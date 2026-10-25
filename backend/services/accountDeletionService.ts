@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
 import SchedulerHeartbeatLease from '../models/SchedulerHeartbeatLease';
-import User from '../models/User';
+import User, { IUser } from '../models/User';
 import AccountDeletion from '../models/AccountDeletion';
 import File from '../models/File';
 import DeviceAuthorization from '../models/DeviceAuthorization';
@@ -23,6 +23,11 @@ export class AccountDeletionError extends Error {
 }
 
 const revokeOwnedAccess = async (userId: string): Promise<void> => {
+  await User.updateOne({ _id: userId }, {
+    $set: { deviceTokens: [] },
+    $unset: { apiToken: 1, apiTokenCreatedAt: 1, apiTokenScopes: 1 },
+  });
+
   const credentials = await AgentCredential.find({ ownerUserId: userId }).select('_id').lean();
   await AgentCredential.revokeCascade(credentials.map((credential) => credential._id));
   await Machine.deleteMany({ ownerUserId: userId });
@@ -60,6 +65,46 @@ const deleteOwnedUploads = async (userId: string): Promise<void> => {
   }
 };
 
+// Only called after request re-authentication or for an already authorized,
+// stale marker. Recovery retains a failed preflight for a later bounded retry.
+const establishCleanupReceipt = async (user: IUser, releaseOnBillingFailure = true): Promise<void> => {
+  const userId = String(user._id);
+  // A receipt means billing preflight already succeeded. Otherwise claim the
+  // non-admin row before Stripe. A stale claim recovers a crashed preflight;
+  // the provider request is bounded below this five-minute lease.
+  if (!await AccountDeletion.exists({ _id: userId })) {
+    const claimedAt = new Date();
+    const claimed = await User.updateOne({
+      _id: userId, isBot: { $ne: true }, role: { $ne: 'admin' },
+      $or: [{ accountDeletionRequestedAt: { $exists: false } },
+        { accountDeletionRequestedAt: { $lt: new Date(claimedAt.getTime() - 300_000) } }],
+    }, { $set: { accountDeletionRequestedAt: claimedAt } });
+    if (claimed.matchedCount !== 1) {
+      throw new AccountDeletionError(409, 'ACCOUNT_CHANGED',
+        'Your account changed or deletion is already in progress. Try again shortly.');
+    }
+    try {
+      if (user.billing?.subscriptionId && user.billing.subscriptionStatus !== 'canceled') {
+        const client = stripe();
+        if (!client) throw new Error('Billing is unavailable; account deletion cannot cancel the subscription');
+        await client.subscriptions.cancel(user.billing.subscriptionId, {}, {
+          idempotencyKey: `account-deletion-${userId}-${user.billing.subscriptionId}`,
+          timeout: 30_000,
+          maxNetworkRetries: 0,
+        });
+      }
+    } catch (error) {
+      // Release only this attempt's claim. Credentials and uploads are intact.
+      if (releaseOnBillingFailure) {
+        await User.updateOne({ _id: userId, accountDeletionRequestedAt: claimedAt },
+          { $unset: { accountDeletionRequestedAt: 1 } });
+      }
+      throw error;
+    }
+    await AccountDeletion.updateOne({ _id: userId }, { $setOnInsert: { createdAt: new Date() } }, { upsert: true });
+  }
+};
+
 export const ACCOUNT_DELETION_SWEEP_BATCH = 100;
 const SWEEP_LEASE_ID = 'account-deletion-sweep';
 const SWEEP_LEASE_MS = 120_000;
@@ -78,20 +123,46 @@ export const sweepAccountDeletions = async (): Promise<void> => {
     if ((error as { code?: number }).code === 11000) return;
     throw error;
   }
+  const renewLease = async (): Promise<void> => {
+    const renewed = await SchedulerHeartbeatLease.updateOne(
+      { _id: SWEEP_LEASE_ID, ownerId },
+      { $set: { expiresAt: new Date(Date.now() + SWEEP_LEASE_MS) } },
+    );
+    if (renewed.matchedCount !== 1) throw new Error('Account deletion sweep lease lost');
+  };
   const errors: unknown[] = [];
   const failedIds: string[] = [];
   try {
+    // Recover the gap between the authorized marker and receipt creation.
+    // Fresh billing preflights are excluded. Existing receipts need no recovery.
+    const stranded = await User.aggregate<IUser>([
+      { $match: { accountDeletionRequestedAt: { $lt: new Date(Date.now() - 300_000) },
+        role: { $ne: 'admin' }, isBot: { $ne: true } } },
+      { $sort: { accountDeletionRequestedAt: 1, _id: 1 } },
+      { $lookup: { from: AccountDeletion.collection.name, localField: '_id',
+        foreignField: '_id', as: 'cleanupReceipt' } },
+      { $match: { 'cleanupReceipt.0': { $exists: false } } },
+      { $limit: ACCOUNT_DELETION_SWEEP_BATCH },
+      { $unset: 'cleanupReceipt' },
+    ]);
+    for (const user of stranded) {
+      // eslint-disable-next-line no-await-in-loop
+      await renewLease();
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await establishCleanupReceipt(user, false);
+      } catch (error) {
+        errors.push(error);
+        failedIds.push(String(user._id));
+      }
+    }
     const receipts = await AccountDeletion.find().sort({ lastSweptAt: 1, _id: 1 })
       .limit(ACCOUNT_DELETION_SWEEP_BATCH).select('_id').lean();
     for (const receipt of receipts) {
       // Renew between receipts. If this worker lost its lease, stop starting
       // work; expiry recovers a crashed worker and deletes remain idempotent.
       // eslint-disable-next-line no-await-in-loop
-      const renewed = await SchedulerHeartbeatLease.updateOne(
-        { _id: SWEEP_LEASE_ID, ownerId },
-        { $set: { expiresAt: new Date(Date.now() + SWEEP_LEASE_MS) } },
-      );
-      if (renewed.matchedCount !== 1) throw new Error('Account deletion sweep lease lost');
+      await renewLease();
       const userId = String(receipt._id);
       try {
         // eslint-disable-next-line no-await-in-loop
@@ -153,43 +224,7 @@ export const deleteOwnAccount = async (
       'Transfer administration and ask another admin to make this a member account before deleting it.');
   }
 
-  // A receipt means billing preflight already succeeded. Otherwise claim the
-  // non-admin row before Stripe. A stale claim recovers a crashed preflight;
-  // the provider request is bounded below this five-minute lease.
-  if (!await AccountDeletion.exists({ _id: userId })) {
-    const claimedAt = new Date();
-    const claimed = await User.updateOne({
-      _id: userId, isBot: { $ne: true }, role: { $ne: 'admin' },
-      $or: [{ accountDeletionRequestedAt: { $exists: false } },
-        { accountDeletionRequestedAt: { $lt: new Date(claimedAt.getTime() - 300_000) } }],
-    }, { $set: { accountDeletionRequestedAt: claimedAt } });
-    if (claimed.matchedCount !== 1) {
-      throw new AccountDeletionError(409, 'ACCOUNT_CHANGED',
-        'Your account changed or deletion is already in progress. Try again shortly.');
-    }
-    try {
-      if (user.billing?.subscriptionId && user.billing.subscriptionStatus !== 'canceled') {
-        const client = stripe();
-        if (!client) throw new Error('Billing is unavailable; account deletion cannot cancel the subscription');
-        await client.subscriptions.cancel(user.billing.subscriptionId, {}, {
-          idempotencyKey: `account-deletion-${userId}-${user.billing.subscriptionId}`,
-          timeout: 30_000,
-          maxNetworkRetries: 0,
-        });
-      }
-    } catch (error) {
-      // Release only this attempt's claim. Credentials and uploads are intact.
-      await User.updateOne({ _id: userId, accountDeletionRequestedAt: claimedAt },
-        { $unset: { accountDeletionRequestedAt: 1 } });
-      throw error;
-    }
-    await AccountDeletion.updateOne({ _id: userId }, { $setOnInsert: { createdAt: new Date() } }, { upsert: true });
-  }
-  // Retain the human until cleanup succeeds for authenticated retries.
-  await User.updateOne({ _id: userId }, {
-    $set: { deviceTokens: [] },
-    $unset: { apiToken: 1, apiTokenCreatedAt: 1, apiTokenScopes: 1 },
-  });
+  await establishCleanupReceipt(user);
   await revokeOwnedAccess(userId);
 
   await deleteOwnedUploads(userId);

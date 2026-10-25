@@ -195,6 +195,25 @@ describe('Self-serve account deletion', () => {
     await deletion(app, token).expect(204);
   });
 
+  it('recovers a failed receipt write without relying on a browser retry', async () => {
+    const user = await makeUser({ billing: { subscriptionId: 'sub_receipt', subscriptionStatus: 'active' } });
+    await addFile(user, 'stranded.png');
+    jest.spyOn(AccountDeletion, 'updateOne').mockRejectedValueOnce(new Error('Receipt store unavailable'));
+    await deletion(app, issueSessionToken(user)).expect(503);
+    expect(await AccountDeletion.countDocuments()).toBe(0);
+    expect((await User.findById(user._id)).accountDeletionRequestedAt).toBeDefined();
+    await sweepAccountDeletions();
+    expect(await AccountDeletion.countDocuments()).toBe(0); // Active preflight is left alone.
+    await User.updateOne({ _id: user._id }, {
+      $set: { accountDeletionRequestedAt: new Date(Date.now() - 301000) },
+    });
+    await sweepAccountDeletions();
+    expect(await AccountDeletion.countDocuments()).toBe(1);
+    expect(await File.countDocuments({ uploadedBy: user._id })).toBe(0);
+    expect(await MediaObject.findOne({ key: 'stranded.png' })).toBeNull();
+    await deletion(app, issueSessionToken(user)).expect(204);
+  });
+
   it('leaves the account and uploads intact if subscription cancellation fails', async () => {
     const user = await makeUser({ apiToken: 'cm_keep-on-billing-failure',
       billing: { subscriptionId: 'sub_fail', subscriptionStatus: 'active' } });

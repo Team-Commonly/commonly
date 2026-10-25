@@ -498,6 +498,11 @@ userSchema.methods.getOrCreateDigestUnsubscribeToken = function (): string {
   return this.digestUnsubscribeToken;
 };
 
+// Recovery scans only authorized deletion markers, ordered for bounded retries.
+userSchema.index({ accountDeletionRequestedAt: 1, _id: 1 }, {
+  partialFilterExpression: { accountDeletionRequestedAt: { $exists: true } },
+});
+
 export default mongoose.model<IUser, IUserModel>('User', userSchema);
 // CJS compat: let require() return the default export directly
 // eslint-disable-next-line @typescript-eslint/no-require-imports

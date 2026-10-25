@@ -69,6 +69,12 @@ deletion has begun or the account is gone.
 An `AccountDeletion` receipt retains the opaque user id, creation time and last
 attempt time.
 A scheduler tick runs every minute under a renewable two-minute cluster lease.
+Before receipt cleanup, it recovers at most 100 stale authorized user markers
+whose receipt write failed. It repeats billing preflight with the same idempotency
+key before creating a receipt; it never cleans uploads before billing succeeds.
+Fresh claims are excluded. Failed recovered preflights retain their marker and
+rotate by claim time for another attempt. A retained human can finish deletion
+through a re-authenticated browser retry after cleanup succeeds.
 Each tick processes at most 100 receipts, ordered by the oldest attempt. Failed
 receipts also rotate to the back of the queue. One cleanup failure does not stop
 other receipts: the sweep reports their failures as an aggregate after the batch,
