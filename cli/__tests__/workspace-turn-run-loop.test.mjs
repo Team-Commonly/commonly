@@ -33,12 +33,15 @@ const drain = async () => {
   for (let i = 0; i < 24; i += 1) await new Promise((resolve) => setImmediate(resolve));
 };
 
-const runOneTurn = async ({ environment, installations }) => {
+let eventCount = 0;
+const runOneTurn = async ({ environment, installations, newSessionId }) => {
+  eventCount += 1;
+  const eventId = `ws-event-${eventCount}`;
   const get = jest.fn(async (route) => {
     if (route === '/api/agents/runtime/events') {
       return {
         events: [{
-          _id: 'ws-event-1', type: 'chat.mention', podId: 'pod-ws', agentName: 'workspace-stub',
+          _id: eventId, type: 'chat.mention', podId: 'pod-ws', agentName: 'workspace-stub',
           payload: { content: 'read the repo' },
         }],
       };
@@ -53,7 +56,7 @@ const runOneTurn = async ({ environment, installations }) => {
     return {};
   });
   createClient.mockReturnValue({ get, post: jest.fn().mockResolvedValue({}) });
-  const spawn = jest.fn().mockResolvedValue({ text: 'done' });
+  const spawn = jest.fn().mockResolvedValue({ text: 'done', newSessionId });
   const logs = [];
   const { stop } = performRun({
     instanceUrl: 'http://localhost:5000',
@@ -124,5 +127,18 @@ describe('performRun workspace turn placement', () => {
     expect(ctx.cwd).toBe(workspaceDir);
     expect(ctx.environment.sandbox.trust).toBe('public');
     expect(get.mock.calls.some(([route]) => route === '/api/agents/runtime/installations')).toBe(false);
+  });
+
+  test('a public turn never resumes a conversation that read the workspace', async () => {
+    const environment = { sandbox: { trust: 'workspace' } };
+    await runOneTurn({ environment, installations: [privatePod], newSessionId: 'sess-ws' });
+    const resumed = await runOneTurn({ environment, installations: [privatePod] });
+    expect(resumed.ctx.sessionId).toBe('sess-ws');
+
+    const degraded = await runOneTurn({
+      environment,
+      installations: [{ podId: 'pod-ws', publicRead: true, communityListed: true }],
+    });
+    expect(degraded.ctx.sessionId).toBeFalsy();
   });
 });

@@ -1495,13 +1495,14 @@ export const performRun = ({
   if (!existsSync(agentCwd)) mkdirSync(agentCwd, { recursive: true });
   // TASK-294: a pod can turn public after attach, so a workspace seat re-reads
   // its pods before every turn, and a turn it cannot confirm (a failed read
-  // included) runs as a public seat in the scratch folder. Moving the cwd
-  // moves claude's session store, so that turn's resume fails "no
-  // conversation" and claude.js starts it fresh.
+  // included) runs as a public seat in the scratch folder. The session is
+  // bound to where and as what the turn runs, so a public turn never resumes
+  // a conversation that read the workspace, whatever claude's resume would
+  // find from another folder.
   let lastPlacementReason = null;
   const placeTurn = async () => {
     if (seatEnvironment?.sandbox?.trust !== 'workspace') {
-      return { environment: seatEnvironment, cwd: agentCwd };
+      return { environment: seatEnvironment, cwd: agentCwd, binding: sessionBinding };
     }
     let installations = null;
     try {
@@ -1522,7 +1523,8 @@ export const performRun = ({
       lastPlacementReason = placement.reason;
     }
     if (!existsSync(placement.cwd)) mkdirSync(placement.cwd, { recursive: true });
-    return placement;
+    const where = `${placement.environment.sandbox.trust}:${placement.cwd}`;
+    return { ...placement, binding: sessionBinding ? `${sessionBinding}:${where}` : where };
   };
   const batchLimit = Math.min(50, Math.max(1, Number(inboxBatchLimit) || 10));
 
@@ -1774,11 +1776,12 @@ export const performRun = ({
   const runTurn = async ({
     event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger,
   }) => {
+    const placement = await placeTurn();
     // TASK-440: a cold, large session starts fresh at wake instead of being
     // resumed. The restart note leads the prompt; memory still reaches the
     // fresh session through the adapter's preamble.
-    const sessionEntry = getSessionEntry(agentName, eventPodId, { binding: sessionBinding });
-    let sessionId = getSession(agentName, eventPodId, { binding: sessionBinding });
+    const sessionEntry = getSessionEntry(agentName, eventPodId, { binding: placement.binding });
+    let sessionId = getSession(agentName, eventPodId, { binding: placement.binding });
     let recycleBriefing = null;
     if (sessionId && shouldStartFreshSession({
       lastTurn: sessionEntry?.lastTurn,
@@ -1797,7 +1800,6 @@ export const performRun = ({
     // ADR-005 §Memory bridge: read long_term before spawn, inject via ctx,
     // and (if the adapter returns a summary) patch-sync back after.
     const memoryLongTerm = await readLongTerm(client, { onError });
-    const placement = await placeTurn();
 
     // Sharpen TASK-129: focus is a turn-start read, not an enqueue-time
     // snapshot. Read through the authorized runtime context route immediately
@@ -2019,7 +2021,7 @@ export const performRun = ({
       // wake can decide whether to recycle. Adapters that report nothing keep
       // resuming.
       setSession(agentName, eventPodId, result.newSessionId, {
-        binding: sessionBinding,
+        binding: placement.binding,
         contextTokens: result.contextTokens ?? null,
       });
     }
