@@ -35,3 +35,5 @@ Anything else is `not_covered`, with the reason. That includes a CLI that ignore
 - The failure's detail is `provider answered <status>`, plus the error's type and code identifiers. The provider's message text stays in memory on `failure.providerMessage`, credential-scrubbed, and never reaches a trace.
 
 The run loop in `cli/src/commands/agent.js` uses all of this only when `COMMONLY_SUPERVISE_RUNS=1`. Otherwise it calls the adapter directly, as before.
+
+**Run record.** The trace store writes each run as a versioned, hash-chained JSONL record. It covers who granted which agent what access for which task, who approved each call, what was attempted, and the result. A tool outside this package can read, verify and export it to OTLP. The format is specified in [`docs/record-v1.md`](docs/record-v1.md), and a generated sample is in [`docs/examples/`](docs/examples/).
