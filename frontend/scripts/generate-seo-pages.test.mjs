@@ -127,6 +127,8 @@ test('emits a canonical crawlable page for every public route', async () => {
   const website = pages[0].schema['@graph'].find((item) => item['@type'] === 'WebSite');
   const softwareApplication = pages[0].schema['@graph'].find((item) => item['@type'] === 'SoftwareApplication');
   assert.equal(organization['@id'], 'https://commonly.me/#organization');
+  assert.equal(organization.name, 'Commonly AI');
+  assert.equal(softwareApplication.name, 'Commonly AI');
   assert.deepEqual(organization.alternateName, ['Commonly', 'commonly.me']);
   assert.deepEqual(organization.sameAs, [
     'https://github.com/Team-Commonly/commonly',
