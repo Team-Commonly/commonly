@@ -101,6 +101,7 @@ describe('OAuth browser round trip over HTTP', () => {
     expect(exchanged.headers['access-control-allow-credentials']).toBe('true');
     expect(jwt.verify(exchanged.body.token, process.env.JWT_SECRET).id).toBe(String((await User.findOne({ email: 'person@example.com' }))._id));
     expect(exchanged.headers['set-cookie'][0]).toContain(`${flow.cookies[0].split('=')[0]}=;`);
+    expect(exchanged.headers['set-cookie'][0]).toContain('Expires=Thu, 01 Jan 1970');
     expect((await OAuthLoginState.findOne({ state: flow.state }).select('+pkceVerifier')).pkceVerifier).toBeUndefined();
     await withBrowser(request(app).post('/api/auth/oauth/exchange'), flow.cookies).send({ code }).expect(400);
     const replay = await withBrowser(request(app).get(callback(flow)), flow.cookies).expect(302);
