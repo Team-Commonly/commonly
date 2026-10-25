@@ -20,13 +20,6 @@
     "**/*.spec.ts",
     // Vendored/authored elsewhere — not this package's source.
     "commonly-bundled-skills",
-    "docs",
-    // Root-level scratch scripts, unreferenced by package.json or any route
-    // or service. 54 pre-existing errors between them. Fix or delete rather
-    // than extending this list — it is the debt ledger, not an escape hatch.
-    "test-discord-integration.ts",
-    "test-discord-interactions.ts",
-    "test-discord-commands.ts",
-    "cleanup-test-data.ts"
+    "docs"
   ]
 }

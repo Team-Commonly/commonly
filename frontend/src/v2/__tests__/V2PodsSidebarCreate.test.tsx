@@ -36,14 +36,6 @@ jest.mock('../hooks/useV2Api', () => ({
   }),
 }));
 
-jest.mock('../hooks/useV2Unread', () => ({
-  useV2Unread: () => ({
-    isUnread: () => false,
-    bumpLatest: jest.fn(),
-    seedFromExisting: jest.fn(),
-  }),
-}));
-
 jest.mock('../../context/SocketContext', () => ({
   useSocket: () => ({ socket: null, connected: false, joinPod: jest.fn() }),
 }));
