@@ -162,4 +162,37 @@ describe('DMService — agent rooms', () => {
     expect(second.members.map(String).sort()).toEqual([agentUser._id, humanUser._id].map(String).sort());
   });
 
+  it.each(['Supernova', 'nova notes'])('never adds an agent to the unrelated owner-only DM %s', async (otherLabel) => {
+    agentUser.botMetadata = { agentName: 'openclaw', instanceId: 'nova', displayName: 'openclaw (nova)' };
+    await agentUser.save();
+    const unrelated = await Pod.create({ name: `DM: ${otherLabel}`, description: `Debug channel for ${otherLabel}`,
+      type: 'agent-admin', createdBy: humanUser._id, members: [humanUser._id], joinPolicy: 'invite-only' });
+    const room = await DMService.getOrCreateAgentDM(agentUser._id, humanUser._id, { agentName: 'openclaw', instanceId: 'nova' });
+    expect(room._id.toString()).not.toBe(unrelated._id.toString());
+    const stored = await Pod.findById(unrelated._id);
+    expect(stored.name).toBe(`DM: ${otherLabel}`);
+    expect(stored.members.map(String)).toEqual([humanUser._id.toString()]);
+  });
+
+  it('reuses a punctuation-ending description after the pod name is edited', async () => {
+    agentUser.botMetadata = { agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova [reviewer]' };
+    await agentUser.save();
+    const first = await DMService.getOrCreateAgentDM(agentUser._id, humanUser._id, { agentName: 'openclaw', instanceId: 'nova' });
+    first.name = 'Private review notes';
+    await first.save();
+    const second = await DMService.getOrCreateAgentDM(agentUser._id, humanUser._id, { agentName: 'openclaw', instanceId: 'nova' });
+    expect(second._id.toString()).toBe(first._id.toString());
+    expect(await Pod.countDocuments({ type: 'agent-admin' })).toBe(1);
+  });
+
+  it('repairs a legacy composite-label DM by its complete description', async () => {
+    agentUser.botMetadata = { agentName: 'openclaw', instanceId: 'nova', displayName: 'openclaw (nova)' };
+    await agentUser.save();
+    const legacy = await Pod.create({ name: 'Private notes', description: 'Debug channel for openclaw (nova)',
+      type: 'agent-admin', createdBy: humanUser._id, members: [humanUser._id], joinPolicy: 'invite-only' });
+    const room = await DMService.getOrCreateAgentDM(agentUser._id, humanUser._id, { agentName: 'openclaw', instanceId: 'nova' });
+    expect(room._id.toString()).toBe(legacy._id.toString());
+    expect(room.members.map(String).sort()).toEqual([agentUser._id, humanUser._id].map(String).sort());
+  });
+
 });

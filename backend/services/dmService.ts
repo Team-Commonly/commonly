@@ -135,24 +135,30 @@ class DMService {
       .lean<{ username?: string; botMetadata?: { displayName?: string; instanceId?: string } } | null>();
     const labelFallback = (agentName && agentName !== 'agent') ? agentName : 'agent';
     const label = resolveAgentDisplayLabel(agentUser, labelFallback);
-    const searchLabels = [...new Set([agentName, label].filter((value): value is string => Boolean(value)))];
+    // Include the stored label to find rooms created before runtime-label cleanup.
+    const searchLabels = [...new Set(
+      [agentName, label, agentUser?.botMetadata?.displayName?.trim()]
+        .filter((value): value is string => Boolean(value)),
+    )];
     const searchPattern = searchLabels.map((value) => DMService.escapeRegex(value)).join('|');
+    const descriptionPattern = `^Debug channel for (?:${searchPattern})$`;
+    const namePattern = `^DM:\\s*(?:${searchPattern})$`;
 
     // Look for an existing agent-admin pod where both users are members and
-    // the agent name matches (prevents cross-agent DM collisions).
+    // the complete stored identity matches (prevents cross-agent DM collisions).
     const existing = await Pod.findOne({
       type: 'agent-admin',
       members: { $all: [agentId, ownerId] },
-      description: { $regex: `\\b(?:${searchPattern})\\b`, $options: 'i' },
+      description: { $regex: descriptionPattern, $options: 'i' },
     });
     if (existing) return DMService.ensureDmMembers(existing, ownerId, agentId);
 
-    // Fallback: broader search without description regex in case the
+    // Fallback: exact DM name match without description in case the
     // description was edited or stored differently.
     const fallback = await Pod.findOne({
       type: 'agent-admin',
       members: { $all: [agentId, ownerId] },
-      name: { $regex: searchPattern, $options: 'i' },
+      name: { $regex: namePattern, $options: 'i' },
     });
     if (fallback) return DMService.ensureDmMembers(fallback, ownerId, agentId);
 
@@ -162,8 +168,8 @@ class DMService {
       type: 'agent-admin',
       members: ownerId,
       $or: [
-        { description: { $regex: `\\b(?:${searchPattern})\\b`, $options: 'i' } },
-        { name: { $regex: searchPattern, $options: 'i' } },
+        { description: { $regex: descriptionPattern, $options: 'i' } },
+        { name: { $regex: namePattern, $options: 'i' } },
       ],
     })
       .sort({ updatedAt: -1 })
