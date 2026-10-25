@@ -158,7 +158,7 @@ describe('BYO listener snippet', () => {
   test('a Claude Code listener says what it can reach and how --allow widens it; Codex says nothing of folders', async () => {
     await issueToken();
     const reach = screen.getByTestId('byo-listen-reach');
-    expect(reach).toHaveTextContent(/By default, in a private, invite-only pod, .+ reads only the folder you run this from\./);
+    expect(reach).toHaveTextContent(/By default, on macOS and in a private, invite-only pod, .+ reads only the folder you run this from\./);
     // The folder bound is the default only: write's commands read past it.
     expect(reach).toHaveTextContent(/add --allow write to the last line\. Those commands can read beyond the folder\./);
     expect(reach).toHaveTextContent(/To let it fetch web pages, add --allow web\./);
