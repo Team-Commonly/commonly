@@ -210,7 +210,7 @@ describe('native turn with commonly_web_search', () => {
 
       expect(offeredIn(1)).toContain('linear_list_issues');
       expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
-        content: 'issue result', noOutboundRelay: true,
+        content: 'issue result', noOutboundRelay: true, runId: 'run-1',
       }));
     });
 
@@ -286,7 +286,7 @@ describe('native turn with commonly_web_search', () => {
 
       expect(offeredIn(1)).toContain('linear_list_issues');
       expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
-        content: 'Here is what shipped.', noOutboundRelay: true,
+        content: 'Here is what shipped.', noOutboundRelay: true, runId: 'run-1',
       }));
     });
 
@@ -329,7 +329,7 @@ describe('native turn with commonly_web_search', () => {
 
       await runAgent(proposalInstall, mention);
 
-      expect(mockProposeAction).toHaveBeenCalledWith(expect.objectContaining({ noOutboundRelay: true }));
+      expect(mockProposeAction).toHaveBeenCalledWith(expect.objectContaining({ noOutboundRelay: true, runId: 'run-1' }));
     });
 
     test('a failed hosted turn after a broker call keeps its fixed line inside the pod', async () => {
@@ -346,7 +346,7 @@ describe('native turn with commonly_web_search', () => {
       expect(result.status).toBe('failed');
       expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
         metadata: expect.objectContaining({ runFailed: true }),
-        noOutboundRelay: true,
+        noOutboundRelay: true, runId: 'run-1',
       }));
     });
 
