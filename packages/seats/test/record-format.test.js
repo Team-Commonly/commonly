@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
-  appendEntry, canonicalLine, hashLine, readRecord, verifyRecord, KINDS, RECORD_VERSION, RECORD_SCHEMA, toolSurfaceOf,
+  appendEntry, argsDigestOf, canonicalLine, hashLine, readRecord, verifyRecord, KINDS, RECORD_VERSION, RECORD_SCHEMA, toolSurfaceOf,
 } from '../src/record/format.js';
 
 const RUN = 'run-fmt-0001';
@@ -251,4 +251,59 @@ test('the writer refuses unknown kinds, a bad seq, and a non-UTC ts', () => {
   assert.throws(() => appendEntry(null, { ...ENV, ts: ts(), kind: 'made.up', data: {} }), /unknown record kind/);
   assert.throws(() => appendEntry(null, { ...ENV, ts: ts(), kind: 'usage', data: {}, seq: 2 }), /seq 2/);
   assert.throws(() => appendEntry(null, { ...ENV, ts: '2026-10-25T12:00:00+02:00', kind: 'usage', data: {} }), /RFC 3339/);
+});
+
+const request = (data) => JSON.parse(appendEntry(null, { ...ENV, ts: ts(), kind: 'permission.requested', data }, { runActor: AGENT }));
+const askData = (overrides = {}) => ({
+  toolCallId: 'tc-1', options: [{ optionId: 'allow', kind: 'allow_once' }], question: 'Resolve CHECKOUT-88?',
+  askedOf: { id: 'u-ben', role: 'credential-owner' }, grantId: 'g-1', decisionCardId: 'card-1', ...overrides,
+});
+
+test('permission.requested: question and askedOf are required, askedOf.id is an id and its role is from the enum', () => {
+  const entry = request(askData());
+  assert.deepEqual(entry.data.askedOf, { id: 'u-ben', role: 'credential-owner' });
+  assert.equal(entry.data.question, 'Resolve CHECKOUT-88?');
+  assert.deepEqual(entry.actor, AGENT, 'the agent asks');
+  const { askedOf, question, ...rest } = askData();
+  assert.throws(() => request(rest), /question/);
+  assert.throws(() => request({ ...rest, question }), /askedOf/);
+  assert.throws(() => request(askData({ question: '' })), /question/);
+  assert.throws(() => request(askData({ askedOf: { id: 'Ben Smith', role: 'credential-owner' } })), /askedOf.id/);
+  assert.throws(() => request(askData({ askedOf: { id: 'u-ben' } })), /askedOf.role/);
+  assert.throws(() => request(askData({ askedOf: { id: 'u-ben', role: 'boss' } })), /askedOf.role/);
+  assert.throws(() => request(askData({ askedOf: { id: 'u-ben', role: 'policy', email: 'ben@example.com' } })), /unknown field/);
+  assert.throws(() => request(askData({ decisionCardId: '' })), /decisionCardId/);
+  assert.equal(request(askData({ askedOf: { id: 'grant:g-1', role: 'policy' } })).data.askedOf.id, 'grant:g-1');
+});
+
+test('decision.ruled: a card ruling, validated like permission.decided', () => {
+  const rule = (data) => JSON.parse(appendEntry(null, { ...ENV, ts: ts(), kind: 'decision.ruled', data }));
+  const good = { decisionCardId: 'card-2', value: 'retry', decidedBy: 'u-ana', decidedByRole: 'agent-owner' };
+  const entry = rule(good);
+  assert.deepEqual(entry.data, good);
+  assert.deepEqual(entry.actor, { type: 'human', id: 'u-ana' }, 'the ruler is the actor');
+  assert.deepEqual(rule({ ...good, decidedBy: 'policy', decidedByRole: 'policy' }).actor, { type: 'policy', id: 'policy' });
+  for (const value of [true, 3, 'ship']) rule({ ...good, value });
+  assert.throws(() => rule({ ...good, decisionCardId: undefined }), /decisionCardId/);
+  assert.throws(() => rule({ ...good, decidedBy: 'Ana Smith' }), /decidedBy/);
+  assert.throws(() => rule({ ...good, decidedBy: undefined }), /decidedBy/);
+  assert.throws(() => rule({ ...good, decidedByRole: 'owner' }), /decidedByRole/);
+  assert.throws(() => rule({ ...good, decidedByRole: null }), /decidedByRole/);
+  for (const value of [undefined, null, { a: 1 }, ['x'], Number.NaN]) assert.throws(() => rule({ ...good, value }), /value/, `value ${value}`);
+});
+
+test('argsDigest is sha256 of the canonical args, and anything else is refused, so raw args cannot ride in', () => {
+  const digest = argsDigestOf({ b: 2, a: [1, 'x'] });
+  assert.equal(digest, `sha256:${createHash('sha256').update('{"a":[1,"x"],"b":2}').digest('hex')}`);
+  assert.equal(argsDigestOf({ a: [1, 'x'], b: 2 }), digest, 'key order does not change it');
+  assert.equal(argsDigestOf(undefined), undefined);
+  assert.equal(argsDigestOf({ n: Number.NaN }), undefined);
+  const call = (argsDigest) => appendEntry(null, { ...ENV, ts: ts(), kind: 'tool.call', data: { toolCallId: 't', title: 'x', argsDigest } });
+  const decided = (argsDigest) => appendEntry(null, { ...ENV, ts: ts(), kind: 'permission.decided', data: { outcome: 'cancelled', toolCallId: 't', argsDigest } });
+  for (const write of [call, decided, (d) => request(askData({ argsDigest: d }))]) {
+    write(digest);
+    for (const raw of [{ command: 'git push' }, 'git push origin main', `sha256:${'A'.repeat(64)}`, `sha256:${'a'.repeat(63)}`, `sha512:${'a'.repeat(64)}`, 'a'.repeat(64), ['x'], 42]) {
+      assert.throws(() => write(raw), /argsDigest/, `raw ${JSON.stringify(raw)}`);
+    }
+  }
 });

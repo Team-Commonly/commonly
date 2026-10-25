@@ -24,7 +24,7 @@
               "name": "seats.run",
               "kind": 1,
               "startTimeUnixNano": "1792944002000000000",
-              "endTimeUnixNano": "1792944030000000000",
+              "endTimeUnixNano": "1792944031000000000",
               "attributes": [
                 {
                   "key": "seats.run.id",
@@ -273,12 +273,60 @@
                 },
                 {
                   "timeUnixNano": "1792944012000000000",
-                  "name": "liveness.recovery",
+                  "name": "decision.ruled",
                   "attributes": [
                     {
                       "key": "seats.seq",
                       "value": {
                         "intValue": "11"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "human"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "u-ana"
+                      }
+                    },
+                    {
+                      "key": "seats.decided_by",
+                      "value": {
+                        "stringValue": "u-ana"
+                      }
+                    },
+                    {
+                      "key": "seats.decided_by_role",
+                      "value": {
+                        "stringValue": "agent-owner"
+                      }
+                    },
+                    {
+                      "key": "seats.decision_card_id",
+                      "value": {
+                        "stringValue": "card-2b9"
+                      }
+                    },
+                    {
+                      "key": "seats.value",
+                      "value": {
+                        "stringValue": "retry"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "timeUnixNano": "1792944013000000000",
+                  "name": "liveness.recovery",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "12"
                       }
                     },
                     {
@@ -308,13 +356,13 @@
                   ]
                 },
                 {
-                  "timeUnixNano": "1792944029000000000",
+                  "timeUnixNano": "1792944030000000000",
                   "name": "result.reported",
                   "attributes": [
                     {
                       "key": "seats.seq",
                       "value": {
-                        "intValue": "28"
+                        "intValue": "29"
                       }
                     },
                     {
@@ -662,12 +710,12 @@
             },
             {
               "traceId": "d043bdec4346bb1253c06463a2c2cc13",
-              "spanId": "54966552492d24ee",
+              "spanId": "109cfe1b8a44b804",
               "parentSpanId": "4f7ea2299f50ef90",
               "name": "invoke_agent Ana's opencode",
               "kind": 1,
-              "startTimeUnixNano": "1792944013000000000",
-              "endTimeUnixNano": "1792944028000000000",
+              "startTimeUnixNano": "1792944014000000000",
+              "endTimeUnixNano": "1792944029000000000",
               "attributes": [
                 {
                   "key": "gen_ai.operation.name",
@@ -744,13 +792,13 @@
               ],
               "events": [
                 {
-                  "timeUnixNano": "1792944027000000000",
+                  "timeUnixNano": "1792944028000000000",
                   "name": "usage",
                   "attributes": [
                     {
                       "key": "seats.seq",
                       "value": {
-                        "intValue": "26"
+                        "intValue": "27"
                       }
                     },
                     {
@@ -798,12 +846,12 @@
             },
             {
               "traceId": "d043bdec4346bb1253c06463a2c2cc13",
-              "spanId": "109cfe1b8a44b804",
-              "parentSpanId": "54966552492d24ee",
+              "spanId": "2f16f44fc7fa7d44",
+              "parentSpanId": "109cfe1b8a44b804",
               "name": "execute_tool git push origin fix/total-rounding",
               "kind": 1,
-              "startTimeUnixNano": "1792944014000000000",
-              "endTimeUnixNano": "1792944017000000000",
+              "startTimeUnixNano": "1792944015000000000",
+              "endTimeUnixNano": "1792944018000000000",
               "attributes": [
                 {
                   "key": "gen_ai.operation.name",
@@ -842,6 +890,12 @@
                   }
                 },
                 {
+                  "key": "seats.tool.args_digest",
+                  "value": {
+                    "stringValue": "sha256:fca8e99d0cd7188c5fd43bd7cd79272d5598afb370cb5aac7b7ccb151087bd92"
+                  }
+                },
+                {
                   "key": "error.type",
                   "value": {
                     "stringValue": "tool_failed"
@@ -850,13 +904,13 @@
               ],
               "events": [
                 {
-                  "timeUnixNano": "1792944015000000000",
+                  "timeUnixNano": "1792944016000000000",
                   "name": "permission.requested",
                   "attributes": [
                     {
                       "key": "seats.seq",
                       "value": {
-                        "intValue": "14"
+                        "intValue": "15"
                       }
                     },
                     {
@@ -881,6 +935,30 @@
                       "key": "seats.actor.name",
                       "value": {
                         "stringValue": "Ana's opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.args_digest",
+                      "value": {
+                        "stringValue": "sha256:fca8e99d0cd7188c5fd43bd7cd79272d5598afb370cb5aac7b7ccb151087bd92"
+                      }
+                    },
+                    {
+                      "key": "seats.asked_of.id",
+                      "value": {
+                        "stringValue": "grant:grant-ana-sentry-1"
+                      }
+                    },
+                    {
+                      "key": "seats.asked_of.role",
+                      "value": {
+                        "stringValue": "policy"
+                      }
+                    },
+                    {
+                      "key": "seats.grant_id",
+                      "value": {
+                        "stringValue": "grant-ana-sentry-1"
                       }
                     },
                     {
@@ -947,6 +1025,12 @@
                       }
                     },
                     {
+                      "key": "seats.question",
+                      "value": {
+                        "stringValue": "git push origin fix/total-rounding"
+                      }
+                    },
+                    {
                       "key": "seats.tool_call_id",
                       "value": {
                         "stringValue": "tc-2"
@@ -955,13 +1039,13 @@
                   ]
                 },
                 {
-                  "timeUnixNano": "1792944016000000000",
+                  "timeUnixNano": "1792944017000000000",
                   "name": "permission.decided",
                   "attributes": [
                     {
                       "key": "seats.seq",
                       "value": {
-                        "intValue": "15"
+                        "intValue": "16"
                       }
                     },
                     {
@@ -974,6 +1058,12 @@
                       "key": "seats.actor.id",
                       "value": {
                         "stringValue": "grant:grant-ana-sentry-1"
+                      }
+                    },
+                    {
+                      "key": "seats.args_digest",
+                      "value": {
+                        "stringValue": "sha256:fca8e99d0cd7188c5fd43bd7cd79272d5598afb370cb5aac7b7ccb151087bd92"
                       }
                     },
                     {
@@ -1033,13 +1123,13 @@
                   ]
                 },
                 {
-                  "timeUnixNano": "1792944017000000000",
+                  "timeUnixNano": "1792944018000000000",
                   "name": "tool.update",
                   "attributes": [
                     {
                       "key": "seats.seq",
                       "value": {
-                        "intValue": "16"
+                        "intValue": "17"
                       }
                     },
                     {
@@ -1088,12 +1178,12 @@
             },
             {
               "traceId": "d043bdec4346bb1253c06463a2c2cc13",
-              "spanId": "b3182723ae254b59",
-              "parentSpanId": "54966552492d24ee",
+              "spanId": "e9bb6dcc7812bd2c",
+              "parentSpanId": "109cfe1b8a44b804",
               "name": "execute_tool sentry.resolve_issue",
               "kind": 1,
-              "startTimeUnixNano": "1792944018000000000",
-              "endTimeUnixNano": "1792944021000000000",
+              "startTimeUnixNano": "1792944019000000000",
+              "endTimeUnixNano": "1792944022000000000",
               "attributes": [
                 {
                   "key": "gen_ai.operation.name",
@@ -1130,17 +1220,23 @@
                   "value": {
                     "stringValue": "connector"
                   }
+                },
+                {
+                  "key": "seats.tool.args_digest",
+                  "value": {
+                    "stringValue": "sha256:70bf019541b1a36a99c763ca15e36c24c15cbe7880b643d897ebd40ff3deeff1"
+                  }
                 }
               ],
               "events": [
                 {
-                  "timeUnixNano": "1792944019000000000",
+                  "timeUnixNano": "1792944020000000000",
                   "name": "permission.requested",
                   "attributes": [
                     {
                       "key": "seats.seq",
                       "value": {
-                        "intValue": "18"
+                        "intValue": "19"
                       }
                     },
                     {
@@ -1165,6 +1261,36 @@
                       "key": "seats.actor.name",
                       "value": {
                         "stringValue": "Ana's opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.args_digest",
+                      "value": {
+                        "stringValue": "sha256:70bf019541b1a36a99c763ca15e36c24c15cbe7880b643d897ebd40ff3deeff1"
+                      }
+                    },
+                    {
+                      "key": "seats.asked_of.id",
+                      "value": {
+                        "stringValue": "u-ben"
+                      }
+                    },
+                    {
+                      "key": "seats.asked_of.role",
+                      "value": {
+                        "stringValue": "credential-owner"
+                      }
+                    },
+                    {
+                      "key": "seats.decision_card_id",
+                      "value": {
+                        "stringValue": "card-7f3"
+                      }
+                    },
+                    {
+                      "key": "seats.grant_id",
+                      "value": {
+                        "stringValue": "grant-ana-sentry-1"
                       }
                     },
                     {
@@ -1231,6 +1357,12 @@
                       }
                     },
                     {
+                      "key": "seats.question",
+                      "value": {
+                        "stringValue": "Resolve Sentry issue CHECKOUT-88: the half-cent rounding is fixed in PR #212"
+                      }
+                    },
+                    {
                       "key": "seats.tool_call_id",
                       "value": {
                         "stringValue": "tc-3"
@@ -1239,13 +1371,13 @@
                   ]
                 },
                 {
-                  "timeUnixNano": "1792944020000000000",
+                  "timeUnixNano": "1792944021000000000",
                   "name": "permission.decided",
                   "attributes": [
                     {
                       "key": "seats.seq",
                       "value": {
-                        "intValue": "19"
+                        "intValue": "20"
                       }
                     },
                     {
@@ -1264,6 +1396,12 @@
                       "key": "seats.approval",
                       "value": {
                         "stringValue": "approved"
+                      }
+                    },
+                    {
+                      "key": "seats.args_digest",
+                      "value": {
+                        "stringValue": "sha256:70bf019541b1a36a99c763ca15e36c24c15cbe7880b643d897ebd40ff3deeff1"
                       }
                     },
                     {
@@ -1329,13 +1467,13 @@
                   ]
                 },
                 {
-                  "timeUnixNano": "1792944021000000000",
+                  "timeUnixNano": "1792944022000000000",
                   "name": "tool.update",
                   "attributes": [
                     {
                       "key": "seats.seq",
                       "value": {
-                        "intValue": "20"
+                        "intValue": "21"
                       }
                     },
                     {
@@ -1383,12 +1521,12 @@
             },
             {
               "traceId": "d043bdec4346bb1253c06463a2c2cc13",
-              "spanId": "400ad84d51bc8edf",
-              "parentSpanId": "54966552492d24ee",
+              "spanId": "d54dc8e7e5d85bf5",
+              "parentSpanId": "109cfe1b8a44b804",
               "name": "execute_tool commonly_post_message",
               "kind": 1,
-              "startTimeUnixNano": "1792944022000000000",
-              "endTimeUnixNano": "1792944025000000000",
+              "startTimeUnixNano": "1792944023000000000",
+              "endTimeUnixNano": "1792944026000000000",
               "attributes": [
                 {
                   "key": "gen_ai.operation.name",
@@ -1425,17 +1563,23 @@
                   "value": {
                     "stringValue": "commonly"
                   }
+                },
+                {
+                  "key": "seats.tool.args_digest",
+                  "value": {
+                    "stringValue": "sha256:f3e2b6ca902dc5a1ab8afac954c241c4dc1034a481fc6bede1ee7a6bc33dcee5"
+                  }
                 }
               ],
               "events": [
                 {
-                  "timeUnixNano": "1792944023000000000",
+                  "timeUnixNano": "1792944024000000000",
                   "name": "permission.requested",
                   "attributes": [
                     {
                       "key": "seats.seq",
                       "value": {
-                        "intValue": "22"
+                        "intValue": "23"
                       }
                     },
                     {
@@ -1460,6 +1604,30 @@
                       "key": "seats.actor.name",
                       "value": {
                         "stringValue": "Ana's opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.args_digest",
+                      "value": {
+                        "stringValue": "sha256:f3e2b6ca902dc5a1ab8afac954c241c4dc1034a481fc6bede1ee7a6bc33dcee5"
+                      }
+                    },
+                    {
+                      "key": "seats.asked_of.id",
+                      "value": {
+                        "stringValue": "grant:grant-ana-sentry-1"
+                      }
+                    },
+                    {
+                      "key": "seats.asked_of.role",
+                      "value": {
+                        "stringValue": "policy"
+                      }
+                    },
+                    {
+                      "key": "seats.grant_id",
+                      "value": {
+                        "stringValue": "grant-ana-sentry-1"
                       }
                     },
                     {
@@ -1526,6 +1694,12 @@
                       }
                     },
                     {
+                      "key": "seats.question",
+                      "value": {
+                        "stringValue": "commonly_post_message: the fix summary, to the pod"
+                      }
+                    },
+                    {
                       "key": "seats.tool_call_id",
                       "value": {
                         "stringValue": "tc-4"
@@ -1534,13 +1708,13 @@
                   ]
                 },
                 {
-                  "timeUnixNano": "1792944024000000000",
+                  "timeUnixNano": "1792944025000000000",
                   "name": "permission.decided",
                   "attributes": [
                     {
                       "key": "seats.seq",
                       "value": {
-                        "intValue": "23"
+                        "intValue": "24"
                       }
                     },
                     {
@@ -1553,6 +1727,12 @@
                       "key": "seats.actor.id",
                       "value": {
                         "stringValue": "grant:grant-ana-sentry-1"
+                      }
+                    },
+                    {
+                      "key": "seats.args_digest",
+                      "value": {
+                        "stringValue": "sha256:f3e2b6ca902dc5a1ab8afac954c241c4dc1034a481fc6bede1ee7a6bc33dcee5"
                       }
                     },
                     {
@@ -1612,13 +1792,13 @@
                   ]
                 },
                 {
-                  "timeUnixNano": "1792944025000000000",
+                  "timeUnixNano": "1792944026000000000",
                   "name": "tool.update",
                   "attributes": [
                     {
                       "key": "seats.seq",
                       "value": {
-                        "intValue": "24"
+                        "intValue": "25"
                       }
                     },
                     {
@@ -1669,8 +1849,8 @@
               "spanId": "a4aa63e7490207ea",
               "name": "seats.run",
               "kind": 1,
-              "startTimeUnixNano": "1792944032000000000",
-              "endTimeUnixNano": "1792944043000000000",
+              "startTimeUnixNano": "1792944033000000000",
+              "endTimeUnixNano": "1792944044000000000",
               "attributes": [
                 {
                   "key": "seats.run.id",
@@ -1705,7 +1885,7 @@
               ],
               "events": [
                 {
-                  "timeUnixNano": "1792944032000000000",
+                  "timeUnixNano": "1792944033000000000",
                   "name": "grant.issued",
                   "attributes": [
                     {
@@ -1813,7 +1993,7 @@
                   ]
                 },
                 {
-                  "timeUnixNano": "1792944033000000000",
+                  "timeUnixNano": "1792944034000000000",
                   "name": "credential.granted",
                   "attributes": [
                     {
@@ -1849,7 +2029,7 @@
                   ]
                 },
                 {
-                  "timeUnixNano": "1792944041000000000",
+                  "timeUnixNano": "1792944042000000000",
                   "name": "task.done",
                   "attributes": [
                     {
@@ -1879,7 +2059,7 @@
                   ]
                 },
                 {
-                  "timeUnixNano": "1792944042000000000",
+                  "timeUnixNano": "1792944043000000000",
                   "name": "grant.revoked",
                   "attributes": [
                     {
@@ -1931,8 +2111,8 @@
               "parentSpanId": "a4aa63e7490207ea",
               "name": "invoke_agent Ben's goose",
               "kind": 1,
-              "startTimeUnixNano": "1792944034000000000",
-              "endTimeUnixNano": "1792944040000000000",
+              "startTimeUnixNano": "1792944035000000000",
+              "endTimeUnixNano": "1792944041000000000",
               "attributes": [
                 {
                   "key": "gen_ai.operation.name",
@@ -2000,8 +2180,8 @@
               "parentSpanId": "5fd2950fcbddd334",
               "name": "execute_tool github.get_pull_request",
               "kind": 1,
-              "startTimeUnixNano": "1792944035000000000",
-              "endTimeUnixNano": "1792944038000000000",
+              "startTimeUnixNano": "1792944036000000000",
+              "endTimeUnixNano": "1792944039000000000",
               "attributes": [
                 {
                   "key": "gen_ai.operation.name",
@@ -2038,11 +2218,17 @@
                   "value": {
                     "stringValue": "connector"
                   }
+                },
+                {
+                  "key": "seats.tool.args_digest",
+                  "value": {
+                    "stringValue": "sha256:49be40400a494e11be85f05dfaa069f693cbcccf50b9d86674f869586a09b9ee"
+                  }
                 }
               ],
               "events": [
                 {
-                  "timeUnixNano": "1792944036000000000",
+                  "timeUnixNano": "1792944037000000000",
                   "name": "permission.requested",
                   "attributes": [
                     {
@@ -2073,6 +2259,30 @@
                       "key": "seats.actor.name",
                       "value": {
                         "stringValue": "Ben's goose"
+                      }
+                    },
+                    {
+                      "key": "seats.args_digest",
+                      "value": {
+                        "stringValue": "sha256:49be40400a494e11be85f05dfaa069f693cbcccf50b9d86674f869586a09b9ee"
+                      }
+                    },
+                    {
+                      "key": "seats.asked_of.id",
+                      "value": {
+                        "stringValue": "grant:grant-ben-review-1"
+                      }
+                    },
+                    {
+                      "key": "seats.asked_of.role",
+                      "value": {
+                        "stringValue": "policy"
+                      }
+                    },
+                    {
+                      "key": "seats.grant_id",
+                      "value": {
+                        "stringValue": "grant-ben-review-1"
                       }
                     },
                     {
@@ -2139,6 +2349,12 @@
                       }
                     },
                     {
+                      "key": "seats.question",
+                      "value": {
+                        "stringValue": "Read pull request #212"
+                      }
+                    },
+                    {
                       "key": "seats.tool_call_id",
                       "value": {
                         "stringValue": "tc-1"
@@ -2147,7 +2363,7 @@
                   ]
                 },
                 {
-                  "timeUnixNano": "1792944037000000000",
+                  "timeUnixNano": "1792944038000000000",
                   "name": "permission.decided",
                   "attributes": [
                     {
@@ -2166,6 +2382,12 @@
                       "key": "seats.actor.id",
                       "value": {
                         "stringValue": "grant:grant-ben-review-1"
+                      }
+                    },
+                    {
+                      "key": "seats.args_digest",
+                      "value": {
+                        "stringValue": "sha256:49be40400a494e11be85f05dfaa069f693cbcccf50b9d86674f869586a09b9ee"
                       }
                     },
                     {
@@ -2225,7 +2447,7 @@
                   ]
                 },
                 {
-                  "timeUnixNano": "1792944038000000000",
+                  "timeUnixNano": "1792944039000000000",
                   "name": "tool.update",
                   "attributes": [
                     {

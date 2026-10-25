@@ -14,10 +14,10 @@ export const EVENT_TYPES = Object.freeze([
   'turn.prompt_sent', // { chars }
   'agent.message_chunk', // { text }
   'agent.thought_chunk', // { chars }  thoughts are counted, not stored
-  'tool.call', // { toolCallId, title, kind?, status? }
+  'tool.call', // { toolCallId, title, kind?, status?, name?, surface?, argsDigest? }
   'tool.update', // { toolCallId, status?, title? }
   'plan', // { entries: [{content, status}] }
-  'permission.requested', // { toolCallId?, options: [{optionId, kind}] }
+  'permission.requested', // { toolCallId?, options: [{optionId, kind}], question, askedOf: {id, role}, grantId?, decisionCardId?, argsDigest? }
   'permission.decided', // { outcome: 'selected'|'cancelled', optionId?, kind?, toolCallId?, rule?: {list, pattern}, approval? }
   'usage', // { inputTokens?, outputTokens?, totalTokens?, cost? }  null-not-zero when unknown
   'liveness.stalled', // { idleMs, windowMs }
@@ -32,6 +32,7 @@ export const EVENT_TYPES = Object.freeze([
   'grant.issued', // { grantId, parentGrantId?, scope: {connectionId?, tools: [names], writeMode?, budget?, audience}, target?, issuedBy?, expiresAt?, binding? }
   'grant.revoked', // { grantIds: [...], reason: 'task.done'|'expired'|'cascade'|'manual' }
   'attempt.settled', // { attempt, outcome, failure?: {kind, detail} }
+  'decision.ruled', // { decisionCardId, value, decidedBy, decidedByRole }  a card ruling not tied to a parked tool call
   'result.reported', // { status: 'done'|'partial'|'blocked'|'failed', refs?: [{type, id}] }
 ]);
 

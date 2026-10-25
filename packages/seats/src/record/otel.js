@@ -106,6 +106,7 @@ const spansOfRun = (entries) => {
   });
   const spans = [run];
   let attempt = null; // { span, number, tools: Map<toolCallId, span>, usage }
+  const cards = new Map(); // decisionCardId → the span its request sits on
   const end = (s, ts) => { if (s && s.endTimeUnixNano === null) s.endTimeUnixNano = nanos(ts); };
   const closeAttempt = (ts) => {
     if (!attempt) return;
@@ -167,7 +168,7 @@ const spansOfRun = (entries) => {
           ['gen_ai.operation.name', 'execute_tool'],
           ['gen_ai.tool.name', toolName], ['gen_ai.tool.call.id', data.toolCallId],
           ['gen_ai.agent.name', attempt?.agentName],
-          ['seats.tool.kind', data.kind], ['seats.tool.surface', data.surface],
+          ['seats.tool.kind', data.kind], ['seats.tool.surface', data.surface], ['seats.tool.args_digest', data.argsDigest],
         ]),
       });
       spans.push(s);
@@ -181,7 +182,12 @@ const spansOfRun = (entries) => {
       attempt.usage = data;
       attempt.span.events.push(eventOf(entry));
     } else if (kind === 'permission.requested' || kind === 'permission.decided') {
-      (attempt?.tools.get(data.toolCallId) || current()).events.push(eventOf(entry));
+      const target = attempt?.tools.get(data.toolCallId) || current();
+      target.events.push(eventOf(entry));
+      if (data.decisionCardId && !cards.has(data.decisionCardId)) cards.set(data.decisionCardId, target);
+    } else if (kind === 'decision.ruled') {
+      // A ruling on a card that a request rode on joins that request; any other is an event where it happened.
+      (cards.get(data.decisionCardId) || current()).events.push(eventOf(entry));
     } else {
       current().events.push(eventOf(entry));
     }

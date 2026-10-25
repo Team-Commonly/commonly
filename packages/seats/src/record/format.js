@@ -39,6 +39,7 @@ export const KINDS = Object.freeze({
   'grant.revoked': Object.freeze({ group: 'grant', actor: 'system' }),
   'permission.requested': Object.freeze({ group: 'approval', actor: 'run' }),
   'permission.decided': Object.freeze({ group: 'approval', actor: 'decider' }),
+  'decision.ruled': Object.freeze({ group: 'approval', actor: 'decider' }),
   'attempt.started': Object.freeze({ group: 'attempt', actor: 'run', trace: 'run.started' }),
   'attempt.settled': Object.freeze({ group: 'attempt', actor: 'system' }),
   'run.settled': Object.freeze({ group: 'attempt', actor: 'system' }),
@@ -109,6 +110,20 @@ export const canonicalLine = (entry) => {
 /** Lowercase hex SHA-256 over a line's UTF-8 bytes: what the next `prev` holds. */
 export const hashLine = (line) => createHash('sha256').update(String(line), 'utf8').digest('hex');
 
+/**
+ * A tool call's arguments as a digest, never the values: `sha256:` + the
+ * lowercase hex SHA-256 of the arguments' RFC 8785 form. The same arguments
+ * give the same digest wherever they are seen, so a reader can match a
+ * tool.call to the permission entries that approved it. Returns undefined
+ * when there are no arguments, or they are not JSON (a function, NaN).
+ */
+const ARGS_DIGEST = /^sha256:[0-9a-f]{64}$/;
+export const argsDigestOf = (args) => {
+  if (args === undefined) return undefined;
+  try { return `sha256:${hashLine(canonical(args))}`; } catch { return undefined; }
+};
+export const isArgsDigest = (value) => typeof value === 'string' && ARGS_DIGEST.test(value);
+
 /** null when the actor is well formed, else the reason. */
 const actorProblem = (actor) => {
   if (actor === null) return null;
@@ -143,6 +158,13 @@ const optionalText = (value, where) => {
 };
 const userIdOrPolicy = (value, where) => {
   if (value !== undefined && value !== null && value !== 'policy' && !isUserId(value)) fail(`${where} must be a user id or "policy"`);
+};
+// Only the digest form: raw arguments would carry values.
+const optionalArgsDigest = (data, kind) => {
+  if (data.argsDigest !== undefined && !isArgsDigest(data.argsDigest)) fail(`${kind}.argsDigest must be sha256:<64 hex>, a digest of the arguments, never the arguments`);
+};
+const checkRole = (role, where) => {
+  if (!DECIDED_BY_ROLES.includes(role)) fail(`${where} must be one of ${DECIDED_BY_ROLES.join(', ')}`);
 };
 
 /** A grant's scope, in the shape of a room grant: exact tool names and a connection id. */
@@ -220,7 +242,29 @@ const CHECKS = {
     userIdOrPolicy(data.doneBy, 'task.done.doneBy');
     return data;
   },
+  'permission.requested': (data) => {
+    if (!isText(data.question)) fail('permission.requested needs a question: the human-readable ask');
+    if (!isPlainObject(data.askedOf)) fail('permission.requested needs askedOf: {id, role}');
+    refuseUnknownKeys(data.askedOf, ['id', 'role'], 'permission.requested.askedOf.');
+    if (!isUserId(data.askedOf.id)) fail('permission.requested.askedOf.id must be an id token, never a display name');
+    checkRole(data.askedOf.role, 'permission.requested.askedOf.role');
+    optionalText(data.grantId, 'permission.requested.grantId');
+    optionalText(data.decisionCardId, 'permission.requested.decisionCardId');
+    optionalArgsDigest(data, 'permission.requested');
+    return { ...data, askedOf: { id: data.askedOf.id, role: data.askedOf.role } };
+  },
+  'decision.ruled': (data) => {
+    if (!isText(data.decisionCardId)) fail('decision.ruled needs a decisionCardId');
+    const { value } = data;
+    if (!(typeof value === 'string' || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value)))) {
+      fail('decision.ruled.value must be a string, number or boolean');
+    }
+    if (data.decidedBy !== 'policy' && !isUserId(data.decidedBy)) fail('decision.ruled.decidedBy must be a user id or "policy"');
+    checkRole(data.decidedByRole, 'decision.ruled.decidedByRole');
+    return data;
+  },
   'permission.decided': (data) => {
+    optionalArgsDigest(data, 'permission.decided');
     // A rule-decided call never had a person in the loop; a writer says so
     // rather than leave a reader to infer it from rule.list.
     const out = { ...data };
@@ -239,6 +283,7 @@ const CHECKS = {
   },
   'tool.call': (data) => {
     if (data.surface !== undefined && !TOOL_SURFACES.includes(data.surface)) fail(`tool.call.surface must be one of ${TOOL_SURFACES.join(', ')}`);
+    optionalArgsDigest(data, 'tool.call');
     return data;
   },
   'credential.granted': (data) => ({ ...data, names: envNames(data.names ?? [], 'credential.granted.names') }),
@@ -275,7 +320,8 @@ export const normalizeData = (kind, data = {}, envelope = {}) => {
 };
 
 /** A grant's rules acting on their own: named by the grant when its id is a token. */
-const policyActor = (grantId) => ({ type: 'policy', id: isUserId(`grant:${grantId}`) ? `grant:${grantId}` : 'policy' });
+export const policyActorId = (grantId) => (isText(grantId) && isUserId(`grant:${grantId}`) ? `grant:${grantId}` : 'policy');
+const policyActor = (grantId) => ({ type: 'policy', id: policyActorId(grantId) });
 
 /** The actor a writer records when the emitter names none. */
 export const defaultActor = (kind, data = {}, runActor = null) => {

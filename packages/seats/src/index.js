@@ -11,6 +11,6 @@ export { validateGrant, matchToolCall, TOOL_KINDS, CREDENTIAL_SOURCES } from './
 export { prepareRunEnv, BASE_ENV_ALLOWLIST } from './valet/env.js';
 export { createPermissionPolicy, DEFAULT_APPROVE_TIMEOUT_MS } from './valet/permissions.js';
 export {
-  RECORD_VERSION, RECORD_SCHEMA, KINDS, canonicalLine, appendEntry, verifyRecord, readRecord, hashLine, toolSurfaceOf,
+  RECORD_VERSION, RECORD_SCHEMA, KINDS, canonicalLine, appendEntry, verifyRecord, readRecord, hashLine, toolSurfaceOf, argsDigestOf,
 } from './record/format.js';
 export { toOtlpJson } from './record/otel.js';

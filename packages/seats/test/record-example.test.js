@@ -60,6 +60,19 @@ test('the headline case: Ana\'s agent asks, Ben approves as the credential owner
   assert.deepEqual(asked.actor, { type: 'human', id: 'u-ben' });
   const issued = entries.find((e) => e.kind === 'grant.issued');
   assert.equal(asked.data.grantId, issued.data.grantId);
+  // The ask itself: Ana's agent asks Ben, tied to the grant and the card, about this exact call.
+  const request = entries.find((e) => e.kind === 'permission.requested' && e.data.toolCallId === asked.data.toolCallId);
+  assert.equal(request.actor.owner, 'u-ana');
+  assert.deepEqual(request.data.askedOf, { id: 'u-ben', role: 'credential-owner' });
+  assert.equal(request.data.grantId, issued.data.grantId);
+  assert.equal(request.data.decisionCardId, 'card-7f3');
+  assert.match(request.data.question, /CHECKOUT-88/);
+  const call = entries.find((e) => e.kind === 'tool.call' && e.data.toolCallId === asked.data.toolCallId);
+  assert.match(call.data.argsDigest, /^sha256:[0-9a-f]{64}$/);
+  assert.equal(request.data.argsDigest, call.data.argsDigest);
+  assert.equal(asked.data.argsDigest, call.data.argsDigest);
+  const ruled = entries.find((e) => e.kind === 'decision.ruled');
+  assert.deepEqual(ruled.data, { decidedBy: 'u-ana', decidedByRole: 'agent-owner', decisionCardId: 'card-2b9', value: 'retry' });
   assert.equal(issued.data.scope.connectionId, 'conn-ben-sentry');
   assert.equal(issued.data.parentGrantId, 'grant-ben-sentry-root');
   const denied = entries.find((e) => e.kind === 'permission.decided' && e.data.rule.list === 'deny');

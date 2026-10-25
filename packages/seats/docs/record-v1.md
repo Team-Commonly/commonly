@@ -140,6 +140,11 @@ one of:
   rest are its descendants, all ended by the same write;
 - `manual`: a person or policy revoked exactly these grants. The actor says who.
 
+The reasons are unchanged by the 2026-10-25 revision. In a hosted pod, server
+writers (TASK-513) supply `expired` and `cascade`, because the server holds
+grant expiry and lineage. The local store writes the same two reasons from
+`expireGrants` and `revokeGrant` for a run that has no server writer.
+
 **What revocation means in v1.** A revoked grant is no longer valid. A
 credential that a run placed in its agent process's environment stays there
 until that process exits. A revocation records that the grant's term ended;
@@ -149,8 +154,22 @@ it does not prove the process lost access. That happens at `run.settled`.
 
 | kind | data | default actor |
 |---|---|---|
-| `permission.requested` | `{toolCallId?, options: [{optionId, kind}]}` | run |
-| `permission.decided` | `{outcome, optionId?, kind?, toolCallId, rule, approval?, decidedBy, decidedByRole, decisionCardId?, grantId?}` | the decider: a human actor for a user id, a policy actor for `policy` |
+| `permission.requested` | `{toolCallId?, options: [{optionId, kind}], question, askedOf: {id, role}, grantId?, decisionCardId?, argsDigest?}` | run |
+| `permission.decided` | `{outcome, optionId?, kind?, toolCallId, rule, approval?, decidedBy, decidedByRole, decisionCardId?, grantId?, argsDigest?}` | the decider: a human actor for a user id, a policy actor for `policy` |
+| `decision.ruled` | `{decisionCardId, value, decidedBy, decidedByRole}` | the decider, as for `permission.decided` |
+
+**The request:**
+- `question` is required: the human-readable ask, normally the tool call's
+  title. It is agent text, so it is scrubbed of known credential values
+  before it is written, like other agent text (section 3, rule 1).
+- `askedOf` is required: `{id, role}`.
+  - `id` is an id token, under the same rule as `actor.id`.
+  - `role` is from the `decidedByRole` enum below.
+  - A call that a rule decides, with no person asked, is asked of the policy:
+    `{id: "grant:<grantId>", role: "policy"}`.
+- `grantId` is the grant the call would act under.
+- `decisionCardId` is the card the ask rides on, when there is one.
+- `argsDigest` identifies the call's arguments (under Tool activity, below).
 
 **The decision:**
 - `outcome` is `selected` or `cancelled`.
@@ -178,6 +197,16 @@ it does not prove the process lost access. That happens at `run.settled`.
 - `decisionCardId` is set when the decision came through a decision card.
 - `grantId` ties the decision to its `grant.issued`.
 
+**`decision.ruled`** records a ruling on a decision card that is not tied to
+a parked tool call, such as whether to retry a stuck attempt.
+- `decisionCardId` is required.
+- `value` is the ruling: a string, number or boolean.
+- `decidedBy` is required. It is a user id, or `"policy"`.
+- `decidedByRole` is required, and comes from the same enum.
+
+A ruling on a card that a `permission.requested` carried belongs with that
+request, and the OTLP export places it there.
+
 ### Attempt
 
 | kind | data | default actor |
@@ -200,7 +229,7 @@ it does not prove the process lost access. That happens at `run.settled`.
 
 | kind | data | default actor |
 |---|---|---|
-| `tool.call` | `{toolCallId, title, kind?, status?, name?, surface?}` | run |
+| `tool.call` | `{toolCallId, title, kind?, status?, name?, surface?, argsDigest?}` | run |
 | `tool.update` | `{toolCallId, status?, title?}` | run |
 
 - `kind` is the ACP tool kind (`read`, `edit`, `execute`, `fetch`, …).
@@ -211,6 +240,21 @@ it does not prove the process lost access. That happens at `run.settled`.
   - `native`: the CLI's built-in tools.
 
   All three land in the same record.
+- `argsDigest` is a digest of the call's arguments, never the arguments:
+  `"sha256:"` followed by the lowercase hex SHA-256 of the arguments'
+  RFC 8785 canonical form, the same serialization as a line. Key order does
+  not change it. For example, `{"b":2,"a":1}` is digested as the bytes
+  `{"a":1,"b":2}`.
+  - A writer refuses any other value, so raw arguments can't ride in under
+    this name.
+  - The same arguments give the same digest on `tool.call`,
+    `permission.requested` and `permission.decided`, so a reader can match a
+    call to the approval it ran under.
+  - The valet writes it on both permission entries when the ACP tool call
+    carries `rawInput`. An adapter writes it on `tool.call` with
+    `argsDigestOf(rawInput)`.
+  - A digest of low-entropy arguments can be confirmed by guessing them. It
+    hides the values from a casual reader, not from someone who can guess them.
 
 ### Credentials
 
@@ -255,7 +299,8 @@ store writes the record kind:
 
 What's new or changed in `EVENT_TYPES`:
 - `task.claimed`, `task.released`, `task.done`, `grant.issued`,
-  `grant.revoked`, `attempt.settled` and `result.reported` are new entries.
+  `grant.revoked`, `attempt.settled`, `decision.ruled` and
+  `result.reported` are new entries.
 - `emit` also accepts the record kind `attempt.started`.
 - `readRun` returns each entry with its trace name as `type` (`run.started`
   for an `attempt.started` line), and puts the envelope fields beside it.
@@ -282,6 +327,15 @@ What's new or changed in `EVENT_TYPES`:
 
    Adding a kind, an optional field or an enum value doesn't break anything,
    and keeps `v: 1`. A reader refuses a `v` higher than it knows.
+
+   The 2026-10-25 revision kept `v: 1`. It added `decision.ruled`,
+   `argsDigest`, and `grantId` and `decisionCardId` on
+   `permission.requested`. It also made `question` and `askedOf` required
+   for writers of `permission.requested`.
+   - Readers must not assume those two fields on lines written before the
+     revision.
+   - The verifier checks the envelope and the chain, never data, so those
+     lines still verify.
 4. **One writer per file.** A single process appends lines in `seq` order.
 
 ## 4. What the hash chain proves, and what it doesn't
@@ -329,7 +383,9 @@ operates it.
 - **A tool call is a child span of its attempt:** `execute_tool {tool name}`.
 - **Decisions are span events.** A `permission.*` entry goes on the tool span
   with the same `toolCallId`. Without one, it goes on the current attempt,
-  then the run.
+  then the run. A `decision.ruled` entry goes on the span of the request
+  that carried its `decisionCardId`, and otherwise on the span current at
+  the time.
 - **Every other kind is an event on the span current at the time.** That
   covers grants, credentials, claims, `task.done`, results, liveness and
   `tool.update`.
@@ -386,13 +442,14 @@ to that commit. `error.type` is Stable.
   - these named attributes: `seats.run.id`, `seats.task.id`, `seats.pod.id`,
     `seats.run.outcome`, `seats.run.attempts`, `seats.attempt.number`,
     `seats.attempt.outcome`, `seats.adapter`, `seats.cli.name`,
-    `seats.cli.version`, `seats.agent.owner`, `seats.tool.kind` and
-    `seats.tool.surface`;
+    `seats.cli.version`, `seats.agent.owner`, `seats.tool.kind`,
+    `seats.tool.surface` and `seats.tool.args_digest`;
   - on every event, `seats.seq` and `seats.actor.type`, `.id`, `.owner` and
     `.name`;
   - the event's data, flattened as `seats.<path>` with camelCase segments in
     snake_case. For example, `decidedBy` becomes `seats.decided_by`, and
-    `scope.connectionId` becomes `seats.scope.connection_id`.
+    `scope.connectionId` becomes `seats.scope.connection_id`, and
+    `askedOf.id` becomes `seats.asked_of.id`.
 
 ## 6. Not in v1 (open for v2)
 
@@ -420,10 +477,14 @@ files drift from what the code writes.
 - `run-ana-0001.jsonl`: Ana's agent (opencode 1.19.0) claims `TASK-101` in
   `pod-checkout`.
   - Its grant attenuates Ben's Sentry connection grant.
-  - The first attempt is stuck, and the agent is retried.
+  - The first attempt is stuck. Ana rules `retry` on card `card-2b9` as
+    `agent-owner` (`decision.ruled`), and the agent is retried.
   - A `git push` is denied by the policy.
-  - A Sentry write asks for approval, and Ben approves it as
-    `credential-owner` through a decision card.
+  - The headline case: Ana's agent asks a question about a Sentry write. The
+    `permission.requested` line is tied to Ana's grant and to card
+    `card-7f3`, and is asked of Ben as `credential-owner`. Ben approves it on
+    that card. `tool.call` and both permission entries carry the same
+    `argsDigest`.
   - The run reports a PR.
 - `run-ben-0001.jsonl`: Ben's agent (goose 1.54.0) reviews the PR under a
   read grant bound to the task. The board then marks the task done, which

@@ -2,9 +2,9 @@
  * Builds docs/examples: one task, two people, two agents on different CLIs.
  *
  * Ana's opencode agent fixes TASK-101 under a grant that attenuates Ben's
- * Sentry connection grant. Its first attempt hangs and is retried; a
- * `git push` is denied by the grant; a Sentry write asks, and Ben approves
- * it as the credential's owner through a decision card. Ben's goose agent
+ * Sentry connection grant. Its first attempt hangs, and Ana rules on a card
+ * to retry it; a `git push` is denied by the grant; a Sentry write is asked
+ * of Ben on a decision card, and he approves it as the credential's owner. Ben's goose agent
  * then reviews the PR, and the board marks the task done, which ends the
  * review grant bound to it.
  *
@@ -17,6 +17,7 @@ import { createTraceStore } from '../src/trace/store.js';
 import { prepareRunEnv } from '../src/valet/env.js';
 import { createPermissionPolicy } from '../src/valet/permissions.js';
 import { toOtlpJson } from '../src/record/otel.js';
+import { argsDigestOf } from '../src/record/format.js';
 
 export const SAMPLE_SECRETS = Object.freeze(['sk-or-sample-0000aaaa1111bbbb', 'sntry-proxy-sample-2222cccc3333', 'sk-sample-openai-4444dddd5555']);
 export const SAMPLE_RUN_IDS = Object.freeze(['run-ana-0001', 'run-ben-0001']);
@@ -27,13 +28,17 @@ const OPTIONS = [
   { optionId: 'always', name: 'Always allow', kind: 'allow_always' },
   { optionId: 'reject', name: 'Reject', kind: 'reject_once' },
 ];
-const options = OPTIONS.map(({ optionId, kind }) => ({ optionId, kind }));
 
-/** A tool call the way an ACP adapter would record it, decided by the run's policy. */
-const toolCall = async (run, decide, call, finalStatus) => {
-  run.emit('tool.call', { ...call, status: 'pending' });
-  run.emit('permission.requested', { toolCallId: call.toolCallId, options });
-  const answer = await decide({ sessionId: 'ses', toolCall: { toolCallId: call.toolCallId, title: call.title, kind: call.kind }, options: OPTIONS });
+/**
+ * A tool call the way an ACP adapter would record it (with the digest of its
+ * arguments, never the arguments), then decided by the run's policy, which
+ * records the request and the decision.
+ */
+const toolCall = async (run, decide, { rawInput, ...call }, finalStatus) => {
+  run.emit('tool.call', { ...call, status: 'pending', argsDigest: argsDigestOf(rawInput) });
+  const answer = await decide({
+    sessionId: 'ses', toolCall: { toolCallId: call.toolCallId, title: call.title, kind: call.kind, rawInput }, options: OPTIONS,
+  });
   const allowed = answer.outcome === 'selected' && answer.optionId === 'allow';
   run.emit('tool.update', { toolCallId: call.toolCallId, status: allowed ? finalStatus : 'failed' });
 };
@@ -77,7 +82,9 @@ export const buildSample = async (root) => {
   const anaDecide = createPermissionPolicy(anaGrant, {
     trace: ana,
     grantId: 'grant-ana-sentry-1',
-    approve: async () => ({ approved: true, by: 'u-ben', role: 'credential-owner', decisionCardId: 'card-7f3' }),
+    // An ask under this grant goes to Ben, who owns the Sentry connection, on a card.
+    askedOf: () => ({ id: 'u-ben', role: 'credential-owner', decisionCardId: 'card-7f3' }),
+    approve: async ({ decisionCardId }) => ({ approved: true, by: 'u-ben', role: 'credential-owner', decisionCardId }),
   });
 
   ana.emit('run.started', { adapter: 'opencode', cli: { name: 'opencode', version: '1.19.0' }, attempt: 1 });
@@ -87,15 +94,21 @@ export const buildSample = async (root) => {
   ana.emit('liveness.stalled', { idleMs: 90000, windowMs: 90000 });
   ana.emit('liveness.recovery', { action: 'cancel', attempt: 1 });
   ana.emit('attempt.settled', { attempt: 1, outcome: 'stuck', failure: { kind: 'stuck', detail: 'no progress signal for 90000ms (window 90000ms)' } });
+  ana.emit('decision.ruled', { decisionCardId: 'card-2b9', value: 'retry', decidedBy: 'u-ana', decidedByRole: 'agent-owner' });
   ana.emit('liveness.recovery', { action: 'retry', attempt: 2 });
 
   ana.emit('run.started', { adapter: 'opencode', cli: { name: 'opencode', version: '1.19.0' }, sessionId: 'ses-ana-2', attempt: 2 });
-  await toolCall(ana, anaDecide, { toolCallId: 'tc-2', title: 'git push origin fix/total-rounding', kind: 'execute', surface: 'native' }, 'completed');
   await toolCall(ana, anaDecide, {
-    toolCallId: 'tc-3', title: 'sentry.resolve_issue CHECKOUT-88', kind: 'fetch', name: 'sentry.resolve_issue', surface: 'connector',
+    toolCallId: 'tc-2', title: 'git push origin fix/total-rounding', kind: 'execute', surface: 'native',
+    rawInput: { command: 'git push origin fix/total-rounding' },
   }, 'completed');
   await toolCall(ana, anaDecide, {
-    toolCallId: 'tc-4', title: 'commonly_post_message', kind: 'other', name: 'commonly_post_message', surface: 'commonly',
+    toolCallId: 'tc-3', title: 'Resolve Sentry issue CHECKOUT-88: the half-cent rounding is fixed in PR #212', kind: 'fetch',
+    name: 'sentry.resolve_issue', surface: 'connector', rawInput: { issueId: 'CHECKOUT-88', status: 'resolved' },
+  }, 'completed');
+  await toolCall(ana, anaDecide, {
+    toolCallId: 'tc-4', title: 'commonly_post_message: the fix summary, to the pod', kind: 'other', name: 'commonly_post_message', surface: 'commonly',
+    rawInput: { podId: 'pod-checkout', content: 'Fixed in #212' },
   }, 'completed');
   ana.emit('agent.message_chunk', { text: 'Fixed the half-cent rounding in total.js and resolved CHECKOUT-88. PR #212 is open.' });
   ana.emit('usage', { inputTokens: 18234, outputTokens: 2210 });
@@ -125,10 +138,11 @@ export const buildSample = async (root) => {
     },
   });
   await benEnv.cleanup();
-  const benDecide = createPermissionPolicy(benGrant, { trace: ben, grantId: 'grant-ben-review-1' });
+  const benDecide = createPermissionPolicy(benGrant, { trace: ben, grantId: 'grant-ben-review-1', askedOf: { id: 'u-ben', role: 'agent-owner' } });
   ben.emit('run.started', { adapter: 'goose', cli: { name: 'goose', version: '1.54.0' }, attempt: 1 });
   await toolCall(ben, benDecide, {
-    toolCallId: 'tc-1', title: 'github.get_pull_request #212', kind: 'read', name: 'github.get_pull_request', surface: 'connector',
+    toolCallId: 'tc-1', title: 'Read pull request #212', kind: 'read', name: 'github.get_pull_request', surface: 'connector',
+    rawInput: { pullNumber: 212 },
   }, 'completed');
   ben.emit('agent.message_chunk', { text: 'Reviewed #212: the rounding fix is right and the half-cent case is tested.' });
   ben.emit('attempt.settled', { attempt: 1, outcome: 'ok' });
