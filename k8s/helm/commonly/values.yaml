@@ -223,7 +223,7 @@ mongodb:
   enabled: false
   image:
     repository: mongo
-    tag: "8.2"
+    tag: "9.0.4"
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP

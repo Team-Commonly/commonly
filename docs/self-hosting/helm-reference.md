@@ -53,26 +53,41 @@ agents:
 
 ### Image pins (TASK-501, 2026-10-25)
 
-The default Compose profile pins MongoDB to `mongo:8.2`, matching the existing
-`docker-compose.dev.yml` line, and PostgreSQL to `postgres:17.11` within the dev
-profile's existing major 17. The Helm MongoDB default also pins `mongo:8.2`.
+The default Compose profile pins `mongo:9.0.4` and `postgres:18.6`.
+The Helm MongoDB default also pins `mongo:9.0.4`. On 2026-10-25, Docker Hub
+reported matching digests for `mongo:latest` and `mongo:9.0.4`, and for
+`postgres:latest` and `postgres:18.6`. These pins preserve what the floating tags
+selected at that check, instead of changing their major versions to match a
+different profile. MongoDB 8.2 is end of life; its existing dev reference is
+not used as the new default.
+
 These are self-host image choices, not a measurement of the hosted databases:
 `values-dev.yaml` disables the chart's MongoDB and PostgreSQL services.
+Existing versioned references stay intact: local Compose and local/staging Helm
+use MongoDB 7, dev Compose uses MongoDB 8.2, base/local Helm use PostgreSQL 15,
+the backup client uses 16, and dev Compose uses 17. Redis remains `7-alpine`.
+**PostgreSQL 15, 16 and 17 remain in use in the checked-in configuration**;
+the default Compose pin is 18.6. Unifying these versions and their volume
+layouts is a separate compatibility/migration change. A PostgreSQL 18 image
+requires the PostgreSQL 18 volume layout; pinning does not repair a volume
+created for an older version.
 
-Existing version lines stay intact: the local Compose profile and local/staging
-Helm overrides use MongoDB 7; base/local Helm use PostgreSQL 15, the backup client
-uses 16, and dev Compose uses 17. Redis remains `7-alpine`. **PostgreSQL 15, 16
-and 17 are all in use in the checked-in configuration**; unifying them is a
-separate compatibility/migration change. This PR does not change existing
-versioned image references or volume layouts.
+Pin evidence, checked 2026-10-25:
 
-PostgreSQL's 17.11 tag was checked against the official Docker image
-[version manifest](https://github.com/docker-library/postgres/blob/master/versions.json)
-on 2026-10-25. Application image defaults use the four exact snapshot tags already
-recorded in `values-dev.yaml`; deployments should override them with their own
-published build SHAs. No image uses a `latest` tag in these Compose/Helm defaults.
-Version tags may still receive rebuilt images; use digest overrides when your
-release process requires byte-for-byte image immutability.
+- [MongoDB latest tag](https://hub.docker.com/v2/repositories/library/mongo/tags/latest)
+  and [9.0.4 tag](https://hub.docker.com/v2/repositories/library/mongo/tags/9.0.4):
+  `sha256:dc28ed5a9d0fc616903c3f463bb1e53b92b49f441721b91926e87d90bf957ce8`.
+- [PostgreSQL latest tag](https://hub.docker.com/v2/repositories/library/postgres/tags/latest)
+  and [18.6 tag](https://hub.docker.com/v2/repositories/library/postgres/tags/18.6):
+  `sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6`.
+- [MongoDB lifecycle policy](https://www.mongodb.com/legal/support-policy/lifecycles)
+  lists 8.2 as end of life and 9.0 as supported.
+
+Application image defaults use the four exact snapshot tags already recorded in
+`values-dev.yaml`; deployments should override them with their own published
+build SHAs. No image uses a `latest` tag in these Compose/Helm defaults. Version
+tags may still receive rebuilt images; use digest overrides when your release
+process requires byte-for-byte image immutability.
 
 Before changing a pin on an existing installation, check the version that wrote
 its persistent volume and follow the database's supported upgrade/downgrade
