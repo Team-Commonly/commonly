@@ -65,6 +65,7 @@ async function omittedMessages(
       SELECT ${count ? 'COUNT(*)::integer AS skipped_count' : '1'} FROM messages m
       WHERE m.pod_id = $1 AND m.freshness_revision > $2 AND m.freshness_revision <= $3
         AND (m.user_id IS DISTINCT FROM $4 OR m.author_kind = 'kernel')
+        AND NOT (m.message_type = 'system' AND COALESCE(m.payload->>'kind', '') = 'system-action')
         AND NOT (m.id = ANY($5::int[]))
       ${count ? '' : 'LIMIT 1'}
     `, [String(podId), previous.readRevision ?? -1, start.revision, ownId, ids]);
@@ -73,6 +74,7 @@ async function omittedMessages(
   const observed = observedIds.filter((id) => /^[a-f\d]{24}$/i.test(id));
   const query = {
     podId,
+    $nor: [{ messageType: 'system', 'payload.kind': 'system-action' }],
     _id: { $nin: observed },
     $and: [
       { $or: [{ userId: { $ne: ownId } }, { authorKind: 'kernel' }] },
@@ -117,6 +119,7 @@ async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hol
         FROM messages m LEFT JOIN users u ON u._id = m.user_id
         WHERE m.pod_id = $1 AND m.freshness_revision > $2
           AND (m.user_id IS DISTINCT FROM $3 OR m.author_kind = 'kernel')
+          AND NOT (m.message_type = 'system' AND COALESCE(m.payload->>'kind', '') = 'system-action')
         ORDER BY m.freshness_revision DESC, m.id DESC LIMIT 3
       `, [String(podId), afterRevision, ownId]);
     unseenCount = Number(result.rows[0]?.unseen_count || 0);
@@ -145,6 +148,7 @@ async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hol
 async function unseenFromMongo(podId: unknown, ownId: string, after: Date): Promise<{ unseenCount: number; messages: Preview[] }> {
   const query = {
     podId,
+    $nor: [{ messageType: 'system', 'payload.kind': 'system-action' }],
     $and: [
       { $or: [{ userId: { $ne: ownId } }, { authorKind: 'kernel' }] },
       { $or: [

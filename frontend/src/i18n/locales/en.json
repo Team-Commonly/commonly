@@ -485,6 +485,9 @@
     "firstTask": {
       "addFailed": "Couldn’t add the task. Try again."
     },
+    "systemActions": {
+      "taskClaimedVerb": "claimed"
+    },
     "starts": {
       "label": "Ways to start"
     },

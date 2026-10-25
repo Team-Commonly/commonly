@@ -43,7 +43,7 @@ const OPAQUE_PLACEHOLDERS = [
   'connector', 'user', 'workspace', 'channel', 'tool', 'tools', 'member', 'agents', 'os',
   // common.aboutPage receives a page title, currently Latin, not a count.
   'adapter', 'title',
-  'holder',
+  'holder', 'actor',
   // Runtime ownership names the visible blocking Pods and installers.
   'blockers', 'harness', 'effort', 'model',
 ];
