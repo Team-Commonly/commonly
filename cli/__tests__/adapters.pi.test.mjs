@@ -171,7 +171,7 @@ describe('spawn', () => {
       runtimeToken: 'cm_agent_secret',
       instanceUrl: 'https://api.example',
       env: { PATH: '/usr/bin', COMMONLY_LITELLM_KEY: 'sk-test', COMMONLY_AGENT_TOKEN: launcherToken },
-      environment: { mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'], env: { COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' } }] },
+      environment: { model: 'test-model', mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'], env: { COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' } }] },
     }));
     const { opts } = calls[0];
     expect(opts.env.COMMONLY_AGENT_TOKEN).toBeUndefined();
@@ -191,7 +191,7 @@ describe('spawn', () => {
       _bridgePath: '/x/bridge.mjs',
       runtimeToken: 'cm_agent_secret',
       instanceUrl: 'https://api.example',
-      environment: { mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }] },
+      environment: { model: 'test-model', mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }] },
     }))).rejects.toThrow(/no fd 3 pipe/);
   });
 
@@ -202,7 +202,7 @@ describe('spawn', () => {
       _bridgePath: '/x/bridge.mjs',
       runtimeToken: 'cm_agent_secret',
       instanceUrl: 'https://api.example',
-      environment: {
+      environment: { model: 'test-model',
         mcp: [{
           name: 'remote',
           transport: 'http',
@@ -233,7 +233,7 @@ describe('spawn', () => {
         _bridgePath: '/x/bridge.mjs',
         runtimeToken: 'cm_agent_secret',
         instanceUrl: 'https://api.example',
-        environment: {
+        environment: { model: 'test-model',
           mcp: [{
             name: 'commonly-grant-broker',
             transport: 'http',
@@ -561,7 +561,7 @@ describe('helpers', () => {
 describe('sandbox — fail closed: pi cannot enforce one', () => {
   test('a public-trust seat is refused before pi starts', async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: assistant('must not run') });
-    await expect(pi.spawn('hi', baseCtx({ _spawnImpl: impl, environment: { sandbox: { trust: 'public', mode: 'workspace' } } })))
+    await expect(pi.spawn('hi', baseCtx({ _spawnImpl: impl, environment: { model: 'test-model', sandbox: { trust: 'public', mode: 'workspace' } } })))
       .rejects.toThrow(/public-trust seats are not supported/);
     expect(calls).toHaveLength(0);
   });
@@ -572,25 +572,25 @@ describe('sandbox — fail closed: pi cannot enforce one', () => {
   // so that is the whole of its confinement. Read through the shared reader.
   test('a legacy `internal` record is refused too — it means public, and pi reads it that way', async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: assistant('must not run') });
-    await expect(pi.spawn('hi', baseCtx({ _spawnImpl: impl, environment: { sandbox: { trust: 'internal' } } })))
+    await expect(pi.spawn('hi', baseCtx({ _spawnImpl: impl, environment: { model: 'test-model', sandbox: { trust: 'internal' } } })))
       .rejects.toThrow(/public-trust seats are not supported/);
     expect(calls).toHaveLength(0);
   });
   test("an explicit mode 'none' does not rescue a legacy `internal` record", async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: assistant('must not run') });
-    await expect(pi.spawn('hi', baseCtx({ _spawnImpl: impl, environment: { sandbox: { trust: 'internal', mode: 'none' } } })))
+    await expect(pi.spawn('hi', baseCtx({ _spawnImpl: impl, environment: { model: 'test-model', sandbox: { trust: 'internal', mode: 'none' } } })))
       .rejects.toThrow(/public-trust seats are not supported/);
     expect(calls).toHaveLength(0);
   });
   test('a declared sandbox mode is refused rather than silently left unenforced', async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: assistant('must not run') });
-    await expect(pi.spawn('hi', baseCtx({ _spawnImpl: impl, environment: { sandbox: { mode: 'workspace' } } })))
+    await expect(pi.spawn('hi', baseCtx({ _spawnImpl: impl, environment: { model: 'test-model', sandbox: { mode: 'workspace' } } })))
       .rejects.toThrow(/cannot be enforced by pi/);
     expect(calls).toHaveLength(0);
   });
   test("sandbox.mode 'none' and an absent sandbox still run", async () => {
     const a = makeSpawnImpl({ stdout: assistant('ran') });
-    expect((await pi.spawn('hi', baseCtx({ _spawnImpl: a.impl, environment: { sandbox: { mode: 'none' } } }))).text).toBe('ran');
+    expect((await pi.spawn('hi', baseCtx({ _spawnImpl: a.impl, environment: { model: 'test-model', sandbox: { mode: 'none' } } }))).text).toBe('ran');
     const b = makeSpawnImpl({ stdout: assistant('ran') });
     expect((await pi.spawn('hi', baseCtx({ _spawnImpl: b.impl }))).text).toBe('ran');
   });

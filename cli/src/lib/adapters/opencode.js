@@ -19,6 +19,7 @@
  * `text.part.text`, and token counts in `step_finish.part.tokens`.
  */
 
+import { requireSeatModel } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { realpathSync } from 'fs';
@@ -622,6 +623,7 @@ const describeOpenCodeVersionMismatch = (installedVersion) => {
 };
 
 export default {
+  requiresModel: true,
   name: 'opencode',
   runtimeType: 'opencode',
   supportsProvider: true,
@@ -645,6 +647,7 @@ export default {
   },
 
   async spawn(prompt, rawCtx = {}) {
+    const seatModel = requireSeatModel(rawCtx.environment, 'opencode');
     const sandbox = normalizeSandboxTrust(rawCtx.environment?.sandbox);
     const ctx = rawCtx.environment
       ? { ...rawCtx, environment: { ...rawCtx.environment, sandbox } }
@@ -805,7 +808,7 @@ export default {
         prompt: fullPrompt,
         sessionId: ctx.sessionId,
         cwd: ctx.cwd,
-        model: qualifiedProviderModel(provider, ctx.environment?.model),
+        model: qualifiedProviderModel(provider, seatModel),
         effort: ctx.environment?.effort,
         title: ctx.agentName,
       });
