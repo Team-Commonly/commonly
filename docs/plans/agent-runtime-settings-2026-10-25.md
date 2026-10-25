@@ -60,6 +60,10 @@ the destination; generation fences prevent late sets and removal cleanup from
 overwriting a newer choice. The secret sweep retains only referenced material.
 `lastUsedAt` records the last authorized launch resolution, not vendor success.
 
+Operators must keep the daemon credential directory (`~/.commonly/daemon`)
+out of sandbox `read-outside` grants. Granting that directory or an ancestor
+explicitly exposes machine authority to model tools and breaks this boundary.
+
 Authorization binds management to the current installer and selected machine,
 using the existing sole-installer and machine-authorization checks. An agent's
 spawn bearer cannot edit saved settings or read provider material. Provider

@@ -533,7 +533,7 @@ test('standalone CLI settings label the saved preference without claiming a runt
     return Promise.resolve({ data: [] });
   });
   renderPage();
-  expect(await screen.findByText('Single CLI')).toBeInTheDocument();
+  expect(await screen.findByText('read only · this seat runs from the cli')).toBeInTheDocument();
   expect(screen.getByLabelText('effort')).toHaveValue('max');
   expect(screen.getByLabelText('effort')).toBeDisabled();
   expect(screen.getAllByText('unconfirmed')).toHaveLength(3);

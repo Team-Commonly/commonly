@@ -739,7 +739,7 @@ export default {
   // hosted variant.
   runtimeType: 'claude-code',
 
-  inventory: claudeRuntimeInventory,
+  inventory: () => claudeRuntimeInventory({ env: withClaudePath(process.env) }),
 
   async detect() {
     try {

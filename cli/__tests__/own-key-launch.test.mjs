@@ -35,3 +35,10 @@ test.each([null, { ...record, machineId: 'other' }, { ...record, instanceUrl: 'h
   await expect(resolve({ opened: { source: 'spawn' }, harness: 'opencode', provider })).rejects.toThrow('registered daemon');
   expect(clientFactory).not.toHaveBeenCalled();
 });
+
+test.each([['claude', provider], ['codex', provider], ['hermes', provider], ['dsh', provider], ['opencode', undefined]])('unavailable own-key scope %s never reads credentials or calls launch', async (harness, selectedProvider) => {
+  const loadRecord = jest.fn(); const clientFactory = jest.fn();
+  const resolve = createOwnKeyResolver({ ...options, loadRecord, clientFactory });
+  await expect(resolve({ opened: { source: 'spawn' }, harness, provider: selectedProvider })).resolves.toBeUndefined();
+  expect(loadRecord).not.toHaveBeenCalled(); expect(clientFactory).not.toHaveBeenCalled();
+});

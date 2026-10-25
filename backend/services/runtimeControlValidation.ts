@@ -1,6 +1,6 @@
 import User from '../models/User';
 import Machine from '../models/Machine';
-import { normalizeRuntimeInventory } from './runtimeInventory';
+import { normalizeRuntimeInventory, WALKED_HARNESSES } from './runtimeInventory';
 
 // Validate controls only when a bound daemon supplies a machine inventory.
 // Existing/standalone installations keep working against older daemons.
@@ -11,6 +11,13 @@ export const runtimeControlRefusal = async ({ agentName, instanceId, ownerUserId
   const requestedHarness = config?.runtime?.adapter;
   if (requestedHarness === undefined && environment.model === undefined
     && environment.effort === undefined) return null;
+  if (environment.model !== undefined && (typeof environment.model !== 'string'
+    || !environment.model.trim() || environment.model.length > 256)) return 'Model must be 1–256 characters';
+  const chosen = requestedHarness || effectiveHarness;
+  const harness = chosen === 'claude-code' ? 'claude' : chosen;
+  // Machine inventory intentionally describes only walked adapters. Keep the
+  // existing configuration path for all other adapters, including legacy rows.
+  if (!harness || !(WALKED_HARNESSES as readonly string[]).includes(harness)) return null;
   const binding = await User.findOne({ isBot: true, 'botMetadata.agentName': agentName,
     'botMetadata.instanceId': instanceId }).select('botMetadata.machineId').lean();
   if (!binding?.botMetadata?.machineId) return null;
@@ -22,15 +29,9 @@ export const runtimeControlRefusal = async ({ agentName, instanceId, ownerUserId
     }
     return environment.effort ? 'This computer has not reported effort levels; choose harness default' : null;
   }
-  // The edit route supplies the effective saved adapter rather than guessing
-  // which harness a model name or a machine process happens to imply.
-  const chosen = requestedHarness || effectiveHarness;
-  const harness = chosen === 'claude-code' ? 'claude' : chosen;
   const inventory = normalizeRuntimeInventory(machine.runtimeInventory) || [];
   const selected = inventory.find((row) => row.harness === harness);
   if (!selected?.installed) return 'The requested harness is not installed on this computer';
-  if (environment.model !== undefined && (typeof environment.model !== 'string'
-    || !environment.model.trim() || environment.model.length > 256)) return 'Model must be 1–256 characters';
   if (selected.models?.length && environment.model !== undefined && !selected.models.includes(environment.model)) {
     return 'The requested model is not reported by this harness';
   }

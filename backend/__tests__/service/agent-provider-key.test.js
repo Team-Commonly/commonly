@@ -156,6 +156,17 @@ it('machine inventory rejects unsupported model/effort/harness choices and permi
   expect(await check({ environment: { effort: 'high' } })).toContain('effort');
   expect(await check({ environment: { effort: '' } })).toBeNull();
 });
+it.each(['pi', 'qwen', undefined])('inventory does not reject controls for unwalked/legacy adapter %s', async (effectiveHarness) => {
+  const { runtimeControlRefusal } = require('../../services/runtimeControlValidation');
+  const check = (config) => runtimeControlRefusal({ agentName: 'key-seat', instanceId: 'default',
+    ownerUserId: String(owner), effectiveHarness, config });
+  for (const reported of [false, true]) {
+    await Machine.updateOne({ machineId: 'machine-key' }, { $set: { runtimeInventory: [], inventoryAt: reported ? new Date() : null } });
+    expect(await check({ environment: { model: 'custom', effort: 'high' } })).toBeNull();
+    expect(await check({ environment: { model: '' } })).toContain('Model must');
+    expect(await check({ environment: { model: 5 } })).toContain('Model must');
+  }
+});
 it('own-key capability requires explicit TLS destination and tool confinement', () => {
   const { ownKeyCapability } = require('../../services/agentProviderKey');
   const runtime = { runtimeType: 'wrapper', adapter: 'opencode' };
