@@ -1,3 +1,4 @@
+import { isAccountDeleting } from '../services/accountDeletionState';
 import { resolveTokenAgentIdentity } from '../utils/agentTokenIdentity';
 import { Request, Response, NextFunction } from 'express';
 import { AgentInstallation } from '../models/AgentRegistry';
@@ -75,6 +76,9 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       }
       if (credential.status !== 'active') {
         return res.status(401).json({ message: 'Token revoked' });
+      }
+      if (await isAccountDeleting(credential.ownerUserId)) {
+        return res.status(401).json({ message: 'Credential owner is being deleted' });
       }
       if (credential.expiresAt && credential.expiresAt < new Date()) {
         return res.status(401).json({ message: 'Session token expired' });

@@ -404,13 +404,18 @@ class PodContextService {
       const memberDocs = await User.find({ _id: { $in: memberIds } })
         .select('_id username isBot botMetadata')
         .lean();
-      members = (memberDocs as Array<Record<string, unknown>>).map((u) => ({
-        name: u.isBot
-          ? resolveAgentDisplayLabel(u, (u.username as string) || 'agent')
-          : ((u.username as string) || 'member'),
-        isAgent: !!u.isBot,
-        self: toObjectIdString(u._id) === selfId,
-      }));
+      const usersById = new Map((memberDocs as Array<Record<string, unknown>>)
+        .map((user) => [toObjectIdString(user._id), user]));
+      members = memberIds.map((id) => {
+        const user = usersById.get(id);
+        return {
+          name: user?.isBot
+            ? resolveAgentDisplayLabel(user, (user.username as string) || 'agent')
+            : (user ? ((user.username as string) || 'member') : 'Deleted user'),
+          isAgent: !!user?.isBot,
+          self: id === selfId,
+        };
+      });
     }
 
     // Files a human uploaded into this pod, so an agent orienting via

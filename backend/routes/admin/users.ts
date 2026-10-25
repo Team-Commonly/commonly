@@ -155,9 +155,7 @@ router.patch('/:userId/role', adminWriteLimiter, auth, adminAuth, async (req: an
 
       if (!isValidObjectId(userId)) return mutationResponse(400, { error: 'Invalid user ID' });
       const target = await User.findById(userId);
-      if (!target) {
-        return mutationResponse(404, { error: 'User not found' });
-      }
+      if (!target) return mutationResponse(404, { error: 'User not found' });
 
       if (target.role === 'admin' && nextRole === 'user') {
         const adminCount = await User.countDocuments({ role: 'admin' });
@@ -166,14 +164,23 @@ router.patch('/:userId/role', adminWriteLimiter, auth, adminAuth, async (req: an
         }
       }
 
-      target.role = nextRole;
+      // The global lock serializes administrator writers, but self-deletion
+      // claims do not take it. Keep their target-document marker predicate too:
+      // promotion wins and deletion refuses, or deletion wins and this refuses.
       beginWrite();
-      await target.save();
-
+      const updated = await User.findOneAndUpdate(
+        { _id: userId, accountDeletionRequestedAt: { $exists: false } },
+        { $set: { role: nextRole } },
+        { new: true },
+      );
+      if (!updated) {
+        return mutationResponse(409, { error: 'This account is being deleted; its role cannot change.' });
+      }
       return mutationResponse(200, {
         message: 'User role updated successfully',
-        user: sanitizeUser(target),
+        user: sanitizeUser(updated),
       });
+
     });
     return res.status(result.status).json(result.body);
   } catch (error) {

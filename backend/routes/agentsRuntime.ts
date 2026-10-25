@@ -1,3 +1,4 @@
+import { podMemberPopulate } from '../services/podMemberPopulate';
 import dualAuth from '../middleware/dualAuth';
 import { validateAgentCardPayload } from '../services/uiCardValidation';
 export {};
@@ -3287,7 +3288,7 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
     // Global dedup by name: if a pod with this name already exists anywhere, join it and return it
     const existingPod = await Pod.findOne({ name })
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture');
+      .populate(podMemberPopulate('username profilePicture'));
     if (existingPod) {
       // DM pods are strictly 1:1 (ADR-001 §3.10). VALID_POD_TYPES above gates
       // the type the caller ASKED for, but this dedup branch matches on name
@@ -3379,7 +3380,7 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
       if (!isMember) {
         existingPod.members.push(agentUser._id);
         await existingPod.save();
-        await existingPod.populate('members', 'username profilePicture');
+        await existingPod.populate(podMemberPopulate('username profilePicture'));
       }
       // Ensure an AgentInstallation exists so the agent appears in the Agents section
       if (sourceInstall) {
@@ -3431,7 +3432,7 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
     const pod = await newPod.save();
 
     await pod.populate('createdBy', 'username profilePicture');
-    await pod.populate('members', 'username profilePicture');
+    await pod.populate(podMemberPopulate('username profilePicture'));
 
     if (process.env.PG_HOST && PGPod) {
       try {

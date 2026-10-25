@@ -1,3 +1,4 @@
+import { podMemberPopulate } from '../services/podMemberPopulate';
 const mongoose = require('mongoose');
 const Pod = require('../models/Pod');
 const Message = require('../models/Message');
@@ -248,7 +249,7 @@ exports.getAllPods = async (req: any, res: any) => {
 
     let pods = await Pod.find(listedQuery)
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture isBot')
+      .populate(podMemberPopulate('username profilePicture isBot'))
       .populate('parentPod', 'name _id')
       .sort({ updatedAt: -1 });
 
@@ -313,7 +314,7 @@ exports.getPodsByType = async (req: any, res: any) => {
 
     const pods = await Pod.find({ type })
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture isBot')
+      .populate(podMemberPopulate('username profilePicture isBot'))
       .sort({ updatedAt: -1 });
 
     // Personal pod types (agent-admin, agent-room, agent-dm) are always
@@ -344,7 +345,7 @@ exports.getPodById = async (req: any, res: any) => {
     // Get the pod with populated data
     const pod = await Pod.findById(id)
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture isBot')
+      .populate(podMemberPopulate('username profilePicture isBot'))
       .populate('parentPod', 'name _id');
 
     if (!pod) {
@@ -449,7 +450,7 @@ exports.createPod = async (req: any, res: any) => {
 
     // Populate the user data
     await pod.populate('createdBy', 'username profilePicture');
-    await pod.populate('members', 'username profilePicture isBot');
+    await pod.populate(podMemberPopulate('username profilePicture isBot'));
 
     // Also create in PostgreSQL if available
     try {
@@ -573,7 +574,7 @@ exports.joinPod = async (req: any, res: any) => {
 
     const updatedPod = await Pod.findById(id)
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture isBot');
+      .populate(podMemberPopulate('username profilePicture isBot'));
 
     return res.json(updatedPod);
   } catch (err: any) {
@@ -626,7 +627,7 @@ exports.leavePod = async (req: any, res: any) => {
 
     // Populate the user data
     await pod.populate('createdBy', 'username profilePicture');
-    await pod.populate('members', 'username profilePicture isBot');
+    await pod.populate(podMemberPopulate('username profilePicture isBot'));
 
     res.json(pod);
   } catch (err: any) {
@@ -694,7 +695,7 @@ exports.removeMember = async (req: any, res: any) => {
     }
 
     await pod.populate('createdBy', 'username profilePicture');
-    await pod.populate('members', 'username profilePicture isBot');
+    await pod.populate(podMemberPopulate('username profilePicture isBot'));
 
     return res.json(pod);
   } catch (err: any) {
