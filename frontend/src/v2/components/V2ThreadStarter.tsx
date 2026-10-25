@@ -69,6 +69,8 @@ const V2ThreadStarter: React.FC<V2ThreadStarterProps> = ({
         <div className="v2-chat__new-pod-action v2-chat__new-pod-action--invite">
           <div className="v2-chat__new-pod-action-title">{t('podChat.newPod.inviteTitle')}</div>
           {inviteLoading && <div className="v2-chat__new-pod-status">{t('podChat.newPod.preparingInvite')}</div>}
+          {!inviteUrl && !inviteError && <button type="button" className="v2-chat__new-pod-copy" disabled={inviteLoading}
+            onClick={onCopyInvite}>{t('teammate.act')}</button>}
           {inviteUrl && (
             <div className="v2-invite-link-row">
               <input

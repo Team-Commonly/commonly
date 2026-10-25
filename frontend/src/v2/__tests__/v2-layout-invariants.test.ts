@@ -5013,6 +5013,26 @@ test('TASK-435 runtime columns can shrink on phones without dropping the observe
   expect(css).toContain('content: attr(data-label)');
 });
 
+test('teammate invite cards keep one-column phone controls at the 44px minimum', () => {
+  const css = read('../components/V2BringTeammate.css');
+  const phone = blockContaining(css, '@media (max-width: 760px)', '.v2-teammate');
+  expect(phone).toContain('grid-template-columns: minmax(0, 1fr)');
+  expect(phone).toContain('height: 44px');
+  expect(phone).toContain('flex-basis: 44px');
+  expect(css).toContain('width: calc(100% - 36px)');
+  expect(css).toContain('.v2-teammate.v2-teammate--message');
+  expect(css).toContain('.v2-teammate .v2-teammate__copy {');
+  expect(css).toContain('max-width: 100%');
+});
+
+test('standalone teammate invite button keeps desktop and phone touch targets', () => {
+  const css = read('../v2.css');
+  const standalone = ruleBody(css, '.v2-chat__new-pod-action--invite > .v2-chat__new-pod-copy');
+  expect(standalone).toContain('min-height: 32px');
+  expect(standalone).toContain('margin-top: auto');
+  expect(css).toMatch(/@media \(max-width: 760px\) \{\s*\.v2-chat__new-pod-action--invite > \.v2-chat__new-pod-copy \{ min-height: 44px;/);
+});
+
 describe('run trace layout', () => {
   const css = read('../components/V2RunTrace.css');
   test('long attribution IDs wrap, phone records stack, and links meet touch height', () => {
