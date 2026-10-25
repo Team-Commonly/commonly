@@ -129,6 +129,18 @@ export function validateAgentCardPayload(
     });
     if (brackets.length) refuse('UI card contains unmatched brackets');
     const statements = split(tokens);
+    const separators = tokenize('\n');
+    const separatorTypes = new Set(separators.map((token) => token.t));
+    const consumed = new Set(statements.flatMap((statement) => statement.tokens));
+    statements.forEach((statement) => {
+      let index = tokens.indexOf(statement.tokens[0]) - 1;
+      while (index >= 0 && separatorTypes.has(tokens[index].t)) index -= 1;
+      consumed.add(tokens[index]); // assignment equals
+      consumed.add(tokens[index - 1]); // assignment identifier
+    });
+    if (tokens.some((token) => !separatorTypes.has(token.t) && !consumed.has(token))) {
+      refuse('UI card contains source discarded by the statement splitter');
+    }
     if (statements.length > 256) refuse('UI card exceeds 256 statements');
     const ids = new Set<string>();
     statements.forEach((statement) => {

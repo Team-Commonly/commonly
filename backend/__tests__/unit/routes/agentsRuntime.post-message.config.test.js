@@ -277,6 +277,24 @@ describe('bot-token send-time freshness', () => {
     });
   });
 
+  it.each(['ui', 'approval'])('validates bot-token card kind %s before writing', async (kind) => {
+    const payload = { kind, v: 1, lang: 'openui@1', source: 'root = Text("hello")' };
+    AgentMessageService.postMessage.mockResolvedValue({ success: true });
+    const res = response();
+    await getRouteHandler('/bot/pods/:podId/messages', 'post')({ ...req,
+      body: { content: 'fallback', messageType: 'card', payload, continueAnyway: true } }, res);
+    if (kind === 'ui') {
+      expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+        content: 'fallback', messageType: 'card', payload,
+      }));
+      expect(res.status).not.toHaveBeenCalled();
+    } else {
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+      expect(findNonMemberMentionNotices).not.toHaveBeenCalled();
+    }
+  });
+
   it('stamps only a successful bot-token message read and holds a stale post', async () => {
     const messages = [{ id: 'm1', content: 'new message' }];
     AgentMessageService.getRecentMessages.mockResolvedValue(messages);

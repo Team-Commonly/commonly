@@ -28,6 +28,12 @@ describe('untrusted UI card write validation', () => {
     expect(() => validate(card(), 'fallback', 'text')).toThrow();
     expect(() => validateAgentCardPayload('card', undefined, 'fallback')).toThrow();
   });
+  it('rejects source lines discarded by the statement splitter', () => {
+    expect(() => validate(card('root = Text("hello")\nnot valid'))).toThrow('discarded');
+    expect(() => validate(card('garbage\nroot = Text("hello")'))).toThrow('discarded');
+    expect(() => validate(card('root = Text("hello")\nunused ='))).toThrow('discarded');
+    expect(() => validate(card('root = Text(\n"hello"\n)\n\n'))).not.toThrow();
+  });
   it.each([
     'root = Unknown("hello")',
     'root = Text("hello")\nunused = Unknown("hello")',
@@ -93,6 +99,16 @@ describe('untrusted UI card write validation', () => {
   });
   it('refuses deeply nested input before recursive parsing', () => {
     expect(() => validate(card('root = Text(' + '['.repeat(1000) + '0' + ']'.repeat(1000) + ')'))).toThrow('nesting');
+  });
+  it('enforces exact nesting and statement count boundaries', () => {
+    const nested = (count) => 'root = ' + 'Card("title", ['.repeat(count)
+      + 'Text(["hello"])' + '])'.repeat(count);
+    expect(() => validate(card(nested(31)))).not.toThrow(); // 64 brackets
+    expect(() => validate(card(nested(32)))).toThrow('64 nesting');
+    const statements = (count) => 'root = Text("hello")\n'
+      + Array.from({ length: count - 1 }, (_, i) => 'unused' + i + ' = "literal"').join('\n');
+    expect(() => validate(card(statements(256)))).not.toThrow();
+    expect(() => validate(card(statements(257)))).toThrow('256 statements');
   });
   it('limits serialized payload bytes, including multibyte Unicode and exact boundary', () => {
     const prefix = 'root = Text("';

@@ -23,8 +23,12 @@ route uses the same validator. A payload on a non-card message is refused.
 
 `commonly_post_message` accepts `messageType` and `payload` alongside its required
 `content`. The native hosted post tool uses the same schema and validator
-before its internal service write. Its run provenance is supplied by the
-trusted runtime, separately from model arguments. The CLI takes a JSON envelope:
+before its internal service write. This change does not attach run provenance;
+TASK-499 will add trusted runtime stamping separately from model arguments.
+The CLI takes a JSON envelope
+and uses the active profile token, which must be a `cm_agent_` runtime token.
+A device token from `commonly login` receives HTTP 401 without a human-writer
+fallback:
 
 ```sh
 commonly pod send <podId> 'A readable text fallback.' --payload '{"kind":"ui","v":1,"lang":"openui@1","source":"root = Text(\"Hello\")"}'
