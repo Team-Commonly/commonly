@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
+import { formatAgentTimestamp } from '../agents/formatAgentTimestamp';
 interface Metadata { set: boolean; setAt: string | null; setBy: string | null; lastUsedAt: string | null }
 const V2AgentProviderKey: React.FC<{ name: string; instanceId: string; editable: boolean;
   capability?: { available: boolean; provider: string | null }; harness: string }> = ({ name, instanceId, editable, capability, harness }) => {
   const api = useV2Api();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const k = (key: string, values?: Record<string, string>) => t(`agentManage.providerKey.${key}`, values);
   const url = `/api/registry/agents/${encodeURIComponent(name)}/provider-key?instanceId=${encodeURIComponent(instanceId)}`;
   const [metadata, setMetadata] = useState<Metadata | null>(null);
@@ -39,7 +40,7 @@ const V2AgentProviderKey: React.FC<{ name: string; instanceId: string; editable:
     <h3>{k('title')}</h3>
     <p className="v2-runtime-controls__meta">{!editable ? k('readOnly')
       : !capability?.available ? k('unavailable', { harness }) : k('provider', { provider: capability.provider || '' })}</p>
-    {editable && metadata?.set && <p className="v2-runtime-controls__meta">{k('set')} · {metadata.setAt ? new Date(metadata.setAt).toLocaleString() : ''}</p>}
+    {editable && metadata?.set && <p className="v2-runtime-controls__meta">{k('set')} · {metadata.setAt ? formatAgentTimestamp(metadata.setAt, i18n.language) : ''}</p>}
     {editable && capability?.available && (editing ? <form onSubmit={(event) => { event.preventDefault(); void save(); }}>
       <label htmlFor="own-provider-key">{k('input')}</label>
       <input id="own-provider-key" type="password" autoComplete="new-password" value={draft} disabled={busy} onChange={(event) => setDraft(event.target.value)} />

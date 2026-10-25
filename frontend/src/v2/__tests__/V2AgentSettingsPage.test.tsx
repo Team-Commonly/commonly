@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import i18n from '../../i18n';
 import V2AgentSettingsPage from '../agents/V2AgentSettingsPage';
+import V2AgentProviderKey from '../components/V2AgentProviderKey';
 import { AuthContext } from '../../context/AuthContext';
 
 jest.mock('axios', () => {
@@ -713,5 +714,23 @@ test.each(['en', 'zh-CN'])('key timestamps follow the selected language (%s)', a
       const date = new Date(value).toLocaleString(language, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
       expect(within(disclosure).getByText(`${labels[index]} ${date}`)).toBeInTheDocument();
     }
+  } finally { view.unmount(); await i18n.changeLanguage('en'); }
+});
+
+
+test.each(['en', 'zh-CN'])('provider-key set timestamp follows the selected language (%s)', async (language) => {
+  await i18n.changeLanguage(language);
+  const setAt = '2026-10-25T16:40:00Z';
+  axios.get.mockResolvedValue({ data: { set: true, setAt, setBy: 'owner', lastUsedAt: null } });
+  const view = render(<AuthContext.Provider value={authValue}>
+    <V2AgentProviderKey name="maya-claude" instanceId="default" editable
+      capability={{ available: true, provider: 'anthropic' }} harness="claude" />
+  </AuthContext.Provider>);
+  try {
+    const date = new Date(setAt).toLocaleString(language, {
+      year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+    expect(await screen.findByText(`${i18n.t('agentManage.providerKey.set')} · ${date}`)).toBeInTheDocument();
+    expect(screen.queryByLabelText(i18n.t('agentManage.providerKey.input'))).toBeNull();
   } finally { view.unmount(); await i18n.changeLanguage('en'); }
 });
