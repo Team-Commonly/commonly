@@ -48,6 +48,8 @@ marked account, so a concurrent promotion and deletion cannot cross that boundar
   The deleted account cannot authenticate, its PG author is anonymized, and its
   owned runtime installations are paused. This preserves conversation history,
   not an active human account. Pods have no separate archive lifecycle field.
+  Pod reads and runtime context render a missing member as `Deleted user`;
+  membership and agent-DM observer fan-out still use the historical IDs.
   Pods they created retain only the opaque historical `createdBy` reference; no
   ownership transfer occurs. Other humans' and agents' memberships remain.
 - Shared messages and posts remain. PostgreSQL's author row becomes a `Deleted

@@ -1,3 +1,4 @@
+import { podMemberPopulate } from '../services/podMemberPopulate';
 // Pod invite tokens — shareable URLs that let a user join a pod without
 // going through the invite-only joinPolicy gate. Tokens are random
 // (16-byte hex), DB-backed (PodInvite), and bound to a single pod by their
@@ -274,7 +275,7 @@ router.post('/invites/:token/redeem', inviteWriteRateLimit, auth, async (req: an
     await invite.save();
     const updated = await Pod.findById(pod._id)
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture isBot');
+      .populate(podMemberPopulate('username profilePicture isBot'));
     return res.json({ ok: true, alreadyMember, pod: updated });
   } catch (err: any) {
     console.error('Redeem invite failed:', err.message);

@@ -145,10 +145,14 @@ describe('Self-serve account deletion', () => {
       await mockPg.query('INSERT INTO pod_members (pod_id,user_id) VALUES ($1,$2)',
         [String(pod._id), String(member._id)]);
     }
+    const otherOwner = await makeUser();
+    const otherInstallation = await AgentInstallation.create({ agentName: 'other-owner-dm-agent',
+      podId: pod._id, version: '1.0.0', installedBy: otherOwner._id });
     const installation = await AgentInstallation.create({ agentName: 'historical-dm-agent',
       podId: pod._id, version: '1.0.0', installedBy: human._id });
     await deletion(app, issueSessionToken(human)).expect(204);
     expect((await AgentInstallation.findById(installation._id)).status).toBe('paused');
+    expect((await AgentInstallation.findById(otherInstallation._id)).status).toBe('active');
     const expected = [String(human._id), String(agent._id)].sort();
     const mongoMembers = (await Pod.findById(pod._id)).members.map(String).sort();
     const rows = (await mockPg.query('SELECT user_id FROM pod_members WHERE pod_id = $1', [String(pod._id)])).rows;
@@ -158,6 +162,26 @@ describe('Self-serve account deletion', () => {
     expect((await Pod.findById(pod._id)).members.map(String).sort()).toEqual(expected);
     expect(await User.findById(human._id)).toBeNull();
     expect(await User.findById(agent._id)).not.toBeNull();
+    const DMService = require('../../services/dmService');
+    const podController = require('../../controllers/podController');
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() };
+    await podController.getPodById({ params: { id: String(pod._id), type }, userId: String(agent._id) }, res);
+    expect(res.status).not.toHaveBeenCalled();
+    const readPod = res.json.mock.calls[0][0];
+    const historicalMember = readPod.members.find((member) => String(member._id) === String(human._id));
+    expect(historicalMember.username).toBe('Deleted user');
+    expect(await DMService.canViewPod(String(agent._id), readPod)).toBe(true);
+    if (type === 'agent-dm') {
+      await Pod.create({ name: 'Observer shared pod', createdBy: otherOwner._id,
+        members: [otherOwner._id, agent._id] });
+      expect(await DMService.canViewPod(String(otherOwner._id), readPod)).toBe(true);
+      expect(await DMService.listPodIdsForListing(String(otherOwner._id))).toContain(String(pod._id));
+    } else {
+      expect(await DMService.canViewPod(String(otherOwner._id), readPod)).toBe(false);
+    }
+    const PodContextService = require('../../services/podContextService');
+    const context = await PodContextService.getPodContext({ podId: String(pod._id), userId: String(agent._id), skillMode: 'none' });
+    expect(context.members).toEqual(expect.arrayContaining([{ name: 'Deleted user', isAgent: false, self: false }]));
   });
 
   it('requires explicit confirmation, the right password and a browser session', async () => {

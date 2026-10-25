@@ -120,7 +120,7 @@ describe('podController', () => {
 
     expect(save).toHaveBeenCalled();
     expect(savedPod.populate).toHaveBeenCalledWith('createdBy', 'username profilePicture');
-    expect(savedPod.populate).toHaveBeenCalledWith('members', 'username profilePicture isBot');
+    expect(savedPod.populate).toHaveBeenCalledWith(expect.objectContaining({ path: 'members', select: 'username profilePicture isBot' }));
     expect(AgentInstallation.install).toHaveBeenCalledWith('commonly-bot', 'p1', expect.objectContaining({
       installedBy: 'creator',
       instanceId: 'default',
@@ -290,7 +290,7 @@ describe('podController', () => {
     expect(pod.members).toEqual(['creator']);
     expect(pod.save).toHaveBeenCalled();
     expect(pod.populate).toHaveBeenCalledWith('createdBy', 'username profilePicture');
-    expect(pod.populate).toHaveBeenCalledWith('members', 'username profilePicture isBot');
+    expect(pod.populate).toHaveBeenCalledWith(expect.objectContaining({ path: 'members', select: 'username profilePicture isBot' }));
     expect(res.json).toHaveBeenCalledWith(pod);
   });
 
