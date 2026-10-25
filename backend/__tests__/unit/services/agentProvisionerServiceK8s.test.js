@@ -34,6 +34,7 @@ const mock = {
     // these, so this is the only place a test can assert on the delivered file
     // rather than on the source that composes it.
     readNamespacedPodLog: jest.fn(),
+    execHandler: null,
     execCommands: [],
     execArgv: [],
     // What the next exec writes to its stdout sink; empty = no output.
@@ -76,6 +77,8 @@ const mock = {
     ) {
       mock.execCommands.push(Array.isArray(_command) ? _command.join(' ') : String(_command));
       mock.execArgv.push(_command);
+      const handled = mock.execHandler?.(_command, _stdout, statusCallback);
+      if (handled) return handled;
       if (mock.execStdout && _stdout && typeof _stdout.write === 'function') {
         _stdout.write(mock.execStdout);
         if (typeof statusCallback === 'function') setImmediate(() => statusCallback({ status: 'Success' }));
@@ -538,6 +541,7 @@ describe('issueLiteLLMVirtualKey never sends the master key to LiteLLM', () => {
   });
   afterEach(() => {
     k8s.__mock.execStdout = '';
+    k8s.__mock.execHandler = null;
     jest.restoreAllMocks();
     if (saved.base === undefined) delete process.env.LITELLM_BASE_URL; else process.env.LITELLM_BASE_URL = saved.base;
     if (saved.master === undefined) delete process.env.LITELLM_MASTER_KEY; else process.env.LITELLM_MASTER_KEY = saved.master;
@@ -628,14 +632,15 @@ describe('community virtual key permits the explicit DeepSeek primary', () => {
   });
   afterEach(() => {
     k8s.__mock.execStdout = '';
+    k8s.__mock.execHandler = null;
     jest.restoreAllMocks();
     if (saved.base === undefined) delete process.env.LITELLM_BASE_URL; else process.env.LITELLM_BASE_URL = saved.base;
     if (saved.master === undefined) delete process.env.LITELLM_MASTER_KEY; else process.env.LITELLM_MASTER_KEY = saved.master;
   });
 
   it('refreshes an old key that lacks the primary alias and permits its wire model id', async () => {
-    await expect(issueLiteLLMOpenRouterKey('liz')).resolves.toBe('sk-community-new');
-    expect(axios.delete.mock.invocationCallOrder[0]).toBeGreaterThan(axios.post.mock.invocationCallOrder[0]);
+    await expect(issueLiteLLMOpenRouterKey('liz')).resolves.toEqual({ key: 'sk-community-new', staleOwnedKey: 'sk-community-existing' });
+    expect(axios.delete).not.toHaveBeenCalled();
     expect(axios.post).toHaveBeenCalledWith('http://litellm:4000/key/generate', expect.objectContaining({
       models: expect.arrayContaining(['deepseek-v4-flash', 'openrouter/deepseek-v4-flash']),
     }), expect.anything());
@@ -655,9 +660,62 @@ describe('community virtual key permits the explicit DeepSeek primary', () => {
     expect(k8s.__mock.execCommands.join('\n')).not.toContain('sk-master-test');
   });
 
+  it.each(['success', 'skip', 'exec', 'no-pod'])('retires an old key only after a confirmed PVC write: %s', async (mode) => {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const { spawnSync } = require('child_process');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'community-key-'));
+    const profilePath = path.join(dir, 'auth-profiles.json');
+    fs.writeFileSync(profilePath, JSON.stringify({ profiles: { 'openrouter:default': { key: 'sk-community-existing' } } }));
+    const originalTimer = global.setTimeout;
+    jest.spyOn(global, 'setTimeout').mockImplementation((fn, delay, ...args) => originalTimer(fn, delay === 10000 ? 0 : delay, ...args));
+    const podList = k8s.__mock.listNamespacedPod.getMockImplementation();
+    let keyAtRetirement;
+    axios.delete.mockImplementation(async () => {
+      keyAtRetirement = JSON.parse(fs.readFileSync(profilePath, 'utf8')).profiles['openrouter:default'].key;
+      return {};
+    });
+    k8s.__mock.execHandler = (command, stdout, status) => {
+      if (command[0] !== 'node' || !command[2].includes("store.profiles['openrouter:default'] =")) return undefined;
+      if (mode === 'exec') { status({ status: 'Failure' }); return Promise.resolve(); }
+      const target = mode === 'skip' ? path.join(dir, 'missing.json') : profilePath;
+      const script = command[2].replace('/state/agents/liz/agent/auth-profiles.json', target);
+      const result = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+      stdout.write(result.stdout);
+      status({ status: result.status === 0 ? 'Success' : 'Failure' });
+      return Promise.resolve();
+    };
+    if (mode === 'no-pod') {
+      axios.post.mockImplementation(async () => {
+        k8s.__mock.listNamespacedPod.mockResolvedValue({ body: { items: [] } });
+        let now = Date.now();
+        jest.spyOn(Date, 'now').mockImplementation(() => { now += 100000; return now; });
+        return { data: { key: 'sk-community-new' } };
+      });
+    }
+    const writes = k8s.__mock.replaceNamespacedConfigMap.mock.calls.length;
+    try {
+      const provision = provisionAgentRuntime({ runtimeType: 'moltbot', agentName: 'openclaw', instanceId: 'liz', runtimeToken: 'test', baseUrl: 'http://backend', heartbeat: null });
+      if (mode === 'success') {
+        await provision;
+        expect(axios.delete).toHaveBeenCalledTimes(1);
+        expect(keyAtRetirement).toBe('sk-community-new');
+      } else {
+        await expect(provision).rejects.toThrow('Community model key was not written');
+        expect(axios.delete).not.toHaveBeenCalled();
+        expect(k8s.__mock.replaceNamespacedConfigMap.mock.calls).toHaveLength(writes);
+        expect(JSON.parse(fs.readFileSync(profilePath, 'utf8')).profiles['openrouter:default'].key).toBe('sk-community-existing');
+      }
+    } finally {
+      k8s.__mock.listNamespacedPod.mockImplementation(podList);
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('does not delete a key owned by another agent during replacement', async () => {
     axios.get.mockResolvedValue({ data: { info: { metadata: { agent_id: 'other' }, models: [] } } });
-    await expect(issueLiteLLMOpenRouterKey('liz')).resolves.toBe('sk-community-new');
+    await expect(issueLiteLLMOpenRouterKey('liz')).resolves.toEqual({ key: 'sk-community-new', staleOwnedKey: null });
     expect(axios.delete).not.toHaveBeenCalled();
   });
 
@@ -665,7 +723,7 @@ describe('community virtual key permits the explicit DeepSeek primary', () => {
     axios.get.mockResolvedValue({ data: { info: {
       metadata: { agent_id: 'liz' }, models: ['gpt-5.4-mini', 'deepseek-v4-flash'],
     } } });
-    await expect(issueLiteLLMOpenRouterKey('liz')).resolves.toBe('sk-community-existing');
+    await expect(issueLiteLLMOpenRouterKey('liz')).resolves.toEqual({ key: 'sk-community-existing', staleOwnedKey: null });
     expect(axios.post).not.toHaveBeenCalled();
     expect(axios.delete).not.toHaveBeenCalled();
   });

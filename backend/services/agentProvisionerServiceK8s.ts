@@ -1700,7 +1700,7 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
         const allowsMini = Array.isArray(info?.models) && info.models.includes('gpt-5.4-mini');
         const allowsDeepSeek = Array.isArray(info?.models) && info.models.includes('deepseek-v4-flash');
         if (ownedByAgent && allowsMini && allowsDeepSeek) {
-          return existingKey;
+          return { key: existingKey, staleOwnedKey: null };
         }
         if (ownedByAgent) staleOwnedKey = existingKey;
       } catch (_: any) { /* key not in DB — fall through */ }
@@ -1736,11 +1736,8 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
     );
     const newKey = resp.data?.key;
     if (typeof newKey !== 'string' || !newKey.startsWith('sk-') || newKey === masterKey) return null;
-    if (staleOwnedKey && staleOwnedKey !== newKey) {
-      await axios.delete(`${baseUrl}/key/delete`, { headers, data: { keys: [staleOwnedKey] } }).catch(() => {});
-    }
     console.log(`[litellm] Issued OpenRouter virtual key for ${agentId}`);
-    return newKey;
+    return { key: newKey, staleOwnedKey: staleOwnedKey === newKey ? null : staleOwnedKey };
   } catch (err: any) {
     console.warn(`[litellm] Community virtual key generation failed for ${agentId}; retry provisioning`);
     return null;
@@ -1756,7 +1753,7 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
  * persist across gateway restarts.
  */
 const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agentId: any, virtualKey: any) => {
-  if (!virtualKey) return;
+  if (!virtualKey) return false;
   const escaped = virtualKey.replace(/'/g, "\\'");
   // OpenRouter calls are proxied through LiteLLM (openrouter.baseUrl = http://litellm:4000/v1).
   // LiteLLM expects a virtual key for authorization — always use the LiteLLM key for openrouter:default.
@@ -1788,11 +1785,13 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agent
     codexOrderLine,
     `  fs.writeFileSync(p, JSON.stringify(store, null, 2));`,
     `  process.stdout.write('ok');`,
-    `} catch (e: any) { process.stdout.write('skip:' + e.message); }`,
+    `} catch (e) { process.stdout.write('skip:' + e.message); }`,
   ].filter(Boolean).join(' ');
 
   const execOnPod = async (podName: any) => new Promise<void>((resolve, reject) => {
     const stdoutStream = new stream.PassThrough();
+    const chunks: Buffer[] = [];
+    stdoutStream.on('data', (chunk: Buffer) => chunks.push(chunk));
     k8sExec.exec(
       NAMESPACE,
       podName,
@@ -1803,8 +1802,8 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agent
       null,
       false,
       (status: any) => {
-        if (status.status === 'Success') resolve();
-        else reject(new Error(status.message || 'exec failed'));
+        if (status.status === 'Success' && Buffer.concat(chunks).toString().trim() === 'ok') resolve();
+        else reject(new Error('OpenRouter credential write was not confirmed'));
       },
     ).catch(reject);
   });
@@ -1814,11 +1813,11 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agent
       const gwPod = await waitForReadyGatewayPod(90000, 5000);
       if (!gwPod) {
         console.warn(`[k8s-provisioner] openrouter key inject skipped for ${agentId}: no ready gateway pod`);
-        return;
+        return false;
       }
       await execOnPod(gwPod.metadata.name);
       console.log(`[k8s-provisioner] openrouter key injected for ${agentId}`);
-      return;
+      return true;
     } catch (err: any) {
       if (attempt < 2) {
         console.warn(`[k8s-provisioner] openrouter key inject attempt ${attempt} failed for ${agentId}: ${err.message} — retrying`);
@@ -1828,6 +1827,7 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agent
       }
     }
   }
+  return false;
 };
 
 const applyOpenClawCodexProviderConfig = async (config: any) => {
@@ -2445,14 +2445,23 @@ const provisionOpenClawAccount = async ({
   // model access); community agents require their own scoped key. Failed
   // issuance must not grant the shared master credential.
   if (process.env.LITELLM_BASE_URL) {
-    const openRouterKey = isDevAgent
-      ? codexVirtualKey
-      : await issueLiteLLMOpenRouterKey(accountId);
+    const communityKey = isDevAgent ? null : await issueLiteLLMOpenRouterKey(accountId);
+    const openRouterKey = isDevAgent ? codexVirtualKey : communityKey?.key;
     if (!isDevAgent && !openRouterKey) {
       throw new Error('Community model key unavailable; retry provisioning');
     }
     if (openRouterKey) {
-      await injectOpenRouterKeyToAgentAuthProfiles('clawdbot-gateway', accountId, openRouterKey);
+      const injected = await injectOpenRouterKeyToAgentAuthProfiles('clawdbot-gateway', accountId, openRouterKey);
+      if (!isDevAgent && !injected) {
+        throw new Error('Community model key was not written; retry provisioning');
+      }
+      if (!isDevAgent && communityKey?.staleOwnedKey) {
+        const axios = require('axios');
+        await axios.delete(`${process.env.LITELLM_BASE_URL}/key/delete`, {
+          headers: { Authorization: `Bearer ${(process.env.LITELLM_MASTER_KEY || '').trim()}` },
+          data: { keys: [communityKey.staleOwnedKey] },
+        }).catch(() => {});
+      }
     }
   }
   applySkillEnvEntriesToConfig(config, skillEnv);
