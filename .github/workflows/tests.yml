@@ -183,6 +183,9 @@ jobs:
             external/commonly-agent-services/commonly-bot/index.test.js
       - run: cd commonly-mcp && npm test
       - run: cd cli && npm run lint && npm test
+      # The adapter runtime the CLI bundles has its own node:test suite and no
+      # dependencies; the CLI's jest run above does not reach it.
+      - run: cd packages/seats && npm test
       - name: Verify CLI test temp cleanup
         run: cd cli && npm run test:temp-cleanup
       - run: cd workers/agent-runtime && npm run typecheck && npm test
