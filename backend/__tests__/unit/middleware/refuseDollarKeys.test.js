@@ -89,10 +89,17 @@ describe('refuseDollarKeys', () => {
       expect(res.body.field.startsWith('body.n.n')).toBe(true);
     });
 
-    test('a 5000-deep body is refused at the cap without exhausting the stack', async () => {
-      const res = await request(app).post('/x').send(nest(5000));
-      expect(res.status).toBe(400);
-      expect(res.body.limit).toBe('MAX_KEY_DEPTH');
+    test('a 1000-deep body is refused at the cap, naming it', async () => {
+      const res = await request(app).post('/x').send(nest(1000));
+      expect({ status: res.status, body: res.body }).toMatchObject({
+        status: 400, body: { code: KEY_LIMIT_EXCEEDED, limit: 'MAX_KEY_DEPTH' },
+      });
+    });
+
+    // Built in memory, not sent: a JSON parser may refuse this depth on its
+    // own, which would hide what the walk does with it.
+    test('a 100,000-deep object stops at the cap without exhausting the stack', () => {
+      expect(scanKeys(nest(100000))).toMatchObject({ kind: 'limit', limit: 'depth', max: MAX_KEY_DEPTH });
     });
 
     test('a $ key past the depth cap is not reported as passing', async () => {
