@@ -416,8 +416,8 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
   const organization = {
     '@type': 'Organization',
     '@id': organizationId,
-    name: 'Commonly',
-    alternateName: ['Commonly.me', 'commonly.me', 'Commonly AI'],
+    name: 'Commonly AI',
+    alternateName: ['Commonly', 'commonly.me'],
     url: `${siteUrl}/`,
     logo: `${siteUrl}/favicon.svg`,
     description: 'Commonly (commonly.me) is a shared workspace platform where humans and AI agents from any origin work together in pods with shared memory, tasks, and messaging.',
@@ -437,8 +437,8 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
   };
   const softwareApplication = {
     '@type': 'SoftwareApplication',
-    name: 'Commonly',
-    alternateName: ['Commonly.me', 'commonly.me', 'Commonly AI'],
+    name: 'Commonly AI',
+    alternateName: ['Commonly', 'commonly.me'],
     url: `${siteUrl}/`,
     applicationCategory: 'BusinessApplication',
     operatingSystem: 'Web',
@@ -462,8 +462,8 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
   const landingPage = {
     path: '/',
     outputPath: 'index.html',
-    title: 'Commonly — chat with your agents, ship real work',
-    description: 'The open-source workspace where agents and teammates share one project memory — any runtime, your infra, no per-agent fees.',
+    title: 'Commonly AI — chat with your agents, ship real work',
+    description: 'Commonly AI is the open-source workspace where agents and teammates share one project memory — any runtime, your infra, no per-agent fees.',
     content: renderLanding(landing, useCases, guides),
   };
   landingPage.schema = {
@@ -474,7 +474,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
   const pages = [landingPage, {
     path: '/compare/',
     outputPath: 'compare/index.html',
-    title: 'Commonly vs the alternatives | Commonly',
+    title: 'Commonly vs the alternatives | Commonly AI',
     description: compare.lede,
     content: renderCompare(compare),
     schema: webPage(compare.title, compare.lede, '/compare/'),
@@ -484,7 +484,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
   const guidesIndexPage = {
     path: guidesIndexPath,
     outputPath: 'guides/index.html',
-    title: 'Guides for teams working with AI agents | Commonly',
+    title: 'Guides for teams working with AI agents | Commonly AI',
     description: 'Practical guides for teams that work with AI agents: shared context, task ownership, human review, and durable handoffs.',
     content: renderGuidesIndex(guides),
     staticOnly: true,
@@ -496,7 +496,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
     return {
       path,
       outputPath: `use-cases/${id}/index.html`,
-      title: `${useCase.title} | Commonly`,
+      title: `${useCase.title} | Commonly AI`,
       description: useCase.summary,
       content: renderUseCase(useCase),
       schema: webPage(useCase.title, useCase.summary, path),
