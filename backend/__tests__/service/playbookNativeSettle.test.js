@@ -4,6 +4,7 @@ jest.mock('../../services/toolBrokerService', () => ({ allToolDefinitions: () =>
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const Task = require('../../models/Task');
+const AttentionItem = require('../../models/AttentionItem');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const { createOffPlaybook, setPlaybookOn } = require('../../services/playbooks/store');
 const { startPlaybookRun } = require('../../services/playbooks/runState');
@@ -57,6 +58,10 @@ test('no post retries once, rejects a stale first-attempt settle, then blocks', 
   expect(wakes).toHaveLength(2);
   expect((await Task.findById(step._id)).status).toBe('blocked');
   expect((await Task.findById(root._id)).status).toBe('blocked');
+  const asks = await AttentionItem.find({ 'source.type': 'task', status: 'open' });
+  expect(asks).toHaveLength(1);
+  expect(String(asks[0].recipientUserId)).toBe(root.claimedBy);
+  expect(asks[0].detail).toBe(`${step.taskId}: no native post after retry`);
 });
 test('a failed event enqueue releases its native claim so recovery can deliver it', async () => {
   await expect(deliverPlaybookStep(String(pod._id), step.taskId, async () => { throw new Error('queue down'); }, propose))

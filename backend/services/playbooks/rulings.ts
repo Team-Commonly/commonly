@@ -6,6 +6,7 @@ import { loadPlaybookContext } from './context';
 import { preflightPlaybook } from './preflight';
 import { withPlaybookLock, playbookConfig, playbookDefinition, requirePlaybookHuman } from './store';
 import { advancePlaybookRun } from './runState';
+import { publishPlaybookTask, blockPlaybookRun } from './observations';
 
 export const loadPlaybookPoint = async (podId: string, taskId: string) => {
   const step = await Task.findOne({ podId, taskId, source: 'playbook', parentTask: { $ne: null } });
@@ -76,10 +77,8 @@ export const applyPlaybookRuling = async (card: IApprovalAction) => {
       $push: { updates: { author: 'playbook', createdAt: new Date(),
         text: `${approved ? 'Approved' : 'Declined'} · card ${card._id}` } },
     }, { new: true });
-    if (updated && !approved) await Task.updateOne({ _id: point.root._id, status: { $ne: 'done' } }, {
-      $set: { status: 'blocked' }, $push: { updates: { author: 'playbook', createdAt: new Date(),
-        text: `Approval declined: ${definition.title}. Run owner: ${config.onBy}` } },
-    });
+    await publishPlaybookTask(updated);
+    if (updated && !approved) await blockPlaybookRun(podId, point.root.taskId, `Approval declined: ${definition.title}`);
     return updated;
   });
   if (changed?.status === 'done') await advancePlaybookRun(podId, taskId);
@@ -113,7 +112,10 @@ export const askPlaybookPointAgain = async (podId: string, taskId: string, userI
       $push: { updates: { author: 'playbook', authorId: userId, createdAt: new Date(), text: 'Asked for a new ruling' } },
     }, { new: true });
     if (!row) throw new PlaybookError('point_not_declined', 'Only a declined point can be asked again');
-    await Task.updateOne({ _id: point.root._id, status: 'blocked' }, { $set: { status: 'claimed' } });
+    const resumed = await Task.findOneAndUpdate({ _id: point.root._id, status: 'blocked' },
+      { $set: { status: 'claimed' } }, { new: true });
+    await publishPlaybookTask(resumed);
+    await publishPlaybookTask(row);
     return row;
   });
 };

@@ -12,6 +12,7 @@ import { loadPlaybookContext } from './context';
 import { playbookConfig } from './store';
 import { latestScheduleSlot } from './schedule';
 import { PlaybookError } from './definition';
+import { blockPlaybookRun, publishPlaybookTask } from './observations';
 
 const enqueue = (event: Parameters<typeof AgentEventService.enqueue>[0]) => AgentEventService.enqueue(event);
 const deliver = (podId: string, taskId: string) => deliverPlaybookStep(podId, taskId, enqueue, proposeAction);
@@ -48,11 +49,6 @@ export const tickPlaybookSchedules = async (now = new Date()) => {
   }
 };
 
-const blockRun = async (podId: string, runId: string, reason: string) => Task.updateOne({ podId,
-  taskId: runId, source: 'playbook', guard: 'kernel', status: { $ne: 'done' } }, {
-  $set: { status: 'blocked' }, $push: { updates: { author: 'playbook', createdAt: new Date(), text: reason } },
-});
-
 /** Recover row/card/delivery gaps without creating another trigger or resetting an assignee. */
 export const reconcilePlaybookRuns = async (now = new Date()) => {
   if (process.env.PLAYBOOKS_ENABLED !== 'true') return;
@@ -61,6 +57,8 @@ export const reconcilePlaybookRuns = async (now = new Date()) => {
   for (const root of roots) {
     const podId = String(root.podId);
     try {
+      // Repair a crash between blocking a run and materializing its attention.
+      if (root.status === 'blocked') await publishPlaybookTask(root);
       let step = await advancePlaybookRun(podId, root.taskId);
       if (!step) continue;
       if (step.ruling?.state === 'awaiting') {
@@ -69,7 +67,7 @@ export const reconcilePlaybookRuns = async (now = new Date()) => {
           await applyPlaybookRuling(card);
           step = await advancePlaybookRun(podId, root.taskId);
         } else if (card && ['moot', 'expired'].includes(card.status)) {
-          await blockRun(podId, root.taskId, `${step.taskId}: approval card could not be delivered`);
+          await blockPlaybookRun(podId, root.taskId, `${step.taskId}: approval card could not be delivered`);
           continue;
         } else if (!card && step.offeredAt && now.getTime() - step.offeredAt.getTime() >= 5 * 60_000) {
           await Task.updateOne({ _id: step._id, offeredAt: step.offeredAt, 'ruling.state': 'awaiting' },
@@ -98,7 +96,7 @@ export const reconcilePlaybookRuns = async (now = new Date()) => {
       await deliver(podId, step.taskId);
     } catch (error) {
       if (!(error instanceof PlaybookError)) throw error;
-      if (error.code !== 'playbook_busy') await blockRun(podId, root.taskId, error.message);
+      if (error.code !== 'playbook_busy') await blockPlaybookRun(podId, root.taskId, error.message);
     }
   }
 };

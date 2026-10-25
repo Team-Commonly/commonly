@@ -3,6 +3,7 @@ import { completeTaskWithRevision } from '../taskMutationCore';
 import { advancePlaybookRun } from './runState';
 import { loadPlaybookContext } from './context';
 import { deliverPlaybookStep, PlaybookWake, ProposePlaybookCard } from './delivery';
+import { publishPlaybookTask, blockPlaybookRun } from './observations';
 
 /** Settlement is bound to the runner's claim, never to an agent/model's task-id argument. */
 export const settleNativePlaybookStep = async (
@@ -30,6 +31,7 @@ export const settleNativePlaybookStep = async (
         text: `Native result posted: ${result.postedMessageIds!.join(', ')}` } } },
     { userId: actor.userId, assignee: actor.handle, isBot: true });
     if (completed) {
+      await publishPlaybookTask(completed);
       const next = await advancePlaybookRun(podId, taskId);
       if (next) await deliverPlaybookStep(podId, next.taskId, enqueue, proposeAction);
     }
@@ -42,11 +44,8 @@ export const settleNativePlaybookStep = async (
     $push: { updates: { author: 'playbook', createdAt: new Date(),
       text: retry ? 'No native post; retrying once' : 'No native post after retry; run blocked' } },
   }, { new: true });
+  await publishPlaybookTask(changed);
   if (changed && retry) await deliverPlaybookStep(podId, taskId, enqueue, proposeAction);
-  if (changed && !retry) await Task.updateOne({ podId, taskId: changed.parentTask, source: 'playbook',
-    guard: 'kernel', status: { $ne: 'done' } }, {
-    $set: { status: 'blocked' }, $push: { updates: { author: 'playbook', createdAt: new Date(),
-      text: `${taskId}: no native post after retry` } },
-  });
+  if (changed && !retry) await blockPlaybookRun(podId, changed.parentTask!, `${taskId}: no native post after retry`);
   return true;
 };

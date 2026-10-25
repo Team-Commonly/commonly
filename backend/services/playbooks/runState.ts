@@ -6,6 +6,7 @@ import { checkPlaybookDone, StepRecord } from './doneCheck';
 import { loadPlaybookContext } from './context';
 import { preflightPlaybook, PlaybookMember } from './preflight';
 import { withPlaybookLock, playbookConfig, playbookDefinition, requirePlaybookHuman } from './store';
+import { publishPlaybookTask, blockPlaybookRun } from './observations';
 
 type BoundRun = { book: PlaybookDefinition; members: Map<string, PlaybookMember> };
 const runIdentity = (ref: string | undefined) => /^playbook:([a-f0-9]{24}):(.+)$/.exec(ref || '');
@@ -20,6 +21,7 @@ const insertRow = async (fields: Record<string, unknown>) => {
     const taskNum = (last?.taskNum || 0) + 1;
     try {
       const row = await Task.create({ ...fields, taskNum, taskId: `TASK-${String(taskNum).padStart(3, '0')}` });
+      await publishPlaybookTask(row, 'created');
       return { row, created: true };
     } catch (error) {
       if ((error as { code?: number }).code !== 11000) throw error;
@@ -52,15 +54,16 @@ const advanceLocked = async (run: any, installation: any, installable: any) => {
         $set: { status: 'done', completedAt: existing.ruling.decidedAt || new Date() },
         $push: { updates: update('Recovered approved kernel step') },
       }, { new: true }) || existing;
+      await publishPlaybookTask(existing);
     }
     if (existing) {
       facts.set(step.key, existing);
+      if (existing.status === 'blocked') await blockPlaybookRun(String(run.podId), run.taskId,
+        `${step.title}: ${existing.updates.at(-1)?.text || 'step blocked'}`);
       if (existing.status !== 'done') return existing;
       // A corrupt or legacy completion never advances past a missing ruling.
       if (step.approval && existing.ruling?.state !== 'approved') {
-        await Task.updateOne({ _id: run._id, status: { $ne: 'blocked' } }, {
-          $set: { status: 'blocked' }, $push: { updates: update(`${step.title}: approval required`) },
-        });
+        await blockPlaybookRun(String(run.podId), run.taskId, `${step.title}: approval required`);
         return existing;
       }
       continue;
@@ -80,10 +83,12 @@ const advanceLocked = async (run: any, installation: any, installable: any) => {
   const humans = await User.find({ _id: { $in: humanIds }, isBot: { $ne: true }, botType: { $in: [null, ''] } })
     .select('_id').lean();
   const checked = checkPlaybookDone(book, facts, new Set(humans.map((person) => String(person._id))));
-  await Task.updateOne({ _id: run._id, source: 'playbook', guard: 'kernel', status: { $ne: 'done' } }, {
-    $set: { status: checked.done ? 'done' : 'blocked', ...(checked.done ? { completedAt: new Date() } : {}) },
-    $push: { updates: update(checked.done ? 'Done check passed' : `Done check failed: ${checked.failed.join('; ')}`) },
-  });
+  if (checked.done) {
+    const finished = await Task.findOneAndUpdate({ _id: run._id, status: { $ne: 'done' } }, {
+      $set: { status: 'done', completedAt: new Date() }, $push: { updates: update('Done check passed') },
+    }, { new: true });
+    await publishPlaybookTask(finished);
+  } else await blockPlaybookRun(String(run.podId), run.taskId, `Done check failed: ${checked.failed.join('; ')}`);
   return null;
 };
 
@@ -126,9 +131,7 @@ export const advancePlaybookRun = async (podId: string, taskId: string) => {
     if (!(error instanceof PlaybookError)) throw error;
     // A concurrent winner or the sweep will deliver the next step. Other
     // capability/membership refusals stop the run with a visible reason.
-    if (error.code !== 'playbook_busy') await Task.updateOne({ _id: run._id, status: { $ne: 'done' } }, {
-      $set: { status: 'blocked' }, $push: { updates: update(error.message) },
-    });
+    if (error.code !== 'playbook_busy') await blockPlaybookRun(podId, run.taskId, error.message);
     return null;
   }
 };

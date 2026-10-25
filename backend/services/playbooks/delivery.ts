@@ -4,6 +4,7 @@ import { claimTaskWithRevision } from '../taskMutationCore';
 import { PlaybookError } from './definition';
 import { loadPlaybookContext } from './context';
 import { describePlaybookPoint } from './rulings';
+import { publishPlaybookTask } from './observations';
 
 export type ProposePlaybookCard = typeof import('../approvalActionService').proposeAction;
 
@@ -48,6 +49,7 @@ export const deliverPlaybookStep = async (
     { userId: actor.userId, assignee: actor.handle, isBot: true }))?.task
     : await Task.findOneAndUpdate(filter, { $set: { offeredAt: now } }, { new: true });
   if (!offered) return;
+  await publishPlaybookTask(offered);
   const content = [`[Playbook step assigned to you: ${taskId}]`, step.title, step.notes || '',
     actor.runtime === 'native' ? 'Post the result in this pod. The workflow records completion from that post.'
       : 'Claim this task, do the step, then complete it with your task tools. Keep any PR link on the row.',

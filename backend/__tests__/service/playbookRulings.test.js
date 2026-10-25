@@ -6,22 +6,27 @@ jest.mock('../../services/agentMessageService', () => ({ postMessage: jest.fn(as
   success: true, message: { id: String(new (require('mongoose').Types.ObjectId)()) },
 })) }));
 jest.mock('../../services/agentEventService', () => ({ enqueue: jest.fn().mockResolvedValue({}) }));
-jest.mock('../../services/attentionItemService', () => ({ recordActionApproval: jest.fn(), resolve: jest.fn() }));
+jest.mock('../../services/needsYouEmailService', () => ({ sendNeedsYouEmail: jest.fn() }));
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const Task = require('../../models/Task');
 const Approval = require('../../models/ApprovalAction');
+const AttentionItem = require('../../models/AttentionItem');
+const { bindSocketIO } = require('../../services/taskEventService');
+const { publishPlaybookTask, blockPlaybookRun } = require('../../services/playbooks/observations');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const { createOffPlaybook, setPlaybookOn } = require('../../services/playbooks/store');
 const { startPlaybookRun } = require('../../services/playbooks/runState');
 const { completeTaskWithRevision } = require('../../services/taskMutationService');
 const { describePlaybookPoint, applyPlaybookRuling } = require('../../services/playbooks/rulings');
 const { proposeAction, resolveApproval } = require('../../services/approvalActionService');
-let person; let agent; let outsider; let pod; let point; let root;
+let person; let agent; let outsider; let pod; let point; let root; let socketEvents;
 const previousFlag = process.env.PLAYBOOKS_ENABLED;
 beforeAll(setupMongoDb); afterAll(closeMongoDb);
 beforeEach(async () => {
   await clearMongoDb(); process.env.PLAYBOOKS_ENABLED = 'true';
+  socketEvents = [];
+  bindSocketIO({ to: (room) => ({ emit: (event, payload) => socketEvents.push({ room, event, payload }) }) });
   person = await User.create({ username: 'sender', email: 'sender@example.test', password: 'test-password' });
   outsider = await User.create({ username: 'outsider', email: 'outsider@example.test', password: 'test-password' });
   agent = await User.create({ username: 'checker', email: 'checker@example.test', password: 'test-password',
@@ -30,7 +35,7 @@ beforeEach(async () => {
   await AgentInstallation.create({ agentName: 'codex', instanceId: 'checker', podId: pod._id, version: '1',
     installedBy: outsider._id, config: { runtime: { runtimeType: 'webhook' } } });
 });
-afterEach(() => { if (previousFlag === undefined) delete process.env.PLAYBOOKS_ENABLED;
+afterEach(() => { bindSocketIO(null); if (previousFlag === undefined) delete process.env.PLAYBOOKS_ENABLED;
   else process.env.PLAYBOOKS_ENABLED = previousFlag; });
 const actor = (user) => ({ userId: String(user._id), assignee: user.username, isBot: user.isBot });
 const complete = (row, user) => completeTaskWithRevision({ podId: pod._id, taskId: row.taskId, status: { $ne: 'done' } },
@@ -73,13 +78,35 @@ test('D8 approval unlocks only; the bound person must separately attest manual c
   expect(await complete(approved, outsider)).toBeNull();
   await complete(approved, person);
   expect((await Task.findById(root._id)).status).toBe('done');
+  expect(socketEvents).toEqual(expect.arrayContaining([
+    expect.objectContaining({ room: `pod_${pod._id}`, event: 'task_updated',
+      payload: expect.objectContaining({ kind: 'created', task: expect.objectContaining({ taskId: root.taskId }) }) }),
+    expect.objectContaining({ payload: expect.objectContaining({ kind: 'updated',
+      task: expect.objectContaining({ taskId: root.taskId, status: 'done' }) }) }),
+  ]));
 });
 test('decline blocks the row/run and cannot be resumed through completion', async () => {
   await start(); const proposed = await propose();
+  // The creator is also a current member, but the On owner alone needs this ask.
+  await Pod.updateOne({ _id: pod._id }, { $addToSet: { members: outsider._id } });
   expect((await decide(proposed.approvalId, 'declined')).status).toBe(200);
   expect((await Task.findById(point._id)).ruling.state).toBe('declined');
   expect((await Task.findById(root._id)).status).toBe('blocked');
   expect(await complete(point, person)).toBeNull();
+  const blocked = await Task.findById(root._id);
+  await publishPlaybookTask(blocked); // repair/repeated sweeps reuse the stored update identity
+  await blockPlaybookRun(String(pod._id), root.taskId, 'Same refusal on another sweep');
+  const asks = await AttentionItem.find({ 'source.type': 'task', status: 'open' });
+  expect(asks).toHaveLength(1);
+  expect(String(asks[0].recipientUserId)).toBe(String(person._id));
+  expect(asks[0].detail).toBe('Approval declined: Send');
+  expect((await Task.findById(root._id)).updates).toHaveLength(blocked.updates.length);
+});
+test('a departed run owner never falls back to notifying another human member', async () => {
+  await start();
+  await Pod.updateOne({ _id: pod._id }, { $set: { members: [outsider._id, agent._id] } });
+  await blockPlaybookRun(String(pod._id), root.taskId, 'Owner left the pod');
+  expect(await AttentionItem.countDocuments({ 'source.type': 'task' })).toBe(0);
 });
 test('kernel none approval and row completion are one write and recover through the same ruling', async () => {
   await start('kernel'); const proposed = await propose();
@@ -122,9 +149,11 @@ test('recovery finishes an approved kernel row left pending without a second car
 test('Ask again replaces the card id and rejects a late application of the old decline', async () => {
   await start(); const first = await propose();
   await decide(first.approvalId, 'declined');
+  expect(await AttentionItem.countDocuments({ 'source.type': 'task', status: 'open' })).toBe(1);
   const oldCard = await Approval.findById(first.approvalId);
   const { askAgainForPlaybookPoint } = require('../../services/playbooks/runner');
   const renewed = await askAgainForPlaybookPoint(String(pod._id), point.taskId, String(person._id));
+  expect(await AttentionItem.countDocuments({ 'source.type': 'task', status: 'open' })).toBe(0);
   expect(String(renewed.ruling.approvalId)).not.toBe(first.approvalId);
   expect((await applyPlaybookRuling(oldCard)).applied).toBe(false);
   expect((await Task.findById(point._id)).ruling.state).toBe('awaiting');
