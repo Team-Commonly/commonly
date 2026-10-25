@@ -16,6 +16,7 @@ import { prepareRunEnv } from '../src/valet/env.js';
 import { sandboxRunArgv, startRunEgress } from '../src/valet/sandbox.js';
 import { buildSeatbeltProfile } from '../src/sandbox/seatbelt.js';
 import { EVENT_TYPES } from '../src/trace/events.js';
+import { createTraceStore } from '../src/trace/store.js';
 import * as seats from '../src/index.js';
 
 const SECRET = 'sk-egress-0123456789abcdef';
@@ -151,7 +152,7 @@ test('the egress events are part of the trace vocabulary and exported', () => {
 const withProxy = async (options, fn) => {
   const allowed = await listener('pong');
   const canary = await listener('pong');
-  const trace = recorder();
+  const trace = options.trace || recorder();
   const allow = typeof options.allow === 'function' ? options.allow({ allowed, canary }) : options.allow;
   const proxy = await startEgressProxy({ ...options, allow, trace });
   try {
@@ -214,6 +215,58 @@ test('every request that is not an allowed CONNECT is refused with a named reaso
   assert.equal(canary.connections, 0);
   assert.equal(allowed.connections, 0, 'a plain-HTTP request to an allowed host is refused, not forwarded');
   for (const event of trace.events) assert.ok(EGRESS_DENIAL_REASONS.includes(event.data.reason));
+}));
+
+// The trace goes into the record, which refuses a host that is not a DNS
+// name, an IP literal or [redacted]. The 405 path takes its host from text
+// the run wrote, so it must be checked before it is traced.
+test('a refused request names only a checked host in the trace; the record store accepts every denial', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'seats-egress-record-'));
+  const allowed = await listener('pong');
+  const canary = await listener('pong');
+  const store = createTraceStore({ root });
+  const run = store.startRun({ runId: 'run-egress-0001', adapter: 'fake', actor: { type: 'agent', id: 'u-agent', owner: 'u-owner' } });
+  const proxy = await startEgressProxy({ allow: [`allowed.localhost:${allowed.port}`], trace: run, redact: [SECRET] });
+  try {
+    const cases = [
+      ['GET http://a!b/ HTTP/1.1\r\n\r\n', 405, { host: null, port: null, reason: 'not_connect' }],
+      ['GET foo://x%20y/ HTTP/1.1\r\n\r\n', 405, { host: null, port: null, reason: 'not_connect' }],
+      ['GET foo://X.Example/ HTTP/1.1\r\n\r\n', 405, { host: 'x.example', port: 80, reason: 'not_connect' }],
+      ['GET http://[::1]:8080/ HTTP/1.1\r\n\r\n', 405, { host: '::1', port: 8080, reason: 'not_connect' }],
+      [`GET https://${SECRET}.example/ HTTP/1.1\r\n\r\n`, 405, { host: '[redacted]', port: 443, reason: 'not_connect' }],
+      ['GET /relative HTTP/1.1\r\n\r\n', 405, { host: null, port: null, reason: 'not_connect' }],
+      [connectHead(`127.0.0.1:${canary.port}`), 403, { host: '127.0.0.1', port: canary.port, reason: 'ip_literal' }],
+      [connectHead(`canary.localhost:${canary.port}`), 403, { host: 'canary.localhost', port: canary.port, reason: 'not_allowed' }],
+      [connectHead(`${SECRET}.example:443`), 403, { host: '[redacted]', port: 443, reason: 'not_allowed' }],
+      ['CONNECT bad_host!:443 HTTP/1.1\r\n\r\n', 400, { host: null, port: null, reason: 'bad_request' }],
+    ];
+    for (const [head, status] of cases) assert.equal((await ask(proxy, head, 'x')).status, status, head);
+    assert.equal((await ask(proxy, connectHead(`allowed.localhost:${allowed.port}`), 'x')).status, 200);
+    const recorded = store.readRun('run-egress-0001');
+    assert.deepEqual(recorded.map((event) => event.data), [
+      ...cases.map(([, , data]) => data),
+      { host: 'allowed.localhost', port: allowed.port },
+    ]);
+    assert.ok(!JSON.stringify(recorded).includes(SECRET));
+    assert.equal(canary.connections, 0);
+  } finally {
+    await proxy.close();
+    await allowed.close();
+    await canary.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a trace hook that throws refuses the request and leaves the proxy serving', () => withProxy({
+  allow: ({ allowed }) => [`allowed.localhost:${allowed.port}`],
+  trace: { emit: () => { throw new Error('store refused'); } },
+}, async ({ proxy, allowed }) => {
+  const first = await ask(proxy, connectHead(`allowed.localhost:${allowed.port}`), 'x');
+  assert.notEqual(first.status, 200, 'an allowed tunnel that cannot be recorded is not opened');
+  assert.equal(allowed.connections, 1, 'the upstream was dialled, then dropped before a byte crossed');
+  assert.equal(allowed.bytes.length, 0);
+  assert.equal((await ask(proxy, 'GET http://a!b/ HTTP/1.1\r\n\r\n')).status, 405, 'a denial still answers');
+  assert.equal((await ask(proxy, connectHead('canary.localhost:1'))).status, 403, 'and the proxy still serves');
 }));
 
 test('a wildcard-allowed name that resolves to a private address is refused; an exact entry is not', () => {

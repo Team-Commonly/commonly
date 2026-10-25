@@ -29,7 +29,12 @@
  * {host, port, reason} otherwise. Never a header, a body or an address. A host
  * holding one of the `redact` values (the run's credentials) is traced as
  * [redacted], so a run cannot write its key into the trace by asking for
- * <key>.example.com.
+ * <key>.example.com. A host that is neither a DNS name nor an IP literal
+ * (`GET http://a!b/` reaches the 405 path with one) is traced as null with a
+ * null port: the record refuses anything else, and the run chose that text.
+ * A trace hook that throws refuses the request rather than taking down the
+ * supervising process, and an allowed tunnel that cannot be recorded is not
+ * opened.
  */
 import { BlockList, connect, createServer, isIP } from 'node:net';
 import { lookup as dnsLookup } from 'node:dns';
@@ -112,6 +117,15 @@ export const startEgressProxy = async ({
   const hook = trace && typeof trace.emit === 'function' ? trace : traceOf(ctx);
   const secrets = redact.filter((value) => typeof value === 'string' && value.length >= 4).map((value) => value.toLowerCase());
   const traced = (host) => (host && secrets.some((secret) => host.toLowerCase().includes(secret)) ? '[redacted]' : host);
+  // What the trace may say about a target: a checked host and its port, or neither.
+  const targetOf = (target) => {
+    const host = target?.host;
+    if (typeof host !== 'string' || !(isIP(host) || isHostName(host))) return { host: null, port: null };
+    return { host: traced(host), port: target.port };
+  };
+  const emit = (type, data) => {
+    try { hook.emit(type, data); return true; } catch { return false; }
+  };
   const sockets = new Set();
   let closed = false;
 
@@ -124,7 +138,7 @@ export const startEgressProxy = async ({
   };
 
   const deny = (client, target, reason, status = 403, text = 'Forbidden') => {
-    hook.emit('egress.denied', { host: traced(target?.host ?? null), port: target?.port ?? null, reason });
+    emit('egress.denied', { ...targetOf(target), reason });
     reply(client, status, text);
   };
 
@@ -151,8 +165,8 @@ export const startEgressProxy = async ({
     });
     upstream.once('connect', () => {
       if (closed || client.destroyed) { upstream.destroy(); return; }
+      if (!emit('egress.allowed', targetOf(target))) { upstream.destroy(); client.destroy(); return; }
       opened = true;
-      hook.emit('egress.allowed', { host: traced(target.host), port: target.port });
       client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
       if (rest.length) upstream.write(rest);
       client.pipe(upstream).pipe(client);
