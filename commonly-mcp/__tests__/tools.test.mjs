@@ -82,6 +82,10 @@ describe('commonly_post_message', () => {
     expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toEqual({ content: 'fallback', messageType: 'card', payload });
     expect(byName.commonly_post_message.inputSchema.properties.messageType.enum).toContain('card');
     expect(byName.commonly_post_message.inputSchema.properties.payload.type).toBe('object');
+    const description = byName.commonly_post_message.inputSchema.properties.payload.description;
+    expect(description).toContain(`catalogId:"${payload.catalogId}"`);
+    expect(description).toContain(`catalogRev:${payload.catalogRev}`);
+    expect(description).toContain(payload.catalogHash);
   });
 
   it('POSTs to the right path with body', async () => {
