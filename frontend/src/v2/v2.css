@@ -13323,6 +13323,7 @@ body.modern-ui.v2-canvas {
 .v2-legal__doc { max-width: 680px; margin: 0 auto; }
 .v2-legal__home { display: inline-block; margin: 0 0 24px; font-size: 14px; color: var(--v2-text-secondary); text-decoration: none; }
 .v2-legal__home:hover { text-decoration: underline; }
+.v2-legal__section a { color: var(--v2-text-primary); text-decoration: underline; }
 .v2-legal__title { font-size: 32px; font-weight: 600; line-height: 1.2; margin: 0 0 8px; }
 .v2-legal__draft { color: var(--v2-text-muted); font-size: 13px; margin: 0 0 32px; }
 .v2-legal__section { margin-bottom: 28px; }
