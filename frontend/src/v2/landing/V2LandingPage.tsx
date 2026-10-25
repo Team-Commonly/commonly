@@ -59,24 +59,43 @@ const UseCaseArrow = () => (
     <path d="M3 8h9M8.5 4.5L12 8l-3.5 3.5" />
   </svg>
 );
-// Issue #708 records the provenance for every affiliation AND the source +
-// license of every logo file (Wikimedia PD-textlogo / official brand assets).
-// Keep this ordered list config-shaped so additions require an explicit,
-// reviewable data change. Logos live in public/logos/ and render grayscale
-// at 26px on the rolling bar. Widths are intrinsic aspect ratio × 26,
+// Every entry's affiliation basis, and every logo file's source, licence,
+// modifications and the org's brand policy, is recorded in
+// docs/design/landing-trusted-banner-provenance.md — one row per org. Issue
+// #708 holds the affiliation basis for the original eleven only; it has no
+// logo records. Keep this ordered list config-shaped so an addition is an
+// explicit, reviewable data change with a row in that doc. Columbia's file is
+// CC BY-SA 4.0; its attribution line is in that doc.
+//
+// Logo files live in public/logos/ and render as one grey ink at 26px (see
+// `.v2-landing__trusted-logo`). Widths are intrinsic aspect ratio × 26,
 // reserving lazy-image space before load; CSS scales both axes on phones.
+// trustedLogoDimensions.test.ts re-derives each width from its file.
 const TRUSTED_AFFILIATIONS = [
   { name: 'Arista', logo: '/logos/arista.svg', width: 165.65714285714284 },
   { name: 'UCLA', logo: '/logos/ucla.svg', width: 79.41206047089129 },
-  { name: 'Rice University', logo: '/logos/rice.svg', width: 70.92222222222222 },
+  { name: 'Rice University', logo: '/logos/rice.svg', width: 178.75 },
   { name: 'Peking University', logo: '/logos/pku.png', width: 92.38413361169103 },
   { name: 'University of Pennsylvania', logo: '/logos/upenn.svg', width: 55.437100213219615 },
   { name: 'Yale University', logo: '/logos/yale.svg', width: 60.41194168016663 },
   { name: 'Columbia University', logo: '/logos/columbia.svg', width: 170.8440052505544 },
   { name: 'McMaster University', logo: '/logos/mcmaster.svg', width: 49.22560975609757 },
+  { name: 'University of Illinois', logo: '/logos/illinois.svg', width: 151.50767918088738 },
   { name: 'ByteDance', logo: '/logos/bytedance.svg', width: 150.70508289126707 },
   { name: 'Microsoft', logo: '/logos/microsoft.svg', width: 121.91111111111111 },
   { name: 'Ajaib', logo: '/logos/ajaib.svg', width: 89.14285714285714 },
+  { name: 'OROZ', logo: '/logos/oroz.png', width: 91 },
+  { name: 'CLCK', logo: '/logos/clck.svg', width: 81.2860310421286 },
+  { name: 'Ollow', logo: '/logos/ollow.svg', width: 106.86 },
+  { name: 'Verifran', logo: '/logos/verifran.png', width: 75 },
+  { name: 'AIMS', logo: '/logos/aims.svg', width: 178.6359649122807 },
+  { name: 'Fluxr', logo: '/logos/fluxr.svg', width: 117.75693303679564 },
+  { name: 'Cyber Solutions', logo: '/logos/cybsolutions.png', width: 169 },
+  { name: 'Altur', logo: '/logos/altur.svg', width: 94.81246138910952 },
+  { name: 'ILOapps', logo: '/logos/iloapps.png', width: 180.5 },
+  { name: 'Rivne Tech', logo: '/logos/rivnetech.png', width: 189.5 },
+  { name: 'NewTech Kuwait', logo: '/logos/newtechkw.png', width: 58.5 },
+  { name: 'Ada', logo: '/logos/ada.svg', width: 92.3 },
 ] as const;
 
 interface Stats {
@@ -476,9 +495,9 @@ const V2LandingPage: React.FC = () => {
           </figure>
         </div>
 
-        {/* Individual affiliations, not organizational endorsements. The
-            provenance for every entry — and the source/license of every logo
-            file — is recorded in issue #708. */}
+        {/* Individual affiliations, not organizational endorsements. Each
+            entry's affiliation basis and each logo's source and licence are
+            recorded in docs/design/landing-trusted-banner-provenance.md. */}
         <section
           className="v2-landing__trusted"
           data-reveal
@@ -487,11 +506,11 @@ const V2LandingPage: React.FC = () => {
           })}
         >
           <span className="v2-landing__trusted-label">{t('landing.trusted.label')}</span>
-          {/* Rolling logo bar: the track holds two identical sets and the
-              keyframe slides -50% for a seamless loop. The second set is
-              purely decorative — aria-hidden with empty alts so screen
-              readers hear each name exactly once. Org names are proper nouns
-              and stay untranslated in alts. */}
+          {/* Rolling bar: the track holds two identical sets and the keyframe
+              slides -50% for a seamless loop. The second set is purely
+              decorative — aria-hidden, with empty alts — so screen readers
+              hear each name exactly once. Org names are proper nouns and stay
+              untranslated in alts. */}
           <div className="v2-landing__trusted-marquee">
             <div className="v2-landing__trusted-track">
               {[0, 1].map((set) => (
