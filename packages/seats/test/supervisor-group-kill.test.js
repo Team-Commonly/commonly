@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -14,6 +14,7 @@ import { superviseRun } from '../src/supervisor.js';
 import { createTraceStore } from '../src/trace/store.js';
 import { runFailure } from '../src/failures.js';
 import { observeSpawn } from '../src/runtime-observation.js';
+import { isRunning, readPid, reap, waitFor } from '../test-support/processes.js';
 import {
   LEADS_PROCESS_GROUP, OWN_PROCESS_GROUP, leadsOwnGroup, spawnInOwnGroup, trackedGroupCount, wantsOwnProcessGroup,
 } from '../src/process-group.js';
@@ -22,28 +23,6 @@ const SRC = fileURLToPath(new URL('../src/', import.meta.url));
 const POSIX = process.platform !== 'win32';
 const STDIO = ['ignore', 'pipe', 'pipe'];
 
-// A zombie still answers kill(pid, 0); on Linux it is read as gone, because a
-// SIGKILLed orphan waits there until init reaps it.
-const isRunning = (pid) => {
-  try { process.kill(pid, 0); } catch (error) { return error.code !== 'ESRCH'; }
-  try { return !/^\d+ \(.*\) Z/.test(readFileSync(`/proc/${pid}/stat`, 'utf8')); } catch { return true; }
-};
-
-const waitFor = async (predicate, ms = 5000) => {
-  const deadline = Date.now() + ms;
-  while (Date.now() < deadline) {
-    if (await predicate()) return true;
-    await new Promise((r) => { setTimeout(r, 25); });
-  }
-  return predicate();
-};
-
-const readPid = async (file) => {
-  assert.ok(await waitFor(() => existsSync(file) && /^\d+\s*$/.test(readFileSync(file, 'utf8'))), `no pid in ${file}`);
-  return Number(readFileSync(file, 'utf8'));
-};
-
-const reap = (pid) => { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };
 
 /**
  * An adapter shaped like the real ones: it spawns through spawnInOwnGroup,
@@ -232,7 +211,7 @@ test('a wrapper that exits takes its supervised groups with it', { skip: !POSIX 
   assert.equal(code, 3);
 }));
 
-test('a wrapper that handles the signal itself still loses its groups, and exits on its own terms', { skip: !POSIX }, async () => withHome(async (home) => {
+test('a wrapper that handles the signal itself keeps its groups through the signal, and loses them when it exits', { skip: !POSIX }, async () => withHome(async (home) => {
   const { code, out } = await runWrapper(home, 'host-handler', 'SIGINT');
   assert.match(out, /host-handled/);
   assert.equal(code, 7);
