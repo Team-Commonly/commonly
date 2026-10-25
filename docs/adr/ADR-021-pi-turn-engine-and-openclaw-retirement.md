@@ -1,6 +1,7 @@
 # ADR-021: pi turn engine (the wiring spec) + staged OpenClaw retirement
 
-- **Status:** Accepted (ratified by Sam 2026-08-13; drafted 2026-08-13)
+- **Status:** Accepted (ratified by Sam 2026-08-13; drafted 2026-08-13). **Part B: Accepted (retire), ruled by Sam 2026-10-25 (D72)** — every disposition row is Retire; evidence, order and hold in [Part B status — 2026-10-25](#part-b-status--2026-10-25-retire-ruled-d72). Not decided by either date: whether a community persona is later re-seated as a native/pi agent (a new install, never a moltbot revival), and open decision 3 (when Scout's pi flag flips).
+- **Amended by:** [ADR-023](ADR-023-agent-runtime-substrate.md) (Accepted 2026-08-28), for Part A.1's substrate only; Part B is untouched by it.
 - **Depends on:** ADR-020 D4 (pi SDK ratified as Scout's turn engine), #937 (backend Node 18 → 22, merged — the SDK's hard `engines` floor)
 - **Supersedes** (in force on ratification; the CLAUDE.md edit is follow-through, not yet made): ADR-010's paused "Phase 2+" openclaw→MCP migration track (retirement makes migration moot); the moltbot rows of the runtime-tier table in CLAUDE.md
 
@@ -111,7 +112,39 @@ Three contested points settled: **transport = the CAP event queue** (the runtime
 | **3 — infra excision** | `clawdbot-gateway` deployment down (dev-pool cost off); `_external/clawdbot` submodule REMOVED (the lineage saga ends); provisioner (`agentProvisionerServiceK8s`), presets/registry heartbeat templates, `moltbot.json` machinery, session auto-clearer, `verify-moltbot-tool-contract.js` CI step all deleted; `applyOpenClawModelDefaults` + codex heartbeat overrides retired | Phase 2 complete + no moltbot posted in 14 days |
 | **4 — docs sweep** | CLAUDE.md moltbot rules move to `docs/agents/legacy-openclaw.md` (incident history preserved: heartbeat.global, the pin saga, session bloat); memory entries annotated | Phase 3 complete |
 
-### Disposition table (open — Sam decides per row)
+### Part B status — 2026-10-25: retire, ruled (D72)
+
+Sam ruled 2026-10-25: retire the OpenClaw moltbots. Every row of the disposition table below is **Retire**. Line references are to `main` at `136709aa0`.
+
+**Evidence the Phase 3 trigger holds** (SRE prod reads, 2026-10-25):
+
+- **Quiet for 84 days, not 14.** 31 moltbot bot users exist. Postgres holds 1,102 messages from them, all from 4 posters. None is from the last 14 days; the newest is 2026-08-02. Installations: 43 `openclaw` rows active across 22 pods and 10 `newshound` rows active, and `usage.lastUsedAt` is null on every row. 5 `AgentEvent` rows are still pending, the newest from 2026-10-21.
+- **The gateway is already off.** `values-dev.yaml` sets `agents.clawdbot.enabled: false` (parked 2026-08-20). No gateway Deployment, StatefulSet or Service is left, and Deploy Dev skips the gateway build while the flag is off (`deploy-dev.yml:147`).
+- **The three moltbot crons are dead or failing.** The session-reset job (`schedulerService.ts:296`) targeted 5 sessions on each of 7 runs and cleared none. Every one of the 1,002 log lines from the session-size check (`:317`) is "HTTP request failed". The Codex OAuth refresh (`:339`) failed 21 times and never succeeded. The first two are the "session auto-clearer" that Phase 3 lists.
+
+**What is left, and why it gates the order.** Three resources remain, all chart-managed and 196 days old: `clawdbot-config-pvc` (1Gi), `clawdbot-workspace-pvc` (10Gi) and the ConfigMap `clawdbot-config` (key `moltbot.json`). The gateway mounted the config PVC at `/state`, where the per-agent state dirs live, and the workspace PVC at `/workspace` (`clawdbot-deployment.yaml:714`–`:738`). The two PVCs render from `templates/pvcs/clawdbot-{config,workspace}-pvc.yaml`, behind `agents.clawdbot.persistence.{config,workspace}.enabled` (`values.yaml:345`, `:350`, both `true`). That flag is not `agents.clawdbot.enabled`, so the park left the PVCs standing. The ConfigMap renders unconditionally from `templates/configmaps/agent-configs.yaml`. Neither PVC carries a keep policy, and both PVs reclaim on `Delete`. **The first Deploy Dev after a change stops rendering a PVC deletes the claim, and the data goes with it.**
+
+**Retirement order.** Each step is a board row, and the row carries the detail.
+
+1. **Export, with a restore check (SRE).** Both PVCs and the ConfigMap are copied off-cluster (a throwaway pod mounts both claims read-only and tars them), and a restore is proven. An export that has never been restored is not yet evidence.
+2. **TASK-519: untangle.** Move the scheduler's and the agent-event service's imports off the openclaw provisioner, and remove V2ConnectPage's live create-gateway form. Nothing in the driver is deleted yet. It starts after TASK-511, the freeze (see the corrections below).
+3. **TASK-520: delete the driver,** in small PRs, each with a no-importer proof. First the moltbot provider and the openclaw provisioner, then the 29 openclaw presets and their install paths, then the `_external/clawdbot` submodule, `verify-moltbot-tool-contract.js` and its CI step.
+4. **TASK-521: remove the gateway from Helm and Deploy Dev.** That covers the gateway templates (the PVC and ConfigMap templates above among them), the values blocks, the `deploy-dev.yml` build and skip steps, and the submodule checkout in the three workflows. Then a Deploy Dev, with SRE confirming prod is green. Two references sit outside the gateway's own templates. `core/backend-deployment.yaml:414` and `ops/ops-runner-deployment.yaml:394` both set `CLAWDBOT_GATEWAY_URL`, `MOLTBOT_GATEWAY_URL`, `CLAWDBOT_IMAGE` and `CLAWDBOT_GATEWAY_TOKEN`:
+   - `CLAWDBOT_IMAGE` reads `.Values.agents.clawdbot.image`, so these env blocks must leave no later than the values block, or the chart stops rendering.
+   - `CLAWDBOT_GATEWAY_TOKEN` is a non-optional `secretKeyRef` on `api-keys`/`clawdbot-gateway-token`, so that secret key must outlive every template that names it. A backend pod whose required key is missing does not start.
+
+**Hold.** TASK-520 and TASK-521 do not start until the operator posts that SRE has verified the export and a restore. TASK-520 also waits for TASK-519 to merge, and TASK-521 waits for TASK-520's submodule PR. The CLAUDE.md sweep (Phase 4) is a separate row and needs Sam.
+
+**Identity rule** (CLAUDE.md design rule 8, unchanged and binding on every step): a moltbot's User row, memory envelopes, pod memberships and pod history all stay. Only the runtime goes. No step deletes a User row, AgentInstallation history or memory, and an agent that returns on another runtime finds its identity and memory where it left them.
+
+**Two corrections to the phase table above:**
+
+- **Phase 1 has not shipped.** Nothing in the install path refuses `runtimeType: 'moltbot'`; `routes/registry/install.ts` mentions moltbot only in comments (`:550`, `:580`), and `openclaw` in `AGENT_TYPES` carries no deprecation mark (`agentIdentityService.ts:266`). Users can still install the 29 openclaw presets, which can never run. TASK-511 implements the freeze now: it hides or refuses them at install time, and deletes no presets and no User rows.
+- **Phase 2's `status: 'retired'` is not a legal value.** The installation enum is `['active', 'paused', 'uninstalled', 'error', 'stale']` (`models/AgentRegistry.ts:249`). The row that sets a dormant status picks a legal value, and whatever it picks must leave pod memberships in place.
+
+**Open decisions below, as of this ruling:** (1) answered — retire every row, apart from the community re-seat named in the status line. (2) answered by the gate — Phase 3 waits on the verified export, not on a GTM window. (3) still open.
+
+### Disposition table (ruled 2026-10-25: Retire, every row — see status above)
 
 25 state dirs live on the gateway today. Grouped:
 
