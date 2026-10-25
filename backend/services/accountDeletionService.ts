@@ -13,6 +13,7 @@ import { AgentInstallation } from '../models/AgentRegistry';
 import { getObjectStore } from './objectStore';
 import { disconnectUserSessionSockets } from './sessionSocketService';
 import { stripe } from './billingService';
+import { DM_POD_TYPES_GUARD } from './agentIdentityService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { pool } = require('../config/db-pg');
@@ -33,7 +34,10 @@ const revokeOwnedAccess = async (userId: string): Promise<void> => {
   const credentials = await AgentCredential.find({ ownerUserId: userId }).select('_id').lean();
   await AgentCredential.revokeCascade(credentials.map((credential) => credential._id));
   await Machine.deleteMany({ ownerUserId: userId });
-  await Pod.updateMany({ members: userId }, { $pull: { members: userId } });
+  // DM membership is historical: removing one side would break strict 1:1.
+  // The deleted account cannot authenticate; its owned runtimes pause below.
+  await Pod.updateMany({ members: userId, type: { $nin: [...DM_POD_TYPES_GUARD] } },
+    { $pull: { members: userId } });
   await AgentInstallation.updateMany(
     { installedBy: userId, status: 'active' },
     { $set: { status: 'paused' } },
@@ -47,7 +51,13 @@ const anonymizeChatAuthor = async (userId: string): Promise<void> => {
   // Shared messages remain. Their PG author join keeps an anonymous tombstone;
   // it must not preserve the deleted person's display name or avatar.
   if (pool) {
-    await pool.query('DELETE FROM pod_members WHERE user_id = $1', [userId]);
+    const dmTypes = [...DM_POD_TYPES_GUARD];
+    const dmTypeParams = dmTypes.map((_type, index) => `$${index + 2}`).join(', ');
+    await pool.query(
+      `DELETE FROM pod_members WHERE user_id = $1
+       AND pod_id NOT IN (SELECT id FROM pods WHERE type IN (${dmTypeParams}))`,
+      [userId, ...dmTypes],
+    );
     await pool.query(
       'UPDATE users SET username = $2, profile_picture = NULL, updated_at = $3 WHERE _id = $1',
       [userId, 'Deleted user', new Date()],

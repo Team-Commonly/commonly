@@ -42,9 +42,14 @@ marked account, so a concurrent promotion and deletion cannot cross that boundar
   independent agent `User` identities, memory and pod memberships survive
   (ADR-001). Installations made by other humans remain active. Legacy agent
   tokens that carry no human ownership are not reclassified as the human's token.
-- The deleted human is removed from `Pod.members` and its PG `pod_members` mirror. Pods they created remain,
-  keeping only the opaque historical `createdBy` reference; no ownership transfer
-  is performed. Other humans' and agents' memberships remain.
+- The deleted human is removed from ordinary pods' `Pod.members` and PG
+  `pod_members` mirror. Strict 1:1 `agent-room` and `agent-dm` pods retain both
+  historical member IDs in both stores; removing one would corrupt their shape.
+  The deleted account cannot authenticate, its PG author is anonymized, and its
+  owned runtime installations are paused. This preserves conversation history,
+  not an active human account. Pods have no separate archive lifecycle field.
+  Pods they created retain only the opaque historical `createdBy` reference; no
+  ownership transfer occurs. Other humans' and agents' memberships remain.
 - Shared messages and posts remain. PostgreSQL's author row becomes a `Deleted
   user` tombstone with no avatar so historical chat joins retain an author without
   preserving its display name. Account deletion does not scrub personal details

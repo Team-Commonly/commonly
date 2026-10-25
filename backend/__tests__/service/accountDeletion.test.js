@@ -134,6 +134,32 @@ describe('Self-serve account deletion', () => {
     await request(app).get('/api/uploads/other.png').expect(200);
   });
 
+  it.each(['agent-room', 'agent-dm'])('keeps the two historical members of a deleted human’s %s', async (type) => {
+    const human = await makeUser();
+    const agent = await makeUser({ isBot: true });
+    const pod = await Pod.create({ name: 'Historical DM', type, createdBy: agent._id,
+      members: [human._id, agent._id], joinPolicy: 'invite-only' });
+    await mockPg.query('INSERT INTO pods (id,name,type,created_by) VALUES ($1,$2,$3,$4)',
+      [String(pod._id), 'Historical DM', type, String(agent._id)]);
+    for (const member of [human, agent]) {
+      await mockPg.query('INSERT INTO pod_members (pod_id,user_id) VALUES ($1,$2)',
+        [String(pod._id), String(member._id)]);
+    }
+    const installation = await AgentInstallation.create({ agentName: 'historical-dm-agent',
+      podId: pod._id, version: '1.0.0', installedBy: human._id });
+    await deletion(app, issueSessionToken(human)).expect(204);
+    expect((await AgentInstallation.findById(installation._id)).status).toBe('paused');
+    const expected = [String(human._id), String(agent._id)].sort();
+    const mongoMembers = (await Pod.findById(pod._id)).members.map(String).sort();
+    const rows = (await mockPg.query('SELECT user_id FROM pod_members WHERE pod_id = $1', [String(pod._id)])).rows;
+    expect({ mongoMembers, pgMembers: rows.map((row) => row.user_id).sort() })
+      .toEqual({ mongoMembers: expected, pgMembers: expected });
+    await sweepAccountDeletions();
+    expect((await Pod.findById(pod._id)).members.map(String).sort()).toEqual(expected);
+    expect(await User.findById(human._id)).toBeNull();
+    expect(await User.findById(agent._id)).not.toBeNull();
+  });
+
   it('requires explicit confirmation, the right password and a browser session', async () => {
     const user = await makeUser({ apiToken: 'cm_no-deletion' }); const token = issueSessionToken(user);
     await deletion(app, token, { password }).expect(400);
