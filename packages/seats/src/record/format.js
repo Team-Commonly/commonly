@@ -31,6 +31,10 @@ export const EGRESS_DENIED_REASONS = Object.freeze([
 ]);
 const EGRESS_TARGETLESS = new Set(['bad_request', 'not_connect']);
 export const SANDBOXES = Object.freeze(['seatbelt', 'bwrap', 'none']);
+export const SESSION_METHODS = Object.freeze(['new', 'resume', 'load']);
+// Why a requested session was not reopened: the two forms an ACP adapter
+// writes. The code is the JSON-RPC error's, an integer by JSON-RPC 2.0.
+const SESSION_FALLBACK = /^(?:agent supports neither session\/resume nor session\/load|session\/(?:resume|load) answered error -?\d{1,16})$/;
 export const REDACTED = '[redacted]';
 
 /** The actors a writer records for its own bookkeeping, and for the board. */
@@ -52,6 +56,7 @@ export const KINDS = Object.freeze({
   'permission.decided': Object.freeze({ group: 'approval', actor: 'decider' }),
   'decision.ruled': Object.freeze({ group: 'approval', actor: 'decider' }),
   'attempt.started': Object.freeze({ group: 'attempt', actor: 'run', trace: 'run.started' }),
+  'session.opened': Object.freeze({ group: 'attempt', actor: 'system' }),
   'attempt.settled': Object.freeze({ group: 'attempt', actor: 'system' }),
   'run.settled': Object.freeze({ group: 'attempt', actor: 'system' }),
   'tool.call': Object.freeze({ group: 'tool', actor: 'run' }),
@@ -349,6 +354,29 @@ const CHECKS = {
     if (data.failure !== undefined && data.failure !== null) {
       const { kind } = data.failure;
       if (kind !== null && kind !== undefined && !FAILURE_KINDS[kind]) fail(`attempt.settled.failure.kind ${kind} is not a FAILURE_KINDS key`);
+    }
+    return data;
+  },
+  'session.opened': (data) => {
+    refuseUnknownKeys(data, ['method', 'sessionId', 'requestedSessionId', 'fallback'], 'session.opened.');
+    if (!SESSION_METHODS.includes(data.method)) fail(`session.opened.method must be one of ${SESSION_METHODS.join(', ')}`);
+    if (!isText(data.sessionId)) fail('session.opened needs a sessionId');
+    if ((data.requestedSessionId === undefined) !== (data.fallback === undefined)) {
+      fail('session.opened.requestedSessionId and fallback come together: a session was asked for and not reopened');
+    }
+    if (data.requestedSessionId !== undefined) {
+      if (data.method !== 'new') fail('session.opened.requestedSessionId is set only when method is new');
+      if (!isText(data.requestedSessionId)) fail('session.opened.requestedSessionId must be a non-empty string');
+      if (typeof data.fallback !== 'string' || !SESSION_FALLBACK.test(data.fallback)) {
+        fail('session.opened.fallback must be "agent supports neither session/resume nor session/load" or "session/<resume|load> answered error <code>"');
+      }
+    }
+    return data;
+  },
+  usage: (data) => {
+    for (const key of ['contextTokens', 'contextSize']) {
+      const value = data[key];
+      if (value !== undefined && value !== null && !(Number.isInteger(value) && value >= 0)) fail(`usage.${key} must be an integer >= 0, or null when unknown`);
     }
     return data;
   },

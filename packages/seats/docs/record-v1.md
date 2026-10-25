@@ -243,6 +243,7 @@ request, and the OTLP export places it there.
 | kind | data | default actor |
 |---|---|---|
 | `attempt.started` | `{attempt, adapter, cli?: {name, version}, sessionId?}` | run |
+| `session.opened` | `{method, sessionId, requestedSessionId?, fallback?}` | `system` |
 | `attempt.settled` | `{attempt, outcome, failure?: {kind, detail}}` | `system` |
 | `run.settled` | `{outcome, failure?, durationMs, attempts}` | `system` |
 
@@ -250,6 +251,16 @@ request, and the OTLP export places it there.
 - `failure.kind` is a key of `FAILURE_KINDS` in `src/failures.js`, or `null`
   when the cause had no name.
 - The agent's id and owner are the actor of `attempt.started`.
+- `session.opened` records the agent session an attempt runs in, as an ACP
+  adapter opens it:
+  - `method` is `new`, `resume` or `load`;
+  - `sessionId` is the session the attempt runs in, a non-empty string;
+  - `requestedSessionId` and `fallback` are set together, only when
+    `method` is `new`: a session was asked for and could not be reopened.
+    `fallback` is one of two forms, `agent supports neither session/resume
+    nor session/load`, or `session/<resume|load> answered error <code>`
+    with the JSON-RPC error's integer code;
+  - no other field is allowed.
 - `run.settled` is the last line of a complete record. Nothing is written
   after it.
 - If an attempt has no `attempt.settled`, the record says only that the next
@@ -386,6 +397,10 @@ documented in `src/trace/events.js`.
 | `agent.message_chunk`, `agent.thought_chunk`, `plan`, `usage` | run |
 | `liveness.stalled`, `liveness.recovery`, `process.exited` | `system` |
 
+`usage` may also carry `contextTokens` (how much of the agent's context
+window is in use) and `contextSize` (the window's size). Each is an integer
+`>= 0`, or `null` when unknown; a writer refuses any other value.
+
 ### Mapping from the trace vocabulary
 
 Emitters keep calling `emit(type, data)` with `EVENT_TYPES` names, and the
@@ -436,9 +451,10 @@ What's new or changed in `EVENT_TYPES`:
    - The verifier checks the envelope and the chain, never data, so those
      lines still verify.
 
-   A later revision, also at `v: 1`, added the optional `actor.onBehalfOf`
-   and the kinds `sandbox.applied`, `egress.allowed` and `egress.denied`.
-   Lines without them are unchanged.
+   A later revision, also at `v: 1`, added the optional `actor.onBehalfOf`,
+   the kinds `session.opened`, `sandbox.applied`, `egress.allowed` and
+   `egress.denied`, and `contextTokens` and `contextSize` on `usage`. Lines
+   without them are unchanged.
 4. **One writer per file.** A single process appends lines in `seq` order.
 
 ## 4. What the hash chain proves, and what it doesn't
@@ -491,7 +507,7 @@ operates it.
   the time.
 - **Every other kind is an event on the span current at the time.** That
   covers grants, credentials, claims, `task.done`, results, liveness,
-  `sandbox.applied`, egress and `tool.update`. An egress denial is an event, not an error status.
+  `session.opened`, `sandbox.applied`, egress and `tool.update`. An egress denial is an event, not an error status.
 - **Span ids** are the first 8 bytes of
   SHA-256(`"seats.record/span/" + runId + "/" + seq`), where `seq` belongs to
   the entry that opens the span. The run span uses `0`. Exporting the same
@@ -527,7 +543,7 @@ to that commit. `error.type` is Stable.
 | `gen_ai.operation.name` | attempt, tool | `invoke_agent`, `execute_tool` |
 | `gen_ai.agent.id` | attempt | `actor.id` of `attempt.started` |
 | `gen_ai.agent.name` | attempt, tool | `actor.name`, else `actor.id` |
-| `gen_ai.conversation.id` | attempt | `sessionId` |
+| `gen_ai.conversation.id` | attempt | `sessionId` of `attempt.started`, else of the attempt's `session.opened` |
 | `gen_ai.tool.name` | tool | `name`, else `title` |
 | `gen_ai.tool.call.id` | tool | `toolCallId` |
 | `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` | attempt | the last `usage` entry in the attempt |
@@ -545,6 +561,8 @@ to that commit. `error.type` is Stable.
   - these named attributes: `seats.run.id`, `seats.task.id`, `seats.pod.id`,
     `seats.run.outcome`, `seats.run.attempts`, `seats.attempt.number`,
     `seats.attempt.outcome`, `seats.adapter`, `seats.cli.name`,
+    `seats.usage.context_tokens`, `seats.usage.context_size` (the last
+    known values in the attempt),
     `seats.cli.version`, `seats.agent.owner`, `seats.agent.on_behalf_of.id`,
     `seats.agent.on_behalf_of.role`, `seats.tool.kind`,
     `seats.tool.surface` and `seats.tool.args_digest`;

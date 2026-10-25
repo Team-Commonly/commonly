@@ -182,3 +182,14 @@ test('the store records sandbox.applied', () => withStore((store, root) => {
   assert.deepEqual(store.readRun('run-st-sbx1').map((e) => e.kind), ['sandbox.applied', 'run.settled']);
   assert.deepEqual(verifyRecord(readFileSync(fileOf(root, 'run-st-sbx1'), 'utf8')).errors, []);
 }));
+
+test('the store records session.opened and context usage', () => withStore((store, root) => {
+  const run = store.startRun({ runId: 'run-st-ses1', actor: AGENT });
+  run.emit('run.started', { adapter: 'acp', attempt: 1 });
+  run.emit('session.opened', { method: 'new', sessionId: 'ses-2', requestedSessionId: 'ses-1', fallback: 'session/resume answered error -32601' });
+  run.emit('usage', { inputTokens: null, outputTokens: null, totalTokens: null, cost: null, contextTokens: 900, contextSize: 128000 });
+  assert.throws(() => run.emit('session.opened', { method: 'new', sessionId: 'ses-3', requestedSessionId: 'ses-1' }), /come together/);
+  run.emit('run.settled', { outcome: 'ok', durationMs: 1, attempts: 1 });
+  assert.deepEqual(store.readRun('run-st-ses1').map((e) => e.kind), ['attempt.started', 'session.opened', 'usage', 'run.settled']);
+  assert.deepEqual(verifyRecord(readFileSync(fileOf(root, 'run-st-ses1'), 'utf8')).errors, []);
+}));
