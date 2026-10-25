@@ -69,11 +69,47 @@ describe('Administrator role concurrency', () => {
     expect(operation).not.toHaveBeenCalled();
     expect(await Lock.countDocuments()).toBe(0);
     await User.updateOne({ _id: alice._id }, { $set: { role: 'admin' } });
-    await expect(withAdminUserMutation(String(alice._id), async () => { throw new Error('write failure'); }))
+    await expect(withAdminUserMutation(String(alice._id), async (beginWrite) => { beginWrite(); throw new Error('write failure'); }))
       .rejects.toThrow('write failure');
     expect(await Lock.countDocuments()).toBe(1);
     await expect(withAdminUserMutation(String(alice._id), async () => 'next writer'))
       .rejects.toMatchObject({ code: 'ADMIN_MUTATION_BUSY' });
+  });
+
+  it.each(['actor', 'count'])('releases the lock after a pre-write %s read fails', async (stage) => {
+    const [alice, bob] = await Promise.all([makeAdmin(`read-${stage}-alice`), makeAdmin(`read-${stage}-bob`)]);
+    const { withAdminUserMutation } = require('../../services/adminUserMutationService');
+    const Lock = require('../../models/AdminUserMutationLock');
+    if (stage === 'actor') {
+      jest.spyOn(User, 'findById').mockRejectedValueOnce(new Error('actor read unavailable'));
+      await expect(withAdminUserMutation(String(alice._id), jest.fn())).rejects.toThrow('actor read unavailable');
+    } else {
+      jest.spyOn(User, 'countDocuments').mockRejectedValueOnce(new Error('count unavailable'));
+      const failed = await request(app).patch(`/api/admin/users/${bob._id}/role`)
+        .set('Authorization', `Bearer ${issueSessionToken(alice)}`).send({ role: 'user' });
+      expect(failed.status).toBe(500);
+    }
+    expect(await Lock.countDocuments()).toBe(0);
+    const retry = await request(app).patch(`/api/admin/users/${bob._id}/role`)
+      .set('Authorization', `Bearer ${issueSessionToken(alice)}`).send({ role: 'user' });
+    expect(retry.status).toBe(200);
+    expect(await User.countDocuments({ role: 'admin' })).toBe(1);
+  });
+
+  it.each(['role', 'ban', 'delete'])('retains the lock if the %s handler write rejects', async (kind) => {
+    const [alice, bob] = await Promise.all([makeAdmin(`write-${kind}-alice`), makeAdmin(`write-${kind}-bob`)]);
+    const Lock = require('../../models/AdminUserMutationLock');
+    if (kind === 'ban') await User.updateOne({ _id: bob._id }, { $set: { role: 'user' } });
+    const write = jest.spyOn(User.prototype, kind === 'delete' ? 'deleteOne' : 'save')
+      .mockRejectedValueOnce(new Error('write outcome unknown'));
+    try {
+      const pending = kind === 'delete' ? request(app).delete(`/api/admin/users/${bob._id}`)
+        : request(app).patch(`/api/admin/users/${bob._id}/${kind}`)
+          .send(kind === 'role' ? { role: 'user' } : { banned: true });
+      const failed = await pending.set('Authorization', `Bearer ${issueSessionToken(alice)}`);
+      expect(failed.status).toBe(500);
+    } finally { write.mockRestore(); }
+    expect(await Lock.countDocuments()).toBe(1);
   });
 
   it('does not send success before releasing the lock, and fails closed if release fails', async () => {
@@ -119,7 +155,8 @@ describe('Administrator role concurrency', () => {
     const [alice, bob] = await Promise.all([makeAdmin('uncertain-alice'), makeAdmin('uncertain-bob')]);
     const { withAdminUserMutation } = require('../../services/adminUserMutationService');
     const resume = deferred(); let late;
-    await expect(withAdminUserMutation(String(alice._id), async () => {
+    await expect(withAdminUserMutation(String(alice._id), async (beginWrite) => {
+      beginWrite();
       late = resume.promise.then(() => User.updateOne({ _id: bob._id }, { $set: { role: 'user' } }));
       throw new Error('unknown write outcome');
     })).rejects.toThrow('unknown write outcome');

@@ -142,7 +142,7 @@ const mutationResponse = (status: number, body: Record<string, unknown>) => ({ s
 // PATCH /api/admin/users/:userId/role
 router.patch('/:userId/role', adminWriteLimiter, auth, adminAuth, async (req: any, res: any) => {
   try {
-    const result = await withAdminUserMutation(String(req.user?.id || ''), async () => {
+    const result = await withAdminUserMutation(String(req.user?.id || ''), async (beginWrite) => {
       const { userId } = req.params;
       const { role } = req.body || {};
       const nextRole = String(role || '').trim().toLowerCase();
@@ -167,6 +167,7 @@ router.patch('/:userId/role', adminWriteLimiter, auth, adminAuth, async (req: an
       }
 
       target.role = nextRole;
+      beginWrite();
       await target.save();
 
       return mutationResponse(200, {
@@ -245,7 +246,7 @@ router.patch('/:userId/entitlements', adminWriteLimiter, auth, adminAuth, async 
 // first — prevents an admin-vs-admin lockout war).
 router.patch('/:userId/ban', adminWriteLimiter, auth, adminAuth, async (req: any, res: any) => {
   try {
-    const result = await withAdminUserMutation(String(req.user?.id || ''), async () => {
+    const result = await withAdminUserMutation(String(req.user?.id || ''), async (beginWrite) => {
       const { userId } = req.params;
       const { banned, reason } = req.body || {};
       if (typeof banned !== 'boolean') {
@@ -270,6 +271,7 @@ router.patch('/:userId/ban', adminWriteLimiter, auth, adminAuth, async (req: any
       target.banned = banned;
       target.bannedAt = banned ? new Date() : undefined;
       target.banReason = banned ? (reason || '').slice(0, 500) : undefined;
+      beginWrite();
       await target.save();
 
       return mutationResponse(200, { ok: true, user: sanitizeUser(target) });
@@ -303,7 +305,7 @@ router.post('/:userId/sessions/revoke', adminWriteLimiter, auth, adminAuth, asyn
 
 router.delete('/:userId', adminWriteLimiter, auth, adminAuth, async (req: any, res: any) => {
   try {
-    const result = await withAdminUserMutation(String(req.user?.id || ''), async () => {
+    const result = await withAdminUserMutation(String(req.user?.id || ''), async (beginWrite) => {
       const { userId } = req.params;
       if (req.user?.id && String(req.user.id) === String(userId)) {
         return mutationResponse(400, { error: 'You cannot delete your own account from admin tools' });
@@ -377,6 +379,7 @@ router.delete('/:userId', adminWriteLimiter, auth, adminAuth, async (req: any, r
         });
       }
 
+      beginWrite();
       await target.deleteOne();
       return mutationResponse(200, { message: 'User deleted successfully' });
     });

@@ -20,9 +20,10 @@ resume and write its User row after an expiring lease has been stolen. A
 separate lock document cannot fence that write on standalone Mongo. Preserving
 an administrator takes precedence over automatically recovering mutation
 availability. A worker crash, a callback failure or an uncertain database acknowledgement may leave
-this small lock row behind. Callback failures retain it because a rejected
-write may still complete later; known pre-write authorization refusals release
-it safely. Reads and unrelated application work continue;
+this small lock row behind. Each caller signals before its first write, including
+delegated cleanup. Failures before that signal release the lock; failures after
+it retain the lock because a rejected write may still complete later. Known
+pre-write authorization refusals also release it safely. Reads and unrelated application work continue;
 administrator role, ban and deletion writes fail closed until recovery.
 
 ## Deploying the change

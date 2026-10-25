@@ -1,7 +1,7 @@
 // This fixture stubs User and auth; real lock/authorization behavior is tested
 // across Mongo in service/adminRoleConcurrency.test.js.
 jest.mock('../../../services/adminUserMutationService', () => ({
-  withAdminUserMutation: (_actor, operation) => operation(),
+  withAdminUserMutation: (_actor, operation) => operation(() => {}),
   AdminUserMutationError: class extends Error {},
 }));
 

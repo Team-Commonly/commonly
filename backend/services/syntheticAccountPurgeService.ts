@@ -98,6 +98,7 @@ const loadPool = (): PgPool | null => {
 const purgeSyntheticAccountsUnlocked = async (
   { apply = false, minAgeMs = DEFAULT_MIN_AGE_MS, now = new Date(), pool = loadPool() }:
   { apply?: boolean; minAgeMs?: number; now?: Date; pool?: PgPool | null } = {},
+  beginWrite: () => void = () => {},
 ): Promise<PurgeReport> => {
   const report: PurgeReport = { dryRun: !apply, examined: 0, accounts: [], counts: {} };
   const tally = (store: string, n: number | undefined) => {
@@ -106,6 +107,7 @@ const purgeSyntheticAccountsUnlocked = async (
   // Dry run counts what a delete would remove; apply deletes and counts that.
   const remove = async (store: string, model: any, filter: Record<string, unknown>) => {
     if (!apply) return tally(store, await model.countDocuments(filter));
+    beginWrite();
     const res = await model.deleteMany(filter);
     return tally(store, res.deletedCount);
   };
@@ -116,6 +118,7 @@ const purgeSyntheticAccountsUnlocked = async (
       tally(store, Number(rows[0]?.n || 0));
       return;
     }
+    beginWrite();
     const res = await pool.query(sql, params);
     tally(store, res.rowCount ?? res.rows.length);
   };
@@ -194,7 +197,10 @@ const purgeSyntheticAccountsUnlocked = async (
       await remove('podmemberfirstmessages', PodMemberFirstMessage, { podId });
       await remove('onboardingsilenceepisodes', OnboardingSilenceEpisode, { podId });
       await pgRemove('pg.message_claims', 'DELETE FROM message_claims WHERE pod_id = $1', [podId]);
-      if (apply) await deletePodCascade(podId);
+      if (apply) {
+        beginWrite();
+        await deletePodCascade(podId);
+      }
       tally('pods', 1);
     }
 
@@ -222,6 +228,7 @@ const purgeSyntheticAccountsUnlocked = async (
     await remove('onboardingsilenceepisodes', OnboardingSilenceEpisode, { userId: human._id });
     await remove('podmemberfirstmessages', PodMemberFirstMessage, { userId: human._id });
     if (apply) {
+      beginWrite();
       const res = await Pod.updateMany({ members: human._id }, { $pull: { members: human._id } });
       tally('pod.members', res.modifiedCount);
     } else {
@@ -240,7 +247,7 @@ const purgeSyntheticAccountsUnlocked = async (
 export const purgeSyntheticAccounts = async (
   options: Parameters<typeof purgeSyntheticAccountsUnlocked>[0] = {},
 ): Promise<PurgeReport> => (options.apply
-  ? withAdminUserMutationLock(() => purgeSyntheticAccountsUnlocked(options))
+  ? withAdminUserMutationLock((beginWrite) => purgeSyntheticAccountsUnlocked(options, beginWrite))
   : purgeSyntheticAccountsUnlocked(options));
 
 // CJS compat, same shape as sibling services.

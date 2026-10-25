@@ -97,6 +97,33 @@ describe('syntheticAccountPurgeService', () => {
     expect(await User.findById(human._id)).not.toBeNull();
   });
 
+  it('releases the applying lock if candidate selection fails before writes', async () => {
+    const Lock = require('../../../models/AdminUserMutationLock');
+    const read = jest.spyOn(User, 'find').mockReturnValueOnce({
+      select: () => ({ lean: async () => { throw new Error('selection unavailable'); } }),
+    });
+    try {
+      await expect(purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() }))
+        .rejects.toThrow('selection unavailable');
+    } finally { read.mockRestore(); }
+    expect(await Lock.countDocuments()).toBe(0);
+    await expect(purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() }))
+      .resolves.toMatchObject({ examined: 0 });
+  });
+
+  it('retains the applying lock after its first cleanup write rejects', async () => {
+    await syntheticAccount();
+    const Lock = require('../../../models/AdminUserMutationLock');
+    const write = jest.spyOn(Task, 'deleteMany').mockRejectedValueOnce(new Error('cleanup outcome unknown'));
+    try {
+      await expect(purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() }))
+        .rejects.toThrow('cleanup outcome unknown');
+    } finally { write.mockRestore(); }
+    expect(await Lock.countDocuments()).toBe(1);
+    await expect(purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() }))
+      .rejects.toMatchObject({ code: 'ADMIN_MUTATION_BUSY' });
+  });
+
   it('a dry run counts the footprint and deletes nothing', async () => {
     const { human, pod } = await syntheticAccount();
     const report = await purgeSyntheticAccounts({ now: NOW, pool: fakePool() });

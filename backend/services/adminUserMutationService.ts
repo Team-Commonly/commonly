@@ -14,7 +14,7 @@ const writeConcern = { w: 'majority' as const, wtimeout: 5000 };
 // Standalone Mongo is supported. A primary-key insert serializes online role,
 // ban and deletion handlers across processes without requiring transactions.
 // A crash fails closed until operator recovery; see docs/runbooks/admin-user-mutation-lock.md.
-export const withAdminUserMutationLock = async <T>(operation: () => Promise<T>): Promise<T> => {
+export const withAdminUserMutationLock = async <T>(operation: (beginWrite: () => void) => Promise<T>): Promise<T> => {
   const owner = randomUUID();
   try {
     await AdminUserMutationLock.create([{ _id: LOCK_ID, owner, acquiredAt: new Date() }], { writeConcern });
@@ -25,21 +25,34 @@ export const withAdminUserMutationLock = async <T>(operation: () => Promise<T>):
     }
     throw error;
   }
-  // A rejected write can still have an unknown outcome. Do not release on
-  // callback failure: the original database write might complete later.
-  const value = await operation();
-  const released = await AdminUserMutationLock.deleteOne({ _id: LOCK_ID, owner }, { writeConcern });
-  if (released.deletedCount !== 1) {
-    throw new AdminUserMutationError(503, 'ADMIN_MUTATION_LOCK_LOST',
-      'Administrator mutation lock changed unexpectedly.');
+  const release = async () => {
+    const released = await AdminUserMutationLock.deleteOne({ _id: LOCK_ID, owner }, { writeConcern });
+    if (released.deletedCount !== 1) {
+      throw new AdminUserMutationError(503, 'ADMIN_MUTATION_LOCK_LOST',
+        'Administrator mutation lock changed unexpectedly.');
+    }
+  };
+  let writeStarted = false;
+  let value: T;
+  try {
+    // Callers must signal before submitting any write, including delegated cleanup.
+    value = await operation(() => { writeStarted = true; });
+  } catch (error) {
+    // Read failures cannot leave a late write. Once a write was submitted, its
+    // rejection may have an unknown outcome, so retain the lock for recovery.
+    if (!writeStarted) await release();
+    throw error;
   }
+  await release();
   return value;
 };
 
 // The scheduler's applying purge uses the same lock without a human actor.
 // HTTP callers must use this authorization-checking entry point.
-export const withAdminUserMutation = async <T>(actorId: string, operation: () => Promise<T>): Promise<T> => {
-  const outcome = await withAdminUserMutationLock(async () => {
+export const withAdminUserMutation = async <T>(
+  actorId: string, operation: (beginWrite: () => void) => Promise<T>,
+): Promise<T> => {
+  const outcome = await withAdminUserMutationLock(async (beginWrite) => {
     // The request may have passed adminAuth before a competing demotion. Read
     // authorization again only after acquiring the shared mutation lock.
     const actor = await User.findById(actorId);
@@ -48,7 +61,7 @@ export const withAdminUserMutation = async <T>(actorId: string, operation: () =>
       return { ok: false as const, error: new AdminUserMutationError(403, 'ADMIN_ACCESS_CHANGED',
         'Administrator access changed. Sign in again.') };
     }
-    return { ok: true as const, value: await operation() };
+    return { ok: true as const, value: await operation(beginWrite) };
   });
   if (!outcome.ok) throw outcome.error;
   return outcome.value;
