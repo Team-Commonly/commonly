@@ -3,6 +3,8 @@ import { Command } from 'commander';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { fileURLToPath } from 'url';
+import { execFileSync } from 'child_process';
 import { registerVerify, verificationPlan } from '../src/commands/verify.js';
 const repo = mkdtempSync(join(tmpdir(), 'commonly-verify-'));
 mkdirSync(join(repo, 'backend/node_modules/jest/bin'), { recursive: true });
@@ -15,6 +17,15 @@ const env = { MONGO_URI: 'mongodb://mongo:27017/verify527', PG_HOST: 'pg', PG_DA
 
 afterEach(() => { process.exitCode = 0; jest.restoreAllMocks(); });
 describe('commonly verify shared scenario selector', () => {
+  it('registers verify through the shipped CLI entrypoint', () => {
+    const entry = fileURLToPath(new URL('../src/index.js', import.meta.url));
+    const help = execFileSync(process.execPath, [entry, 'verify', '--help'], { encoding: 'utf8', timeout: 15000 });
+    expect(help).toContain('verify');
+    expect(help).toMatch(/wave1 or\s+first-reply/);
+  });
+  it.each(['mongodb://mongo1:27017,mongo2:27017/verify527', 'mongodb+srv://mongo.example.test/verify527'])('accepts MongoDB seed-list/SRV database paths: %s', (uri) => {
+    expect(verificationPlan('first-reply', repo, { ...env, MONGO_URI: uri }).options.env.MONGO_URI).toBe(uri);
+  });
   it.each(['wave1', 'first-reply'])('selects the existing %s HTTP harness without a shell', (scenario) => {
     const plan = verificationPlan(scenario, repo, env);
     expect(plan.command).toBe(process.execPath);

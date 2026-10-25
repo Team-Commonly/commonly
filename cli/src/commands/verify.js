@@ -13,7 +13,9 @@ export const verificationPlan = (scenario, repo, env = process.env) => {
   const suite = SCENARIOS[scenario];
   if (!suite) throw new Error(`Unknown scenario: ${scenario}. Choose wave1 or first-reply.`);
   let mongoDatabase = '';
-  try { mongoDatabase = decodeURIComponent(new URL(env.MONGO_URI).pathname.slice(1)); } catch { /* refused below */ }
+  // MongoDB authorities can contain comma-separated seed hosts, unlike WHATWG URLs.
+  const mongoPath = /^mongodb(?:\+srv)?:\/\/[^/?#]+\/([^?#]*)/.exec(env.MONGO_URI || '');
+  try { mongoDatabase = decodeURIComponent(mongoPath?.[1] || ''); } catch { /* refused below */ }
   if (!env.PG_HOST || !testDatabase(env.PG_DATABASE) || !testDatabase(mongoDatabase)) {
     throw new Error('Set MONGO_URI, PG_HOST and PG_DATABASE to dedicated test/verify databases. Fixture setup clears their data.');
   }

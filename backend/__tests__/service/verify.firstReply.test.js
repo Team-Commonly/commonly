@@ -97,8 +97,7 @@ tier1('commonly verify first-agent-reply — production HTTP routes', () => {
     return { token, userId, podId: String(pod._id), decoyId };
   }
 
-  async function awaitReply(person, expected, agentId) {
-    const deadline = Date.now() + LIMIT_MS;
+  async function awaitReply(person, expected, agentId, deadline = Date.now() + LIMIT_MS) {
     while (Date.now() < deadline) {
       const target = await request(app).get(`/api/messages/${person.podId}`).set(auth(person.token)).timeout({ deadline: 5000 }).expect(200);
       const decoy = await request(app).get(`/api/messages/${person.decoyId}`).set(auth(person.token)).timeout({ deadline: 5000 }).expect(200);
@@ -108,6 +107,7 @@ tier1('commonly verify first-agent-reply — production HTTP routes', () => {
       expect(messages(decoy).some((row) => row.content === expected)).toBe(false);
       const reply = messages(target).find((row) => row.content === expected);
       if (reply) {
+        expect(Date.now()).toBeLessThanOrEqual(deadline);
         expect(String(reply.userId?._id || reply.user_id || reply.userId)).toBe(String(agentId));
         expect(String(reply.pod_id || reply.podId)).toBe(person.podId);
         return reply;
@@ -124,9 +124,10 @@ tier1('commonly verify first-agent-reply — production HTTP routes', () => {
       'botMetadata.instanceId': scout.instanceId }).lean();
     expect(agent).toBeTruthy();
     const marker = `verify527-human-${randomUUID()}`;
+    const deadline = Date.now() + LIMIT_MS;
     await request(app).post(`/api/messages/${person.podId}`).set(auth(person.token))
       .send({ content: marker }).expect(200);
-    await awaitReply(person, 'verify527-hosted-reply', agent._id);
+    await awaitReply(person, 'verify527-hosted-reply', agent._id, deadline);
     await waitFor(() => AgentRun.exists({ podId: person.podId, agentName: 'scout', status: 'succeeded' }), { timeout: LIMIT_MS });
     // Re-read after the final NO_REPLY provider response has settled.
     await awaitReply(person, 'verify527-hosted-reply', agent._id);
@@ -144,10 +145,10 @@ tier1('commonly verify first-agent-reply — production HTTP routes', () => {
     const token = issued.body.token;
     expect(token).toMatch(/^cm_agent_/);
     const marker = `verify527-human-${randomUUID()}`;
+    const deadline = Date.now() + LIMIT_MS;
     await request(app).post(`/api/messages/${person.podId}`).set(auth(person.token))
       .send({ content: `@${name} ${marker}` }).expect(200);
     let event;
-    const deadline = Date.now() + LIMIT_MS;
     while (!event && Date.now() < deadline) {
       const inbox = await request(app).get('/api/agents/runtime/events').set(auth(token)).expect(200);
       event = inbox.body.events.find((item) => JSON.stringify(item.payload).includes(marker));
@@ -156,9 +157,8 @@ tier1('commonly verify first-agent-reply — production HTTP routes', () => {
     expect(event).toBeTruthy();
     expect(String(event.podId)).toBe(person.podId);
     const fallback = 'verify527-byo-reply';
-    const sendDeadline = Date.now() + LIMIT_MS;
     let sent = false;
-    while (!sent && Date.now() < sendDeadline) {
+    while (!sent && Date.now() < deadline) {
       const read = await request(app).get(`/api/agents/runtime/pods/${person.podId}/messages`).set(auth(token)).expect(200);
       expect(messages(read).some((row) => String(row.content).includes(marker))).toBe(true);
       const posted = await request(app).post(`/api/agents/runtime/pods/${person.podId}/messages`)
@@ -172,7 +172,7 @@ tier1('commonly verify first-agent-reply — production HTTP routes', () => {
     }
     expect(sent).toBe(true);
     const agent = await User.findOne({ isBot: true, 'botMetadata.agentName': name }).lean();
-    await awaitReply(person, fallback, agent._id);
+    await awaitReply(person, fallback, agent._id, deadline);
     await request(app).post(`/api/agents/runtime/events/${event.id || event._id}/ack`)
       .set(auth(token)).send({ deliveryId: event.deliveryId, result: { outcome: 'replied' } }).expect(200);
     expect(await AgentEvent.findById(event.id || event._id).lean()).toMatchObject({ status: 'acked' });
