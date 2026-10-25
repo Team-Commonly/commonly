@@ -248,13 +248,22 @@ const runAttempt = ({ adapter, prompt, ctx, run, settings, attempt, sessionId, e
  * @param {(info: {runId, adapter, attempt, idleMs, windowMs}) => void} [args.policy.onStalled]
  * @param {string} [args.runId]
  * @param {string} [args.label]
+ * @param {string} [args.taskId]  the board task this run works; needs `podId`
+ * @param {string} [args.podId]
+ * @param {object} [args.actor]   the run's own party, {type, id, owner?, onBehalfOf?};
+ *   entries the run writes without naming an actor (run.started, tool calls,
+ *   permission requests) record this one instead of null
  * @returns {Promise<{ runId: string, outcome: string, attempts: number, result?: object, failure?: Error }>}
  */
-export const superviseRun = async ({ adapter, prompt, ctx = {}, store, policy = {}, runId, label } = {}) => {
+export const superviseRun = async ({
+  adapter, prompt, ctx = {}, store, policy = {}, runId, label, taskId, podId, actor,
+} = {}) => {
   if (!adapter || typeof adapter.spawn !== 'function') throw new Error('superviseRun needs an adapter with spawn()');
   if (!store || typeof store.startRun !== 'function') throw new Error('superviseRun needs a trace store');
   const settings = resolvePolicy(policy);
-  const run = store.startRun({ runId, adapter: adapter.name, label });
+  const run = store.startRun({
+    runId, adapter: adapter.name, label, taskId, podId, actor,
+  });
   // The runtime token rides in ctx, not through the valet, so the store would
   // not otherwise know to scrub it from agent text.
   if (typeof run.redact === 'function' && typeof ctx.runtimeToken === 'string' && ctx.runtimeToken) {

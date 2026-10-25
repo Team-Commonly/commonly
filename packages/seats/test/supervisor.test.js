@@ -78,6 +78,43 @@ test('a successful run: started, the adapter\'s events, settled ok — in that o
   assert.equal(store.listRuns()[0].outcome, 'ok');
 }));
 
+test('the run\'s actor, task and pod reach the record, so run-owned entries are attributed', () => withStore(async (store) => {
+  const actor = { type: 'agent', id: 'u-agent-quire', owner: 'u-sam', onBehalfOf: { id: 'u-cy', role: 'assigner' } };
+  const adapter = {
+    name: 'ok',
+    async spawn(prompt, ctx) {
+      ctx.trace.emit('agent.message_chunk', { text: 'PONG' });
+      return { text: 'PONG' };
+    },
+  };
+  const out = await superviseRun({
+    adapter, prompt: 'ping', store, policy: FAST, taskId: 'TASK-548', podId: 'pod-sharpen', actor,
+  });
+  assert.equal(out.outcome, 'ok');
+  const entries = store.readRun(out.runId);
+  for (const entry of entries) {
+    assert.equal(entry.taskId, 'TASK-548', `${entry.type} carries the task`);
+    assert.equal(entry.podId, 'pod-sharpen', `${entry.type} carries the pod`);
+  }
+  const byType = Object.fromEntries(entries.map((e) => [e.type, e]));
+  assert.deepEqual(byType['run.started'].actor, actor, 'the supervisor\'s own run start is the run\'s');
+  assert.deepEqual(byType['agent.message_chunk'].actor, actor, 'an emit that names no actor takes the run\'s');
+  const [indexed] = store.listRuns();
+  assert.equal(indexed.taskId, 'TASK-548');
+  assert.equal(indexed.podId, 'pod-sharpen');
+  assert.deepEqual(indexed.actor, actor);
+}));
+
+test('a taskId without a podId is refused before the adapter is spawned', () => withStore(async (store) => {
+  let spawned = false;
+  const adapter = { name: 'ok', async spawn() { spawned = true; return { text: '' }; } };
+  await assert.rejects(
+    superviseRun({ adapter, prompt: 'ping', store, policy: FAST, taskId: 'TASK-548' }),
+    /a taskId needs a podId/,
+  );
+  assert.equal(spawned, false);
+}));
+
 test('a hung adapter that honours abort settles stuck, with the reason on its signal', () => withStore(async (store) => {
   const calls = [];
   const stalled = [];
