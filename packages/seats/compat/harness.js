@@ -6,10 +6,11 @@
  * Checks see only the generic Adapter contract (src/contract.js) plus
  * ctx.provider, so any adapter — stub, fake-cli, ACP — plugs in unchanged.
  */
-import { execFile, spawnSync } from 'node:child_process';
+import { execFile, spawn as childSpawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 import { RunFailure, runFailure } from '../src/failures.js';
 import { isEventType } from '../src/trace/events.js';
 
@@ -86,6 +87,42 @@ export const killDescendants = (rootPid = process.pid) => {
   return rows.length;
 };
 
+const WIRE_LIMIT = 2000;
+
+/**
+ * A spawn that also records the child's newline-delimited JSON on stdin and
+ * stdout, so a probe sees what the agent said before any adapter read it.
+ * Lines that are not JSON are not protocol messages and are not kept. The
+ * listener is attached in the spawning tick, before the adapter's own, so no
+ * chunk is lost to either reader. `stamp()` adds fields to each record; the
+ * harness stamps how many provider requests the turn had made by then.
+ */
+export const tapSpawn = (wire, spawnImpl = childSpawn, { stamp = () => ({}) } = {}) => (command, args, options) => {
+  const child = spawnImpl(command, args, options);
+  const started = Date.now();
+  const reader = (dir) => {
+    const decoder = new StringDecoder('utf8');
+    let buffer = '';
+    return (chunk) => {
+      buffer += typeof chunk === 'string' ? chunk : decoder.write(chunk);
+      let at;
+      while ((at = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, at).trim();
+        buffer = buffer.slice(at + 1);
+        if (!line || wire.length >= WIRE_LIMIT) continue;
+        try { wire.push({ dir, ms: Date.now() - started, ...stamp(), msg: JSON.parse(line) }); } catch { /* not a protocol line */ }
+      }
+    };
+  };
+  child.stdout?.on('data', reader('in'));
+  if (child.stdin) {
+    const write = child.stdin.write.bind(child.stdin);
+    const out = reader('out');
+    child.stdin.write = (chunk, ...rest) => { out(chunk); return write(chunk, ...rest); };
+  }
+  return child;
+};
+
 // Only names a CLI needs to start: never the host's own secrets.
 const runEnv = ({ home, binaryPath }) => {
   const xdg = (name) => { const dir = join(home, name); mkdirSync(dir, { recursive: true }); return dir; };
@@ -108,9 +145,11 @@ const runEnv = ({ home, binaryPath }) => {
  * @param {import('../src/contract.js').Adapter} opts.adapter
  * @param {{ baseURL: string, apiKey: string, model: string, requests: object[] }} opts.provider
  * @param {string} [opts.binaryPath]
- * @param {{ turnMs: number, stallMs: number }} opts.timeouts
+ * @param {{ turnMs: number, stallMs: number, retryWindowMs?: number }} opts.timeouts
+ * @param {import('../src/contract.js').Adapter} [opts.probeAdapter]  the same adapter with
+ *   the target's `probeOptions` applied, for checks that read the agent itself
  */
-export const createHarness = ({ adapter, provider, binaryPath = null, timeouts }) => {
+export const createHarness = ({ adapter, provider, binaryPath = null, timeouts, probeAdapter = null }) => {
   const root = mkdtempSync(join(tmpdir(), 'seats-compat-'));
   const home = join(root, 'home');
   const cwd = join(root, 'work');
@@ -129,13 +168,19 @@ export const createHarness = ({ adapter, provider, binaryPath = null, timeouts }
     return detection;
   };
 
-  const runTurn = async (prompt, { sessionId, timeoutMs = timeouts.turnMs } = {}) => {
+  const runTurn = async (prompt, { sessionId, timeoutMs = timeouts.turnMs, via = adapter, tap = false } = {}) => {
     const events = [];
+    const wire = [];
+    const tapped = { spawned: false };
+    const firstRequest = provider.requests.length;
+    // How many provider requests this turn had made at a given instant; an
+    // event and a wire line stamped with it can be placed among the retries.
+    const stamp = () => ({ requests: provider.requests.length - firstRequest });
     const controller = new AbortController();
     pending.add(controller);
     const watch = watchArgv(provider.apiKey);
     const trace = {
-      emit(type, data = {}) { events.push({ seq: events.length + 1, type, data, known: isEventType(type) }); },
+      emit(type, data = {}) { events.push({ seq: events.length + 1, type, data, known: isEventType(type), ...stamp() }); },
     };
     const ctx = {
       provider: { baseURL: provider.baseURL, apiKey: provider.apiKey, model: provider.model },
@@ -147,12 +192,14 @@ export const createHarness = ({ adapter, provider, binaryPath = null, timeouts }
       timeoutMs,
       agentName: 'compat',
       ...(sessionId ? { sessionId } : {}),
+      // ACP adapters take ctx._spawnImpl; one that ignores it leaves the
+      // wire empty and spawned stays false, which the probe checks report.
+      ...(tap ? { _spawnImpl: (...args) => { tapped.spawned = true; return tapSpawn(wire, childSpawn, { stamp })(...args); } } : {}),
     };
-    const firstRequest = provider.requests.length;
     const started = Date.now();
     let outcome;
     try {
-      const result = await adapter.spawn(prompt, ctx);
+      const result = await via.spawn(prompt, ctx);
       outcome = { ok: true, result: result || {} };
     } catch (error) {
       outcome = { ok: false, error };
@@ -166,6 +213,7 @@ export const createHarness = ({ adapter, provider, binaryPath = null, timeouts }
       events,
       argv: watch.report,
       requests: provider.requests.slice(firstRequest),
+      ...(tap ? { wire, tapped: tapped.spawned } : {}),
     };
   };
 
@@ -173,6 +221,17 @@ export const createHarness = ({ adapter, provider, binaryPath = null, timeouts }
   const turn = (name, prompt, opts) => {
     if (!turns.has(name)) turns.set(name, runTurn(prompt, opts));
     return turns.get(name);
+  };
+
+  /**
+   * A named turn on the probe adapter with the agent's stdio recorded, or
+   * null when the target declares no probe. Memoized like turn().
+   */
+  const probeTurn = (name, prompt, opts = {}) => {
+    if (!probeAdapter) return null;
+    const key = `probe:${name}`;
+    if (!turns.has(key)) turns.set(key, runTurn(prompt, { ...opts, via: probeAdapter, tap: true }));
+    return turns.get(key);
   };
 
   // A check that ran out of time leaves its turn open; cancel it so the next
@@ -187,8 +246,8 @@ export const createHarness = ({ adapter, provider, binaryPath = null, timeouts }
   };
 
   return {
-    adapter, provider, binaryPath, timeouts, env, cwd,
-    detect, turn, cancelPending, dispose,
+    adapter, probeAdapter, provider, binaryPath, timeouts, env, cwd,
+    detect, turn, probeTurn, cancelPending, dispose,
   };
 };
 

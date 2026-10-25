@@ -6,8 +6,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CHECKS, runCheck } from '../compat/checks.js';
 import { createHarness, watchArgv } from '../compat/harness.js';
-import { loadTargets, runMatrix, runTarget, writeOutputs, RESULTS_SCHEMA } from '../compat/run.js';
-import { PACKAGE_ROOT } from '../compat/targets.js';
+import {
+  isLimitRow, limitOf, loadTargets, runMatrix, runTarget, totalsOf, writeOutputs, RESULTS_SCHEMA,
+} from '../compat/run.js';
+import { installDirOf, PACKAGE_ROOT } from '../compat/targets.js';
 import { runFailure } from '../src/failures.js';
 import { startFakeProvider } from '../test-support/fake-provider.js';
 
@@ -39,7 +41,11 @@ test('stub and fake-cli produce a schema-versioned results.json with every check
   }
   for (const row of written.rows) assert.ok(['pass', 'fail', 'skip'].includes(row.status), `${row.target} ${row.check}`);
   assert.deepEqual(failing(written.rows, 'fake-cli@1.0.0'), [], JSON.stringify(written.rows.filter((r) => r.status !== 'pass' && r.target === 'fake-cli@1.0.0')));
-  assert.equal(written.rows.filter((r) => r.target === 'fake-cli@1.0.0' && r.status === 'skip').length, 0);
+  // fake-cli declares no probeOptions, so only the agent-level probes skip.
+  const skipped = written.rows.filter((r) => r.target === 'fake-cli@1.0.0' && r.status === 'skip');
+  assert.deepEqual(skipped.map((r) => r.check), ['retry-status', 'retry-status-surfaced']);
+  assert.ok(skipped.every((r) => /declares no probeOptions/.test(r.detail)), JSON.stringify(skipped));
+  assert.deepEqual(written.totals, { pass: written.rows.filter((r) => r.status === 'pass').length, fail: 5, skip: written.rows.filter((r) => r.status === 'skip').length, limit: 0 });
   // The stub never calls a provider, so the suite must say so rather than pass it.
   assert.deepEqual(failing(written.rows, 'stub@0.0.0'), ['exact-reply', 'fresh-turn', 'provider-5xx', 'refusal', 'stall']);
   assert.match(readFileSync(html, 'utf8'), /fake-cli@1\.0\.0/);
@@ -152,9 +158,14 @@ test('a target whose adapter module is absent skips every check cleanly', async 
 
 test('the seeded targets skip the ACP CLIs while their module is absent', async () => {
   const targets = loadTargets(join(PACKAGE_ROOT, 'compat', 'targets.json'));
-  assert.deepEqual(targets.map((t) => t.cli), ['stub', 'fake-cli', 'goose', 'opencode']);
+  assert.deepEqual(targets.map((t) => t.cli), ['stub', 'fake-cli', 'goose', 'opencode', 'opencode-v2']);
   const acp = targets.filter((t) => t.requires === 'acp');
-  assert.deepEqual(acp.map((t) => `${t.cli}@${t.version}`), ['goose@1.54.0', 'opencode@1.19.0']);
+  assert.deepEqual(acp.map((t) => `${t.cli}@${t.version}`), ['goose@1.56.0', 'opencode@1.19.4', 'opencode-v2@2.1.4']);
+  // Probes need a factory export, so probeOptions can build a second instance.
+  for (const t of acp) {
+    assert.match(t.adapter, /#createAcp(?:Goose|Opencode)Adapter$/, t.cli);
+    assert.deepEqual(t.probeOptions, { watchProvider: false }, t.cli);
+  }
   if (existsSync(join(PACKAGE_ROOT, 'src', 'adapters', 'acp-launch.js'))) return; // landed: covered by the nightly
   const fake = await startFakeProvider();
   try {
@@ -182,4 +193,56 @@ test('the argv watch sees a key in a child process argv and ignores its own ps',
   await new Promise((resolve) => setTimeout(resolve, 250));
   quiet.stop();
   assert.deepEqual(quiet.report, { available: true, processes: 0, leaks: 0 });
+});
+
+test('the two opencode lines are separate targets, and only 1.x carries the retry-status limit', () => {
+  const targets = loadTargets(join(PACKAGE_ROOT, 'compat', 'targets.json'));
+  const v1 = targets.find((t) => t.cli === 'opencode');
+  const v2 = targets.find((t) => t.cli === 'opencode-v2');
+  assert.equal(v1.binary.npm, 'opencode-ai@1.19.4');
+  assert.equal(v2.binary.npm, '@opencode/cli@2.1.4');
+  assert.equal(limitOf(v1, 'retry-status').fixedIn, '@opencode/cli ≥2.0.15');
+  assert.match(limitOf(v1, 'retry-status').note, /no session\/update/);
+  assert.equal(limitOf(v2, 'retry-status'), null);
+  // goose is silent while it retries too, and no release fixes it yet.
+  const goose = targets.find((t) => t.cli === 'goose');
+  assert.match(limitOf(goose, 'retry-status').note, /no session\/update/);
+  assert.equal(limitOf(goose, 'retry-status').fixedIn, undefined);
+  // 2.x's .bin launcher is a stub that only its postinstall replaces, and
+  // install runs with --ignore-scripts, so the pin is the platform binary.
+  for (const bin of Object.values(v2.binary.bin)) assert.match(bin, /^node_modules\/@opencode\/cli-(?:linux|darwin)-(?:x64|arm64)\/bin\/opencode$/);
+  assert.notEqual(installDirOf(v1, '/p'), installDirOf(v2, '/p'));
+});
+
+test('a declared limit rides on its row: a failure it explains counts as limit, not fail', async () => {
+  const fake = await startFakeProvider();
+  try {
+    const stub = {
+      cli: 'stub', version: '0.0.0', adapter: 'src/adapters/stub.js#default', enabled: true,
+      limits: { 'fresh-turn': { note: 'never calls a provider', fixedIn: 'stub@never' }, detect: { note: 'not a failure here' } },
+    };
+    const rows = await runTarget(stub, { provider: { ...fake, apiKey: 'sk-compat-test-key-003' }, timeouts: FAST });
+    const fresh = rows.find((r) => r.check === 'fresh-turn');
+    assert.equal(fresh.status, 'fail', 'the real status is kept');
+    assert.deepEqual(fresh.limit, { note: 'never calls a provider', fixedIn: 'stub@never' });
+    assert.ok(isLimitRow(fresh));
+    const detect = rows.find((r) => r.check === 'detect');
+    assert.equal(detect.status, 'pass');
+    assert.ok(!isLimitRow(detect), 'a passing row with a declared limit is not a limit');
+    assert.deepEqual(totalsOf(rows), {
+      pass: rows.filter((r) => r.status === 'pass').length,
+      fail: rows.filter((r) => r.status === 'fail').length - 1,
+      skip: rows.filter((r) => r.status === 'skip').length,
+      limit: 1,
+    });
+  } finally {
+    await fake.close();
+  }
+});
+
+test('limitOf ignores a limit with no note and drops an empty fixedIn', () => {
+  assert.equal(limitOf({ limits: { a: { fixedIn: 'x' } } }, 'a'), null);
+  assert.equal(limitOf({ limits: { a: { note: '' } } }, 'a'), null);
+  assert.deepEqual(limitOf({ limits: { a: { note: 'n', fixedIn: '' } } }, 'a'), { note: 'n' });
+  assert.equal(limitOf({}, 'a'), null);
 });

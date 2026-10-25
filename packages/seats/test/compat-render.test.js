@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { escapeHtml, renderMatrix } from '../compat/render.js';
+import { escapeHtml, limitText, renderMatrix } from '../compat/render.js';
 
 const results = (detail) => ({
   schema: 'seats-compat/1',
@@ -41,4 +41,43 @@ test('a missing row renders as missing rather than vanishing', () => {
   doc.rows = doc.rows.slice(0, 1);
   assert.match(renderMatrix(doc), /class="c missing"/);
   assert.equal(escapeHtml(`'"<>&`), '&#39;&quot;&lt;&gt;&amp;');
+});
+
+const limitDoc = (status) => ({
+  ...results('x'),
+  checks: [{ id: 'retry-status', title: 'retry status' }, { id: 'refusal', title: 'refusal' }],
+  targets: [{ target: 'opencode@1.19.4', cli: 'opencode', version: '1.19.4' }],
+  rows: [
+    {
+      target: 'opencode@1.19.4', check: 'retry-status', status, detail: '4 provider requests and no session/update', ms: 9,
+      limit: { note: 'retries a 5xx and sends no session/update', fixedIn: '@opencode/cli ≥2.0.15' },
+    },
+    { target: 'opencode@1.19.4', check: 'refusal', status: 'fail', detail: 'boom', ms: 1 },
+  ],
+});
+
+test('a failure its target declares renders as a limit of that version, with where it is fixed', () => {
+  const html = renderMatrix(limitDoc('fail'));
+  assert.match(html, /<td class="c limit" title="retry status: limit \(limit of opencode@1\.19\.4: retries a 5xx and sends no session\/update\. Fixed in @opencode\/cli ≥2\.0\.15\)/);
+  assert.match(html, /<span aria-hidden="true">!<\/span><span class="sr">limit<\/span>/);
+  assert.match(html, /<li><strong>retry-status<\/strong> limit <span class="limit">limit of opencode@1\.19\.4: retries a 5xx and sends no session\/update\. Fixed in @opencode\/cli ≥2\.0\.15<\/span>: <code>4 provider requests/);
+  // An undeclared failure on the same row stays a failure.
+  assert.match(html, /<td class="c fail" title="refusal: fail — boom"/);
+  assert.match(html, /<li class="fail">1 fail<\/li><li class="limit">1 limit<\/li>/);
+  assert.equal(limitText({ target: 't@1', limit: { note: 'n' } }), 'limit of t@1: n');
+});
+
+test('a declared limit that does not reproduce renders as a pass that says so', () => {
+  const html = renderMatrix(limitDoc('pass'));
+  assert.match(html, /<td class="c pass"/);
+  assert.match(html, /<li class="fail">1 fail<\/li><li class="limit">0 limit<\/li>/);
+  assert.match(html, /\(declared limit of opencode@1\.19\.4: retries a 5xx and sends no session\/update\. Fixed in @opencode\/cli ≥2\.0\.15; it did not reproduce\)/);
+});
+
+test('a limit note is escaped like every other value', () => {
+  const doc = limitDoc('fail');
+  doc.rows[0].limit = { note: '<img src=x onerror=1>', fixedIn: '"><script>' };
+  const html = renderMatrix(doc);
+  assert.doesNotMatch(html, /<img src=x/);
+  assert.equal((html.match(/<script/gi) || []).length, 0);
 });

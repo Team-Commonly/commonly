@@ -1,0 +1,118 @@
+[
+  {
+    "id": "goose-refusal-retried",
+    "cli": "goose",
+    "versions": "1.54.0 to 1.56.0",
+    "bug": "retries a 400 content-policy refusal 3 times with a byte-identical body, for both its title call and its reply call",
+    "status": "worked around",
+    "workaround": {
+      "name": "fail fast on the first refusal on the wire, as RunFailure refusal_retry_loop (provider watch in the ACP adapter)",
+      "ref": "180b2ec808d87d019a6128e99a4d1196bdc16abf",
+      "where": "packages/seats/src/provider-watch.js, packages/seats/src/adapters/acp.js",
+      "tests": [
+        "packages/seats/test/provider-watch.test.js: the first refusal trips once, its body reaches the CLI, and nothing more is forwarded",
+        "packages/seats/test/acp.test.js: the first provider refusal on the wire ends the run as refusal_retry_loop, fast",
+        "packages/seats/test/acp-real.test.js: goose acp: the first provider refusal ends the run as refusal_retry_loop"
+      ]
+    },
+    "matrix": {
+      "target": "goose@1.56.0",
+      "check": "refusal"
+    },
+    "references": []
+  },
+  {
+    "id": "goose-5xx-silent",
+    "cli": "goose",
+    "versions": "1.56.0",
+    "bug": "over ACP, retries a provider 5xx with backoff and sends no session/update while it does; the error reaches the client only after it gives up, as message text ending in end_turn",
+    "status": "worked around",
+    "workaround": {
+      "name": "our own 5xx detection: the first 5xx on the wire ends the run as RunFailure provider_unavailable (provider watch in the ACP adapter)",
+      "ref": "180b2ec808d87d019a6128e99a4d1196bdc16abf",
+      "where": "packages/seats/src/provider-watch.js, packages/seats/src/adapters/acp.js",
+      "tests": [
+        "packages/seats/test/provider-watch.test.js: the first 503 trips as provider_unavailable",
+        "packages/seats/test/acp-real.test.js: goose acp: the first provider 503 ends the run as provider_unavailable"
+      ]
+    },
+    "matrix": {
+      "target": "goose@1.56.0",
+      "check": "provider-5xx"
+    },
+    "references": []
+  },
+  {
+    "id": "codex-refusal-exit-0",
+    "cli": "codex",
+    "versions": "0.162.1 measured; 0.164.0 reported",
+    "bug": "an in-band provider refusal ends `codex exec --json` with exit 0 and no output, so the run looks like an empty success",
+    "status": "open",
+    "workaround": {
+      "name": "refusal_dropped detector over the provider response bodies, fed by a per-run loopback provider relay",
+      "ref": "077a9a12c04429a1ffb6677cb17821368a0c8cef",
+      "where": "packages/seats/src/wire/refusal.js (the detector, with its unit tests); the per-run relay that feeds it is not built, so it cannot fire on a live run yet",
+      "tests": []
+    },
+    "references": [
+      "https://github.com/openai/codex/issues/56875"
+    ]
+  },
+  {
+    "id": "opencode-5xx-silent",
+    "cli": "opencode",
+    "versions": "opencode-ai 1.19.0 to 1.19.4",
+    "bug": "over ACP, retries a provider 5xx for about 73 s with no session/update, then answers -32603 with no HTTP status",
+    "status": "worked around",
+    "workaround": {
+      "name": "our own 5xx detection: the first 5xx on the wire ends the run as RunFailure provider_unavailable (provider watch in the ACP adapter); pinning @opencode/cli 2.x is the second route, see its row",
+      "ref": "180b2ec808d87d019a6128e99a4d1196bdc16abf",
+      "where": "packages/seats/src/provider-watch.js, packages/seats/src/adapters/acp.js",
+      "tests": [
+        "packages/seats/test/provider-watch.test.js: the first 503 trips as provider_unavailable",
+        "packages/seats/test/acp.test.js: the first provider 5xx on the wire ends the run as provider_unavailable, fast",
+        "packages/seats/test/acp-real.test.js: opencode acp: the first provider 503 ends the run as provider_unavailable, not at a timeout"
+      ]
+    },
+    "matrix": {
+      "target": "opencode@1.19.4",
+      "check": "provider-5xx"
+    },
+    "references": [
+      "https://github.com/anomalyco/opencode/issues/50743",
+      "https://github.com/anomalyco/opencode/pull/50752"
+    ]
+  },
+  {
+    "id": "opencode-v2-retry-status-unread",
+    "cli": "opencode-v2",
+    "versions": "@opencode/cli 2.1.4",
+    "bug": "not an upstream bug: 2.x forwards each retry as a session_info_update whose only content is _meta[\"opencode/retry\"], and our ACP adapter drops that update kind, so the trace shows none of it",
+    "status": "open",
+    "workaround": {
+      "name": "read session_info_update._meta[\"opencode/retry\"] in the ACP adapter's update mapping",
+      "ref": "",
+      "where": "packages/seats/src/adapters/acp.js (traceUpdate), not started",
+      "tests": []
+    },
+    "matrix": {
+      "target": "opencode-v2@2.1.4",
+      "check": "retry-status-surfaced"
+    },
+    "references": []
+  },
+  {
+    "id": "pi-cowboy-explore-hang",
+    "cli": "pi-cowboy",
+    "versions": "",
+    "bug": "the explore step hangs without reporting",
+    "status": "open",
+    "workaround": {
+      "name": "settle without a report in our plugin",
+      "ref": "",
+      "where": "our plugin, in progress; not on a pushed branch",
+      "tests": []
+    },
+    "references": []
+  }
+]

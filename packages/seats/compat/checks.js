@@ -26,9 +26,90 @@ const resumedTurn = async (env) => {
   return env.turn('resumed', `Reply with the single word ${RESUMED}. [[reply:${RESUMED}]]`, { sessionId });
 };
 const refusalTurn = (env) => env.turn('refusal', 'Answer this. [[refuse]]');
+// A provider watch that stops the CLI at the first refusal on the wire names
+// it refusal_retry_loop; both kinds are final and never retried.
+const REFUSAL_KINDS = new Set(['refusal', 'refusal_retry_loop']);
 const upstreamTurn = (env) => env.turn('upstream-5xx', 'Answer this. [[fail:503]]');
 const stallTurn = (env) => env.turn('stall', 'Answer this. [[stall]]', { timeoutMs: env.timeouts.stallMs });
 const ALL_TURNS = [freshTurn, resumedTurn, refusalTurn, upstreamTurn, stallTurn];
+// The same 503, on the probe adapter (the target's probeOptions, e.g. no
+// provider watch), held open for a window so the agent's own retries happen.
+const retryProbeTurn = (env) => env.probeTurn?.('retry-5xx', 'Answer this. [[fail:503]]', { timeoutMs: env.timeouts.retryWindowMs }) ?? null;
+
+// Trace events an adapter emits on its own account rather than from what the
+// agent streamed; they say nothing about whether a retry report got through.
+const LIFECYCLE_EVENT = /^(?:run\.|session\.|turn\.|process\.|permission\.|liveness\.|credential\.)/;
+// ACP update kinds that publish session state (commands, mode, config,
+// context size). Agents send them whenever they like, and goose 1.56.0 sends
+// two right as its first request goes out, so they never count as a report
+// about a retry; `usage` is what the adapter maps usage_update to.
+const SESSION_STATE = new Set(['available_commands_update', 'current_mode_update', 'config_option_update', 'usage_update']);
+const SESSION_STATE_EVENT = new Set(['usage']);
+const SAMPLE_CHARS = 600;
+
+const tally = (records) => {
+  const kinds = {};
+  const metaKeys = new Set();
+  for (const { msg } of records) {
+    const update = msg.params?.update || {};
+    const kind = update.sessionUpdate || 'unknown';
+    kinds[kind] = (kinds[kind] || 0) + 1;
+    for (const name of Object.keys(update._meta || {})) metaKeys.add(name);
+  }
+  return { kinds, metaKeys: [...metaKeys].sort() };
+};
+
+/**
+ * What a recorded ACP turn shows about retries: how often the provider was
+ * asked, what the agent streamed while it was still retrying, and what of
+ * that reached the trace. Reads only the tap, so it holds for any ACP agent.
+ *
+ * "While retrying" is placed by the harness stamp (provider requests made so
+ * far), not inferred from a kind name: an update counts when the agent had
+ * already asked the provider twice and asked again afterwards. The first
+ * request is the turn starting, and start-of-turn bookkeeping lands beside
+ * it; what an agent sends once it has given up (its error text) lands after
+ * the last. Both are reported, as "outside the retries", never as progress.
+ */
+export const readRetryProbe = (turn, { key = '' } = {}) => {
+  const wire = Array.isArray(turn?.wire) ? turn.wire : [];
+  const prompt = wire.find((w) => w.dir === 'out' && w.msg?.method === 'session/prompt');
+  const at = prompt ? wire.indexOf(prompt) : -1;
+  const after = at === -1 ? [] : wire.slice(at + 1);
+  const total = (turn?.requests || []).length;
+  const inWindow = (record) => Number.isFinite(record.requests) && record.requests >= 2 && record.requests < total;
+  const all = after.filter((w) => w.dir === 'in' && w.msg?.method === 'session/update');
+  const during = all.filter((w) => inWindow(w) && !SESSION_STATE.has(w.msg.params?.update?.sessionUpdate));
+  const answer = prompt ? after.find((w) => w.dir === 'in' && w.msg?.id === prompt.msg.id && !w.msg.method) : null;
+  const { kinds, metaKeys } = tally(during);
+  const rest = tally(all.filter((w) => !during.includes(w)));
+  const promptEvent = (turn?.events || []).findIndex((e) => e.type === 'turn.prompt_sent');
+  const surfaced = promptEvent === -1 ? []
+    : turn.events.slice(promptEvent + 1).filter((e) => !LIFECYCLE_EVENT.test(e.type) && !SESSION_STATE_EVENT.has(e.type) && inWindow(e));
+  const scrub = (text) => (key ? text.split(key).join('<key>') : text);
+  return {
+    tapped: !!turn?.tapped,
+    promptSent: !!prompt,
+    failedRequests: (turn?.requests || []).filter((r) => r.directive === 'fail').length,
+    updates: during.length,
+    kinds,
+    metaKeys,
+    otherKinds: rest.kinds,
+    sample: during[0] ? scrub(JSON.stringify(during[0].msg.params)).slice(0, SAMPLE_CHARS) : null,
+    answerMetaKeys: Object.keys(answer?.msg?.result?._meta || answer?.msg?.error?.data?._meta || {}).sort(),
+    surfaced: surfaced.map((e) => e.type),
+  };
+};
+
+const listKinds = (kinds) => Object.entries(kinds).map(([kind, n]) => `${kind}×${n}`).join(', ');
+const needsProbe = async (env, then) => needsBinary(env, async () => {
+  const turn = await retryProbeTurn(env);
+  if (!turn) return skip('the target declares no probeOptions, so the agent is only seen through its adapter');
+  const probe = readRetryProbe(turn, { key: env.provider.apiKey });
+  if (!probe.tapped) return skip('the adapter took no spawn hook, so the agent\'s own stream was not recorded');
+  if (!probe.promptSent) return skip(`no session/prompt was sent (${turn.ok ? 'the turn succeeded' : describeError(turn.error)})`);
+  return then(turn, probe);
+});
 
 const describeError = (error) => (isNamedFailure(error)
   ? `RunFailure ${error.kind}: ${error.detail || error.message}`
@@ -110,7 +191,7 @@ export const CHECKS = [
   },
   {
     id: 'refusal',
-    title: "a provider refusal surfaces as RunFailure kind 'refusal' and is not retried",
+    title: "a provider refusal surfaces as RunFailure kind 'refusal' (or 'refusal_retry_loop', stopped on the wire) and is not retried",
     run: (target, env) => needsBinary(env, async () => {
       const turn = await refusalTurn(env);
       // Real CLIs make more than one provider call per turn (opencode also
@@ -120,10 +201,10 @@ export const CHECKS = [
       const baseline = fresh.ok && fresh.requests.length ? fresh.requests.length : 1;
       const asked = turn.requests.filter((r) => r.directive === 'refuse').length;
       if (turn.ok) return fail(`a refused turn reported success: ${quote(turn.result.text)}`);
-      if (!isNamedFailure(turn.error) || turn.error.kind !== 'refusal') return fail(`expected RunFailure refusal, got ${describeError(turn.error)}`);
+      if (!isNamedFailure(turn.error) || !REFUSAL_KINDS.has(turn.error.kind)) return fail(`expected RunFailure refusal or refusal_retry_loop, got ${describeError(turn.error)}`);
       if (asked === 0) return fail('reported refusal without asking the provider');
       if (asked > baseline) return fail(`the provider was asked ${asked} times against ${baseline} on an ordinary turn; a refusal must not be retried`);
-      return pass(`refusal named after ${asked} provider request(s), as on an ordinary turn`);
+      return pass(`${turn.error.kind} named after ${asked} provider request(s), as on an ordinary turn`);
     }),
   },
   {
@@ -137,6 +218,35 @@ export const CHECKS = [
       // surfaced: the CLI kept retrying until the adapter gave up on it.
       if (['timeout', 'stuck'].includes(turn.error.kind)) return fail(`the 503 was not surfaced; the turn ran until RunFailure ${turn.error.kind} after ${turn.ms}ms`);
       return pass(`RunFailure ${turn.error.kind} after ${turn.ms}ms`);
+    }),
+  },
+  {
+    id: 'retry-status',
+    title: 'while it retries a provider 5xx, the agent reports progress on its own stream',
+    timeoutMs: (env) => env.timeouts.retryWindowMs + env.timeouts.graceMs * 3,
+    run: (target, env) => needsProbe(env, async (turn, probe) => {
+      const window = `${turn.ms}ms`;
+      if (probe.failedRequests <= 1) return pass(`no retry: ${probe.failedRequests} provider request(s) in ${window}`);
+      const meta = probe.metaKeys.length ? `; _meta keys ${probe.metaKeys.join(', ')}` : '';
+      const answered = probe.answerMetaKeys.length ? `; the prompt answer carries _meta ${probe.answerMetaKeys.join(', ')}` : '';
+      const outside = Object.keys(probe.otherKinds).length ? `; outside the retries: ${listKinds(probe.otherKinds)}` : '';
+      if (!probe.updates) {
+        return fail(`${probe.failedRequests} provider requests in ${window} and no session/update between the first and the last${outside}${answered}`);
+      }
+      return pass(`${probe.updates} session/update(s) between the first and the last of ${probe.failedRequests} provider requests in ${window}: ${listKinds(probe.kinds)}${meta}${outside}${answered}; first ${probe.sample}`);
+    }),
+  },
+  {
+    id: 'retry-status-surfaced',
+    title: "the adapter's trace carries the agent's retry reports",
+    timeoutMs: (env) => env.timeouts.retryWindowMs + env.timeouts.graceMs * 3,
+    run: (target, env) => needsProbe(env, async (turn, probe) => {
+      if (!probe.updates) return skip('the agent sent no update during its retries, so there is nothing to surface');
+      const meta = probe.metaKeys.length ? ` (_meta keys ${probe.metaKeys.join(', ')})` : '';
+      if (probe.surfaced.length < probe.updates) {
+        return fail(`the agent sent ${listKinds(probe.kinds)}${meta}; the trace carries ${probe.surfaced.length ? probe.surfaced.join(', ') : 'no event'} from them`);
+      }
+      return pass(`${probe.updates} update(s) reached the trace as ${probe.surfaced.join(', ')}`);
     }),
   },
   {

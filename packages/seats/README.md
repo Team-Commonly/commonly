@@ -17,4 +17,11 @@ node compat/install.js --targets compat/targets.json --prefix <dir>   # pinned b
 node compat/run.js --targets compat/targets.json --prefix <dir> --out <dir>
 ```
 
-A target is data: `{ cli, version, adapter: 'module#export', binary?, enabled, requires? }`. The export is an adapter or a factory taking `options`. A target whose adapter module is absent skips every check. `.github/workflows/seats-compat-nightly.yml` runs it nightly and uploads the output.
+A target is data: `{ cli, version, adapter: 'module#export', binary?, enabled, requires?, probeOptions?, limits? }`. The export is an adapter or a factory taking `options`. A target whose adapter module is absent skips every check. `.github/workflows/seats-compat-nightly.yml` runs it nightly and uploads the output.
+
+- `probeOptions` builds a second instance of a factory export for the checks that read the agent itself. The ACP targets pass `{ watchProvider: false }`, so `retry-status` sees what the agent streams while it retries a 5xx, with no provider watch ending the turn first. `retry-status-surfaced` then asks whether the adapter's trace carried those reports.
+- `limits: { <checkId>: { note, fixedIn? } }` marks a failure that belongs to that CLI version, not to the adapter. The row keeps `status: 'fail'` and gains `limit`; the page shows it as a limit with the version that fixes it, and `totals.fail` counts only failures no limit explains. A declared limit that stops reproducing shows as a pass that says so.
+
+### Upstream bugs
+
+`compat/upstream.json` lists each known upstream bug with what we do about it: `{ id, cli, versions, bug, status, workaround: { name, ref, where, tests[] }, matrix?: { target, check }, references[] }`. We do not wait on upstream, so `status` is `"worked around"` or `"open"`, and `compat/upstream.js` enforces the first: a row reads as worked around only when its workaround names the pushed commit it lives on (`ref`, a full sha) and at least one test there that proves it. A row that claims more is shown as open, with the reason. An open row names its planned workaround. Upstream issue links go in `references`, never in place of a workaround. A row with `matrix` shows what that check did on this run beside the claim. `run.js` reads the file next to the targets, or the one `--upstream` names.
