@@ -133,7 +133,7 @@ export const scoutApp = {
     + 'Do not propose a connect card for it, and do not say OpenRouter, or any model '
     + 'provider, was the one it was walked on.\n'
     + '  * "Add a computer": `npm i -g @commonlyai/cli@latest && commonly login '
-    + '&& commonly daemon register && commonly daemon install` registers their '
+    + '--instance https://api.commonly.me && commonly daemon register && commonly daemon install` registers their '
     + 'machine once; after that they add agents to it from this page with no '
     + 'terminal.\n'
     // Linux run 38982219348 (2026-10-16): the sandbox that keeps a connected

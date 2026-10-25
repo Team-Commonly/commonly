@@ -14,6 +14,7 @@ const path = require('path');
 const { scoutApp } = require('../../../config/native-agents/scout');
 
 const BYO_PAGE = path.resolve(__dirname, '../../../../frontend/src/v2/components/V2AgentBYO.tsx');
+const DAEMON_HELPER = path.resolve(__dirname, '../../../../frontend/src/v2/utils/daemonSetupCommand.ts');
 
 const constantFromPage = (name) => {
   const source = fs.readFileSync(BYO_PAGE, 'utf8');
@@ -22,12 +23,20 @@ const constantFromPage = (name) => {
   return match[1];
 };
 
+// The computer command is built from the page's API base URL (TASK-547), so the
+// Scout copy is checked against the public instance it describes.
+const daemonCommandForPublicInstance = () => {
+  const source = fs.readFileSync(DAEMON_HELPER, 'utf8');
+  const template = source.match(/`(npm i -g [^`]+)`/)[1];
+  return template.replace(/\$\{apiUrl[^}]*\}/, 'https://api.commonly.me');
+};
+
 describe('Scout onboarding knowledge', () => {
   const prompt = scoutApp.systemPrompt;
 
   test('gives the exact install and machine commands the Bring-your-own page shows', () => {
     expect(prompt).toContain(constantFromPage('CLI_INSTALL_COMMAND'));
-    expect(prompt).toContain(constantFromPage('DAEMON_SETUP_COMMAND'));
+    expect(prompt).toContain(daemonCommandForPublicInstance());
     expect(prompt).toContain('export COMMONLY_API_URL=');
     expect(prompt).toContain('export COMMONLY_AGENT_TOKEN=');
     expect(prompt).toContain('commonly agent run <name>');
