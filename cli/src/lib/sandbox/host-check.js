@@ -70,7 +70,9 @@ export const hostSandboxRefusal = ({
   if (!Object.prototype.hasOwnProperty.call(ADAPTER_LABELS, adapterName)) return null;
   const sandbox = normalizeSandboxTrust(environment?.sandbox);
   if (!sandbox || typeof sandbox !== 'object') return null;
-  const mode = sandbox.mode ?? (sandbox.trust === 'public' ? resolvePublicSandboxMode(sandbox, platform) : undefined);
+  // Every host-confined trust (public, and workspace since TASK-294) derives its
+  // mode here; any other trust gets back only the mode it declared.
+  const mode = sandbox.mode ?? resolvePublicSandboxMode(sandbox, platform);
   if (mode !== 'bwrap' && !SEATBELT_MODES.has(mode)) return null;
 
   if (platform === 'win32') return windowsSandboxMessage(adapterName);

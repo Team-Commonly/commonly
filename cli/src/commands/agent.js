@@ -62,7 +62,7 @@ import {
   resolveWorkspace,
   validateEnvironmentSpec,
 } from '../lib/environment.js';
-import { podIsConfirmedPrivate } from '../lib/workspace-trust.js';
+import { firstRunWorkspace, podIsConfirmedPrivate } from '../lib/workspace-trust.js';
 import {
   ADAPTERS_WITH_DEFAULT_MCP,
   ADAPTERS_WITH_GRANT_BROKER,
@@ -322,6 +322,8 @@ export const bootstrapAgentRecordFromEnv = async ({
   adapterRegistry = { getAdapter, listAdapterNames },
   adapterOverride = null,
   log = () => {},
+  startDir = process.cwd(),
+  home,
 }) => {
   const runtimeToken = (env.COMMONLY_AGENT_TOKEN || '').trim();
   if (!runtimeToken) return null;
@@ -400,6 +402,22 @@ export const bootstrapAgentRecordFromEnv = async ({
   });
   if (bindingRefusal) throw new Error(bindingRefusal);
 
+  // The daemon's baseline for a seat nobody wrote a spec for, sandbox
+  // included: this record is derived from nothing the person declared.
+  const environment = seatBaseline(buildDefaultEnvironment(adapterName), adapterName, { sandbox: true });
+  // A claude seat whose every pod is confirmed private reads the directory
+  // it was started from (TASK-294); anything else keeps the public default.
+  const workspace = firstRunWorkspace({
+    adapterName, installations: installs, startDir, home,
+  });
+  if (workspace?.workspacePath) {
+    log(`this agent can read ${workspace.workspacePath} and run read-only git there; `
+      + 'it cannot edit files or reach the web.');
+  } else if (workspace?.reason) {
+    log(`this agent can read only its own scratch folder, because ${workspace.reason}.`
+      + (workspace.fix ? ` ${workspace.fix}` : ''));
+  }
+
   return {
     agentName,
     displayName: identity?.displayName || primary?.displayName || agentName,
@@ -408,10 +426,10 @@ export const bootstrapAgentRecordFromEnv = async ({
     instanceUrl,
     runtimeToken,
     adapter: adapterName,
-    // The daemon's baseline for a seat nobody wrote a spec for, sandbox
-    // included: this record is derived from nothing the person declared.
-    environment: seatBaseline(buildDefaultEnvironment(adapterName), adapterName, { sandbox: true }),
-    workspacePath: null,
+    environment: workspace?.workspacePath
+      ? { ...environment, sandbox: { trust: 'workspace' } }
+      : environment,
+    workspacePath: workspace?.workspacePath || null,
   };
 };
 

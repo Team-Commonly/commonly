@@ -68,4 +68,36 @@ export const workspaceStartDirRefusal = (dir, { home = homedir() } = {}) => {
   return null;
 };
 
-export default { podIsConfirmedPrivate, allPodsConfirmedPrivate, workspaceStartDirRefusal };
+/**
+ * Where a first-run claude seat may read (TASK-294), from three facts the
+ * bootstrap already holds: the adapter it detected, the rooms its token
+ * answers in, and the directory the person ran it from. It returns the start
+ * directory only when all three allow it, and otherwise the reason the seat
+ * keeps the `public` default it had before, plus a `fix` when the person can
+ * change the outcome by starting somewhere else. Any other adapter gets `null`:
+ * `workspace` is claude-only for now, so there is nothing to decide.
+ */
+export const firstRunWorkspace = ({
+  adapterName, installations, startDir, home,
+} = {}) => {
+  if (adapterName !== 'claude') return null;
+  if (!allPodsConfirmedPrivate(installations)) {
+    return {
+      workspacePath: null,
+      reason: 'a pod it answers in is publicly readable, or did not report whether it is',
+    };
+  }
+  const refusal = workspaceStartDirRefusal(startDir, home === undefined ? {} : { home });
+  if (refusal) {
+    return {
+      workspacePath: null,
+      reason: refusal,
+      fix: 'To let it read a project, run this command from that project\'s folder.',
+    };
+  }
+  return { workspacePath: realOrResolved(startDir), reason: null };
+};
+
+export default {
+  podIsConfirmedPrivate, allPodsConfirmedPrivate, workspaceStartDirRefusal, firstRunWorkspace,
+};

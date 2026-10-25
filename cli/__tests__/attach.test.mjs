@@ -838,6 +838,77 @@ describe('bootstrapAgentRecordFromEnv', () => {
     expect(record.environment.sandbox).toEqual({ trust: 'public' });
   });
 
+  // TASK-294: a claude seat whose every pod is confirmed private reads the
+  // directory it was started from; anything less keeps the public default.
+  describe('first-run workspace trust', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'commonly-bootstrap-ws-'));
+    const home = path.join(root, 'home');
+    const repo = path.join(home, 'code', 'repo');
+    fs.mkdirSync(repo, { recursive: true });
+    afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+
+    const withVisibility = (publicRead) => ({
+      ...identityResponse,
+      installations: identityResponse.installations.map((row) => ({
+        ...row, publicRead, communityListed: false,
+      })),
+    });
+    const run = async ({ response, startDir = repo, registry = makeRegistry() } = {}) => {
+      const lines = [];
+      const record = await bootstrapAgentRecordFromEnv({
+        name: 'smoke-agent',
+        env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+        clientFactory: makeFactory(response),
+        adapterRegistry: registry,
+        log: (line) => lines.push(line),
+        startDir,
+        home,
+      });
+      return { record, lines };
+    };
+
+    test('every pod private and a project start dir: the seat reads that project', async () => {
+      const { record, lines } = await run({ response: withVisibility(false) });
+      expect(record.adapter).toBe('claude');
+      expect(record.environment.sandbox).toEqual({ trust: 'workspace' });
+      expect(record.workspacePath).toBe(fs.realpathSync(repo));
+      expect(record.environment.mcp[0].name).toBe('commonly');
+      expect(lines.some((line) => line.includes(fs.realpathSync(repo)))).toBe(true);
+    });
+
+    test('one publicly readable pod keeps the public default and says why', async () => {
+      const response = withVisibility(false);
+      response.installations[1] = { ...response.installations[1], publicRead: true };
+      const { record, lines } = await run({ response });
+      expect(record.environment.sandbox).toEqual({ trust: 'public' });
+      expect(record.workspacePath).toBeNull();
+      expect(lines.some((line) => /scratch folder.*publicly readable/.test(line))).toBe(true);
+    });
+
+    test('a server that reports no visibility keeps the public default', async () => {
+      const { record } = await run({ response: identityResponse });
+      expect(record.environment.sandbox).toEqual({ trust: 'public' });
+      expect(record.workspacePath).toBeNull();
+    });
+
+    test('started from $HOME keeps the public default and says where to start instead', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), startDir: home });
+      expect(record.environment.sandbox).toEqual({ trust: 'public' });
+      expect(record.workspacePath).toBeNull();
+      expect(lines.some((line) => /your home directory\. To let it read a project/.test(line))).toBe(true);
+    });
+
+    test('a codex seat keeps its baseline and hears nothing about workspaces', async () => {
+      const { record, lines } = await run({
+        response: withVisibility(false), registry: makeRegistry({ claudeFound: false }),
+      });
+      expect(record.adapter).toBe('codex');
+      expect(record.workspacePath).toBeNull();
+      expect(record.environment.sandbox?.trust).not.toBe('workspace');
+      expect(lines.some((line) => /scratch folder|can read/.test(line))).toBe(false);
+    });
+  });
+
   test('a pi seat bootstrapped from env gets the kernel server but no sandbox block, which pi refuses', async () => {
     const record = await bootstrapAgentRecordFromEnv({
       name: 'smoke-agent',

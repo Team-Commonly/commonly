@@ -92,6 +92,22 @@ describe('hostSandboxRefusal', () => {
       .toMatch(/^This seat runs in a bubblewrap sandbox, which is not available here\. bwrap not found on PATH\. Install bubblewrap/);
   });
 
+  // TASK-294: a workspace seat is confined by the same host mechanism as a
+  // public one, so a host that cannot confine it stops the run at start
+  // rather than at the first turn.
+  test('a workspace trust is checked against the host the same way as a public one', () => {
+    const workspace = { sandbox: { trust: 'workspace' } };
+    const args = { environment: workspace, adapterName: 'claude' };
+    expect(hostSandboxRefusal({ ...args, platform: 'win32', detectBwrap: never, detectSeatbelt: never }))
+      .toMatch(/no sandbox for Windows yet/);
+    expect(hostSandboxRefusal({ ...args, platform: 'linux', detectBwrap: never, detectSeatbelt: never }))
+      .toMatch(/cannot run Claude Code yet/);
+    expect(hostSandboxRefusal({ ...args, platform: 'darwin', detectBwrap: never, detectSeatbelt: available })).toBeNull();
+    expect(hostSandboxRefusal({
+      ...args, platform: 'darwin', detectBwrap: never, detectSeatbelt: missing('sandbox-exec preflight failed: exit 1'),
+    })).toMatch(/^This seat runs in a macOS Seatbelt sandbox \(sandbox\.mode=workspace\)/);
+  });
+
   test('a legacy internal trust reads as public', () => {
     expect(hostSandboxRefusal({
       environment: { sandbox: { trust: 'internal' } }, adapterName: 'claude', platform: 'win32',
