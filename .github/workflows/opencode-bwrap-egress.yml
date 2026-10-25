@@ -7,7 +7,8 @@ on:
       - 'cli/src/lib/provider-proxy.js'
       - 'cli/src/lib/instance-proxy.js'
       - 'cli/src/lib/sandbox/bwrap.js'
-      - 'cli/src/lib/sandbox/opencode-loopback.mjs'
+      - 'packages/seats/src/sandbox/loopback-bridge.mjs'
+      - 'packages/seats/**'
       - 'commonly-mcp/**'
       - 'cli/__tests__/opencode.bwrap-egress.test.mjs'
       - 'cli/__tests__/instance-proxy.test.mjs'
@@ -33,11 +34,12 @@ jobs:
               apt-get update -qq
               apt-get install -y -qq bubblewrap iproute2 >/dev/null
               mkdir -p /work
-              cp -R /source/cli /source/commonly-mcp /source/scripts /work/
+              cp -R /source/cli /source/commonly-mcp /source/scripts /source/packages /work/
               rm -rf /work/cli/node_modules /work/commonly-mcp/node_modules
               npm ci --prefix /work/cli --silent
               npm ci --prefix /work/commonly-mcp --silent
               chown -R node:node /work
               su node -s /bin/bash -c "cd /work/cli && COMMONLY_REQUIRE_BWRAP_SMOKE=1 node --experimental-vm-modules node_modules/.bin/jest __tests__/opencode.bwrap-egress.test.mjs __tests__/instance-proxy.test.mjs --runInBand"
               su node -s /bin/bash -c "node /work/scripts/verify-opencode-bwrap-mcp.mjs"
+              su node -s /bin/bash -c "cd /work/packages/seats && SEATS_REQUIRE_BWRAP=1 node --test test/valet-egress.bwrap.test.js test/valet-sandbox.linux.test.js test/valet-egress.test.js"
             '
