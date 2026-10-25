@@ -1627,7 +1627,9 @@ describe('performRun', () => {
       circuitOpen: true,
       eventId: event._id,
     });
-    expect(errors[2].message).toMatch(/circuit open, next probe in 1m/);
+    // The third consecutive failure of the same event releases it to the
+    // server's requeue rather than carrying it again (HELD_RETRY_MAX_FAILURES).
+    expect(errors[2].message).toMatch(/circuit open; releasing 1 event after 3 failed attempts .*; next poll in 1m/);
   });
 
   test('recognized quota failure opens the long circuit on the first attempt', async () => {
@@ -1754,9 +1756,15 @@ describe('performRun', () => {
     }));
     const acked = new Set();
     const pages = [];
-    const post = jest.fn(async (route) => {
+    const post = jest.fn(async (route, body) => {
       const match = route.match(/events\/(evt-check-\d)\/ack$/);
       if (match) acked.add(match[1]);
+      // renewDelivery renews only a row still delivered under that nonce: a
+      // checkpointed item is acked, so it is not renewed — which is how the
+      // failed turn's carry learns not to re-run it.
+      if (route.endsWith('/events/renew')) {
+        return { renewed: body.events.map((entry) => entry.eventId).filter((id) => !acked.has(id)) };
+      }
       return {};
     });
     const get = jest.fn(async (route) => {
@@ -3588,17 +3596,25 @@ describe('performRun — ADR-018 enforcement', () => {
       }
     };
 
+    // A failed turn's events are carried to its retry. Here the server
+    // reports each one as no longer this runner's (renewed: []), so the carry
+    // drops it and the stand-down tick runs alone — which is the sequence
+    // this invariant is about.
+    const failing = (id) => makeEvent({
+      _id: id, payload: { content: 'hello from tester', deliveryId: `nonce-${id}` },
+    });
     const batches = [
-      [makeEvent({ _id: 'evt-fail-1' })],
+      [failing('evt-fail-1')],
       // Broadcast wake, post-fairness: addressed claim-losses now spawn
       // peer-aware, so the stand-down under test must ride message.posted.
       [makeClaimEvent({ _id: 'evt-held', type: 'message.posted' })],
-      [makeEvent({ _id: 'evt-fail-2' })],
+      [failing('evt-fail-2')],
       [],
     ];
     let batch = 0;
     const post = jest.fn(async (route) => {
       if (route.endsWith('/claim')) return { claimed: false, claimedBy: 'nova' };
+      if (route.endsWith('/events/renew')) return { renewed: [] };
       return {};
     });
     const get = jest.fn(async (route) => {
