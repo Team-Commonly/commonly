@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import V2AgentRuntimeGrants, { describeRuntime } from '../components/V2AgentRuntimeGrants';
 import { AuthContext } from '../../context/AuthContext';
 import { daemonSetupCommand } from '../utils/daemonSetupCommand';
@@ -172,4 +172,29 @@ test('does not offer revoke when the server says this viewer cannot revoke', asy
   renderSection();
   expect(await screen.findByText(/Work · Granted by Owner/)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Revoke' })).toBeNull();
+});
+
+test('placement errors clear when the mounted runtime becomes unmanaged', async () => {
+  axios.get.mockImplementation((url) => url.includes('/agent-binding/placement')
+    ? Promise.reject(new Error('fixture placement failure')) : Promise.resolve({ data: response }));
+  const view = renderSection({ runtimeType: 'wrapper', adapter: 'claude' });
+  await screen.findByRole('alert');
+  view.rerender(<AuthContext.Provider value={authValue}>
+    <V2AgentRuntimeGrants name="nib" instanceId="default" runtime={{ runtimeType: 'wrapper', adapter: 'claude', managed: false }} />
+  </AuthContext.Provider>);
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+});
+
+test('a late placement error cannot follow a runtime switch', async () => {
+  let rejectPlacement;
+  axios.get.mockImplementation((url) => url.includes('/agent-binding/placement')
+    ? new Promise((resolve, reject) => { rejectPlacement = reject; }) : Promise.resolve({ data: response }));
+  const view = renderSection({ runtimeType: 'wrapper', adapter: 'claude' });
+  await waitFor(() => expect(rejectPlacement).toBeDefined());
+  view.rerender(<AuthContext.Provider value={authValue}>
+    <V2AgentRuntimeGrants name="nib" instanceId="default" runtime={{ runtimeType: 'native' }} />
+  </AuthContext.Provider>);
+  await act(async () => { rejectPlacement(new Error('fixture late error')); });
+  await screen.findByText('read only · runs on commonly');
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
 });

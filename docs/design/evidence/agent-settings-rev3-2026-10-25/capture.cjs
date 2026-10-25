@@ -26,10 +26,12 @@ for(const lang of ['en','zh-CN']) for(const kind of ['byo','hosted','scout','nev
  else if(u.pathname.includes('/skills'))data={skills:[]};
  await route.fulfill({json:data});});
  await page.addInitScript((lang)=>{localStorage.setItem('token','fixture-only-user');localStorage.setItem('v2.lang',lang);},lang);
- await page.goto(`http://127.0.0.1:3546/v2/agents/${kind}/default`); await page.getByRole('heading',{name:lang==='en'?'Status':'状态',exact:true}).waitFor(); await page.waitForTimeout(400);await page.evaluate(async()=>{
+ await page.goto(`http://127.0.0.1:3546/v2/agents/${kind}/default`); await page.getByRole('heading',{name:lang==='en'?'Status':'状态',exact:true}).waitFor(); await page.locator('.v2-agent-status strong').filter({hasText:kind==='byo'?(lang==='en'?'Off':'离线'):kind==='never'?(lang==='en'?'Not connected yet':'尚未连接'):kind==='hosted'?(lang==='en'?'Working':'工作中'):(lang==='en'?'Ready':'就绪')}).waitFor();await page.evaluate(async()=>{
  await document.fonts.ready;
- await Promise.all([document.fonts.load('400 12px "IBM Plex Sans"'),document.fonts.load('400 12px "IBM Plex Mono"')]);
- if(!document.fonts.check('400 12px "IBM Plex Sans"')||!document.fonts.check('400 12px "IBM Plex Mono"'))throw new Error('Signal fonts missing');
+ for(const family of ['IBM Plex Sans','IBM Plex Mono']) {
+ const faces=await document.fonts.load(`400 12px "${family}"`);
+ if(!faces.some(face=>face.family.replaceAll('"','')===family && face.status==='loaded')) throw new Error('Signal font missing: '+family);
+ }
  });
  if(width===390) {
  for(const el of await page.locator('.v2-agent-status button, .v2-agent-status a.v2-agent-settings__action, .v2-agent-runtime-summary__command button').all()) {

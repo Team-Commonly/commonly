@@ -103,9 +103,10 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
     return data?.code && key[data.code] ? t(`agentManage.runtime.${key[data.code]}`) : t(fallback);
   };
 
-  const loadPlacement = useCallback(async () => {
+  const loadPlacement = useCallback(async (active: () => boolean = () => true) => {
     const response = await api.get<Placement>('/api/agent-binding/placement', { params: { agentName: name, instanceId } });
     const next = { ...response, activeMachines: response.activeMachines || [] };
+    if (!active()) return next;
     setPlacement(next);
     setMachineChoice((current) => next.activeMachines.some((machine) => machine.machineId === current)
       ? current : next.activeMachines.find((machine) => machine.machineId !== next.boundMachineId)?.machineId || '');
@@ -129,10 +130,14 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
 
   useEffect(() => { if (section !== 'runtime') void load(); }, [load, section]);
   useEffect(() => {
-    if (section === 'grants' || runtime.runtimeType !== 'wrapper' || runtime.managed === false) return;
     setPlacement(null);
     setPlacementError('');
-    void loadPlacement().catch((error) => setPlacementError(placementFailure(error, 'agentManage.runtime.placementError')));
+    if (section === 'grants' || runtime.runtimeType !== 'wrapper' || runtime.managed === false) return;
+    let active = true;
+    void loadPlacement(() => active).catch((error) => {
+      if (active) setPlacementError(placementFailure(error, 'agentManage.runtime.placementError'));
+    });
+    return () => { active = false; };
   }, [runtime.runtimeType, runtime.managed, loadPlacement, t, section]);
 
   const details = useMemo(() => describeRuntime(runtime), [runtime]);

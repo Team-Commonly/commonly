@@ -7,7 +7,7 @@ import { AuthContext } from '../../context/AuthContext';
 
 jest.mock('axios', () => {
   const mock = {
-    get: jest.fn(), post: jest.fn(), patch: jest.fn(), delete: jest.fn(),
+    get: jest.fn(), put: jest.fn(), post: jest.fn(), patch: jest.fn(), delete: jest.fn(),
     defaults: { baseURL: '', headers: { common: {} } },
     interceptors: { request: { use: jest.fn() }, response: { use: jest.fn() } },
   };
@@ -179,7 +179,11 @@ test('OpenClaw identity keeps the live Persona editor and saves its changes', as
   });
   axios.patch.mockResolvedValue({ data: { success: true } });
   renderPage('/v2/agents/openclaw/scout');
-  expect(await screen.findByRole('group', { name: 'Persona' })).toBeInTheDocument();
+  const persona = await screen.findByRole('group', { name: 'Persona' });
+  const disclosure = persona.closest('details');
+  expect(disclosure).not.toHaveAttribute('open');
+  fireEvent.click(disclosure.querySelector('summary'));
+  disclosure.open = true;
   fireEvent.change(screen.getByRole('textbox', { name: 'Persona notes' }), { target: { value: 'Keep detail' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
@@ -645,9 +649,21 @@ test('managed runtimes keep the provider-key editor reachable', async () => {
   renderPage();
   const button = await screen.findByRole('button', { name: 'Set key' });
   await waitFor(() => expect(button).toBeEnabled());
-  expect(button.closest('details')).toHaveTextContent('Change runtime');
+  const disclosure = button.closest('details');
+  expect(disclosure).toHaveTextContent('Change runtime');
+  fireEvent.click(disclosure.querySelector('summary'));
+  disclosure.open = true;
   fireEvent.click(button);
   expect(screen.getByLabelText('API key')).toHaveAttribute('type', 'password');
+  axios.put.mockResolvedValue({ data: { set: true, setAt: '2026-10-25T12:00:00Z' } });
+  fireEvent.change(screen.getByLabelText('API key'), { target: { value: 'provider-fixture-value' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save key' }));
+  await waitFor(() => expect(axios.put).toHaveBeenCalledWith(
+    '/api/registry/agents/maya-claude/provider-key?instanceId=default', { key: 'provider-fixture-value' },
+    expect.objectContaining({ headers: { Authorization: 'Bearer user-jwt' } }),
+  ));
+  expect(await screen.findByRole('button', { name: 'Replace key' })).toBeInTheDocument();
+  expect(screen.queryByLabelText('API key')).toBeNull();
 });
 
 test('never-connected agents keep removal folded and available', async () => {
