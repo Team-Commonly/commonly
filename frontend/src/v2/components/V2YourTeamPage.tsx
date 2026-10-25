@@ -364,7 +364,7 @@ const V2YourTeamPage: React.FC = () => {
             <V2Avatar name={display} src={a.iconUrl} kind="agent" seed={a.userId || `${a.name}:${a.instanceId}`} />
           </button>
           <div className="v2-team-card__title">
-            <Link className="v2-team-card__name" to={`/v2/agents/${encodeURIComponent(a.name)}/${encodeURIComponent(a.instanceId || 'default')}`}>{display}</Link>
+            <Link className="v2-team-card__name" to={`/v2/${a.installedBy === String(user?._id) || user?.role === 'admin' ? 'agents' : 'agent'}/${encodeURIComponent(a.name)}/${encodeURIComponent(a.instanceId || 'default')}`}>{display}</Link>
             <div className={`v2-team-card__status v2-team-card__status--${visualState}`}>
               {(!a.connection || a.connection.state === 'connected') && state !== 'idle' && <span className="v2-team-card__dot" aria-hidden="true">{STATE_DOT}</span>}
               {(!a.connection || a.connection.state === 'connected') && state !== 'idle' ? ' ' : ''}

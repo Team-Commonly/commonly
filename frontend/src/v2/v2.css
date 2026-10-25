@@ -13159,6 +13159,7 @@ body.modern-ui.v2-canvas {
   overflow: hidden;
   min-width: 0;
 }
+.v2-root a.v2-team-card__name { color: var(--v2-text-primary); text-decoration: none; }
 .v2-team-card__status { margin-top: 2px; font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .v2-team-card__status--needsYou,
 .v2-team-card__status--working { color: var(--v2-accent-text); }

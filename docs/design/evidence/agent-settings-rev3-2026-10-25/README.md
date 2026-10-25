@@ -2,7 +2,7 @@
 
 These are real Chromium captures of the local application with synthetic API responses. They are not production evidence. No real credentials are issued, read or revoked. All network API requests are intercepted.
 
-The fixtures cover BYO, hosted, built-in Scout and never-connected agents in English and Chinese at 1440 and 390. Each has a page capture and separate Status/Runtime captures. The hosted fixture exercises Pause and waits for Resume after the persisted readback changes. Every capture reported no browser errors or horizontal document overflow.
+The fixtures cover BYO, hosted, built-in Scout and never-connected agents in English and Chinese at 1440 and 390. Each has a page capture and separate Status/Runtime captures. The hosted fixture exercises Pause and waits for Resume after the persisted readback changes. Every capture reported no browser errors or horizontal document overflow. The English BYO fixture also opens Your Team at both widths, verifies the name stays ink and links back to Settings, then follows it. Non-owner names retain the public-profile destination.
 
 Reference: section 05 of the rev3 artboard attached to TASK-546. The review bundle shared in the task pod contains that reference beside these captures; the source artboard is not copied into this directory.
 

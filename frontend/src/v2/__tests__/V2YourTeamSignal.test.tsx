@@ -242,3 +242,12 @@ describe('Your Team (direction C)', () => {
     expect(screen.getByPlaceholderText('Invitation code')).toBeInTheDocument();
   });
 });
+
+test.each([['u1', '/v2/agents/local/default'], ['another-owner', '/v2/agent/local/default']])(
+  'agent names keep a usable destination for installer %s', async (installedBy, href) => {
+    renderPage({ pods: [{ _id: 'p1', name: 'Workspace' }], p1Agents: [{
+      name: 'local', instanceId: 'default', displayName: 'Local', installedBy,
+    }] });
+    expect(await screen.findByRole('link', { name: 'Local', exact: true })).toHaveAttribute('href', href);
+  },
+);

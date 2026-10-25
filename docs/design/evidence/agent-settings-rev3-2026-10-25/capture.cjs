@@ -9,7 +9,7 @@ for(const lang of ['en','zh-CN']) for(const kind of ['byo','hosted','scout','nev
  let paused=false;
  const runtime={runtimeType:kind==='scout'?'native':kind==='hosted'?'hosted':'wrapper',adapter:kind==='byo'?'codex':undefined};
  const receipt={harness:'claude',version:'2.1',model:'claude-sonnet-4-5',effort:'high',at:'2026-10-25T16:40:00Z'};
- const installation=()=>({name:kind,instanceId:'default',displayName:kind==='scout'?'Scout':kind==='hosted'?'Launch plan agent':'Maya agent',runtime,status:paused?'paused':'active'});
+ const installation=()=>({name:kind,instanceId:'default',displayName:kind==='scout'?'Scout':kind==='hosted'?'Launch plan agent':'Maya agent',runtime,status:paused?'paused':'active',installedBy:'fixture-owner'});
  await page.route('**/*',route=>['127.0.0.1','localhost'].includes(new URL(route.request().url()).hostname)?route.continue():route.abort());
  await page.route('**/api/**',async route=>{const req=route.request();const u=new URL(req.url());let data={};
  if(req.method()==='PATCH'){paused=req.postDataJSON().status==='paused';data={agent:installation()};}
@@ -31,6 +31,14 @@ for(const lang of ['en','zh-CN']) for(const kind of ['byo','hosted','scout','nev
  await page.locator('.v2-agent-settings').evaluate(el=>el.closest('.v2-feature__body').scrollTop=0);
  await page.screenshot({path:`${outDir}/${lang}-${kind}-${width}.png`,fullPage:true});
  console.log(lang,kind,width,JSON.stringify({errors,overflow:await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),h2:await page.locator('h2').allTextContents()}));
+ if(kind==='byo' && lang==='en'){
+ await page.goto('http://127.0.0.1:3546/v2/agents');
+ const name=page.getByRole('link',{name:'Maya agent',exact:true}); await name.waitFor();
+ if(await name.getAttribute('href')!=='/v2/agents/byo/default') throw new Error('Wrong Settings link');
+ const color=await name.evaluate(el=>getComputedStyle(el).color);if(color!=='rgb(16, 24, 40)')throw new Error('Changed name color: '+color);
+ await page.screenshot({path:`${outDir}/en-team-${width}.png`,fullPage:true});
+ await name.click(); await page.getByRole('heading',{name:'Status',exact:true}).waitFor();
+ }
  if(kind==='hosted'){await page.getByRole('button',{name:lang==='en'?'Pause':'暂停',exact:true}).click();await page.getByRole('button',{name:lang==='en'?'Resume':'恢复',exact:true}).waitFor();}
  await context.close();
 } await browser.close();
