@@ -21,6 +21,7 @@
  * Network egress is fenced by sandbox.js too: the run reaches only its
  * grant's network.allow hosts and its provider, through egress-proxy.js.
  */
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, mkdir, chmod, readFile, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { delimiter, join, resolve, sep } from 'node:path';
@@ -86,8 +87,30 @@ const resolveOne = async (spec, { baseEnv, resolveSecret }) => {
 };
 
 /**
- * prepareRunEnv({ grant, baseEnv, resolveSecret, root?, require?, trace?, ctx? })
- *   → { env, home, cleanup, granted: [names], realHomes: [paths], network }
+ * The grant.issued entry for grantMeta. Its scope is the room grant this run
+ * acts under (exact tool names, a connection id), as the host knows it; the
+ * run grant's own credential names and patterns show up in credential.* and
+ * in each permission.decided rule. `taskId` + `podId` bind the grant to that
+ * board task, ending when it is done unless `endsOn` says otherwise.
+ */
+const grantIssued = (meta) => {
+  const {
+    grantId = randomUUID(), parentGrantId, scope = {}, target, issuedBy, expiresAt, taskId, podId, endsOn = 'task.done',
+  } = meta;
+  return {
+    grantId,
+    ...(parentGrantId === undefined ? {} : { parentGrantId }),
+    scope: { tools: [], audience: [], ...scope },
+    ...(target ? { target } : {}),
+    ...(issuedBy ? { issuedBy } : {}),
+    ...(expiresAt ? { expiresAt: expiresAt instanceof Date ? expiresAt.toISOString() : expiresAt } : {}),
+    ...(taskId ? { binding: { taskId, podId, endsOn } } : {}),
+  };
+};
+
+/**
+ * prepareRunEnv({ grant, baseEnv, resolveSecret, root?, require?, trace?, ctx?, grantMeta? })
+ *   → { env, home, cleanup, granted: [names], realHomes: [paths], network, grantId? }
  *
  * `realHomes` names the login homes this run was cut from, so sandboxRunArgv
  * can deny them; it never enters `env`. `network` is the grant's validated
@@ -99,14 +122,19 @@ const resolveOne = async (spec, { baseEnv, resolveSecret }) => {
  * A named credential that cannot be resolved fails it the same way: a run
  * that silently lacks its key fails later and less legibly.
  *
- * Events go to `trace`, else ctx.trace: credential.granted {names} and
- * credential.denied {name, reason}. Values never enter an event or a message.
+ * Events go to `trace`, else ctx.trace: grant.issued (only with grantMeta,
+ * first), then credential.granted {names} or credential.denied {name, reason}.
+ * Values never enter an event or a message, and a hook that offers
+ * redact(values) is handed the resolved values so the record can scrub them
+ * out of agent text too.
  */
 export const prepareRunEnv = async ({
-  grant, baseEnv = {}, resolveSecret, root, require: required = [], trace, ctx,
+  grant, baseEnv = {}, resolveSecret, root, require: required = [], trace, ctx, grantMeta,
 } = {}) => {
   const valid = validateGrant(grant);
   const hook = trace && typeof trace.emit === 'function' ? trace : traceOf(ctx);
+  const issued = grantMeta ? grantIssued(grantMeta) : null;
+  if (issued) hook.emit('grant.issued', issued);
   const realHomes = [...new Set([baseEnv.HOME, homedir()].filter(Boolean))];
   const deny = (name, reason, values) => {
     hook.emit('credential.denied', { name, reason });
@@ -134,7 +162,10 @@ export const prepareRunEnv = async ({
     await cleanup();
     throw error;
   }
+  if (typeof hook.redact === 'function') hook.redact(values);
   const names = valid.credentials.map((c) => c.name);
   hook.emit('credential.granted', { names });
-  return { env, home, cleanup, granted: names, realHomes, network: valid.network };
+  return {
+    env, home, cleanup, granted: names, realHomes, network: valid.network, ...(issued ? { grantId: issued.grantId } : {}),
+  };
 };

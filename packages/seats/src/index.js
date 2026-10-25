@@ -12,3 +12,7 @@ export { prepareRunEnv, BASE_ENV_ALLOWLIST } from './valet/env.js';
 export { sandboxRunArgv, startRunEgress, REAL_HOME_LOGIN_PATHS } from './valet/sandbox.js';
 export { startEgressProxy, EGRESS_DENIAL_REASONS } from './valet/egress-proxy.js';
 export { createPermissionPolicy, DEFAULT_APPROVE_TIMEOUT_MS } from './valet/permissions.js';
+export {
+  RECORD_VERSION, RECORD_SCHEMA, KINDS, canonicalLine, appendEntry, verifyRecord, readRecord, hashLine, toolSurfaceOf, argsDigestOf,
+} from './record/format.js';
+export { toOtlpJson } from './record/otel.js';
