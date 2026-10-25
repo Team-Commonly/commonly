@@ -5,6 +5,7 @@
  * (via the same _fetchImpl seam in client.js) and assert the wire shape.
  */
 
+import { readFileSync } from 'node:fs';
 import { jest } from '@jest/globals';
 import { buildTools } from '../src/tools.js';
 import { HttpError } from '../src/client.js';
@@ -685,4 +686,11 @@ describe('per-event inbox checkpoint', () => {
     expect(JSON.stringify(result)).toContain('stale_delivery');
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
+});
+
+test('post schema publishes the current catalogue tuple without a private manifest lookup', () => {
+  const revision = JSON.parse(readFileSync(new URL('../../backend/config/uiCardCatalogueRevision.json', import.meta.url), 'utf8'));
+  const description = byName.commonly_post_message.inputSchema.properties.payload.description;
+  for (const value of Object.values(revision)) expect(description).toContain(String(value));
+  expect(description).not.toContain('published catalogue revision manifest');
 });
