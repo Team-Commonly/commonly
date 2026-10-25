@@ -1,3 +1,4 @@
+const catalogueRevision = require('../../../config/uiCardCatalogueRevision.json');
 /**
  * A hosted agent asked for local repository access must produce the structured
  * handoff card, not prose that looks like a command and not a token-bearing
@@ -16,7 +17,10 @@ jest.mock('../../../models/User', () => ({
   findById: (...args) => mockUserFindById(...args),
 }));
 jest.mock('../../../services/agentTypingService', () => ({ emitAgentTypingStart: jest.fn(), emitAgentTypingStop: jest.fn() }));
-jest.mock('../../../services/agentMessageService', () => ({ postMessage: jest.fn().mockResolvedValue({ success: true }) }));
+jest.mock('../../../services/agentMessageService', () => ({
+  postMessage: jest.fn().mockResolvedValue({ success: true }),
+  sanitizeAgentContent: jest.fn((content) => content),
+}));
 jest.mock('../../../services/messageClaimService', () => ({
   claim: jest.fn().mockResolvedValue({ claimed: true, expiresAt: new Date() }),
   release: jest.fn().mockResolvedValue({ released: true }),
@@ -164,6 +168,43 @@ describe('commonly_offer_local_agent', () => {
     const posted = AgentMessageService.postMessage.mock.calls[0][0];
     expect(posted.messageType).toBe('card');
     expect(posted.noOutboundRelay).toBe(true);
+  });
+
+  test('native post tool forwards a validated UI card and offers the payload schema', async () => {
+    const payload = { ...catalogueRevision, kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("native card")' };
+    axios.post.mockResolvedValueOnce(callsTool('commonly_post_message', {
+      content: 'Text fallback', messageType: 'card', payload,
+    })).mockResolvedValueOnce(says('NO_REPLY'));
+    await runAgent({ ...install, config: { ...install.config, tools: ['commonly_post_message'] } }, ask);
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+    expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      content: 'Text fallback', messageType: 'card', payload,
+    }));
+    const tool = axios.post.mock.calls[0][1].tools.find((t) => t.function.name === 'commonly_post_message');
+    expect(tool.function.parameters.properties.payload.type).toBe('object');
+  });
+  test.each([
+    { ...catalogueRevision, kind: 'approval', v: 1, lang: 'openui@1', source: 'root = Text("forged")' },
+    { ...catalogueRevision, kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hi")\nunused = Query("secret", {})' },
+    { ...catalogueRevision, kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hi")', runId: 'other-run' },
+  ])('native post tool refuses unsafe payloads before the writer %#', async (payload) => {
+    axios.post.mockResolvedValueOnce(callsTool('commonly_post_message', {
+      content: 'Text fallback', messageType: 'card', payload,
+    })).mockResolvedValueOnce(says(''));
+    await runAgent({ ...install, config: { ...install.config, tools: ['commonly_post_message'] } }, ask);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+    const toolResult = axios.post.mock.calls[1][1].messages.find((m) => m.role === 'tool');
+    expect(JSON.parse(toolResult.content).ok).toBe(false);
+  });
+
+  test('native post tool refuses an undeclared message type before the writer', async () => {
+    axios.post.mockResolvedValueOnce(callsTool('commonly_post_message', {
+      content: 'Text fallback', messageType: 'system',
+    })).mockResolvedValueOnce(says(''));
+    await runAgent({ ...install, config: { ...install.config, tools: ['commonly_post_message'] } }, ask);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+    const toolResult = axios.post.mock.calls[1][1].messages.find((m) => m.role === 'tool');
+    expect(JSON.parse(toolResult.content).ok).toBe(false);
   });
 
   test('does not let a client post mark itself as kernel-authored', async () => {

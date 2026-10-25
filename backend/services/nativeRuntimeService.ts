@@ -26,6 +26,7 @@
    @typescript-eslint/no-require-imports */
 
 import { Types } from 'mongoose';
+import { validateAgentCardPayload, UI_CARD_CATALOGUE } from './uiCardValidation';
 import { isTaskPriority, TASK_PRIORITY_ORDER } from '../utils/taskPriority';
 import axios, { AxiosError } from 'axios';
 import {
@@ -277,7 +278,9 @@ export const TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          content: { type: 'string', description: 'Markdown-supported message content' },
+          content: { type: 'string', description: 'Markdown-supported message content and required UI text fallback' },
+          messageType: { type: 'string', enum: ['text', 'card'] },
+          payload: { type: 'object', description: `Optional {kind:"ui",v:1,lang:"openui@1",source,...catalogue}. Catalogue fields: ${JSON.stringify(UI_CARD_CATALOGUE)}. Requires messageType card; validated locally before writing.` },
         },
         required: ['content'],
       },
@@ -782,12 +785,20 @@ export async function dispatchTool(
           return { content: { ok: false, error: 'content is required' }, error: 'missing_content' };
         }
         const AgentMessageService = require('./agentMessageService');
+        const messageType = args.messageType ?? 'text';
+        if (messageType !== 'text' && messageType !== 'card') {
+          return { content: { ok: false, error: 'Unsupported native messageType' }, error: 'invalid_message_type' };
+        }
+        validateAgentCardPayload(messageType, args.payload, args.payload !== undefined
+          ? (typeof args.content === 'string' ? AgentMessageService.sanitizeAgentContent(args.content) : args.content)
+          : content);
         const result = await AgentMessageService.postMessage({
           agentName: ctx.agentName,
           instanceId: ctx.instanceId,
           podId: ctx.podId,
           content,
-          messageType: 'text',
+          messageType,
+          ...(args.payload !== undefined ? { payload: args.payload } : {}),
           displayName: ctx.displayName,
           installationConfig: ctx.installationConfig,
           metadata: { source: 'native-runtime' },
