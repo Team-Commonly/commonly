@@ -88,6 +88,14 @@ agentProvisioning:
 backend:
   enabled: true
   replicaCount: 1
+  worker:
+    # Opt in only when a dedicated worker can replace web's background jobs.
+    enabled: false
+    # Enabling the worker first disables web jobs but keeps worker replicas at
+    # zero. After old web pods terminate, set this false to start the worker.
+    startPaused: true
+    nodeSelector: {}
+    tolerations: []
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend
     tag: latest
