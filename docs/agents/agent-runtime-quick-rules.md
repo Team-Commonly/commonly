@@ -1,8 +1,10 @@
 # Agent Runtime — Quick Rules
 
-Moved verbatim from `CLAUDE.md` ("Agent Runtime — Quick Rules") as part of the
-CLAUDE.md slim-down (TASK-528). No rule was reworded, dropped, or re-dated. The
-section is kept here so `CLAUDE.md` can hold a one-line pointer per rule.
+Moved from `CLAUDE.md` ("Agent Runtime — Quick Rules") as part of the CLAUDE.md
+slim-down (TASK-528), verbatim with relative links rebased: the three link
+targets point from this directory, and the link text is unchanged. No rule was
+reworded, dropped, or re-dated. The section is kept here so `CLAUDE.md` can hold
+a one-line pointer per rule.
 
 ## Agent Runtime — Quick Rules
 
