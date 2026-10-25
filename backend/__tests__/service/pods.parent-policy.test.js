@@ -21,30 +21,35 @@ afterAll(closeMongoDb);
 describe.each(['create', 'update'])('%s parent policy through HTTP and real Mongo', (mode) => {
   let child;
   beforeEach(async () => { child = await pod(); });
+  const unchanged = async () => {
+    if (mode === 'create') expect(await Pod.countDocuments({ name: 'child' })).toBe(0);
+    else expect((await Pod.findById(child._id).lean()).parentPod).toBeNull();
+  };
   const change = (parentPod, user = owner) => mode === 'create'
     ? send('post', '/api/pods', { name: 'child', type: 'team', parentPod }, user)
     : send('patch', `/api/pods/${child._id}/parent`, { parentPod }, user);
   test.each(['bad-id', '', [], { $ne: null }])('malformed parent %p returns a coded 400', async (value) => {
     const response = await change(value);
-    expect(response.status).toBe(400); expect(response.body.code).toBe('invalid_parent_pod');
+    expect(response.status).toBe(400); expect(response.body.code).toBe('invalid_parent_pod'); await unchanged();
   });
   test('missing parent returns 400 rather than persisting an orphan', async () => {
     const response = await change(String(new mongoose.Types.ObjectId()));
-    expect(response.status).toBe(400); expect(response.body.code).toBe('parent_pod_not_found');
+    expect(response.status).toBe(400); expect(response.body.code).toBe('parent_pod_not_found'); await unchanged();
   });
   test('a public parent still requires write membership', async () => {
-    const parent = await pod({ members: [outsider], publicRead: true });
+    const parent = await pod({ createdBy: outsider, members: [outsider], publicRead: true });
+    expect(parent.members.map(String)).not.toContain(String(owner));
     const response = await change(String(parent._id));
-    expect(response.status).toBe(403); expect(response.body.code).toBe('parent_pod_write_denied');
+    expect(response.status).toBe(403); expect(response.body.code).toBe('parent_pod_write_denied'); await unchanged();
   });
   test.each(['agent-room', 'agent-dm', 'agent-admin'])('%s cannot be a parent', async (type) => {
     const parent = await pod({ type }); const response = await change(String(parent._id));
-    expect(response.status).toBe(400); expect(response.body.code).toBe('invalid_parent_pod_type');
+    expect(response.status).toBe(400); expect(response.body.code).toBe('invalid_parent_pod_type'); await unchanged();
   });
   test('a child cannot be used as a parent', async () => {
     const root = await pod(), parent = await pod({ parentPod: root._id });
     const response = await change(String(parent._id));
-    expect(response.status).toBe(400); expect(response.body.code).toBe('pod_parent_depth');
+    expect(response.status).toBe(400); expect(response.body.code).toBe('pod_parent_depth'); await unchanged();
   });
   test('a write member can attach to a root and detach with null', async () => {
     const parent = await pod(); const response = await change(String(parent._id));
@@ -60,15 +65,18 @@ test('update refuses self cycles, two-pod cycles and moving a parent under anoth
   const root = await pod(), child = await pod({ parentPod: root._id }), other = await pod();
   const self = await send('patch', `/api/pods/${root._id}/parent`, { parentPod: String(root._id) });
   expect(self.status).toBe(400); expect(self.body.code).toBe('pod_parent_cycle');
+  expect((await Pod.findById(root._id).lean()).parentPod).toBeNull();
   for (const parentPod of [String(child._id), String(other._id)]) {
     const response = await send('patch', `/api/pods/${root._id}/parent`, { parentPod });
     expect(response.status).toBe(400); expect(response.body.code).toBe('pod_parent_depth');
+    expect((await Pod.findById(root._id).lean()).parentPod).toBeNull();
   }
 });
 test('write membership in the parent does not allow changing another owner’s child', async () => {
   const root = await pod(), child = await pod({ createdBy: outsider, members: [owner, outsider] });
   const response = await send('patch', `/api/pods/${child._id}/parent`, { parentPod: String(root._id) });
   expect(response.status).toBe(403); expect(response.body.code).toBe('pod_admin_required');
+  expect((await Pod.findById(child._id).lean()).parentPod).toBeNull();
 });
 test('update requires an explicit parent field and a well-formed child ID', async () => {
   const child = await pod();

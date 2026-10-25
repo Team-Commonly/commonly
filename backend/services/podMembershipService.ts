@@ -15,7 +15,7 @@ export async function requirePodMember(podId: string, userId: unknown, { write =
   if (!membership) {
     if (write || memberOnly) return { error: 'Write access denied', status: 403 };
     // eslint-disable-next-line global-require
-    const DMService = require('../services/dmService');
+    const DMService = require('./dmService');
     const canView = await DMService.canViewPod(userId, pod);
     if (!canView) return { error: 'Access denied', status: 403 };
     return { pod, canWrite: false };
