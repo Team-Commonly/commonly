@@ -172,7 +172,8 @@ describe('read-only git runs the five subcommands', () => {
   test('forced options are prepended for diff, log and show', () => {
     const excludes = ['--', ':(exclude,glob)**/.env', ':(exclude,glob)**/.env.*',
       ':(exclude,glob)**/.env/**', ':(exclude,glob)**/.env.*/**'];
-    const top = ['--no-pager', '-c', 'core.fsmonitor=false', '-c', 'format.pretty=medium'];
+    const top = ['--no-pager', '-c', 'core.fsmonitor=false', '-c', 'format.pretty=medium',
+      '-c', 'diff.submodule=short', '-c', 'status.submoduleSummary=false', '-c', 'log.showSignature=false'];
     expect(readonlyGitArgv({ subcommand: 'diff', args: [], root: repo }).argv)
       .toEqual([...top, 'diff', '--no-ext-diff', '--no-textconv', ...excludes]);
     expect(readonlyGitArgv({ subcommand: 'log', args: [], root: repo }).argv)
@@ -428,5 +429,80 @@ describe('read-only git runs no gpg and no textconv', () => {
     expect(blame.ok).toBe(true);
     expect(blame.text).toContain('one line');
     expect(ran('textconv')).toBe(false);
+  });
+});
+
+// A superproject whose submodule has moved on by one commit, where the
+// submodule's own config names a diff program that leaves a marker if it runs.
+describe('read-only git holds a submodule to the same rules', () => {
+  let base;
+  let parent;
+  let marker;
+  const inParent = (args) => bareGit(args, { cwd: parent });
+  const runIn = (subcommand, args) => runReadonlyGit({ subcommand, args, root: parent, git: GIT });
+
+  beforeAll(async () => {
+    base = mkdtempSync(join(tmpdir(), 'git-ro-submodule-'));
+    const sub = join(base, 'sub');
+    parent = join(base, 'parent');
+    marker = join(base, 'diff-program-ran');
+    const id = ['-c', 'user.name=t', '-c', 'user.email=t@t'];
+    mkdirSync(sub);
+    await bareGit(['init', '-q'], { cwd: sub });
+    writeFileSync(join(sub, 'f.txt'), 'one\n');
+    await bareGit(['add', 'f.txt'], { cwd: sub });
+    await bareGit([...id, 'commit', '-q', '-m', 'one'], { cwd: sub });
+    mkdirSync(parent);
+    await inParent(['init', '-q']);
+    await inParent(['-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub, 's']);
+    await inParent([...id, 'commit', '-q', '-m', 'add s']);
+    const program = join(base, 'diff-program');
+    writeFileSync(program, `#!/bin/sh\ntouch '${marker}'\n`);
+    chmodSync(program, 0o755);
+    const inSub = (args) => bareGit(args, { cwd: join(parent, 's') });
+    await inSub(['config', 'diff.external', program]);
+    writeFileSync(join(parent, 's', 'f.txt'), 'two\n');
+    await inSub([...id, 'commit', '-q', '-am', 'two']);
+  });
+
+  afterAll(() => rmSync(base, { recursive: true, force: true }));
+
+  test('--submodule=diff is refused (control: bare git runs the submodule diff program)', async () => {
+    await inParent(['diff', '--submodule=diff']);
+    expect(existsSync(marker)).toBe(true);
+    rmSync(marker);
+    const result = await runIn('diff', ['--submodule=diff']);
+    expect(result.ok).toBe(false);
+    expect(result.text).toMatch(/--submodule=diff is refused/);
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  test('diff.submodule=diff in the repository config runs no submodule program (control: bare git does)', async () => {
+    await inParent(['config', 'diff.submodule', 'diff']);
+    try {
+      await inParent(['diff']);
+      expect(existsSync(marker)).toBe(true);
+      rmSync(marker);
+      for (const [subcommand, args] of [['diff', []], ['show', []], ['log', ['-p', '-1']]]) {
+        // eslint-disable-next-line no-await-in-loop
+        expect((await runIn(subcommand, args)).ok).toBe(true);
+      }
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      await inParent(['config', '--unset', 'diff.submodule']);
+    }
+  });
+
+  test('status prints no submodule summary, so no git log runs inside it (control: bare git prints one)', async () => {
+    await inParent(['config', 'status.submoduleSummary', 'true']);
+    try {
+      expect((await inParent(['status'])).stdout).toMatch(/Submodules changed but not updated/);
+      const result = await runIn('status', []);
+      expect(result.ok).toBe(true);
+      expect(result.text).toMatch(/modified: +s \(new commits\)/);
+      expect(result.text).not.toMatch(/Submodules changed but not updated/);
+    } finally {
+      await inParent(['config', '--unset', 'status.submoduleSummary']);
+    }
   });
 });

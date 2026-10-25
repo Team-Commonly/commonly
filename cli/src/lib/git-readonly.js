@@ -28,7 +28,10 @@
  *    same reason: `git status` runs it. What still runs is a clean filter the
  *    repository's own config defines, when status, diff or blame read a
  *    working-tree file: without it they report unchanged files as changed. It
- *    runs inside the sandbox below, and the seat cannot define one.
+ *    runs inside the sandbox below, and the seat cannot define one. A
+ *    submodule's git runs as a child process that gets none of these flags, so
+ *    `--submodule=diff` is refused, and the settings that would start one are
+ *    forced through `-c`, which does reach it (TOP_LEVEL).
  * 4. The environment is rebuilt from an allowlist. No inherited GIT_* variable
  *    survives, system and global config are off, optional locks are off (so
  *    status never rewrites the index), and GIT_CEILING_DIRECTORIES stops
@@ -103,8 +106,15 @@ const FORCED_OPTIONS = Object.freeze({
   blame: ['--no-textconv'],
 });
 // `format.pretty` is the repository's default format for log and show, and a
-// format can hold a %G placeholder; `medium` is git's own default.
-const TOP_LEVEL = Object.freeze(['--no-pager', '-c', 'core.fsmonitor=false', '-c', 'format.pretty=medium']);
+// format can hold a %G placeholder; `medium` is git's own default. The last
+// three reach the child git a submodule runs in, which FORCED_OPTIONS do not:
+// `diff.submodule=diff` would run git diff inside each submodule under that
+// submodule's own config, `status.submoduleSummary` runs git log there, and
+// `log.showSignature` would make that log run gpg.
+const TOP_LEVEL = Object.freeze([
+  '--no-pager', '-c', 'core.fsmonitor=false', '-c', 'format.pretty=medium',
+  '-c', 'diff.submodule=short', '-c', 'status.submoduleSummary=false', '-c', 'log.showSignature=false',
+]);
 
 // A %G placeholder (%G?, %GG, %GS, %GK, %GF, %GP, %GT) runs gpg on each signed
 // commit. A value with no %, no format: and no tformat: is looked up by
@@ -159,6 +169,9 @@ const escapesRoot = (root, arg) => {
 
 const checkLongOption = (arg) => {
   const name = arg.split('=')[0];
+  if (arg.endsWith('=diff') && name.length >= 3 && '--submodule'.startsWith(name)) {
+    return `${arg} is refused: it runs git diff inside each submodule, where the forced options don't reach; --submodule=log lists the same commits`;
+  }
   if (Object.prototype.hasOwnProperty.call(DENIED_LONG_OPTIONS, name)) {
     return `${name} is refused: it ${DENIED_LONG_OPTIONS[name]}`;
   }
