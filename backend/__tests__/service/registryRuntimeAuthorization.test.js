@@ -89,6 +89,25 @@ describe('registry runtime authorization', () => {
     expect(effects()).toBe(0);
   });
 
+  it('coerces a body instance value instead of accepting a Mongo query operator', async () => {
+    expect((await call('post', 'runtime-start', owner, { instanceId: { $ne: null } })).status).toBe(404);
+    expect(effects()).toBe(0);
+  });
+  it.each([[undefined, 200], ['NaN', 200], ['Infinity', 200], ['1000000', 1000], ['-1', 1], ['0', 1], ['2.9', 2]])(
+    'bounds runtime log lines %s to %s', async (requested, expected) => {
+      const query = { instanceId: 'curator', ...(requested === undefined ? {} : { lines: requested }) };
+      const response = await request(server).get(`/api/registry/pods/${pod._id}/agents/openclaw/runtime-logs`)
+        .set('Authorization', `Bearer ${jwt.sign({ id: String(owner._id) }, SECRET)}`).query(query);
+      expect(response.status).toBe(200);
+      expect(adapters.getAgentRuntimeLogs.mock.calls[0][2]).toBe(expected);
+    },
+  );
+  it('keeps paused installations inspectable by their owner', async () => {
+    await AgentInstallation.updateOne({ _id: installation._id }, { status: 'paused' });
+    try { expect((await call('get', 'runtime-status', owner)).status).toBe(200); }
+    finally { await AgentInstallation.updateOne({ _id: installation._id }, { status: 'active' }); }
+  });
+
   describe.each(operations)('%s %s', (method, operation, adapter) => {
     it('refuses a non-installer member before adapter dispatch', async () => {
       expect((await call(method, operation, member)).status).toBe(403);
@@ -141,6 +160,26 @@ describe('registry runtime authorization', () => {
         });
       },
     );
+    it('looks up a stored session ID without changing its spelling', async () => {
+      await AgentInstallation.updateOne({ _id: installation._id }, { instanceId: 'My Session' });
+      try {
+        expect((await call(method, operation, owner, { instanceId: 'My Session' })).status).toBe(200);
+        expect(adapters[adapter].mock.calls[0][1]).toBe('My Session');
+        expect(JSON.parse(audit.mock.calls[0][0]).instanceId).toBe('My Session');
+      } finally { await AgentInstallation.updateOne({ _id: installation._id }, { instanceId: 'curator' }); }
+    });
+    it('audits the same method-specific instance used by authorization', async () => {
+      const req = request(server)[method](`/api/registry/pods/${pod._id}/agents/openclaw/${operation}`)
+        .set('Authorization', `Bearer ${jwt.sign({ id: String(owner._id) }, SECRET)}`);
+      if (method === 'post') await AgentInstallation.updateOne({ _id: installation._id }, { instanceId: 'default' });
+      try {
+        const response = method === 'get'
+          ? await req.query({ instanceId: 'curator' }).send({ instanceId: 'wrong-body' })
+          : await req.query({ instanceId: 'wrong-query' }).send({});
+        expect(response.status).toBe(200);
+        expect(JSON.parse(audit.mock.calls[0][0]).instanceId).toBe(method === 'get' ? 'curator' : 'default');
+      } finally { await AgentInstallation.updateOne({ _id: installation._id }, { instanceId: 'curator' }); }
+    });
     it('refuses an uninstalled record', async () => {
       await AgentInstallation.updateOne({ _id: installation._id }, { status: 'uninstalled' });
       try {

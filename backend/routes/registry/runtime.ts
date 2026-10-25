@@ -19,7 +19,6 @@ const {
 } = require('../../services/agentProvisionerService');
 const {
   getUserId,
-  normalizeInstanceId,
   normalizeConfigMap,
   isGlobalAdminUser,
   buildRuntimeLogFilters,
@@ -37,6 +36,11 @@ const runtimeRouteLimit = rateLimit({
   keyGenerator: cloudflareIpRateLimitKeyGenerator,
 });
 
+const getRequestedInstanceId = (req: any): string => {
+  const rawInstanceId = req.method === 'GET' ? req.query.instanceId : req.body?.instanceId;
+  return String(rawInstanceId || 'default');
+};
+
 // Emit once after dispatch, using only route/identity metadata.
 const auditRuntimeRoute = (req: any, res: any, next: any) => {
   res.once('finish', () => {
@@ -45,7 +49,7 @@ const auditRuntimeRoute = (req: any, res: any, next: any) => {
       route: req.route.path,
       podId: req.params.podId,
       agentName: req.params.name,
-      instanceId: normalizeInstanceId(req.body?.instanceId || req.query.instanceId || 'default'),
+      instanceId: getRequestedInstanceId(req),
       callerUserId: getUserId(req) || null,
       outcome: res.statusCode < 400 ? 'allowed' : res.statusCode,
     }));
@@ -96,7 +100,7 @@ runtimeRouter.get('/pods/:podId/agents/:name/runtime-status',
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    const instanceId = normalizeInstanceId(req.query.instanceId || 'default');
+    const instanceId = getRequestedInstanceId(req);
     const gatewayId = req.query.gatewayId || null;
 
     const installation = await resolveAuthorizedRuntimeInstallation({
@@ -137,12 +141,12 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-start',
   auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const { instanceId, gatewayId } = req.body || {};
+    const { gatewayId } = req.body || {};
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    const normalizedInstanceId = normalizeInstanceId(instanceId || 'default');
+    const normalizedInstanceId = getRequestedInstanceId(req);
 
     const installation = await resolveAuthorizedRuntimeInstallation({
       podId, name, instanceId: normalizedInstanceId, userId,
@@ -182,12 +186,12 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop',
   auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const { instanceId, gatewayId } = req.body || {};
+    const { gatewayId } = req.body || {};
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    const normalizedInstanceId = normalizeInstanceId(instanceId || 'default');
+    const normalizedInstanceId = getRequestedInstanceId(req);
 
     const installation = await resolveAuthorizedRuntimeInstallation({
       podId, name, instanceId: normalizedInstanceId, userId,
@@ -227,12 +231,12 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart',
   auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const { instanceId, gatewayId } = req.body || {};
+    const { gatewayId } = req.body || {};
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    const normalizedInstanceId = normalizeInstanceId(instanceId || 'default');
+    const normalizedInstanceId = getRequestedInstanceId(req);
 
     const installation = await resolveAuthorizedRuntimeInstallation({
       podId, name, instanceId: normalizedInstanceId, userId,
@@ -272,12 +276,12 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions',
   auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const { instanceId, gatewayId, restart = true } = req.body || {};
+    const { gatewayId, restart = true } = req.body || {};
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    const normalizedInstanceId = normalizeInstanceId(instanceId || 'default');
+    const normalizedInstanceId = getRequestedInstanceId(req);
 
     const installation = await resolveAuthorizedRuntimeInstallation({
       podId, name, instanceId: normalizedInstanceId, userId,
@@ -341,8 +345,10 @@ runtimeRouter.get('/pods/:podId/agents/:name/runtime-logs',
   auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const lines = Number(req.query.lines || 200);
-    const instanceId = normalizeInstanceId(req.query.instanceId || 'default');
+    const requestedLines = Number(req.query.lines ?? 200);
+    const lines = Number.isFinite(requestedLines)
+      ? Math.min(1000, Math.max(1, Math.trunc(requestedLines))) : 200;
+    const instanceId = getRequestedInstanceId(req);
     const gatewayId = req.query.gatewayId || null;
     const userId = getUserId(req);
     if (!userId) {
