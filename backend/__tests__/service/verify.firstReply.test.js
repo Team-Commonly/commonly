@@ -12,9 +12,12 @@ const Pod = require('../../models/Pod');
 const AgentRun = require('../../models/AgentRun');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 
+// Keep cold TypeScript compilation outside the asynchronous database hook.
+// TASK-514's factory import starts no database connection or background worker.
+const createApp = process.env.INTEGRATION_TEST === 'true' ? require('../../server').createApp : null;
 const tier1 = process.env.INTEGRATION_TEST === 'true' ? describe : describe.skip;
 const LIMIT_MS = 15000;
-const pause = () => new Promise((resolve) => setTimeout(resolve, 50));
+const pause = () => new Promise((resolve) => setTimeout(resolve, 150));
 const auth = (token) => ({ Authorization: `Bearer ${token}` });
 const messages = (response) => Array.isArray(response.body) ? response.body : response.body.messages;
 
@@ -53,7 +56,6 @@ tier1('commonly verify first-agent-reply — production HTTP routes', () => {
     await new Promise((resolve) => provider.listen(0, '127.0.0.1', resolve));
     process.env.LITELLM_BASE_URL = `http://127.0.0.1:${provider.address().port}`;
     process.env.LITELLM_MASTER_KEY = 'verify527-local-only';
-    const { createApp } = require('../../server');
     await setupMongoDb();
     await setupPgDb();
     app = createApp();
@@ -152,11 +154,21 @@ tier1('commonly verify first-agent-reply — production HTTP routes', () => {
     }
     expect(event).toBeTruthy();
     expect(String(event.podId)).toBe(person.podId);
-    await request(app).get(`/api/agents/runtime/pods/${person.podId}/messages`).set(auth(token)).expect(200);
     const fallback = 'verify527-byo-reply';
-    const posted = await request(app).post(`/api/agents/runtime/pods/${person.podId}/messages`)
-      .set(auth(token)).send({ content: fallback }).expect(200);
-    expect(posted.body.success).toBe(true);
+    const sendDeadline = Date.now() + LIMIT_MS;
+    let sent = false;
+    while (!sent && Date.now() < sendDeadline) {
+      await request(app).get(`/api/agents/runtime/pods/${person.podId}/messages`).set(auth(token)).expect(200);
+      const posted = await request(app).post(`/api/agents/runtime/pods/${person.podId}/messages`)
+        .set(auth(token)).send({ content: fallback });
+      if (posted.status === 409 && posted.body.code === 'unseen_messages') {
+        await pause(); // Honour the fresh read after a concurrent Scout post.
+      } else {
+        expect({ status: posted.status, body: posted.body }).toMatchObject({ status: 200, body: { success: true } });
+        sent = true;
+      }
+    }
+    expect(sent).toBe(true);
     const agent = await User.findOne({ isBot: true, 'botMetadata.agentName': name }).lean();
     await awaitReply(person, fallback, agent._id);
     await request(app).post(`/api/agents/runtime/events/${event.id || event._id}/ack`)
@@ -164,7 +176,7 @@ tier1('commonly verify first-agent-reply — production HTTP routes', () => {
     // Exercise sentinel suppression via the real HTTP writer as well. It must
     // never create a user-visible row, including when a real BYO emits silence.
     await request(app).post(`/api/agents/runtime/pods/${person.podId}/messages`)
-      .set(auth(token)).send({ content: 'NO_REPLY', continueAnyway: true }).expect(200);
+      .set(auth(token)).send({ content: 'NO_REPLY' }).expect(200);
     await awaitReply(person, fallback, agent._id);
   }, 45000);
 });
