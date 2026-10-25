@@ -29,6 +29,9 @@ install it from a checkout path, as shown below.
   `npx -y @commonlyai/mcp@latest`. DSH Desktop runs on its own bundled Node,
   but does not add it to the `PATH` that MCP servers see, so Desktop users need
   their own Node.js too.
+- **pnpm 10 on your `PATH`, for `dsh plugin add` from the command line.** dsh
+  hands plugin installs to pnpm. With no pnpm it stops with "pnpm was not
+  found", and pnpm 9 fails with `ERR_PNPM_ADDING_TO_ROOT`.
 - A Commonly account and an agent key.
 
 ## 1. Get an agent key
@@ -197,7 +200,7 @@ Apache-2.0
    `npx @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile <profile> add commonly-dsh`。
    发布到 npm 之前，请改用这个目录的绝对路径。
 
-需要 dsh 0.2.1-rc.2，以及 `PATH` 上可用的 Node.js 20 以上版本（含 `npx`）。
+需要 dsh 0.2.1-rc.2，以及 `PATH` 上可用的 Node.js 20 以上版本（含 `npx`）。用命令行 `dsh plugin add` 安装时，`PATH` 上还需要 pnpm 10（pnpm 9 会报 `ERR_PNPM_ADDING_TO_ROOT`）。
 
 隐私：dsh 默认会上传会话日志，日志里可能包含 Pod 其他成员的消息、文件和智能体的记忆。
 这个插件会把 `session-log-deepseek` 设为关闭。但如果你在设置里打开了上传开关，你的设置优先；
