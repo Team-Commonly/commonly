@@ -8,8 +8,9 @@ import { withAdminUserMutationLock } from './adminUserMutationService';
  * every deploy. Its own cleanup can only uninstall the seat and delete the pod:
  * there is no self-delete route, and the admin delete removes the Mongo user
  * row only. Everything else a signup leaves behind would otherwise accumulate
- * as fake users. This removes exactly that footprint, and nothing that a real
- * person could own:
+ * as fake users. Cleanup is limited by the footprint and dependency refusals
+ * below; these are snapshot checks, not a fence against concurrent installs.
+ * Foreign group dependencies of disposable bots remain tracked in TASK-007:
  *
  *   per synthetic user H (all three must hold: username pattern, email domain,
  *   not a bot) and older than minAgeMs:
@@ -35,7 +36,9 @@ import { withAdminUserMutationLock } from './adminUserMutationService';
  *     an identity older than itself).
  * DMs with participants outside this disposable footprint retain their historical
  * pair and data. A disposable bot used by another DM or a Scout installed by
- * another owner refuses the account purge. Shared-pod membership still removes H.
+ * another owner refuses the account purge. Any pod selected for cascade with an
+ * outside-footprint installation also refuses before cleanup. Shared-pod
+ * membership still removes H.
  * Memory is deleted only for the seat's own (name, 'default') instance. Names
  * are not yet owned by an identity (TASK-270); once they are, the seat test
  * becomes "the seat's owner is H". Dry run is the default.
@@ -205,6 +208,14 @@ const purgeSyntheticAccountsUnlocked = async (
     if (botDms.some((pod: any) => String(pod.createdBy) !== humanId
       || (pod.members || []).some((member: unknown) => !ownIds.has(String(member))))) {
       account.refused = 'a disposable agent participates in a DM outside the synthetic footprint';
+      continue;
+    }
+    // Cascading a disposable pod removes every installation in it. Membership
+    // alone cannot prove ownership: an outside installer need not be a member.
+    if (pods.length && await AgentInstallation.exists({
+      podId: { $in: pods.map((pod: any) => pod._id) }, installedBy: { $nin: [...ownIds] },
+    })) {
+      account.refused = 'a disposable pod has an installation owned outside the synthetic footprint';
       continue;
     }
     const foreignIds = createdPods.flatMap((p: any) => (p.members || []).map(String))

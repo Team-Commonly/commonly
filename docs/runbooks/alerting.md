@@ -315,8 +315,10 @@ This uses the same read projection as account deletion (#2721).
 A DM wholly within the disposable footprint can still be cascaded. If a disposable
 Scout or seat bot is used in a DM outside that footprint, or the Scout is
 installed by another owner, the whole account is
-refused rather than deleting that identity. The existing refusal for a
-synthetic-created pod another human joined remains. Inspect `refused` and
+refused rather than deleting that identity. Any pod selected for cascade with an
+installation owned outside the disposable footprint also refuses the whole account before cleanup, even when that installer
+is not a member. The existing refusal for a synthetic-created pod another human
+joined remains. Inspect `refused` and
 `preservedDms` in the dry-run report; do not force a refused candidate through.
 The global administrator mutation lock and uncertain-write recovery rules still
 apply ([runbook](admin-user-mutation-lock.md)). This change does not add a durable

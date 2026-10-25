@@ -148,4 +148,31 @@ describe('Synthetic purge DM preservation', () => {
     expect((await AgentInstallation.findById(installation._id)).status).toBe('active');
   });
 
+  it.each([false, true])('refuses a disposable group with an outside-owner install (apply=%s)', async (apply) => {
+    const human = await insertUser({ username: 'eng-smoke-journey-1015124709', email: 'journey@ops.commonly.invalid', isBot: false });
+    const other = await insertUser({ username: 'outside-owner', isBot: false });
+    // The installer is intentionally not a member: the foreign-human refusal
+    // must not accidentally supply the protection being tested here.
+    const pod = { _id: id(), name: 'Synthetic group', type: 'standard', createdBy: human._id, members: [human._id] };
+    await Pod.collection.insertOne(pod);
+    await pool.query('INSERT INTO pods VALUES ($1,$2)', [String(pod._id), pod.type]);
+    await pool.query('INSERT INTO pod_members VALUES ($1,$2)', [String(pod._id), String(human._id)]);
+    await Message.collection.insertOne({ podId: pod._id, userId: human._id, content: 'Retain on refusal' });
+    await pool.query('INSERT INTO messages VALUES ($1)', [String(pod._id)]);
+    const installation = await AgentInstallation.create({ agentName: 'outside-agent', podId: pod._id, version: '1.0.0', installedBy: other._id });
+    const credential = await AgentCredential.create({ tokenHash: 'outside-install-key', kind: 'runtime', ownerUserId: other._id });
+    const report = await purgeSyntheticAccounts({ apply, now: NOW, pool });
+    expect((await AgentInstallation.findById(installation._id))?.status).toBe('active');
+    expect(report.accounts[0].refused).toMatch(/disposable pod has an installation owned outside/);
+    expect(await User.findById(human._id)).not.toBeNull();
+    expect(await User.findById(other._id)).not.toBeNull();
+    expect(await Pod.findById(pod._id)).not.toBeNull();
+    expect(await Message.countDocuments({ podId: pod._id })).toBe(1);
+    expect((await AgentCredential.findById(credential._id)).status).toBe('active');
+    expect((await pool.query('SELECT id FROM pods WHERE id=$1', [String(pod._id)])).rows).toHaveLength(1);
+    expect((await pool.query('SELECT user_id FROM pod_members WHERE pod_id=$1', [String(pod._id)])).rows).toHaveLength(1);
+    expect((await pool.query('SELECT pod_id FROM messages WHERE pod_id=$1', [String(pod._id)])).rows).toHaveLength(1);
+    expect(Object.values(report.counts).every((count) => count === 0)).toBe(true);
+  });
+
 });
