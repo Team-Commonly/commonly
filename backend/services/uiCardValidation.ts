@@ -110,6 +110,20 @@ export function validateAgentCardPayload(
   }
   try {
     const source = envelope.source as string;
+    // The lexer drops unknown characters. Reject those in the original source,
+    // while leaving quoted prose (including Unicode and escapes) untouched.
+    let quote = '';
+    let escaped = false;
+    for (const character of source) {
+      if (quote) {
+        if (escaped) escaped = false;
+        else if (character === '\\') escaped = true;
+        else if (character === quote) quote = '';
+      } else if (character === '"' || character === "'") quote = character;
+      else if (!/[a-zA-Z0-9_$@\s()[\]{},:=.?!+*/%<>|&-]/.test(character)) {
+        refuse('UI card contains unsupported source characters');
+      }
+    }
     // The streaming parser intentionally repairs incomplete input. Stored cards
     // must be complete. Inspect ALL statements, including unreachable ones:
     // materializing only root misses a dormant Query or an unknown component.

@@ -16,6 +16,10 @@ describe('untrusted UI card write validation', () => {
     expect(() => validate()).not.toThrow();
     expect(() => validate(card('root = Text("Query Mutation @Run are just quoted text")'))).not.toThrow();
     expect(() => validate(card('root = Text("hello")\nunused = Action(@OpenUrl("https://commonly.me"))'))).not.toThrow();
+    expect(() => validate(card('root = Text("# hello 🌍")'))).not.toThrow();
+  });
+  it.each(['#', '🌍', '`', '\\'])('rejects source characters omitted by tokenization: %s', (suffix) => {
+    expect(() => validate(card('root = Text("hello")' + suffix))).toThrow('unsupported source characters');
   });
   it.each([
     null, [], {}, { ...card(), kind: 'approval' }, { ...card(), kind: 'decision' },
