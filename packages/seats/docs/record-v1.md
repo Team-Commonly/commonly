@@ -287,6 +287,18 @@ request, and the OTLP export places it there.
   - A digest of low-entropy arguments can be confirmed by guessing them. It
     hides the values from a casual reader, not from someone who can guess them.
 
+**Writers in other languages.** A writer that computes `argsDigest` outside
+this code must pass every vector in
+[`test/vectors/args-digest.json`](../test/vectors/args-digest.json), which
+`test/args-digest-vectors.test.js` holds to `argsDigestOf`. The vectors cover
+key order by UTF-16 code units, string escaping, number formatting (`1.0`,
+`-0`, `1e21`, small floats), and the cases where a hand-rolled key-sorted
+serializer drifts: an undefined value in an object drops its key, one in an
+array becomes `null`, and `NaN` or `Infinity` anywhere means the arguments
+have no digest. On arguments that can't be digested, the writer omits
+`argsDigest` rather than writing a different digest, because a different
+digest would not match the approval the call ran under.
+
 ### Credentials
 
 | kind | data | default actor |
