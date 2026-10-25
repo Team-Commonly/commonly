@@ -100,9 +100,9 @@ describe('listLiteLLMKeys', () => {
     axios.get
       .mockResolvedValueOnce(page([key({ key_alias: 'a' })], 2))
       .mockResolvedValueOnce(page([key({ key_alias: 'b' })], 2));
-    const { rows, truncated } = await budget.listLiteLLMKeys();
+    const { rows, incomplete } = await budget.listLiteLLMKeys();
     expect(rows.map((r) => r.key_alias)).toEqual(['a', 'b']);
-    expect(truncated).toBeNull();
+    expect(incomplete).toBeNull();
     expect(axios.get).toHaveBeenCalledTimes(2);
     const [url, opts] = axios.get.mock.calls[0];
     expect(url).toBe('http://litellm:4000/key/list');
@@ -113,9 +113,9 @@ describe('listLiteLLMKeys', () => {
 
   test('stops at the page bound and reports the scan as truncated', async () => {
     axios.get.mockResolvedValue(page([key()], 9999));
-    const { truncated } = await budget.listLiteLLMKeys();
+    const { incomplete } = await budget.listLiteLLMKeys();
     expect(axios.get).toHaveBeenCalledTimes(20);
-    expect(truncated).toEqual({ pagesRead: 20, totalPages: 9999 });
+    expect(incomplete).toEqual({ reason: 'truncated', pagesRead: 20, totalPages: 9999 });
   });
 });
 
@@ -172,12 +172,36 @@ describe('checkLiteLLMBudgets', () => {
     axios.get.mockResolvedValue(page([key({ spend: 39 })], 9999));
     await budget.checkLiteLLMBudgets();
     expect(alarmLines()).toEqual([
-      { alarm: 'litellm_budget', scanTruncated: true, pagesRead: 20, totalPages: 9999 },
+      { alarm: 'litellm_budget', scanIncomplete: 'truncated', pagesRead: 20, totalPages: 9999 },
       expect.objectContaining({ keyAlias: 'svc-backend' }),
     ]);
     expect(mockPageSre.mock.calls[0][0]).toMatch(/stopped at 20 of 9999 pages/);
     await budget.checkLiteLLMBudgets();
-    expect(alarmLines().filter((l) => l.scanTruncated).length).toBe(1);
+    expect(alarmLines().filter((l) => l.scanIncomplete).length).toBe(1);
+  });
+
+  test('a failed later page keeps the keys already read and alarms the incomplete scan', async () => {
+    axios.get
+      .mockResolvedValueOnce(page([key({ spend: 39 })], 3))
+      .mockRejectedValueOnce(new Error('timeout of 15000ms exceeded'));
+    const fresh = await budget.checkLiteLLMBudgets();
+    expect(fresh.map((a) => a.keyAlias)).toEqual(['svc-backend']);
+    expect(alarmLines()[0]).toEqual({ alarm: 'litellm_budget', scanIncomplete: 'failed', pagesRead: 1, totalPages: 3 });
+    expect(mockPageSre.mock.calls[0][0]).toMatch(/failed after 1 page,/);
+    expect(mockPageSre).toHaveBeenCalledTimes(2);
+  });
+
+  test('an incomplete scan alarms again only after a complete one in between', async () => {
+    axios.get.mockRejectedValueOnce(new Error('down'));
+    await budget.checkLiteLLMBudgets();
+    axios.get.mockRejectedValueOnce(new Error('down'));
+    await budget.checkLiteLLMBudgets();
+    expect(alarmLines().filter((l) => l.scanIncomplete).length).toBe(1);
+    axios.get.mockResolvedValueOnce(page([]));
+    await budget.checkLiteLLMBudgets();
+    axios.get.mockRejectedValueOnce(new Error('down'));
+    await budget.checkLiteLLMBudgets();
+    expect(alarmLines().filter((l) => l.scanIncomplete).length).toBe(2);
   });
 
   test('does nothing without the master key', async () => {

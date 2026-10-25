@@ -84,9 +84,10 @@ export const keysNearBudget = (
 
 export interface KeyScan {
   rows: LiteLLMKeyRow[];
-  // Set when /key/list reported more pages than the bound allowed, so a
-  // budgeted key on a later page went unchecked.
-  truncated: { pagesRead: number; totalPages: number } | null;
+  // Set when the scan did not cover every key: /key/list reported more pages
+  // than the bound allows, or a page request failed. Either way a budgeted
+  // key on a later page went unchecked. The rows already read are kept.
+  incomplete: { reason: 'truncated' | 'failed'; pagesRead: number; totalPages: number | null } | null;
 }
 
 export const listLiteLLMKeys = async (): Promise<KeyScan | null> => {
@@ -94,20 +95,27 @@ export const listLiteLLMKeys = async (): Promise<KeyScan | null> => {
   const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
   if (!baseUrl || !masterKey) return null;
   const rows: LiteLLMKeyRow[] = [];
+  let totalPages: number | null = null;
   for (let page = 1; page <= MAX_PAGES; page += 1) {
-    // eslint-disable-next-line no-await-in-loop
-    const resp = await axios.get(`${baseUrl}/key/list`, {
-      params: { return_full_object: true, page, size: PAGE_SIZE },
-      headers: { Authorization: `Bearer ${masterKey}` },
-      timeout: 15000,
-    });
+    let resp;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      resp = await axios.get(`${baseUrl}/key/list`, {
+        params: { return_full_object: true, page, size: PAGE_SIZE },
+        headers: { Authorization: `Bearer ${masterKey}` },
+        timeout: 15000,
+      });
+    } catch (error) {
+      console.warn(`[budget-alarm] /key/list page ${page} failed:`, (error as Error).message);
+      return { rows, incomplete: { reason: 'failed', pagesRead: page - 1, totalPages } };
+    }
     const keys = Array.isArray(resp?.data?.keys) ? resp.data.keys : [];
     rows.push(...keys);
-    const totalPages = Number(resp?.data?.total_pages) || 1;
-    if (page >= totalPages || keys.length === 0) return { rows, truncated: null };
-    if (page === MAX_PAGES) return { rows, truncated: { pagesRead: page, totalPages } };
+    totalPages = Number(resp?.data?.total_pages) || 1;
+    if (page >= totalPages || keys.length === 0) return { rows, incomplete: null };
+    if (page === MAX_PAGES) return { rows, incomplete: { reason: 'truncated', pagesRead: page, totalPages } };
   }
-  return { rows, truncated: null };
+  return { rows, incomplete: null };
 };
 
 export const composeBudgetPage = (alarm: BudgetAlarm, mention?: string): string => {
@@ -125,7 +133,9 @@ export const composeBudgetPage = (alarm: BudgetAlarm, mention?: string): string 
 // the email alert counts, so it is never repeated for a retry.
 const alarmed = new Set<string>();
 const unpaged = new Map<string, BudgetAlarm>();
-let truncationReported = false;
+// An incomplete scan alarms once, and again only after a complete scan in
+// between, so a lasting failure is one alert rather than one every sweep.
+let incompleteReported = false;
 
 const sendPage = async (content: string): Promise<boolean> => {
   try {
@@ -144,14 +154,19 @@ export const checkLiteLLMBudgets = async (): Promise<BudgetAlarm[]> => {
   if (!scan) return [];
   const mention = String(process.env.SPEND_ALARM_MENTION || '').trim() || undefined;
 
-  // An unfinished scan can hide a key near its budget, so it alarms too:
-  // once per process, on the same metric, toward over-delivery.
-  if (scan.truncated && !truncationReported) {
-    truncationReported = true;
-    console.warn(JSON.stringify({ alarm: 'litellm_budget', scanTruncated: true, ...scan.truncated }));
+  // An incomplete scan can hide a key near its budget, so it alarms too, on
+  // the same metric, toward over-delivery. The rows it did read are checked.
+  if (!scan.incomplete) {
+    incompleteReported = false;
+  } else if (!incompleteReported) {
+    incompleteReported = true;
+    const { reason, pagesRead, totalPages } = scan.incomplete;
+    console.warn(JSON.stringify({ alarm: 'litellm_budget', scanIncomplete: reason, pagesRead, totalPages }));
     const handle = mention ? ` @${mention}` : '';
-    await sendPage(`[budget alarm] The LiteLLM key scan stopped at ${scan.truncated.pagesRead} of `
-      + `${scan.truncated.totalPages} pages, so some keys were not checked against their budget.${handle}`);
+    const what = reason === 'failed'
+      ? `failed after ${pagesRead} page${pagesRead === 1 ? '' : 's'}`
+      : `stopped at ${pagesRead} of ${totalPages} pages`;
+    await sendPage(`[budget alarm] The LiteLLM key scan ${what}, so some keys were not checked against their budget.${handle}`);
   }
 
   const fresh: BudgetAlarm[] = [];
@@ -176,5 +191,5 @@ export const checkLiteLLMBudgets = async (): Promise<BudgetAlarm[]> => {
 export const resetBudgetAlarmMemory = (): void => {
   alarmed.clear();
   unpaged.clear();
-  truncationReported = false;
+  incompleteReported = false;
 };

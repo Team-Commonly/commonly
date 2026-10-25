@@ -356,10 +356,13 @@ key (`GET /key/list`, `backend/services/litellmBudgetAlarmService.ts`) and logs
 one `{"alarm":"litellm_budget", ...}` line per key per budget period, naming
 the key alias, the spend, the budget and the reset time. The same text goes to
 the "SRE alerts" pod as described under *User spend*; a failed post is retried
-on the next sweep without a second log line. If `/key/list` has more pages
-than the sweep reads (20 pages of 100), it logs one `scanTruncated` line on
-the same metric, so the alert also means "some keys were not checked". Raise
-the page bound in the service when that happens.
+on the next sweep without a second log line. If the scan does not cover every
+key, it logs one `scanIncomplete` line on the same metric, so the alert can
+also mean "some keys were not checked". `truncated` means `/key/list` has more
+pages than the sweep reads (20 pages of 100): raise the bound in the service.
+`failed` means a page request failed: check LiteLLM's health first. Either
+way the keys already read are still checked, and the line repeats only after
+a complete scan in between.
 
 The keys that matter (TASK-555, minted 2026-10-25):
 
