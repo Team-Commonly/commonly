@@ -231,11 +231,12 @@ const runTurn = ({
   // Who decides, for the record. With a hook, the run's approver (ctx.askedOf)
   // is asked; without one, or when the hook fails, the reject default is the
   // policy deciding. A decider that writes its own permission entries (the
-  // valet's policy given a trace) sets ctx.permissionsRecordedByDecider.
+  // valet's policy) carries recordsPermissions = true, and then the adapter
+  // writes none, so each ask is recorded exactly once.
   const hasHook = typeof ctx.decidePermission === 'function';
   const grantId = typeof ctx.grantId === 'string' && ctx.grantId ? ctx.grantId : undefined;
   const policy = { id: policyActorId(grantId), role: 'policy' };
-  const recordPermissions = ctx.permissionsRecordedByDecider !== true;
+  const recordPermissions = ctx.decidePermission?.recordsPermissions !== true;
 
   /** Resolves { decision, by }: by is 'hook' (with its attribution), 'default', 'failed' or 'aborted'. */
   const decide = (params) => {

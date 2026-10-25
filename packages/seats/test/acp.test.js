@@ -287,13 +287,15 @@ test('the question is agent text: credentials are scrubbed out of it and it stay
   } finally { h.done(); }
 });
 
-test('a decider that records its own permission entries is not double-recorded', async () => {
+test('a decider marked recordsPermissions writes the pair itself; a plain hook gets the adapter pair', async () => {
   const h = harness();
   try {
-    await h.adapter.spawn('[[permission]]', h.ctx({
-      permissionsRecordedByDecider: true, decidePermission: async () => ({ outcome: 'selected', optionId: 'allow' }),
-    }));
-    assert.ok(!h.events.some((e) => e.type.startsWith('permission.')));
+    const recording = async () => ({ outcome: 'selected', optionId: 'allow' });
+    Object.defineProperty(recording, 'recordsPermissions', { value: true });
+    await h.adapter.spawn('[[permission]]', h.ctx({ decidePermission: recording }));
+    assert.ok(!h.events.some((e) => e.type.startsWith('permission.')), 'the adapter wrote nothing for a recording decider');
+    await h.adapter.spawn('[[permission]]', h.ctx({ decidePermission: async () => ({ outcome: 'selected', optionId: 'allow' }) }));
+    assert.deepEqual(h.events.filter((e) => e.type.startsWith('permission.')).map((e) => e.type), ['permission.requested', 'permission.decided']);
   } finally { h.done(); }
 });
 
