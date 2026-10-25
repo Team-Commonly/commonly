@@ -14,6 +14,7 @@ const MAX_UPSTREAM_STATUS = 599;
 // ESM import shape but has trouble tracing rate-limit middleware through
 // require() returns; using `import` here makes the recognition unambiguous.
 import rateLimit from 'express-rate-limit';
+import { operatorOnlyPodAllowed } from '../services/operatorOnlyPodPolicy';
 import { platformIpRateLimit } from '../middleware/platformRateLimit';
 
 const express = require('express');
@@ -499,6 +500,22 @@ router.delete('/messages/:messageId/claim', phase4RateLimit, agentRuntimeAuth, a
   } catch (err) {
     console.error('[claims] release failed:', (err as Error).message);
     return res.status(500).json({ error: 'release_failed' });
+  }
+});
+
+// Fail closed for full-tool in-process harnesses. Re-read before every turn.
+router.get('/pods/:podId/operator-only', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const installations = req.agentInstallations || [];
+    if (!await operatorOnlyPodAllowed(req.params.podId, installations, req.agentUser)) {
+      return res.status(403).json({ code: 'operator_only_required' });
+    }
+    const identity = installations[0];
+    return res.json({ allowed: true, podId: req.params.podId,
+      agentName: identity.agentName, instanceId: identity.instanceId || 'default' });
+  } catch {
+    return res.status(503).json({ code: 'operator_only_unavailable' });
   }
 });
 

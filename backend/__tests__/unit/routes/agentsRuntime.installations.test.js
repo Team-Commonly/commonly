@@ -2,6 +2,9 @@
 
 jest.mock('jsonwebtoken', () => ({ sign: jest.fn(), verify: jest.fn(), decode: jest.fn() }));
 
+let mockOperatorAllowed = true;
+jest.mock('../../../services/operatorOnlyPodPolicy', () => ({ operatorOnlyPodAllowed: jest.fn(async () => mockOperatorAllowed) }));
+
 const mockInstallation = {
   podId: 'pod-1',
   instanceId: 'writer',
@@ -101,5 +104,24 @@ describe('GET /installations runtime adapter projection', () => {
     } finally {
       mockInstallation.config = config;
     }
+  });
+});
+
+describe('GET /pods/:podId/operator-only', () => {
+  test('projects authenticated identity or refuses without private details', async () => {
+    mockOperatorAllowed = true;
+    const ok = await request(app).get('/api/agents/runtime/pods/pod-1/operator-only');
+    expect(ok.status).toBe(200);
+    expect(ok.headers['cache-control']).toBe('no-store');
+    expect(ok.body).toEqual({ allowed: true, podId: 'pod-1', instanceId: 'writer' });
+    mockOperatorAllowed = false;
+    const denied = await request(app).get('/api/agents/runtime/pods/pod-1/operator-only');
+    expect(denied.status).toBe(403);
+  });
+  test('database failure refuses instead of authorizing', async () => {
+    require('../../../services/operatorOnlyPodPolicy').operatorOnlyPodAllowed.mockRejectedValueOnce(Error('DB unavailable'));
+    const result = await request(app).get('/api/agents/runtime/pods/pod-1/operator-only');
+    expect(result.status).toBe(503);
+    expect(result.body).not.toHaveProperty('allowed');
   });
 });
