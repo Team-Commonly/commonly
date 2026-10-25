@@ -170,10 +170,14 @@ describe('read-only git refuses what is not read-only', () => {
 
 describe('read-only git runs the five subcommands', () => {
   test('forced options are prepended for diff, log and show', () => {
+    const excludes = ['--', ':(exclude,glob)**/.env', ':(exclude,glob)**/.env.*',
+      ':(exclude,glob)**/.env/**', ':(exclude,glob)**/.env.*/**'];
     expect(readonlyGitArgv({ subcommand: 'diff', args: [], root: repo }).argv)
-      .toEqual(['--no-pager', '-c', 'core.fsmonitor=false', 'diff', '--no-ext-diff', '--no-textconv']);
+      .toEqual(['--no-pager', '-c', 'core.fsmonitor=false', 'diff', '--no-ext-diff', '--no-textconv', ...excludes]);
     expect(readonlyGitArgv({ subcommand: 'status', args: [], root: repo }).argv)
-      .toEqual(['--no-pager', '-c', 'core.fsmonitor=false', 'status']);
+      .toEqual(['--no-pager', '-c', 'core.fsmonitor=false', 'status', ...excludes]);
+    expect(readonlyGitArgv({ subcommand: 'blame', args: ['tracked.txt'], root: repo }).argv)
+      .toEqual(['--no-pager', '-c', 'core.fsmonitor=false', 'blame', 'tracked.txt']);
   });
 
   test('status, log, diff, show and blame all return output', async () => {
@@ -236,5 +240,54 @@ describe('read-only git runs the five subcommands', () => {
     } finally {
       rmSync(parent, { recursive: true, force: true });
     }
+  });
+});
+
+// A committed .env sits in git's objects, where the sandbox's deny on the file
+// does not reach. Each control reads it with bare git; the guarded call does not.
+describe('read-only git keeps committed .env files out of reach', () => {
+  const SECRET = 'ENV_SECRET_VALUE';
+  const run = (subcommand, args) => runReadonlyGit({
+    subcommand, args, root: repo, git: GIT,
+  });
+
+  beforeAll(async () => {
+    mkdirSync(join(repo, 'sub'), { recursive: true });
+    writeFileSync(join(repo, '.env'), `TOKEN=${SECRET}\n`);
+    writeFileSync(join(repo, 'sub', '.env.local'), `LOCAL=${SECRET}\n`);
+    await bareGit(['add', '-f', '.env', 'sub/.env.local']);
+    await bareGit(['commit', '-q', '-m', 'commit env files']);
+  });
+
+  test('an argument naming one is refused, in every form git reads a path from (control: bare show reads it)', async () => {
+    expect((await bareGit(['show', 'HEAD:.env'])).stdout).toContain(SECRET);
+    for (const args of [['HEAD:.env'], [':.env'], [':0:sub/.env.local'], ['HEAD~0:./sub/.env.local'],
+      ['HEAD', '--', '.env'], ['HEAD^{tree}:sub/.env.local']]) {
+      expect(refusal({ subcommand: 'show', args })).toMatch(/names a \.env file/);
+    }
+    expect(refusal({ subcommand: 'blame', args: ['sub/.env.local'] })).toMatch(/names a \.env file/);
+    expect(refusal({ subcommand: 'log', args: ['-L1,1:.env'] })).toMatch(/names a \.env file/);
+    expect(refusal({ subcommand: 'log', args: ['-L', '1,1:sub/.env.local'] })).toMatch(/names a \.env file/);
+  });
+
+  test('a patch, a glob, a pickaxe and a raw listing all leave it out (control: bare log -p shows it)', async () => {
+    expect((await bareGit(['log', '-p'])).stdout).toContain(SECRET);
+    for (const [subcommand, args] of [['log', ['-p']], ['log', ['-p', '--', '.en*', 'sub/*']],
+      ['show', ['HEAD']], ['diff', ['HEAD~1', 'HEAD']], ['log', ['--raw', '--all']]]) {
+      // eslint-disable-next-line no-await-in-loop
+      const out = await run(subcommand, args);
+      expect(out.ok).toBe(true);
+      expect(out.text).not.toContain(SECRET);
+      expect(out.text).not.toMatch(/\.env/);
+    }
+    expect((await bareGit(['log', '--oneline', `-S${SECRET}`])).stdout).toContain('commit env files');
+    expect((await run('log', ['--oneline', `-S${SECRET}`])).text).toBe('(no output)');
+  });
+
+  test('ordinary reads still work, with paths after --', async () => {
+    expect((await run('log', ['-p', '--', 'tracked.txt'])).text).toContain('first line');
+    expect((await run('show', ['HEAD~1:tracked.txt'])).text).toContain('first line');
+    expect((await run('log', ['-L1,1:tracked.txt'])).ok).toBe(true);
+    expect((await run('status', ['--short'])).ok).toBe(true);
   });
 });

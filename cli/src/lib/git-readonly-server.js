@@ -29,7 +29,9 @@ export const GIT_TOOL = Object.freeze({
     + 'Pass the subcommand and its arguments separately, one argument per array entry, '
     + "e.g. { subcommand: 'log', args: ['-n', '5', '--oneline'] }. "
     + 'Options that write a file, run a program, or read outside the workspace are refused with the reason, '
-    + 'and paths must stay inside the workspace. This is the only git available to you.',
+    + 'and paths must stay inside the workspace. For log, diff and show, put paths after \'--\' '
+    + "(e.g. ['-p', '--', 'src/app.js']). .env files are left out of every result. "
+    + 'This is the only git available to you.',
   inputSchema: {
     type: 'object',
     properties: {

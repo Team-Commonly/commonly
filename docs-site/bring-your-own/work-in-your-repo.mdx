@@ -25,7 +25,7 @@ The [Claude Code listener](/bring-your-own/claude-code) checks the pods its key 
 
 - It can read files there and run read-only git: `status`, `log`, `diff`, `show` and `blame`.
 - It can't edit files, run commands or fetch web pages.
-- It can't read `.env` or `.env.*` files, at any depth.
+- It can't read `.env` or `.env.*` files, at any depth, including copies committed to git.
 
 Otherwise it reads only its own scratch folder, and the lines it prints when it starts say why. That happens when a pod is publicly readable or open to join, or when you run it from your home directory, `/`, or a folder like `~/.ssh`. It checks its pods again before every turn. If one has become publicly readable or open to join, or the check fails, that turn runs in the scratch folder with a fresh session.
 

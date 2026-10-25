@@ -29,6 +29,13 @@
  *    is one rooted there, so `show HEAD:<path>` cannot reach a file above it.
  * 5. Outside this module, the seat's sandbox (Seatbelt or bwrap) mounts the
  *    workspace read-only.
+ * 6. A committed `.env` or `.env.*` stays as far out of reach as the file
+ *    itself, which the sandbox denies at any depth. An argument naming one
+ *    (`.env`, `HEAD:.env`, `:0:sub/.env.local`, `-L1,5:.env`) is refused, and
+ *    status, log, diff and show run with pathspecs excluding them, so no patch,
+ *    pickaxe match or blob id comes from one whatever path or glob the caller
+ *    named. What this cannot stop is `show <blob id>` with an id learned
+ *    somewhere else.
  */
 import { execFile } from 'child_process';
 import { realpathSync } from 'fs';
@@ -87,6 +94,20 @@ const FORCED_OPTIONS = Object.freeze({
   blame: [],
 });
 const TOP_LEVEL = Object.freeze(['--no-pager', '-c', 'core.fsmonitor=false']);
+
+// Mirrors the names sandbox/seatbelt.js denies at any depth.
+const ENV_FILE_SEGMENT = /^\.env(\..*)?$/;
+const namesEnvFile = (arg) => arg.split(':')
+  .some((part) => part.split('/').some((segment) => ENV_FILE_SEGMENT.test(segment)));
+const NAMES_ENV_FILE = 'it names a .env file, which the workspace keeps out of reach';
+const ENV_EXCLUDES = Object.freeze([
+  ':(exclude,glob)**/.env', ':(exclude,glob)**/.env.*', ':(exclude,glob)**/.env/**', ':(exclude,glob)**/.env.*/**',
+]);
+// blame takes one literal file, so the name check above covers it. A
+// blob-to-blob diff (`diff A:f B:f`) takes no pathspec and is refused by git
+// here; `diff A B -- f` is the same diff. log -L also takes none, so its file
+// is name-checked instead.
+const PATHSPEC_SUBCOMMANDS = new Set(['status', 'log', 'diff', 'show']);
 
 const MAX_ARGS = 64;
 const MAX_ARG_LENGTH = 4096;
@@ -151,18 +172,27 @@ export const readonlyGitArgv = ({ subcommand, args = [], root }) => {
   if (args.length > MAX_ARGS) return refuse(`at most ${MAX_ARGS} arguments`);
   if (typeof root !== 'string' || !isAbsolute(root)) return refuse('the workspace is not an absolute path');
   let pathsOnly = false;
+  let lineRange = false;
   for (const arg of args) {
     if (arg.length > MAX_ARG_LENGTH || arg.includes('\0')) return refuse('an argument is too long or contains NUL');
     if (pathsOnly || arg === '-' || !arg.startsWith('-')) {
       if (escapesRoot(root, arg)) return refuse(`${arg} is refused: it is outside the workspace`);
+      if (namesEnvFile(arg)) return refuse(`${arg} is refused: ${NAMES_ENV_FILE}`);
     } else if (arg === '--') {
       pathsOnly = true;
     } else {
       const reason = arg.startsWith('--') ? checkLongOption(arg) : checkShortOption(arg, subcommand);
       if (reason) return refuse(reason);
+      if (arg.startsWith('-L')) {
+        lineRange = true;
+        if (namesEnvFile(arg.slice(2))) return refuse(`${arg} is refused: ${NAMES_ENV_FILE}`);
+      }
     }
   }
-  return { ok: true, argv: [...TOP_LEVEL, subcommand, ...FORCED_OPTIONS[subcommand], ...args] };
+  const excludes = PATHSPEC_SUBCOMMANDS.has(subcommand) && !lineRange
+    ? [...(pathsOnly ? [] : ['--']), ...ENV_EXCLUDES]
+    : [];
+  return { ok: true, argv: [...TOP_LEVEL, subcommand, ...FORCED_OPTIONS[subcommand], ...args, ...excludes] };
 };
 
 // What git keeps from the seat's environment. Everything else is dropped,
