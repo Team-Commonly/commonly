@@ -1,3 +1,4 @@
+import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
 /**
  * OpenCode adapter — wraps `opencode run --format json` as a Commonly seat.
  *
@@ -393,7 +394,7 @@ const publicToolFailedError = ({ tool, error }) => {
   return failure;
 };
 
-const runOpenCode = ({ cmd, args, cwd, env, timeoutMs, credentials, spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
+const runOpenCode = ({ cmd, args, cwd, env, timeoutMs, credentials, spawnImpl = childSpawn, onSpawn, controls = {} }) => new Promise((resolve, reject) => {
   let proc;
   try {
     proc = spawnImpl(cmd, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -401,6 +402,7 @@ const runOpenCode = ({ cmd, args, cwd, env, timeoutMs, credentials, spawnImpl = 
     reject(err);
     return;
   }
+  observeSpawn(proc, onSpawn, controls);
   let stderr = '';
   let timedOut = false;
   let killTimer = null;
@@ -634,7 +636,7 @@ export default {
 
   async detect() {
     try {
-      const res = spawnSync('opencode', ['--version'], { encoding: 'utf8' });
+      const res = spawnSync('opencode', ['--version'], { encoding: 'utf8', timeout: VERSION_CHECK_TIMEOUT_MS });
       if (res.error || res.status !== 0) return null;
       const stdout = (res.stdout || '').trim();
       const version = parseOpenCodeVersion(stdout) || stdout || 'unknown';
@@ -666,7 +668,10 @@ export default {
     if (isPublic && !provider) {
       throw new Error('public OpenCode seats require environment.provider; the implicit public tier and operator auth.json are unsupported for public trust');
     }
-    const providerKeyFile = await validateProviderEnvironment(ctx.environment, ctx.cwd);
+    if (ctx.providerKey && (!isPublic || !['workspace', 'read-only', 'bwrap'].includes(sandboxMode))) {
+      throw new Error('Own provider keys require a confined OpenCode runtime');
+    }
+    const providerKeyFile = ctx.providerKey ? null : await validateProviderEnvironment(ctx.environment, ctx.cwd);
 
     const sourceEnv = ctx.env || process.env;
     const childSourceEnv = Object.fromEntries(Object.entries(sourceEnv)
@@ -739,7 +744,7 @@ export default {
         // the bearer only prevents unrelated local processes from using it.
         providerProxy = await startProviderProxy({
           provider,
-          keyFile: providerKeyFile,
+          keyFile: providerKeyFile, keyMaterial: ctx.providerKey,
           tokenFile: join(tempDir, 'provider-proxy-token'),
           ...(sandboxMode === 'bwrap' ? {
             socketPath: join(tempDir, 'provider-proxy.sock'),
@@ -868,7 +873,7 @@ export default {
         });
         [cmd, ...spawnArgs] = wrapped;
       }
-      const credentials = spawnCredentials(ctx, sourceAuthEnvNames(sourceEnv));
+      const credentials = [...spawnCredentials(ctx, sourceAuthEnvNames(sourceEnv)), ctx.providerKey].filter(Boolean);
       const result = await runOpenCode({
         cmd,
         args: spawnArgs,
@@ -876,7 +881,7 @@ export default {
         env: childEnv,
         timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
         credentials,
-        spawnImpl: ctx._spawnImpl,
+        spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(0, -1), { modelFlag: '-m', effortFlag: '--variant', valueFlags: ['-s', '--dir', '--title', '--format'] }),
       });
       if (isPublic) {
         const failure = publicToolFailure(result.toolErrors, ctx.environment?.mcp);

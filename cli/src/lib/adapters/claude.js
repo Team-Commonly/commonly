@@ -1,3 +1,5 @@
+import { claudeRuntimeInventory } from '../native-runtime-inventory.js';
+import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
 /**
  * claude adapter — wraps the local `claude` CLI as a Commonly agent.
  *
@@ -289,12 +291,13 @@ const publicSkillPromptArgs = async (skillSources) => {
   return { args: text ? ['--append-system-prompt', text] : [], included };
 };
 
-const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
+const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {} }) => new Promise((resolve, reject) => {
   const proc = spawnImpl(cmd, args, {
     cwd,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  observeSpawn(proc, onSpawn, controls);
   let stdout = '';
   let stderr = '';
   let timedOut = false;
@@ -736,11 +739,13 @@ export default {
   // hosted variant.
   runtimeType: 'claude-code',
 
+  inventory: claudeRuntimeInventory,
+
   async detect() {
     try {
       const claudeEnv = withClaudePath(process.env);
       const res = spawnSync('claude', ['--version'], {
-        encoding: 'utf8',
+        encoding: 'utf8', timeout: 5000,
         env: claudeEnv,
       });
       if (res.error || res.status !== 0) return null;
@@ -900,7 +905,7 @@ export default {
         // and its provider key is not an env var here, so the seat credential is
         // the value a tail can echo back.
         credentials: spawnCredentials(spawnCtx),
-        spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
+        spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }), // test seam only — do not use in production
       });
       // TASK-440: the context this turn left, read from the transcript the
       // child wrote under its own env (an isolated HOME for public seats).
@@ -951,7 +956,7 @@ export default {
           env: retry.env,
           timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
           credentials: spawnCredentials(retryCtx),
-          spawnImpl: ctx._spawnImpl,
+          spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
         });
         const contextTokens = claudeContextTokens({
           cwd: ctx.cwd, sessionId: freshId,

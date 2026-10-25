@@ -482,7 +482,9 @@
     }
   },
   "podChat": {
-    "firstTask": { "addFailed": "Couldn’t add the task. Try again." },
+    "firstTask": {
+      "addFailed": "Couldn’t add the task. Try again."
+    },
     "starts": {
       "label": "Ways to start"
     },
@@ -2384,6 +2386,53 @@
       "cancel": "Cancel",
       "loadError": "Could not load connector grants.",
       "revokeError": "Could not revoke the grant."
+    },
+    "controls": {
+      "title": "How it runs",
+      "nextSpawn": "changes apply on the next spawn",
+      "readOnlyHosted": "read only · runs on commonly",
+      "readOnlyCli": "read only · this seat runs from the cli",
+      "saved": "saved",
+      "lastSpawn": "last spawn",
+      "confirmed": "confirmed",
+      "harness": "harness",
+      "model": "model",
+      "effort": "effort",
+      "unconfirmed": "unconfirmed",
+      "default": "harness default",
+      "pending": "pending next spawn",
+      "unknown": "unknown",
+      "notInstalled": "not installed",
+      "stored": "stored",
+      "modelsUnavailable": "model list unavailable · checked at next spawn",
+      "effortUnavailable": "{{harness}} reports no effort levels · {{effort}} stays stored, not sent",
+      "unsupported": "stored choice unsupported · last spawn: {{harness}} · {{model}} · {{effort}}",
+      "save": "Save",
+      "saveError": "Could not save runtime settings.",
+      "process": "process",
+      "turn": "turn",
+      "connected": "connected",
+      "disconnected": "disconnected",
+      "running": "running",
+      "noTurn": "no turn reported",
+      "saveRuntime": "Save runtime",
+      "spawnFailed": "spawn failed · last spawn: {{harness}} · {{model}} · {{effort}}",
+      "notReported": "not reported"
+    },
+    "providerKey": {
+      "title": "Use my own API key",
+      "readOnly": "set where the cli runs · not managed here",
+      "unavailable": "own key not available for {{harness}}",
+      "provider": "key for {{provider}}",
+      "input": "API key",
+      "save": "Save key",
+      "cancel": "Cancel",
+      "replace": "Replace key",
+      "setAction": "Set key",
+      "remove": "Remove",
+      "set": "set",
+      "loadError": "Could not load key status.",
+      "saveError": "Could not update the key. Enter it again to retry."
     }
   },
   "agentSettings": {
@@ -2391,7 +2440,13 @@
     "displayName": "Display name",
     "persona": "Persona",
     "tone": "Tone",
-    "toneOptions": { "friendly": "Friendly", "professional": "Professional", "casual": "Casual", "formal": "Formal", "technical": "Technical" },
+    "toneOptions": {
+      "friendly": "Friendly",
+      "professional": "Professional",
+      "casual": "Casual",
+      "formal": "Formal",
+      "technical": "Technical"
+    },
     "specialties": "Specialties (comma separated)",
     "boundaries": "Boundaries (comma separated)",
     "personaNotes": "Persona notes",
@@ -2479,7 +2534,11 @@
     "workspace": "Allow repository edits",
     "saveTrust": "Save trust mode",
     "memory": "Memory",
-    "section": { "long_term": "Long-term", "soul": "Identity", "shared": "Shared" },
+    "section": {
+      "long_term": "Long-term",
+      "soul": "Identity",
+      "shared": "Shared"
+    },
     "saveMemory": "Save memory",
     "loadingMemory": "Loading memory…",
     "retry": "Try again",

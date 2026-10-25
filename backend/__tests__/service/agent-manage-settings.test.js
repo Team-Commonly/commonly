@@ -5,6 +5,7 @@ const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const { AgentInstallation } = require('../../models/AgentRegistry');
+const Machine = require('../../models/Machine');
 const AgentMemory = require('../../models/AgentMemory');
 const manageSettings = require('../../routes/registry/manage-settings');
 const podAgents = require('../../routes/registry/pod-agents');
@@ -47,6 +48,7 @@ describe('per-installation agent settings', () => {
 
   afterEach(async () => {
     await User.deleteMany({ username: 'settings-runtime-bot' });
+    await Machine.deleteMany({ machineId: 'machine-a' });
   });
 
   it('lists only installations the caller may manage', async () => {
@@ -68,6 +70,8 @@ describe('per-installation agent settings', () => {
   });
 
   it('reads and writes the same effort declaration the daemon selects', async () => {
+    await Machine.create({ ownerUserId: owner._id, machineId: 'machine-a', name: 'Test computer',
+      inventoryAt: new Date(), runtimeInventory: [{ harness: 'claude', installed: true, version: '2.1', models: null, efforts: ['high', 'xhigh'] }] });
     await User.create({
       username: 'settings-runtime-bot', email: 'settings-runtime-bot@test.com', password: 'password123',
       isBot: true, botMetadata: { agentName: 'settings-agent', instanceId: 'same', machineId: 'machine-a' },
@@ -90,7 +94,7 @@ describe('per-installation agent settings', () => {
     const saved = await request(app)
       .patch(`/api/registry/pods/${before.body.runtimeSourcePodId}/agents/settings-agent`)
       .set('Authorization', `Bearer ${token(owner)}`)
-      .send({ instanceId: 'same', config: { environment: { effort: 'xhigh' } } });
+      .send({ instanceId: 'same', config: { environment: { effort: 'xhigh' }, runtime: { adapter: 'claude' } } });
     expect(saved.status).toBe(200);
     const seat = (await projectSeatEnvironments({ installedBy: owner._id }))
       .get(seatEnvironmentKey('settings-agent', 'same'));
@@ -113,6 +117,7 @@ describe('per-installation agent settings', () => {
     expect(response.body.runtimeManaged).toBe(false);
     expect(response.body.runtimeEditable).toBe(false);
     expect(response.body.runtimeControls.effort).toBe('');
+    expect(response.body.runtimeSavedControls.effort).toBe('max');
   });
 
   it('does not present a hosted runtime preference as its running model or effort', async () => {
@@ -129,6 +134,7 @@ describe('per-installation agent settings', () => {
     expect(response.body.runtimeSourcePodId).toBeNull();
     expect(response.body.runtimeControls.model).toBe('');
     expect(response.body.runtimeControls.effort).toBe('');
+    expect(response.body.runtimeSavedControls.effort).toBe('max');
   });
 
   it('shows the installation owner’s quota when an admin opens settings', async () => {

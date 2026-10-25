@@ -1584,3 +1584,28 @@ describe('opencode adapter — spawn()', () => {
     });
   });
 });
+
+test('an own key stays in the confined parent proxy, never argv, config, tool env or failure output', async () => {
+  await withTemp(async (root) => {
+    const workspace = join(root, 'workspace'); await mkdir(workspace);
+    const vendorKey = 'sk-OWN-KEY-parent-only';
+    let config;
+    const spawn = makeSpawnImpl({ onCall: (_cmd, args, options) => {
+      expect(JSON.stringify({ args, env: options.env })).not.toContain(vendorKey);
+      config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
+      expect(JSON.stringify(config)).not.toContain(vendorKey);
+      expect(JSON.stringify(config)).not.toContain('/missing/vendor-key');
+    } });
+    await opencode.spawn('test', { cwd: workspace, env: { PATH: process.env.PATH },
+      environment: { model: 'test-model', provider: { id: 'test-provider', baseURL: 'https://api.example.com/v1', keyFile: '/missing/vendor-key' },
+        sandbox: { trust: 'public', mode: 'workspace' }, mcp: [] },
+      providerKey: vendorKey, _platform: 'darwin', _binaryPath: '/usr/local/bin/opencode', _spawnImpl: spawn.impl });
+    expect(spawn.calls).toHaveLength(1);
+    expect(config.provider['test-provider']).toBeDefined();
+    await expect(opencode.spawn('test', { cwd: workspace, environment: { model: 'm',
+      provider: { id: 'p', baseURL: 'https://api.example.com/v1', keyFile: '/unused' },
+      sandbox: { trust: 'private', mode: 'none' } }, providerKey: vendorKey, _spawnImpl: spawn.impl }))
+      .rejects.toThrow('Own provider keys require a confined OpenCode runtime');
+    expect(spawn.calls).toHaveLength(1);
+  });
+});

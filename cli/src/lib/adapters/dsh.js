@@ -1,3 +1,4 @@
+import { observeSpawn } from '../runtime-observation.js';
 /** DeepSeek Harness 0.2.1-rc.2, private seats only. Configuration is per spawn. */
 import { requireSeatModel } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
@@ -167,8 +168,9 @@ const parseEvent = (line, state) => {
   }
 };
 
-export const runDsh = ({ binary, args, cwd, env, timeoutMs, credentials, spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
+export const runDsh = ({ binary, args, cwd, env, timeoutMs, credentials, spawnImpl = childSpawn, onSpawn, controls = {} }) => new Promise((resolve, reject) => {
   const proc = spawnImpl(binary, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  observeSpawn(proc, onSpawn, controls);
   const state = { sessionId: null, final: null, error: null, buffer: '' };
   let stderr = '';
   let timedOut = false;
@@ -277,11 +279,14 @@ export default {
       const mcp = resolveCommonlyMcp(ctx.environment?.mcp, {
         credentialFile: credential.path, instanceUrl: ctx.instanceUrl,
       });
-      const patch = JSON.stringify(buildPatch({
+      const patchData = buildPatch({
         proxyBaseURL: proxy.baseURL, model: seatModel,
         cwd: ctx.cwd, mcp, effort: ctx.environment.effort,
         deepseekOfficial: new URL(ctx.environment.provider.baseURL).hostname === 'api.deepseek.com',
-      }), null, 2);
+      });
+      const patch = JSON.stringify(patchData, null, 2);
+      const passedProvider = patchData.find((entry) => entry.id === 'llm-pi-ai').config.providers.commonly;
+      const passedModel = patchData.find((entry) => entry.id === 'agent-default-model').config.model;
       assertPatchHasNoCredentials(patch, [ctx.runtimeToken, bearer]);
       const patchPath = join(tempDir, 'seat.patch.yml');
       await writeFile(patchPath, `${patch}\n`, { mode: 0o600 });
@@ -296,7 +301,7 @@ export default {
         ? Math.min(requested, MAX_TIMEOUT_MS) : MAX_TIMEOUT_MS;
       return await runDsh({
         binary, args, cwd: ctx.cwd, env, timeoutMs,
-        credentials: [...spawnCredentials(ctx, []), bearer], spawnImpl: ctx._spawnImpl,
+        credentials: [...spawnCredentials(ctx, []), bearer], spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: { model: passedModel || null, effort: passedProvider.reasoning || null },
       });
     } finally {
       try { await proxy?.close(); } catch { /* best effort */ }

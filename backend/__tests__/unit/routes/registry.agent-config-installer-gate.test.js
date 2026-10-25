@@ -1,3 +1,4 @@
+jest.mock('../../../services/runtimeControlValidation', () => ({ runtimeControlRefusal: jest.fn(async () => null) }));
 // TASK-055 / C4-SEC: PATCH /api/registry/pods/:podId/agents/:name is gated on
 // pod membership, and it writes `config` — which agentBinding projects to the
 // OWNER's daemon as the seat's declared environment — plus the AgentProfile.

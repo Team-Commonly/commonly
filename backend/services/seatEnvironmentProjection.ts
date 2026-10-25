@@ -84,6 +84,8 @@ const projectEnvironment = (raw: unknown): Record<string, unknown> | null => {
   for (const key of ['version', 'model', 'effort']) {
     if (source[key] !== undefined) projected[key] = source[key];
   }
+  const provider = pick(source.provider, ['id', 'baseURL']);
+  if (provider) projected.provider = provider;
   const workspace = pick(source.workspace, ['path', 'seed']);
   if (workspace) projected.workspace = workspace;
   const sandbox = pick(source.sandbox, ['mode', 'trust']);

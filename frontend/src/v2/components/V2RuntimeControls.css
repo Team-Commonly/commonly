@@ -1,0 +1,40 @@
+.v2-runtime-controls { min-width: 0; }
+.v2-runtime-controls__meta, .v2-runtime-controls small, .v2-runtime-controls__head, .v2-runtime-controls__status dt { font: 400 11px/1.5 var(--v2-font-mono); color: var(--v2-text-secondary); }
+.v2-runtime-controls__table { margin-block: 20px; }
+.v2-runtime-controls__head, .v2-runtime-controls__row { display: grid; grid-template-columns: minmax(65px, .6fr) minmax(0, 1.5fr) repeat(2, minmax(0, 1fr)); gap: 12px; }
+.v2-runtime-controls__row { border-top: 1px solid var(--v2-border-soft); padding-block: 14px; align-items: start; }
+.v2-runtime-controls__head { padding-bottom: 8px; }
+.v2-runtime-controls__row label { font-size: 13px; padding-top: 8px; }
+.v2-runtime-controls__saved { min-width: 0; }
+.v2-runtime-controls__saved input, .v2-runtime-controls__saved select { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius); background: var(--v2-surface); color: var(--v2-text-primary); font: 400 13px/1.5 var(--v2-font-mono); }
+.v2-runtime-controls__saved :disabled { background: var(--v2-surface-hover); opacity: 1; appearance: none; }
+.v2-runtime-controls__saved small { display: block; margin-top: 6px; overflow-wrap: anywhere; }
+.v2-runtime-controls__saved .is-unsupported, .v2-runtime-controls__refusal { color: var(--v2-danger); }
+.v2-runtime-controls__observed { font: 400 12px/1.5 var(--v2-font-mono); overflow-wrap: anywhere; padding-top: 8px; }
+.v2-runtime-controls__pending { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--v2-accent); margin-right: 5px; vertical-align: middle; }
+.v2-runtime-controls__save { background: var(--v2-text-primary); color: var(--v2-surface); padding: 8px 16px; border: 0; border-radius: var(--v2-radius); font: inherit; }
+.v2-runtime-controls__save:disabled { opacity: .45; }
+.v2-runtime-controls__status { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 24px; }
+.v2-runtime-controls__status dd { margin: 4px 0 0; font: 400 12px/1.5 var(--v2-font-mono); }
+.v2-runtime-controls__refusal { font-size: 12px; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .v2-runtime-controls__head, .v2-runtime-controls__row { grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .v2-runtime-controls__head > :first-child { display: none; }
+  .v2-runtime-controls__row label { grid-column: 1 / -1; padding-top: 0; }
+  .v2-runtime-controls__observed { font-size: 11px; }
+}
+
+.v2-runtime-controls__key { border-top: 1px solid var(--v2-border-soft); margin-top: 24px; padding-top: 16px; }
+.v2-runtime-controls__key h3 { font-size: 14px; font-weight: 500; }
+.v2-runtime-controls__key form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.v2-runtime-controls__key input { max-width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius); font: 13px var(--v2-font-mono); }
+.v2-runtime-controls__key .v2-runtime-controls__remove { color: var(--v2-danger); background: transparent; border: 0; margin-left: 12px; }
+.v2-root .v2-agent-settings .v2-runtime-controls button.v2-runtime-controls__save,
+.v2-root .v2-agent-settings .v2-runtime-controls__key button.v2-runtime-controls__save { background: var(--v2-text-primary); color: var(--v2-surface); border-color: var(--v2-text-primary); font-weight: 500; }
+.v2-root .v2-agent-settings .v2-runtime-controls__key button.v2-runtime-controls__remove { color: var(--v2-danger); background: transparent; border: 0; }
+.v2-runtime-controls :focus-visible, .v2-runtime-controls__key :focus-visible { outline: 2px solid var(--v2-text-primary); outline-offset: 2px; }
+.v2-root .v2-agent-settings .v2-runtime-controls input:focus-visible,
+.v2-root .v2-agent-settings .v2-runtime-controls select:focus-visible,
+.v2-root .v2-agent-settings .v2-runtime-controls button:focus-visible,
+.v2-root .v2-agent-settings .v2-runtime-controls__key input:focus-visible,
+.v2-root .v2-agent-settings .v2-runtime-controls__key button:focus-visible { outline: 2px solid var(--v2-text-primary); outline-offset: 2px; box-shadow: none; }

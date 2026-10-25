@@ -46,7 +46,7 @@ export interface ConnectorSecretKindSpec {
    * hosted-MCP client registration is not an Integration, so its secret is
    * owned by the registration and the sweeps look it up there.
    */
-  owner?: 'integration' | 'hosted-mcp-dcr-registration';
+  owner?: 'integration' | 'hosted-mcp-dcr-registration' | 'agent-provider-key';
 }
 
 /** The Slack bot token: the ref lives on the row the OAuth bind writes. */
@@ -108,7 +108,13 @@ export const HOSTED_MCP_DCR_CLIENT_SECRET: ConnectorSecretKindSpec = {
   owner: 'hosted-mcp-dcr-registration',
 };
 
+export const AGENT_PROVIDER_KEY: ConnectorSecretKindSpec = {
+  kind: 'agent-provider-key', provider: 'agent-provider', refPaths: ['secretRef'],
+  unavailableReason: 'Agent provider key is unavailable', owner: 'agent-provider-key',
+};
+
 export const CONNECTOR_SECRET_KINDS: readonly ConnectorSecretKindSpec[] = [
+  AGENT_PROVIDER_KEY,
   SLACK_BOT_TOKEN,
   DISCORD_WEBHOOK_URL,
   HOSTED_MCP_ACCESS_TOKEN,

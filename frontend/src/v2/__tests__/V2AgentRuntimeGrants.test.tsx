@@ -29,7 +29,7 @@ const response = {
 
 const renderSection = (runtime = { runtimeType: 'wrapper', adapter: 'claude', model: 'sonnet' }) => render(
   <AuthContext.Provider value={authValue}>
-    <V2AgentRuntimeGrants name="nib" instanceId="default" runtime={runtime} onSaveRuntime={saveRuntime} />
+    <V2AgentRuntimeGrants name="nib" instanceId="default" runtime={{ managed: true, inventory: ['claude', 'codex'].map((harness) => ({ harness, installed: true, version: '1', models: null, efforts: ['low', 'medium', 'high', 'xhigh'] })), ...runtime }} onSaveRuntime={saveRuntime} />
   </AuthContext.Provider>,
 );
 
@@ -110,7 +110,7 @@ test('a revoked target after preflight keeps the old placement visible and shows
 test('shows this agent grant and requires a second click to revoke through the existing route', async () => {
   renderSection();
   expect(await screen.findByText('On a computer, via the daemon')).toBeInTheDocument();
-  expect(screen.getByText('Claude Code')).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Claude Code 1' })).toBeInTheDocument();
   expect(await screen.findByText(/Work · Granted by Owner/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
   expect(axios.post).not.toHaveBeenCalled();
@@ -120,39 +120,39 @@ test('shows this agent grant and requires a second click to revoke through the e
 
 test('model changes delegate to the shared settings hook; a single CLI has no edit control', async () => {
   const { rerender } = renderSection();
-  const input = await screen.findByLabelText('Model');
+  const input = await screen.findByLabelText('model');
   fireEvent.change(input, { target: { value: 'opus' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
-  await waitFor(() => expect(saveRuntime).toHaveBeenCalledWith({ model: 'opus' }));
+  await waitFor(() => expect(saveRuntime).toHaveBeenCalledWith({ adapter: 'claude', model: 'opus' }));
   expect(axios.post).not.toHaveBeenCalled();
 
   rerender(<AuthContext.Provider value={authValue}><V2AgentRuntimeGrants name="other" instanceId="default" runtime={{ runtimeType: 'webhook', host: 'byo', adapter: 'hermes' }} onSaveRuntime={saveRuntime} /></AuthContext.Provider>);
   expect(await screen.findByText('Single CLI')).toBeInTheDocument();
-  expect(screen.queryByLabelText('Model')).toBeNull();
+  expect(screen.getByLabelText('model')).toBeDisabled();
 });
 
 test('daemon effort changes are passed to the shared settings callback', async () => {
   renderSection({ runtimeType: 'wrapper', adapter: 'codex', model: 'gpt-6-sol', effort: 'medium' });
-  const input = screen.getByLabelText('Effort');
+  const input = screen.getByLabelText('effort');
   fireEvent.change(input, { target: { value: 'high' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
-  await waitFor(() => expect(saveRuntime).toHaveBeenCalledWith({ effort: 'high' }));
+  await waitFor(() => expect(saveRuntime).toHaveBeenCalledWith({ adapter: 'codex', effort: 'high' }));
 });
 
 test('the unset effort option clears a saved effort', async () => {
   renderSection({ runtimeType: 'wrapper', adapter: 'codex', model: 'gpt-6-sol', effort: 'medium' });
-  fireEvent.change(screen.getByLabelText('Effort'), { target: { value: '' } });
+  fireEvent.change(screen.getByLabelText('effort'), { target: { value: '' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
-  await waitFor(() => expect(saveRuntime).toHaveBeenCalledWith({ effort: '' }));
+  await waitFor(() => expect(saveRuntime).toHaveBeenCalledWith({ adapter: 'codex', effort: '' }));
 });
 
 test('a failed runtime save reports next to the editor', async () => {
   saveRuntime.mockRejectedValue(new Error('unavailable'));
   renderSection();
-  fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'opus' } });
+  fireEvent.change(screen.getByLabelText('model'), { target: { value: 'opus' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
-  const runtimeSection = screen.getByRole('heading', { name: 'Runtime' }).closest('section');
-  expect(await within(runtimeSection).findByRole('alert')).toHaveTextContent('Could not save the model.');
+  const runtimeSection = screen.getByRole('heading', { name: 'How it runs' }).closest('section');
+  expect(await within(runtimeSection).findByRole('alert')).toHaveTextContent('Could not save runtime settings.');
 });
 
 test('a successful revoke stays ended if the grant reload fails', async () => {

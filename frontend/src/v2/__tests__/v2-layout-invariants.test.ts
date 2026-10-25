@@ -4963,3 +4963,11 @@ test('TASK-482 offer follows the final CTA so existing commands and controls can
   expect(offer).toBeGreaterThan(source.lastIndexOf('className="v2-byo__cta-row"'));
   // Actual before/after top coordinates are asserted by e2e/byo-offer-layout.spec.ts.
 });
+
+test('TASK-435 runtime columns can shrink on phones without dropping the observed values', () => {
+  const css = read('../components/V2RuntimeControls.css');
+  expect(css).toContain('minmax(0, 1.4fr) repeat(2, minmax(0, 1fr))');
+  expect(ruleBody(css, '.v2-runtime-controls__saved')).toContain('min-width: 0');
+  expect(ruleBody(css, '.v2-runtime-controls__observed')).toContain('overflow-wrap: anywhere');
+  expect(css).toContain('grid-column: 1 / -1');
+});

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { RuntimeObservation, HarnessInventory, RuntimeUpdate } from '../components/V2RuntimeControls';
 import axios from '../../utils/axiosConfig';
 
 export interface AgentSettingsInstallation {
@@ -45,6 +46,11 @@ interface ManageSettingsResponse {
   writablePodId: string | null;
   runtimeSourcePodId?: string | null;
   runtimeControls?: { runtimeType?: string; host?: 'cloud' | 'byo'; adapter?: string; model?: string; effort?: string };
+  runtimeSavedControls?: ManageSettingsResponse['runtimeControls'];
+  ownKeyCapability?: { available: boolean; provider: string | null };
+  runtimeObservation?: RuntimeObservation | null;
+  runtimeInventory?: HarnessInventory[];
+  processConnected?: boolean;
   runtimeEditable?: boolean;
   runtimeManaged?: boolean;
   installations: Array<{ podId: string; podName: string; status: string }>;
@@ -57,6 +63,10 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
   const [podId, setPodId] = useState<string | null>(null);
   const [runtimeSourcePodId, setRuntimeSourcePodId] = useState<string | null>(null);
   const [runtimeControls, setRuntimeControls] = useState<ManageSettingsResponse['runtimeControls']>({});
+  const [ownKeyCapability, setOwnKeyCapability] = useState<ManageSettingsResponse['ownKeyCapability']>();
+  const [runtimeObservation, setRuntimeObservation] = useState<RuntimeObservation | null>(null);
+  const [runtimeInventory, setRuntimeInventory] = useState<HarnessInventory[]>([]);
+  const [processConnected, setProcessConnected] = useState(false);
   const [runtimeEditable, setRuntimeEditable] = useState(true);
   const [runtimeManaged, setRuntimeManaged] = useState<boolean | undefined>(undefined);
   const [loading, setLoading] = useState(true);
@@ -92,7 +102,11 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
           setPodId(pod.podId);
           setRuntimeSourcePodId(settingsResponse.data.runtimeSourcePodId === undefined
             ? settingsResponse.data.writablePodId : settingsResponse.data.runtimeSourcePodId);
-          setRuntimeControls(settingsResponse.data.runtimeControls || {});
+          setRuntimeControls(settingsResponse.data.runtimeSavedControls || settingsResponse.data.runtimeControls || {});
+          setOwnKeyCapability(settingsResponse.data.ownKeyCapability);
+          setRuntimeObservation(settingsResponse.data.runtimeObservation || null);
+          setRuntimeInventory(settingsResponse.data.runtimeInventory || []);
+          setProcessConnected(settingsResponse.data.processConnected === true);
           setRuntimeEditable(settingsResponse.data.runtimeEditable !== false);
           setRuntimeManaged(settingsResponse.data.runtimeManaged);
           setError(null);
@@ -115,6 +129,10 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
     setPodId(null);
     setRuntimeSourcePodId(null);
     setRuntimeControls({});
+    setOwnKeyCapability(undefined);
+    setRuntimeObservation(null);
+    setRuntimeInventory([]);
+    setProcessConnected(false);
     setRuntimeEditable(true);
     setRuntimeManaged(undefined);
     void refresh().catch((requestError) => {
@@ -141,14 +159,16 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
     return response.data;
   }, [agentName, instanceId]);
 
-  const updateRuntime = useCallback(async (changes: { model?: string; effort?: string }) => {
+  const updateRuntime = useCallback(async (changes: RuntimeUpdate) => {
     if (!runtimeSourcePodId) throw new Error('No writable runtime source');
     await axios.patch(installationUrl(runtimeSourcePodId), {
-      config: { environment: changes }, instanceId,
+      config: { environment: { ...(changes.model !== undefined ? { model: changes.model } : {}),
+        ...(changes.effort !== undefined ? { effort: changes.effort } : {}) },
+        ...(changes.adapter ? { runtime: { adapter: changes.adapter } } : {}) }, instanceId,
     });
     await refresh();
   }, [instanceId, installationUrl, refresh, runtimeSourcePodId]);
 
-  return { access, installation, podId, runtimeControls, runtimeEditable, runtimeManaged, loading,
+  return { access, installation, podId, ownKeyCapability, runtimeControls, runtimeObservation, runtimeInventory, processConnected, runtimeEditable, runtimeManaged, loading,
     error, refresh, update, updatePod, updateRuntime };
 };

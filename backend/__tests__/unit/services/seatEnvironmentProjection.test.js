@@ -175,7 +175,7 @@ describe('projectSeatEnvironments', () => {
     // literal value never reaches the daemon-token boundary.
     expect(entry.environment.mcp[0].headers).toEqual({ Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' });
     // `provider.keyFile` belongs to the attaching host, never the server row.
-    expect(entry.environment.provider).toBeUndefined();
+    expect(entry.environment.provider).toEqual({ id: 'litellm', baseURL: 'https://llm.example.test/v1' });
     expect(JSON.stringify(entry)).not.toMatch(/ghp_|X-Other|llm-key/);
   });
 });

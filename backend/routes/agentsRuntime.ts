@@ -54,6 +54,8 @@ const {
   runtimeTypeFromConfig,
 } = require('../services/outsiderGrantAgentJoinPolicy');
 const { hostedEngineInEffect } = require('../services/hostedEngine');
+const { launchProviderKey } = require('../services/agentProviderKey');
+const { recordRuntimeObservation } = require('../services/agentRuntimeObservation');
 const { patchAgentRuntimeConfiguration } = require('../services/agentRuntimeConfiguration');
 
 // ADR-003 Phase 4: per-token rate limiter for the cross-agent surface.
@@ -500,6 +502,20 @@ router.delete('/messages/:messageId/claim', phase4RateLimit, agentRuntimeAuth, a
   } catch (err) {
     console.error('[claims] release failed:', (err as Error).message);
     return res.status(500).json({ error: 'release_failed' });
+  }
+});
+
+router.post('/provider-key/launch', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try { return await launchProviderKey(req, res); } catch {
+    return res.status(503).json({ code: 'provider_key_unavailable' });
+  }
+});
+
+router.post('/observation', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    return await recordRuntimeObservation(req, res);
+  } catch {
+    return res.status(503).json({ code: 'runner_observation_unavailable' });
   }
 });
 

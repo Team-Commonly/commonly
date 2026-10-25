@@ -45,7 +45,7 @@ const OPAQUE_PLACEHOLDERS = [
   'adapter', 'title',
   'holder',
   // Runtime ownership names the visible blocking Pods and installers.
-  'blockers',
+  'blockers', 'harness', 'effort', 'model',
 ];
 
 // The exception runs the safe way: a name that is usually opaque and is a number
