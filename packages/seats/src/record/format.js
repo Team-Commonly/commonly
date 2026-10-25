@@ -14,7 +14,10 @@ export const RECORD_SCHEMA = 'seats.record';
 export const ACTOR_TYPES = Object.freeze(['agent', 'human', 'policy', 'system']);
 // Who decides an approval today is the owner of the credential it would use;
 // `decision-owner` is reserved for a separately assigned decider.
-export const DECIDED_BY_ROLES = Object.freeze(['credential-owner', 'decision-owner', 'agent-owner', 'policy']);
+export const DECIDED_BY_ROLES = Object.freeze(['credential-owner', 'decision-owner', 'agent-owner', 'pod-member', 'policy']);
+// A parked tool call is decided by an owner or by policy, never by a pod member
+// who owns neither the credential nor the asking agent (ADR-033 D5).
+export const PARKED_CALL_ROLES = Object.freeze(DECIDED_BY_ROLES.filter((role) => role !== 'pod-member'));
 export const TOOL_SURFACES = Object.freeze(['connector', 'commonly', 'native']);
 export const GRANT_ENDS_ON = Object.freeze(['task.done', 'expiresAt']);
 export const REVOKE_REASONS = Object.freeze(['task.done', 'expired', 'cascade', 'manual']);
@@ -220,8 +223,8 @@ const checkEgressTarget = (data, kind, { nullable }) => {
   if (!isPort(data.port)) fail(`${kind}.port must be an integer from 1 to 65535`);
 };
 
-const checkRole = (role, where) => {
-  if (!DECIDED_BY_ROLES.includes(role)) fail(`${where} must be one of ${DECIDED_BY_ROLES.join(', ')}`);
+const checkRole = (role, where, roles = DECIDED_BY_ROLES) => {
+  if (!roles.includes(role)) fail(`${where} must be one of ${roles.join(', ')}`);
 };
 
 /** A grant's scope, in the shape of a room grant: exact tool names and a connection id. */
@@ -304,7 +307,7 @@ const CHECKS = {
     if (!isPlainObject(data.askedOf)) fail('permission.requested needs askedOf: {id, role}');
     refuseUnknownKeys(data.askedOf, ['id', 'role'], 'permission.requested.askedOf.');
     if (!isUserId(data.askedOf.id)) fail('permission.requested.askedOf.id must be an id token, never a display name');
-    checkRole(data.askedOf.role, 'permission.requested.askedOf.role');
+    checkRole(data.askedOf.role, 'permission.requested.askedOf.role', PARKED_CALL_ROLES);
     optionalText(data.grantId, 'permission.requested.grantId');
     optionalText(data.decisionCardId, 'permission.requested.decisionCardId');
     optionalArgsDigest(data, 'permission.requested');
@@ -332,8 +335,8 @@ const CHECKS = {
     }
     if (!('decidedByRole' in out)) out.decidedByRole = null;
     if (out.decidedBy !== null) userIdOrPolicy(out.decidedBy, 'permission.decided.decidedBy');
-    if (out.decidedByRole !== null && !DECIDED_BY_ROLES.includes(out.decidedByRole)) {
-      fail(`permission.decided.decidedByRole must be one of ${DECIDED_BY_ROLES.join(', ')}, or null`);
+    if (out.decidedByRole !== null && !PARKED_CALL_ROLES.includes(out.decidedByRole)) {
+      fail(`permission.decided.decidedByRole must be one of ${PARKED_CALL_ROLES.join(', ')}, or null`);
     }
     optionalText(out.decisionCardId, 'permission.decided.decisionCardId');
     return out;

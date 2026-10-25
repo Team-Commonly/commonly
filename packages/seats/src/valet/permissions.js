@@ -9,16 +9,23 @@
  *           { approved: true, by: <user id>, role?, decisionCardId? }.
  *           Anything else (false, 'yes', {approved: 1}, a throw, no answer in
  *           time) denies. `by`/`role`/`decisionCardId` are recorded either way.
+ *           An answer whose role is `pod-member` decides nothing (ADR-033 D5):
+ *           the call stays parked, and approve is called again with
+ *           `refused: { by, role: 'pod-member', reason: 'not_owner' }` so the
+ *           card can show why and wait for the owner.
  *
  * allow_always and reject_always are never chosen: either would be remembered
  * by the agent past this grant, so the next call would skip the check.
  * An allow rule with no allow_once option therefore denies.
  */
 import { traceOf } from '../trace/events.js';
-import { argsDigestOf, DECIDED_BY_ROLES, isUserId, policyActorId } from '../record/format.js';
+import { argsDigestOf, PARKED_CALL_ROLES, isUserId, policyActorId } from '../record/format.js';
 import { matchToolCall, validateGrant } from './grant.js';
 
 export const DEFAULT_APPROVE_TIMEOUT_MS = 5 * 60 * 1000;
+// An approver that keeps handing back pod-member answers is broken; after this
+// many the ask fails, and the policy's default decides, as for any broken approver.
+export const MAX_REFUSED_ANSWERS = 10;
 
 const optionOfKind = (options, kind) => (Array.isArray(options) ? options : [])
   .find((option) => option && option.kind === kind && typeof option.optionId === 'string');
@@ -46,10 +53,12 @@ const readAnswer = (answer) => {
   return {
     verdict: answer.approved === true ? 'approved' : 'rejected',
     ...(isUserId(answer.by) ? { by: answer.by } : {}),
-    ...(DECIDED_BY_ROLES.includes(answer.role) ? { role: answer.role } : {}),
+    ...(PARKED_CALL_ROLES.includes(answer.role) ? { role: answer.role } : {}),
     ...(isText(answer.decisionCardId) ? { decisionCardId: answer.decisionCardId } : {}),
   };
 };
+
+const isPodMemberAnswer = (answer) => isPlainObject(answer) && answer.role === 'pod-member';
 
 /**
  * Wait for the host's approval, bounded. Resolves { verdict, by?, role?,
@@ -71,9 +80,20 @@ const awaitApproval = (approve, input, { timeoutMs, signal }) => new Promise((do
   const onAbort = () => finish({ verdict: 'aborted' });
   const timer = setTimeout(() => finish({ verdict: 'timed_out' }), timeoutMs);
   signal?.addEventListener?.('abort', onAbort, { once: true });
-  Promise.resolve()
-    .then(() => approve(input))
-    .then((answer) => finish(readAnswer(answer)), () => finish({ verdict: 'failed' }));
+  let refusals = 0;
+  const ask = (current) => Promise.resolve()
+    .then(() => approve(current))
+    .then((answer) => {
+      if (finished) return;
+      if (!isPodMemberAnswer(answer)) { finish(readAnswer(answer)); return; }
+      // A pod member may not decide a parked call: the call stays parked and
+      // the owner is asked again, with the refusal, inside the same timeout.
+      refusals += 1;
+      if (refusals > MAX_REFUSED_ANSWERS) { finish({ verdict: 'failed' }); return; }
+      const refused = { by: isUserId(answer.by) ? answer.by : null, role: 'pod-member', reason: 'not_owner' };
+      setTimeout(() => { if (!finished) ask({ ...input, refused }); }, 0);
+    }, () => finish({ verdict: 'failed' }));
+  ask(input);
 });
 
 /**
@@ -94,7 +114,7 @@ const decider = (approval) => {
   return { decidedBy: 'policy', decidedByRole: 'policy' };
 };
 
-const isAsker = (value) => isPlainObject(value) && isUserId(value.id) && DECIDED_BY_ROLES.includes(value.role);
+const isAsker = (value) => isPlainObject(value) && isUserId(value.id) && PARKED_CALL_ROLES.includes(value.role);
 
 /**
  * Who an ask goes to, for permission.requested. `askedOf` is {id, role} or

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTraceStore } from '../src/trace/store.js';
 import { prepareRunEnv } from '../src/valet/env.js';
-import { createPermissionPolicy } from '../src/valet/permissions.js';
+import { createPermissionPolicy, MAX_REFUSED_ANSWERS } from '../src/valet/permissions.js';
 import { argsDigestOf } from '../src/record/format.js';
 
 const FROM_ENV = 'sk-env-planted-0a1b2c3d4e5f';
@@ -132,6 +132,45 @@ test('the decision names who decided and as what, separate from the agent and it
   assert.equal('decisionCardId' in odd.data, false);
   const bare = await ask(true);
   assert.equal(bare.data.decidedBy, null, 'a bare true names nobody');
+});
+
+test('a pod member\'s answer decides nothing: the call stays parked until the owner answers (ADR-033 D5)', async () => {
+  const events = [];
+  const seen = [];
+  let ownerAnswers;
+  const ownerAnswer = new Promise((resolve) => { ownerAnswers = resolve; });
+  const decide = createPermissionPolicy({ tools: { ask: ['fetch'] } }, {
+    trace: { emit: (type, data) => events.push({ type, data }) }, approveTimeoutMs: 5000, grantId: 'g-9',
+    approve: (input) => {
+      seen.push(input);
+      return seen.length === 1 ? { approved: true, by: 'u-cal', role: 'pod-member', decisionCardId: 'card-1' } : ownerAnswer;
+    },
+  });
+  const pending = decide({ toolCall: { toolCallId: 'tc-1', title: 'fetch it', kind: 'fetch' }, options: OPTIONS });
+  while (seen.length < 2) await new Promise((resolve) => { setTimeout(resolve, 5); });
+  assert.deepEqual(events.map((e) => e.type), ['permission.requested'], 'no permission.decided for the pod member\'s answer');
+  assert.deepEqual(seen[1].refused, { by: 'u-cal', role: 'pod-member', reason: 'not_owner' }, 'the card is told why');
+  assert.equal(seen[0].refused, undefined);
+  ownerAnswers({ approved: true, by: 'u-ben', role: 'credential-owner', decisionCardId: 'card-1' });
+  assert.deepEqual(await pending, { outcome: 'selected', optionId: 'allow' });
+  const decided = events.filter((e) => e.type === 'permission.decided');
+  assert.equal(decided.length, 1);
+  assert.equal(decided[0].data.decidedBy, 'u-ben');
+  assert.equal(decided[0].data.decidedByRole, 'credential-owner');
+});
+
+test('an approver that only ever answers as a pod member fails the ask, and the policy default decides', async () => {
+  const events = [];
+  let calls = 0;
+  const decide = createPermissionPolicy({ tools: { ask: ['fetch'] } }, {
+    trace: { emit: (type, data) => events.push({ type, data }) }, approveTimeoutMs: 5000, grantId: 'g-9',
+    approve: () => { calls += 1; return { approved: true, by: 'u-cal', role: 'pod-member' }; },
+  });
+  const result = await decide({ toolCall: { toolCallId: 'tc-1', title: 'fetch it', kind: 'fetch' }, options: OPTIONS });
+  assert.deepEqual(result, { outcome: 'selected', optionId: 'reject' });
+  assert.equal(calls, MAX_REFUSED_ANSWERS + 1);
+  const [decided] = events.filter((e) => e.type === 'permission.decided');
+  assert.deepEqual([decided.data.decidedBy, decided.data.decidedByRole], ['policy', 'policy']);
 });
 
 test('no answer in time is decided by policy', async () => {
