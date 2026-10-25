@@ -182,3 +182,28 @@ test('actor.onBehalfOf maps beside actor.owner: on every event, the attempt span
   const plain = spansOf(toOtlpJson(entries.map((e) => (e.actor.type === 'agent' ? { ...e, actor: { type: 'agent', id: 'u-agent-ana', owner: 'u-ana' } } : e))));
   assert.ok(!JSON.stringify(plain).includes('on_behalf_of'));
 });
+
+test('egress entries are events on the span current at the time', () => {
+  const base = { v: 1, schema: 'seats.record', runId: 'run-egr-0001', prev: null, actor: { type: 'system', id: 'seats' } };
+  const entries = [
+    { ...base, seq: 1, ts: '2026-10-25T12:00:00.000Z', kind: 'egress.denied', data: { host: null, port: null, reason: 'bad_request' } },
+    { ...base, seq: 2, ts: '2026-10-25T12:00:01.000Z', kind: 'attempt.started', actor: { type: 'agent', id: 'u-agent-ana' }, data: { attempt: 1 } },
+    { ...base, seq: 3, ts: '2026-10-25T12:00:02.000Z', kind: 'egress.allowed', data: { host: 'api.sentry.io', port: 443 } },
+    { ...base, seq: 4, ts: '2026-10-25T12:00:03.000Z', kind: 'egress.denied', data: { host: '[redacted]', port: 443, reason: 'not_allowed' } },
+    { ...base, seq: 5, ts: '2026-10-25T12:00:04.000Z', kind: 'run.settled', data: { outcome: 'ok' } },
+  ];
+  const spans = spansOf(toOtlpJson(entries));
+  const run = spans.find((s) => s.name === 'seats.run');
+  const attempt = spans.find((s) => s.name.startsWith('invoke_agent'));
+  const early = run.events.find((e) => e.name === 'egress.denied');
+  assert.equal(attrOf(early, 'seats.reason').stringValue, 'bad_request');
+  assert.equal(attrOf(early, 'seats.host'), undefined, 'a null host is left out');
+  assert.equal(attrOf(early, 'seats.actor.id').stringValue, 'seats');
+  const allowed = attempt.events.find((e) => e.name === 'egress.allowed');
+  assert.equal(attrOf(allowed, 'seats.host').stringValue, 'api.sentry.io');
+  assert.equal(attrOf(allowed, 'seats.port').intValue, '443');
+  const denied = attempt.events.find((e) => e.name === 'egress.denied');
+  assert.equal(attrOf(denied, 'seats.host').stringValue, '[redacted]');
+  assert.equal(attrOf(denied, 'seats.reason').stringValue, 'not_allowed');
+  assert.equal(attrOf(attempt, 'error.type'), undefined, 'a denial is an event, not an error status');
+});

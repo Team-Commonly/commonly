@@ -287,20 +287,28 @@ request, and the OTLP export places it there.
   - A digest of low-entropy arguments can be confirmed by guessing them. It
     hides the values from a casual reader, not from someone who can guess them.
 
-**Writers in other languages.** A writer that computes `argsDigest` outside
-this code must pass every vector in
-[`test/vectors/args-digest.json`](../test/vectors/args-digest.json), which
-`test/args-digest-vectors.test.js` holds to `argsDigestOf`. The vectors cover
-key order by UTF-16 code units, string escaping, number formatting (`1.0`,
-`-0`, `1e21`, small floats), and the cases where a hand-rolled key-sorted
-serializer drifts: an undefined value in an object drops its key, one in an
-array becomes `null`, and `NaN` or `Infinity` anywhere means the arguments
-have no digest. So does a lone surrogate (half of a UTF-16 pair) in any
-string or key, as RFC 8785 requires. Only the digest refuses it: a line
-still records agent text holding one, as a `\u` escape, because a stream
-cut mid-pair must not lose the chunk. On arguments that can't be digested,
-the writer omits `argsDigest` rather than writing a different digest,
-because a different digest would not match the approval the call ran under.
+**Conformance gate for writers in other languages.** Every record writer,
+in any language, must pass every vector in
+[`test/vectors/args-digest.json`](../test/vectors/args-digest.json), and a
+writer that fails it does not ship. `test/args-digest-vectors.test.js` holds
+the file to `argsDigestOf`, so the file is the definition, not a sample. The
+vectors cover:
+- key order by UTF-16 code units;
+- string escaping, with U+2028 and U+2029 written raw;
+- number formatting: `1.0` is `1`, `-0` is `0`, `1e21`, small floats, and an
+  integer past 2^53, which a writer parses as an IEEE 754 double first, so
+  `9007199254740993` on the wire is written `9007199254740992`;
+- the cases where a hand-rolled key-sorted serializer drifts: an undefined
+  value in an object drops its key, one in an array becomes `null`, and `NaN`
+  or `Infinity` anywhere means the arguments have no digest.
+
+A lone surrogate (half of a UTF-16 pair) in any string or key also means no
+digest, as RFC 8785 requires. Only the digest refuses it: a line still
+records agent text holding one, as a `\u` escape, because a stream cut
+mid-pair must not lose the chunk. On arguments that can't be digested, a
+writer omits `argsDigest` rather than writing a different digest, because a
+different digest would not match the approval the call ran under. A writer
+built in Go runs its tests with `-race` in CI.
 
 ### Credentials
 
@@ -312,6 +320,36 @@ because a different digest would not match the approval the call ran under.
 These cover the environment credentials a run is started with. Values never
 appear here: `NAME` is an environment variable name matching
 `[A-Z_][A-Z0-9_]*`.
+
+### Egress
+
+A sandboxed run reaches the network only through the egress proxy, which
+admits the hosts its grant names, plus its model provider. These lines
+record what the proxy did.
+
+| kind | data | default actor |
+|---|---|---|
+| `egress.allowed` | `{host, port}`: a tunnel opened | `system` |
+| `egress.denied` | `{host, port, reason}`: a request was refused | `system` |
+
+- `host` is a lowercase DNS name, an IP literal (IPv6 without brackets), or
+  the literal string `"[redacted]"` when the requested name held one of the
+  run's credentials.
+- `port` is an integer from 1 to 65535.
+- `reason` is one of:
+  - `bad_request`: the request could not be parsed;
+  - `not_connect`: a method other than `CONNECT`;
+  - `ip_literal`: the target was an address, not a name;
+  - `not_allowed`: no grant entry names the host and port;
+  - `unresolved`: the name did not resolve;
+  - `private_address`: it resolved to a non-public address that no exact
+    entry names;
+  - `unreachable`: the connection failed.
+- `host` and `port` are `null` together, and only on a malformed request
+  (`bad_request`, or `not_connect` when the target can't be read). Every
+  other line names both.
+- No other field is allowed, so no header, body or resolved address is
+  recorded.
 
 ### Result
 
@@ -383,8 +421,9 @@ What's new or changed in `EVENT_TYPES`:
    - The verifier checks the envelope and the chain, never data, so those
      lines still verify.
 
-   A later revision, also at `v: 1`, added the optional `actor.onBehalfOf`.
-   Lines without it are unchanged.
+   A later revision, also at `v: 1`, added the optional `actor.onBehalfOf`
+   and the kinds `egress.allowed` and `egress.denied`. Lines without them
+   are unchanged.
 4. **One writer per file.** A single process appends lines in `seq` order.
 
 ## 4. What the hash chain proves, and what it doesn't
@@ -436,8 +475,8 @@ operates it.
   that carried its `decisionCardId`, and otherwise on the span current at
   the time.
 - **Every other kind is an event on the span current at the time.** That
-  covers grants, credentials, claims, `task.done`, results, liveness and
-  `tool.update`.
+  covers grants, credentials, claims, `task.done`, results, liveness, egress
+  and `tool.update`. An egress denial is an event, not an error status.
 - **Span ids** are the first 8 bytes of
   SHA-256(`"seats.record/span/" + runId + "/" + seq`), where `seq` belongs to
   the entry that opens the span. The run span uses `0`. Exporting the same

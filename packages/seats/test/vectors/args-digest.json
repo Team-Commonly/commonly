@@ -1,5 +1,5 @@
 {
-  "_about": "Test vectors for argsDigestOf (src/record/format.js; docs/record-v1.md, Tool activity). Each vector is {name, args, canonical, digest} or {name, args, error: true}. digest is \"sha256:\" + lowercase hex SHA-256 of canonical, the RFC 8785 bytes of args. error: true means the arguments cannot be digested (a non-finite number, undefined arguments, or a lone surrogate in any string or key), and a writer omits argsDigest. JSON cannot hold every input, so args uses two tags, each an object with exactly one key: {\"$undefined\":true} is an undefined value, and {\"$number\":\"<literal>\"} is the number that literal parses to as an IEEE 754 double (e.g. \"1.0\", \"-0\", \"1e21\", \"NaN\", \"Infinity\"). Decode the tags before digesting; no vector holds a real argument of either shape.",
+  "_about": "Test vectors for argsDigestOf (src/record/format.js; docs/record-v1.md, Tool activity). Each vector is {name, args, canonical, digest} or {name, args, error: true}. digest is \"sha256:\" + lowercase hex SHA-256 of canonical, the RFC 8785 bytes of args. error: true means the arguments cannot be digested (a non-finite number, undefined arguments, or a lone surrogate in any string or key), and a writer omits argsDigest. JSON cannot hold every input, so args uses two tags, each an object with exactly one key: {\"$undefined\":true} is an undefined value, and {\"$number\":\"<literal>\"} is the number that literal parses to as an IEEE 754 double (e.g. \"1.0\", \"-0\", \"1e21\", \"NaN\", \"Infinity\"). Decode the tags before digesting; no vector holds a real argument of either shape. A writer outside JavaScript must parse every JSON number as an IEEE 754 double before serializing it (as JSON.parse does), then print its shortest round-trip form as ECMAScript does: 9007199254740993 in the input is the double 9007199254740992, and is written that way. Strings are UTF-8 with U+2028 and U+2029 raw, not escaped.",
   "vectors": [
     {
       "name": "flat object, keys reordered",
@@ -124,6 +124,14 @@
       },
       "canonical": "{\"s\":\"\\\"\\\\/<>&  \"}",
       "digest": "sha256:2cd92a4cd6d75d7908756eddfd66f0b4bd361808bc32ea278fcb7dbde1f0eefa"
+    },
+    {
+      "name": "U+2028 and U+2029 are written raw, never escaped",
+      "args": {
+        "s": "a b c"
+      },
+      "canonical": "{\"s\":\"a b c\"}",
+      "digest": "sha256:5b2dc062ac2d05c4b51a388dd0e99e9b161c6c6f0fefeef39629890a42902b84"
     },
     {
       "name": "a lone high surrogate in a string means no digest",
@@ -258,14 +266,22 @@
       "digest": "sha256:fd4545080eaf9490b1e10de2680fc77a1a90886c9c494a05f1144cdb33d38ae0"
     },
     {
-      "name": "an integer past 2^53 is read as an IEEE double first",
+      "name": "an integer past 2^53: 9007199254740993 on the wire is the double 9007199254740992",
       "args": {
-        "n": {
-          "$number": "9007199254740993"
-        }
+        "n": 9007199254740992
       },
       "canonical": "{\"n\":9007199254740992}",
       "digest": "sha256:66c87d9cb3014e05a11baa97df62282d89d425f22ee15816577c84534e2ef1bb"
+    },
+    {
+      "name": "large integers print their shortest round-trip digits, then zeros: 2^60 is 1152921504606847000",
+      "args": [
+        9007199254740994,
+        1152921504606847000,
+        10000000000000000
+      ],
+      "canonical": "[9007199254740994,1152921504606847000,10000000000000000]",
+      "digest": "sha256:0e2b45d1064af2a28028209676fbd29080eca67ae85a2ad6582eb0efec521429"
     },
     {
       "name": "undefined in an object drops the key",

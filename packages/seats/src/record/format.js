@@ -5,6 +5,7 @@
  * the store, so another tool can vendor it alone.
  */
 import { createHash } from 'node:crypto';
+import { isIP } from 'node:net';
 import { FAILURE_KINDS } from '../failures.js';
 
 export const RECORD_VERSION = 1;
@@ -24,6 +25,12 @@ export const RESULT_STATUSES = Object.freeze(['done', 'partial', 'blocked', 'fai
 // Whose request an agent acts on: 'requester' sent the message that started
 // the run, 'assigner' assigned its task. Absent when no human asked.
 export const ON_BEHALF_ROLES = Object.freeze(['requester', 'assigner']);
+// Why the egress proxy refused a request. The first two can leave host and port null.
+export const EGRESS_DENIED_REASONS = Object.freeze([
+  'bad_request', 'not_connect', 'ip_literal', 'not_allowed', 'unresolved', 'private_address', 'unreachable',
+]);
+const EGRESS_TARGETLESS = new Set(['bad_request', 'not_connect']);
+export const REDACTED = '[redacted]';
 
 /** The actors a writer records for its own bookkeeping, and for the board. */
 export const SYSTEM_ACTOR = Object.freeze({ type: 'system', id: 'seats' });
@@ -59,6 +66,8 @@ export const KINDS = Object.freeze({
   'liveness.stalled': Object.freeze({ group: 'activity', actor: 'system' }),
   'liveness.recovery': Object.freeze({ group: 'activity', actor: 'system' }),
   'process.exited': Object.freeze({ group: 'activity', actor: 'system' }),
+  'egress.allowed': Object.freeze({ group: 'egress', actor: 'system' }),
+  'egress.denied': Object.freeze({ group: 'egress', actor: 'system' }),
 });
 
 const TRACE_TO_KIND = new Map(Object.entries(KINDS).filter(([, spec]) => spec.trace).map(([kind, spec]) => [spec.trace, kind]));
@@ -188,6 +197,21 @@ const userIdOrPolicy = (value, where) => {
 const optionalArgsDigest = (data, kind) => {
   if (data.argsDigest !== undefined && !isArgsDigest(data.argsDigest)) fail(`${kind}.argsDigest must be sha256:<64 hex>, a digest of the arguments, never the arguments`);
 };
+// A host as the egress proxy traces it: a lowercase DNS name, an IP literal
+// (IPv6 without brackets), or [redacted] when it held a run credential.
+const DNS_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const isEgressHost = (host) => typeof host === 'string' && (host === REDACTED || isIP(host) !== 0
+  || (host.length <= 253 && host.split('.').every((label) => DNS_LABEL.test(label))));
+const isPort = (port) => Number.isInteger(port) && port >= 1 && port <= 65535;
+const checkEgressTarget = (data, kind, { nullable }) => {
+  if (data.host === null && data.port === null && nullable) return;
+  if (data.host === null || data.port === null) {
+    fail(nullable ? `${kind}: host and port are null together, or both set` : `${kind} needs a host and a port`);
+  }
+  if (!isEgressHost(data.host)) fail(`${kind}.host must be a lowercase DNS name, an IP literal or "${REDACTED}"`);
+  if (!isPort(data.port)) fail(`${kind}.port must be an integer from 1 to 65535`);
+};
+
 const checkRole = (role, where) => {
   if (!DECIDED_BY_ROLES.includes(role)) fail(`${where} must be one of ${DECIDED_BY_ROLES.join(', ')}`);
 };
@@ -323,6 +347,17 @@ const CHECKS = {
       const { kind } = data.failure;
       if (kind !== null && kind !== undefined && !FAILURE_KINDS[kind]) fail(`attempt.settled.failure.kind ${kind} is not a FAILURE_KINDS key`);
     }
+    return data;
+  },
+  'egress.allowed': (data) => {
+    refuseUnknownKeys(data, ['host', 'port'], 'egress.allowed.');
+    checkEgressTarget(data, 'egress.allowed', { nullable: false });
+    return data;
+  },
+  'egress.denied': (data) => {
+    refuseUnknownKeys(data, ['host', 'port', 'reason'], 'egress.denied.');
+    if (!EGRESS_DENIED_REASONS.includes(data.reason)) fail(`egress.denied.reason must be one of ${EGRESS_DENIED_REASONS.join(', ')}`);
+    checkEgressTarget(data, 'egress.denied', { nullable: EGRESS_TARGETLESS.has(data.reason) });
     return data;
   },
   'result.reported': (data) => {

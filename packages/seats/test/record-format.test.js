@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
-  appendEntry, argsDigestOf, canonicalLine, hashLine, readRecord, verifyRecord, KINDS, ON_BEHALF_ROLES, RECORD_VERSION, RECORD_SCHEMA, toolSurfaceOf,
+  appendEntry, argsDigestOf, canonicalLine, hashLine, readRecord, verifyRecord, EGRESS_DENIED_REASONS, KINDS, ON_BEHALF_ROLES, RECORD_VERSION, RECORD_SCHEMA, toolSurfaceOf,
 } from '../src/record/format.js';
 
 const RUN = 'run-fmt-0001';
@@ -376,4 +376,53 @@ test('a lone surrogate in agent text still records: only the args digest refuses
   assert.deepEqual(verifyRecord(`${first}\n${second}\n`).errors, []);
   assert.equal(readRecord(`${first}\n`)[0].data.text, chunk);
   assert.equal(argsDigestOf({ q: chunk }), undefined);
+});
+
+const egress = (kind, data) => JSON.parse(appendEntry(null, { ...ENV, ts: ts(), kind, data }, { runActor: AGENT }));
+
+test('egress.allowed: {host, port}, written by the system', () => {
+  assert.deepEqual(KINDS['egress.allowed'], { group: 'egress', actor: 'system' });
+  const ok = egress('egress.allowed', { host: 'api.sentry.io', port: 443 });
+  assert.deepEqual(ok.data, { host: 'api.sentry.io', port: 443 });
+  assert.deepEqual(ok.actor, { type: 'system', id: 'seats' });
+  // host: a lowercase DNS name, an IP literal, or [redacted]; anything else is refused.
+  for (const host of ['localhost', '[redacted]', '203.0.113.7', '2001:db8::1']) egress('egress.allowed', { host, port: 443 });
+  for (const host of ['API.sentry.io', 'https://api.sentry.io', 'user@api.sentry.io', 'a b.io', '-x.io', '', '[REDACTED]', 42]) {
+    assert.throws(() => egress('egress.allowed', { host, port: 443 }), /egress.allowed.host/, `host ${JSON.stringify(host)}`);
+  }
+  assert.throws(() => egress('egress.allowed', { host: `${'a'.repeat(60)}.`.repeat(5), port: 443 }), /egress.allowed.host/, 'over 253 characters');
+  // port: an integer from 1 to 65535.
+  egress('egress.allowed', { host: 'api.sentry.io', port: 65535 });
+  for (const port of [0, 65536, 443.5, '443', -1]) assert.throws(() => egress('egress.allowed', { host: 'api.sentry.io', port }), /egress.allowed.port/, `port ${port}`);
+  // An opened tunnel always names its target: no nulls, no missing fields.
+  assert.throws(() => egress('egress.allowed', { host: null, port: null }), /needs a host and a port/);
+  assert.throws(() => egress('egress.allowed', { port: 443 }), /egress.allowed.host/);
+  assert.throws(() => egress('egress.allowed', { host: 'api.sentry.io' }), /egress.allowed.port/);
+  // No other field: a header or an address can't ride in.
+  assert.throws(() => egress('egress.allowed', { host: 'api.sentry.io', port: 443, address: '203.0.113.7' }), /unknown field egress.allowed.address/);
+});
+
+test('egress.denied: {host, port, reason}, the reason from a closed set, null target only on a malformed request', () => {
+  assert.deepEqual(KINDS['egress.denied'], { group: 'egress', actor: 'system' });
+  assert.deepEqual(EGRESS_DENIED_REASONS, ['bad_request', 'not_connect', 'ip_literal', 'not_allowed', 'unresolved', 'private_address', 'unreachable']);
+  const denied = egress('egress.denied', { host: 'evil.example', port: 443, reason: 'not_allowed' });
+  assert.deepEqual(denied.data, { host: 'evil.example', port: 443, reason: 'not_allowed' });
+  assert.deepEqual(denied.actor, { type: 'system', id: 'seats' });
+  // reason: every listed reason is accepted; anything else is refused.
+  for (const reason of EGRESS_DENIED_REASONS) egress('egress.denied', { host: '10.0.0.1', port: 80, reason });
+  for (const reason of ['forbidden', undefined, null, 'NOT_ALLOWED']) {
+    assert.throws(() => egress('egress.denied', { host: 'evil.example', port: 443, reason }), /egress.denied.reason/, `reason ${reason}`);
+  }
+  // host and port may be null, together, when the request was malformed.
+  for (const reason of ['bad_request', 'not_connect']) {
+    assert.deepEqual(egress('egress.denied', { host: null, port: null, reason }).data, { host: null, port: null, reason });
+  }
+  assert.throws(() => egress('egress.denied', { host: null, port: null, reason: 'not_allowed' }), /needs a host and a port/, 'a parsed target is never null');
+  assert.throws(() => egress('egress.denied', { host: null, port: 443, reason: 'bad_request' }), /null together/);
+  assert.throws(() => egress('egress.denied', { host: 'evil.example', port: null, reason: 'not_connect' }), /null together/);
+  // host and port follow the egress.allowed rules when set.
+  egress('egress.denied', { host: '[redacted]', port: 443, reason: 'not_allowed' });
+  assert.throws(() => egress('egress.denied', { host: 'Evil.example', port: 443, reason: 'not_allowed' }), /egress.denied.host/);
+  assert.throws(() => egress('egress.denied', { host: 'evil.example', port: 70000, reason: 'not_allowed' }), /egress.denied.port/);
+  assert.throws(() => egress('egress.denied', { host: 'evil.example', port: 443, reason: 'not_allowed', status: 403 }), /unknown field egress.denied.status/);
 });
