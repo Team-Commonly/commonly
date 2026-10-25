@@ -16,4 +16,8 @@ This is at-least-once recovery, not exactly-once provider execution. A provider 
 
 Use a non-production test pod and a controlled long-turn provider. Start one native turn, then send SIGTERM. Confirm readiness refuses new traffic, a second wake remains pending, the original turn and its event acknowledgement finish, and `[shutdown] hosted drain complete` appears before process exit. Check the replacement process handles the pending wake. A forced deadline case should show the unfinished event pending with its old nonce invalidated; confirm any provider write independently before retrying it.
 
+Also force-kill a test process during a controlled turn. SIGKILL runs no shutdown handler, so confirm the delivery stays delivered until the replacement's stuck-redispatch sweep recovers it. A spot reclaim can provide less notice than the drain budget and needs the same recovery path. Record the recovery delay and verify that an old nonce cannot settle the replacement's claim.
+
+A deadline requeue reruns the tool-using turn. Any provider write or posted message that happened before interruption can repeat; inspect those effects independently before retrying.
+
 Automated tests use real Mongo AgentEvent rows and a fake long `runAgent`, plus signal-handler tests. They cover graceful success/failure, claim/lookup races, waiting for the acknowledgement, timeout requeue, sibling ownership and late settlement. An actual Kubernetes rollout remains an operator deployment check.
