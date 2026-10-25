@@ -65,6 +65,44 @@ describe('scrub legacy feed token copies', () => {
     expect(output).not.toContain(REFRESH);
   });
 
+  it.each([{ args: [], apply: false }, { args: ['--apply'], apply: true }])(
+    'runs successful CLI with apply=$apply against the seeded Mongo database',
+    async ({ args, apply }) => {
+      await seed();
+      const before = await rows().find().toArray();
+      const uri = process.env.INTEGRATION_TEST === 'true'
+        ? process.env.MONGO_URI
+        : `mongodb://${mongoose.connection.host}:${mongoose.connection.port}/${mongoose.connection.name}`;
+      const result = spawnSync(process.execPath, [
+        '-r', require.resolve('ts-node/register'),
+        path.resolve(__dirname, '../../../scripts/scrub-feed-token-copies.ts'),
+        ...args,
+      ], {
+        cwd: path.resolve(__dirname, '../../..'),
+        env: { ...process.env, MONGO_URI: uri },
+        encoding: 'utf8',
+        timeout: 15000,
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(result.stdout).toContain(apply ? '[scrub-feed-token-copies] APPLY' : '[scrub-feed-token-copies] DRY-RUN');
+      expect(result.stdout).not.toContain(ACCESS);
+      expect(result.stdout).not.toContain(REFRESH);
+      expect(result.stdout).not.toContain(uri);
+      const after = await rows().find().toArray();
+      expect(after).toHaveLength(before.length);
+      for (const row of before) {
+        const expected = { ...row, config: { ...row.config } };
+        if (apply && ['x', 'instagram'].includes(row.type)) {
+          delete expected.config.accessToken;
+          delete expected.config.refreshToken;
+        }
+        expect(after.find((entry) => entry._id.equals(row._id))).toEqual(expected);
+      }
+    },
+  );
+
   it('is idempotent after apply, including access-only and refresh-only rows', async () => {
     await rows().insertMany([
       { type: 'x', config: { refreshToken: REFRESH } },
