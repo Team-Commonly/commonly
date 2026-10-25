@@ -1,0 +1,6 @@
+# Built artifacts and measurement output never enter the repo.
+go/broker
+go/dist/
+ts/dist/
+bench/out/
+*.blob

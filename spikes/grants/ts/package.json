@@ -1,0 +1,10 @@
+{
+  "name": "grants-broker-spike",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Spike: standalone MCP grants broker, Node built-ins only.",
+  "type": "module",
+  "bin": { "grants-broker": "./broker.js" },
+  "files": ["broker.js"],
+  "engines": { "node": ">=22.0.0" }
+}
