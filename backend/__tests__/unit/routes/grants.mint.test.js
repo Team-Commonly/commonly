@@ -93,19 +93,30 @@ beforeEach(async () => {
 });
 
 describe('POST /api/grants', () => {
-  test('an explicit empty pod audience covers nobody and warns the granting user', async () => {
+  test('an explicit empty pod audience is refused without saving a grant', async () => {
     const res = await mint({ audience: [] });
-    expect(res.status).toBe(201);
-    expect(res.body.audience).toEqual([]);
-    expect(res.body.warnings).toEqual([expect.objectContaining({ code: 'empty_audience', message: expect.stringContaining('covers nobody') })]);
-    expect((await RoomGrant.findOne({ grantId: res.body.grantId }).lean()).audience).toEqual([]);
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'invalid_audience', message: 'name at least one agent, or omit audience for all current members' });
+    expect(await RoomGrant.countDocuments({})).toBe(0);
   });
 
-  test('omitting pod audience keeps the member snapshot and has no empty-audience warning', async () => {
+  test('omitting pod audience keeps the current member snapshot', async () => {
     const res = await mint({});
     expect(res.status).toBe(201);
     expect(res.body.audience).toEqual([OWNER, SEAT]);
-    expect(res.body.warnings).toBeUndefined();
+  });
+
+  test.each([{ audience: [] }, { audience: [OWNER] }, { audience: [OWNER, SEAT] }])('a seat audience must still be exactly its target: %p', async ({ audience }) => {
+    const res = await mint({ target: { kind: 'seat', id: SEAT }, audience });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_audience');
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+
+  test.each([{ audience: undefined }, { audience: [SEAT] }])('a seat defaults to itself or accepts itself explicitly: %p', async ({ audience }) => {
+    const res = await mint({ target: { kind: 'seat', id: SEAT }, ...(audience === undefined ? {} : { audience }) });
+    expect(res.status).toBe(201);
+    expect(res.body.audience).toEqual([SEAT]);
   });
 
   test('an agent User ID used as a pod target returns not-found before join-policy checks', async () => {

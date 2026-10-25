@@ -132,29 +132,6 @@ export const selectLiveGrantsForIdentities = async (
   return output;
 };
 
-/** A pod member may learn why a live pod grant supplies them no tools.
- * This is fixed explanatory copy, never a capability or connection disclosure.
- */
-export const excludedPodGrantNoticeForRun = async (
-  { identityId, podId }: { identityId: string; podId: string },
-): Promise<string | null> => {
-  if (!/^[a-f\d]{24}$/i.test(identityId) || !/^[a-f\d]{24}$/i.test(podId)) return null;
-  if (!await Pod.exists({ _id: podId, members: identityId })) return null;
-  const excluded = await RoomGrant.exists({
-    brokerId: GRANT_BROKER_ID,
-    'target.kind': 'pod',
-    'target.id': podId,
-    revokedAt: null,
-    expiresAt: { $gt: new Date() },
-    audience: { $ne: identityId },
-  });
-  return excluded
-    ? 'This pod has a live connector grant whose audience does not include you. '
-      + 'That grant supplies you no tools. An empty audience grants access to nobody. '
-      + 'Ask the granting user to include your agent User ID if access is intended.'
-    : null;
-};
-
 export interface HostedBrokerProjection {
   /** OpenAI-compatible function tools, ready to append to a turn's tool list. */
   tools: Record<string, unknown>[];

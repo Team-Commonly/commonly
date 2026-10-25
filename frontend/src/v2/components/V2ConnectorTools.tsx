@@ -457,7 +457,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     .filter((tool) => MODE_RANK[tool.requiredWriteMode] <= MODE_RANK[mode]).map((tool) => tool.name);
 
   const submitDraft = async () => {
-    if (!draft || !draftEntry) return;
+    if (!draft || !draftEntry || draft.audience.length === 0) return;
     setBusy(true);
     setError(null);
     setJoinPolicyFixPodId(null);
@@ -939,7 +939,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
             </fieldset>
             {draft.audience.length === 0 && (
               <p className="v2-connector-aside__note" role="status">{t('tools.emptyAudienceNotice', {
-                defaultValue: 'No agents selected. This grant will give nobody access.',
+                defaultValue: 'Select at least one agent to grant access.',
               })}</p>
             )}
             <label className="v2-tools__field">
@@ -952,7 +952,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
             </label>
           </div>
           <div className="v2-connector-aside__actions">
-            <button type="button" className="v2-connector-aside__primary" disabled={busy || !draft.connectionId || !draft.podId || tools.length === 0} onClick={() => { void submitDraft(); }}>
+            <button type="button" className="v2-connector-aside__primary" disabled={busy || !draft.connectionId || !draft.podId || draft.audience.length === 0 || tools.length === 0} onClick={() => { void submitDraft(); }}>
               {busy ? t('tools.granting', { defaultValue: 'Granting…' }) : t('tools.grantAct', { defaultValue: 'Grant' })}
             </button>
             <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => setDraft(null)}>

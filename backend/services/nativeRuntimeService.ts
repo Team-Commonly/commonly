@@ -31,7 +31,6 @@ import axios, { AxiosError } from 'axios';
 import {
   dispatchHostedBrokerTool,
   hostedBrokerToolsForRun,
-  excludedPodGrantNoticeForRun,
   HostedBrokerProjection,
 } from './grantBrokerProjectionService';
 import { podHasOutsiderWritableGrant } from './nativeOutsiderGrantPolicy';
@@ -1923,16 +1922,6 @@ export async function runAgent(
         `[native-runtime] ${agentName}:${instanceId} grant broker assembly failed:`,
         (error as Error).message,
       );
-    }
-  }
-
-  if (seatUserId) {
-    try {
-      const notice = await excludedPodGrantNoticeForRun({ identityId: seatUserId, podId });
-      if (notice) messages.push({ role: 'system', content: notice });
-    } catch (error) {
-      // A failed explanatory read must neither grant tools nor stop the turn.
-      console.warn('[native-runtime] grant audience notice unavailable:', (error as Error).message);
     }
   }
 
