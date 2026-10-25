@@ -1,3 +1,4 @@
+import { withAdminUserMutationLock } from './adminUserMutationService';
 /*
  * Purge the throwaway accounts the stranger journey signs up (TASK-260).
  *
@@ -94,7 +95,7 @@ const loadPool = (): PgPool | null => {
   return require('../config/db-pg').pool as PgPool;
 };
 
-export const purgeSyntheticAccounts = async (
+const purgeSyntheticAccountsUnlocked = async (
   { apply = false, minAgeMs = DEFAULT_MIN_AGE_MS, now = new Date(), pool = loadPool() }:
   { apply?: boolean; minAgeMs?: number; now?: Date; pool?: PgPool | null } = {},
 ): Promise<PurgeReport> => {
@@ -123,6 +124,7 @@ export const purgeSyntheticAccounts = async (
     username: SYNTHETIC_USERNAME,
     email: SYNTHETIC_EMAIL,
     isBot: { $ne: true },
+    role: { $ne: 'admin' },
     createdAt: { $lt: new Date(now.getTime() - minAgeMs) },
   }).select('_id username email isBot createdAt').lean();
   report.examined = candidates.length;
@@ -131,7 +133,8 @@ export const purgeSyntheticAccounts = async (
     if (!isSyntheticAccount(human)) continue; // the query and the predicate must both agree
     const humanId = String(human._id);
     const scoutUsername = `scout-${perUserInstanceId(humanId)}`;
-    const scoutBot = await User.findOne({ username: scoutUsername, isBot: true }).select('_id').lean();
+    const scoutBot = await User.findOne({ username: scoutUsername, isBot: true, role: { $ne: 'admin' } })
+      .select('_id').lean();
     const seatRows = await AgentRegistry.find({ 'publisher.userId': human._id, ephemeral: true })
       .select('agentName').lean();
     const skippedSeats: { name: string; reason: string }[] = [];
@@ -147,7 +150,11 @@ export const purgeSyntheticAccounts = async (
         continue;
       }
       const bot = await User.findOne({ username: agentName, isBot: true, email: `${agentName}@agents.commonly.local` })
-        .select('_id username createdAt').lean();
+        .select('_id username createdAt role').lean();
+      if (bot?.role === 'admin') {
+        skippedSeats.push({ name: agentName, reason: 'its bot user is an administrator' });
+        continue;
+      }
       if (bot && (!bot.createdAt || !human.createdAt || new Date(bot.createdAt) < new Date(human.createdAt))) {
         skippedSeats.push({ name: agentName, reason: 'its bot user predates the account' });
         continue;
@@ -226,6 +233,15 @@ export const purgeSyntheticAccounts = async (
   }
   return report;
 };
+
+// Applying the purge can remove User rows. Keep selection and deletion in the
+// same critical section as online role writers so a candidate cannot become an
+// administrator between those steps. Dry runs perform no destructive writes.
+export const purgeSyntheticAccounts = async (
+  options: Parameters<typeof purgeSyntheticAccountsUnlocked>[0] = {},
+): Promise<PurgeReport> => (options.apply
+  ? withAdminUserMutationLock(() => purgeSyntheticAccountsUnlocked(options))
+  : purgeSyntheticAccountsUnlocked(options));
 
 // CJS compat, same shape as sibling services.
 module.exports = {

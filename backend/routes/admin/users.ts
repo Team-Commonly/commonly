@@ -1,3 +1,5 @@
+import { isValidObjectId } from 'mongoose';
+import { AdminUserMutationError, withAdminUserMutation } from '../../services/adminUserMutationService';
 export {};
 const express = require('express');
 const crypto = require('crypto');
@@ -135,39 +137,48 @@ router.get('/', auth, adminAuth, async (req: any, res: any) => {
   }
 });
 
+const mutationResponse = (status: number, body: Record<string, unknown>) => ({ status, body });
+
 // PATCH /api/admin/users/:userId/role
-router.patch('/:userId/role', auth, adminAuth, async (req: any, res: any) => {
+router.patch('/:userId/role', adminWriteLimiter, auth, adminAuth, async (req: any, res: any) => {
   try {
-    const { userId } = req.params;
-    const { role } = req.body || {};
-    const nextRole = String(role || '').trim().toLowerCase();
-    if (!['admin', 'user'].includes(nextRole)) {
-      return res.status(400).json({ error: 'Role must be either "admin" or "user"' });
-    }
-    if (req.user?.id && String(req.user.id) === String(userId)) {
-      return res.status(400).json({ error: 'You cannot change your own admin role' });
-    }
-
-    const target = await User.findById(userId);
-    if (!target) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    if (target.role === 'admin' && nextRole === 'user') {
-      const adminCount = await User.countDocuments({ role: 'admin' });
-      if (adminCount <= 1) {
-        return res.status(400).json({ error: 'Cannot remove the last global admin' });
+    const result = await withAdminUserMutation(String(req.user?.id || ''), async () => {
+      const { userId } = req.params;
+      const { role } = req.body || {};
+      const nextRole = String(role || '').trim().toLowerCase();
+      if (!['admin', 'user'].includes(nextRole)) {
+        return mutationResponse(400, { error: 'Role must be either "admin" or "user"' });
       }
-    }
+      if (req.user?.id && String(req.user.id) === String(userId)) {
+        return mutationResponse(400, { error: 'You cannot change your own admin role' });
+      }
 
-    target.role = nextRole;
-    await target.save();
+      if (!isValidObjectId(userId)) return mutationResponse(400, { error: 'Invalid user ID' });
+      const target = await User.findById(userId);
+      if (!target) {
+        return mutationResponse(404, { error: 'User not found' });
+      }
 
-    return res.json({
-      message: 'User role updated successfully',
-      user: sanitizeUser(target),
+      if (target.role === 'admin' && nextRole === 'user') {
+        const adminCount = await User.countDocuments({ role: 'admin' });
+        if (adminCount <= 1) {
+          return mutationResponse(400, { error: 'Cannot remove the last global admin' });
+        }
+      }
+
+      target.role = nextRole;
+      await target.save();
+
+      return mutationResponse(200, {
+        message: 'User role updated successfully',
+        user: sanitizeUser(target),
+      });
     });
+    return res.status(result.status).json(result.body);
   } catch (error) {
+    if (error instanceof AdminUserMutationError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
     console.error('Failed to update user role:', error);
     return res.status(500).json({ error: 'Failed to update user role' });
   }
@@ -234,33 +245,40 @@ router.patch('/:userId/entitlements', adminWriteLimiter, auth, adminAuth, async 
 // first — prevents an admin-vs-admin lockout war).
 router.patch('/:userId/ban', adminWriteLimiter, auth, adminAuth, async (req: any, res: any) => {
   try {
-    const { userId } = req.params;
-    const { banned, reason } = req.body || {};
-    if (typeof banned !== 'boolean') {
-      return res.status(400).json({ error: 'banned (boolean) is required' });
-    }
-    if (reason !== undefined && typeof reason !== 'string') {
-      return res.status(400).json({ error: 'reason must be a string' });
-    }
-    if (req.user?.id && String(req.user.id) === String(userId)) {
-      return res.status(400).json({ error: 'You cannot ban your own account' });
-    }
-    const target = await User.findById(userId);
-    if (!target) return res.status(404).json({ error: 'User not found' });
-    if (target.isBot) {
-      return res.status(400).json({ error: 'Bot accounts cannot be banned from this endpoint' });
-    }
-    if (target.role === 'admin' && banned) {
-      return res.status(400).json({ error: 'Demote the admin role before banning this account' });
-    }
+    const result = await withAdminUserMutation(String(req.user?.id || ''), async () => {
+      const { userId } = req.params;
+      const { banned, reason } = req.body || {};
+      if (typeof banned !== 'boolean') {
+        return mutationResponse(400, { error: 'banned (boolean) is required' });
+      }
+      if (reason !== undefined && typeof reason !== 'string') {
+        return mutationResponse(400, { error: 'reason must be a string' });
+      }
+      if (req.user?.id && String(req.user.id) === String(userId)) {
+        return mutationResponse(400, { error: 'You cannot ban your own account' });
+      }
+      if (!isValidObjectId(userId)) return mutationResponse(400, { error: 'Invalid user ID' });
+      const target = await User.findById(userId);
+      if (!target) return mutationResponse(404, { error: 'User not found' });
+      if (target.isBot) {
+        return mutationResponse(400, { error: 'Bot accounts cannot be banned from this endpoint' });
+      }
+      if (target.role === 'admin' && banned) {
+        return mutationResponse(400, { error: 'Demote the admin role before banning this account' });
+      }
 
-    target.banned = banned;
-    target.bannedAt = banned ? new Date() : undefined;
-    target.banReason = banned ? (reason || '').slice(0, 500) : undefined;
-    await target.save();
+      target.banned = banned;
+      target.bannedAt = banned ? new Date() : undefined;
+      target.banReason = banned ? (reason || '').slice(0, 500) : undefined;
+      await target.save();
 
-    return res.json({ ok: true, user: sanitizeUser(target) });
+      return mutationResponse(200, { ok: true, user: sanitizeUser(target) });
+    });
+    return res.status(result.status).json(result.body);
   } catch (error) {
+    if (error instanceof AdminUserMutationError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
     console.error('Failed to update ban state:', error);
     return res.status(500).json({ error: 'Failed to update ban state' });
   }
@@ -283,83 +301,90 @@ router.post('/:userId/sessions/revoke', adminWriteLimiter, auth, adminAuth, asyn
   }
 });
 
-router.delete('/:userId', auth, adminAuth, async (req: any, res: any) => {
+router.delete('/:userId', adminWriteLimiter, auth, adminAuth, async (req: any, res: any) => {
   try {
-    const { userId } = req.params;
-    if (req.user?.id && String(req.user.id) === String(userId)) {
-      return res.status(400).json({ error: 'You cannot delete your own account from admin tools' });
-    }
-
-    const target = await User.findById(userId);
-    if (!target) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    if (target.isBot) {
-      return res.status(400).json({ error: 'Bot accounts cannot be deleted from this endpoint' });
-    }
-
-    if (target.role === 'admin') {
-      const adminCount = await User.countDocuments({ role: 'admin' });
-      if (adminCount <= 1) {
-        return res.status(400).json({ error: 'Cannot delete the last global admin' });
+    const result = await withAdminUserMutation(String(req.user?.id || ''), async () => {
+      const { userId } = req.params;
+      if (req.user?.id && String(req.user.id) === String(userId)) {
+        return mutationResponse(400, { error: 'You cannot delete your own account from admin tools' });
       }
-    }
 
-    // Deleting the person leaves their hosted connections behind for whoever
-    // happens to look. An admin CAN finish the removal — `canDeleteIntegration`
-    // answers true on `role === 'admin'` before it reads `createdBy`
-    // (`routes/integrations.ts:173`), and `GET /api/integrations/admin/all`
-    // still lists the row (it filters on `isActive`, so the orphan comes back
-    // with `createdBy: null`) — but nothing prompts the look, so until someone
-    // takes it the grants and the material outlive the person they act for.
-    // Refusing here does that cleanup at the one moment an admin is already
-    // acting on this user, and hands over the ids and entries to do it with.
-    //
-    // The predicate is the EXISTENCE of the row — not `status`, not the presence
-    // of material (wren 75857, reverting my material-keyed version). Both
-    // narrower keys let a live connect through. `status` waves past the row a
-    // failed provider revoke left `disconnected` with its material still on it
-    // (`markDisconnected` writes that at step 2, the material does not go until
-    // step 4). Material waves past the row that is mid-exchange: the callback
-    // unsets `config.pendingAuth` at `:341`, then makes its upstream calls, and
-    // `config.credentialRef` is not written until `:427` — and each failure
-    // branch in between (`issuer_unreachable`, `exchange_refused`,
-    // `exchange_unreachable`, `exchange_incomplete`) returns a redirect with the
-    // row left exactly so. A row holding no ref is therefore not a dead stub:
-    // it is a connect that lands material seconds later, or one that already
-    // failed while owing a cleanup.
-    //
-    // The cost of the coarser predicate is bounded and falls on a caller who can
-    // pay it: a genuinely dead attempt costs one DELETE from the ids this
-    // response lists. `createdBy` is the right owner term for the same reason it
-    // is exact — `routes/grants.ts:266` resolves an owner as `createdBy ||
-    // config.linkedUserId`, and a hosted row never gets the second.
-    //
-    // The remedy is the ordinary removal, which admits admins and runs the whole
-    // sequence (grants first); this endpoint never calls a vendor, the same way
-    // pod delete does not.
-    const ownedConnections = await Integration.find({
-      type: HOSTED_MCP_TYPE,
-      createdBy: target._id,
-    }).select('_id config.entryId').lean() as Array<{ _id: unknown; config?: { entryId?: string } }>;
-    if (ownedConnections.length > 0) {
-      return res.status(409).json({
-        error: 'This user still owns hosted connections. Remove them first.',
-        code: 'hosted_mcp_connection_owned',
-        // The id AND the entry, per the plan's §7 body (plan doc :192): the pair
-        // is exactly what `DELETE /api/integrations/:id` takes, so an admin
-        // reading this knows which row to delete for which app without a second
-        // lookup. A parallel array of entries would couple by index and drift.
-        connections: ownedConnections.map((connection) => ({
-          id: String(connection._id),
-          entryId: connection.config?.entryId || null,
-        })),
-      });
-    }
+      if (!isValidObjectId(userId)) return mutationResponse(400, { error: 'Invalid user ID' });
+      const target = await User.findById(userId);
+      if (!target) {
+        return mutationResponse(404, { error: 'User not found' });
+      }
+      if (target.isBot) {
+        return mutationResponse(400, { error: 'Bot accounts cannot be deleted from this endpoint' });
+      }
 
-    await target.deleteOne();
-    return res.json({ message: 'User deleted successfully' });
+      if (target.role === 'admin') {
+        const adminCount = await User.countDocuments({ role: 'admin' });
+        if (adminCount <= 1) {
+          return mutationResponse(400, { error: 'Cannot delete the last global admin' });
+        }
+      }
+
+      // Deleting the person leaves their hosted connections behind for whoever
+      // happens to look. An admin CAN finish the removal — `canDeleteIntegration`
+      // answers true on `role === 'admin'` before it reads `createdBy`
+      // (`routes/integrations.ts:173`), and `GET /api/integrations/admin/all`
+      // still lists the row (it filters on `isActive`, so the orphan comes back
+      // with `createdBy: null`) — but nothing prompts the look, so until someone
+      // takes it the grants and the material outlive the person they act for.
+      // Refusing here does that cleanup at the one moment an admin is already
+      // acting on this user, and hands over the ids and entries to do it with.
+      //
+      // The predicate is the EXISTENCE of the row — not `status`, not the presence
+      // of material (wren 75857, reverting my material-keyed version). Both
+      // narrower keys let a live connect through. `status` waves past the row a
+      // failed provider revoke left `disconnected` with its material still on it
+      // (`markDisconnected` writes that at step 2, the material does not go until
+      // step 4). Material waves past the row that is mid-exchange: the callback
+      // unsets `config.pendingAuth` at `:341`, then makes its upstream calls, and
+      // `config.credentialRef` is not written until `:427` — and each failure
+      // branch in between (`issuer_unreachable`, `exchange_refused`,
+      // `exchange_unreachable`, `exchange_incomplete`) returns a redirect with the
+      // row left exactly so. A row holding no ref is therefore not a dead stub:
+      // it is a connect that lands material seconds later, or one that already
+      // failed while owing a cleanup.
+      //
+      // The cost of the coarser predicate is bounded and falls on a caller who can
+      // pay it: a genuinely dead attempt costs one DELETE from the ids this
+      // response lists. `createdBy` is the right owner term for the same reason it
+      // is exact — `routes/grants.ts:266` resolves an owner as `createdBy ||
+      // config.linkedUserId`, and a hosted row never gets the second.
+      //
+      // The remedy is the ordinary removal, which admits admins and runs the whole
+      // sequence (grants first); this endpoint never calls a vendor, the same way
+      // pod delete does not.
+      const ownedConnections = await Integration.find({
+        type: HOSTED_MCP_TYPE,
+        createdBy: target._id,
+      }).select('_id config.entryId').lean() as Array<{ _id: unknown; config?: { entryId?: string } }>;
+      if (ownedConnections.length > 0) {
+        return mutationResponse(409, {
+          error: 'This user still owns hosted connections. Remove them first.',
+          code: 'hosted_mcp_connection_owned',
+          // The id AND the entry, per the plan's §7 body (plan doc :192): the pair
+          // is exactly what `DELETE /api/integrations/:id` takes, so an admin
+          // reading this knows which row to delete for which app without a second
+          // lookup. A parallel array of entries would couple by index and drift.
+          connections: ownedConnections.map((connection) => ({
+            id: String(connection._id),
+            entryId: connection.config?.entryId || null,
+          })),
+        });
+      }
+
+      await target.deleteOne();
+      return mutationResponse(200, { message: 'User deleted successfully' });
+    });
+    return res.status(result.status).json(result.body);
   } catch (error) {
+    if (error instanceof AdminUserMutationError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
     console.error('Failed to delete user:', error);
     return res.status(500).json({ error: 'Failed to delete user' });
   }
