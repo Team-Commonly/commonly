@@ -218,6 +218,42 @@ describe('agentsRuntime post message installation config forwarding', () => {
   });
 });
 
+describe('agent card route boundary', () => {
+  const installation = { podId: 'pod-1', agentName: 'openclaw', instanceId: 'default', config: {} };
+  const payload = { kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hello")' };
+  const handler = getRouteHandler('/pods/:podId/messages', 'post');
+  const req = (body) => ({ params: { podId: 'pod-1' }, body: { continueAnyway: true, ...body },
+    agentInstallation: installation, agentInstallations: [installation] });
+  const response = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
+  beforeEach(() => { jest.clearAllMocks(); findNonMemberMentionNotices.mockResolvedValue([]); });
+  it('forwards a validated UI payload unchanged to the durable message writer', async () => {
+    AgentMessageService.postMessage.mockResolvedValue({ success: true });
+    const res = response();
+    await handler(req({ messageType: 'card', payload, content: 'fallback' }), res);
+    expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      messageType: 'card', payload, content: 'fallback',
+    }));
+    expect(res.status).not.toHaveBeenCalled();
+  });
+  it.each([
+    { ...payload, kind: 'approval' },
+    { ...payload, source: 'root = Text("hello")\nq = Query("secret", {})' },
+    { ...payload, source: 'root = Unknown("hello")' },
+  ])('refuses unsafe cards before persistence or mention fan-out %#', async (badPayload) => {
+    const res = response();
+    await handler(req({ messageType: 'card', payload: badPayload, content: 'fallback' }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+    expect(findNonMemberMentionNotices).not.toHaveBeenCalled();
+  });
+  it('keeps the pod authorization check ahead of parsing', async () => {
+    const res = response();
+    await handler({ ...req({ payload }), params: { podId: 'other' } }, res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+  });
+});
+
 describe('bot-token send-time freshness', () => {
   const user = {
     _id: 'bot-1', username: 'openclaw', isBot: true,

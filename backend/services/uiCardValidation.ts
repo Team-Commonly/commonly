@@ -1,0 +1,115 @@
+import {
+  createParser, parseExpression, split, tokenize, walkAST,
+} from '@openuidev/lang-core';
+import type { LibraryJSONSchema } from '@openuidev/lang-core';
+import catalogue from '../config/uiCardCatalogue.json';
+
+export const UI_CARD_MAX_BYTES = 32 * 1024;
+const schema = catalogue as LibraryJSONSchema;
+const parser = createParser(schema);
+const componentNames = new Set(Object.keys(schema.properties || {}));
+const bracketTokens = tokenize('()[]{}');
+const closingTokens = new Map([
+  [bracketTokens[0].t, bracketTokens[1].t],
+  [bracketTokens[2].t, bracketTokens[3].t],
+  [bracketTokens[4].t, bracketTokens[5].t],
+]);
+const openParenToken = bracketTokens[0].t;
+const allowedCall = (name: string) => componentNames.has(name) || ['Action', 'OpenUrl'].includes(name);
+
+export class UICardValidationError extends Error {
+  readonly statusCode = 400;
+
+  readonly code = 'invalid_ui_card';
+}
+
+function refuse(message: string): never {
+  throw new UICardValidationError(message);
+}
+
+/** Validate untrusted CAP input, never privileged kernel-composed payloads. */
+export function validateAgentCardPayload(
+  messageType: unknown,
+  payload: unknown,
+  content: unknown,
+): void {
+  if (payload === undefined && messageType !== 'card') return;
+  if (messageType !== 'card') refuse('UI payload requires messageType card');
+  if (typeof content !== 'string' || !content.trim()) refuse('UI card requires a content text fallback');
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) refuse('UI card payload must be an object');
+  const envelope = payload as Record<string, unknown>;
+  if (envelope.kind !== 'ui' || envelope.v !== 1 || envelope.lang !== 'openui@1'
+    || typeof envelope.source !== 'string' || !envelope.source.trim()
+    || Object.keys(envelope).some((key) => !['kind', 'v', 'lang', 'source'].includes(key))) {
+    refuse('Expected {kind:"ui",v:1,lang:"openui@1",source}');
+  }
+  if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > UI_CARD_MAX_BYTES) {
+    refuse('UI card payload exceeds 32 KB');
+  }
+  try {
+    const source = envelope.source as string;
+    // The streaming parser intentionally repairs incomplete input. Stored cards
+    // must be complete. Inspect ALL statements, including unreachable ones:
+    // materializing only root misses a dormant Query or an unknown component.
+    const tokens = tokenize(source);
+    // Also inspect tokens that the forgiving parser would discard after an
+    // expression. Quoted prose has string tokens and is never treated as code.
+    const brackets: number[] = [];
+    tokens.forEach((token, index) => {
+      const closing = closingTokens.get(token.t);
+      if (closing !== undefined) {
+        brackets.push(closing);
+        if (brackets.length > 64) refuse('UI card exceeds 64 nesting levels');
+      } else if ([...closingTokens.values()].includes(token.t) && brackets.pop() !== token.t) {
+        refuse('UI card contains unmatched brackets');
+      }
+      if (typeof token.v === 'string' && tokens[index + 1]?.t === openParenToken
+        && parseExpression([token]).k !== 'Str' && !allowedCall(token.v)) {
+        refuse(`UI card call is not allowed: ${token.v}`);
+      }
+    });
+    if (brackets.length) refuse('UI card contains unmatched brackets');
+    const statements = split(tokens);
+    if (statements.length > 256) refuse('UI card exceeds 256 statements');
+    const ids = new Set<string>();
+    statements.forEach((statement) => {
+      if (ids.has(statement.id) || statement.id.startsWith('$')) {
+        refuse('UI card contains duplicate or reactive statements');
+      }
+      ids.add(statement.id);
+      walkAST(parseExpression(statement.tokens), (node) => {
+        if (node.k === 'Comp') {
+          if (!allowedCall(node.name)) {
+            refuse(`UI card call is not allowed: ${node.name}`);
+          }
+          if (node.fn) refuse('UI card functions are not allowed');
+          if (node.name === 'OpenUrl') {
+            const [url] = node.args;
+            if (node.args.length !== 1 || url?.k !== 'Str') refuse('OpenUrl requires a literal https URL');
+            const parsed = new URL(url.v);
+            if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
+              refuse('OpenUrl requires a literal https URL');
+            }
+          }
+        } else if (node.k === 'Ref' && ['Query', 'Mutation', 'Run'].includes(node.n)) {
+          refuse(`UI card capability is not allowed: ${node.n}`);
+        } else if (node.k === 'Obj') {
+          if (node.entries.some(([key]) => ['__proto__', 'prototype', 'constructor'].includes(key))) {
+            refuse('UI card prototype keys are not allowed');
+          }
+        } else if (!['Str', 'Num', 'Bool', 'Null', 'Arr', 'Ref'].includes(node.k)) {
+          refuse('UI card reactive expressions are not allowed');
+        }
+      });
+    });
+    const result = parser.parse(source);
+    if (!result.root || result.meta.incomplete || result.meta.unresolved.length
+      || result.meta.errors.length || result.queryStatements.length || result.mutationStatements.length
+      || Object.keys(result.stateDeclarations).length) {
+      refuse('UI card source is incomplete or invalid for the Commonly catalogue');
+    }
+  } catch (error) {
+    if (error instanceof UICardValidationError) throw error;
+    refuse('UI card source could not be parsed');
+  }
+}

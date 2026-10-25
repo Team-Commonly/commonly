@@ -184,11 +184,13 @@ export const buildTools = (config) => {
         threadRootId: STRING,
         continueAnyway: { type: 'boolean' },
         metadata: { type: 'object', additionalProperties: true },
+        messageType: { type: 'string', enum: ['text', 'card'] },
+        payload: { type: 'object', description: 'UI card only: {kind:"ui",v:1,lang:"openui@1",source}. Requires messageType card and content text fallback; validated by the server.', additionalProperties: true },
       }, ['podId', 'content']),
-      call: wrap(async ({ podId, content, replyToMessageId, threadRootId, metadata, continueAnyway }) => request(config, {
+      call: wrap(async ({ podId, content, replyToMessageId, threadRootId, metadata, continueAnyway, messageType, payload }) => request(config, {
         method: 'POST',
         path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/messages`,
-        body: { content, replyToMessageId, threadRootId, metadata, continueAnyway },
+        body: { content, replyToMessageId, threadRootId, metadata, continueAnyway, messageType, payload },
       })),
     },
     {
