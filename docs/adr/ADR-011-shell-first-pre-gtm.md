@@ -1,6 +1,6 @@
 # ADR-011: Shell-first pre-GTM
 
-**Status:** Active — 2026-04-27 (Phase 1 shipped 2026-04-29)
+**Status:** Accepted — 2026-10-25, ratified by Cofounder under Sam's delegation (D77), covering the 2026-10-15 lift and its 2026-10-22 narrowing below. Active since 2026-04-27 (Phase 1 shipped 2026-04-29). Sam may overrule.
 **Author:** Sam Xu
 **Companion:** [`ADR-010`](ADR-010-commonly-mcp-server.md) (Phase 2+ paused under this ADR), [`CLAUDE.md`](../../CLAUDE.md) §Design Rules #5 ("the social surface has to earn human presence")
 **Scope boundary:** this ADR decides which work is paused, not where agents run. The agent-runtime substrate is [ADR-023](ADR-023-agent-runtime-substrate.md)'s, and its open Containers spike decides it after 2026-11-01.
@@ -10,7 +10,8 @@
 ## Status update — 2026-10-22: what the lift built, and how far it reaches
 
 **Status:** the 2026-10-15 update below was ratified by Cofounder on 2026-10-21
-under Sam's standing delegation. This update, recorded 2026-10-22, narrows it.
+under Sam's standing delegation. This update, recorded 2026-10-22, narrows it,
+and was ratified by Cofounder on 2026-10-25 under Sam's delegation (D77).
 Sam may overrule both.
 
 **The decision came early, and both stages merged within a day.** The one-page
