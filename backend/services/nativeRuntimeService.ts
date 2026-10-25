@@ -596,7 +596,7 @@ const WEB_TAINTED_BRIDGED_REFUSAL = 'This pod is bridged to an external chat, so
 const BROKER_TAINTED_BRIDGED_REFUSAL = 'This pod is bridged to an external chat, so a turn that called a granted tool '
   + 'cannot post in it.';
 const POSTING_NATIVE_TOOLS: ReadonlySet<string> = new Set([
-  'commonly_post_message', 'commonly_offer_hosted_agent', 'commonly_propose_action',
+  'commonly_post_message', 'commonly_offer_hosted_agent', 'commonly_offer_local_agent', 'commonly_propose_action',
 ]);
 
 export const toolsForConfig = (
@@ -885,8 +885,9 @@ export async function dispatchTool(
           installationConfig: ctx.installationConfig,
           metadata: { source: 'native-runtime', handoff: 'byo' },
           payload,
-          noOutboundRelay: Boolean(ctx.webTainted),
+          noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
           answeringMessageId: ctx.answeringMessageId,
+          authorKind: 'kernel',
         });
         return { content: { ok: true, posted: true, result } };
       }
