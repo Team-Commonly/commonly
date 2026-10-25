@@ -1921,6 +1921,7 @@ export async function runAgent(
   let finalMessage: string | undefined;
   let turnIndex = 0;
   let postedViaTool = false;
+  let modelFailureReason: string | undefined;
 
   // Row B (TASK-132): the seat's grant broker, assembled ONCE PER RUN at turn
   // assembly.
@@ -2032,6 +2033,8 @@ export async function runAgent(
           `${litellm.baseUrl}/chat/completions`,
           {
             model,
+            // D81: a failed model must not silently substitute another vendor.
+            disable_fallbacks: true,
             messages,
             // ADR-020 D1: the manifest's tool allowlist, enforced.
             // The manifest's allowlist, plus the grant broker's read tools for
@@ -2057,7 +2060,7 @@ export async function runAgent(
         );
         if (axiosResp.status < 200 || axiosResp.status >= 300) {
           const body = axiosResp.data as unknown;
-          const bodyText = typeof body === 'string' ? body : JSON.stringify(body);
+          const bodyText = typeof body === 'string' ? body : JSON.stringify(body) || '';
           // A content guardrail (injection / moderation) rejection comes back as an
           // error status from LiteLLM. Tag it distinctly so it's observable in
           // AgentRun metrics (told apart from genuine LLM failures) and never
@@ -2077,7 +2080,8 @@ export async function runAgent(
             run.errorMessage = 'Request blocked by a content guardrail (prompt-injection / moderation).';
             break;
           }
-          throw new Error(`LiteLLM HTTP ${axiosResp.status}: ${bodyText.slice(0, 500)}`);
+          modelFailureReason = `HTTP ${axiosResp.status}`;
+          throw new Error(`LiteLLM ${modelFailureReason}`);
         }
         llmResponse = axiosResp.data;
         responseHeaders = (axiosResp.headers || {}) as Record<string, unknown>;
@@ -2085,7 +2089,11 @@ export async function runAgent(
         const axErr = err as AxiosError;
         run.status = 'failed';
         run.errorKind = 'llm_error';
-        run.errorMessage = (axErr.message || String(err)).slice(0, 1000);
+        // Publish only a bounded category, never the proxy payload, URL or credentials.
+        modelFailureReason = modelFailureReason || (axErr.code === 'ECONNABORTED' || axErr.code === 'ETIMEDOUT'
+          ? 'request timed out' : 'connection failed');
+        run.errorMessage = `Model ${model}: ${modelFailureReason}`.slice(0, 1000);
+        console.warn('[native-runtime] model request failed:', model, modelFailureReason);
         break;
       }
 
@@ -2332,12 +2340,12 @@ export async function runAgent(
   }
 
   // A hosted turn that failed (a guard stop or an error) and posted nothing
-  // costs the person no turn. When someone was waiting on it, a mention or a
-  // DM, it posts one fixed line instead of leaving them in silence. A turn
+  // costs the person no turn. Model failures name the model and a safe reason
+  // on native turns too; other hosted failures keep the fixed line. A turn
   // that declined (NO_REPLY, a silent group-pod turn) ended succeeded and
   // never reaches this. The per-user spend ceiling still counts the run.
-  if (hostedNative && run.status === 'failed' && !postedViaTool && !finalMessage) {
-    run.metered = false;
+  if ((hostedNative || modelFailureReason) && run.status === 'failed' && !postedViaTool && !finalMessage) {
+    if (hostedNative) run.metered = false;
     if (wasDirectlyAddressed(trigger)
       && !((dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow())) {
       try {
@@ -2346,7 +2354,10 @@ export async function runAgent(
           agentName,
           instanceId,
           podId,
-          content: HOSTED_RUN_FAILED_LINE,
+          content: modelFailureReason
+            ? `Model ${model} could not answer (${modelFailureReason}). ${hostedNative
+              ? HOSTED_RUN_FAILED_LINE : 'Please try again.'}`
+            : HOSTED_RUN_FAILED_LINE,
           messageType: 'text',
           displayName,
           installationConfig: cfg,
