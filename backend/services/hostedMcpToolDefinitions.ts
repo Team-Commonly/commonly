@@ -18,7 +18,6 @@
  * the row's credential for tools/list drift assessment and for tools/call, so
  * both requests are made under the same member's authority.
  */
-import { randomUUID } from 'crypto';
 import { HOSTED_MCP_ENTRIES, findHostedMcpEntry } from '../integrations/hostedMcp/entries';
 import { RoomGrantError } from './roomGrantService';
 import {
@@ -65,7 +64,6 @@ export interface HostedMcpToolDeps {
   /** The live credential for a row: a stored token, or a refresh behind §10.3's fence. */
   credentialFor: (row: HostedMcpRow) => Promise<{ token: string }>;
   fetcher: typeof fetch;
-  newCallId: () => string;
   driftCache: HostedMcpDriftCache;
 }
 
@@ -85,7 +83,6 @@ const guardedFetch: typeof fetch = (input, init) => {
 
 const defaultDeps = (): HostedMcpToolDeps => ({
   fetcher: guardedFetch,
-  newCallId: () => `hosted_call_${randomUUID()}`,
   loadRow: async (connectionId) => {
     // A grant's connection id is an ObjectId string by construction, but an
     // untrusted value must not reach a BSON `_id` selector as a CastError.
@@ -175,75 +172,6 @@ export const capHostedToolResult = (result: unknown): unknown => {
   };
 };
 
-/**
- * Streamable HTTP may answer a JSON-RPC request with either a JSON body or an
- * SSE stream. Both are accepted, and the reply is whichever frame carries a
- * `result` or an `error`: a frame that is neither is not the answer to this
- * call, so it is not mistaken for one.
- */
-const jsonRpcReply = async (response: Response): Promise<Record<string, unknown>> => {
-  const contentType = String(response.headers?.get?.('content-type') || '').toLowerCase();
-  if (!contentType.includes('text/event-stream')) {
-    const raw = await readCappedText(response);
-    let body: Record<string, unknown>;
-    try {
-      body = JSON.parse(raw) as Record<string, unknown>;
-    } catch {
-      throw new RoomGrantError('provider_error', 'hosted-MCP vendor returned invalid JSON', 502,
-        { failure: 'invalid_json', vendorStatus: response.status });
-    }
-    if (body && (body.result !== undefined || body.error !== undefined)) return body;
-    throw new RoomGrantError('provider_error', 'hosted-MCP vendor returned no JSON-RPC reply', 502,
-      { failure: 'missing_rpc_reply', vendorStatus: response.status });
-  }
-  const reader = response.body?.getReader();
-  if (!reader) throw new RoomGrantError('provider_error', 'hosted-MCP vendor returned no JSON-RPC reply', 502,
-    { failure: 'missing_rpc_reply', vendorStatus: response.status });
-  const decoder = new TextDecoder();
-  let pending = '';
-  let bytes = 0;
-  const readLine = (line: string): Record<string, unknown> | undefined => {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith('data:')) return undefined;
-    const payload = trimmed.slice('data:'.length).trim();
-    if (!payload) return undefined;
-    try {
-      const parsed = JSON.parse(payload) as Record<string, unknown>;
-      if (parsed && (parsed.result !== undefined || parsed.error !== undefined)) return parsed;
-    } catch {
-      // A frame this parser cannot read is not the reply; keep looking.
-    }
-    return undefined;
-  };
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        const last = readLine(pending + decoder.decode());
-        if (last) return last;
-        break;
-      }
-      bytes += value.byteLength;
-      if (bytes > HOSTED_MCP_MAX_REPLY_BYTES) throw replyTooLarge(response.status);
-      pending += decoder.decode(value, { stream: true });
-      let newline = pending.indexOf('\n');
-      while (newline !== -1) {
-        const reply = readLine(pending.slice(0, newline));
-        if (reply) return reply;
-        pending = pending.slice(newline + 1);
-        newline = pending.indexOf('\n');
-      }
-    }
-  } finally {
-    void reader.cancel().catch(() => {});
-  }
-  throw new RoomGrantError('provider_error', 'hosted-MCP vendor returned no JSON-RPC reply', 502,
-    { failure: 'missing_rpc_reply', vendorStatus: response.status });
-};
-
-const MCP_PROTOCOL_VERSION = '2025-11-25';
-const MCP_HANDSHAKE_VERSIONS = new Set(['2025-03-26', '2025-06-18', MCP_PROTOCOL_VERSION]);
-
 const sanitizeVendorError = (value: string, token: string): string | undefined => value
   .split(/[\r\n]/, 1)[0]
   .split(token).join('[redacted]')
@@ -275,124 +203,183 @@ const vendorErrorLine = async (response: Response, token: string): Promise<strin
   } catch { return undefined; }
 };
 
-/** One short-lived Streamable HTTP session, under one member's credential. */
+/**
+ * SDK owns envelopes, request IDs, negotiation and JSON/SSE decoding. Commonly
+ * owns outbound policy, byte/deadline limits, diagnostic redaction and the one
+ * session-bound 404 renewal. No OAuth provider is supplied to the SDK: refresh
+ * authority stays in credentialFor, and a vendor 401 never starts discovery.
+ */
 const openHostedMcpSession = async (
   resource: string,
   token: string,
   fetcher: typeof fetch,
-  newCallId: () => string,
   signal: AbortSignal,
 ) => {
-  let sessionId: string | null = null;
-  let version = MCP_PROTOCOL_VERSION;
-  const send = async (body: Record<string, unknown>, initialized = false): Promise<Response> => {
+  // Lazy for the frontend's pure catalogue projection, which must not bundle
+  // the Node SDK and its transport dependencies.
+  // SDK package exports require .js subpaths; the legacy ESLint resolver cannot resolve them.
+  /* eslint-disable global-require, @typescript-eslint/no-require-imports, import/extensions, import/no-unresolved */
+  const { Client } = require('@modelcontextprotocol/sdk/client/index.js') as
+    typeof import('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js') as
+    typeof import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const { ResultSchema, McpError, ProgressNotificationSchema } = require('@modelcontextprotocol/sdk/types.js') as
+    typeof import('@modelcontextprotocol/sdk/types.js');
+  /* eslint-enable global-require, @typescript-eslint/no-require-imports, import/extensions, import/no-unresolved */
+  let client: InstanceType<typeof Client>;
+  let transport: InstanceType<typeof StreamableHTTPClientTransport>;
+  let vendorStatus: number | undefined;
+  let phase = 'initialize';
+  const readers = new Set<ReadableStreamDefaultReader<Uint8Array>>();
+  let firstError: unknown;
+  let fault = new AbortController();
+
+  const mappedError = (error: unknown): RoomGrantError => {
+    const cause = firstError || error;
+    if (cause instanceof RoomGrantError && cause.code !== 'provider_unreachable') return cause;
+    if (signal.aborted) return new RoomGrantError(
+      'provider_unreachable', 'hosted-MCP vendor reply did not finish in time', 502,
+    );
+    if (cause instanceof RoomGrantError) return cause;
+    if (cause instanceof McpError) {
+      const detail = sanitizeVendorError(cause.message, token);
+      return new RoomGrantError('provider_error', `hosted-MCP ${phase} failed: ${detail}`, 502,
+        { vendorStatus, rpcCode: cause.code, vendorError: detail,
+          ...(phase === 'initialize' ? { failure: 'unsupported_protocol' } : {}) });
+    }
+    const failure = cause instanceof SyntaxError ? 'invalid_json'
+      : phase === 'initialize' ? 'unsupported_protocol' : 'missing_rpc_reply';
+    return new RoomGrantError('provider_error', `hosted-MCP vendor returned an invalid ${phase} reply`, 502,
+      { failure, vendorStatus });
+  };
+
+  const sdkFetch: typeof fetch = async (url, init = {}) => {
+    // We only consume responses to requests. The SDK probes an optional GET
+    // event channel after initialized; do not open a background vendor stream
+    // for this short-lived, request/response-only broker session.
+    if (init.method === 'GET') return new Response(null, { status: 405 });
+    const combinedSignal = AbortSignal.any([signal, fault.signal, ...(init.signal ? [init.signal] : [])]);
     let response: Response;
     try {
-      response = await fetcher(resource, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json, text/event-stream',
-          Authorization: `Bearer ${token}`,
-          ...(initialized ? { 'MCP-Protocol-Version': version } : {}),
-          ...(sessionId ? { 'Mcp-Session-Id': sessionId } : {}),
-        },
-        body: JSON.stringify(body),
-        signal,
-      });
+      combinedSignal.throwIfAborted();
+      response = await fetcher(url, { ...init, signal: combinedSignal });
     } catch (error) {
-      throw new RoomGrantError('provider_unreachable', `hosted-MCP vendor unreachable: ${messageOf(error)}`, 502);
+      const refused = new RoomGrantError('provider_unreachable',
+        `hosted-MCP vendor unreachable: ${sanitizeVendorError(messageOf(error), token)}`, 502);
+      firstError ||= refused;
+      throw refused;
     }
+    vendorStatus = response.status;
     if (response.status === 401 || response.status === 403) {
-      throw new RoomGrantError(
-        'credential_rejected', 'the vendor rejected this connection’s credential — reconnect to continue', 403,
-      );
+      const refused = new RoomGrantError('credential_rejected',
+        'the vendor rejected this connection’s credential — reconnect to continue', 403);
+      firstError ||= refused;
+      await response.body?.cancel();
+      throw refused;
     }
     if (!response.ok) {
       const vendorError = await vendorErrorLine(response, token);
-      throw new RoomGrantError('provider_error', `hosted-MCP vendor answered ${response.status}`, 502,
+      const refused = new RoomGrantError('provider_error', `hosted-MCP vendor answered ${response.status}`, 502,
         { vendorStatus: response.status, vendorError });
+      firstError ||= refused;
+      throw refused;
     }
-    return response;
-  };
-
-  const initializeSession = async () => {
-    const initialized = await send({
-      jsonrpc: '2.0', id: newCallId(), method: 'initialize',
-      params: {
-        protocolVersion: MCP_PROTOCOL_VERSION,
-        capabilities: {},
-        clientInfo: { name: 'commonly-hosted-mcp', version: '1.0.0' },
-      },
-    });
-    sessionId = initialized.headers.get('mcp-session-id');
-    const reply = await jsonRpcReply(initialized);
-    const result = reply.result as { protocolVersion?: unknown } | undefined;
-    if (reply.error || typeof result?.protocolVersion !== 'string'
-      || !MCP_HANDSHAKE_VERSIONS.has(result.protocolVersion)) {
-      throw new RoomGrantError('provider_error', 'hosted-MCP vendor did not negotiate a supported protocol', 502,
-        { failure: 'unsupported_protocol', vendorStatus: initialized.status,
-          rpcCode: (reply.error as { code?: unknown } | undefined)?.code });
-    }
-    version = result.protocolVersion;
-    const notification = await send({ jsonrpc: '2.0', method: 'notifications/initialized' }, true);
-    if (notification.status !== 202) {
+    if (phase === 'initialize' && init.body && JSON.parse(String(init.body)).method === 'notifications/initialized'
+      && response.status !== 202) {
+      await response.body?.cancel();
       throw new RoomGrantError('provider_error', 'hosted-MCP vendor did not accept initialization', 502,
-        { vendorStatus: notification.status });
+        { vendorStatus: response.status });
     }
+    if (!response.body) return response;
+    const reader = response.body.getReader();
+    readers.add(reader);
+    let bytes = 0;
+    // Bound raw bytes before the SDK parses either JSON or SSE, without
+    // buffering an event stream until EOF or implementing its framing ourselves.
+    const bounded = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          const { done, value } = await reader.read();
+          if (done) { readers.delete(reader); controller.close(); return; }
+          bytes += value.byteLength;
+          if (bytes > HOSTED_MCP_MAX_REPLY_BYTES) {
+            const error = replyTooLarge(response.status);
+            firstError ||= error;
+            controller.error(error);
+            await reader.cancel().catch(() => undefined);
+            return;
+          }
+          controller.enqueue(value);
+        } catch (error) {
+          firstError ||= error;
+          controller.error(error);
+        }
+      },
+      cancel: () => reader.cancel().catch(() => undefined),
+    });
+    return new Response(bounded, { status: response.status, headers: response.headers });
   };
-  const initializeWithRenewal = async () => {
-    try {
-      await initializeSession();
-    } catch (error) {
-      if (!(error instanceof RoomGrantError) || error.details?.vendorStatus !== 404 || !sessionId) throw error;
-      // A server can expire its new session before the initialized
-      // notification. That notification carried the ID, so it earns the same
-      // one-time renewal as a session-bound tools request.
-      sessionId = null;
-      await initializeSession();
-    }
+  const initialize = async () => {
+    phase = 'initialize';
+    firstError = undefined;
+    fault = new AbortController();
+    client = new Client({ name: 'commonly-hosted-mcp', version: '1.0.0' }, { capabilities: {} });
+    transport = new StreamableHTTPClientTransport(new URL(resource), {
+      fetch: sdkFetch,
+      requestInit: { headers: { Authorization: `Bearer ${token}` } },
+      reconnectionOptions: { maxRetries: 0, initialReconnectionDelay: 1000,
+        maxReconnectionDelay: 1000, reconnectionDelayGrowFactor: 1 },
+    });
+    // Progress is advisory; this broker does not expose progress callbacks.
+    client.setNotificationHandler(ProgressNotificationSchema, () => {});
+    client.onerror = (error) => { firstError ||= error; fault.abort(); };
+    const setProtocolVersion = transport.setProtocolVersion.bind(transport);
+    transport.setProtocolVersion = (version) => {
+      if (!['2025-03-26', '2025-06-18', '2025-11-25'].includes(version)) {
+        throw new RoomGrantError('provider_error', 'hosted-MCP vendor did not negotiate a supported protocol', 502,
+          { failure: 'unsupported_protocol', vendorStatus });
+      }
+      setProtocolVersion(version);
+    };
+    await client.connect(transport, { signal, timeout: HOSTED_MCP_CALL_TIMEOUT_MS });
   };
   const close = async () => {
-    if (!sessionId) return;
-    const closingSessionId = sessionId;
-    sessionId = null;
-    try {
-      await fetcher(resource, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'MCP-Protocol-Version': version,
-          'Mcp-Session-Id': closingSessionId,
-        },
-        signal,
-      });
-    } catch {
-      // Session expiry and unsupported DELETE do not change the tool result.
-    }
+    try { await transport?.terminateSession(); } catch { /* Cleanup cannot replace the first failure. */ }
+    await client?.close();
+    await Promise.all([...readers].map((reader) => reader.cancel().catch(() => undefined)));
+    readers.clear();
   };
+  const expired = (error: unknown) => error instanceof RoomGrantError
+    && error.details?.vendorStatus === 404 && Boolean(transport?.sessionId);
   try {
-    await initializeWithRenewal();
+    try { await initialize(); } catch (error) {
+      const mapped = mappedError(error);
+      if (!expired(mapped)) throw mapped;
+      await client!.close();
+      await initialize();
+    }
   } catch (error) {
+    const mapped = mappedError(error);
     await close();
-    throw error;
+    throw mapped;
   }
   return {
-    post: async (body: Record<string, unknown>) => {
-      try {
-        return await send(body, true);
-      } catch (error) {
-        if (!(error instanceof RoomGrantError) || error.details?.vendorStatus !== 404 || !sessionId) throw error;
-        // A stateful server can expire a session between initialization and a
-        // request. The spec requires a new initialize without the stale ID.
-        sessionId = null;
+    request: async (method: 'tools/list' | 'tools/call', params: Record<string, unknown>) => {
+      const send = async () => {
+        phase = method;
+        firstError = undefined;
         try {
-          await initializeSession();
-        } catch (initializationError) {
-          await close();
-          throw initializationError;
-        }
-        return send(body, true);
+          // ResultSchema retains the broker's existing list-shape diagnostics
+          // and opaque tool content. SDK still validates every JSON-RPC frame.
+          return await client.request({ method, params }, ResultSchema,
+            { signal: AbortSignal.any([signal, fault.signal]), timeout: HOSTED_MCP_CALL_TIMEOUT_MS });
+        } catch (error) { throw mappedError(error); }
+      };
+      try { return await send(); } catch (error) {
+        if (!expired(error)) throw error;
+        await client.close();
+        try { await initialize(); } catch (initializationError) { throw mappedError(initializationError); }
+        return send();
       }
     },
     close,
@@ -401,7 +388,7 @@ const openHostedMcpSession = async (
 
 const listUpstreamTools = async (
   connectionId: string,
-  deps: Pick<HostedMcpToolDeps, 'loadRow' | 'credentialFor' | 'fetcher' | 'newCallId'>,
+  deps: Pick<HostedMcpToolDeps, 'loadRow' | 'credentialFor' | 'fetcher'>,
   entries: HostedMcpEntry[],
 ): Promise<HostedMcpUpstreamTool[]> => {
   const row = await deps.loadRow(connectionId);
@@ -413,23 +400,12 @@ const listUpstreamTools = async (
   const timer = setTimeout(() => controller.abort(), HOSTED_MCP_CALL_TIMEOUT_MS);
   let session: Awaited<ReturnType<typeof openHostedMcpSession>> | undefined;
   try {
-    session = await openHostedMcpSession(entry.resource, token, deps.fetcher, deps.newCallId, controller.signal);
+    session = await openHostedMcpSession(entry.resource, token, deps.fetcher, controller.signal);
     const allTools: HostedMcpUpstreamTool[] = [];
     const seenCursors = new Set<string>();
     let cursor: string | undefined;
     for (let page = 0; page < 100; page += 1) {
-      const response = await session.post({
-        jsonrpc: '2.0', id: deps.newCallId(), method: 'tools/list', params: cursor ? { cursor } : {},
-      });
-      const reply = await jsonRpcReply(response);
-      if (reply.error) {
-        const vendorError = reply.error as { code?: unknown; message?: unknown };
-        const rpcLine = `JSON-RPC ${String(vendorError.code ?? 'error')}: ${String(vendorError.message ?? '')}`;
-        throw new RoomGrantError('provider_error', 'hosted-MCP tools/list returned an error', 502,
-          { vendorStatus: response.status, rpcCode: vendorError.code,
-            vendorError: sanitizeVendorError(rpcLine, token) });
-      }
-      const result = reply.result as { tools?: unknown; nextCursor?: unknown } | undefined;
+      const result = await session.request('tools/list', cursor ? { cursor } : {});
       if (!Array.isArray(result?.tools)) {
         throw new RoomGrantError('provider_error', 'hosted-MCP tools/list returned no tools array', 502,
           { failure: 'missing_tools' });
@@ -456,7 +432,7 @@ const listUpstreamTools = async (
 // The cache survives definition reconstruction on each broker call. A failed
 // list is never cached, so it cannot turn a vendor outage into a clean pin.
 export const createHostedMcpRuntimeDriftCache = (
-  deps: Pick<HostedMcpToolDeps, 'loadRow' | 'credentialFor' | 'fetcher' | 'newCallId'>,
+  deps: Pick<HostedMcpToolDeps, 'loadRow' | 'credentialFor' | 'fetcher'>,
   entries: HostedMcpEntry[] = HOSTED_MCP_ENTRIES,
 ): HostedMcpDriftCache => createHostedMcpDriftCache({
   listUpstreamTools: ({ connectionId }) => listUpstreamTools(connectionId, deps, entries),
@@ -466,7 +442,6 @@ const productionDriftCache = createHostedMcpRuntimeDriftCache({
   loadRow: (connectionId) => defaultDeps().loadRow(connectionId),
   credentialFor: (row) => defaultDeps().credentialFor(row),
   fetcher: guardedFetch,
-  newCallId: () => `hosted_list_${randomUUID()}`,
 });
 
 /** A removed row must not retain an assessment after its credential is gone. */
@@ -565,31 +540,16 @@ const callHostedTool = async (
     throw error;
   }
 
-  const callId = deps.newCallId();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), HOSTED_MCP_CALL_TIMEOUT_MS);
   let session: Awaited<ReturnType<typeof openHostedMcpSession>> | undefined;
-  let response: Response;
   try {
-    session = await openHostedMcpSession(entry.resource, token, deps.fetcher, deps.newCallId, controller.signal);
-    response = await session.post({
-      jsonrpc: '2.0',
-      id: callId,
-      method: 'tools/call',
-      params: { name: tool.upstreamName, arguments: args },
-    });
-    const reply = await jsonRpcReply(response);
-    if (reply.error) {
-      const vendorError = reply.error as { message?: unknown; code?: unknown };
-      const detail = String(vendorError?.message || vendorError?.code || 'unknown error');
-      throw new RoomGrantError('provider_error', `hosted-MCP vendor refused the call: ${sanitizeVendorError(detail, token)}`, 502,
-        { vendorStatus: response.status, rpcCode: vendorError?.code,
-          vendorError: sanitizeVendorError(`JSON-RPC ${String(vendorError?.code ?? 'error')}: ${detail}`, token) });
-    }
+    session = await openHostedMcpSession(entry.resource, token, deps.fetcher, controller.signal);
+    const result = await session.request('tools/call', { name: tool.upstreamName, arguments: args });
     // MCP reports a tool that ran and failed as a result with `isError`, which is
     // the model's to read: throwing here would hide the vendor's own explanation
     // from the turn that asked for it.
-    return capHostedToolResult(reply.result);
+    return capHostedToolResult(result);
   } catch (error) {
     // The deadline covers the body too: a vendor that sends headers and then
     // trickles the reply would otherwise hold the turn open past it (TASK-254).

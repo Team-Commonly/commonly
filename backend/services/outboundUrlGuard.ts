@@ -347,6 +347,7 @@ interface PinnedRequest {
 
 interface RawResponse {
   status: number;
+  mcpSessionId?: string;
   location?: string;
   text: string;
   /** The response's media type, lowercased and without parameters; '' when absent. */
@@ -397,6 +398,8 @@ const requestPinned = (
     const status = res.statusCode || 0;
     const location = REDIRECT_STATUSES.has(status) ? res.headers.location : undefined;
     const contentType = mediaTypeOf(res.headers['content-type']);
+    const mcpSessionId = typeof res.headers['mcp-session-id'] === 'string'
+      ? res.headers['mcp-session-id'] : undefined;
     if (location || ((status < 200 || status >= 300) && !read.readErrorBodies)) {
       res.resume();
       settle(() => resolve({ status, location, text: '', contentType, truncated: false }));
@@ -426,6 +429,7 @@ const requestPinned = (
     });
     res.on('end', () => settle(() => resolve({
       status, text: Buffer.concat(chunks).toString('utf8'), contentType, truncated: false,
+      ...(mcpSessionId ? { mcpSessionId } : {}),
     })));
     res.on('error', (error) => settle(() => reject(error)));
   });
@@ -534,6 +538,7 @@ export const getFromPublicAddress = async (rawUrl: string): Promise<PublicPageRe
 /** A vendor reply as the guard read it. `location` is set on a 3xx, which is never followed. */
 export interface VendorEndpointResult {
   status: number;
+  mcpSessionId?: string;
   contentType: string;
   text: string;
   location?: string;
@@ -583,5 +588,6 @@ export const requestVendorEndpoint = async (
     contentType: response.contentType,
     text: response.text,
     ...(response.location ? { location: response.location } : {}),
+    ...(response.mcpSessionId ? { mcpSessionId: response.mcpSessionId } : {}),
   };
 };
