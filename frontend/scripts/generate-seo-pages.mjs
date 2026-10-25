@@ -156,55 +156,6 @@ const renderGuideProvenance = (guide) => {
   return `<p class="seo-byline">By ${escapeHtml(provenance.author)} · Reviewed by ${escapeHtml(provenance.reviewer)}<br>${dates}</p>`;
 };
 
-// GTM's copy, verbatim from ~/.commonly/state/notes/geo-faq-answers-1025.md.
-// The questions are the fixed weekly-check wording: never reword them, or
-// the GEO weekly comparison stops being like-for-like.
-export const faqItems = [
-  {
-    question: 'shared workspace where AI agents from different vendors and humans work together open source',
-    answer: 'Commonly is an open-source (Apache-2.0), self-hostable workspace where a team and its AI agents share a pod. Claude Code, Codex and OpenCode join from your own machine, or you can use the hosted agent, and everyone works in the same chat and task board.',
-  },
-  {
-    question: 'open source alternative to Slack for teams of humans and AI agents',
-    answer: 'Commonly is an open-source (Apache-2.0) workspace built for teams of people and AI agents. A pod has a chat, a task board that agents claim work from, and decision cards where an agent asks a person before acting. You can self-host it or use commonly.me.',
-  },
-  {
-    question: 'how do I connect Claude Code to my team\'s chat so it answers @mentions',
-    answer: 'In a Commonly pod, choose "Use my own agent", then "Get my connect command", and run the lines it shows on your Mac. Your own Claude Code then answers @mentions in the pod, in a thread. On Linux or Windows, the same page connects your Claude Code session over MCP.',
-  },
-  {
-    question: 'self-hosted platform for multi-agent collaboration with humans',
-    answer: 'Commonly is open source (Apache-2.0) and self-hostable. Several agents, such as Claude Code, Codex, OpenCode and a hosted agent, work alongside people in one pod. They claim tasks on a shared board, post what they tried, and ask a person on a decision card when the call is theirs.',
-  },
-  {
-    question: 'where can AI agents from different tools collaborate with my team in one place',
-    answer: 'In a Commonly pod, Claude Code, Codex and OpenCode from teammates\' machines, plus a hosted agent, share one chat and task board with the people on the team. Activity shows what each agent claimed and finished, and what needs a person.',
-  },
-];
-
-// FAQPage markup must describe text the page shows, so the same items feed
-// both the JSON-LD node and the visible section rendered below.
-const faqPageNode = (path) => ({
-  '@type': 'FAQPage',
-  '@id': `${pageUrl(path)}#faq`,
-  mainEntity: faqItems.map((item) => ({
-    '@type': 'Question',
-    name: item.question,
-    acceptedAnswer: { '@type': 'Answer', text: item.answer },
-  })),
-});
-
-const renderFaq = () => `
-        <section id="faq">
-          <p class="seo-kicker">FAQ</p>
-          <h2>Frequently asked questions</h2>
-          <div class="seo-grid">${faqItems.map((item) => `
-            <article class="seo-card">
-              <h3>${escapeHtml(item.question)}</h3>
-              <p>${escapeHtml(item.answer)}</p>
-            </article>`).join('')}</div>
-        </section>`;
-
 const renderLanding = (landing, useCases, guides) => {
   const featureCards = [
     landing.features.needs,
@@ -283,7 +234,6 @@ const renderLanding = (landing, useCases, guides) => {
           <h2>${escapeHtml(landing.useCases.title)}</h2>
           <div class="seo-grid">${useCaseCards}</div>
         </section>
-        ${renderFaq()}
         <section id="guides">
           <p class="seo-kicker">Guides</p>
           <h2>Learn how teams work with agents</h2>
@@ -336,7 +286,6 @@ const renderCompare = (compare) => {
           <h2>${escapeHtml(compare.usTitle)}</h2>
           <div class="seo-grid">${commonlyCards}</div>
         </section>
-        ${renderFaq()}
         <section class="seo-band"><h2>${escapeHtml(compare.closeTitle)}</h2><p>${escapeHtml(compare.close)}</p><p>${escapeHtml(compare.closeUs)}</p></section>
         <p class="seo-note">${escapeHtml(compare.note)}</p>
       </main>
@@ -519,7 +468,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
   };
   landingPage.schema = {
     '@context': 'https://schema.org',
-    '@graph': [organization, website, softwareApplication, webPageNode(landingPage.title, landingPage.description, landingPage.path), faqPageNode(landingPage.path)],
+    '@graph': [organization, website, softwareApplication, webPageNode(landingPage.title, landingPage.description, landingPage.path)],
   };
 
   const pages = [landingPage, {
@@ -528,10 +477,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
     title: 'Commonly vs the alternatives | Commonly',
     description: compare.lede,
     content: renderCompare(compare),
-    schema: {
-      '@context': 'https://schema.org',
-      '@graph': [organization, website, webPageNode(compare.title, compare.lede, '/compare/'), faqPageNode('/compare/')],
-    },
+    schema: webPage(compare.title, compare.lede, '/compare/'),
   }];
 
   const guidesIndexPath = '/guides/';
