@@ -32,6 +32,13 @@ describe('signup source over the public HTTP auth surface', () => {
     delete process.env.REGISTRATION_INVITE_ONLY;
   });
 
+  it('refuses dollar-prefixed OAuth form keys before creating server state', async () => {
+    const refused = await request(app).post('/api/auth/oauth/github/start').type('form')
+      .send('$gt=1').expect(400);
+    expect(refused.body).toMatchObject({ code: 'dollar_key_refused', field: 'body.$gt' });
+    expect(await OAuthLoginState.countDocuments({})).toBe(0);
+  });
+
   it('carries bounded form attribution in server state through callback and ignores replay', async () => {
     const source = { ref: 'HN', landingPath: `/${'%2F'.repeat(480)}?email=private`,
       referrer: `https://news.example/${'%2F'.repeat(480)}?token=private`, firstSeenAt: '2026-01-01T00:00:00.000Z' };

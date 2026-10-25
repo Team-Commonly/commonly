@@ -279,6 +279,6 @@ describe('where the guard is mounted', () => {
   });
 
   test('the OAuth start form runs it after its urlencoded parser', () => {
-    expect(src('routes/auth.ts')).toMatch(/express\.urlencoded\(\{ extended: false, limit: '4kb' \}\), refuseDollarKeys, startOAuth\)/);
+    expect(src('routes/auth.ts')).toMatch(/express\.urlencoded\(\{ extended: false, limit: '16kb' \}\), refuseDollarKeys, startOAuth\)/);
   });
 });
