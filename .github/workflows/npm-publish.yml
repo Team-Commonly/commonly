@@ -73,6 +73,15 @@ jobs:
   publish:
     name: ${{ matrix.pkg }}
     runs-on: ubuntu-latest
+    # Bind the publish to the `npm-release` environment, whose deployment
+    # branch policy is `main` only (TASK-470). While this job references the
+    # environment, GitHub refuses to start a deployment to it from any other
+    # ref, so a publish dispatched off a branch is rejected before the OIDC
+    # id-token is minted. This reference is not itself a branch boundary — a
+    # branch copy of this file can omit it. The durable boundary lives outside
+    # this file: npm's trusted-publisher binding for each package must require
+    # this `npm-release` environment, and dispatch rights must be restricted.
+    environment: npm-release
     permissions:
       contents: write   # push the cli-v<ver> / mcp-v<ver> release tag
       id-token: write   # npm trusted publishing (OIDC) + provenance
@@ -120,10 +129,13 @@ jobs:
 
           # A dispatch can name any branch. Publishing or tagging from one
           # would release code main does not hold. This catches a mistaken
-          # dispatch; it is not a security boundary, because a branch's own
-          # copy of this file can drop it. The boundary is the trusted-publisher
-          # binding plus who can dispatch; a protected main-only environment is
-          # the planned hardening.
+          # dispatch with a clear error; it is not a security boundary, because
+          # a branch's own copy of this file can drop it — and so can the
+          # `npm-release` environment reference above. The durable boundary
+          # lives outside this file: npm's trusted-publisher binding for each
+          # package must require the `npm-release` environment, and dispatch
+          # rights must be restricted to trusted users. This check stays as the
+          # earlier, friendlier failure.
           if [ "$GITHUB_REF" != "refs/heads/main" ]; then
             echo "::error::$name: this workflow publishes only from main (got $GITHUB_REF)"
             exit 1
