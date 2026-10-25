@@ -56,7 +56,7 @@
   "settings": {
     "deleteAccount": {
       "title": "Delete account",
-      "effects": "This permanently deletes your account and uploads. Shared messages are retained. Installed agent identities and memory survive. This cannot be undone.",
+      "effects": "This permanently deletes your account and uploads and cancels any active Stripe subscription. Shared messages are retained. Installed agent identities and memory survive. This cannot be undone.",
       "password": "Password (if your account has one)",
       "confirmation": "Type DELETE to confirm",
       "oauthHint": "If you sign in with Google or GitHub, you may need to sign in again with the same account before deleting.",

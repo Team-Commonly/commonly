@@ -46,7 +46,7 @@ test('requires an exact deliberate confirmation, explains retention, and cancel 
   renderDeletion();
   expect(screen.queryByRole('form')).not.toBeInTheDocument();
   openDeletion();
-  expect(screen.getByText(/permanently deletes your account and uploads/)).toHaveTextContent('Shared messages are retained. Installed agent identities and memory survive.');
+  expect(screen.getByText(/permanently deletes your account and uploads/)).toHaveTextContent('cancels any active Stripe subscription. Shared messages are retained. Installed agent identities and memory survive.');
   expect(screen.getByLabelText('Type DELETE to confirm')).toHaveFocus();
   confirmDeletion('delete');
   expect(screen.getByRole('button', { name: 'Permanently delete account' })).toBeDisabled();
@@ -62,7 +62,7 @@ test('requires an exact deliberate confirmation, explains retention, and cancel 
   expect(logout).not.toHaveBeenCalled();
 });
 
-test('sends the password in the DELETE body and logs out only after success; blocks duplicate submits', async () => {
+test('sends the password in the DELETE body and logs out only after a 204; blocks duplicate submits', async () => {
   let resolve!: (value: unknown) => void;
   (axios.delete as jest.Mock).mockReturnValue(new Promise((done) => { resolve = done; }));
   renderDeletion();
@@ -76,7 +76,7 @@ test('sends the password in the DELETE body and logs out only after success; blo
   expect(logout).not.toHaveBeenCalled();
   expect(screen.getByRole('button', { name: 'Deleting…' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
-  await act(async () => { resolve({ data: { success: true } }); });
+  await act(async () => { resolve({ status: 204, data: '' }); });
   expect(logout).toHaveBeenCalledTimes(1);
 });
 
