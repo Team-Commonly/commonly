@@ -46,7 +46,7 @@ test('requires an exact deliberate confirmation, explains retention, and cancel 
   renderDeletion();
   expect(screen.queryByRole('form')).not.toBeInTheDocument();
   openDeletion();
-  expect(screen.getByText(/permanently deletes your account and uploads/)).toHaveTextContent('cancels any active Stripe subscription. Shared messages are retained. Installed agent identities and memory survive.');
+  expect(screen.getByText(/permanently deletes your account and uploads/)).toHaveTextContent('cancels any active Stripe subscription. Shared messages are retained. Agent runtimes you installed are paused. Their identities and memory survive.');
   expect(screen.getByLabelText('Type DELETE to confirm')).toHaveFocus();
   confirmDeletion('delete');
   expect(screen.getByRole('button', { name: 'Permanently delete account' })).toBeDisabled();
@@ -129,13 +129,18 @@ test('REAUTH_REQUIRED sends the existing OAuth login flow back to Settings witho
   expect(axios.delete).toHaveBeenCalledTimes(1);
 });
 
-test('shows the backend rejection and keeps confirmation available for retry', async () => {
-  (axios.delete as jest.Mock).mockRejectedValueOnce({ response: { data: { error: 'Incorrect password.' } } });
+test.each([
+  [401, 'INVALID_PASSWORD', 'Incorrect password.'],
+  [409, 'ADMIN_HANDOFF_REQUIRED', 'Hand off administration before deleting your account.'],
+  [403, 'BROWSER_SESSION_REQUIRED', 'Use a browser session to delete your account.'],
+  [503, 'CLEANUP_FAILED', 'Cleanup could not finish. Try again.'],
+])('shows a %s %s rejection and keeps confirmation available for retry', async (status, code, error) => {
+  (axios.delete as jest.Mock).mockRejectedValueOnce({ response: { status, data: { code, error } } });
   renderDeletion();
   openDeletion();
   confirmDeletion();
   submit();
-  expect(await screen.findByRole('alert')).toHaveTextContent('Incorrect password.');
+  expect(await screen.findByRole('alert')).toHaveTextContent(error);
   expect(screen.getByLabelText('Type DELETE to confirm')).toHaveValue('DELETE');
   expect(screen.getByRole('button', { name: 'Permanently delete account' })).toBeEnabled();
   expect(logout).not.toHaveBeenCalled();
