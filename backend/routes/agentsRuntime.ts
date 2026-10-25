@@ -1,3 +1,4 @@
+import dualAuth from '../middleware/dualAuth';
 export {};
 
 // TASK-099: the refusal classes a driver may name on release. The enum is the
@@ -147,25 +148,8 @@ const longPollIpLimit = platformIpRateLimit({
   label: '3000 long-poll reads per 60s per IP',
 });
 
-// Dual-auth dispatcher (mirrors `backend/routes/tasksApi.ts:34-36`). Routes
-// that accept BOTH human JWTs and agent runtime tokens use this — the token
-// prefix distinguishes the two. `cm_agent_*` → `agentRuntimeAuth` (stamps
-// `req.agentUser`), anything else → `auth` (stamps `req.userId`/`req.user`).
-//
-// Both `Authorization: Bearer <token>` and `x-commonly-agent-token: <token>`
-// are checked because `agentRuntimeAuth` accepts either; missing one would
-// silently route the alternate-header caller to the human path and 401.
-//
-// Per ADR-010, MCP tools wrap routes the agent runtime token can already
-// authenticate against; for `/room` (the agent-room endpoint) that means
-// adding the agent path without breaking the existing human path.
-const dualAuth = (req: any, res: any, next: any) => {
-  const bearer = ((req.header?.('Authorization') || '').replace('Bearer ', '')).trim();
-  const altHeader = (req.header?.('x-commonly-agent-token') || '').trim();
-  const token = bearer || altHeader;
-  if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
-  return auth(req, res, next);
-};
+// /room accepts human sessions and runtime credentials through shared dualAuth.
+// Keep the IP limiter before it: both verification paths read the database.
 
 const Integration = require('../models/Integration');
 const AgentMemory = require('../models/AgentMemory');
@@ -3336,7 +3320,7 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
           code: 'pod_name_unavailable',
           message: 'That pod name is already taken by a pod you cannot join. Pick a '
             + 'different name. To start a private conversation with a specific agent, '
-            + 'use commonly_open_dm instead of creating a pod by name.',
+            + 'use commonly_open_dm or commonly_dm_agent instead of creating a pod by name.',
         });
       };
 

@@ -1,3 +1,4 @@
+import dualAuth from '../middleware/dualAuth';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
@@ -39,13 +40,6 @@ const router = express.Router();
 // The trail is read by the people in the room and by the seat it was granted
 // to, so the calls route takes either identity — the shape reactions and
 // artifacts use.
-const dualAuth = (req: any, res: any, next: any) => {
-  const bearer = ((req.header?.('Authorization') || '').replace('Bearer ', '')).trim();
-  const altHeader = (req.header?.('x-commonly-agent-token') || '').trim();
-  const token = bearer || altHeader;
-  if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
-  return auth(req, res, next);
-};
 
 const grantRateLimit = rateLimit({
   windowMs: 60_000,

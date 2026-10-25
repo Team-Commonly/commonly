@@ -1,3 +1,4 @@
+import { resolveAgentDisplayLabel } from '../utils/agentDisplayLabel';
 import Pod from '../models/Pod';
 import User from '../models/User';
 import { AgentInstallation } from '../models/AgentRegistry';
@@ -60,26 +61,6 @@ interface AgentDmUpsertResult {
   };
 }
 
-// Mirror of agentIdentityService.resolveAgentDisplayLabel — duplicated here
-// to avoid a service-to-service import cycle (dmService is required by
-// agentMessageService, which is required by agentIdentityService callers).
-// Stays in sync with the same fallback chain: botMetadata.displayName →
-// instanceId (when not 'default') → username → fallback. Never falls back
-// to botMetadata.agentName (runtime-leaning, "openclaw" for OpenClaw-driven
-// agents). Producing pod names like "openclaw (aria)" is the bug this
-// avoids — the agent's heartbeat surfaces those names back into chat.
-const resolveAgentDisplayLabel = (
-  user: { username?: string; botMetadata?: { displayName?: string; instanceId?: string } } | null | undefined,
-  fallback: string,
-): string => {
-  if (!user) return fallback;
-  const meta = user.botMetadata || {};
-  const display = meta.displayName?.trim();
-  if (display) return display;
-  const instanceId = meta.instanceId?.trim();
-  if (instanceId && instanceId !== 'default') return instanceId;
-  return user.username || fallback;
-};
 
 class DMService {
   static agentDmPairKey(a: unknown, b: unknown): string {

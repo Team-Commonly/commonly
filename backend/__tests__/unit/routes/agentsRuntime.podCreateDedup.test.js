@@ -242,6 +242,8 @@ describe('POST /pods dedup refuses to widen a 1:1 DM (ADR-001 §3.10)', () => {
     // FOUND — its type or its id — since that is what the caller is fishing
     // for and did not already know.
     const body = JSON.stringify(dm.body);
+    expect(body).toContain('commonly_open_dm');
+    expect(body).toContain('commonly_dm_agent');
     expect(body).not.toMatch(/agent-dm|agent-room|pod-agent-dm/);
   });
 

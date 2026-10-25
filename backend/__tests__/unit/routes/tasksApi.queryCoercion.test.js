@@ -15,12 +15,12 @@
 const request = require('supertest');
 const express = require('express');
 
-jest.mock('../../../middleware/auth', () => (req, res, next) => {
+jest.mock('../../../middleware/auth', () => jest.fn((req, res, next) => {
   req.userId = 'u1';
   req.user = { id: 'u1', _id: 'u1' };
   next();
-});
-jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => next());
+}));
+jest.mock('../../../middleware/agentRuntimeAuth', () => jest.fn((req, res, next) => { req.agentUser = { _id: 'u1' }; next(); }));
 
 jest.mock('../../../models/Pod', () => ({
   findById: jest.fn(() => ({
@@ -54,6 +54,15 @@ describe('GET /api/v1/tasks/:podId — query coercion at the boundary', () => {
     app = express();
     app.use(express.json());
     app.use('/api/v1/tasks', tasksApiRoutes);
+  });
+
+  test('task reads accept the alternate runtime header without human auth', async () => {
+    const agentAuth = require('../../../middleware/agentRuntimeAuth');
+    const humanAuth = require('../../../middleware/auth');
+    const res = await request(app).get(`/api/v1/tasks/${POD}`).set('x-commonly-agent-token', 'cm_agent_valid');
+    expect(res.status).toBe(200);
+    expect(agentAuth).toHaveBeenCalledTimes(1);
+    expect(humanAuth).not.toHaveBeenCalled();
   });
 
   // Domain guard, by the rule these tests are an instance of: every assertion
