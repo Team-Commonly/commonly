@@ -127,6 +127,27 @@ describe('macOS Seatbelt profile', () => {
     })).toThrow(/readOnlyWorkspaceEntries entries must be names inside the workspace/);
   });
 
+  test('holds every .env file under the workspace, at any depth, out of reach', () => {
+    const profile = buildSeatbeltProfile({
+      workspacePath: workspace,
+      executablePath: '/usr/bin/true',
+      statePath: state,
+    });
+    const escaped = realpathSync(workspace).replace(/[\\^$.|?*+()[\]{}]/g, '\\$&');
+
+    expect(profile).toContain(`(deny file-read* file-write* (regex #"^${escaped}/(.*/)?\\.env(\\..*)?$"))`);
+  });
+
+  test('refuses a workspace path an SBPL regex cannot hold', () => {
+    const quoted = join(root, 'a"b');
+    mkdirSync(quoted);
+    expect(() => buildSeatbeltProfile({
+      workspacePath: quoted,
+      executablePath: '/usr/bin/true',
+      statePath: state,
+    })).toThrow(/must not contain a quote or a line break/);
+  });
+
   test('OpenCode config roots remain read-only in the generated profile', () => {
     const configRoot = join(root, 'opencode-temp');
     const configDir = join(configRoot, 'config-dir');

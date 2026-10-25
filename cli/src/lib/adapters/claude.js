@@ -326,11 +326,15 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, { trust, allow = [] } = {}
     'Read(./.codex/**)',
     'Read(./.env)',
   ];
-  // A workspace seat reads a real project, so every .env variant stays out of
-  // reach, and it cannot install itself into a room partway through a turn:
-  // the per-turn check confirmed its pods private before the spawn.
+  // A workspace seat reads a real project, so every .env variant at any depth
+  // stays out of reach (the jail holds the same line), and it cannot install
+  // itself into a room partway through a turn: the per-turn check confirmed
+  // its pods private before the spawn.
   const workspaceDenies = trust === 'workspace'
-    ? ['Read(./.env.*)', ...mcpToolPatterns.map((pattern) => pattern.replace(/\*$/, 'commonly_self_install_into_pod'))]
+    ? [
+      'Read(./.env.*)', 'Read(./**/.env)', 'Read(./**/.env.*)',
+      ...mcpToolPatterns.map((pattern) => pattern.replace(/\*$/, 'commonly_self_install_into_pod')),
+    ]
     : [];
   return [
     // HOME points at an isolated, sanitized state directory. Ignore settings

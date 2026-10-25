@@ -300,6 +300,16 @@ const escapeSbplString = (value) => String(value)
 
 const literal = (path) => `(literal "${escapeSbplString(path)}")`;
 const subpath = (path) => `(subpath "${escapeSbplString(path)}")`;
+// Every .env and .env.* file under the workspace, at any depth: a real project
+// keeps one beside each package, not only at its root (TASK-294). An SBPL
+// regex literal takes no escapes, so a path it cannot hold is refused.
+const envFilesUnder = (workspace) => {
+  if (/["\r\n]/.test(workspace)) {
+    throw new Error('Seatbelt workspacePath must not contain a quote or a line break');
+  }
+  const pattern = workspace.replace(/[\\^$.|?*+()[\]{}]/g, '\\$&');
+  return `(regex #"^${pattern}/(.*/)?\\.env(\\..*)?$")`;
+};
 
 const assertAbsolutePath = (path, label) => {
   if (!path || !isAbsolute(path)) {
@@ -459,7 +469,7 @@ export const buildSeatbeltProfile = ({
     // paths are not. Explicit deny wins over the broad workspace allow.
     `(deny file-read* file-write* ${subpath(join(resolvedWorkspace, '.commonly'))})`,
     `(deny file-read* file-write* ${subpath(join(resolvedWorkspace, '.codex'))})`,
-    `(deny file-read* file-write* ${literal(join(resolvedWorkspace, '.env'))})`,
+    `(deny file-read* file-write* ${envFilesUnder(resolvedWorkspace)})`,
     readOnlyWorkspaceRules,
     ...claudeRuntimeRules,
   ].filter(Boolean).join('\n\n');

@@ -1267,7 +1267,8 @@ describe('claude adapter — a workspace seat', () => {
     const denied = args.slice(args.indexOf('--disallowedTools') + 1);
     expect(denied).toEqual(expect.arrayContaining([
       'Bash', 'Write', 'Edit', 'WebFetch', 'WebSearch', 'Task',
-      'Read(./.env)', 'Read(./.env.*)', 'mcp__commonly__commonly_self_install_into_pod',
+      'Read(./.env)', 'Read(./.env.*)', 'Read(./**/.env)', 'Read(./**/.env.*)',
+      'mcp__commonly__commonly_self_install_into_pod',
     ]));
     expect(opts.env.HOME).toBe(publicState);
     expect(opts.env.COMMONLY_HOST_SECRET).toBeUndefined();
