@@ -1,0 +1,131 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { toOtlpJson } from '../src/record/otel.js';
+import { buildSample } from '../test-support/record-sample.js';
+
+const sample = async () => {
+  const root = mkdtempSync(join(tmpdir(), 'seats-record-otel-'));
+  try { return await buildSample(root); } finally { rmSync(root, { recursive: true, force: true }); }
+};
+const spansOf = (otlp) => otlp.resourceSpans[0].scopeSpans[0].spans;
+const attrOf = (holder, key) => holder.attributes.find((a) => a.key === key)?.value;
+const ANY_VALUE_KEYS = new Set(['stringValue', 'boolValue', 'intValue', 'doubleValue', 'arrayValue', 'kvlistValue']);
+
+const checkAnyValue = (value, where) => {
+  const keys = Object.keys(value);
+  assert.equal(keys.length, 1, `${where}: one AnyValue field`);
+  assert.ok(ANY_VALUE_KEYS.has(keys[0]), `${where}: ${keys[0]}`);
+  if (keys[0] === 'intValue') assert.match(value.intValue, /^-?\d+$/, `${where}: intValue is a decimal string in OTLP/JSON`);
+  if (keys[0] === 'arrayValue') value.arrayValue.values.forEach((v, i) => checkAnyValue(v, `${where}[${i}]`));
+  if (keys[0] === 'kvlistValue') value.kvlistValue.values.forEach((kv) => checkAnyValue(kv.value, `${where}.${kv.key}`));
+};
+
+test('OTLP/JSON structure: ids, times, kinds, typed attributes', async () => {
+  const { entries } = await sample();
+  const otlp = toOtlpJson(entries, { serviceName: 'seats-test' });
+  assert.equal(otlp.resourceSpans.length, 1);
+  assert.deepEqual(otlp.resourceSpans[0].resource.attributes, [{ key: 'service.name', value: { stringValue: 'seats-test' } }]);
+  assert.deepEqual(otlp.resourceSpans[0].scopeSpans[0].scope, { name: 'seats.record', version: '1' });
+  const spans = spansOf(otlp);
+  assert.ok(spans.length > 0);
+  const ids = new Set();
+  for (const span of spans) {
+    assert.match(span.traceId, /^[0-9a-f]{32}$/);
+    assert.match(span.spanId, /^[0-9a-f]{16}$/);
+    assert.ok(!/^0+$/.test(span.traceId) && !/^0+$/.test(span.spanId));
+    assert.ok(!ids.has(span.spanId), `span ids are unique: ${span.name}`);
+    ids.add(span.spanId);
+    if (span.parentSpanId !== undefined) assert.match(span.parentSpanId, /^[0-9a-f]{16}$/);
+    assert.equal(span.kind, 1, 'INTERNAL');
+    assert.match(span.startTimeUnixNano, /^\d+$/);
+    assert.match(span.endTimeUnixNano, /^\d+$/, `${span.name} has an end`);
+    assert.ok(BigInt(span.endTimeUnixNano) >= BigInt(span.startTimeUnixNano));
+    assert.ok([0, 2].includes(span.status.code));
+    for (const a of span.attributes) checkAnyValue(a.value, `${span.name}.${a.key}`);
+    for (const event of span.events) {
+      assert.match(event.timeUnixNano, /^\d+$/);
+      for (const a of event.attributes) checkAnyValue(a.value, `${span.name}/${event.name}.${a.key}`);
+    }
+  }
+  // Content stays out: no message text anywhere in the export.
+  assert.ok(!JSON.stringify(otlp).includes('half-cent rounding'));
+});
+
+test('one task is one trace; ids follow the documented derivation', async () => {
+  const { entries } = await sample();
+  const spans = spansOf(toOtlpJson(entries));
+  const expectedTrace = createHash('sha256').update('seats.record/trace/task/pod-checkout/TASK-101').digest('hex').slice(0, 32);
+  assert.deepEqual([...new Set(spans.map((s) => s.traceId))], [expectedTrace]);
+  const runSpan = spans.find((s) => s.name === 'seats.run' && attrOf(s, 'seats.run.id').stringValue === 'run-ana-0001');
+  assert.equal(runSpan.spanId, createHash('sha256').update('seats.record/span/run-ana-0001/0').digest('hex').slice(0, 16));
+  const first = entries.find((e) => e.runId === 'run-ana-0001' && e.kind === 'attempt.started');
+  const attempt = spans.find((s) => s.spanId === createHash('sha256').update(`seats.record/span/run-ana-0001/${first.seq}`).digest('hex').slice(0, 16));
+  assert.ok(attempt.name.startsWith('invoke_agent'));
+});
+
+test('parent/child links: run → attempt → tool, and decisions sit on their tool span', async () => {
+  const { entries } = await sample();
+  const spans = spansOf(toOtlpJson(entries));
+  const byId = new Map(spans.map((s) => [s.spanId, s]));
+  const runs = spans.filter((s) => s.name === 'seats.run');
+  assert.equal(runs.length, 2);
+  for (const run of runs) assert.equal(run.parentSpanId, undefined, 'a run span is a root');
+  const attempts = spans.filter((s) => s.name.startsWith('invoke_agent'));
+  assert.equal(attempts.length, 3, 'two attempts for Ana, one for Ben');
+  for (const attempt of attempts) {
+    assert.equal(byId.get(attempt.parentSpanId).name, 'seats.run');
+    assert.equal(attrOf(attempt, 'gen_ai.operation.name').stringValue, 'invoke_agent');
+  }
+  const tools = spans.filter((s) => s.name.startsWith('execute_tool'));
+  for (const tool of tools) {
+    assert.ok(byId.get(tool.parentSpanId).name.startsWith('invoke_agent'), `${tool.name} is a child of an attempt`);
+    assert.equal(attrOf(tool, 'gen_ai.operation.name').stringValue, 'execute_tool');
+  }
+  const resolve = tools.find((s) => s.name === 'execute_tool sentry.resolve_issue');
+  const parent = byId.get(resolve.parentSpanId);
+  assert.equal(attrOf(parent, 'seats.attempt.number').intValue, '2', 'the approved call ran in the retry');
+  assert.equal(attrOf(resolve, 'gen_ai.tool.call.id').stringValue, 'tc-3');
+  assert.equal(attrOf(resolve, 'seats.tool.surface').stringValue, 'connector');
+  const decided = resolve.events.find((e) => e.name === 'permission.decided');
+  assert.equal(attrOf(decided, 'seats.decided_by').stringValue, 'u-ben');
+  assert.equal(attrOf(decided, 'seats.decided_by_role').stringValue, 'credential-owner');
+  assert.equal(attrOf(decided, 'seats.actor.id').stringValue, 'u-ben');
+  assert.equal(attrOf(parent, 'seats.agent.owner').stringValue, 'u-ana');
+  // The stuck first attempt is an error with its failure kind; the run is not.
+  const stuck = attempts.find((s) => attrOf(s, 'seats.attempt.number').intValue === '1' && attrOf(s, 'seats.agent.owner').stringValue === 'u-ana');
+  assert.equal(stuck.status.code, 2);
+  assert.equal(attrOf(stuck, 'error.type').stringValue, 'stuck');
+  const push = tools.find((s) => s.name.startsWith('execute_tool git push'));
+  assert.equal(push.status.code, 2);
+  assert.equal(runs.every((r) => r.status.code === 0), true);
+});
+
+test('the export is deterministic: same entries, same bytes, in any input order', async () => {
+  const a = await sample();
+  const b = await sample();
+  const one = JSON.stringify(toOtlpJson(a.entries));
+  assert.equal(one, JSON.stringify(toOtlpJson(b.entries)));
+  const reversedPerRun = [...a.entries.filter((e) => e.runId === 'run-ana-0001').reverse(), ...a.entries.filter((e) => e.runId === 'run-ben-0001')];
+  assert.equal(JSON.stringify(toOtlpJson(reversedPerRun)), one);
+});
+
+test('a run without a task is its own trace; unknown kinds and newer versions are skipped', () => {
+  const base = { v: 1, schema: 'seats.record', runId: 'run-solo-01', actor: null, prev: null };
+  const entries = [
+    { ...base, seq: 1, ts: '2026-10-25T12:00:00.000Z', kind: 'attempt.started', data: { attempt: 1 } },
+    { ...base, seq: 2, ts: '2026-10-25T12:00:01.000Z', kind: 'future.kind', data: {} },
+    { ...base, seq: 3, ts: '2026-10-25T12:00:02.000Z', kind: 'run.settled', data: { outcome: 'failed', failure: { kind: 'crashed' } } },
+    { ...base, v: 2, runId: 'run-v2-0001', seq: 1, ts: '2026-10-25T12:00:00.000Z', kind: 'attempt.started', data: {} },
+  ];
+  const spans = spansOf(toOtlpJson(entries));
+  assert.equal(spans.length, 2);
+  assert.equal(spans[0].traceId, createHash('sha256').update('seats.record/trace/run/run-solo-01').digest('hex').slice(0, 32));
+  assert.ok(spans.every((s) => s.events.every((e) => e.name !== 'future.kind')));
+  assert.equal(spans[0].status.code, 2);
+  assert.equal(attrOf(spans[0], 'error.type').stringValue, 'crashed');
+  assert.equal(attrOf(spans[1], 'error.type').stringValue, 'crashed', 'an unsettled last attempt takes the run\'s failure');
+});

@@ -2,8 +2,10 @@
  * Trace event vocabulary. Names follow ACP's session/update kinds where one
  * exists, so an ACP agent's stream maps across without a translation table.
  *
- * Event: { runId, seq, ts, type, data }. `seq` is per run, starting at 1;
- * `ts` is an ISO string. Events never carry prompt text, credentials or
+ * Event: { runId, seq, ts, type, data }, plus the record envelope (kind, v,
+ * actor, prev, taskId?, podId?) when read back from the store; the on-disk
+ * format is docs/record-v1.md. `seq` is per run, starting at 1; `ts` is
+ * an ISO string. Events never carry prompt text, credentials or
  * environment values — only names, ids, sizes and the agent's own output.
  */
 export const EVENT_TYPES = Object.freeze([
@@ -23,6 +25,14 @@ export const EVENT_TYPES = Object.freeze([
   'credential.granted', // { names: [...] }  names only, never values
   'credential.denied', // { name, reason?: 'not_granted'|'unresolved' }
   'process.exited', // { code, signal }
+  // Record kinds with no earlier trace name (docs/record-v1.md has the full data).
+  'task.claimed', // { leaseUntil? }  mirrors the board's claim; the board stays the source of truth
+  'task.released', // { reason? }
+  'task.done', // { doneBy? }  written for the board; ends grants bound to the task
+  'grant.issued', // { grantId, parentGrantId?, scope: {connectionId?, tools: [names], writeMode?, budget?, audience}, target?, issuedBy?, expiresAt?, binding? }
+  'grant.revoked', // { grantIds: [...], reason: 'task.done'|'expired'|'cascade'|'manual' }
+  'attempt.settled', // { attempt, outcome, failure?: {kind, detail} }
+  'result.reported', // { status: 'done'|'partial'|'blocked'|'failed', refs?: [{type, id}] }
 ]);
 
 const KNOWN = new Set(EVENT_TYPES);

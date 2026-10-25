@@ -1,0 +1,2285 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "seats-sample"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "seats.record",
+            "version": "1"
+          },
+          "spans": [
+            {
+              "traceId": "d043bdec4346bb1253c06463a2c2cc13",
+              "spanId": "4f7ea2299f50ef90",
+              "name": "seats.run",
+              "kind": 1,
+              "startTimeUnixNano": "1792944002000000000",
+              "endTimeUnixNano": "1792944030000000000",
+              "attributes": [
+                {
+                  "key": "seats.run.id",
+                  "value": {
+                    "stringValue": "run-ana-0001"
+                  }
+                },
+                {
+                  "key": "seats.task.id",
+                  "value": {
+                    "stringValue": "TASK-101"
+                  }
+                },
+                {
+                  "key": "seats.pod.id",
+                  "value": {
+                    "stringValue": "pod-checkout"
+                  }
+                },
+                {
+                  "key": "seats.run.outcome",
+                  "value": {
+                    "stringValue": "ok"
+                  }
+                },
+                {
+                  "key": "seats.run.attempts",
+                  "value": {
+                    "intValue": "2"
+                  }
+                }
+              ],
+              "events": [
+                {
+                  "timeUnixNano": "1792944002000000000",
+                  "name": "task.claimed",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "1"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "agent"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "u-agent-ana-opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.owner",
+                      "value": {
+                        "stringValue": "u-ana"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.name",
+                      "value": {
+                        "stringValue": "Ana's opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.lease_until",
+                      "value": {
+                        "stringValue": "2026-10-25T18:00:00Z"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "timeUnixNano": "1792944003000000000",
+                  "name": "grant.issued",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "2"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "human"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "u-ana"
+                      }
+                    },
+                    {
+                      "key": "seats.binding.ends_on",
+                      "value": {
+                        "stringValue": "task.done"
+                      }
+                    },
+                    {
+                      "key": "seats.binding.pod_id",
+                      "value": {
+                        "stringValue": "pod-checkout"
+                      }
+                    },
+                    {
+                      "key": "seats.binding.task_id",
+                      "value": {
+                        "stringValue": "TASK-101"
+                      }
+                    },
+                    {
+                      "key": "seats.expires_at",
+                      "value": {
+                        "stringValue": "2026-10-25T20:00:00.000Z"
+                      }
+                    },
+                    {
+                      "key": "seats.grant_id",
+                      "value": {
+                        "stringValue": "grant-ana-sentry-1"
+                      }
+                    },
+                    {
+                      "key": "seats.issued_by",
+                      "value": {
+                        "stringValue": "u-ana"
+                      }
+                    },
+                    {
+                      "key": "seats.parent_grant_id",
+                      "value": {
+                        "stringValue": "grant-ben-sentry-root"
+                      }
+                    },
+                    {
+                      "key": "seats.scope.audience",
+                      "value": {
+                        "arrayValue": {
+                          "values": [
+                            {
+                              "stringValue": "u-ana"
+                            },
+                            {
+                              "stringValue": "u-ben"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "key": "seats.scope.budget.calls",
+                      "value": {
+                        "intValue": "20"
+                      }
+                    },
+                    {
+                      "key": "seats.scope.budget.window_ms",
+                      "value": {
+                        "intValue": "3600000"
+                      }
+                    },
+                    {
+                      "key": "seats.scope.connection_id",
+                      "value": {
+                        "stringValue": "conn-ben-sentry"
+                      }
+                    },
+                    {
+                      "key": "seats.scope.tools",
+                      "value": {
+                        "arrayValue": {
+                          "values": [
+                            {
+                              "stringValue": "sentry.get_issue"
+                            },
+                            {
+                              "stringValue": "sentry.resolve_issue"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "key": "seats.scope.write_mode",
+                      "value": {
+                        "stringValue": "write-with-confirm"
+                      }
+                    },
+                    {
+                      "key": "seats.target.id",
+                      "value": {
+                        "stringValue": "u-agent-ana-opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.target.kind",
+                      "value": {
+                        "stringValue": "seat"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "timeUnixNano": "1792944004000000000",
+                  "name": "credential.granted",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "3"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "system"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "seats"
+                      }
+                    },
+                    {
+                      "key": "seats.names",
+                      "value": {
+                        "arrayValue": {
+                          "values": [
+                            {
+                              "stringValue": "OPENROUTER_API_KEY"
+                            },
+                            {
+                              "stringValue": "SENTRY_PROXY_TOKEN"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "timeUnixNano": "1792944012000000000",
+                  "name": "liveness.recovery",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "11"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "system"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "seats"
+                      }
+                    },
+                    {
+                      "key": "seats.action",
+                      "value": {
+                        "stringValue": "retry"
+                      }
+                    },
+                    {
+                      "key": "seats.attempt",
+                      "value": {
+                        "intValue": "2"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "timeUnixNano": "1792944029000000000",
+                  "name": "result.reported",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "28"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "agent"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "u-agent-ana-opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.owner",
+                      "value": {
+                        "stringValue": "u-ana"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.name",
+                      "value": {
+                        "stringValue": "Ana's opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.refs",
+                      "value": {
+                        "arrayValue": {
+                          "values": [
+                            {
+                              "kvlistValue": {
+                                "values": [
+                                  {
+                                    "key": "id",
+                                    "value": {
+                                      "stringValue": "#212"
+                                    }
+                                  },
+                                  {
+                                    "key": "type",
+                                    "value": {
+                                      "stringValue": "pr"
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "key": "seats.status",
+                      "value": {
+                        "stringValue": "done"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "status": {
+                "code": 0
+              }
+            },
+            {
+              "traceId": "d043bdec4346bb1253c06463a2c2cc13",
+              "spanId": "f213e9d395dc7277",
+              "parentSpanId": "4f7ea2299f50ef90",
+              "name": "invoke_agent Ana's opencode",
+              "kind": 1,
+              "startTimeUnixNano": "1792944005000000000",
+              "endTimeUnixNano": "1792944011000000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "invoke_agent"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.id",
+                  "value": {
+                    "stringValue": "u-agent-ana-opencode"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.name",
+                  "value": {
+                    "stringValue": "Ana's opencode"
+                  }
+                },
+                {
+                  "key": "seats.agent.owner",
+                  "value": {
+                    "stringValue": "u-ana"
+                  }
+                },
+                {
+                  "key": "seats.attempt.number",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "seats.adapter",
+                  "value": {
+                    "stringValue": "opencode"
+                  }
+                },
+                {
+                  "key": "seats.cli.name",
+                  "value": {
+                    "stringValue": "opencode"
+                  }
+                },
+                {
+                  "key": "seats.cli.version",
+                  "value": {
+                    "stringValue": "1.19.0"
+                  }
+                },
+                {
+                  "key": "seats.attempt.outcome",
+                  "value": {
+                    "stringValue": "stuck"
+                  }
+                },
+                {
+                  "key": "error.type",
+                  "value": {
+                    "stringValue": "stuck"
+                  }
+                }
+              ],
+              "events": [
+                {
+                  "timeUnixNano": "1792944006000000000",
+                  "name": "turn.prompt_sent",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "5"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "system"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "seats"
+                      }
+                    },
+                    {
+                      "key": "seats.chars",
+                      "value": {
+                        "intValue": "412"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "timeUnixNano": "1792944009000000000",
+                  "name": "liveness.stalled",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "8"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "system"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "seats"
+                      }
+                    },
+                    {
+                      "key": "seats.idle_ms",
+                      "value": {
+                        "intValue": "90000"
+                      }
+                    },
+                    {
+                      "key": "seats.window_ms",
+                      "value": {
+                        "intValue": "90000"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "timeUnixNano": "1792944010000000000",
+                  "name": "liveness.recovery",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "9"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "system"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "seats"
+                      }
+                    },
+                    {
+                      "key": "seats.action",
+                      "value": {
+                        "stringValue": "cancel"
+                      }
+                    },
+                    {
+                      "key": "seats.attempt",
+                      "value": {
+                        "intValue": "1"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "status": {
+                "code": 2,
+                "message": "stuck"
+              }
+            },
+            {
+              "traceId": "d043bdec4346bb1253c06463a2c2cc13",
+              "spanId": "a95791040c71e9f0",
+              "parentSpanId": "f213e9d395dc7277",
+              "name": "execute_tool Read src/checkout/total.js",
+              "kind": 1,
+              "startTimeUnixNano": "1792944007000000000",
+              "endTimeUnixNano": "1792944008000000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "execute_tool"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.name",
+                  "value": {
+                    "stringValue": "Read src/checkout/total.js"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.id",
+                  "value": {
+                    "stringValue": "tc-1"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.name",
+                  "value": {
+                    "stringValue": "Ana's opencode"
+                  }
+                },
+                {
+                  "key": "seats.tool.kind",
+                  "value": {
+                    "stringValue": "read"
+                  }
+                },
+                {
+                  "key": "seats.tool.surface",
+                  "value": {
+                    "stringValue": "native"
+                  }
+                }
+              ],
+              "events": [
+                {
+                  "timeUnixNano": "1792944008000000000",
+                  "name": "tool.update",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "7"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "agent"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "u-agent-ana-opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.owner",
+                      "value": {
+                        "stringValue": "u-ana"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.name",
+                      "value": {
+                        "stringValue": "Ana's opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.status",
+                      "value": {
+                        "stringValue": "completed"
+                      }
+                    },
+                    {
+                      "key": "seats.tool_call_id",
+                      "value": {
+                        "stringValue": "tc-1"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "status": {
+                "code": 0
+              }
+            },
+            {
+              "traceId": "d043bdec4346bb1253c06463a2c2cc13",
+              "spanId": "54966552492d24ee",
+              "parentSpanId": "4f7ea2299f50ef90",
+              "name": "invoke_agent Ana's opencode",
+              "kind": 1,
+              "startTimeUnixNano": "1792944013000000000",
+              "endTimeUnixNano": "1792944028000000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "invoke_agent"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.id",
+                  "value": {
+                    "stringValue": "u-agent-ana-opencode"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.name",
+                  "value": {
+                    "stringValue": "Ana's opencode"
+                  }
+                },
+                {
+                  "key": "gen_ai.conversation.id",
+                  "value": {
+                    "stringValue": "ses-ana-2"
+                  }
+                },
+                {
+                  "key": "seats.agent.owner",
+                  "value": {
+                    "stringValue": "u-ana"
+                  }
+                },
+                {
+                  "key": "seats.attempt.number",
+                  "value": {
+                    "intValue": "2"
+                  }
+                },
+                {
+                  "key": "seats.adapter",
+                  "value": {
+                    "stringValue": "opencode"
+                  }
+                },
+                {
+                  "key": "seats.cli.name",
+                  "value": {
+                    "stringValue": "opencode"
+                  }
+                },
+                {
+                  "key": "seats.cli.version",
+                  "value": {
+                    "stringValue": "1.19.0"
+                  }
+                },
+                {
+                  "key": "seats.attempt.outcome",
+                  "value": {
+                    "stringValue": "ok"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.input_tokens",
+                  "value": {
+                    "intValue": "18234"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.output_tokens",
+                  "value": {
+                    "intValue": "2210"
+                  }
+                }
+              ],
+              "events": [
+                {
+                  "timeUnixNano": "1792944027000000000",
+                  "name": "usage",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "26"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "agent"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "u-agent-ana-opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.owner",
+                      "value": {
+                        "stringValue": "u-ana"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.name",
+                      "value": {
+                        "stringValue": "Ana's opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.input_tokens",
+                      "value": {
+                        "intValue": "18234"
+                      }
+                    },
+                    {
+                      "key": "seats.output_tokens",
+                      "value": {
+                        "intValue": "2210"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "status": {
+                "code": 0
+              }
+            },
+            {
+              "traceId": "d043bdec4346bb1253c06463a2c2cc13",
+              "spanId": "109cfe1b8a44b804",
+              "parentSpanId": "54966552492d24ee",
+              "name": "execute_tool git push origin fix/total-rounding",
+              "kind": 1,
+              "startTimeUnixNano": "1792944014000000000",
+              "endTimeUnixNano": "1792944017000000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "execute_tool"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.name",
+                  "value": {
+                    "stringValue": "git push origin fix/total-rounding"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.id",
+                  "value": {
+                    "stringValue": "tc-2"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.name",
+                  "value": {
+                    "stringValue": "Ana's opencode"
+                  }
+                },
+                {
+                  "key": "seats.tool.kind",
+                  "value": {
+                    "stringValue": "execute"
+                  }
+                },
+                {
+                  "key": "seats.tool.surface",
+                  "value": {
+                    "stringValue": "native"
+                  }
+                },
+                {
+                  "key": "error.type",
+                  "value": {
+                    "stringValue": "tool_failed"
+                  }
+                }
+              ],
+              "events": [
+                {
+                  "timeUnixNano": "1792944015000000000",
+                  "name": "permission.requested",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "14"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "agent"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "u-agent-ana-opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.owner",
+                      "value": {
+                        "stringValue": "u-ana"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.name",
+                      "value": {
+                        "stringValue": "Ana's opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.options",
+                      "value": {
+                        "arrayValue": {
+                          "values": [
+                            {
+                              "kvlistValue": {
+                                "values": [
+                                  {
+                                    "key": "kind",
+                                    "value": {
+                                      "stringValue": "allow_once"
+                                    }
+                                  },
+                                  {
+                                    "key": "option_id",
+                                    "value": {
+                                      "stringValue": "allow"
+                                    }
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "kvlistValue": {
+                                "values": [
+                                  {
+                                    "key": "kind",
+                                    "value": {
+                                      "stringValue": "allow_always"
+                                    }
+                                  },
+                                  {
+                                    "key": "option_id",
+                                    "value": {
+                                      "stringValue": "always"
+                                    }
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "kvlistValue": {
+                                "values": [
+                                  {
+                                    "key": "kind",
+                                    "value": {
+                                      "stringValue": "reject_once"
+                                    }
+                                  },
+                                  {
+                                    "key": "option_id",
+                                    "value": {
+                                      "stringValue": "reject"
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "key": "seats.tool_call_id",
+                      "value": {
+                        "stringValue": "tc-2"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "timeUnixNano": "1792944016000000000",
+                  "name": "permission.decided",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "15"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "policy"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "grant:grant-ana-sentry-1"
+                      }
+                    },
+                    {
+                      "key": "seats.decided_by",
+                      "value": {
+                        "stringValue": "policy"
+                      }
+                    },
+                    {
+                      "key": "seats.decided_by_role",
+                      "value": {
+                        "stringValue": "policy"
+                      }
+                    },
+                    {
+                      "key": "seats.grant_id",
+                      "value": {
+                        "stringValue": "grant-ana-sentry-1"
+                      }
+                    },
+                    {
+                      "key": "seats.kind",
+                      "value": {
+                        "stringValue": "reject_once"
+                      }
+                    },
+                    {
+                      "key": "seats.option_id",
+                      "value": {
+                        "stringValue": "reject"
+                      }
+                    },
+                    {
+                      "key": "seats.outcome",
+                      "value": {
+                        "stringValue": "selected"
+                      }
+                    },
+                    {
+                      "key": "seats.rule.list",
+                      "value": {
+                        "stringValue": "deny"
+                      }
+                    },
+                    {
+                      "key": "seats.rule.pattern",
+                      "value": {
+                        "stringValue": "execute:git push*"
+                      }
+                    },
+                    {
+                      "key": "seats.tool_call_id",
+                      "value": {
+                        "stringValue": "tc-2"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "timeUnixNano": "1792944017000000000",
+                  "name": "tool.update",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "16"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "agent"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "u-agent-ana-opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.owner",
+                      "value": {
+                        "stringValue": "u-ana"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.name",
+                      "value": {
+                        "stringValue": "Ana's opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.status",
+                      "value": {
+                        "stringValue": "failed"
+                      }
+                    },
+                    {
+                      "key": "seats.tool_call_id",
+                      "value": {
+                        "stringValue": "tc-2"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "status": {
+                "code": 2,
+                "message": "tool_failed"
+              }
+            },
+            {
+              "traceId": "d043bdec4346bb1253c06463a2c2cc13",
+              "spanId": "b3182723ae254b59",
+              "parentSpanId": "54966552492d24ee",
+              "name": "execute_tool sentry.resolve_issue",
+              "kind": 1,
+              "startTimeUnixNano": "1792944018000000000",
+              "endTimeUnixNano": "1792944021000000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "execute_tool"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.name",
+                  "value": {
+                    "stringValue": "sentry.resolve_issue"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.id",
+                  "value": {
+                    "stringValue": "tc-3"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.name",
+                  "value": {
+                    "stringValue": "Ana's opencode"
+                  }
+                },
+                {
+                  "key": "seats.tool.kind",
+                  "value": {
+                    "stringValue": "fetch"
+                  }
+                },
+                {
+                  "key": "seats.tool.surface",
+                  "value": {
+                    "stringValue": "connector"
+                  }
+                }
+              ],
+              "events": [
+                {
+                  "timeUnixNano": "1792944019000000000",
+                  "name": "permission.requested",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "18"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "agent"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "u-agent-ana-opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.owner",
+                      "value": {
+                        "stringValue": "u-ana"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.name",
+                      "value": {
+                        "stringValue": "Ana's opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.options",
+                      "value": {
+                        "arrayValue": {
+                          "values": [
+                            {
+                              "kvlistValue": {
+                                "values": [
+                                  {
+                                    "key": "kind",
+                                    "value": {
+                                      "stringValue": "allow_once"
+                                    }
+                                  },
+                                  {
+                                    "key": "option_id",
+                                    "value": {
+                                      "stringValue": "allow"
+                                    }
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "kvlistValue": {
+                                "values": [
+                                  {
+                                    "key": "kind",
+                                    "value": {
+                                      "stringValue": "allow_always"
+                                    }
+                                  },
+                                  {
+                                    "key": "option_id",
+                                    "value": {
+                                      "stringValue": "always"
+                                    }
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "kvlistValue": {
+                                "values": [
+                                  {
+                                    "key": "kind",
+                                    "value": {
+                                      "stringValue": "reject_once"
+                                    }
+                                  },
+                                  {
+                                    "key": "option_id",
+                                    "value": {
+                                      "stringValue": "reject"
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "key": "seats.tool_call_id",
+                      "value": {
+                        "stringValue": "tc-3"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "timeUnixNano": "1792944020000000000",
+                  "name": "permission.decided",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "19"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "human"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "u-ben"
+                      }
+                    },
+                    {
+                      "key": "seats.approval",
+                      "value": {
+                        "stringValue": "approved"
+                      }
+                    },
+                    {
+                      "key": "seats.decided_by",
+                      "value": {
+                        "stringValue": "u-ben"
+                      }
+                    },
+                    {
+                      "key": "seats.decided_by_role",
+                      "value": {
+                        "stringValue": "credential-owner"
+                      }
+                    },
+                    {
+                      "key": "seats.decision_card_id",
+                      "value": {
+                        "stringValue": "card-7f3"
+                      }
+                    },
+                    {
+                      "key": "seats.grant_id",
+                      "value": {
+                        "stringValue": "grant-ana-sentry-1"
+                      }
+                    },
+                    {
+                      "key": "seats.kind",
+                      "value": {
+                        "stringValue": "allow_once"
+                      }
+                    },
+                    {
+                      "key": "seats.option_id",
+                      "value": {
+                        "stringValue": "allow"
+                      }
+                    },
+                    {
+                      "key": "seats.outcome",
+                      "value": {
+                        "stringValue": "selected"
+                      }
+                    },
+                    {
+                      "key": "seats.rule.list",
+                      "value": {
+                        "stringValue": "ask"
+                      }
+                    },
+                    {
+                      "key": "seats.rule.pattern",
+                      "value": {
+                        "stringValue": "fetch"
+                      }
+                    },
+                    {
+                      "key": "seats.tool_call_id",
+                      "value": {
+                        "stringValue": "tc-3"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "timeUnixNano": "1792944021000000000",
+                  "name": "tool.update",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "20"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "agent"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "u-agent-ana-opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.owner",
+                      "value": {
+                        "stringValue": "u-ana"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.name",
+                      "value": {
+                        "stringValue": "Ana's opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.status",
+                      "value": {
+                        "stringValue": "completed"
+                      }
+                    },
+                    {
+                      "key": "seats.tool_call_id",
+                      "value": {
+                        "stringValue": "tc-3"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "status": {
+                "code": 0
+              }
+            },
+            {
+              "traceId": "d043bdec4346bb1253c06463a2c2cc13",
+              "spanId": "400ad84d51bc8edf",
+              "parentSpanId": "54966552492d24ee",
+              "name": "execute_tool commonly_post_message",
+              "kind": 1,
+              "startTimeUnixNano": "1792944022000000000",
+              "endTimeUnixNano": "1792944025000000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "execute_tool"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.name",
+                  "value": {
+                    "stringValue": "commonly_post_message"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.id",
+                  "value": {
+                    "stringValue": "tc-4"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.name",
+                  "value": {
+                    "stringValue": "Ana's opencode"
+                  }
+                },
+                {
+                  "key": "seats.tool.kind",
+                  "value": {
+                    "stringValue": "other"
+                  }
+                },
+                {
+                  "key": "seats.tool.surface",
+                  "value": {
+                    "stringValue": "commonly"
+                  }
+                }
+              ],
+              "events": [
+                {
+                  "timeUnixNano": "1792944023000000000",
+                  "name": "permission.requested",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "22"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "agent"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "u-agent-ana-opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.owner",
+                      "value": {
+                        "stringValue": "u-ana"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.name",
+                      "value": {
+                        "stringValue": "Ana's opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.options",
+                      "value": {
+                        "arrayValue": {
+                          "values": [
+                            {
+                              "kvlistValue": {
+                                "values": [
+                                  {
+                                    "key": "kind",
+                                    "value": {
+                                      "stringValue": "allow_once"
+                                    }
+                                  },
+                                  {
+                                    "key": "option_id",
+                                    "value": {
+                                      "stringValue": "allow"
+                                    }
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "kvlistValue": {
+                                "values": [
+                                  {
+                                    "key": "kind",
+                                    "value": {
+                                      "stringValue": "allow_always"
+                                    }
+                                  },
+                                  {
+                                    "key": "option_id",
+                                    "value": {
+                                      "stringValue": "always"
+                                    }
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "kvlistValue": {
+                                "values": [
+                                  {
+                                    "key": "kind",
+                                    "value": {
+                                      "stringValue": "reject_once"
+                                    }
+                                  },
+                                  {
+                                    "key": "option_id",
+                                    "value": {
+                                      "stringValue": "reject"
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "key": "seats.tool_call_id",
+                      "value": {
+                        "stringValue": "tc-4"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "timeUnixNano": "1792944024000000000",
+                  "name": "permission.decided",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "23"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "policy"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "grant:grant-ana-sentry-1"
+                      }
+                    },
+                    {
+                      "key": "seats.decided_by",
+                      "value": {
+                        "stringValue": "policy"
+                      }
+                    },
+                    {
+                      "key": "seats.decided_by_role",
+                      "value": {
+                        "stringValue": "policy"
+                      }
+                    },
+                    {
+                      "key": "seats.grant_id",
+                      "value": {
+                        "stringValue": "grant-ana-sentry-1"
+                      }
+                    },
+                    {
+                      "key": "seats.kind",
+                      "value": {
+                        "stringValue": "allow_once"
+                      }
+                    },
+                    {
+                      "key": "seats.option_id",
+                      "value": {
+                        "stringValue": "allow"
+                      }
+                    },
+                    {
+                      "key": "seats.outcome",
+                      "value": {
+                        "stringValue": "selected"
+                      }
+                    },
+                    {
+                      "key": "seats.rule.list",
+                      "value": {
+                        "stringValue": "allow"
+                      }
+                    },
+                    {
+                      "key": "seats.rule.pattern",
+                      "value": {
+                        "stringValue": "other:commonly_*"
+                      }
+                    },
+                    {
+                      "key": "seats.tool_call_id",
+                      "value": {
+                        "stringValue": "tc-4"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "timeUnixNano": "1792944025000000000",
+                  "name": "tool.update",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "24"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "agent"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "u-agent-ana-opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.owner",
+                      "value": {
+                        "stringValue": "u-ana"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.name",
+                      "value": {
+                        "stringValue": "Ana's opencode"
+                      }
+                    },
+                    {
+                      "key": "seats.status",
+                      "value": {
+                        "stringValue": "completed"
+                      }
+                    },
+                    {
+                      "key": "seats.tool_call_id",
+                      "value": {
+                        "stringValue": "tc-4"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "status": {
+                "code": 0
+              }
+            },
+            {
+              "traceId": "d043bdec4346bb1253c06463a2c2cc13",
+              "spanId": "a4aa63e7490207ea",
+              "name": "seats.run",
+              "kind": 1,
+              "startTimeUnixNano": "1792944032000000000",
+              "endTimeUnixNano": "1792944043000000000",
+              "attributes": [
+                {
+                  "key": "seats.run.id",
+                  "value": {
+                    "stringValue": "run-ben-0001"
+                  }
+                },
+                {
+                  "key": "seats.task.id",
+                  "value": {
+                    "stringValue": "TASK-101"
+                  }
+                },
+                {
+                  "key": "seats.pod.id",
+                  "value": {
+                    "stringValue": "pod-checkout"
+                  }
+                },
+                {
+                  "key": "seats.run.outcome",
+                  "value": {
+                    "stringValue": "ok"
+                  }
+                },
+                {
+                  "key": "seats.run.attempts",
+                  "value": {
+                    "intValue": "1"
+                  }
+                }
+              ],
+              "events": [
+                {
+                  "timeUnixNano": "1792944032000000000",
+                  "name": "grant.issued",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "1"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "human"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "u-ben"
+                      }
+                    },
+                    {
+                      "key": "seats.binding.ends_on",
+                      "value": {
+                        "stringValue": "task.done"
+                      }
+                    },
+                    {
+                      "key": "seats.binding.pod_id",
+                      "value": {
+                        "stringValue": "pod-checkout"
+                      }
+                    },
+                    {
+                      "key": "seats.binding.task_id",
+                      "value": {
+                        "stringValue": "TASK-101"
+                      }
+                    },
+                    {
+                      "key": "seats.expires_at",
+                      "value": {
+                        "stringValue": "2026-10-25T20:00:00.000Z"
+                      }
+                    },
+                    {
+                      "key": "seats.grant_id",
+                      "value": {
+                        "stringValue": "grant-ben-review-1"
+                      }
+                    },
+                    {
+                      "key": "seats.issued_by",
+                      "value": {
+                        "stringValue": "u-ben"
+                      }
+                    },
+                    {
+                      "key": "seats.scope.audience",
+                      "value": {
+                        "arrayValue": {
+                          "values": [
+                            {
+                              "stringValue": "u-ben"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "key": "seats.scope.connection_id",
+                      "value": {
+                        "stringValue": "conn-ben-github"
+                      }
+                    },
+                    {
+                      "key": "seats.scope.tools",
+                      "value": {
+                        "arrayValue": {
+                          "values": [
+                            {
+                              "stringValue": "github.get_pull_request"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "key": "seats.scope.write_mode",
+                      "value": {
+                        "stringValue": "read"
+                      }
+                    },
+                    {
+                      "key": "seats.target.id",
+                      "value": {
+                        "stringValue": "u-agent-ben-goose"
+                      }
+                    },
+                    {
+                      "key": "seats.target.kind",
+                      "value": {
+                        "stringValue": "seat"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "timeUnixNano": "1792944033000000000",
+                  "name": "credential.granted",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "2"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "system"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "seats"
+                      }
+                    },
+                    {
+                      "key": "seats.names",
+                      "value": {
+                        "arrayValue": {
+                          "values": [
+                            {
+                              "stringValue": "OPENAI_API_KEY"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "timeUnixNano": "1792944041000000000",
+                  "name": "task.done",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "10"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "system"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "board"
+                      }
+                    },
+                    {
+                      "key": "seats.done_by",
+                      "value": {
+                        "stringValue": "u-ben"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "timeUnixNano": "1792944042000000000",
+                  "name": "grant.revoked",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "11"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "system"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "board"
+                      }
+                    },
+                    {
+                      "key": "seats.grant_ids",
+                      "value": {
+                        "arrayValue": {
+                          "values": [
+                            {
+                              "stringValue": "grant-ben-review-1"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "key": "seats.reason",
+                      "value": {
+                        "stringValue": "task.done"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "status": {
+                "code": 0
+              }
+            },
+            {
+              "traceId": "d043bdec4346bb1253c06463a2c2cc13",
+              "spanId": "5fd2950fcbddd334",
+              "parentSpanId": "a4aa63e7490207ea",
+              "name": "invoke_agent Ben's goose",
+              "kind": 1,
+              "startTimeUnixNano": "1792944034000000000",
+              "endTimeUnixNano": "1792944040000000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "invoke_agent"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.id",
+                  "value": {
+                    "stringValue": "u-agent-ben-goose"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.name",
+                  "value": {
+                    "stringValue": "Ben's goose"
+                  }
+                },
+                {
+                  "key": "seats.agent.owner",
+                  "value": {
+                    "stringValue": "u-ben"
+                  }
+                },
+                {
+                  "key": "seats.attempt.number",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "seats.adapter",
+                  "value": {
+                    "stringValue": "goose"
+                  }
+                },
+                {
+                  "key": "seats.cli.name",
+                  "value": {
+                    "stringValue": "goose"
+                  }
+                },
+                {
+                  "key": "seats.cli.version",
+                  "value": {
+                    "stringValue": "1.54.0"
+                  }
+                },
+                {
+                  "key": "seats.attempt.outcome",
+                  "value": {
+                    "stringValue": "ok"
+                  }
+                }
+              ],
+              "events": [],
+              "status": {
+                "code": 0
+              }
+            },
+            {
+              "traceId": "d043bdec4346bb1253c06463a2c2cc13",
+              "spanId": "d45b1520df0f2e72",
+              "parentSpanId": "5fd2950fcbddd334",
+              "name": "execute_tool github.get_pull_request",
+              "kind": 1,
+              "startTimeUnixNano": "1792944035000000000",
+              "endTimeUnixNano": "1792944038000000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "execute_tool"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.name",
+                  "value": {
+                    "stringValue": "github.get_pull_request"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.id",
+                  "value": {
+                    "stringValue": "tc-1"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.name",
+                  "value": {
+                    "stringValue": "Ben's goose"
+                  }
+                },
+                {
+                  "key": "seats.tool.kind",
+                  "value": {
+                    "stringValue": "read"
+                  }
+                },
+                {
+                  "key": "seats.tool.surface",
+                  "value": {
+                    "stringValue": "connector"
+                  }
+                }
+              ],
+              "events": [
+                {
+                  "timeUnixNano": "1792944036000000000",
+                  "name": "permission.requested",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "5"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "agent"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "u-agent-ben-goose"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.owner",
+                      "value": {
+                        "stringValue": "u-ben"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.name",
+                      "value": {
+                        "stringValue": "Ben's goose"
+                      }
+                    },
+                    {
+                      "key": "seats.options",
+                      "value": {
+                        "arrayValue": {
+                          "values": [
+                            {
+                              "kvlistValue": {
+                                "values": [
+                                  {
+                                    "key": "kind",
+                                    "value": {
+                                      "stringValue": "allow_once"
+                                    }
+                                  },
+                                  {
+                                    "key": "option_id",
+                                    "value": {
+                                      "stringValue": "allow"
+                                    }
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "kvlistValue": {
+                                "values": [
+                                  {
+                                    "key": "kind",
+                                    "value": {
+                                      "stringValue": "allow_always"
+                                    }
+                                  },
+                                  {
+                                    "key": "option_id",
+                                    "value": {
+                                      "stringValue": "always"
+                                    }
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "kvlistValue": {
+                                "values": [
+                                  {
+                                    "key": "kind",
+                                    "value": {
+                                      "stringValue": "reject_once"
+                                    }
+                                  },
+                                  {
+                                    "key": "option_id",
+                                    "value": {
+                                      "stringValue": "reject"
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "key": "seats.tool_call_id",
+                      "value": {
+                        "stringValue": "tc-1"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "timeUnixNano": "1792944037000000000",
+                  "name": "permission.decided",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "6"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "policy"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "grant:grant-ben-review-1"
+                      }
+                    },
+                    {
+                      "key": "seats.decided_by",
+                      "value": {
+                        "stringValue": "policy"
+                      }
+                    },
+                    {
+                      "key": "seats.decided_by_role",
+                      "value": {
+                        "stringValue": "policy"
+                      }
+                    },
+                    {
+                      "key": "seats.grant_id",
+                      "value": {
+                        "stringValue": "grant-ben-review-1"
+                      }
+                    },
+                    {
+                      "key": "seats.kind",
+                      "value": {
+                        "stringValue": "allow_once"
+                      }
+                    },
+                    {
+                      "key": "seats.option_id",
+                      "value": {
+                        "stringValue": "allow"
+                      }
+                    },
+                    {
+                      "key": "seats.outcome",
+                      "value": {
+                        "stringValue": "selected"
+                      }
+                    },
+                    {
+                      "key": "seats.rule.list",
+                      "value": {
+                        "stringValue": "allow"
+                      }
+                    },
+                    {
+                      "key": "seats.rule.pattern",
+                      "value": {
+                        "stringValue": "read"
+                      }
+                    },
+                    {
+                      "key": "seats.tool_call_id",
+                      "value": {
+                        "stringValue": "tc-1"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "timeUnixNano": "1792944038000000000",
+                  "name": "tool.update",
+                  "attributes": [
+                    {
+                      "key": "seats.seq",
+                      "value": {
+                        "intValue": "7"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.type",
+                      "value": {
+                        "stringValue": "agent"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.id",
+                      "value": {
+                        "stringValue": "u-agent-ben-goose"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.owner",
+                      "value": {
+                        "stringValue": "u-ben"
+                      }
+                    },
+                    {
+                      "key": "seats.actor.name",
+                      "value": {
+                        "stringValue": "Ben's goose"
+                      }
+                    },
+                    {
+                      "key": "seats.status",
+                      "value": {
+                        "stringValue": "completed"
+                      }
+                    },
+                    {
+                      "key": "seats.tool_call_id",
+                      "value": {
+                        "stringValue": "tc-1"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "status": {
+                "code": 0
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
