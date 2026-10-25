@@ -1721,6 +1721,23 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(maskOff).toMatch(/^\s*-webkit-mask-image:\s*none;/m);
   });
 
+  test('landing trusted-by logos render as one grey ink, on hover too', () => {
+    // OROZ ships white artwork and Fluxr a white wordmark. `grayscale(1)`
+    // alone left both white on the light strip — present in the DOM, invisible
+    // on the page. `brightness(0)` maps every opaque pixel to black, so each
+    // logo reads as its silhouette and the opacity sets the grey. Measured in a
+    // real browser at 1440 and 390: all 24 logos non-blank.
+    const logo = selectorRuleBody(landing, '.v2-landing__trusted-logo {');
+    expect(logo).toMatch(/filter:\s*grayscale\(1\)\s+brightness\(0\)\s*;/);
+    expect(logo).toMatch(/opacity:\s*0\.6\s*;/);
+    // Hover lifts the opacity only. Restoring the source colours on hover
+    // (`grayscale(0)`, the old rule) makes the white files vanish under the
+    // pointer.
+    const hover = selectorRuleBody(landing, '.v2-landing__trusted-logo:hover {');
+    expect(hover).toMatch(/opacity:\s*1\s*;/);
+    expect(hover).not.toMatch(/filter\s*:/);
+  });
+
   test('landing adapter code scrolls inside its card instead of widening the page', () => {
     // Preformatted adapter commands have a wide min-content size. Without a
     // zero-width grid minimum + shrinkable card, the mobile landing page grows
@@ -4994,4 +5011,15 @@ test('TASK-435 runtime columns can shrink on phones without dropping the observe
   expect(ruleBody(css, '.v2-runtime-controls__saved')).toContain('min-width: 0');
   expect(ruleBody(css, '.v2-runtime-controls__observed')).toContain('overflow-wrap: anywhere');
   expect(css).toContain('content: attr(data-label)');
+});
+
+describe('run trace layout', () => {
+  const css = read('../components/V2RunTrace.css');
+  test('long attribution IDs wrap, phone records stack, and links meet touch height', () => {
+    expect(css).toContain('overflow-wrap: anywhere');
+    expect(css).toContain('min-width: 0');
+    expect(css).toContain('min-height: 44px');
+    expect(css).toMatch(/@media \(max-width: 760px\)/);
+    expect(css).toMatch(/grid-template-columns: minmax\(0, 1fr\)/);
+  });
 });

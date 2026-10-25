@@ -108,3 +108,9 @@ describe('resolveAgentDisplayLabel', () => {
     });
   });
 });
+
+it('preserves a curated default-instance name equal to the agent name', () => {
+  expect(resolveAgentDisplayLabel({ username: 'pixel-default', botMetadata: {
+    agentName: 'pixel', instanceId: 'default', displayName: 'Pixel',
+  } })).toBe('Pixel');
+});

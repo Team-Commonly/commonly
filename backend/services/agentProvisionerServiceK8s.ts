@@ -1,3 +1,4 @@
+import { filterRuntimeAccountLogs } from '../utils/runtimeLogFilter';
 /**
  * Kubernetes-native Agent Provisioner Service
  * Replaces Docker socket mounting with K8s API for agent runtime provisioning
@@ -3167,19 +3168,7 @@ const getDeploymentLogs = async ({ deploymentName, lines, filterTokens = [] }: a
       undefined,
       lines,
     );
-    let logs = logsResponse.body || '';
-    const tokens = (filterTokens || []).map((t: any) => String(t || '').trim()).filter(Boolean);
-    if (tokens.length) {
-      logs = logs
-        .split('\n')
-        .filter((line: any) => {
-          if (!line) return false;
-          if (tokens.some((token: any) => line.includes(`[commonly] [${token}]`))) return true;
-          if (tokens.some((token: any) => line.includes(token))) return true;
-          return false;
-        })
-        .join('\n');
-    }
+    const logs = filterRuntimeAccountLogs(logsResponse.body || '', filterTokens);
     return { logs, pod: pod.metadata.name, deployment: deploymentName };
   } catch (error: any) {
     console.error(`[k8s-provisioner] Failed to get logs for ${deploymentName}:`, (error as Error).message);

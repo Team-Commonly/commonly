@@ -44,6 +44,7 @@ const moltbotProviderRoutes = require('./routes/providers/moltbot');
 const activityRoutes = require('./routes/activity');
 const marketplaceRoutes = require('./routes/marketplace');
 const marketplaceApiRoutes = require('./routes/marketplace-api');
+const { refuseDollarKeys } = require('./middleware/refuseDollarKeys');
 const gatewayRoutes = require('./routes/gateways');
 const skillsRoutes = require('./routes/skills');
 const devRoutes = require('./routes/dev');
@@ -235,6 +236,10 @@ app.use('/api/webhooks/github', githubGigWebhookRoutes.githubGigRawError);
 // JSON parsing for all other routes
 app.use(express.json());
 
+// Refuse `$`-prefixed keys in every query string and body, after every
+// parser above and before any route (middleware/refuseDollarKeys.ts).
+app.use(refuseDollarKeys);
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/posts', postRoutes);
@@ -248,6 +253,7 @@ app.use('/api', podInvitesRoutes);
 app.use('/api', attributionRoutes);
 // Before podRoutes: its `/:type/:id` catch-all would answer `/:podId/grants` as type=<podId>, id='grants' (Wren 67721).
 app.use('/api/pods', require('./routes/grants').podGrantsRouter); // tools plan §6: GET /api/pods/:podId/grants, the page's list
+app.use('/api/pods', require('./routes/runTraces'));
 app.use('/api/pods', podRoutes);
 app.use('/api/billing', require('./routes/billing'));
 app.use('/api/messages', messageRoutes);
@@ -383,15 +389,11 @@ mongoose.connection.once('open', () => {
 // Start the summarizer scheduler
 const schedulerService = require('./services/schedulerService');
 const discordGatewayService = require('./services/discordGatewayService');
-
-if (process.env.NODE_ENV !== 'test') {
-  console.log('Starting summarizer scheduler...');
-  schedulerService.start();
-
-  if (process.env.DISCORD_BOT_TOKEN) {
-    discordGatewayService.start();
-  }
-}
+const { startBackgroundServices, shouldRunBackgroundServices } = require('./services/backgroundWorkerStart');
+startBackgroundServices(process.env, {
+  scheduler: schedulerService,
+  discordGateway: discordGatewayService,
+});
 
 // PostgreSQL status is mounted unconditionally, and NOT as a placeholder:
 // checkStatus reads the pool and the schema itself, so it answers
@@ -441,7 +443,7 @@ if (process.env.PG_HOST) {
       // Kick off the daily 30-day message retention cron. Kept out
       // of schedulerService.ts on purpose so other tracks can edit
       // that file without stomping on this cron.
-      if (process.env.NODE_ENV !== 'test') {
+      if (shouldRunBackgroundServices(process.env)) {
         try {
           const { initPgRetention } = require('./services/pgRetentionService');
           initPgRetention();

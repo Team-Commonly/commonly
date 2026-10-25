@@ -26,6 +26,7 @@
    @typescript-eslint/no-require-imports */
 
 import { Types } from 'mongoose';
+import { validateAgentCardPayload, UI_CARD_CATALOGUE } from './uiCardValidation';
 import { isTaskPriority, TASK_PRIORITY_ORDER } from '../utils/taskPriority';
 import axios, { AxiosError } from 'axios';
 import {
@@ -277,7 +278,9 @@ export const TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          content: { type: 'string', description: 'Markdown-supported message content' },
+          content: { type: 'string', description: 'Markdown-supported message content and required UI text fallback' },
+          messageType: { type: 'string', enum: ['text', 'card'] },
+          payload: { type: 'object', description: `Optional {kind:"ui",v:1,lang:"openui@1",source,...catalogue}. Catalogue fields: ${JSON.stringify(UI_CARD_CATALOGUE)}. Requires messageType card; validated locally before writing.` },
         },
         required: ['content'],
       },
@@ -618,6 +621,7 @@ export const toolsForConfig = (
 // --- tool dispatcher -------------------------------------------------------
 
 interface DispatchContext {
+  runId?: string;
   installation: any;
   podId: string;
   agentName: string;
@@ -782,12 +786,20 @@ export async function dispatchTool(
           return { content: { ok: false, error: 'content is required' }, error: 'missing_content' };
         }
         const AgentMessageService = require('./agentMessageService');
+        const messageType = args.messageType ?? 'text';
+        if (messageType !== 'text' && messageType !== 'card') {
+          return { content: { ok: false, error: 'Unsupported native messageType' }, error: 'invalid_message_type' };
+        }
+        validateAgentCardPayload(messageType, args.payload, args.payload !== undefined
+          ? (typeof args.content === 'string' ? AgentMessageService.sanitizeAgentContent(args.content) : args.content)
+          : content);
         const result = await AgentMessageService.postMessage({
           agentName: ctx.agentName,
           instanceId: ctx.instanceId,
           podId: ctx.podId,
           content,
-          messageType: 'text',
+          messageType,
+          ...(args.payload !== undefined ? { payload: args.payload } : {}),
           displayName: ctx.displayName,
           installationConfig: ctx.installationConfig,
           metadata: { source: 'native-runtime' },
@@ -795,7 +807,12 @@ export async function dispatchTool(
           // bridge appears between this check and message storage.
           noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
           answeringMessageId: ctx.answeringMessageId,
+          runId: ctx.runId,
+          ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
         });
+        if (result?.refused) {
+          return { content: { ok: false, posted: false, result }, error: 'message_post_refused' };
+        }
         return { content: { ok: true, posted: true, result } };
       }
 
@@ -840,6 +857,8 @@ export async function dispatchTool(
           payload: { kind: 'starts', starts: [{ id: 'run-hosted', label: HOSTED_OFFER_LABEL, href }] },
           noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
           answeringMessageId: ctx.answeringMessageId,
+          runId: ctx.runId,
+          ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
         });
         return { content: { ok: true, posted: true, result } };
       }
@@ -887,6 +906,8 @@ export async function dispatchTool(
           payload,
           noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
           answeringMessageId: ctx.answeringMessageId,
+          runId: ctx.runId,
+          ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
           authorKind: 'kernel',
         });
         return { content: { ok: true, posted: true, result } };
@@ -939,6 +960,8 @@ export async function dispatchTool(
         // fallback never double-posts narration beside the card.
         const { proposeAction } = require('./approvalActionService');
         const result = await proposeAction({
+          runId: ctx.runId,
+          ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
           podId: String(ctx.podId),
           agentName: ctx.agentName,
           instanceId: ctx.instanceId,
@@ -1800,6 +1823,7 @@ export async function runAgent(
   }
 
   const dispatchCtx: DispatchContext = {
+    runId,
     installation,
     podId,
     agentName,
@@ -1897,6 +1921,7 @@ export async function runAgent(
   let finalMessage: string | undefined;
   let turnIndex = 0;
   let postedViaTool = false;
+  let modelFailureReason: string | undefined;
 
   // Row B (TASK-132): the seat's grant broker, assembled ONCE PER RUN at turn
   // assembly.
@@ -2008,6 +2033,8 @@ export async function runAgent(
           `${litellm.baseUrl}/chat/completions`,
           {
             model,
+            // D81: a failed model must not silently substitute another vendor.
+            disable_fallbacks: true,
             messages,
             // ADR-020 D1: the manifest's tool allowlist, enforced.
             // The manifest's allowlist, plus the grant broker's read tools for
@@ -2033,7 +2060,7 @@ export async function runAgent(
         );
         if (axiosResp.status < 200 || axiosResp.status >= 300) {
           const body = axiosResp.data as unknown;
-          const bodyText = typeof body === 'string' ? body : JSON.stringify(body);
+          const bodyText = typeof body === 'string' ? body : JSON.stringify(body) || '';
           // A content guardrail (injection / moderation) rejection comes back as an
           // error status from LiteLLM. Tag it distinctly so it's observable in
           // AgentRun metrics (told apart from genuine LLM failures) and never
@@ -2053,7 +2080,8 @@ export async function runAgent(
             run.errorMessage = 'Request blocked by a content guardrail (prompt-injection / moderation).';
             break;
           }
-          throw new Error(`LiteLLM HTTP ${axiosResp.status}: ${bodyText.slice(0, 500)}`);
+          modelFailureReason = `HTTP ${axiosResp.status}`;
+          throw new Error(`LiteLLM ${modelFailureReason}`);
         }
         llmResponse = axiosResp.data;
         responseHeaders = (axiosResp.headers || {}) as Record<string, unknown>;
@@ -2061,7 +2089,11 @@ export async function runAgent(
         const axErr = err as AxiosError;
         run.status = 'failed';
         run.errorKind = 'llm_error';
-        run.errorMessage = (axErr.message || String(err)).slice(0, 1000);
+        // Publish only a bounded category, never the proxy payload, URL or credentials.
+        modelFailureReason = modelFailureReason || (axErr.code === 'ECONNABORTED' || axErr.code === 'ETIMEDOUT'
+          ? 'request timed out' : 'connection failed');
+        run.errorMessage = `Model ${model}: ${modelFailureReason}`.slice(0, 1000);
+        console.warn('[native-runtime] model request failed:', model, modelFailureReason);
         break;
       }
 
@@ -2113,6 +2145,8 @@ export async function runAgent(
           // dispatcher handles it below.
           const brokerCall = webTaintedAway ? null : await dispatchHostedBrokerTool({
             projection: broker,
+            runId: dispatchCtx.runId,
+            runPodId: String(dispatchCtx.podId),
             name: toolName,
             args: parsedArgs,
             agentUserId: seatUserId,
@@ -2173,6 +2207,7 @@ export async function runAgent(
               : parsedArgs,
             result: result.recorded ?? result.content,
             error: result.error,
+            outcome: result.error ? 'failed' : 'ok',
             elapsedMs: elapsed,
           });
           if (toolName === 'commonly_post_message' && !result.error) {
@@ -2278,6 +2313,8 @@ export async function runAgent(
             metadata: { source: 'native-runtime', fallback: true },
             noOutboundRelay: Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen),
             answeringMessageId: dispatchCtx.answeringMessageId,
+            runId,
+            runPodId: String(podId),
           });
           // The message service suppresses a bare NO_REPLY (and other
           // silent output) without throwing. That is a normal declined turn,
@@ -2303,12 +2340,12 @@ export async function runAgent(
   }
 
   // A hosted turn that failed (a guard stop or an error) and posted nothing
-  // costs the person no turn. When someone was waiting on it, a mention or a
-  // DM, it posts one fixed line instead of leaving them in silence. A turn
+  // costs the person no turn. Model failures name the model and a safe reason
+  // on native turns too; other hosted failures keep the fixed line. A turn
   // that declined (NO_REPLY, a silent group-pod turn) ended succeeded and
   // never reaches this. The per-user spend ceiling still counts the run.
-  if (hostedNative && run.status === 'failed' && !postedViaTool && !finalMessage) {
-    run.metered = false;
+  if ((hostedNative || modelFailureReason) && run.status === 'failed' && !postedViaTool && !finalMessage) {
+    if (hostedNative) run.metered = false;
     if (wasDirectlyAddressed(trigger)
       && !((dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow())) {
       try {
@@ -2317,13 +2354,18 @@ export async function runAgent(
           agentName,
           instanceId,
           podId,
-          content: HOSTED_RUN_FAILED_LINE,
+          content: modelFailureReason
+            ? `Model ${model} could not answer (${modelFailureReason}). ${hostedNative
+              ? HOSTED_RUN_FAILED_LINE : 'Please try again.'}`
+            : HOSTED_RUN_FAILED_LINE,
           messageType: 'text',
           displayName,
           installationConfig: cfg,
           metadata: { source: 'native-runtime', runFailed: true },
           noOutboundRelay: Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen),
           answeringMessageId: dispatchCtx.answeringMessageId,
+          runId,
+          runPodId: String(podId),
         });
       } catch (postErr) {
         console.warn('[native-runtime] failed-run line not posted:', (postErr as Error).message);

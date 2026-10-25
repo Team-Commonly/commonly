@@ -179,7 +179,7 @@ spec:
             # The source secret was fixed, but a malformed key from ANY source must never be
             # able to break routing again — so sanitize here too. litellm inherits this env
             # via exec below.
-            for _k in OPENROUTER_API_KEY OPENROUTER_API_KEY_2 OPENAI_API_KEY ANTHROPIC_API_KEY GEMINI_API_KEY; do
+            for _k in OPENROUTER_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY GEMINI_API_KEY; do
               eval "_orig=\${$_k:-}"
               _clean=$(printf '%s' "$_orig" | tr -d '\r\n')
               [ "$_orig" != "$_clean" ] && echo "sanitized $_k (stripped CR/LF)"
@@ -236,12 +236,6 @@ spec:
             secretKeyRef:
               name: api-keys
               key: openrouter-api-key
-              optional: true
-        - name: OPENROUTER_API_KEY_2
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: openrouter-api-key-2
               optional: true
         - name: OPENAI_API_KEY
           valueFrom:

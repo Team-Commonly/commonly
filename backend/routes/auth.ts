@@ -4,6 +4,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 const { platformIpRateLimit } = require('../middleware/platformRateLimit');
+const { refuseDollarKeys } = require('../middleware/refuseDollarKeys');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
@@ -228,7 +229,8 @@ router.get('/oauth/providers', getOAuthProviders);
 router.get('/oauth/:provider/start', oauthLimiter, startOAuth);
 // The same start as a form POST, so an invite code rides in the body, not the URL
 // (the register page uses it whenever it holds a code; TASK-404).
-router.post('/oauth/:provider/start', oauthLimiter, express.urlencoded({ extended: false, limit: '4kb' }), startOAuth);
+// This parser runs after the global $-key guard, so the guard runs again on its body.
+router.post('/oauth/:provider/start', oauthLimiter, express.urlencoded({ extended: false, limit: '4kb' }), refuseDollarKeys, startOAuth);
 router.get('/oauth/:provider/callback', oauthLimiter, oauthCallback);
 router.post('/oauth/exchange', oauthLimiter, exchangeOAuthCode);
 router.get('/registration-policy', registrationPolicyLimit, getRegistrationPolicy);

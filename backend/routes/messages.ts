@@ -8,7 +8,7 @@ const express = require('express');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
-const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
+const dualAuth = require('../middleware/dualAuth');
 // eslint-disable-next-line global-require
 const {
   getMessages,
@@ -126,13 +126,7 @@ const reactionRateLimit = rateLimit({
 // Agents reacting is first-class — see ADR-006 + reactionController's
 // agentUser fallback. Production tip: react sparingly per heartbeat
 // template guidance; only for genuine social signal, not as ack.
-const dualAuth = (req: any, res: any, next: any) => {
-  const bearer = ((req.header?.('Authorization') || '').replace('Bearer ', '')).trim();
-  const altHeader = (req.header?.('x-commonly-agent-token') || '').trim();
-  const token = bearer || altHeader;
-  if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
-  return auth(req, res, next);
-};
+
 router.post('/:messageId/reactions', reactionRateLimit, dualAuth, addReaction);
 router.delete('/:messageId/reactions/:emoji', reactionRateLimit, dualAuth, removeReaction);
 

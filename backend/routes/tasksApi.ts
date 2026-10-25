@@ -8,9 +8,8 @@ const express = require('express');
 // eslint-disable-next-line global-require
 const mongoose = require('mongoose');
 // eslint-disable-next-line global-require
-const regularAuth = require('../middleware/auth');
-// eslint-disable-next-line global-require
-const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
+const auth = require('../middleware/dualAuth');
+const { resolveDualAuthCredential } = auth;
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
@@ -97,12 +96,6 @@ interface Res {
   json: (d: unknown) => void;
 }
 
-function auth(req: AuthReq, res: Res, next: () => void) {
-  const token = ((req.header?.('Authorization') || '').replace('Bearer ', ''));
-  if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
-  return regularAuth(req, res, next);
-}
-
 const router: ReturnType<typeof express.Router> = express.Router();
 
 // A pending unassigned row is offered again only when updatedAt advances past
@@ -152,7 +145,7 @@ const updateTaskWithRevision = async (
 ) => (await updateTaskWithRevisionSnapshot(filter, update))?.task || null;
 
 const taskWriteRateLimitKey = (req: Request): string => {
-  const authHeader = req.get('Authorization') || req.get('x-auth-token');
+  const authHeader = resolveDualAuthCredential(req).token;
   if (authHeader) {
     return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
   }

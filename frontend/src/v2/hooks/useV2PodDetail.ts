@@ -85,6 +85,8 @@ export interface V2Message {
   // (approval-card and byo-handoff). Server-composed; survives normalizeMessage via
   // the `...raw` spread — declared here so consumers can read it typed.
   payload?: {
+    runId?: string;
+    runPodId?: string;
     kind?: string;
     action?: string;
     actorName?: string;

@@ -43,6 +43,7 @@ const File = require('../models/File');
 const User = require('../models/User');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
+const { refuseDollarKeys } = require('../middleware/refuseDollarKeys');
 // eslint-disable-next-line global-require
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 import { getObjectStore } from '../services/objectStore';
@@ -135,7 +136,9 @@ const uploadSingle = (field: string) => (req: AuthReq, res: Res, next: (err?: un
       }
       return res.status(400).json({ msg: e?.message || 'Invalid upload' });
     }
-    next();
+    // multer parses the multipart fields only now, after the global
+    // `$`-key check has run, so the fields are checked here too.
+    return refuseDollarKeys(req as never, res as never, next as never);
   });
 };
 

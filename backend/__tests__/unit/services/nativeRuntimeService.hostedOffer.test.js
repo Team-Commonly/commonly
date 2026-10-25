@@ -90,6 +90,7 @@ describe('commonly_offer_hosted_agent', () => {
     const posted = AgentMessageService.postMessage.mock.calls[0][0];
     expect(posted.content).toBe(REPLY);
     expect(posted.podId).toBe(POD);
+    expect(posted.runId).toBe('run-1');
     expect(posted.payload).toEqual({
       kind: 'starts',
       starts: [{ id: 'run-hosted', label: 'Run it here', href: `/v2/agents/byo?pod=${POD}&mode=hosted` }],

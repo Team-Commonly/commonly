@@ -64,6 +64,17 @@ Backend selector labels
 app: backend
 {{- end }}
 
+{{/* The worker must never match the backend Service selector. */}}
+{{- define "commonly.backendWorker.labels" -}}
+{{ include "commonly.labels" . }}
+app: backend-worker
+{{- end }}
+
+{{- define "commonly.backendWorker.selectorLabels" -}}
+{{ include "commonly.selectorLabels" . }}
+app: backend-worker
+{{- end }}
+
 {{/*
 Frontend labels
 */}}

@@ -13,16 +13,16 @@
  * configuration and signs locally; it must keep its honest local 500.
  */
 
-jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => {
+jest.mock('../../../middleware/agentRuntimeAuth', () => jest.fn((req, res, next) => {
   req.agentUser = { _id: 'bot-1' };
   next();
-});
+}));
 
-jest.mock('../../../middleware/auth', () => (req, res, next) => {
+jest.mock('../../../middleware/auth', () => jest.fn((req, res, next) => {
   req.user = { _id: 'user-1', role: 'member' };
   req.userId = 'user-1';
   next();
-});
+}));
 
 jest.mock('../../../services/githubAppService', () => ({
   isPatConfigured: jest.fn(),
@@ -187,4 +187,16 @@ describe('routes that lent out the server GitHub credential stay removed', () =>
       expect.objectContaining({ owner: 'Team-Commonly', repo: 'commonly' }),
     );
   });
+});
+
+test('GitHub issue reads accept the alternate runtime header without human auth', async () => {
+  const agentAuth = require('../../../middleware/agentRuntimeAuth');
+  const humanAuth = require('../../../middleware/auth');
+  jest.clearAllMocks();
+  GitHubAppService.isConfigured.mockReturnValue(true);
+  GitHubAppService.listOpenIssues.mockResolvedValue([]);
+  const res = await request(app).get('/api/github/issues').set('x-commonly-agent-token', 'cm_agent_valid');
+  expect(res.status).toBe(200);
+  expect(agentAuth).toHaveBeenCalledTimes(1);
+  expect(humanAuth).not.toHaveBeenCalled();
 });

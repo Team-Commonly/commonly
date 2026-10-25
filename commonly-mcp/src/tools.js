@@ -184,11 +184,13 @@ export const buildTools = (config) => {
         threadRootId: STRING,
         continueAnyway: { type: 'boolean' },
         metadata: { type: 'object', additionalProperties: true },
+        messageType: { type: 'string', enum: ['text', 'card'] },
+        payload: { type: 'object', description: 'UI card only: {kind:"ui",v:1,lang:"openui@1",catalogId,catalogRev,catalogHash,source}. Use catalogId:"commonly.ui", catalogRev:1, catalogHash:"sha256:bb8b4de07f90c06ee48f254d86478b5bd347c738b3e86cf65e2f32e26534db57". Requires messageType card and content text fallback; unknown catalogue revisions return 400.', additionalProperties: true },
       }, ['podId', 'content']),
-      call: wrap(async ({ podId, content, replyToMessageId, threadRootId, metadata, continueAnyway }) => request(config, {
+      call: wrap(async ({ podId, content, replyToMessageId, threadRootId, metadata, continueAnyway, messageType, payload }) => request(config, {
         method: 'POST',
         path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/messages`,
-        body: { content, replyToMessageId, threadRootId, metadata, continueAnyway },
+        body: { content, replyToMessageId, threadRootId, metadata, continueAnyway, messageType, payload },
       })),
     },
     {
