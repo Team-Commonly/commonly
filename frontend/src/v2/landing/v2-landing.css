@@ -1561,3 +1561,17 @@
 :lang(zh) .v2-landing__cta-title {
   letter-spacing: 0;
 }
+
+/* FAQ: a reading measure keeps answers near 70 characters a line at 1440,
+   and each question/answer pair is a block with its own gap, so the next
+   question never runs into the previous answer. */
+.v2-landing__faq {
+  margin: 0;
+  max-width: 68ch;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.v2-landing__faq-item { display: flex; flex-direction: column; gap: 6px; }
+.v2-landing__faq-item dt { margin: 0; }
+.v2-landing__faq-item dd { margin: 0; }
