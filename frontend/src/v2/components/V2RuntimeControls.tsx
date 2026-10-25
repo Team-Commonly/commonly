@@ -12,7 +12,7 @@ export interface HarnessInventory { harness: string; installed: boolean; version
 export interface RuntimeSettings {
   providerId?: string; runtimeType?: string; host?: 'cloud' | 'byo'; adapter?: string; model?: string; effort?: string; managed?: boolean;
   ownKeyCapability?: { available: boolean; provider: string | null };
-  observation?: RuntimeObservation | null; inventory?: HarnessInventory[]; processConnected?: boolean;
+  observation?: RuntimeObservation | null; inventory?: HarnessInventory[]; processConnected?: boolean | null;
 }
 export type RuntimeUpdate = { adapter?: string; model?: string; effort?: string };
 const LABELS: Record<string, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', hermes: 'Hermes', dsh: 'DeepSeek Harness' };
@@ -99,8 +99,8 @@ const V2RuntimeControls: React.FC<{ runtime: RuntimeSettings; onSave?: (update: 
     {error && <p role="alert">{error}</p>}
     {editable && <button className="v2-runtime-controls__save" aria-label={k('saveRuntime')} disabled={busy || !changed || unsupportedHarness || !model.trim() || unsupportedModel || Boolean(levels.length && unsupportedEffort)} onClick={() => { void save(); }}>{k('save')}</button>}
     <dl className="v2-runtime-controls__status">
-      <div><dt>{k('process')}</dt><dd>{runtime.processConnected ? k('connected') : k('disconnected')}{runtime.processConnected && runtime.observation?.connectedAt ? ` · ${new Date(runtime.observation.connectedAt).toLocaleString()}` : ''}</dd></div>
-      <div><dt>{k('turn')}</dt><dd>{runtime.processConnected && runtime.observation?.turnRunning ? k('running') : runtime.observation?.lastTurnAt ? new Date(runtime.observation.lastTurnAt).toLocaleString() : k('noTurn')}</dd></div>
+      <div><dt>{k('process')}</dt><dd>{runtime.processConnected === true ? k('connected') : runtime.processConnected === false ? k('disconnected') : k('notReported')}{runtime.processConnected && runtime.observation?.connectedAt ? ` · ${new Date(runtime.observation.connectedAt).toLocaleString()}` : ''}</dd></div>
+      <div><dt>{k('turn')}</dt><dd>{runtime.processConnected == null ? k('notReported') : runtime.processConnected && runtime.observation?.turnRunning ? k('running') : runtime.observation?.lastTurnAt ? new Date(runtime.observation.lastTurnAt).toLocaleString() : k('noTurn')}</dd></div>
     </dl>
     {last && <p className="v2-runtime-controls__meta">{k('lastSpawn')} · {new Date(last.at).toLocaleString()}</p>}
   </div>;

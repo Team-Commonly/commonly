@@ -50,7 +50,7 @@ interface ManageSettingsResponse {
   ownKeyCapability?: { available: boolean; provider: string | null };
   runtimeObservation?: RuntimeObservation | null;
   runtimeInventory?: HarnessInventory[];
-  processConnected?: boolean;
+  processConnected?: boolean | null;
   runtimeEditable?: boolean;
   runtimeManaged?: boolean;
   installations: Array<{ podId: string; podName: string; status: string }>;
@@ -66,7 +66,7 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
   const [ownKeyCapability, setOwnKeyCapability] = useState<ManageSettingsResponse['ownKeyCapability']>();
   const [runtimeObservation, setRuntimeObservation] = useState<RuntimeObservation | null>(null);
   const [runtimeInventory, setRuntimeInventory] = useState<HarnessInventory[]>([]);
-  const [processConnected, setProcessConnected] = useState(false);
+  const [processConnected, setProcessConnected] = useState<boolean | null>(null);
   const [runtimeEditable, setRuntimeEditable] = useState(true);
   const [runtimeManaged, setRuntimeManaged] = useState<boolean | undefined>(undefined);
   const [loading, setLoading] = useState(true);
@@ -106,7 +106,7 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
           setOwnKeyCapability(settingsResponse.data.ownKeyCapability);
           setRuntimeObservation(settingsResponse.data.runtimeObservation || null);
           setRuntimeInventory(settingsResponse.data.runtimeInventory || []);
-          setProcessConnected(settingsResponse.data.processConnected === true);
+          setProcessConnected(typeof settingsResponse.data.processConnected === 'boolean' ? settingsResponse.data.processConnected : null);
           setRuntimeEditable(settingsResponse.data.runtimeEditable !== false);
           setRuntimeManaged(settingsResponse.data.runtimeManaged);
           setError(null);
@@ -132,7 +132,7 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
     setOwnKeyCapability(undefined);
     setRuntimeObservation(null);
     setRuntimeInventory([]);
-    setProcessConnected(false);
+    setProcessConnected(null);
     setRuntimeEditable(true);
     setRuntimeManaged(undefined);
     void refresh().catch((requestError) => {
@@ -142,6 +142,30 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
     });
     return () => { active = false; requestId.current += 1; };
   }, [refresh]);
+
+  // Refresh runner facts without reloading form drafts or asserting that a
+  // process remains connected after the observation endpoint becomes unknown.
+  useEffect(() => {
+    if (!podId) return undefined;
+    let active = true;
+    let pending = false;
+    const timer = setInterval(async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        const response = await axios.get<ManageSettingsResponse>(
+          `/api/registry/agents/${encodeURIComponent(agentName)}/manage-settings`, { params: { instanceId } },
+        );
+        if (active) {
+          setRuntimeObservation(response.data.runtimeObservation || null);
+          setRuntimeInventory(response.data.runtimeInventory || []);
+          setProcessConnected(typeof response.data.processConnected === 'boolean' ? response.data.processConnected : null);
+        }
+      } catch { if (active) setProcessConnected(null); }
+      finally { pending = false; }
+    }, 30_000);
+    return () => { active = false; clearInterval(timer); };
+  }, [agentName, instanceId, podId]);
 
   const update = useCallback(async (patch: AgentSettingsPatch) => {
     if (!podId) throw new Error('No accessible installation');

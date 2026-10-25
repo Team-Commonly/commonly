@@ -24,7 +24,9 @@ an unsupported stored effort remains visible but is not passed. Validation on
 save and the actual adapter launch must agree. A declared supported choice
 must never be silently replaced with another value.
 
-Process connection and runtime progress remain separate signals. A desired
+Process connection and runtime progress remain separate signals. Runner facts
+refresh every 30 seconds without reloading form drafts. An unavailable read or
+a seat without machine telemetry is unreported, rather than disconnected. A desired
 configuration edit must not terminate a running turn. It is loaded on the next
 spawn. Pending compares saved controls with the last-spawn receipt, except
 for an effort the runner explicitly cannot send.

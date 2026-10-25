@@ -539,3 +539,43 @@ test('standalone CLI settings label the saved preference without claiming a runt
   expect(screen.getAllByText('unconfirmed')).toHaveLength(3);
   expect(screen.queryByRole('button', { name: 'Save runtime' })).not.toBeInTheDocument();
 });
+
+test('runner facts refresh without resetting unsaved controls, and a failed read becomes unreported', async () => {
+  jest.useFakeTimers();
+  let failed = false;
+  let connected = true;
+  let running = true;
+  const at = '2026-10-25T05:00:00Z';
+  axios.get.mockImplementation((url) => {
+    if (url.includes('/manage-settings')) {
+      if (failed) return Promise.reject(new Error('offline'));
+      return Promise.resolve({ data: { writablePodId: 'pod-1', runtimeSourcePodId: 'pod-1',
+        runtimeManaged: true, runtimeEditable: true, runtimeControls: { runtimeType: 'wrapper', adapter: 'claude', model: 'saved' },
+        runtimeInventory: [{ harness: 'claude', installed: true, version: '2.1', models: null, efforts: [] }],
+        processConnected: connected, runtimeObservation: { connectedAt: at, lastSeenAt: at, turnRunning: running,
+          lastTurnAt: at, lastSpawn: { harness: 'claude', version: '2.1', model: 'actual', effort: null, at }, confirmed: null },
+        installations: [{ podId: 'pod-1', podName: 'Work', status: 'active' }],
+      } });
+    }
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'wrapper', adapter: 'claude' },
+    } } });
+    if (url.includes('/grants')) return Promise.resolve({ data: { grants: [] } });
+    return Promise.resolve({ data: [] });
+  });
+  const view = renderPage();
+  try {
+    const input = await screen.findByLabelText('model');
+    fireEvent.change(input, { target: { value: 'unsaved-draft' } });
+    expect(screen.getByText('process').closest('div')).toHaveTextContent('connected');
+    connected = false; running = false;
+    await act(async () => { jest.advanceTimersByTime(30_000); });
+    expect(input).toHaveValue('unsaved-draft');
+    expect(screen.getByText('process').closest('div')).toHaveTextContent('disconnected');
+    expect(screen.queryByText('running')).toBeNull();
+    failed = true;
+    await act(async () => { jest.advanceTimersByTime(30_000); });
+    expect(screen.getByText('process').closest('div')).toHaveTextContent('not reported');
+    expect(input).toHaveValue('unsaved-draft');
+  } finally { view.unmount(); jest.useRealTimers(); }
+});

@@ -120,9 +120,9 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       runtimeSavedControls,
       ownKeyCapability: runtimeManaged ? ownKeyCapability(runtime, environment) : { available: false, provider: null },
       runtimeObservation: observation ? { ...observation, confirmed: null } : null,
-      processConnected: Boolean(machine?.lastSeenAt && Date.now() - new Date(machine.lastSeenAt).getTime() < 90_000
+      processConnected: machine ? Boolean(machine.lastSeenAt && Date.now() - new Date(machine.lastSeenAt).getTime() < 90_000
         && machine.agentStates?.some((entry: any) => entry.agentName === String(req.params.name).toLowerCase()
-          && entry.instanceId === normalizeInstanceId(req.query.instanceId) && entry.state === 'running')),
+          && entry.instanceId === normalizeInstanceId(req.query.instanceId) && entry.state === 'running')) : null,
       runtimeInventory: machine?.runtimeInventory || [],
       runtimeInventoryAt: machine?.inventoryAt || null,
       machineLastSeenAt: machine?.lastSeenAt || null,
