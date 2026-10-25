@@ -68,7 +68,7 @@ export async function acquireLock(path, { onStale = async () => {}, wait = () =>
       const pid = Number((await readFile(resolve(path, 'pid'), 'utf8')).trim());
       if (Number.isInteger(pid) && pid > 0 && !alive(pid)) {
         await onStale(pid);
-        await rm(path, { recursive: true }); recovering = false;
+        await rm(path, { recursive: true });
         continue;
       }
     } catch (error) {
@@ -145,7 +145,7 @@ export async function main(args) {
       for (const key of ['postgres', 'mongo']) {
         const name = `${id}-${key}`; containers.push(name);
         const dbArgs = key === 'postgres'
-          ? ['--tmpfs', `/var/lib/postgresql/data:rw,size=${policy.serviceTmpfs}`, '--tmpfs', `/var/run/postgresql:rw,size=${policy.tempTmpfs}`, '-e', 'POSTGRES_PASSWORD=postgres', '-e', 'POSTGRES_DB=commonly-test', '--health-cmd', 'pg_isready -U postgres']
+          ? ['--tmpfs', `/var/lib/postgresql/data:rw,size=${policy.serviceTmpfs}`, '--tmpfs', `/var/run/postgresql:rw,size=${policy.tempTmpfs}`, '-e', 'POSTGRES_PASSWORD=postgres', '-e', 'POSTGRES_DB=commonly-test', '--health-cmd', 'pg_isready -h 127.0.0.1 -U postgres']
           : ['--tmpfs', `/data/db:rw,size=${policy.serviceTmpfs}`, '--tmpfs', `/data/configdb:rw,size=${policy.serviceTmpfs}`, '--ulimit', 'nofile=64000:64000', '--health-cmd', 'mongosh --quiet --eval "db.runCommand({ping:1}).ok"'];
         await checked('docker', ['run', '--rm', '--pull=never', '-d', '--name', name, '--label', 'commonly.test=1', '--label', `commonly.test.pid=${process.pid}`, '--network', id, '--network-alias', key,
           ...limits(policy, policy.serviceMemory, policy.serviceCpus), ...dbArgs, '--health-interval', '1s', '--health-timeout', '5s', '--health-retries', '60', pulled[key]], { capture: true });

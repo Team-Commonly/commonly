@@ -1,5 +1,5 @@
 import { describe, test, expect } from '@jest/globals';
-import { mkdtemp, readFile, writeFile, chmod, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, chmod, mkdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,7 +27,10 @@ if (args[0] === 'image') process.stdout.write('sha256:'+args.at(-1).split(':')[0
 if (args[0] === 'inspect') process.stdout.write('healthy');
 if (args[0] === 'rm' && process.env.FAIL_CLEANUP) process.exit(1);
 if (args[0] === 'ps') process.stdout.write('container-id');
-if (args[0] === 'run' && args.includes('bash')) process.exit(Number(process.env.SUITE_EXIT || 0));
+if (args[0] === 'run' && args.includes('bash')) {
+  if (process.env.SIGNAL_PARENT) { process.kill(process.ppid, process.env.SIGNAL_PARENT); setTimeout(() => process.exit(0), 100); }
+  else process.exit(Number(process.env.SUITE_EXIT || 0));
+}
 `);
     await chmod(path, 0o700);
   }
@@ -77,9 +80,18 @@ describe('container test runner boundaries', () => {
     await nextRelease();
   }));
   test('dead PID is the only automatic stale-lock recovery', async () => usingTemp(async (dir) => {
-    const path = resolve(dir, 'lock'); await mkdir(path); await writeFile(resolve(path, 'pid'), '2147483647');
-    const release = await acquireLock(path, { alive: () => false });
-    expect(Number(await readFile(resolve(path, 'pid'), 'utf8'))).toBe(process.pid); await release();
+    const path = resolve(dir, 'lock');
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await mkdir(path); await writeFile(resolve(path, 'pid'), '2147483647');
+      const release = await acquireLock(path, { alive: () => false, onStale: async (pid) => {
+        expect(pid).toBe(2147483647);
+        // Cleanup must finish while the old lock still excludes other runs.
+        expect(await readFile(resolve(path, 'pid'), 'utf8')).toBe(String(pid));
+        expect((await stat(`${path}.reap`)).isDirectory()).toBe(true);
+      }, wait: async () => { throw new Error('recovery mutex leaked'); } });
+      await expect(stat(`${path}.reap`)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(Number(await readFile(resolve(path, 'pid'), 'utf8'))).toBe(process.pid); await release();
+    }
   }));
   test('propagates suite exit and isolates all writes without building or host dependency mounts', async () => usingTemp(async (dir) => {
     const { result, trace } = await invoke(dir, 'cli', { SUITE_EXIT: '37' });
@@ -101,8 +113,15 @@ describe('container test runner boundaries', () => {
     expect(result.status).toBe(0);
     expect(trace.filter((args) => args[0] === 'pull').map((args) => args[1])).toEqual(['node:22', 'postgres:16', 'mongo:7']);
     expect(trace.filter((args) => args[0] === 'run')).toHaveLength(3);
+    expect(trace.find((args) => args.includes('postgres'))).toEqual(expect.arrayContaining(['pg_isready -h 127.0.0.1 -U postgres']));
     expect(trace.filter((args) => args[0] === 'run').every((args) => args.includes('--read-only') && args.includes('--memory') && args.includes('--rm') && !args.includes('-p'))).toBe(true);
     expect(trace.at(-1).slice(0, 2)).toEqual(['network', 'rm']);
+  }));
+  test.each([['SIGINT', 130], ['SIGTERM', 143]])('%s cleans the container and releases the lock', async (signal, exit) => usingTemp(async (dir) => {
+    const { result, trace } = await invoke(dir, 'cli', { SIGNAL_PARENT: signal });
+    expect(result.status).toBe(exit);
+    expect(trace.some((args) => args[0] === 'rm' && args[1] === '-f')).toBe(true);
+    await expect(stat(resolve(dir, 'lock'))).rejects.toMatchObject({ code: 'ENOENT' });
   }));
   test('failed cleanup retains the global lock', async () => usingTemp(async (dir) => {
     const { result } = await invoke(dir, 'cli', { FAIL_CLEANUP: '1' });
