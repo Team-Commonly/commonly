@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
-  DEFAULT_EXIT_TIMEOUT_S, createSeatStop, groupKillDeadlineMs, readExitTimeOut, seatPlistPath,
+  DEFAULT_EXIT_TIMEOUT_S, createSeatStop, groupKillDeadlineMs, readExitTimeOut, readSeatPlist, seatPlistPath,
 } from '../src/lib/seat-stop.js';
 
 const plist = (body) => `<?xml version="1.0" encoding="UTF-8"?>
@@ -92,10 +92,25 @@ describe('seat-stop — requestStop', () => {
     expect(kill).not.toHaveBeenCalled();
   });
 
-  test('SIGTERM on a seat with no plist uses the 20 s default', () => {
-    const { arm, seatStop } = make('daemon-seat');
-    seatStop.requestStop('SIGTERM');
+  test('SIGTERM on a seat with no plist (daemon-spawned) arms nothing: the exit path alone kills', () => {
+    const { stop, arm, seatStop } = make('daemon-seat');
+    expect(seatStop.requestStop('SIGTERM')).toBeNull();
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(arm).not.toHaveBeenCalled();
+  });
+
+  test('SIGTERM on a seat whose plist has no ExitTimeOut uses launchd\'s 20 s default', () => {
+    writePlist('anvil', '');
+    const { arm, seatStop } = make();
+    expect(seatStop.requestStop('SIGTERM')).toBe(15000);
     expect(arm).toHaveBeenCalledWith(15000);
+  });
+
+  test('a plist that exists but cannot be read still counts as present, at the default', () => {
+    expect(readSeatPlist('/p.plist', { exists: () => true, readFile: () => { throw new Error('EACCES'); } }))
+      .toEqual({ present: true, exitTimeOut: null });
+    expect(readSeatPlist(join(home, 'nope.plist'))).toEqual({ present: false, exitTimeOut: null });
+    expect(readSeatPlist(null)).toEqual({ present: false, exitTimeOut: null });
   });
 
   test('SIGINT stops the loop and arms nothing', () => {

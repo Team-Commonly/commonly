@@ -5,15 +5,21 @@
  * SIGTERM keeps the in-flight turn: the run loop stops polling and lets the
  * turn finish. A launchd seat is SIGKILLed ExitTimeOut seconds after SIGTERM,
  * and that SIGKILL cannot be caught, so a supervised group (outside the seat's
- * own group, which launchd kills) would outlive the seat. So SIGTERM also arms
- * a deadline a margin before ExitTimeOut, and the exit path kills whatever
- * groups are left when the turn ends first.
+ * own group, which launchd kills) would outlive the seat. So on a launchd
+ * seat, SIGTERM also arms a deadline a margin before ExitTimeOut, and the exit
+ * path kills whatever groups are left when the turn ends first.
  *
- * ExitTimeOut is read from the seat's plist and never written. Unset, zero or
- * unreadable, it is launchd's default of 20 s.
+ * The deadline is armed only when the seat's plist exists. A seat without one
+ * (the daemon spawns it) is stopped with SIGTERM and never SIGKILLed, so it
+ * relies on the exit path alone, and a reassignment or config change does not
+ * cut the in-flight turn.
+ *
+ * ExitTimeOut is read from the seat's plist and never written. In a plist that
+ * exists, an unset, zero or unreadable value is launchd's default of 20 s,
+ * because launchd will SIGKILL that seat.
  */
 import { spawnSync } from 'child_process';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import { armSupervisedGroupDeadline, killSupervisedGroups } from '@commonlyai/seats/process-group';
@@ -49,6 +55,15 @@ export const readExitTimeOut = (path, { readFile = readFileSync, run = spawnSync
   return match ? positive(Number(match[2])) : null;
 };
 
+/**
+ * Whether the seat's plist exists, and its ExitTimeOut (null when unset or
+ * unreadable). Only an existing plist means launchd will SIGKILL this seat.
+ */
+export const readSeatPlist = (path, { exists = existsSync, ...deps } = {}) => {
+  if (!path || !exists(path)) return { present: false, exitTimeOut: null };
+  return { present: true, exitTimeOut: readExitTimeOut(path, deps) };
+};
+
 /** Milliseconds after SIGTERM to kill the groups: ExitTimeOut less a margin of 5 s or a quarter, whichever is less. */
 export const groupKillDeadlineMs = (exitTimeOutS) => {
   const totalMs = (positive(exitTimeOutS) ?? DEFAULT_EXIT_TIMEOUT_S) * 1000;
@@ -56,20 +71,23 @@ export const groupKillDeadlineMs = (exitTimeOutS) => {
 };
 
 /**
- * `requestStop(signal)` stops the run loop and, on SIGTERM, arms the group
- * deadline; `onExit` kills the groups left at exit. `deps` is a test seam.
+ * `requestStop(signal)` stops the run loop and, on SIGTERM to a seat with a
+ * plist, arms the group deadline; `onExit` kills the groups left at exit.
+ * `deps` is a test seam.
  */
 export const createSeatStop = ({ name, stop, home, deps = {} } = {}) => {
   const {
     arm = armSupervisedGroupDeadline,
     kill = killSupervisedGroups,
-    readTimeout = readExitTimeOut,
+    readPlist = readSeatPlist,
   } = deps;
   return {
     requestStop(signal) {
       stop();
       if (signal !== 'SIGTERM') return null;
-      const deadlineMs = groupKillDeadlineMs(readTimeout(seatPlistPath(name, home)));
+      const plist = readPlist(seatPlistPath(name, home));
+      if (!plist.present) return null;
+      const deadlineMs = groupKillDeadlineMs(plist.exitTimeOut);
       arm(deadlineMs);
       return deadlineMs;
     },
