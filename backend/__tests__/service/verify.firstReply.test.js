@@ -10,6 +10,7 @@ const { setupMongoDb, closeMongoDb, setupPgDb, closePgDb, waitFor } = require('.
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const AgentRun = require('../../models/AgentRun');
+const AgentEvent = require('../../models/AgentEvent');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 
 // Keep cold TypeScript compilation outside the asynchronous database hook.
@@ -158,7 +159,8 @@ tier1('commonly verify first-agent-reply — production HTTP routes', () => {
     const sendDeadline = Date.now() + LIMIT_MS;
     let sent = false;
     while (!sent && Date.now() < sendDeadline) {
-      await request(app).get(`/api/agents/runtime/pods/${person.podId}/messages`).set(auth(token)).expect(200);
+      const read = await request(app).get(`/api/agents/runtime/pods/${person.podId}/messages`).set(auth(token)).expect(200);
+      expect(messages(read).some((row) => String(row.content).includes(marker))).toBe(true);
       const posted = await request(app).post(`/api/agents/runtime/pods/${person.podId}/messages`)
         .set(auth(token)).send({ content: fallback });
       if (posted.status === 409 && posted.body.code === 'unseen_messages') {
@@ -173,6 +175,7 @@ tier1('commonly verify first-agent-reply — production HTTP routes', () => {
     await awaitReply(person, fallback, agent._id);
     await request(app).post(`/api/agents/runtime/events/${event.id || event._id}/ack`)
       .set(auth(token)).send({ deliveryId: event.deliveryId, result: { outcome: 'replied' } }).expect(200);
+    expect(await AgentEvent.findById(event.id || event._id).lean()).toMatchObject({ status: 'acked' });
     // Exercise sentinel suppression via the real HTTP writer as well. It must
     // never create a user-visible row, including when a real BYO emits silence.
     await request(app).post(`/api/agents/runtime/pods/${person.podId}/messages`)
