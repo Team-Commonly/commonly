@@ -16,7 +16,6 @@
 .v2-teammate .v2-teammate__manual { border-color: var(--v2-text-primary); }
 .v2-teammate__error { font: 400 11px/16px var(--v2-font-mono); color: var(--v2-danger-text); margin: 0; }
 .v2-teammate__live { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.v2-root .v2-teammate button:focus-visible, .v2-root .v2-teammate input:focus-visible { outline: 2px solid var(--v2-text-primary); outline-offset: 2px; }
 @media (max-width: 760px) {
   .v2-teammate { grid-template-columns: minmax(0, 1fr); padding: 12px; }
   .v2-teammate__acts { grid-column: 1; grid-row: auto; margin-top: 4px; }

@@ -85,3 +85,22 @@ test('analytics excludes staff inviters and admits an explicit unobserved cohort
   await request(app).get('/api/admin/analytics/invites').set('x-user', alice.id).expect(403);
   await request(app).get('/api/admin/analytics/invites').expect(401);
 });
+
+test('bot redemption does not count as a new outside teammate', async () => {
+  const bot = await User.create({ username: 'bot-cohort', email: 'bot@outside-company.org', password: 'test-password-123', isBot: true });
+  const response = await mint({ source: 'scout-first-session' });
+  await redeem(response.body.token, bot).expect(200);
+  expect((await PodInvite.findOne({ token: response.body.token })).firstTeammateJoinedAt).toBeUndefined();
+  const report = await stats().expect(200);
+  expect(report.body.sources['scout-first-session']).toEqual({ created: 1, used: 0 });
+});
+test('invites outside the creation window contribute to neither cohorts nor sources', async () => {
+  await PodInvite.create({ token: 'f'.repeat(32), podId: pod.id, createdBy: alice.id,
+    source: 'pod-menu', createdAt: new Date(Date.now() - 31 * 86400000),
+    inviterFirstSessionAt: new Date('2026-09-01T12:00:00Z'), firstTeammateJoinedAt: new Date(),
+  });
+  await mint({ source: 'solo-pod' }).expect(201);
+  const report = await stats().expect(200);
+  expect(report.body.sources).toEqual({ 'solo-pod': { created: 1, used: 0 } });
+  expect(report.body.cohorts).toEqual([{ firstSessionDay: '2026-10-20', created: 1, used: 0, inviters: 1, convertedInviters: 0 }]);
+});

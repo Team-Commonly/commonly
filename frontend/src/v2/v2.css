@@ -2474,6 +2474,14 @@ body.modern-ui.v2-canvas {
   font-weight: 700;
 }
 
+.v2-chat__new-pod-action--invite > .v2-chat__new-pod-copy {
+  min-height: 32px;
+  margin-top: auto;
+}
+@media (max-width: 760px) {
+  .v2-chat__new-pod-action--invite > .v2-chat__new-pod-copy { min-height: 44px; }
+}
+
 .v2-root button.v2-chat__new-pod-copy:hover {
   background: var(--v2-surface-hover);
 }

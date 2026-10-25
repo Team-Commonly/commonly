@@ -385,6 +385,8 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
           ? item.replies
           : item.replies.slice(item.replies.length - MAX_EXPANDED_REPLIES);
         const hiddenReplies = item.replies.length - shownReplies.length;
+        const hiddenHasAfter = hiddenReplies > 0
+          && item.replies.slice(0, hiddenReplies).some((reply) => String(reply.id) === afterMessage?.messageId);
         const following = state ? state.following : null;
         const followLabel = following === true ? t('podChat.thread.following') : following === false ? t('podChat.thread.muted') : t('podChat.thread.follow');
         return (
@@ -407,6 +409,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                     {t('podChat.thread.moreReplies', { count: hiddenReplies })}
                   </button>
                 )}
+                {hiddenHasAfter && afterMessage?.content}
                 {renderedReplyEntries(shownReplies).map(({ sourceId, message: reply, ruling }, replyIndex, renderedReplies) => (
                   <React.Fragment key={reply.id}>
                   <V2MessageRow

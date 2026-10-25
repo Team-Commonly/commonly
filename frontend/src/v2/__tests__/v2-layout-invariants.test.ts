@@ -4985,3 +4985,11 @@ test('teammate invite cards keep one-column phone controls at the 44px minimum',
   expect(css).toContain('.v2-teammate .v2-teammate__copy {');
   expect(css).toContain('max-width: 100%');
 });
+
+test('standalone teammate invite button keeps desktop and phone touch targets', () => {
+  const css = read('../v2.css');
+  const standalone = ruleBody(css, '.v2-chat__new-pod-action--invite > .v2-chat__new-pod-copy');
+  expect(standalone).toContain('min-height: 32px');
+  expect(standalone).toContain('margin-top: auto');
+  expect(css).toMatch(/@media \(max-width: 760px\) \{\s*\.v2-chat__new-pod-action--invite > \.v2-chat__new-pod-copy \{ min-height: 44px;/);
+});
