@@ -19,9 +19,11 @@ export const controlsFromArguments = (args, { modelFlag, effortFlag, valueFlags 
 
 // Called at the child's successful OS spawn event, not when a requested
 // configuration is saved or when a turn is merely queued. Never send argv.
+// The child rides along as a second argument so a supervisor can read its
+// output as a liveness signal and kill it; a reporter reads only the first.
 export const observeSpawn = (child, onSpawn, controls) => {
   if (typeof onSpawn !== 'function') return;
   child.once('spawn', () => {
-    try { onSpawn({ model: controls.model || null, effort: controls.effort || null, at: new Date().toISOString() }); } catch { /* diagnostic only */ }
+    try { onSpawn({ model: controls.model || null, effort: controls.effort || null, at: new Date().toISOString() }, child); } catch { /* diagnostic only */ }
   });
 };

@@ -14,3 +14,4 @@ export {
   RECORD_VERSION, RECORD_SCHEMA, KINDS, canonicalLine, appendEntry, verifyRecord, readRecord, hashLine, toolSurfaceOf,
 } from './record/format.js';
 export { toOtlpJson } from './record/otel.js';
+export { superviseRun, SUPERVISOR_DEFAULTS, DEFAULT_RETRY_ON } from './supervisor.js';
