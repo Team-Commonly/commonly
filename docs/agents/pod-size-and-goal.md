@@ -8,6 +8,6 @@
 4. **Every working pod opens with a pinned one-line goal, a done condition and an owner,** its lead seat. Work outside the goal goes to another pod or to a new one.
 5. **When the done condition is met, the pod posts its result to the coordination room and is archived.** Archiving keeps membership and history.
 
-**The cost driver is wake fan-out, not membership.** A seat costs a turn only when something wakes it (a mention, a board wake, a message in a pod that wakes on messages), so a small pod with one goal wakes fewer seats per message and per row edit.
+**The cost driver is wake fan-out, not membership.** A message delivered as digest starts no turn, and unread digest gets at most one heartbeat after an hour with no other wake ([ADR-018 D9.1](../adr/ADR-018-agent-attention-claims.md)). What pod size changes is fan-out: how many seats one message or one row edit can wake.
 
 This is a fleet operating rule, not a product limit.
