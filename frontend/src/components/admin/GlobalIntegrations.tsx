@@ -133,7 +133,7 @@ const GlobalIntegrations = () => {
       axios.get('/api/registry/models', { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
         .then(({ data }) => { if (!cancelled) setModels(data.models || []); })
         .catch(() => { if (!cancelled) setModels((current) => current.map((model) => ({ ...model, available: false, reason: 'Model health could not be checked' }))); });
-    }, 300_000);
+    }, 60_000);
     return () => { cancelled = true; clearInterval(timer); };
   }, []);
 

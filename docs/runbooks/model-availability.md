@@ -29,7 +29,8 @@ Consumers:
   missing/unhealthy model remains visible. No replacement is selected when a
   provider changes. Periodic catalogue refresh does not overwrite policy edits.
 - Authenticated `GET /api/registry/models` supplies the same snapshot to hosted
-  model override choices and refreshes them every five minutes.
+  model override choices. Consumers poll every minute; the server cache limits
+  upstream health checks to once per five minutes.
 - `GET /api/registry/presets` includes the same catalogue and each hosted
   recommendation's status. BYO recommendations are explicitly scoped to BYO;
   gateway failures never mark them unavailable.

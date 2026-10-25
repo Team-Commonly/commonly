@@ -1433,9 +1433,13 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     let cancelled = false;
     const refresh = () => axios.get('/api/registry/models', { headers: getAuthHeaders() })
       .then(({ data }) => { if (!cancelled) setInstanceModels(data.models || []); })
-      .catch(() => { if (!cancelled) setInstanceModels([]); });
+      .catch(() => {
+        if (!cancelled) setInstanceModels((current) => current.map((model) => ({
+          ...model, available: false, reason: 'Model health could not be checked',
+        })));
+      });
     void refresh();
-    const timer = setInterval(refresh, 300_000);
+    const timer = setInterval(refresh, 60_000);
     return () => { cancelled = true; clearInterval(timer); };
   }, []);
   const configRuntime = (configAgent as any)?.config?.runtime || (configAgent as any)?.runtime || {};
