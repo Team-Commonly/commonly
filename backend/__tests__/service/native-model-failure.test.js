@@ -4,7 +4,8 @@ const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 jest.mock('../../models/pg/Message', () => ({ findByPodId: jest.fn().mockResolvedValue([]) }));
 jest.mock('../../services/agentTypingService', () => ({ emitAgentTypingStart: jest.fn(), emitAgentTypingStop: jest.fn() }));
 const mockEmit = jest.fn();
-jest.mock('../../config/socket', () => ({ getIO: () => ({ to: () => ({ emit: mockEmit }) }) }));
+const mockTo = jest.fn(() => ({ emit: mockEmit }));
+jest.mock('../../config/socket', () => ({ getIO: () => ({ to: mockTo }) }));
 jest.mock('../../services/installable/eventHandlers', () => ({ dispatch: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../../services/starterTaskService', () => ({ completeFirstTaskOnAnswer: jest.fn() }));
 jest.mock('../../services/agentComputerBroker', () => ({ agentComputerBroker: {}, agentComputerEnabled: false }));
@@ -68,6 +69,7 @@ beforeEach(async () => {
   requests = [];
   jest.spyOn(AgentMessageService, 'postMessage');
   mockEmit.mockClear();
+  mockTo.mockClear();
 });
 afterEach(() => { process.env = previousEnv; });
 
@@ -99,6 +101,7 @@ test.each(['hosted', 'native'])('a %s 503 persists failure and posts model/reaso
   expect(message.metadata.runFailed).toBe(true);
   const delivered = await Message.findOne({ podId: pod._id, userId: seat._id }).lean();
   expect(delivered.content).toBe(message.content);
+  expect(mockTo).toHaveBeenCalledWith(`pod_${pod._id}`);
   expect(mockEmit).toHaveBeenCalledWith('newMessage', expect.objectContaining({
     podId: String(pod._id), content: delivered.content,
   }));
