@@ -16,6 +16,7 @@ import {
   attenuateGrant,
   createGrant,
   effectiveAudience,
+  normalizeTaskBinding,
   revokeGrant,
   RoomGrantError,
 } from '../services/roomGrantService';
@@ -82,7 +83,7 @@ interface AuthenticatedRequest extends express.Request {
  * broker's business; the raw `audience` snapshot still names agents who have
  * left, so only the effective audience goes out.
  */
-type GrantRow = Pick<IRoomGrant, 'grantId' | 'installationId' | 'target' | 'tools' | 'writeMode' | 'budget'
+type GrantRow = Pick<IRoomGrant, 'binding' | 'revocationReason' | 'grantId' | 'installationId' | 'target' | 'tools' | 'writeMode' | 'budget'
   | 'expiresAt' | 'revokedAt' | 'revokedBy' | 'parentGrantId' | 'rootGrantId' | 'createdAt'> & { audience?: string[]; connectionId?: string };
 
 const projectGrant = (
@@ -99,6 +100,8 @@ const projectGrant = (
   budget: grant.budget ? { calls: grant.budget.calls, windowMs: grant.budget.windowMs } : null,
   effectiveAudience: effectiveAudience(grant, currentMembers),
   expiresAt: grant.expiresAt,
+  ...(grant.binding ? { binding: grant.binding } : {}),
+  ...(grant.revocationReason ? { revocationReason: grant.revocationReason } : {}),
   revokedAt: grant.revokedAt ?? null,
   revokedBy: grant.revokedBy ?? null,
   parentGrantId: grant.parentGrantId ?? null,
@@ -405,7 +408,12 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       });
     }
 
+    const binding = normalizeTaskBinding(body.binding);
+    if (binding && target.kind === 'seat') {
+      await ensureTargetAccess({ kind: 'pod', id: binding.podId }, userId);
+    }
     const grantInput: RoomGrantCreateInput = {
+      binding,
       connectionId,
       installationId,
       target,
@@ -454,8 +462,13 @@ router.post(
       });
     }
     const body = (req.body || {}) as Record<string, unknown>;
+    const binding = body.binding === null ? null : normalizeTaskBinding(body.binding);
+    if (binding && parent.target.kind === 'seat') {
+      await ensureTargetAccess({ kind: 'pod', id: binding.podId }, agentId);
+    }
     const child = await attenuateGrant({
       parentGrantId: parent.grantId,
+      binding,
       tools: body.tools as string[] | undefined,
       writeMode: body.writeMode as any,
       budget: body.budget as any,

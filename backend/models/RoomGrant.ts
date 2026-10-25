@@ -21,7 +21,12 @@ export interface IRoomGrantTarget {
   id: string;
 }
 
+export interface RoomGrantTaskBinding { taskId: string; podId: string }
+
 export interface IRoomGrant extends Document {
+  binding?: RoomGrantTaskBinding;
+  taskEpoch?: number;
+  revocationReason?: string;
   grantId: string;
   connectionId: string;
   installationId: string;
@@ -82,6 +87,12 @@ const RoomGrantSchema = new Schema<IRoomGrant>(
     // `grantId` is the public, opaque identifier used by the MCP endpoint;
     // Mongo's _id remains an implementation detail.
     grantId: { type: String, required: true, unique: true, trim: true },
+    binding: {
+      type: new Schema({ taskId: { type: String, required: true }, podId: { type: String, required: true } }, { _id: false }),
+      default: undefined,
+    },
+    taskEpoch: { type: Number, min: 0 },
+    revocationReason: { type: String },
     connectionId: { type: String, required: true, trim: true },
     installationId: { type: String, required: true, trim: true },
     target: { type: GrantTargetSchema, required: true },
@@ -108,6 +119,7 @@ const RoomGrantSchema = new Schema<IRoomGrant>(
 );
 
 RoomGrantSchema.index({ target: 1, revokedAt: 1, expiresAt: 1 });
+RoomGrantSchema.index({ 'binding.podId': 1, 'binding.taskId': 1, taskEpoch: 1, revokedAt: 1 });
 RoomGrantSchema.index({ parentGrantId: 1 });
 RoomGrantSchema.index({ rootGrantId: 1 });
 RoomGrantSchema.index({ connectionId: 1, installationId: 1 });

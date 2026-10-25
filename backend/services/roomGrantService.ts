@@ -1,13 +1,18 @@
 import { randomUUID } from 'crypto';
+import { Types } from 'mongoose';
+import Task from '../models/Task';
+import Pod from '../models/Pod';
 import RoomGrant, {
   IRoomGrant,
   IRoomGrantBudget,
   RoomGrantTargetKind,
+  RoomGrantTaskBinding,
   RoomGrantWriteMode,
 } from '../models/RoomGrant';
 
 export interface RoomGrantCreateInput {
   grantId?: string;
+  binding?: RoomGrantTaskBinding;
   connectionId: string;
   installationId: string;
   target: { kind: RoomGrantTargetKind; id: string };
@@ -25,6 +30,7 @@ export interface RoomGrantCreateInput {
 }
 
 export interface RoomGrantAttenuationInput {
+  binding?: RoomGrantTaskBinding | null;
   parentGrantId: string;
   tools?: string[];
   writeMode?: RoomGrantWriteMode;
@@ -230,8 +236,17 @@ const assertGrantLineageActive = async (
 };
 
 const markMintedGrantRejected = async (grantId: string, error: RoomGrantError): Promise<never> => {
-  await RoomGrant.updateOne({ grantId }, { $set: { revokedAt: new Date() } });
+  await RoomGrant.updateOne({ grantId }, { $set: { revokedAt: new Date(),
+    ...(error.code === 'task_closed' ? { revocationReason: 'task.closed' } : {}),
+  } });
   throw error;
+};
+
+export const onTaskClosed = async (task: {
+  podId?: unknown; taskId?: string; status?: string; grantEpoch?: number;
+}): Promise<void> => {
+  if (task.status !== 'done' || !task.podId || !task.taskId) return;
+  await revokeTaskGrants({ podId: String(task.podId), taskId: task.taskId, closedEpoch: task.grantEpoch || 1 });
 };
 
 export const effectiveAudience = (
@@ -242,6 +257,81 @@ export const effectiveAudience = (
   return Array.from(new Set((grant.audience || []).map(String))).filter((id) => current.has(id));
 };
 
+/** Task IDs are pod-local: always resolve the complete board tuple. */
+export const normalizeTaskBinding = (value: unknown): RoomGrantTaskBinding | undefined => {
+  if (value === undefined) return undefined;
+  const binding = value as Partial<RoomGrantTaskBinding> | null;
+  if (!binding || typeof binding.taskId !== 'string' || !binding.taskId.trim()
+    || typeof binding.podId !== 'string' || !Types.ObjectId.isValid(binding.podId)) {
+    throw new RoomGrantError('invalid_task_binding', 'binding requires taskId and podId');
+  }
+  return { taskId: binding.taskId.trim(), podId: new Types.ObjectId(binding.podId).toHexString() };
+};
+
+const loadOpenBoundTask = async (binding: RoomGrantTaskBinding) => {
+  const task = await Task.findOne({ taskId: binding.taskId, podId: binding.podId })
+    .select('status grantEpoch claimedBy claimedByUserId claimedAt claimExpiresAt').lean();
+  if (!task) throw new RoomGrantError('task_not_found', 'bound task not found', 404);
+  if (task.status === 'done') throw new RoomGrantError('task_closed', 'bound task is closed', 403);
+  return task;
+};
+
+const assertTaskBindingTarget = async (binding: RoomGrantTaskBinding, target: RoomGrantCreateInput['target']) => {
+  if (target.kind === 'pod') {
+    if (String(target.id) !== binding.podId) {
+      throw new RoomGrantError('invalid_task_binding', 'bound task must be in the target pod');
+    }
+  } else {
+    const pod = await Pod.findById(binding.podId).select('members').lean();
+    if (!pod || !(pod.members || []).some((id) => String(id) === String(target.id))) {
+      throw new RoomGrantError('invalid_task_binding', 'target seat must belong to the bound task pod');
+    }
+  }
+};
+
+const assertBoundTaskOpen = async (grant: IRoomGrant | Record<string, unknown>) => {
+  const binding = normalizeTaskBinding(readGrantValue(grant, 'binding'));
+  if (!binding) return;
+  const task = await loadOpenBoundTask(binding);
+  if ((task.grantEpoch || 0) !== readGrantValue<number>(grant, 'taskEpoch')) {
+    throw new RoomGrantError('task_closed', 'bound task has closed since this grant was issued', 403);
+  }
+};
+
+/** A selector is not authority: the authenticated caller must hold the board's live lease. */
+const assertTaskContext = async (grant: IRoomGrant | Record<string, unknown>, options: GrantUsabilityOptions) => {
+  const binding = normalizeTaskBinding(readGrantValue(grant, 'binding'));
+  if (!binding) return;
+  const task = await loadOpenBoundTask(binding);
+  const expiresAt = task.claimExpiresAt;
+  if (task.status !== 'claimed' || !expiresAt || new Date(expiresAt).getTime() <= Date.now()) {
+    throw new RoomGrantError('task_claim_required', 'bound task requires a live claim', 403);
+  }
+  // Older runtime-token claims already stored the User ID. Name-only legacy
+  // claims need a fresh claim: instance names are not globally unique identities.
+  const claimant = task.claimedByUserId === undefined
+    ? (Types.ObjectId.isValid(String(task.claimedBy || '')) ? task.claimedBy : null)
+    : task.claimedByUserId;
+  if (!claimant || claimant !== options.agentUserId) {
+    throw new RoomGrantError('task_claim_required', 'claim the bound task as this agent before using its grant', 403);
+  }
+  const pod = await Pod.findById(binding.podId).select('members').lean();
+  if (!pod || !(pod.members || []).some((id) => String(id) === options.agentUserId)) {
+    throw new RoomGrantError('not_in_audience', 'agent is no longer in the bound task pod', 403);
+  }
+};
+
+/** Hook successful close transitions. An old close never revokes new grants issued after reopen. */
+export const revokeTaskGrants = async ({ taskId, podId, closedEpoch }: RoomGrantTaskBinding & {
+  closedEpoch: number;
+}): Promise<number> => {
+  const result = await RoomGrant.updateMany({
+    'binding.taskId': taskId, 'binding.podId': podId,
+    taskEpoch: { $lt: closedEpoch }, revokedAt: null,
+  }, { $set: { revokedAt: new Date(), revocationReason: 'task.closed' } });
+  return result.modifiedCount;
+};
+
 export const mintGrant = async (input: RoomGrantCreateInput): Promise<IRoomGrant> => {
   if (input.expiresAt === undefined || input.expiresAt === null || input.expiresAt === '') {
     throw new RoomGrantError('missing_expiry', 'expiresAt is required');
@@ -249,10 +339,13 @@ export const mintGrant = async (input: RoomGrantCreateInput): Promise<IRoomGrant
   const grantId = input.grantId ? asId(input.grantId, 'grantId') : `grant_${randomUUID()}`;
   const parentGrantId = input.parentGrantId ? asId(input.parentGrantId, 'parentGrantId') : undefined;
   let rootGrantId = grantId;
+  let inheritedBinding: RoomGrantTaskBinding | undefined;
   if (parentGrantId) {
     const parent = await RoomGrant.findOne({ grantId: parentGrantId });
     if (!parent) throw new RoomGrantError('grant_not_found', 'parent grant not found', 404);
     const lineage = await assertGrantLineageActive(parent);
+    await assertBoundTaskOpen(parent);
+    inheritedBinding = normalizeTaskBinding(parent.binding);
     const root = lineage[lineage.length - 1];
     rootGrantId = String(readGrantValue<string>(root, 'rootGrantId') || readGrantValue<string>(root, 'grantId'));
   }
@@ -261,8 +354,17 @@ export const mintGrant = async (input: RoomGrantCreateInput): Promise<IRoomGrant
     throw new RoomGrantError('invalid_expiry', 'expiresAt must be in the future');
   }
   const budget = normalizeBudget(input.budget);
+  const suppliedBinding = normalizeTaskBinding(input.binding);
+  if (inheritedBinding && suppliedBinding && JSON.stringify(suppliedBinding) !== JSON.stringify(inheritedBinding)) {
+    throw new RoomGrantError('grant_not_attenuated', 'a child cannot change its task binding');
+  }
+  const binding = suppliedBinding || inheritedBinding;
+  if (binding) await assertTaskBindingTarget(binding, input.target);
+  const taskEpoch = binding ? (await loadOpenBoundTask(binding)).grantEpoch || 0 : undefined;
   const grant = await RoomGrant.create({
     grantId,
+    binding,
+    taskEpoch,
     connectionId: asId(input.connectionId, 'connectionId'),
     installationId: asId(input.installationId, 'installationId'),
     target: {
@@ -316,7 +418,15 @@ export const mintGrant = async (input: RoomGrantCreateInput): Promise<IRoomGrant
     }
     try {
       await assertGrantLineageActive(persistedParent);
+      await assertBoundTaskOpen(persistedParent);
     } catch (error) {
+      if (error instanceof RoomGrantError) return markMintedGrantRejected(grantId, error);
+      throw error;
+    }
+  }
+  // Close can commit between the first task read and the grant insertion.
+  if (binding) {
+    try { await assertBoundTaskOpen(grant); } catch (error) {
       if (error instanceof RoomGrantError) return markMintedGrantRejected(grantId, error);
       throw error;
     }
@@ -334,6 +444,13 @@ export const attenuateGrant = async (input: RoomGrantAttenuationInput): Promise<
   const parent = await RoomGrant.findOne({ grantId: parentGrantId });
   if (!parent) throw new RoomGrantError('grant_not_found', 'parent grant not found', 404);
   await assertGrantLineageActive(parent);
+  await assertBoundTaskOpen(parent);
+  const parentBinding = normalizeTaskBinding(parent.binding);
+  const binding = input.binding === undefined ? parentBinding
+    : input.binding === null ? undefined : normalizeTaskBinding(input.binding);
+  if (parentBinding && JSON.stringify(binding) !== JSON.stringify(parentBinding)) {
+    throw new RoomGrantError('grant_not_attenuated', 'a child cannot remove or change its task binding');
+  }
   const parentExpiry = asDate(parent.expiresAt, 'expiresAt');
 
   const tools = input.tools === undefined ? [...parent.tools] : uniqueStrings(input.tools, 'tools');
@@ -380,6 +497,7 @@ export const attenuateGrant = async (input: RoomGrantAttenuationInput): Promise<
   }
 
   return mintGrant({
+    binding,
     connectionId: parent.connectionId,
     installationId: parent.installationId,
     target: { kind: parent.target.kind, id: parent.target.id },
@@ -439,7 +557,8 @@ export const assertGrantUsable = async (
   if (!grant) throw new RoomGrantError('grant_not_found', 'grant not found', 404);
   if (grantIsRevoked(grant)) throw new RoomGrantError('grant_revoked', 'grant is revoked', 403);
   if (grantIsExpired(grant)) throw new RoomGrantError('grant_expired', 'grant is expired', 403);
-  await assertGrantLineageActive(grant);
+  const lineage = await assertGrantLineageActive(grant);
+  for (const item of lineage) await assertBoundTaskOpen(item);
 
   if (!options.agentUserId) {
     throw new RoomGrantError('agent_identity_required', 'agent identity is required for grant use', 403);
@@ -452,6 +571,7 @@ export const assertGrantUsable = async (
     throw new RoomGrantError('not_in_audience', 'agent is not in the grant audience', 403);
   }
 
+  for (const item of lineage) await assertTaskContext(item, options);
   assertGrantToolAllowed(grant, options);
   return grant;
 };
@@ -519,6 +639,8 @@ export default {
   attenuateGrant,
   revokeGrant,
   revokeConnectionGrants,
+  revokeTaskGrants,
+  onTaskClosed,
   assertGrantUsable,
   getGrantLineage,
   effectiveAudience,
