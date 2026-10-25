@@ -3,12 +3,11 @@ import { createServer } from 'http';
 import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { fileURLToPath } from 'url';
 import { detectBwrap, wrapArgvWithBwrap } from '../src/lib/sandbox/bwrap.js';
 import { startProviderProxy } from '../src/lib/provider-proxy.js';
 import { startInstanceProxy } from '../src/lib/instance-proxy.js';
+import { LOOPBACK_BRIDGE } from '@commonlyai/seats/sandbox/loopback';
 
-const LOOPBACK_BRIDGE = fileURLToPath(new URL('../src/lib/sandbox/opencode-loopback.mjs', import.meta.url));
 const PORT = 8765;
 const INSTANCE_PORT = 8766;
 const run = (cmd, args) => new Promise((resolve, reject) => {

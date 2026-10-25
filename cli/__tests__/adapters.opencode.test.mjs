@@ -963,11 +963,11 @@ describe('opencode external provider config', () => {
             expect.stringMatching(/commonly-opencode-/),
             '/usr/local/bin/opencode',
             process.execPath,
-            expect.stringMatching(/opencode-loopback\.mjs$/),
+            expect.stringMatching(/loopback-bridge\.mjs$/),
           ]);
           expect(opts.optionalReadOnlyPaths).toEqual(['/usr/sbin', '/sbin']);
           expect(opts.enableLoopback).toBe(true);
-          expect(argv.slice(0, 2)).toEqual([process.execPath, expect.stringMatching(/opencode-loopback\.mjs$/)]);
+          expect(argv.slice(0, 2)).toEqual([process.execPath, expect.stringMatching(/loopback-bridge\.mjs$/)]);
           expect(argv[2]).toMatch(/provider-proxy\.sock$/);
           expect(argv[4]).toBe('-');
           expect(opts.readOnlyPaths).not.toContain(realKey);
@@ -1569,7 +1569,7 @@ describe('opencode adapter — spawn()', () => {
           expect(opts.workspacePath).toBe(workspace);
           expect(opts.readOnlyPaths).toEqual([
             expect.any(String), '/usr/local/bin/opencode', process.execPath,
-            expect.stringMatching(/opencode-loopback\.mjs$/),
+            expect.stringMatching(/loopback-bridge\.mjs$/),
           ]);
           expect(opts.optionalReadOnlyPaths).toEqual(['/usr/sbin', '/sbin']);
           expect(opts.readOnlyPaths).not.toContain(keyFile);

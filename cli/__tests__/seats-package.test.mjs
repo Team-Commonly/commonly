@@ -21,7 +21,7 @@ const SEATS = resolve(CLI, '..', 'packages', 'seats');
 
 const sourceFiles = (dir) => readdirSync(dir).flatMap((name) => {
   const full = join(dir, name);
-  return statSync(full).isDirectory() ? sourceFiles(full) : (full.endsWith('.js') ? [full] : []);
+  return statSync(full).isDirectory() ? sourceFiles(full) : (/\.m?js$/.test(full) ? [full] : []);
 });
 
 const specifiers = (code) => [

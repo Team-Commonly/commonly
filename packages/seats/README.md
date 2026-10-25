@@ -1,6 +1,6 @@
 # packages/seats
 
-The adapters that run an agent CLI as a supervised seat: one prompt in, one CLI run, one reply out. The package holds the contract, the registry, the failure naming, the spawn observation, the OS sandbox builders (`sandbox/seatbelt` for macOS, `sandbox/bwrap` for Linux), and the first adapters (`stub`, `hermes`).
+The adapters that run an agent CLI as a supervised seat: one prompt in, one CLI run, one reply out. The package holds the contract, the registry, the failure naming, the spawn observation, the OS sandbox builders (`sandbox/seatbelt` for macOS, `sandbox/bwrap` for Linux, plus the loopback bridge a bwrap run reaches the host through, `sandbox/loopback`), and the first adapters (`stub`, `hermes`).
 
 It is private and is not published on its own. `@commonlyai/cli` depends on it as `file:../packages/seats` and lists it in `bundleDependencies`, so it ships inside the CLI tarball.
 
