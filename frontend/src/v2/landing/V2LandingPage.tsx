@@ -319,6 +319,18 @@ const V2LandingPage: React.FC = () => {
     setMotion(true);
   }, []);
 
+  // A fresh load of `/#pricing` (the /pricing redirect) makes the browser try
+  // the fragment scroll before React has rendered the sections, so it finds
+  // nothing and the page stays at the hero. Scroll once after mount. The
+  // scroller's scroll-padding-top keeps the target clear of the sticky bar.
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (!id) return;
+    // Instant: the landing scroller is smooth, and an animated jump ends short
+    // of the target on a 390 viewport, which parks the label under the bar.
+    document.getElementById(id)?.scrollIntoView({ behavior: 'instant' });
+  }, []);
+
   // `stats` is a dependency on purpose: when /api/stats/public resolves, the
   // conditionally-rendered stats block shifts <main>'s child list and React
   // remounts every section AFTER it (index-based reconciliation) — fresh DOM

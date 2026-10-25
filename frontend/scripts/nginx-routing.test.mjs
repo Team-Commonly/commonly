@@ -23,6 +23,13 @@ test('unknown public routes are real 404s while documented app routes retain SPA
   assert.match(notFoundPage, /href="\/guides\/"/);
 });
 
+test('/pricing and /pricing/ redirect to the pricing section', async () => {
+  const config = await readFile(resolve(frontendDir, 'nginx.conf'), 'utf8');
+
+  assert.match(config, /location = \/pricing \{\s*return 301 \/#pricing;\s*\}/s);
+  assert.match(config, /location = \/pricing\/ \{\s*return 301 \/#pricing;\s*\}/s);
+});
+
 test('HTML and inherited NGINX locations enforce the same image source policy', async () => {
   const config = await readFile(resolve(frontendDir, 'nginx.conf'), 'utf8');
   assert.match(config, /map \$host \$upload_image_origins \{/);
