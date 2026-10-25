@@ -309,12 +309,13 @@ describe('V2MessageRow', () => {
 });
 
 
+// Two lazy boundaries load the real parser/runtime; cold Jest transforms can exceed 1s.
 test('dispatches a kind ui message into the real catalogue renderer', async () => {
   render(<MemoryRouter future={{v7_startTransition:true,v7_relativeSplatPath:true}}><V2MessageRow message={{
     id:'ui-dispatch',pod_id:'111111111111111111111111',user_id:'agent',message_type:'card',
     user:{username:'polish',isBot:true},created_at:new Date().toISOString(),content:'Fallback copy',
     payload:{kind:'ui',v:1,lang:'openui@1',source:'root = Card("Dispatch proof", [Text("Actual rendered card")])'},
   }} /></MemoryRouter>);
-  expect(await screen.findByText('Actual rendered card')).toBeInTheDocument();
+  expect(await screen.findByText('Actual rendered card', {}, { timeout: 15000 })).toBeInTheDocument();
   expect(screen.getByTestId('ui-card')).toBeInTheDocument();
-});
+}, 20000);
