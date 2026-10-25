@@ -8,9 +8,8 @@ const express = require('express');
 // eslint-disable-next-line global-require
 const mongoose = require('mongoose');
 // eslint-disable-next-line global-require
-const regularAuth = require('../middleware/auth');
-// eslint-disable-next-line global-require
-const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
+const auth = require('../middleware/dualAuth');
+const { resolveDualAuthCredential } = auth;
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
@@ -21,6 +20,10 @@ const User = require('../models/User');
 const AgentSendFreshness = require('../services/agentSendFreshness');
 // eslint-disable-next-line global-require
 const { emitTaskUpdated, notifyPodAgents } = require('../services/taskEventService');
+// eslint-disable-next-line global-require
+const { emitSystemActionLine } = require('../services/systemActionLineService');
+// eslint-disable-next-line global-require
+const { resolveAgentDisplayLabel } = require('../services/agentIdentityService');
 // eslint-disable-next-line global-require
 const { recordTaskAttention, resolveTaskAttention } = require('../services/attentionItemService');
 // eslint-disable-next-line global-require
@@ -78,11 +81,11 @@ interface AuthReq {
   // `username` is here because the sweep can write it into `lapsedFrom`
   // (provenance falls back through holder.label = assignee || username ||
   // claimedBy), so the restore path must be able to match on it.
-  user?: { id?: string; _id?: unknown; isBot?: boolean; username?: string; botMetadata?: { instanceId?: string; agentName?: string } };
+  user?: { id?: string; _id?: unknown; isBot?: boolean; username?: string; profilePicture?: string; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } };
   // Same reason as `user.username` above: `agentRuntimeAuth` puts the bot's
   // User row here, and its username is what the sweep writes into
   // `lapsedFrom` for an agent holder.
-  agentUser?: { _id?: unknown; username?: string };
+  agentUser?: { _id?: unknown; username?: string; profilePicture?: string; isBot?: boolean; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } };
   params?: Record<string, string>;
   query?: Record<string, string>;
   body?: Record<string, unknown>;
@@ -91,12 +94,6 @@ interface AuthReq {
 interface Res {
   status: (n: number) => Res;
   json: (d: unknown) => void;
-}
-
-function auth(req: AuthReq, res: Res, next: () => void) {
-  const token = ((req.header?.('Authorization') || '').replace('Bearer ', ''));
-  if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
-  return regularAuth(req, res, next);
 }
 
 const router: ReturnType<typeof express.Router> = express.Router();
@@ -148,7 +145,7 @@ const updateTaskWithRevision = async (
 ) => (await updateTaskWithRevisionSnapshot(filter, update))?.task || null;
 
 const taskWriteRateLimitKey = (req: Request): string => {
-  const authHeader = req.get('Authorization') || req.get('x-auth-token');
+  const authHeader = resolveDualAuthCredential(req).token;
   if (authHeader) {
     return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
   }
@@ -690,6 +687,22 @@ router.post('/:podId/:taskId/claim', rateLimit({
       && (preClaim.claimedBy === claimedBy || preClaim.lapsedFrom === claimedBy);
     if (!isSameHolderContinuation) {
       notifyAgents(req, podId, task, 'updated', preClaim);
+      const actorUser = req.agentUser || req.user;
+      const actorName = actorUser?.isBot
+        ? resolveAgentDisplayLabel(actorUser, author)
+        : actorUser?.username || author;
+      // The claim CAS has committed. This quiet timeline projection is
+      // best-effort and never changes the claim's HTTP result.
+      void emitSystemActionLine({
+        podId: String(podId),
+        actorUserId: String(userId),
+        actorName,
+        actorUsername: actorUser?.username || author,
+        actorAvatarUrl: actorUser?.profilePicture || null,
+        actorIsBot: !!actorUser?.isBot,
+        action: 'task-claimed',
+        taskId: String(task.taskId || taskId),
+      }).catch((error: Error) => console.warn('[tasks] system action line failed:', error.message));
     }
     return res.json({ task });
   } catch (err) {

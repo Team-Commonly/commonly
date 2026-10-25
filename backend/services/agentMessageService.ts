@@ -157,6 +157,9 @@ interface MetadataDoc {
 }
 
 interface PostMessageOptions {
+  /** Server-owned AgentRun identity. Never forwarded from runtime HTTP input. */
+  runId?: string;
+  runPodId?: string;
   agentName: string;
   podId: unknown;
   content: string;
@@ -1295,7 +1298,7 @@ class AgentMessageService {
       }
       // It's a 1:1 DM and this agent isn't a member.
       const err: Error & { code?: string; statusCode?: number } = new Error(
-        `Agent is not a member of ${podDoc.type} pod ${podId} — DM pods are 1:1 (ADR-001 §3.10). Open a new DM via commonly_open_dm if a private channel with this peer is needed.`,
+        `Agent is not a member of ${podDoc.type} pod ${podId} — DM pods are 1:1 (ADR-001 §3.10). Open a new DM via commonly_open_dm or commonly_dm_agent if a private channel with this peer is needed.`,
       );
       err.code = 'dm_membership_refused';
       err.statusCode = 403;
@@ -1571,6 +1574,16 @@ class AgentMessageService {
       }
     }
 
+    // Provenance is kernel-owned even when the presentation is agent-authored.
+    let messagePayload = payload;
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      messagePayload = { ...payload } as Record<string, unknown>;
+      delete (messagePayload as Record<string, unknown>).runId;
+      delete (messagePayload as Record<string, unknown>).runPodId;
+    }
+    if (options.runId) messagePayload = { ...(messagePayload as object || {}), runId: options.runId,
+      ...(options.runPodId ? { runPodId: options.runPodId } : {}) };
+
     const posted = await AgentMessageService._postToTarget({
       agentName,
       instanceId,
@@ -1578,7 +1591,7 @@ class AgentMessageService {
       content: sanitizedContent,
       messageType,
       metadata,
-      payload,
+      payload: messagePayload,
       relayCard,
       agentUser,
       displayName,

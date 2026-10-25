@@ -23,11 +23,6 @@ data:
       #                natural, one question, no feature dump, no invented identity
       #   tool call -> clean structured tool_calls, arguments {"name":"biomed-qa"}
       #
-      # Compare cloudflare/llama-3.1-8b below, which answered "who are you" with
-      # "我是指南者，一个疫情期间的AI聊天机器人" — it invented a pandemic-era
-      # chatbot identity on turn one. Fine as a fallback, not as a first
-      # impression.
-      #
       # NOTE: responses carry `reasoning_content` alongside `content`. Content is
       # clean on its own — but anything reading the raw message must take
       # `content` and never concatenate the two, or the guide's first message to
@@ -65,39 +60,6 @@ data:
           max_budget: 200
           budget_duration: 1mo
 
-      # --- Cloudflare Workers AI (fallback; own-account, unrevokable) ---
-      # Added 2026-08-08 to unblock the guide agent, which had no working model:
-      # every other provider in this file was returning 401 (OpenRouter's account
-      # was gone, OpenAI/Anthropic keys are literal "placeholder" strings). This
-      # runs on our OWN Cloudflare account, so nobody else can revoke it — which
-      # is exactly how the OpenRouter route died.
-      #
-      # Verified with a live inference call before landing: both models below
-      # returned 200.
-      #
-      # WHY THIS MODEL, chosen by testing rather than spec sheet. Every cheap
-      # alternative on Workers AI is a REASONING model — qwen3-30b, gpt-oss-20b
-      # and gemma-4 all return OpenAI-shaped output with `content: null` and the
-      # answer buried in a `reasoning` field, and on a short budget they hit the
-      # token limit before producing any content at all. The deepseek r1 distill
-      # is the same shape via <think> tags, and at $4.881/M output costs 17x this
-      # one. A first greeting must be short, clean and cheap; a reasoning model
-      # is the wrong tool and leaks chain-of-thought into a stranger's first
-      # impression of the product.
-      #
-      # Verified live: this returned a correct, natural Chinese greeting that
-      # asked exactly one question, with no reasoning leakage. Both users who
-      # asked "what is this for" wrote Chinese, so that was the test that
-      # mattered.
-      #
-      # Do NOT swap this for a reasoning model without adding content-extraction
-      # and reasoning-stripping first.
-      - model_name: cloudflare/llama-3.1-8b
-        litellm_params:
-          model: cloudflare/@cf/meta/llama-3.1-8b-instruct-fp8
-          api_key: os.environ/CLOUDFLARE_API_KEY
-          account_id: os.environ/CLOUDFLARE_ACCOUNT_ID
-
       # --- Gemini (direct google provider) ---
       - model_name: google/gemini-2.5-flash
         litellm_params:
@@ -125,21 +87,10 @@ data:
       # - openrouter/* used when gateway calls via openai-codex/gpt-5.4 fallback path
       # - nvidia/* / arcee-ai/* used when gateway uses openrouter:default profile
       #   (OpenClaw strips the "openrouter/" prefix before sending to the provider)
-      # Two deployments per model_name with different api_keys so router_settings
-      # routing_strategy: least-busy spreads load across both OR accounts and
-      # num_retries: 1 falls through to the other on 429/auth error. OPENROUTER_API_KEY_2
-      # is a secondary OpenRouter account for free-tier capacity doubling.
+      # One OpenRouter key. A second key (OPENROUTER_API_KEY_2) once doubled
+      # free-tier capacity; it expired unnoticed and was removed 2026-10-25.
+      # Both keys had expired, so every call here failed over silently.
       - model_name: openrouter/nvidia/nemotron-3-super-120b-a12b:free
-        litellm_params:
-          model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
-          api_key: os.environ/OPENROUTER_API_KEY
-
-      - model_name: openrouter/nvidia/nemotron-3-super-120b-a12b:free
-        litellm_params:
-          model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
-          api_key: os.environ/OPENROUTER_API_KEY_2
-
-      - model_name: nvidia/nemotron-3-super-120b-a12b:free
         litellm_params:
           model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
           api_key: os.environ/OPENROUTER_API_KEY
@@ -147,7 +98,7 @@ data:
       - model_name: nvidia/nemotron-3-super-120b-a12b:free
         litellm_params:
           model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
-          api_key: os.environ/OPENROUTER_API_KEY_2
+          api_key: os.environ/OPENROUTER_API_KEY
 
       # NOTE: arcee-ai/trinity-large-preview:free was deregistered at OpenRouter
       # (404 No endpoints found) on 2026-05-03. Removed from model_list and from
@@ -281,57 +232,8 @@ data:
           model: openai/gpt-image-1
           api_key: os.environ/OPENAI_API_KEY
 
-      # --- Anthropic (cluster ANTHROPIC_API_KEY, standard BYOK pattern) ---
-      # Consumers will point at these entries:
-      #   1. cluster-side `cloud-claude-code` runtime pods (Deployment
-      #      templated parallel to cloud-codex) — set
-      #      ANTHROPIC_BASE_URL=http://litellm:4000 and
-      #      ANTHROPIC_API_KEY=<per-pod virtual key>
-      #   2. openclaw moltbots that need Claude models (dev-only, gated
-      #      the same way as openai-codex/* — see applyOpenClawModelDefaults)
-      #
-      # Auth model matches every other LiteLLM caller in the cluster
-      # (codex CLI, backend services, dev moltbots): caller sends its
-      # LiteLLM virtual key as Authorization; LiteLLM validates it
-      # against LiteLLM_VerificationTokenTable; on hit, LiteLLM calls
-      # api.anthropic.com using the cluster's own ANTHROPIC_API_KEY
-      # (which holds Anthropic's $200/mo prepaid credit, provisioned
-      # into anthropic-api-key in api-keys secret on 2026-06-15).
-      #
-      # Until the real key replaces `placeholder` in the api-keys secret
-      # (target: 2026-06-15), any call to a claude-* model will 401
-      # upstream with `invalid x-api-key`. No current consumers, so this
-      # is a harmless dormant path until provisioning day.
-      #
-      # OAuth pass-through (PR #432, x-litellm-api-key + ANTHROPIC_
-      # CUSTOM_HEADERS) was considered and rejected: TOS risk on Max
-      # subscription multiplexing, refresh sidecar complexity matching
-      # codex-auth-rotator (incident-prone), quota concentration on a
-      # single account. Predictable per-token billing against $200/mo
-      # API credit is the right trade.
-      #
-      # Per-key scoping (models[], rpm/tpm/spend limits, key_alias) is
-      # set at `/key/generate` time — see docs/runbooks/litellm-claude-code.md.
-      - model_name: claude-opus-4-7
-        litellm_params:
-          model: anthropic/claude-opus-4-7
-          api_key: os.environ/ANTHROPIC_API_KEY
-
-      - model_name: claude-sonnet-4-6
-        litellm_params:
-          model: anthropic/claude-sonnet-4-6
-          api_key: os.environ/ANTHROPIC_API_KEY
-
-      - model_name: claude-haiku-4-5
-        litellm_params:
-          model: anthropic/claude-haiku-4-5-20251001
-          api_key: os.environ/ANTHROPIC_API_KEY
-
-      # Versioned alias — Claude Code sometimes sends date-suffixed IDs
-      - model_name: claude-haiku-4-5-20251001
-        litellm_params:
-          model: anthropic/claude-haiku-4-5-20251001
-          api_key: os.environ/ANTHROPIC_API_KEY
+      # Direct Anthropic routes removed under D76. Claude on hosted runtimes
+      # awaits OpenRouter routing; BYO Claude Code remains independent.
 
     router_settings:
       # The codex-auth-rotator sidecar rotates Codex accounts every 10 min on
@@ -361,7 +263,7 @@ data:
         - {"codex-cli/gpt-5.4":        ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
         # Dead routes fall back to deepseek-v4-flash (2026-10-15). Probing every
         # chat route from the backend pod found exactly two answering:
-        # deepseek-v4-flash and cloudflare/llama-3.1-8b. Every Gemini name 401s
+        # deepseek-v4-flash and the since-removed Workers AI route. Every Gemini name 401s
         # (Google: ACCESS_TOKEN_TYPE_UNSUPPORTED for GEMINI_API_KEY) and both
         # nemotron names 401 at OpenRouter. Callers still ask for those names:
         # the commonly-bot client defaults to gemini-2.5-flash; pod-welcomer,

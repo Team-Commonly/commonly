@@ -1,4 +1,58 @@
 {
+  "runTrace": {
+    "title": "运行轨迹",
+    "back": "返回 Pod",
+    "view": "查看运行轨迹",
+    "linkRetention": "卡片默认保留30天，轨迹持续保留。",
+    "retention": "卡片默认保留30天，Pod 策略和存储限制可能改变期限。卡片过期后，运行轨迹仍会保留。",
+    "loading": "正在加载运行轨迹…",
+    "access": "此轨迹不可用，或你已无权访问对应的 Pod。",
+    "error": "无法加载运行轨迹，请重试。",
+    "retry": "重试",
+    "counts": "已记录{{turns}}轮 · {{tokens}}个 token",
+    "stopped": "停止原因：{{kind}}",
+    "running": "此运行尚未结束。",
+    "refresh": "刷新轨迹",
+    "empty": "尚未记录任何轮次。",
+    "turn": "第{{number}}轮",
+    "tokens": "个 token",
+    "noTools": "无工具调用。",
+    "call": "调用 {{id}}",
+    "grant": "授权",
+    "owner": "凭据所有者",
+    "outcome": "结果",
+    "notRecorded": "未记录",
+    "unavailable": "代理调用轨迹不可用。",
+    "builtIn": "内置工具，未使用连接器凭据。",
+    "status": {
+      "queued": "排队中",
+      "running": "运行中",
+      "succeeded": "已完成",
+      "failed": "失败",
+      "interrupted": "已中断"
+    },
+    "trigger": {
+      "mention": "提及",
+      "heartbeat": "心跳",
+      "task.assigned": "任务分配",
+      "chat.message": "聊天消息",
+      "pod.join": "加入 Pod",
+      "first_contact": "首次联系",
+      "manual": "手动"
+    },
+    "outcomes": {
+      "ok": "成功",
+      "failed": "失败",
+      "refused": "已拒绝",
+      "pending": "等待中",
+      "pending_approval": "待批准",
+      "unavailable": "不可用"
+    },
+    "limitedBoth": "此轨迹受到存储大小限制，省略了{{turns}}轮和{{calls}}次工具调用，大型内容字段也已截断。",
+    "limitedTurns": "此轨迹受到存储大小限制，省略了{{turns}}轮，大型内容字段也已截断。",
+    "limitedCalls": "此轨迹受到存储大小限制，省略了{{calls}}次工具调用，大型内容字段也已截断。",
+    "limitedContent": "此轨迹受到存储大小限制，大型内容字段已截断。"
+  },
   "common": {
     "brandName": "Commonly",
     "brandWordmark": "commonly",
@@ -485,6 +539,9 @@
     "firstTask": {
       "addFailed": "添加任务失败，请重试。"
     },
+    "systemActions": {
+      "taskClaimedVerb": "认领了"
+    },
     "starts": {
       "label": "开始方式"
     },
@@ -833,6 +890,9 @@
           "text": "不同实例上的智能体将能彼此互通——相当于智能体版的 ActivityPub。"
         }
       }
+    },
+    "faq": {
+      "title": "常见问题"
     },
     "benefits": {
       "kicker": "你将获得",
@@ -2555,5 +2615,24 @@
       "hours": "{{n}}小时",
       "days": "{{n}}天"
     }
+  },
+  "teammate": {
+    "kicker": "这里只有你",
+    "title": "邀请队友加入 {{podName}}",
+    "body": {
+      "agentPost": "队友也能和 {{agentName}} 一起工作，还能看到这个 Pod 里的全部内容，包括之前的消息。",
+      "scout": "Scout 可以把这些工作分给你们两人。他们能看到这个 Pod，包括你和 Scout 的这段对话。",
+      "solo": "队友可以在这里发消息，和这个 Pod 里的智能体一起工作，也能看到这里的全部内容，包括之前的消息。"
+    },
+    "act": "复制邀请链接",
+    "creating": "正在生成链接…",
+    "copied": "已复制",
+    "copyRetry": "复制链接",
+    "retry": "重试",
+    "meta": "7天内有效 · 任何人登录后都能凭此链接加入",
+    "clipboardFail": "自动复制失败 · 链接已选中，请手动复制",
+    "error": "链接生成失败 · 未分享任何内容",
+    "live": "邀请链接已复制",
+    "dismiss": "关闭"
   }
 }

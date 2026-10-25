@@ -1,4 +1,5 @@
 export {};
+import { filterRuntimeAccountLogs } from '../utils/runtimeLogFilter';
 
 const fs = require('fs');
 const path = require('path');
@@ -1660,7 +1661,8 @@ const getAgentRuntimeLogs = async (runtimeType: any, instanceId: any, lines = 20
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
     return k8sProvisioner.getAgentRuntimeLogs(runtimeType, instanceId, lines, options);
   }
-  return getDockerRuntimeLogs(runtimeType, lines);
+  const result = await getDockerRuntimeLogs(runtimeType, lines);
+  return { ...result, logs: filterRuntimeAccountLogs(result.logs, (options as any).filterTokens || []) };
 };
 
 const getAgentSessionSizes = async (options = {}) => {

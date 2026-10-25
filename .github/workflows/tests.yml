@@ -336,13 +336,22 @@ jobs:
             -f k8s/helm/commonly/values.yaml \
             -f k8s/helm/commonly/values-dev.yaml \
             > /tmp/dev-rendered.yaml
+          helm template commonly-dev-worker k8s/helm/commonly \
+            -f k8s/helm/commonly/values.yaml \
+            -f k8s/helm/commonly/values-dev.yaml \
+            --set backend.worker.enabled=true \
+            --set backend.worker.startPaused=false \
+            > /tmp/dev-worker-rendered.yaml
+
+      - name: Verify backend worker render
+        run: bash scripts/verify-backend-worker-chart.sh
 
       - name: Lint rendered dev chart
         run: |
           kubeconform --strict --summary -output text \
             --schema-location "https://raw.githubusercontent.com/datreeio/CRDs-catalog/${CRDS_CATALOG_SHA}/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
             --schema-location default \
-            /tmp/dev-rendered.yaml
+            /tmp/dev-rendered.yaml /tmp/dev-worker-rendered.yaml
 
       # The dev render has kubeconform coverage, but staging is otherwise first
       # rendered at deploy time. Parse both values combinations before merge.

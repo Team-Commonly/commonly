@@ -192,10 +192,10 @@ const hostedRow = (overrides = {}) => ({
   ...overrides,
 });
 
-const okReply = { jsonrpc: '2.0', id: 'call-1', result: { content: [{ type: 'text', text: 'done' }] } };
+const okReply = { jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: 'done' }] } };
 let upstreamTools;
 const listReply = () => ({
-  jsonrpc: '2.0', id: 'list-1',
+  jsonrpc: '2.0', id: 1,
   result: { tools: upstreamTools },
 });
 const sessionFetch = (answer) => jest.fn(async (url, init) => {
@@ -203,7 +203,7 @@ const sessionFetch = (answer) => jest.fn(async (url, init) => {
   const body = JSON.parse(init.body);
   if (body.method === 'initialize') return new Response(JSON.stringify({
     jsonrpc: '2.0', id: body.id,
-    result: { protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: 'fixture', version: '1' } },
+    result: { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'fixture', version: '1' } },
   }), { status: 200, headers: { 'content-type': 'application/json', 'mcp-session-id': 'fixture-session' } });
   if (body.method === 'notifications/initialized') return new Response(null, { status: 202 });
   return answer(url, init);
@@ -483,12 +483,13 @@ describe('a hosted-MCP grant through the broker', () => {
       token: row._id === otherId ? 'tok-b' : 'tok-a',
     }));
     global.fetch = sessionFetch(async (_url, init) => {
-      const method = JSON.parse(init.body).method;
-      const tools = init.headers.Authorization === 'Bearer tok-b'
+      const body = JSON.parse(init.body);
+      const method = body.method;
+      const tools = new Headers(init.headers).get('authorization') === 'Bearer tok-b'
         ? [{ ...upstreamTools[0], inputSchema: { type: 'object', properties: { extra: { type: 'string' } } } }, upstreamTools[1]]
         : upstreamTools;
       return new Response(JSON.stringify(method === 'tools/list'
-        ? { jsonrpc: '2.0', id: 'list', result: { tools } }
+        ? { jsonrpc: '2.0', id: body.id, result: { tools } }
         : okReply), { status: 200, headers: { 'content-type': 'application/json' } });
     });
 
@@ -502,7 +503,7 @@ describe('a hosted-MCP grant through the broker', () => {
       init.method === 'POST' && JSON.parse(init.body).method === 'tools/list'
     ));
     expect(lists).toHaveLength(2);
-    expect(lists.map(([, init]) => init.headers.Authorization)).toEqual(['Bearer tok-a', 'Bearer tok-b']);
+    expect(lists.map(([, init]) => new Headers(init.headers).get('authorization'))).toEqual(['Bearer tok-a', 'Bearer tok-b']);
     require('../../../services/hostedMcpToolDefinitions').forgetHostedMcpDrift(otherId);
   });
 
@@ -518,8 +519,8 @@ describe('a hosted-MCP grant through the broker', () => {
 
     expect(toolCalls()).toHaveLength(1);
     const [url, init] = toolCalls()[0];
-    expect(url).toBe('https://mcp.linear.app/mcp');
-    expect(init.headers.Authorization).toBe('Bearer tok-1');
+    expect(String(url)).toBe('https://mcp.linear.app/mcp');
+    expect(new Headers(init.headers).get('authorization')).toBe('Bearer tok-1');
     expect(JSON.parse(init.body)).toMatchObject({
       method: 'tools/call',
       params: { name: 'list_issues', arguments: { limit: 3 } },
@@ -544,7 +545,7 @@ describe('a hosted-MCP grant through the broker', () => {
       content: [{ type: 'text', text: 'Google Calendar access is not enabled for this project.' }],
     };
     global.fetch = vendorFetch(async () => new Response(JSON.stringify({
-      jsonrpc: '2.0', id: 'call-error', result: vendorError,
+      jsonrpc: '2.0', id: 1, result: vendorError,
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
 
     const result = await callTool({
@@ -642,7 +643,7 @@ describe('a hosted-MCP grant through the broker', () => {
       content: [{ type: 'text', text: 'The vendor rejected this operation.' }],
     };
     global.fetch = vendorFetch(async () => new Response(JSON.stringify({
-      jsonrpc: '2.0', id: 'call-error', result: vendorError,
+      jsonrpc: '2.0', id: 1, result: vendorError,
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
 
     const result = await executeApprovedToolCall({

@@ -1,3 +1,10 @@
+// This fixture stubs User and auth; real lock/authorization behavior is tested
+// across Mongo in service/adminRoleConcurrency.test.js.
+jest.mock('../../services/adminUserMutationService', () => ({
+  withAdminUserMutation: (_actor, operation) => operation(() => {}),
+  AdminUserMutationError: class extends Error {},
+}));
+
 // TASK-172 §10 step 6b: the admin pause/resume lever projects onto the rows an
 // InstallableInstallation owns, and it selects them by `installationId`
 // (`routes/admin/installables.ts:108` / `:145`). A hosted-MCP connection is

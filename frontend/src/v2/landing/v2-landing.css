@@ -493,10 +493,15 @@
   mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
 }
 
+/* The duration is the set's width over a fixed speed, so it moves with the
+   list. 42s carried the 11-logo set (1,763px at 1440: logo widths + 56px per
+   item) at ~42px/s. The 24-logo set measures 4,145px in a real browser at
+   1440, so 99s keeps the same ~42px/s. Re-measure the first set's width and
+   rescale this when the list changes. */
 .v2-landing__trusted-track {
   display: flex;
   width: max-content;
-  animation: v2-trusted-scroll 42s linear infinite;
+  animation: v2-trusted-scroll 99s linear infinite;
 }
 
 .v2-landing__trusted-marquee:hover .v2-landing__trusted-track {
@@ -510,16 +515,23 @@
   padding-right: 56px;
 }
 
+/* One grey ink for every logo, whatever colours the source file carries.
+   `brightness(0)` maps every opaque pixel to black and leaves alpha alone, so
+   a mark reads as its silhouette; `grayscale(1)` before it is a no-op on the
+   result and stays only to make the intent legible. It is what keeps white
+   artwork (OROZ, Fluxr's wordmark) visible on the light strip: a plain
+   grayscale left both white on white. The opacity then sets the grey. Hover
+   lifts the opacity only — restoring the source colours would make the white
+   files vanish again. */
 .v2-landing__trusted-logo {
   height: 26px;
   width: auto;
-  filter: grayscale(1);
+  filter: grayscale(1) brightness(0);
   opacity: 0.6;
-  transition: filter 0.2s ease, opacity 0.2s ease;
+  transition: opacity 0.2s ease;
 }
 
 .v2-landing__trusted-logo:hover {
-  filter: grayscale(0);
   opacity: 1;
 }
 
@@ -1549,3 +1561,31 @@
 :lang(zh) .v2-landing__cta-title {
   letter-spacing: 0;
 }
+
+/* FAQ: capped measure; items are separated by a hairline and a 30px gap, and
+   each question sits 8px above its answer. The question is body-weight, not
+   a card title, so the list reads as text rather than as a row of cards. */
+.v2-landing__faq {
+  margin: 0;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+.v2-landing__faq-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.v2-landing__faq-item + .v2-landing__faq-item {
+  border-top: 1px solid var(--v2-border-soft);
+  padding-top: 30px;
+}
+.v2-landing__faq-item dt {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--v2-text-primary);
+}
+.v2-landing__faq-item dt::first-letter { text-transform: uppercase; }
+.v2-landing__faq-item dd { margin: 0; }

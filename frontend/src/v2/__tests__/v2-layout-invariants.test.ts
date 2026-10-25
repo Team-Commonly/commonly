@@ -1055,6 +1055,21 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-msg.v2-msg--system')).toContain('display: block');
   });
 
+  test('system actions align with message text and keep the avatar and time in their own slots', () => {
+    const rule = ruleBody(v2, '.v2-system-action-line');
+    expect(rule).toContain('display: grid');
+    expect(rule).toContain('grid-template-columns: 16px minmax(0, max-content) auto minmax(0, 1fr) auto');
+    expect(rule).toContain('margin-left: 36px');
+    expect(rule).toContain('width: calc(100% - 36px)');
+    expect(ruleBody(v2, '.v2-thread .v2-system-action-line .v2-avatar')).toContain('width: 16px');
+    expect(ruleBody(v2, '.v2-system-action-line__action')).toContain('grid-column: 3;');
+    expect(ruleBody(v2, '.v2-system-action-line time')).toContain('grid-column: 5');
+    expect(ruleBody(v2, '.v2-system-action-line__name')).toContain('color: var(--v2-text-primary)');
+    expect(ruleBody(v2, '.v2-system-action-line__verb')).toContain('color: var(--v2-text-tertiary)');
+    expect(ruleBody(v2, '.v2-system-action-line__object')).toContain('var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-system-action-line time')).toContain('var(--v2-font-mono)');
+  });
+
   test('the feedback popover overrides the legacy dark MUI paper theme', () => {
     // body.modern-ui .MuiPaper-root has enough specificity to beat a two-class
     // selector and turn portaled v2 popovers dark. Keep the compound Paper
@@ -1704,6 +1719,23 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const maskOff = selectorRuleBody(reduced, '.v2-landing__trusted-marquee {');
     expect(maskOff).toMatch(/^\s*mask-image:\s*none;/m);
     expect(maskOff).toMatch(/^\s*-webkit-mask-image:\s*none;/m);
+  });
+
+  test('landing trusted-by logos render as one grey ink, on hover too', () => {
+    // OROZ ships white artwork and Fluxr a white wordmark. `grayscale(1)`
+    // alone left both white on the light strip — present in the DOM, invisible
+    // on the page. `brightness(0)` maps every opaque pixel to black, so each
+    // logo reads as its silhouette and the opacity sets the grey. Measured in a
+    // real browser at 1440 and 390: all 24 logos non-blank.
+    const logo = selectorRuleBody(landing, '.v2-landing__trusted-logo {');
+    expect(logo).toMatch(/filter:\s*grayscale\(1\)\s+brightness\(0\)\s*;/);
+    expect(logo).toMatch(/opacity:\s*0\.6\s*;/);
+    // Hover lifts the opacity only. Restoring the source colours on hover
+    // (`grayscale(0)`, the old rule) makes the white files vanish under the
+    // pointer.
+    const hover = selectorRuleBody(landing, '.v2-landing__trusted-logo:hover {');
+    expect(hover).toMatch(/opacity:\s*1\s*;/);
+    expect(hover).not.toMatch(/filter\s*:/);
   });
 
   test('landing adapter code scrolls inside its card instead of widening the page', () => {
@@ -4979,4 +5011,48 @@ test('TASK-435 runtime columns can shrink on phones without dropping the observe
   expect(ruleBody(css, '.v2-runtime-controls__saved')).toContain('min-width: 0');
   expect(ruleBody(css, '.v2-runtime-controls__observed')).toContain('overflow-wrap: anywhere');
   expect(css).toContain('content: attr(data-label)');
+});
+
+test('teammate invite cards keep one-column phone controls at the 44px minimum', () => {
+  const css = read('../components/V2BringTeammate.css');
+  const phone = blockContaining(css, '@media (max-width: 760px)', '.v2-teammate');
+  expect(phone).toContain('grid-template-columns: minmax(0, 1fr)');
+  expect(phone).toContain('height: 44px');
+  expect(phone).toContain('flex-basis: 44px');
+  expect(css).toContain('width: calc(100% - 36px)');
+  expect(css).toContain('.v2-teammate.v2-teammate--message');
+  expect(css).toContain('.v2-teammate .v2-teammate__copy {');
+  expect(css).toContain('max-width: 100%');
+});
+
+test('standalone teammate invite button keeps desktop and phone touch targets', () => {
+  const css = read('../v2.css');
+  const standalone = ruleBody(css, '.v2-chat__new-pod-action--invite > .v2-chat__new-pod-copy');
+  expect(standalone).toContain('min-height: 32px');
+  expect(standalone).toContain('margin-top: auto');
+  expect(css).toMatch(/@media \(max-width: 760px\) \{\s*\.v2-chat__new-pod-action--invite > \.v2-chat__new-pod-copy \{ min-height: 44px;/);
+});
+
+describe('run trace layout', () => {
+  const css = read('../components/V2RunTrace.css');
+  test('long attribution IDs wrap, phone records stack, and links meet touch height', () => {
+    expect(css).toContain('overflow-wrap: anywhere');
+    expect(css).toContain('min-width: 0');
+    expect(css).toContain('min-height: 44px');
+    expect(css).toMatch(/@media \(max-width: 760px\)/);
+    expect(css).toMatch(/grid-template-columns: minmax\(0, 1fr\)/);
+  });
+});
+
+test('TASK-531 landing FAQ keeps its measure, rhythm and question style', () => {
+  const css = read('../landing/v2-landing.css');
+  expect(ruleBody(css, '.v2-landing__faq')).toMatch(/max-width:\s*720px/);
+  expect(ruleBody(css, '.v2-landing__faq')).toMatch(/gap:\s*30px/);
+  expect(ruleBody(css, '.v2-landing__faq-item')).toMatch(/gap:\s*8px/);
+  expect(ruleBody(css, '.v2-landing__faq-item + .v2-landing__faq-item')).toMatch(
+    /border-top:\s*1px solid var\(--v2-border-soft\)/,
+  );
+  expect(ruleBody(css, '.v2-landing__faq-item dt')).toMatch(/font-size:\s*18px/);
+  expect(ruleBody(css, '.v2-landing__faq-item dt')).toMatch(/font-weight:\s*600/);
+  expect(css).toContain('.v2-landing__faq-item dt::first-letter');
 });

@@ -1,3 +1,4 @@
+import { withAdminUserMutationLock } from './adminUserMutationService';
 /*
  * Purge the throwaway accounts the stranger journey signs up (TASK-260).
  *
@@ -94,9 +95,10 @@ const loadPool = (): PgPool | null => {
   return require('../config/db-pg').pool as PgPool;
 };
 
-export const purgeSyntheticAccounts = async (
+const purgeSyntheticAccountsUnlocked = async (
   { apply = false, minAgeMs = DEFAULT_MIN_AGE_MS, now = new Date(), pool = loadPool() }:
   { apply?: boolean; minAgeMs?: number; now?: Date; pool?: PgPool | null } = {},
+  beginWrite: () => void = () => {},
 ): Promise<PurgeReport> => {
   const report: PurgeReport = { dryRun: !apply, examined: 0, accounts: [], counts: {} };
   const tally = (store: string, n: number | undefined) => {
@@ -105,6 +107,7 @@ export const purgeSyntheticAccounts = async (
   // Dry run counts what a delete would remove; apply deletes and counts that.
   const remove = async (store: string, model: any, filter: Record<string, unknown>) => {
     if (!apply) return tally(store, await model.countDocuments(filter));
+    beginWrite();
     const res = await model.deleteMany(filter);
     return tally(store, res.deletedCount);
   };
@@ -115,6 +118,7 @@ export const purgeSyntheticAccounts = async (
       tally(store, Number(rows[0]?.n || 0));
       return;
     }
+    beginWrite();
     const res = await pool.query(sql, params);
     tally(store, res.rowCount ?? res.rows.length);
   };
@@ -123,6 +127,7 @@ export const purgeSyntheticAccounts = async (
     username: SYNTHETIC_USERNAME,
     email: SYNTHETIC_EMAIL,
     isBot: { $ne: true },
+    role: { $ne: 'admin' },
     createdAt: { $lt: new Date(now.getTime() - minAgeMs) },
   }).select('_id username email isBot createdAt').lean();
   report.examined = candidates.length;
@@ -131,7 +136,8 @@ export const purgeSyntheticAccounts = async (
     if (!isSyntheticAccount(human)) continue; // the query and the predicate must both agree
     const humanId = String(human._id);
     const scoutUsername = `scout-${perUserInstanceId(humanId)}`;
-    const scoutBot = await User.findOne({ username: scoutUsername, isBot: true }).select('_id').lean();
+    const scoutBot = await User.findOne({ username: scoutUsername, isBot: true, role: { $ne: 'admin' } })
+      .select('_id').lean();
     const seatRows = await AgentRegistry.find({ 'publisher.userId': human._id, ephemeral: true })
       .select('agentName').lean();
     const skippedSeats: { name: string; reason: string }[] = [];
@@ -147,7 +153,11 @@ export const purgeSyntheticAccounts = async (
         continue;
       }
       const bot = await User.findOne({ username: agentName, isBot: true, email: `${agentName}@agents.commonly.local` })
-        .select('_id username createdAt').lean();
+        .select('_id username createdAt role').lean();
+      if (bot?.role === 'admin') {
+        skippedSeats.push({ name: agentName, reason: 'its bot user is an administrator' });
+        continue;
+      }
       if (bot && (!bot.createdAt || !human.createdAt || new Date(bot.createdAt) < new Date(human.createdAt))) {
         skippedSeats.push({ name: agentName, reason: 'its bot user predates the account' });
         continue;
@@ -187,7 +197,10 @@ export const purgeSyntheticAccounts = async (
       await remove('podmemberfirstmessages', PodMemberFirstMessage, { podId });
       await remove('onboardingsilenceepisodes', OnboardingSilenceEpisode, { podId });
       await pgRemove('pg.message_claims', 'DELETE FROM message_claims WHERE pod_id = $1', [podId]);
-      if (apply) await deletePodCascade(podId);
+      if (apply) {
+        beginWrite();
+        await deletePodCascade(podId);
+      }
       tally('pods', 1);
     }
 
@@ -215,6 +228,7 @@ export const purgeSyntheticAccounts = async (
     await remove('onboardingsilenceepisodes', OnboardingSilenceEpisode, { userId: human._id });
     await remove('podmemberfirstmessages', PodMemberFirstMessage, { userId: human._id });
     if (apply) {
+      beginWrite();
       const res = await Pod.updateMany({ members: human._id }, { $pull: { members: human._id } });
       tally('pod.members', res.modifiedCount);
     } else {
@@ -226,6 +240,15 @@ export const purgeSyntheticAccounts = async (
   }
   return report;
 };
+
+// Applying the purge can remove User rows. Keep selection and deletion in the
+// same critical section as online role writers so a candidate cannot become an
+// administrator between those steps. Dry runs perform no destructive writes.
+export const purgeSyntheticAccounts = async (
+  options: Parameters<typeof purgeSyntheticAccountsUnlocked>[0] = {},
+): Promise<PurgeReport> => (options.apply
+  ? withAdminUserMutationLock((beginWrite) => purgeSyntheticAccountsUnlocked(options, beginWrite))
+  : purgeSyntheticAccountsUnlocked(options));
 
 // CJS compat, same shape as sibling services.
 module.exports = {

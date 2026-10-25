@@ -1,6 +1,6 @@
 # ADR-018 — Agent attention claims: claim, lease, turn-taking
 
-**Status:** Accepted — ratified by Sam 2026-08-17. D8.1 (2026-10-21), the BYO default, was ratified by Cofounder on Sam's explicit direction. Cofounder accepted the receive/wake direction in D8.1 (2026-10-23) and conditional digest heartbeat in D9.1 on 2026-10-23. TASK-414 (#2558) implements digest delivery and D9.1 while retaining installation wake defaults; the 10-23 direction to replace the BYO default remains unimplemented. D8.3 supersedes the original 30-minute discovery cap. D4's 90s lease and BYO claim compliance remain unsettled. D6.3's convergence guard remains unbuilt; its signal source and threshold remain open. D6.4 was accepted 2026-10-20.
+**Status:** Accepted — ratified by Sam 2026-08-17. D8.1 (2026-10-21), the BYO default, was ratified by Cofounder on Sam's explicit direction. Cofounder accepted the receive/wake direction in D8.1 (2026-10-23) and conditional digest heartbeat in D9.1 on 2026-10-23. TASK-414 (#2558) implements digest delivery and D9.1 while retaining installation wake defaults; the 10-23 direction to replace the BYO default remains unimplemented. D8.3 supersedes the original 30-minute discovery cap. D4's 90s lease and BYO claim compliance remain unsettled. D6.3's convergence guard remains unbuilt; its signal source and threshold remain open. D6.4 was accepted 2026-10-20. D8.6 (2026-10-25), the sub-pod result wake, is Proposed together with ADR-032 and is not in force.
 **Date:** 2026-08-11
 **Method:** settled through a full grilling session (design-tree interview, every branch visited); the decisions below are Sam's, the facts are measured
 **Relates to:** ADR-017 (attention routing *to the human* — a different problem), ADR-012 (memory), #887 (silent mentions)
@@ -507,6 +507,25 @@ only. A follower who also owns a row can still wake through ownership (D8.2),
 never merely because they followed it. Subscription changes create no wakes.
 The open-backlog title-prefix migration writes the collection directly,
 preserving updatedAt/offeredAt and emitting zero task or agent events.
+
+### D8.6 — PROPOSED AMENDMENT (2026-10-25, from ADR-032 D6.2): a sub-pod result wakes only the parent pod's owner
+
+**Status: PROPOSED — not in force.** It is ratified together with
+[ADR-032](ADR-032-sub-pods.md) or not at all; neither is Accepted without the
+other (ADR-032 §10, proposed answer 4). Until then, a sub-pod result follows
+the decisions above like any other message. It is numbered D8.6 rather than
+D6.2 because this ADR's own D6.2 is serial event processing.
+
+When a child pod is marked done, the kernel posts one `kind: 'sub-pod-result'`
+message into the parent pod (ADR-032 §5). Under this amendment, that message is
+delivered as an **addressed** wake to the parent's owner
+(`P.focus.ownerUserId`, else `P.createdBy`) and as **digest** to every other
+installation in the parent, whatever its `wakeOnMessage` setting.
+
+- **Why it is decided here.** This ADR owns wake policy, and the rule overrides
+  an opted-in seat's ambient wake (D8) for one message class.
+- **Why it is not room shape.** It keys on the message's `kind`, never on member
+  count or pod shape, so ADR-020 D6 and ADR-024 D4 are untouched.
 
 ### D9 — Heartbeat shrinks; it does not die
 

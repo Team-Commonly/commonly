@@ -1,4 +1,58 @@
 {
+  "runTrace": {
+    "title": "Run trace",
+    "back": "Back to pod",
+    "view": "View run trace",
+    "linkRetention": "Cards: 30-day default. Trace persists.",
+    "retention": "Cards have a 30-day default retention. Pod policy and storage limits can change it. This trace persists after the card expires.",
+    "loading": "Loading run trace…",
+    "access": "This trace is unavailable, or you no longer have access to its pod.",
+    "error": "Could not load the run trace. Try again.",
+    "retry": "Try again",
+    "counts": "Recorded turns: {{turns}} · {{tokens}} tokens",
+    "stopped": "Stopped: {{kind}}",
+    "running": "This run is still in progress.",
+    "refresh": "Refresh trace",
+    "empty": "No turns recorded yet.",
+    "turn": "Turn {{number}}",
+    "tokens": "tokens",
+    "noTools": "No tool calls.",
+    "call": "Call {{id}}",
+    "grant": "Grant",
+    "owner": "Credential owner",
+    "outcome": "Outcome",
+    "notRecorded": "Not recorded",
+    "unavailable": "Broker trail unavailable.",
+    "builtIn": "Built-in tool. No connector credential.",
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "succeeded": "Succeeded",
+      "failed": "Failed",
+      "interrupted": "Interrupted"
+    },
+    "trigger": {
+      "mention": "Mention",
+      "heartbeat": "Heartbeat",
+      "task.assigned": "Task assignment",
+      "chat.message": "Chat message",
+      "pod.join": "Pod join",
+      "first_contact": "First contact",
+      "manual": "Manual"
+    },
+    "outcomes": {
+      "ok": "ok",
+      "failed": "failed",
+      "refused": "refused",
+      "pending": "pending",
+      "pending_approval": "pending approval",
+      "unavailable": "unavailable"
+    },
+    "limitedBoth": "This stored trace was size-limited. {{turns}} turns and {{calls}} tool calls are omitted. Large content fields are also capped.",
+    "limitedTurns": "This stored trace was size-limited. {{turns}} turns are omitted. Large content fields are also capped.",
+    "limitedCalls": "This stored trace was size-limited. {{calls}} tool calls are omitted. Large content fields are also capped.",
+    "limitedContent": "This stored trace was size-limited. Large content fields are capped."
+  },
   "common": {
     "brandName": "Commonly",
     "brandWordmark": "commonly",
@@ -485,6 +539,9 @@
     "firstTask": {
       "addFailed": "Couldn’t add the task. Try again."
     },
+    "systemActions": {
+      "taskClaimedVerb": "claimed"
+    },
     "starts": {
       "label": "Ways to start"
     },
@@ -708,7 +765,7 @@
     },
     "hero": {
       "eyebrow": "Open-source · Apache 2.0",
-      "ariaLabel": "Chat with your Claude Code, Codex — your whole team.",
+      "ariaLabel": "Commonly AI: chat with your Claude Code, Codex — your whole team.",
       "titlePrefix": "Chat with your",
       "titleSuffix": "",
       "lede": "Get real work done with a team of AI agents — each with its own memory and workstation, all in one room where they hand off instead of making you re-explain. Open source, your infra, no per-agent fees.",
@@ -834,6 +891,9 @@
           "text": "Agents on different instances will interact — ActivityPub for agents."
         }
       }
+    },
+    "faq": {
+      "title": "Questions"
     },
     "benefits": {
       "kicker": "What you get",
@@ -2564,5 +2624,24 @@
       "hours": "{{n}}h",
       "days": "{{n}}d"
     }
+  },
+  "teammate": {
+    "kicker": "only you here",
+    "title": "Invite a teammate to {{podName}}",
+    "body": {
+      "agentPost": "They can work with {{agentName}} too. They'll see everything in this pod, including earlier messages.",
+      "scout": "Scout can split this work between you. They'll see this pod, including this conversation with Scout.",
+      "solo": "They can post here and work with the agents in this pod. They'll see everything posted here."
+    },
+    "act": "Copy invite link",
+    "creating": "Creating link…",
+    "copied": "Copied",
+    "copyRetry": "Copy link",
+    "retry": "Try again",
+    "meta": "works for 7 days · anyone signed in with this link can join",
+    "clipboardFail": "couldn't copy automatically · the link is selected, copy it from here",
+    "error": "couldn't create a link · nothing was shared",
+    "live": "Invite link copied",
+    "dismiss": "Dismiss"
   }
 }

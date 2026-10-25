@@ -307,14 +307,30 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
   });
 
-  test('a model error with nothing posted gets the fixed line and uses no turn', async () => {
+  test('a model error names the model and HTTP reason and uses no turn', async () => {
     chatReplies = [{ status: 502, headers: {}, data: { error: 'upstream unavailable' } }];
 
     const result = await runAgent(hostedInstall(), mention);
 
     expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'llm_error' }));
     expect(savedRun.metered).toBe(false);
-    expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+    expect(posted()).toEqual([`Model deepseek-v4-flash could not answer (HTTP 502). ${HOSTED_RUN_FAILED_LINE}`]);
+    expect(chatBodies[0].disable_fallbacks).toBe(true);
+  });
+
+  test.each([
+    ['ECONNABORTED', 'request timed out'],
+    ['ETIMEDOUT', 'request timed out'],
+    ['ECONNRESET', 'connection failed'],
+  ])('a transport error %s reports a safe category without the raw error', async (code, reason) => {
+    axios.post.mockRejectedValueOnce(Object.assign(new Error('secret-token-in-proxy-url'), { code }));
+    const result = await runAgent(hostedInstall(), mention);
+    expect(result).toMatchObject({ status: 'failed', errorKind: 'llm_error' });
+    expect(savedRun.metered).toBe(false);
+    expect(posted()).toEqual([`Model deepseek-v4-flash could not answer (${reason}). ${HOSTED_RUN_FAILED_LINE}`]);
+    expect(posted().join('')).not.toContain('secret-token');
+    expect(savedRun.errorMessage).not.toContain('secret-token');
+    expect(result.errorMessage).not.toContain('secret-token');
   });
 
   test('a thrown fallback post fails unmetered and tries the fixed line', async () => {

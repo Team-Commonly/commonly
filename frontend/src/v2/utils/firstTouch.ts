@@ -10,6 +10,18 @@
  * just means "no ref".
  */
 const KEY = 'commonly.firstTouchRef';
+
+/** Captured by /signup-source.js on the first public page, including static guides. */
+export const readFirstTouchSource = (): Record<string, unknown> | undefined => {
+  try {
+    const raw = window.localStorage.getItem('commonly.signupSource.v1');
+    if (!raw || raw.length > 4096) return undefined;
+    const value = JSON.parse(raw);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    // The server sanitizes these untrusted values. Never forward arbitrary keys.
+    return { ref: value.ref, referrer: value.referrer, landingPath: value.landingPath, firstSeenAt: value.firstSeenAt };
+  } catch { return undefined; }
+};
 // The same rule as backend/utils/signupRef.ts (SIGNUP_REF_PATTERN,
 // RESERVED_REFS); change both together. The backend is the gate.
 const REF_PATTERN = /^[a-z0-9_-]{1,32}$/;

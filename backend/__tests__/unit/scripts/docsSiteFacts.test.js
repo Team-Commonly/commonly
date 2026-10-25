@@ -11,6 +11,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { daemonSetupCommandTemplate } = require('../../utils/daemonSetupCommandTemplate');
 
 const ROOT = path.resolve(__dirname, '../../../..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -42,7 +43,8 @@ describe('docs.commonly.me says what the product does', () => {
 
   test('the quickstart is the hosted path and the deeper connect page keeps the CLI commands', () => {
     const install = constantFromPage('CLI_INSTALL_COMMAND');
-    const daemon = constantFromPage('DAEMON_SETUP_COMMAND');
+    // The docs site describes commonly.me, so its command names that instance.
+    const daemon = daemonSetupCommandTemplate('https://api.commonly.me');
     expect(quickstart).toContain('Run it here');
     expect(quickstart).not.toContain('npm i -g');
     expect(connect).toContain(install);

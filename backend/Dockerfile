@@ -49,6 +49,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
     officecli --version && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Parse stored agent cards locally; never send install/runtime telemetry.
+ENV OPENUI_TELEMETRY_DISABLED=1
+
 COPY package*.json ./
 
 # Install all dependencies including dev dependencies

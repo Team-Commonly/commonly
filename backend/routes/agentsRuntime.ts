@@ -1,3 +1,5 @@
+import dualAuth from '../middleware/dualAuth';
+import { validateAgentCardPayload } from '../services/uiCardValidation';
 export {};
 
 // TASK-099: the refusal classes a driver may name on release. The enum is the
@@ -147,25 +149,8 @@ const longPollIpLimit = platformIpRateLimit({
   label: '3000 long-poll reads per 60s per IP',
 });
 
-// Dual-auth dispatcher (mirrors `backend/routes/tasksApi.ts:34-36`). Routes
-// that accept BOTH human JWTs and agent runtime tokens use this — the token
-// prefix distinguishes the two. `cm_agent_*` → `agentRuntimeAuth` (stamps
-// `req.agentUser`), anything else → `auth` (stamps `req.userId`/`req.user`).
-//
-// Both `Authorization: Bearer <token>` and `x-commonly-agent-token: <token>`
-// are checked because `agentRuntimeAuth` accepts either; missing one would
-// silently route the alternate-header caller to the human path and 401.
-//
-// Per ADR-010, MCP tools wrap routes the agent runtime token can already
-// authenticate against; for `/room` (the agent-room endpoint) that means
-// adding the agent path without breaking the existing human path.
-const dualAuth = (req: any, res: any, next: any) => {
-  const bearer = ((req.header?.('Authorization') || '').replace('Bearer ', '')).trim();
-  const altHeader = (req.header?.('x-commonly-agent-token') || '').trim();
-  const token = bearer || altHeader;
-  if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
-  return auth(req, res, next);
-};
+// /room accepts human sessions and runtime credentials through shared dualAuth.
+// Keep the IP limiter before it: both verification paths read the database.
 
 const Integration = require('../models/Integration');
 const AgentMemory = require('../models/AgentMemory');
@@ -1572,7 +1557,9 @@ router.post(
         return res.status(403).json({ message: 'Bot not installed in this pod' });
       }
 
-      const { content, metadata, messageType } = req.body || {};
+      const { content, metadata, messageType, payload } = req.body || {};
+      validateAgentCardPayload(messageType, payload, payload !== undefined
+        ? AgentMessageService.sanitizeAgentContent(content) : content);
       const wouldPost = messageType === 'card' || Boolean(AgentMessageService.sanitizeAgentContent(content));
       if (wouldPost && req.body?.continueAnyway !== true) {
         const hold = await AgentSendFreshness.unseenMessages(user._id, podId);
@@ -1586,6 +1573,7 @@ router.post(
         content,
         metadata,
         messageType,
+        ...(payload !== undefined ? { payload } : {}),
         installationConfig: installation.config || null,
       });
 
@@ -2263,6 +2251,9 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
+    validateAgentCardPayload(req.body?.messageType, req.body?.payload, req.body?.payload !== undefined
+      ? AgentMessageService.sanitizeAgentContent(req.body?.content) : req.body?.content);
+
     // A total-match silence or runtime artifact is not a post. Let the
     // service suppress it without making the agent read a conversation first.
     const wouldPost = req.body?.messageType === 'card'
@@ -2277,7 +2268,7 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
     }
 
     const {
-      content, metadata, messageType, replyToMessageId, threadRootId,
+      content, metadata, messageType, replyToMessageId, threadRootId, payload,
     } = req.body || {};
     const result = await AgentMessageService.postMessage({
       agentName: installation.agentName,
@@ -2287,6 +2278,7 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       content,
       metadata,
       messageType,
+      ...(payload !== undefined ? { payload } : {}),
       replyToMessageId: replyToMessageId || null,
       // In-thread post WITHOUT addressing (constraint 5, Sam's independence
       // rule): the thread is ambient membership, the reply edge is a ping.
@@ -3336,7 +3328,7 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
           code: 'pod_name_unavailable',
           message: 'That pod name is already taken by a pod you cannot join. Pick a '
             + 'different name. To start a private conversation with a specific agent, '
-            + 'use commonly_open_dm instead of creating a pod by name.',
+            + 'use commonly_open_dm or commonly_dm_agent instead of creating a pod by name.',
         });
       };
 

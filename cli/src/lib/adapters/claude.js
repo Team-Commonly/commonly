@@ -1,5 +1,6 @@
 import { claudeRuntimeInventory } from '../native-runtime-inventory.js';
 import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
+import { spawnInOwnGroup, wantsOwnProcessGroup } from '@commonlyai/seats/process-group';
 /**
  * claude adapter — wraps the local `claude` CLI as a Commonly agent.
  *
@@ -81,7 +82,7 @@ import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credent
 import {
   prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_CODE, publicMcpUnavailableError, selectedMcpVersionDir,
 } from '../mcp-home.js';
-import { buildMemoryPreamble } from '../memory-bridge.js';
+import { buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
 import { claudeConfigDirFor, claudeContextTokens } from '../session-recycle.js';
 import { skillsAsText } from '../skill-prompt.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
@@ -98,6 +99,16 @@ const DEFAULT_TIMEOUT_MS = (() => {
 })();
 
 const buildPrompt = buildMemoryPreamble;
+
+// The working habits a private claude seat is taught on a fresh session (D48,
+// TASK-545). Parallel reads live here because only this CLI has a subagent
+// tool; codex is passed row slicing alone. A public seat is passed neither: its
+// argv allows Read and the MCP under dontAsk, so it has no subagent to spawn,
+// and it answers strangers rather than working board rows.
+const PARALLEL_READS_CUE = 'Parallel reads: when a row needs several files or sources read, '
+  + 'use the Agent tool. Spawn read-only subagents in parallel, brief each one with the files '
+  + 'to read and the question to answer, and keep only their conclusions.';
+const WORK_CUES = [PARALLEL_READS_CUE, ROW_SLICING_CUE];
 const RUNTIME_CREDENTIAL_PLACEHOLDER = '${COMMONLY_AGENT_TOKEN}';
 
 const QUOTE_SHELL_ARGUMENT = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
@@ -291,12 +302,14 @@ const publicSkillPromptArgs = async (skillSources) => {
   return { args: text ? ['--append-system-prompt', text] : [], included };
 };
 
-const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {} }) => new Promise((resolve, reject) => {
-  const proc = spawnImpl(cmd, args, {
+// `ownGroup` is set only under the run supervisor, which kills the child's
+// whole group; unsupervised, the spawn options are exactly what they were.
+const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false }) => new Promise((resolve, reject) => {
+  const proc = spawnInOwnGroup(spawnImpl, cmd, args, {
     cwd,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  }, { ownGroup });
   observeSpawn(proc, onSpawn, controls);
   let stdout = '';
   let stderr = '';
@@ -799,7 +812,12 @@ export default {
     // the only two paths that build a real prompt. buildPrompt handles
     // undefined and '' as absence itself; it does not need a guard, it needs
     // the value.
-    const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, { freshSession: !isResume });
+    const publicTrust = ctx.environment?.sandbox?.trust === 'public';
+    const workCues = publicTrust ? [] : WORK_CUES;
+    const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
+      freshSession: !isResume,
+      workCues,
+    });
     const sessionFlag = isResume ? '--resume' : '--session-id';
     // Model pin from the ADR-008 environment spec. Absent it, claude picks its
     // own default — which is how a fleet of ten agents ended up running three
@@ -839,7 +857,6 @@ export default {
     let mcpConfig = null;
     let publicClaudeState = null;
     let publicSkillArgs = [];
-    const publicTrust = ctx.environment?.sandbox?.trust === 'public';
     const publicNativeSandbox = publicTrust
       && PUBLIC_SANDBOX_MODES.has(resolvePublicSandboxMode(ctx.environment?.sandbox));
     const publicBwrapSandbox = publicTrust
@@ -906,6 +923,7 @@ export default {
         // the value a tail can echo back.
         credentials: spawnCredentials(spawnCtx),
         spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }), // test seam only — do not use in production
+        ownGroup: wantsOwnProcessGroup(ctx),
       });
       // TASK-440: the context this turn left, read from the transcript the
       // child wrote under its own env (an isolated HOME for public seats).
@@ -927,7 +945,10 @@ export default {
         // The retry creates a new underlying CLI session. Rebuild its prompt
         // as fresh too: otherwise a session-recovery path is the one fresh
         // session that misses the durable-state cue.
-        const freshPrompt = buildPrompt(prompt, ctx.memoryLongTerm, { freshSession: true });
+        const freshPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
+          freshSession: true,
+          workCues,
+        });
         const retryBase = ['-p', freshPrompt,
         '--output-format', 'text', '--session-id', freshId, ...modelArgs];
         const retryCtx = {
@@ -957,6 +978,7 @@ export default {
           timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
           credentials: spawnCredentials(retryCtx),
           spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
+          ownGroup: wantsOwnProcessGroup(ctx),
         });
         const contextTokens = claudeContextTokens({
           cwd: ctx.cwd, sessionId: freshId,

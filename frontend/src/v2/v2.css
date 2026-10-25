@@ -90,6 +90,7 @@ body.modern-ui.v2-canvas {
   --v2-info: #0891b2;
   --v2-info-soft: #dff4f8;
   --v2-danger: #ef4444;
+  --v2-danger-text: #b91c1c;
   --v2-danger-soft: rgba(239, 68, 68, 0.10);
 
   /* Agent role colors */
@@ -2473,6 +2474,14 @@ body.modern-ui.v2-canvas {
   font-weight: 700;
 }
 
+.v2-chat__new-pod-action--invite > .v2-chat__new-pod-copy {
+  min-height: 32px;
+  margin-top: auto;
+}
+@media (max-width: 760px) {
+  .v2-chat__new-pod-action--invite > .v2-chat__new-pod-copy { min-height: 44px; }
+}
+
 .v2-root button.v2-chat__new-pod-copy:hover {
   background: var(--v2-surface-hover);
 }
@@ -2719,6 +2728,64 @@ body.modern-ui.v2-canvas {
   font-size: 12.5px;
   line-height: 1.45;
   color: var(--v2-text-secondary);
+}
+
+/* TASK-406: quiet, non-interactive kernel action line in the pod timeline. */
+.v2-system-action-line {
+  box-sizing: border-box;
+  width: calc(100% - 36px);
+  margin-left: 36px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, max-content) auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font: 400 13px/16px var(--v2-font);
+}
+
+.v2-thread .v2-system-action-line .v2-avatar {
+  width: 16px;
+  height: 16px;
+  border-width: 1px;
+  font: 650 11px/1 var(--v2-font-mono);
+  letter-spacing: 0;
+  text-indent: 0;
+}
+
+.v2-system-action-line__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--v2-text-primary);
+  font-weight: 500;
+}
+
+.v2-system-action-line__action {
+  grid-column: 3;
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.v2-system-action-line__verb {
+  color: var(--v2-text-tertiary);
+}
+
+.v2-system-action-line__object {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--v2-text-tertiary);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+.v2-system-action-line time {
+  grid-column: 5;
+  color: var(--v2-text-placeholder);
+  font: 400 11px/16px var(--v2-font-mono);
 }
 
 /* §3.8 system event card — replaces the regular author/avatar bubble for

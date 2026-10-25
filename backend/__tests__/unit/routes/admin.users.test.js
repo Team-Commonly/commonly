@@ -1,3 +1,10 @@
+// This fixture stubs User and auth; real lock/authorization behavior is tested
+// across Mongo in service/adminRoleConcurrency.test.js.
+jest.mock('../../../services/adminUserMutationService', () => ({
+  withAdminUserMutation: (_actor, operation) => operation(() => {}),
+  AdminUserMutationError: class extends Error {},
+}));
+
 jest.mock('../../../middleware/auth', () => (req, _res, next) => {
   req.user = req.user || { id: 'admin-1' };
   req.userId = req.user.id;
@@ -105,12 +112,12 @@ describe('admin users routes', () => {
   it('deletes a non-bot user', async () => {
     const handler = getRouteHandler('/:userId', 'delete');
     const req = {
-      params: { userId: 'u2' },
+      params: { userId: '000000000000000000000002' },
       user: { id: 'admin-1' },
     };
     const res = createRes();
     const target = {
-      _id: 'u2',
+      _id: '000000000000000000000002',
       role: 'user',
       isBot: false,
       deleteOne: jest.fn().mockResolvedValue(true),
@@ -126,13 +133,13 @@ describe('admin users routes', () => {
   it('updates a user role', async () => {
     const handler = getRouteHandler('/:userId/role', 'patch');
     const req = {
-      params: { userId: 'u2' },
+      params: { userId: '000000000000000000000002' },
       body: { role: 'admin' },
       user: { id: 'admin-1' },
     };
     const res = createRes();
     const target = {
-      _id: 'u2',
+      _id: '000000000000000000000002',
       username: 'bob',
       email: 'b@example.com',
       role: 'user',
@@ -148,7 +155,7 @@ describe('admin users routes', () => {
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({
         message: 'User role updated successfully',
-        user: expect.objectContaining({ id: 'u2', role: 'admin' }),
+        user: expect.objectContaining({ id: '000000000000000000000002', role: 'admin' }),
       }),
     );
   });
@@ -354,9 +361,9 @@ describe('admin users routes', () => {
     it('bans a non-admin user with a reason', async () => {
       const handler = getRouteHandler('/:userId/ban', 'patch');
       const save = jest.fn().mockResolvedValue(undefined);
-      const target = { _id: 'u2', username: 'mallory', role: 'user', isBot: false, save };
+      const target = { _id: '000000000000000000000002', username: 'mallory', role: 'user', isBot: false, save };
       User.findById.mockResolvedValue(target);
-      const req = { params: { userId: 'u2' }, body: { banned: true, reason: 'spam' }, user: { id: 'admin1' } };
+      const req = { params: { userId: '000000000000000000000002' }, body: { banned: true, reason: 'spam' }, user: { id: 'admin1' } };
       const res = createRes();
 
       await handler(req, res);
@@ -373,9 +380,9 @@ describe('admin users routes', () => {
     it('unbans and clears the reason', async () => {
       const handler = getRouteHandler('/:userId/ban', 'patch');
       const save = jest.fn().mockResolvedValue(undefined);
-      const target = { _id: 'u2', username: 'mallory', role: 'user', isBot: false, banned: true, banReason: 'spam', save };
+      const target = { _id: '000000000000000000000002', username: 'mallory', role: 'user', isBot: false, banned: true, banReason: 'spam', save };
       User.findById.mockResolvedValue(target);
-      const req = { params: { userId: 'u2' }, body: { banned: false }, user: { id: 'admin1' } };
+      const req = { params: { userId: '000000000000000000000002' }, body: { banned: false }, user: { id: 'admin1' } };
       const res = createRes();
 
       await handler(req, res);
@@ -387,8 +394,8 @@ describe('admin users routes', () => {
 
     it('refuses to ban an admin account', async () => {
       const handler = getRouteHandler('/:userId/ban', 'patch');
-      User.findById.mockResolvedValue({ _id: 'a2', role: 'admin', isBot: false, save: jest.fn() });
-      const req = { params: { userId: 'a2' }, body: { banned: true }, user: { id: 'admin1' } };
+      User.findById.mockResolvedValue({ _id: '0000000000000000000000a2', role: 'admin', isBot: false, save: jest.fn() });
+      const req = { params: { userId: '0000000000000000000000a2' }, body: { banned: true }, user: { id: 'admin1' } };
       const res = createRes();
 
       await handler(req, res);

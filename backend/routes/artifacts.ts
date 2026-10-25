@@ -20,8 +20,7 @@ import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { ARTIFACT_KINDS, listArtifacts } from '../services/artifactService';
 
 const express = require('express');
-const auth = require('../middleware/auth');
-const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
+const dualAuth = require('../middleware/dualAuth');
 const Pod = require('../models/Pod');
 const DMService = require('../services/dmService');
 
@@ -42,14 +41,6 @@ const artifactsRateLimit = rateLimit({
   keyGenerator: (req: Request) => cloudflareIpRateLimitKeyGenerator(req),
   handler: (_req: unknown, res: Res) => res.status(429).json({ code: 'rate_limited' }),
 });
-
-const dualAuth = (req: any, res: any, next: any) => {
-  const bearer = ((req.header?.('Authorization') || '').replace('Bearer ', '')).trim();
-  const altHeader = (req.header?.('x-commonly-agent-token') || '').trim();
-  const token = bearer || altHeader;
-  if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
-  return auth(req, res, next);
-};
 
 // Two scope resolvers, one read.
 async function resolveScope(req: AuthReq): Promise<string[] | null> {
