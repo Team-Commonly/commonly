@@ -99,8 +99,11 @@ describe('V2OAuthButtons', () => {
     submit.mockRestore();
   });
 
-  test('carries the first-touch ref into the provider start', async () => {
+  test('posts first-touch attribution into the provider start, never in its URL', async () => {
     localStorage.setItem('commonly.firstTouchRef', JSON.stringify({ ref: 'x' }));
+    localStorage.setItem('commonly.signupSource.v1', JSON.stringify({
+      ref: 'x', referrer: 'https://news.example/article', landingPath: '/guides/start', firstSeenAt: '2026-01-01T00:00:00.000Z',
+    }));
     axios.get.mockResolvedValueOnce({ data: { providers: [{ id: 'google', label: 'Google' }] } });
 
     render(
@@ -109,8 +112,20 @@ describe('V2OAuthButtons', () => {
       </MemoryRouter>,
     );
 
-    const google = await screen.findByRole('link', { name: /continue with google/i });
-    expect(new URL(google.getAttribute('href') as string, 'https://api.test').searchParams.get('ref')).toBe('x');
+    const submit = jest.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => {});
+    const google = await screen.findByRole('button', { name: /continue with google/i });
+    fireEvent.click(google);
+    const form = document.body.querySelector('form[action*="/api/auth/oauth/google/start"]');
+    expect(form.method).toBe('post');
+    expect(new URL(form.action).search).toBe('');
+    const fields = Object.fromEntries(Array.from(form.elements).filter((el) => el.name).map((el) => [el.name, el.value]));
+    expect(fields.ref).toBe('x');
+    expect(JSON.parse(fields.signupSource)).toEqual({
+      ref: 'x', referrer: 'https://news.example/article', landingPath: '/guides/start', firstSeenAt: '2026-01-01T00:00:00.000Z',
+    });
+    expect(sessionStorage.getItem('commonly.pendingInviteOAuth')).toBeNull();
+    form.remove();
+    submit.mockRestore();
   });
 
   test('renders nothing when no provider is configured', async () => {

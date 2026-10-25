@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from '../../utils/axiosConfig';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { useTranslation } from 'react-i18next';
-import { readFirstTouchRef } from '../utils/firstTouch';
+import { readFirstTouchRef, readFirstTouchSource } from '../utils/firstTouch';
 import { rememberInviteOAuthStart } from '../utils/pendingInvite';
 
 // Social sign-in buttons shared by V2Login and V2Register. Renders nothing
@@ -53,8 +53,8 @@ const readProviderCache = (): OAuthProvider[] => {
   } catch { return []; }
 };
 
-const submitInviteOAuth = (action: string, params: URLSearchParams): void => {
-  rememberInviteOAuthStart();
+const submitOAuth = (action: string, params: URLSearchParams, hasInvite: boolean): void => {
+  if (hasInvite) rememberInviteOAuthStart();
   const form = document.createElement('form');
   form.method = 'post';
   form.action = action;
@@ -103,13 +103,15 @@ const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
   if (!providers.length) return null;
 
   const startPath = (id: string) => `${getApiBaseUrl()}/api/auth/oauth/${id}/start`;
+  const source = readFirstTouchSource();
+  const ref = readFirstTouchRef();
   const startParams = () => {
     const params = new URLSearchParams();
     if (next) params.set('next', next);
     // A new account made through the provider keeps the first-touch ref too;
     // signing in to an existing account ignores it (oauthController).
-    const ref = readFirstTouchRef();
     if (ref) params.set('ref', ref);
+    if (source) params.set('signupSource', JSON.stringify(source));
     return params;
   };
   const startUrl = (id: string) => {
@@ -118,7 +120,7 @@ const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
   };
   const inviteParams = () => {
     const params = startParams();
-    params.set('invite', invite || '');
+    if (invite) params.set('invite', invite);
     return params;
   };
 
@@ -127,12 +129,12 @@ const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
       <div className="v2-login__or"><span>{t('auth.oauth.or')}</span></div>
       <div className="v2-login__oauth">
         {providers.map((p) => (
-          invite ? (
+          invite || source || ref ? (
             <button
               key={p.id}
               type="button"
               className="v2-login__oauth-btn"
-              onClick={() => submitInviteOAuth(startPath(p.id), inviteParams())}
+              onClick={() => submitOAuth(startPath(p.id), inviteParams(), Boolean(invite))}
             >
               {PROVIDER_ICONS[p.id]}
               {t('auth.oauth.continueWith', { provider: p.label })}
