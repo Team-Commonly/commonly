@@ -110,3 +110,12 @@ test('aggregate budget caps many individually valid values before Mongo insert',
   expect(stored.omittedToolCalls).toBeGreaterThan(0);
   expect(BSON.calculateObjectSize(JSON.parse(JSON.stringify(stored.turns)))).toBeLessThan(RUN_TRACE_BYTES);
 });
+
+
+test('limits repeated trace reads before authentication and database work', async () => {
+  let status;
+  for (let attempt = 0; attempt < 125 && status !== 429; attempt += 1) {
+    status = (await request(app).get(`/api/pods/${POD}/runs/bad-id`)).status;
+  }
+  expect(status).toBe(429);
+});

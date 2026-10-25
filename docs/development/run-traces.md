@@ -21,6 +21,8 @@ TASK-499 adds a read-only link from a native hosted agent's message to its
   current pod-read access as the existing grant trail (`DMService.canViewPod`).
   Wrong pod/run combinations, malformed IDs and denied access return 404.
   Knowledge of a run ID or the public pod listing grants no access.
+- Reads are limited to 120 per minute per IP using the shared Cloudflare-aware
+  key, before authentication or database access.
 - The response is `{run, retention}`. `run.turns[].toolCalls[]` holds name,
   duration, outcome, optional callId, and `trail` with grantId and the credential
   owner's ID. A RunTrace last-N renderer can flatten these calls and slice the

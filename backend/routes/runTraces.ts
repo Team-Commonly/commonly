@@ -1,4 +1,6 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import mongoose from 'mongoose';
 import AgentRun from '../models/AgentRun';
 import ToolCall from '../models/ToolCall';
@@ -7,10 +9,14 @@ const auth = require('../middleware/auth');
 const Pod = require('../models/Pod');
 const DMService = require('../services/dmService');
 const router = express.Router();
+const traceReadLimit = rateLimit({
+  windowMs: 60_000, limit: 120, standardHeaders: 'draft-7', legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+});
 
 // Trace access follows today's pod access, never the original grant audience
 // or the continued existence of the card. Public pod listing is insufficient.
-router.get('/:podId/runs/:runId', auth, async (req, res) => {
+router.get('/:podId/runs/:runId', traceReadLimit, auth, async (req, res) => {
   try {
     const { podId, runId } = req.params;
     if (!mongoose.isObjectIdOrHexString(podId) || !mongoose.isObjectIdOrHexString(runId)) {

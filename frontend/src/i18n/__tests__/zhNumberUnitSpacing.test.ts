@@ -25,7 +25,7 @@ const NUMERAL_PLACEHOLDERS = [
   // bare numbers, or numbers formatted with grouping separators (Intl.NumberFormat)
   'count', 'formattedCount', 'uses', 'maxUses', 'complete', 'total', 'attempt',
   'revision', 'position', 'cap', 'turns', 'notes', 'days', 'signups', 'active',
-  'working', 'needsYou', 'minutes', 'calls',
+  'working', 'needsYou', 'minutes', 'calls', 'number', 'tokens',
   // a formatted duration, closed because the ruling names this key explicitly:
   // tools.budgetWindow renders 「每1小时可调用5次」
   'window',
@@ -46,6 +46,8 @@ const OPAQUE_PLACEHOLDERS = [
   'holder',
   // Runtime ownership names the visible blocking Pods and installers.
   'blockers', 'harness', 'effort', 'model',
+  // runTrace.call inserts the opaque PG call ID, not a number.
+  'id',
 ];
 
 // The exception runs the safe way: a name that is usually opaque and is a number
