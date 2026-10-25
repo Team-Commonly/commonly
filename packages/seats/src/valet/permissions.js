@@ -148,6 +148,7 @@ const askOf = (askedOf, input, policy) => {
  * permission.requested: the question (the tool call's title), who it is
  * asked of, and the card it rides on. The approver receives that card id.
  * When the tool call carries `rawInput`, both entries carry its argsDigest.
+ * Given a `trace`, the returned function has `recordsPermissions === true`.
  */
 export const createPermissionPolicy = (grant, {
   approve, trace, approveTimeoutMs = DEFAULT_APPROVE_TIMEOUT_MS, signal, grantId, askedOf,
@@ -158,7 +159,7 @@ export const createPermissionPolicy = (grant, {
     throw new Error('askedOf must be {id: <user id>, role: <decidedByRole>} or a function returning one');
   }
   const policy = { id: policyActorId(grantId), role: 'policy' };
-  return async (request = {}) => {
+  const decide = async (request = {}) => {
     const toolCall = request?.toolCall || {};
     const options = request?.options;
     const { decision, rule } = matchToolCall(valid, toolCall);
@@ -200,4 +201,8 @@ export const createPermissionPolicy = (grant, {
     });
     return answer.outcome === 'selected' ? { outcome: 'selected', optionId: answer.optionId } : { outcome: 'cancelled' };
   };
+  // With a trace this writes both permission entries itself, so an adapter
+  // handed it as ctx.decidePermission must not write them again.
+  if (trace) Object.defineProperty(decide, 'recordsPermissions', { value: true });
+  return decide;
 };

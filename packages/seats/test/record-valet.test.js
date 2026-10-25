@@ -173,6 +173,13 @@ test('an approver that only ever answers as a pod member fails the ask, and the 
   assert.deepEqual([decided.data.decidedBy, decided.data.decidedByRole], ['policy', 'policy']);
 });
 
+test('a valet policy with a trace says it records permissions itself; without one it does not', () => {
+  const recording = createPermissionPolicy({ tools: { ask: ['fetch'] } }, { trace: { emit: () => {} } });
+  assert.equal(recording.recordsPermissions, true);
+  assert.equal(Object.keys(recording).includes('recordsPermissions'), false, 'non-enumerable');
+  assert.equal(createPermissionPolicy({ tools: { ask: ['fetch'] } }).recordsPermissions, undefined);
+});
+
 test('no answer in time is decided by policy', async () => {
   const events = [];
   const decide = createPermissionPolicy({ tools: { ask: ['fetch'] } }, {
