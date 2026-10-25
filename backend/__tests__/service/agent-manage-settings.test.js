@@ -69,6 +69,45 @@ describe('per-installation agent settings', () => {
     expect(otherResponse.body.writablePodId).toBe(String(podB._id));
   });
 
+  it('reads the actual latest run model only within the managed owner and pod', async () => {
+    const AgentRun = require('../../models/AgentRun');
+    const base = { agentName: 'settings-agent', instanceId: 'same', trigger: 'manual', status: 'succeeded' };
+    await AgentRun.create([
+      { ...base, userId: String(owner._id), podId: podA._id, startedAt: new Date('2026-10-25T01:00:00Z'), turns: [{ turnIndex: 0, model: 'actual-model', elapsedMs: 1 }] },
+      { ...base, userId: String(other._id), podId: podB._id, startedAt: new Date('2026-10-25T02:00:00Z'), turns: [{ turnIndex: 0, model: 'private-model', elapsedMs: 1 }] },
+    ]);
+    await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
+      $set: { 'config.runtime': { runtimeType: 'hosted', model: 'saved-but-never-run' } },
+    });
+    const response = await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(owner)}`);
+    expect(response.status).toBe(200);
+    expect(response.body.runtimeRun).toEqual(expect.objectContaining({ model: 'actual-model', status: 'succeeded' }));
+    expect(JSON.stringify(response.body.runtimeRun)).not.toContain('private-model');
+    await AgentRun.create({ ...base, userId: String(owner._id), podId: podA._id,
+      startedAt: new Date('2026-10-25T03:00:00Z'), status: 'failed', turns: [] });
+    const failed = await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(owner)}`);
+    expect(failed.body.runtimeRun.model).toBeNull();
+    await AgentRun.deleteMany({ agentName: 'settings-agent' });
+  });
+
+  it('shows a held task to pod members, not a non-member installation admin', async () => {
+    const Task = require('../../models/Task');
+    const bot = await User.create({ username: 'settings-runtime-bot', email: 'settings-runtime-bot@test.com',
+      password: 'password123', isBot: true, botMetadata: { agentName: 'settings-agent', instanceId: 'same' } });
+    await Task.create({ podId: podA._id, taskNum: 546, taskId: 'TASK-546', title: 'Private title',
+      status: 'claimed', claimedBy: String(bot._id), claimedAt: new Date() });
+    const url = '/api/registry/agents/settings-agent/manage-settings?instanceId=same';
+    const member = await request(app).get(url).set('Authorization', `Bearer ${token(owner)}`);
+    expect(member.body.heldTask).toEqual({ taskId: 'TASK-546', podId: String(podA._id), podName: 'Settings A' });
+    expect(JSON.stringify(member.body.heldTask)).not.toContain('Private title');
+    const outsider = await request(app).get(url).set('Authorization', `Bearer ${token(admin)}`);
+    expect(outsider.status).toBe(200);
+    expect(outsider.body.heldTask).toBeNull();
+    await Task.deleteMany({ taskId: 'TASK-546' });
+  });
+
   it('reads and writes the same effort declaration the daemon selects', async () => {
     await Machine.create({ ownerUserId: owner._id, machineId: 'machine-a', name: 'Test computer',
       inventoryAt: new Date(), runtimeInventory: [{ harness: 'claude', installed: true, version: '2.1', models: null, efforts: ['high', 'xhigh'] }] });

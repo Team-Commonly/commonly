@@ -43,6 +43,8 @@ interface AgentAccess {
 }
 
 interface ManageSettingsResponse {
+  runtimeRun?: { model: string | null; startedAt: string; completedAt: string | null; status: string } | null;
+  heldTask?: { taskId: string; podId: string; podName: string } | null;
   writablePodId: string | null;
   runtimeSourcePodId?: string | null;
   runtimeControls?: { providerId?: string; runtimeType?: string; host?: 'cloud' | 'byo'; adapter?: string; model?: string; effort?: string };
@@ -69,6 +71,8 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
   const [processConnected, setProcessConnected] = useState<boolean | null>(null);
   const [runtimeEditable, setRuntimeEditable] = useState(true);
   const [runtimeManaged, setRuntimeManaged] = useState<boolean | undefined>(undefined);
+  const [runtimeRun, setRuntimeRun] = useState<ManageSettingsResponse['runtimeRun']>(null);
+  const [heldTask, setHeldTask] = useState<ManageSettingsResponse['heldTask']>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const requestId = useRef(0);
@@ -109,6 +113,8 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
           setProcessConnected(typeof settingsResponse.data.processConnected === 'boolean' ? settingsResponse.data.processConnected : null);
           setRuntimeEditable(settingsResponse.data.runtimeEditable !== false);
           setRuntimeManaged(settingsResponse.data.runtimeManaged);
+          setRuntimeRun(settingsResponse.data.runtimeRun || null);
+          setHeldTask(settingsResponse.data.heldTask || null);
           setError(null);
         }
         return response.data.agent;
@@ -135,6 +141,8 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
     setProcessConnected(null);
     setRuntimeEditable(true);
     setRuntimeManaged(undefined);
+    setRuntimeRun(null);
+    setHeldTask(null);
     void refresh().catch((requestError) => {
       if (active) setError(requestError);
     }).finally(() => {
@@ -159,9 +167,13 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
         if (active) {
           setRuntimeObservation(response.data.runtimeObservation || null);
           setRuntimeInventory(response.data.runtimeInventory || []);
+          setRuntimeRun(response.data.runtimeRun || null);
+          setHeldTask(response.data.heldTask || null);
           setProcessConnected(typeof response.data.processConnected === 'boolean' ? response.data.processConnected : null);
         }
-      } catch { if (active) setProcessConnected(null); }
+      } catch { if (active) {
+        setProcessConnected(null); setRuntimeObservation(null); setRuntimeRun(null); setHeldTask(null);
+      } }
       finally { pending = false; }
     }, 30_000);
     return () => { active = false; clearInterval(timer); };
@@ -193,6 +205,6 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
     await refresh();
   }, [instanceId, installationUrl, refresh, runtimeSourcePodId]);
 
-  return { access, installation, podId, ownKeyCapability, runtimeControls, runtimeObservation, runtimeInventory, processConnected, runtimeEditable, runtimeManaged, loading,
+  return { access, installation, podId, ownKeyCapability, runtimeControls, runtimeObservation, runtimeInventory, processConnected, runtimeEditable, runtimeManaged, runtimeRun, heldTask, loading,
     error, refresh, update, updatePod, updateRuntime };
 };

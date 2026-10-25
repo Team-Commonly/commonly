@@ -30,7 +30,7 @@ const response = {
 
 const renderSection = (runtime = { runtimeType: 'wrapper', adapter: 'claude', model: 'sonnet' }) => render(
   <AuthContext.Provider value={authValue}>
-    <V2AgentRuntimeGrants name="nib" instanceId="default" runtime={{ managed: true, inventory: ['claude', 'codex'].map((harness) => ({ harness, installed: true, version: '1', models: null, efforts: ['low', 'medium', 'high', 'xhigh'] })), ...runtime }} onSaveRuntime={saveRuntime} />
+    <V2AgentRuntimeGrants name="nib" instanceId="default" runtime={{ managed: true, inventory: ['claude', 'codex'].map((harness) => ({ harness, installed: true, version: '1', models: ['sonnet', 'opus', 'gpt-5', 'gpt-5.3-codex', 'gpt-6-sol'], efforts: ['low', 'medium', 'high', 'xhigh'] })), ...runtime }} onSaveRuntime={saveRuntime} />
   </AuthContext.Provider>,
 );
 

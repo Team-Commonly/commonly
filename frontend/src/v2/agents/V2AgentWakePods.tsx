@@ -21,7 +21,9 @@ const V2AgentWakePods: React.FC<{
   instanceId: string;
   updatePod: (podId: string, patch: AgentPodWakePatch) => Promise<unknown>;
   onRemoved?: (podId: string, wasLastPod: boolean) => void;
-}> = ({ agentName, instanceId, updatePod, onRemoved }) => {
+  section?: 'wake' | 'remove' | 'all';
+  showTurnEstimate?: boolean;
+}> = ({ agentName, instanceId, updatePod, onRemoved, section = 'all', showTurnEstimate = true }) => {
   const { t } = useTranslation();
   const [installations, setInstallations] = useState<InstallationSettings[]>([]);
   const [busyPod, setBusyPod] = useState<string | null>(null);
@@ -130,8 +132,8 @@ const V2AgentWakePods: React.FC<{
   return (
     <div className="v2-agent-wake-pods">
       {error && <p className="v2-agent-wake-pods__error" role="alert">{error}</p>}
-      <section className="v2-agent-wake-pods__section" aria-labelledby="agent-wake-title">
-        <h2 id="agent-wake-title">{t('agentSettings.wakeTitle')}</h2>
+      {section !== 'remove' && <section className="v2-agent-wake-pods__section" aria-labelledby="agent-wake-title">
+        <h2 id="agent-wake-title">{t(section === 'wake' ? 'agentSettings.rev3.reach' : 'agentSettings.wakeTitle')}</h2>
         <p className="v2-agent-wake-pods__hint">{t('agentSettings.mentionsAlwaysWake')}</p>
         {installations.map((entry) => (
           <div className="v2-agent-wake-pods__pod" key={entry.podId}>
@@ -168,7 +170,7 @@ const V2AgentWakePods: React.FC<{
                   ))}
               </select>
             </label>
-            <p className="v2-agent-wake-pods__hint">
+            {showTurnEstimate && <p className="v2-agent-wake-pods__hint">
               {turnCap === null
                 ? t('agentSettings.capUnavailable', {
                   count: Math.ceil(1440 / (draftMinutes[entry.podId] ?? entry.heartbeatMinutes)),
@@ -178,7 +180,7 @@ const V2AgentWakePods: React.FC<{
                 })}
               {turnCap !== null && Math.ceil(1440 / (draftMinutes[entry.podId] ?? entry.heartbeatMinutes)) > turnCap
                 && ` ${t('agentSettings.overCap')}`}
-            </p>
+            </p>}
             {entry.heartbeatEnabled && draftMinutes[entry.podId] !== entry.heartbeatMinutes
               && <button type="button" disabled={busyPod === entry.podId}
                 onClick={() => { void save(entry, { heartbeatMinutes: draftMinutes[entry.podId] }); }}>
@@ -186,9 +188,9 @@ const V2AgentWakePods: React.FC<{
               </button>}
           </div>
         ))}
-      </section>
-      <section className="v2-agent-wake-pods__section" aria-labelledby="agent-pods-title">
-        <h2 id="agent-pods-title">{t('agentSettings.podsTitle')}</h2>
+      </section>}
+      {section !== 'wake' && <section className="v2-agent-wake-pods__section" aria-labelledby="agent-pods-title">
+        <h2 id="agent-pods-title">{t(section === 'remove' ? 'agentSettings.rev3.remove' : 'agentSettings.podsTitle')}</h2>
         {installations.length ? installations.map((entry) => (
           <div className="v2-agent-wake-pods__pod-row" key={entry.podId}>
             <Link to={`/v2/pods/${entry.podId}`}>{entry.podName}</Link>
@@ -197,7 +199,7 @@ const V2AgentWakePods: React.FC<{
             </button>
           </div>
         )) : <p className="v2-agent-wake-pods__empty">{t('agentSettings.noPods')}</p>}
-      </section>
+      </section>}
     </div>
   );
 };

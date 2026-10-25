@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 
-interface Props {
+export interface AgentControlProps {
   agentName: string;
   instanceId: string;
   podId: string;
@@ -14,7 +14,7 @@ interface Props {
 
 // Owner/admin-only: the parent must obtain these props from an authenticated
 // roster read after its server-gated Settings access check.
-const V2AgentControlSection: React.FC<Props> = ({ agentName, instanceId, podId, runtimeType, connection }) => {
+const V2AgentControlSection: React.FC<AgentControlProps> = ({ agentName, instanceId, podId, runtimeType, connection }) => {
   const { t } = useTranslation();
   const needsReconnect = connection.state === 'revoked' || connection.state === 'stale';
   const canRegenerateMachineKey = runtimeType === 'wrapper' && connection.state === 'connected';
@@ -44,9 +44,10 @@ export const AgentControlLoader: React.FC<{
   instanceId: string;
   refreshNonce?: number;
   onConnectionState?: (state: AgentConnection['state'] | null) => void;
-}> = ({ agentName, instanceId, refreshNonce, onConnectionState }) => {
+  render?: (status: AgentControlProps | null, unavailable: boolean) => React.ReactNode;
+}> = ({ agentName, instanceId, refreshNonce, onConnectionState, render }) => {
   const { t } = useTranslation();
-  const [status, setStatus] = useState<(Props & { podId: string }) | null>(null);
+  const [status, setStatus] = useState<AgentControlProps | null>(null);
   const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
@@ -91,6 +92,7 @@ export const AgentControlLoader: React.FC<{
     return () => { active = false; window.clearInterval(interval); };
   }, [agentName, instanceId, refreshNonce, onConnectionState]);
 
+  if (render) return <>{render(status, unavailable)}</>;
   if (status) return <V2AgentControlSection {...status} />;
   return <section className="v2-agent-settings__section" data-testid="agent-control-section">
     <h2>{t('agentConnection.control')}</h2>

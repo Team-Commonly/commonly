@@ -78,7 +78,7 @@ test('wrapper key replacement cannot bypass the daemon reconnect flow', async ()
     return Promise.resolve({ data: [] });
   });
   renderPage();
-  await screen.findByText("Replace this computer's key from Control.");
+  await screen.findByText("Reconnect this computer to replace its key.");
   expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Reconnect to regenerate key' })).not.toBeInTheDocument();
   expect(axios.post).not.toHaveBeenCalled();
@@ -163,31 +163,14 @@ test('identity edits go through the shared installation PATCH with the exact ins
   ));
 });
 
-test('OpenClaw identity keeps the live Persona editor and saves its changes', async () => {
-  axios.get.mockImplementation((url) => {
-    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
-      displayName: 'Scout', pods: [{ id: 'pod-1', name: 'Workspace' }],
-    } });
-    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: {
-      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
-    } });
-    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
-      name: 'openclaw', instanceId: 'scout', displayName: 'Scout',
-      profile: { persona: { tone: 'friendly', specialties: ['writing'], customInstructions: 'Stay clear' } },
-    } } });
-    return Promise.resolve({ data: [] });
-  });
-  axios.patch.mockResolvedValue({ data: { success: true } });
+test('rev3 hides Persona until it is consumed', async () => {
+  const defaultGet = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url, options) => url.startsWith('/api/registry/pods/')
+    ? Promise.resolve({ data: { agent: { name: 'openclaw', instanceId: 'scout', displayName: 'Scout',
+      profile: { persona: { tone: 'friendly' } } } } }) : defaultGet(url, options));
   renderPage('/v2/agents/openclaw/scout');
-  expect(await screen.findByRole('group', { name: 'Persona' })).toBeInTheDocument();
-  fireEvent.change(screen.getByRole('textbox', { name: 'Persona notes' }), { target: { value: 'Keep detail' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
-  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
-    '/api/registry/pods/pod-1/agents/openclaw',
-    { instanceId: 'scout', persona: {
-      tone: 'friendly', specialties: ['writing'], boundaries: [], customInstructions: 'Keep detail',
-    } },
-  ));
+  await screen.findByRole('heading', { name: 'Status' });
+  expect(screen.queryByRole('group', { name: 'Persona' })).toBeNull();
 });
 
 test('OpenClaw name-only edits leave Persona out of the PATCH', async () => {
@@ -206,7 +189,8 @@ test('OpenClaw name-only edits leave Persona out of the PATCH', async () => {
   });
   axios.patch.mockResolvedValue({ data: { success: true } });
   renderPage('/v2/agents/openclaw/scout');
-  expect(await screen.findByRole('group', { name: 'Persona' })).toBeInTheDocument();
+  await screen.findByRole('button', { name: 'Save identity' });
+  expect(screen.queryByRole('group', { name: 'Persona' })).toBeNull();
   fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Scout 2' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
@@ -265,7 +249,7 @@ test('nondefault wrapper instances never link to a default-instance reconnect', 
     return Promise.resolve({ data: [] });
   });
   renderPage('/v2/agents/maya-claude/second');
-  await screen.findByText("Replace this computer's key from Control.");
+  await screen.findByText("Reconnect this computer to replace its key.");
   expect(screen.queryByRole('link', { name: 'Reconnect to regenerate key' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
 });
@@ -346,9 +330,9 @@ test('a partial installation owner cannot see identity-wide key controls', async
     return Promise.reject({ response: { status: 403, data: { message: 'Access denied' } } });
   });
   renderPage();
-  expect(await screen.findByRole('heading', { name: 'Policy' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Memory' })).toBeInTheDocument();
   expect(await screen.findByText('Key management is unavailable for this agent. Ask an admin for access.')).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Pods' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Remove' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
   expect(screen.queryByText('Laptop')).not.toBeInTheDocument();
   expect(axios.get.mock.calls.some(([url]) => url === '/api/agent-memory/maya-claude/default')).toBe(false);
@@ -421,10 +405,10 @@ test('selects an installation the owner can manage without exposing a foreign po
   );
   expect(screen.getByText('Pod · My pod')).toBeInTheDocument();
   expect(screen.queryByText('Pod · Other pod')).not.toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Key' }).compareDocumentPosition(
-    screen.getByRole('heading', { name: 'Skills' }),
+  expect(screen.getByRole('heading', { name: 'Skills' }).compareDocumentPosition(
+    screen.getByRole('heading', { name: 'Access key' }),
   ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(screen.getByRole('heading', { name: 'Wake' }).compareDocumentPosition(
+  expect(screen.getByRole('heading', { name: 'Reach per pod' }).compareDocumentPosition(
     screen.getByRole('heading', { name: 'Skills' }),
   ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Regenerate key' }));
@@ -439,9 +423,9 @@ test('runtime editor writes environment controls through the shared settings hoo
   axios.patch.mockResolvedValue({ data: { updated: true } });
   axios.get.mockImplementation((url) => {
     if (url.includes('/manage-settings')) return Promise.resolve({ data: {
-      runtimeManaged: true, runtimeInventory: [{ harness: 'claude', installed: true, version: '1', models: null, efforts: ['low', 'medium', 'high', 'xhigh'] }], writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+      runtimeManaged: true, runtimeInventory: [{ harness: 'claude', installed: true, version: '1', models: ['old', 'new-model', 'selected-model', 'opus'], efforts: ['low', 'medium', 'high', 'xhigh'] }], writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
     } });
-    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { runtimeManaged: true, runtimeInventory: [{ harness: 'claude', installed: true, version: '1', models: null, efforts: ['low', 'medium', 'high', 'xhigh'] }], writablePodId: 'pod-1' } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { runtimeManaged: true, runtimeInventory: [{ harness: 'claude', installed: true, version: '1', models: ['old', 'new-model', 'selected-model', 'opus'], efforts: ['low', 'medium', 'high', 'xhigh'] }], writablePodId: 'pod-1' } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya',
       runtime: { runtimeType: 'wrapper' },
@@ -452,18 +436,12 @@ test('runtime editor writes environment controls through the shared settings hoo
   });
   renderPage();
   const model = await screen.findByLabelText('model');
-  await screen.findByRole('heading', { name: 'Wake' });
-  await screen.findByRole('heading', { name: 'Policy' });
+  await screen.findByRole('heading', { name: 'Reach per pod' });
+  await screen.findByRole('heading', { name: 'Memory' });
   await screen.findByRole('heading', { name: 'Skills' });
-  const sections = Array.from(document.querySelectorAll('.v2-agent-settings h2')).map((node) => node.textContent);
-  expect(sections).toEqual(expect.arrayContaining(['Identity', 'Policy', 'Skills']));
-  expect(sections.indexOf('Key')).toBeLessThan(sections.indexOf('Identity'));
-  expect(sections.indexOf('Identity')).toBeLessThan(sections.indexOf('Wake'));
-  expect(sections.indexOf('Key')).toBeLessThan(sections.indexOf('How it runs'));
-  expect(sections.indexOf('Wake')).toBeLessThan(sections.indexOf('How it runs'));
-  expect(sections.indexOf('How it runs')).toBeLessThan(sections.indexOf('Connector grants'));
-  expect(sections.indexOf('Connector grants')).toBeLessThan(sections.indexOf('Policy'));
-  expect(sections.indexOf('Policy')).toBeLessThan(sections.indexOf('Skills'));
+  const sections = Array.from(document.querySelectorAll('.v2-agent-settings h2')).map((node) => node.textContent)
+    .filter((text) => text !== 'Identity');
+  expect(sections).toEqual(['Status', 'Runtime', 'Reach per pod', 'Memory', 'What it can use', 'Usage', 'Access key', 'Remove']);
   fireEvent.change(model, { target: { value: 'new-model' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
@@ -475,7 +453,7 @@ test('runtime editor writes environment controls through the shared settings hoo
 test('runtime editor keeps a wrapper model when no environment override exists', async () => {
   axios.get.mockImplementation((url) => {
     if (url.includes('/manage-settings')) return Promise.resolve({ data: {
-      runtimeManaged: true, runtimeInventory: [{ harness: 'claude', installed: true, version: '1', models: null, efforts: ['low', 'medium', 'high', 'xhigh'] }], writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+      runtimeManaged: true, runtimeInventory: [{ harness: 'claude', installed: true, version: '1', models: ['old', 'new-model', 'selected-model', 'opus'], efforts: ['low', 'medium', 'high', 'xhigh'] }], writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
     } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya',
@@ -492,7 +470,7 @@ test('runtime editor shows the daemon-selected effort instead of a different pod
   axios.patch.mockResolvedValue({ data: { updated: true } });
   axios.get.mockImplementation((url) => {
     if (url.includes('/manage-settings')) return Promise.resolve({ data: {
-      runtimeManaged: true, runtimeInventory: [{ harness: 'claude', installed: true, version: '1', models: null, efforts: ['low', 'medium', 'high', 'xhigh'] }], writablePodId: 'skills-pod', runtimeSourcePodId: 'source-pod',
+      runtimeManaged: true, runtimeInventory: [{ harness: 'claude', installed: true, version: '1', models: ['old', 'new-model', 'selected-model', 'opus'], efforts: ['low', 'medium', 'high', 'xhigh'] }], writablePodId: 'skills-pod', runtimeSourcePodId: 'source-pod',
       runtimeControls: { runtimeType: 'wrapper', adapter: 'claude', model: 'opus', effort: 'high' },
       runtimeEditable: true, installations: [
         { podId: 'skills-pod', podName: 'Work', status: 'active' },
@@ -533,10 +511,11 @@ test('standalone CLI settings label the saved preference without claiming a runt
     return Promise.resolve({ data: [] });
   });
   renderPage();
-  expect(await screen.findByText('read only · this seat runs from the cli')).toBeInTheDocument();
-  expect(screen.getByLabelText('effort')).toHaveValue('max');
-  expect(screen.getByLabelText('effort')).toBeDisabled();
-  expect(screen.getAllByText('unconfirmed')).toHaveLength(3);
+  await screen.findByRole('heading', { name: 'Runtime' });
+  expect(screen.queryByLabelText('effort')).toBeNull();
+  expect(screen.queryByDisplayValue('max')).toBeNull();
+  expect(screen.queryByDisplayValue('opus')).toBeNull();
+  expect(screen.getByText('not reported')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Save runtime' })).not.toBeInTheDocument();
 });
 
@@ -551,7 +530,7 @@ test('runner facts refresh without resetting unsaved controls, and a failed read
       if (failed) return Promise.reject(new Error('offline'));
       return Promise.resolve({ data: { writablePodId: 'pod-1', runtimeSourcePodId: 'pod-1',
         runtimeManaged: true, runtimeEditable: true, runtimeControls: { runtimeType: 'wrapper', adapter: 'claude', model: 'saved' },
-        runtimeInventory: [{ harness: 'claude', installed: true, version: '2.1', models: null, efforts: [] }],
+        runtimeInventory: [{ harness: 'claude', installed: true, version: '2.1', models: ['saved', 'unsaved-draft'], efforts: [] }],
         processConnected: connected, runtimeObservation: { connectedAt: at, lastSeenAt: at, turnRunning: running,
           lastTurnAt: at, lastSpawn: { harness: 'claude', version: '2.1', model: 'actual', effort: null, at }, confirmed: null },
         installations: [{ podId: 'pod-1', podName: 'Work', status: 'active' }],
@@ -578,4 +557,38 @@ test('runner facts refresh without resetting unsaved controls, and a failed read
     expect(screen.getByText('process').closest('div')).toHaveTextContent('not reported');
     expect(input).toHaveValue('unsaved-draft');
   } finally { view.unmount(); jest.useRealTimers(); }
+});
+
+
+test.each(['hosted', 'native'])('rev3 %s shows the server run model and never requests credentials', async (runtimeType) => {
+  const defaultGet = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url, options) => {
+    if (url.includes('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', runtimeRun: { model: 'actual-server-model', startedAt: '2026-10-25T12:00:00Z', status: 'succeeded' },
+      runtimeControls: { model: 'saved-not-run' }, installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } });
+    if (url === '/api/registry/pods/pod-1/agents') return Promise.resolve({ data: { agents: [{
+      name: 'maya-claude', instanceId: 'default', runtime: { runtimeType }, connection: { state: 'available' },
+    }] } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType },
+    } } });
+    return defaultGet(url, options);
+  });
+  renderPage();
+  expect(await screen.findByText(/Commonly picks the model: actual-server-model/)).toBeInTheDocument();
+  expect(screen.queryByText('saved-not-run')).toBeNull();
+  expect(screen.queryByRole('heading', { name: 'Access key' })).toBeNull();
+  expect(screen.queryByText('Use my own API key')).toBeNull();
+  expect(axios.get.mock.calls.some(([url]) => url === '/api/credentials')).toBe(false);
+  if (runtimeType === 'native') {
+    expect(screen.getByText('built in')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Usage' })).toBeNull();
+  } else {
+    const pause = await screen.findByRole('button', { name: 'Pause', exact: true });
+    axios.patch.mockResolvedValue({ data: {} });
+    fireEvent.click(pause);
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith('/api/registry/pods/pod-1/agents/maya-claude',
+      { status: 'paused', instanceId: 'default' }));
+  }
 });

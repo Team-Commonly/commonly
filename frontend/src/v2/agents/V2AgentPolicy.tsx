@@ -19,9 +19,10 @@ interface Props {
   instanceId: string;
   installation: AgentSettingsInstallation | null;
   update: (patch: AgentSettingsPatch) => Promise<unknown>;
+  section?: 'memory' | 'usage' | 'all';
 }
 
-const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, update }) => {
+const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, update, section: visibleSection = 'all' }) => {
   const { t } = useTranslation();
   const environment = (installation?.config?.environment || {}) as { adapter?: string; sandbox?: { mode?: string } };
   const runtime = installation?.runtime;
@@ -30,7 +31,8 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
   const canSetTrust = (runtime?.host === 'byo' || runtime?.runtimeType === 'wrapper')
     && trustAdapters.has(adapter);
   const [trustMode, setTrustMode] = useState(environment.sandbox?.mode || '');
-  const [quota, setQuota] = useState<{ turnCap: number; userRunCeiling: number | null } | null>(null);
+  const [quota, setQuota] = useState<{ turnCap: number; userRunCeiling: number | null;
+    usage?: { used: number; cap: number; resetsAt: string } | null } | null>(null);
   const [documents, setDocuments] = useState<MemoryDocuments | null>(null);
   const [section, setSection] = useState<MemorySection>('long_term');
   const [content, setContent] = useState('');
@@ -63,7 +65,7 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
         setContent(response.data.sections.long_term?.content || '');
       }
     }).catch((requestError) => { if (current) setMemoryLoadError(message(requestError, t('agentPolicy.loadError'))); });
-    void axios.get<{ turnCap: number; userRunCeiling: number | null }>(
+    void axios.get<{ turnCap: number; userRunCeiling: number | null; usage?: { used: number; cap: number; resetsAt: string } | null }>(
       `/api/registry/agents/${encodeURIComponent(agentName)}/manage-settings`, { params: { instanceId } },
     ).then((response) => { if (current) setQuota(response.data); })
       .catch((requestError) => { if (current) setQuotaError(message(requestError, t('agentPolicy.loadError'))); });
@@ -108,9 +110,9 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
       className={feedback.kind === 'error' ? 'v2-agent-policy__error' : 'v2-agent-policy__saved'}>{feedback.text}</p>
   );
 
-  return <section className="v2-agent-policy" aria-labelledby="agent-policy-title">
-    <h2 id="agent-policy-title">{t('agentPolicy.title')}</h2>
-    {canSetTrust && <div className="v2-agent-policy__group">
+  return <section className="v2-agent-policy" aria-labelledby={`agent-policy-title-${visibleSection}`}>
+    <h2 id={`agent-policy-title-${visibleSection}`}>{t(visibleSection === 'memory' ? 'agentPolicy.memory' : visibleSection === 'usage' ? 'agentSettings.rev3.usage' : 'agentPolicy.title')}</h2>
+    {visibleSection === 'all' && canSetTrust && <div className="v2-agent-policy__group">
       <h3>{t('agentPolicy.trust')}</h3>
       <label>{t('agentPolicy.repoAccess')}<select value={trustMode} onChange={(event) => setTrustMode(event.target.value)}>
         <option value="">{t('agentPolicy.chooseAccess')}</option>
@@ -120,8 +122,8 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
       <button type="button" disabled={busy || !['read-only', 'workspace'].includes(trustMode)} onClick={saveTrust}>{t('agentPolicy.saveTrust')}</button>
       {groupFeedback('trust')}
     </div>}
-    <div className="v2-agent-policy__group">
-      <h3>{t('agentPolicy.memory')}</h3>
+    {visibleSection !== 'usage' && <div className="v2-agent-policy__group">
+      {visibleSection === 'all' && <h3>{t('agentPolicy.memory')}</h3>}
       {documents ? <>
         <div className="v2-agent-policy__memory-tabs" role="tablist" aria-label={t('agentPolicy.memory')}>
           {memorySections.map((entry) => <button type="button" role="tab" aria-selected={entry === section}
@@ -137,15 +139,19 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
         }}>{t('agentPolicy.retry')}</button>
       </> : <p className="v2-agent-policy__muted">{t('agentPolicy.loadingMemory')}</p>}
       {groupFeedback('memory')}
-    </div>
-    {(installation?.runtime?.runtimeType === 'hosted' || installation?.runtime?.runtimeType === 'native') && (
+    </div>}
+    {visibleSection !== 'memory' && (installation?.runtime?.runtimeType === 'hosted' || (visibleSection === 'all' && installation?.runtime?.runtimeType === 'native')) && (
       <div className="v2-agent-policy__group">
         <h3>{t('agentPolicy.quotas')}</h3>
+        <div className="v2-agent-policy__quota"><span>{t('agentSettings.rev3.turnsToday')}</span><strong>{quota?.usage ? `${quota.usage.used} / ${quota.usage.cap}` : '—'}</strong></div>
+        {quota?.usage && <p>{t('agentSettings.rev3.resets', { date: new Date(quota.usage.resetsAt).toLocaleString() })}</p>}
         <div className="v2-agent-policy__quota"><span>{t('agentPolicy.turnsPerDay')}</span><strong>{quota?.turnCap ?? '—'}</strong></div>
         <div className="v2-agent-policy__quota"><span>{t('agentPolicy.userRunCeiling')}</span><strong>{quota?.userRunCeiling ?? '—'}</strong></div>
         {quotaError && <p role="alert" className="v2-agent-policy__error">{quotaError}</p>}
       </div>
     )}
+    {visibleSection === 'usage' && installation?.runtime?.runtimeType !== 'hosted'
+      && <p>{t('agentSettings.rev3.machineUsage')}</p>}
   </section>;
 };
 

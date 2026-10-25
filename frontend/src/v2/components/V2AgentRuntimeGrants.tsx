@@ -40,6 +40,10 @@ interface Props {
   instanceId: string;
   runtime: Runtime;
   onSaveRuntime?: (update: RuntimeUpdate) => Promise<void>;
+  section?: 'runtime' | 'grants' | 'both';
+  runtimeSummary?: React.ReactNode;
+  runtimeTitle?: string;
+  grantsTitle?: string;
 }
 
 const WALKED_ADAPTERS: Record<string, string> = {
@@ -68,7 +72,7 @@ const dateLabel = (value: string | null): string => {
 };
 
 const V2AgentRuntimeGrants: React.FC<Props> = ({
-  name, instanceId, runtime, onSaveRuntime,
+  name, instanceId, runtime, onSaveRuntime, section = 'both', runtimeSummary, runtimeTitle, grantsTitle,
 }) => {
   const { t } = useTranslation();
   const api = useV2Api();
@@ -122,13 +126,13 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
     }
   }, [api, name, instanceId, t]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (section !== 'runtime') void load(); }, [load, section]);
   useEffect(() => {
-    if (runtime.runtimeType !== 'wrapper') return;
+    if (section === 'grants' || runtime.runtimeType !== 'wrapper' || runtime.managed === false) return;
     setPlacement(null);
     setPlacementError('');
     void loadPlacement().catch((error) => setPlacementError(placementFailure(error, 'agentManage.runtime.placementError')));
-  }, [runtime.runtimeType, loadPlacement, t]);
+  }, [runtime.runtimeType, runtime.managed, loadPlacement, t, section]);
 
   const details = useMemo(() => describeRuntime(runtime), [runtime]);
   const revoke = async (grantId: string) => {
@@ -177,9 +181,9 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
 
   return (
     <div className="v2-agent-runtime-grants">
-      <section className="v2-agent-settings__section" aria-labelledby="agent-runtime-heading">
-        <h2 id="agent-runtime-heading">{t('agentManage.controls.title')}</h2>
-        <V2RuntimeControls runtime={runtime} onSave={onSaveRuntime} />
+      {section !== 'grants' && <section className="v2-agent-settings__section" aria-labelledby="agent-runtime-heading">
+        <h2 id="agent-runtime-heading">{runtimeTitle || t('agentManage.controls.title')}</h2>
+        {runtimeSummary || <V2RuntimeControls runtime={runtime} onSave={onSaveRuntime} />}
         {details.mode === 'daemon' && placement && (
           <div className="v2-agent-runtime-grants__edit" data-testid="agent-machine-placement">
             {placement.boundMachineRevoked && <p role="status">{t('agentManage.runtime.machineRevoked')}</p>}
@@ -202,11 +206,11 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
             )}
           </div>
         )}
-        <V2AgentProviderKey key={`${name}/${instanceId}`} name={name} instanceId={instanceId} editable={Boolean(onSaveRuntime && runtime.managed)} capability={runtime.ownKeyCapability} harness={details.adapter || runtime.adapter || ''} />
+        {details.mode !== 'native' && details.mode !== 'hosted' && <V2AgentProviderKey key={`${name}/${instanceId}`} name={name} instanceId={instanceId} editable={Boolean(onSaveRuntime && runtime.managed)} capability={runtime.ownKeyCapability} harness={details.adapter || runtime.adapter || ''} />}
         {placementError && <p role="alert">{placementError}</p>}
-      </section>
-      <section className="v2-agent-settings__section" aria-labelledby="agent-grants-heading">
-        <h2 id="agent-grants-heading">{t('agentManage.grants.title', { defaultValue: 'Connector grants' })}</h2>
+      </section>}
+      {section !== 'runtime' && <section className="v2-agent-settings__section" aria-labelledby="agent-grants-heading">
+        <h2 id="agent-grants-heading">{grantsTitle || t('agentManage.grants.title', { defaultValue: 'Connector grants' })}</h2>
         {grantsError && <p role="alert">{grantsError}</p>}
         {loading && <p role="status">{t('agentManage.grants.loading', { defaultValue: 'Loading grants…' })}</p>}
         {!loading && !grantsError && grants.length === 0 && <p>{t('agentManage.grants.empty', { defaultValue: 'This agent has no connector grants.' })}</p>}
@@ -233,7 +237,7 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
             );
           })}
         </ul>
-      </section>
+      </section>}
     </div>
   );
 };

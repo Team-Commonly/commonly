@@ -20,7 +20,7 @@ test('saved, passed and confirmed remain separate, and a disconnected process is
   expect(screen.queryByText('running')).not.toBeInTheDocument();
   expect(screen.getByText('disconnected')).toBeInTheDocument();
 });
-test('missing model inventory permits text, but missing effort inventory never permits free text or a pending dot', async () => {
+test('missing model inventory disables model edits and save, and missing effort inventory has no free text', async () => {
   const save = jest.fn().mockResolvedValue(undefined);
   render(<Controls runtime={{ ...runtime, inventory: [{ ...runtime.inventory[0], efforts: [] }] }} onSave={save} />);
   expect(screen.getByLabelText('effort')).toBeDisabled();
@@ -29,10 +29,11 @@ test('missing model inventory permits text, but missing effort inventory never p
   expect(screen.getByLabelText('effort')).not.toHaveClass('is-unsupported');
   const effortRow = screen.getByLabelText('effort').closest('.v2-runtime-controls__row')!;
   expect(within(effortRow as HTMLElement).queryByLabelText('pending next spawn')).toBeNull();
-  fireEvent.change(screen.getByLabelText('model'), { target: { value: 'new-unlisted-model' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
-  await waitFor(() => expect(save).toHaveBeenCalledWith({ adapter: 'claude', model: 'new-unlisted-model' }));
+  expect(screen.getByLabelText('model')).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Save runtime' })).toBeDisabled();
+  expect(save).not.toHaveBeenCalled();
 });
+
 test('read-only seats keep all columns, with disabled controls and no save', () => {
   render(<Controls runtime={{ ...runtime, managed: false }} />);
   for (const field of ['harness','model','effort']) expect(screen.getByLabelText(field)).toBeDisabled();

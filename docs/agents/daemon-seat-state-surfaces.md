@@ -263,3 +263,10 @@ ps -axo pid=,ppid=,args= | grep -E '[c]ommonlyai/mcp|mcp/0\.3'
 - [review-checklist.md](../development/review-checklist.md) — rule 38: a read of
   the installed artifact is not a read of the process running it, and the two
   disagree for as long as the process outlives the file
+
+
+## Settings rev3 readbacks (TASK-546)
+
+The owner/admin manage-settings response keeps evidence separate from saved preferences. Machine-managed agents use the existing `runtimeObservation.lastSpawn`; hosted/native agents use `runtimeRun`, projected from the newest `AgentRun` for the managed owner and visible installation pods. `runtimeRun.model` is the last recorded turn's model. A run with no recorded model returns null; the UI must not substitute its saved model or a display default. The DTO contains no prompt, completion or tool arguments.
+
+`heldTask` contains only task ID and pod identity, and only where the viewer is a pod member. Installation administration alone does not reveal a board claim. Service coverage is in `agent-manage-settings.test.js`, including a newer foreign-owner run and a non-member instance admin. The rev3 evidence directory under `docs/design/evidence/` contains fixture captures; these do not replace the required non-author production walk.

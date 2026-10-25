@@ -3,14 +3,17 @@ import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import V2PageHead from '../components/V2PageHead';
-import V2AgentRuntimeGrants, { Runtime } from '../components/V2AgentRuntimeGrants';
-import { AgentControlLoader } from '../components/V2AgentControlSection';
+import V2AgentRuntimeGrants, { Runtime, describeRuntime } from '../components/V2AgentRuntimeGrants';
 import { AgentConnection } from '../utils/agentConnection';
 import { useAgentSettings } from './useAgentSettings';
-import V2AgentIdentitySection from './V2AgentIdentitySection';
 import V2AgentWakePods from './V2AgentWakePods';
 import V2AgentPolicy from './V2AgentPolicy';
 import V2AgentSkills from '../components/V2AgentSkills';
+import V2Avatar from '../components/V2Avatar';
+import V2AgentIdentitySection from './V2AgentIdentitySection';
+import V2RuntimeControls from '../components/V2RuntimeControls';
+import V2AgentStatus from './V2AgentStatus';
+import V2AgentRuntimeSummary, { agentRuntimeKind } from './V2AgentRuntimeSummary';
 import './v2-agent-settings.css';
 
 interface RuntimeKey {
@@ -39,7 +42,7 @@ const errorLabel = (error: unknown, fallback: string): string => (
 const V2AgentSettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const { agentName = '', instanceId = '' } = useParams<{ agentName: string; instanceId: string }>();
-  const { access, installation, podId, ownKeyCapability, runtimeControls, runtimeObservation, runtimeInventory, processConnected, runtimeEditable, runtimeManaged, loading,
+  const { access, installation, podId, ownKeyCapability, runtimeControls, runtimeObservation, runtimeInventory, processConnected, runtimeEditable, runtimeManaged, runtimeRun, heldTask, loading,
     error: loadError, refresh, update, updatePod, updateRuntime } = useAgentSettings(agentName, instanceId);
   const [removedLast, setRemovedLast] = useState(false);
   const [keys, setKeys] = useState<RuntimeKey[]>([]);
@@ -55,6 +58,9 @@ const V2AgentSettingsPage: React.FC = () => {
   const currentIdentity = useRef(identityKey);
   currentIdentity.current = identityKey;
   const disconnected = connectionState === 'revoked' || connectionState === 'stale';
+  const inProcess = !runtimeManaged && (installation?.runtime?.runtimeType === 'native'
+    || installation?.runtime?.runtimeType === 'hosted' || installation?.runtime?.runtimeType === 'internal'
+    || installation?.runtime?.host === 'cloud');
 
   const onConnectionState = useCallback((state: AgentConnection['state'] | null) => {
     setConnectionState(state);
@@ -82,7 +88,7 @@ const V2AgentSettingsPage: React.FC = () => {
     setPendingAction(null);
     setBusy(false);
     setConnectionState(null);
-    if (access && podId) {
+    if (access && podId && !inProcess) {
       void fetchKeys().then((rows) => {
         if (active) {
           setKeys(rows);
@@ -99,7 +105,7 @@ const V2AgentSettingsPage: React.FC = () => {
       });
     }
     return () => { active = false; };
-  }, [access, podId, fetchKeys, identityKey, t]);
+  }, [access, podId, fetchKeys, identityKey, inProcess, t]);
 
   const replaceKey = async () => {
     if (!access || !podId || pendingAction !== 'replace' || busy || installation?.runtime?.runtimeType === 'wrapper') return;
@@ -157,6 +163,7 @@ const V2AgentSettingsPage: React.FC = () => {
     setKeys([]);
     setPendingAction(null);
     setOneTimeKey(null);
+    setConnectionRefreshNonce((nonce) => nonce + 1);
     if (wasLastPod) setRemovedLast(true);
     else void refresh().catch((requestError) => setError(errorLabel(requestError, t('agentSettings.unavailable'))));
   };
@@ -166,7 +173,7 @@ const V2AgentSettingsPage: React.FC = () => {
   if (!access || !podId) return <div className="v2-agent-settings__state" role="alert">
     {error || errorLabel(loadError, t('agentSettings.unavailable'))}
   </div>;
-  if (keysReadyFor !== identityKey) return <div className="v2-agent-settings__state" role={error ? 'alert' : 'status'}>
+  if (!inProcess && keysReadyFor !== identityKey) return <div className="v2-agent-settings__state" role={error ? 'alert' : 'status'}>
     {error || t('agentSettings.loading')}
   </div>;
 
@@ -188,6 +195,9 @@ const V2AgentSettingsPage: React.FC = () => {
     ...(runtimeManaged !== undefined ? { managed: runtimeManaged } : {}),
   };
   const activeKeys = keys.filter((key) => key.status === 'active');
+  const kind = agentRuntimeKind(runtime, connectionState === 'never' ? false : processConnected);
+  const harnessLabel = describeRuntime({ ...runtime, adapter: runtimeObservation?.lastSpawn?.harness || runtime.adapter }).adapter
+    || runtimeObservation?.lastSpawn?.harness || runtime.adapter;
   const revokedKeys = keys.filter((key) => key.status === 'revoked');
   const keyLabel = (key: RuntimeKey): string => {
     const defaultLabel = !key.label || key.label === 'Runtime token' || key.label === 'Agent Settings replacement';
@@ -225,18 +235,57 @@ const V2AgentSettingsPage: React.FC = () => {
 
   return (
     <main className="v2-agent-settings">
-      <V2PageHead title={access.displayName || agentName} actions={<Link to="/v2/agents">{t('agentSettings.yourTeam')}</Link>} />
+      <V2PageHead title={<span className="v2-agent-settings__name"><V2Avatar name={access.displayName || agentName} kind="agent"
+        seed={`${agentName}:${instanceId}`} src={typeof installation?.profilePicture === 'string' ? installation.profilePicture : undefined} />
+        <span>{access.displayName || agentName}</span></span>}
+        actions={<Link to="/v2/agents">{t('agentSettings.yourTeam')}</Link>} />
+      <p className="v2-agent-settings__kind">{kind === 'byo' ? harnessLabel || t('agentSettings.rev3.onMachine') : t(`agentSettings.rev3.${kind}`)}</p>
       <nav className="v2-agent-settings__tabs" aria-label={t('agentSettings.tabs')}>
         <Link to={`/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`}>{t('agentSettings.profile')}</Link>
         <span aria-current="page">{t('agentSettings.settings')}</span>
       </nav>
-      <AgentControlLoader agentName={agentName} instanceId={instanceId}
+      {installation && connectionState !== 'never' && <details className="v2-agent-settings__identity-details">
+        <summary>{t('agentSettings.displayName')}</summary>
+        <V2AgentIdentitySection nameOnly installation={installation} update={update} />
+      </details>}
+      <V2AgentStatus key={identityKey} agentName={agentName} instanceId={instanceId}
+        paused={installation?.status === 'paused'} builtIn={kind === 'builtIn'}
+        observation={runtimeObservation} run={runtimeRun} task={heldTask} update={update}
         refreshNonce={connectionRefreshNonce} onConnectionState={onConnectionState} />
-      <section className="v2-agent-settings__section" aria-labelledby="agent-keys-title">
+      <V2AgentRuntimeGrants name={agentName} instanceId={instanceId} runtime={runtime} section="runtime" runtimeTitle={t('agentSettings.rev3.runtime')}
+        runtimeSummary={<V2AgentRuntimeSummary name={agentName} runtime={runtime} serverModel={runtimeRun?.model} />} />
+      {runtimeManaged && runtimeEditable && <details className="v2-agent-settings__runtime-details">
+        <summary>{t('agentSettings.rev3.editRuntime')}</summary>
+        <V2RuntimeControls runtime={runtime} onSave={updateRuntime} />
+      </details>}
+
+      {connectionState !== 'never' && <>
+      <V2AgentWakePods key={`wake:${identityKey}:${connectionRefreshNonce}`} section="wake" showTurnEstimate={kind !== 'builtIn'} agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
+      <V2AgentPolicy section="memory" key={`memory:${agentName}:${instanceId}`} agentName={agentName} instanceId={instanceId}
+        installation={installation} update={update} />
+      <V2AgentRuntimeGrants
+        section="grants" grantsTitle={t('agentSettings.rev3.tools')}
+        key={`runtime:${agentName}:${instanceId}`}
+        name={agentName}
+        instanceId={instanceId}
+        runtime={runtime}
+        onSaveRuntime={runtimeEditable ? async (changes) => {
+          await updateRuntime(changes);
+        } : undefined}
+      />
+      <div className="v2-agent-settings__section">
+        <V2AgentSkills subsection podId={podId} podName={access?.pods.find((pod) => pod.id === podId)?.name || podId} agentName={agentName} instanceId={instanceId} />
+      </div>
+      {kind !== 'builtIn' && <V2AgentPolicy section="usage" agentName={agentName} instanceId={instanceId}
+        installation={installation} update={update} />}
+      {!inProcess && <section className="v2-agent-settings__section" aria-labelledby="agent-keys-title">
         <div className="v2-agent-settings__section-head">
-          <h2 id="agent-keys-title">{t('agentSettings.key')}</h2>
+          <h2 id="agent-keys-title">{t('agentSettings.rev3.key')}</h2>
           {keysForbidden ? null : installation?.runtime?.runtimeType === 'wrapper' ? (
-            <span>{t('agentSettings.wrapperReconnect')}</span>
+            connectionState === 'connected' ? <Link
+              to={`/v2/agents/byo?pod=${encodeURIComponent(podId)}&name=${encodeURIComponent(agentName)}&instanceId=${encodeURIComponent(instanceId)}&reconnect=1&mode=machine`}>
+              {t('agentSettings.regenerate')}
+            </Link> : <span>{t('agentSettings.wrapperReconnect')}</span>
           ) : !disconnected && (
             <button type="button" onClick={() => setPendingAction('replace')} disabled={busy}>
               {t('agentSettings.regenerate')}
@@ -270,23 +319,9 @@ const V2AgentSettingsPage: React.FC = () => {
             </details>}
           </>
         )}
-      </section>
-      {installation && <V2AgentIdentitySection key={`${agentName}:${instanceId}`} installation={installation} update={update} />}
-      <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
-      <V2AgentRuntimeGrants
-        key={`runtime:${agentName}:${instanceId}`}
-        name={agentName}
-        instanceId={instanceId}
-        runtime={runtime}
-        onSaveRuntime={runtimeEditable ? async (changes) => {
-          await updateRuntime(changes);
-        } : undefined}
-      />
-      <V2AgentPolicy key={`policy:${agentName}:${instanceId}`} agentName={agentName} instanceId={instanceId}
-        installation={installation} update={update} />
-      <div className="v2-agent-settings__section">
-        <V2AgentSkills podId={podId} podName={access?.pods.find((pod) => pod.id === podId)?.name || podId} agentName={agentName} instanceId={instanceId} />
-      </div>
+      </section>}
+      <V2AgentWakePods section="remove" agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
+      </>}
     </main>
   );
 };

@@ -5151,3 +5151,16 @@ describe('v2 board on a phone (TASK-576)', () => {
     expect(page).toContain('<V2MobileTabs needsYouCount={attention.count ?? 0} />');
   });
 });
+
+describe('D44 rev3 agent Settings', () => {
+  const settings = read('../agents/v2-agent-settings.css');
+  test('does not stack feature-shell padding onto the phone Settings gutter', () => {
+    expect(ruleBody(settings, '.v2-feature--agent-settings > .v2-feature__body')).toContain('padding: 0');
+  });
+  test('runtime values and commands can wrap without widening the phone', () => {
+    expect(ruleBody(settings, '.v2-agent-runtime-summary dd')).toContain('overflow-wrap: anywhere');
+    expect(ruleBody(settings, '.v2-agent-runtime-summary__command code')).toContain('min-width: 0');
+    expect(ruleBody(settings, '.v2-agent-runtime-summary__command code')).toContain('overflow-wrap: anywhere');
+    expect(settings).toContain('min-height: 44px');
+  });
+});

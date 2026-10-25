@@ -1,11 +1,14 @@
 // Owner/admin controls for one agent installation at a time.
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
-import { hostedCapsForOwner, userRunCeilingForOwner } from '../../services/hostedRuntimeService';
+import { hostedCapsForOwner, userRunCeilingForOwner, meterAllowsTurn } from '../../services/hostedRuntimeService';
+import { hostedRunsNative } from '../../services/hostedEngine';
 import { projectSeatEnvironments, seatEnvironmentKey } from '../../services/seatEnvironmentProjection';
 const { ownKeyCapability } = require('../../services/agentProviderKey');
 const Machine = require('../../models/Machine');
 const AgentRuntimeObservation = require('../../models/AgentRuntimeObservation');
+const AgentRun = require('../../models/AgentRun');
+const Task = require('../../models/Task');
 const express = require('express');
 const auth = require('../../middleware/auth');
 const { AgentInstallation } = require('../../models/AgentRegistry');
@@ -58,7 +61,7 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     }).sort({ createdAt: 1, _id: 1 }).lean();
     const manageable = installations.filter((entry: any) => canManage(entry, userId, isAdmin));
     const pods = await Pod.find({ _id: { $in: manageable.map((entry: any) => entry.podId) } })
-      .select('name').lean();
+      .select('name members').lean();
     const names = new Map<string, string>(pods.map((pod: any) => [String(pod._id), String(pod.name)]));
     const visible = manageable.filter((entry: any) => names.has(String(entry.podId)));
     const fallback = visible.find((entry: any) => entry.status === 'active') || visible[0];
@@ -97,6 +100,19 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       agentUserId: binding._id, machineId: binding.botMetadata.machineId,
     }).select('connectedAt lastSeenAt lastSpawn lastSpawnOutcome turnRunning lastTurnAt -_id').lean() : null;
     const runtimeManaged = Boolean(binding?.botMetadata?.machineId);
+    // A saved preference is not evidence of the model a turn actually used.
+    const run = !runtimeManaged && visible.length ? await AgentRun.findOne({
+      agentName: String(req.params.name).toLowerCase(),
+      instanceId: normalizeInstanceId(req.query.instanceId),
+      userId: String(quotaOwner),
+      podId: { $in: visible.map((entry: any) => entry.podId) },
+    }).sort({ startedAt: -1, _id: -1 }).select('startedAt completedAt status turns.model').lean() : null;
+    // Managing an installation does not grant access to its pod's task board.
+    const memberPodIds = pods.filter((pod: any) => (pod.members || [])
+      .some((member: any) => String(member) === String(userId))).map((pod: any) => pod._id);
+    const heldTask = binding && memberPodIds.length ? await Task.findOne({
+      podId: { $in: memberPodIds }, claimedBy: String(binding._id), status: 'claimed',
+    }).sort({ claimedAt: -1, _id: -1 }).select('taskId podId -_id').lean() : null;
     if (runtimeManaged && !runtimeControls.runtimeType) runtimeControls.runtimeType = 'wrapper';
     const runtimeSavedControls = { ...runtimeControls };
     // A standalone `agent run` reads its local token record. Hosted/native
@@ -110,7 +126,11 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     const [{ turnsPerDay }, userRunCeiling] = await Promise.all([
       hostedCapsForOwner(quotaOwner), userRunCeilingForOwner(quotaOwner),
     ]);
+    const usage = normalizeConfigMap(fallback?.config)?.runtime?.runtimeType === 'hosted'
+      ? await meterAllowsTurn(req.params.name, normalizeInstanceId(req.query.instanceId), turnsPerDay,
+        { countRuns: hostedRunsNative(fallback) }) : null;
     return res.json({ turnCap: turnsPerDay, userRunCeiling, podCount: installations.length,
+      usage,
       activePodCount: installations.filter((entry: any) => entry.status === 'active').length,
       writablePodId: writable ? String(writable.podId) : null,
       runtimeSourcePodId: !runtimeManaged ? null
@@ -120,6 +140,10 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       runtimeSavedControls,
       ownKeyCapability: runtimeManaged ? ownKeyCapability(runtime, environment) : { available: false, provider: null },
       runtimeObservation: observation ? { ...observation, confirmed: null } : null,
+      runtimeRun: run ? { model: run.turns?.at(-1)?.model || null,
+        startedAt: run.startedAt, completedAt: run.completedAt || null, status: run.status } : null,
+      heldTask: heldTask ? { taskId: heldTask.taskId, podId: String(heldTask.podId),
+        podName: names.get(String(heldTask.podId)) } : null,
       processConnected: machine ? Boolean(machine.lastSeenAt && Date.now() - new Date(machine.lastSeenAt).getTime() < 90_000
         && machine.agentStates?.some((entry: any) => entry.agentName === String(req.params.name).toLowerCase()
           && entry.instanceId === normalizeInstanceId(req.query.instanceId) && entry.state === 'running')) : null,
