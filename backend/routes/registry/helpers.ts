@@ -545,8 +545,7 @@ const buildRuntimeLogFilters = ({ runtimeType, agentName, instanceId }: { runtim
   const accountId = normalizedAgent === 'openclaw'
     ? normalizedInstance
     : `${normalizedAgent}-${normalizedInstance}`;
-  const tokens = [normalizedInstance, accountId, normalizedAgent].filter(Boolean);
-  return Array.from(new Set(tokens));
+  return [accountId];
 };
 
 const resolveGatewayForRequest = async ({ gatewayId, userId }: { gatewayId: any; userId: any }) => {
