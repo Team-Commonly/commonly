@@ -891,7 +891,7 @@ const V2LandingPage: React.FC = () => {
             <dl className="v2-landing__faq">
               {LANDING_FAQ.map((item) => (
                 <div className="v2-landing__faq-item" key={item.question}>
-                  <dt className="v2-landing__card-title">{item.question}</dt>
+                  <dt>{item.question}</dt>
                   <dd className="v2-landing__card-text">{item.answer}</dd>
                 </div>
               ))}
