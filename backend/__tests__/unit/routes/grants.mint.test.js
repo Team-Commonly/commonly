@@ -336,7 +336,7 @@ describe('POST /api/grants on a hosted-mcp connection', () => {
   });
 
   test('write is refused on a hosted row, and write-with-confirm is not', async () => {
-    Integration.findById.mockResolvedValue(hostedRow());
+    Integration.findById.mockResolvedValue(hostedRow({ grantedScope: 'read write openid' }));
     const refused = await withCatalog([ENTRY], () => hostedMint({ writeMode: 'write' }));
     expect(refused.status).toBe(403);
     expect(refused.body).toMatchObject({ error: 'write_requires_confirm' });
@@ -346,6 +346,16 @@ describe('POST /api/grants on a hosted-mcp connection', () => {
     // and the mint proceeds — so the refusal is about the mode, not the type.
     const allowed = await withCatalog([ENTRY], () => hostedMint({ writeMode: 'write-with-confirm' }));
     expect(allowed.status).toBe(201);
+  });
+
+  test.each(['read openid', '', undefined, 'read overwrite openid'])('Linear scope %s cannot mint confirmation mode', async (grantedScope) => {
+    Integration.findById.mockResolvedValue(hostedRow({ grantedScope }));
+    const res = await withCatalog([ENTRY], () => hostedMint({ writeMode: 'write-with-confirm' }));
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('write_scope_required');
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+    const read = await withCatalog([ENTRY], () => hostedMint({ writeMode: 'read' }));
+    expect(read.status).toBe(201);
   });
 
   test('a github-app write grant is refused by the CTO pod-eligibility ruling', async () => {

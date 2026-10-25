@@ -86,7 +86,7 @@ const intake = require('../../../services/hostedMcpIntakeService');
 const dcr = require('../../../services/hostedMcpDcrRegistry');
 
 const { HOSTED_MCP_ENTRIES: SHIPPED_ENTRIES } = jest.requireActual('../../../integrations/hostedMcp/entries');
-const LINEAR_SCOPE_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-01.json');
+const LINEAR_SCOPE_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-19.json');
 const ATLASSIAN_SCOPE_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-19.json');
 const AIRTABLE_SCOPE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
 const GOOGLE_CALENDAR_CAPTURE = require('../../fixtures/hostedMcp/google-calendar-tools-list-2026-10-01.json');
@@ -337,7 +337,7 @@ describe('hosted-mcp connect: callback', () => {
   });
   it('the captured Linear, Atlassian and Airtable grants match their requested scope sets', () => {
     const captures = [
-      [LINEAR_SCOPE_CAPTURE, 'scope'],
+      [LINEAR_SCOPE_CAPTURE, 'grantedScope'],
       [ATLASSIAN_SCOPE_CAPTURE, 'grantedScope'],
       [AIRTABLE_SCOPE_CAPTURE, 'grantedScope'],
     ];

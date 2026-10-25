@@ -2222,6 +2222,7 @@
     "loadFailed": "Could not load artifacts."
   },
   "tools": {
+    "linearWriteReconnect": "Linear connections made before write access was added need to be removed and connected again to enable writes. Each write requires your approval.",
     "makePodInviteOnly": "Make this pod invite-only",
     "podInviteOnlyNow": "This pod is invite-only. Select Grant to continue.",
     "joinPolicyError": "Could not make this pod invite-only.",

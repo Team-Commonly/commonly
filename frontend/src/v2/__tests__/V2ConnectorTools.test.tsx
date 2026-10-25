@@ -76,6 +76,20 @@ const linearEntry = {
 };
 const grantLinear = { ...grantLive, grantId: 'grant_lin', installationId: 'inst-2', writeMode: 'read', tools: ['linear.list_issues'] };
 
+test.each(['en', 'zh-CN'])('connected Linear explains the write reconnect requirement in %s', async (language) => {
+  await i18nReady;
+  await act(async () => { await i18n.changeLanguage(language); });
+  try {
+    mockTwoEntries({ catalog: [linearEntry], grants: { p1: [grantLinear], p2: [] } });
+    render(<AuthContext.Provider value={authValue}><MemoryRouter><V2ConnectorTools pods={pods} /></MemoryRouter></AuthContext.Provider>);
+    const notice = await screen.findByRole('note');
+    expect(notice).toHaveTextContent(language === 'en' ? 'connected again to enable writes' : '重新连接');
+    expect(notice).toHaveTextContent(language === 'en' ? 'Each write requires your approval' : '每次写入都需要你批准');
+  } finally {
+    await act(async () => { await i18n.changeLanguage('en'); });
+  }
+});
+
 test('Atlassian shows its read-in-testing state on an existing grant', async () => {
   const atlassian = { ...linearEntry, installableId: 'atlassian', entryId: 'atlassian', label: 'Atlassian',
     tools: [{ name: 'atlassian.get_accessible_atlassian_resources', requiredWriteMode: 'read', irreversible: false }] };

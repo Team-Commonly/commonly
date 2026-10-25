@@ -347,6 +347,16 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
         message: 'a hosted-mcp grant cannot hold write mode; use write-with-confirm',
       });
     }
+    // Linear's earlier tokens carry read/openid only. Approval cannot upgrade
+    // that vendor authorization; require a reconnect before minting this mode.
+    if (hosted && connection.config?.entryId === 'linear' && body.writeMode === 'write-with-confirm'
+      && !(typeof connection.config?.grantedScope === 'string' ? connection.config.grantedScope : '')
+        .split(/\s+/).includes('write')) {
+      return res.status(403).json({
+        error: 'write_scope_required',
+        message: 'reconnect Linear to enable writes before granting write-with-confirm',
+      });
+    }
 
     const target = body.target;
     if (!target || (target.kind !== 'pod' && target.kind !== 'seat')) {
