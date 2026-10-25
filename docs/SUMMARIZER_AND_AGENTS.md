@@ -92,27 +92,18 @@ Claude on BYO agents still runs on the owner's machine. Hosted Claude routing
 through OpenRouter is separate work; existing model choices must not be
 rewritten while that decision is pending.
 
-The census is strictly read-only:
-
-```sh
-cd backend
-npx ts-node scripts/census-anthropic-installations.ts
-```
-
-It requires `MONGO_URI`, prints only aggregate counts, and refuses every
-argument, including `--apply`, before connecting. It checks runtime and
-environment model fields, but only explicitly hosted runtimes (`native`,
-`hosted`, `internal`, `moltbot`, `managed-agents`) count as hosted candidates.
-CLI, webhook and unset/unknown tiers are reported separately. No documents,
-owner notices or indexes are written. Use read-only DB credentials for the
-production run; SRE owns that census.
+SRE's read-only census found no hosted/native Claude selections; the 47
+Claude selections were BYO seats. There is no migration script and no apply
+path. Removing a hosted route must not rewrite BYO or unknown-tier models.
+`litellmAvailability.byo.test.js` checks persisted local selections against both
+a model listing without Claude and failed gateway availability requests.
 
 Deployment sequencing: merge and deploy the runtime/chart removal first.
 SRE then removes the existing Secret Manager value and ESO mapping from
 `templates/secrets/api-keys.yaml`, verifies ESO reconciliation, and checks
 remaining runtime/PVC credential copies. The ExternalSecret entry is retained
 until that owned cleanup so it is not confused with removal already performed
-on production. No secret value is handled by this census or its tests.
+on production. No secret value is handled by these tests.
 
 ---
 
