@@ -37,14 +37,14 @@ export function resolveAgentDisplayLabel(
   // instead of using the curated label. Treat these as if displayName were
   // missing and fall through to instanceId. Matches both the
   // `<runtime> (<instance>)` form and the bare `<runtime>` form
-  // (e.g. displayName === 'openclaw'). Also catches the case where
-  // displayName equals just instanceId — the chain below would render the
-  // same thing, but we drop the redundant pass here.
+  // (e.g. displayName === 'openclaw') for a non-default instance. A default
+  // agent can have a curated label equal to its name ('Pixel'), so bare
+  // equality alone does not prove a runtime leak there.
   const leakedPattern = (
     !!display
     && !!agentName
     && (
-      display.toLowerCase() === agentName.toLowerCase()
+      (!!instanceId && instanceId !== 'default' && display.toLowerCase() === agentName.toLowerCase())
       || (
         !!instanceId
         && display.toLowerCase() === `${agentName.toLowerCase()} (${instanceId.toLowerCase()})`

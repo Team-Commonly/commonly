@@ -1,8 +1,10 @@
+const rateLimit = require('express-rate-limit');
 const express = require('express');
 const request = require('supertest');
 
 jest.mock('../../../middleware/auth', () => jest.fn((req, res, next) => {
-  if (req.header('Authorization') !== 'Bearer valid-user' && req.header('x-auth-token') !== 'valid-user') {
+  const token = req.header('Authorization')?.replace('Bearer ', '') || req.header('x-auth-token');
+  if (token !== 'valid-user') {
     return res.status(401).json({ verifier: 'human' });
   }
   req.userId = 'person-1';
@@ -18,7 +20,9 @@ const dualAuth = require('../../../middleware/dualAuth');
 const humanAuth = require('../../../middleware/auth');
 const agentAuth = require('../../../middleware/agentRuntimeAuth');
 const app = express();
-app.get('/', dualAuth, (req, res) => res.json({ human: req.userId || null, agent: req.agentUser?._id || null }));
+// Keep even this unserved HTTP fixture behind the normal limiter-before-auth order.
+const limiter = rateLimit({ windowMs: 60000, max: 100 });
+app.get('/', limiter, dualAuth, (req, res) => res.json({ human: req.userId || null, agent: req.agentUser?._id || null }));
 beforeEach(() => jest.clearAllMocks());
 
 test.each([
@@ -26,6 +30,9 @@ test.each([
   [{ 'x-commonly-agent-token': 'cm_agent_valid' }, 200, 'agent'],
   [{ Authorization: 'Bearer valid-user' }, 200, 'human'],
   [{ 'x-auth-token': 'valid-user' }, 200, 'human'],
+  [{ 'x-auth-token': 'cm_agent_valid' }, 401, 'human'],
+  [{ 'x-commonly-agent-token': 'invalid', 'x-auth-token': 'valid-user' }, 200, 'human'],
+  [{ Authorization: 'Bearer invalid', 'x-auth-token': 'valid-user' }, 401, 'human'],
   [{ Authorization: 'Bearer valid-user', 'x-commonly-agent-token': 'cm_agent_valid' }, 200, 'human'],
   [{ Authorization: 'Bearer cm_agent_revoked', 'x-auth-token': 'valid-user' }, 401, 'agent'],
   [{ Authorization: 'Bearer invalid', 'x-commonly-agent-token': 'cm_agent_valid' }, 401, 'human'],
@@ -39,4 +46,15 @@ test.each([
   expect(agentAuth).toHaveBeenCalledTimes(verifier === 'agent' ? 1 : 0);
   if (status === 200) expect(res.body).toEqual(verifier === 'agent'
     ? { human: null, agent: 'agent-1' } : { human: 'person-1', agent: null });
+});
+
+test.each([
+  [{ Authorization: 'Bearer valid-user', 'x-commonly-agent-token': 'cm_agent_valid' }, 'human', 'valid-user'],
+  [{ 'x-commonly-agent-token': 'cm_agent_valid', 'x-auth-token': 'spoof-a' }, 'agent', 'cm_agent_valid'],
+  [{ 'x-commonly-agent-token': 'cm_agent_valid', 'x-auth-token': 'spoof-b' }, 'agent', 'cm_agent_valid'],
+  [{ 'x-commonly-agent-token': 'not-a-runtime-token', 'x-auth-token': 'valid-user' }, 'human', 'valid-user'],
+  [{ 'x-auth-token': 'cm_agent_valid' }, 'human', 'cm_agent_valid'],
+])('the limiter keys the selected verifier credential for %j', (headers, verifier, token) => {
+  const { resolveDualAuthCredential } = require('../../../middleware/dualAuth');
+  expect(resolveDualAuthCredential({ header: (name) => headers[name] })).toEqual({ verifier, token });
 });

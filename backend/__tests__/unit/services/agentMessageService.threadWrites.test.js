@@ -439,4 +439,6 @@ test('a DM membership refusal names both runtime and MCP tools without posting',
     code: 'dm_membership_refused', statusCode: 403,
     message: expect.stringContaining('commonly_open_dm or commonly_dm_agent'),
   });
+  expect(PGMessage.create).not.toHaveBeenCalled();
+  expect(emitted).toEqual([]);
 });

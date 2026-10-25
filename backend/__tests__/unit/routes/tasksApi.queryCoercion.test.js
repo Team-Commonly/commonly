@@ -65,6 +65,20 @@ describe('GET /api/v1/tasks/:podId — query coercion at the boundary', () => {
     expect(humanAuth).not.toHaveBeenCalled();
   });
 
+  test('an alternate runtime token keeps one write budget while x-auth-token rotates', async () => {
+    for (let i = 0; i < 20; i += 1) {
+      const response = await request(app).post(`/api/v1/tasks/${POD}`)
+        .set('x-commonly-agent-token', 'cm_agent_budget').set('x-auth-token', `unrelated-${i}`).send({});
+      expect(response.status).toBe(400); // Missing title, after the real limiter/auth chain.
+    }
+    const refused = await request(app).post(`/api/v1/tasks/${POD}`)
+      .set('x-commonly-agent-token', 'cm_agent_budget').set('x-auth-token', 'another-unused-header').send({});
+    expect(refused.status).toBe(429);
+    const control = await request(app).post(`/api/v1/tasks/${POD}`)
+      .set('x-commonly-agent-token', 'cm_agent_other_budget').set('x-auth-token', 'unrelated-0').send({});
+    expect(control.status).toBe(400);
+  });
+
   // Domain guard, by the rule these tests are an instance of: every assertion
   // below is negative-form (`not.toHaveProperty`), and a negative passes on a
   // subject that does not exist. Asserting the query is well-formed FIRST means

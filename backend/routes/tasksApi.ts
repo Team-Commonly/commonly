@@ -9,6 +9,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/dualAuth');
+const { resolveDualAuthCredential } = auth;
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
@@ -140,7 +141,7 @@ const updateTaskWithRevision = async (
 ) => (await updateTaskWithRevisionSnapshot(filter, update))?.task || null;
 
 const taskWriteRateLimitKey = (req: Request): string => {
-  const authHeader = req.get('Authorization') || req.get('x-auth-token');
+  const authHeader = resolveDualAuthCredential(req).token;
   if (authHeader) {
     return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
   }
