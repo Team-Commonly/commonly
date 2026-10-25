@@ -2697,6 +2697,13 @@
     "noPod": "This agent has no active pod.",
     "missingReplacement": "The replacement key was not returned.",
     "rev3": {
+      "onceConnected": "On your machine, once connected",
+      "builtInLocation": "On Commonly, built in",
+      "model": "Model",
+      "modelEffort": "Model · effort",
+      "modelPrefix": "Commonly picks the model: ",
+      "boundMachine": "Bound to {{name}}",
+      "kindNotConnected": "not connected yet",
       "status": "Status",
       "builtIn": "built in",
       "hosted": "run it here",

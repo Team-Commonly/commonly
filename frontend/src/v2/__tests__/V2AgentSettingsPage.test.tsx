@@ -667,3 +667,12 @@ test('never-connected agents keep removal folded and available', async () => {
   disclosure.open = true;
   expect(within(disclosure).getByRole('button', { name: 'Remove from pod' })).toBeEnabled();
 });
+
+
+test('BYO without a receipt describes a future connection without a missing command', async () => {
+  renderPage();
+  const section = (await screen.findByRole('heading', { name: 'Runtime', exact: true })).closest('section');
+  expect(within(section).getByText('On your machine, once connected')).toBeInTheDocument();
+  expect(section).not.toHaveTextContent('To change it, run this there:');
+  expect(within(section).queryByRole('button', { name: 'Copy' })).toBeNull();
+});

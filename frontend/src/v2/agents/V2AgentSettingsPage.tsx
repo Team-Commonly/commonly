@@ -242,7 +242,7 @@ const V2AgentSettingsPage: React.FC = () => {
         seed={`${agentName}:${instanceId}`} src={typeof installation?.profilePicture === 'string' ? installation.profilePicture : undefined} />
         <span>{access.displayName || agentName}</span></span>}
         actions={<Link to="/v2/agents">{t('agentSettings.yourTeam')}</Link>} />
-      <p className="v2-agent-settings__kind">{kind === 'byo' ? harnessLabel || t('agentSettings.rev3.onMachine') : t(`agentSettings.rev3.${kind}`)}</p>
+      <p className="v2-agent-settings__kind">{kind === 'byo' ? harnessLabel || t('agentSettings.rev3.onMachine') : t(`agentSettings.rev3.${kind === 'notConnected' ? 'kindNotConnected' : kind}`)}</p>
       <nav className="v2-agent-settings__tabs" aria-label={t('agentSettings.tabs')}>
         <Link to={`/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`}>{t('agentSettings.profile')}</Link>
         <span aria-current="page">{t('agentSettings.settings')}</span>

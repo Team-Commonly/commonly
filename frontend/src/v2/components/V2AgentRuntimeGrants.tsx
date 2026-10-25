@@ -188,7 +188,7 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
         {details.mode === 'daemon' && placement && (
           <div className="v2-agent-runtime-grants__edit" data-testid="agent-machine-placement">
             {placement.boundMachineRevoked && <p role="status">{t('agentManage.runtime.machineRevoked')}</p>}
-            {!placement.boundMachineRevoked && placement.boundMachineId && <p>{t('agentManage.runtime.currentMachine', {
+            {!placement.boundMachineRevoked && placement.boundMachineId && <p>{t(runtimeSummary ? 'agentSettings.rev3.boundMachine' : 'agentManage.runtime.currentMachine', {
               name: placement.activeMachines.find((machine) => machine.machineId === placement.boundMachineId)?.name || placement.boundMachineId,
             })}</p>}
             {placement.requestedMachineId && !placement.boundMachineId && <p role="status">{t('agentManage.runtime.machineRequested', {

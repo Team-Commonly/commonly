@@ -19,7 +19,7 @@ interface Props {
 
 const V2AgentStatus: React.FC<Props> = ({ agentName, instanceId, paused, builtIn,
   observation, run, task, refreshNonce, update, onConnectionState }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const togglePause = async () => {
@@ -46,7 +46,7 @@ const V2AgentStatus: React.FC<Props> = ({ agentName, instanceId, paused, builtIn
             <strong>{snapshot ? t(`agentSettings.rev3.${state}`) : t(unavailable ? 'agentConnection.unavailable' : 'agentConnection.checking')}
               {task && <> · <Link to={`/v2/pods/${task.podId}`}>{task.taskId}</Link></>}
             </strong>
-            <span className="v2-agent-status__last">{lastTurn ? t('agentSettings.rev3.lastTurn', { date: new Date(lastTurn).toLocaleString() }) : t('agentSettings.rev3.lastTurnUnknown')}</span>
+            <span className="v2-agent-status__last">{lastTurn ? t('agentSettings.rev3.lastTurn', { date: new Date(lastTurn).toLocaleString(i18n.language, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }) : t('agentSettings.rev3.lastTurnUnknown')}</span>
             <p>{t(`agentSettings.rev3.${builtIn ? 'builtInStatus' : never ? 'connectHint' : off ? 'offHint' : 'pauseHint'}`)}</p>
           </div>
           {(never || connection?.state === 'revoked') && reconnect ? <Link className="v2-agent-settings__action" to={reconnect}>{t(never ? 'agentSettings.rev3.connect' : 'agentConnection.reconnect')}</Link>

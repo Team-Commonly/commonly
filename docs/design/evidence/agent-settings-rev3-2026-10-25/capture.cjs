@@ -31,6 +31,18 @@ for(const lang of ['en','zh-CN']) for(const kind of ['byo','hosted','scout','nev
  await Promise.all([document.fonts.load('400 12px "IBM Plex Sans"'),document.fonts.load('400 12px "IBM Plex Mono"')]);
  if(!document.fonts.check('400 12px "IBM Plex Sans"')||!document.fonts.check('400 12px "IBM Plex Mono"'))throw new Error('Signal fonts missing');
  });
+ if(width===390) {
+ for(const el of await page.locator('.v2-agent-status button, .v2-agent-status a.v2-agent-settings__action, .v2-agent-runtime-summary__command button').all()) {
+ const box=await el.boundingBox(); if(box && box.height<44) throw new Error('Phone action below 44px: '+box.height);
+ }
+ }
+ if(kind==='byo') {
+ const flags=page.locator('.v2-agent-runtime-summary__command code span').filter({hasText:/^--/});
+ if(await flags.count()!==2) throw new Error('Config flags missing');
+ for(const flag of await flags.all()) if(await flag.evaluate(el=>getComputedStyle(el).whiteSpace)!=='nowrap') throw new Error('Config flag can split');
+ }
+ if(kind==='never' && await page.getByText(/To change it, run this there:/).count()) throw new Error('Missing command hint');
+ if(kind==='byo' && await page.getByText(/Running on Laptop/).count()) throw new Error('Binding claims a running process');
  for (const title of (lang==='en'?['Status','Runtime']:['状态','运行方式'])) { const section=page.getByRole('heading',{name:title,exact:true}).locator('..'); await section.screenshot({path:`${outDir}/${lang}-${kind}-${width}-${title.toLowerCase()}.png`}); }
  await page.locator('.v2-agent-settings').evaluate(el=>el.closest('.v2-feature__body').scrollTop=0);
  await page.screenshot({path:`${outDir}/${lang}-${kind}-${width}.png`,fullPage:true});

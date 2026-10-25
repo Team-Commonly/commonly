@@ -115,7 +115,7 @@
 }
 
 /* D44 rev3, section 05: factual runtime data and one status action. */
-.v2-agent-settings__kind { margin: 4px 0 16px; color: var(--v2-text-tertiary); font: 12px var(--v2-font-mono); }
+.v2-agent-settings__kind { margin: 4px 0 16px; color: var(--v2-text-tertiary); font: 11px var(--v2-font-mono); }
 .v2-agent-status { display: flex; align-items: center; gap: 12px; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius); padding: 14px 16px; margin-top: 12px; }
 .v2-agent-status > div { flex: 1; min-width: 0; }
 .v2-agent-status strong { font-size: 13px; }
@@ -128,14 +128,17 @@
 .v2-agent-runtime-summary dt { font-size: 12px; color: var(--v2-text-tertiary); }
 .v2-agent-runtime-summary dd { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
 .v2-agent-runtime-summary small { display: block; margin-top: 4px; font-size: 12px; color: var(--v2-text-tertiary); }
-.v2-agent-runtime-summary__command { display: flex; align-items: center; gap: 12px; padding: 8px 10px; background: var(--v2-bg-subtle); border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius); }
-.v2-agent-runtime-summary__command code { flex: 1; min-width: 0; overflow-wrap: anywhere; font: 11px var(--v2-font-mono); }
+.v2-agent-runtime-summary__command { margin-left: 166px; display: flex; align-items: center; gap: 12px; padding: 8px 10px; background: var(--v2-bg-subtle); border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius); }
+.v2-agent-runtime-summary__command code { flex: 1; min-width: 0; overflow-wrap: normal; word-break: normal; white-space: pre-wrap; overflow-x: auto; font: 11px var(--v2-font-mono); }
+.v2-agent-runtime-summary__command code span { display: inline-block; white-space: nowrap; }
 @media (max-width: 760px) {
   .v2-agent-status { flex-wrap: wrap; padding: 12px; }
-  .v2-agent-status button, .v2-agent-status .v2-agent-settings__action { min-height: 44px; }
+  .v2-root .v2-agent-settings button:not(.MuiButtonBase-root),
+  .v2-root .v2-agent-settings a.v2-agent-settings__action { min-height: 44px; }
+  .v2-root .v2-agent-settings .v2-agent-status .v2-agent-settings__action { width: 100%; justify-content: center; }
   .v2-agent-runtime-summary dl > div { grid-template-columns: 100px minmax(0, 1fr); gap: 12px; }
-  .v2-agent-runtime-summary__command { align-items: flex-start; }
-  .v2-agent-runtime-summary__command button { min-height: 44px; }
+  .v2-agent-runtime-summary__command { align-items: flex-start; margin-left: 0; }
+
 }
 .v2-feature--agent-settings > .v2-feature__body { padding: 0; }
 .v2-agent-settings__name { display: flex; align-items: center; gap: 12px; }

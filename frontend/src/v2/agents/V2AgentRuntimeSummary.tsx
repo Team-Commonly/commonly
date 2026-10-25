@@ -27,15 +27,15 @@ const V2AgentRuntimeSummary: React.FC<{
   };
   return <div className="v2-agent-runtime-summary">
     <dl>
-      <div><dt>{t('agentSettings.rev3.where')}</dt><dd>{t(`agentSettings.rev3.${onCommonly ? 'onCommonly' : 'onMachine'}`)}
-        {details.mode === 'native' ? `, ${t('agentSettings.rev3.builtIn')}` : observedHarness ? ` · ${observedHarness}` : ''}</dd></div>
-      <div><dt>{t('agentManage.controls.model')}{!onCommonly && ` · ${t('agentManage.controls.effort')}`}</dt>
-        <dd>{onCommonly && `${t('agentSettings.rev3.modelPicked')}: `}{model || t('agentManage.controls.notReported')}
+      <div><dt>{t('agentSettings.rev3.where')}</dt><dd>{t(`agentSettings.rev3.${details.mode === 'native' ? 'builtInLocation' : onCommonly ? 'onCommonly' : last ? 'onMachine' : 'onceConnected'}`)}
+        {observedHarness ? ` · ${observedHarness}` : ''}</dd></div>
+      <div><dt>{t(`agentSettings.rev3.${onCommonly ? 'model' : 'modelEffort'}`)}</dt>
+        <dd>{onCommonly && t('agentSettings.rev3.modelPrefix')}{model || t('agentManage.controls.notReported')}
           {!onCommonly && last?.effort ? ` · ${last.effort}` : ''}
-          <small>{t(`agentSettings.rev3.${onCommonly ? 'serverReported' : 'machineReported'}`)}</small>
+          {(onCommonly || last) && <small>{t(`agentSettings.rev3.${onCommonly ? 'serverReported' : 'machineReported'}`)}</small>}
         </dd></div>
     </dl>
-    {!onCommonly && last && <div className="v2-agent-runtime-summary__command"><code>{configCommand}</code>
+    {!onCommonly && last && <div className="v2-agent-runtime-summary__command"><code>{configCommand.split(' ').map((word, index) => <React.Fragment key={index}>{index > 0 && ' '}<span>{word}</span></React.Fragment>)}</code>
       <button type="button" onClick={() => { void copy(); }}>{t('common.copy')}</button>
     </div>}
     {copyError && <p role="alert">{t('agentSettings.rev3.copyError')}</p>}

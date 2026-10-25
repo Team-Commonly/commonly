@@ -18,6 +18,12 @@ Reference: section 05 of the rev3 artboard attached to TASK-546. The review bund
 
 The existing OpenClaw Persona editor remains available inside the folded identity editor because its save path writes the runtime workspace’s `IDENTITY.md`. Other runtime kinds retain their existing name-only editor.
 
+## Status and Runtime review follow-up
+
+The capture fixture asserts that Pause, Copy and connect actions measure at least 44px at 390. Runtime without a spawn receipt says “On your machine, once connected” and omits the command hint. Placement is labelled “Bound to” so an Off agent does not claim to be running. Config flags are nonbreaking tokens; the desktop command aligns with the runtime value column. Last-turn dates use the selected language without seconds; Chinese location/model separators belong to the locale.
+
+Scout retains Pause: the existing installation status PATCH accepts active/paused without a runtime restriction, and the event routing selects active installations. This control pauses the installation while preserving memory and membership, as requested in TASK-546. The model remains the raw ID from the run receipt, preserving its exact readback rather than inventing a display name.
+
 ## Reproduce
 
 Start the normal frontend dev server on `127.0.0.1:3546`, then run `node capture.cjs` in an environment with Playwright installed. `PLAYWRIGHT_MODULE` can point to an existing installation; `OUTPUT_DIR` changes the destination. The fixture defaults to the system Chrome executable on macOS. If node_modules is a worktree symlink, allow its real directory in the local Vite server’s `server.fs.allow`; otherwise font URLs are refused. The capture asserts the Signal font loads before taking images. The source uses fake identities and a fixed receipt, so the displayed values can be checked against the intercepted responses.

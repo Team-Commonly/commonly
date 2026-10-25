@@ -2688,6 +2688,13 @@
     "noPod": "此智能体没有活跃的 Pod。",
     "missingReplacement": "未返回新密钥。",
     "rev3": {
+      "onceConnected": "连接后在你的电脑上运行",
+      "builtInLocation": "在 Commonly 上，内置",
+      "model": "模型",
+      "modelEffort": "模型 · 思考强度",
+      "modelPrefix": "Commonly 选择模型：",
+      "boundMachine": "已绑定到 {{name}}",
+      "kindNotConnected": "尚未连接",
       "status": "状态",
       "builtIn": "内置",
       "hosted": "在这里运行",
