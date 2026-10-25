@@ -1,0 +1,51 @@
+{
+  "source": "actual rebased components; local controlled API fixtures, not deployed or vendor calls",
+  "proof": [
+    {
+      "lang": "en",
+      "width": 1440,
+      "overflow": false,
+      "approveHeights": [
+        32,
+        32
+      ],
+      "allOwnKeysVisible": true,
+      "exactJsonPreserved": true
+    },
+    {
+      "lang": "en",
+      "width": 390,
+      "overflow": false,
+      "approveHeights": [
+        32,
+        32
+      ],
+      "allOwnKeysVisible": true,
+      "exactJsonPreserved": true
+    },
+    {
+      "lang": "zh-CN",
+      "width": 1440,
+      "overflow": false,
+      "approveHeights": [
+        34,
+        34
+      ],
+      "allOwnKeysVisible": true,
+      "exactJsonPreserved": true
+    },
+    {
+      "lang": "zh-CN",
+      "width": 390,
+      "overflow": false,
+      "approveHeights": [
+        34,
+        34
+      ],
+      "allOwnKeysVisible": true,
+      "exactJsonPreserved": true
+    }
+  ],
+  "errors": [],
+  "posts": 0
+}

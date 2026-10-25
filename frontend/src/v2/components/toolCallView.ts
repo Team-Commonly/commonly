@@ -119,7 +119,7 @@ export const toolCallView = (tool: string, args: Record<string, unknown>): ToolC
 
   for (const [key, raw] of Object.entries(args)) {
     if (shown.has(key)) continue;
-    const labelKey = LABEL_KEYS[key];
+    const labelKey = Object.prototype.hasOwnProperty.call(LABEL_KEYS, key) ? LABEL_KEYS[key] : undefined;
     const isLabels = key === 'labels' && Array.isArray(raw) && raw.every((label) => typeof label === 'string');
     rows.push({
       keys: [key],
@@ -132,7 +132,7 @@ export const toolCallView = (tool: string, args: Record<string, unknown>): ToolC
     });
   }
 
-  const verbKey = VERB_KEYS[tool];
+  const verbKey = Object.prototype.hasOwnProperty.call(VERB_KEYS, tool) ? VERB_KEYS[tool] : undefined;
   const number = isPositiveInteger(args.pullNumber) ? args.pullNumber
     : (isPositiveInteger(args.issueNumber) ? args.issueNumber : null);
   // A numbered verb with no valid number would read "#undefined"; fall back to the tool name.

@@ -75,3 +75,16 @@ describe('toolCallView', () => {
     expect(view.rows.every((row) => row.href === undefined)).toBe(true);
   });
 });
+
+test.each(['toString', 'constructor', 'hasOwnProperty', '__proto__', 'extra'])('unknown argument %s retains its raw label', key => {
+  const args = JSON.parse(JSON.stringify({ title:'Pinned title', [key]:'pinned-not-prose' }));
+  const view = toolCallView('github.create_issue', args);
+  const row = view.rows.find(candidate => candidate.keys.includes(key));
+  expect(row).toMatchObject({ label:key, value:'pinned-not-prose' });
+  expect(row?.labelKey).toBeUndefined();
+  expect(keysShown(args,'github.create_issue')).toEqual(Object.keys(args).sort());
+});
+
+test.each(['toString','constructor','__proto__'])('unknown tool %s has no inherited verb', tool => {
+  expect(toolCallView(tool,{issueNumber:1,extra:'kept'}).verb).toBeNull();
+});

@@ -374,3 +374,15 @@ describe('tool-call approval details stay owner-scoped', () => {
     expect(screen.getByText(en.approvalCard.decline)).toBeEnabled();
   });
 });
+
+test.each(['toString', 'constructor', 'hasOwnProperty', '__proto__', 'extra'])('canonical argument %s keeps the real consent card usable', async key => {
+  const canonicalArgs = JSON.parse(JSON.stringify({ title:'Pinned issue', [key]:'pinned-not-prose' }));
+  mockGet.mockResolvedValue({approvals:[{approvalId:'inherited-key',messageId:'m1',toolCall:{tool:'github.create_issue',canonicalArgs}}]});
+  renderCard({kind:'approval-card',approvalId:'inherited-key',status:'flagged',ownerUserId:'viewer-1',actionType:'tool_call'});
+  const row = await screen.findByTestId(`approval-arg-${key}`);
+  expect(within(row).getByText(key)).toBeInTheDocument();
+  expect(within(row).getByText('pinned-not-prose')).toBeInTheDocument();
+  expect(screen.getByTestId('approval-tool-call')).toHaveTextContent(`"${key}": "pinned-not-prose"`);
+  expect(screen.getByText(en.approvalCard.approve)).toBeEnabled();
+  expect(screen.getByText(en.approvalCard.decline)).toBeEnabled();
+});
