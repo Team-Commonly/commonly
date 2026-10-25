@@ -104,15 +104,21 @@
   {
     "id": "pi-cowboy-explore-hang",
     "cli": "pi-cowboy",
-    "versions": "",
-    "bug": "the explore step hangs without reporting",
-    "status": "open",
+    "versions": "0.22.1 and earlier",
+    "bug": "an explore agent may not write its result file, because its prompt forbids creating files; a foreground call then never settles",
+    "status": "fixed upstream",
+    "fixed": {
+      "version": "0.22.2",
+      "verified": "6 of 6 fresh-session runs on 0.22.2 settled (subagent done in 12 to 17 s, parent idle in 16 to 21 s), in a clean node:22-bookworm container with pi 1.4.0, herdr 0.9.5 and pi-cowboy as the only plugin; the same repro on 0.22.1 hung about one run in three"
+    },
     "workaround": {
-      "name": "settle without a report in our plugin",
+      "name": "settle a run that ended without a report, in our pi-cowboy plugin; kept for 0.22.1 and earlier, since 0.22.2 still settles only on a report",
       "ref": "",
-      "where": "our plugin, in progress; not on a pushed branch",
+      "where": "pi-cowboy-commonly, on a branch, not released",
       "tests": []
     },
-    "references": []
+    "references": [
+      "https://github.com/electric-dragon-80000v/pi-cowboy/issues/33"
+    ]
   }
 ]

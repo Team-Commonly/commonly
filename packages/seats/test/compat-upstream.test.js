@@ -49,7 +49,7 @@ test('the seeded upstream rows load, and each status is the one the evidence sup
     'codex-refusal-exit-0': 'open',
     'opencode-5xx-silent': 'worked around',
     'opencode-v2-retry-status-unread': 'open',
-    'pi-cowboy-explore-hang': 'open',
+    'pi-cowboy-explore-hang': 'fixed upstream',
   });
   for (const r of rows) {
     assert.ok(r.workaround.name, `${r.id} names its workaround, planned or done`);
@@ -58,13 +58,43 @@ test('the seeded upstream rows load, and each status is the one the evidence sup
   }
   const codex = rows.find((r) => r.id === 'codex-refusal-exit-0');
   assert.deepEqual(codex.references, ['https://github.com/openai/codex/issues/56875']);
+  const pi = rows.find((r) => r.id === 'pi-cowboy-explore-hang');
+  assert.equal(pi.fixed.version, '0.22.2');
+  assert.match(pi.fixed.verified, /6 of 6/);
 });
 
-test('loadUpstream rejects a status outside the two, and a row missing its workaround', () => {
+test('a row is fixed upstream only with the fixing release, our check of it, and the issue link', () => {
+  const fixed = (extra = {}) => row({
+    status: 'fixed upstream',
+    workaround: { name: 'w' },
+    fixed: { version: '1.2.3', verified: 'ran the repro 6 times on 1.2.3' },
+    references: ['https://github.com/o/r/issues/1'],
+    ...extra,
+  });
+  assert.equal(upstreamStatusOf(fixed()), 'fixed upstream');
+  assert.equal(upstreamStatusOf(fixed({ fixed: { version: '', verified: 'v' } })), 'open', 'no release');
+  assert.equal(upstreamStatusOf(fixed({ fixed: { version: '1.2.3', verified: ' ' } })), 'open', 'their word is not our check');
+  assert.equal(upstreamStatusOf(fixed({ fixed: undefined })), 'open', 'no fixed block');
+  assert.equal(upstreamStatusOf(fixed({ references: [] })), 'open', 'no upstream link');
+  assert.equal(upstreamStatusOf(fixed({ references: ['javascript:x'] })), 'open', 'only an https link counts');
+  assert.equal(upstreamStatusOf(row({ status: 'open', fixed: { version: '1', verified: 'v' }, references: ['https://x.example/1'] })), 'open', 'a row listed open stays open');
+  const [proven, downgraded] = normaliseUpstream([fixed(), fixed({ fixed: { version: '1.2.3' } })]);
+  assert.deepEqual(proven.fixed, { version: '1.2.3', verified: 'ran the repro 6 times on 1.2.3' });
+  assert.equal(downgraded.status, 'open');
+  assert.equal(downgraded.fixed, undefined, 'an unproven fix is not carried to the page');
+  assert.match(downgraded.downgraded, /no fixing release, no check of it, or no upstream link/);
+  const html = upstreamItem(proven);
+  assert.match(html, /<span class="badge fixed">fixed upstream<\/span>/);
+  assert.match(html, /<strong>Fixed upstream in 1\.2\.3:<\/strong> ran the repro 6 times on 1\.2\.3/);
+  assert.match(html, /<strong>Our workaround, for older versions:<\/strong> w/);
+  assert.doesNotMatch(html, /No test proves it yet/);
+});
+
+test('loadUpstream rejects a status outside the three, and a row missing its workaround', () => {
   const dir = mkdtempSync(join(tmpdir(), 'compat-upstream-'));
   try {
     const write = (rows) => { const p = join(dir, 'u.json'); writeFileSync(p, JSON.stringify(rows)); return p; };
-    assert.throws(() => loadUpstream(write([row({ status: 'waiting on upstream' })])), /use "worked around" or "open"/);
+    assert.throws(() => loadUpstream(write([row({ status: 'waiting on upstream' })])), /use "worked around", "fixed upstream" or "open"/);
     assert.throws(() => loadUpstream(write([row({ workaround: {} })])), /workaround\.name/);
     assert.throws(() => loadUpstream(write({ rows: [] })), /must hold an array/);
     assert.deepEqual(loadUpstream(join(dir, 'absent.json')), []);
@@ -123,7 +153,7 @@ test('the page has an Upstream bugs section only when rows exist', () => {
   const base = { checks: [], rows: [], targets: [] };
   assert.doesNotMatch(renderMatrix(base), /Upstream bugs/);
   const html = renderMatrix({ ...base, upstream: normaliseUpstream([row(), row({ id: 'y', status: 'open' })]) });
-  assert.match(html, /<h2>Upstream bugs<\/h2>\n<p class="meta">1 worked around · 1 open\./);
+  assert.match(html, /<h2>Upstream bugs<\/h2>\n<p class="meta">1 worked around · 0 fixed upstream · 1 open\./);
 });
 
 const refusalEnv = (error, refused = 1) => ({

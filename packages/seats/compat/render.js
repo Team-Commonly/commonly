@@ -60,7 +60,7 @@ ol.legend{padding-left:22px;color:var(--muted);font-size:13px}
 .up{border:1px solid var(--line);border-radius:10px;background:var(--card);padding:12px 14px;margin:0 0 10px;overflow-wrap:anywhere}
 .up h3{font-size:15px;margin:0 0 6px}.up p,.up ul{margin:4px 0;font-size:14px}.up ul{padding-left:18px}
 .badge{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;margin-right:6px}
-.worked{color:var(--pass);background:var(--pass-bg)}.open{color:var(--fail);background:var(--fail-bg)}
+.worked,.fixed{color:var(--pass);background:var(--pass-bg)}.open{color:var(--fail);background:var(--fail-bg)}
 .up code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
 @media (max-width:480px){main{padding:16px}th,td{padding:6px}td.t small{max-width:140px}}
 `;
@@ -102,27 +102,33 @@ const reference = (url) => (/^https:\/\/[^\s"<>]+$/.test(url)
  * it lives, the tests that prove it, what this run's matrix saw, and the
  * upstream links as references only.
  */
+const BADGE = { 'worked around': 'worked', 'fixed upstream': 'fixed' };
+
 export const upstreamItem = (row) => {
   const worked = row?.status === 'worked around';
+  const fixed = row?.status === 'fixed upstream';
   const w = row?.workaround || {};
   const where = [w.ref && `<code>${escapeHtml(w.ref)}</code>`, w.where && escapeHtml(w.where)].filter(Boolean).join(' · ');
   const tests = Array.isArray(w.tests) && w.tests.length
     ? `<ul>${w.tests.map((t) => `<li><code>${escapeHtml(t)}</code></li>`).join('')}</ul>`
-    : '<p>No test proves it yet.</p>';
+    : (fixed ? '' : '<p>No test proves it yet.</p>');
+  const fixedLine = fixed ? `<p><strong>Fixed upstream in ${escapeHtml(row.fixed?.version)}:</strong> ${escapeHtml(row.fixed?.verified)}</p>\n` : '';
+  const label = worked ? 'Workaround' : fixed ? 'Our workaround, for older versions' : 'Planned workaround';
   const matrix = row?.matrix ? `<p><strong>This run:</strong> ${escapeHtml(row.matrix.target)} · <code>${escapeHtml(row.matrix.check)}</code> ${escapeHtml(row.matrix.observed || 'not run')}</p>` : '';
   const refs = Array.isArray(row?.references) && row.references.length
     ? `<p><strong>Upstream (reference, not the fix):</strong> ${row.references.map(reference).join(' · ')}</p>` : '';
-  return `<section class="up"><h3><span class="badge ${worked ? 'worked' : 'open'}">${worked ? 'worked around' : 'open'}</span>${escapeHtml(row?.cli)}${row?.versions ? ` <small>${escapeHtml(row.versions)}</small>` : ''}</h3>
+  return `<section class="up"><h3><span class="badge ${BADGE[row?.status] || 'open'}">${BADGE[row?.status] ? escapeHtml(row.status) : 'open'}</span>${escapeHtml(row?.cli)}${row?.versions ? ` <small>${escapeHtml(row.versions)}</small>` : ''}</h3>
 <p>${escapeHtml(row?.bug)}</p>
-${row?.downgraded ? `<p class="open">${escapeHtml(row.downgraded)}</p>` : ''}<p><strong>${worked ? 'Workaround' : 'Planned workaround'}:</strong> ${escapeHtml(w.name)}${where ? ` (${where})` : ''}</p>
+${row?.downgraded ? `<p class="open">${escapeHtml(row.downgraded)}</p>` : ''}${fixedLine}<p><strong>${label}:</strong> ${escapeHtml(w.name)}${where ? ` (${where})` : ''}</p>
 ${tests}${matrix}${refs}</section>`;
 };
 
 const upstreamSection = (upstream) => {
   if (!Array.isArray(upstream) || !upstream.length) return '';
   const worked = upstream.filter((r) => r.status === 'worked around').length;
+  const fixed = upstream.filter((r) => r.status === 'fixed upstream').length;
   return `<h2>Upstream bugs</h2>
-<p class="meta">${worked} worked around · ${upstream.length - worked} open. A row is worked around only when its workaround is on a pushed commit and a test there proves it.</p>
+<p class="meta">${worked} worked around · ${fixed} fixed upstream · ${upstream.length - worked - fixed} open. A row is worked around only when its workaround is on a pushed commit and a test there proves it, and fixed upstream only when we checked the fixing release ourselves.</p>
 ${upstream.map(upstreamItem).join('\n')}`;
 };
 
