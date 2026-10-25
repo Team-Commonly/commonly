@@ -192,8 +192,14 @@ test('chart and dynamic gateways no longer consume a direct Anthropic key or rou
   const root = path.resolve(__dirname, '../../..');
   const chart = path.join(root, 'k8s/helm/commonly');
   const routes = fs.readFileSync(path.join(chart, 'templates/configmaps/litellm-config.yaml'), 'utf8');
-  assert.doesNotMatch(routes, /model_name:\s*claude-|model:\s*anthropic\//i);
-  assert.doesNotMatch(routes, /ANTHROPIC_API_KEY|["']claude-[^"']*["']/);
+  const directRoute = /model_name:\s*claude-|model:\s*anthropic\//i;
+  const directKeyOrFallback = /ANTHROPIC_API_KEY|["']claude-[^"']*["']/;
+  assert.match('      - model_name: claude-haiku-4-5', directRoute);
+  assert.match('          model: anthropic/claude-haiku-4-5-20251001', directRoute);
+  assert.match('          api_key: os.environ/ANTHROPIC_API_KEY', directKeyOrFallback);
+  assert.match('        - {"claude-haiku-4-5": ["deepseek-v4-flash"]}', directKeyOrFallback);
+  assert.doesNotMatch(routes, directRoute);
+  assert.doesNotMatch(routes, directKeyOrFallback);
   for (const file of [
     'templates/core/backend-deployment.yaml',
     'templates/ops/ops-runner-deployment.yaml',

@@ -95,10 +95,11 @@ rewritten while that decision is pending.
 [SRE's read-only census, relayed in TASK-001 on 2026-10-25](https://github.com/Team-Commonly/commonly/pull/2704#issuecomment-6396818571),
 found no hosted/native Claude selections; the 47 Claude selections were BYO seats. There is no migration script and no apply
 path. Removing a hosted route must not rewrite BYO or unknown-tier models.
-`litellmAvailability.byo.test.js` checks that the shared client leaves persisted
-local selections unchanged across a model listing without Claude and failed
-gateway availability requests. There is currently no backend caller or rewrite
-path for that listing; this test does not guard a future migration implementation.
+There is currently no backend caller or installation-rewrite path for the
+shared client's model listing. `litellmClient.models.test.js` checks only the
+listing response and gateway errors. It does not prove BYO persistence safety;
+a future availability-driven rewrite requires its own runtime-tier regression.
+This change includes no installation writes or migration code.
 
 Deployment sequencing: merge and deploy the runtime/chart removal first.
 SRE then removes the existing Secret Manager value and ESO mapping from
