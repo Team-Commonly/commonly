@@ -4,11 +4,12 @@
  *
  *   allow → the allow_once option
  *   deny  → the reject_once option, or cancelled when there is none
- *   ask   → approve({ toolCall, grantRule }) from the host. `true` allows,
- *           and so does an object whose `approved` is exactly true:
- *           { approved: true, by: <user id>, role?, decisionCardId? }.
- *           Anything else (false, 'yes', {approved: 1}, a throw, no answer in
- *           time) denies. `by`/`role`/`decisionCardId` are recorded either way.
+ *   ask   → approve({ toolCall, grantRule }) from the host. Only an answer
+ *           that says who gave it decides:
+ *           { approved: true | false, by: <user id>, role, decisionCardId? },
+ *           with `role` an owner role. Anything else (a bare true, 'yes',
+ *           {approved: 1}, an answer naming nobody, a throw, no answer in
+ *           time) is a failed ask, and the policy's default, deny, decides.
  *           An answer whose role is `pod-member` decides nothing (ADR-033 D5):
  *           the call stays parked, and approve is called again with
  *           `refused: { by, role: 'pod-member', reason: 'not_owner' }` so the
@@ -42,18 +43,22 @@ const denyAnswer = (options) => {
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const isText = (value) => typeof value === 'string' && value.length > 0;
 
+// The roles a person can answer a parked call as; `policy` is not a person.
+const ANSWER_ROLES = PARKED_CALL_ROLES.filter((role) => role !== 'policy');
+
 /**
- * What an approver's answer says. Only `true`, or an object with
- * `approved === true`, approves; attribution is taken from an object either
- * way, and a malformed field is dropped rather than trusted.
+ * What an approver's answer says. It approves or rejects only when it is an
+ * object whose `approved` is exactly true or false and that names a user id
+ * and an owner role. Any other answer approves nothing: it is a failed ask,
+ * so the record never carries a decision nobody can be held to.
  */
 const readAnswer = (answer) => {
-  if (answer === true) return { verdict: 'approved' };
-  if (!isPlainObject(answer)) return { verdict: 'rejected' };
+  if (!isPlainObject(answer) || typeof answer.approved !== 'boolean') return { verdict: 'failed' };
+  if (!isUserId(answer.by) || !ANSWER_ROLES.includes(answer.role)) return { verdict: 'failed' };
   return {
-    verdict: answer.approved === true ? 'approved' : 'rejected',
-    ...(isUserId(answer.by) ? { by: answer.by } : {}),
-    ...(PARKED_CALL_ROLES.includes(answer.role) ? { role: answer.role } : {}),
+    verdict: answer.approved ? 'approved' : 'rejected',
+    by: answer.by,
+    role: answer.role,
     ...(isText(answer.decisionCardId) ? { decisionCardId: answer.decisionCardId } : {}),
   };
 };
@@ -98,16 +103,16 @@ const awaitApproval = (approve, input, { timeoutMs, signal }) => new Promise((do
 
 /**
  * Who decided an ask, for the record. A person who answered is named by the
- * approver; no answer (timeout, failure, cancelled run) means the policy's
- * default decided. A bare true/false names nobody: decidedBy null.
+ * approver; anything else (no answer in time, an answer naming nobody, a
+ * broken approver, a cancelled run) means the policy's default decided.
  * Rule-decided calls carry no decidedBy here; the record writer fills in
  * "policy" for any decision whose rule list is not `ask`.
  */
 const decider = (approval) => {
   if (approval.verdict === 'approved' || approval.verdict === 'rejected') {
     return {
-      decidedBy: approval.by ?? null,
-      decidedByRole: approval.role ?? null,
+      decidedBy: approval.by,
+      decidedByRole: approval.role,
       ...(approval.decisionCardId ? { decisionCardId: approval.decisionCardId } : {}),
     };
   }

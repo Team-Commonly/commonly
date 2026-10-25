@@ -213,10 +213,11 @@ it does not prove the process lost access. That happens at `run.settled`.
   `rejected`, `timed_out`, `failed` or `aborted`.
 
 **Who decided:**
-- `decidedBy` is a user id, `"policy"`, or `null`.
-  - `null` means the approver answered without saying who it was.
-  - A rule-decided call, or the default given when no answer came in time, is
-    `"policy"`.
+- `decidedBy` is required: a user id, or `"policy"`. A writer refuses `null`.
+  - A rule-decided call is `"policy"`. So is the default given when no
+    answer came in time, or when the answer did not name a user and an owner
+    role: such an answer approves nothing.
+  - It is `"policy"` exactly when `decidedByRole` is `"policy"`.
 - `decidedByRole` is one of:
   - `credential-owner`: the owner of the connection the call would use. This
     is who decides approvals today;
@@ -227,8 +228,9 @@ it does not prove the process lost access. That happens at `run.settled`.
     the asking agent. It is valid only on `decision.ruled`. A parked call is
     decided by an owner or by policy, so `permission.decided` and
     `permission.requested.askedOf` refuse it;
-  - `policy`;
-  - `null`, when unknown.
+  - `policy`.
+
+  It is required on `permission.decided`, and a writer refuses `null`.
 - `decisionCardId` is set when the decision came through a decision card.
 - `grantId` ties the decision to its `grant.issued`.
 

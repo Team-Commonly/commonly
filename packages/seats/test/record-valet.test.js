@@ -105,14 +105,41 @@ const ask = async (answer) => {
   return { result, data: events[0].data };
 };
 
-test('an approver approves only with true, or an object whose approved is exactly true', async () => {
-  for (const answer of [true, { approved: true }, { approved: true, by: 'u-ben' }]) {
-    assert.deepEqual((await ask(answer)).result, { outcome: 'selected', optionId: 'allow' }, JSON.stringify(answer));
+const BEN = { by: 'u-ben', role: 'credential-owner' };
+
+test('an approver approves only with approved exactly true and a named owner', async () => {
+  for (const role of ['credential-owner', 'agent-owner']) {
+    assert.deepEqual((await ask({ approved: true, by: 'u-ben', role })).result, { outcome: 'selected', optionId: 'allow' }, role);
   }
-  for (const answer of [{ approved: 'yes' }, { approved: 1 }, { approved: 'true' }, { approved: {} }, { approved: [true] }, 'yes', 1, {}, [true], null, undefined, false]) {
+  for (const approved of ['yes', 1, 'true', {}, [true], null, undefined]) {
+    const { result, data } = await ask({ approved, ...BEN });
+    assert.deepEqual(result, { outcome: 'selected', optionId: 'reject' }, `approved ${JSON.stringify(approved)} must not approve`);
+    assert.equal(data.approval, 'failed');
+  }
+});
+
+test('a bare true approves nothing: the ask fails and policy denies (CTO, 10-25)', async () => {
+  const { result, data } = await ask(true);
+  assert.deepEqual(result, { outcome: 'selected', optionId: 'reject' });
+  assert.deepEqual([data.approval, data.decidedBy, data.decidedByRole], ['failed', 'policy', 'policy']);
+});
+
+test('a malformed answer approves nothing: the ask fails and policy denies; no decided line names nobody', async () => {
+  const malformed = [
+    'yes', 1, false, null, undefined, [true], {},
+    { approved: true },
+    { approved: true, by: 'u-ben' },
+    { approved: true, role: 'credential-owner' },
+    { approved: true, by: 'Ben Smith', role: 'credential-owner' },
+    { approved: true, by: 'u-ben', role: 'boss' },
+    { approved: true, by: 'u-ben', role: 'policy' },
+    { approved: true, by: 'u-ben', role: null },
+    { approved: false },
+  ];
+  for (const answer of malformed) {
     const { result, data } = await ask(answer);
     assert.deepEqual(result, { outcome: 'selected', optionId: 'reject' }, `${JSON.stringify(answer)} must not approve`);
-    assert.equal(data.approval, 'rejected');
+    assert.deepEqual([data.approval, data.decidedBy, data.decidedByRole], ['failed', 'policy', 'policy'], JSON.stringify(answer));
   }
 });
 
@@ -124,14 +151,12 @@ test('the decision names who decided and as what, separate from the agent and it
   assert.equal(data.decisionCardId, 'card-1');
   assert.equal(data.grantId, 'g-9');
   const refused = await ask({ approved: false, by: 'u-ben', role: 'credential-owner' });
+  assert.equal(refused.data.approval, 'rejected');
   assert.equal(refused.data.decidedBy, 'u-ben', 'a refusal is attributed too');
-  // Malformed attribution is dropped rather than trusted.
-  const odd = await ask({ approved: true, by: 'Ben Smith', role: 'boss', decisionCardId: '' });
-  assert.equal(odd.data.decidedBy, null);
-  assert.equal(odd.data.decidedByRole, null);
+  // A malformed card id is dropped rather than trusted.
+  const odd = await ask({ approved: true, ...BEN, decisionCardId: '' });
+  assert.equal(odd.data.decidedBy, 'u-ben');
   assert.equal('decisionCardId' in odd.data, false);
-  const bare = await ask(true);
-  assert.equal(bare.data.decidedBy, null, 'a bare true names nobody');
 });
 
 test('a pod member\'s answer decides nothing: the call stays parked until the owner answers (ADR-033 D5)', async () => {
@@ -198,7 +223,7 @@ test('the question is redacted: a credential value in the ask never reaches disk
   const env = await prepareRunEnv({ grant, resolveSecret: async () => FROM_RESOLVER, root, trace: run });
   await env.cleanup();
   const decide = createPermissionPolicy(grant, {
-    trace: run, grantId: 'g-3', askedOf: { id: 'u-ben', role: 'credential-owner' }, approve: async () => ({ approved: true, by: 'u-ben' }),
+    trace: run, grantId: 'g-3', askedOf: { id: 'u-ben', role: 'credential-owner' }, approve: async () => ({ approved: true, ...BEN }),
   });
   await decide({ toolCall: { toolCallId: 'tc-1', title: `Call the API with token ${FROM_RESOLVER}?`, kind: 'fetch' }, options: OPTIONS });
   const raw = readFileSync(join(root, 'trace', 'runs', 'run-va-0003.jsonl'), 'utf8');

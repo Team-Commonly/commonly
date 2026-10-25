@@ -327,16 +327,18 @@ const CHECKS = {
     optionalArgsDigest(data, 'permission.decided');
     // A rule-decided call never had a person in the loop; a writer says so
     // rather than leave a reader to infer it from rule.list.
+    // A decision always names who made it: no writer may record one nobody
+    // can be held to.
     const out = { ...data };
-    if (!('decidedBy' in out)) {
-      const byRule = out.rule && out.rule.list !== 'ask';
-      out.decidedBy = byRule ? 'policy' : null;
-      if (!('decidedByRole' in out)) out.decidedByRole = byRule ? 'policy' : null;
+    if (!('decidedBy' in out) && !('decidedByRole' in out) && out.rule && out.rule.list !== 'ask') {
+      out.decidedBy = 'policy';
+      out.decidedByRole = 'policy';
     }
-    if (!('decidedByRole' in out)) out.decidedByRole = null;
-    if (out.decidedBy !== null) userIdOrPolicy(out.decidedBy, 'permission.decided.decidedBy');
-    if (out.decidedByRole !== null && !PARKED_CALL_ROLES.includes(out.decidedByRole)) {
-      fail(`permission.decided.decidedByRole must be one of ${PARKED_CALL_ROLES.join(', ')}, or null`);
+    if (out.decidedBy === undefined || out.decidedBy === null) fail('permission.decided.decidedBy is required: a user id, or "policy"');
+    userIdOrPolicy(out.decidedBy, 'permission.decided.decidedBy');
+    checkRole(out.decidedByRole, 'permission.decided.decidedByRole', PARKED_CALL_ROLES);
+    if ((out.decidedBy === 'policy') !== (out.decidedByRole === 'policy')) {
+      fail('permission.decided.decidedBy is "policy" exactly when decidedByRole is "policy"');
     }
     optionalText(out.decisionCardId, 'permission.decided.decisionCardId');
     return out;

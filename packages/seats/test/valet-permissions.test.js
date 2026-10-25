@@ -107,22 +107,24 @@ test('deny selects reject_once, or cancelled when there is no reject_once option
     ['selected', 'deny'], ['cancelled', 'deny'], ['selected', 'default'], ['cancelled', 'default']]);
 });
 
+const BEN = { by: 'u-ben', role: 'credential-owner' };
+
 test('ask: approved allows once, rejected denies, and approve sees the tool call and rule', async () => {
   const seen = [];
   const trace = recorder();
-  let verdict = true;
+  let verdict = { approved: true, ...BEN };
   const decide = createPermissionPolicy({ tools: { ask: ['execute'] } }, {
     trace, approve: async (input) => { seen.push(input); return verdict; },
   });
   const req = request('execute', 'npm test');
   assert.deepEqual(await decide(req), { outcome: 'selected', optionId: 'opt-once' });
-  verdict = false;
+  verdict = { approved: false, ...BEN };
   assert.deepEqual(await decide(req), { outcome: 'selected', optionId: 'opt-reject' });
-  verdict = 'yes';
+  verdict = { approved: 'yes', ...BEN };
   assert.deepEqual(await decide(req), { outcome: 'selected', optionId: 'opt-reject' }, 'only literal true approves');
   assert.deepEqual(seen[0], { toolCall: req.toolCall, grantRule: { list: 'ask', pattern: 'execute' } });
-  assert.deepEqual(trace.events.map((e) => [e.data.kind, e.data.approval]), [
-    ['allow_once', 'approved'], ['reject_once', 'rejected'], ['reject_once', 'rejected']]);
+  assert.deepEqual(trace.events.map((e) => [e.data.kind, e.data.approval, e.data.decidedBy]), [
+    ['allow_once', 'approved', 'u-ben'], ['reject_once', 'rejected', 'u-ben'], ['reject_once', 'failed', 'policy']]);
 });
 
 test('ask: no answer in time denies; a throwing or missing approver denies', async () => {
