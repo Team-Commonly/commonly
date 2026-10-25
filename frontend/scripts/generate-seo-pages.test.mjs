@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildPageDefinitions, renderStaticPage } from './generate-seo-pages.mjs';
+import { buildPageDefinitions, faqItems, renderStaticPage } from './generate-seo-pages.mjs';
 
 const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -122,6 +122,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     'WebSite',
     'SoftwareApplication',
     'WebPage',
+    'FAQPage',
   ]);
   const organization = pages[0].schema['@graph'].find((item) => item['@type'] === 'Organization');
   const website = pages[0].schema['@graph'].find((item) => item['@type'] === 'WebSite');
@@ -2069,4 +2070,44 @@ test('puts route content, canonical metadata, and structured data in the documen
   assert.match(rendered, /application\/ld\+json/);
   assert.match(rendered, /document\.documentElement/);
   assert.match(rendered, /type="module"/);
+});
+
+test('shows the GEO FAQ on the landing and compare pages and marks up the same text', async () => {
+  const [translationText, useCaseText, guideText, indexHtml] = await Promise.all([
+    readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'index.html'), 'utf8'),
+  ]);
+  const translations = JSON.parse(translationText);
+  const pages = buildPageDefinitions({
+    landing: translations.landing,
+    compare: translations.compare,
+    useCases: JSON.parse(useCaseText),
+    guides: JSON.parse(guideText),
+  });
+  const escapeHtml = (value) => value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+
+  assert.equal(faqItems.length, 5);
+  for (const path of ['/', '/compare/']) {
+    const page = pages.find((candidate) => candidate.path === path);
+    const faq = page.schema['@graph'].find((node) => node['@type'] === 'FAQPage');
+    assert.ok(faq, `${path} carries FAQPage markup`);
+    assert.deepEqual(faq.mainEntity.map((entity) => entity.name), faqItems.map((item) => item.question));
+    for (const entity of faq.mainEntity) {
+      assert.equal(entity['@type'], 'Question');
+      assert.ok(entity.acceptedAnswer.text.length > 0, `${path} answer for "${entity.name}" is not empty`);
+    }
+
+    const rendered = renderStaticPage(indexHtml, page);
+    for (const item of faqItems) {
+      assert.ok(rendered.includes(`<h3>${escapeHtml(item.question)}</h3>`), `${path} shows the question`);
+      assert.ok(rendered.includes(escapeHtml(item.answer)), `${path} shows the answer`);
+    }
+  }
 });
