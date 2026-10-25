@@ -13,11 +13,9 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
   req.user = { id: req.get('x-user') };
   return next();
 });
-jest.mock('../../../services/dmService', () => ({
-  canViewPod: jest.fn(async (userId, pod) => Boolean(pod?.members.some((m) => String(m) === userId))),
-}));
 const AgentRun = require('../../../models/AgentRun');
 const Pod = require('../../../models/Pod');
+const User = require('../../../models/User');
 const ToolCall = require('../../../models/ToolCall');
 const { pool } = require('../../../config/db-pg');
 const { boundRunValue, RUN_TRACE_BYTES } = require('../../../services/agentRunLimits');
@@ -38,6 +36,7 @@ afterAll(async () => { await mongoose.disconnect(); await mongo.stop(); });
 beforeEach(async () => {
   await AgentRun.deleteMany({});
   await Pod.deleteMany({});
+  await User.deleteMany({});
   await Pod.create({ _id: POD, name: 'Trace pod', type: 'team', members: [MEMBER], createdBy: MEMBER });
   run = await AgentRun.create({
     podId: POD, agentName: 'trace-seat', instanceId: 'default', trigger: 'mention', status: 'succeeded',
@@ -66,6 +65,25 @@ test('returns durable turn + PG attribution after card retention without content
   expect(JSON.stringify(res.body)).not.toMatch(/PRIVATE_|private prompt|argsDigest/);
   expect(res.body.retention).toEqual({ cardDefaultDays: 30, traceExpiresAt: null });
 });
+test.each(['global admin', 'agent-dm observer'])(
+  'returns trace metadata without authorization identities to a non-member %s', async (viewerType) => {
+    if (viewerType === 'global admin') {
+      await User.create({ _id: OTHER, username: 'trace-admin', email: 'trace-admin@example.test',
+        role: 'admin', authProviders: [{ provider: 'github', providerId: 'trace-admin' }] });
+    } else {
+      await Pod.updateOne({ _id: POD }, { $set: { type: 'agent-dm' } });
+      await Pod.create({ name: 'Shared team', type: 'team', members: [MEMBER, OTHER], createdBy: MEMBER });
+    }
+    const res = await get(POD, run.id, OTHER);
+    expect(res.status).toBe(200);
+    expect(res.headers['cache-control']).toBe('no-store');
+    const call = res.body.run.turns[0].toolCalls[0];
+    expect(call.outcome).toBe('ok');
+    expect(call.trail).toEqual({ callId: 'trace-call', tool: 'vendor.read', outcome: 'ok',
+      at: expect.any(String), durationMs: null });
+    expect(JSON.stringify(res.body)).not.toMatch(/grantId|credentialOwnerId|PRIVATE_|private prompt|argsDigest/);
+  },
+);
 test('cross-pod references never join a foreign trail', async () => {
   run.turns[0].toolCalls[0].callId = 'foreign-call';
   await run.save();

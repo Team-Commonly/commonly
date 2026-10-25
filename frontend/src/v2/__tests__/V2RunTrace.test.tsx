@@ -39,6 +39,18 @@ test('reads recorded turns and PG attribution, with honest retention wording', a
   expect(screen.getByText(/30-day default retention/)).toBeInTheDocument();
   expect(screen.getByText(/This trace persists after the card expires/)).toBeInTheDocument();
 });
+test.each(['en', 'zh-CN'])('withheld authorization identities have no labels or missing-record claims (%s)', async (language) => {
+  await act(async () => { await i18n.changeLanguage(language); });
+  mockGet.mockResolvedValue({ run: { ...trace, turns: [{ ...trace.turns[0], toolCalls: [{
+    ...trace.turns[0].toolCalls[0], trail: { outcome: 'ok' },
+  }] }] } });
+  setup();
+  await screen.findByText('vendor.read');
+  expect(screen.queryByText(i18n.t('runTrace.grant'))).not.toBeInTheDocument();
+  expect(screen.queryByText(i18n.t('runTrace.owner'))).not.toBeInTheDocument();
+  expect(screen.queryByText(i18n.t('runTrace.notRecorded'))).not.toBeInTheDocument();
+  expect(screen.getByText(i18n.t('runTrace.outcome'))).toBeInTheDocument();
+});
 test('refusal can retry and never presents an empty successful trace', async () => {
   mockGet.mockRejectedValueOnce({ response: { status: 404 } }).mockResolvedValueOnce({ run: trace });
   setup();

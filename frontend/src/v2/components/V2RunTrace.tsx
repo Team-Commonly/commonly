@@ -12,7 +12,7 @@ export interface RunTrace {
     turnIndex: number; model: string; elapsedMs: number; totalTokens?: number;
     toolCalls: Array<{
       name: string; elapsedMs: number; callId?: string; outcome: string;
-      trail?: { grantId: string; credentialOwnerId: string | null; outcome: string } | null;
+      trail?: { grantId?: string; credentialOwnerId?: string | null; outcome: string } | null;
     }>;
   }>;
 }
@@ -67,8 +67,8 @@ const V2RunTrace: React.FC = () => {
             <strong>{call.name}</strong><span>{enumLabel('outcomes', call.outcome)} · {call.elapsedMs} ms</span>
             {call.callId && <code>{t('runTrace.call', { id: call.callId })}</code>}
             {call.trail ? <dl>
-              <dt>{t('runTrace.grant')}</dt><dd>{call.trail.grantId}</dd>
-              <dt>{t('runTrace.owner')}</dt><dd>{call.trail.credentialOwnerId || t('runTrace.notRecorded')}</dd>
+              {call.trail.grantId !== undefined && <><dt>{t('runTrace.grant')}</dt><dd>{call.trail.grantId}</dd></>}
+              {call.trail.credentialOwnerId !== undefined && <><dt>{t('runTrace.owner')}</dt><dd>{call.trail.credentialOwnerId || t('runTrace.notRecorded')}</dd></>}
               <dt>{t('runTrace.outcome')}</dt><dd>{enumLabel('outcomes', call.trail.outcome)}</dd>
             </dl> : call.callId ? <p>{t('runTrace.unavailable')}</p> : <p>{t('runTrace.builtIn')}</p>}
           </div>)}

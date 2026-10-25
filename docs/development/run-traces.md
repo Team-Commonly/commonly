@@ -24,9 +24,11 @@ TASK-499 adds a read-only link from a native hosted agent's message to its
 - Reads are limited to 120 per minute per IP using the shared Cloudflare-aware
   key, before authentication or database access.
 - The response is `{run, retention}`. `run.turns[].toolCalls[]` holds name,
-  duration, outcome, optional callId, and `trail` with grantId and the credential
-  owner's ID. A RunTrace last-N renderer can flatten these calls and slice the
-  last 1–5. The server joins **only** recorded callIds in the authorized pod.
+  duration, outcome, optional callId, and `trail`. Only origin-pod members
+  receive `trail.grantId` and `trail.credentialOwnerId`. Global admins and
+  agent-DM observers admitted by pod-read access receive the other trail
+  metadata (callId, tool, outcome, at, durationMs) without either identity. A
+  RunTrace last-N renderer can flatten these calls and slice the last 1–5. The server joins **only** recorded callIds in the authorized pod.
   A missing broker record is `outcome:'unavailable', trail:null`. No raw tool
   arguments, results, LLM text, error prose or argument digests are returned.
 - An unavailable PostgreSQL read returns 503, not a successful empty audit.
@@ -36,7 +38,7 @@ TASK-499 adds a read-only link from a native hosted agent's message to its
 ## Storage bounds
 
 Every `AgentRun` document save validates a bounded trace: 4,096 serialized UTF-8
-bytes and 256 JSON nodes per args/result value, 4,096 characters of LLM response
+bytes and 256 JSON nodes per args/result value, 4,096 UTF-16 code units of LLM response
 text per turn, 128 stored turns, 64 stored tool calls per turn, and a 2 MiB BSON
 budget for the stored turns. Oversized args/results become a truncation marker
 with their original byte count, not a prefix of potentially secret content.

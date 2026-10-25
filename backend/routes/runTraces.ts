@@ -28,6 +28,10 @@ router.get('/:podId/runs/:runId', traceReadLimit, auth, async (req, res) => {
     if (!await DMService.canViewPod(userId, pod)) {
       return res.status(404).json({ error: 'trace_not_found' });
     }
+    // Pod-read bypasses admit admins and agent-DM observers, but authorization
+    // identities are visible only to actual origin members. This pod is lean
+    // and unpopulated, so members are ObjectIds.
+    const isOriginMember = pod.members.some((member: unknown) => String(member) === String(userId));
     // Do not load content-bearing args, results or LLM text even transiently.
     const run = await AgentRun.findOne({ _id: runId, podId })
       .select([
@@ -41,7 +45,11 @@ router.get('/:podId/runs/:runId', traceReadLimit, auth, async (req, res) => {
     const callIds = run.turns.flatMap((turn) => turn.toolCalls.flatMap((call) => (call.callId ? [call.callId] : [])));
     // A PG outage is an error, never an apparently empty successful audit.
     const trail = await ToolCall.listRunReferences(podId, callIds);
-    const byId = new Map(trail.map((call) => [call.callId, call]));
+    const byId = new Map(trail.map((call) => [call.callId, {
+      callId: call.callId, tool: call.tool, outcome: call.outcome,
+      at: call.at, durationMs: call.durationMs,
+      ...(isOriginMember ? { grantId: call.grantId, credentialOwnerId: call.credentialOwnerId } : {}),
+    }]));
     res.set('Cache-Control', 'no-store');
     return res.json({
       run: {
