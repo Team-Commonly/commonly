@@ -3,6 +3,7 @@
 export {};
 const express = require('express');
 const auth = require('../../middleware/auth');
+const requireAdmin = require('../../middleware/adminAuth');
 const Pod = require('../../models/Pod');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentIdentityService = require('../../services/agentIdentityService');
@@ -32,7 +33,7 @@ const runtimeRouter = express.Router({ mergeParams: true });
  * GET /api/registry/pods/:podId/agents/:name/runtime-status
  * Check local runtime status (docker).
  */
-runtimeRouter.get('/pods/:podId/agents/:name/runtime-status', auth, async (req: any, res: any) => {
+runtimeRouter.get('/pods/:podId/agents/:name/runtime-status', auth, requireAdmin, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const userId = getUserId(req);
@@ -94,7 +95,7 @@ runtimeRouter.get('/pods/:podId/agents/:name/runtime-status', auth, async (req: 
 /**
  * POST /api/registry/pods/:podId/agents/:name/runtime-start
  */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-start', auth, async (req: any, res: any) => {
+runtimeRouter.post('/pods/:podId/agents/:name/runtime-start', auth, requireAdmin, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, gatewayId } = req.body || {};
@@ -156,7 +157,7 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-start', auth, async (req: 
 /**
  * POST /api/registry/pods/:podId/agents/:name/runtime-stop
  */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop', auth, async (req: any, res: any) => {
+runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop', auth, requireAdmin, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, gatewayId } = req.body || {};
@@ -218,7 +219,7 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop', auth, async (req: a
 /**
  * POST /api/registry/pods/:podId/agents/:name/runtime-restart
  */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart', auth, async (req: any, res: any) => {
+runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart', auth, requireAdmin, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, gatewayId } = req.body || {};
@@ -280,7 +281,8 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart', auth, async (req
 /**
  * POST /api/registry/pods/:podId/agents/:name/runtime-clear-sessions
  */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions', auth, async (req: any, res: any) => {
+runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions',
+  auth, requireAdmin, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, gatewayId, restart = true } = req.body || {};
@@ -366,7 +368,7 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions', auth, asy
 /**
  * GET /api/registry/pods/:podId/agents/:name/runtime-logs
  */
-runtimeRouter.get('/pods/:podId/agents/:name/runtime-logs', auth, async (req: any, res: any) => {
+runtimeRouter.get('/pods/:podId/agents/:name/runtime-logs', auth, requireAdmin, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const lines = Number(req.query.lines || 200);
