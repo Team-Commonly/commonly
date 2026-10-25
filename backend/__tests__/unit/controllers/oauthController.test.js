@@ -7,6 +7,7 @@ const InvitationCode = require('../../../models/InvitationCode');
 jest.mock('../../../services/communityPodService', () => ({
   ensureUserInCommunityPod: jest.fn().mockResolvedValue(undefined),
 }));
+jest.mock('../../../services/emailService', () => ({ sendEmail: jest.fn().mockResolvedValue(undefined) }));
 const { ensureUserInCommunityPod } = require('../../../services/communityPodService');
 const oauthController = require('../../../controllers/oauthController');
 const authController = require('../../../controllers/authController');
@@ -79,6 +80,68 @@ describe('OAuth Controller', () => {
     delete process.env.GITHUB_OAUTH_CLIENT_SECRET;
     delete process.env.AUTH_ALLOWED_EMAILS;
     delete process.env.AUTH_ALLOWED_DOMAINS;
+  });
+
+  describe('signup source round trips', () => {
+    it.each(['password', 'github', 'google'])('persists sanitized %s first touch once, never from callback parameters', async (method) => {
+      const touch = {
+        ref: 'HN', referrer: 'https://search.example/results?email=private#token',
+        landingPath: '/guides/start?invite=private#token', firstSeenAt: '2026-01-01T00:00:00.000Z',
+        authMethod: 'forged', recordedAt: '1900-01-01',
+      };
+      if (method === 'password') {
+        const res = mockRes();
+        await authController.register({ body: {
+          username: 'source-user', email: 'source@example.com', password: 'Password123!', signupSource: touch,
+        } }, res);
+        expect(res.status).toHaveBeenCalledWith(201);
+      } else {
+        if (method === 'google') {
+          process.env.GOOGLE_OAUTH_CLIENT_ID = 'google-client';
+          process.env.GOOGLE_OAUTH_CLIENT_SECRET = 'google-secret';
+        }
+        const signIn = async (source) => {
+          const startRes = mockRes();
+          await oauthController.startOAuth({ ...startReq(method), method: 'POST',
+            body: { signupSource: JSON.stringify(source) } }, startRes);
+          const location = startRes.redirect.mock.calls[0][0];
+          expect(location).not.toMatch(/search\.example|landingPath|signupSource|private|firstSeenAt/);
+          const state = new URL(location).searchParams.get('state');
+          const storedState = await OAuthLoginState.findOne({ state });
+          expect(JSON.stringify(storedState.signupSource)).not.toContain('private');
+          if (method === 'github') mockGithubProfile({ email: 'source@example.com' });
+          else {
+            axios.post.mockResolvedValueOnce({ data: { access_token: 'google-access-token' } });
+            axios.get.mockResolvedValue({ data: { sub: 'google-source', email: 'source@example.com',
+              email_verified: true, name: 'source-user' } });
+          }
+          const callbackRes = mockRes();
+          await oauthController.oauthCallback({ ...startReq(method),
+            query: { code: 'provider-code', state, signupSource: JSON.stringify({ ref: 'forged' }), ref: 'forged' } }, callbackRes);
+          expect(callbackRes.redirect).toHaveBeenCalledWith(expect.stringContaining('/v2/oauth/complete?'));
+          expect(callbackRes.redirect.mock.calls[0][0]).not.toMatch(/signupSource|firstSeenAt|search\.example|private/);
+          return { state, callbackRes };
+        };
+        const first = await signIn(touch);
+        // A replay cannot create an account or overwrite its attribution.
+        const replay = mockRes();
+        await oauthController.oauthCallback({ ...startReq(method), query: { state: first.state, code: 'replay' } }, replay);
+        expect(replay.redirect).toHaveBeenCalledWith(expect.stringContaining('oauthError=state_invalid'));
+        await signIn({ ref: 'later', landingPath: '/later' });
+      }
+      const user = await User.findOne({ email: 'source@example.com' }).select('+signupSource');
+      expect(user.signupSource.toObject()).toEqual({
+        ref: 'hn', referrer: 'https://search.example/results', landingPath: '/guides/start',
+        firstSeenAt: new Date('2026-01-01T00:00:00.000Z'), authMethod: method, recordedAt: expect.any(Date),
+      });
+      expect(user.onboarding.signupRef).toBe('hn');
+      expect((await User.findById(user._id).lean()).signupSource).toBeUndefined();
+      // Neither a later save nor a dotted update may rewrite a created source.
+      user.signupSource.ref = 'changed';
+      await user.save();
+      await User.updateOne({ _id: user._id }, { $set: { 'signupSource.ref': 'also-changed' } });
+      expect((await User.findById(user._id).select('+signupSource')).signupSource.ref).toBe('hn');
+    });
   });
 
   describe('getOAuthProviders', () => {

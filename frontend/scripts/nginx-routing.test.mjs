@@ -38,16 +38,25 @@ test('HTML and inherited NGINX locations enforce the same image source policy', 
     'default "https://api.$host http://api.$host";',
   ]);
   const policy = /add_header Content-Security-Policy "img-src 'self' \$upload_image_origins data: blob:" always;/g;
-  // Server scope, index.html (which adds Cache-Control), and asset location
-  // (which also adds Cache-Control) each need their own copy.
-  assert.equal([...config.matchAll(policy)].length, 3);
+  // Server, index.html, signup-source.js and the hashed asset location need
+  // their own copy where Cache-Control overrides inherited headers.
+  assert.equal([...config.matchAll(policy)].length, 4);
   assert.doesNotMatch(config, /img-src[^"\n]*\*/);
   const imagePolicies = [...config.matchAll(/Content-Security-Policy "img-src ([^"\n]+)"/g)];
-  assert.equal(imagePolicies.length, 3);
+  assert.equal(imagePolicies.length, 4);
   for (const [, sources] of imagePolicies) {
     assert.deepEqual(sources.split(/\s+/), ["'self'", '$upload_image_origins', 'data:', 'blob:']);
   }
   const chatRoom = await readFile(resolve(frontendDir, 'src/components/ChatRoom.tsx'), 'utf8');
   assert.doesNotMatch(chatRoom, /logo:\s*['"]https?:\/\//);
   assert.doesNotMatch(chatRoom, /src\s*=\s*['"]https?:\/\//);
+});
+
+test('unhashed signup capture script revalidates instead of inheriting six-month immutable caching', async () => {
+  const config = await readFile(resolve(frontendDir, 'nginx.conf'), 'utf8');
+  const block = config.match(/location = \/signup-source\.js \{([^}]+)\}/)?.[1];
+  assert.ok(block);
+  assert.match(block, /Cache-Control "no-cache, must-revalidate"/);
+  assert.match(block, /expires -1;/);
+  assert.match(block, /try_files \$uri =404;/);
 });
