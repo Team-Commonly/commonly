@@ -1,5 +1,6 @@
 // Agent install route — extracted from registry.js (GH#112)
 // Handles: POST /install
+const { copyInstallHandoffMemory } = require('../../services/installHandoffMemory');
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
@@ -152,6 +153,12 @@ const findExistingAgentInstance = async (agentName: any, instanceId: any) => {
  * POST /api/registry/install
  * Install an agent to a pod
  */
+// Clients must discover this before posting to an older server, which would
+// otherwise ignore memoryFrom and install before reporting an unsupported copy.
+installRouter.get('/install/memory-handoff', installRateLimit, auth, (_req: any, res: any) => {
+  res.json({ installTimeMemoryHandoff: true });
+});
+
 installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), installRateLimit, auth, async (req: any, res: any) => {
   try {
     const {
@@ -373,6 +380,11 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       status: 'active',
     });
 
+    const copyMemory = () => copyInstallHandoffMemory({
+      source: req.body.memoryFrom, agentName: safeAgentName, instanceId: normalizedInstanceId,
+      userId, registryOwner: agent.publisher?.userId, runtime: normalizeConfigMap(config)?.runtime,
+    });
+
     if (existingInPod) {
       if (req.body.resumeExisting === true) {
         const storedRuntime = normalizeConfigMap(existingInPod.config)?.runtime;
@@ -385,7 +397,8 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
           || storedRuntime.runtimeType !== requestedRuntime?.runtimeType) {
           return res.status(409).json({ error: 'Existing installation does not match this local handoff' });
         }
-        return res.json({ resumed: true, installation: {
+        const memoryCopy = await copyMemory();
+        return res.json({ resumed: true, memoryCopy, installation: {
           _id: existingInPod._id, agentName: existingInPod.agentName,
           instanceId: existingInPod.instanceId, podId: existingInPod.podId,
           displayName: existingInPod.displayName,
@@ -678,6 +691,8 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     if (!effectiveDisplayName) {
       effectiveDisplayName = agent.displayName;
     }
+
+    const memoryCopy = await copyMemory();
 
     // Identity before the installation row (TASK-133 b): a refused identity must
     // not leave an AgentInstallation behind, and that refusal is the one error in
@@ -1029,13 +1044,16 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         scopes: installation.scopes,
         runtime: sanitizeRuntimeConfig(installConfig.runtime) || null,
       },
+      memoryCopy,
       sharedIdentity: isReusingExistingAgent,
       otherPods: otherPodIds,
       hasExistingRuntimeToken: globalAgent.agentUser?.agentRuntimeTokens?.length > 0,
     });
   } catch (error) {
     console.error('Error installing agent:', error);
-    res.status(500).json({ error: (error as any).message || 'Failed to install agent' });
+    const status = (error as { status?: number }).status;
+    res.status(status === 400 || status === 403 || status === 409 ? status : 500)
+      .json({ error: (error as Error).message || 'Failed to install agent' });
   }
 });
 

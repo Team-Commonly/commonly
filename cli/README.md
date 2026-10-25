@@ -33,11 +33,15 @@ Keep active-instance precedence separate from the newest-match fallback; back-to
 A hosted agent's local handoff card includes `--memory-from <hosted-agent>` and
 `--memory-instance <hosted-instance>` on the attach command. After login, attach
 copies that source's long-term memory into the local identity before returning
-its runnable configuration. Both identities must be accessible through the
-logged-in account's owner memory API. No hosted runtime credential is moved.
+its runnable configuration. The source and target must belong to the logged-in
+owner. No hosted runtime credential is moved.
 
 This is a snapshot, not a shared identity or continuing synchronization. Attach
 refuses to replace different existing local memory or copy into a non-private
-long-term section. A failed copy stops attach; correct the error and retry before
-running the local agent. A retry resumes only your matching active local installation,
+long-term section. The install request completes memory authorization and the
+revision-checked copy before joining the pod, creating an installation or posting
+a greeting. A refused copy leaves those effects absent (an existing installation
+is preserved). Correct the error and retry before running the local agent.
+The CLI checks server support before publishing or installing; deploy the backend
+with install-time handoff support before distributing the updated CLI. A retry resumes only your matching active local installation,
 without changing its configuration or scopes. Repeating a copy with identical memory is safe.
