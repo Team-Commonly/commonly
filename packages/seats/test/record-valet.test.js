@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { createTraceStore } from '../src/trace/store.js';
 import { prepareRunEnv } from '../src/valet/env.js';
 import { createPermissionPolicy } from '../src/valet/permissions.js';
+import { argsDigestOf } from '../src/record/format.js';
 
 const FROM_ENV = 'sk-env-planted-0a1b2c3d4e5f';
 const FROM_FILE = 'sk-file-planted-6a7b8c9d0e1f';
@@ -142,4 +143,64 @@ test('no answer in time is decided by policy', async () => {
   assert.equal(events[0].data.approval, 'timed_out');
   assert.equal(events[0].data.decidedBy, 'policy');
   assert.equal(events[0].data.decidedByRole, 'policy');
+});
+
+test('the question is redacted: a credential value in the ask never reaches disk', () => withRoot(async (root) => {
+  const store = createTraceStore({ root: join(root, 'trace') });
+  const run = store.startRun({ runId: 'run-va-0003', actor: { type: 'agent', id: 'u-agent-1', owner: 'u-ana' } });
+  const grant = { credentials: [{ name: 'BROKER_TOKEN', from: 'resolver' }], tools: { ask: ['fetch'] } };
+  const env = await prepareRunEnv({ grant, resolveSecret: async () => FROM_RESOLVER, root, trace: run });
+  await env.cleanup();
+  const decide = createPermissionPolicy(grant, {
+    trace: run, grantId: 'g-3', askedOf: { id: 'u-ben', role: 'credential-owner' }, approve: async () => ({ approved: true, by: 'u-ben' }),
+  });
+  await decide({ toolCall: { toolCallId: 'tc-1', title: `Call the API with token ${FROM_RESOLVER}?`, kind: 'fetch' }, options: OPTIONS });
+  const raw = readFileSync(join(root, 'trace', 'runs', 'run-va-0003.jsonl'), 'utf8');
+  const asked = store.readRun('run-va-0003').find((e) => e.kind === 'permission.requested');
+  assert.equal(asked.data.question, 'Call the API with token [redacted]?', 'positive control: the question was written, scrubbed');
+  assert.ok(!raw.includes(FROM_RESOLVER));
+  assert.equal(store.verifyRun('run-va-0003').ok, true);
+}));
+
+const asks = async (askedOf, toolCall = { toolCallId: 'tc-1', title: 'fetch it', kind: 'fetch' }, tools = { ask: ['fetch'] }) => {
+  const events = [];
+  const decide = createPermissionPolicy({ tools }, {
+    trace: { emit: (type, data) => events.push({ type, data }) }, grantId: 'g-5', askedOf,
+    approve: async (input) => { events.push({ type: 'approver-saw', data: input }); return { approved: true, by: 'u-ben', role: 'credential-owner', decisionCardId: input.decisionCardId }; },
+  });
+  await decide({ toolCall, options: OPTIONS });
+  return events;
+};
+
+test('permission.requested is written first, asked of the host\'s choice for an ask and of the policy for a rule', async () => {
+  const events = await asks(() => ({ id: 'u-ben', role: 'credential-owner', decisionCardId: 'card-9' }));
+  assert.deepEqual(events.map((e) => e.type), ['permission.requested', 'approver-saw', 'permission.decided']);
+  assert.deepEqual(events[0].data, {
+    toolCallId: 'tc-1', options: OPTIONS.map(({ optionId, kind }) => ({ optionId, kind })), question: 'fetch it',
+    askedOf: { id: 'u-ben', role: 'credential-owner' }, grantId: 'g-5', decisionCardId: 'card-9',
+  });
+  assert.equal(events[1].data.decisionCardId, 'card-9', 'the approver gets the card the ask rides on');
+  assert.equal(events[2].data.decisionCardId, 'card-9');
+  const byRule = await asks({ id: 'u-ben', role: 'credential-owner' }, { toolCallId: 'tc-2', title: 'cat file', kind: 'read' }, { allow: ['read'] });
+  assert.deepEqual(byRule[0].data.askedOf, { id: 'grant:g-5', role: 'policy' });
+  assert.equal(byRule.some((e) => e.type === 'approver-saw'), false);
+  for (const bad of [() => ({ id: 'Ben Smith', role: 'credential-owner' }), () => ({ id: 'u-ben' }), () => { throw new Error('x'); }]) {
+    assert.deepEqual((await asks(bad))[0].data.askedOf, { id: 'grant:g-5', role: 'policy' }, 'a malformed answer names nobody');
+  }
+  assert.throws(() => createPermissionPolicy({ tools: {} }, { askedOf: { id: 'Ben Smith', role: 'policy' } }), /askedOf/);
+  const untitled = await asks({ id: 'u-ben', role: 'agent-owner' }, { toolCallId: 'tc-3', kind: 'fetch' });
+  assert.equal(untitled[0].data.question, 'fetch call');
+});
+
+test('the permission path writes the digest of the call\'s arguments, never the arguments', async () => {
+  const rawInput = { url: 'https://example.test/issues/88', body: { status: 'resolved' } };
+  const events = await asks({ id: 'u-ben', role: 'credential-owner' }, { toolCallId: 'tc-1', title: 'fetch it', kind: 'fetch', rawInput });
+  const digest = argsDigestOf(rawInput);
+  assert.match(digest, /^sha256:[0-9a-f]{64}$/);
+  assert.equal(events[0].data.argsDigest, digest);
+  assert.equal(events[2].data.argsDigest, digest);
+  assert.ok(!JSON.stringify([events[0].data, events[2].data]).includes('example.test'));
+  const none = await asks(undefined, { toolCallId: 'tc-1', title: 'fetch it', kind: 'fetch' });
+  assert.equal('argsDigest' in none[1].data, false, 'no rawInput, no digest');
+  assert.deepEqual(none.map((e) => e.type), ['approver-saw', 'permission.decided'], 'without askedOf, nothing new is emitted');
 });

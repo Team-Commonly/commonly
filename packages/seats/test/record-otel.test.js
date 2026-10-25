@@ -52,7 +52,7 @@ test('OTLP/JSON structure: ids, times, kinds, typed attributes', async () => {
     }
   }
   // Content stays out: no message text anywhere in the export.
-  assert.ok(!JSON.stringify(otlp).includes('half-cent rounding'));
+  assert.ok(!JSON.stringify(otlp).includes('Fixed the half-cent rounding in total.js'));
 });
 
 test('one task is one trace; ids follow the documented derivation', async () => {
@@ -128,4 +128,28 @@ test('a run without a task is its own trace; unknown kinds and newer versions ar
   assert.equal(spans[0].status.code, 2);
   assert.equal(attrOf(spans[0], 'error.type').stringValue, 'crashed');
   assert.equal(attrOf(spans[1], 'error.type').stringValue, 'crashed', 'an unsettled last attempt takes the run\'s failure');
+});
+
+test('decision.ruled joins the tool span of the request on its card, else the span current at the time; argsDigest is a tool attribute', async () => {
+  const { entries } = await sample();
+  const spans = spansOf(toOtlpJson(entries));
+  const resolve = spans.find((s) => s.name === 'execute_tool sentry.resolve_issue');
+  assert.match(attrOf(resolve, 'seats.tool.args_digest').stringValue, /^sha256:[0-9a-f]{64}$/);
+  const asked = resolve.events.find((e) => e.name === 'permission.requested');
+  assert.equal(attrOf(asked, 'seats.asked_of.id').stringValue, 'u-ben');
+  assert.equal(attrOf(asked, 'seats.decision_card_id').stringValue, 'card-7f3');
+  assert.equal(attrOf(asked, 'seats.args_digest').stringValue, attrOf(resolve, 'seats.tool.args_digest').stringValue);
+  // The retry ruling rode no tool call: it lands on Ana's run span, between attempts.
+  const anaRun = spans.find((s) => s.name === 'seats.run' && attrOf(s, 'seats.run.id').stringValue === 'run-ana-0001');
+  const ruled = anaRun.events.find((e) => e.name === 'decision.ruled');
+  assert.equal(attrOf(ruled, 'seats.value').stringValue, 'retry');
+  assert.equal(attrOf(ruled, 'seats.decided_by_role').stringValue, 'agent-owner');
+  // A ruling on a card a request carried goes to that request's tool span.
+  const ana = entries.filter((e) => e.runId === 'run-ana-0001');
+  const settle = ana.at(-1);
+  const extra = [...ana.slice(0, -1), {
+    ...settle, kind: 'decision.ruled', data: { decisionCardId: 'card-7f3', value: 'approved', decidedBy: 'u-ben', decidedByRole: 'credential-owner' },
+  }, { ...settle, seq: settle.seq + 1 }];
+  const again = spansOf(toOtlpJson(extra)).find((s) => s.name === 'execute_tool sentry.resolve_issue');
+  assert.ok(again.events.some((e) => e.name === 'decision.ruled'));
 });

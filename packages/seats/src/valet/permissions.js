@@ -15,7 +15,7 @@
  * An allow rule with no allow_once option therefore denies.
  */
 import { traceOf } from '../trace/events.js';
-import { DECIDED_BY_ROLES, isUserId } from '../record/format.js';
+import { argsDigestOf, DECIDED_BY_ROLES, isUserId, policyActorId } from '../record/format.js';
 import { matchToolCall, validateGrant } from './grant.js';
 
 export const DEFAULT_APPROVE_TIMEOUT_MS = 5 * 60 * 1000;
@@ -94,27 +94,75 @@ const decider = (approval) => {
   return { decidedBy: 'policy', decidedByRole: 'policy' };
 };
 
+const isAsker = (value) => isPlainObject(value) && isUserId(value.id) && DECIDED_BY_ROLES.includes(value.role);
+
 /**
- * createPermissionPolicy(grant, { approve?, trace?, approveTimeoutMs?, signal?, grantId? })
+ * Who an ask goes to, for permission.requested. `askedOf` is {id, role} or
+ * ({toolCall, grantRule}) => {id, role, decisionCardId?}. A call a
+ * rule decides is asked of the grant's policy. A function that throws or
+ * answers malformed is recorded as asked of the policy too: the record does
+ * not name a person it cannot vouch for.
+ */
+const askOf = (askedOf, input, policy) => {
+  if (input.grantRule?.list !== 'ask') return policy;
+  let answer = askedOf;
+  if (typeof askedOf === 'function') {
+    try { answer = askedOf(input); } catch { answer = null; }
+  }
+  if (!isAsker(answer)) return policy;
+  return {
+    id: answer.id,
+    role: answer.role,
+    ...(isText(answer.decisionCardId) ? { decisionCardId: answer.decisionCardId } : {}),
+  };
+};
+
+/**
+ * createPermissionPolicy(grant, { approve?, trace?, approveTimeoutMs?, signal?, grantId?, askedOf? })
  *   → (request) => Promise<{outcome:'selected', optionId} | {outcome:'cancelled'}>
  *
  * `signal` is the run's AbortSignal: a cancelled run answers a pending ask
  * with cancelled, which is what ACP asks of a client after session/cancel.
  * `grantId` is recorded on each decision, to tie it to its grant.issued.
+ * With `askedOf` (above), each request is recorded first as
+ * permission.requested: the question (the tool call's title), who it is
+ * asked of, and the card it rides on. The approver receives that card id.
+ * When the tool call carries `rawInput`, both entries carry its argsDigest.
  */
 export const createPermissionPolicy = (grant, {
-  approve, trace, approveTimeoutMs = DEFAULT_APPROVE_TIMEOUT_MS, signal, grantId,
+  approve, trace, approveTimeoutMs = DEFAULT_APPROVE_TIMEOUT_MS, signal, grantId, askedOf,
 } = {}) => {
   const valid = validateGrant(grant);
   const hook = traceOf({ trace });
+  if (askedOf !== undefined && typeof askedOf !== 'function' && !isAsker(askedOf)) {
+    throw new Error('askedOf must be {id: <user id>, role: <decidedByRole>} or a function returning one');
+  }
+  const policy = { id: policyActorId(grantId), role: 'policy' };
   return async (request = {}) => {
     const toolCall = request?.toolCall || {};
     const options = request?.options;
     const { decision, rule } = matchToolCall(valid, toolCall);
+    const toolCallId = typeof toolCall.toolCallId === 'string' ? toolCall.toolCallId : null;
+    const argsDigest = argsDigestOf(toolCall.rawInput);
+    let asker = null;
+    if (askedOf !== undefined) {
+      asker = askOf(askedOf, { toolCall, grantRule: rule }, policy);
+      const fallback = `${isText(toolCall.kind) ? toolCall.kind : 'tool'} call`;
+      hook.emit('permission.requested', {
+        toolCallId,
+        options: (Array.isArray(options) ? options : []).filter(isPlainObject).map(({ optionId, kind }) => ({ optionId, kind })),
+        question: isText(toolCall.title) ? toolCall.title : fallback,
+        askedOf: { id: asker.id, role: asker.role },
+        ...(grantId ? { grantId } : {}),
+        ...(asker.decisionCardId ? { decisionCardId: asker.decisionCardId } : {}),
+        ...(argsDigest ? { argsDigest } : {}),
+      });
+    }
     let approval;
     let answer;
     if (decision === 'ask') {
-      approval = await awaitApproval(approve, { toolCall, grantRule: rule }, { timeoutMs: approveTimeoutMs, signal });
+      const input = { toolCall, grantRule: rule, ...(asker?.decisionCardId ? { decisionCardId: asker.decisionCardId } : {}) };
+      approval = await awaitApproval(approve, input, { timeoutMs: approveTimeoutMs, signal });
       if (approval.verdict === 'aborted') answer = { outcome: 'cancelled' };
       else answer = approval.verdict === 'approved' ? allowAnswer(options) : null;
     } else if (decision === 'allow') {
@@ -124,10 +172,11 @@ export const createPermissionPolicy = (grant, {
     hook.emit('permission.decided', {
       outcome: answer.outcome,
       ...(answer.optionId ? { optionId: answer.optionId, kind: answer.kind } : {}),
-      toolCallId: typeof toolCall.toolCallId === 'string' ? toolCall.toolCallId : null,
+      toolCallId,
       rule,
       ...(approval ? { approval: approval.verdict, ...decider(approval) } : {}),
       ...(grantId ? { grantId } : {}),
+      ...(argsDigest ? { argsDigest } : {}),
     });
     return answer.outcome === 'selected' ? { outcome: 'selected', optionId: answer.optionId } : { outcome: 'cancelled' };
   };
