@@ -47,15 +47,6 @@ discord:
 email:
   enabled: false
 
-# No prod GitHub PAT on staging. The shared commonly-github-pat has write power over
-# prod repos, and staging auto-deploys every merge (the reckless lane), so the
-# api-keys render must not reference it (Cofounder's ruling, same principle as
-# keeping atlasAdmin off staging). The backend uses GitHub App installation tokens
-# and does not read this key. If staging agents ever need git, that is a
-# separate fine-grained PAT on a throwaway repo, post-11/1.
-githubPat:
-  enabled: false
-
 # Staging renders NO Ingress object. A staging Ingress would be picked up by the
 # single shared ingress-nginx controller and reload prod routing (R1). Staging
 # is reached only through its own cloudflared tunnel, straight to Services.
@@ -86,25 +77,6 @@ cloudflared:
       key: workload-tier
       operator: Equal
       value: spot
-
-# clawdbot-gateway (openclaw moltbot) is OFF in staging. Prod has no clawdbot-gateway
-# Deployment either — prod runs backend, commonly-bot, frontend, litellm and redis — so
-# staging matches. Disabling it also drops its two PVCs (clawdbot-config / clawdbot-
-# workspace, which never Bound in the first install attempt) and the gateway's CPU.
-# Hosted agents answer through litellm (native runtime), not this gateway; if the Fri
-# walk needs a live moltbot inside a staging pod, enable one right-sized replica.
-agents:
-  clawdbot:
-    enabled: false
-    # The gateway Deployment/Service gate on `enabled`, but its two PVCs gate on
-    # these separate persistence flags (default true) — leaving them on would re-create
-    # the unbound clawdbot-config / clawdbot-workspace PVCs that stalled the first
-    # install (no consumer, never Bound). Off here so the gateway leaves nothing behind.
-    persistence:
-      config:
-        enabled: false
-      workspace:
-        enabled: false
 
 backend:
   env:

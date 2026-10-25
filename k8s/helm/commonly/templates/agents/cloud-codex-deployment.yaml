@@ -81,7 +81,7 @@ spec:
         agent: {{ $name }}
     spec:
       initContainers:
-      # Mirror of clawdbot-deployment's codex-tools-installer init —
+      # Codex tools installer init —
       # installs the pinned codex + commonly CLIs into the shared
       # /tools volume so the main container has the binaries available.
       - name: codex-tools-installer

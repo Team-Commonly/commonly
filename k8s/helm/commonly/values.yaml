@@ -79,10 +79,9 @@ hostedMcp:
   googleCalendar:
     enabled: false
 
-# Agent provisioning (RBAC + PVCs)
+# Agent provisioning RBAC
 agentProvisioning:
   enabled: true
-  createWorkspacePvc: false
 
 # Backend service configuration
 backend:
@@ -165,8 +164,6 @@ backend:
     # "native" to run new hosted installs in-process (TASK-261); empty keeps
     # the Durable Object.
     hostedEngine: ""
-    clawdbotGatewayUrl: ""
-    moltbotGatewayUrl: ""
     pgHost: "YOUR_PG_HOST"
     pgPort: "25450"
     pgDatabase: "defaultdb"
@@ -320,51 +317,6 @@ externalSecrets:
 
 # Agent runtime configuration
 agents:
-  clawdbot:
-    enabled: true
-    strategy:
-      type: Recreate
-    image:
-      repository: gcr.io/YOUR_GCP_PROJECT_ID/clawdbot-gateway
-      tag: latest
-      pullPolicy: IfNotPresent
-    # ADR-005 Stage 2 — codex + @commonly/cli installed by an init
-    # container into a shared /tools volume. codexVersion pins the
-    # @openai/codex npm package; commonlyCliRef pins the git ref this
-    # repo's cli/ subdirectory is installed from. @commonly/cli is not
-    # yet on npm (ADR-005 Phase 4), so we install from source.
-    codexTools:
-      codexVersion: "0.125.0"
-      commonlyCliRef: "main"
-    config:
-      gatewayPort: 18789
-      bridgePort: 18790
-      gatewayBind: lan
-    persistence:
-      config:
-        enabled: true
-        storageClass: standard-rwo
-        size: 1Gi
-        accessMode: ReadWriteOnce
-      workspace:
-        enabled: true
-        storageClass: standard-rwo
-        size: 10Gi
-        accessMode: ReadWriteOnce
-    resources:
-      requests:
-        memory: "512Mi"
-        cpu: "200m"
-      limits:
-        memory: "2Gi"
-        cpu: "1000m"
-    securityContext:
-      runAsUser: 1000
-      runAsGroup: 1000
-      fsGroup: 1000
-    nodeSelector: {}
-    tolerations: []
-
   commonlyBot:
     enabled: false
     image:
@@ -445,14 +397,6 @@ discord:
 # on a verification mail it cannot send. Do NOT substitute placeholder values —
 # a non-empty SMTP2GO_API_KEY flips hasEmailDeliveryConfig true and hangs signup.
 email:
-  enabled: true
-
-# Shared GitHub PAT (api-keys -> GITHUB_PAT), now consumed only by the clawdbot
-# gateway (retires with ADR-021). The backend, ops-runner and cloud-codex no longer
-# read it: backend GitHub calls use GitHub App installation tokens. On (default)
-# for prod/dev. Off (staging) omits the ref entirely, so the auto-deploy-every-merge
-# lane holds no credential with write power over prod repos.
-githubPat:
   enabled: true
 
 # Ingress configuration

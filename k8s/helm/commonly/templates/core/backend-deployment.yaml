@@ -405,17 +405,6 @@ spec:
           value: {{ include "commonly.namespace" . | quote }}
         - name: COMMONLY_API_URL
           value: {{ .Values.backend.env.commonlyApiUrl | default (printf "http://backend.%s.svc.cluster.local:5000" (include "commonly.namespace" .)) | quote }}
-        - name: CLAWDBOT_GATEWAY_URL
-          value: {{ .Values.backend.env.clawdbotGatewayUrl | default (printf "http://clawdbot-gateway.%s.svc.cluster.local:18789" (include "commonly.namespace" .)) | quote }}
-        - name: MOLTBOT_GATEWAY_URL
-          value: {{ .Values.backend.env.moltbotGatewayUrl | default (printf "ws://clawdbot-gateway.%s.svc.cluster.local:18789" (include "commonly.namespace" .)) | quote }}
-        - name: CLAWDBOT_IMAGE
-          value: "{{ .Values.agents.clawdbot.image.repository }}:{{ .Values.agents.clawdbot.image.tag }}"
-        - name: CLAWDBOT_GATEWAY_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: clawdbot-gateway-token
         - name: COMMONLY_BOT_RUNTIME_TOKEN
           valueFrom:
             secretKeyRef:

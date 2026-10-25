@@ -77,10 +77,8 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout (with submodules for _external/clawdbot)
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Compute image tag
         id: tag
@@ -123,33 +121,6 @@ jobs:
         env:
           DEV_HELM_VALUES_PRIVATE: ${{ secrets.DEV_HELM_VALUES_PRIVATE }}
 
-      # clawdbot-gateway is parked (agents.clawdbot.enabled: false since #1051),
-      # and the chart then renders no gateway Deployment at all. Building it
-      # anyway cost 3.3 of the ~6.4 build minutes per deploy and pushed a
-      # ~1.1 GB image nothing ran: 709 such versions by 2026-10-14, about two
-      # thirds of the Artifact Registry bill. Ask the release itself, with the
-      # same three values files the upgrade uses, so the build returns the
-      # moment the flag does. "could not find template" is helm's answer for a
-      # template that rendered empty; any other helm error fails the job rather
-      # than reading as "disabled".
-      - name: Is clawdbot-gateway enabled in this release?
-        id: gateway
-        run: |
-          set -uo pipefail
-          if err=$(helm template commonly-dev k8s/helm/commonly \
-              -f k8s/helm/commonly/values.yaml \
-              -f k8s/helm/commonly/values-dev.yaml \
-              -f "$RUNNER_TEMP/values-private.yaml" \
-              --show-only templates/agents/clawdbot-deployment.yaml 2>&1 >/dev/null); then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          elif printf '%s' "$err" | grep -q 'could not find template'; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "clawdbot-gateway is disabled in this release; skipping its build and tag."
-          else
-            printf '%s\n' "$err"
-            exit 1
-          fi
-
       - name: Build + push backend image
         env:
           TAG: ${{ steps.tag.outputs.tag }}
@@ -175,30 +146,6 @@ jobs:
             -t "$REPO:$TAG"
           docker push "$REPO:$TAG"
 
-      - name: Build + push clawdbot-gateway image
-        if: steps.gateway.outputs.enabled == 'true'
-        env:
-          TAG: ${{ steps.tag.outputs.tag }}
-        run: |
-          # Stage commonly-bundled-skills/ into the gateway build context
-          # so the Dockerfile's COPY commonly-bundled-skills /opt/... layer
-          # picks up the latest skill content. Sidesteps the kubectl-exec
-          # ARG_MAX limit that the runtime sync would otherwise hit when
-          # bundles carry sub-files (officecli specialized sub-skills, etc.).
-          rm -rf _external/clawdbot/commonly-bundled-skills
-          cp -r backend/commonly-bundled-skills _external/clawdbot/commonly-bundled-skills
-
-          REPO=${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/clawdbot-gateway
-          docker build _external/clawdbot \
-            --build-arg OPENCLAW_EXTENSIONS=acpx \
-            --build-arg OPENCLAW_INSTALL_GH_CLI=1 \
-            --build-arg OPENCLAW_INSTALL_DOC_TOOLCHAIN=1 \
-            -t "$REPO:$TAG"
-          docker push "$REPO:$TAG"
-
-          # Cleanup so a re-run sees a deterministic build context.
-          rm -rf _external/clawdbot/commonly-bundled-skills
-
       - name: Build + push commonly-bot image
         env:
           TAG: ${{ steps.tag.outputs.tag }}
@@ -219,7 +166,7 @@ jobs:
       # false failures: `litellm` (CrashLoopBackOff, 561 restarts over 2d10h)
       # and `cloud-codex-cody` (Init:CrashLoopBackOff) never become ready, so
       # `--wait` burned the full 10m timeout and exited non-zero while
-      # backend/frontend/clawdbot-gateway/commonly-bot had all rolled out
+      # backend/frontend/commonly-bot had all rolled out
       # correctly minutes earlier.
       #
       # The error it surfaces — `client rate limiter Wait returned an error:
@@ -236,26 +183,19 @@ jobs:
       - name: Helm upgrade commonly-dev
         env:
           TAG: ${{ steps.tag.outputs.tag }}
-          GATEWAY_ENABLED: ${{ steps.gateway.outputs.enabled }}
         run: |
-          # Point the gateway at this run's tag only when this run built it.
-          GATEWAY_TAG=()
-          if [ "$GATEWAY_ENABLED" = "true" ]; then
-            GATEWAY_TAG=(--set agents.clawdbot.image.tag="$TAG")
-          fi
           helm upgrade commonly-dev k8s/helm/commonly -n "$NAMESPACE" \
             -f k8s/helm/commonly/values.yaml \
             -f k8s/helm/commonly/values-dev.yaml \
             -f "$RUNNER_TEMP/values-private.yaml" \
             --set backend.image.tag="$TAG" \
             --set frontend.image.tag="$TAG" \
-            "${GATEWAY_TAG[@]}" \
             --set agents.commonlyBot.image.tag="$TAG" \
             --timeout 10m \
             --burst-limit 200 \
             --qps 100
 
-      # Verify exactly what this job deploys: the four workloads whose image
+      # Verify exactly what this job deploys: the workloads whose image
       # tags it sets above. Scoping the check to them is the point — an
       # unrelated unhealthy workload is a real problem, but it is not THIS
       # job's failure, and conflating the two is what made the signal

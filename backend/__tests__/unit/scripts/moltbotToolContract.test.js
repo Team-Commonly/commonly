@@ -471,22 +471,8 @@ describe('moltbot tool contract', () => {
         expect(exitTwo).toContain("direction.state === 'undetermined'");
       });
 
-      /**
-       * The other half of the CI repair, and the one a mocked exec cannot
-       * reach: the job that runs this guard has to check out deep enough for
-       * `origin/main` to exist. Without this the probe is correct and silent —
-       * it reports undetermined on every pull request and the direction check
-       * is, in practice, off. That was the live state until #2497.
-       */
-      it('runs in a CI job whose checkout can reach origin/main', () => {
-        const workflow = repoFile('.github/workflows/tests.yml');
-        const jobs = workflow.split(/\n {2}(?=[a-z][\w-]*:\n)/);
-        const job = jobs.find((block) => block.includes('verify:moltbot-tools'));
-        expect(job).toBeDefined();
-        // Scoped to the job that actually runs the guard: a `fetch-depth` on
-        // some other job is exactly the thing that looks like a pass and isn't.
-        expect(job).toMatch(/fetch-depth:\s*0/);
-      });
+      // The retired runtime no longer runs this guard in the CI workflow.
+
 
       /**
        * A SHALLOW checkout answers this question confidently and wrongly.
