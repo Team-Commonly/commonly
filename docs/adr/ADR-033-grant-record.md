@@ -10,7 +10,7 @@ Moonjelly runner writes it for a local seat. Nothing on the server records `comm
 (`tool_calls` requires a grant), so "every call is in the record" doesn't hold until TASK-513 ships a
 server writer and someone other than its author walks it.
 
-**Spec:** `packages/seats/docs/record-v1.md` at `b7b71f63ae0b3a34d3084d3803056be4f5498a02`
+**Spec:** `packages/seats/docs/record-v1.md` at `50437c912bddaa102b2cf1e08cbd3c0295eab611`
 (branch `feat/moonjelly-record`), with the generated sample in `packages/seats/docs/examples/` at the
 same sha. Section references below (`spec §N`) are to that file at that sha.
 **Where this ADR and the spec disagree, the spec wins.** The tables below use the spec's exact field
@@ -33,10 +33,10 @@ record does and doesn't enforce. The serialization belongs to the spec. This ADR
   the broker R2 names. **Read ADR-028 D5, D7 and D13 before extending either ADR.**
 - **ADR-025** (connector substrate). D18 requires the broker to keep the `(agent, on-behalf-of
   human)` pair with the connection, grant and provider result in the action's audit trail. This
-  ADR's connector `tool.call` lines are one such trail, but record-v1 has no on-behalf-of field:
-  `actor.owner` is whose agent it is, not whom it acts for (spec §1). Until the spec adds one, the
-  pair stays in the broker's own store (open question 6). RoomGrant stays the authorization
-  boundary, as D18 says.
+  ADR's connector `tool.call` lines are one such trail. record-v1 carries the pair on the actor:
+  `actor.onBehalfOf {id, role}` (spec §1) sits beside `actor.owner`, which says only whose agent it
+  is. RoomGrant stays the authorization boundary, as D18 says; the record reports the pair and
+  enforces nothing (R2).
 - **ADR-030** (agent identity, a Proposed stub). The record identifies agents by their instance user
   id (`actor.id`, spec §1), which is local to one instance. This ADR does not make that id portable or
   verifiable off-instance, and it must not be cited as having decided ADR-030's question.
@@ -89,7 +89,7 @@ credential values the writer was given (spec §3 rule 1, and spec §2 Approval f
 store's `redact()` hook feeds `redactKnownCredentials`, which runs over every string in `data` before
 the line is hashed. **No writer that records agent text goes live until the supervisor's trace
 wrapper forwards both `actor` and `redact` to the store**, with a test that places a resolved
-credential value in agent text and asserts the value never reaches the record bytes. At `b7b71f63`
+credential value in agent text and asserts the value never reaches the record bytes. At `50437c91`
 the store and the valet (`valet/env.js` calls `hook.redact(values)`) carry the hook; no supervisor
 wrapper is on that branch, so this is unproven for the supervised path. Writers that record no agent
 text (grants, the board) are not gated by R1. Approval writers are gated, because `question` is agent
@@ -104,7 +104,7 @@ path may treat the absence of `grant.revoked` as "still usable", or its presence
 lost access (spec §2, "What revocation means in v1": an environment credential lasts until the
 process exits).
 
-## 3. The record (summary of record-v1 at `b7b71f63`)
+## 3. The record (summary of record-v1 at `50437c91`)
 
 **Envelope (spec §1).** One RFC 8785 (JCS) canonical JSON object per line, `\n`-terminated. A
 verifier rejects a non-canonical line. An absent field is omitted, never written as `null`; `actor`
@@ -120,9 +120,26 @@ and `prev` are the envelope fields where `null` is a value.
 | `seq` | yes | **1** on the first line, then +1, with no gaps. |
 | `ts` | yes | RFC 3339 UTC, ending `Z`. |
 | `kind` | yes | Below. |
-| `actor` | object or `null` | `{type: agent\|human\|policy\|system, id, owner?, name?}`. `id` is an id token (`[A-Za-z0-9][A-Za-z0-9._:-]{0,127}`), never a display name: a user id for agent/human, `seats` or `board` for system, `grant:<grantId>` or `policy` for policy. `owner` (agents only) is the owning user id. `name` is a display name and never identity. `null` = unknown; readers must not fill it in. |
+| `actor` | object or `null` | `{type: agent\|human\|policy\|system, id, owner?, onBehalfOf?, name?}`. `id` is an id token (`[A-Za-z0-9][A-Za-z0-9._:-]{0,127}`), never a display name: a user id for agent/human, `seats` or `board` for system, `grant:<grantId>` or `policy` for policy. `owner` (agents only) is the owning user id. `onBehalfOf` (agents only, optional) is below. `name` is a display name and never identity. `null` = unknown; readers must not fill it in. |
 | `data` | yes | Kind-specific. |
 | `prev` | string or `null` | Lowercase hex SHA-256 of the previous line's exact bytes, without its `\n`. `null` on seq 1. Tamper evidence, not a signature (spec §4). |
+
+**`actor.onBehalfOf` (spec §1).** `{id, role}`: the human the agent is acting for, the second half
+of the ADR-025 D18 `(agent, on-behalf-of human)` pair. `id` is a user id token. `role` is
+`requester` (the human whose message started the run) or `assigner` (the human who assigned the
+task); no other role or key is allowed, and a writer throws on one. It is valid only when
+`actor.type` is `agent`; on any other actor it is a malformed actor (`bad_envelope`). It lives on the
+actor, not in `data`, so it covers every line the agent authors, `tool.call` and
+`permission.requested` included, and the OTLP export puts it on the tool span as
+`seats.actor.on_behalf_of.{id,role}`. Adding it kept `v: 1`.
+
+**A run with no human behind it writes no `onBehalfOf`.** A schedule, a heartbeat or an
+agent-to-agent DM omits the field. A writer never fills it with the agent's owner: `owner` already
+says whose agent it is, and `onBehalfOf` means a human asked. **This rule is documented, not
+enforced.** The writer can't check it by comparing `onBehalfOf.id` to `owner`, because the owner
+can genuinely be the requester (Ana asks her own agent), and that line must be accepted. So each
+server writer derives the field from the run's trigger (the message author, the task's assigner),
+and a writer whose trigger has no human omits it.
 
 **Kinds (spec §2).**
 
@@ -141,6 +158,7 @@ and `prev` are the envelope fields where `null` is a value.
 | `run.settled` | `{outcome, failure?, durationMs, attempts}`. Last line. | `system` |
 | `tool.call` / `tool.update` | `{toolCallId, title, kind?, status?, name?, surface?: connector\|commonly\|native, argsDigest?}` / `{toolCallId, status?, title?}` | run |
 | `credential.granted` / `.denied` | `{names: [ENV_NAME]}` / `{name, reason: not_granted\|unresolved}`. Environment-variable names of a run's start credentials only. | `system` |
+| `egress.allowed` / `.denied` | `{host, port}` / `{host, port, reason}`, written by a sandboxed run's egress proxy; `reason` is `bad_request`, `not_connect`, `ip_literal`, `not_allowed`, `unresolved`, `private_address` or `unreachable`. No header, body or resolved address. No server writer in this ADR. | `system` |
 | `result.reported` | `{status: done\|partial\|blocked\|failed, refs?: [{type, id}]}` | run |
 | run activity | `turn.prompt_sent`, `agent.message_chunk`, `agent.thought_chunk`, `plan`, `usage`, `liveness.*`, `process.exited` | per spec |
 
@@ -151,10 +169,20 @@ The same arguments give the same digest on all three, so a reader can match a ca
 ran under. **A digest of low-entropy arguments can be confirmed by guessing them:** it hides values
 from a casual reader, not from someone who can guess them.
 
+**The vectors file is the conformance gate.** `packages/seats/test/vectors/args-digest.json` (36
+vectors) defines `argsDigest`; `test/args-digest-vectors.test.js` holds it to `argsDigestOf`, so the
+file is the definition, not a sample. **A record writer in any language that fails any vector does
+not ship**, server writers in this ADR included. The vectors cover the cases where a hand-rolled
+key-sorted serializer drifts: UTF-16 key order, U+2028/U+2029 written raw, `1.0` → `1`, `-0` → `0`,
+an integer past 2^53, an undefined value (key dropped in an object, `null` in an array), and
+`NaN`/`Infinity` or a lone surrogate, which mean no digest. On arguments that can't be digested a
+writer omits `argsDigest`. A writer built in Go runs its tests with `-race` in CI.
+
 **Rules (spec §3).** (1) No credential values; agent text is redacted of known values only (R1).
 (2) Readers ignore unknown fields and skip unknown kinds, and still verify the chain over them.
 (3) `v` bumps only on a breaking change. The 2026-10-25 revision kept `v: 1` and made `question` and
 `askedOf` required for writers of `permission.requested`; readers must not assume them on older lines.
+A later revision, also `v: 1`, added `actor.onBehalfOf` and the `egress.*` kinds.
 (4) One writer per file.
 
 **OTLP export (spec §5)** is deterministic. Task = trace (`traceId` = first 16 bytes of
@@ -180,12 +208,12 @@ semantic-conventions-genai `9ffc7e00` (Development status); `argsDigest` exports
 | `revokeGrant` (→ `RoomGrant.revokeCascade`) | `revokedAt`, `revokedBy` on the lineage | one `grant.revoked`: `reason: cascade` with the ancestor first, or `manual` for a single grant |
 | `revokeConnectionGrants` | revokes every grant on a connection | `grant.revoked {reason: manual}`, actor = who disconnected |
 | Expiry (`expiresAt` passed) | nothing (checked at use) | `grant.revoked {reason: expired}`, written by the server writer (TASK-513), which holds expiry (spec §2) |
-| Broker refuses before the vendor (`refused`) | `tool_calls` row | `tool.call {surface: connector, name, argsDigest}` + `permission.requested {question: <title>, askedOf: {id: "grant:<grantId>", role: policy}, grantId, argsDigest}` + `permission.decided {decidedBy: policy, decidedByRole: policy, rule.list: deny, grantId, argsDigest}` + `tool.update {status: failed}` |
-| Broker parks a write (`pending_approval`) + `ApprovalAction` | `tool_calls` row + `ApprovalAction` | `tool.call {argsDigest}` + `permission.requested {toolCallId, options, question: <title>, askedOf: {id: ownerUserId, role: credential-owner}, grantId, decisionCardId?, argsDigest}` (**not** a second `tool.call`) |
-| `resolveApproval` | `ApprovalAction.decision/resolvedBy` + `tool_calls` row | `permission.decided {decidedBy: resolvedBy, decidedByRole: credential-owner, approval: approved\|rejected, grantId, decisionCardId?, argsDigest}`, then `tool.update {completed\|failed}` |
-| Approval expiry sweep | `tool_calls` `refused/approval_expired` | `permission.decided {decidedBy: policy, decidedByRole: policy, approval: timed_out, grantId, argsDigest}` |
-| Broker executes (`ok` / `failed`) with no ask | `tool_calls` row | `tool.call` + `permission.requested {askedOf: {id: "grant:<grantId>", role: policy}}` + `permission.decided {policy, rule.list: allow, grantId}` + `tool.update`, all carrying `argsDigest` |
-| `chooseDecision` on a card tied to a parked call | `DecisionRequest.ruling` | `permission.decided {decisionCardId, …}` on that call (spec §2: a ruling on a card a `permission.requested` carried belongs with that request) |
+| Broker refuses before the vendor (`refused`) | `tool_calls` row | **B1** below: `tool.call` + `permission.requested` asked of the policy + `permission.decided` (`rule.list: deny`) + `tool.update {status: failed}` |
+| Broker parks a write (`pending_approval`) + `ApprovalAction` | `tool_calls` row + `ApprovalAction` | **B2**: `tool.call` + `permission.requested` asked of `ownerUserId` as `credential-owner` (**not** a second `tool.call`) |
+| `resolveApproval` | `ApprovalAction.decision/resolvedBy` + `tool_calls` row | **B3**: `permission.decided` by `resolvedBy` as `credential-owner`, then `tool.update {status: completed\|failed}` |
+| Approval expiry sweep | `tool_calls` `refused/approval_expired` | **B4**: `permission.decided` by `policy`, `approval: timed_out` |
+| Broker executes (`ok` / `failed`) with no ask | `tool_calls` row | **B5**: `tool.call` + `permission.requested` asked of the policy + `permission.decided` (`rule.list: allow`) + `tool.update {status: completed\|failed}` |
+| `chooseDecision` on a card tied to a parked call | `DecisionRequest.ruling` | the **B3** `permission.decided` on that call, with `decisionCardId` and `decidedBy: ruling.byUserId` (spec §2: a ruling on a card a `permission.requested` carried belongs with that request). `decidedByRole` is `credential-owner` only when the ruler is the credential owner; any other ruler follows the next row's rule. |
 | `chooseDecision` on any other card | `DecisionRequest.ruling` | `decision.ruled {decisionCardId, value: ruling.value, decidedBy: ruling.byUserId, decidedByRole}`. Any human member may rule today, and `decision.ruled` requires a non-null role (the format refuses `null` there). So the writer emits `decidedByRole: agent-owner` when the ruler owns the asking agent; for any other ruler it writes no line, and the ruling stays only in `DecisionRequest` until open question 1 settles. It never emits `decision-owner` as a stand-in. |
 | Native runtime (`AgentRun`) | AgentRun subdocs | `attempt.started/settled`, `tool.call {surface: native}`, `run.settled` |
 | `commonly_*` calls (CAP via MCP) | **not recorded anywhere server-side** | `tool.call {surface: commonly}` (TASK-513) |
@@ -195,17 +223,56 @@ A rule-decided call is written with a `permission.requested` asked of the grant'
 spec's sample does for a denied `git push` and an allowed `commonly_post_message`. That keeps one
 request/decision pair per call for readers, whichever path decided it.
 
+**Complete `data` for the broker rows.** The table names lines; these are the full objects, with
+every field the spec requires. `?` marks a field the writer omits when it has no value (never
+`null`). Shared values:
+- `toolCallId` = the broker's `callId` (`tool_calls.call_id`, `ApprovalAction.toolCall.callId`).
+- `name` = `tool_calls.tool`, the exact tool name. `question` and `title` are that same name: the
+  broker holds no agent-written title.
+- `argsDigest?` = `"sha256:" + args_digest`, only when the equality test below passes.
+- `OPTS` = `[{optionId: "approve", kind: "allow_once"}, {optionId: "decline", kind: "reject_once"}]`,
+  the two answers an approval card offers. `kind` is the ACP option kind, as the spec requires.
+- `rule.pattern` is `null` on every broker line: RoomGrant names exact tools, so no run-policy
+  pattern matched (spec §2 allows `null`).
+
+| | Lines and their `data` |
+|---|---|
+| **B1** refused | `tool.call {toolCallId, title: name, name, surface: "connector", argsDigest?}` · `permission.requested {toolCallId, options: OPTS, question: name, askedOf: {id: "grant:<grantId>", role: "policy"}, grantId, argsDigest?}` · `permission.decided {outcome: "selected", optionId: "decline", kind: "reject_once", toolCallId, rule: {list: "deny", pattern: null}, decidedBy: "policy", decidedByRole: "policy", grantId, argsDigest?}` · `tool.update {toolCallId, status: "failed"}` |
+| **B2** parked | `tool.call {toolCallId, title: name, name, surface: "connector", argsDigest?}` · `permission.requested {toolCallId, options: OPTS, question: name, askedOf: {id: ownerUserId, role: "credential-owner"}, grantId, decisionCardId?, argsDigest?}` |
+| **B3** resolved | `permission.decided {outcome: "selected", optionId: "approve"\|"decline", kind: "allow_once"\|"reject_once", toolCallId, rule: {list: "ask", pattern: null}, approval: "approved"\|"rejected", decidedBy: resolvedBy, decidedByRole: "credential-owner", grantId, decisionCardId?, argsDigest?}` · `tool.update {toolCallId, status: "completed"\|"failed"}` |
+| **B4** expired | `permission.decided {outcome: "selected", optionId: "decline", kind: "reject_once", toolCallId, rule: {list: "ask", pattern: null}, approval: "timed_out", decidedBy: "policy", decidedByRole: "policy", grantId, decisionCardId?, argsDigest?}` · `tool.update {toolCallId, status: "failed"}` |
+| **B5** executed | `tool.call {toolCallId, title: name, name, surface: "connector", argsDigest?}` · `permission.requested {toolCallId, options: OPTS, question: name, askedOf: {id: "grant:<grantId>", role: "policy"}, grantId, argsDigest?}` · `permission.decided {outcome: "selected", optionId: "approve", kind: "allow_once", toolCallId, rule: {list: "allow", pattern: null}, decidedBy: "policy", decidedByRole: "policy", grantId, argsDigest?}` · `tool.update {toolCallId, status: "completed"\|"failed"}` |
+
+The actor of each `tool.call` and `permission.requested` is the calling agent, with `owner` and,
+where a human asked, `onBehalfOf` (§3). Each `permission.decided` takes the spec's default actor:
+the policy (`grant:<grantId>`) or the human decider.
+
 **`argsDigest` from `tool_calls.args_digest`.** The broker already stores a digest (`digestArgs` in
 `models/ToolCall.ts`): bare hex SHA-256 over a key-sorted JSON form. For arguments parsed from JSON
 that form matches RFC 8785 (keys sorted by UTF-16 code units, `JSON.stringify` for scalars), so the
 writer emits `"sha256:" + args_digest`. They can differ on inputs that JSON can't carry
-(`undefined` values, non-finite numbers), so each broker writer ships a test asserting its digest
-equals the spec's `argsDigestOf` over the same arguments. Without that test the writer omits
-`argsDigest` rather than emit a value that won't match the valet's.
+(`undefined` values, non-finite numbers, and the number and escaping cases the vectors pin), so
+each broker writer ships a test that runs `digestArgs` over all 36 vectors in
+`test/vectors/args-digest.json` (§3) and asserts the spec's digest, or no digest where the vector
+says none. Without that test passing the writer omits `argsDigest` rather than emit a value that
+won't match the valet's.
 
 Broker writers never emit `credential.*`: those kinds carry environment-variable names of a run's
 start credentials (spec §2, Credentials), and a brokered connector credential is named only by
 `scope.connectionId`. `vendor_status` and `vendor_error` have no field in v1 and are not exported.
+
+**The grant broker stays in TypeScript.** CTO ruling, 2026-10-25, from a spike that built the same
+standalone MCP grants broker in Node built-ins and in Go stdlib against one 24-test conformance
+suite (`spikes/grants/RESULTS.md`, branch `feat/moonjelly-grants-go` at `2f74be8d`). Go won
+footprint clearly: idle RSS 9.6 MB against 40–56 MB, peak RSS under load 21 MB against
+138–219 MB, startup CPU 16 ms against 134–141 ms, CPU per call 151–281 µs against 818–1,005 µs,
+and one 7.1 MB file against a 146 MB Node single executable. It didn't win install for today's
+users, who already have Node from the CLI that runs the grant-broker guard and get the TS broker as
+a 14 KB file. The spike's throughput and latency figures are not quoted here: the host ran at load
+average 126–770 throughout, so they mostly measured the scheduler. **The broker moves to Go only
+when it must run without Node** (a standalone sidecar or container, minimal or musl Linux) **or
+one per run**, where the per-process memory and startup CPU compound. A Go broker that writes
+record lines is held to the same vectors gate and `-race` rule (§3).
 
 **Readers.**
 - **The room** (shell): the task inspector renders one task's record as a timeline, gated by
@@ -213,7 +280,15 @@ start credentials (spec §2, Credentials), and a brokered connector credential i
 - **Agents**: CAP `GET /api/agents/runtime/pods/:podId/tasks/:taskId/record` (dual-auth, membership
   gated).
 - **Outside tools**: `GET /api/v1/tasks/:podId/:taskId/record?format=jsonl|otlp`, for an OTel
-  collector.
+  collector. **Same gate as the task it belongs to:** the route uses `tasksApi.ts`'s dual `auth`
+  (a user JWT or a `cm_agent_*` token) and `requirePodMember(podId, userId)` in read mode, exactly
+  as `GET /api/v1/tasks/:podId` does today (members, plus the `canViewPod` fallback for read). A
+  caller who can't read the pod's task board can't read its record; an unknown pod is 404, a
+  non-viewer 403. There is **no collector credential** in this ADR: a collector authenticates as a
+  user or agent who is a pod member, and sees exactly what that identity sees. A scoped,
+  task-bounded collector token is a separate decision, and would need its own ADR before any such
+  route ships. All three readers return the whole record (grant metadata, `question` text,
+  `argsDigest`), so all three get leakMatrix coverage (§7).
 
 ## 5. The three Trust clauses
 
@@ -277,8 +352,8 @@ hand-editing one line breaks `prev`; re-exporting yields identical bytes.
    left unrecorded until TASK-288 binds them?
 5. **Where does the record live?** A PG `record_lines` table or a derived view. Settle together with
    ADR-028 D5.
-6. **The ADR-025 D18 pair.** Does record-v1 gain an optional on-behalf-of field on connector
-   `tool.call`, or does the pair stay in the broker's own store and out of the portable record?
+6. ~~**The ADR-025 D18 pair.**~~ **Resolved at `50437c91`:** record-v1 carries it as
+   `actor.onBehalfOf {id, role: requester|assigner}`, on agent actors only (§3).
 7. **`surface: commonly` volume.** Every CAP call (heartbeats, reads), or writes only?
 
 ## Appendix: conflicts between the code and the fields
@@ -292,7 +367,7 @@ Resolved by record-v1 (at `099db50` unless noted):
    plus `parentGrantId`.
 4. ~~`grant.revoked` has no reason or cascade list.~~ **Resolved:** `{grantIds[], reason}`, with
    `cascade` putting the ancestor first. The code still captures no reason, so the writer derives
-   it; at `b7b71f63` the spec assigns `expired` and `cascade` to server writers.
+   it; at `50437c91` the spec assigns `expired` and `cascade` to server writers.
 5. ~~`decidedByRole: decision-owner` has no source.~~ **Resolved for the format:** `credential-owner`
    is today's role; `decision-owner` is reserved for TASK-512 (open question 1).
 6. ~~`actor.id` spaces differ.~~ **Resolved for the format:** `actor.id` is an id token and
@@ -300,11 +375,11 @@ Resolved by record-v1 (at `099db50` unless noted):
    user id.
 7. ~~No canonical bytes / no defined OTLP mapping.~~ **Resolved:** RFC 8785 lines; deterministic
    export.
-8. ~~An unlinked decision-card ruling has no v1 kind.~~ **Resolved at `b7b71f63`:**
+8. ~~An unlinked decision-card ruling has no v1 kind.~~ **Resolved at `50437c91`:**
    `decision.ruled {decisionCardId, value, decidedBy, decidedByRole}`.
-9. ~~The broker's `args_digest` has no field.~~ **Resolved at `b7b71f63`:** `argsDigest` on
+9. ~~The broker's `args_digest` has no field.~~ **Resolved at `50437c91`:** `argsDigest` on
    `tool.call` and both permission entries, subject to the equality test in §4.
-10. ~~A request doesn't say what was asked or of whom.~~ **Resolved at `b7b71f63`:**
+10. ~~A request doesn't say what was asked or of whom.~~ **Resolved at `50437c91`:**
     `permission.requested` requires `question` and `askedOf`.
 
 Open, writer-side (TASK-513):
