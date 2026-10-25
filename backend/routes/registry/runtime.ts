@@ -19,7 +19,7 @@ const {
   getUserId,
   normalizeInstanceId,
   normalizeConfigMap,
-  resolveInstallation,
+  isGlobalAdminUser,
   buildRuntimeLogFilters,
   resolveGatewayForRequest,
   resolveGatewayForInstallation,
@@ -27,6 +27,37 @@ const {
 } = require('./helpers');
 
 const runtimeRouter = express.Router({ mergeParams: true });
+
+// Runtime routes share one authorization boundary before dispatching any
+// adapter action. Use exact installation identity rather than legacy aliases.
+const resolveAuthorizedRuntimeInstallation = async ({ podId, name, instanceId, userId }: any) => {
+  const pod = await Pod.findById(podId).lean();
+  if (!pod) {
+    const error: any = new Error('Pod not found');
+    error.status = 404;
+    throw error;
+  }
+  const isAdmin = await isGlobalAdminUser(userId);
+  if (!isAdmin && !userHasPodAccess(pod, userId)) {
+    const error: any = new Error('Access denied');
+    error.status = 403;
+    throw error;
+  }
+  const installation = await AgentInstallation.findOne({
+    agentName: String(name).toLowerCase(), podId, instanceId, status: { $ne: 'uninstalled' },
+  });
+  if (!installation) {
+    const error: any = new Error('Agent installation not found');
+    error.status = 404;
+    throw error;
+  }
+  if (!isAdmin && installation.installedBy?.toString() !== userId.toString()) {
+    const error: any = new Error('Access denied');
+    error.status = 403;
+    throw error;
+  }
+  return installation;
+};
 
 /**
  * GET /api/registry/pods/:podId/agents/:name/runtime-status
@@ -42,28 +73,10 @@ runtimeRouter.get('/pods/:podId/agents/:name/runtime-status', auth, async (req: 
     const instanceId = normalizeInstanceId(req.query.instanceId || 'default');
     const gatewayId = req.query.gatewayId || null;
 
-    const pod = await Pod.findById(podId).lean();
-    if (!pod) {
-      return res.status(404).json({ error: 'Pod not found' });
-    }
-
-    const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m: any) => {
-      if (!m) return false;
-      const memberId = m.userId?.toString?.() || m.toString?.();
-      return memberId && memberId === userId.toString();
+    const installation = await resolveAuthorizedRuntimeInstallation({
+      podId, name, instanceId: instanceId, userId,
     });
-
-    if (!membership && !isCreator) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const { installation, instanceId: resolvedInstanceId } = await resolveInstallation({
-      agentName: name,
-      podId,
-      instanceId,
-    });
-    const effectiveInstanceId = resolvedInstanceId || instanceId;
+    const effectiveInstanceId = installation.instanceId;
 
     const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
     const runtimeType = typeConfig?.runtime;
@@ -104,28 +117,10 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-start', auth, async (req: 
     }
     const normalizedInstanceId = normalizeInstanceId(instanceId || 'default');
 
-    const pod = await Pod.findById(podId).lean();
-    if (!pod) {
-      return res.status(404).json({ error: 'Pod not found' });
-    }
-
-    const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m: any) => {
-      if (!m) return false;
-      const memberId = m.userId?.toString?.() || m.toString?.();
-      return memberId && memberId === userId.toString();
+    const installation = await resolveAuthorizedRuntimeInstallation({
+      podId, name, instanceId: normalizedInstanceId, userId,
     });
-
-    if (!membership && !isCreator) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const { installation, instanceId: resolvedInstanceId } = await resolveInstallation({
-      agentName: name,
-      podId,
-      instanceId: normalizedInstanceId,
-    });
-    const effectiveInstanceId = resolvedInstanceId || normalizedInstanceId;
+    const effectiveInstanceId = installation.instanceId;
 
     const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
     const runtimeType = typeConfig?.runtime;
@@ -166,28 +161,10 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop', auth, async (req: a
     }
     const normalizedInstanceId = normalizeInstanceId(instanceId || 'default');
 
-    const pod = await Pod.findById(podId).lean();
-    if (!pod) {
-      return res.status(404).json({ error: 'Pod not found' });
-    }
-
-    const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m: any) => {
-      if (!m) return false;
-      const memberId = m.userId?.toString?.() || m.toString?.();
-      return memberId && memberId === userId.toString();
+    const installation = await resolveAuthorizedRuntimeInstallation({
+      podId, name, instanceId: normalizedInstanceId, userId,
     });
-
-    if (!membership && !isCreator) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const { installation, instanceId: resolvedInstanceId } = await resolveInstallation({
-      agentName: name,
-      podId,
-      instanceId: normalizedInstanceId,
-    });
-    const effectiveInstanceId = resolvedInstanceId || normalizedInstanceId;
+    const effectiveInstanceId = installation.instanceId;
 
     const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
     const runtimeType = typeConfig?.runtime;
@@ -228,28 +205,10 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart', auth, async (req
     }
     const normalizedInstanceId = normalizeInstanceId(instanceId || 'default');
 
-    const pod = await Pod.findById(podId).lean();
-    if (!pod) {
-      return res.status(404).json({ error: 'Pod not found' });
-    }
-
-    const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m: any) => {
-      if (!m) return false;
-      const memberId = m.userId?.toString?.() || m.toString?.();
-      return memberId && memberId === userId.toString();
+    const installation = await resolveAuthorizedRuntimeInstallation({
+      podId, name, instanceId: normalizedInstanceId, userId,
     });
-
-    if (!membership && !isCreator) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const { installation, instanceId: resolvedInstanceId } = await resolveInstallation({
-      agentName: name,
-      podId,
-      instanceId: normalizedInstanceId,
-    });
-    const effectiveInstanceId = resolvedInstanceId || normalizedInstanceId;
+    const effectiveInstanceId = installation.instanceId;
 
     const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
     const runtimeType = typeConfig?.runtime;
@@ -290,28 +249,10 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions', auth, asy
     }
     const normalizedInstanceId = normalizeInstanceId(instanceId || 'default');
 
-    const pod = await Pod.findById(podId).lean();
-    if (!pod) {
-      return res.status(404).json({ error: 'Pod not found' });
-    }
-
-    const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m: any) => {
-      if (!m) return false;
-      const memberId = m.userId?.toString?.() || m.toString?.();
-      return memberId && memberId === userId.toString();
+    const installation = await resolveAuthorizedRuntimeInstallation({
+      podId, name, instanceId: normalizedInstanceId, userId,
     });
-
-    if (!membership && !isCreator) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const { installation, instanceId: resolvedInstanceId } = await resolveInstallation({
-      agentName: name,
-      podId,
-      instanceId: normalizedInstanceId,
-    });
-    const effectiveInstanceId = resolvedInstanceId || normalizedInstanceId;
+    const effectiveInstanceId = installation.instanceId;
 
     const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
     const runtimeType = typeConfig?.runtime;
@@ -377,28 +318,10 @@ runtimeRouter.get('/pods/:podId/agents/:name/runtime-logs', auth, async (req: an
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const pod = await Pod.findById(podId).lean();
-    if (!pod) {
-      return res.status(404).json({ error: 'Pod not found' });
-    }
-
-    const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m: any) => {
-      if (!m) return false;
-      const memberId = m.userId?.toString?.() || m.toString?.();
-      return memberId && memberId === userId.toString();
+    const installation = await resolveAuthorizedRuntimeInstallation({
+      podId, name, instanceId: instanceId, userId,
     });
-
-    if (!membership && !isCreator) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const { installation, instanceId: resolvedInstanceId } = await resolveInstallation({
-      agentName: name,
-      podId,
-      instanceId,
-    });
-    const effectiveInstanceId = resolvedInstanceId || instanceId;
+    const effectiveInstanceId = installation.instanceId;
 
     const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
     const runtimeType = typeConfig?.runtime;
