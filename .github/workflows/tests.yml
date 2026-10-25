@@ -395,7 +395,7 @@ jobs:
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "redis") | .spec.template.spec.tolerations | map(select(.key == "workload-tier")) | length' /tmp/dev-rendered.yaml)" = "0"
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "redis") | .spec.template.spec.tolerations | map(select(.key == "pool" and .value == "dev" and .effect == "NoSchedule")) | length' /tmp/dev-rendered.yaml)" = "1"
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.minReadySeconds' /tmp/dev-rendered.yaml)" = "10"
-          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.terminationGracePeriodSeconds' /tmp/dev-rendered.yaml)" = "30"
+          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.terminationGracePeriodSeconds' /tmp/dev-rendered.yaml)" = "180"
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[] | select(.name == "backend") | .readinessProbe.httpGet.path' /tmp/dev-rendered.yaml)" = "/api/health/ready"
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[] | select(.name == "backend") | .lifecycle.preStop.exec.command[2]' /tmp/dev-rendered.yaml)" = "sleep 10"
           # Two frontend replicas never share a node, so a spot reclaim leaves one serving; with the spot

@@ -168,6 +168,11 @@ router.get('/db', (_req: unknown, res: Res) => {
 });
 
 router.get('/ready', async (_req: unknown, res: Res) => {
+  // Draining is not a liveness failure; only readiness stops new traffic.
+  const AgentEventService = require('../services/agentEventService');
+  if (AgentEventService.isInProcessDraining()) {
+    return res.status(503).json({ status: 'not_ready', reason: 'hosted runtime draining' });
+  }
   try {
     if (mongoose.connection.readyState !== 1) {
       return res.status(503).json({ status: 'not_ready', reason: 'MongoDB not connected' });
