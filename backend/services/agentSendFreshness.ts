@@ -1,6 +1,6 @@
 // A pod-wide read watermark, recorded only after a successful current-tail read.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const Cursor = require('../models/AgentPodReadCursor');
+const Cursor = require('../repositories/agentPodReadCursorRepository');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const MongoMessage = require('../models/Message');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -28,14 +28,12 @@ async function readStart(podId: unknown): Promise<ReadStart> {
   if (!(hello.localTime instanceof Date)) throw new Error('MongoDB did not return a freshness clock');
   return { at: hello.localTime };
 }
-const cursorId = (agentUserId: unknown, podId: unknown): string => `${String(agentUserId)}:${String(podId)}`;
 
 async function recordRead(
   agentUserId: unknown, podId: unknown, start: ReadStart, observedIds: string[],
 ): Promise<void> {
   if (!Array.isArray(observedIds)) throw new Error('Read acknowledgement needs returned message IDs');
-  const previous = await Cursor.findOne({ _id: cursorId(agentUserId, podId) })
-    .select('readAt readRevision').lean();
+  const previous = await Cursor.getReadWatermark(agentUserId, podId);
   // The first read also needs evidence: a truncated tail cannot acknowledge
   // older history just because no cursor existed yet.
   if (await omittedMessages(
@@ -45,20 +43,10 @@ async function recordRead(
 }
 
 async function advanceCursor(agentUserId: unknown, podId: unknown, start: ReadStart): Promise<void> {
-  // A slow earlier read must not roll a newer read's watermark backwards.
-  const filter = { _id: cursorId(agentUserId, podId) };
-  const maximum = {
+  await Cursor.advanceReadWatermark(agentUserId, podId, {
     readAt: start.at,
     ...(start.revision === undefined ? {} : { readRevision: start.revision }),
-  };
-  try {
-    await Cursor.updateOne(filter, { $max: maximum, $setOnInsert: { agentUserId, podId } }, { upsert: true });
-  } catch (error) {
-    if ((error as { code?: number }).code !== 11000) throw error;
-    // Two first reads can race on the deterministic _id; the loser still
-    // advances the winner's cursor without ever replacing a later timestamp.
-    await Cursor.updateOne(filter, { $max: maximum });
-  }
+  });
 }
 
 async function omittedMessages(
@@ -106,8 +94,7 @@ async function omittedMessages(
 async function recordCatchUp(
   agentUserId: unknown, podId: unknown, start: ReadStart, observedIds: string[],
 ): Promise<{ skippedCount: number }> {
-  const previous = await Cursor.findOne({ _id: cursorId(agentUserId, podId) })
-    .select('readAt readRevision').lean();
+  const previous = await Cursor.getReadWatermark(agentUserId, podId);
   const skippedCount = await omittedMessages(
     agentUserId, podId, previous || { readAt: new Date(0), readRevision: -1 }, start, observedIds, true,
   );
@@ -116,7 +103,7 @@ async function recordCatchUp(
 }
 
 async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hold> {
-  const cursor = await Cursor.findOne({ _id: cursorId(agentUserId, podId) }).select('readAt readRevision').lean();
+  const cursor = await Cursor.getReadWatermark(agentUserId, podId);
   const after = cursor?.readAt || new Date(0);
   const afterRevision = cursor?.readRevision ?? -1;
   const ownId = String(agentUserId);

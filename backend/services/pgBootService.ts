@@ -70,7 +70,7 @@ export interface PgBootDeps {
   mountRoutes: () => void;
   /** `connectPG` — resolves the pool, or null when the attempt failed. */
   connect: () => Promise<unknown>;
-  /** `initializePGDB` — applies schema.sql; false means the schema is not there. */
+  /** `initializePGDB` — runs pending SQL migrations; false keeps routes unavailable. */
   initialize: () => Promise<boolean>;
   /** Started once, after the mount (retention + installation-cleanup crons). */
   onMounted?: () => void;

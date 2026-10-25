@@ -1,6 +1,6 @@
-jest.mock('../../../models/AgentPodReadCursor', () => ({
-  findOne: jest.fn(),
-  updateOne: jest.fn(),
+jest.mock('../../../repositories/agentPodReadCursorRepository', () => ({
+  getReadWatermark: jest.fn(),
+  advanceReadWatermark: jest.fn(),
 }));
 jest.mock('../../../models/Message', () => ({
   countDocuments: jest.fn(),
@@ -9,7 +9,7 @@ jest.mock('../../../models/Message', () => ({
 }));
 jest.mock('../../../config/db-pg', () => ({ pool: { query: jest.fn() } }));
 
-const Cursor = require('../../../models/AgentPodReadCursor');
+const Cursor = require('../../../repositories/agentPodReadCursorRepository');
 const Message = require('../../../models/Message');
 const { pool } = require('../../../config/db-pg');
 const Freshness = require('../../../services/agentSendFreshness');
@@ -20,7 +20,7 @@ describe('agent send-time freshness', () => {
     jest.clearAllMocks();
     delete process.env.PG_HOST;
     Message.exists.mockResolvedValue(null);
-    Cursor.findOne.mockReturnValue({ select: () => ({ lean: async () => ({ readAt: new Date('2026-10-24T00:00:00Z') }) }) });
+    Cursor.getReadWatermark.mockResolvedValue({ readAt: new Date('2026-10-24T00:00:00Z') });
   });
   afterAll(() => {
     if (originalPgHost === undefined) delete process.env.PG_HOST;
@@ -71,13 +71,9 @@ describe('agent send-time freshness', () => {
 
   it('uses a monotonic watermark for a successful read', async () => {
     const at = new Date('2026-10-24T01:00:00Z');
-    Cursor.findOne.mockReturnValueOnce({ select: () => ({ lean: async () => null }) });
+    Cursor.getReadWatermark.mockResolvedValueOnce(null);
     await Freshness.recordRead('agent-id', 'pod-id', { at }, []);
-    expect(Cursor.updateOne).toHaveBeenCalledWith(
-      { _id: 'agent-id:pod-id' },
-      { $max: { readAt: at }, $setOnInsert: { agentUserId: 'agent-id', podId: 'pod-id' } },
-      { upsert: true },
-    );
+    expect(Cursor.advanceReadWatermark).toHaveBeenCalledWith('agent-id', 'pod-id', { readAt: at });
   });
 
   it('does not mistake an unavailable PostgreSQL store for a quiet pod', async () => {
@@ -106,9 +102,9 @@ describe('agent send-time freshness', () => {
     const start = await Freshness.readStart('pod-id');
     expect(start).toEqual({ at: expect.any(Date), revision: 7 });
     expect(pool.query.mock.calls[0][0]).toContain('pod_message_revisions');
-    Cursor.findOne.mockReturnValueOnce({ select: () => ({ lean: async () => null }) });
+    Cursor.getReadWatermark.mockResolvedValueOnce(null);
     await Freshness.recordRead('agent-id', 'pod-id', start, []);
-    expect(Cursor.updateOne.mock.calls[0][1].$max).toEqual({ readAt: start.at, readRevision: 7 });
+    expect(Cursor.advanceReadWatermark.mock.calls[0][2]).toEqual({ readAt: start.at, readRevision: 7 });
   });
 
   it('does not stamp a PostgreSQL read that omitted a newly committed message', async () => {
@@ -116,17 +112,15 @@ describe('agent send-time freshness', () => {
     pool.query.mockResolvedValue({ rows: [{ '?column?': 1 }] });
     await Freshness.recordRead('agent-id', 'pod-id', { at: new Date(), revision: 12 }, ['19']);
     expect(pool.query.mock.calls[0][1][4]).toEqual([19]);
-    expect(Cursor.updateOne).not.toHaveBeenCalled();
+    expect(Cursor.advanceReadWatermark).not.toHaveBeenCalled();
   });
 
   it('stamps a PostgreSQL read when every new peer message was returned', async () => {
     process.env.PG_HOST = 'configured';
-    Cursor.findOne.mockReturnValueOnce({
-      select: () => ({ lean: async () => ({ readAt: new Date('2026-10-24T00:00:00Z'), readRevision: 4 }) }),
-    });
+    Cursor.getReadWatermark.mockResolvedValueOnce({ readAt: new Date('2026-10-24T00:00:00Z'), readRevision: 4 });
     pool.query.mockResolvedValue({ rows: [] });
     await Freshness.recordRead('agent-id', 'pod-id', { at: new Date(), revision: 6 }, ['5', '6']);
     expect(pool.query.mock.calls[0][1]).toEqual(['pod-id', 4, 6, 'agent-id', [5, 6]]);
-    expect(Cursor.updateOne).toHaveBeenCalledTimes(1);
+    expect(Cursor.advanceReadWatermark).toHaveBeenCalledTimes(1);
   });
 });

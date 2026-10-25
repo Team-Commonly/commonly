@@ -57,10 +57,9 @@ RUN npm install --include=dev
 COPY . .
 
 # Compile TypeScript to dist/
-RUN npx tsc -p tsconfig.build.json
+RUN npm run build
 
 # Copy non-JS assets that tsc doesn't copy
-RUN cp config/schema.sql dist/config/schema.sql
 RUN cp -r external dist/external 2>/dev/null || true
 
 EXPOSE 5000
