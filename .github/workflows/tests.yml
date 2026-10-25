@@ -181,6 +181,9 @@ jobs:
       SENDGRID_FROM_EMAIL: test@example.com
       FRONTEND_URL: http://localhost:3000
     steps:
+      - name: Suppress Node deprecation warnings
+        shell: bash
+        run: "echo \"NODE_OPTIONS=--no-deprecation\" >> $GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
