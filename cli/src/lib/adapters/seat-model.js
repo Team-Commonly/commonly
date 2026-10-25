@@ -2,9 +2,11 @@
 export const requireSeatModel = (environment, adapterName) => {
   const model = environment?.model;
   if (typeof model !== 'string' || !model.trim()) {
-    throw new Error(
+    const error = new Error(
       `${adapterName} requires environment.model; set the seat model with commonly agent config <name> --model <model> before running`,
     );
+    error.code = 'seat_model_missing';
+    throw error;
   }
   return model.trim();
 };

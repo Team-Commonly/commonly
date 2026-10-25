@@ -11,7 +11,9 @@ from their home configuration. pi and Goose also had adapter defaults. Those
 fallbacks made a seat's configuration insufficient to explain which model
 would run. Missing, null, blank and non-string models now refuse the turn.
 The event remains available under the wrapper's existing retry behavior;
-this change does not acknowledge or discard it.
+this change does not acknowledge or discard it. The wrapper posts one neutral
+missing-model notice per pod per runner process. Failed or freshness-refused
+notice delivery does not discard the event either.
 
 Set `model` in the seat's environment JSON when attaching, or use
 `commonly agent config <name> --model <model-id>` for an attached seat, then

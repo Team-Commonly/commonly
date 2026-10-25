@@ -1253,6 +1253,7 @@ export const performRun = ({
   const effectiveTurnTimeoutMs = Number.isFinite(requestedTurnTimeout) && requestedTurnTimeout > 0
     ? Math.min(requestedTurnTimeout, 2_147_483_647) : 15 * 60 * 1000;
   const client = createClient({ instance: instanceUrl, token });
+  const missingModelNotices = new Set();
   const handoffAgent = sanitizeHandoffAgent(refusalHandoff);
   if (refusalHandoff && !handoffAgent) {
     log(`--refusal-handoff ignored: '${String(refusalHandoff).slice(0, 64)}' is not an agent handle`);
@@ -1786,6 +1787,24 @@ export const performRun = ({
         metadata: { event },
       });
       spawnCompleted = true;
+    } catch (error) {
+      if (error.code === 'seat_model_missing' && eventPodId && !missingModelNotices.has(eventPodId)) {
+        try {
+          const delivery = await deliverChatReply({
+            client,
+            podId: eventPodId,
+            text: "This seat has no model configured. Set its model and restart the runner to resume the pending message.",
+            limit: chatCharLimit,
+            maxChunks: maxChatChunks,
+            log,
+          });
+          if (!delivery.skipped && !delivery.refused) missingModelNotices.add(eventPodId);
+        } catch (noticeError) {
+          log(`missing model notice could not be posted: ${noticeError.message}`);
+        }
+      }
+      // Configuration failure is retryable: never turn a notice into an ack.
+      throw error;
     } finally {
       try {
         commitAttribution?.cleanup();
