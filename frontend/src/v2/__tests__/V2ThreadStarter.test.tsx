@@ -485,6 +485,15 @@ describe('second-person prompt placements', () => {
     </MemoryRouter></AuthContext.Provider>);
     expect(screen.queryByRole('button', { name: 'Copy invite link' })).not.toBeInTheDocument();
   });
+  test('socket messages after a failed initial history read do not qualify as the first reply', () => {
+    const failed = makeDetail({ initialLoadComplete: true, initialMessagesLoaded: false, error: 'History unavailable', hasMore: false });
+    const view = renderChat(failed);
+    const liveDetail = { ...withReply(), initialMessagesLoaded: false, error: 'History unavailable' };
+    view.rerender(<AuthContext.Provider value={authValue}><MemoryRouter><V2Thread detail={liveDetail} /></MemoryRouter></AuthContext.Provider>);
+    expect(screen.getAllByText('Rendered message')).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: 'Copy invite link' })).not.toBeInTheDocument();
+  });
+
   test('Scout’s owned workspace discloses the conversation being shared', async () => {
     const detail = withReply({ _id: 'p1', name: 'My Workspace', type: 'chat', createdBy: { _id: 'u1' } });
     const username = 'scout-u0123456789';

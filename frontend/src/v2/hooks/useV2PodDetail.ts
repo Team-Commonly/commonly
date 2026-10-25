@@ -182,7 +182,7 @@ export interface UseV2PodDetailResult {
   loading: boolean;
   /** True after the current pod's initial pod/message read has settled. */
   initialLoadComplete?: boolean;
-  /** The current pod has returned a successful messages page, including an empty page. */
+  /** The current pod has returned a successful initial messages page, including an empty page. */
   initialMessagesLoaded?: boolean;
   error: string | null;
   /** Send failures belong beside the composer; load failures use `error`. */
@@ -368,7 +368,8 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       const list = Array.isArray(data) ? data : [];
       if (activePodIdRef.current !== id) return;
       const normalized = chronologicalMessages(list.map(normalizeMessage));
-      setInitialMessagesLoaded(true);
+      // A catch-up page cannot establish whether earlier history exists.
+      if (!reconnect) setInitialMessagesLoaded(true);
       if (reconnect) {
         // A socket event (or a previously loaded history page) can arrive
         // while the catch-up request is in flight. Keep those rows and dedupe.

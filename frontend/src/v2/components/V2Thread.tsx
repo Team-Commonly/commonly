@@ -1447,7 +1447,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const scoutWorkspace = viewerOwnsPod && pod.name === 'My Workspace';
   const scoutKeys = new Set((agents || []).filter((agent) => agent.agentName === 'scout')
     .map((agent) => buildAgentUsername(agent.agentName, agent.instanceId || 'default').toLowerCase()));
-  const teammateMoment = soloHuman && !hasMore && !loading && !firstRunVisible
+  const teammateMoment = soloHuman && detail.initialMessagesLoaded === true && !hasMore && !loading && !firstRunVisible
     ? teammateInviteMoment(messages, currentUserId || '', agentAuthorKeys, scoutKeys, scoutWorkspace) : null;
 
   const teammateSource = teammateMoment?.source || (scoutWorkspace ? 'scout-first-session' : 'first-agent-post');
