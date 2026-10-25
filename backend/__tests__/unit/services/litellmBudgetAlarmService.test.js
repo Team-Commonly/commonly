@@ -191,6 +191,27 @@ describe('checkLiteLLMBudgets', () => {
     expect(mockPageSre).toHaveBeenCalledTimes(2);
   });
 
+  test('an empty page that reports more pages is an incomplete scan', async () => {
+    axios.get
+      .mockResolvedValueOnce(page([key({ key_alias: 'a' })], 3))
+      .mockResolvedValueOnce(page([], 3));
+    const { rows, incomplete } = await budget.listLiteLLMKeys();
+    expect(rows.length).toBe(1);
+    expect(incomplete).toEqual({ reason: 'failed', pagesRead: 2, totalPages: 3 });
+  });
+
+  test('a failed incomplete-scan page is retried until it is delivered, logged once', async () => {
+    mockPageSre.mockRejectedValueOnce(new Error('pod gone'));
+    axios.get.mockRejectedValue(new Error('down'));
+    await budget.checkLiteLLMBudgets();
+    await budget.checkLiteLLMBudgets();
+    expect(mockPageSre).toHaveBeenCalledTimes(2);
+    expect(mockPageSre.mock.calls[1][0]).toMatch(/key scan failed after 0 pages/);
+    await budget.checkLiteLLMBudgets();
+    expect(mockPageSre).toHaveBeenCalledTimes(2);
+    expect(alarmLines().filter((l) => l.scanIncomplete).length).toBe(1);
+  });
+
   test('an incomplete scan alarms again only after a complete one in between', async () => {
     axios.get.mockRejectedValueOnce(new Error('down'));
     await budget.checkLiteLLMBudgets();

@@ -112,7 +112,9 @@ export const listLiteLLMKeys = async (): Promise<KeyScan | null> => {
     const keys = Array.isArray(resp?.data?.keys) ? resp.data.keys : [];
     rows.push(...keys);
     totalPages = Number(resp?.data?.total_pages) || 1;
-    if (page >= totalPages || keys.length === 0) return { rows, incomplete: null };
+    if (page >= totalPages) return { rows, incomplete: null };
+    // An empty page that still reports more pages is not the end of the list.
+    if (keys.length === 0) return { rows, incomplete: { reason: 'failed', pagesRead: page, totalPages } };
     if (page === MAX_PAGES) return { rows, incomplete: { reason: 'truncated', pagesRead: page, totalPages } };
   }
   return { rows, incomplete: null };
@@ -133,9 +135,11 @@ export const composeBudgetPage = (alarm: BudgetAlarm, mention?: string): string 
 // the email alert counts, so it is never repeated for a retry.
 const alarmed = new Set<string>();
 const unpaged = new Map<string, BudgetAlarm>();
-// An incomplete scan alarms once, and again only after a complete scan in
+// An incomplete scan logs once, and again only after a complete scan in
 // between, so a lasting failure is one alert rather than one every sweep.
-let incompleteReported = false;
+// Its SRE page is held until it is delivered, like the key pages.
+let incompleteLogged = false;
+let unpagedScan: string | null = null;
 
 const sendPage = async (content: string): Promise<boolean> => {
   try {
@@ -157,17 +161,18 @@ export const checkLiteLLMBudgets = async (): Promise<BudgetAlarm[]> => {
   // An incomplete scan can hide a key near its budget, so it alarms too, on
   // the same metric, toward over-delivery. The rows it did read are checked.
   if (!scan.incomplete) {
-    incompleteReported = false;
-  } else if (!incompleteReported) {
-    incompleteReported = true;
+    incompleteLogged = false;
+  } else if (!incompleteLogged) {
+    incompleteLogged = true;
     const { reason, pagesRead, totalPages } = scan.incomplete;
     console.warn(JSON.stringify({ alarm: 'litellm_budget', scanIncomplete: reason, pagesRead, totalPages }));
     const handle = mention ? ` @${mention}` : '';
     const what = reason === 'failed'
       ? `failed after ${pagesRead} page${pagesRead === 1 ? '' : 's'}`
       : `stopped at ${pagesRead} of ${totalPages} pages`;
-    await sendPage(`[budget alarm] The LiteLLM key scan ${what}, so some keys were not checked against their budget.${handle}`);
+    unpagedScan = `[budget alarm] The LiteLLM key scan ${what}, so some keys were not checked against their budget.${handle}`;
   }
+  if (unpagedScan && await sendPage(unpagedScan)) unpagedScan = null;
 
   const fresh: BudgetAlarm[] = [];
   scan.rows.filter((row) => nearBudget(row, BUDGET_ALARM_FRACTION)).forEach((row) => {
@@ -191,5 +196,6 @@ export const checkLiteLLMBudgets = async (): Promise<BudgetAlarm[]> => {
 export const resetBudgetAlarmMemory = (): void => {
   alarmed.clear();
   unpaged.clear();
-  incompleteReported = false;
+  incompleteLogged = false;
+  unpagedScan = null;
 };
