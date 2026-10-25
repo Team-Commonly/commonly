@@ -92,11 +92,13 @@ written by the board (`actor {type: system, id: board}`).
   credential's use.
 - **Any other card:** any pod member who may rule writes a `decision.ruled` line, with that human as
   actor. `decidedByRole` is never `null` (the format refuses it) and never `decision-owner` (reserved).
-  A ruler who owns the asking agent is `agent-owner`. **For any other member, record-v1 at
-  `50437c91` has no fitting value:** its writer accepts only `credential-owner`, `decision-owner`,
-  `agent-owner` and `policy` (`DECIDED_BY_ROLES`, `src/record/format.js`). That needs an additive
-  enum value in the spec, which keeps `v: 1` (spec §3 rule 3). Until the spec admits one, this
-  writer does not go live (open question 8).
+  A ruler who owns the asking agent is `agent-owner`; **any other member is `pod-member`** (CTO
+  ruling, 2026-10-25). `pod-member` is valid only on `decision.ruled`: a `permission.decided` line
+  carrying it is refused, so parked calls stay owner-only. record-v1 at `50437c91` doesn't have the
+  value yet (`DECIDED_BY_ROLES` in `src/record/format.js` is `credential-owner`, `decision-owner`,
+  `agent-owner`, `policy`); it is being added on `feat/moonjelly-record` as an additive enum value,
+  which keeps `v: 1` (spec §3 rule 3). This writer goes live once that commit lands (open
+  question 8).
 
 **R1. Redact forwarding is a launch blocker.** Agent-authored text (message chunks, tool titles, and
 the `question` of `permission.requested`, which is normally the tool call's title) is scrubbed only of
@@ -228,8 +230,8 @@ semantic-conventions-genai `9ffc7e00` (Development status); `argsDigest` exports
 | `resolveApproval` | `ApprovalAction.decision/resolvedBy` + `tool_calls` row | **B3**: `permission.decided` by `resolvedBy` as `credential-owner`, then `tool.update {status: completed\|failed}` |
 | Approval expiry sweep | `tool_calls` `refused/approval_expired` | **B4**: `permission.decided` by `policy`, `approval: timed_out` |
 | Broker executes (`ok` / `failed`) with no ask | `tool_calls` row | **B5**: `tool.call` + `permission.requested` asked of the policy + `permission.decided` (`rule.list: allow`) + `tool.update {status: completed\|failed}` |
-| `chooseDecision` on a card tied to a parked call | `DecisionRequest.ruling` | the **B3** `permission.decided` on that call, with `decisionCardId` and `decidedBy: ruling.byUserId` (spec §2: a ruling on a card a `permission.requested` carried belongs with that request). **Only the credential owner or the asking agent's owner may rule it** (D5), so `decidedByRole` is always `credential-owner` or `agent-owner`. |
-| `chooseDecision` on any other card | `DecisionRequest.ruling` | `decision.ruled {decisionCardId, value: ruling.value, decidedBy: ruling.byUserId, decidedByRole}`, actor = the ruling human (D5). Every ruling by a member who may rule writes a line. `decidedByRole` is `agent-owner` when the ruler owns the asking agent; for any other member see D5 and open question 8. Never `null`, never `decision-owner`. |
+| `chooseDecision` on a card tied to a parked call | `DecisionRequest.ruling` | the **B3** `permission.decided` on that call, with `decisionCardId` and `decidedBy: ruling.byUserId` (spec §2: a ruling on a card a `permission.requested` carried belongs with that request). **Only the credential owner or the asking agent's owner may rule it** (D5), so `decidedByRole` is always `credential-owner` or `agent-owner`; `pod-member` is refused on `permission.decided`. |
+| `chooseDecision` on any other card | `DecisionRequest.ruling` | `decision.ruled {decisionCardId, value: ruling.value, decidedBy: ruling.byUserId, decidedByRole}`, actor = the ruling human (D5). Every ruling by a member who may rule writes a line. `decidedByRole` is `agent-owner` when the ruler owns the asking agent, otherwise `pod-member` (D5; valid on `decision.ruled` only). Never `null`, never `decision-owner`. |
 | Native runtime (`AgentRun`) | AgentRun subdocs | `attempt.started/settled`, `tool.call {surface: native}`, `run.settled` |
 | `commonly_*` calls (CAP via MCP) | **not recorded anywhere server-side** | `tool.call {surface: commonly}` (TASK-513) |
 | Moonjelly runner (local seat) | its own JSONL (the spec's reference writer) | everything in the spec |
@@ -370,10 +372,9 @@ hand-editing one line breaks `prev`; re-exporting yields identical bytes.
 6. ~~**The ADR-025 D18 pair.**~~ **Resolved at `50437c91`:** record-v1 carries it as
    `actor.onBehalfOf {id, role: requester|assigner}`, on agent actors only (§3).
 7. **`surface: commonly` volume.** Every CAP call (heartbeats, reads), or writes only?
-8. **A role for a non-owner card ruling.** D5 requires a `decision.ruled` line for every member
-   who rules a card not tied to a parked call, and record-v1 has no `decidedByRole` for a member who
-   owns neither the credential nor the agent. Which additive value the spec adds (for example
-   `pod-member`) is the spec's call; the `chooseDecision` writer for those rulings waits on it.
+8. ~~**A role for a non-owner card ruling.**~~ **Ruled by CTO 10-25; spec commit pending (SWE):**
+   `decidedByRole: pod-member`, valid on `decision.ruled` only and refused on `permission.decided`
+   (D5). Spec sha: `<pending>`.
 
 ## Appendix: conflicts between the code and the fields
 
@@ -410,5 +411,5 @@ Open, writer-side (TASK-513):
 13. **`tool_calls.pod_id` holds a seat id** for seat-target grants. Map `podId` from the grant's
     context, not the column.
 14. **`DecisionRequest` rulings have no defined role.** Any human member may rule. D5 closes the
-    parked-call case by authorization (owners only, others 403). For other cards a non-owner ruler
-    still has no `decidedByRole` in record-v1 (open question 8).
+    parked-call case by authorization (owners only, others 403). Other cards record a non-owner
+    ruler as `pod-member` (D5; spec commit pending, open question 8).
