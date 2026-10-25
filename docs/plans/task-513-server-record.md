@@ -34,7 +34,8 @@ binding contract is shared with TASK-288.
 
 Capture metadata for every authenticated `commonly_*` call, reads included,
 plus connector calls. Store the exact allowlisted tool name, actor, server
-timestamp, digest when conformant, and outcome. Do not store arguments,
+timestamp and outcome. Omit `argsDigest` from every server record line and
+JSONL/OTLP export under the interim launch rule below. Do not store arguments,
 response bodies, credentials, arbitrary headers or exception prose. A request
 must not select another agent's identity, a foreign pod, or an unrelated task.
 Requests without an attributable pod need a separately ruled boundary; never
@@ -79,10 +80,28 @@ still open/Proposed at e2c89e2f with reviewer HOLDs. Its approval and stored
 parked-call binding rules must be resolved before enablement. These are real
 integration dependencies; the server-boundary choice is no longer pending.
 
+## Interim digest rule (2026-10-25)
+
+Rivet's handoff in pod message 87089 pins proposed ADR-033 §8 question 9 at
+`d2dbd42bae7819b76c70e5972ddfe90f4981e2a4`. TASK-513 adopts its interim
+launch rule: omit `argsDigest` from **all** server record lines and exports,
+including B1–B5. Do not copy broker-internal `tool_calls.args_digest` into the
+record. That internal value remains unchanged for approval integrity.
+
+CTO owns the later privacy decision between a separately specified keyed field
+and omission for low-entropy tools. Do not add a keyed value to v1's `sha256:`
+field: its canonical unkeyed meaning is fixed. Digest emission remains disabled
+until the decision and conformance/privacy tests are accepted. An absent digest
+never means a call had no arguments. The ADR remains Proposed; this handoff does
+not ratify the rest of it or enable a writer.
+
 ## Required evidence before enablement
 
-1. All shared digest vectors, writer/verifier round-trip and deterministic
-   OTLP bytes; editing a line breaks verification.
+1. Shared writer/verifier round-trip and deterministic OTLP bytes; editing a
+   line breaks verification. Assert `argsDigest` is absent from persisted server
+   lines, JSONL and OTLP for every emitted kind, including B1–B5, even when the
+   source broker row has `args_digest`. A future digest field requires the
+   accepted privacy decision and all shared conformance vectors first.
 2. Real PostgreSQL concurrent appends, idempotent replay, rollback on failed
    head update and upgrade from the populated prior schema.
 3. Cross-pod/task denial with no content read, public nonmember denial,
