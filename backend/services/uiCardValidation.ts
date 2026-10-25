@@ -1,7 +1,8 @@
 import {
   createParser, parseExpression, split, tokenize, walkAST,
 } from '@openuidev/lang-core';
-import type { LibraryJSONSchema } from '@openuidev/lang-core';
+import type { ElementNode, LibraryJSONSchema } from '@openuidev/lang-core';
+import Ajv from 'ajv';
 import catalogue from '../config/uiCardCatalogue.json';
 
 export const UI_CARD_MAX_BYTES = 32 * 1024;
@@ -16,6 +17,64 @@ const closingTokens = new Map([
 ]);
 const openParenToken = bracketTokens[0].t;
 const allowedCall = (name: string) => componentNames.has(name) || ['Action', 'OpenUrl'].includes(name);
+const helpers = new Set(['Step', 'File', 'Pair', 'Col']);
+// lang-core validates prop types but ignores JSON Schema bounds (maxLength,
+// minItems, minimum, etc.). Validate its materialized tree as well. References
+// name element wrappers so helper/child identity is checked, not only prop shape.
+const validateTree = new Ajv({ strict: false }).compile({
+  $defs: Object.fromEntries(Object.entries(catalogue.$defs).map(([name, props]) => [name, {
+    type: 'object',
+    properties: {
+      type: { const: 'element' }, typeName: { const: name }, props,
+      partial: { type: 'boolean' }, hasDynamicProps: { type: 'boolean' }, statementId: { type: 'string' },
+    },
+    required: ['type', 'typeName', 'props'],
+    additionalProperties: false,
+  }])),
+  anyOf: Object.keys(catalogue.properties).filter((name) => !helpers.has(name))
+    .map((name) => ({ $ref: `#/$defs/${name}` })),
+});
+
+function validatePresentation(root: ElementNode): void {
+  let buttons = 0;
+  let primary = 0;
+  function visit(value: unknown): void {
+    if (Array.isArray(value)) { value.forEach(visit); return; }
+    if (!value || typeof value !== 'object') return;
+    const node = value as ElementNode;
+    if (node.type !== 'element') return;
+    const { props } = node;
+    if (node.typeName === 'Link') {
+      const url = new URL(props.url as string);
+      if (url.protocol !== 'https:' || url.username || url.password) refuse('Link requires a credential-free https URL');
+      if (props.as !== 'text') buttons += 1;
+      if (props.as === 'primary') primary += 1;
+    }
+    if (node.typeName === 'Text' && Array.isArray(props.body)) {
+      let length = 0;
+      props.body.forEach((part: string | ElementNode) => {
+        if (typeof part === 'string') length += [...part].length;
+        else {
+          if (part.props.as !== 'text') refuse('Inline Text links must use text presentation');
+          length += [...String(part.props.label)].length;
+        }
+      });
+      if (length > 600) refuse('Text body exceeds 600 characters');
+    }
+    if (node.typeName === 'Steps'
+      && (props.steps as ElementNode[]).filter((step) => step.props.state === 'active').length > 1) {
+      refuse('Steps permits at most one active step');
+    }
+    if (node.typeName === 'Table'
+      && (props.rows as unknown[][]).some((row) => row.length !== (props.columns as unknown[]).length)) {
+      refuse('Table row width must match its columns');
+    }
+    Object.values(props).forEach(visit);
+  }
+  visit(root);
+  if (buttons > 2 || primary > 1) refuse('UI card permits at most two buttons and one primary link');
+}
+
 
 export class UICardValidationError extends Error {
   readonly statusCode = 400;
@@ -108,6 +167,8 @@ export function validateAgentCardPayload(
       || Object.keys(result.stateDeclarations).length) {
       refuse('UI card source is incomplete or invalid for the Commonly catalogue');
     }
+    if (!validateTree(result.root)) refuse('UI card props violate the Commonly catalogue');
+    validatePresentation(result.root);
   } catch (error) {
     if (error instanceof UICardValidationError) throw error;
     refuse('UI card source could not be parsed');
