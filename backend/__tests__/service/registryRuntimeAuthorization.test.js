@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const { setupMongoDb, clearMongoDb, closeMongoDb } = require('../utils/testUtils');
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
+const Gateway = require('../../models/Gateway');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 
 // External runtime adapters are the side-effect boundary. Authentication,
@@ -108,6 +109,21 @@ describe('registry runtime authorization', () => {
     finally { await AgentInstallation.updateOne({ _id: installation._id }, { status: 'active' }); }
   });
 
+  it.each([['admin', 404], ['owner', 403]])('keeps string gateway selection policy for %s', async (actor, status) => {
+    const lookup = jest.spyOn(Gateway, 'findById');
+    const gatewayId = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+    try {
+      const user = actor === 'admin' ? admin : owner;
+      const response = await request(server).get(`/api/registry/pods/${pod._id}/agents/openclaw/runtime-status`)
+        .set('Authorization', `Bearer ${jwt.sign({ id: String(user._id) }, SECRET)}`)
+        .query({ instanceId: 'curator', gatewayId });
+      expect(response.status).toBe(status);
+      if (actor === 'admin') expect(lookup).toHaveBeenCalledWith(gatewayId);
+      else expect(lookup).not.toHaveBeenCalled();
+      expect(effects()).toBe(0);
+    } finally { lookup.mockRestore(); }
+  });
+
   describe.each(operations)('%s %s', (method, operation, adapter) => {
     it('refuses a non-installer member before adapter dispatch', async () => {
       expect((await call(method, operation, member)).status).toBe(403);
@@ -179,6 +195,19 @@ describe('registry runtime authorization', () => {
         expect(response.status).toBe(200);
         expect(JSON.parse(audit.mock.calls[0][0]).instanceId).toBe(method === 'get' ? 'curator' : 'default');
       } finally { await AgentInstallation.updateOne({ _id: installation._id }, { instanceId: 'curator' }); }
+    });
+    it('refuses a non-string gateway selection before database lookup or dispatch', async () => {
+      const lookup = jest.spyOn(Gateway, 'findById');
+      try {
+        const req = request(server)[method](`/api/registry/pods/${pod._id}/agents/openclaw/${operation}`)
+          .set('Authorization', `Bearer ${jwt.sign({ id: String(admin._id) }, SECRET)}`);
+        const response = method === 'get'
+          ? await req.query({ instanceId: 'curator', 'gatewayId[$ne]': 'null' })
+          : await req.send({ instanceId: 'curator', gatewayId: { $ne: null } });
+        expect(response.status).toBe(400);
+        expect(lookup).not.toHaveBeenCalled();
+        expect(effects()).toBe(0);
+      } finally { lookup.mockRestore(); }
     });
     it('refuses an uninstalled record', async () => {
       await AgentInstallation.updateOne({ _id: installation._id }, { status: 'uninstalled' });

@@ -101,7 +101,11 @@ runtimeRouter.get('/pods/:podId/agents/:name/runtime-status',
       return res.status(401).json({ error: 'Unauthorized' });
     }
     const instanceId = getRequestedInstanceId(req);
-    const gatewayId = req.query.gatewayId || null;
+    const rawGatewayId = req.query.gatewayId;
+    if (rawGatewayId != null && typeof rawGatewayId !== 'string') {
+      return res.status(400).json({ error: 'Invalid gateway ID' });
+    }
+    const gatewayId = typeof rawGatewayId === 'string' ? rawGatewayId : null;
 
     const installation = await resolveAuthorizedRuntimeInstallation({
       podId, name, instanceId: instanceId, userId,
@@ -141,7 +145,11 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-start',
   auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const { gatewayId } = req.body || {};
+    const { gatewayId: rawGatewayId } = req.body || {};
+    if (rawGatewayId != null && typeof rawGatewayId !== 'string') {
+      return res.status(400).json({ error: 'Invalid gateway ID' });
+    }
+    const gatewayId = typeof rawGatewayId === 'string' ? rawGatewayId : null;
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -186,7 +194,11 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop',
   auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const { gatewayId } = req.body || {};
+    const { gatewayId: rawGatewayId } = req.body || {};
+    if (rawGatewayId != null && typeof rawGatewayId !== 'string') {
+      return res.status(400).json({ error: 'Invalid gateway ID' });
+    }
+    const gatewayId = typeof rawGatewayId === 'string' ? rawGatewayId : null;
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -231,7 +243,11 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart',
   auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const { gatewayId } = req.body || {};
+    const { gatewayId: rawGatewayId } = req.body || {};
+    if (rawGatewayId != null && typeof rawGatewayId !== 'string') {
+      return res.status(400).json({ error: 'Invalid gateway ID' });
+    }
+    const gatewayId = typeof rawGatewayId === 'string' ? rawGatewayId : null;
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -276,7 +292,11 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions',
   auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const { gatewayId, restart = true } = req.body || {};
+    const { gatewayId: rawGatewayId, restart = true } = req.body || {};
+    if (rawGatewayId != null && typeof rawGatewayId !== 'string') {
+      return res.status(400).json({ error: 'Invalid gateway ID' });
+    }
+    const gatewayId = typeof rawGatewayId === 'string' ? rawGatewayId : null;
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -349,7 +369,11 @@ runtimeRouter.get('/pods/:podId/agents/:name/runtime-logs',
     const lines = Number.isFinite(requestedLines)
       ? Math.min(1000, Math.max(1, Math.trunc(requestedLines))) : 200;
     const instanceId = getRequestedInstanceId(req);
-    const gatewayId = req.query.gatewayId || null;
+    const rawGatewayId = req.query.gatewayId;
+    if (rawGatewayId != null && typeof rawGatewayId !== 'string') {
+      return res.status(400).json({ error: 'Invalid gateway ID' });
+    }
+    const gatewayId = typeof rawGatewayId === 'string' ? rawGatewayId : null;
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
