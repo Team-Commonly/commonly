@@ -1,5 +1,6 @@
 import { claudeRuntimeInventory } from '../native-runtime-inventory.js';
 import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
+import { spawnInOwnGroup, wantsOwnProcessGroup } from '@commonlyai/seats/process-group';
 /**
  * claude adapter — wraps the local `claude` CLI as a Commonly agent.
  *
@@ -291,12 +292,14 @@ const publicSkillPromptArgs = async (skillSources) => {
   return { args: text ? ['--append-system-prompt', text] : [], included };
 };
 
-const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {} }) => new Promise((resolve, reject) => {
-  const proc = spawnImpl(cmd, args, {
+// `ownGroup` is set only under the run supervisor, which kills the child's
+// whole group; unsupervised, the spawn options are exactly what they were.
+const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false }) => new Promise((resolve, reject) => {
+  const proc = spawnInOwnGroup(spawnImpl, cmd, args, {
     cwd,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  }, { ownGroup });
   observeSpawn(proc, onSpawn, controls);
   let stdout = '';
   let stderr = '';
@@ -906,6 +909,7 @@ export default {
         // the value a tail can echo back.
         credentials: spawnCredentials(spawnCtx),
         spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }), // test seam only — do not use in production
+        ownGroup: wantsOwnProcessGroup(ctx),
       });
       // TASK-440: the context this turn left, read from the transcript the
       // child wrote under its own env (an isolated HOME for public seats).
@@ -957,6 +961,7 @@ export default {
           timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
           credentials: spawnCredentials(retryCtx),
           spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
+          ownGroup: wantsOwnProcessGroup(ctx),
         });
         const contextTokens = claudeContextTokens({
           cwd: ctx.cwd, sessionId: freshId,

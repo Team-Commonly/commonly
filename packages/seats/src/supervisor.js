@@ -8,9 +8,16 @@
  * the adapter emits, and any byte on the stdout/stderr of a child the adapter
  * reports through `ctx.onSpawn`. A run that is busy but quiet past the window
  * is indistinguishable from a hung one, which is why the window is long.
+ *
+ * The adapter is told (ctx.ownProcessGroup) that it may start its child as the
+ * leader of a new process group; a child it marks as one is killed as a group,
+ * so the CLI's own children (MCP servers, a native binary behind a launcher)
+ * die with it. See process-group.js, which also kills those groups when the
+ * wrapper itself is signalled or exits.
  */
 import { RunFailure, runFailure, failureKindOf, FAILURE_KINDS } from './failures.js';
 import { scrubAdapterFailure, spawnCredentials } from './upstream-refusal.js';
+import { killProcessTree, trackSupervisedGroup, OWN_PROCESS_GROUP } from './process-group.js';
 
 export const SUPERVISOR_DEFAULTS = Object.freeze({
   // Longer than the quiet stretches a healthy turn has: a long-context first
@@ -109,7 +116,7 @@ const runAttempt = ({ adapter, prompt, ctx, run, settings, attempt, sessionId, e
     let killed = 0;
     for (const child of children) {
       if (!isAlive(child)) continue;
-      try { child.kill('SIGKILL'); killed += 1; } catch { /* already gone */ }
+      if (killProcessTree(child, 'SIGKILL')) killed += 1;
     }
     return killed;
   };
@@ -179,7 +186,11 @@ const runAttempt = ({ adapter, prompt, ctx, run, settings, attempt, sessionId, e
   };
 
   // Wraps the caller's onSpawn: every argument reaches it unchanged.
+  // A group-leading child is tracked for the wrapper's exit even when it
+  // arrives after this attempt ended: it is outside the seat's own group, so
+  // nothing else would kill it.
   const onSpawn = (...args) => {
+    for (const child of args.filter(isChild)) trackSupervisedGroup(child);
     if (live) {
       touch();
       for (const child of args.filter(isChild)) {
@@ -205,7 +216,7 @@ const runAttempt = ({ adapter, prompt, ctx, run, settings, attempt, sessionId, e
   let pending;
   try {
     pending = Promise.resolve(adapter.spawn(prompt, {
-      ...ctx, ...(sessionId ? { sessionId } : {}), trace, signal: controller.signal, onSpawn,
+      ...ctx, ...(sessionId ? { sessionId } : {}), trace, signal: controller.signal, onSpawn, [OWN_PROCESS_GROUP]: true,
     }));
   } catch (error) {
     pending = Promise.reject(error);
@@ -224,7 +235,8 @@ const runAttempt = ({ adapter, prompt, ctx, run, settings, attempt, sessionId, e
  * @param {object} args
  * @param {import('./contract.js').Adapter} args.adapter
  * @param {string} args.prompt
- * @param {object} [args.ctx]  passed to adapter.spawn; `trace`, `signal` and `onSpawn` are wrapped.
+ * @param {object} [args.ctx]  passed to adapter.spawn; `trace`, `signal` and `onSpawn` are wrapped,
+ *   and `ownProcessGroup` is set to true.
  *   `ctx.signal`, when given, cancels the run (outcome `cancelled`).
  * @param {ReturnType<import('./trace/store.js').createTraceStore>} args.store
  * @param {object} [args.policy]
