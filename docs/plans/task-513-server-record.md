@@ -1,7 +1,9 @@
 # TASK-513: server record boundary
 
-Status: proposal, awaiting the server-boundary ruling in ADR-033. No writer or
-public read surface is enabled by this document.
+Status: server boundary ruled by Lily on 2026-10-25 at 15:45:17Z, decision
+`6ade1e1d22a5cac4a3985799` (pod message 86051): **Task and pod chains**.
+The shared record package is not yet on main and ADR-033 remains Proposed.
+No writer or public read surface is enabled by this document.
 
 ## Measured inputs (2026-10-25)
 
@@ -21,7 +23,7 @@ public read surface is enabled by this document.
   readers who are not actual origin members. A new record reader must state
   its treatment of those identities explicitly.
 
-## Proposed boundary
+## Ruled boundary
 
 Use a server-owned PG chain per `(podId, taskId)`, with the backend as the sole
 logical writer and transaction serialization across replicas. Give taskless
@@ -62,17 +64,20 @@ approval cards. Follow origin pod links, not the card's display pod. Reuse the
 existing run-trace presentation where it fits; add one task or decision entry
 point and JSONL/OTLP export, with English and Chinese copy.
 
-## Alternative needing a ruling
+## Ruling and remaining integration dependencies
 
-Append server events to real agent-run chains instead. This requires explicit
-run-context propagation across CAP/MCP, native execution, broker calls,
-approval callbacks and task transitions. It must not append from two writers
-to one chain. It provides a literal run boundary, but needs a different shared
-transport and sequencing contract before the server writer can be implemented.
+Lily chose task and pod chains over real agent-run chains or a task-only first
+slice. That settles sequencing ownership, taskless capture and breadth: one
+backend-sequenced PG chain per task, separate pod chains for taskless calls,
+and every pod-attributable commonly call, reads included. Explicit validated
+context is required; a recent task claim is never a task-binding source.
 
-The other possible scope is a first slice restricted to explicitly task-bound
-calls, omitting taskless calls. That is smaller but cannot claim to cover all
-`commonly_*` traffic. The read surface must disclose that omission.
+Implementation must reuse the shared record-v1 writer/verifier/exporter. The
+pinned package is still absent from main; its landing or a coordinated tracked
+module extraction is required before wiring the backend writer. ADR-033 is
+still open/Proposed at e2c89e2f with reviewer HOLDs. Its approval and stored
+parked-call binding rules must be resolved before enablement. These are real
+integration dependencies; the server-boundary choice is no longer pending.
 
 ## Required evidence before enablement
 
