@@ -15,3 +15,10 @@ export { startProviderWatch, failureForStatus } from './provider-watch.js';
 export { RunFailure, runFailure, failureKindOf, FAILURE_KINDS } from './failures.js';
 export { EVENT_TYPES, isEventType, traceOf, NULL_TRACE } from './trace/events.js';
 export { createTraceStore } from './trace/store.js';
+export { validateGrant, matchToolCall, TOOL_KINDS, CREDENTIAL_SOURCES } from './valet/grant.js';
+export { prepareRunEnv, BASE_ENV_ALLOWLIST } from './valet/env.js';
+export { createPermissionPolicy, DEFAULT_APPROVE_TIMEOUT_MS } from './valet/permissions.js';
+export {
+  RECORD_VERSION, RECORD_SCHEMA, KINDS, canonicalLine, appendEntry, verifyRecord, readRecord, hashLine, toolSurfaceOf, argsDigestOf,
+} from './record/format.js';
+export { toOtlpJson } from './record/otel.js';
