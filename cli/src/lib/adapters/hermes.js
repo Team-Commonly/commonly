@@ -1,4 +1,5 @@
 /** Hermes 0.22.2 local CLI wrapper. Hermes owns provider I/O; this file only spawns it. */
+import { requireSeatModel } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { mkdir } from 'fs/promises';
@@ -161,6 +162,7 @@ export default {
   },
 
   async spawn(prompt, ctx = {}) {
+    const seatModel = requireSeatModel(ctx.environment, 'hermes');
     await this.validateEnvironment(ctx.environment);
     // Keep Hermes away from the operator's default profile, including any
     // Nous Portal/Cloud credentials there. The wrapper provides the sole key.
@@ -177,7 +179,7 @@ export default {
     }
     const args = ['chat', '--oneshot', '--query-file', '-', '--format', 'stream-json',
       '--provider', 'openrouter', '--source', 'tool', '--no-restore-cwd'];
-    if (ctx.environment?.model) args.push('--model', ctx.environment.model);
+    args.push('--model', seatModel);
     if (ctx.sessionId) args.push('--resume', ctx.sessionId);
     const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, {
       freshSession: !ctx.sessionId,

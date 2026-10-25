@@ -142,7 +142,7 @@ describe('codex adapter — spawn()', () => {
       outputContents: 'Hello from codex.',
     });
 
-    const res = await codex.spawn('hi', { sessionId: null, _spawnImpl: impl });
+    const res = await codex.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl });
 
     expect(res.text).toBe('Hello from codex.');
     expect(res.newSessionId).toBe(threadId);
@@ -182,6 +182,7 @@ describe('codex adapter — spawn()', () => {
     });
     expect(resumed.calls[0].args.slice(0, 5)).toEqual(['exec', 'resume', 'sid-1', '--json', '--skip-git-repo-check']);
     expect(resumed.calls[0].args).toContain('model_reasoning_effort="xhigh"');
+    expect(resumed.calls[0].args[resumed.calls[0].args.indexOf('--model') + 1]).toBe('gpt-5.4');
   });
 
   test('TASK-174: a warmed MCP home turns the override into `node <bin>`, and the credential stays on the file channel', async () => {
@@ -210,7 +211,7 @@ describe('codex adapter — spawn()', () => {
         env: spawnEnv(),
         runtimeToken: 'cm_agent_secret',
         instanceUrl: 'https://api.example.test',
-        environment: {
+        environment: { model: 'test-model',
           mcp: [{
             name: 'commonly',
             transport: 'stdio',
@@ -268,7 +269,7 @@ describe('codex adapter — spawn()', () => {
       env: spawnEnv(),
       runtimeToken: 'cm_agent_secret',
       instanceUrl: 'https://api.example.test',
-      environment: {
+      environment: { model: 'test-model',
         mcp: [
           {
             name: 'commonly',
@@ -329,7 +330,7 @@ describe('codex adapter — spawn()', () => {
     await codex.spawn('work safely', {
       sessionId: null,
       cwd: '/tmp/legacy-internal-workspace',
-      environment: {
+      environment: { model: 'test-model',
         sandbox: { mode: 'workspace', trust: 'internal' },
       },
       env: { ...process.env, CODEX_HOME: operatorHome },
@@ -364,7 +365,7 @@ describe('codex adapter — spawn()', () => {
       const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
       await expect(codex.spawn('hi', {
         cwd: '/tmp/public-workspace',
-        environment: {
+        environment: { model: 'test-model',
           sandbox: { trust: 'public', mode: 'workspace' },
           mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }],
         },
@@ -398,7 +399,7 @@ describe('codex adapter — spawn()', () => {
       const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
       await codex.spawn('hi', {
         cwd: '/tmp/public-workspace',
-        environment: {
+        environment: { model: 'test-model',
           sandbox: { trust: 'public', mode: 'workspace' },
           mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }],
         },
@@ -439,7 +440,7 @@ describe('codex adapter — spawn()', () => {
       env: spawnEnv(),
       runtimeToken: 'cm_agent_secret',
       instanceUrl: 'https://api.example.test',
-      environment: {
+      environment: { model: 'test-model',
         mcp: [{
           name: 'broker',
           transport: 'http',
@@ -490,7 +491,7 @@ describe('codex adapter — spawn()', () => {
     await codex.spawn('work safely', {
       sessionId: null,
       cwd: '/tmp/public-agent-workspace',
-      environment: {
+      environment: { model: 'test-model',
         sandbox: { mode: 'workspace', trust: 'public' },
       },
       env: {
@@ -589,7 +590,7 @@ describe('codex adapter — spawn()', () => {
 
     await codex.spawn('inspect safely', {
       sessionId: 'sid-public',
-      environment: {
+      environment: { model: 'test-model',
         sandbox: { mode: 'read-only', trust: 'public' },
       },
       env: { ...process.env, CODEX_HOME: operatorHome },
@@ -628,7 +629,7 @@ describe('codex adapter — spawn()', () => {
     await codex.spawn('work safely', {
       sessionId: null,
       cwd: '/tmp/public-agent-workspace',
-      environment: { sandbox: { trust: 'public' } },
+      environment: { model: 'test-model', sandbox: { trust: 'public' } },
       env: { ...process.env, CODEX_HOME: operatorHome },
       agentName: 'derived-sandbox-agent',
       _publicCodexHome: publicHome,
@@ -651,7 +652,7 @@ describe('codex adapter — spawn()', () => {
     });
 
     await expect(codex.spawn('x', {
-      environment: { sandbox: { mode: 'unconfined', trust: 'public' } },
+      environment: { model: 'test-model', sandbox: { mode: 'unconfined', trust: 'public' } },
       _spawnImpl: impl,
     })).rejects.toThrow(/require sandbox.mode=workspace or read-only/);
   });
@@ -661,7 +662,7 @@ describe('codex adapter — spawn()', () => {
       stdoutChunks: ['{"type":"turn.completed"}\n'],
       outputContents: 'ok',
     });
-    await codex.spawn('hi', { sessionId: null, _spawnImpl: impl });
+    await codex.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl });
     expect(calls[0].args).not.toContain('-c');
   });
 
@@ -674,7 +675,7 @@ describe('codex adapter — spawn()', () => {
       stdoutChunks: ['{"type":"thread.started","thread_id":"sid-1"}\n'],
       outputContents: 'ok',
     });
-    await codex.spawn('hi', { sessionId: null, _spawnImpl: impl });
+    await codex.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl });
     expect(calls[0].opts.stdio).toEqual(['ignore', 'pipe', 'pipe']);
   });
 
@@ -688,7 +689,7 @@ describe('codex adapter — spawn()', () => {
       outputContents: 'continuing',
     });
 
-    const res = await codex.spawn('keep going', { sessionId: sid, _spawnImpl: impl });
+    const res = await codex.spawn('keep going', { environment: { model: 'test-model' }, sessionId: sid, _spawnImpl: impl });
 
     expect(res.text).toBe('continuing');
     expect(res.newSessionId).toBe(sid);
@@ -711,7 +712,7 @@ describe('codex adapter — spawn()', () => {
       stdoutChunks: ['{"type":"thread.started","thread_id":"sid-1"}\n'],
       outputContents: 'ok',
     });
-    await codex.spawn('current message', {
+    await codex.spawn('current message', { environment: { model: 'test-model' },
       sessionId: null,
       memoryLongTerm: 'I remember the user prefers dark mode.',
       _spawnImpl: impl,
@@ -733,7 +734,7 @@ describe('codex adapter — spawn()', () => {
       stdoutChunks: ['{"type":"thread.started","thread_id":"sid-1"}\n'],
       outputContents: 'ok',
     });
-    await codex.spawn('current message', {
+    await codex.spawn('current message', { environment: { model: 'test-model' },
       sessionId: 'sid-1',
       memoryLongTerm: 'open gate: #123',
       _spawnImpl: impl,
@@ -750,7 +751,7 @@ describe('codex adapter — spawn()', () => {
       stdoutChunks: ['{"type":"thread.started","thread_id":"sid-1"}\n'],
       outputContents: 'ok',
     });
-    await codex.spawn('just this', { sessionId: null, memoryLongTerm: '', _spawnImpl: impl });
+    await codex.spawn('just this', { environment: { model: 'test-model' }, sessionId: null, memoryLongTerm: '', _spawnImpl: impl });
     const promptArg = calls[0].args[calls[0].args.length - 1];
     expect(promptArg).not.toBe('just this');
     expect(promptArg).toContain('just this');
@@ -766,7 +767,7 @@ describe('codex adapter — spawn()', () => {
       stdoutChunks: ['{"type":"thread.started","thread_id":"sid-1"}\n'],
       outputContents: 'ok',
     });
-    await codex.spawn('just this', { sessionId: null, memoryLongTerm: null, _spawnImpl: impl });
+    await codex.spawn('just this', { environment: { model: 'test-model' }, sessionId: null, memoryLongTerm: null, _spawnImpl: impl });
     const promptArg = calls[0].args[calls[0].args.length - 1];
     expect(promptArg).toContain('unreadable');
     expect(promptArg).toContain('just this');
@@ -784,7 +785,7 @@ describe('codex adapter — spawn()', () => {
       code: 0,
     });
     await expect(
-      codex.spawn('x', { sessionId: null, _spawnImpl: impl }),
+      codex.spawn('x', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl }),
     ).rejects.toThrow(/turn failed.*refresh token reused/i);
   });
 
@@ -795,7 +796,7 @@ describe('codex adapter — spawn()', () => {
       code: 1,
     });
     await expect(
-      codex.spawn('x', { sessionId: null, _spawnImpl: impl }),
+      codex.spawn('x', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl }),
     ).rejects.toThrow(/codex exited with code 1.*auth error/);
   });
 
@@ -814,7 +815,7 @@ describe('codex adapter — spawn()', () => {
       code: 0,
     });
 
-    const err = await codex.spawn('x', {
+    const err = await codex.spawn('x', { environment: { model: 'test-model' },
       sessionId: null,
       env: { ...process.env, LITELLM_API_KEY: secret },
       _spawnImpl: impl,
@@ -833,7 +834,7 @@ describe('codex adapter — spawn()', () => {
     proc.kill = jest.fn();
     const impl = () => proc;
 
-    const p = codex.spawn('x', { sessionId: null, timeoutMs: 20, _spawnImpl: impl });
+    const p = codex.spawn('x', { environment: { model: 'test-model' }, sessionId: null, timeoutMs: 20, _spawnImpl: impl });
     setTimeout(() => proc.emit('close', null), 40);
 
     await expect(p).rejects.toThrow(/timed out after 20ms/);
@@ -851,7 +852,7 @@ describe('codex adapter — spawn()', () => {
       ],
       outputContents: 'ok',
     });
-    const res = await codex.spawn('x', { sessionId: null, _spawnImpl: impl });
+    const res = await codex.spawn('x', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl });
     expect(res.newSessionId).toBe(threadId);
     expect(res.text).toBe('ok');
   });
@@ -884,7 +885,7 @@ describe('codex adapter — spawn()', () => {
     };
 
     await expect(
-      codex.spawn('x', { sessionId: null, _spawnImpl: implWatchingDir }),
+      codex.spawn('x', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: implWatchingDir }),
     ).rejects.toThrow(/turn failed/);
 
     expect(spawnDir).toMatch(/commonly-codex-/);
@@ -933,7 +934,7 @@ describe('codex: the carve-out for a reference the file channel cannot carry (TA
         env: spawnEnv(),
         runtimeToken: 'cm_agent_secret',
         instanceUrl: 'https://api.example.test',
-        environment: { mcp },
+        environment: { model: 'test-model', mcp },
       });
     } finally {
       warned = warn.mock.calls.map((c) => c.join(' '));

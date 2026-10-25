@@ -43,6 +43,7 @@
  * SIGKILL escalation is a post-v1 concern (ADR-005 §Spawning semantics).
  */
 
+import { requireSeatModel } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { accessSync, constants, realpathSync } from 'fs';
@@ -759,6 +760,7 @@ export default {
   },
 
   async spawn(prompt, rawCtx = {}) {
+    const seatModel = requireSeatModel(rawCtx.environment, 'claude');
     // `sandbox.trust: 'internal'` is refused for new declarations and read as
     // `public` for a record that already carries it; such a seat is confined
     // where it can be and refuses to derive where it cannot (Wren 69585).
@@ -809,7 +811,7 @@ export default {
     // session-recovery retry, or a retry runs at a different effort than the
     // turn it replaces.
     const modelArgs = [
-      ...(ctx.environment?.model ? ['--model', String(ctx.environment.model)] : []),
+      '--model', seatModel,
       ...(ctx.environment?.effort ? ['--effort', String(ctx.environment.effort)] : []),
     ];
     const baseArgs = ['-p', fullPrompt, '--output-format', 'text', sessionFlag, sessionId, ...modelArgs];

@@ -37,6 +37,7 @@
  * SIGKILL escalation is a post-v1 concern (ADR-005 §Spawning semantics).
  */
 
+import { requireSeatModel } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { accessSync, constants } from 'fs';
@@ -642,6 +643,7 @@ export default {
   },
 
   async spawn(prompt, ctx = {}) {
+    const seatModel = requireSeatModel(ctx.environment, 'codex');
     // Passed through UNCOALESCED. `ctx.memoryLongTerm || ''` was here, and
     // `null || ''` is `''` — which routed the unreadable case straight into
     // the empty-memory branch and made the whole distinction unreachable from
@@ -698,7 +700,7 @@ export default {
         mcpFlags: mcp.flags,
         mcpReadDirectories: mcp.mcpReadDirectories,
         publicSandboxMode,
-        model: ctx.environment?.model,
+        model: seatModel,
         effort: ctx.environment?.effort,
         commitAttributionEnv: ctx.commitAttributionEnv,
       });
