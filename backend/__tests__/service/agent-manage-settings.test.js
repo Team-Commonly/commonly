@@ -121,6 +121,8 @@ describe('per-installation agent settings', () => {
 
   it.each(['runtime-token claim', 'instance-id claim'])('shows a held task to members only (%s)', async (claimForm) => {
     const Task = require('../../models/Task');
+    await Task.deleteMany({ taskId: 'TASK-546' });
+    await Pod.updateOne({ _id: podB._id }, { $pull: { members: admin._id } });
     await User.deleteMany({ username: 'settings-runtime-bot' });
     const bot = await User.create({ username: 'settings-runtime-bot', email: 'settings-runtime-bot@test.com',
       password: 'password123', isBot: true, botType: 'agent',
@@ -140,9 +142,15 @@ describe('per-installation agent settings', () => {
     const member = await request(app).get(url).set('Authorization', `Bearer ${token(owner)}`);
     expect(member.body.heldTask).toEqual({ taskId: 'TASK-546', podId: String(podA._id), podName: 'Settings A' });
     expect(JSON.stringify(member.body.heldTask)).not.toContain('Private title');
+    // Keep memberPodIds nonempty: an all-or-nothing empty-list guard must not
+    // stand in for filtering each claimed task's own pod.
+    await Pod.updateOne({ _id: podB._id }, { $addToSet: { members: admin._id } });
+    expect((await Pod.findById(podA._id)).members.map(String)).not.toContain(String(admin._id));
     const outsider = await request(app).get(url).set('Authorization', `Bearer ${token(admin)}`);
     expect(outsider.status).toBe(200);
+    expect(outsider.body.installations.map((entry) => entry.podId)).toContain(String(podB._id));
     expect(outsider.body.heldTask).toBeNull();
+    await Pod.updateOne({ _id: podB._id }, { $pull: { members: admin._id } });
     await Task.deleteMany({ taskId: 'TASK-546' });
   });
 
