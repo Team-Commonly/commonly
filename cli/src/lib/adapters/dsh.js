@@ -219,6 +219,7 @@ export const runDsh = ({ binary, args, cwd, env, timeoutMs, credentials, spawnIm
 });
 
 export default {
+  requiresModel: true,
   name: 'dsh', runtimeType: 'dsh', supportsProvider: true,
 
   async validateEnvironment(environment, workspacePath) {

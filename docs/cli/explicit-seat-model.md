@@ -13,7 +13,9 @@ would run. Missing, null, blank and non-string models now refuse the turn.
 The event remains available under the wrapper's existing retry behavior;
 this change does not acknowledge or discard it. The wrapper posts one neutral
 missing-model notice per pod per runner process. Failed or freshness-refused
-notice delivery does not discard the event either.
+notice delivery does not discard the event either. Server delivery/requeue
+limits still apply, so an unfixed seat can eventually lose the retained event
+when those limits expire; repair the configuration promptly.
 
 Set `model` in the seat's environment JSON when attaching, or use
 `commonly agent config <name> --model <model-id>` for an attached seat, then

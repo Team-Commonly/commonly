@@ -623,6 +623,7 @@ const describeOpenCodeVersionMismatch = (installedVersion) => {
 };
 
 export default {
+  requiresModel: true,
   name: 'opencode',
   runtimeType: 'opencode',
   supportsProvider: true,

@@ -617,6 +617,7 @@ const runCodex = ({ args, cwd, env, timeoutMs, credentials = [], spawnImpl = chi
 });
 
 export default {
+  requiresModel: true,
   name: 'codex',
   // See claude.js for the rationale — identity-bearing runtime tag persisted
   // to AgentInstallation.config.runtime (paired with host:'byo') so a CLI-

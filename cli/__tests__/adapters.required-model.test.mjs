@@ -9,6 +9,9 @@ beforeEach(() => { childProcess.mockClear(); });
 const adapters = listAdapterNames().filter((name) => name !== 'stub');
 
 describe.each(adapters)('%s requires the seat model before any subprocess', (name) => {
+  test('declares the pre-credential model requirement', () => {
+    expect(getAdapter(name).requiresModel).toBe(true);
+  });
   test('refuses a missing spawn context', async () => {
     await expect(getAdapter(name).spawn('hello')).rejects.toThrow(`${name} requires environment.model`);
     expect(childProcess).not.toHaveBeenCalled();

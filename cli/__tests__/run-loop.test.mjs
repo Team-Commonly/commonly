@@ -1374,7 +1374,7 @@ describe('performRun', () => {
     expect(ackPosts(mockPost)).toHaveLength(1);
   });
 
-  test.each(['claude', 'codex'])('%s missing model posts one notice and retains the event on retry', async (name) => {
+  test.each(['claude', 'codex'])('%s missing model posts one notice and retains the event even if credential minting would refuse', async (name) => {
     const realAdapter = (await import(`../src/lib/adapters/${name}.js`)).default;
     const event = makeEvent({ _id: `evt-model-${name}` });
     const get = jest.fn(async (route) => route.endsWith('/messages')
@@ -1383,6 +1383,10 @@ describe('performRun', () => {
     createClient.mockReturnValue({ get, post });
     const scheduled = [];
     const errors = [];
+    const open = jest.fn(async () => {
+      throw Object.assign(new Error('mint refused'), { spawnCredentialRefused: true, status: 403 });
+    });
+    const leaseFactory = jest.fn(() => ({ open, close: jest.fn() }));
     const spawn = jest.fn((...args) => realAdapter.spawn(...args));
     const { stop } = performRun({
       instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
@@ -1390,13 +1394,16 @@ describe('performRun', () => {
       adapter: { ...realAdapter, spawn },
       setTimeoutImpl: (callback) => { scheduled.push(callback); return 0; },
       onError: (error) => errors.push(error),
+      spawnCredentialLeaseFactory: leaseFactory,
     });
     await drainMicrotasks();
     expect(scheduled).toHaveLength(1);
     await scheduled.shift()();
     await drainMicrotasks();
     stop();
-    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(spawn).not.toHaveBeenCalled();
+    expect(leaseFactory).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
     expect(replyPosts(post)).toEqual([[
       '/api/agents/runtime/pods/pod-abc/messages',
       { content: 'This agent has no model set; add environment.model to its configuration.' },

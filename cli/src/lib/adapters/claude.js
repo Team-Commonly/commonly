@@ -726,6 +726,7 @@ const prepareArgv = async (innerArgv, ctx) => {
 };
 
 export default {
+  requiresModel: true,
   name: 'claude',
   // Identity-bearing runtime tag written into AgentInstallation.config.runtime
   // by `commonly agent attach`. The CLI command stays `commonly agent attach

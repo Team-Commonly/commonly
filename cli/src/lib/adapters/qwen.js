@@ -209,6 +209,7 @@ const runQwen = ({ cmd, args, cwd, env, timeoutMs, spawnImpl, credentials }) => 
 });
 
 export default {
+  requiresModel: true,
   name: 'qwen',
   runtimeType: 'qwen',
   supportsProvider: true,

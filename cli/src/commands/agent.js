@@ -17,6 +17,7 @@ import { homedir, tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
 
+import { requireSeatModel } from '../lib/adapters/seat-model.js';
 import { createClient } from '../lib/api.js';
 import { copyHandoffMemory } from '../lib/handoff-memory.js';
 import {
@@ -1678,6 +1679,30 @@ export const performRun = ({
       ? `${recycleBriefing}\n\n${promptWithSkills}`
       : promptWithSkills;
 
+    if (adapter.requiresModel) {
+      try {
+        requireSeatModel(seatEnvironment, adapter.name);
+      } catch (error) {
+        if (error.code === 'seat_model_missing' && eventPodId && !missingModelNotices.has(eventPodId)) {
+          try {
+            const delivery = await deliverChatReply({
+              client,
+              podId: eventPodId,
+              text: "This agent has no model set; add environment.model to its configuration.",
+              limit: chatCharLimit,
+              maxChunks: maxChatChunks,
+              log,
+            });
+            if (!delivery.skipped && !delivery.refused) missingModelNotices.add(eventPodId);
+          } catch (noticeError) {
+            log(`missing model notice could not be posted: ${noticeError.message}`);
+          }
+        }
+        // Configuration failure is retryable: never turn a notice into an ack.
+        throw error;
+      }
+    }
+
     log(`[${event.type}] spawning ${adapter.name}`);
     // TASK-102 part B. The CHILD gets a scoped credential; the wrapper keeps
     // the seat token for its own polling, claiming and posting (`client` was
@@ -1787,24 +1812,6 @@ export const performRun = ({
         metadata: { event },
       });
       spawnCompleted = true;
-    } catch (error) {
-      if (error.code === 'seat_model_missing' && eventPodId && !missingModelNotices.has(eventPodId)) {
-        try {
-          const delivery = await deliverChatReply({
-            client,
-            podId: eventPodId,
-            text: "This agent has no model set; add environment.model to its configuration.",
-            limit: chatCharLimit,
-            maxChunks: maxChatChunks,
-            log,
-          });
-          if (!delivery.skipped && !delivery.refused) missingModelNotices.add(eventPodId);
-        } catch (noticeError) {
-          log(`missing model notice could not be posted: ${noticeError.message}`);
-        }
-      }
-      // Configuration failure is retryable: never turn a notice into an ack.
-      throw error;
     } finally {
       try {
         commitAttribution?.cleanup();

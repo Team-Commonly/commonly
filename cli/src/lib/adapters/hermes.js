@@ -138,6 +138,7 @@ const runHermes = ({ args, prompt, cwd, env, timeoutMs, spawnImpl, credentials }
 });
 
 export default {
+  requiresModel: true,
   name: 'hermes',
   runtimeType: 'hermes',
   supportsProvider: false,

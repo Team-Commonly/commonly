@@ -390,6 +390,7 @@ const runPi = ({ args, cwd, env, payload, timeoutMs, credentials = [], spawnImpl
 });
 
 export default {
+  requiresModel: true,
   name: 'pi',
 
   // TASK-049: the variable this adapter needs from the environment of whatever

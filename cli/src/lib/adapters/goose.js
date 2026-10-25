@@ -174,6 +174,7 @@ const runGoose = ({ binary, args, cwd, env, timeoutMs, credentials, spawnImpl = 
 });
 
 export default {
+  requiresModel: true,
   name: 'goose',
   providerKeyEnv: DEFAULT_PROVIDER_KEY,
   supportsProvider: true,
