@@ -22,6 +22,19 @@ on:
   schedule:
     - cron: '0 8 * * *'
   workflow_dispatch:
+    inputs:
+      latchkey:
+        description: Route this run's heavy jobs through the Latchkey path (rehearsal; the merge queue uses vars.LATCHKEY_HEAVY)
+        type: boolean
+        default: false
+      latchkey_probe_label:
+        description: Runner label for the probe; a label with no runners rehearses a held job
+        type: string
+        default: ''
+      latchkey_budget_eqmin:
+        description: Override the free-minute budget; 0 rehearses spent minutes
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -48,21 +61,120 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Heavy jobs (backend, frontend, service tests) run on Latchkey runners on
+  # merge-queue runs when vars.LATCHKEY_HEAVY is 'on': those runners don't
+  # count against the org's 20-concurrent-job cap that made the queue wait
+  # (D37). Every other run, PRs included, stays on GitHub-hosted runners, which
+  # are free on this public repo. Unsetting LATCHKEY_HEAVY turns it all off.
+  #
+  # A Latchkey job that is held (free minutes spent, or an outage) sits
+  # "queued" on GitHub with no error, so the route never trusts Latchkey
+  # blind: it falls back to GitHub-hosted on a recent hold or a spent budget,
+  # and otherwise waits for this probe to be picked up first. The probe is
+  # deliberately outside the gate's needs: a held probe must not hold the
+  # required check. See docs/runbooks/ci-heavy-runner.md.
+  latchkey-probe:
+    name: Latchkey probe
+    if: ${{ (github.event_name == 'merge_group' && vars.LATCHKEY_HEAVY == 'on') || (github.event_name == 'workflow_dispatch' && inputs.latchkey) }}
+    runs-on: ${{ inputs.latchkey_probe_label || vars.LATCHKEY_LIGHT_LABEL || 'latchkey-small' }}
+    timeout-minutes: 2
+    steps:
+      - run: echo "picked up by $RUNNER_NAME"
+
+  latchkey-route:
+    name: Latchkey route
+    if: ${{ (github.event_name == 'merge_group' && vars.LATCHKEY_HEAVY == 'on') || (github.event_name == 'workflow_dispatch' && inputs.latchkey) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      backend: ${{ steps.route.outputs.backend }}
+      frontend: ${{ steps.route.outputs.frontend }}
+      service: ${{ steps.route.outputs.service }}
+      use: ${{ steps.route.outputs.use }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/latchkey-route.mjs
+          sparse-checkout-cone-mode: false
+      - id: route
+        run: node scripts/latchkey-route.mjs route
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUDGET_START: ${{ vars.LATCHKEY_BUDGET_START }}
+          BUDGET_EQMIN: ${{ inputs.latchkey_budget_eqmin || vars.LATCHKEY_BUDGET_EQMIN }}
+          EQ_PER_RUN: ${{ vars.LATCHKEY_EQ_PER_RUN }}
+          PICKUP_SEC: ${{ vars.LATCHKEY_PICKUP_SEC }}
+          BACKEND_LABEL: ${{ vars.LATCHKEY_BACKEND_LABEL }}
+          LIGHT_LABEL: ${{ vars.LATCHKEY_LIGHT_LABEL }}
+      - if: ${{ steps.route.outputs.hold == 'true' }}
+        run: echo "probe not picked up in run ${{ github.run_id }}" > latchkey-hold.txt
+      - if: ${{ steps.route.outputs.hold == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: latchkey-hold
+          path: latchkey-hold.txt
+          retention-days: 1
+          overwrite: true
+      # One artifact per Latchkey run is the budget's counter.
+      - if: ${{ steps.route.outputs.use == 'true' }}
+        run: echo "${{ github.run_id }}" > latchkey-run.txt
+      - if: ${{ steps.route.outputs.use == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: latchkey-run
+          path: latchkey-run.txt
+          retention-days: 35
+          overwrite: true
+
+  # Once the heavy jobs are routed to Latchkey, a held one would leave the
+  # required check pending. This cancels the run instead, so the queue entry
+  # fails loudly, and records a hold so the next runs stay on GitHub.
+  latchkey-backstop:
+    name: Latchkey backstop
+    needs: latchkey-route
+    if: ${{ needs.latchkey-route.outputs.use == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/latchkey-route.mjs
+          sparse-checkout-cone-mode: false
+      - id: watch
+        run: node scripts/latchkey-route.mjs backstop
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - if: ${{ steps.watch.outputs.tripped == 'true' }}
+        run: echo "heavy job held in run ${{ github.run_id }}" > latchkey-hold.txt
+      - if: ${{ steps.watch.outputs.tripped == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: latchkey-hold
+          path: latchkey-hold.txt
+          retention-days: 1
+          overwrite: true
+      - if: ${{ steps.watch.outputs.tripped == 'true' }}
+        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   backend-tests:
     name: Backend tests (${{ matrix.shard }}/3)
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3]
-    # Heavy jobs run where the repo variable HEAVY_RUNNER points (D37: Latchkey
-    # runners, which don't count against the org's 20-concurrent-job cap).
-    # Unset means GitHub-hosted, so rolling back is deleting one variable. The
-    # job names, and so the required check, don't change either way. A fork
-    # PR's own pull_request run stays on GitHub. A merge_group run uses
-    # HEAVY_RUNNER even when the group holds a reviewed fork change: queue
-    # admission (a maintainer queues a gated PR) is the trust decision, not
-    # this expression. See docs/runbooks/ci-heavy-runner.md.
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.HEAVY_RUNNER || 'ubuntu-latest' }}
+    # Routed by latchkey-route (backend on medium, the rest on small; see
+    # the route job). Skipped routing leaves the output empty: GitHub-hosted.
+    needs: latchkey-route
+    if: ${{ !cancelled() }}
+    runs-on: ${{ needs.latchkey-route.outputs.backend || 'ubuntu-latest' }}
     env:
       JWT_SECRET: test-jwt-secret
       SENDGRID_API_KEY: fake-api-key
@@ -109,15 +221,10 @@ jobs:
 
   frontend-tests:
     name: Frontend tests
-    # Heavy jobs run where the repo variable HEAVY_RUNNER points (D37: Latchkey
-    # runners, which don't count against the org's 20-concurrent-job cap).
-    # Unset means GitHub-hosted, so rolling back is deleting one variable. The
-    # job names, and so the required check, don't change either way. A fork
-    # PR's own pull_request run stays on GitHub. A merge_group run uses
-    # HEAVY_RUNNER even when the group holds a reviewed fork change: queue
-    # admission (a maintainer queues a gated PR) is the trust decision, not
-    # this expression. See docs/runbooks/ci-heavy-runner.md.
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.HEAVY_RUNNER || 'ubuntu-latest' }}
+    # Routed by latchkey-route, as backend-tests.
+    needs: latchkey-route
+    if: ${{ !cancelled() }}
+    runs-on: ${{ needs.latchkey-route.outputs.frontend || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -174,6 +281,7 @@ jobs:
       - run: npm run verify:moltbot-tools
       - run: npm run verify:litellm-patch-runner
       - run: npm run verify:readme-invariants
+      - run: node --test scripts/__tests__/latchkey-route.test.mjs
       # These node:test files lived only in the retired all-in-one job.
       - name: Run agent service tests
         run: |
@@ -190,7 +298,8 @@ jobs:
   test-gate:
     name: Test & Coverage
     if: always()
-    needs: [backend-tests, backend-checks, frontend-tests, tool-tests, service-test, chart-lint]
+    # latchkey-probe is left out on purpose: see the comment above it.
+    needs: [latchkey-route, latchkey-backstop, backend-tests, backend-checks, frontend-tests, tool-tests, service-test, chart-lint]
     runs-on: ubuntu-latest
     env:
       NEEDS_JSON: ${{ toJSON(needs) }}
@@ -199,14 +308,16 @@ jobs:
       - name: Verify gate covers every suite
         run: |
           diff -u \
-            <(awk '/^jobs:$/ { jobs=1; next } jobs && /^  [[:alnum:]_-]+:$/ { id=$1; sub(/:$/, "", id); if (id != "test-gate") print id }' .github/workflows/tests.yml | sort) \
+            <(awk '/^jobs:$/ { jobs=1; next } jobs && /^  [[:alnum:]_-]+:$/ { id=$1; sub(/:$/, "", id); if (id != "test-gate" && id != "latchkey-probe") print id }' .github/workflows/tests.yml | sort) \
             <(printf '%s\n' "$NEEDS_JSON" | jq -r 'keys[]' | sort)
       - name: Verify every check passed
         run: |
           # Suite jobs run unconditionally; a skipped result is a failed gate.
+          # Only the Latchkey routing jobs may be skipped (off on PR runs).
           # Revisit this predicate if a later PR adds path-based job skipping.
           echo "$NEEDS_JSON" | jq -e '
-            [.[].result] | all(. == "success")
+            to_entries | all(.value.result == "success"
+              or ((.key | startswith("latchkey-")) and .value.result == "skipped"))
           '
 
   service-test:
@@ -215,15 +326,10 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2]
-    # Heavy jobs run where the repo variable HEAVY_RUNNER points (D37: Latchkey
-    # runners, which don't count against the org's 20-concurrent-job cap).
-    # Unset means GitHub-hosted, so rolling back is deleting one variable. The
-    # job names, and so the required check, don't change either way. A fork
-    # PR's own pull_request run stays on GitHub. A merge_group run uses
-    # HEAVY_RUNNER even when the group holds a reviewed fork change: queue
-    # admission (a maintainer queues a gated PR) is the trust decision, not
-    # this expression. See docs/runbooks/ci-heavy-runner.md.
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.HEAVY_RUNNER || 'ubuntu-latest' }}
+    # Routed by latchkey-route, as backend-tests.
+    needs: latchkey-route
+    if: ${{ !cancelled() }}
+    runs-on: ${{ needs.latchkey-route.outputs.service || 'ubuntu-latest' }}
 
     services:
       mongo:
