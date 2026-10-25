@@ -442,7 +442,7 @@ const V2LandingPage: React.FC = () => {
                 </a>
               </div>
 
-              <div className="v2-landing__install" aria-label={t('landing.hero.selfHostInstall')}>
+              <div className="v2-landing__install" role="group" aria-label={t('landing.hero.selfHostInstall')}>
                 {/* The scroll region is this wrapper, not the box, so the Copy
                     control beside it is visible at every width and scroll
                     position (TASK-154). */}
