@@ -44,6 +44,7 @@ test('the vector file documents its tags and covers what writers get wrong', () 
     assert.ok(raw.includes(tag), `a vector uses ${tag}`);
   }
   assert.ok(vectors.filter((v) => v.error).length >= 3, 'non-finite and undefined inputs are covered');
+  assert.ok(vectors.some((v) => v.error && /lone surrogate/.test(v.name)), 'a lone surrogate is a no-digest case');
 });
 
 for (const v of vectors) {

@@ -295,9 +295,12 @@ key order by UTF-16 code units, string escaping, number formatting (`1.0`,
 `-0`, `1e21`, small floats), and the cases where a hand-rolled key-sorted
 serializer drifts: an undefined value in an object drops its key, one in an
 array becomes `null`, and `NaN` or `Infinity` anywhere means the arguments
-have no digest. On arguments that can't be digested, the writer omits
-`argsDigest` rather than writing a different digest, because a different
-digest would not match the approval the call ran under.
+have no digest. So does a lone surrogate (half of a UTF-16 pair) in any
+string or key, as RFC 8785 requires. Only the digest refuses it: a line
+still records agent text holding one, as a `\u` escape, because a stream
+cut mid-pair must not lose the chunk. On arguments that can't be digested,
+the writer omits `argsDigest` rather than writing a different digest,
+because a different digest would not match the approval the call ran under.
 
 ### Credentials
 
@@ -493,6 +496,8 @@ to that commit. `error.type` is Stable.
     `seats.tool.surface` and `seats.tool.args_digest`;
   - on every event, `seats.seq` and `seats.actor.type`, `.id`, `.owner`,
     `.name`, `.on_behalf_of.id` and `.on_behalf_of.role`;
+  - on the tool span, `seats.actor.on_behalf_of.id` and `.role` from the
+    `tool.call` actor, so the pair sits on the action itself;
   - the event's data, flattened as `seats.<path>` with camelCase segments in
     snake_case. For example, `decidedBy` becomes `seats.decided_by`, and
     `scope.connectionId` becomes `seats.scope.connection_id`, and

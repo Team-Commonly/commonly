@@ -170,6 +170,7 @@ const spansOfRun = (entries) => {
           ['gen_ai.operation.name', 'execute_tool'],
           ['gen_ai.tool.name', toolName], ['gen_ai.tool.call.id', data.toolCallId],
           ['gen_ai.agent.name', attempt?.agentName],
+          ['seats.actor.on_behalf_of.id', entry.actor?.onBehalfOf?.id], ['seats.actor.on_behalf_of.role', entry.actor?.onBehalfOf?.role],
           ['seats.tool.kind', data.kind], ['seats.tool.surface', data.surface], ['seats.tool.args_digest', data.argsDigest],
         ]),
       });

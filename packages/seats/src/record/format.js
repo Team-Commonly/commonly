@@ -86,20 +86,28 @@ const isTimestamp = (value) => typeof value === 'string' && RFC3339_UTC.test(val
  * RFC 8785 (JCS) serialization. For the JSON values a record holds, JCS is
  * JSON.stringify with object keys sorted by UTF-16 code units, which is what
  * Array.prototype.sort does by default.
+ *
+ * `strict` also refuses a lone surrogate in any string or key, as RFC 8785
+ * requires. Lines are not strict: agent text from a stream cut mid-pair must
+ * still record, and JSON.stringify writes the lone half as a \u escape.
  */
-const canonical = (value) => {
-  if (value !== null && typeof value === 'object' && typeof value.toJSON === 'function') return canonical(value.toJSON());
+const canonicalString = (text, strict) => {
+  if (strict && !text.isWellFormed()) fail('strings must be well-formed UTF-16 (no lone surrogates)');
+  return JSON.stringify(text);
+};
+const canonical = (value, strict = false) => {
+  if (value !== null && typeof value === 'object' && typeof value.toJSON === 'function') return canonical(value.toJSON(), strict);
   if (value === null) return 'null';
   switch (typeof value) {
-    case 'string': return JSON.stringify(value);
+    case 'string': return canonicalString(value, strict);
     case 'boolean': return value ? 'true' : 'false';
     case 'number':
       if (!Number.isFinite(value)) fail('numbers must be finite');
       return JSON.stringify(value);
     case 'object':
-      if (Array.isArray(value)) return `[${value.map((item) => (item === undefined ? 'null' : canonical(item))).join(',')}]`;
+      if (Array.isArray(value)) return `[${value.map((item) => (item === undefined ? 'null' : canonical(item, strict))).join(',')}]`;
       return `{${Object.keys(value).filter((key) => value[key] !== undefined).sort()
-        .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+        .map((key) => `${canonicalString(key, strict)}:${canonical(value[key], strict)}`).join(',')}}`;
     default: return fail(`cannot serialize a ${typeof value}`);
   }
 };
@@ -118,12 +126,13 @@ export const hashLine = (line) => createHash('sha256').update(String(line), 'utf
  * lowercase hex SHA-256 of the arguments' RFC 8785 form. The same arguments
  * give the same digest wherever they are seen, so a reader can match a
  * tool.call to the permission entries that approved it. Returns undefined
- * when there are no arguments, or they are not JSON (a function, NaN).
+ * when there are no arguments, or they are not JSON (a function, NaN, a
+ * string or key holding a lone surrogate): a writer then omits argsDigest.
  */
 const ARGS_DIGEST = /^sha256:[0-9a-f]{64}$/;
 export const argsDigestOf = (args) => {
   if (args === undefined) return undefined;
-  try { return `sha256:${hashLine(canonical(args))}`; } catch { return undefined; }
+  try { return `sha256:${hashLine(canonical(args, true))}`; } catch { return undefined; }
 };
 export const isArgsDigest = (value) => typeof value === 'string' && ARGS_DIGEST.test(value);
 

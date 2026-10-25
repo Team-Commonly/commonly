@@ -298,6 +298,8 @@ test('argsDigest is sha256 of the canonical args, and anything else is refused, 
   assert.equal(argsDigestOf({ a: [1, 'x'], b: 2 }), digest, 'key order does not change it');
   assert.equal(argsDigestOf(undefined), undefined);
   assert.equal(argsDigestOf({ n: Number.NaN }), undefined);
+  assert.equal(argsDigestOf({ s: '\ud800' }), undefined, 'a lone surrogate has no digest (RFC 8785)');
+  assert.equal(argsDigestOf({ ['k\udc00']: 1 }), undefined, 'in a key too');
   const call = (argsDigest) => appendEntry(null, { ...ENV, ts: ts(), kind: 'tool.call', data: { toolCallId: 't', title: 'x', argsDigest } });
   const decided = (argsDigest) => appendEntry(null, { ...ENV, ts: ts(), kind: 'permission.decided', data: { outcome: 'cancelled', toolCallId: 't', argsDigest } });
   for (const write of [call, decided, (d) => request(askData({ argsDigest: d }))]) {
@@ -361,4 +363,17 @@ test('actor.onBehalfOf is additive: a record written without it is byte-identica
   assert.equal(hashLine(l2), '1689f865735018eafddcb3fcf0b267d8ead7d9546d45b6d9a471c23eed21cfc6');
   assert.ok(!l1.includes('onBehalfOf') && !l2.includes('onBehalfOf'));
   assert.deepEqual(verifyRecord(`${l1}\n${l2}\n`).errors, []);
+});
+
+test('a lone surrogate in agent text still records: only the args digest refuses it', () => {
+  // A stream cut mid-pair leaves half a surrogate pair in a chunk.
+  const chunk = `cut here ${'\ud83d'}`;
+  const first = appendEntry(null, { ...ENV, ts: ts(), kind: 'agent.message_chunk', data: { text: chunk } }, { runActor: AGENT });
+  assert.ok(first.includes('cut here \\ud83d'), 'the lone half is written as a \\u escape');
+  const second = appendEntry(first, {
+    ...ENV, ts: ts(), kind: 'tool.call', data: { toolCallId: 'tc-1', title: chunk, argsDigest: argsDigestOf({ q: 'ok' }) },
+  }, { runActor: AGENT });
+  assert.deepEqual(verifyRecord(`${first}\n${second}\n`).errors, []);
+  assert.equal(readRecord(`${first}\n`)[0].data.text, chunk);
+  assert.equal(argsDigestOf({ q: chunk }), undefined);
 });

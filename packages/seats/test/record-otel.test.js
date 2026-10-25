@@ -154,7 +154,7 @@ test('decision.ruled joins the tool span of the request on its card, else the sp
   assert.ok(again.events.some((e) => e.name === 'decision.ruled'));
 });
 
-test('actor.onBehalfOf maps beside actor.owner: on every event, and on the attempt span', () => {
+test('actor.onBehalfOf maps beside actor.owner: on every event, the attempt span and the tool span', () => {
   const base = { v: 1, schema: 'seats.record', runId: 'run-obo-0001', prev: null };
   const actor = { type: 'agent', id: 'u-agent-ana', owner: 'u-ana', onBehalfOf: { id: 'u-ben', role: 'requester' } };
   const entries = [
@@ -171,7 +171,10 @@ test('actor.onBehalfOf maps beside actor.owner: on every event, and on the attem
   assert.equal(attrOf(attempt, 'seats.agent.owner').stringValue, 'u-ana');
   assert.equal(attrOf(attempt, 'seats.agent.on_behalf_of.id').stringValue, 'u-ben');
   assert.equal(attrOf(attempt, 'seats.agent.on_behalf_of.role').stringValue, 'requester');
-  const asked = spans.find((s) => s.name === 'execute_tool sentry.resolve_issue').events.find((e) => e.name === 'permission.requested');
+  const tool = spans.find((s) => s.name === 'execute_tool sentry.resolve_issue');
+  assert.equal(attrOf(tool, 'seats.actor.on_behalf_of.id').stringValue, 'u-ben', 'the pair is on the action itself');
+  assert.equal(attrOf(tool, 'seats.actor.on_behalf_of.role').stringValue, 'requester');
+  const asked = tool.events.find((e) => e.name === 'permission.requested');
   assert.equal(attrOf(asked, 'seats.actor.owner').stringValue, 'u-ana');
   assert.equal(attrOf(asked, 'seats.actor.on_behalf_of.id').stringValue, 'u-ben');
   assert.equal(attrOf(asked, 'seats.actor.on_behalf_of.role').stringValue, 'requester');

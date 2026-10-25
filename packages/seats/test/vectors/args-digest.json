@@ -1,5 +1,5 @@
 {
-  "_about": "Test vectors for argsDigestOf (src/record/format.js; docs/record-v1.md, Tool activity). Each vector is {name, args, canonical, digest} or {name, args, error: true}. digest is \"sha256:\" + lowercase hex SHA-256 of canonical, the RFC 8785 bytes of args. error: true means the arguments cannot be digested, and a writer omits argsDigest. JSON cannot hold every input, so args uses two tags, each an object with exactly one key: {\"$undefined\":true} is an undefined value, and {\"$number\":\"<literal>\"} is the number that literal parses to as an IEEE 754 double (e.g. \"1.0\", \"-0\", \"1e21\", \"NaN\", \"Infinity\"). Decode the tags before digesting; no vector holds a real argument of either shape.",
+  "_about": "Test vectors for argsDigestOf (src/record/format.js; docs/record-v1.md, Tool activity). Each vector is {name, args, canonical, digest} or {name, args, error: true}. digest is \"sha256:\" + lowercase hex SHA-256 of canonical, the RFC 8785 bytes of args. error: true means the arguments cannot be digested (a non-finite number, undefined arguments, or a lone surrogate in any string or key), and a writer omits argsDigest. JSON cannot hold every input, so args uses two tags, each an object with exactly one key: {\"$undefined\":true} is an undefined value, and {\"$number\":\"<literal>\"} is the number that literal parses to as an IEEE 754 double (e.g. \"1.0\", \"-0\", \"1e21\", \"NaN\", \"Infinity\"). Decode the tags before digesting; no vector holds a real argument of either shape.",
   "vectors": [
     {
       "name": "flat object, keys reordered",
@@ -126,12 +126,37 @@
       "digest": "sha256:2cd92a4cd6d75d7908756eddfd66f0b4bd361808bc32ea278fcb7dbde1f0eefa"
     },
     {
-      "name": "a lone surrogate is written as a lowercase \\u escape",
+      "name": "a lone high surrogate in a string means no digest",
       "args": {
         "s": "\ud800"
       },
-      "canonical": "{\"s\":\"\\ud800\"}",
-      "digest": "sha256:d06a70a1ca4d3ac4099cd5f35ecbb551be652247e0950c05790e8f0c58010851"
+      "error": true
+    },
+    {
+      "name": "a lone low surrogate nested in an array means no digest",
+      "args": {
+        "a": [
+          "ok",
+          [
+            "x\udc00y"
+          ]
+        ]
+      },
+      "error": true
+    },
+    {
+      "name": "a surrogate pair in the wrong order means no digest",
+      "args": {
+        "s": "\ude00\ud83d"
+      },
+      "error": true
+    },
+    {
+      "name": "a lone surrogate in a key means no digest",
+      "args": {
+        "k\ud800": 1
+      },
+      "error": true
     },
     {
       "name": "1.0 is written as 1",
