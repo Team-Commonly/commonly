@@ -236,6 +236,13 @@ force-sync and a LiteLLM restart (CLAUDE.md, the ESO rule). Until then,
 point the dead name's `fallbacks` entry in `litellm-config.yaml` at a live
 route.
 
+Provider keys expire without warning, and this has caught us twice. Both
+OpenRouter keys had been expired for months before anyone checked, and every
+nemotron call failed over in silence. The current OpenRouter key expires on
+**2027-10-25**, so rotate it in **September 2027**. To check any OpenRouter key's
+expiry, call `GET https://openrouter.ai/api/v1/key` with that key. It returns
+`expires_at` and `limit_remaining`. A 401 with "API key expired." is this failure.
+
 Do not test with `guardrails: ["openai-moderation-enforce"]` unless the
 moderation key is real. That guardrail's OpenAI key is still a placeholder,
 so it 401s every call on any model. Production platform calls send

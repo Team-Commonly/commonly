@@ -304,4 +304,50 @@ describe('V2MessageRow', () => {
 
     expect(screen.getByText('Pixel and codex started a DM').closest('.v2-syscard')).toHaveClass('v2-syscard--action');
   });
+
+  it('renders a structured task claim as a quiet line without message actions', () => {
+    render(
+      <MemoryRouter>
+        <V2MessageRow message={{
+          id: '45', pod_id: 'pod-1', user_id: 'agent-1',
+          content: 'Forge claimed TASK-406', message_type: 'system',
+          created_at: '2026-10-23T20:00:00.000Z',
+          payload: { kind: 'system-action', action: 'task-claimed', actorName: 'Forge', taskId: 'TASK-406' },
+          user: { username: 'forge-agent', isBot: true },
+        }} />
+      </MemoryRouter>,
+    );
+    const line = screen.getByText('Forge').closest('.v2-system-action-line');
+    expect(line).toBeInTheDocument();
+    expect(line).toHaveTextContent('ForgeclaimedTASK-406');
+    expect(line?.querySelector('.v2-system-action-line__object')).toHaveTextContent('TASK-406');
+    expect(line?.querySelector('.v2-avatar')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+});
+
+it('server-bound origin pod links a plain message after its content', () => {
+  const runPodId = 'aaaaaaaaaaaaaaaaaaaaaaa1';
+  const runId = 'bbbbbbbbbbbbbbbbbbbbbbb1';
+  render(<MemoryRouter><V2MessageRow message={{ id: 'origin-run', pod_id: 'ccccccccccccccccccccccc1',
+    user_id: 'agent-1', message_type: 'text', content: 'Approval requested.', created_at: '2026-10-25T00:00:00Z',
+    user: { username: 'lark', isBot: true }, payload: { runId, runPodId },
+  }} /></MemoryRouter>);
+  const link = screen.getByRole('link', { name: 'View run trace' });
+  expect(link).toHaveAttribute('href', `/v2/pods/${runPodId}/runs/${runId}`);
+  const content = link.closest('.v2-msg__body').querySelector('.v2-msg__content');
+  expect(content.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it('the approval-card branch links to its server-bound original pod', () => {
+  const runPodId = 'aaaaaaaaaaaaaaaaaaaaaaa1', runId = 'bbbbbbbbbbbbbbbbbbbbbbb1';
+  render(<MemoryRouter><V2MessageRow message={{ id: 'approval-origin-run', pod_id: 'ccccccccccccccccccccccc1',
+    user_id: 'agent-1', message_type: 'card', content: 'Approve the research pod', created_at: '2026-10-25T00:00:00Z',
+    user: { username: 'lark', isBot: true }, payload: { kind: 'approval-card', runId, runPodId,
+      approvalId: 'approval-1', actionType: 'create_pod', params: { name: 'Research' },
+      summary: 'Approve the research pod', status: 'resolved', decision: 'declined', ownerUserId: 'owner-1',
+    },
+  }} /></MemoryRouter>);
+  expect(screen.getByTestId('approval-card')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'View run trace' })).toHaveAttribute('href', `/v2/pods/${runPodId}/runs/${runId}`);
 });

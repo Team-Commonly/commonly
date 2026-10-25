@@ -83,12 +83,14 @@ const minimalConfigByType = {
   telegram: {
     chatId: 'chat-1',
   },
+  // X and Instagram hold their tokens in connector secrets; the row carries only
+  // the ref (#2692). A plaintext `accessToken` on the row no longer validates.
   x: {
-    accessToken: 'x-token',
+    feedAccessTokenRef: 'secret-ref-fixture',
     username: 'openclaw',
   },
   instagram: {
-    accessToken: 'ig-token',
+    feedAccessTokenRef: 'secret-ref-fixture',
     igUserId: 'ig-user-1',
   },
 };

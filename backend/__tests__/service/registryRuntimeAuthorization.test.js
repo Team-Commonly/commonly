@@ -39,6 +39,7 @@ describe('registry runtime authorization', () => {
   let pod;
   let ownPod;
   let installation;
+  let audit;
   const effects = () => Object.values(adapters).reduce((count, method) => count + method.mock.calls.length, 0);
   const call = (method, operation, user, { podId = pod._id, instanceId = 'curator' } = {}) => {
     const url = `/api/registry/pods/${podId}/agents/openclaw/${operation}`;
@@ -67,7 +68,11 @@ describe('registry runtime authorization', () => {
     app.use('/api/registry', runtimeRouter);
     server = await new Promise((resolve) => { const listening = app.listen(0, () => resolve(listening)); });
   });
-  beforeEach(() => { jest.clearAllMocks(); });
+  beforeEach(() => {
+    jest.clearAllMocks();
+    audit = jest.spyOn(console, 'info').mockImplementation(() => {});
+  });
+  afterEach(() => { audit.mockRestore(); });
   afterAll(async () => {
     if (server) await new Promise((resolve) => server.close(resolve));
     await clearMongoDb(); await closeMongoDb();
@@ -122,6 +127,20 @@ describe('registry runtime authorization', () => {
       expect((await call(method, operation, admin, { podId: ownPod._id })).status).toBe(404);
       expect(effects()).toBe(0);
     });
+    it.each([['owner', 'allowed', 200], ['member', 403, 403], ['missing', 404, 404]])(
+      'audits one %s outcome without content or credentials', async (actor, outcome, status) => {
+        const user = actor === 'member' ? member : owner;
+        const options = actor === 'missing' ? { instanceId: 'missing' } : {};
+        expect((await call(method, operation, user, options)).status).toBe(status);
+        expect(audit).toHaveBeenCalledTimes(1);
+        expect(JSON.parse(audit.mock.calls[0][0])).toEqual({
+          event: 'registry.runtime', route: `/pods/:podId/agents/:name/${operation}`,
+          podId: String(pod._id), agentName: 'openclaw',
+          instanceId: actor === 'missing' ? 'missing' : 'curator',
+          callerUserId: String(user._id), outcome,
+        });
+      },
+    );
     it('refuses an uninstalled record', async () => {
       await AgentInstallation.updateOne({ _id: installation._id }, { status: 'uninstalled' });
       try {

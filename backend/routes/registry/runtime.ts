@@ -37,6 +37,22 @@ const runtimeRouteLimit = rateLimit({
   keyGenerator: cloudflareIpRateLimitKeyGenerator,
 });
 
+// Emit once after dispatch, using only route/identity metadata.
+const auditRuntimeRoute = (req: any, res: any, next: any) => {
+  res.once('finish', () => {
+    console.info(JSON.stringify({
+      event: 'registry.runtime',
+      route: req.route.path,
+      podId: req.params.podId,
+      agentName: req.params.name,
+      instanceId: normalizeInstanceId(req.body?.instanceId || req.query.instanceId || 'default'),
+      callerUserId: getUserId(req) || null,
+      outcome: res.statusCode < 400 ? 'allowed' : res.statusCode,
+    }));
+  });
+  next();
+};
+
 // Runtime routes share one authorization boundary before dispatching any
 // adapter action. Use exact installation identity rather than legacy aliases.
 const resolveAuthorizedRuntimeInstallation = async ({ podId, name, instanceId, userId }: any) => {
@@ -72,7 +88,8 @@ const resolveAuthorizedRuntimeInstallation = async ({ podId, name, instanceId, u
  * GET /api/registry/pods/:podId/agents/:name/runtime-status
  * Check local runtime status (docker).
  */
-runtimeRouter.get('/pods/:podId/agents/:name/runtime-status', runtimeRouteLimit, auth, async (req: any, res: any) => {
+runtimeRouter.get('/pods/:podId/agents/:name/runtime-status',
+  auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const userId = getUserId(req);
@@ -116,7 +133,8 @@ runtimeRouter.get('/pods/:podId/agents/:name/runtime-status', runtimeRouteLimit,
 /**
  * POST /api/registry/pods/:podId/agents/:name/runtime-start
  */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-start', runtimeRouteLimit, auth, async (req: any, res: any) => {
+runtimeRouter.post('/pods/:podId/agents/:name/runtime-start',
+  auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, gatewayId } = req.body || {};
@@ -160,7 +178,8 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-start', runtimeRouteLimit,
 /**
  * POST /api/registry/pods/:podId/agents/:name/runtime-stop
  */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop', runtimeRouteLimit, auth, async (req: any, res: any) => {
+runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop',
+  auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, gatewayId } = req.body || {};
@@ -204,7 +223,8 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop', runtimeRouteLimit, 
 /**
  * POST /api/registry/pods/:podId/agents/:name/runtime-restart
  */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart', runtimeRouteLimit, auth, async (req: any, res: any) => {
+runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart',
+  auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, gatewayId } = req.body || {};
@@ -249,7 +269,7 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart', runtimeRouteLimi
  * POST /api/registry/pods/:podId/agents/:name/runtime-clear-sessions
  */
 runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions',
-  runtimeRouteLimit, auth, async (req: any, res: any) => {
+  auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, gatewayId, restart = true } = req.body || {};
@@ -317,7 +337,8 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions',
 /**
  * GET /api/registry/pods/:podId/agents/:name/runtime-logs
  */
-runtimeRouter.get('/pods/:podId/agents/:name/runtime-logs', runtimeRouteLimit, auth, async (req: any, res: any) => {
+runtimeRouter.get('/pods/:podId/agents/:name/runtime-logs',
+  auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const lines = Number(req.query.lines || 200);

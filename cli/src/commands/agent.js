@@ -487,6 +487,28 @@ const inboxPriority = (event) => {
 // event that represents the shared pod inbox is batched below.
 const PRIVATE_RESPONSE_EVENT_TYPES = new Set(['agent.ask', 'agent.ask.response']);
 
+// How often a live delivery lease is renewed: during a turn, and while a failed
+// turn's events wait for their retry. The server requeues a delivery whose
+// lease is 10+ minutes old (AGENT_EVENT_REQUEUE_DELIVERED_MINUTES).
+const DELIVERY_RENEW_INTERVAL_MS = 60_000;
+
+// A failed turn's events are carried in memory and re-run when the retry timer
+// fires (see `holdForRetry` in performRun). Each local re-run is a delivery
+// attempt the server's requeue cap (AGENT_EVENT_REQUEUE_MAX_ATTEMPTS, 3) never
+// counts, so a carry with no bound would retry poison content forever and
+// block every later event behind it. At this many consecutive failures of the
+// same event the carry lets it go: renewal stops, and the server's requeue
+// sweep redelivers it under the cap it already enforces. Three matches the
+// point where spawnRetryPolicy stops treating an unknown failure as transient.
+const HELD_RETRY_MAX_FAILURES = 3;
+
+const deliveryIdOf = (event) => {
+  const deliveryId = event?.payload?.deliveryId;
+  return typeof deliveryId === 'string' && deliveryId ? deliveryId : null;
+};
+
+const countEvents = (count) => `${count} event${count === 1 ? '' : 's'}`;
+
 // ── default environment for adapters that benefit from auto-MCP wiring ─────
 
 // Which adapters can consume `mcp[]`, and the server declaration they get by
@@ -2301,6 +2323,145 @@ export const performRun = ({
   let heldGreeting = [];
   let greetingHoldSpent = false;
 
+  // The same is true of a batch whose turn FAILED: its events are claimed, so
+  // scheduling a later poll retries nothing — the next poll cannot return
+  // them, and the old "retry scheduled" was really a 10–20 minute wait for the
+  // requeue sweep with the process idle in between (sprint-review,
+  // 2026-10-25). So a failed turn's events are carried exactly like the
+  // greeting and rejoin the inbox when the retry timer fires. Their leases are
+  // renewed while they wait, because an ack under a lapsed lease is a 409
+  // `stale_delivery`, and that stops the run. The rule (CTO ruling,
+  // 2026-10-25): a scheduled retry either fires, re-running the held events,
+  // or releases them; it never leaves a live process idle on unacked work.
+  let heldRetry = [];
+  // eventId → consecutive local failures, for HELD_RETRY_MAX_FAILURES.
+  const heldRetryFailures = new Map();
+  let heldRenewTimer = null;
+  const clearHeldRenewal = () => {
+    if (heldRenewTimer !== null) clearIntervalImpl(heldRenewTimer);
+    heldRenewTimer = null;
+  };
+
+  // Renew the nonce-bound leases of carried events. Returns the ids the server
+  // confirmed are still this runner's delivery, or null when it cannot say:
+  // nothing carried a nonce, the request failed, or an older server answered
+  // without a `renewed` list.
+  const renewHeldDeliveries = async (events) => {
+    const deliveries = events.filter(deliveryIdOf)
+      .map((event) => ({ eventId: String(event._id), deliveryId: deliveryIdOf(event) }));
+    if (deliveries.length === 0) return null;
+    const confirmed = new Set();
+    try {
+      for (let offset = 0; offset < deliveries.length; offset += 50) {
+        // eslint-disable-next-line no-await-in-loop
+        const response = await client.post('/api/agents/runtime/events/renew', {
+          events: deliveries.slice(offset, offset + 50),
+        });
+        if (!Array.isArray(response?.renewed)) return null;
+        for (const id of response.renewed) confirmed.add(String(id));
+      }
+    } catch (error) {
+      log(`[inbox.batch] held delivery renewal failed: ${error.message}`);
+      return null;
+    }
+    return confirmed;
+  };
+  // A nonce-bound event the server did not renew is no longer ours to ack:
+  // the child checkpointed it mid-turn, the requeue took it, or the cap
+  // retired it. Re-running it would at best repeat finished work, and at worst
+  // end in a stale-delivery ack that stops the run.
+  const stillHeld = (event, confirmed) => (
+    confirmed === null || !deliveryIdOf(event) || confirmed.has(String(event._id))
+  );
+
+  // Decide what a failed turn's retry carries. `failedEvents` were attempted
+  // and count toward HELD_RETRY_MAX_FAILURES; `untriedEvents` are later groups
+  // from the same page that the failure stopped before they ran (#782), and
+  // are just as claimed, so they ride along without a strike.
+  const holdForRetry = async (failedEvents, untriedEvents = []) => {
+    const released = [];
+    const carry = [];
+    const seen = new Set();
+    for (const event of failedEvents) {
+      const id = String(event._id);
+      if (!seen.has(id)) {
+        seen.add(id);
+        const failures = (heldRetryFailures.get(id) || 0) + 1;
+        if (failures >= HELD_RETRY_MAX_FAILURES) released.push(event);
+        else {
+          heldRetryFailures.set(id, failures);
+          carry.push(event);
+        }
+      }
+    }
+    for (const event of untriedEvents) {
+      const id = String(event._id);
+      if (!seen.has(id)) {
+        seen.add(id);
+        carry.push(event);
+      }
+    }
+    // A stopping run carries nothing and renews nothing: extending the lease
+    // of a process on its way out only delays the replacement's redelivery.
+    const confirmed = running && carry.length ? await renewHeldDeliveries(carry) : null;
+    const held = running ? carry.filter((event) => stillHeld(event, confirmed)) : [];
+    const dropped = running ? carry.filter((event) => !stillHeld(event, confirmed)) : [];
+    const heldIds = new Set(held.map((event) => String(event._id)));
+    for (const id of [...heldRetryFailures.keys()]) {
+      if (!heldIds.has(id)) heldRetryFailures.delete(id);
+    }
+    heldRetry = held;
+    if (dropped.length) {
+      log(
+        `[inbox.batch] ${countEvents(dropped.length)} no longer held by this runner on the server `
+        + '(checkpointed, requeued or retired) — not retried',
+      );
+    }
+    return { held, released };
+  };
+
+  // Keep a long wait's leases alive. A wait shorter than one renewal interval
+  // needs none: holdForRetry renewed at the start, and the re-run turn renews
+  // its own batch from there.
+  const keepHeldLeases = (delayMs) => {
+    clearHeldRenewal();
+    if (!running || delayMs <= DELIVERY_RENEW_INTERVAL_MS || !heldRetry.some(deliveryIdOf)) return;
+    heldRenewTimer = setIntervalImpl(async () => {
+      if (!running) {
+        clearHeldRenewal();
+        return;
+      }
+      const carry = heldRetry;
+      const confirmed = await renewHeldDeliveries(carry);
+      // The tick may already have taken this carry; never resurrect it.
+      if (heldRetry !== carry || confirmed === null) return;
+      heldRetry = carry.filter((event) => stillHeld(event, confirmed));
+      if (heldRetry.length < carry.length) {
+        log(
+          `[inbox.batch] ${countEvents(carry.length - heldRetry.length)} no longer held by this runner `
+          + 'on the server during the retry wait — not retried',
+        );
+      }
+    }, DELIVERY_RENEW_INTERVAL_MS);
+    heldRenewTimer?.unref?.();
+  };
+
+  // What the retry will actually do, for the failure report.
+  const describeHold = ({ held, released }, retry) => {
+    const parts = [];
+    if (retry.circuitOpen) parts.push('circuit open');
+    if (released.length) {
+      parts.push(
+        `releasing ${countEvents(released.length)} after ${HELD_RETRY_MAX_FAILURES} failed attempts `
+        + 'to the server\'s requeue (redelivered in ~10–20 min)',
+      );
+    }
+    parts.push(held.length
+      ? `retrying ${held.length} held event${held.length === 1 ? '' : 's'} in ${formatRetryDelay(retry.delayMs)}`
+      : `next poll in ${formatRetryDelay(retry.delayMs)}`);
+    return parts.join('; ');
+  };
+
   const handleEventBatch = async (events, inboxCount = events.length) => {
     const eventPodId = events[0]?.podId || podId;
     if (!eventPodId || events.some((event) => (event.podId || podId) !== eventPodId)) {
@@ -2578,7 +2739,7 @@ export const performRun = ({
         log(`[inbox.batch] delivery renewal failed: ${error.message}`);
       } finally { renewing = false; }
     };
-    const timer = deliveries.length ? setIntervalImpl(renew, 60_000) : null;
+    const timer = deliveries.length ? setIntervalImpl(renew, DELIVERY_RENEW_INTERVAL_MS) : null;
     const stopRenewal = () => {
       renewalStopped = true;
       if (timer !== null) clearIntervalImpl(timer);
@@ -2600,6 +2761,7 @@ export const performRun = ({
     if (!running) return;
     let nextPollDelayMs = intervalMs;
     let completedModelTurn = false;
+    let retryScheduled = false;
     try {
       // ADR-024 D3: this is an inbox fetch, not a stream of interrupts. The
       // backend returns one pod's oldest pending batch, so every delivered row
@@ -2615,15 +2777,25 @@ export const performRun = ({
       // returns multiple pods in one page. Preserve pod privacy in that
       // migration window by partitioning locally. Current servers produce one
       // group, so the normal path remains one tick → one turn.
-      // A carried greeting rejoins the inbox here, so it is grouped, ordered
-      // and acked by exactly the same path as anything the poll returned. The
-      // carried row is still 'delivered' on the server, so a requeue during the
-      // carry can hand the same id back in this very page: drop the copy rather
-      // than processing it twice.
-      const carried = heldGreeting;
+      // A carried greeting or failed batch rejoins the inbox here, so it is
+      // grouped, ordered and acked by exactly the same path as anything the
+      // poll returned. The carried row is still 'delivered' on the server, so a
+      // requeue during the carry can hand the same id back in this very page:
+      // drop the carried copy rather than processing it twice. The fetched
+      // copy wins because it carries the live deliveryId; the carried one's
+      // nonce was cleared by that requeue.
+      const carried = [...heldRetry, ...heldGreeting];
       heldGreeting = [];
+      heldRetry = [];
+      clearHeldRenewal();
       const fetchedIds = new Set(events.map((event) => String(event._id)));
-      const carriedFresh = carried.filter((event) => !fetchedIds.has(String(event._id)));
+      const carriedIds = new Set();
+      const carriedFresh = carried.filter((event) => {
+        const id = String(event._id);
+        if (fetchedIds.has(id) || carriedIds.has(id)) return false;
+        carriedIds.add(id);
+        return true;
+      });
       const pageEvents = carriedFresh.length ? [...carriedFresh, ...events] : events;
       const pageInboxCount = (Number.isFinite(inboxCount) ? inboxCount : events.length)
         + carriedFresh.length;
@@ -2638,7 +2810,14 @@ export const performRun = ({
         group.push(event);
         eventGroups.set(key, group);
       }
-      for (const group of eventGroups.values()) {
+      const groups = [...eventGroups.values()];
+      // The claimed events a failure at `groupIndex` stops before they run.
+      // A digest-only group was never claimed, so it is not carried.
+      const untriedAfter = (groupIndex) => groups.slice(groupIndex + 1)
+        .filter((later) => !later.every((event) => event.deliveryMode === 'digest'))
+        .flat();
+      for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
+        const group = groups[groupIndex];
         if (!running) break;
         // A current kernel never claims a digest-only page. Guard a mixed
         // version rollout too: an ambient batch must not start a model turn.
@@ -2659,7 +2838,9 @@ export const performRun = ({
           }
           // One failure report for a batch whose items stay unacked, whether
           // the composite turn threw or an isolated item did after a refusal.
-          const scheduleBatchRetry = (err, unackedCount) => {
+          // The unacked items are carried to the retry, not left to the
+          // requeue sweep, so the delay below is when they run again.
+          const scheduleBatchRetry = async (err, failedEvents) => {
             consecutiveSpawnFailures += 1;
             const retry = spawnRetryPolicy({
               error: err,
@@ -2668,11 +2849,13 @@ export const performRun = ({
               jitterRatio: spawnJitterRatio,
             });
             nextPollDelayMs = retry.delayMs;
+            retryScheduled = true;
+            const hold = await holdForRetry(failedEvents, untriedAfter(groupIndex));
+            keepHeldLeases(retry.delayMs);
             const event = group[0];
             const wrapped = new Error(
               `inbox batch processing failed (${retry.failureClass}; ${consecutiveSpawnFailures} consecutive) `
-              + `— ${unackedCount} events remain unacked; ${retry.circuitOpen ? 'circuit open' : 'retry scheduled'}, `
-              + `next probe in ${formatRetryDelay(retry.delayMs)}: ${err.message}`,
+              + `— ${describeHold(hold, retry)}: ${err.message}`,
               { cause: err },
             );
             Object.assign(wrapped, {
@@ -2681,6 +2864,8 @@ export const performRun = ({
               consecutiveFailures: consecutiveSpawnFailures,
               retryAfterMs: retry.delayMs,
               circuitOpen: retry.circuitOpen,
+              heldCount: hold.held.length,
+              releasedCount: hold.released.length,
               eventId: event._id,
               ...(isPodFocusDiagnostic(err) ? {
                 focusDiagnostic: {
@@ -2704,7 +2889,7 @@ export const performRun = ({
               pageInboxCount,
             );
           } catch (err) {
-            scheduleBatchRetry(err, group.length);
+            await scheduleBatchRetry(err, group);
             break;
           }
           const batchSpawned = batch.entries.some((entry) => (
@@ -2742,7 +2927,10 @@ export const performRun = ({
             }
           }
           if (batch.deferredError) {
-            scheduleBatchRetry(batch.deferredError, batch.entries.filter((entry) => !entry.result).length);
+            await scheduleBatchRetry(
+              batch.deferredError,
+              batch.entries.filter((entry) => !entry.result).map((entry) => entry.event),
+            );
             break;
           }
           continue;
@@ -2775,12 +2963,16 @@ export const performRun = ({
                 jitterRatio: spawnJitterRatio,
               });
               nextPollDelayMs = retry.delayMs;
-              const retryIn = formatRetryDelay(retry.delayMs);
-              const state = retry.circuitOpen ? 'circuit open' : 'retry scheduled';
+              retryScheduled = true;
+              // Carried to the retry like a failed batch: the event is claimed,
+              // so the next poll would not return it.
+              // eslint-disable-next-line no-await-in-loop
+              const hold = await holdForRetry([event], untriedAfter(groupIndex));
+              keepHeldLeases(retry.delayMs);
               const wrapped = new Error(
                 `${event.type} processing failed (${retry.failureClass}; `
-                + `${consecutiveSpawnFailures} consecutive) — event ${event._id} remains unacked; `
-                + `${state}, next probe in ${retryIn}: ${err.message}`,
+                + `${consecutiveSpawnFailures} consecutive) — event ${event._id} unacked; `
+                + `${describeHold(hold, retry)}: ${err.message}`,
                 { cause: err },
               );
               Object.assign(wrapped, {
@@ -2789,6 +2981,8 @@ export const performRun = ({
                 consecutiveFailures: consecutiveSpawnFailures,
                 retryAfterMs: retry.delayMs,
                 circuitOpen: retry.circuitOpen,
+                heldCount: hold.held.length,
+                releasedCount: hold.released.length,
                 eventId: event._id,
                 ...(isPodFocusDiagnostic(err) ? {
                   focusDiagnostic: {
@@ -2894,12 +3088,19 @@ export const performRun = ({
       onError?.(err);
     }
     // Notices landing during a turn share one three-second collection window
-    // before the next inbox read, independent of the idle polling cadence.
-    if (running) setTimeoutImpl(tick, completedModelTurn ? 3000 : nextPollDelayMs);
+    // before the next inbox read, independent of the idle polling cadence. A
+    // retry scheduled in the same tick keeps its own delay: the failure report
+    // names it, and a sibling's completed turn must not shorten the backoff.
+    if (running) setTimeoutImpl(tick, completedModelTurn && !retryScheduled ? 3000 : nextPollDelayMs);
   };
 
   tick();
-  return { stop: () => { running = false; } };
+  return {
+    stop: () => {
+      running = false;
+      clearHeldRenewal();
+    },
+  };
 };
 
 // ── init: scaffold a webhook-SDK agent (ADR-006 §Scaffolding) ───────────────
