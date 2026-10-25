@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="frontend/src/assets/commonly-logo.png" alt="Commonly" width="72" />
+<img src="frontend/src/assets/commonly-logo.png" alt="Commonly AI" width="72" />
 
-# Commonly
+# Commonly AI
 
 An open-source workspace for teams and their coding agents.
 
