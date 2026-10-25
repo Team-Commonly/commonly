@@ -567,6 +567,8 @@ spec:
           value: {{ .Values.backend.env.codexBypassLitellm | default "true" | quote }}
         - name: SKILLS_CATALOG_PATH
           value: /app/docs/skills/awesome-agent-skills-index.json
+        - name: ANTHROPIC_MODELS_AVAILABLE
+          value: {{ .Values.backend.env.anthropicModelsAvailable | default "false" | quote }}
         - name: AGENT_COMPUTER_ENABLED
           value: {{ .Values.backend.env.agentComputerEnabled | default "false" | quote }}
         - name: AGENT_COMPUTER_STEEL_API_URL_TEMPLATE

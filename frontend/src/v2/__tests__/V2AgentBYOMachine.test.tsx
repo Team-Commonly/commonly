@@ -45,13 +45,14 @@ const machineRow = {
   id: 'm1', machineId: 'mach-a', name: 'Sam’s MacBook', status: 'online', agentStates: [],
 };
 
-const mockGet = ({ machines = [machineRow] } = {}) => {
+const mockGet = ({ machines = [machineRow], anthropicAvailable = true } = {}) => {
   axios.get.mockImplementation((url) => {
     if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
     if (url.startsWith('/api/hosted/availability')) {
       return Promise.resolve({ data: { configured: false, caps: { agentsPerUser: 1, turnsPerDay: 200 } } });
     }
     if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat', createdBy: { _id: 'u1' } }] });
+    if (url === '/api/registry/model-availability') return Promise.resolve({ data: { anthropic: { available: anthropicAvailable, reason: anthropicAvailable ? null : 'Anthropic models are unavailable on this instance right now' }, claudeCodeRecommendation: 'claude-opus-4-6' } });
     if (url === '/api/machines') return Promise.resolve({ data: { machines, offlineAfterMs: 90000 } });
     return Promise.resolve({ data: {} });
   });
@@ -389,4 +390,23 @@ describe('BYO on-my-computer mode', () => {
     expect(screen.queryByTestId('byo-machine-result')).toBeNull();
     expect(screen.queryByText(/has no runtime token/)).toBeNull();
   });
+});
+
+
+test.each([false, true])('Claude install explains instance availability %s without disabling the local model', async (available) => {
+  mockGet({ anthropicAvailable: available });
+  renderPage();
+  await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+  fireEvent.click(screen.getByTestId('byo-mode-machine'));
+  fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'claude' } });
+  const notice = await screen.findByTestId('byo-anthropic-notice');
+  expect(notice).toHaveTextContent('The Claude Code preset recommends claude-opus-4-6.');
+  if (available) expect(notice).not.toHaveTextContent('Anthropic models are unavailable');
+  else {
+    expect(await screen.findByTestId('byo-anthropic-notice')).toHaveTextContent('The Claude Code preset recommends claude-opus-4-6. Anthropic models are unavailable on this instance right now. Your own Claude session uses your account, independently of this instance.');
+  }
+  const select = screen.getByTestId('byo-model-select');
+  expect(select).not.toBeDisabled();
+  fireEvent.change(select, { target: { value: 'sonnet' } });
+  expect(select).toHaveValue('sonnet');
 });

@@ -20,6 +20,7 @@ import {
   Switch,
   FormControlLabel,
   FormControl,
+  FormHelperText,
   InputLabel,
   Select,
   MenuItem
@@ -88,6 +89,7 @@ const GlobalIntegrations = () => {
   const v2Embedded = useV2Embedded();
   const location = useLocation();
   const navigate = useNavigate();
+  const [anthropic, setAnthropic] = useState<{ available: boolean; reason: string | null } | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [applyingModelPolicy, setApplyingModelPolicy] = useState(false);
@@ -179,6 +181,7 @@ const GlobalIntegrations = () => {
       });
 
       const { x, instagram, socialPolicy: nextPolicy, modelPolicy: nextModelPolicy } = response.data;
+      setAnthropic(response.data.modelAvailability?.anthropic || null);
 
       if (x) {
         setXConfig({
@@ -986,7 +989,8 @@ const GlobalIntegrations = () => {
                   onChange={(event) => {
                     const nextProvider = event.target.value;
                     const models = OPENCLAW_MODEL_OPTIONS[nextProvider];
-                    const nextModel = models ? models[0].value : '';
+                    const nextModel = nextProvider === 'anthropic' && !anthropic?.available
+                      ? '' : models ? models[0].value : '';
                     setModelPolicy({
                       ...modelPolicy,
                       openclaw: {
@@ -1001,7 +1005,7 @@ const GlobalIntegrations = () => {
                   <MenuItem value="openai-codex">OpenAI Codex (OAuth)</MenuItem>
                   <MenuItem value="openrouter">OpenRouter</MenuItem>
                   <MenuItem value="openai">OpenAI</MenuItem>
-                  <MenuItem value="anthropic">Anthropic</MenuItem>
+                  <MenuItem value="anthropic">Anthropic{anthropic?.available === false ? ' (unavailable)' : ''}</MenuItem>
                   <MenuItem value="custom">Custom</MenuItem>
                 </Select>
               </FormControl>
@@ -1023,9 +1027,15 @@ const GlobalIntegrations = () => {
                     })}
                   >
                     {OPENCLAW_MODEL_OPTIONS[modelPolicy.openclaw.provider].map((opt) => (
-                      <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                      <MenuItem key={opt.value} value={opt.value}
+                        disabled={modelPolicy.openclaw.provider === 'anthropic' && !anthropic?.available}>
+                        {opt.label}{modelPolicy.openclaw.provider === 'anthropic' && anthropic?.available === false ? ' (unavailable)' : ''}
+                      </MenuItem>
                     ))}
                   </Select>
+                  {modelPolicy.openclaw.provider === 'anthropic' && !anthropic?.available && (
+                    <FormHelperText>{anthropic?.reason || 'Model availability could not be confirmed. Refresh to check again.'}</FormHelperText>
+                  )}
                 </FormControl>
               ) : (
                 <TextField
@@ -1138,7 +1148,7 @@ const GlobalIntegrations = () => {
               variant="contained"
               startIcon={<SaveIcon />}
               onClick={handleSaveModelPolicy}
-              disabled={saving || applyingModelPolicy}
+              disabled={saving || applyingModelPolicy || (modelPolicy.openclaw.provider === 'anthropic' && !anthropic?.available)}
             >
               Save Model Policy
             </Button>

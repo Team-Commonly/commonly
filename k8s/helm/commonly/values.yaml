@@ -131,6 +131,8 @@ backend:
     initialDelaySeconds: 10
     periodSeconds: 5
   env:
+    # Restore only after verifying the instance Anthropic route succeeds.
+    anthropicModelsAvailable: "false"
     # Agent computer is an opt-in staging experiment. Empty endpoints keep it
     # unavailable even when the flag is enabled.
     agentComputerEnabled: "false"

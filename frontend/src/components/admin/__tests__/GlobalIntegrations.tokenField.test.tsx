@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import GlobalIntegrations from '../GlobalIntegrations';
 
@@ -120,5 +120,33 @@ describe('GlobalIntegrations token fields', () => {
 
     fireEvent.change(xToken, { target: { value: 'first-token' } });
     expect(screen.getByRole('button', { name: 'Save X Configuration' })).not.toBeDisabled();
+  });
+});
+
+
+describe('instance Anthropic model options', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    localStorage.setItem('token', 'jwt');
+  });
+  it.each([false, true])('keeps all three options visible with availability %s', async (available) => {
+    mockGet.mockResolvedValue({ data: {
+      ...globalResponse.data,
+      modelAvailability: { anthropic: { available, reason: available ? null : 'Anthropic models are unavailable on this instance right now' } },
+      modelPolicy: { openclaw: { provider: 'anthropic', model: 'anthropic/claude-opus-4-6' } },
+    } });
+    renderPage();
+    await waitFor(() => expect(screen.getByLabelText('Dev Agent Primary Model')).toHaveTextContent('Claude Opus 4.6'));
+    const save = screen.getByRole('button', { name: 'Save Model Policy' });
+    expect(save.disabled).toBe(!available);
+    if (!available) expect(screen.getByText('Anthropic models are unavailable on this instance right now')).toBeInTheDocument();
+    else expect(screen.queryByText('Anthropic models are unavailable on this instance right now')).not.toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByLabelText('Dev Agent Primary Model'));
+    const list = await screen.findByRole('listbox', { hidden: true });
+    for (const model of ['Claude Opus 4.6', 'Claude Sonnet 4.6', 'Claude Haiku 4.5']) {
+      const option = within(list).getByRole('option', { name: available ? model : model + ' (unavailable)', hidden: true });
+      if (available) expect(option).not.toHaveAttribute('aria-disabled', 'true');
+      else expect(option).toHaveAttribute('aria-disabled', 'true');
+    }
   });
 });

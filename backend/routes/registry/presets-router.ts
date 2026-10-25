@@ -10,8 +10,18 @@ const {
   binLooksInstalled,
 } = require('./detect');
 const { PRESET_DEFINITIONS } = require('./presets');
+const { anthropicAvailability, modelAvailability } = require('../../services/modelAvailability');
 
 const presetsRouter = express.Router();
+
+// The install screen needs the recommendation without probing gateway tools.
+presetsRouter.get('/model-availability', auth, (_req: any, res: any) => {
+  const claudePreset = PRESET_DEFINITIONS.find((preset: any) => preset.id === 'claude-code-agent');
+  res.json({
+    anthropic: anthropicAvailability(),
+    claudeCodeRecommendation: claudePreset?.recommendedModel || null,
+  });
+});
 
 const resolvePresetTool = (tool: any, capabilities: any) => {
   if (tool.type === 'core') {
@@ -113,6 +123,7 @@ presetsRouter.get('/presets', auth, async (req: any, res: any) => {
       });
       return {
         ...preset,
+        recommendedModelAvailability: modelAvailability(preset.recommendedModel),
         requiredTools: (preset.requiredTools || []).map(
           (tool: any) => resolvePresetTool(tool, capabilities),
         ),

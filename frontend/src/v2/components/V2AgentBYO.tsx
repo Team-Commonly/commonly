@@ -213,6 +213,17 @@ const V2AgentBYO: React.FC = () => {
   // the token and hands it to the runtime server-side; nothing secret is
   // ever rendered on this screen.
   const [hosting, setHosting] = useState<HostedAvailability | null>(null);
+  const [modelAvailability, setModelAvailability] = useState<{
+    anthropic?: { available: boolean; reason: string | null };
+    claudeCodeRecommendation?: string;
+  } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api.get<NonNullable<typeof modelAvailability>>('/api/registry/model-availability')
+      .then((result) => { if (!cancelled) setModelAvailability(result); })
+      .catch(() => { if (!cancelled) setModelAvailability(null); });
+    return () => { cancelled = true; };
+  }, [api]);
   // Where the agent runs is the person's choice, so nothing is preselected
   // when there is a choice to make (UX Lead's first-session artboards, frame
   // 04; ruled 2026-10-14). Preselecting "Run it here" answered a question this
@@ -1250,6 +1261,14 @@ const V2AgentBYO: React.FC = () => {
               </span>
             </label>
           )}
+          {((mode === 'machine' && adapter === 'claude') || (mode === 'byo' && listenAdapter === 'claude'))
+            && modelAvailability?.claudeCodeRecommendation && (
+              <p className="v2-byo__hint" data-testid="byo-anthropic-notice">
+                {t('agentByo.form.claudeRecommendation', { model: modelAvailability.claudeCodeRecommendation })}{' '}
+                {modelAvailability.anthropic?.available === false && <>{modelAvailability.anthropic.reason}.{' '}</>}
+                {t('agentByo.form.claudeOwnSession')}
+              </p>
+            )}
           <label className={`v2-byo__field${errorField === 'name' || nameLookupError ? ' v2-byo__field--error' : ''}`}>
             <span className="v2-byo__label">{t('agentByo.form.nameLabel')}</span>
             <input

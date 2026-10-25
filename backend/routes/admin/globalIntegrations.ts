@@ -12,6 +12,7 @@ const Pod = require('../../models/Pod');
 const registry = require('../../integrations');
 const SocialPolicyService = require('../../services/socialPolicyService');
 const GlobalModelConfigService = require('../../services/globalModelConfigService');
+const { anthropicAvailability } = require('../../services/modelAvailability');
 // eslint-disable-next-line global-require
 const { isListedPodMember } = require('../../utils/isPodMember');
 const externalFeedService = require('../../services/externalFeedService');
@@ -494,6 +495,7 @@ router.get('/', auth, adminAuth, async (req: any, res: any) => {
       instagram: instagramIntegration || null,
       socialPolicy: await SocialPolicyService.getPolicy(),
       modelPolicy: await GlobalModelConfigService.getConfig({ includeSecrets: false }),
+      modelAvailability: { anthropic: anthropicAvailability() },
       globalPodId: globalPod._id,
     });
   } catch (error) {
