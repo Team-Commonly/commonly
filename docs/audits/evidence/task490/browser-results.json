@@ -1,0 +1,134 @@
+{
+  "head": "afe160b203d662294101c35bd8c0bfd44e06a6d3",
+  "provenance": "Isolated local Chrome, actual component and CSS, mocked API fixtures, no production account",
+  "results": [
+    {
+      "lang": "en",
+      "width": 390,
+      "geometry": {
+        "x": 15,
+        "y": 333,
+        "width": 360,
+        "height": 464,
+        "scrollWidth": 390,
+        "viewport": 390
+      },
+      "notice": "Select at least one agent to grant access.",
+      "emptyDisabled": true,
+      "normalEnabled": true,
+      "submitted": {
+        "connectionId": "conn-2",
+        "target": {
+          "kind": "pod",
+          "id": "p1"
+        },
+        "tools": [
+          "linear.list_issues"
+        ],
+        "writeMode": "read",
+        "audience": [
+          "a1"
+        ],
+        "expiresAt": "2026-11-01T02:24:25.925Z"
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "lang": "en",
+      "width": 1440,
+      "geometry": {
+        "x": 1007,
+        "y": 97,
+        "width": 400,
+        "height": 464,
+        "scrollWidth": 1440,
+        "viewport": 1440
+      },
+      "notice": "Select at least one agent to grant access.",
+      "emptyDisabled": true,
+      "normalEnabled": true,
+      "submitted": {
+        "connectionId": "conn-2",
+        "target": {
+          "kind": "pod",
+          "id": "p1"
+        },
+        "tools": [
+          "linear.list_issues"
+        ],
+        "writeMode": "read",
+        "audience": [
+          "a1"
+        ],
+        "expiresAt": "2026-11-01T02:24:27.647Z"
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "lang": "zh-CN",
+      "width": 390,
+      "geometry": {
+        "x": 15,
+        "y": 333,
+        "width": 360,
+        "height": 464,
+        "scrollWidth": 390,
+        "viewport": 390
+      },
+      "notice": "请至少选择一个智能体以授予访问权限。",
+      "emptyDisabled": true,
+      "normalEnabled": true,
+      "submitted": {
+        "connectionId": "conn-2",
+        "target": {
+          "kind": "pod",
+          "id": "p1"
+        },
+        "tools": [
+          "linear.list_issues"
+        ],
+        "writeMode": "read",
+        "audience": [
+          "a1"
+        ],
+        "expiresAt": "2026-11-01T02:24:29.275Z"
+      },
+      "errors": [],
+      "failedRequests": []
+    },
+    {
+      "lang": "zh-CN",
+      "width": 1440,
+      "geometry": {
+        "x": 1007,
+        "y": 97,
+        "width": 400,
+        "height": 464,
+        "scrollWidth": 1440,
+        "viewport": 1440
+      },
+      "notice": "请至少选择一个智能体以授予访问权限。",
+      "emptyDisabled": true,
+      "normalEnabled": true,
+      "submitted": {
+        "connectionId": "conn-2",
+        "target": {
+          "kind": "pod",
+          "id": "p1"
+        },
+        "tools": [
+          "linear.list_issues"
+        ],
+        "writeMode": "read",
+        "audience": [
+          "a1"
+        ],
+        "expiresAt": "2026-11-01T02:24:30.755Z"
+      },
+      "errors": [],
+      "failedRequests": []
+    }
+  ]
+}
