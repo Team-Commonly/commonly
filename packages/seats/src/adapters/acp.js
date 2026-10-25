@@ -43,6 +43,17 @@ const STOP_FAILURES = Object.freeze({
   cancelled: 'cancelled',
 });
 
+// The agent leads its own process group, so a kill reaches what it spawned:
+// a CLI launcher's native binary, its MCP servers, a tool's shell. Killing
+// only the leader can leave a grandchild holding the run's work and keys.
+const OWN_GROUP = process.platform !== 'win32';
+
+/** Signal the whole group; false when it has no members left (or no group). */
+const signalGroup = (child, signal) => {
+  if (!OWN_GROUP || child.pid === undefined) return false;
+  try { process.kill(-child.pid, signal); return true; } catch { return false; }
+};
+
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms).unref?.(); });
 
 /**
@@ -174,7 +185,7 @@ const runTurn = ({
   let child;
   try {
     child = (ctx._spawnImpl || childSpawn)(launched.command, launched.args || [], {
-      cwd, env: launched.env, stdio: ['pipe', 'pipe', 'pipe'],
+      cwd, env: launched.env, stdio: ['pipe', 'pipe', 'pipe'], detached: OWN_GROUP,
     });
   } catch (error) {
     rejectRun(runFailure('exited', `could not start ${name}: ${error?.code || error?.message}`, { credentials }));
@@ -354,12 +365,21 @@ const runTurn = ({
       child.stdin.end();
       await Promise.race([gone, sleep(timings.closeGraceMs)]);
     }
+    const kill = (signal) => { if (!signalGroup(child, signal)) child.kill(signal); };
     if (!exitInfo) {
-      child.kill('SIGTERM');
+      kill('SIGTERM');
       await Promise.race([gone, sleep(timings.killGraceMs)]);
     }
-    if (!exitInfo) child.kill('SIGKILL');
+    if (!exitInfo) kill('SIGKILL');
     await gone;
+    // The leader is gone; anything it left in its group goes too, on every
+    // end, so no descendant outlives the run.
+    if (signalGroup(child, 0)) {
+      signalGroup(child, 'SIGTERM');
+      const deadline = Date.now() + timings.killGraceMs;
+      while (signalGroup(child, 0) && Date.now() < deadline) await sleep(20);
+      signalGroup(child, 'SIGKILL');
+    }
   };
 
   const outcome = drive().catch((error) => { throw stopping || error; });

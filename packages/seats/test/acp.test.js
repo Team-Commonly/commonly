@@ -465,6 +465,50 @@ const settleAfterFirstRequest = async (provider, settling) => {
   } finally { clearInterval(poll); }
 };
 
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
+/** Runs a turn whose agent leaves a SIGTERM-deaf grandchild; it must not survive. */
+const grandchildOutlives = async (prompt, ctxExtra, settle) => {
+  const h = harness();
+  let pid;
+  try {
+    await settle(h.adapter.spawn(prompt, h.ctx(ctxExtra(h))), h);
+    pid = h.received().find((entry) => entry.event === 'grandchild')?.pid;
+    assert.ok(pid, 'the agent started a grandchild');
+    // A killed orphan is reaped by init asynchronously; give it a moment.
+    const deadline = Date.now() + 2000;
+    while (alive(pid) && Date.now() < deadline) await new Promise((r) => { setTimeout(r, 20); });
+    return alive(pid);
+  } finally {
+    if (pid && alive(pid)) process.kill(pid, 'SIGKILL');
+    h.done();
+  }
+};
+
+test('abort kills the whole process group: a SIGTERM-deaf grandchild does not outlive the run', async () => {
+  const controller = new AbortController();
+  const survived = await grandchildOutlives('[[grandchild:hang]]', () => ({ signal: controller.signal }), async (run, h) => {
+    await waitFor(() => h.received().some((entry) => entry.event === 'grandchild'));
+    controller.abort();
+    await rejectsKind(run, 'cancelled');
+  });
+  assert.equal(survived, false);
+});
+
+test('a timeout kills the whole process group too', async () => {
+  const survived = await grandchildOutlives('[[grandchild:hang]]', () => ({ timeoutMs: 1500 }), async (run) => {
+    await rejectsKind(run, 'timeout');
+  });
+  assert.equal(survived, false);
+});
+
+test('an agent that exits mid-turn or ends normally leaves no descendant behind', async () => {
+  assert.equal(await grandchildOutlives('[[grandchild:exit]]', () => ({}), (run) => rejectsKind(run, 'exited')), false);
+  assert.equal(await grandchildOutlives('[[grandchild:reply]]', () => ({}), async (run) => {
+    assert.equal((await run).text, 'SPAWNED');
+  }), false);
+});
+
 const providerAttempts = (h) => h.received().filter((entry) => entry.event === 'provider-attempt').map((entry) => entry.status);
 
 test('the first provider refusal on the wire ends the run as refusal_retry_loop, fast', async () => {

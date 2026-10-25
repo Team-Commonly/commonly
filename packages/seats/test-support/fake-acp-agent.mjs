@@ -23,11 +23,15 @@
  *   [[hang-permission]]       ask permission and wait; on cancel answer cancelled
  *   [[rpc-error:CODE:MSG]]    answer the prompt with a JSON-RPC error
  *   [[echo-session]]          reply SESSION:<sessionId>
+ *   [[grandchild:THEN]]       start a grandchild that ignores SIGTERM, log its pid
+ *                             ({event:'grandchild', pid}), then THEN: `hang`
+ *                             (answers cancel), `reply` (end_turn) or `exit` (exit 0)
  *   [[provider:N]]            POST the prompt to FAKE_ACP_PROVIDER_URL/chat/completions
  *                             up to N times (default 8), 200 ms apart, like a CLI
  *                             retrying a failing provider; ignores cancel; then
  *                             reply PROVIDER:<statuses> (PROVIDER:<text> on a 200)
  */
+import { spawn } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
 
 const log = (entry) => { if (process.env.FAKE_ACP_LOG) appendFileSync(process.env.FAKE_ACP_LOG, `${JSON.stringify(entry)}\n`); };
@@ -95,6 +99,17 @@ const runPrompt = async (id, { sessionId, prompt }) => {
       activePrompt = { id, sessionId };
       const response = await permission(sessionId, PERMISSION_OPTIONS);
       log({ event: 'permission-answer', outcome: response.result?.outcome });
+      return undefined;
+    }
+    case 'grandchild': {
+      const grandchild = spawn(process.execPath, ['-e',
+        "process.on('SIGTERM', () => {}); process.stdout.write('ready\\n'); setInterval(() => {}, 1000);"],
+      { stdio: ['ignore', 'pipe', 'ignore'] });
+      await new Promise((resolve) => { grandchild.stdout.once('data', resolve); });
+      log({ event: 'grandchild', pid: grandchild.pid });
+      if (arg === 'reply') { chunk(sessionId, 'SPAWNED'); return answer('end_turn'); }
+      if (arg === 'exit') { setTimeout(() => process.exit(0), 10); return undefined; }
+      activePrompt = { id, sessionId };
       return undefined;
     }
     case 'provider': {
