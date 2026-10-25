@@ -94,18 +94,18 @@ export const scanKeys = (
   while (stack.length) {
     const frame = stack.pop() as Frame;
     const { node } = frame;
-    const keys = Array.isArray(node) ? null : Object.keys(node);
-    const count = keys ? keys.length : (node as unknown[]).length;
-    seen += count;
+    // Array indices become keys too ('0', '1', ...); none starts with `$`.
+    const keys = Array.isArray(node) ? Array.from(node.keys(), String) : Object.keys(node);
+    seen += keys.length;
     if (seen > MAX_KEYS) return { kind: 'limit', limit: 'keys', max: MAX_KEYS, field: pathOf(frame) };
-    for (let i = 0; i < count; i += 1) {
-      const key = keys ? keys[i] : String(i);
-      if (keys && key.startsWith('$') && !isExempt(frame.head, key)) {
+    for (let i = 0; i < keys.length; i += 1) {
+      const key = keys[i];
+      if (key.startsWith('$') && !isExempt(frame.head, key)) {
         return { kind: 'dollar', field: pathOf(frame, key) };
       }
       // Exempt keys are walked too: an exemption allows a key at a path,
       // never everything beneath it.
-      const child = keys ? (node as Record<string, unknown>)[key] : (node as unknown[])[i];
+      const child = (node as Record<string, unknown>)[key];
       if (!isContainer(child)) continue;
       if (frame.depth + 1 > MAX_KEY_DEPTH) {
         return { kind: 'limit', limit: 'depth', max: MAX_KEY_DEPTH, field: pathOf(frame, key) };
