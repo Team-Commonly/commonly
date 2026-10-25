@@ -376,6 +376,13 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       return res.status(400).json({ error: 'invalid_audience', message: 'audience must be current target members' });
     }
 
+    if (target.kind === 'pod' && Array.isArray(body.audience) && body.audience.length === 0) {
+      return res.status(400).json({
+        error: 'invalid_audience',
+        message: 'name at least one agent, or omit audience for all current members',
+      });
+    }
+
     // The broker is the catalogue's business, never the body's (Vera 67728):
     // a caller who names one is refused, the grant names the proxy the seeded
     // tool Installable points at, and may only allow tools that Installable
