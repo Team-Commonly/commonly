@@ -81,7 +81,7 @@ const V2RuntimeControls: React.FC<{ runtime: RuntimeSettings; onSave?: (update: 
           </select> : field === 'model' ? (models?.length ? <select id="runtime-model" disabled={!editable || busy} value={model} className={unsupportedModel ? 'is-unsupported' : ''} onChange={(event) => setModel(event.target.value)}>
             {(!model || !models.includes(model)) && <option value={model}>{model ? editable ? `${model} · ${k('stored')}` : model : k('default')}</option>}
             {models.map((option) => <option value={option} key={option}>{option}</option>)}
-          </select> : <input id="runtime-model" disabled value={model} readOnly />)
+          </select> : <input id="runtime-model" disabled={!editable || busy} value={model} onChange={(event) => setModel(event.target.value)} />)
             : <select id="runtime-effort" disabled={!editable || busy || !levels.length} className={unsupportedEffort ? 'is-unsupported' : ''} value={effort} onChange={(event) => setEffort(event.target.value)}>
               <option value="">{k('default')}</option>
               {editable && storedEffort && <option value={effort}>{effort} · {k('stored')}</option>}
@@ -98,7 +98,7 @@ const V2RuntimeControls: React.FC<{ runtime: RuntimeSettings; onSave?: (update: 
     {(unsupportedHarness || unsupportedModel || unsupportedEffort) && <p className="v2-runtime-controls__refusal">{k('unsupported', { harness: value(last, 'harness'), model: value(last, 'model'), effort: value(last, 'effort') })}</p>}
     {runtime.observation?.lastSpawnOutcome === 'failed' && <p className="v2-runtime-controls__refusal">{k('spawnFailed', { harness: value(last, 'harness'), model: value(last, 'model'), effort: value(last, 'effort') })}</p>}
     {error && <p role="alert">{error}</p>}
-    {editable && <button className="v2-runtime-controls__save" aria-label={k('saveRuntime')} disabled={busy || !changed || unsupportedHarness || !model.trim() || !models?.length || unsupportedModel || Boolean(levels.length && unsupportedEffort)} onClick={() => { void save(); }}>{k('save')}</button>}
+    {editable && <button className="v2-runtime-controls__save" aria-label={k('saveRuntime')} disabled={busy || !changed || unsupportedHarness || !model.trim() || unsupportedModel || Boolean(levels.length && unsupportedEffort)} onClick={() => { void save(); }}>{k('save')}</button>}
     <dl className="v2-runtime-controls__status">
       <div><dt>{k('process')}</dt><dd>{runtime.processConnected === true ? k('connected') : runtime.processConnected === false ? k('disconnected') : k('notReported')}{runtime.processConnected && runtime.observation?.connectedAt ? ` · ${new Date(runtime.observation.connectedAt).toLocaleString()}` : ''}</dd></div>
       <div><dt>{k('turn')}</dt><dd>{runtime.processConnected == null ? k('notReported') : runtime.processConnected && runtime.observation?.turnRunning ? k('running') : runtime.observation?.lastTurnAt ? new Date(runtime.observation.lastTurnAt).toLocaleString() : k('noTurn')}</dd></div>

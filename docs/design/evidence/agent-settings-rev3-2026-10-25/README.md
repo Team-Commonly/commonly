@@ -14,7 +14,7 @@ Reference: section 05 of the rev3 artboard attached to TASK-546. The review bund
 - Status Pause/Resume uses the existing installation PATCH with the exact instance ID. Existing machine reconnect, credential ownership checks, per-pod removal and memory conflict handling remain in their own components.
 - Hosted and Scout request no credential ledger and render neither an Access key section nor a provider-key section. Scout has no usage meter or scheduled-turn estimate.
 - A never-connected agent has one connect action. Revoked runtime credentials remain folded. The credential endpoint already excludes spawn children.
-- Model editing is limited to models in the machine-reported inventory. Missing inventory disables editing and saving. The TASK-002 model-catalog contract requested from Kai is still pending; this draft does not claim that integration complete.
+- Local model controls use the machine-reported CLI inventory, with the existing user-supplied ID input when a CLI cannot enumerate models. TASK-002 owner Kai confirmed the source split: the instance catalogue is for hosted override choices; local CLI inventories remain independent. The runbook in #2707 explicitly says native Settings displays runtime truth. This page keeps the hosted/Scout model read only per rev3 and introduces no hosted override picker. That interpretation of the task’s picker clause is called out for task-owner review.
 
 ## Reproduce
 
@@ -22,4 +22,4 @@ Start the normal frontend dev server on `127.0.0.1:3546`, then run `node capture
 
 ## Completion holds
 
-This is a draft implementation. UX review proceeds section by section, beginning with Status and Runtime. The TASK-002 model-list integration, independent gates and a non-author production walk of BYO/hosted/Scout at both widths with every displayed value checked against its real last spawn remain required. Captures alone do not complete TASK-546.
+This is a draft implementation. UX review proceeds section by section, beginning with Status and Runtime. Task-owner confirmation of the catalogue clause, independent gates and a non-author production walk of BYO/hosted/Scout at both widths with every displayed value checked against its real last spawn remain required. Captures alone do not complete TASK-546.
