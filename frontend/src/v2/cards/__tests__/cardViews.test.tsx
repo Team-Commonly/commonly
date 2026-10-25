@@ -45,3 +45,18 @@ test('task_updated refreshes board truth and unsubscribes on unmount', async () 
   view.unmount();
   expect(mockSocket.off).toHaveBeenCalledWith('task_updated', update);
 });
+
+test('forwarded traces use the original pod while TaskStatus uses the displayed board', async () => {
+  const runPodId = '222222222222222222222222';
+  mockGet.mockImplementation((path: string) => Promise.resolve(path.includes('/runs/')
+    ? { run: { id:runId,podId:runPodId,turns:[{toolCalls:[{name:'source pod call',outcome:'ok',elapsedMs:1}]}] } }
+    : { tasks:[{taskId:'TASK-498',title:'Displayed pod task',status:'done'}] }));
+  render(<MemoryRouter><CardContext.Provider value={{podId,runPodId,runId}}>
+    <TaskView taskId="TASK-498" /><TraceView limit={1} />
+  </CardContext.Provider></MemoryRouter>);
+  expect(await screen.findByText('source pod call')).toBeInTheDocument();
+  expect(await screen.findByText('Displayed pod task')).toBeInTheDocument();
+  expect(mockGet).toHaveBeenCalledWith(`/api/pods/${runPodId}/runs/${runId}`);
+  expect(mockGet).toHaveBeenCalledWith(`/api/v1/tasks/${podId}`);
+  expect(screen.getByRole('link',{name:'Open trace'})).toHaveAttribute('href', `/v2/pods/${runPodId}/runs/${runId}`);
+});

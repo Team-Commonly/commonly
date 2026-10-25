@@ -5,7 +5,7 @@ import { useV2Api } from '../hooks/useV2Api';
 import { useSocket } from '../../context/SocketContext';
 import { cardHref } from './cardLinks';
 
-export const CardContext = createContext({ podId: '', runId: '' });
+export const CardContext = createContext<{ podId: string; runId: string; runPodId?: string }>({ podId: '', runId: '' });
 export type Node = ElementNode;
 export const literal = (value: unknown) => value == null ? '' : String(value);
 export function CardLink({ label, url, as = 'text', showHost = true }: { label: string; url: string; as?: string; showHost?: boolean }) {
@@ -81,7 +81,8 @@ export function TaskView({ taskId, note }: { taskId: string; note?: string }) {
     <span className="no">{task?.status || ''}{note && ` · ${note}`}</span></div>;
 }
 export function TraceLink() {
-  const { podId, runId } = useContext(CardContext);
+  const { podId: messagePodId, runPodId, runId } = useContext(CardContext);
+  const podId = runPodId ?? messagePodId;
   return /^[a-f\d]{24}$/i.test(runId) && /^[a-f\d]{24}$/i.test(podId) ? <RouterLink className="lk" to={`/v2/pods/${encodeURIComponent(podId)}/runs/${runId}`}>Open trace</RouterLink> : <span className="ui-meta">Trace unavailable</span>;
 }
 
@@ -91,7 +92,8 @@ interface TraceData {
   turns: Array<{ toolCalls: Array<{ name: string; outcome: string; elapsedMs: number }> }>;
 }
 export function TraceView({ limit }: { limit: number }) {
-  const { podId, runId } = useContext(CardContext);
+  const { podId: messagePodId, runPodId, runId } = useContext(CardContext);
+  const podId = runPodId ?? messagePodId;
   const api = useV2Api();
   const [state, setState] = useState<{ key: string; data?: TraceData }>({ key: '' });
   const key = `${podId}/${runId}`;

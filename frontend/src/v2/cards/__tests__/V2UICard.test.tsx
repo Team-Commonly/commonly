@@ -41,3 +41,11 @@ test.each([{ catalogRev: 2 }, { catalogId: 'other' }, { catalogHash: 'sha256:bad
   expect(screen.getByText('Unsupported card version.')).toBeInTheDocument();
   expect(screen.queryByText('Must not render')).not.toBeInTheDocument();
 });
+
+test('an expired forwarded card links to its server-bound source pod', () => {
+  const m = message('root = Text("Old")', new Date(Date.now() - 31 * 86400000).toISOString());
+  m.payload!.runId = '012345678901234567890123';
+  m.payload!.runPodId = '222222222222222222222222';
+  show(m);
+  expect(screen.getByRole('link', { name: 'Open trace' })).toHaveAttribute('href', '/v2/pods/222222222222222222222222/runs/012345678901234567890123');
+});

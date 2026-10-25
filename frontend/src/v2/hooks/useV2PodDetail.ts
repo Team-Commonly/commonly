@@ -94,6 +94,7 @@ export interface V2Message {
     catalogRev?: number;
     catalogHash?: string;
     runId?: string;
+    runPodId?: string;
     // kind 'starts': offers rendered as buttons under the message (first
     // session, direction B). A plain start sends its label as the person's own
     // message; `href` navigates in-app, and supported actions act in place.
