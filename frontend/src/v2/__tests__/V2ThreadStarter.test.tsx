@@ -494,14 +494,16 @@ describe('second-person prompt placements', () => {
     expect(screen.queryByRole('button', { name: 'Copy invite link' })).not.toBeInTheDocument();
   });
 
-  test('Scout’s owned workspace discloses the conversation being shared', async () => {
+  test('Lily’s Drop B ruling suppresses the automatic card in Scout’s owned workspace', async () => {
     const detail = withReply({ _id: 'p1', name: 'My Workspace', type: 'chat', createdBy: { _id: 'u1' } });
     const username = 'scout-u0123456789';
     detail.agents = [{ agentName: 'scout', instanceId: 'u0123456789', status: 'active', displayName: 'Scout' }];
     detail.members = [member, { ...agent, username }];
     detail.messages = [messages[0], { ...messages[1], user: { username, isBot: true } }];
     renderChat(detail);
-    expect(await screen.findByText(/including this conversation with Scout/)).toBeInTheDocument();
+    await act(async () => { await Promise.resolve(); });
+    expect(document.querySelector('.v2-teammate')).toBeNull();
+    expect(axios.get.mock.calls.filter(([url]) => url.endsWith('/invites'))).toHaveLength(0);
     expect(axios.post).not.toHaveBeenCalled();
   });
   test('a pending invite press completes once across expanding and collapsing its thread', async () => {

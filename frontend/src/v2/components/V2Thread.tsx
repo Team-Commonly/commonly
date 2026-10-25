@@ -1442,12 +1442,13 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const noAgentsInPodLive = !(agents || []).some((agent) => agent.status === 'active');
 
   const soloHuman = isSoloHumanPod(pod, members || [], currentUserId || '');
-  // This one condition isolates placement B if the private-workspace ruling
-  // changes. Its copy explicitly names the Scout conversation being shared.
+  // Do not offer the automatic first-reply invite in the private Scout workspace
+  // (the placement-B privacy ruling). Group replies and empty pods qualify separately.
   const scoutWorkspace = viewerOwnsPod && pod.name === 'My Workspace';
   const scoutKeys = new Set((agents || []).filter((agent) => agent.agentName === 'scout')
     .map((agent) => buildAgentUsername(agent.agentName, agent.instanceId || 'default').toLowerCase()));
-  const teammateMoment = soloHuman && detail.initialMessagesLoaded === true && !hasMore && !loading && !firstRunVisible
+  const teammateMoment = soloHuman && !scoutWorkspace && detail.initialMessagesLoaded === true
+    && !hasMore && !loading && !firstRunVisible
     ? teammateInviteMoment(messages, currentUserId || '', agentAuthorKeys, scoutKeys, scoutWorkspace) : null;
 
   const teammateSource = teammateMoment?.source || (scoutWorkspace ? 'scout-first-session' : 'first-agent-post');

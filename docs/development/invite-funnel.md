@@ -12,8 +12,13 @@ and selects that link; retry never creates another token. Returning links are
 shown without claiming the new browser has copied them. Dismissal is local to
 the pod and placement. The just-created-pod starter also creates only on press.
 
+The automatic first-reply card is suppressed in the viewer-owned My Workspace
+to avoid prompting them to share a private Scout conversation. The group-pod
+reply and one-person empty-state placements remain available.
+
 Placement sources are `first-agent-post`, `scout-first-session`, and `solo-pod`;
-legacy/menu writes default to `pod-menu`. Source is client-provided attribution,
+`scout-first-session` is retained for historical attribution. Legacy/menu writes
+default to `pod-menu`. Source is client-provided attribution,
 not an authorization claim. Inviter identity and cohort time are server-bound.
 
 ## Measurement
