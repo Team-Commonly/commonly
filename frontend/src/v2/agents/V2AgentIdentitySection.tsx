@@ -7,7 +7,6 @@ import type { AgentSettingsInstallation, AgentSettingsPatch } from './useAgentSe
 interface Props {
   installation: AgentSettingsInstallation;
   update: (patch: AgentSettingsPatch) => Promise<unknown>;
-  nameOnly?: boolean;
 }
 
 interface PersonaFields {
@@ -29,10 +28,10 @@ const asPersona = (value: unknown): PersonaFields => {
   };
 };
 
-const V2AgentIdentitySection: React.FC<Props> = ({ installation, update, nameOnly = false }) => {
+const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
   const { t } = useTranslation();
   const profile = installation.profile;
-  const supportsPersona = !nameOnly && installation.name.toLowerCase() === 'openclaw';
+  const supportsPersona = installation.name.toLowerCase() === 'openclaw';
   const [displayName, setDisplayName] = useState(installation.displayName || '');
   const [persona, setPersona] = useState<PersonaFields>(() => asPersona(profile?.persona));
   const personaChanged = supportsPersona && Object.entries(asPersona(profile?.persona))

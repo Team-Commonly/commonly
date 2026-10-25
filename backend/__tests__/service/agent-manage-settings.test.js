@@ -7,6 +7,7 @@ const Pod = require('../../models/Pod');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const Machine = require('../../models/Machine');
 const AgentMemory = require('../../models/AgentMemory');
+const AgentRun = require('../../models/AgentRun');
 const manageSettings = require('../../routes/registry/manage-settings');
 const podAgents = require('../../routes/registry/pod-agents');
 const agentConfig = require('../../routes/registry/agent-config');
@@ -38,6 +39,7 @@ describe('per-installation agent settings', () => {
 
   beforeEach(async () => {
     await AgentInstallation.deleteMany({ agentName: 'settings-agent' });
+    await AgentRun.deleteMany({ agentName: 'settings-agent' });
     await AgentInstallation.create([
       { agentName: 'settings-agent', instanceId: 'same', podId: podA._id, version: '1', installedBy: owner._id,
         config: new Map([['wakeOnMessage', { enabled: true, humanOnly: true }], ['boardWake', { enabled: false }], ['runtime', { runtimeType: 'wrapper' }]]) },
@@ -70,11 +72,11 @@ describe('per-installation agent settings', () => {
   });
 
   it('reads the actual latest run model only within the managed owner and pod', async () => {
-    const AgentRun = require('../../models/AgentRun');
     const base = { agentName: 'settings-agent', instanceId: 'same', trigger: 'manual', status: 'succeeded' };
     await AgentRun.create([
       { ...base, userId: String(owner._id), podId: podA._id, startedAt: new Date('2026-10-25T01:00:00Z'), turns: [{ turnIndex: 0, model: 'actual-model', elapsedMs: 1 }] },
-      { ...base, userId: String(other._id), podId: podB._id, startedAt: new Date('2026-10-25T02:00:00Z'), turns: [{ turnIndex: 0, model: 'private-model', elapsedMs: 1 }] },
+      { ...base, userId: String(other._id), podId: podA._id, startedAt: new Date('2026-10-25T02:00:00Z'), turns: [{ turnIndex: 0, model: 'private-owner-model', elapsedMs: 1 }] },
+      { ...base, userId: String(owner._id), podId: podB._id, startedAt: new Date('2026-10-25T03:00:00Z'), turns: [{ turnIndex: 0, model: 'private-pod-model', elapsedMs: 1 }] },
     ]);
     await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
       $set: { 'config.runtime': { runtimeType: 'hosted', model: 'saved-but-never-run' } },
@@ -83,13 +85,36 @@ describe('per-installation agent settings', () => {
       .set('Authorization', `Bearer ${token(owner)}`);
     expect(response.status).toBe(200);
     expect(response.body.runtimeRun).toEqual(expect.objectContaining({ model: 'actual-model', status: 'succeeded' }));
-    expect(JSON.stringify(response.body.runtimeRun)).not.toContain('private-model');
+    expect(JSON.stringify(response.body.runtimeRun)).not.toContain('private-owner-model');
+    expect(JSON.stringify(response.body.runtimeRun)).not.toContain('private-pod-model');
     await AgentRun.create({ ...base, userId: String(owner._id), podId: podA._id,
-      startedAt: new Date('2026-10-25T03:00:00Z'), status: 'failed', turns: [] });
+      startedAt: new Date('2026-10-25T04:00:00Z'), status: 'failed', turns: [] });
     const failed = await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
       .set('Authorization', `Bearer ${token(owner)}`);
     expect(failed.body.runtimeRun.model).toBeNull();
     await AgentRun.deleteMany({ agentName: 'settings-agent' });
+  });
+
+  it('reads the hosted engine meter and omits usage for non-hosted installs', async () => {
+    await AgentRun.create({ agentName: 'settings-agent', instanceId: 'same', trigger: 'manual',
+      status: 'succeeded', userId: String(owner._id), podId: podA._id, startedAt: new Date(), turns: [] });
+    const url = '/api/registry/agents/settings-agent/manage-settings?instanceId=same';
+    const read = () => request(app).get(url).set('Authorization', `Bearer ${token(owner)}`);
+    await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
+      $set: { 'config.runtime': { runtimeType: 'hosted' }, 'config.hosted': { engine: 'native', provisionedAt: new Date().toISOString() } },
+    });
+    const native = await read();
+    expect(native.status).toBe(200);
+    expect(native.body.usage).toEqual(expect.objectContaining({ used: 1, cap: 30 }));
+    await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
+      $set: { 'config.hosted': { engine: 'durable-object' } },
+    });
+    const worker = await read();
+    expect(worker.body.usage).toEqual(expect.objectContaining({ used: 0, cap: 30 }));
+    await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
+      $set: { 'config.runtime': { runtimeType: 'native' } },
+    });
+    expect((await read()).body.usage).toBeNull();
   });
 
   it('shows a held task to pod members, not a non-member installation admin', async () => {

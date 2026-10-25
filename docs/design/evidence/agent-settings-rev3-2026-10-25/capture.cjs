@@ -39,6 +39,13 @@ for(const lang of ['en','zh-CN']) for(const kind of ['byo','hosted','scout','nev
  await page.screenshot({path:`${outDir}/en-team-${width}.png`,fullPage:true});
  await name.click(); await page.getByRole('heading',{name:'Status',exact:true}).waitFor();
  }
+ if(kind==='never') {
+ const disclosure=page.locator('details').filter({has:page.getByRole('heading',{name:lang==='en'?'Remove':'移除',exact:true,includeHidden:true})});
+ if(await disclosure.getAttribute('open')!==null) throw new Error('Removal must start folded');
+ await disclosure.locator('summary').click();
+ await disclosure.getByRole('button').waitFor();
+ await page.screenshot({path:`${outDir}/${lang}-never-remove-${width}.png`,fullPage:true});
+ }
  if(kind==='hosted'){await page.getByRole('button',{name:lang==='en'?'Pause':'暂停',exact:true}).click();await page.getByRole('button',{name:lang==='en'?'Resume':'恢复',exact:true}).waitFor();}
  await context.close();
 } await browser.close();

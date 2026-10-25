@@ -163,14 +163,31 @@ test('identity edits go through the shared installation PATCH with the exact ins
   ));
 });
 
-test('rev3 hides Persona until it is consumed', async () => {
-  const defaultGet = axios.get.getMockImplementation();
-  axios.get.mockImplementation((url, options) => url.startsWith('/api/registry/pods/')
-    ? Promise.resolve({ data: { agent: { name: 'openclaw', instanceId: 'scout', displayName: 'Scout',
-      profile: { persona: { tone: 'friendly' } } } } }) : defaultGet(url, options));
+test('OpenClaw identity keeps the live Persona editor and saves its changes', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
+      displayName: 'Scout', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'openclaw', instanceId: 'scout', displayName: 'Scout',
+      profile: { persona: { tone: 'friendly', specialties: ['writing'], customInstructions: 'Stay clear' } },
+    } } });
+    return Promise.resolve({ data: [] });
+  });
+  axios.patch.mockResolvedValue({ data: { success: true } });
   renderPage('/v2/agents/openclaw/scout');
-  await screen.findByRole('heading', { name: 'Status' });
-  expect(screen.queryByRole('group', { name: 'Persona' })).toBeNull();
+  expect(await screen.findByRole('group', { name: 'Persona' })).toBeInTheDocument();
+  fireEvent.change(screen.getByRole('textbox', { name: 'Persona notes' }), { target: { value: 'Keep detail' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
+  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+    '/api/registry/pods/pod-1/agents/openclaw',
+    { instanceId: 'scout', persona: {
+      tone: 'friendly', specialties: ['writing'], boundaries: [], customInstructions: 'Keep detail',
+    } },
+  ));
 });
 
 test('OpenClaw name-only edits leave Persona out of the PATCH', async () => {
@@ -190,7 +207,7 @@ test('OpenClaw name-only edits leave Persona out of the PATCH', async () => {
   axios.patch.mockResolvedValue({ data: { success: true } });
   renderPage('/v2/agents/openclaw/scout');
   await screen.findByRole('button', { name: 'Save identity' });
-  expect(screen.queryByRole('group', { name: 'Persona' })).toBeNull();
+  expect(screen.getByRole('group', { name: 'Persona' })).toBeInTheDocument();
   fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Scout 2' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
@@ -610,4 +627,43 @@ test('the primary harness follows the last spawn, not a different saved choice',
   expect(section).toHaveTextContent('actual-model · high');
   expect(section).not.toHaveTextContent('saved-model');
   expect(section).not.toHaveTextContent('On your machine · Codex');
+});
+
+
+test('managed runtimes keep the provider-key editor reachable', async () => {
+  const defaultGet = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url, options) => {
+    if (url.includes('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', runtimeManaged: true,
+      runtimeControls: { runtimeType: 'wrapper', adapter: 'claude' },
+      ownKeyCapability: { available: true, provider: 'anthropic' },
+      installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } });
+    if (url.includes('/provider-key?')) return Promise.resolve({ data: { set: false } });
+    return defaultGet(url, options);
+  });
+  renderPage();
+  const button = await screen.findByRole('button', { name: 'Set key' });
+  await waitFor(() => expect(button).toBeEnabled());
+  expect(button.closest('details')).toHaveTextContent('Change runtime');
+  fireEvent.click(button);
+  expect(screen.getByLabelText('API key')).toHaveAttribute('type', 'password');
+});
+
+test('never-connected agents keep removal folded and available', async () => {
+  const defaultGet = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url, options) => {
+    if (url === '/api/registry/pods/pod-1/agents') return Promise.resolve({ data: { agents: [{
+      name: 'maya-claude', instanceId: 'default', runtime: { runtimeType: 'wrapper' }, connection: { state: 'never' },
+    }] } });
+    return defaultGet(url, options);
+  });
+  renderPage();
+  const heading = await screen.findByRole('heading', { name: 'Remove', hidden: true });
+  const disclosure = heading.closest('details');
+  expect(disclosure).not.toHaveAttribute('open');
+  fireEvent.click(disclosure.querySelector('summary'));
+  // jsdom does not implement the native summary toggle.
+  disclosure.open = true;
+  expect(within(disclosure).getByRole('button', { name: 'Remove from pod' })).toBeEnabled();
 });

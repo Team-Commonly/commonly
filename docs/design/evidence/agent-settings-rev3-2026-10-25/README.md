@@ -13,8 +13,10 @@ Reference: section 05 of the rev3 artboard attached to TASK-546. The review bund
 - The held task includes only its ID and pod name, and only where the viewer is a pod member. A non-member installation admin gets no task.
 - Status Pause/Resume uses the existing installation PATCH with the exact instance ID. Existing machine reconnect, credential ownership checks, per-pod removal and memory conflict handling remain in their own components.
 - Hosted and Scout request no credential ledger and render neither an Access key section nor a provider-key section. Scout has no usage meter or scheduled-turn estimate.
-- A never-connected agent has one connect action. Revoked runtime credentials remain folded. The credential endpoint already excludes spawn children.
+- A never-connected agent has one connect action and a folded Remove disclosure; the fixture opens it and captures the reachable removal control. Revoked runtime credentials remain folded. The credential endpoint already excludes spawn children.
 - Local model controls use the machine-reported CLI inventory, with the existing user-supplied ID input when a CLI cannot enumerate models. TASK-002 owner Kai confirmed the source split: the instance catalogue is for hosted override choices; local CLI inventories remain independent. The runbook in #2707 explicitly says native Settings displays runtime truth. This page keeps the hosted/Scout model read only per rev3 and introduces no hosted override picker. That interpretation of the task’s picker clause is called out for task-owner review.
+
+The existing OpenClaw Persona editor remains available inside the folded identity editor because its save path writes the runtime workspace’s `IDENTITY.md`. Other runtime kinds retain their existing name-only editor.
 
 ## Reproduce
 

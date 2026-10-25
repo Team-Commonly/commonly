@@ -248,8 +248,8 @@ const V2AgentSettingsPage: React.FC = () => {
         <span aria-current="page">{t('agentSettings.settings')}</span>
       </nav>
       {installation && connectionState !== 'never' && <details className="v2-agent-settings__identity-details">
-        <summary>{t('agentSettings.displayName')}</summary>
-        <V2AgentIdentitySection nameOnly installation={installation} update={update} />
+        <summary>{t(installation.name.toLowerCase() === 'openclaw' ? 'agentSettings.identityTitle' : 'agentSettings.displayName')}</summary>
+        <V2AgentIdentitySection installation={installation} update={update} />
       </details>}
       <V2AgentStatus key={identityKey} agentName={agentName} instanceId={instanceId}
         paused={installation?.status === 'paused'} builtIn={kind === 'builtIn'}
@@ -278,9 +278,6 @@ const V2AgentSettingsPage: React.FC = () => {
         name={agentName}
         instanceId={instanceId}
         runtime={runtime}
-        onSaveRuntime={runtimeEditable ? async (changes) => {
-          await updateRuntime(changes);
-        } : undefined}
       />
       <div className="v2-agent-settings__section">
         <V2AgentSkills subsection podId={podId} podName={access?.pods.find((pod) => pod.id === podId)?.name || podId} agentName={agentName} instanceId={instanceId} />
@@ -329,8 +326,11 @@ const V2AgentSettingsPage: React.FC = () => {
           </>
         )}
       </section>}
-      <V2AgentWakePods section="remove" agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
       </>}
+      {connectionState === 'never' ? <details className="v2-agent-settings__identity-details">
+        <summary>{t('agentSettings.rev3.remove')}</summary>
+        <V2AgentWakePods section="remove" agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
+      </details> : <V2AgentWakePods section="remove" agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />}
     </main>
   );
 };
