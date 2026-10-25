@@ -56,9 +56,26 @@ const METRIC_KEYS = [
   'relayRefusals',
 ].sort();
 
-// A real child that never writes and never exits on its own.
-const silentChild = () => childSpawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: ['ignore', 'pipe', 'pipe'] });
+// A real child that never writes and never exits on its own. Every one is
+// tracked: after each test any still running is killed and the test FAILS, so
+// a supervisor that does not kill (or a mutant that skips it) cannot leave a
+// child holding jest open.
+const spawned = new Set();
+const silentChild = () => {
+  const child = childSpawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  spawned.add(child);
+  return child;
+};
 const isRunning = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code !== 'ESRCH'; } };
+afterEach(async () => {
+  const leaked = [...spawned].filter((child) => child.exitCode === null && child.signalCode === null);
+  spawned.clear();
+  for (const child of leaked) child.kill('SIGKILL');
+  await Promise.all(leaked.map((child) => new Promise((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) resolve(); else child.once('exit', resolve);
+  })));
+  expect(leaked.map((child) => `child ${child.pid} outlived its test`)).toEqual([]);
+});
 
 describe('policy and relay defaults', () => {
   test('codex stalls at 15 min, claude has no stall window, both get grace 15 s and the wall past the turn budget', () => {
@@ -128,6 +145,10 @@ describe('the turn runner', () => {
   });
 
   test('a stalled real child is named stuck, killed, and thrown; the metric line says so', async () => {
+    // Under a mutant that never supervises, run() never settles: race it so the test fails, not hangs.
+    const within = (promise, ms) => Promise.race([promise, new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`no settle in ${ms}ms`)), ms).unref();
+    })]);
     const env = { COMMONLY_SUPERVISE_STALL_MS: '60', COMMONLY_SUPERVISE_CANCEL_GRACE_MS: '40', COMMONLY_SUPERVISE_RELAY_CODEX: '0' };
     const logs = [];
     let pid;
@@ -141,7 +162,7 @@ describe('the turn runner', () => {
       }),
     };
     const runner = createTurnRunner({ seat: 'nib', turnTimeoutMs: 60_000, supervise: true, env, log: (l) => logs.push(l) });
-    const error = await runner.run(adapter, PROMPT, {}, { eventType: 'chat.mention' }).catch((e) => e);
+    const error = await within(runner.run(adapter, PROMPT, {}, { eventType: 'chat.mention' }), 5000).catch((e) => e);
     expect(error.kind).toBe('stuck');
     expect(isRunning(pid)).toBe(false);
     expect(logs).toEqual([expect.stringMatching(/^\[chat\.mention\] supervised turn failed: stuck \(child killed\)$/)]);
