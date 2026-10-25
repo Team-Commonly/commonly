@@ -2035,15 +2035,32 @@ export const performRun = ({
     } else {
       // ADR-018 length gate: the tone contract is enforced here, where the
       // wrapper is the one posting. Split, attach — never truncate.
-      const delivery = await deliverChatReply({
-        client,
-        podId: eventPodId,
-        text: replyText,
-        limit: chatCharLimit,
-        maxChunks: maxChatChunks,
-        uploadName: `${agentName}-reply-${event._id}.md`,
-        log: (line) => log(`[${event.type}] ${line}`),
-      });
+      let delivery;
+      try {
+        delivery = await deliverChatReply({
+          client,
+          podId: eventPodId,
+          text: replyText,
+          limit: chatCharLimit,
+          maxChunks: maxChatChunks,
+          uploadName: `${agentName}-reply-${event._id}.md`,
+          log: (line) => log(`[${event.type}] ${line}`),
+        });
+      } catch (deliveryError) {
+        // TASK-535: every rung threw, so the reply reached nobody. The throw
+        // still leaves the events unacked for redelivery (unchanged), but the
+        // retry report is about the BATCH; this line is about the reply, and
+        // it names where it was going so a lost summary is never silent.
+        const eventCount = Array.isArray(event.payload?.batchEventIds)
+          ? event.payload.batchEventIds.length
+          : 1;
+        log(
+          `[${event.type}] ERROR reply NOT delivered to pod ${eventPodId} — `
+          + `${Buffer.byteLength(replyText)} bytes lost, ${eventCount} event${eventCount === 1 ? '' : 's'} `
+          + `left unacked for retry: ${deliveryError.message}`,
+        );
+        throw deliveryError;
+      }
       if (delivery.skipped) {
         // The server answered 200 and created nothing: a duplicate inside its
         // dedupe window, a silent body, a heartbeat it keeps. Nothing reached
