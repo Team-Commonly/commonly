@@ -98,8 +98,14 @@ implementation.
 ## Capacity model and its limits
 
 The sweep selects the 100 least-recently-attempted receipts each minute and
-rotates failures too. The current 101-receipt regression demonstrates that the
-second batch reaches the last receipt. It does not benchmark a large database.
+rotates failures too. The existing 101-receipt regression demonstrates that the
+second sweep reaches the last receipt. A separate selection-only probe inserted
+10,001 receipts into the default ephemeral Mongo service fixture and exercised
+this same sort/limit, advancing each selected batch's timestamp with updateMany.
+All 10,001 IDs were visited after 101 batches (one probe passed). The timestamp
+values increased deterministically by one millisecond per batch. There were no
+cleanup operations, scheduler waits or concurrent arrivals in that probe. It is
+not an end-to-end sweep or a production database latency benchmark.
 
 Under an idealized fixed queue of N receipts, successful ticks and negligible
 work duration, a full revisit takes `ceil(N / 100)` minutes: 100 minutes at
@@ -135,3 +141,23 @@ work, and registers in-flight producers. That is a proposal to test, not an
 accepted design or a claim that moving the same unbounded records to another
 collection solves retention. The remaining writer census, large-queue database
 measurement and producer protocol are unfinished. Receipts remain without TTL.
+
+
+Selection-only reproduction, after the service fixture initializes Mongo:
+
+```js
+const ids = Array.from({ length: 10001 }, () => new User()._id);
+await AccountDeletion.insertMany(ids.map(_id => ({ _id })));
+const seen = new Set();
+let batches = 0;
+while (seen.size < ids.length) {
+  const rows = await AccountDeletion.find()
+    .sort({ lastSweptAt: 1, _id: 1 }).limit(100).select('_id').lean();
+  batches += 1;
+  rows.forEach(row => seen.add(String(row._id)));
+  await AccountDeletion.updateMany({ _id: { $in: rows.map(row => row._id) } },
+    { $set: { lastSweptAt: new Date(1700000000000 + batches) } });
+  if (batches > 102) throw new Error('rotation did not progress');
+}
+// Observed: seen.size === 10001, batches === 101.
+```
