@@ -2,10 +2,14 @@
 const axios = require('axios');
 // eslint-disable-next-line global-require
 const { manifests } = require('../manifests');
+// eslint-disable-next-line global-require
+const {
+  readFeedAccessToken, readFeedRefreshToken, withFeedTokenPresence,
+} = require('../../services/feedCredentials');
 
 interface XConfig {
-  accessToken?: string;
-  refreshToken?: string;
+  feedAccessTokenRef?: string;
+  feedRefreshTokenRef?: string;
   userId?: string;
   username?: string;
   maxResults?: number;
@@ -263,7 +267,7 @@ function createXProvider(integration: { _id: unknown; config?: XConfig; [key: st
   return {
     async validateConfig() {
       try {
-        validateRequiredConfig(config, manifests.x);
+        validateRequiredConfig(withFeedTokenPresence(config), manifests.x);
       } catch (err) {
         const e = err as { message?: string };
         throw new ValidationError(e.message || 'Validation failed');
@@ -287,8 +291,8 @@ function createXProvider(integration: { _id: unknown; config?: XConfig; [key: st
     },
 
     async syncRecent({ sinceId, sinceTimestamp } = {}): Promise<unknown> {
-      let { accessToken } = config;
-      let { refreshToken } = config;
+      let accessToken = await readFeedAccessToken(config);
+      let refreshToken = await readFeedRefreshToken(config);
       const previousSinceByUser = (config.lastExternalIdsByUser && typeof config.lastExternalIdsByUser === 'object')
         ? Object.entries(config.lastExternalIdsByUser).reduce<Record<string, string>>((acc, [key, value]) => {
           const normalizedKey = String(key || '').trim();
@@ -530,7 +534,12 @@ function createXProvider(integration: { _id: unknown; config?: XConfig; [key: st
     },
 
     async health(): Promise<{ ok: boolean; error?: string; status?: number }> {
-      const { accessToken } = config;
+      let accessToken: string | undefined;
+      try {
+        accessToken = await readFeedAccessToken(config);
+      } catch {
+        return { ok: false, error: 'X credential is unavailable; reconnect X' };
+      }
       if (!accessToken || (!config.username && !config.userId)) {
         return { ok: false, error: 'Missing X access configuration' };
       }
@@ -579,7 +588,7 @@ function createXProvider(integration: { _id: unknown; config?: XConfig; [key: st
     },
 
     async publishPost({ text, hashtags = [], sourceUrl } = {}): Promise<{ success: boolean; provider: string; externalId: string | null; url: string | null; text: string }> {
-      const { accessToken } = config;
+      const accessToken = await readFeedAccessToken(config);
       if (!accessToken) {
         throw new Error('Missing X access token');
       }
