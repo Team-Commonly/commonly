@@ -105,6 +105,19 @@ enforces this and no reader compensates.
 | **Connector grants** | grants match by `target.id` equality (`nativeOutsiderGrantPolicy.ts:30-37`; `routes/grants.ts:602-603`), so a P grant **never reaches C**. Seat grants follow the seat, and since `members(C) ⊆ members(P)` that set in C ⊆ in P. Pod-grant audience must be current target members (`grants.ts:371-377`). | a grant targeting C must be an attenuation of an active grant on P from the same connection. The subset checks exist in `attenuateGrant` (`roomGrantService.ts:324-388`: tools `:333-341`, audience `:354-363`), but it **pins the child's target to the parent's** (`:379`). Add a retarget-to-child step that checks `C.parentPod === parent.target.id`. Revoking P's grant already cascades (`RoomGrant.revokeCascade`, `RoomGrant.ts:49`). Open question §10-3. |
 | **Delete** | none (`podDeletionService.ts:24`) | deleting P is refused while it has non-archived children, or the delete archives them first. No orphans. |
 
+**One flow goes up on purpose.** S1 bounds who can read and act in C. It doesn't stop C's content
+from reaching P: §5's result message and an escalation both land in P, where members who aren't in C
+read them. Both also show that C exists, which `/children` hides from those members (§4). This is
+the one named exception to "never wider", and exactly this leaves C:
+
+- **The result message:** C's goal, `doneWhen`, the owner's summary and a link to C.
+- **An escalation:** a `DecisionRequest` with the fields its requester writes (`title`, `question`,
+  `context`, two to four `options`, and `decisionClass`; `DecisionRequest.ts:36-40`), plus
+  `escalatedFromPodId`.
+
+The kernel attaches nothing else from C: no rows, messages or files. Whatever the requester writes
+into those fields is disclosed to P.
+
 Every new check is an *entrance* guard, as ADR-016 describes its own. Existing rows aren't
 rewritten (§9). The seed script must check that HQ is `community` before writing listed children,
 or carry a named exemption, as ADR-016 did for it at `ADR-016:164`.
@@ -141,6 +154,9 @@ classes `strategy | implementation | prioritization`, `:20`) **filed in P**, wit
 D8.4 already requires holds to be stored as `blocked` (`ADR-018:476-492`). When the ruling lands
 (`ruling`, `:44`), the kernel mirrors it into C as a message addressed to the requester and unblocks
 the row, which wakes its owner under ADR-018 D8.2 (`:464`). Privileged real-world acts still go through `ApprovalAction`, never this path (`DecisionRequest.ts:6-9`).
+
+Both the result and an escalation put C's content in P. §3 names them as S1's one exception and
+lists exactly what leaves C.
 
 ## 6. Wakes (ADR-018 governs; this section states the consequences)
 
@@ -249,7 +265,8 @@ reads more than it needs to and wakes for things it doesn't own, and nobody can 
 *for*. Sub-pods let a team carve off a piece of work: "migrate billing to the new API, done when the
 old endpoint has zero traffic for a day". The work gets its own owner and a handful of agents, and it
 can't see or grant anything the parent room doesn't already have. The people in the parent room
-aren't interrupted while the work runs. They see a rollup of its board, they're asked only for
-decisions the child can't make, and they get one result message when it's done. The child then
+aren't interrupted while the work runs. They're asked only for decisions
+the child can't make, and they get one result message when it's done. Those who are also in the
+child see its board as a rollup on the parent (§4). The child then
 archives with its history intact. That's how a manager already splits work across a team, applied to
 a mixed team of agents and people.
