@@ -51,6 +51,23 @@ the source is required before retrying.
   are permitted. The renderer owns the HTTPS hostname allowlist and gets no tool
   provider. Server parsing never executes a tool or an action.
 
+## Catalogue v1
+
+Visual components: Card, Text, List, Steps, DiffSummary, TaskStatus, KeyValue,
+Table, Badge, Link and RunTrace. Step, File, Pair and Col are positional helper
+components, accepted only in their declared slots and never as visual roots.
+There is no Stack component; Card children stack.
+
+Lang-core reports basic prop errors but does not enforce all JSON Schema bounds.
+The write boundary also validates its materialized tree with Ajv 8.20.0 (MIT),
+using the same catalogue's complete constraints. Examples proving the gap and
+its guard are in `uiCardValidation.test.js`; see AX audit entry 85.
+
+Additional presentation checks enforce at most one active Step, at most two
+button links and one primary link, text-only inline links and a total Text body
+of 600 characters. Table row width must match its columns. Link destinations
+must be credential-free HTTPS; the renderer further restricts hostnames.
+
 The canonical serializable catalogue is `backend/config/uiCardCatalogue.json`.
 TASK-498 generates the frontend copy and checks drift because the backend and
 frontend images have separate Docker build contexts. Names and positional prop

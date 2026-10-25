@@ -49,14 +49,56 @@ describe('untrusted UI card write validation', () => {
   ])('refuses unsafe, unknown, or incomplete source: %s', (source) => {
     expect(() => validate(card(source))).toThrow(expect.objectContaining({ statusCode: 400 }));
   });
+  it.each([
+    'root = Card("Plan", [Text("Do it"), Steps([Step("First", "active"), Step("Second", "pending")])])',
+    'root = DiffSummary([File("src/main.ts", 4, 2)])',
+    'root = TaskStatus("TASK-497", "Read from the board")',
+    'root = KeyValue([Pair("Checks", 42), Pair("Ready", true)])',
+    'root = Table([Col("Name"), Col("Count", "number")], [["tests", 42]])',
+    'root = Badge("Ready", "done")',
+    'root = Link("Docs", "https://commonly.me/docs", "text")',
+    'root = RunTrace(3)',
+    'root = List(["one", "two"], true)',
+    'root = Text(["Read ", Link("the docs", "https://commonly.me/docs", "text")])',
+  ])('accepts the artboard catalogue: %s', (source) => {
+    expect(() => validate(card(source))).not.toThrow();
+  });
+  it.each([
+    'root = Text(' + JSON.stringify('a'.repeat(601)) + ')',
+    'root = Card(' + JSON.stringify('a'.repeat(81)) + ', [Text("hi")])',
+    'root = Card("Empty", [])',
+    'root = List([])',
+    'root = Steps([Step("only", "done")])',
+    'root = Steps([Step("one", "active"), Step("two", "active")])',
+    'root = Steps([Step("one", "unknown"), Step("two", "pending")])',
+    'root = DiffSummary([File("file", -1, 0)])',
+    'root = RunTrace(0)',
+    'root = RunTrace(6)',
+    'root = RunTrace(1.5)',
+    'root = Badge("Ready", "cobalt")',
+    'root = TaskStatus("TASK-1", "note", "done")',
+    'root = Table([Col("Name")], [["one", "extra"]])',
+    'root = Text(["prefix", Link("button", "https://commonly.me", "button")])',
+    'root = Link("unsafe", "http://commonly.me", "text")',
+    'root = Link("unsafe", "https://user:password@commonly.me", "text")',
+    'root = Link("unsafe", "javascript:alert(1)", "text")',
+    'root = Card("Two primary", [Link("one", "https://commonly.me", "primary"), Link("two", "https://commonly.me", "primary")])',
+    'root = Card("Three buttons", [Link("one", "https://commonly.me", "button"), Link("two", "https://commonly.me", "button"), Link("three", "https://commonly.me", "button")])',
+    'root = Step("not a visual root", "done")',
+    'root = Card("wrong helper", [Pair("one", "two")])',
+    'root = Text([' + JSON.stringify('a'.repeat(400)) + ', ' + JSON.stringify('b'.repeat(201)) + '])',
+  ])('refuses catalogue limits and invalid helper placement: %s', (source) => {
+    expect(() => validate(card(source))).toThrow(expect.objectContaining({ statusCode: 400 }));
+  });
   it('refuses deeply nested input before recursive parsing', () => {
     expect(() => validate(card('root = Text(' + '['.repeat(1000) + '0' + ']'.repeat(1000) + ')'))).toThrow('nesting');
   });
   it('limits serialized payload bytes, including multibyte Unicode and exact boundary', () => {
     const prefix = 'root = Text("';
     const suffix = '")';
-    const overhead = Buffer.byteLength(JSON.stringify(card(prefix + suffix)));
-    const exact = card(prefix + 'a'.repeat(UI_CARD_MAX_BYTES - overhead) + suffix);
+    const exact = card();
+    const overhead = Buffer.byteLength(JSON.stringify(exact));
+    exact.source += ' '.repeat(UI_CARD_MAX_BYTES - overhead);
     expect(Buffer.byteLength(JSON.stringify(exact))).toBe(UI_CARD_MAX_BYTES);
     expect(() => validate(exact)).not.toThrow();
     expect(() => validate({ ...exact, source: exact.source + ' ' })).toThrow('32 KB');
