@@ -63,7 +63,10 @@ import {
   writeFile,
 } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
-import { delimiter, isAbsolute, join } from 'path';
+import {
+  delimiter, dirname, isAbsolute, join,
+} from 'path';
+import { fileURLToPath } from 'url';
 
 import {
   isLegacySandboxTrust,
@@ -138,6 +141,48 @@ const PUBLIC_DENIED_TOOLS = [
 // TASK-294: a workspace seat is confined as a public one is, except that its
 // folder is the person's project, which the jail holds read-only.
 const isConfinedTrust = (trust) => trust === 'public' || trust === 'workspace';
+// A workspace seat reads its project's history through one read-only git tool
+// (git-readonly-server.js). The server runs inside the jail, so the jail must
+// admit its code (cli/src/lib, plus package.json for the module type) and the
+// git binary it runs.
+const WORKSPACE_GIT_SERVER = fileURLToPath(new URL('../git-readonly-server.js', import.meta.url));
+const WORKSPACE_GIT_PACKAGE_JSON = fileURLToPath(new URL('../../../package.json', import.meta.url));
+// macOS's /usr/bin/git is an xcrun shim, and it fails inside Seatbelt ("No
+// developer tools were found"). So the jail gets the binary git itself runs:
+// `git --exec-path`, resolved here on the host, holds a `git` that links to it.
+const resolveRealGit = () => {
+  const result = spawnSync('git', ['--exec-path'], { encoding: 'utf8', timeout: 5000 });
+  const execDir = result?.status === 0 ? String(result.stdout || '').trim() : '';
+  if (!execDir) return null;
+  try {
+    return realpathSync(join(execDir, 'git'));
+  } catch {
+    return null;
+  }
+};
+const withWorkspaceGit = (ctx) => {
+  if (ctx.environment?.sandbox?.trust !== 'workspace' || !ctx.cwd) return ctx;
+  const git = resolveRealGit();
+  if (!git) {
+    // eslint-disable-next-line no-console
+    console.warn('[claude] git was not found on this machine, so this workspace seat has no git tool');
+    return ctx;
+  }
+  const server = {
+    name: 'workspace_git',
+    transport: 'stdio',
+    command: [process.execPath, WORKSPACE_GIT_SERVER, '--root', ctx.cwd, '--git', git],
+  };
+  return {
+    ...ctx,
+    environment: { ...ctx.environment, mcp: [...(ctx.environment.mcp || []), server] },
+    workspaceGit: {
+      executable: git,
+      readDirectories: [dirname(WORKSPACE_GIT_SERVER)],
+      readPaths: [WORKSPACE_GIT_PACKAGE_JSON],
+    },
+  };
+};
 const PUBLIC_SAFE_ENV = /^(?:PATH|LANG|LC_[A-Z_]+|TERM|USER|LOGNAME|NO_COLOR|CI|SSL_CERT_FILE|SSL_CERT_DIR)$/;
 
 const statOrNull = async (path) => {
@@ -714,9 +759,18 @@ const prepareArgv = async (innerArgv, ctx) => {
       executablePath: claudeBin,
       statePath: ctx.publicClaudeState.statePath,
       mcpConfigDir: ctx.mcpConfigDir,
-      executablePaths: [...mcpExecutables, ...commitHookExecutables, ...originalHookExecutables],
+      executablePaths: [
+        ...mcpExecutables,
+        ...(ctx.workspaceGit ? [ctx.workspaceGit.executable] : []),
+        ...commitHookExecutables,
+        ...originalHookExecutables,
+      ],
       allowClaudeRuntimeAccess: true,
-      readOnlyDirectories: ctx.mcpReadDirectories || [],
+      readOnlyDirectories: [
+        ...(ctx.mcpReadDirectories || []),
+        ...(ctx.workspaceGit?.readDirectories || []),
+      ],
+      readOnlyPaths: ctx.workspaceGit?.readPaths || [],
     });
     return {
       cmd: wrapped[0],
@@ -803,13 +857,13 @@ export default {
     // one declaration is exactly how this seat crashed with "public Claude
     // state was not prepared" instead of spawning confined.
     const ctx = rawCtx.environment
-      ? {
+      ? withWorkspaceGit({
         ...rawCtx,
         environment: {
           ...rawCtx.environment,
           sandbox: normalizeSandboxTrust(rawCtx.environment.sandbox),
         },
-      }
+      })
       : rawCtx;
     if (isLegacySandboxTrust(rawCtx.environment?.sandbox)) {
       // eslint-disable-next-line no-console

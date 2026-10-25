@@ -1324,3 +1324,99 @@ describe('claude adapter — a workspace seat', () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+describe('claude adapter — a workspace seat\'s git tool', () => {
+  let cwd;
+  let publicState;
+  let fakeGitDirs;
+  let realGit;
+  let gitExecDir;
+  const originalPlatform = process.platform;
+  const serverPath = path.resolve('src/lib/git-readonly-server.js');
+
+  beforeEach(() => {
+    cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-git-workspace-'));
+    publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-git-state-'));
+    // `git --exec-path` names a dir whose `git` links to the binary git runs,
+    // which is what the jail must admit — never the link, never a shim.
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-git-bin-'));
+    gitExecDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-git-exec-'));
+    fakeGitDirs = [binDir, gitExecDir];
+    const binary = path.join(binDir, 'git');
+    fs.writeFileSync(binary, '#!/bin/sh\n', { mode: 0o755 });
+    fs.symlinkSync(binary, path.join(gitExecDir, 'git'));
+    realGit = fs.realpathSync(binary);
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+  });
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+    spawnSync.mockReset();
+    jest.restoreAllMocks();
+    for (const dir of [cwd, publicState, ...fakeGitDirs]) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const gitOnMachine = (execDir) => spawnSync.mockImplementation((cmd, args) => {
+    if (cmd === 'which') return { status: 0, stdout: '/usr/bin/true\n' };
+    if (cmd === 'git' && args?.[0] === '--exec-path') {
+      return execDir ? { status: 0, stdout: `${execDir}\n` } : { status: 1, stdout: '' };
+    }
+    return { status: 0, stdout: '' };
+  });
+
+  const seatSpawn = (impl, trust) => claude.spawn('hi', {
+    agentName: 'workspace-git-test',
+    sessionId: null,
+    cwd,
+    env: { PATH: process.env.PATH },
+    environment: {
+      model: 'test-model',
+      sandbox: { mode: 'workspace', trust },
+      mcp: [{ name: 'commonly', transport: 'stdio', command: [process.execPath, path.join(cwd, 'server.mjs')] }],
+    },
+    _publicClaudeState: publicState,
+    _spawnImpl: impl,
+  });
+
+  test('gets one read-only git tool, whose server code and real git binary the jail admits', async () => {
+    gitOnMachine(gitExecDir);
+    const { impl, calls } = makeSpawnImpl();
+    await seatSpawn(impl, 'workspace');
+
+    expect(calls).toHaveLength(1);
+    const { args, config } = calls[0];
+    expect(config.mcpServers.workspace_git).toEqual({
+      type: 'stdio',
+      command: process.execPath,
+      args: [serverPath, '--root', cwd, '--git', realGit],
+    });
+    expect(fs.existsSync(serverPath)).toBe(true);
+    expect(args.slice(args.indexOf('--allowedTools'))).toContain('mcp__workspace_git__*');
+    const profile = args[1];
+    expect(profile).toContain(`(allow file-read* file-test-existence file-map-executable (literal "${realGit}"))`);
+    expect(profile).toContain(`(allow file-read* file-test-existence (subpath "${fs.realpathSync(path.dirname(serverPath))}"))`);
+    expect(profile).toContain(`(allow file-read* file-test-existence (literal "${fs.realpathSync(path.resolve('package.json'))}"))`);
+  });
+
+  test('a public seat gets no git tool, even on a machine with git', async () => {
+    gitOnMachine(gitExecDir);
+    const { impl, calls } = makeSpawnImpl();
+    await seatSpawn(impl, 'public');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].config.mcpServers.workspace_git).toBeUndefined();
+    expect(calls[0].args).not.toContain('mcp__workspace_git__*');
+    expect(calls[0].args[1]).not.toContain(realGit);
+  });
+
+  test('without git on the machine, a workspace seat still runs, with no git tool', async () => {
+    gitOnMachine(null);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { impl, calls } = makeSpawnImpl();
+    await seatSpawn(impl, 'workspace');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].config.mcpServers.workspace_git).toBeUndefined();
+    expect(calls[0].args[1]).not.toContain(fs.realpathSync(path.dirname(serverPath)));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('git was not found'));
+  });
+});
