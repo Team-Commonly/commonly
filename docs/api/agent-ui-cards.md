@@ -90,7 +90,7 @@ order are part of the stored contract. The immutable revision tuple is in
 lowercase SHA-256 of `JSON.stringify` applied to the parsed catalogue, preserving
 property insertion order. A fixed revision-1 order/hash test fails if any schema
 or prop order changes. Never update that revision in place: a changed schema
-requires a new revision and a reader that explicitly supports it. The frontend
+requires a new revision and a reader that explicitly supports it. The frontend implementation in TASK-498 / PR #2689 (not available until that PR merges)
 generates a byte-identical manifest copy and chooses its renderer by the full
 tuple. Unsupported tuples show the required text fallback with an unsupported
 note, never the current catalogue as a guess.

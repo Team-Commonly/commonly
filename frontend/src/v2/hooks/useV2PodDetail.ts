@@ -90,6 +90,9 @@ export interface V2Message {
     v?: number;
     lang?: string;
     source?: string;
+    catalogId?: string;
+    catalogRev?: number;
+    catalogHash?: string;
     runId?: string;
     // kind 'starts': offers rendered as buttons under the message (first
     // session, direction B). A plain start sends its label as the person's own

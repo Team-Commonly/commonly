@@ -1,15 +1,16 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { CardContext, TaskView, TraceView } from '../cardViews';
 const podId = '111111111111111111111111';
 const runId = '012345678901234567890123';
 const mockGet = jest.fn();
 const mockApi = { get: mockGet };
-jest.mock('../../../context/SocketContext', () => ({ useSocket: () => ({ socket:null, connected:false }) }));
+const mockSocket = { on: jest.fn(), off: jest.fn() };
+jest.mock('../../../context/SocketContext', () => ({ useSocket: () => ({ socket:mockSocket, connected:true }) }));
 jest.mock('../../hooks/useV2Api', () => ({ useV2Api: () => mockApi }));
 const show = (node: React.ReactNode) => render(<MemoryRouter future={{v7_startTransition:true,v7_relativeSplatPath:true}}><CardContext.Provider value={{podId,runId}}>{node}</CardContext.Provider></MemoryRouter>);
-beforeEach(() => mockGet.mockReset());
+beforeEach(() => { mockGet.mockReset(); mockSocket.on.mockReset(); mockSocket.off.mockReset(); });
 test('TaskStatus reads the current pod board instead of author-provided state', async () => {
   mockGet.mockResolvedValue({ tasks: [{taskId:'TASK-498', title:'Board truth', status:'claimed'}] });
   show(<TaskView taskId="TASK-498" note="Agent annotation" />);
@@ -30,4 +31,17 @@ test('a mismatched trace receipt cannot fill this card', async () => {
   mockGet.mockResolvedValue({run:{id:'other',podId,turns:[]}});
   show(<TraceView limit={3} />);
   expect(await screen.findByText('Trace unavailable')).toBeInTheDocument();
+});
+
+test('task_updated refreshes board truth and unsubscribes on unmount', async () => {
+  mockGet.mockResolvedValueOnce({ tasks: [{ taskId:'TASK-498',title:'Old board',status:'claimed' }] })
+    .mockResolvedValueOnce({ tasks: [{ taskId:'TASK-498',title:'New board',status:'done' }] });
+  const view = show(<TaskView taskId="TASK-498" />);
+  expect(await screen.findByText('Old board')).toBeInTheDocument();
+  const update = mockSocket.on.mock.calls.find(([name]) => name === 'task_updated')[1];
+  await act(async () => update({ podId }));
+  expect(await screen.findByText('New board')).toBeInTheDocument();
+  expect(mockGet).toHaveBeenCalledTimes(2);
+  view.unmount();
+  expect(mockSocket.off).toHaveBeenCalledWith('task_updated', update);
 });

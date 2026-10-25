@@ -21,6 +21,16 @@ const validate = new Ajv({ strict: false }).compile({
 export function parseCard(source: unknown): ElementNode | null {
   if (typeof source !== 'string' || new TextEncoder().encode(source).length > 32 * 1024) return null;
   try {
+    // The forgiving lexer drops characters such as # outside quoted prose.
+    let quote = ''; let escaped = false;
+    for (const c of source) {
+      if (quote) {
+        if (escaped) escaped = false;
+        else if (c === '\\') escaped = true;
+        else if (c === quote) quote = '';
+      } else if (c === '"' || c === "'") quote = c;
+      else if (!/[a-zA-Z0-9_$@\s()[\]{},:=.?!+*/%<>|&-]/.test(c)) return null;
+    }
     const tokens = tokenize(source);
     const pairs = tokenize('()[]{}');
     const closing = new Map([[pairs[0].t, pairs[1].t], [pairs[2].t, pairs[3].t], [pairs[4].t, pairs[5].t]]);
@@ -46,7 +56,33 @@ export function parseCard(source: unknown): ElementNode | null {
         } else if (!['Str', 'Num', 'Bool', 'Null', 'Arr', 'Ref'].includes(n.k)) throw new Error('Not static');
       });
     }
+    // Count repeated references BEFORE lang-core materializes them. Memoized
+    // costs saturate at the cap; a tiny DAG cannot cause exponential work.
+    const asts = new Map(statements.map(s => [s.id, parseExpression(s.tokens)]));
+    const costs = new Map<string, number>();
+    const cost = (id: string, path = new Set<string>()): number => {
+      if (path.has(id) || path.size >= 64) throw new Error('Reference cycle or depth');
+      if (costs.has(id)) return costs.get(id)!;
+      const ast = asts.get(id);
+      if (!ast) throw new Error('Unresolved reference');
+      const next = new Set(path).add(id);
+      let count = 0;
+      walkAST(ast, n => {
+        count += n.k === 'Ref' ? cost(n.n, next) : 1;
+        if (count > 4096) throw new Error('Reference expansion limit');
+      });
+      costs.set(id, count);
+      return count;
+    };
+    let expanded = 0;
+    for (const id of asts.keys()) { expanded += cost(id); if (expanded > 4096) return null; }
     const r = parser.parse(source);
+    let materialized = 0;
+    const bound = (value: unknown, depth = 0) => {
+      if (++materialized > 4096 || depth > 128) throw new Error('Materialized tree limit');
+      if (value && typeof value === 'object') Object.values(value).forEach(v => bound(v, depth + 1));
+    };
+    bound(r.root);
     if (!r.root || r.meta.incomplete || r.meta.errors.length || r.meta.unresolved.length
       || r.queryStatements.length || r.mutationStatements.length || Object.keys(r.stateDeclarations).length
       || !validate(r.root)) return null;

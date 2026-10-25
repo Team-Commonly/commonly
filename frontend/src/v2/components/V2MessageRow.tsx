@@ -17,6 +17,8 @@ import { useV2Api } from '../hooks/useV2Api';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 import { messageImageUrl } from '../utils/messageImageUrl';
 
+import CardRenderBoundary from '../cards/CardRenderBoundary';
+
 const V2UICard = lazy(() => import('../cards/V2UICard'));
 
 // Minimal v2-scoped markdown renderer. Plain HTML elements (no MUI), so
@@ -486,7 +488,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
     return <V2BYOHandoffCard message={message} authorLabel={author} time={time} />;
   }
   if (message.payload?.kind === 'ui') {
-    return <Suspense fallback={<div className="v2-msg__content">{message.content}</div>}><V2UICard message={message} authorLabel={author} time={time} /></Suspense>;
+    return <CardRenderBoundary key={message.id} fallback={<div className="v2-msg__content">{message.content}</div>}><Suspense fallback={<div className="v2-msg__content">{message.content}</div>}><V2UICard message={message} authorLabel={author} time={time} /></Suspense></CardRenderBoundary>;
   }
   if (message.payload?.kind === 'gig-card') {
     return <V2GigCard message={message} time={time} />;
