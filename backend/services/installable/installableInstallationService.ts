@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { isPlaybook } from '../playbooks/identity';
 import { Types } from 'mongoose';
 
 import type { IComponent, IInstallable } from '../../models/Installable';
@@ -595,6 +596,9 @@ const installAttempt = async ({
     kind: 'app',
   }) as IInstallable | null;
   if (!installable) throw new InstallableNotFoundError();
+  if (isPlaybook(installable)) {
+    throw new InstallableProjectionError('Use the pod Playbooks panel to install this playbook.');
+  }
 
   const installerId = asObjectId(installedBy, 'installer');
   const targetPodId = asObjectId(podId, 'podId');
