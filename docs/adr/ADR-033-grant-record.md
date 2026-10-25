@@ -84,8 +84,9 @@ mirror the board's transitions (spec §2, Claim). A record line never moves the 
 written by the board (`actor {type: system, id: board}`).
 
 **D5. A card ruling is never off the record (CTO ruling, 2026-10-25).**
-- **A card tied to a parked call** (B3) may be ruled only by the credential owner or the asking
-  agent's owner. `chooseDecision` refuses anyone else with a 403 and a reason shown on the card, so
+- **A card tied to a parked call** (B3) may be ruled only by the credential owner, as ADR-020 D3
+  requires: the asking agent's owner does not own the credential and must not approve its use.
+  `chooseDecision` refuses anyone else with a 403 and a reason shown on the card, so
   no ruling exists without its line, and every `permission.requested` gets exactly one
   `permission.decided`. This is authorization, so it fails closed. The review checklist's rule 19
   (a degraded guard fails toward over-delivery) governs delivery guards, not who may approve a
@@ -103,11 +104,11 @@ written by the board (`actor {type: system, id: board}`).
   branch merges (open question 8).
 
 **D5 acceptance.** A service test at the `chooseDecision` boundary must fail if D5 is reverted:
-- On a parked-call card, the credential owner and the asking agent's owner can each rule. Any other
-  pod member gets a 403, and after the refusal the card is still `pending`, has no `ruling`, and no
+- On a parked-call card, the credential owner can rule. The asking agent's owner (when a different
+  person) and any other pod member each get a 403, and after the refusal the card is still `pending`, has no `ruling`, and no
   record line was written.
 - Each successful ruling writes exactly one line. A parked-call card writes one `permission.decided`
-  with `decisionCardId` and `decidedByRole` `credential-owner` or `agent-owner`. Any other card writes
+  with `decisionCardId` and `decidedByRole: credential-owner`. Any other card writes
   one `decision.ruled`, with `agent-owner` for the agent's owner and `pod-member` for anyone else.
 - A `permission.decided` line carrying `pod-member`, or a `null` `decidedBy`, is refused by the
   format (`fb686d4f` covers this at the format layer; the service test covers the route).
@@ -242,7 +243,7 @@ semantic-conventions-genai `9ffc7e00` (Development status); `argsDigest` exports
 | `resolveApproval` | `ApprovalAction.decision/resolvedBy` + `tool_calls` row | **B3**: `permission.decided` by `resolvedBy` as `credential-owner`, then `tool.update {status: completed\|failed}` |
 | Approval expiry sweep | `tool_calls` `refused/approval_expired` | **B4**: `permission.decided` by `policy`, `approval: timed_out` |
 | Broker executes (`ok` / `failed`) with no ask | `tool_calls` row | **B5**: `tool.call` + `permission.requested` asked of the policy + `permission.decided` (`rule.list: allow`) + `tool.update {status: completed\|failed}` |
-| `chooseDecision` on a card tied to a parked call | `DecisionRequest.ruling` | the **B3** `permission.decided` on that call, with `decisionCardId` and `decidedBy: ruling.byUserId` (spec §2: a ruling on a card a `permission.requested` carried belongs with that request). **Only the credential owner or the asking agent's owner may rule it** (D5), so `decidedByRole` is always `credential-owner` or `agent-owner`; `pod-member` is refused on `permission.decided`. |
+| `chooseDecision` on a card tied to a parked call | `DecisionRequest.ruling` | the **B3** `permission.decided` on that call, with `decisionCardId` and `decidedBy: ruling.byUserId` (spec §2: a ruling on a card a `permission.requested` carried belongs with that request). **Only the credential owner may rule it** (D5, ADR-020 D3), so `decidedByRole` is always `credential-owner`; `agent-owner` and `pod-member` are refused on this path. |
 | `chooseDecision` on any other card | `DecisionRequest.ruling` | `decision.ruled {decisionCardId, value: ruling.value, decidedBy: ruling.byUserId, decidedByRole}`, actor = the ruling human (D5). Every ruling by a member who may rule writes a line. `decidedByRole` is `agent-owner` when the ruler owns the asking agent, otherwise `pod-member` (D5; valid on `decision.ruled` only). Never `null`, never `decision-owner`. |
 | Native runtime (`AgentRun`) | AgentRun subdocs | `attempt.started/settled`, `tool.call {surface: native}`, `run.settled` |
 | `commonly_*` calls (CAP via MCP) | **not recorded anywhere server-side** | `tool.call {surface: commonly}` (TASK-513) |
@@ -333,7 +334,7 @@ and `DecisionRequest` lets any human pod member rule. Writers emit `askedOf.role
 as `credential-owner` for today's approvals. `decision-owner` is reserved in the spec; it becomes
 emittable only when TASK-512 defines the role (open question 1) and the spec admits it. A decision
 card that carries a parked call's approval links them through `decisionCardId` on both permission
-entries. Until TASK-512, D5 limits rulings on such a card to the credential owner and the asking agent's owner. Human only; ADR-020 D3 is unchanged.
+entries. Until TASK-512, D5 limits rulings on such a card to the credential owner. Human only; ADR-020 D3 is unchanged.
 
 **5.3 One openable record (TASK-513).** The three readers join every source in §4 by
 `(podId, taskId)`. Acceptance: for one real task, the export opens in a stock OTel viewer and shows
