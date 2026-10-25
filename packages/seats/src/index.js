@@ -7,3 +7,4 @@ export { createHermesAdapter } from './adapters/hermes.js';
 export { RunFailure, runFailure, failureKindOf, FAILURE_KINDS } from './failures.js';
 export { EVENT_TYPES, isEventType, traceOf, NULL_TRACE } from './trace/events.js';
 export { createTraceStore } from './trace/store.js';
+export { superviseRun, SUPERVISOR_DEFAULTS, DEFAULT_RETRY_ON } from './supervisor.js';
