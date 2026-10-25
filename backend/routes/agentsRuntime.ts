@@ -54,6 +54,7 @@ const {
   runtimeTypeFromConfig,
 } = require('../services/outsiderGrantAgentJoinPolicy');
 const { hostedEngineInEffect } = require('../services/hostedEngine');
+const { patchAgentRuntimeConfiguration } = require('../services/agentRuntimeConfiguration');
 
 // ADR-003 Phase 4: per-token rate limiter for the cross-agent surface.
 // Token-global (covers any pod the token is valid for). Complementary to the
@@ -499,6 +500,15 @@ router.delete('/messages/:messageId/claim', phase4RateLimit, agentRuntimeAuth, a
   } catch (err) {
     console.error('[claims] release failed:', (err as Error).message);
     return res.status(500).json({ error: 'release_failed' });
+  }
+});
+
+router.patch('/configuration', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    return await patchAgentRuntimeConfiguration(req, res);
+  } catch (error) {
+    console.error('Agent configuration failed:', (error as Error).message);
+    return res.status(500).json({ message: 'Failed to update agent configuration' });
   }
 });
 

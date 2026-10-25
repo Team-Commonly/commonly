@@ -27,3 +27,21 @@ Use `commonly agent config <name> --model <model-id>` and restart the runner
 to load the repaired configuration. Explicit models remain pinned on Claude
 recovery and Codex resumed turns. This setting controls model selection;
 it does not isolate the operator's home or change provider authentication.
+
+A BYO user with only the page-issued key can set `--model` and `--effort`
+without logging into the CLI. The command uses the key saved by the first
+`agent run`, updates the identity's owned BYO installations, and preserves the
+rest of the local environment for the next restart. It requires a backend
+with `PATCH /api/agents/runtime/configuration`; a failed request leaves the
+local record unchanged. Existing owner logins continue using the Settings
+write path, including for machine-managed agents.
+
+The runtime-key endpoint accepts only model and effort. It requires an active
+root credential with a recorded owner who remains the identity's sole
+installer. Spawn keys, machine bindings, hosted agents, other identities and
+broader environment changes are refused. `--adapter` and `--env` still require
+an owner login. A saved runtime key is used only for its recorded instance URL;
+an `--instance` override resolving to another URL requires an owner login for
+that instance and receives no fallback runtime-key request.
+Legacy keys without a credential ledger row need the owner to
+reissue a key through the page.

@@ -667,11 +667,28 @@ export const updateAgentConfiguration = async ({
   model = null,
   effort = null,
   envPath = null,
+  runtimeKey = false,
   parseEnv = parseEnvironmentFile,
   adapterRegistry = { getAdapter, listAdapterNames },
 }) => {
   if (!record?.agentName) {
     throw new Error('token record is missing agentName — re-attach the agent');
+  }
+  if (runtimeKey) {
+    if (adapter || envPath) throw new Error('--adapter and --env require an owner login; run commonly login');
+    const controls = Object.fromEntries(Object.entries({ model, effort })
+      .filter(([, value]) => value !== null && value !== undefined));
+    if (!Object.keys(controls).length) throw new Error('provide --model or --effort');
+    const environment = { ...record.environment, ...controls };
+    const validation = validateEnvironmentSpec(environment);
+    if (!validation.ok) throw new Error(validation.errors.join('; '));
+    const result = await client.patch('/api/agents/runtime/configuration', {
+      agentName: record.agentName, instanceId: record.instanceId || 'default', ...controls,
+    });
+    return {
+      agentName: record.agentName, instanceId: record.instanceId || 'default', podId: result.podId,
+      changed: Object.keys(controls), environment,
+    };
   }
   const instanceId = record.instanceId || 'default';
   const runtime = {};
@@ -3774,13 +3791,21 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
         process.exit(1);
       }
       const instance = opts.instance || record.instanceUrl;
-      const token = getToken(instance);
+      const ownerToken = getToken(instance);
+      const runtimeKey = !opts.adapter && !opts.env && !ownerToken && Boolean(record.runtimeToken);
+      const token = runtimeKey ? record.runtimeToken : ownerToken;
       if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
-      const client = createClient({ instance: resolveInstanceUrl(instance), token });
       try {
+        const instanceUrl = resolveInstanceUrl(instance);
+        if (runtimeKey && (!record.instanceUrl
+          || new URL(instanceUrl).href.replace(/\/$/, '') !== new URL(record.instanceUrl).href.replace(/\/$/, ''))) {
+          throw new Error('Changing --instance requires an owner login for that instance; run commonly login');
+        }
+        const client = createClient({ instance: instanceUrl, token });
         const result = await updateAgentConfiguration({
           client,
           record,
+          runtimeKey,
           adapter: opts.adapter,
           model: opts.model,
           effort: opts.effort,

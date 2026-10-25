@@ -76,6 +76,8 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: cd backend && npm ci --include=dev
+      # Backend service suites exercise the real CLI in a subprocess.
+      - run: cd cli && npm ci --include=dev
       - name: Run backend tests (coverage on the nightly schedule only)
         run: |
           cd backend
@@ -279,6 +281,9 @@ jobs:
 
       - name: Install backend dependencies
         run: cd backend && npm ci --include=dev
+
+      - name: Install CLI dependencies for subprocess service tests
+        run: cd cli && npm ci --include=dev
 
       - name: Run service tests (Tier 1)
         run: |
