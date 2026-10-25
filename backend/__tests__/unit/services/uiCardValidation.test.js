@@ -58,6 +58,7 @@ describe('untrusted UI card write validation', () => {
     'root = Badge("Ready", "done")',
     'root = Link("Docs", "https://commonly.me/docs", "text")',
     'root = RunTrace(3)',
+    'root = RunTrace()',
     'root = List(["one", "two"], true)',
     'root = Text(["Read ", Link("the docs", "https://commonly.me/docs", "text")])',
   ])('accepts the artboard catalogue: %s', (source) => {
