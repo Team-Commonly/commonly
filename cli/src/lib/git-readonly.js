@@ -14,8 +14,9 @@
  *    an alias, and the caller's arguments go AFTER it, where git's top-level
  *    options (`-c`, `-C`, `--git-dir`, `--exec-path`, …) are not parsed.
  * 2. The arguments are checked against the spellings that write, execute, or
- *    read a file the caller names (DENIED_LONG_OPTIONS, DENIED_SHORT_OPTIONS),
- *    including git's accepted abbreviations of them (`--outp=`), and against
+ *    read a file the caller names (DENIED_LONG_OPTIONS, DENIED_SHORT_OPTIONS,
+ *    DENIED_SHORT_OPTIONS_BY_SUBCOMMAND), including git's accepted
+ *    abbreviations of them (`--outp=`), and against
  *    paths that leave the workspace.
  * 3. diff, log and show run with `--no-ext-diff --no-textconv`, so no external
  *    diff or conversion program configured for the repository runs, and the
@@ -61,6 +62,13 @@ export const DENIED_SHORT_OPTIONS = Object.freeze({
   c: 'sets configuration (as a top-level option)',
   C: 'changes directory (as a top-level option); use --find-copies to detect copies',
   O: 'reads a file the caller names',
+});
+
+// Letters refused for one subcommand only. log, diff and show read -S as the
+// pickaxe string, but blame reads it as a file of revisions, and prints back a
+// line it cannot parse ("bad graft data: <line>").
+export const DENIED_SHORT_OPTIONS_BY_SUBCOMMAND = Object.freeze({
+  blame: Object.freeze({ S: 'reads a revisions file the caller names' }),
 });
 
 // Short options that carry their value in the same argument (`-n5`, `-U3`,
@@ -118,6 +126,10 @@ const checkShortOption = (arg, subcommand) => {
   const letter = arg[1];
   if (Object.prototype.hasOwnProperty.call(DENIED_SHORT_OPTIONS, letter)) {
     return `-${letter} is refused: it ${DENIED_SHORT_OPTIONS[letter]}`;
+  }
+  const deniedHere = DENIED_SHORT_OPTIONS_BY_SUBCOMMAND[subcommand] || {};
+  if (Object.prototype.hasOwnProperty.call(deniedHere, letter)) {
+    return `-${letter} is refused for ${subcommand}: it ${deniedHere[letter]}`;
   }
   if (arg.length === 2) return null;
   if (VALUE_SHORT_OPTIONS.has(letter)) return null;

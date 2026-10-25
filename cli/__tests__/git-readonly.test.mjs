@@ -129,6 +129,16 @@ describe('read-only git refuses what is not read-only', () => {
     expect(refusal({ subcommand: 'log', args: ['-C', outside] })).toMatch(/-C is refused/);
   });
 
+  test('blame -S reads a caller-named file and prints it back (control), and is refused for blame only', async () => {
+    const secret = join(outside, 'secret.txt');
+    const { stderr } = await bareGit(['blame', `-S${secret}`, 'tracked.txt']);
+    expect(stderr).toMatch(/bad graft data: a file above the workspace/); // control: blame read it
+    expect(refusal({ subcommand: 'blame', args: [`-S${secret}`, 'tracked.txt'] })).toMatch(/-S is refused for blame/);
+    expect(refusal({ subcommand: 'blame', args: ['-S', 'tracked.txt', 'tracked.txt'] })).toMatch(/-S is refused for blame/);
+    // log, diff and show read -S as the pickaxe string, so it stays allowed there.
+    expect(readonlyGitArgv({ root: repo, subcommand: 'log', args: [`-S${secret}`] }).ok).toBe(true);
+  });
+
   test('-O reads a caller-named order file, and is refused', () => {
     expect(refusal({ subcommand: 'diff', args: [`-O${join(outside, 'secret.txt')}`] })).toMatch(/-O is refused/);
   });
