@@ -937,6 +937,11 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
                 </label>
               ))}
             </fieldset>
+            {draft.audience.length === 0 && (
+              <p className="v2-connector-aside__note" role="status">{t('tools.emptyAudienceNotice', {
+                defaultValue: 'No agents selected. This grant will give nobody access.',
+              })}</p>
+            )}
             <label className="v2-tools__field">
               <span>{t('tools.ends', { defaultValue: 'ends' })}</span>
               <select className="v2-connectors__select" value={draft.expiryDays} onChange={(event) => setDraft({ ...draft, expiryDays: Number(event.target.value) as 7 | 30 | 90 })}>

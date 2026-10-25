@@ -93,6 +93,21 @@ beforeEach(async () => {
 });
 
 describe('POST /api/grants', () => {
+  test('an explicit empty pod audience covers nobody and warns the granting user', async () => {
+    const res = await mint({ audience: [] });
+    expect(res.status).toBe(201);
+    expect(res.body.audience).toEqual([]);
+    expect(res.body.warnings).toEqual([expect.objectContaining({ code: 'empty_audience', message: expect.stringContaining('covers nobody') })]);
+    expect((await RoomGrant.findOne({ grantId: res.body.grantId }).lean()).audience).toEqual([]);
+  });
+
+  test('omitting pod audience keeps the member snapshot and has no empty-audience warning', async () => {
+    const res = await mint({});
+    expect(res.status).toBe(201);
+    expect(res.body.audience).toEqual([OWNER, SEAT]);
+    expect(res.body.warnings).toBeUndefined();
+  });
+
   test('an agent User ID used as a pod target returns not-found before join-policy checks', async () => {
     outsiderGrantPodRefusal.mockResolvedValue('pod_joinable');
     const res = await mint({ target: { kind: 'pod', id: SEAT } });

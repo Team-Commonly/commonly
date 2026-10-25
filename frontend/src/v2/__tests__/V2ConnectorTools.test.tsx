@@ -853,3 +853,16 @@ test('hosted grant picker sends the selected pod ID and keeps the agent User ID 
     target: { kind: 'pod', id: 'p2' }, audience: ['a2'],
   }), expect.anything()));
 });
+
+
+test('clearing the selected agents explains that the grant covers nobody without widening its audience', async () => {
+  mockTwoEntries({ catalog: [linearEntry], grants: { p1: [], p2: [] } });
+  renderTools();
+  fireEvent.click(await screen.findByRole('button', { name: 'Add' }));
+  const form = await screen.findByRole('complementary', { name: 'Add Linear' });
+  expect(within(form).queryByText('No agents selected. This grant will give nobody access.')).toBeNull();
+  fireEvent.click(within(form).getByRole('checkbox', { name: 'Scout' }));
+  expect(within(form).getByRole('status')).toHaveTextContent('No agents selected. This grant will give nobody access.');
+  fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({ audience: [] }), expect.anything()));
+});

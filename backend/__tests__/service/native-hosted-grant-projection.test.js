@@ -14,6 +14,7 @@ const Pod = require('../../models/Pod');
 const RoomGrant = require('../../models/RoomGrant');
 const AgentRun = require('../../models/AgentRun');
 const { runAgent, resolveSeatUserId } = require('../../services/nativeRuntimeService');
+const { excludedPodGrantNoticeForRun } = require('../../services/grantBrokerProjectionService');
 const { GRANT_BROKER_ID } = require('../../services/installable/toolInstallables');
 const axios = require('axios').default;
 const AgentIdentityService = require('../../services/agentIdentityService');
@@ -69,4 +70,36 @@ test('a current member outside the mint audience receives no Sentry capability',
   await grant({ audience: [String(owner._id)] });
   expect(await run()).toMatchObject({ status: 'succeeded' });
   expect(names()).not.toContain('sentry_find_organizations');
+  expect(axios.post.mock.calls[0][1].messages.some((message) => message.content.includes('audience does not include you'))).toBe(true);
+});
+
+
+test('an empty audience gives no tools but tells the native agent why', async () => {
+  const row = await grant({ audience: [] });
+  expect(await run()).toMatchObject({ status: 'succeeded' });
+  expect(names()).not.toContain('sentry_find_organizations');
+  const notice = axios.post.mock.calls[0][1].messages.find((message) => message.content.includes('audience does not include you'));
+  expect(notice).toMatchObject({ role: 'system' });
+  expect(notice.content).toContain('An empty audience grants access to nobody.');
+  expect(notice.content).not.toContain(row.grantId);
+  expect(notice.content).not.toContain(row.connectionId);
+  expect((await RoomGrant.findById(row._id)).audience).toEqual([]);
+});
+
+test.each(['revoked', 'expired', 'other pod', 'seat target', 'not a member'])(
+  'the notice reveals no grant for %s', async (state) => {
+    const over = { audience: [] };
+    if (state === 'revoked') over.revokedAt = new Date();
+    if (state === 'expired') over.expiresAt = new Date(Date.now() - 1000);
+    if (state === 'other pod') over.target = { kind: 'pod', id: String(new mongoose.Types.ObjectId()) };
+    if (state === 'seat target') over.target = { kind: 'seat', id: String(owner._id) };
+    await grant(over);
+    if (state === 'not a member') await Pod.updateOne({ _id: pod._id }, { $pull: { members: seat._id } });
+    expect(await excludedPodGrantNoticeForRun({ identityId: String(seat._id), podId: String(pod._id) })).toBeNull();
+  },
+);
+
+test('an included agent gets tools without an exclusion notice', async () => {
+  await grant();
+  expect(await excludedPodGrantNoticeForRun({ identityId: String(seat._id), podId: String(pod._id) })).toBeNull();
 });

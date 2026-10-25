@@ -419,7 +419,15 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       brokerId: broker.brokerId,
     };
     const grant = await createGrant(grantInput);
-    return res.status(201).json(grant);
+    return res.status(201).json({
+      ...grant.toObject(),
+      ...(grant.audience.length === 0 ? {
+        warnings: [{
+          code: 'empty_audience',
+          message: 'This grant covers nobody. Include the intended agent User IDs in audience to give them access.',
+        }],
+      } : {}),
+    });
   } catch (error) {
     return handleError(res, error);
   }
