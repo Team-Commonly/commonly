@@ -120,8 +120,18 @@ const podListingRateLimit = rateLimit({
   legacyHeaders: false,
   keyGenerator: podJoinRateLimitKey,
 });
+// Bound lifecycle writes before authentication. Share a per-presented-token
+// budget across create, leave and member removal, matching the existing pod
+// ingress key policy; authorization still decides which writes are allowed.
+const podLifecycleRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 60,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: podJoinRateLimitKey,
+});
 router.get('/', podListingRateLimit, auth, getAllPods);
-router.post('/', auth, createPod);
+router.post('/', podLifecycleRateLimit, auth, createPod);
 
 router.post('/announcement', auth, async (req: AuthReq, res: Res) => {
   try {
@@ -406,8 +416,8 @@ router.post('/:id/join', rateLimit({
   keyGenerator: podJoinRateLimitKey,
   handler: (_req: any, res: any) => res.status(429).json({ msg: 'rate limit exceeded: 20 pod joins per 60s' }),
 }), auth, joinPod);
-router.post('/:id/leave', auth, leavePod);
-router.delete('/:id/members/:memberId', auth, removeMember);
+router.post('/:id/leave', podLifecycleRateLimit, auth, leavePod);
+router.delete('/:id/members/:memberId', podLifecycleRateLimit, auth, removeMember);
 
 // Pod admin actions hit Mongo on every call but don't need much volume.
 // Capping per-IP keeps a stuck client from re-pinging contacts at full

@@ -58,6 +58,21 @@ describe('pods routes', () => {
     expect(limited.body.msg).toMatch(/20 pod joins per 60s/);
   });
 
+  it.each([
+    ['post', '/api/pods', 201, 'createPod'],
+    ['post', '/api/pods/123/leave', 200, 'leavePod'],
+    ['delete', '/api/pods/123/members/456', 200, 'removeMember'],
+  ])('bounds lifecycle writes on %s %s without consuming another token’s budget', async (method, url, status, handler) => {
+    const token = `Bearer lifecycle-${handler}`;
+    const callsBefore = controllers[handler].mock.calls.length;
+    for (let i = 0; i < 60; i += 1) {
+      await request(app)[method](url).set('Authorization', token).expect(status);
+    }
+    await request(app)[method](url).set('Authorization', token).expect(429);
+    expect(controllers[handler].mock.calls.length - callsBefore).toBe(60);
+    await request(app)[method](url).set('Authorization', `${token}-other`).expect(status);
+  });
+
   it('DELETE /api/pods/123/members/456 calls removeMember', async () => {
     await request(app).delete('/api/pods/123/members/456').expect(200);
     expect(controllers.removeMember).toHaveBeenCalled();
