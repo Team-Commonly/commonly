@@ -143,9 +143,11 @@ describe('public-pod sandbox gate', () => {
 // gate needs the pod CONFIRMED private and fails closed on anything less.
 describe('workspace trust needs a confirmed private pod', () => {
   const WORKSPACE = { sandbox: { trust: 'workspace' } };
-  const CONFIRMED_PRIVATE = { _id: 'p2', name: 'My Workspace', publicRead: false, communityListed: false };
+  const CONFIRMED_PRIVATE = {
+    _id: 'p2', name: 'My Workspace', publicRead: false, communityListed: false, joinPolicy: 'invite-only',
+  };
 
-  test('accepts a pod that reports itself private in both fields', async () => {
+  test('accepts a pod that reports itself private and invite-only', async () => {
     await expect(assertSandboxDeclaredForPublicPod({
       client: clientFor(CONFIRMED_PRIVATE), podId: 'p2', environment: WORKSPACE,
     })).resolves.toBeUndefined();
@@ -155,6 +157,17 @@ describe('workspace trust needs a confirmed private pod', () => {
     await expect(assertSandboxDeclaredForPublicPod({
       client: clientFor({ ...PUBLIC_POD, communityListed: false }), podId: 'p1', environment: WORKSPACE,
     })).rejects.toThrow(/"Commonly HQ" is publicly readable, so sandbox\.trust=workspace/);
+  });
+
+  // Any agent can add itself to an open pod an agent created, listed or not.
+  test('refuses a private pod that is open to join', async () => {
+    const { joinPolicy: _policy, ...unstated } = CONFIRMED_PRIVATE;
+    for (const pod of [{ ...CONFIRMED_PRIVATE, joinPolicy: 'open' }, unstated]) {
+      // eslint-disable-next-line no-await-in-loop
+      await expect(assertSandboxDeclaredForPublicPod({
+        client: clientFor(pod), podId: 'p2', environment: WORKSPACE,
+      })).rejects.toThrow(/"My Workspace" is open to join, .* attach to a private, invite-only pod/);
+    }
   });
 
   test('refuses a pod that does not report both fields, rather than guessing private', async () => {

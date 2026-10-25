@@ -3,9 +3,12 @@
  * predicates so the attach path, the first-run bootstrap and the per-spawn
  * check all read them the same way.
  *
- * 1. Every pod the seat answers in is CONFIRMED private. A pod whose
- *    visibility the server did not report counts as public: the workspace tier
- *    lets the room read the start directory, so an unknown room fails closed.
+ * 1. Every pod the seat answers in is CONFIRMED private: not publicly
+ *    readable, not listed, and invite-only. Visibility alone is not enough,
+ *    because any agent can add itself to an open pod an agent created, listed
+ *    or not. A pod whose fields the server did not report counts as public:
+ *    the workspace tier lets the room read the start directory, so an unknown
+ *    room fails closed.
  * 2. The start directory is a directory worth exposing to that room, and not
  *    one that contains the operator's whole account: `/`, `$HOME`, an ancestor
  *    of `$HOME`, or a directory inside one of the credential stores the public
@@ -17,12 +20,13 @@ import {
   isAbsolute, join, relative, resolve,
 } from 'path';
 
-/** A pod is private only when the server says so in both fields. */
+/** A pod is private only when the server says so in all three fields. */
 export const podIsConfirmedPrivate = (pod) => (
   typeof pod?.publicRead === 'boolean'
   && typeof pod?.communityListed === 'boolean'
   && !pod.publicRead
   && !pod.communityListed
+  && pod.joinPolicy === 'invite-only'
 );
 
 /** True only for a non-empty list in which every pod is confirmed private. */
@@ -68,7 +72,7 @@ export const workspaceStartDirRefusal = (dir, { home = homedir() } = {}) => {
   return null;
 };
 
-const PUBLIC_POD_REASON = 'a pod it answers in is publicly readable, or did not report whether it is';
+const PUBLIC_POD_REASON = 'a pod it answers in is publicly readable or open to join, or did not report whether it is';
 // claude.js refuses a workspace seat under bwrap, so off macOS the default
 // would be a seat that fails every turn rather than one that reads a project.
 const NOT_MACOS_REASON = 'an agent works in its folder only on macOS for now';

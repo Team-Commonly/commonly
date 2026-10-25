@@ -19,10 +19,13 @@ import {
 } from '../src/lib/workspace-trust.js';
 
 describe('pod visibility', () => {
-  test('a pod is private only when both fields say so', () => {
-    expect(podIsConfirmedPrivate({ publicRead: false, communityListed: false })).toBe(true);
-    expect(podIsConfirmedPrivate({ publicRead: true, communityListed: false })).toBe(false);
-    expect(podIsConfirmedPrivate({ publicRead: false, communityListed: true })).toBe(false);
+  test('a pod is private only when all three fields say so', () => {
+    expect(podIsConfirmedPrivate({ publicRead: false, communityListed: false, joinPolicy: 'invite-only' })).toBe(true);
+    expect(podIsConfirmedPrivate({ publicRead: true, communityListed: false, joinPolicy: 'invite-only' })).toBe(false);
+    expect(podIsConfirmedPrivate({ publicRead: false, communityListed: true, joinPolicy: 'invite-only' })).toBe(false);
+    // Any agent can add itself to an open pod an agent created, listed or not.
+    expect(podIsConfirmedPrivate({ publicRead: false, communityListed: false, joinPolicy: 'open' })).toBe(false);
+    expect(podIsConfirmedPrivate({ publicRead: false, communityListed: false })).toBe(false);
   });
 
   test('an unreported field counts as public, so an older server fails closed', () => {
@@ -32,7 +35,7 @@ describe('pod visibility', () => {
   });
 
   test('every pod must be private, and an empty list is not proof of anything', () => {
-    const priv = { publicRead: false, communityListed: false };
+    const priv = { publicRead: false, communityListed: false, joinPolicy: 'invite-only' };
     expect(allPodsConfirmedPrivate([priv, priv])).toBe(true);
     expect(allPodsConfirmedPrivate([priv, { publicRead: true, communityListed: false }])).toBe(false);
     expect(allPodsConfirmedPrivate([])).toBe(false);
@@ -82,7 +85,7 @@ describe('first-run workspace', () => {
   const home = join(root, 'home');
   const repo = join(home, 'code', 'repo');
   mkdirSync(repo, { recursive: true });
-  const priv = { publicRead: false, communityListed: false };
+  const priv = { publicRead: false, communityListed: false, joinPolicy: 'invite-only' };
   const pub = { publicRead: true, communityListed: false };
 
   afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -128,7 +131,7 @@ describe('first-run workspace', () => {
 });
 
 describe('workspace turn placement', () => {
-  const priv = { publicRead: false, communityListed: false };
+  const priv = { publicRead: false, communityListed: false, joinPolicy: 'invite-only' };
   const pub = { publicRead: false, communityListed: true };
   const workspace = { model: 'm', sandbox: { trust: 'workspace' } };
   const place = (overrides) => workspaceTurnPlacement({
@@ -145,7 +148,7 @@ describe('workspace turn placement', () => {
     expect(place({ installations: [priv, pub] })).toEqual({
       environment: { model: 'm', sandbox: { trust: 'public' } },
       cwd: '/tmp/scratch',
-      reason: 'a pod it answers in is publicly readable, or did not report whether it is',
+      reason: 'a pod it answers in is publicly readable or open to join, or did not report whether it is',
     });
   });
 

@@ -852,7 +852,7 @@ describe('bootstrapAgentRecordFromEnv', () => {
     const withVisibility = (publicRead) => ({
       ...identityResponse,
       installations: identityResponse.installations.map((row) => ({
-        ...row, publicRead, communityListed: false,
+        ...row, publicRead, communityListed: false, joinPolicy: 'invite-only',
       })),
     });
     const run = async ({

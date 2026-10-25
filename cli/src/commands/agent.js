@@ -708,10 +708,12 @@ export const assertSandboxDeclaredForPublicPod = async ({
     if (podIsConfirmedPrivate(pod)) return;
     const label = pod?.name ? `"${pod.name}"` : podId;
     const reported = typeof pod?.publicRead === 'boolean' && typeof pod?.communityListed === 'boolean';
+    let why = 'did not report its visibility';
+    if (reported) why = pod.publicRead || pod.communityListed ? 'is publicly readable' : 'is open to join';
     throw new Error(
-      `${label} ${reported ? 'is publicly readable' : 'did not report its visibility'}, so `
-      + 'sandbox.trust=workspace would let people you do not control read this agent\'s start '
-      + 'directory. Declare "sandbox": { "trust": "public" } for this pod, or attach to a private pod.',
+      `${label} ${why}, so sandbox.trust=workspace would let people you do not control read this `
+      + 'agent\'s start directory. Declare "sandbox": { "trust": "public" } for this pod, or attach '
+      + 'to a private, invite-only pod.',
     );
   }
 

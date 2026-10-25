@@ -23,9 +23,14 @@ jest.mock('../../../middleware/auth', () => (_req, _res, next) => next());
 jest.mock('../../../middleware/apiTokenScopes', () => ({
   requireApiTokenScopes: () => (_req, _res, next) => next(),
 }));
+// Honours the select list, so a field the route forgets to select reads as absent.
 jest.mock('../../../models/Pod', () => ({
   find: jest.fn(() => ({
-    select: () => ({ lean: async () => mockPods }),
+    select: (fields) => ({
+      lean: async () => mockPods.map((pod) => Object.fromEntries(
+        Object.entries(pod).filter(([key]) => fields.split(' ').includes(key)),
+      )),
+    }),
   })),
 }));
 jest.mock('../../../services/agentEventService', () => ({}));
@@ -131,6 +136,21 @@ describe('GET /installations pod visibility', () => {
     });
   });
 
+  // An open pod an agent created admits any agent through self-install, listed
+  // or not, so the CLI needs the join policy as well as the visibility.
+  test('the join policy is reported, and a pod with none stored reads as open', async () => {
+    await withPods([
+      { _id: 'pod-1', name: 'Private', type: 'team', joinPolicy: 'invite-only' },
+      { _id: 'pod-2', name: 'Open', type: 'team', joinPolicy: 'open' },
+      { _id: 'pod-3', name: 'Legacy', type: 'team' },
+    ], ['pod-1', 'pod-2', 'pod-3'], async () => {
+      const response = await request(app).get('/api/agents/runtime/installations');
+      const policy = Object.fromEntries(response.body.installations
+        .map((entry) => [entry.podId, entry.joinPolicy]));
+      expect(policy).toEqual({ 'pod-1': 'invite-only', 'pod-2': 'open', 'pod-3': 'open' });
+    });
+  });
+
   test('a publicly readable or listed pod is reported as such', async () => {
     await withPods([{
       _id: 'pod-1', name: 'Room', type: 'team', publicRead: true, communityListed: true,
@@ -145,6 +165,7 @@ describe('GET /installations pod visibility', () => {
       const response = await request(app).get('/api/agents/runtime/installations');
       expect(response.body.installations[0]).not.toHaveProperty('publicRead');
       expect(response.body.installations[0]).not.toHaveProperty('communityListed');
+      expect(response.body.installations[0]).not.toHaveProperty('joinPolicy');
     });
   });
 

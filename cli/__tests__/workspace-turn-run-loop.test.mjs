@@ -27,7 +27,9 @@ const { performRun } = await import('../src/commands/agent.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
 
 const scratchDir = path.join(os.tmpdir(), 'commonly-agents', 'workspace-stub');
-const privatePod = { podId: 'pod-ws', publicRead: false, communityListed: false };
+const privatePod = {
+  podId: 'pod-ws', publicRead: false, communityListed: false, joinPolicy: 'invite-only',
+};
 const noopTimeout = () => 0;
 const drain = async () => {
   for (let i = 0; i < 24; i += 1) await new Promise((resolve) => setImmediate(resolve));
@@ -105,7 +107,7 @@ describe('performRun workspace turn placement', () => {
     expect(ctx.environment.sandbox.trust).toBe('public');
     expect(logs).toContain(
       `this turn runs as a public seat in ${scratchDir}, because a pod it answers in is `
-      + 'publicly readable, or did not report whether it is',
+      + 'publicly readable or open to join, or did not report whether it is',
     );
   });
 

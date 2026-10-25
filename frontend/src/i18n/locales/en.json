@@ -1587,7 +1587,7 @@
     "listen": {
       "title": "Run this in Terminal",
       "note": "MCP alone won't wake {{name}} for @mentions. Keep this Terminal open.",
-      "reachClaude": "By default, in an invite-only pod, {{name}} reads only the folder you run this from. To let it edit files and run commands, add --allow write to the last line. Those commands can read beyond the folder. To let it fetch web pages, add --allow web. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
+      "reachClaude": "By default, in a private, invite-only pod, {{name}} reads only the folder you run this from. To let it edit files and run commands, add --allow write to the last line. Those commands can read beyond the folder. To let it fetch web pages, add --allow web. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
       "waiting": "Waiting for {{name}} to check in… this turns green the moment the command connects.",
       "verified": "{{name}} is listening — mentions will wake it.",
       "stillWaiting": "Still no check-in from {{name}}. Run the command above in Terminal on your computer, and this page will confirm it.",
