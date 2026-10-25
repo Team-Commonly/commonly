@@ -322,6 +322,15 @@ The global administrator mutation lock and uncertain-write recovery rules still
 apply ([runbook](admin-user-mutation-lock.md)). This change does not add a durable
 late-producer fence to synthetic purge or implement receipt retirement.
 
+The overlapping pod lifecycle handlers (create, leave and member removal) share
+60 requests/minute per presented token, preceded by a coarse 6,000/minute client-IP
+budget. The latter bounds rotating invalid credentials before authentication and
+token-store allocation. Both use process-local stores; this is not a cluster-wide
+quota or a global bound across arbitrarily many IPs. Clients sharing a public IP
+share the coarse budget. Client-IP attribution inherits the documented edge/tunnel
+assumptions in `middleware/ipRateLimit.ts`; use that deployment's configured client
+identity rather than treating the reverse proxy address as the external caller.
+
 ### User spend
 
 "One user's agent spend passed the daily line" (WARNING) fires when a user's
