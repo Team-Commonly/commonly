@@ -21,6 +21,14 @@
  * this host is left alone. Leaves go first so a pid's parent is still alive,
  * and its ppid still meaningful, when it is checked.
  *
+ * What the walk does not catch, by design, because each case would need the
+ * ppid match loosened:
+ *   (a) a descendant reparented to 1 (its parent died) between the snapshot
+ *       and its re-read is skipped: its ppid no longer matches;
+ *   (b) a process started after the snapshot is not in it, and one that calls
+ *       setsid after the snapshot leaves the group the group kill signals;
+ *       either is missed.
+ *
  * A child in its own group is outside the wrapper's group, so launchd's kill
  * of the seat's group on exit no longer reaches it. `trackSupervisedGroup`
  * covers that: while any tracked group is live, the wrapper kills them all
