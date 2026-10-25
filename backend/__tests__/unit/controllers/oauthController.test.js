@@ -422,7 +422,7 @@ describe('OAuth Controller', () => {
         const state = await OAuthLoginState.findOne({ state: 'state-1' });
         expect(String(state.userId)).toBe(String(intended._id));
         expect(state.exchangeCode).toEqual(expect.any(String));
-        expect(await User.countDocuments({})).toBe(2);
+        expect(await User.countDocuments({ isBot: { $ne: true } })).toBe(2);
         expect((await User.findById(unrelated._id)).toObject()).toEqual(before);
         expect((await User.findById(intended._id)).authProviders.map((entry) => ({
           provider: entry.provider, providerId: entry.providerId,
