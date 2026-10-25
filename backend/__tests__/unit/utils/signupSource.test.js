@@ -8,7 +8,7 @@ describe('signup source privacy boundary', () => {
       authMethod: 'admin', extra: 'secret',
     });
     expect(source).toEqual({
-      ref: 'x', referrer: 'https://news.example/article', landingPath: '/guides/a',
+      ref: 'x', referrer: 'https://news.example', landingPath: '/guides/a',
       firstSeenAt: new Date('2026-01-01T00:00:00.000Z'),
     });
   });
@@ -18,6 +18,26 @@ describe('signup source privacy boundary', () => {
       expect(cleanSignupTouch(input)).toEqual({});
     },
   );
+
+  it.each([
+    '/v2/invite/SECRETinviteTOKEN123',
+    '/v2/INVITE/short',
+    '/v2/%69nvite/short',
+    '/v2/%2569nvite%252Fshort',
+    '/share/0123456789abcdef0123456789abcdef',
+    '/share/550e8400-e29b-41d4-a716-446655440000',
+    '/share/AbCdEfGhIjKlMnOpQrStUvWxYz012345', '/v2/%25252569nvite/short', '/bad/%zz',
+  ])('drops path-embedded capabilities even from an old or forged client: %s', (path) => {
+    expect(cleanSignupTouch({ landingPath: path, referrer: `https://news.example${path}` }))
+      .toEqual({ referrer: 'https://news.example' });
+  });
+
+  it('retains a normal guide path while reducing even long referrer paths to an origin', () => {
+    expect(cleanSignupTouch({ landingPath: '/guides/multi-agent-collaboration-platform',
+      referrer: `https://news.example/${'a'.repeat(1500)}` })).toEqual({
+      landingPath: '/guides/multi-agent-collaboration-platform', referrer: 'https://news.example',
+    });
+  });
 
   it('does not turn a later ref into the ref of an earlier direct visit', () => {
     expect(cleanSignupTouch({ landingPath: '/' }, 'later')).toEqual({ landingPath: '/' });

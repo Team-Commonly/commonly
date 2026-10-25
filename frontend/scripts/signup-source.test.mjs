@@ -22,11 +22,27 @@ test('captures first public-page touch without query, fragment, or credentials',
   const first = visit(storage, 'https://commonly.me/guides/a?ref=X&email=secret#invite=secret',
     'https://name:password@search.example/result?q=secret#secret');
   assert.equal(first.landingPath, '/guides/a');
-  assert.equal(first.referrer, 'https://search.example/result');
+  assert.equal(first.referrer, 'https://search.example');
   assert.equal(first.ref, 'x');
   assert.ok(Number.isFinite(Date.parse(first.firstSeenAt)));
   assert.deepEqual(visit(storage, 'https://commonly.me/v2/register?ref=later'), first);
   assert.equal(JSON.stringify(first).includes('secret'), false);
+});
+
+test('never captures invite capabilities in landing or referrer paths', () => {
+  for (const path of ['/v2/invite/SECRETinviteTOKEN123', '/v2/INVITE/short',
+    '/v2/%69nvite/short', '/v2/%2569nvite%252Fshort',
+    '/share/0123456789abcdef0123456789abcdef', '/share/550e8400-e29b-41d4-a716-446655440000',
+    '/share/AbCdEfGhIjKlMnOpQrStUvWxYz012345', '/v2/%25252569nvite/short', '/bad/%zz']) {
+    const first = visit(new Map(), `https://commonly.me${path}`, `https://news.example${path}`);
+    assert.equal(first.landingPath, undefined, path);
+    assert.equal(first.referrer, 'https://news.example', path);
+    assert.ok(first.firstSeenAt);
+  }
+  const normal = visit(new Map(), 'https://commonly.me/guides/multi-agent-collaboration-platform',
+    `https://news.example/${'a'.repeat(1500)}`);
+  assert.equal(normal.landingPath, '/guides/multi-agent-collaboration-platform');
+  assert.equal(normal.referrer, 'https://news.example');
 });
 
 test('a direct first visit stays direct; old browsers retain their existing clean ref', () => {

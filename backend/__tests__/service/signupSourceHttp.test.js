@@ -43,6 +43,7 @@ describe('signup source over the public HTTP auth surface', () => {
     const stored = await OAuthLoginState.findOne({ state });
     expect(stored.signupSource.landingPath).toBe(source.landingPath.split('?')[0]);
     expect(JSON.stringify(stored.signupSource)).not.toContain('private');
+    expect(stored.signupSource.referrer).toBe('https://news.example');
     axios.post.mockResolvedValue({ data: { access_token: 'source-test-access' } });
     axios.get.mockImplementation((url) => Promise.resolve({ data: url.endsWith('/emails')
       ? [{ email: 'source-http@example.com', verified: true, primary: true }]
@@ -59,10 +60,13 @@ describe('signup source over the public HTTP auth surface', () => {
 
   it('writes the password source only at registration, and never returns it in an ordinary profile read', async () => {
     await request(app).post('/api/auth/register').send({ email: 'password-source@example.com',
-      password: 'Password123!', signupSource: { landingPath: '/guides/first?email=private', ref: 'HN' } }).expect(201);
+      password: 'Password123!', signupSource: { landingPath: '/v2/invite/SECRETinviteTOKEN123',
+        referrer: 'https://news.example/v2/invite/SECRETinviteTOKEN123', ref: 'HN' } }).expect(201);
     const before = await User.findOne({ email: 'password-source@example.com' }).select('+signupSource');
     expect(before.signupSource.authMethod).toBe('password');
-    expect(before.signupSource.landingPath).toBe('/guides/first');
+    expect(before.signupSource.landingPath).toBeUndefined();
+    expect(before.signupSource.referrer).toBe('https://news.example');
+    expect(JSON.stringify(before.signupSource)).not.toContain('SECRETinviteTOKEN123');
     const login = await request(app).post('/api/auth/login').send({ email: 'password-source@example.com',
       password: 'Password123!', signupSource: { ref: 'replacement' } }).expect(200);
     expect(JSON.stringify(login.body)).not.toContain('signupSource');

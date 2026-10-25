@@ -7,6 +7,23 @@ export interface SignupTouch {
   firstSeenAt?: Date;
 }
 
+// Keep this rule aligned with frontend/public/signup-source.js. The backend is
+// the trust boundary, including for a browser with an older stored touch.
+function hasCapabilityPath(pathname: string): boolean {
+  let decoded = pathname;
+  for (let i = 0; i < 3 && decoded.includes('%'); i += 1) decoded = decodeURIComponent(decoded);
+  // Fail closed on malformed or deeper escaping; decodeURIComponent throws on
+  // malformed escapes and the caller drops the optional path.
+  if (decoded.includes('%')) return true;
+  const segments = decoded.split('/');
+  return segments.some((segment, i) => (
+    (segment.toLowerCase() === 'invite' && i < segments.length - 1)
+    || /^[a-f0-9]{24,}$/i.test(segment)
+    || /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(segment)
+    || (segment.length >= 32 && /^[a-z0-9_.~+=-]+$/i.test(segment) && /[A-Z0-9_.~+=]/.test(segment))
+  ));
+}
+
 // Attribution is browser-reported, not authorization. Drop unknown fields and
 // URL queries/fragments before either the temporary OAuth state or User sees it.
 export function cleanSignupTouch(raw: unknown, legacyRef?: unknown): SignupTouch {
@@ -21,14 +38,14 @@ export function cleanSignupTouch(raw: unknown, legacyRef?: unknown): SignupTouch
   if (typeof input.referrer === 'string' && input.referrer.length <= 2048) {
     try {
       const url = new URL(input.referrer);
-      if (['https:', 'http:'].includes(url.protocol)) result.referrer = `${url.origin}${url.pathname}`;
+      if (['https:', 'http:'].includes(url.protocol) && url.origin.length <= 256) result.referrer = url.origin;
     } catch { /* no valid referrer */ }
   }
   if (typeof input.landingPath === 'string' && input.landingPath.length <= 2048) {
     try {
       const url = new URL(input.landingPath, 'https://landing.invalid');
       if (input.landingPath.startsWith('/') && url.origin === 'https://landing.invalid'
-        && !url.pathname.startsWith('//')) result.landingPath = url.pathname;
+        && !url.pathname.startsWith('//') && !hasCapabilityPath(url.pathname)) result.landingPath = url.pathname;
     } catch { /* no valid path */ }
   }
   const seen = input.firstSeenAt instanceof Date ? input.firstSeenAt

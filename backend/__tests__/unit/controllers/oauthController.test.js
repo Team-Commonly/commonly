@@ -83,10 +83,11 @@ describe('OAuth Controller', () => {
   });
 
   describe('signup source round trips', () => {
-    it.each(['password', 'github', 'google'])('persists sanitized %s first touch once, never from callback parameters', async (method) => {
+    it.each(['password', 'github', 'google'].flatMap((method) => [[method, false], [method, true]]))(
+      'persists sanitized %s first touch once, never from callback parameters (invite path: %s)', async (method, invitePath) => {
       const touch = {
-        ref: 'HN', referrer: 'https://search.example/results?email=private#token',
-        landingPath: '/guides/start?invite=private#token', firstSeenAt: '2026-01-01T00:00:00.000Z',
+        ref: 'HN', referrer: invitePath ? 'https://search.example/v2/invite/SECRETinviteTOKEN123' : 'https://search.example/results?email=private#token',
+        landingPath: invitePath ? '/v2/invite/SECRETinviteTOKEN123' : '/guides/start?invite=private#token', firstSeenAt: '2026-01-01T00:00:00.000Z',
         authMethod: 'forged', recordedAt: '1900-01-01',
       };
       if (method === 'password') {
@@ -109,6 +110,7 @@ describe('OAuth Controller', () => {
           const state = new URL(location).searchParams.get('state');
           const storedState = await OAuthLoginState.findOne({ state });
           expect(JSON.stringify(storedState.signupSource)).not.toContain('private');
+          expect(JSON.stringify(storedState.signupSource)).not.toContain('SECRETinviteTOKEN123');
           if (method === 'github') mockGithubProfile({ email: 'source@example.com' });
           else {
             axios.post.mockResolvedValueOnce({ data: { access_token: 'google-access-token' } });
@@ -131,7 +133,7 @@ describe('OAuth Controller', () => {
       }
       const user = await User.findOne({ email: 'source@example.com' }).select('+signupSource');
       expect(user.signupSource.toObject()).toEqual({
-        ref: 'hn', referrer: 'https://search.example/results', landingPath: '/guides/start',
+        ref: 'hn', referrer: 'https://search.example', ...(invitePath ? {} : { landingPath: '/guides/start' }),
         firstSeenAt: new Date('2026-01-01T00:00:00.000Z'), authMethod: method, recordedAt: expect.any(Date),
       });
       expect(user.onboarding.signupRef).toBe('hn');
