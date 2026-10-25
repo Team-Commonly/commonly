@@ -276,6 +276,10 @@ spec:
           # No shared GitHub credential is injected here, only the commit
           # identity. A run that needs clone/push/PR access must be handed a
           # short-lived GitHub App installation token, never a pod-wide PAT.
+          # Earlier boots persisted a credential on the /state PVC; clear it on
+          # every start so an upgraded pod cannot keep authenticating with it.
+          rm -f /state/.git-credentials
+          git config --global --unset-all credential.helper || true
           git config --global user.name "${GIT_AUTHOR_NAME:-Cody}"
           git config --global user.email "${GIT_AUTHOR_EMAIL:-cody@commonly.me}"
 
