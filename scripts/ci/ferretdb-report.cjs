@@ -1,6 +1,6 @@
 // Preserve full Jest error text; categories are search hints, not root-cause verdicts.
 const fs = require('node:fs');
-console.log('# FerretDB 2.8.0 bridge evidence');
+console.log('# FerretDB 2.7.0 bridge evidence');
 console.log(`Integration: ${process.env.INTEGRATION_OUTCOME || 'not run'}; HTTP smoke: ${process.env.SMOKE_OUTCOME || 'not run'}`);
 console.log(`Run: ${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`);
 if (!fs.existsSync('evidence/jest.json')) {

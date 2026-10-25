@@ -15,8 +15,8 @@ jobs:
     timeout-minutes: 55
     services:
       postgres:
-        # Matched pair: https://docs.ferretdb.io/v2.8/installation/ferretdb/docker/
-        image: ghcr.io/ferretdb/postgres-documentdb:17-0.108.0-ferretdb-2.8.0
+        # Matched pair: https://docs.ferretdb.io/v2.7/installation/ferretdb/docker/
+        image: ghcr.io/ferretdb/postgres-documentdb:17-0.107.0-ferretdb-2.7.0
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -26,7 +26,7 @@ jobs:
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 20
       ferretdb:
-        image: ghcr.io/ferretdb/ferretdb:2.8.0
+        image: ghcr.io/ferretdb/ferretdb:2.7.0
         env:
           FERRETDB_POSTGRESQL_URL: postgres://postgres:postgres@postgres:5432/postgres
           FERRETDB_TELEMETRY: disabled
@@ -103,14 +103,20 @@ jobs:
           FERRET_ID: ${{ job.services.ferretdb.id }}
           POSTGRES_ID: ${{ job.services.postgres.id }}
         run: |
-          docker logs "$FERRET_ID" > evidence/ferretdb.log 2>&1
-          docker logs "$POSTGRES_ID" > evidence/postgres.log 2>&1
+          mkdir -p evidence
+          if [ -n "$FERRET_ID" ]; then docker logs "$FERRET_ID" > evidence/ferretdb.log 2>&1; fi
+          if [ -n "$POSTGRES_ID" ]; then docker logs "$POSTGRES_ID" > evidence/postgres.log 2>&1; fi
       - name: Evidence summary
         if: always()
         env:
           INTEGRATION_OUTCOME: ${{ steps.integration.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
-        run: node scripts/ci/ferretdb-report.cjs >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          if [ -f scripts/ci/ferretdb-report.cjs ]; then
+            node scripts/ci/ferretdb-report.cjs >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Setup failed before checkout; inspect Initialize containers. No compatibility verdict." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
