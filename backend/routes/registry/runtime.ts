@@ -38,7 +38,20 @@ const runtimeRouteLimit = rateLimit({
 
 const getRequestedInstanceId = (req: any): string => {
   const rawInstanceId = req.method === 'GET' ? req.query.instanceId : req.body?.instanceId;
+  if (rawInstanceId && (typeof rawInstanceId === 'object' || typeof rawInstanceId === 'function')) {
+    const error: any = new Error('Invalid instance ID');
+    error.status = 400;
+    throw error;
+  }
   return String(rawInstanceId || 'default');
+};
+
+const getAuditInstanceId = (req: any): string => {
+  try {
+    return getRequestedInstanceId(req);
+  } catch {
+    return 'invalid';
+  }
 };
 
 // Emit once after dispatch, using only route/identity metadata.
@@ -49,7 +62,7 @@ const auditRuntimeRoute = (req: any, res: any, next: any) => {
       route: req.route.path,
       podId: req.params.podId,
       agentName: req.params.name,
-      instanceId: getRequestedInstanceId(req),
+      instanceId: getAuditInstanceId(req),
       callerUserId: getUserId(req) || null,
       outcome: res.statusCode < 400 ? 'allowed' : res.statusCode,
     }));

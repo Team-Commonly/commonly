@@ -44,7 +44,8 @@ describe('registry runtime authorization', () => {
   const effects = () => Object.values(adapters).reduce((count, method) => count + method.mock.calls.length, 0);
   const call = (method, operation, user, { podId = pod._id, instanceId = 'curator' } = {}) => {
     const url = `/api/registry/pods/${podId}/agents/openclaw/${operation}`;
-    const req = request(server)[method](url).set('Authorization', `Bearer ${jwt.sign({ id: String(user._id) }, SECRET)}`);
+    const req = request(server)[method](url).set('Authorization', `Bearer ${jwt.sign({ id: String(user._id) }, SECRET)}`)
+      .set('cf-connecting-ip', `192.0.2.${10 + operations.findIndex((entry) => entry[1] === operation)}`);
     return method === 'get' ? req.query({ instanceId }) : req.send({ instanceId });
   };
 
@@ -90,8 +91,8 @@ describe('registry runtime authorization', () => {
     expect(effects()).toBe(0);
   });
 
-  it('coerces a body instance value instead of accepting a Mongo query operator', async () => {
-    expect((await call('post', 'runtime-start', owner, { instanceId: { $ne: null } })).status).toBe(404);
+  it('rejects a body instance object before it reaches a Mongo query', async () => {
+    expect((await call('post', 'runtime-start', owner, { instanceId: { $ne: null } })).status).toBe(400);
     expect(effects()).toBe(0);
   });
   it.each([[undefined, 200], ['NaN', 200], ['Infinity', 200], ['1000000', 1000], ['-1', 1], ['0', 1], ['2.9', 2]])(
@@ -209,6 +210,17 @@ describe('registry runtime authorization', () => {
         expect(effects()).toBe(0);
       } finally { lookup.mockRestore(); }
     });
+    if (method === 'post') {
+      it('returns 400 and safely audits a malformed instance object', async () => {
+        const response = await call(method, operation, owner, { instanceId: { toString: null } });
+        expect(response.status).toBe(400);
+        expect(effects()).toBe(0);
+        expect(audit).toHaveBeenCalledTimes(1);
+        expect(JSON.parse(audit.mock.calls[0][0])).toEqual(expect.objectContaining({
+          instanceId: 'invalid', outcome: 400, callerUserId: String(owner._id),
+        }));
+      });
+    }
     it('refuses an uninstalled record', async () => {
       await AgentInstallation.updateOne({ _id: installation._id }, { status: 'uninstalled' });
       try {
