@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const User = require('../../models/User');
@@ -8,7 +9,9 @@ const { hash } = require('../../utils/secret');
 const { backfillApiTokenStorage } = require('../../scripts/backfill-api-token-storage');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils');
 const app = express();
-app.get('/private', auth, (req, res) => res.json({ id: req.userId, scopes: req.apiTokenScopes }));
+// Match the existing database-auth probe fixture (runtimeTokenRevoke.test.js).
+const probeLimit = rateLimit({ windowMs: 60000, max: 10000 });
+app.get('/private', probeLimit, auth, (req, res) => res.json({ id: req.userId, scopes: req.apiTokenScopes }));
 const get = (token) => request(app).get('/private').set('Authorization', `Bearer ${token}`);
 const users = () => mongoose.connection.collection('users');
 const create = (name, isBot = false) => User.create({ username: name, email: `${name}@example.test`, isBot, password: 'test-password', apiTokenScopes: ['messages:read'] });
