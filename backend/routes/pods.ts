@@ -221,7 +221,18 @@ const deriveLinkName = (rawUrl: string): string => {
   }
 };
 
-router.post('/external-link', auth, upload.single('qrCode'), refuseDollarKeys, async (req: AuthReq, res: Res) => {
+// Creating an external link writes a row and may store an uploaded QR image.
+// CodeQL flags it as `js/missing-rate-limiting`; it had been unlimited since
+// the route landed (routeRateLimitGuard.baseline.json, row deleted with this
+// change). Keyed on the token, like the focus writers above.
+const externalLinkCreateRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: podJoinRateLimitKey,
+});
+router.post('/external-link', externalLinkCreateRateLimit, auth, upload.single('qrCode'), refuseDollarKeys, async (req: AuthReq, res: Res) => {
   try {
     const { podId, name: rawName, type: rawType, url } = (req.body || {}) as { podId?: string; name?: string; type?: string; url?: string };
     if (!podId) return res.status(400).json({ message: 'Missing podId' });

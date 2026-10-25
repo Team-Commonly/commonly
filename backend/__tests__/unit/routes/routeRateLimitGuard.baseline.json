@@ -117,7 +117,6 @@
   "routes/pods.ts POST / [unlimited]",
   "routes/pods.ts POST /:id/leave [unlimited]",
   "routes/pods.ts POST /announcement [unlimited]",
-  "routes/pods.ts POST /external-link [unlimited]",
   "routes/registry/admin.ts DELETE /admin/installations/:installationId [unlimited]",
   "routes/registry/admin.ts DELETE /admin/installations/:installationId/runtime-tokens/:tokenId [unlimited]",
   "routes/registry/admin.ts GET /admin/installations [unlimited]",

@@ -112,6 +112,25 @@ describe('refuseDollarKeys', () => {
       expect(scanKeys(wide)).toMatchObject({ kind: 'limit', limit: 'keys', max: MAX_KEYS });
       expect(scanKeys({ a: new Array(MAX_KEYS - 1).fill(0) })).toBeNull();
     });
+
+    test('a sparse array is refused by its length, before its indices are listed', () => {
+      const sparse = [];
+      sparse[2 ** 32 - 2] = 'x';
+      const keys = jest.spyOn(Array.prototype, 'keys');
+      try {
+        expect(scanKeys({ a: sparse })).toMatchObject({ kind: 'limit', limit: 'keys', field: 'a' });
+        expect(keys).not.toHaveBeenCalled();
+      } finally {
+        keys.mockRestore();
+      }
+    });
+
+    test('multer turns a bracketed index into that sparse array, and the route refuses it', async () => {
+      const res = await request(app).post('/multipart').field('a[99999999]', 'x');
+      expect({ status: res.status, body: res.body }).toMatchObject({
+        status: 400, body: { code: KEY_LIMIT_EXCEEDED, limit: 'MAX_KEYS' },
+      });
+    });
   });
 
   describe('marketplace publish: JSON Schema keywords in schema fields only', () => {

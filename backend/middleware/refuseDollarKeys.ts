@@ -94,6 +94,12 @@ export const scanKeys = (
   while (stack.length) {
     const frame = stack.pop() as Frame;
     const { node } = frame;
+    // An array is measured by its length before its indices are listed:
+    // multer builds `a[999999999]=x` as a sparse array of that length.
+    const size = Array.isArray(node) ? node.length : null;
+    if (size !== null && seen + size > MAX_KEYS) {
+      return { kind: 'limit', limit: 'keys', max: MAX_KEYS, field: pathOf(frame) };
+    }
     // Array indices become keys too ('0', '1', ...); none starts with `$`.
     const keys = Array.isArray(node) ? Array.from(node.keys(), String) : Object.keys(node);
     seen += keys.length;
