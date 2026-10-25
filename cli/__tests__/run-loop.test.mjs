@@ -2035,6 +2035,101 @@ describe('performRun', () => {
     expect(errors[0].message).toMatch(/Ack failed.*ack transport offline/);
   });
 
+  // TASK-535: a long turn ends with the pod having moved on. The backend holds
+  // the reply with 409 `unseen_messages`; before the fix every rung hit the
+  // same hold, the reply was lost and the events re-ran (rhea, 10:01Z).
+  const unseenHold = (unseenCount) => Object.assign(
+    new Error(`There are ${unseenCount} unseen messages. Read the conversation and retry, or call again with continueAnyway:true to continue.`),
+    { status: 409, body: { code: 'unseen_messages', unseenCount, messages: [] } },
+  );
+
+  test('a turn that ends with 12 unseen messages still posts exactly once — and a redelivery does not post again', async () => {
+    const event = makeEvent({ _id: 'evt-long-turn-unseen' });
+    const get = jest.fn(async (route) => (route.endsWith('/messages') ? { messages: [] } : { events: [event] }));
+    let held = false;
+    let ackAttempts = 0;
+    const post = jest.fn(async (route, body) => {
+      if (route.endsWith('/messages') && !body?.continueAnyway) {
+        held = true;
+        throw unseenHold(12);
+      }
+      if (route.endsWith('/ack')) {
+        ackAttempts += 1;
+        // The success is recorded locally before this ack; losing the ack is
+        // what makes the kernel redeliver the event.
+        if (ackAttempts === 1) throw new Error('ack transport offline');
+      }
+      return {};
+    });
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'Summary of 43 minutes of work.' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+    const logs = [];
+
+    const first = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test', adapter, agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout, log: (line) => logs.push(line), onError: () => {},
+    });
+    await drainMicrotasks();
+    first.stop();
+
+    expect(held).toBe(true);
+    expect(replyPosts(post)).toEqual([
+      ['/api/agents/runtime/pods/pod-abc/messages', { content: 'Summary of 43 minutes of work.' }],
+      ['/api/agents/runtime/pods/pod-abc/messages', { content: 'Summary of 43 minutes of work.', continueAnyway: true }],
+    ]);
+    expect(logs.some((l) => /posted .* as 1 message \(single\)/.test(l))).toBe(true);
+    expect(wasEventHandled('my-stub', event._id)).toBe(true);
+
+    // The kernel redelivers the event whose ack was lost. The reply already
+    // reached the pod, so it must not post a second time.
+    const second = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test', adapter, agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout, onError: () => {},
+    });
+    await drainMicrotasks();
+    second.stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(replyPosts(post).filter(([, body]) => body.continueAnyway === true)).toHaveLength(1);
+    expect(replyPosts(post)).toHaveLength(2);
+    expect(ackPosts(post)[1][1]).toEqual({ result: { outcome: 'no_action', reason: 'duplicate-delivery' } });
+  });
+
+  test('a reply that no rung can deliver leaves the events unacked and writes one error line naming pod, count and reason', async () => {
+    const events = [
+      makeEvent({ _id: 'evt-lost-1' }),
+      makeEvent({ _id: 'evt-lost-2', payload: { content: 'and another thing' } }),
+    ];
+    const get = jest.fn(async (route) => (route.endsWith('/messages') ? { messages: [] } : { events }));
+    const post = jest.fn(async (route) => {
+      if (route.endsWith('/messages')) throw unseenHold(12);
+      return {};
+    });
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'A summary nobody will see.' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+    const logs = [];
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test', adapter, agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout, log: (line) => logs.push(line), onError: () => {},
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    // One held post, one override post, then stop: never a loop.
+    expect(replyPosts(post)).toHaveLength(2);
+    expect(ackPosts(post)).toHaveLength(0);
+    for (const event of events) expect(wasEventHandled('my-stub', event._id)).toBe(false);
+    const errorLines = logs.filter((l) => /reply NOT delivered/.test(l));
+    expect(errorLines).toHaveLength(1);
+    expect(errorLines[0]).toContain('pod pod-abc');
+    expect(errorLines[0]).toContain('2 events left unacked');
+    expect(errorLines[0]).toContain('12 unseen messages');
+  });
+
   test.each([false, true])('backlog catch-up reaches the model before one reply and ack (skills: %s)', async (skills) => {
     const event = makeEvent({ _id: 'backlog-event' });
     let caughtUp = false;
