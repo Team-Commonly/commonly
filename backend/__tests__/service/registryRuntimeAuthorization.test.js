@@ -31,6 +31,7 @@ const SECRET = 'runtime-route-authorization-test';
 
 describe('registry runtime authorization', () => {
   let app;
+  let server;
   let owner;
   let member;
   let creator;
@@ -41,7 +42,7 @@ describe('registry runtime authorization', () => {
   const effects = () => Object.values(adapters).reduce((count, method) => count + method.mock.calls.length, 0);
   const call = (method, operation, user, { podId = pod._id, instanceId = 'curator' } = {}) => {
     const url = `/api/registry/pods/${podId}/agents/openclaw/${operation}`;
-    const req = request(app)[method](url).set('Authorization', `Bearer ${jwt.sign({ id: String(user._id) }, SECRET)}`);
+    const req = request(server)[method](url).set('Authorization', `Bearer ${jwt.sign({ id: String(user._id) }, SECRET)}`);
     return method === 'get' ? req.query({ instanceId }) : req.send({ instanceId });
   };
 
@@ -64,14 +65,36 @@ describe('registry runtime authorization', () => {
     app = express();
     app.use(express.json());
     app.use('/api/registry', runtimeRouter);
+    server = await new Promise((resolve) => { const listening = app.listen(0, () => resolve(listening)); });
   });
   beforeEach(() => { jest.clearAllMocks(); });
-  afterAll(async () => { await clearMongoDb(); await closeMongoDb(); });
+  afterAll(async () => {
+    if (server) await new Promise((resolve) => server.close(resolve));
+    await clearMongoDb(); await closeMongoDb();
+  });
+
+  it('limits unauthenticated requests before authentication and dispatch', async () => {
+    const url = `/api/registry/pods/${pod._id}/agents/openclaw/runtime-status`;
+    for (let count = 0; count < 120; count += 1) {
+      const response = await request(server).get(url).set('cf-connecting-ip', '192.0.2.50');
+      expect(response.status).toBe(401);
+    }
+    const response = await request(server).get(url).set('cf-connecting-ip', '192.0.2.50');
+    expect(response.status).toBe(429);
+    expect(effects()).toBe(0);
+  });
 
   describe.each(operations)('%s %s', (method, operation, adapter) => {
     it('refuses a non-installer member before adapter dispatch', async () => {
       expect((await call(method, operation, member)).status).toBe(403);
       expect(effects()).toBe(0);
+    });
+    it('requires pod access from a non-admin installer', async () => {
+      await Pod.updateOne({ _id: pod._id }, { $pull: { members: owner._id } });
+      try {
+        expect((await call(method, operation, owner)).status).toBe(403);
+        expect(effects()).toBe(0);
+      } finally { await Pod.updateOne({ _id: pod._id }, { $addToSet: { members: owner._id } }); }
     });
     it('refuses a pod creator who is not the installer', async () => {
       expect((await call(method, operation, creator)).status).toBe(403);

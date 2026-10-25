@@ -1,6 +1,8 @@
 // Runtime management routes — extracted from registry.js (GH#112)
 // Handles: runtime-status, runtime-start, runtime-stop, runtime-restart, runtime-clear-sessions, runtime-logs
 export {};
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
 const express = require('express');
 const auth = require('../../middleware/auth');
 const Pod = require('../../models/Pod');
@@ -27,6 +29,13 @@ const {
 } = require('./helpers');
 
 const runtimeRouter = express.Router({ mergeParams: true });
+const runtimeRouteLimit = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+});
 
 // Runtime routes share one authorization boundary before dispatching any
 // adapter action. Use exact installation identity rather than legacy aliases.
@@ -63,7 +72,7 @@ const resolveAuthorizedRuntimeInstallation = async ({ podId, name, instanceId, u
  * GET /api/registry/pods/:podId/agents/:name/runtime-status
  * Check local runtime status (docker).
  */
-runtimeRouter.get('/pods/:podId/agents/:name/runtime-status', auth, async (req: any, res: any) => {
+runtimeRouter.get('/pods/:podId/agents/:name/runtime-status', runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const userId = getUserId(req);
@@ -107,7 +116,7 @@ runtimeRouter.get('/pods/:podId/agents/:name/runtime-status', auth, async (req: 
 /**
  * POST /api/registry/pods/:podId/agents/:name/runtime-start
  */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-start', auth, async (req: any, res: any) => {
+runtimeRouter.post('/pods/:podId/agents/:name/runtime-start', runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, gatewayId } = req.body || {};
@@ -151,7 +160,7 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-start', auth, async (req: 
 /**
  * POST /api/registry/pods/:podId/agents/:name/runtime-stop
  */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop', auth, async (req: any, res: any) => {
+runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop', runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, gatewayId } = req.body || {};
@@ -195,7 +204,7 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop', auth, async (req: a
 /**
  * POST /api/registry/pods/:podId/agents/:name/runtime-restart
  */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart', auth, async (req: any, res: any) => {
+runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart', runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, gatewayId } = req.body || {};
@@ -239,7 +248,8 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart', auth, async (req
 /**
  * POST /api/registry/pods/:podId/agents/:name/runtime-clear-sessions
  */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions', auth, async (req: any, res: any) => {
+runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions',
+  runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, gatewayId, restart = true } = req.body || {};
@@ -307,7 +317,7 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions', auth, asy
 /**
  * GET /api/registry/pods/:podId/agents/:name/runtime-logs
  */
-runtimeRouter.get('/pods/:podId/agents/:name/runtime-logs', auth, async (req: any, res: any) => {
+runtimeRouter.get('/pods/:podId/agents/:name/runtime-logs', runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const lines = Number(req.query.lines || 200);
