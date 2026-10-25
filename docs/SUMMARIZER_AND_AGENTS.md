@@ -62,6 +62,29 @@ static async runSummarizer() {
 
 ---
 
+### Commonly-bot model and failure behavior
+
+The Helm deployment sets `AGENT_MODEL=deepseek-v4-flash`, matching the backend's
+`LITELLM_CHAT_MODEL`. The standalone bot uses the same default;
+`COMMONLY_SOCIAL_REPHRASE_MODEL` overrides it for both pod summaries and social
+rewrites. Both use the shared LiteLLM client. The chart's LiteLLM config must
+route the selected group; `commonly-bot/index.test.js` exercises the actual
+request body and checks that the default is a routed, non-Claude group.
+
+On a failed pod-summary model call, the bot logs `feature=pod-summary` and the
+model, then builds a heuristic recap from recent messages. A silent summary
+request persists that recap before acknowledging its event; normal delivery
+posts the recap before acknowledgement. This preserves an output but loses the
+model-generated synthesis. A failed optional social rewrite logs
+`feature=social-rephrase` and the model, and uses heuristic feed-post text.
+These logs omit provider error bodies and chat content.
+
+A LiteLLM 401 alone does not identify the feature that called it. Correlate the
+caller and runtime model configuration before attributing lost user output;
+requests from proxy loopback can also be operator probes.
+
+---
+
 ### **2. commonly-bot Agent Identity**
 
 **Location**: Created via `AgentIdentityService.getOrCreateAgentUser()`

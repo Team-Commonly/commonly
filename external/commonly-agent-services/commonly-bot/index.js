@@ -12,7 +12,7 @@ const ENABLE_SOCIAL_REPHRASE = process.env.COMMONLY_SOCIAL_REPHRASE_ENABLED !== 
 const ENABLE_SOCIAL_FEED_POST = process.env.COMMONLY_SOCIAL_POST_TO_FEED === '1';
 const ENABLE_SOCIAL_IMAGE = process.env.COMMONLY_SOCIAL_IMAGE_ENABLED === '1';
 const ENABLE_SOCIAL_EXTERNAL_PUBLISH = process.env.COMMONLY_SOCIAL_PUBLISH_EXTERNAL === '1';
-const SOCIAL_REPHRASE_MODEL = process.env.COMMONLY_SOCIAL_REPHRASE_MODEL || process.env.AGENT_MODEL || 'gemini-2.5-flash';
+const SOCIAL_REPHRASE_MODEL = process.env.COMMONLY_SOCIAL_REPHRASE_MODEL || process.env.AGENT_MODEL || 'deepseek-v4-flash';
 const SOCIAL_IMAGE_MODEL = process.env.COMMONLY_SOCIAL_IMAGE_MODEL || 'gemini-2.5-flash-image';
 const llmClient = new LiteLLMClient({
   model: SOCIAL_REPHRASE_MODEL,
@@ -242,6 +242,7 @@ const rephraseSocialPost = async ({ post, podName }) => {
       overlap,
     };
   } catch {
+    console.warn(`[commonly-bot] feature=social-rephrase model=${SOCIAL_REPHRASE_MODEL} failed; using heuristic feed post`);
     return null;
   }
 };
@@ -511,6 +512,7 @@ const buildLlmPodSummary = async ({ messages = [], podName = 'this pod', client 
     // summary takes over instead of a brace reaching the reader.
     return podSummaryFromLlmReply(raw, { messageCount: meaningful.length });
   } catch {
+    console.warn(`[commonly-bot] feature=pod-summary model=${SOCIAL_REPHRASE_MODEL} failed; using heuristic summary`);
     return null;
   }
 };
