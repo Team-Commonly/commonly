@@ -503,21 +503,22 @@ test('approval card rebuilds keep their originating run after a transition', () 
 test('a proposal carries its originating run into the saved action and posted card', async () => {
   const { proposeAction } = require('../../../services/approvalActionService');
   const runId = 'aaaaaaaaaaaaaaaaaaaaa111';
-  const row = flaggedRow({ runId });
+  const runPodId = 'bbbbbbbbbbbbbbbbbbbbb111';
+  const row = flaggedRow({ runId, runPodId });
   mockPodFindById.mockReturnValue({ select: () => ({ lean: async () => ({ createdBy: OWNER }) }) });
   mockInstallFindOne.mockResolvedValue({ installedBy: OWNER });
   mockApprovalCreate.mockResolvedValue(row);
   mockPostMessage.mockResolvedValue({ success: true, message: { id: 42 } });
 
   const result = await proposeAction({
-    podId: 'pod-1', agentName: 'guide', instanceId: 'udefault', runId,
+    podId: 'pod-1', agentName: 'guide', instanceId: 'udefault', runId, runPodId,
     actionType: 'create_pod', params: { name: 'Research', type: 'chat' }, summary: 'Create a research pod',
   });
 
   expect(result.ok).toBe(true);
-  expect(mockApprovalCreate).toHaveBeenCalledWith(expect.objectContaining({ runId }));
+  expect(mockApprovalCreate).toHaveBeenCalledWith(expect.objectContaining({ runId, runPodId }));
   expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({
-    runId, payload: expect.objectContaining({ runId, kind: 'approval-card' }),
+    runId, runPodId, payload: expect.objectContaining({ runId, runPodId, kind: 'approval-card' }),
   }));
   expect(row.messageId).toBe('42');
   expect(row.save).toHaveBeenCalled();

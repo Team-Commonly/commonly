@@ -437,10 +437,10 @@ test('server run identity survives PG storage and live message broadcast with ex
   await AgentMessageService.postMessage({
     agentName: 'sprint-review', instanceId: 'default', podId: POD,
     content: 'Run complete.', messageType: 'card',
-    payload: { kind: 'starts', starts: [{ id: 'test', label: 'Test' }], runId: 'forged' }, runId,
+    payload: { kind: 'starts', starts: [{ id: 'test', label: 'Test' }], runId: 'forged', runPodId: 'forged-pod' }, runId, runPodId: POD,
   });
   expect(PGMessage.create.mock.calls[0][5]).toEqual({
-    kind: 'starts', starts: [{ id: 'test', label: 'Test' }], runId,
+    kind: 'starts', starts: [{ id: 'test', label: 'Test' }], runId, runPodId: POD,
   });
   expect(emitted.find((entry) => entry.event === 'newMessage').payload.payload.runId).toBe(runId);
 });
@@ -449,7 +449,7 @@ test('server run identity survives PG storage and live message broadcast with ex
 test('an agent-authored payload cannot claim another run', async () => {
   await AgentMessageService.postMessage({
     agentName: 'sprint-review', instanceId: 'default', podId: POD,
-    content: 'A card.', payload: { kind: 'ui', runId: 'aaaaaaaaaaaaaaaaaaaaa111' },
+    content: 'A card.', payload: { kind: 'ui', runId: 'aaaaaaaaaaaaaaaaaaaaa111', runPodId: POD },
   });
   expect(PGMessage.create.mock.calls[0][5]).toEqual({ kind: 'ui' });
 });

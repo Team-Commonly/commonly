@@ -797,6 +797,7 @@ export async function dispatchTool(
           noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
           answeringMessageId: ctx.answeringMessageId,
           runId: ctx.runId,
+          ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
         });
         return { content: { ok: true, posted: true, result } };
       }
@@ -843,6 +844,7 @@ export async function dispatchTool(
           noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
           answeringMessageId: ctx.answeringMessageId,
           runId: ctx.runId,
+          ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
         });
         return { content: { ok: true, posted: true, result } };
       }
@@ -891,6 +893,7 @@ export async function dispatchTool(
           noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
           answeringMessageId: ctx.answeringMessageId,
           runId: ctx.runId,
+          ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
           authorKind: 'kernel',
         });
         return { content: { ok: true, posted: true, result } };
@@ -944,6 +947,7 @@ export async function dispatchTool(
         const { proposeAction } = require('./approvalActionService');
         const result = await proposeAction({
           runId: ctx.runId,
+          ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
           podId: String(ctx.podId),
           agentName: ctx.agentName,
           instanceId: ctx.instanceId,
@@ -2119,6 +2123,8 @@ export async function runAgent(
           // dispatcher handles it below.
           const brokerCall = webTaintedAway ? null : await dispatchHostedBrokerTool({
             projection: broker,
+            runId: dispatchCtx.runId,
+            runPodId: String(dispatchCtx.podId),
             name: toolName,
             args: parsedArgs,
             agentUserId: seatUserId,
@@ -2286,6 +2292,7 @@ export async function runAgent(
             noOutboundRelay: Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen),
             answeringMessageId: dispatchCtx.answeringMessageId,
             runId,
+            runPodId: String(podId),
           });
           // The message service suppresses a bare NO_REPLY (and other
           // silent output) without throwing. That is a normal declined turn,
@@ -2333,6 +2340,7 @@ export async function runAgent(
           noOutboundRelay: Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen),
           answeringMessageId: dispatchCtx.answeringMessageId,
           runId,
+          runPodId: String(podId),
         });
       } catch (postErr) {
         console.warn('[native-runtime] failed-run line not posted:', (postErr as Error).message);

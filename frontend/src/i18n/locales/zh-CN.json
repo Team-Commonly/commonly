@@ -40,6 +40,14 @@
       "first_contact": "首次联系",
       "manual": "手动"
     },
+    "outcomes": {
+      "ok": "成功",
+      "failed": "失败",
+      "refused": "已拒绝",
+      "pending": "等待中",
+      "pending_approval": "待批准",
+      "unavailable": "不可用"
+    },
     "limitedBoth": "此轨迹受到存储大小限制，省略了{{turns}}轮和{{calls}}次工具调用，大型内容字段也已截断。",
     "limitedTurns": "此轨迹受到存储大小限制，省略了{{turns}}轮，大型内容字段也已截断。",
     "limitedCalls": "此轨迹受到存储大小限制，省略了{{calls}}次工具调用，大型内容字段也已截断。",

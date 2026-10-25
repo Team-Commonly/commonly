@@ -102,6 +102,9 @@ export interface BrokerCallInput {
   hostedTurn?: boolean;
   /** Server-set native turn marker. A parked approval card must stay in the pod. */
   noOutboundRelay?: boolean;
+  /** Server-owned origin for approval cards posted into another pod. */
+  runId?: string;
+  runPodId?: string;
 }
 
 export interface BrokerCallResult {
@@ -1266,6 +1269,8 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
           ownerUserId: connection.ownerUserId,
           agentUserId: input.agentUserId,
           noOutboundRelay: input.noOutboundRelay,
+          runId: input.runId,
+          runPodId: input.runPodId,
           approvalExpiresAt: new Date((grant as IRoomGrant).expiresAt),
           toolCall: {
             grantId: String((grant as Record<string, unknown>).grantId || input.grantId),

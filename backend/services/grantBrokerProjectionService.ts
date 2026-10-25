@@ -241,7 +241,7 @@ export interface HostedBrokerCall {
  * JSON for the same outcome.
  */
 export const dispatchHostedBrokerTool = async (
-  { projection, name, args, agentUserId, agentName, instanceId, noOutboundRelay }: {
+  { projection, name, args, agentUserId, agentName, instanceId, noOutboundRelay, runId, runPodId }: {
     projection: HostedBrokerProjection;
     name: string;
     args: unknown;
@@ -249,6 +249,8 @@ export const dispatchHostedBrokerTool = async (
     agentName?: string;
     instanceId?: string;
     noOutboundRelay?: boolean;
+    runId?: string;
+    runPodId?: string;
   },
 ): Promise<HostedBrokerCall | null> => {
   const mapped = projection.dispatch.get(name);
@@ -265,6 +267,8 @@ export const dispatchHostedBrokerTool = async (
       tool: mapped.tool,
       args,
       noOutboundRelay,
+      runId,
+      runPodId,
       // A hosted turn has no shell, web or file tools: there is nothing for a
       // sandbox to confine, so the seat-confinement refusal does not apply
       // (Wren, TASK-175 74882). This is the only caller that sets it.

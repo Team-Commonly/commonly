@@ -40,6 +40,14 @@
       "first_contact": "First contact",
       "manual": "Manual"
     },
+    "outcomes": {
+      "ok": "ok",
+      "failed": "failed",
+      "refused": "refused",
+      "pending": "pending",
+      "pending_approval": "pending approval",
+      "unavailable": "unavailable"
+    },
     "limitedBoth": "This stored trace was size-limited. {{turns}} turns and {{calls}} tool calls are omitted. Large content fields are also capped.",
     "limitedTurns": "This stored trace was size-limited. {{turns}} turns are omitted. Large content fields are also capped.",
     "limitedCalls": "This stored trace was size-limited. {{calls}} tool calls are omitted. Large content fields are also capped.",

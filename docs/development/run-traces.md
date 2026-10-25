@@ -66,3 +66,11 @@ approval outcomes. Message-service and native-runtime tests cover stored/socket
 provenance. UI tests cover valid links, retry, retention and incomplete trails.
 Real browser checks use the production components with fixture API responses
 at 390/1440 in English/Chinese; they are layout proof, not a production walk.
+
+
+Connector approval cards may be posted into the credential owner's private room.
+Their server-bound `payload.runPodId` preserves the originating run's pod beside
+`runId`, so the link uses the original trace route. Both client payload fields
+are stripped by the writer; hosted runtime context supplies them separately.
+ApprovalAction persists both through decisions. Reading still requires access
+to the original pod; receiving the approval card grants no trace access.

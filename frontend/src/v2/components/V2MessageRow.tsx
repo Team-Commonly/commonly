@@ -479,13 +479,13 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   // content regex — the first message class where `payload` is the truth
   // and `content` is only the plain-text fallback for legacy surfaces.
   if (message.payload?.kind === 'approval-card') {
-    return <><V2ApprovalCard message={message} authorLabel={author} time={time} /><V2RunTraceLink podId={message.pod_id} runId={message.payload?.runId} /></>;
+    return <><V2ApprovalCard message={message} authorLabel={author} time={time} /><V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} /></>;
   }
   if (message.payload?.kind === 'byo-handoff') {
-    return <><V2BYOHandoffCard message={message} authorLabel={author} time={time} /><V2RunTraceLink podId={message.pod_id} runId={message.payload?.runId} /></>;
+    return <><V2BYOHandoffCard message={message} authorLabel={author} time={time} /><V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} /></>;
   }
   if (message.payload?.kind === 'gig-card') {
-    return <><V2GigCard message={message} time={time} /><V2RunTraceLink podId={message.pod_id} runId={message.payload?.runId} /></>;
+    return <><V2GigCard message={message} time={time} /><V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} /></>;
   }
 
   // §3.8 system event card. Detected by content shape (commonly-bot only
@@ -683,7 +683,6 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
           {isDecisionRuling && <span className="v2-msg__ruled">· {t('activity.decision.ruledShort')}</span>}
         </div>
         )}
-        <V2RunTraceLink podId={message.pod_id} runId={message.payload?.runId} />
         {grouped && time && <span className="v2-msg__gutter-time" aria-hidden="true">{time}</span>}
         {(() => {
           // Quoted context for replies. POST responses carry a normalized
@@ -790,6 +789,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
             number={pr.number}
           />
         ))}
+        <V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} />
         {(() => {
           // Sprint B5: real reactions come from message.reactions (server-
           // aggregated `[{emoji, count, mine}]`); legacy fixtures use the

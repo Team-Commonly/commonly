@@ -86,6 +86,7 @@ export interface V2Message {
   // the `...raw` spread — declared here so consumers can read it typed.
   payload?: {
     runId?: string;
+    runPodId?: string;
     kind?: string;
     elements?: unknown[];
     // kind 'starts': offers rendered as buttons under the message (first

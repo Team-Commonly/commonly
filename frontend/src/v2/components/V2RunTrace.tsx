@@ -37,7 +37,7 @@ const V2RunTrace: React.FC = () => {
     return () => { live = false; };
   }, [api, podId, runId, attempt, t]);
 
-  const enumLabel = (group: 'status' | 'trigger', value: string) => t(`runTrace.${group}.${value}`, { defaultValue: value });
+  const enumLabel = (group: 'status' | 'trigger' | 'outcomes', value: string) => t(`runTrace.${group}.${value}`, { defaultValue: value });
   const limitedKey = trace?.omittedTurns && trace?.omittedToolCalls ? 'limitedBoth'
     : trace?.omittedTurns ? 'limitedTurns' : trace?.omittedToolCalls ? 'limitedCalls' : 'limitedContent';
 
@@ -64,12 +64,12 @@ const V2RunTrace: React.FC = () => {
           <p className="v2-run-trace__meta">{turn.model} · {turn.elapsedMs} ms · {turn.totalTokens ?? '—'} {t('runTrace.tokens')}</p>
           {!turn.toolCalls.length && <p>{t('runTrace.noTools')}</p>}
           {turn.toolCalls.map((call, index) => <div className="v2-run-trace__call" key={`${call.callId || call.name}-${index}`}>
-            <strong>{call.name}</strong><span>{call.outcome} · {call.elapsedMs} ms</span>
+            <strong>{call.name}</strong><span>{enumLabel('outcomes', call.outcome)} · {call.elapsedMs} ms</span>
             {call.callId && <code>{t('runTrace.call', { id: call.callId })}</code>}
             {call.trail ? <dl>
               <dt>{t('runTrace.grant')}</dt><dd>{call.trail.grantId}</dd>
               <dt>{t('runTrace.owner')}</dt><dd>{call.trail.credentialOwnerId || t('runTrace.notRecorded')}</dd>
-              <dt>{t('runTrace.outcome')}</dt><dd>{call.trail.outcome}</dd>
+              <dt>{t('runTrace.outcome')}</dt><dd>{enumLabel('outcomes', call.trail.outcome)}</dd>
             </dl> : call.callId ? <p>{t('runTrace.unavailable')}</p> : <p>{t('runTrace.builtIn')}</p>}
           </div>)}
         </li>)}

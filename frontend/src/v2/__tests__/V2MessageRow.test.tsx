@@ -305,3 +305,16 @@ describe('V2MessageRow', () => {
     expect(screen.getByText('Pixel and codex started a DM').closest('.v2-syscard')).toHaveClass('v2-syscard--action');
   });
 });
+
+it('server-bound origin pod links a private approval to its original run without widening trace access', () => {
+  const runPodId = 'aaaaaaaaaaaaaaaaaaaaaaa1';
+  const runId = 'bbbbbbbbbbbbbbbbbbbbbbb1';
+  render(<MemoryRouter><V2MessageRow message={{ id: 'origin-run', pod_id: 'ccccccccccccccccccccccc1',
+    user_id: 'agent-1', message_type: 'text', content: 'Approval requested.', created_at: '2026-10-25T00:00:00Z',
+    user: { username: 'lark', isBot: true }, payload: { runId, runPodId },
+  }} /></MemoryRouter>);
+  const link = screen.getByRole('link', { name: 'View run trace' });
+  expect(link).toHaveAttribute('href', `/v2/pods/${runPodId}/runs/${runId}`);
+  const content = link.closest('.v2-msg__body').querySelector('.v2-msg__content');
+  expect(content.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});

@@ -71,6 +71,7 @@ test('Chinese status, trigger, region label and nonzero truncation clause are lo
   mockGet.mockResolvedValue({ run: { ...trace, traceTruncated: true, omittedToolCalls: 2 } });
   setup();
   await screen.findByText('已完成 · 提及');
+  expect(screen.getByText('成功 · 5 ms')).toBeInTheDocument();
   expect(screen.getByRole('region', { name: '运行轨迹' })).toBeInTheDocument();
   expect(screen.getByText(/省略了2次工具调用/)).toBeInTheDocument();
   expect(screen.queryByText(/0轮/)).not.toBeInTheDocument();
