@@ -68,6 +68,28 @@ describe('claude adapter — model pinning', () => {
     expect(flagValue(calls[0].args, '--model')).toBe('claude-opus-5');
   });
 
+  test('passes no --model when the environment omits it, so the CLI default stands', async () => {
+    const { impl, calls } = makeSpawnImpl();
+
+    await claude.spawn('hi', {
+      sessionId: null,
+      cwd,
+      environment: {},
+      _spawnImpl: impl,
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].args).not.toContain('--model');
+  });
+
+  test('is absent-safe when ctx carries no environment at all', async () => {
+    const { impl, calls } = makeSpawnImpl();
+
+    await claude.spawn('hi', { sessionId: null, cwd, _spawnImpl: impl });
+
+    expect(calls[0].args).not.toContain('--model');
+  });
+
   // THE one that matters: a session-recovery retry must not switch engines.
   test('carries the same --model into the session-recovery retry', async () => {
     const { impl, calls } = makeSpawnImpl(['session-conflict', 'ok']);

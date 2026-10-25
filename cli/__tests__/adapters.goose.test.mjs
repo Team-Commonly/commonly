@@ -42,7 +42,7 @@ const baseCtx = () => ({
 test('private Goose turn isolates its home, takes Commonly MCP through a token file, and parses reply', async () => {
   let launched;
   const ctx = baseCtx();
-  const result = await goose.spawn('hello', { environment: { model: 'test-model' },
+  const result = await goose.spawn('hello', {
     ...ctx,
     _spawnImpl: (cmd, args, options) => {
       launched = { cmd, args, options };
@@ -71,7 +71,7 @@ test.each(['public', 'internal'])('refuses %s trust at the adapter gate before s
   const ctx = baseCtx();
   ctx.environment.sandbox = { trust };
   const spawnImpl = jest.fn();
-  await expect(goose.spawn('hello', { environment: { model: 'test-model' }, ...ctx, _spawnImpl: spawnImpl }))
+  await expect(goose.spawn('hello', { ...ctx, _spawnImpl: spawnImpl }))
     .rejects.toThrow(/public-trust seats are not supported/);
   expect(spawnImpl).not.toHaveBeenCalled();
 });
@@ -80,7 +80,7 @@ test.each(['workspace', 'bwrap'])('refuses %s confinement before spawning', asyn
   const ctx = baseCtx();
   ctx.environment.sandbox = { mode };
   const spawnImpl = jest.fn();
-  await expect(goose.spawn('hello', { environment: { model: 'test-model' }, ...ctx, _spawnImpl: spawnImpl }))
+  await expect(goose.spawn('hello', { ...ctx, _spawnImpl: spawnImpl }))
     .rejects.toThrow(/cannot be enforced by Goose/);
   expect(spawnImpl).not.toHaveBeenCalled();
 });
@@ -90,7 +90,7 @@ test('none mode is allowed, and missing provider key fails before spawning', asy
   const ctx = baseCtx();
   delete ctx.env.COMMONLY_LITELLM_KEY;
   const spawnImpl = jest.fn();
-  await expect(goose.spawn('hello', { environment: { model: 'test-model' }, ...ctx, _spawnImpl: spawnImpl }))
+  await expect(goose.spawn('hello', { ...ctx, _spawnImpl: spawnImpl }))
     .rejects.toThrow(/COMMONLY_LITELLM_KEY is missing/);
   expect(spawnImpl).not.toHaveBeenCalled();
 });
@@ -110,11 +110,11 @@ test('MCP command flags refuse literal credentials and credential-bearing HTTP',
 test('structured error at exit zero is a failed turn; incomplete output is not posted', async () => {
   const ctx = baseCtx();
   const error = `${JSON.stringify({ type: 'error', message: 'route refused' })}\n${JSON.stringify({ type: 'complete' })}\n`;
-  await expect(goose.spawn('hello', { environment: { model: 'test-model' }, ...ctx, _spawnImpl: () => childWith(error) }))
+  await expect(goose.spawn('hello', { ...ctx, _spawnImpl: () => childWith(error) }))
     .rejects.toThrow(/route refused/);
-  await expect(goose.spawn('hello', { environment: { model: 'test-model' }, ...ctx, _spawnImpl: () => childWith(reply('partial').replace(/\{"type":"complete".*\}\n/, '')) }))
+  await expect(goose.spawn('hello', { ...ctx, _spawnImpl: () => childWith(reply('partial').replace(/\{"type":"complete".*\}\n/, '')) }))
     .rejects.toThrow(/incomplete stream/);
-  await expect(goose.spawn('hello', { environment: { model: 'test-model' }, ...ctx, _spawnImpl: () => childWith(
+  await expect(goose.spawn('hello', { ...ctx, _spawnImpl: () => childWith(
     reply('I cannot see the pod'), 0, "Failed to start extension 'commonly' (process quit before initialization)\n",
   ) })).rejects.toThrow(/Failed to start extension/);
 });
@@ -134,7 +134,7 @@ test('Goose stdout preserves UTF-8 characters split across data chunks', async (
   const output = Buffer.from(reply('你好🙂'));
   const split = output.indexOf(Buffer.from('你')) + 1;
   expect(split).toBeGreaterThan(0);
-  const result = await goose.spawn('hello', { environment: { model: 'test-model' },
+  const result = await goose.spawn('hello', {
     ...ctx,
     _spawnImpl: () => {
       const child = new EventEmitter();
@@ -155,7 +155,7 @@ test('Goose stdout preserves UTF-8 characters split across data chunks', async (
 test('oversized stream terminates Goose and fails after the child closes', async () => {
   const ctx = baseCtx();
   let child;
-  await expect(goose.spawn('hello', { environment: { model: 'test-model' },
+  await expect(goose.spawn('hello', {
     ...ctx,
     _spawnImpl: () => {
       child = new EventEmitter();

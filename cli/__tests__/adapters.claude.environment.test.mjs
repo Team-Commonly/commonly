@@ -73,7 +73,6 @@ describe('claude adapter — ctx.environment', () => {
   test('keeps MCP config outside the workspace at 0600 for only the spawn lifetime', async () => {
     const { impl, calls } = makeSpawnImpl();
     const environment = {
-      model: 'test-model',
       mcp: [
         { name: 'github', transport: 'http', url: 'http://localhost:3000/github-mcp' },
         { name: 'local-db', transport: 'stdio', command: ['postgres-mcp', '--db', 'mydb'] },
@@ -117,7 +116,7 @@ describe('claude adapter — ctx.environment', () => {
     await expect(claude.spawn('hi', {
       sessionId: null,
       cwd,
-      environment: { model: 'test-model',
+      environment: {
         mcp: [{ name: 'commonly', transport: 'stdio', command: ['commonly-mcp'] }],
       },
       _spawnImpl: impl,
@@ -151,7 +150,7 @@ describe('claude adapter — ctx.environment', () => {
         cwd,
         instanceUrl: 'https://api.example.test',
         runtimeToken: 'cm_agent_secret',
-        environment: { model: 'test-model',
+        environment: {
           mcp: [{
             name: 'commonly',
             transport: 'stdio',
@@ -204,7 +203,7 @@ describe('claude adapter — ctx.environment', () => {
         cwd,
         instanceUrl: 'https://api.example.test',
         runtimeToken: 'cm_agent_secret',
-        environment: { model: 'test-model',
+        environment: {
           mcp: [{
             name: 'commonly',
             transport: 'stdio',
@@ -262,7 +261,7 @@ describe('claude adapter — ctx.environment', () => {
         cwd,
         instanceUrl: 'https://api.example.test',
         runtimeToken: 'cm_agent_secret',
-        environment: { model: 'test-model',
+        environment: {
           mcp: [{
             name: 'commonly',
             transport: 'stdio',
@@ -302,7 +301,7 @@ describe('claude adapter — ctx.environment', () => {
     await claude.spawn('hi', {
       sessionId: null,
       cwd,
-      environment: { model: 'test-model', skills: { claude: [skillSrc] } },
+      environment: { skills: { claude: [skillSrc] } },
       onSkillsLinked,
       _spawnImpl: impl,
     });
@@ -324,7 +323,7 @@ describe('claude adapter — ctx.environment', () => {
     await claude.spawn('hi', {
       sessionId: null,
       cwd,
-      environment: { model: 'test-model',
+      environment: {
         sandbox: { mode: 'bwrap', network: { policy: 'unrestricted' } },
       },
       _spawnImpl: impl,
@@ -344,7 +343,7 @@ describe('claude adapter — ctx.environment', () => {
 
   test('no environment → behaviour identical to pre-ADR-008 (cmd=claude, no MCP file)', async () => {
     const { impl, calls } = makeSpawnImpl();
-    await claude.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, cwd, _spawnImpl: impl });
+    await claude.spawn('hi', { sessionId: null, cwd, _spawnImpl: impl });
     expect(calls[0].cmd).toBe('claude');
     expect(calls[0].args).not.toContain('--mcp-config');
     expect(fs.existsSync(path.join(cwd, '.commonly'))).toBe(false);
@@ -393,7 +392,7 @@ describe('claude adapter — ctx.environment', () => {
           cm_agent_probe: 'must-not-inherit',
         },
         commitAttributionEnv,
-        environment: { model: 'test-model',
+        environment: {
           sandbox: { mode: 'workspace', trust: 'public' },
           mcp: [{
             name: 'capture',
@@ -477,7 +476,7 @@ describe('claude adapter — ctx.environment', () => {
         sessionId: null,
         cwd,
         env: { PATH: process.env.PATH, USER: 'safe-user', LOGNAME: 'safe-user' },
-        environment: { model: 'test-model',
+        environment: {
           sandbox: { mode: 'workspace', trust: 'public' },
           mcp: [
             {
@@ -530,7 +529,7 @@ describe('claude adapter — ctx.environment', () => {
       await expect(claude.spawn('hi', {
         agentName: 'public-test', cwd,
         env: { PATH: process.env.PATH, USER: 'safe-user', LOGNAME: 'safe-user' },
-        environment: { model: 'test-model',
+        environment: {
           sandbox: { mode: 'workspace', trust: 'public' },
           mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }],
         },
@@ -578,7 +577,7 @@ describe('claude adapter — ctx.environment', () => {
           sessionId: null,
           cwd,
           env: { PATH: process.env.PATH },
-          environment: { model: 'test-model', sandbox, mcp: COLD_MCP },
+          environment: { sandbox, mcp: COLD_MCP },
           _spawnImpl: impl,
           _detectBwrap: () => ({ available: true, path: 'bwrap' }),
         })).rejects.toMatchObject({ code: 'public_mcp_unavailable' });
@@ -603,7 +602,7 @@ describe('claude adapter — ctx.environment', () => {
           agentName: 'public-test',
           cwd,
           env: { PATH: process.env.PATH, USER: 'safe-user', LOGNAME: 'safe-user' },
-          environment: { model: 'test-model',
+          environment: {
             sandbox: { mode: 'workspace', trust: 'public' },
             mcp: [{ ...COLD_MCP[0], name: 'no session' }],
           },
@@ -642,7 +641,7 @@ describe('claude adapter — ctx.environment', () => {
       await claude.spawn('hi', {
         agentName: 'public-test', cwd,
         env: { PATH: process.env.PATH, USER: 'safe-user', LOGNAME: 'safe-user' },
-        environment: { model: 'test-model',
+        environment: {
           sandbox: { mode: 'workspace', trust: 'public' },
           mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }],
         },
@@ -670,7 +669,7 @@ describe('claude adapter — ctx.environment', () => {
     await expect(claude.spawn('hi', {
       sessionId: null,
       cwd,
-      environment: { model: 'test-model', sandbox: { mode: 'none', trust: 'public' } },
+      environment: { sandbox: { mode: 'none', trust: 'public' } },
       _spawnImpl: impl,
     })).rejects.toThrow(/require an enforced sandbox mode/);
     expect(calls).toHaveLength(0);
@@ -697,7 +696,7 @@ describe('claude adapter — ctx.environment', () => {
         sessionId: null,
         cwd,
         env: { PATH: process.env.PATH },
-        environment: { model: 'test-model', sandbox: { trust: 'public' } },
+        environment: { sandbox: { trust: 'public' } },
         _publicClaudeState: publicState,
         _spawnImpl: impl,
       });
@@ -728,7 +727,7 @@ describe('claude adapter — ctx.environment', () => {
           AWS_SECRET_ACCESS_KEY: 'must-not-reach-public-seat',
         },
         commitAttributionEnv: { COMMONLY_AGENT_SEAT_NAME: 'Public Linux Seat' },
-        environment: { model: 'test-model', sandbox: { trust: 'public' } },
+        environment: { sandbox: { trust: 'public' } },
         _spawnImpl: impl,
         _detectBwrap: () => ({ available: true, path: 'bwrap' }),
       });
@@ -772,7 +771,7 @@ describe('claude adapter — ctx.environment', () => {
         sessionId: null,
         cwd,
         env: { PATH: process.env.PATH },
-        environment: { model: 'test-model', sandbox: { trust: 'public' } },
+        environment: { sandbox: { trust: 'public' } },
         _spawnImpl: impl,
         _detectBwrap: () => ({ available: false, error: 'bwrap not found on PATH.' }),
       })).rejects.toThrow(/require bwrap: bwrap not found/);
@@ -791,7 +790,7 @@ describe('claude adapter — ctx.environment', () => {
         sessionId: null,
         cwd,
         env: { PATH: process.env.PATH },
-        environment: { model: 'test-model', sandbox: { mode: 'bwrap' } },
+        environment: { sandbox: { mode: 'bwrap' } },
         _spawnImpl: impl,
         _detectBwrap: () => ({ available: true, path: 'bwrap' }),
       });
@@ -821,7 +820,7 @@ describe('claude adapter — ctx.environment', () => {
         sessionId: null,
         cwd,
         env: { PATH: process.env.PATH },
-        environment: { model: 'test-model', sandbox: { mode: 'workspace', trust: 'internal' } },
+        environment: { sandbox: { mode: 'workspace', trust: 'internal' } },
         _publicClaudeState: publicState,
         _spawnImpl: impl,
       });
@@ -844,7 +843,7 @@ describe('claude adapter — ctx.environment', () => {
     await expect(claude.spawn('hi', {
       sessionId: null,
       cwd,
-      environment: { model: 'test-model', sandbox: { mode: 'unconfined', trust: 'public' } },
+      environment: { sandbox: { mode: 'unconfined', trust: 'public' } },
       _spawnImpl: impl,
     })).rejects.toThrow(/require an enforced sandbox mode/);
     expect(calls).toHaveLength(0);
@@ -857,7 +856,6 @@ describe('claude adapter — ctx.environment', () => {
   test('${COMMONLY_AGENT_TOKEN} stays literal on disk and is supplied only in child env', async () => {
     const { impl, calls } = makeSpawnImpl();
     const environment = {
-      model: 'test-model',
       mcp: [
         {
           name: 'commonly',
@@ -896,7 +894,7 @@ describe('claude adapter — ctx.environment', () => {
     await claude.spawn('hi', {
       sessionId: null,
       cwd,
-      environment: { model: 'test-model',
+      environment: {
         mcp: [{
           name: 'github-grant',
           transport: 'http',
@@ -922,7 +920,7 @@ describe('claude adapter — ctx.environment', () => {
     await claude.spawn('hi', {
       sessionId: null,
       cwd,
-      environment: { model: 'test-model', mcp: [{ name: 'x', transport: 'stdio', command: ['m'], env: { U: '${COMMONLY_INSTANCE_URL}' } }] },
+      environment: { mcp: [{ name: 'x', transport: 'stdio', command: ['m'], env: { U: '${COMMONLY_INSTANCE_URL}' } }] },
       runtimeToken: 'cm_agent_t',
       instanceUrl: 'http://localhost:5000',
       _spawnImpl: impl,
@@ -937,7 +935,7 @@ describe('claude adapter — ctx.environment', () => {
     await claude.spawn('hi', {
       sessionId: null,
       cwd,
-      environment: { model: 'test-model',
+      environment: {
         mcp: [
           {
             name: 'sse-server',
@@ -967,7 +965,7 @@ describe('claude adapter — ctx.environment', () => {
     await claude.spawn('hi', {
       sessionId: null,
       cwd,
-      environment: { model: 'test-model',
+      environment: {
         mcp: [{
           name: 'x',
           transport: 'stdio',
@@ -990,7 +988,7 @@ describe('claude adapter — ctx.environment', () => {
       sessionId: null,
       cwd,
       env: { PATH: process.env.PATH },
-      environment: { model: 'test-model',
+      environment: {
         mcp: [{
           name: 'x',
           transport: 'stdio',
@@ -1049,7 +1047,7 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
     sessionId: null,
     cwd,
     env: { PATH: process.env.PATH },
-    environment: { model: 'test-model',
+    environment: {
       sandbox: { mode: 'workspace', trust: 'public' },
       skills: { claude: [skillSrc] },
     },
@@ -1077,7 +1075,7 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
     await claude.spawn('hi', {
       sessionId: null,
       cwd,
-      environment: { model: 'test-model', skills: { claude: [skillSrc] } },
+      environment: { skills: { claude: [skillSrc] } },
       _spawnImpl: impl,
     });
 
@@ -1088,7 +1086,7 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
   test('a public seat that declares no skills gets no appended prompt', async () => {
     const { impl, calls } = makeSpawnImpl();
     await publicSpawn(impl, {
-      environment: { model: 'test-model', sandbox: { mode: 'workspace', trust: 'public' } },
+      environment: { sandbox: { mode: 'workspace', trust: 'public' } },
     });
 
     expect(appended(calls[0].args)).toBeNull();
@@ -1113,7 +1111,7 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
       sessionId: null,
       cwd,
       env: { PATH: process.env.PATH },
-      environment: { model: 'test-model', sandbox: { trust: 'public' }, skills: { claude: [skillSrc] } },
+      environment: { sandbox: { trust: 'public' }, skills: { claude: [skillSrc] } },
       _spawnImpl: impl,
       _detectBwrap: () => ({ available: true, path: 'bwrap' }),
     });
@@ -1134,7 +1132,7 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
     const { impl, calls } = makeSpawnImpl();
     const onSkillsLinked = jest.fn();
     await publicSpawn(impl, {
-      environment: { model: 'test-model',
+      environment: {
         sandbox: { mode: 'workspace', trust: 'public' },
         skills: { claude: [big, skillSrc] },
       },

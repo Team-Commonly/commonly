@@ -231,7 +231,7 @@ describe('claude adapter — the tail goes through the reader', () => {
       }),
     };
 
-    const err = await claude.spawn('hi', { environment: { model: 'test-model' },
+    const err = await claude.spawn('hi', {
       sessionId: null,
       runtimeToken: SECRET,
       _spawnImpl: impl,

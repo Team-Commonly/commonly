@@ -37,7 +37,7 @@ describe('claude adapter reports the turn context from the child HOME', () => {
         })}\n`);
         return fakeChild();
       };
-      const res = await claude.spawn('hi', { environment: { model: 'test-model' },
+      const res = await claude.spawn('hi', {
         sessionId: 'sid-ctx',
         cwd,
         env: { HOME: childHome },
@@ -54,7 +54,7 @@ describe('claude adapter reports the turn context from the child HOME', () => {
   test('a turn with no transcript reports unknown, so the seat keeps resuming', async () => {
     const childHome = mkdtempSync(join(tmpdir(), 'claude-home-'));
     try {
-      const res = await claude.spawn('hi', { environment: { model: 'test-model' },
+      const res = await claude.spawn('hi', {
         sessionId: 'sid-none',
         cwd: join(childHome, 'work'),
         env: { HOME: childHome },
@@ -93,7 +93,7 @@ describe('claude adapter reads the transcript inside a bwrap jail', () => {
         sessionId: 'sid-jail',
         cwd,
         env: { PATH: process.env.PATH, HOME: hostHome },
-        environment: { model: 'test-model', sandbox: { trust: 'public', mode: 'bwrap' } },
+        environment: { sandbox: { trust: 'public', mode: 'bwrap' } },
         memoryLongTerm: '',
         _spawnImpl: impl,
         _detectBwrap: () => ({ available: true, path: 'bwrap' }),

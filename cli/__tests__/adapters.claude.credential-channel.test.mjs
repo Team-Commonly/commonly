@@ -116,7 +116,7 @@ const spawnWith = async (mcp, extra = {}) => {
     runtimeToken: TOKEN,
     instanceUrl: 'https://api.commonly.me',
     agentName: 'kai-test',
-    environment: { model: 'test-model', mcp },
+    environment: { mcp },
     env: spawnEnv(),
     _spawnImpl: impl,
     ...extra,
@@ -201,7 +201,7 @@ describe('claude: the seat credential arrives as a path, never as a value (TASK-
       sessionId: null,
       cwd,
       runtimeToken: undefined,
-      environment: { model: 'test-model', mcp: declaration({ COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' }) },
+      environment: { mcp: declaration({ COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' }) },
       env: spawnEnv(),
       _spawnImpl: impl,
     });
@@ -227,7 +227,7 @@ describe('claude: HTTP token headers use the per-spawn credential file (TASK-228
         cwd,
         runtimeToken: TOKEN,
         instanceUrl: 'https://api.commonly.me',
-        environment: { model: 'test-model', mcp },
+        environment: { mcp },
         env: spawnEnv(),
         _spawnImpl: impl,
       });

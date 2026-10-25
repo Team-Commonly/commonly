@@ -61,7 +61,6 @@ describe('adapter DEFAULT_TIMEOUT_MS env override', () => {
     process.env.COMMONLY_AGENT_RUN_TIMEOUT_MS = String(timeoutMs);
     const adapter = (await import(adapterPath)).default;
     const ctx = {
-      environment: { model: 'test-model' },
       _spawnImpl: () => makeKillableChild(),
       env: { ...process.env },
       cwd: process.cwd(),
@@ -100,7 +99,6 @@ describe('adapter DEFAULT_TIMEOUT_MS env override', () => {
     // default-fallback path is exercised by the module loading without
     // throwing.
     const ctx = {
-      environment: { model: 'test-model' },
       _spawnImpl: () => makeKillableChild(),
       env: { ...process.env },
       cwd: process.cwd(),
@@ -134,7 +132,6 @@ describe('adapter DEFAULT_TIMEOUT_MS env override', () => {
       kill: () => {},
     };
     const ctx = {
-      environment: { model: 'test-model' },
       _spawnImpl: () => neverResolvingChild,
       env: { ...process.env },
       cwd: process.cwd(),
