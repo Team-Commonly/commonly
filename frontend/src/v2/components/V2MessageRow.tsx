@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import V2Lightbox, { type V2LightboxImage } from './V2Lightbox';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +16,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useV2Api } from '../hooks/useV2Api';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 import { messageImageUrl } from '../utils/messageImageUrl';
+
+const V2UICard = lazy(() => import('../cards/V2UICard'));
 
 // Minimal v2-scoped markdown renderer. Plain HTML elements (no MUI), so
 // styling stays in v2.css under `.v2-msg__content`. The body comes pre-stripped
@@ -482,6 +484,9 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   }
   if (message.payload?.kind === 'byo-handoff') {
     return <V2BYOHandoffCard message={message} authorLabel={author} time={time} />;
+  }
+  if (message.payload?.kind === 'ui') {
+    return <Suspense fallback={<div className="v2-msg__content">{message.content}</div>}><V2UICard message={message} authorLabel={author} time={time} /></Suspense>;
   }
   if (message.payload?.kind === 'gig-card') {
     return <V2GigCard message={message} time={time} />;

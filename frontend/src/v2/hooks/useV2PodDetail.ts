@@ -87,6 +87,10 @@ export interface V2Message {
   payload?: {
     kind?: string;
     elements?: unknown[];
+    v?: number;
+    lang?: string;
+    source?: string;
+    runId?: string;
     // kind 'starts': offers rendered as buttons under the message (first
     // session, direction B). A plain start sends its label as the person's own
     // message; `href` navigates in-app, and supported actions act in place.

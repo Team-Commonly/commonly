@@ -4973,3 +4973,14 @@ test('TASK-435 runtime columns can shrink on phones without dropping the observe
   expect(ruleBody(css, '.v2-runtime-controls__observed')).toContain('overflow-wrap: anywhere');
   expect(css).toContain('content: attr(data-label)');
 });
+
+
+test('OpenUI cards keep the approved phone controls and table records', () => {
+  const css = read('../cards/uiCard.css');
+  expect(css).toContain('@media (max-width:760px)');
+  expect(css).toMatch(/\.ui-ft \.ub\{height:44px/);
+  expect(css).toContain('.ui-table--records .ui-tw { display:none; }');
+  expect(css).toContain('.ui-table--records .ui-recs { display:grid; }');
+  expect(css).toContain('.v2-root .v2-msg.v2-ui-card { display:flex; flex-direction:column;');
+  expect(css).toContain('.ui.gone{border-style:dashed');
+});
