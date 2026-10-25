@@ -3,12 +3,16 @@ const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 
 jest.mock('../../models/pg/Message', () => ({ findByPodId: jest.fn().mockResolvedValue([]) }));
 jest.mock('../../services/agentTypingService', () => ({ emitAgentTypingStart: jest.fn(), emitAgentTypingStop: jest.fn() }));
-jest.mock('../../services/agentMessageService', () => ({ postMessage: jest.fn().mockResolvedValue({ success: true }) }));
+const mockEmit = jest.fn();
+jest.mock('../../config/socket', () => ({ getIO: () => ({ to: () => ({ emit: mockEmit }) }) }));
+jest.mock('../../services/installable/eventHandlers', () => ({ dispatch: jest.fn().mockResolvedValue(undefined) }));
+jest.mock('../../services/starterTaskService', () => ({ completeFirstTaskOnAnswer: jest.fn() }));
 jest.mock('../../services/agentComputerBroker', () => ({ agentComputerBroker: {}, agentComputerEnabled: false }));
 
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const AgentRun = require('../../models/AgentRun');
+const Message = require('../../models/Message');
 const { runAgent } = require('../../services/nativeRuntimeService');
 const AgentMessageService = require('../../services/agentMessageService');
 
@@ -51,14 +55,19 @@ beforeEach(async () => {
   previousEnv = { ...process.env };
   process.env.LITELLM_BASE_URL = `http://127.0.0.1:${server.address().port}`;
   process.env.LITELLM_MASTER_KEY = 'test-only';
-  await Promise.all([User.deleteMany({}), Pod.deleteMany({}), AgentRun.deleteMany({})]);
+  // Exercise the repository's Mongo message store and actual message pipeline;
+  // socket/relay transports are external boundaries. The socket assertion also
+  // proves this notice is emitted to the addressed pod, not merely constructed.
+  delete process.env.PG_HOST;
+  await Promise.all([User.deleteMany({}), Pod.deleteMany({}), AgentRun.deleteMany({}), Message.deleteMany({})]);
   owner = await User.create({ username: 'model-owner', email: 'model-owner@example.test', password: 'test-password' });
   seat = await User.create({ username: 'model-agent', email: 'model-agent@agents.commonly.local',
     password: 'test-password', isBot: true, botMetadata: { agentName: 'model-agent', instanceId: 'default' } });
   pod = await Pod.create({ name: 'Model failure test', type: 'team', createdBy: owner._id,
     members: [owner._id, seat._id], publicRead: false, joinPolicy: 'invite-only' });
   requests = [];
-  AgentMessageService.postMessage.mockClear();
+  jest.spyOn(AgentMessageService, 'postMessage');
+  mockEmit.mockClear();
 });
 afterEach(() => { process.env = previousEnv; });
 
@@ -77,6 +86,8 @@ test.each(['hosted', 'native'])('a %s 503 persists failure and posts model/reaso
   expect(saved.status).toBe('failed');
   expect(saved.errorMessage).toContain(model);
   expect(saved.errorMessage).toContain('HTTP 503');
+  expect(saved.errorMessage).not.toContain(privateReason);
+  expect(result.errorMessage).not.toContain(privateReason);
   expect(saved.turns).toHaveLength(0);
   if (runtimeType === 'hosted') expect(saved.metered).toBe(false);
   expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
@@ -86,6 +97,11 @@ test.each(['hosted', 'native'])('a %s 503 persists failure and posts model/reaso
   expect(message.content).not.toContain(privateReason);
   expect(message.content).not.toContain('cloudflare');
   expect(message.metadata.runFailed).toBe(true);
+  const delivered = await Message.findOne({ podId: pod._id, userId: seat._id }).lean();
+  expect(delivered.content).toBe(message.content);
+  expect(mockEmit).toHaveBeenCalledWith('newMessage', expect.objectContaining({
+    podId: String(pod._id), content: delivered.content,
+  }));
 });
 
 test('a healthy default posts its answer and persists a successful turn', async () => {

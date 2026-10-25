@@ -2057,7 +2057,7 @@ export async function runAgent(
             break;
           }
           modelFailureReason = `HTTP ${axiosResp.status}`;
-          throw new Error(`LiteLLM HTTP ${axiosResp.status}: ${bodyText.slice(0, 500)}`);
+          throw new Error(`LiteLLM ${modelFailureReason}`);
         }
         llmResponse = axiosResp.data;
         responseHeaders = (axiosResp.headers || {}) as Record<string, unknown>;
@@ -2065,10 +2065,10 @@ export async function runAgent(
         const axErr = err as AxiosError;
         run.status = 'failed';
         run.errorKind = 'llm_error';
-        run.errorMessage = `Model ${model}: ${axErr.message || String(err)}`.slice(0, 1000);
         // Publish only a bounded category, never the proxy payload, URL or credentials.
         modelFailureReason = modelFailureReason || (axErr.code === 'ECONNABORTED' || axErr.code === 'ETIMEDOUT'
           ? 'request timed out' : 'connection failed');
+        run.errorMessage = `Model ${model}: ${modelFailureReason}`.slice(0, 1000);
         console.warn('[native-runtime] model request failed:', model, modelFailureReason);
         break;
       }

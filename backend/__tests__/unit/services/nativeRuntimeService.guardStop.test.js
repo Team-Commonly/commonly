@@ -329,6 +329,8 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(savedRun.metered).toBe(false);
     expect(posted()).toEqual([`Model deepseek-v4-flash could not answer (${reason}). ${HOSTED_RUN_FAILED_LINE}`]);
     expect(posted().join('')).not.toContain('secret-token');
+    expect(savedRun.errorMessage).not.toContain('secret-token');
+    expect(result.errorMessage).not.toContain('secret-token');
   });
 
   test('a thrown fallback post fails unmetered and tries the fixed line', async () => {
