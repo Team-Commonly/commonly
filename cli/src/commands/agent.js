@@ -1856,8 +1856,13 @@ export const performRun = ({
       sessionId = null;
     }
     // ADR-005 §Memory bridge: read long_term before spawn, inject via ctx,
-    // and (if the adapter returns a summary) patch-sync back after.
-    const memoryLongTerm = await readLongTerm(client, { onError });
+    // and (if the adapter returns a summary) patch-sync back after. A workspace
+    // seat's turn that runs public (placement.reason) gets none of it: its
+    // memory may hold what earlier turns read in the project, and what this
+    // turn reads in an unconfirmed room must not reach the next workspace turn.
+    // The adapter also denies the memory tools for it (memoryWithheld).
+    const memoryWithheld = Boolean(placement.reason);
+    const memoryLongTerm = memoryWithheld ? undefined : await readLongTerm(client, { onError });
 
     // Sharpen TASK-129: focus is a turn-start read, not an enqueue-time
     // snapshot. Read through the authorized runtime context route immediately
@@ -2036,6 +2041,7 @@ export const performRun = ({
         env: commitAttribution?.env || process.env,
         commitAttributionEnv: commitAttribution?.sandboxEnv || null,
         memoryLongTerm,
+        memoryWithheld,
         environment: placement.environment,
         onSkillsLinked: ({ mounted, conflicted }) => {
           skillMount = {
@@ -2303,7 +2309,7 @@ export const performRun = ({
         );
       }
     }
-    if (result.memorySummary) {
+    if (result.memorySummary && !memoryWithheld) {
       try {
         await syncBack(client, { summary: result.memorySummary });
         log(`[${event.type}] memory synced (${Buffer.byteLength(result.memorySummary)} bytes)`);

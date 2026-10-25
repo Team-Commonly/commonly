@@ -52,7 +52,7 @@ const runOneTurn = async ({ environment, installations, newSessionId }) => {
       if (installations instanceof Error) throw installations;
       return { installations };
     }
-    if (route === '/api/agents/runtime/memory') return { sections: {} };
+    if (route === '/api/agents/runtime/memory') return { sections: { long_term: { content: 'notes from the project' } } };
     if (route.endsWith('/messages')) return { messages: [] };
     if (route.endsWith('/context')) return { focus: { podId: 'pod-ws', revision: 0, focus: null } };
     return {};
@@ -95,6 +95,19 @@ describe('performRun workspace turn placement', () => {
       signal: expect.any(AbortSignal),
     });
     expect(logs.some((line) => line.includes('public seat'))).toBe(false);
+    expect(ctx.memoryWithheld).toBe(false);
+    expect(ctx.memoryLongTerm).toBe('notes from the project');
+  });
+
+  test('a turn that runs public never reads the seat\'s memory', async () => {
+    const { ctx, get } = await runOneTurn({
+      environment: { sandbox: { trust: 'workspace' } },
+      installations: [privatePod, { podId: 'pod-open', publicRead: true, communityListed: false }],
+    });
+    expect(ctx.environment.sandbox.trust).toBe('public');
+    expect(ctx.memoryWithheld).toBe(true);
+    expect(ctx.memoryLongTerm).toBeUndefined();
+    expect(get.mock.calls.some(([route]) => route === '/api/agents/runtime/memory')).toBe(false);
   });
 
   test('a pod that turned public runs the turn as a public seat in the scratch folder', async () => {

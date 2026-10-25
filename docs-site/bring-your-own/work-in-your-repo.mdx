@@ -25,9 +25,10 @@ The [Claude Code listener](/bring-your-own/claude-code) checks the pods its key 
 
 - It can read files there and run read-only git: `status`, `log`, `diff`, `show` and `blame`.
 - It can't edit files, run commands or fetch web pages.
-- It can't read `.env` or `.env.*` files, at any depth, including copies committed to git.
+- It can't read `.env` or `.env.*` files, or what a `.env` folder holds, at any depth, including copies committed to git.
+- It can't open the `.git` folder directly, because `.git/config` can hold a remote URL with a token in it. History still comes through read-only git.
 
-Otherwise it reads only its own scratch folder, and the lines it prints when it starts say why. That happens when a pod is publicly readable or open to join, or when you run it from your home directory, `/`, or a folder like `~/.ssh`. It checks its pods again before every turn. If one has become publicly readable or open to join, or the check fails, that turn runs in the scratch folder with a fresh session.
+Otherwise it reads only its own scratch folder, and the lines it prints when it starts say why. That happens when a pod is publicly readable or open to join, or when you run it from your home directory, `/`, or a folder like `~/.ssh`. It checks its pods again before every turn. If one has become publicly readable or open to join, or the check fails, that turn runs in the scratch folder with a fresh session. It also gets none of the agent's saved memory and can't save any, because earlier turns may have stored what they read in your folder.
 
 ### Give it more with `--allow`
 
@@ -39,7 +40,7 @@ commonly agent run your-agent-name --adapter claude --allow web
 commonly agent run your-agent-name --adapter claude --allow write,web
 ```
 
-- `write` lets it edit files in the folder and run commands there. Those commands can reach the network, and they can read what the sandbox lets them read, which is more than the folder. `.git` stays read-only, so it can't commit or change hooks or git config. Files git ignores are writable too, and `git status` won't show changes to them.
+- `write` lets it edit files in the folder and run commands there. Those commands can reach the network, and they can read what the sandbox lets them read, which is more than the folder and includes `.git`. `.git` stays read-only, so it can't commit or change hooks or git config. Files git ignores are writable too, and `git status` won't show changes to them.
 - `web` lets it fetch web pages. Web search stays off.
 
 Fetching stays off unless you ask for it. An agent that can read your code and fetch any URL could send what it read off your machine, and its permissions can't tell a URL you pasted from one it built. `write` opens the same path, because its commands reach the network. Grant either one only in a pod where you trust everyone who can @mention the agent with your code.

@@ -310,7 +310,10 @@ const buildClaudeEnv = (input, state, expansionEnv = {}, credentialFile = null, 
 
 const absoluteToolDeny = (path) => `Read(/${path}/**)`;
 
-const buildPublicClaudePolicyArgs = (mcpToolPatterns, { trust, allow = [] } = {}) => {
+// The tools that read or write the seat's agent-wide memory.
+const MEMORY_TOOLS = Object.freeze(['commonly_read_agent_memory', 'commonly_write_agent_memory', 'commonly_save_my_memory']);
+
+const buildPublicClaudePolicyArgs = (mcpToolPatterns, { trust, allow = [], memoryWithheld = false } = {}) => {
   const home = homedir();
   // `allow` is already narrowed to a workspace seat's grants (workspaceGrants).
   const granted = allow.flatMap((grant) => WORKSPACE_ALLOW_TOOLS[grant] || []);
@@ -341,6 +344,11 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, { trust, allow = [] } = {}
       ...mcpToolPatterns.map((pattern) => pattern.replace(/\*$/, 'commonly_self_install_into_pod')),
     ]
     : [];
+  // A workspace seat's turn that runs public gets no memory in its prompt
+  // (agent.js), and no tool that would read or write it either.
+  const memoryDenies = memoryWithheld
+    ? MEMORY_TOOLS.flatMap((tool) => mcpToolPatterns.map((pattern) => pattern.replace(/\*$/, tool)))
+    : [];
   return [
     // HOME points at an isolated, sanitized state directory. Ignore settings
     // from user/project/local sources and disable slash-command extensions;
@@ -352,7 +360,7 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, { trust, allow = [] } = {}
     '--permission-mode', 'dontAsk',
     '--allowedTools', 'Read(./**)', ...granted, ...mcpToolPatterns,
     '--disallowedTools', ...PUBLIC_DENIED_TOOLS.filter((tool) => !granted.includes(tool)),
-    ...deniedReads, ...workspaceDenies,
+    ...deniedReads, ...workspaceDenies, ...memoryDenies,
   ];
 };
 
@@ -770,7 +778,9 @@ const prepareArgv = async (innerArgv, ctx) => {
     }
     innerArgv = [
       ...innerArgv,
-      ...buildPublicClaudePolicyArgs(allowedPatterns, { trust: sandboxTrust, allow: grants }),
+      ...buildPublicClaudePolicyArgs(allowedPatterns, {
+        trust: sandboxTrust, allow: grants, memoryWithheld: ctx.memoryWithheld === true,
+      }),
       ...(ctx.publicSkillArgs || []),
     ];
     const claudeBin = resolveClaudePath(claudeEnv);
@@ -819,7 +829,7 @@ const prepareArgv = async (innerArgv, ctx) => {
     }
     innerArgv = [
       ...innerArgv,
-      ...buildPublicClaudePolicyArgs(allowedPatterns),
+      ...buildPublicClaudePolicyArgs(allowedPatterns, { memoryWithheld: ctx.memoryWithheld === true }),
       ...(ctx.publicSkillArgs || []),
     ];
   } else if (allowedPatterns.length > 0) {
@@ -915,6 +925,7 @@ export default {
     const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
       freshSession: !isResume,
       workCues,
+      memoryWithheld: ctx.memoryWithheld === true,
     });
     const sessionFlag = isResume ? '--resume' : '--session-id';
     // Model pin from the ADR-008 environment spec. Absent it, claude picks its
@@ -1050,6 +1061,7 @@ export default {
         const freshPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
           freshSession: true,
           workCues,
+          memoryWithheld: ctx.memoryWithheld === true,
         });
         const retryBase = ['-p', freshPrompt,
         '--output-format', 'text', '--session-id', freshId, ...modelArgs];

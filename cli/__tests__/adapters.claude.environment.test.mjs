@@ -1233,7 +1233,8 @@ describe('claude adapter — a workspace seat', () => {
     }
   });
 
-  const workspaceSpawn = (impl, sandbox = { mode: 'workspace', trust: 'workspace' }) => claude.spawn('hi', {
+  const workspaceSpawn = (impl, sandbox = { mode: 'workspace', trust: 'workspace' }, extra = {}) => claude.spawn('hi', {
+    ...extra,
     agentName: 'workspace-test',
     sessionId: null,
     cwd,
@@ -1274,6 +1275,30 @@ describe('claude adapter — a workspace seat', () => {
     ]));
     expect(opts.env.HOME).toBe(publicState);
     expect(opts.env.COMMONLY_HOST_SECRET).toBeUndefined();
+  });
+
+  test('a workspace seat\'s turn that runs public gets no memory and no memory tool', async () => {
+    const memoryTools = ['mcp__commonly__commonly_read_agent_memory', 'mcp__commonly__commonly_write_agent_memory',
+      'mcp__commonly__commonly_save_my_memory'];
+    const withheld = makeSpawnImpl();
+    await workspaceSpawn(withheld.impl, { mode: 'workspace', trust: 'public' }, {
+      memoryWithheld: true, memoryLongTerm: 'notes from the project',
+    });
+    const { args } = withheld.calls[0];
+    const denied = args.slice(args.indexOf('--disallowedTools') + 1);
+    expect(denied).toEqual(expect.arrayContaining(memoryTools));
+    // The last -p: sandbox-exec's own -p carries the profile.
+    const prompt = args[args.lastIndexOf('-p') + 1];
+    expect(prompt).toContain('withheld this turn');
+    expect(prompt).not.toContain('notes from the project');
+    expect(prompt).not.toContain('(empty');
+
+    // Control: the same public spawn, not withheld, injects the memory and keeps the tools.
+    const kept = makeSpawnImpl();
+    await workspaceSpawn(kept.impl, { mode: 'workspace', trust: 'public' }, { memoryLongTerm: 'notes from the project' });
+    const keptArgs = kept.calls[0].args;
+    expect(keptArgs[keptArgs.lastIndexOf('-p') + 1]).toContain('notes from the project');
+    for (const tool of memoryTools) expect(keptArgs).not.toContain(tool);
   });
 
   test('a public seat keeps the denies it had, without the workspace ones', async () => {
