@@ -372,19 +372,27 @@ export async function notifyPodAgents(
       // Preserve known assignees even if a claim or dependency lookup fails.
       console.warn('[task-event] own-row lookup failed:', (err as Error).message);
     }
+    // A hand-off accepted by its new owner or made by a human needs no
+    // previous-owner turn. Unknown actors retain the existing wake behavior.
+    const actorOwnsRow = actor?.isAgent && actor.agentName && (
+      seatMatchesAssignee(actor, task.assignee) || seatHoldsClaim(actor, currentHolder)
+    );
+    const wakePreviousOwner = actor?.isAgent !== false && !actorOwnsRow;
     const outcomes = await Promise.all(installs.map(async (install: Record<string, unknown>) => {
       const installKey = `${String(install.agentName || '').toLowerCase()}::${String(install.instanceId || 'default')}`;
       if (actorKey && installKey === actorKey) return null;
       const agentName = install.agentName;
       const instanceId = install.instanceId || 'default';
-      const ownRow = !install.digestOnlyWatcher && (seatMatchesAssignee(install, task.assignee)
-        || seatMatchesAssignee(install, previousTask?.assignee)
-        || seatHoldsClaim(install, currentHolder)
-        || seatHoldsClaim(install, previousHolder)
-        || dependentRows.some((row) => seatMatchesAssignee(install, row.assignee))
-        || dependentHolders.some((holder) => seatHoldsClaim(install, holder)));
+      const wakeReason = install.digestOnlyWatcher ? null : (
+        (seatMatchesAssignee(install, task.assignee) && 'assignee')
+        || (seatHoldsClaim(install, currentHolder) && 'claimant')
+        || (wakePreviousOwner && seatMatchesAssignee(install, previousTask?.assignee) && 'prevAssignee')
+        || (wakePreviousOwner && seatHoldsClaim(install, previousHolder) && 'prevClaimant')
+        || (dependentRows.some((row) => seatMatchesAssignee(install, row.assignee)) && 'dependentAssignee')
+        || (dependentHolders.some((holder) => seatHoldsClaim(install, holder)) && 'dependentClaimant')
+      );
       try {
-        if (!ownRow) {
+        if (!wakeReason) {
           await AgentEventService.enqueue({
             agentName, instanceId, podId: normalizedPodId, type: 'message.posted',
             deliveryMode: 'digest',
@@ -434,11 +442,11 @@ export async function notifyPodAgents(
             // A human edit arriving on top of agent churn must re-price the
             // whole batch as human — otherwise one agent write early in a sweep
             // permanently marks a wake the human later contributed to.
-            ...(eventType === 'chat.mention' || dmKind === 'user-agent'
-              ? { $set: {
-                ...(eventType === 'chat.mention' ? { type: 'chat.mention' } : {}),
-                ...(dmKind === 'user-agent' ? { 'payload.dmKind': 'user-agent' } : {}),
-              } } : {}),
+            $set: {
+              'payload.wakeReason': wakeReason,
+              ...(eventType === 'chat.mention' ? { type: 'chat.mention' } : {}),
+              ...(dmKind === 'user-agent' ? { 'payload.dmKind': 'user-agent' } : {}),
+            },
           },
           { new: true },
         );
@@ -466,6 +474,7 @@ export async function notifyPodAgents(
             podId: normalizedPodId,
             boardWake: true,
             boardChanges: 0,
+            wakeReason,
             taskId,
             taskKind: kind,
             // See choice 3: an unknown actor is priced as an agent.

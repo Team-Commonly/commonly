@@ -398,6 +398,51 @@ describe('Self-serve account deletion', () => {
     expect(await AccountDeletion.countDocuments()).toBe(0);
   });
 
+  it('composes the admin lock with promotion winning before deletion claims its marker', async () => {
+    const admin = await makeUser({ role: 'admin' });
+    const user = await makeUser({ billing: { subscriptionId: 'sub_role_race', subscriptionStatus: 'active' } });
+    const update = User.updateOne.bind(User);
+    let promoted = false;
+    jest.spyOn(User, 'updateOne').mockImplementation((filter, mutation, ...rest) => {
+      if (!promoted && mutation.$set?.accountDeletionRequestedAt) return (async () => {
+        promoted = true;
+        await request(app).patch(`/api/admin/users/${user.id}/role`)
+          .set('Authorization', `Bearer ${issueSessionToken(admin)}`).send({ role: 'admin' }).expect(200);
+        return update(filter, mutation, ...rest);
+      })();
+      return update(filter, mutation, ...rest);
+    });
+    mockStripe.subscriptions.cancel.mockClear();
+    await deletion(app, issueSessionToken(user)).expect(409);
+    const remaining = await User.findById(user.id);
+    expect(remaining.role).toBe('admin');
+    expect(remaining.accountDeletionRequestedAt).toBeUndefined();
+    expect(mockStripe.subscriptions.cancel).not.toHaveBeenCalled();
+    expect(await AccountDeletion.countDocuments()).toBe(0);
+  });
+
+  it('composes the admin lock with deletion winning after the role target was read', async () => {
+    const admin = await makeUser({ role: 'admin' }); const user = await makeUser();
+    const update = User.findOneAndUpdate.bind(User);
+    let claimed = false;
+    jest.spyOn(User, 'findOneAndUpdate').mockImplementation((filter, mutation, ...rest) => {
+      if (!claimed && mutation.$set?.role === 'admin') return (async () => {
+        claimed = true;
+        jest.spyOn(mockPg, 'query').mockRejectedValueOnce(new Error('PG unavailable'));
+        await deletion(app, issueSessionToken(user)).expect(503);
+        return update(filter, mutation, ...rest);
+      })();
+      return update(filter, mutation, ...rest);
+    });
+    await request(app).patch(`/api/admin/users/${user.id}/role`)
+      .set('Authorization', `Bearer ${issueSessionToken(admin)}`).send({ role: 'admin' }).expect(409);
+    const remaining = await User.findById(user.id);
+    expect(remaining.role).toBe('user');
+    expect(remaining.accountDeletionRequestedAt).toBeTruthy();
+    const Lock = require('../../models/AdminUserMutationLock');
+    expect(await Lock.countDocuments()).toBe(0);
+  });
+
   it('refuses an admin role change after deletion has marked the account', async () => {
     const admin = await makeUser({ role: 'admin' });
     const user = await makeUser({ accountDeletionRequestedAt: new Date() });
@@ -471,14 +516,16 @@ describe('Self-serve account deletion', () => {
   it.each([false, true])('revokes a token minted or backfilled after deletion completed (%s)', async (existing) => {
     const owner = await makeUser();
     const agent = await makeUser({ isBot: true, agentRuntimeTokens: existing ? [{ tokenHash: 'late-old-hash', label: 'old' }] : [] });
+    let deletionStatus;
     const method = existing ? 'updateOne' : 'create';
     const write = AgentCredential[method].bind(AgentCredential);
     jest.spyOn(AgentCredential, method).mockImplementationOnce(async (...args) => {
-      await deletion(app, issueSessionToken(owner)).expect(204);
+      deletionStatus = (await deletion(app, issueSessionToken(owner))).status;
       return write(...args);
     });
-    await expect(issueRuntimeTokenForAgent(agent, 'key', null, { ownerUserId: owner._id }))
-      .rejects.toMatchObject({ code: 'account_deleting' });
+    const outcome = await issueRuntimeTokenForAgent(agent, 'key', null, { ownerUserId: owner._id }).catch((error) => error);
+    expect(deletionStatus).toBe(204);
+    expect(outcome).toMatchObject({ code: 'account_deleting' });
     expect(await AgentCredential.countDocuments({ ownerUserId: owner._id, status: 'active' })).toBe(0);
     expect((await User.findById(agent._id)).agentRuntimeTokens).toHaveLength(0);
   });
@@ -505,13 +552,15 @@ describe('Self-serve account deletion', () => {
     const agent = await makeUser({ isBot: true, agentRuntimeTokens: [{ tokenHash: 'shared-old-hash', label: 'other key' }] });
     const credential = await AgentCredential.create({ tokenHash: 'shared-old-hash', kind: 'runtime',
       ownerUserId: other._id, agentUserId: agent._id });
+    let deletionStatus;
     const write = AgentCredential.updateOne.bind(AgentCredential);
     jest.spyOn(AgentCredential, 'updateOne').mockImplementationOnce(async (...args) => {
-      await deletion(app, issueSessionToken(owner)).expect(204);
+      deletionStatus = (await deletion(app, issueSessionToken(owner))).status;
       return write(...args);
     });
-    await expect(issueRuntimeTokenForAgent(agent, 'key', null, { ownerUserId: owner._id }))
-      .rejects.toMatchObject({ code: 'account_deleting' });
+    const outcome = await issueRuntimeTokenForAgent(agent, 'key', null, { ownerUserId: owner._id }).catch((error) => error);
+    expect(deletionStatus).toBe(204);
+    expect(outcome).toMatchObject({ code: 'account_deleting' });
     expect((await AgentCredential.findById(credential._id)).status).toBe('active');
     expect((await User.findById(agent._id)).agentRuntimeTokens).toHaveLength(1);
   });

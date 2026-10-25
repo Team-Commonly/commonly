@@ -160,8 +160,14 @@ take roughly ceil(N/100) ticks per full revisit; work grows with lifetime
 deletions. Retiring receipts requires a proven producer horizon, not an arbitrary
 TTL. TASK-004 tracks that capacity/retirement work.
 
-The existing administrator-demotion handler still counts then updates. Concurrent
-administrators can demote one another and leave zero administrators. This PR
-only makes role promotion versus account-deletion eligibility atomic on the
-target document; it does not fix the independent administrator-demotion race.
-TASK-003 tracks that defect separately.
+Administrator role, ban and admin-delete mutations now share the non-expiring,
+majority-acknowledged lock introduced by #2742 (TASK-003). Actor authorization and
+administrator recount happen inside it. Role updates also retain the atomic
+`accountDeletionRequestedAt`-absent predicate: self-serve deletion claims do not
+take the global lock, so the lock alone cannot prevent a late promotion of a
+marked account. Tests exercise both orders through the actual handlers:
+promotion wins before the deletion claim and prevents billing cancellation, or
+deletion marks after the role handler reads its target and promotion returns 409.
+See [the lock runbook](../runbooks/admin-user-mutation-lock.md) for uncertain-write
+recovery and the mixed-version rollout constraint. Synthetic purge DM cleanup
+remains a separate TASK-005 follow-up.
