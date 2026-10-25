@@ -11,6 +11,7 @@ const AgentRun = require('../../models/AgentRun');
 const manageSettings = require('../../routes/registry/manage-settings');
 const podAgents = require('../../routes/registry/pod-agents');
 const agentConfig = require('../../routes/registry/agent-config');
+const tasksApi = require('../../routes/tasksApi');
 const { projectSeatEnvironments, seatEnvironmentKey } = require('../../services/seatEnvironmentProjection');
 
 const SECRET = 'agent-manage-settings-test';
@@ -28,6 +29,7 @@ describe('per-installation agent settings', () => {
     app.use('/api/registry', manageSettings);
     app.use('/api/registry', podAgents);
     app.use('/api/registry', agentConfig);
+    app.use('/api/tasks', tasksApi);
     owner = await User.create({ username: 'settings-owner', email: 'settings-owner@test.com', password: 'password123' });
     other = await User.create({ username: 'settings-other', email: 'settings-other@test.com', password: 'password123' });
     admin = await User.create({ username: 'settings-admin', email: 'settings-admin@test.com', password: 'password123', role: 'admin' });
@@ -117,12 +119,23 @@ describe('per-installation agent settings', () => {
     expect((await read()).body.usage).toBeNull();
   });
 
-  it('shows a held task to pod members, not a non-member installation admin', async () => {
+  it.each(['runtime-token claim', 'instance-id claim'])('shows a held task to members only (%s)', async (claimForm) => {
     const Task = require('../../models/Task');
+    await User.deleteMany({ username: 'settings-runtime-bot' });
     const bot = await User.create({ username: 'settings-runtime-bot', email: 'settings-runtime-bot@test.com',
-      password: 'password123', isBot: true, botMetadata: { agentName: 'settings-agent', instanceId: 'same' } });
+      password: 'password123', isBot: true, botType: 'agent',
+      botMetadata: { agentName: 'settings-agent', instanceId: 'same' },
+      agentRuntimeTokens: [{ tokenHash: require('crypto').createHash('sha256').update('cm_agent_settings_claim_fixture').digest('hex'), label: 'test', createdAt: new Date() }] });
     await Task.create({ podId: podA._id, taskNum: 546, taskId: 'TASK-546', title: 'Private title',
-      status: 'claimed', claimedBy: String(bot._id), claimedAt: new Date() });
+      status: 'pending' });
+    await Pod.updateOne({ _id: podA._id }, { $addToSet: { members: bot._id } });
+    const claim = await request(app).post(`/api/tasks/${podA._id}/TASK-546/claim`)
+      .set('Authorization', 'Bearer cm_agent_settings_claim_fixture');
+    expect(claim.status).toBe(200);
+    expect((await Task.findOne({ podId: podA._id, taskId: 'TASK-546' })).claimedBy).toBe(String(bot._id));
+    if (claimForm === 'instance-id claim') {
+      await Task.updateOne({ podId: podA._id, taskId: 'TASK-546' }, { $set: { claimedBy: 'same' } });
+    }
     const url = '/api/registry/agents/settings-agent/manage-settings?instanceId=same';
     const member = await request(app).get(url).set('Authorization', `Bearer ${token(owner)}`);
     expect(member.body.heldTask).toEqual({ taskId: 'TASK-546', podId: String(podA._id), podName: 'Settings A' });

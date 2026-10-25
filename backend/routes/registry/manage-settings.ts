@@ -92,7 +92,7 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       isBot: true,
       'botMetadata.agentName': String(req.params.name).toLowerCase(),
       'botMetadata.instanceId': normalizeInstanceId(req.query.instanceId),
-    }).select('botMetadata.machineId').lean();
+    }).select('botMetadata.machineId botMetadata.instanceId botMetadata.agentName').lean();
     const machine = binding?.botMetadata?.machineId ? await Machine.findOne({
       machineId: binding.botMetadata.machineId, ownerUserId: quotaOwner,
     }).select('runtimeInventory inventoryAt lastSeenAt agentStates').lean() : null;
@@ -110,8 +110,12 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     // Managing an installation does not grant access to its pod's task board.
     const memberPodIds = pods.filter((pod: any) => (pod.members || [])
       .some((member: any) => String(member) === String(userId))).map((pod: any) => pod._id);
+    // Claims persisted by seat callers may use the instance key; runtime-token
+    // claims at this boundary also use the bot ObjectId. Read both forms.
+    const claimKeys = binding ? [String(binding._id),
+      binding.botMetadata?.instanceId || binding.botMetadata?.agentName].filter(Boolean) : [];
     const heldTask = binding && memberPodIds.length ? await Task.findOne({
-      podId: { $in: memberPodIds }, claimedBy: String(binding._id), status: 'claimed',
+      podId: { $in: memberPodIds }, claimedBy: { $in: claimKeys }, status: 'claimed',
     }).sort({ claimedAt: -1, _id: -1 }).select('taskId podId -_id').lean() : null;
     if (runtimeManaged && !runtimeControls.runtimeType) runtimeControls.runtimeType = 'wrapper';
     const runtimeSavedControls = { ...runtimeControls };
