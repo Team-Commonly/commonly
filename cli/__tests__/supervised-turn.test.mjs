@@ -37,6 +37,7 @@ const {
   createTurnRunner, createMetadataStore, supervisedRunPolicy, relayEnabledFor, metricLine, STALL_DEFAULTS_MS,
 } = await import('../src/lib/supervised-turn.js');
 const { runFailure } = await import('@commonlyai/seats/failures');
+const { spawnInOwnGroup, wantsOwnProcessGroup } = await import('@commonlyai/seats/process-group');
 
 afterAll(() => fs.rmSync(home, { recursive: true, force: true }));
 
@@ -65,8 +66,20 @@ const silentChild = () => {
   spawned.add(child);
   return child;
 };
-const isRunning = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code !== 'ESRCH'; } };
+// A zombie (exited, not yet reaped by whoever adopted it) is not running.
+const isZombie = (pid) => {
+  try { return /^\d+ \(.*\) Z /.test(fs.readFileSync(`/proc/${pid}/stat`, 'utf8')); } catch { return false; }
+};
+const isRunning = (pid) => {
+  try { process.kill(pid, 0); } catch (e) { return e.code !== 'ESRCH'; }
+  return !isZombie(pid);
+};
+const strayPids = new Set();
 afterEach(async () => {
+  const strays = [...strayPids].filter(isRunning);
+  strayPids.clear();
+  for (const pid of strays) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
+  expect(strays.map((pid) => `grandchild ${pid} outlived its test`)).toEqual([]);
   const leaked = [...spawned].filter((child) => child.exitCode === null && child.signalCode === null);
   spawned.clear();
   for (const child of leaked) child.kill('SIGKILL');
@@ -170,6 +183,42 @@ describe('the turn runner', () => {
       cancelled: true, killed: true, signal: 'SIGKILL', exitObserved: true, childLeftRunning: false, relay: false, stallMs: 60,
     })]);
   });
+
+  test('a stalled child in its own group is killed with its grandchild (group kill on the canary path)', async () => {
+    const env = { COMMONLY_SUPERVISE_STALL_MS: '500', COMMONLY_SUPERVISE_CANCEL_GRACE_MS: '40', COMMONLY_SUPERVISE_RELAY_CODEX: '0' };
+    // The CLI stand-in starts a grandchild in a group of its own (as codex does
+    // for MCP servers), reports its pid on stderr, then goes quiet.
+    const script = "const c=require('child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'});"
+      + "process.stderr.write(c.pid+'\\n');setInterval(()=>{},1000);";
+    let child;
+    let ownGroup;
+    let grandchild = null;
+    const adapter = {
+      name: 'codex',
+      spawn: (_prompt, ctx) => new Promise(() => {
+        ownGroup = wantsOwnProcessGroup(ctx);
+        child = spawnInOwnGroup(childSpawn, process.execPath, ['-e', script], { stdio: ['ignore', 'pipe', 'pipe'] }, { ownGroup });
+        spawned.add(child);
+        child.stderr.on('data', (chunk) => {
+          grandchild = Number(String(chunk).trim());
+          strayPids.add(grandchild);
+        });
+        child.once('spawn', () => ctx.onSpawn({}, child));
+      }),
+    };
+    const runner = createTurnRunner({ seat: 'nib', turnTimeoutMs: 60_000, supervise: true, env });
+    const error = await runner.run(adapter, PROMPT, {}, { eventType: 'chat.mention' }).catch((e) => e);
+    expect(error.kind).toBe('stuck');
+    expect(ownGroup).toBe(process.platform !== 'win32');
+    expect(Number.isInteger(grandchild)).toBe(true);
+    const deadline = Date.now() + 2000;
+    while ((isRunning(child.pid) || isRunning(grandchild)) && Date.now() < deadline) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(isRunning(child.pid)).toBe(false);
+    expect(isRunning(grandchild)).toBe(false);
+  }, 15_000);
 
   test('one metric line per turn on both paths, and none of them carries text', async () => {
     const env = { COMMONLY_SUPERVISE_RELAY_CODEX: '0', COMMONLY_SUPERVISE_STALL_MS: '0' };
