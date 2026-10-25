@@ -4,21 +4,29 @@
  *
  *   allow → the allow_once option
  *   deny  → the reject_once option, or cancelled when there is none
- *   ask   → approve({ toolCall, grantRule }) from the host. `true` allows,
- *           and so does an object whose `approved` is exactly true:
- *           { approved: true, by: <user id>, role?, decisionCardId? }.
- *           Anything else (false, 'yes', {approved: 1}, a throw, no answer in
- *           time) denies. `by`/`role`/`decisionCardId` are recorded either way.
+ *   ask   → approve({ toolCall, grantRule }) from the host. Only an answer
+ *           that says who gave it decides:
+ *           { approved: true | false, by: <user id>, role, decisionCardId? },
+ *           with `role` an owner role. Anything else (a bare true, 'yes',
+ *           {approved: 1}, an answer naming nobody, a throw, no answer in
+ *           time) is a failed ask, and the policy's default, deny, decides.
+ *           An answer whose role is `pod-member` decides nothing (ADR-033 D5):
+ *           the call stays parked, and approve is called again with
+ *           `refused: { by, role: 'pod-member', reason: 'not_owner' }` so the
+ *           card can show why and wait for the owner.
  *
  * allow_always and reject_always are never chosen: either would be remembered
  * by the agent past this grant, so the next call would skip the check.
  * An allow rule with no allow_once option therefore denies.
  */
 import { traceOf } from '../trace/events.js';
-import { argsDigestOf, DECIDED_BY_ROLES, isUserId, policyActorId } from '../record/format.js';
+import { argsDigestOf, PARKED_CALL_ROLES, isUserId, policyActorId } from '../record/format.js';
 import { matchToolCall, validateGrant } from './grant.js';
 
 export const DEFAULT_APPROVE_TIMEOUT_MS = 5 * 60 * 1000;
+// An approver that keeps handing back pod-member answers is broken; after this
+// many the ask fails, and the policy's default decides, as for any broken approver.
+export const MAX_REFUSED_ANSWERS = 10;
 
 const optionOfKind = (options, kind) => (Array.isArray(options) ? options : [])
   .find((option) => option && option.kind === kind && typeof option.optionId === 'string');
@@ -35,21 +43,27 @@ const denyAnswer = (options) => {
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const isText = (value) => typeof value === 'string' && value.length > 0;
 
+// The roles a person can answer a parked call as; `policy` is not a person.
+const ANSWER_ROLES = PARKED_CALL_ROLES.filter((role) => role !== 'policy');
+
 /**
- * What an approver's answer says. Only `true`, or an object with
- * `approved === true`, approves; attribution is taken from an object either
- * way, and a malformed field is dropped rather than trusted.
+ * What an approver's answer says. It approves or rejects only when it is an
+ * object whose `approved` is exactly true or false and that names a user id
+ * and an owner role. Any other answer approves nothing: it is a failed ask,
+ * so the record never carries a decision nobody can be held to.
  */
 const readAnswer = (answer) => {
-  if (answer === true) return { verdict: 'approved' };
-  if (!isPlainObject(answer)) return { verdict: 'rejected' };
+  if (!isPlainObject(answer) || typeof answer.approved !== 'boolean') return { verdict: 'failed' };
+  if (!isUserId(answer.by) || !ANSWER_ROLES.includes(answer.role)) return { verdict: 'failed' };
   return {
-    verdict: answer.approved === true ? 'approved' : 'rejected',
-    ...(isUserId(answer.by) ? { by: answer.by } : {}),
-    ...(DECIDED_BY_ROLES.includes(answer.role) ? { role: answer.role } : {}),
+    verdict: answer.approved ? 'approved' : 'rejected',
+    by: answer.by,
+    role: answer.role,
     ...(isText(answer.decisionCardId) ? { decisionCardId: answer.decisionCardId } : {}),
   };
 };
+
+const isPodMemberAnswer = (answer) => isPlainObject(answer) && answer.role === 'pod-member';
 
 /**
  * Wait for the host's approval, bounded. Resolves { verdict, by?, role?,
@@ -71,30 +85,41 @@ const awaitApproval = (approve, input, { timeoutMs, signal }) => new Promise((do
   const onAbort = () => finish({ verdict: 'aborted' });
   const timer = setTimeout(() => finish({ verdict: 'timed_out' }), timeoutMs);
   signal?.addEventListener?.('abort', onAbort, { once: true });
-  Promise.resolve()
-    .then(() => approve(input))
-    .then((answer) => finish(readAnswer(answer)), () => finish({ verdict: 'failed' }));
+  let refusals = 0;
+  const ask = (current) => Promise.resolve()
+    .then(() => approve(current))
+    .then((answer) => {
+      if (finished) return;
+      if (!isPodMemberAnswer(answer)) { finish(readAnswer(answer)); return; }
+      // A pod member may not decide a parked call: the call stays parked and
+      // the owner is asked again, with the refusal, inside the same timeout.
+      refusals += 1;
+      if (refusals > MAX_REFUSED_ANSWERS) { finish({ verdict: 'failed' }); return; }
+      const refused = { by: isUserId(answer.by) ? answer.by : null, role: 'pod-member', reason: 'not_owner' };
+      setTimeout(() => { if (!finished) ask({ ...input, refused }); }, 0);
+    }, () => finish({ verdict: 'failed' }));
+  ask(input);
 });
 
 /**
  * Who decided an ask, for the record. A person who answered is named by the
- * approver; no answer (timeout, failure, cancelled run) means the policy's
- * default decided. A bare true/false names nobody: decidedBy null.
+ * approver; anything else (no answer in time, an answer naming nobody, a
+ * broken approver, a cancelled run) means the policy's default decided.
  * Rule-decided calls carry no decidedBy here; the record writer fills in
  * "policy" for any decision whose rule list is not `ask`.
  */
 const decider = (approval) => {
   if (approval.verdict === 'approved' || approval.verdict === 'rejected') {
     return {
-      decidedBy: approval.by ?? null,
-      decidedByRole: approval.role ?? null,
+      decidedBy: approval.by,
+      decidedByRole: approval.role,
       ...(approval.decisionCardId ? { decisionCardId: approval.decisionCardId } : {}),
     };
   }
   return { decidedBy: 'policy', decidedByRole: 'policy' };
 };
 
-const isAsker = (value) => isPlainObject(value) && isUserId(value.id) && DECIDED_BY_ROLES.includes(value.role);
+const isAsker = (value) => isPlainObject(value) && isUserId(value.id) && PARKED_CALL_ROLES.includes(value.role);
 
 /**
  * Who an ask goes to, for permission.requested. `askedOf` is {id, role} or
@@ -128,6 +153,7 @@ const askOf = (askedOf, input, policy) => {
  * permission.requested: the question (the tool call's title), who it is
  * asked of, and the card it rides on. The approver receives that card id.
  * When the tool call carries `rawInput`, both entries carry its argsDigest.
+ * Given a `trace`, the returned function has `recordsPermissions === true`.
  */
 export const createPermissionPolicy = (grant, {
   approve, trace, approveTimeoutMs = DEFAULT_APPROVE_TIMEOUT_MS, signal, grantId, askedOf,
@@ -138,7 +164,7 @@ export const createPermissionPolicy = (grant, {
     throw new Error('askedOf must be {id: <user id>, role: <decidedByRole>} or a function returning one');
   }
   const policy = { id: policyActorId(grantId), role: 'policy' };
-  return async (request = {}) => {
+  const decide = async (request = {}) => {
     const toolCall = request?.toolCall || {};
     const options = request?.options;
     const { decision, rule } = matchToolCall(valid, toolCall);
@@ -180,4 +206,8 @@ export const createPermissionPolicy = (grant, {
     });
     return answer.outcome === 'selected' ? { outcome: 'selected', optionId: answer.optionId } : { outcome: 'cancelled' };
   };
+  // With a trace this writes both permission entries itself, so an adapter
+  // handed it as ctx.decidePermission must not write them again.
+  if (trace) Object.defineProperty(decide, 'recordsPermissions', { value: true });
+  return decide;
 };

@@ -218,16 +218,25 @@ test('permission.decided: decidedBy is separate from the agent owner, and creden
   });
   assert.deepEqual(asked.actor, { type: 'human', id: 'u-ben' }, 'the decider is the actor, not the agent or its owner');
   assert.equal(asked.data.decidedByRole, 'credential-owner');
-  for (const role of ['decision-owner', 'agent-owner', 'policy']) decide({ outcome: 'cancelled', toolCallId: 't', decidedBy: 'u-ben', decidedByRole: role });
+  for (const role of ['decision-owner', 'agent-owner']) decide({ outcome: 'cancelled', toolCallId: 't', decidedBy: 'u-ben', decidedByRole: role });
+  decide({ outcome: 'cancelled', toolCallId: 't', decidedBy: 'policy', decidedByRole: 'policy' });
+  assert.throws(() => decide({ outcome: 'cancelled', toolCallId: 't', decidedBy: 'u-ben', decidedByRole: 'policy' }), /exactly when/);
+  assert.throws(() => decide({ outcome: 'cancelled', toolCallId: 't', decidedBy: 'policy', decidedByRole: 'credential-owner' }), /exactly when/);
   assert.throws(() => decide({ outcome: 'cancelled', toolCallId: 't', decidedBy: 'u-ben', decidedByRole: 'owner' }), /decidedByRole/);
+  // A parked call is decided by an owner or by policy, never a pod member (ADR-033 D5).
+  assert.throws(() => decide({ outcome: 'cancelled', toolCallId: 't', decidedBy: 'u-cal', decidedByRole: 'pod-member' }), /decidedByRole/);
   assert.throws(() => decide({ outcome: 'cancelled', toolCallId: 't', decidedBy: 'Ben Smith' }), /decidedBy/);
   const byRule = decide({ outcome: 'selected', optionId: 'reject', kind: 'reject_once', toolCallId: 't', rule: { list: 'deny', pattern: 'x' }, grantId: 'g-1' });
   assert.equal(byRule.data.decidedBy, 'policy');
   assert.equal(byRule.data.decidedByRole, 'policy');
   assert.deepEqual(byRule.actor, { type: 'policy', id: 'grant:g-1' });
-  const unnamed = decide({ outcome: 'selected', optionId: 'allow', toolCallId: 't', rule: { list: 'ask', pattern: 'x' }, approval: 'approved' });
-  assert.equal(unnamed.data.decidedBy, null, 'an ask with no named approver stays null');
-  assert.equal(unnamed.actor, null);
+  // A decision always names who made it; no writer may record one nobody can be held to.
+  const asked2 = { outcome: 'selected', optionId: 'allow', toolCallId: 't', rule: { list: 'ask', pattern: 'x' }, approval: 'approved' };
+  assert.throws(() => decide(asked2), /decidedBy is required/);
+  assert.throws(() => decide({ ...asked2, decidedBy: null, decidedByRole: null }), /decidedBy is required/);
+  assert.throws(() => decide({ ...asked2, decidedBy: 'u-ben', decidedByRole: null }), /decidedByRole/);
+  assert.throws(() => decide({ ...asked2, decidedBy: 'u-ben' }), /decidedByRole/);
+  assert.throws(() => decide({ outcome: 'cancelled', toolCallId: 't' }), /decidedBy is required/, 'no rule, no decider');
 });
 
 test('tool.call surface is one of connector, commonly, native', () => {
@@ -271,6 +280,7 @@ test('permission.requested: question and askedOf are required, askedOf.id is an 
   assert.throws(() => request(askData({ askedOf: { id: 'Ben Smith', role: 'credential-owner' } })), /askedOf.id/);
   assert.throws(() => request(askData({ askedOf: { id: 'u-ben' } })), /askedOf.role/);
   assert.throws(() => request(askData({ askedOf: { id: 'u-ben', role: 'boss' } })), /askedOf.role/);
+  assert.throws(() => request(askData({ askedOf: { id: 'u-cal', role: 'pod-member' } })), /askedOf.role/, 'a parked call is not asked of a pod member');
   assert.throws(() => request(askData({ askedOf: { id: 'u-ben', role: 'policy', email: 'ben@example.com' } })), /unknown field/);
   assert.throws(() => request(askData({ decisionCardId: '' })), /decisionCardId/);
   assert.equal(request(askData({ askedOf: { id: 'grant:g-1', role: 'policy' } })).data.askedOf.id, 'grant:g-1');
@@ -284,6 +294,9 @@ test('decision.ruled: a card ruling, validated like permission.decided', () => {
   assert.deepEqual(entry.actor, { type: 'human', id: 'u-ana' }, 'the ruler is the actor');
   assert.deepEqual(rule({ ...good, decidedBy: 'policy', decidedByRole: 'policy' }).actor, { type: 'policy', id: 'policy' });
   for (const value of [true, 3, 'ship']) rule({ ...good, value });
+  const byMember = rule({ ...good, decidedBy: 'u-cal', decidedByRole: 'pod-member' });
+  assert.equal(byMember.data.decidedByRole, 'pod-member', 'a pod member may rule a card that parks no call');
+  assert.deepEqual(byMember.actor, { type: 'human', id: 'u-cal' });
   assert.throws(() => rule({ ...good, decisionCardId: undefined }), /decisionCardId/);
   assert.throws(() => rule({ ...good, decidedBy: 'Ana Smith' }), /decidedBy/);
   assert.throws(() => rule({ ...good, decidedBy: undefined }), /decidedBy/);
@@ -301,7 +314,7 @@ test('argsDigest is sha256 of the canonical args, and anything else is refused, 
   assert.equal(argsDigestOf({ s: '\ud800' }), undefined, 'a lone surrogate has no digest (RFC 8785)');
   assert.equal(argsDigestOf({ ['k\udc00']: 1 }), undefined, 'in a key too');
   const call = (argsDigest) => appendEntry(null, { ...ENV, ts: ts(), kind: 'tool.call', data: { toolCallId: 't', title: 'x', argsDigest } });
-  const decided = (argsDigest) => appendEntry(null, { ...ENV, ts: ts(), kind: 'permission.decided', data: { outcome: 'cancelled', toolCallId: 't', argsDigest } });
+  const decided = (argsDigest) => appendEntry(null, { ...ENV, ts: ts(), kind: 'permission.decided', data: { outcome: 'cancelled', toolCallId: 't', decidedBy: 'policy', decidedByRole: 'policy', argsDigest } });
   for (const write of [call, decided, (d) => request(askData({ argsDigest: d }))]) {
     write(digest);
     for (const raw of [{ command: 'git push' }, 'git push origin main', `sha256:${'A'.repeat(64)}`, `sha256:${'a'.repeat(63)}`, `sha512:${'a'.repeat(64)}`, 'a'.repeat(64), ['x'], 42]) {

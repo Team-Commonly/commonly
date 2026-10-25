@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTraceStore } from '../src/trace/store.js';
 import { prepareRunEnv } from '../src/valet/env.js';
-import { createPermissionPolicy } from '../src/valet/permissions.js';
+import { createPermissionPolicy, MAX_REFUSED_ANSWERS } from '../src/valet/permissions.js';
 import { argsDigestOf } from '../src/record/format.js';
 
 const FROM_ENV = 'sk-env-planted-0a1b2c3d4e5f';
@@ -105,14 +105,41 @@ const ask = async (answer) => {
   return { result, data: events[0].data };
 };
 
-test('an approver approves only with true, or an object whose approved is exactly true', async () => {
-  for (const answer of [true, { approved: true }, { approved: true, by: 'u-ben' }]) {
-    assert.deepEqual((await ask(answer)).result, { outcome: 'selected', optionId: 'allow' }, JSON.stringify(answer));
+const BEN = { by: 'u-ben', role: 'credential-owner' };
+
+test('an approver approves only with approved exactly true and a named owner', async () => {
+  for (const role of ['credential-owner', 'agent-owner']) {
+    assert.deepEqual((await ask({ approved: true, by: 'u-ben', role })).result, { outcome: 'selected', optionId: 'allow' }, role);
   }
-  for (const answer of [{ approved: 'yes' }, { approved: 1 }, { approved: 'true' }, { approved: {} }, { approved: [true] }, 'yes', 1, {}, [true], null, undefined, false]) {
+  for (const approved of ['yes', 1, 'true', {}, [true], null, undefined]) {
+    const { result, data } = await ask({ approved, ...BEN });
+    assert.deepEqual(result, { outcome: 'selected', optionId: 'reject' }, `approved ${JSON.stringify(approved)} must not approve`);
+    assert.equal(data.approval, 'failed');
+  }
+});
+
+test('a bare true approves nothing: the ask fails and policy denies (CTO, 10-25)', async () => {
+  const { result, data } = await ask(true);
+  assert.deepEqual(result, { outcome: 'selected', optionId: 'reject' });
+  assert.deepEqual([data.approval, data.decidedBy, data.decidedByRole], ['failed', 'policy', 'policy']);
+});
+
+test('a malformed answer approves nothing: the ask fails and policy denies; no decided line names nobody', async () => {
+  const malformed = [
+    'yes', 1, false, null, undefined, [true], {},
+    { approved: true },
+    { approved: true, by: 'u-ben' },
+    { approved: true, role: 'credential-owner' },
+    { approved: true, by: 'Ben Smith', role: 'credential-owner' },
+    { approved: true, by: 'u-ben', role: 'boss' },
+    { approved: true, by: 'u-ben', role: 'policy' },
+    { approved: true, by: 'u-ben', role: null },
+    { approved: false },
+  ];
+  for (const answer of malformed) {
     const { result, data } = await ask(answer);
     assert.deepEqual(result, { outcome: 'selected', optionId: 'reject' }, `${JSON.stringify(answer)} must not approve`);
-    assert.equal(data.approval, 'rejected');
+    assert.deepEqual([data.approval, data.decidedBy, data.decidedByRole], ['failed', 'policy', 'policy'], JSON.stringify(answer));
   }
 });
 
@@ -124,14 +151,61 @@ test('the decision names who decided and as what, separate from the agent and it
   assert.equal(data.decisionCardId, 'card-1');
   assert.equal(data.grantId, 'g-9');
   const refused = await ask({ approved: false, by: 'u-ben', role: 'credential-owner' });
+  assert.equal(refused.data.approval, 'rejected');
   assert.equal(refused.data.decidedBy, 'u-ben', 'a refusal is attributed too');
-  // Malformed attribution is dropped rather than trusted.
-  const odd = await ask({ approved: true, by: 'Ben Smith', role: 'boss', decisionCardId: '' });
-  assert.equal(odd.data.decidedBy, null);
-  assert.equal(odd.data.decidedByRole, null);
+  // A malformed card id is dropped rather than trusted.
+  const odd = await ask({ approved: true, ...BEN, decisionCardId: '' });
+  assert.equal(odd.data.decidedBy, 'u-ben');
   assert.equal('decisionCardId' in odd.data, false);
-  const bare = await ask(true);
-  assert.equal(bare.data.decidedBy, null, 'a bare true names nobody');
+});
+
+test('a pod member\'s answer decides nothing: the call stays parked until the owner answers (ADR-033 D5)', async () => {
+  const events = [];
+  const seen = [];
+  let ownerAnswers;
+  const ownerAnswer = new Promise((resolve) => { ownerAnswers = resolve; });
+  const decide = createPermissionPolicy({ tools: { ask: ['fetch'] } }, {
+    trace: { emit: (type, data) => events.push({ type, data }) }, approveTimeoutMs: 5000, grantId: 'g-9',
+    askedOf: { id: 'u-ben', role: 'credential-owner' },
+    approve: (input) => {
+      seen.push(input);
+      return seen.length === 1 ? { approved: true, by: 'u-cal', role: 'pod-member', decisionCardId: 'card-1' } : ownerAnswer;
+    },
+  });
+  const pending = decide({ toolCall: { toolCallId: 'tc-1', title: 'fetch it', kind: 'fetch' }, options: OPTIONS });
+  // Bounded: a policy that lets the pod member decide never asks again.
+  for (let i = 0; i < 200 && seen.length < 2; i += 1) await new Promise((resolve) => { setTimeout(resolve, 5); });
+  assert.equal(seen.length, 2, 'the owner is asked again after the pod member\'s answer');
+  assert.deepEqual(events.map((e) => e.type), ['permission.requested'], 'no permission.decided for the pod member\'s answer');
+  assert.deepEqual(seen[1].refused, { by: 'u-cal', role: 'pod-member', reason: 'not_owner' }, 'the card is told why');
+  assert.equal(seen[0].refused, undefined);
+  ownerAnswers({ approved: true, by: 'u-ben', role: 'credential-owner', decisionCardId: 'card-1' });
+  assert.deepEqual(await pending, { outcome: 'selected', optionId: 'allow' });
+  const decided = events.filter((e) => e.type === 'permission.decided');
+  assert.equal(decided.length, 1);
+  assert.equal(decided[0].data.decidedBy, 'u-ben');
+  assert.equal(decided[0].data.decidedByRole, 'credential-owner');
+});
+
+test('an approver that only ever answers as a pod member fails the ask, and the policy default decides', async () => {
+  const events = [];
+  let calls = 0;
+  const decide = createPermissionPolicy({ tools: { ask: ['fetch'] } }, {
+    trace: { emit: (type, data) => events.push({ type, data }) }, approveTimeoutMs: 5000, grantId: 'g-9',
+    approve: () => { calls += 1; return { approved: true, by: 'u-cal', role: 'pod-member' }; },
+  });
+  const result = await decide({ toolCall: { toolCallId: 'tc-1', title: 'fetch it', kind: 'fetch' }, options: OPTIONS });
+  assert.deepEqual(result, { outcome: 'selected', optionId: 'reject' });
+  assert.equal(calls, MAX_REFUSED_ANSWERS + 1);
+  const [decided] = events.filter((e) => e.type === 'permission.decided');
+  assert.deepEqual([decided.data.decidedBy, decided.data.decidedByRole], ['policy', 'policy']);
+});
+
+test('a valet policy with a trace says it records permissions itself; without one it does not', () => {
+  const recording = createPermissionPolicy({ tools: { ask: ['fetch'] } }, { trace: { emit: () => {} } });
+  assert.equal(recording.recordsPermissions, true);
+  assert.equal(Object.keys(recording).includes('recordsPermissions'), false, 'non-enumerable');
+  assert.equal(createPermissionPolicy({ tools: { ask: ['fetch'] } }).recordsPermissions, undefined);
 });
 
 test('no answer in time is decided by policy', async () => {
@@ -152,7 +226,7 @@ test('the question is redacted: a credential value in the ask never reaches disk
   const env = await prepareRunEnv({ grant, resolveSecret: async () => FROM_RESOLVER, root, trace: run });
   await env.cleanup();
   const decide = createPermissionPolicy(grant, {
-    trace: run, grantId: 'g-3', askedOf: { id: 'u-ben', role: 'credential-owner' }, approve: async () => ({ approved: true, by: 'u-ben' }),
+    trace: run, grantId: 'g-3', askedOf: { id: 'u-ben', role: 'credential-owner' }, approve: async () => ({ approved: true, ...BEN }),
   });
   await decide({ toolCall: { toolCallId: 'tc-1', title: `Call the API with token ${FROM_RESOLVER}?`, kind: 'fetch' }, options: OPTIONS });
   const raw = readFileSync(join(root, 'trace', 'runs', 'run-va-0003.jsonl'), 'utf8');

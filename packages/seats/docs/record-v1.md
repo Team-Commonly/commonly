@@ -213,18 +213,24 @@ it does not prove the process lost access. That happens at `run.settled`.
   `rejected`, `timed_out`, `failed` or `aborted`.
 
 **Who decided:**
-- `decidedBy` is a user id, `"policy"`, or `null`.
-  - `null` means the approver answered without saying who it was.
-  - A rule-decided call, or the default given when no answer came in time, is
-    `"policy"`.
+- `decidedBy` is required: a user id, or `"policy"`. A writer refuses `null`.
+  - A rule-decided call is `"policy"`. So is the default given when no
+    answer came in time, or when the answer did not name a user and an owner
+    role: such an answer approves nothing.
+  - It is `"policy"` exactly when `decidedByRole` is `"policy"`.
 - `decidedByRole` is one of:
   - `credential-owner`: the owner of the connection the call would use. This
     is who decides approvals today;
   - `decision-owner`: a person assigned to the decision. This is reserved,
     and writers may not emit it yet;
   - `agent-owner`: the owner of the asking agent;
-  - `policy`;
-  - `null`, when unknown.
+  - `pod-member`: a person in the pod who owns neither the credential nor
+    the asking agent. It is valid only on `decision.ruled`. A parked call is
+    decided by an owner or by policy, so `permission.decided` and
+    `permission.requested.askedOf` refuse it;
+  - `policy`.
+
+  It is required on `permission.decided`, and a writer refuses `null`.
 - `decisionCardId` is set when the decision came through a decision card.
 - `grantId` ties the decision to its `grant.issued`.
 
@@ -233,7 +239,8 @@ a parked tool call, such as whether to retry a stuck attempt.
 - `decisionCardId` is required.
 - `value` is the ruling: a string, number or boolean.
 - `decidedBy` is required. It is a user id, or `"policy"`.
-- `decidedByRole` is required, and comes from the same enum.
+- `decidedByRole` is required, and comes from the same enum. Only here may it
+  be `pod-member`.
 
 A ruling on a card that a `permission.requested` carried belongs with that
 request, and the OTLP export places it there.
@@ -453,8 +460,8 @@ What's new or changed in `EVENT_TYPES`:
 
    A later revision, also at `v: 1`, added the optional `actor.onBehalfOf`,
    the kinds `session.opened`, `sandbox.applied`, `egress.allowed` and
-   `egress.denied`, and `contextTokens` and `contextSize` on `usage`. Lines
-   without them are unchanged.
+   `egress.denied`, `contextTokens` and `contextSize` on `usage`, and the
+   `pod-member` value of `decidedByRole`. Lines without them are unchanged.
 4. **One writer per file.** A single process appends lines in `seq` order.
 
 ## 4. What the hash chain proves, and what it doesn't
