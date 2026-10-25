@@ -8,3 +8,6 @@ export { RunFailure, runFailure, failureKindOf, FAILURE_KINDS } from './failures
 export { EVENT_TYPES, isEventType, traceOf, NULL_TRACE } from './trace/events.js';
 export { createTraceStore } from './trace/store.js';
 export { superviseRun, SUPERVISOR_DEFAULTS, DEFAULT_RETRY_ON } from './supervisor.js';
+export {
+  REFUSAL_FORMATS, refusalSignalsOf, createRefusalDetector, findRefusal, createRefusalTap, refusalDropped,
+} from './wire/refusal.js';

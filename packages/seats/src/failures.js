@@ -11,6 +11,7 @@ export const FAILURE_KINDS = Object.freeze({
   exited: { retryable: true, meaning: 'the CLI process ended before the turn settled' },
   protocol: { retryable: false, meaning: 'the CLI broke its wire protocol' },
   refusal: { retryable: false, meaning: 'the model or provider refused; never retried' },
+  refusal_dropped: { retryable: false, meaning: 'the provider refused in-band and the CLI exited 0 without surfacing it' },
   max_tokens: { retryable: false, meaning: 'the turn hit its token limit' },
   max_turn_requests: { retryable: false, meaning: 'the turn hit its request limit' },
   cancelled: { retryable: false, meaning: 'the run was cancelled' },
