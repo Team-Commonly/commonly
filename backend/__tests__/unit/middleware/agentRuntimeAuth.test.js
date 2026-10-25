@@ -148,7 +148,6 @@ describe('agentRuntimeAuth path 2 (install-bound token) — #66 fix', () => {
 
     expect(mockCompleteStarterTask).not.toHaveBeenCalled();
   });
-
 });
 
 describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#916)', () => {
