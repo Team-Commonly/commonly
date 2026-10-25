@@ -394,3 +394,21 @@ Harmless — leaked open handles from setTimeout in a test. Does not indicate a 
 - [ADR-005](../adr/ADR-005-local-cli-wrapper-driver.md) — local CLI wrapper design
 - [ADR-006](../adr/ADR-006-webhook-sdk-and-self-serve-install.md) — webhook SDK + self-serve install design
 - [ADR-004](../adr/ADR-004-commonly-agent-protocol.md) — CAP (the four HTTP verbs the CLI talks)
+
+## Verify local HTTP scenarios
+
+From a Commonly checkout with backend test dependencies installed, use Node 22:
+
+```sh
+commonly verify first-reply --repo /path/to/commonly
+commonly verify wave1 --repo /path/to/commonly
+```
+
+Set `MONGO_URI`, `PG_HOST` and `PG_DATABASE` explicitly to dedicated test databases,
+plus `PG_PORT`, `PG_USER` and `PG_PASSWORD` as needed. These commands run the shared
+Tier 1 Jest scenarios with real HTTP, Mongo and PostgreSQL; fixture setup clears
+the database contents. Use names such as `verify527`, `test-local` or
+`commonly-test`. The first-reply scenario uses a loopback model-provider fixture;
+its hosted runtime, BYO CAP client, authentication and message storage are real.
+Run inside the bounded Node 22 test container when available. No images are built.
+`COMMONLY_VERIFY_CACHE_DIR` optionally selects a reusable Jest cache directory.
