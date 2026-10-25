@@ -22,7 +22,6 @@ import { createHash } from 'crypto';
 
 import { requireSeatModel } from '../lib/adapters/seat-model.js';
 import { createClient } from '../lib/api.js';
-import { copyHandoffMemory } from '../lib/handoff-memory.js';
 import {
   buildSpawnId,
   createSpawnCredentialLease,
@@ -83,6 +82,7 @@ import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
+import { createSeatStop } from '../lib/seat-stop.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import { describeUpstreamRefusal } from '../lib/upstream-refusal.js';
 import {
@@ -987,6 +987,13 @@ export const performAttach = async ({
   // server via legacy normalization).
   const runtimeType = adapter.runtimeType || adapter.name;
 
+  if (memoryFrom) {
+    const capability = await client.get('/api/registry/install/memory-handoff');
+    if (capability?.installTimeMemoryHandoff !== true) {
+      throw new Error('Server does not support install-time memory handoff; upgrade the server before attaching');
+    }
+  }
+
   // Idempotent publish — already-published is expected and fine. Install will
   // surface the real error if the manifest is truly unusable.
   try {
@@ -1010,7 +1017,9 @@ export const performAttach = async ({
   // on config.environment so cross-driver implementations can realize it
   // server-side without re-reading the user's file.
   const installResult = await client.post('/api/registry/install', {
-    ...(memoryFrom ? { resumeExisting: true } : {}),
+    ...(memoryFrom ? {
+      resumeExisting: true, memoryFrom: { agentName: memoryFrom, instanceId: memoryInstance },
+    } : {}),
     agentName,
     podId,
     displayName: displayName || agentName,
@@ -1034,10 +1043,8 @@ export const performAttach = async ({
   const instanceId = installation.instanceId || 'default';
 
   if (memoryFrom) {
-    const memoryCopy = await copyHandoffMemory(client, {
-      sourceAgentName: memoryFrom, sourceInstanceId: memoryInstance,
-      targetAgentName: installation.agentName, targetInstanceId: instanceId,
-    });
+    const memoryCopy = installResult.memoryCopy;
+    if (!memoryCopy) throw new Error('Server does not support install-time memory handoff; upgrade the server before attaching');
     log(memoryCopy.reason === 'source-empty'
       ? 'hosted agent has no long-term memory to copy'
       : 'hosted long-term memory is present in the local agent');
@@ -3830,12 +3837,16 @@ Docs:
       // SIGTERM is the daemon's idle-boundary handoff signal. `stop()` stops
       // future polls but lets the in-flight turn finish and ack before the
       // event loop drains; exiting here would cut a model turn in half.
-      const requestStop = () => {
+      // seat-stop also arms the supervised-group deadline before launchd's
+      // SIGKILL, and kills any group still live when the process exits.
+      const seatStop = createSeatStop({ name, stop });
+      const requestStop = (signal) => {
         console.log(`\n${stamp()} [${name}] stopping after the current turn...`);
-        stop();
+        seatStop.requestStop(signal);
       };
       process.on('SIGINT', requestStop);
       process.on('SIGTERM', requestStop);
+      process.once('exit', seatStop.onExit);
     });
 
   // ── detach (ADR-005) ──────────────────────────────────────────────────────

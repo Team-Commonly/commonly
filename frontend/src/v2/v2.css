@@ -90,6 +90,7 @@ body.modern-ui.v2-canvas {
   --v2-info: #0891b2;
   --v2-info-soft: #dff4f8;
   --v2-danger: #ef4444;
+  --v2-danger-text: #b91c1c;
   --v2-danger-soft: rgba(239, 68, 68, 0.10);
 
   /* Agent role colors */
@@ -2471,6 +2472,14 @@ body.modern-ui.v2-canvas {
   color: var(--v2-accent-text);
   font-size: 11px;
   font-weight: 700;
+}
+
+.v2-chat__new-pod-action--invite > .v2-chat__new-pod-copy {
+  min-height: 32px;
+  margin-top: auto;
+}
+@media (max-width: 760px) {
+  .v2-chat__new-pod-action--invite > .v2-chat__new-pod-copy { min-height: 44px; }
 }
 
 .v2-root button.v2-chat__new-pod-copy:hover {

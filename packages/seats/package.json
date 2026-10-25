@@ -1,0 +1,22 @@
+{
+  "name": "@commonlyai/seats",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Adapters that run agent CLIs as supervised seats. Bundled inside @commonlyai/cli; not published on its own.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js",
+    "./*": "./src/*.js"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\""
+  }
+}

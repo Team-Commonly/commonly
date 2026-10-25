@@ -23,6 +23,18 @@
 export const SOURCE_RUNTIME = 'local-cli';
 
 /**
+ * Row slicing, the runtime-agnostic half of D48 (TASK-545). A row too large
+ * for one turn drifts when one seat carries it whole, so the seat splits it on
+ * the board before any code. It names the exact call and field for the reason
+ * the memory cue below names `long_term`: a seat adopts a habit through a
+ * surface it can see. Each adapter decides whether to pass it.
+ */
+export const ROW_SLICING_CUE = 'Slicing: when a row is too large for one turn, split it before '
+  + 'writing any code. Post each slice as a child row (commonly_create_task with parentTask set '
+  + "to the row's taskId) with one assignee, a written file or area boundary, and its own "
+  + 'acceptance line.';
+
+/**
  * The turn preamble, shared by every adapter so the two cannot drift.
  *
  * Non-empty memory is prepended verbatim — that path is load-bearing and is
@@ -39,8 +51,17 @@ export const SOURCE_RUNTIME = 'local-cli';
  * the section whose name most invites exactly this use — succeeds, returns 200,
  * and is never seen again; the write and the silence are indistinguishable from
  * a correct round trip. Naming the section is the whole point of the cue.
+ *
+ * `workCues` are working habits an adapter teaches on a fresh session, beside
+ * the memory cues and under the same once-per-session rule. An adapter passes
+ * only the habits its CLI can act on; passing none leaves the preamble as it
+ * was.
  */
-export const buildMemoryPreamble = (prompt, memoryLongTerm, { freshSession = false } = {}) => {
+export const buildMemoryPreamble = (
+  prompt,
+  memoryLongTerm,
+  { freshSession = false, workCues = [] } = {},
+) => {
   // `null` is the UNREADABLE signal, and it is deliberately not the same value
   // as `''`. Telling a seat whose token was revoked that "nothing has ever been
   // saved here" is a false claim about its own history, and it is the same
@@ -87,7 +108,10 @@ export const buildMemoryPreamble = (prompt, memoryLongTerm, { freshSession = fal
       + 'gates held, decisions pending, and task context, not a transcript — using '
       + 'the long_term write above.';
   }
-  return `${context}\n${freshReadCue}\n=== Current turn ===\n${prompt}\n${sessionEndCue}`;
+  const workCue = workCues.length
+    ? `\n=== Working a row ===\n${workCues.map((cue) => `- ${cue}`).join('\n')}\n`
+    : '';
+  return `${context}\n${freshReadCue}${workCue}\n=== Current turn ===\n${prompt}\n${sessionEndCue}`;
 };
 
 export const readLongTerm = async (client, { onError } = {}) => {

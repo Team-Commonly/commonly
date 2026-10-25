@@ -7,7 +7,9 @@
  */
 
 import { jest } from '@jest/globals';
-import { readLongTerm, syncBack, SOURCE_RUNTIME, buildMemoryPreamble } from '../src/lib/memory-bridge.js';
+import {
+  readLongTerm, syncBack, SOURCE_RUNTIME, buildMemoryPreamble, ROW_SLICING_CUE,
+} from '../src/lib/memory-bridge.js';
 
 const makeClient = ({ memoryPayload = null, getThrows = false, postThrows = false } = {}) => {
   const get = jest.fn(async () => {
@@ -237,5 +239,35 @@ describe('buildMemoryPreamble', () => {
     expect(fresh).toContain('=== Fresh session ===');
     expect(fresh).toMatch(/Do not treat it as empty or write a replacement/i);
     expect(fresh).not.toContain('commonly_save_my_memory');
+  });
+
+  // D48 (TASK-545). Working habits ride the memory cues' once-per-session rule,
+  // and only the habits an adapter passes are rendered.
+  it('renders work cues on a fresh session, after the read cue and before the turn', () => {
+    const fresh = buildMemoryPreamble('turn', 'mem', {
+      freshSession: true,
+      workCues: ['first habit', 'second habit'],
+    });
+    expect(fresh).toContain('=== Working a row ===\n- first habit\n- second habit\n');
+    expect(fresh.indexOf('=== Fresh session ===')).toBeLessThan(fresh.indexOf('=== Working a row ==='));
+    expect(fresh.indexOf('=== Working a row ===')).toBeLessThan(fresh.indexOf('=== Current turn ==='));
+  });
+
+  it('does not render work cues on a resumed turn, even when an adapter passes them', () => {
+    const resumed = buildMemoryPreamble('turn', 'mem', { workCues: ['first habit'] });
+    expect(resumed).not.toContain('=== Working a row ===');
+    expect(resumed).not.toContain('first habit');
+  });
+
+  it('leaves the fresh preamble as it was when no cues are passed', () => {
+    const none = buildMemoryPreamble('turn', 'mem', { freshSession: true, workCues: [] });
+    expect(none).toBe(buildMemoryPreamble('turn', 'mem', { freshSession: true }));
+    expect(none).not.toContain('=== Working a row ===');
+    expect(none).toContain('prior sessions.\n\n=== Current turn ===\nturn');
+  });
+
+  it('names the exact call and field a seat slices a row with', () => {
+    expect(ROW_SLICING_CUE).toContain('commonly_create_task');
+    expect(ROW_SLICING_CUE).toContain('parentTask');
   });
 });

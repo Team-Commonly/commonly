@@ -170,6 +170,7 @@ describe('claude adapter — spawn()', () => {
     // Recovery creates an underlying session, so it must receive the same
     // fresh-session memory cues as an initial spawn.
     expect(calls[1].args[1]).toContain('=== Fresh session ===');
+    expect(calls[1].args[1]).toContain('=== Working a row ===');
     // newSessionId returned is the fresh one so the wrapper persists it next turn
     expect(res.newSessionId).not.toBe('abc-123');
     expect(res.newSessionId).toMatch(/^[0-9a-f]{8}-/);
@@ -213,6 +214,35 @@ describe('claude adapter — spawn()', () => {
     expect(promptArg).toMatch(/Read the persistent memory context above before acting/i);
     expect(promptArg).toMatch(/At a natural end to meaningful work/i);
     expect(promptArg).toContain("section: 'long_term'");
+  });
+
+  // D48 (TASK-545) is done when a live seat's spawn argv shows these habits, so
+  // they are pinned on the argv here, not only on the shared helper.
+  test('a fresh private Claude seat is taught parallel reads and row slicing', async () => {
+    const { impl, calls } = makeSpawnImpl({ stdout: 'ok' });
+    await claude.spawn('current message', { environment: { model: 'test-model' },
+      memoryLongTerm: 'open gate: #123',
+      _spawnImpl: impl,
+    });
+
+    const promptArg = calls[0].args[1];
+    expect(promptArg).toContain('=== Working a row ===');
+    expect(promptArg).toContain('use the Agent tool');
+    expect(promptArg).toContain('commonly_create_task with parentTask');
+    expect(promptArg.indexOf('=== Working a row ===')).toBeLessThan(promptArg.indexOf('=== Current turn ==='));
+  });
+
+  test('a resumed Claude seat is not re-taught the habits its transcript holds', async () => {
+    const { impl, calls } = makeSpawnImpl({ stdout: 'ok' });
+    await claude.spawn('current message', { environment: { model: 'test-model' },
+      sessionId: 'sid-1',
+      memoryLongTerm: 'open gate: #123',
+      _spawnImpl: impl,
+    });
+
+    const promptArg = calls[0].args[1];
+    expect(promptArg).not.toContain('=== Working a row ===');
+    expect(promptArg).not.toContain('Agent tool');
   });
 
   // Replaces an assertion that empty memory passed the prompt verbatim. That

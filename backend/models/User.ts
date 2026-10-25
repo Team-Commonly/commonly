@@ -221,6 +221,15 @@ export interface IUser extends Document {
     signupRef?: string;
   };
   createdAt: Date;
+  /** Browser-reported first touch, persisted only for a new human account. */
+  signupSource?: {
+    ref?: string;
+    referrer?: string;
+    landingPath?: string;
+    firstSeenAt?: Date;
+    authMethod: 'password' | 'google' | 'github';
+    recordedAt: Date;
+  };
   // Instance methods
   comparePassword(password: string): Promise<boolean>;
   generateApiToken(): string;
@@ -231,6 +240,20 @@ export interface IUser extends Document {
 export interface IUserModel extends Model<IUser> {}
 
 const userSchema = new Schema<IUser>({
+  // Growth opts in with .select('+signupSource'); incidental profile/populate
+  // reads must not disclose referral paths. Every field is write-once too.
+  signupSource: {
+    type: new Schema({
+      ref: { type: String, immutable: true },
+      referrer: { type: String, immutable: true },
+      landingPath: { type: String, immutable: true },
+      firstSeenAt: { type: Date, immutable: true },
+      authMethod: { type: String, enum: ['password', 'google', 'github'], required: true, immutable: true },
+      recordedAt: { type: Date, required: true, immutable: true },
+    }, { _id: false }),
+    immutable: true,
+    select: false,
+  },
   username: { type: String, required: true, unique: true },
   previousUsernames: { type: [String], default: [] },
   displayName: { type: String, trim: true },
