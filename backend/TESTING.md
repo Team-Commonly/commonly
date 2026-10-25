@@ -43,21 +43,21 @@ cd backend && INTEGRATION_TEST=true \
   npx jest --testPathPattern="__tests__/service" --forceExit --runInBand
 ```
 
-Schema source: `backend/config/schema.sql`. `testUtils.setupPgDb()` applies it verbatim after `CREATE EXTENSION IF NOT EXISTS pgcrypto`.
+Schema source: ordered files in `backend/config/migrations/`. `testUtils.setupPgDb()` runs the boot migration runner after `CREATE EXTENSION IF NOT EXISTS pgcrypto`. `config/schema.sql` aliases the frozen first migration for older fixtures. See [the migration contract](../docs/database/schema-migrations.md).
 
-> **Blind spot both tiers share: neither exercises an EXISTING database.**
-> Tier 1 provisions a fresh `postgres:16` per CI run, so `CREATE TABLE IF NOT
-> EXISTS` always takes the CREATE branch. Tier 0 reads `schema.sql` as text.
-> A column added to an existing table therefore needs a *third* arrangement to
-> be tested at all: start from the pre-threading table shape, apply the
-> retrofit `ALTER`s, assert the column appears. See
+> **A fresh database alone does not prove an upgrade.**
+> Tier 1 normally provisions fresh PostgreSQL per CI run, and many Tier 0
+> fixtures inspect SQL as text. An upgrade needs an additional arrangement:
+> start from the previous populated table shape, apply pending migrations,
+> and assert the new column appears without losing data. See
 > `__tests__/unit/models/threadingSchemaRetrofit.test.js`.
 >
 > This is not hypothetical. On 2026-08-22 `thread_root_id` shipped declared
 > only inside its `CREATE TABLE`; both tiers were green and the column would
 > never have existed on the live instance, throwing at boot on the index and
-> failing every INSERT that named it. Any PR adding a column to an existing
-> table should be read for both declarations.
+> failing every INSERT that named it. New migrations need an existing-shape
+> test. `__tests__/service/pgMigrations.test.js` now exercises that path with
+> real PostgreSQL, plus rollback and concurrent boots.
 
 Tier-1 setup logs `[tier1] Connected to real MongoDB …` and `[tier1] Connected to real Postgres …` so the CI run log makes the mode obvious.
 

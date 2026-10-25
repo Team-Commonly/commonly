@@ -157,6 +157,9 @@ interface MetadataDoc {
 }
 
 interface PostMessageOptions {
+  /** Server-owned AgentRun identity. Never forwarded from runtime HTTP input. */
+  runId?: string;
+  runPodId?: string;
   agentName: string;
   podId: unknown;
   content: string;
@@ -1571,6 +1574,16 @@ class AgentMessageService {
       }
     }
 
+    // Provenance is kernel-owned even when the presentation is agent-authored.
+    let messagePayload = payload;
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      messagePayload = { ...payload } as Record<string, unknown>;
+      delete (messagePayload as Record<string, unknown>).runId;
+      delete (messagePayload as Record<string, unknown>).runPodId;
+    }
+    if (options.runId) messagePayload = { ...(messagePayload as object || {}), runId: options.runId,
+      ...(options.runPodId ? { runPodId: options.runPodId } : {}) };
+
     const posted = await AgentMessageService._postToTarget({
       agentName,
       instanceId,
@@ -1578,7 +1591,7 @@ class AgentMessageService {
       content: sanitizedContent,
       messageType,
       metadata,
-      payload,
+      payload: messagePayload,
       relayCard,
       agentUser,
       displayName,

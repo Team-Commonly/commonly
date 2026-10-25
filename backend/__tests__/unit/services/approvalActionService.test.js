@@ -490,3 +490,36 @@ describe('approved connect_local_agent execution — the seat, never the token',
     expect(mockInstallUpsert).not.toHaveBeenCalled();
   });
 });
+
+
+test('approval card rebuilds keep their originating run after a transition', () => {
+  const { buildCardPayload } = require('../../../services/approvalActionService');
+  const row = flaggedRow({ runId: 'aaaaaaaaaaaaaaaaaaaaa111' });
+  expect(buildCardPayload(row).runId).toBe('aaaaaaaaaaaaaaaaaaaaa111');
+  expect(buildCardPayload({ ...row, status: 'resolved', decision: 'declined' }).runId).toBe('aaaaaaaaaaaaaaaaaaaaa111');
+});
+
+
+test('a proposal carries its originating run into the saved action and posted card', async () => {
+  const { proposeAction } = require('../../../services/approvalActionService');
+  const runId = 'aaaaaaaaaaaaaaaaaaaaa111';
+  const runPodId = 'bbbbbbbbbbbbbbbbbbbbb111';
+  const row = flaggedRow({ runId, runPodId });
+  mockPodFindById.mockReturnValue({ select: () => ({ lean: async () => ({ createdBy: OWNER }) }) });
+  mockInstallFindOne.mockResolvedValue({ installedBy: OWNER });
+  mockApprovalCreate.mockResolvedValue(row);
+  mockPostMessage.mockResolvedValue({ success: true, message: { id: 42 } });
+
+  const result = await proposeAction({
+    podId: 'pod-1', agentName: 'guide', instanceId: 'udefault', runId, runPodId,
+    actionType: 'create_pod', params: { name: 'Research', type: 'chat' }, summary: 'Create a research pod',
+  });
+
+  expect(result.ok).toBe(true);
+  expect(mockApprovalCreate).toHaveBeenCalledWith(expect.objectContaining({ runId, runPodId }));
+  expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({
+    runId, runPodId, payload: expect.objectContaining({ runId, runPodId, kind: 'approval-card' }),
+  }));
+  expect(row.messageId).toBe('42');
+  expect(row.save).toHaveBeenCalled();
+});

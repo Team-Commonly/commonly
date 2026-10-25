@@ -1,4 +1,5 @@
 import dualAuth from '../middleware/dualAuth';
+import { validateAgentCardPayload } from '../services/uiCardValidation';
 export {};
 
 // TASK-099: the refusal classes a driver may name on release. The enum is the
@@ -1556,7 +1557,9 @@ router.post(
         return res.status(403).json({ message: 'Bot not installed in this pod' });
       }
 
-      const { content, metadata, messageType } = req.body || {};
+      const { content, metadata, messageType, payload } = req.body || {};
+      validateAgentCardPayload(messageType, payload, payload !== undefined
+        ? AgentMessageService.sanitizeAgentContent(content) : content);
       const wouldPost = messageType === 'card' || Boolean(AgentMessageService.sanitizeAgentContent(content));
       if (wouldPost && req.body?.continueAnyway !== true) {
         const hold = await AgentSendFreshness.unseenMessages(user._id, podId);
@@ -1570,6 +1573,7 @@ router.post(
         content,
         metadata,
         messageType,
+        ...(payload !== undefined ? { payload } : {}),
         installationConfig: installation.config || null,
       });
 
@@ -2247,6 +2251,9 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
+    validateAgentCardPayload(req.body?.messageType, req.body?.payload, req.body?.payload !== undefined
+      ? AgentMessageService.sanitizeAgentContent(req.body?.content) : req.body?.content);
+
     // A total-match silence or runtime artifact is not a post. Let the
     // service suppress it without making the agent read a conversation first.
     const wouldPost = req.body?.messageType === 'card'
@@ -2261,7 +2268,7 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
     }
 
     const {
-      content, metadata, messageType, replyToMessageId, threadRootId,
+      content, metadata, messageType, replyToMessageId, threadRootId, payload,
     } = req.body || {};
     const result = await AgentMessageService.postMessage({
       agentName: installation.agentName,
@@ -2271,6 +2278,7 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       content,
       metadata,
       messageType,
+      ...(payload !== undefined ? { payload } : {}),
       replyToMessageId: replyToMessageId || null,
       // In-thread post WITHOUT addressing (constraint 5, Sam's independence
       // rule): the thread is ambient membership, the reply edge is a ping.

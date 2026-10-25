@@ -33,6 +33,24 @@ jest.mock('../../../services/globalModelConfigService', () => ({
 jest.mock('../../../services/externalFeedService', () => ({
   syncExternalFeeds: jest.fn(),
 }));
+// The feed tokens are stored through connectorSecrets (`services/feedCredentials`);
+// this stand-in keeps them in a map keyed by ref so a save is observable here.
+jest.mock('../../../services/feedCredentials', () => {
+  const store = new Map();
+  const read = async (ref) => (ref ? store.get(String(ref)) : undefined);
+  return {
+    store,
+    storeFeedTokens: jest.fn(async (integrationId, type, { accessToken, refreshToken } = {}) => {
+      const refs = {};
+      if (accessToken) { refs.feedAccessTokenRef = `ref-${type}-access`; store.set(refs.feedAccessTokenRef, accessToken); }
+      if (refreshToken && type === 'x') { refs.feedRefreshTokenRef = `ref-${type}-refresh`; store.set(refs.feedRefreshTokenRef, refreshToken); }
+      return refs;
+    }),
+    readFeedAccessToken: jest.fn((config) => read(config?.feedAccessTokenRef)),
+    hasFeedAccessToken: jest.fn(async (config) => Boolean(await read(config?.feedAccessTokenRef))),
+  };
+});
+
 jest.mock('axios', () => ({
   get: jest.fn(),
 }));
@@ -45,6 +63,7 @@ const registry = require('../../../integrations');
 const externalFeedService = require('../../../services/externalFeedService');
 const GlobalModelConfigService = require('../../../services/globalModelConfigService');
 const router = require('../../../routes/admin/globalIntegrations');
+const feedCredentials = require('../../../services/feedCredentials');
 
 function getRouteHandler(path, method) {
   const layer = router.stack.find(
@@ -63,6 +82,7 @@ function createRes() {
 describe('admin global integrations route', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    feedCredentials.store.clear();
     Pod.findOne.mockResolvedValue({
       _id: 'pod-global',
       name: 'Global Social Feed',
@@ -213,7 +233,7 @@ describe('admin global integrations route', () => {
     expect(Integration.create).toHaveBeenCalledWith(expect.objectContaining({
       type: 'x',
       config: expect.objectContaining({
-        accessToken: 'x-token',
+        feedAccessTokenRef: 'ref-x-access',
         agentAccessEnabled: true,
         globalAgentAccess: true,
         followFromAuthenticatedUser: true,
@@ -221,6 +241,8 @@ describe('admin global integrations route', () => {
         followingMaxUsers: 12,
       }),
     }));
+    expect(Integration.create.mock.calls[0][0].config.accessToken).toBeUndefined();
+    expect(feedCredentials.store.get('ref-x-access')).toBe('x-token');
     expect(res.json).toHaveBeenCalledWith({
       success: true,
       integration: created,
@@ -242,9 +264,11 @@ describe('admin global integrations route', () => {
       _id: 'x-int-1',
       type: 'x',
       status: 'connected',
-      config: { accessToken: 'stored-x-token', refreshToken: 'stored-refresh', username: 'old' },
+      config: { feedAccessTokenRef: 'ref-x-access', feedRefreshTokenRef: 'ref-x-refresh', username: 'old' },
       save: jest.fn().mockResolvedValue(undefined),
     };
+    feedCredentials.store.set('ref-x-access', 'stored-x-token');
+    feedCredentials.store.set('ref-x-refresh', 'stored-refresh');
 
     Integration.findOne.mockResolvedValueOnce(stored);
 
@@ -253,8 +277,10 @@ describe('admin global integrations route', () => {
     expect(Integration.findOne).toHaveBeenCalledTimes(1);
     expect(Integration.create).not.toHaveBeenCalled();
     expect(stored.save).toHaveBeenCalled();
-    expect(stored.config.accessToken).toBe('stored-x-token');
-    expect(stored.config.refreshToken).toBe('stored-refresh');
+    expect(feedCredentials.storeFeedTokens).toHaveBeenCalledWith('x-int-1', 'x', expect.objectContaining({ accessToken: undefined }));
+    expect(stored.config.feedAccessTokenRef).toBe('ref-x-access');
+    expect(stored.config.feedRefreshTokenRef).toBe('ref-x-refresh');
+    expect(feedCredentials.store.get('ref-x-access')).toBe('stored-x-token');
     expect(stored.config.username).toBe('commonly');
     expect(res.status).not.toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({ success: true, integration: stored });
@@ -271,15 +297,18 @@ describe('admin global integrations route', () => {
       _id: 'x-int-1',
       type: 'x',
       status: 'connected',
-      config: { accessToken: 'stored-x-token' },
+      config: { feedAccessTokenRef: 'ref-x-access' },
       save: jest.fn().mockResolvedValue(undefined),
     };
+    feedCredentials.store.set('ref-x-access', 'stored-x-token');
 
     Integration.findOne.mockResolvedValueOnce(stored);
 
     await handler(req, res);
 
-    expect(stored.config.accessToken).toBe('fresh-x-token');
+    expect(stored.config.accessToken).toBeUndefined();
+    expect(stored.config.feedAccessTokenRef).toBe('ref-x-access');
+    expect(feedCredentials.store.get('ref-x-access')).toBe('fresh-x-token');
     expect(res.json).toHaveBeenCalledWith({ success: true, integration: stored });
   });
 
@@ -380,16 +409,19 @@ describe('admin global integrations route', () => {
       _id: 'ig-int-1',
       type: 'instagram',
       status: 'connected',
-      config: { accessToken: 'stored-ig-token', username: 'old' },
+      config: { feedAccessTokenRef: 'ref-instagram-access', username: 'old' },
       save: jest.fn().mockResolvedValue(undefined),
     };
+    feedCredentials.store.set('ref-instagram-access', 'stored-ig-token');
 
     Integration.findOne.mockResolvedValueOnce(stored);
 
     await handler(req, res);
 
     expect(stored.save).toHaveBeenCalled();
-    expect(stored.config.accessToken).toBe('stored-ig-token');
+    expect(stored.config.accessToken).toBeUndefined();
+    expect(stored.config.feedAccessTokenRef).toBe('ref-instagram-access');
+    expect(feedCredentials.store.get('ref-instagram-access')).toBe('stored-ig-token');
     expect(stored.config.username).toBe('commonly');
     expect(res.status).not.toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({ success: true, integration: stored });
@@ -420,8 +452,9 @@ describe('admin global integrations route', () => {
       type: 'x',
       status: 'connected',
       isActive: true,
-      config: { accessToken: 'x-token', userId: 'x-user-1' },
+      config: { feedAccessTokenRef: 'ref-x-access', userId: 'x-user-1' },
     };
+    feedCredentials.store.set('ref-x-access', 'x-token');
 
     Integration.findOne.mockResolvedValueOnce(xIntegration);
     axios.get.mockResolvedValueOnce({

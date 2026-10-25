@@ -94,6 +94,8 @@ export interface IIntegration extends Document {
     chatType?: string;
     accessToken?: string;
     refreshToken?: string;
+    feedAccessTokenRef?: string;
+    feedRefreshTokenRef?: string;
     tokenType?: string;
     tokenExpiresAt?: Date;
     oauthScopes?: string[];
@@ -264,6 +266,11 @@ const IntegrationSchema = new Schema<IIntegration>(
       chatType: String,
       accessToken: String,
       refreshToken: String,
+      // ConnectorSecret refs for the X / Instagram feed pair (`services/feedCredentials`).
+      // Declared for the same reason as `webhookUrlRef` above: a strict subdocument
+      // drops an undeclared `$set` in silence.
+      feedAccessTokenRef: String,
+      feedRefreshTokenRef: String,
       tokenType: String,
       tokenExpiresAt: Date,
       oauthScopes: [String],

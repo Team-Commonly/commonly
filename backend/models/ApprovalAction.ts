@@ -55,6 +55,9 @@ export interface IApprovalAction extends Document {
   // Message id of the rendered card. String because messages live in PG
   // (serial int) with a Mongo fallback (ObjectId hex).
   messageId?: string;
+  /** Originating native run; persists when the card changes state. */
+  runId?: Types.ObjectId;
+  runPodId?: Types.ObjectId;
   ownerUserId: Types.ObjectId;
   agentName: string;
   /** Server-only executor identity for tool_call; never in the shared card. */
@@ -89,6 +92,8 @@ const ApprovalActionSchema = new Schema<IApprovalAction>(
   {
     podId: { type: Schema.Types.ObjectId, ref: 'Pod', required: true },
     messageId: { type: String },
+    runId: { type: Schema.Types.ObjectId, ref: 'AgentRun' },
+    runPodId: { type: Schema.Types.ObjectId, ref: 'Pod' },
     ownerUserId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     agentName: { type: String, required: true, lowercase: true, trim: true },
     agentUserId: { type: String },

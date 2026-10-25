@@ -34,6 +34,21 @@ module.exports = {
   },
   overrides: [
     {
+      // Extracted aggregates are private to their repositories. Fixtures may
+      // still seed/inspect the real model to test the persistence contract.
+      files: ['**/*.ts', '**/*.js'],
+      excludedFiles: ['repositories/**', '__tests__/**', 'models/**', 'dist/**'],
+      rules: {
+        'no-restricted-imports': ['error', { patterns: [{
+          group: ['**/models/AgentPodReadCursor', '**/models/AgentPodReadCursor.*'],
+          message: 'Use repositories/agentPodReadCursorRepository.',
+        }] }],
+        'no-restricted-modules': ['error', { patterns: [
+          '**/models/AgentPodReadCursor', '**/models/AgentPodReadCursor.*',
+        ] }],
+      },
+    },
+    {
       // TypeScript. Added 2026-08-28 for TASK-024, which measured backend
       // eslint reaching 0 of 286 `.ts` files: `npm run lint` was scoped
       // `--ext .js`, every backend `lint-staged` glob had gone stale to zero
