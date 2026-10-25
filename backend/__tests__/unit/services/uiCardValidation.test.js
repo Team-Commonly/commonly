@@ -123,6 +123,11 @@ describe('untrusted UI card write validation', () => {
   it('refuses deeply nested input before recursive parsing', () => {
     expect(() => validate(card('root = Text(' + '['.repeat(1000) + '0' + ']'.repeat(1000) + ')'))).toThrow('nesting');
   });
+  it('accepts bounded reuse and rejects direct or indirect reference cycles', () => {
+    expect(() => validate(card('leaf = Text("hello")\nroot = Card("Reuse", [leaf, leaf])'))).not.toThrow();
+    expect(() => validate(card('root = Card("cycle", [root])'))).toThrow('cyclic references');
+    expect(() => validate(card('a = b\nb = a\nroot = Text("safe")'))).toThrow('cyclic references');
+  });
   it('enforces exact nesting and statement count boundaries', () => {
     const nested = (count) => 'root = ' + 'Card("title", ['.repeat(count)
       + 'Text(["hello"])' + '])'.repeat(count);

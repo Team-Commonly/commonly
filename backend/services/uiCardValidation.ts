@@ -1,7 +1,7 @@
 import {
   createParser, parseExpression, split, tokenize, walkAST,
 } from '@openuidev/lang-core';
-import type { ElementNode, LibraryJSONSchema } from '@openuidev/lang-core';
+import type { ASTNode, ElementNode, LibraryJSONSchema } from '@openuidev/lang-core';
 import Ajv from 'ajv';
 import { createHash } from 'crypto';
 import catalogue from '../config/uiCardCatalogue.json';
@@ -13,6 +13,7 @@ const catalogueHash = `sha256:${createHash('sha256').update(JSON.stringify(catal
 if (catalogueHash !== revision.catalogHash) throw new Error('UI catalogue revision hash mismatch');
 
 export const UI_CARD_MAX_BYTES = 32 * 1024;
+export const UI_CARD_MAX_EXPANDED_NODES = 2048;
 const schema = catalogue as LibraryJSONSchema;
 const parser = createParser(schema);
 const componentNames = new Set(Object.keys(schema.properties || {}));
@@ -93,6 +94,45 @@ function refuse(message: string): never {
   throw new UICardValidationError(message);
 }
 
+/** Bound reference substitution before lang-core allocates a materialized tree. */
+function validateExpansionBudget(expressions: Map<string, ASTNode>): void {
+  type Cost = { nodes: number; depth: number };
+  const measured = new Map<string, Cost>();
+  const visiting = new Set<string>();
+  function measureStatement(id: string): Cost {
+    if (visiting.has(id)) refuse('UI card contains cyclic references');
+    const cached = measured.get(id);
+    if (cached) return cached;
+    visiting.add(id);
+    const cost = measureNode(expressions.get(id)!);
+    visiting.delete(id);
+    measured.set(id, cost);
+    return cost;
+  }
+  function measureNode(node: ASTNode): Cost {
+    let children: Cost[] = [];
+    if (node.k === 'Ref' && expressions.has(node.n)) children = [measureStatement(node.n)];
+    else if (node.k === 'Comp') children = [...node.args, ...Object.values(node.mappedProps || {})].map(measureNode);
+    else if (node.k === 'Arr') children = node.els.map(measureNode);
+    else if (node.k === 'Obj') children = node.entries.map(([, value]) => measureNode(value));
+    const cost = { nodes: 1, depth: 1 };
+    for (const child of children) {
+      cost.nodes += child.nodes;
+      cost.depth = Math.max(cost.depth, child.depth + 1);
+      if (cost.nodes > UI_CARD_MAX_EXPANDED_NODES || cost.depth > 128) {
+        refuse('UI card exceeds reference expansion budget (2048 nodes / 128 levels)');
+      }
+    }
+    return cost;
+  }
+  // Include dormant statements: the parser may materialize more than root.
+  let total = 0;
+  for (const id of expressions.keys()) {
+    total += measureStatement(id).nodes;
+    if (total > UI_CARD_MAX_EXPANDED_NODES) refuse('UI card exceeds reference expansion budget (2048 nodes)');
+  }
+}
+
 /** Validate untrusted CAP input, never privileged kernel-composed payloads. */
 export function validateAgentCardPayload(
   messageType: unknown,
@@ -170,12 +210,15 @@ export function validateAgentCardPayload(
     }
     if (statements.length > 256) refuse('UI card exceeds 256 statements');
     const ids = new Set<string>();
+    const expressions = new Map<string, ASTNode>();
     statements.forEach((statement) => {
       if (ids.has(statement.id) || statement.id.startsWith('$')) {
         refuse('UI card contains duplicate or reactive statements');
       }
       ids.add(statement.id);
-      walkAST(parseExpression(statement.tokens), (node) => {
+      const expression = parseExpression(statement.tokens);
+      expressions.set(statement.id, expression);
+      walkAST(expression, (node) => {
         if (node.k === 'Comp') {
           if (!allowedCall(node.name)) {
             refuse(`UI card call is not allowed: ${node.name}`);
@@ -204,6 +247,7 @@ export function validateAgentCardPayload(
         }
       });
     });
+    validateExpansionBudget(expressions);
     const result = parser.parse(source);
     if (!result.root || result.meta.incomplete || result.meta.unresolved.length
       || result.meta.errors.length || result.queryStatements.length || result.mutationStatements.length

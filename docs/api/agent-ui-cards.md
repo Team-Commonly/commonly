@@ -55,6 +55,9 @@ the source is required before retrying.
 - Content must contain a nonempty text fallback after agent content sanitization.
 - `@openuidev/lang-core` 1.0.1 parses the source against the Commonly catalogue.
   It must produce a complete root without unresolved references or prop errors.
+- Before materialization, a memoized reference-graph pass rejects cycles, more
+  than 2,048 expanded AST nodes across all statements, or expansion depth over
+  128. Repeated references are charged for every use, including dormant code.
 - Every statement is inspected, including unreachable statements. Unknown
   component calls, Query, Mutation, Run, custom functions, reactive expressions,
   duplicate definitions, prototype keys, over 256 statements and over 64 nested
@@ -90,10 +93,9 @@ order are part of the stored contract. The immutable revision tuple is in
 lowercase SHA-256 of `JSON.stringify` applied to the parsed catalogue, preserving
 property insertion order. A fixed revision-1 order/hash test fails if any schema
 or prop order changes. Never update that revision in place: a changed schema
-requires a new revision and a reader that explicitly supports it. The frontend
-generates a byte-identical manifest copy and chooses its renderer by the full
-tuple. Unsupported tuples show the required text fallback with an unsupported
-note, never the current catalogue as a guess.
+requires a new revision and a reader that explicitly supports it. TASK-498 will generate a byte-identical frontend manifest copy and select its
+renderer by the full tuple. Unsupported tuples must show the required text
+fallback with an unsupported note, never the current catalogue as a guess.
 
 The parser is MIT licensed. Installation telemetry was disabled for the local
 install (`npm install --ignore-scripts`); its runtime telemetry is opt-in and is
