@@ -113,9 +113,11 @@
     },
     "workaround": {
       "name": "settle a run that ended without a report, in our pi-cowboy plugin; kept for 0.22.1 and earlier, since 0.22.2 still settles only on a report",
-      "ref": "",
-      "where": "pi-cowboy-commonly, on a branch, not released",
-      "tests": []
+      "ref": "65ccaf5444f9a34d9d5ebfe28217c863305b8ca8",
+      "where": "pi-cowboy-commonly 0.1.2 on npm (Team-Commonly/pi-cowboy-commonly, src/report-guard.js). Real-model check on pi-cowboy 0.22.1: 6 of 6 runs settled in 11 to 15 s on deepseek-v4-flash (3 wrote a report, 3 got the missing-report notice), none hung",
+      "tests": [
+        "pi-cowboy-commonly test/report-guard.test.js: KEY: an explore subagent that settles without a report gets a missing-report notice"
+      ]
     },
     "references": [
       "https://github.com/electric-dragon-80000v/pi-cowboy/issues/33"
