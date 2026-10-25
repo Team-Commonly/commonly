@@ -2,21 +2,28 @@ import { unlink } from 'fs';
 import { resolve, sep } from 'path';
 import type { Request, Response, NextFunction } from 'express';
 
-// Request keys that start with `$` are refused, in the query string and in the
-// body, at any depth, before any route runs. `$` opens a MongoDB operator name,
-// and no client of this API sends such a key: the 2026-10-18 audit read every
-// client in the repo, the openclaw extension at its pin, and every stored Mongo
-// and Postgres document, and found none. One check here keeps them out of
-// every handler, instead of each handler re-checking its own inputs.
+// Body keys that start with `$`, and query keys that contain `$`, are refused
+// at any depth before the route handler runs. `$` opens a MongoDB operator
+// name, and no client of this API sends such a key: the 2026-10-18 audit read
+// every client in the repo, the openclaw extension at its pin, and every
+// stored Mongo and Postgres document, and found none. One check here keeps
+// them out of the handlers, instead of each handler re-checking its inputs.
 //
-// Mounted in server.ts right after the global express.json(), so every
-// route-specific parser has already run. Multipart routes parse their fields
-// later, inside multer, so they call this again after multer.
+// Mounted in server.ts right after the global express.json(), so every parser
+// mounted there has already run. Routes that parse later call it again after
+// their own parser: the two multer routes (pods external-link, uploads) and
+// the OAuth start form's urlencoded parser in auth.ts.
 //
-// The two exemptions are the narrowest the audit found, each a subtree a
-// third party or a schema author legitimately fills with `$` keys:
-//   · POST /api/marketplace/publish: JSON Schema keywords inside a
-//     component's `widgetConfigSchema` or `schemaFields` (stored as free-form
+// Not covered: a Buffer body is passed through, so the three raw-body routes
+// that JSON.parse inside their handler (Discord interactions, the Stripe
+// billing webhook, the GitHub gig webhook) are not inspected. Each verifies a
+// signature over the raw bytes first, so only a signed sender reaches them.
+//
+// The two body exemptions are the narrowest the audit found. Each covers the
+// subtree under its prefix, which a third party or a schema author
+// legitimately fills with `$` keys:
+//   · POST /api/marketplace/publish: JSON Schema keywords, at any depth, inside
+//     a component's `widgetConfigSchema` or `schemaFields` (stored as free-form
 //     JSON, never used as a query);
 //   · /api/webhooks/slack: anything under `event.metadata.event_payload`,
 //     whose keys other Slack apps define. Refusing it would make Slack retry
