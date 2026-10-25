@@ -58,6 +58,11 @@ jest.mock('../../services/agentInstallationCleanupService', () => {
   const initInstallationCleanup = mockInitInstallationCleanup;
   return { initInstallationCleanup };
 });
+let mockInitPgMessageReconcile = jest.fn();
+jest.mock('../../services/pgMessageReconcileService', () => {
+  const initPgMessageReconcile = mockInitPgMessageReconcile;
+  return { initPgMessageReconcile };
+});
 jest.mock('../../services/schedulerService', () => ({ start: jest.fn() }));
 jest.mock('../../services/discordGatewayService', () => ({ start: jest.fn() }));
 
@@ -103,6 +108,7 @@ describe('server pg boot routes', () => {
     mockInitPGDB = jest.fn();
     mockInitPgRetention = jest.fn();
     mockInitInstallationCleanup = jest.fn();
+    mockInitPgMessageReconcile = jest.fn();
   });
 
   afterEach(() => {
@@ -196,6 +202,7 @@ describe('server pg boot routes', () => {
       await request(app).get('/api/pg/messages').expect(200);
       expect(mockInitPgRetention).toHaveBeenCalledTimes(shouldStart ? 1 : 0);
       expect(mockInitInstallationCleanup).toHaveBeenCalledTimes(shouldStart ? 1 : 0);
+      expect(mockInitPgMessageReconcile).toHaveBeenCalledTimes(shouldStart ? 1 : 0);
     } finally {
       if (priorNodeEnv === undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV = priorNodeEnv;
