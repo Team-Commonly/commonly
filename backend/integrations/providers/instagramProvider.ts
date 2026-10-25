@@ -2,9 +2,11 @@
 const axios = require('axios');
 // eslint-disable-next-line global-require
 const { manifests } = require('../manifests');
+// eslint-disable-next-line global-require
+const { readFeedAccessToken, withFeedTokenPresence } = require('../../services/feedCredentials');
 
 interface InstagramConfig {
-  accessToken?: string;
+  feedAccessTokenRef?: string;
   igUserId?: string;
   username?: string;
   maxResults?: number;
@@ -129,7 +131,7 @@ function createInstagramProvider(integration: { _id: unknown; config?: Instagram
   return {
     async validateConfig() {
       try {
-        validateRequiredConfig(config, manifests.instagram);
+        validateRequiredConfig(withFeedTokenPresence(config), manifests.instagram);
       } catch (err) {
         const e = err as { message?: string };
         throw new ValidationError(e.message || 'Validation failed');
@@ -152,7 +154,7 @@ function createInstagramProvider(integration: { _id: unknown; config?: Instagram
     },
 
     async syncRecent({ sinceTimestamp } = {}): Promise<unknown> {
-      const { accessToken } = config;
+      const accessToken = await readFeedAccessToken(config);
       if (!accessToken) {
         throw new Error('Missing Instagram access token');
       }
@@ -191,7 +193,12 @@ function createInstagramProvider(integration: { _id: unknown; config?: Instagram
     },
 
     async health(): Promise<{ ok: boolean; error?: string }> {
-      const { accessToken } = config;
+      let accessToken: string | undefined;
+      try {
+        accessToken = await readFeedAccessToken(config);
+      } catch {
+        return { ok: false, error: 'Instagram credential is unavailable; reconnect Instagram' };
+      }
       if (!accessToken || !config.igUserId) {
         return { ok: false, error: 'Missing Instagram access configuration' };
       }
@@ -199,7 +206,7 @@ function createInstagramProvider(integration: { _id: unknown; config?: Instagram
     },
 
     async publishPost({ caption, imageUrl, hashtags = [], sourceUrl } = {}): Promise<{ success: boolean; provider: string; externalId: string | null; caption: string }> {
-      const { accessToken } = config;
+      const accessToken = await readFeedAccessToken(config);
       if (!accessToken || !config.igUserId) {
         throw new Error('Missing Instagram access configuration');
       }
