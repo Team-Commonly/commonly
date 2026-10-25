@@ -11,6 +11,12 @@ describe('public legal pages (TASK-530)', () => {
     expect(screen.getByText(/Draft for review/)).toBeInTheDocument();
   });
 
+  it('links the addresses by mailto and links home', () => {
+    render(<V2PrivacyPage />);
+    expect(screen.getByRole('link', { name: 'privacy@commonly.me' })).toHaveAttribute('href', 'mailto:privacy@commonly.me');
+    expect(screen.getByRole('link', { name: 'Commonly' })).toHaveAttribute('href', '/');
+  });
+
   it('renders the terms page', () => {
     render(<V2TermsPage />);
     expect(screen.getByRole('heading', { level: 1, name: 'Terms' })).toBeInTheDocument();

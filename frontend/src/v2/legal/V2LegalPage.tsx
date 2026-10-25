@@ -9,10 +9,18 @@ import React from 'react';
 
 interface LegalSection {
   heading: string;
-  body: React.ReactNode[];
+  body: string[];
 }
 
 const DRAFT_NOTE = 'Draft for review. Bracketed items are not yet confirmed.';
+
+// Turns each commonly.me address in a paragraph into a mailto link.
+// String.split with a capture group puts the matches at odd indexes.
+const EMAIL_PATTERN = /([a-z]+@commonly\.me)/;
+const linkEmails = (text: string): React.ReactNode[] =>
+  text.split(EMAIL_PATTERN).map((part, index) => (index % 2 === 1
+    ? <a key={index} href={`mailto:${part}`}>{part}</a>
+    : part));
 
 const PRIVACY_SECTIONS: LegalSection[] = [
   {
@@ -90,6 +98,7 @@ const TERMS_SECTIONS: LegalSection[] = [
 const LegalDocument: React.FC<{ title: string; sections: LegalSection[] }> = ({ title, sections }) => (
   <main className="v2-root v2-legal">
     <article className="v2-legal__doc">
+      <a className="v2-legal__home" href="/">Commonly</a>
       <h1 className="v2-legal__title">{title}</h1>
       <p className="v2-legal__draft">{DRAFT_NOTE}</p>
       {sections.map((section) => (
@@ -97,7 +106,7 @@ const LegalDocument: React.FC<{ title: string; sections: LegalSection[] }> = ({ 
           <h2>{section.heading}</h2>
           {section.body.map((paragraph, index) => (
             // eslint-disable-next-line react/no-array-index-key
-            <p key={index}>{paragraph}</p>
+            <p key={index}>{linkEmails(paragraph)}</p>
           ))}
         </section>
       ))}
