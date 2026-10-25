@@ -300,15 +300,16 @@ const escapeSbplString = (value) => String(value)
 
 const literal = (path) => `(literal "${escapeSbplString(path)}")`;
 const subpath = (path) => `(subpath "${escapeSbplString(path)}")`;
-// Every .env and .env.* file under the workspace, at any depth: a real project
-// keeps one beside each package, not only at its root (TASK-294). An SBPL
-// regex literal takes no escapes, so a path it cannot hold is refused.
+// Every .env and .env.* file under the workspace, at any depth, and everything
+// inside a directory of that name: a real project keeps one beside each
+// package, not only at its root (TASK-294). An SBPL regex literal takes no
+// escapes, so a path it cannot hold is refused.
 const envFilesUnder = (workspace) => {
   if (/["\r\n]/.test(workspace)) {
     throw new Error('Seatbelt workspacePath must not contain a quote or a line break');
   }
   const pattern = workspace.replace(/[\\^$.|?*+()[\]{}]/g, '\\$&');
-  return `(regex #"^${pattern}/(.*/)?\\.env(\\..*)?$")`;
+  return `(regex #"^${pattern}/(.*/)?\\.env([./].*)?$")`;
 };
 
 const assertAbsolutePath = (path, label) => {

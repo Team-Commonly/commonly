@@ -18,10 +18,17 @@
  *    DENIED_SHORT_OPTIONS_BY_SUBCOMMAND), including git's accepted
  *    abbreviations of them (`--outp=`), and against
  *    paths that leave the workspace.
- * 3. diff, log and show run with `--no-ext-diff --no-textconv`, so no external
- *    diff or conversion program configured for the repository runs, and the
- *    spellings that would turn them back on are refused. `core.fsmonitor` is
- *    forced off for the same reason: `git status` runs it.
+ * 3. diff, log and show run with `--no-ext-diff --no-textconv`, and blame with
+ *    `--no-textconv`, so no external diff or conversion program configured for
+ *    the repository runs, and the spellings that would turn them back on are
+ *    refused. log and show also run with `--no-show-signature`, and
+ *    `format.pretty` is forced to `medium`, so nothing runs gpg:
+ *    `--show-signature`, a `%G` placeholder and a configured format alias
+ *    (which can hold one) are refused. `core.fsmonitor` is forced off for the
+ *    same reason: `git status` runs it. What still runs is a clean filter the
+ *    repository's own config defines, when status, diff or blame read a
+ *    working-tree file: without it they report unchanged files as changed. It
+ *    runs inside the sandbox below, and the seat cannot define one.
  * 4. The environment is rebuilt from an allowlist. No inherited GIT_* variable
  *    survives, system and global config are off, optional locks are off (so
  *    status never rewrites the index), and GIT_CEILING_DIRECTORIES stops
@@ -58,6 +65,7 @@ export const DENIED_LONG_OPTIONS = Object.freeze({
   '--exec-path': 'runs git programs from another directory',
   '--config-env': 'sets configuration',
   '--paginate': 'runs a pager',
+  '--show-signature': 'runs gpg to check a signature',
 });
 
 // Real options that are also prefixes of a denied one. Git takes an exact name
@@ -88,12 +96,30 @@ const STATUS_UNTRACKED_MODES = new Set(['-uno', '-unormal', '-uall']);
 // Ahead of the caller's arguments, so a configured program never runs.
 const FORCED_OPTIONS = Object.freeze({
   diff: ['--no-ext-diff', '--no-textconv'],
-  log: ['--no-ext-diff', '--no-textconv'],
-  show: ['--no-ext-diff', '--no-textconv'],
+  log: ['--no-ext-diff', '--no-textconv', '--no-show-signature'],
+  show: ['--no-ext-diff', '--no-textconv', '--no-show-signature'],
   status: [],
-  blame: [],
+  blame: ['--no-textconv'],
 });
-const TOP_LEVEL = Object.freeze(['--no-pager', '-c', 'core.fsmonitor=false']);
+// `format.pretty` is the repository's default format for log and show, and a
+// format can hold a %G placeholder; `medium` is git's own default.
+const TOP_LEVEL = Object.freeze(['--no-pager', '-c', 'core.fsmonitor=false', '-c', 'format.pretty=medium']);
+
+// A %G placeholder (%G?, %GG, %GS, %GK, %GF, %GP, %GT) runs gpg on each signed
+// commit. A value with no %, no format: and no tformat: is looked up by
+// prefix among the built-in formats and the repository's `pretty.<name>`
+// aliases, and an alias can hold one, so only a built-in name is taken.
+const FORMAT_ARGUMENT = /^--(?:pretty|format)=([\s\S]*)$/;
+const BUILTIN_FORMATS = Object.freeze(['oneline', 'short', 'medium', 'full', 'fuller', 'reference', 'email', 'mboxrd', 'raw']);
+const checkFormat = (arg) => {
+  const match = FORMAT_ARGUMENT.exec(arg);
+  if (!match) return null;
+  const value = match[1];
+  if (value.includes('%G')) return `${arg} is refused: a %G placeholder runs gpg to check a signature`;
+  const userFormat = value === '' || value.startsWith('format:') || value.startsWith('tformat:') || value.includes('%');
+  if (userFormat || BUILTIN_FORMATS.includes(value.toLowerCase())) return null;
+  return `${arg} is refused: name a built-in format (${BUILTIN_FORMATS.join(', ')}) or give format:<placeholders>`;
+};
 
 // Mirrors the names sandbox/seatbelt.js denies at any depth.
 const ENV_FILE_SEGMENT = /^\.env(\..*)?$/;
@@ -181,7 +207,7 @@ export const readonlyGitArgv = ({ subcommand, args = [], root }) => {
     } else if (arg === '--') {
       pathsOnly = true;
     } else {
-      const reason = arg.startsWith('--') ? checkLongOption(arg) : checkShortOption(arg, subcommand);
+      const reason = arg.startsWith('--') ? checkLongOption(arg) || checkFormat(arg) : checkShortOption(arg, subcommand);
       if (reason) return refuse(reason);
       if (arg.startsWith('-L')) {
         lineRange = true;

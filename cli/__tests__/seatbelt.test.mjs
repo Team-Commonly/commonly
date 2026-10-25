@@ -127,7 +127,7 @@ describe('macOS Seatbelt profile', () => {
     })).toThrow(/readOnlyWorkspaceEntries entries must be names inside the workspace/);
   });
 
-  test('holds every .env file under the workspace, at any depth, out of reach', () => {
+  test('holds every .env file under the workspace, at any depth, and what a .env directory holds, out of reach', () => {
     const profile = buildSeatbeltProfile({
       workspacePath: workspace,
       executablePath: '/usr/bin/true',
@@ -135,7 +135,7 @@ describe('macOS Seatbelt profile', () => {
     });
     const escaped = realpathSync(workspace).replace(/[\\^$.|?*+()[\]{}]/g, '\\$&');
 
-    expect(profile).toContain(`(deny file-read* file-write* (regex #"^${escaped}/(.*/)?\\.env(\\..*)?$"))`);
+    expect(profile).toContain(`(deny file-read* file-write* (regex #"^${escaped}/(.*/)?\\.env([./].*)?$"))`);
   });
 
   test('refuses a workspace path an SBPL regex cannot hold', () => {

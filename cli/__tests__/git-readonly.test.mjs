@@ -9,7 +9,7 @@ import {
 } from '@jest/globals';
 import { execFile } from 'child_process';
 import {
-  existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync,
+  chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync,
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -172,12 +172,15 @@ describe('read-only git runs the five subcommands', () => {
   test('forced options are prepended for diff, log and show', () => {
     const excludes = ['--', ':(exclude,glob)**/.env', ':(exclude,glob)**/.env.*',
       ':(exclude,glob)**/.env/**', ':(exclude,glob)**/.env.*/**'];
+    const top = ['--no-pager', '-c', 'core.fsmonitor=false', '-c', 'format.pretty=medium'];
     expect(readonlyGitArgv({ subcommand: 'diff', args: [], root: repo }).argv)
-      .toEqual(['--no-pager', '-c', 'core.fsmonitor=false', 'diff', '--no-ext-diff', '--no-textconv', ...excludes]);
+      .toEqual([...top, 'diff', '--no-ext-diff', '--no-textconv', ...excludes]);
+    expect(readonlyGitArgv({ subcommand: 'log', args: [], root: repo }).argv)
+      .toEqual([...top, 'log', '--no-ext-diff', '--no-textconv', '--no-show-signature', ...excludes]);
     expect(readonlyGitArgv({ subcommand: 'status', args: [], root: repo }).argv)
-      .toEqual(['--no-pager', '-c', 'core.fsmonitor=false', 'status', ...excludes]);
+      .toEqual([...top, 'status', ...excludes]);
     expect(readonlyGitArgv({ subcommand: 'blame', args: ['tracked.txt'], root: repo }).argv)
-      .toEqual(['--no-pager', '-c', 'core.fsmonitor=false', 'blame', 'tracked.txt']);
+      .toEqual([...top, 'blame', '--no-textconv', 'tracked.txt']);
   });
 
   test('status, log, diff, show and blame all return output', async () => {
@@ -289,5 +292,133 @@ describe('read-only git keeps committed .env files out of reach', () => {
     expect((await run('show', ['HEAD~1:tracked.txt'])).text).toContain('first line');
     expect((await run('log', ['-L1,1:tracked.txt'])).ok).toBe(true);
     expect((await run('status', ['--short'])).ok).toBe(true);
+  });
+});
+
+// A program the repository's config names (gpg for a signature, a textconv
+// driver) runs on an ordinary read unless git is told not to. Each control
+// runs bare git with a stub on PATH that leaves a marker; the guarded call
+// leaves none.
+describe('read-only git runs no gpg and no textconv', () => {
+  let cfgRepo;
+  let bin;
+  let markers;
+  let signed;
+  const cfgGit = (args, opts = {}) => execFileAsync(GIT, args, {
+    cwd: cfgRepo,
+    env: {
+      ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', PATH: `${bin}:${process.env.PATH}`,
+    },
+    ...opts,
+  });
+  const run = (subcommand, args) => runReadonlyGit({
+    subcommand, args, root: cfgRepo, git: GIT, baseEnv: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+  });
+  const ran = (name) => {
+    const marker = join(markers, name);
+    const was = existsSync(marker);
+    rmSync(marker, { force: true });
+    return was;
+  };
+
+  beforeAll(async () => {
+    cfgRepo = mkdtempSync(join(tmpdir(), 'git-ro-cfg-'));
+    bin = mkdtempSync(join(tmpdir(), 'git-ro-bin-'));
+    markers = mkdtempSync(join(tmpdir(), 'git-ro-markers-'));
+    writeFileSync(join(bin, 'gpg'), `#!/bin/sh\ntouch '${join(markers, 'gpg')}'\nexit 1\n`);
+    writeFileSync(join(bin, 'conv'), `#!/bin/sh\ntouch '${join(markers, 'textconv')}'\ncat "$1"\n`);
+    chmodSync(join(bin, 'gpg'), 0o755);
+    chmodSync(join(bin, 'conv'), 0o755);
+    await cfgGit(['init', '-q', '-b', 'main']);
+    await cfgGit(['config', 'user.email', 'test@example.com']);
+    await cfgGit(['config', 'user.name', 'Test']);
+    await cfgGit(['config', 'diff.conv.textconv', 'conv']);
+    writeFileSync(join(cfgRepo, '.gitattributes'), '*.txt diff=conv\n');
+    writeFileSync(join(cfgRepo, 'notes.txt'), 'one line\n');
+    await cfgGit(['add', '.gitattributes', 'notes.txt']);
+    await cfgGit(['commit', '-q', '-m', 'unsigned']);
+    // The same commit with a signature header: enough for git to call gpg.
+    const { stdout: body } = await cfgGit(['cat-file', 'commit', 'HEAD']);
+    const split = body.indexOf('\n\n');
+    const header = ['gpgsig -----BEGIN PGP SIGNATURE-----', ' ', ' aGVsbG8=', ' -----END PGP SIGNATURE-----'].join('\n');
+    const child = execFile(GIT, ['hash-object', '-t', 'commit', '-w', '--stdin'], { cwd: cfgRepo });
+    const out = new Promise((done) => { let text = ''; child.stdout.on('data', (d) => { text += d; }); child.on('close', () => done(text)); });
+    child.stdin.end(`${body.slice(0, split)}\n${header}${body.slice(split)}`);
+    signed = (await out).trim();
+    expect(signed).toMatch(/^[0-9a-f]{40,64}$/);
+  });
+
+  afterAll(() => {
+    for (const dir of [cfgRepo, bin, markers]) rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('--show-signature runs gpg (control), and is refused; abbreviations too', async () => {
+    await cfgGit(['log', '--show-signature', '-1', signed]);
+    expect(ran('gpg')).toBe(true);
+    expect((await run('log', ['--show-signature', '-1', signed])).text).toMatch(/--show-signature is refused: it runs gpg/);
+    expect((await run('show', ['--show-sig', signed])).text).toMatch(/git reads it as --show-signature/);
+    expect(ran('gpg')).toBe(false);
+  });
+
+  test('a %G placeholder runs gpg (control), and is refused in --format and --pretty', async () => {
+    await cfgGit(['log', '--format=%G?', '-1', signed]);
+    expect(ran('gpg')).toBe(true);
+    for (const arg of ['--format=%G?', '--pretty=format:%GS', '--pretty=tformat:%h %GK']) {
+      expect((await run('log', [arg, '-1', signed])).text).toMatch(/%G placeholder runs gpg/);
+    }
+    expect(ran('gpg')).toBe(false);
+  });
+
+  test('log.showSignature in the repository config runs gpg (control); the guarded log and show do not', async () => {
+    await cfgGit(['config', 'log.showSignature', 'true']);
+    try {
+      await cfgGit(['log', '-1', signed]);
+      expect(ran('gpg')).toBe(true);
+      expect((await run('log', ['-1', signed])).ok).toBe(true);
+      expect((await run('show', ['--stat', signed])).ok).toBe(true);
+      expect(ran('gpg')).toBe(false);
+    } finally {
+      await cfgGit(['config', '--unset', 'log.showSignature']);
+    }
+  });
+
+  test('a format.pretty holding %G runs gpg (control); the guarded log does not', async () => {
+    await cfgGit(['config', 'format.pretty', 'format:%G?']);
+    try {
+      await cfgGit(['log', '-1', signed]);
+      expect(ran('gpg')).toBe(true);
+      const log = await run('log', ['-1', signed]);
+      expect(log.ok).toBe(true);
+      expect(log.text).toContain('unsigned');
+      expect(ran('gpg')).toBe(false);
+    } finally {
+      await cfgGit(['config', '--unset', 'format.pretty']);
+    }
+  });
+
+  test('a configured format alias can hold %G (control), so only built-in names are taken', async () => {
+    await cfgGit(['config', 'pretty.sig', '%G?']);
+    try {
+      await cfgGit(['log', '--pretty=sig', '-1', signed]);
+      expect(ran('gpg')).toBe(true);
+      expect((await run('log', ['--pretty=sig', '-1', signed])).text).toMatch(/name a built-in format/);
+      expect((await run('log', ['--format=si', '-1', signed])).text).toMatch(/name a built-in format/);
+      expect(ran('gpg')).toBe(false);
+      const oneline = await run('log', ['--pretty=oneline', '-1', signed]);
+      expect(oneline.text).toContain('unsigned');
+      const custom = await run('log', ['--format=%h %s', '-1', signed]);
+      expect(custom.text).toContain('unsigned');
+    } finally {
+      await cfgGit(['config', '--unset', 'pretty.sig']);
+    }
+  });
+
+  test('blame runs the configured textconv (control); the guarded blame does not', async () => {
+    await cfgGit(['blame', 'notes.txt']);
+    expect(ran('textconv')).toBe(true);
+    const blame = await run('blame', ['notes.txt']);
+    expect(blame.ok).toBe(true);
+    expect(blame.text).toContain('one line');
+    expect(ran('textconv')).toBe(false);
   });
 });

@@ -326,13 +326,18 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, { trust, allow = [] } = {}
     'Read(./.codex/**)',
     'Read(./.env)',
   ];
-  // A workspace seat reads a real project, so every .env variant at any depth
-  // stays out of reach (the jail holds the same line), and it cannot install
-  // itself into a room partway through a turn: the per-turn check confirmed
-  // its pods private before the spawn.
+  // A workspace seat reads a real project, so every .env variant at any depth,
+  // and what a .env directory holds, stays out of reach (the jail holds the
+  // same line). .git is denied too: its config can carry a remote URL with a
+  // token in it, and history comes through the read-only git tool, which runs
+  // in its own process. And the seat cannot install itself into a room partway
+  // through a turn: the per-turn check confirmed its pods private before the
+  // spawn.
   const workspaceDenies = trust === 'workspace'
     ? [
       'Read(./.env.*)', 'Read(./**/.env)', 'Read(./**/.env.*)',
+      'Read(./.env/**)', 'Read(./**/.env/**)', 'Read(./**/.env.*/**)',
+      'Read(./.git/**)', 'Read(./**/.git/**)',
       ...mcpToolPatterns.map((pattern) => pattern.replace(/\*$/, 'commonly_self_install_into_pod')),
     ]
     : [];
