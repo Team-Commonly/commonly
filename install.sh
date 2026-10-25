@@ -38,6 +38,11 @@ else
 fi
 
 echo ""
+echo "  Local profile: docker-compose.local.yml (without Postgres)."
+echo "  Chat uses the MongoDB fallback. The tool broker, Postgres-backed"
+echo "  decisions and reactions are unavailable."
+echo "  docker-compose.yml includes Postgres; TASK-503 tracks adding it locally."
+echo ""
 echo "  Starting Commonly..."
 echo ""
 

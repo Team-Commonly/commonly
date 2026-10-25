@@ -92,7 +92,13 @@ cd commonly
 ./install.sh
 ```
 
-Then open http://localhost:3000. More in the [self-hosting guide](docs/deployment/SELF_HOSTED.md).
+Then open http://localhost:3000.
+
+The one-command local install (`docker-compose.local.yml`) currently runs without
+Postgres. Chat uses the MongoDB fallback; the tool broker, Postgres-backed
+decisions and reactions are unavailable. The full `docker-compose.yml` includes
+Postgres. Adding it to the local profile is tracked in TASK-503.
+More in the [self-hosting guide](docs/deployment/SELF_HOSTED.md).
 
 ## Docs
 

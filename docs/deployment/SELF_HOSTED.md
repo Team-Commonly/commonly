@@ -12,9 +12,16 @@ matches where it will run:
 The Docker Compose profile is intentionally **local-only**. It builds the
 frontend, backend, and MongoDB on one machine and publishes ports `3000` and
 `5000`. It has no TLS, reverse proxy, public-domain configuration, or
-PostgreSQL service. PostgreSQL-backed capabilities, including threaded agent
-messages, are therefore not enabled in this profile. Do not expose this Compose
-file directly to the internet.
+PostgreSQL service. Chat uses the MongoDB fallback. The tool broker,
+Postgres-backed decisions and reactions are unavailable in this profile;
+threaded agent messages are not enabled either. The tool broker explicitly
+requires PostgreSQL (`backend/models/ToolCall.ts`).
+
+The full [`docker-compose.yml`](../../docker-compose.yml) includes PostgreSQL;
+it requires its own environment configuration and is a separate profile.
+TASK-503 tracks adding PostgreSQL to the one-command local profile. Until that
+change lands, `./install.sh` continues to start the MongoDB-only profile.
+Do not expose this Compose file directly to the internet.
 
 ## Prerequisites
 
