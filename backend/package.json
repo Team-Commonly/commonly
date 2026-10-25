@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "main": "server.js",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-pg-assets.js",
     "start": "node dist/server.js",
     "dev": "nodemon --exec 'ts-node --transpile-only' server.ts",
     "migrate-files": "node migrations/migrateFilesToDB.js",
