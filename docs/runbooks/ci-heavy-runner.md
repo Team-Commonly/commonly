@@ -37,7 +37,7 @@ red anywhere. So nothing is sent to Latchkey blind. The logic is
    for any dequeue.
 
 The budget is an estimate: Latchkey runs since `LATCHKEY_BUDGET_START` times
-`LATCHKEY_EQ_PER_RUN` (default 32 small-equivalent minutes), stopped at 80%
+`LATCHKEY_EQ_PER_RUN` (default 48 small-equivalent minutes, measured on the 10-25 rehearsal), stopped at 80%
 of `LATCHKEY_BUDGET_EQMIN` (default 10000). The 20% left is margin for the
 estimate and for runs already in flight. Check it against the measured
 figure below, and raise `LATCHKEY_EQ_PER_RUN` if the measured figure is higher.
@@ -49,7 +49,7 @@ figure below, and raise `LATCHKEY_EQ_PER_RUN` if the measured figure is higher.
 | `LATCHKEY_HEAVY` | `on` routes merge-queue runs through Latchkey; anything else is off | off |
 | `LATCHKEY_BUDGET_START` | ISO start of the free-minute period; unset keeps everything on GitHub | none |
 | `LATCHKEY_BUDGET_EQMIN` | free small-equivalent minutes in the period | 10000 |
-| `LATCHKEY_EQ_PER_RUN` | estimated small-equivalent minutes per routed run | 32 |
+| `LATCHKEY_EQ_PER_RUN` | estimated small-equivalent minutes per routed run | 48 |
 | `LATCHKEY_PICKUP_SEC` | how long the route waits for the probe | 180 |
 | `LATCHKEY_BACKEND_LABEL` / `LATCHKEY_LIGHT_LABEL` | runner sizes | `latchkey-medium` / `latchkey-small` |
 

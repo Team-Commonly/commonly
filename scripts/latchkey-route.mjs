@@ -127,7 +127,7 @@ export const route = async ({ now = () => Date.now(), wait = sleep } = {}) => {
     const runs = runsSince(await listArtifacts(RUN_ARTIFACT, start), start);
     const budget = budgetDecision({
       runs,
-      eqPerRun: Number(env('EQ_PER_RUN', '32')),
+      eqPerRun: Number(env('EQ_PER_RUN', '48')),
       budgetEqMin: Number(env('BUDGET_EQMIN', '10000')),
     });
     summary(`Latchkey budget since ${start}: ${runs} runs, about ${budget.used} of ${budget.limit} small-equivalent minutes allowed.`);
