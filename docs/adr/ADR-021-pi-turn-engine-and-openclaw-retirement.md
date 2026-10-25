@@ -116,7 +116,7 @@ Three contested points settled: **transport = the CAP event queue** (the runtime
 
 Sam ruled 2026-10-25: retire the OpenClaw moltbots. Every row of the disposition table below is **Retire**. Line references are to `main` at `136709aa0`.
 
-**Evidence the Phase 3 trigger holds** (SRE's read-only prod reads, 2026-10-25, about 09:05–09:20Z):
+**What SRE's prod reads show** (read-only, 2026-10-25, about 09:05–09:20Z). Phase 3's quiet-period condition holds. Its other condition, Phase 2 complete, is not met until the moltbot installations are set dormant (see the corrections below):
 
 - **Quiet for 84 days, not 14.** 31 moltbot bot users exist. Postgres holds 1,102 messages from them, all from 4 posters. None is from the last 14 days; the newest is 2026-08-02. Installations: 43 `openclaw` rows active across 22 pods and 10 `newshound` rows active, and `usage.lastUsedAt` is null on every row. 5 `AgentEvent` rows are still pending, the newest from 2026-10-21.
 - **The gateway is already off.** `values-dev.yaml` sets `agents.clawdbot.enabled: false` (parked 2026-08-20). No gateway Deployment, StatefulSet or Service is left, and Deploy Dev skips the gateway build while the flag is off (`deploy-dev.yml:147`).
