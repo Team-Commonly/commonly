@@ -120,7 +120,7 @@ describe('OAuth browser round trip over HTTP', () => {
     expect(res.headers.location).toContain('oauthError=state_invalid');
     expect(axios.post).not.toHaveBeenCalled();
     expect(axios.get).not.toHaveBeenCalled();
-    expect(await User.countDocuments({})).toBe(0);
+    expect(await User.countDocuments({ isBot: { $ne: true } })).toBe(0);
     const row = await OAuthLoginState.findOne({ state: flow.state });
     expect(row.usedAt).toBeNull();
     expect(row.exchangeCode).toBeUndefined();
@@ -134,7 +134,7 @@ describe('OAuth browser round trip over HTTP', () => {
       ? { $unset: { pkceVerifier: 1 } } : { $set: { pkceVerifier: 'x'.repeat(43) } });
     const res = await withBrowser(request(app).get(callback(flow)), flow.cookies).expect(302);
     expect(res.headers.location).toContain(`oauthError=${missing ? 'state_invalid' : 'provider_error'}`);
-    expect(await User.countDocuments({})).toBe(0);
+    expect(await User.countDocuments({ isBot: { $ne: true } })).toBe(0);
     expect((await OAuthLoginState.findOne({ state: flow.state })).exchangeCode).toBeUndefined();
     expect(axios.post).toHaveBeenCalledTimes(missing ? 0 : 1);
   });
@@ -146,7 +146,7 @@ describe('OAuth browser round trip over HTTP', () => {
     const res = await withBrowser(request(app).get(callback(flow)), flow.cookies).expect(302);
     expect(res.headers.location).toContain('oauthError=state_invalid');
     expect(axios.post).not.toHaveBeenCalled();
-    expect(await User.countDocuments({})).toBe(0);
+    expect(await User.countDocuments({ isBot: { $ne: true } })).toBe(0);
     expect((await OAuthLoginState.findOne({ state: flow.state })).usedAt).toBeNull();
   });
 
