@@ -1599,7 +1599,13 @@ test('an own key stays in the confined parent proxy, never argv, config, tool en
     await opencode.spawn('test', { cwd: workspace, env: { PATH: process.env.PATH },
       environment: { model: 'test-model', provider: { id: 'test-provider', baseURL: 'https://api.example.com/v1', keyFile: '/missing/vendor-key' },
         sandbox: { trust: 'public', mode: 'workspace' }, mcp: [] },
-      providerKey: vendorKey, _platform: 'darwin', _binaryPath: '/usr/local/bin/opencode', _spawnImpl: spawn.impl });
+      providerKey: vendorKey, _platform: 'darwin', _binaryPath: '/usr/local/bin/opencode',
+      _wrapArgvWithSeatbelt: (argv, options) => {
+        const profile = buildSeatbeltProfile(options);
+        expect(profile).not.toContain(vendorKey);
+        return ['/usr/bin/sandbox-exec', '-p', profile, ...argv];
+      },
+      _spawnImpl: spawn.impl });
     expect(spawn.calls).toHaveLength(1);
     expect(config.provider['test-provider']).toBeDefined();
     await expect(opencode.spawn('test', { cwd: workspace, environment: { model: 'm',
