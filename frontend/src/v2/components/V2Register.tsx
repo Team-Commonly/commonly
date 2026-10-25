@@ -35,7 +35,7 @@ const Brand: React.FC = () => (
 
 const V2Register: React.FC = () => {
   const { login } = useAuth();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
@@ -95,6 +95,8 @@ const V2Register: React.FC = () => {
         // Where this signup came from (?ref=x on the first visit), stored once.
         signupRef: readFirstTouchRef(),
         signupSource: readFirstTouchSource(),
+        // The language they are reading, so Scout's welcome is stored in it (TASK-550).
+        locale: i18n.language === 'zh-CN' ? 'zh-CN' : 'en',
       });
       const data = res.data as { message?: string };
       const message = data?.message || t('auth.register.success.ready');

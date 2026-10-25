@@ -166,7 +166,7 @@ const sendVerificationEmailInBackground = (user: any) => {
 // step's rejection surfaces as an unhandled rejection from the `void
 // finishWorkspaceOnboarding(...)` call site, which is a process crash under
 // Node's default --unhandled-rejections=throw, on the register path.
-const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
+const finishWorkspaceOnboarding = async (pod: any, userId: any, locale: string = 'en') => {
   try {
     // Mirror the workspace into PostgreSQL immediately. The UI path
     // (`createPod`) already does this, but registration's workspace pod did
@@ -240,7 +240,7 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
     try {
       // eslint-disable-next-line global-require
       const {
-        scoutApp, SCOUT_HOSTED_START, SCOUT_STARTS, SCOUT_WELCOME,
+        scoutApp, SCOUT_HOSTED_START, SCOUT_STARTS, scoutWelcomeFor,
       } = require('../config/native-agents/scout');
       // eslint-disable-next-line global-require
       const { buildInstallationConfig } = require('../scripts/seed-native-agents');
@@ -328,7 +328,7 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
           instanceId: scoutInstanceId,
           podId: pod._id.toString(),
           displayName: scoutApp.displayName,
-          content: SCOUT_WELCOME,
+          content: scoutWelcomeFor(locale),
           // ADR-020 D3: the starts render as buttons under this message from
           // the payload, not from the text. Server-composed, never model prose.
           payload: {
@@ -362,7 +362,7 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
 // awaited. The queued call is not tracked anywhere: a pod-restart mid-tail
 // leaves a workspace with no Guide and no starter checklist, the same
 // best-effort limit the verification email already carries.
-const createDefaultWorkspacePod = async (userId: any) => {
+const createDefaultWorkspacePod = async (userId: any, locale: string = 'en') => {
   try {
     const pod = await Pod.create({
       name: 'My Workspace',
@@ -373,7 +373,7 @@ const createDefaultWorkspacePod = async (userId: any) => {
       members: [userId],
     });
 
-    void finishWorkspaceOnboarding(pod, userId);
+    void finishWorkspaceOnboarding(pod, userId, locale);
   } catch (podError: any) {
     console.warn('[register] default workspace pod creation failed:', podError?.message);
   }
@@ -408,6 +408,7 @@ exports.register = async (req: any, res: any) => {
       invitationCode,
       signupRef,
       signupSource,
+      locale,
     } = req.body;
 
     const normalizedEmail = normalizeEmail(email);
@@ -544,7 +545,9 @@ exports.register = async (req: any, res: any) => {
       await user.save();
     }
 
-    await createDefaultWorkspacePod(user._id);
+    // eslint-disable-next-line global-require
+    const { normalizeScoutLocale } = require('../config/native-agents/scout');
+    await createDefaultWorkspacePod(user._id, normalizeScoutLocale(locale));
 
     if (shouldAutoVerify) joinCommunityPodBestEffort(user._id);
 
