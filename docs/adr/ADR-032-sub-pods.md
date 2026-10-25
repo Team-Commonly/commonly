@@ -116,7 +116,7 @@ or carry a named exemption, as ADR-016 did for it at `ADR-016:164`.
 - **The `requirePodMember` constraint.** Every task write requires membership of the row's pod
   (`tasksApi.ts:198-219`; write refusal at `:209-211`; create `:322`, claim `:636`, complete `:707`,
   updates `:805`, PATCH `:1041`). A parent member who isn't in C **can't write C's rows**, and that
-  stays. They also **can't read** them: a non-member read falls through to `canViewPod` (`:212-215`), which admits only members and global admins to a non-DM pod.
+  stays. They also **can't read** them unless they are a global admin: a non-member read falls through to `canViewPod` (`:212-215`), which admits only members and global admins to a non-DM pod.
 - **Rollup.** New `GET /api/v1/tasks/:podId/rollup` returns, for each child the caller passes
   `canViewPod` on (the same filter as `/children`, `routes/pods.ts:619-622`): name, goal, `subPod.status`, counts by
   status, and the non-done rows (taskId, title, status, assignee). It is read-only, with no claim or
