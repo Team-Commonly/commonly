@@ -40,5 +40,8 @@ The runtime-key endpoint accepts only model and effort. It requires an active
 root credential with a recorded owner who remains the identity's sole
 installer. Spawn keys, machine bindings, hosted agents, other identities and
 broader environment changes are refused. `--adapter` and `--env` still require
-an owner login. Legacy keys without a credential ledger row need the owner to
+an owner login. A saved runtime key is used only for its recorded instance URL;
+an `--instance` override resolving to another URL requires an owner login for
+that instance and receives no fallback runtime-key request.
+Legacy keys without a credential ledger row need the owner to
 reissue a key through the page.

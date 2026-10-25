@@ -3795,8 +3795,13 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
       const runtimeKey = !opts.adapter && !opts.env && !ownerToken && Boolean(record.runtimeToken);
       const token = runtimeKey ? record.runtimeToken : ownerToken;
       if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
-      const client = createClient({ instance: resolveInstanceUrl(instance), token });
       try {
+        const instanceUrl = resolveInstanceUrl(instance);
+        if (runtimeKey && (!record.instanceUrl
+          || new URL(instanceUrl).href.replace(/\/$/, '') !== new URL(record.instanceUrl).href.replace(/\/$/, ''))) {
+          throw new Error('Changing --instance requires an owner login for that instance; run commonly login');
+        }
+        const client = createClient({ instance: instanceUrl, token });
         const result = await updateAgentConfiguration({
           client,
           record,

@@ -74,6 +74,21 @@ describe('page-issued key model configuration', () => {
     expect((await stored(foreignInstall)).environment.model).toBe('foreign-model');
     expect((await stored(ownInstall)).environment.model).toBe('old-model');
   });
+  it('never sends a request or the page key to a mismatched --instance', async () => {
+    const received = [];
+    const app = express();
+    app.use((req, res) => { received.push(req.headers.authorization); res.json({ podId: 'wrong-instance' }); });
+    const foreign = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
+    try {
+      await expect(command('byo-config', ['--instance', `http://127.0.0.1:${foreign.address().port}`]))
+        .rejects.toMatchObject({ code: 1, stderr: expect.stringContaining('requires an owner login') });
+      expect(received).toEqual([]);
+      expect((await stored(ownInstall)).environment.model).toBe('old-model');
+    } finally { await new Promise((resolve) => foreign.close(resolve)); }
+  });
+  it('accepts an explicit matching instance URL with a trailing slash', async () => {
+    expect((await command('byo-config', ['--instance', `${base}/`])).stdout).toContain('Updated byo-config');
+  });
   it.each([
     { instanceId: 'other' }, { environment: { mcp: [{ command: ['sh'] }] } },
     { adapter: 'claude' }, { model: '' }, { effort: 'ultra' },
