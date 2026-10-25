@@ -328,6 +328,25 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'commonly_read_file',
+      description: 'Read a file uploaded into a pod you belong to. Text only, up to 256 KiB. '
+        + 'PDF and Word return metadata: ask the person for a Markdown or text export.',
+      parameters: { type: 'object', properties: { podId: { type: 'string' }, fileName: { type: 'string' } },
+        required: ['fileName'], additionalProperties: false },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'commonly_playbook_options',
+      description: 'Read a member pod’s supported playbook triggers, roles, live pinned tools and write gaps. '
+        + 'Use before drafting a playbook. It changes nothing.',
+      parameters: { type: 'object', properties: { podId: { type: 'string' } }, additionalProperties: false },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'commonly_propose_action',
       description:
         'Propose an action that needs the workspace owner\'s approval. Posts an '
@@ -335,14 +354,15 @@ export const TOOLS = [
         + 'Use for anything that creates a surface others can see or join — '
         + 'create_pod (a new pod), connect_local_agent (a seat for an agent that '
         + 'runs on the user\'s own machine; after approval the user links it from '
-        + 'the connect page — you never see or handle its token). Do NOT also '
+        + 'the connect page — you never see or handle its token), or create_playbook '
+        + '(a draft workflow, saved Off after human approval). Do NOT also '
         + 'post a separate chat message about the proposal; the card IS the message.',
       parameters: {
         type: 'object',
         properties: {
           actionType: {
             type: 'string',
-            enum: ['create_pod', 'connect_local_agent'],
+            enum: ['create_pod', 'connect_local_agent', 'create_playbook'],
             description: 'The action being proposed',
           },
           summary: {
@@ -355,13 +375,20 @@ export const TOOLS = [
               + 'type? ("chat"|"team"), locale? ("en"|"zh-CN", the person\'s language) }. '
               + 'For connect_local_agent: { name (required — '
               + 'lowercase letters/digits/dashes, e.g. "sams-claude"), adapter? ("claude" for '
-              + 'Claude Code, "codex" for Codex: what they told you they run) }',
+              + 'Claude Code, "codex" for Codex: what they told you they run) }. '
+              + 'For create_playbook: { podId?, title, definition: {v:1, roles:[{key,kind:"agent"|"person"}], '
+              + 'steps:[{key,title,role,do,reads?,delivers?,approval?:{by,act:"actor"|"kernel",effect:"none"},writeGap?}], '
+              + 'done:[{says,check:"done"|"approved"|"by-person"|"has-pr",step}]}, sourceText?, bindings?, '
+              + 'schedule?:{cron,timezone} }. Only Run and daily/weekday/weekly schedules are supported. '
+              + 'A missing write is an agent draft followed by a person step, never an automatic send.',
             properties: {
               name: { type: 'string' },
               adapter: { type: 'string', enum: ['claude', 'codex'] },
               description: { type: 'string' },
               type: { type: 'string', enum: ['chat', 'team'] },
               locale: { type: 'string', enum: ['en', 'zh-CN'] },
+              podId: { type: 'string' }, title: { type: 'string' }, definition: { type: 'object' },
+              sourceText: { type: 'string' }, bindings: { type: 'object' }, schedule: { type: 'object' },
             },
           },
         },
@@ -531,6 +558,7 @@ const OPT_IN_TOOLS: ReadonlySet<string> = new Set([
   'commonly_propose_action', 'commonly_offer_hosted_agent', 'commonly_offer_local_agent',
   'commonly_run_code', 'commonly_web_search',
   'commonly_fetch_url',
+  'commonly_read_file', 'commonly_playbook_options',
   'computer_navigate', 'computer_snapshot', 'computer_click', 'computer_type',
   'computer_screenshot', 'computer_request_takeover',
 ]);
@@ -752,6 +780,22 @@ export async function dispatchTool(
 
   try {
     switch (name) {
+      case 'commonly_read_file':
+      case 'commonly_playbook_options': {
+        const podId = String(args.podId || ctx.podId);
+        if (!Types.ObjectId.isValid(podId)) return { content: { ok: false }, error: 'invalid_pod' };
+        const userId = await resolveSeatUserId(podId, ctx.agentName, ctx.instanceId);
+        if (!userId) return { content: { ok: false, error: 'Join this pod before reading it' },
+          error: 'pod_membership_required' };
+        if (name === 'commonly_playbook_options') {
+          const { playbookOptions } = require('./playbooks/store');
+          return { content: await playbookOptions(podId, userId) };
+        }
+        const { readPodFileText } = require('./podFileTextService');
+        const file = await readPodFileText(podId, String(args.fileName || ''));
+        return { content: file, untrustedSourceTitle: 'a pod attachment',
+          recorded: { fileName: file.fileName, contentType: file.contentType, size: file.size } };
+      }
       case 'commonly_read_context': {
         const limit = Math.min(Number(args.messageCount) || 20, 50);
         const recent = await fetchRecentPodMessages(String(ctx.podId), limit);

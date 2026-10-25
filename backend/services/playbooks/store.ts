@@ -35,7 +35,7 @@ export interface DraftInput {
   bindings?: Record<string, string>;
   schedule?: PlaybookSchedule;
 }
-const checkedDraft = (draft: DraftInput) => {
+export const validatePlaybookDraft = (draft: DraftInput) => {
   if (!draft || typeof draft !== 'object' || Array.isArray(draft)
     || Object.keys(draft).some((key) => !['title', 'definition', 'sourceText', 'bindings', 'schedule'].includes(key))) {
     throw new PlaybookError('invalid_draft', 'Provide only title, definition, sourceText, bindings and schedule', 400);
@@ -93,7 +93,7 @@ export const assertNoOpenRun = async (podId: string, installationId: string): Pr
 /** Draft creation always stays Off, including a Scout proposal approved by a person. */
 export const createOffPlaybook = async (podId: string, userId: string, draft: DraftInput) => {
   await requirePlaybookHuman(podId, userId);
-  const { book, schedule } = checkedDraft(draft);
+  const { book, schedule } = validatePlaybookDraft(draft);
   const installableId = `playbook-${randomUUID()}`;
   const components: any[] = [{ name: COMPONENT, type: 'event-handler', eventHandler: PLAYBOOK_HANDLER,
     metadata: { playbook: book, sourceSkill: installableId } }];
@@ -141,7 +141,7 @@ export const setPlaybookOn = async (podId: string, userId: string, installationI
 /** Saving a valid edit first pauses the workflow; a failed write cannot leave a changed workflow running. */
 export const editPlaybook = async (podId: string, userId: string, installationId: string, draft: DraftInput) => {
   await requirePlaybookHuman(podId, userId);
-  const { book, schedule } = checkedDraft(draft);
+  const { book, schedule } = validatePlaybookDraft(draft);
   return withPlaybookLock(podId, installationId, async (installation, installable, claimId) => {
     await assertNoOpenRun(podId, installationId);
     const paused = await Installation.findOneAndUpdate({ _id: installation._id, claimId,

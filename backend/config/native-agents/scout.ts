@@ -243,7 +243,14 @@ export const scoutApp = {
     + '- They want Commonly to run an agent for them, or would rather not '
     + 'install anything → commonly_offer_hosted_agent.\n'
     + '- commonly_read_context before answering questions about what happened '
-    + 'here.',
+    + 'here.\n'
+    + '- Asked to turn a procedure into a playbook: commonly_read_file reads a dropped text/Markdown file '
+    + '(PDF or Word needs a Markdown export). Read commonly_playbook_options for the target pod before drafting. '
+    + 'Use roles, agent/person steps, explicit approval points and record-based done checks. '
+    + 'Only Run and daily/weekday/weekly schedules are supported. Keep missing connector writes as a person step '
+    + 'after an agent drafts the output. For approval on a person send step, approved means only Approved: '
+    + 'also require done and by-person. Propose create_playbook for a human member to approve. '
+    + 'Approval saves it Off. The team binds roles and turns it On in Playbooks. Never claim approval sent anything.',
     'Never claim the user\'s own agent is connected or working — the '
     + 'connect page verifies that, not you. Point them there instead. And '
     + 'remember you are the product\'s first impression: an invented product '
@@ -253,6 +260,8 @@ export const scoutApp = {
   triggers: ['mention', 'chat.message'],
   tools: [
     'commonly_read_context',
+    'commonly_read_file',
+    'commonly_playbook_options',
     'commonly_read_memory',
     'commonly_write_memory',
     'commonly_post_message',

@@ -20,6 +20,8 @@ import User from '../models/User';
 import { advancePlaybookRun } from './playbooks/runState';
 import { deliverPlaybookStep } from './playbooks/delivery';
 import { applyPlaybookRuling, describePlaybookPoint } from './playbooks/rulings';
+import { validatePlaybookProposal, playbookProposalOwner } from './playbooks/proposal';
+import { createOffPlaybook } from './playbooks/store';
 import { assertAgentRuntimeMayJoinPod } from './outsiderGrantAgentJoinPolicy';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -34,7 +36,9 @@ const CARD_KIND = 'approval-card';
 // with arbitrary membership breaks the §3.10 invariant.
 const CREATABLE_POD_TYPES = new Set(['chat', 'team']);
 
-const KNOWN_ACTION_TYPES = new Set<ApprovalActionType>(['create_pod', 'connect_local_agent', 'tool_call', 'playbook_step']);
+const KNOWN_ACTION_TYPES = new Set<ApprovalActionType>([
+  'create_pod', 'connect_local_agent', 'tool_call', 'playbook_step', 'create_playbook',
+]);
 
 // Same shape the registry install route enforces for self-serve names (no
 // scoped @publisher/ names for local seats). Mirrors the BYO page's
@@ -165,6 +169,7 @@ interface ProposeResult {
 }
 
 const validateParams = (actionType: ApprovalActionType, params: Record<string, unknown>): string | null => {
+  if (actionType === 'create_playbook') return null; // Current pod/draft validation is asynchronous below.
   if (actionType === 'playbook_step') {
     return typeof params.taskId === 'string' && /^TASK-\d+$/.test(params.taskId)
       && typeof params.runTaskId === 'string' && /^TASK-\d+$/.test(params.runTaskId)
@@ -445,6 +450,10 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
       error: `unknown actionType '${actionType}' — known: ${Array.from(KNOWN_ACTION_TYPES).join(', ')}`,
     };
   }
+  if (actionType === 'create_playbook') {
+    try { params = { ...await validatePlaybookProposal(params || {}, podId, agentName, instanceId || 'default') }; }
+    catch (error) { return { ok: false, error: (error as Error).message }; }
+  }
   if (actionType === 'tool_call' && (!toolCall
     || !toolCall.grantId || !toolCall.callId || !toolCall.tool || !toolCall.argsDigest
     || !toolCall.canonicalArgs || !agentUserId)) {
@@ -475,7 +484,9 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     instanceId: instanceId || 'default',
     status: 'active',
   });
-  const ownerUserId = actionType === 'tool_call' || actionType === 'playbook_step'
+  const ownerUserId = actionType === 'create_playbook'
+    ? await playbookProposalOwner(String(params.podId), install?.installedBy)
+    : actionType === 'tool_call' || actionType === 'playbook_step'
     ? await resolveHumanDecider([point?.ownerUserId || requestedOwnerUserId])
     : await resolveHumanDecider([install?.installedBy, pod.createdBy]);
   if (!ownerUserId) {
@@ -1083,6 +1094,12 @@ export const sweepExpiredToolCallApprovals = async (now = new Date()): Promise<n
 // ── executors (D2: user authority owns the result) ──────────────────────────
 
 const executeAction = async (row: IApprovalAction): Promise<unknown> => {
+  if (row.actionType === 'create_playbook') {
+    const { podId, ...draft } = await validatePlaybookProposal(row.params || {}, String(row.podId),
+      row.agentName, row.instanceId || 'default');
+    const installation = await createOffPlaybook(podId, String(row.ownerUserId), draft);
+    return { podId, installationId: String(installation._id), on: false };
+  }
   if (row.actionType === 'playbook_step') return applyPlaybookRuling(row);
   if (row.actionType === 'create_pod') return executeCreatePod(row);
   if (row.actionType === 'connect_local_agent') return executeConnectLocalAgent(row);

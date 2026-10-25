@@ -42,7 +42,7 @@ const Pod = require('../models/Pod');
 const PodAsset = require('../models/PodAsset');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const File = require('../models/File');
-const { getObjectStore } = require('../services/objectStore');
+import { readPodFileText, PodFileReadError } from '../services/podFileTextService';
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
 const { toPublicIntegrationConfig } = require('../models/integrationPublicConfig');
 const { isGlobalAdminUser } = require('./registry/helpers');
@@ -1990,42 +1990,6 @@ router.get('/pods/:podId/files', phase4RateLimit, agentRuntimeAuth, async (req: 
  * return metadata + a note (no bytes). The file must belong to THIS pod —
  * this prevents cross-pod reads via a guessed fileName.
  */
-const AGENT_FILE_TEXT_MAX = 256 * 1024; // 256 KB cap on inlined text
-
-// Textual subtypes, matched as WHOLE TOKENS against the parsed subtype —
-// never as substrings of the raw header.
-//
-// The previous test was
-//   /^text\/|json|csv|xml|javascript|markdown|yaml|x-sh|html/
-// in which only `^text/` is anchored; every alternative after it matched
-// anywhere in the string. `application/vnd.openXMLformats-officedocument.
-// wordprocessingml.document` contains "xml", so .docx/.xlsx/.pptx were all
-// classified as text and returned as raw ZIP bytes decoded as UTF-8 — in
-// `content`, with no `note`, so an agent had no signal at all that what it
-// received was not the document. Measured 2026-08-05: a 939-byte .docx came
-// back as "PK\x03\x04…". That is worse than refusing, because a refusal is
-// legible and this is not. See AX audit entry 19.
-//
-// A PDF was never affected (`application/pdf` matches nothing here) and
-// still returns `content: null` + the binary note — correct behaviour, and
-// the reason the .docx case went unnoticed: the format everyone tested
-// failed honestly.
-const TEXTUAL_SUBTYPES = new Set([
-  'json', 'csv', 'tsv', 'xml', 'javascript', 'ecmascript', 'markdown', 'md',
-  'yaml', 'x-yaml', 'x-sh', 'html', 'xhtml', 'plain', 'sql', 'toml', 'ini',
-]);
-
-const isTextualContentType = (raw: string): boolean => {
-  // Strip parameters (`; charset=utf-8`) before splitting type/subtype.
-  const [type, subtype = ''] = String(raw || '').split(';')[0].trim().toLowerCase().split('/');
-  if (type === 'text') return true;
-  if (TEXTUAL_SUBTYPES.has(subtype)) return true;
-  // Structured syntax suffixes: application/ld+json, image/svg+xml, …
-  // Anchored to the END of the subtype, so `…wordprocessingml.document`
-  // cannot match on a bare "+xml" that isn't a suffix.
-  return /\+(json|xml)$/.test(subtype);
-};
-
 router.get('/pods/:podId/files/:fileName/content', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
@@ -2039,54 +2003,9 @@ router.get('/pods/:podId/files/:fileName/content', phase4RateLimit, agentRuntime
     if (!ensurePodMatch(req.agentInstallations || req.agentInstallation, podId, req.agentAuthorizedPodIds)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
-    const file = await File.findOne({ fileName, podId })
-      .select('fileName originalName contentType size')
-      .lean() as any;
-    if (!file) {
-      return res.status(404).json({ message: 'File not found in this pod' });
-    }
-
-    // Fetch bytes: object store first, legacy inline data as fallback.
-    let buffer: Buffer | null = null;
-    const store = getObjectStore();
-    const obj = await store.get(fileName);
-    if (obj && obj.stream) {
-      buffer = await new Promise<Buffer>((resolve, reject) => {
-        const chunks: Buffer[] = [];
-        obj.stream.on('data', (c: Buffer) => chunks.push(c));
-        obj.stream.on('end', () => resolve(Buffer.concat(chunks)));
-        obj.stream.on('error', reject);
-      });
-    } else {
-      const legacy = await File.findByFileName(fileName);
-      if (legacy && legacy.data && legacy.data.length > 0) buffer = legacy.data;
-    }
-    if (!buffer) {
-      return res.status(404).json({ message: 'File content not found' });
-    }
-
-    const ct = String(file.contentType || '');
-    const isText = isTextualContentType(ct);
-    if (isText && buffer.length <= AGENT_FILE_TEXT_MAX) {
-      return res.json({
-        fileName: file.fileName,
-        name: file.originalName,
-        contentType: file.contentType,
-        size: file.size,
-        content: buffer.toString('utf8'),
-      });
-    }
-    return res.json({
-      fileName: file.fileName,
-      name: file.originalName,
-      contentType: file.contentType,
-      size: file.size,
-      content: null,
-      note: isText
-        ? `File is ${buffer.length} bytes, over the ${AGENT_FILE_TEXT_MAX}-byte inline text limit.`
-        : 'Binary file — content is not returned as text.',
-    });
+    return res.json(await readPodFileText(podId, fileName));
   } catch (error: any) {
+    if (error instanceof PodFileReadError) return res.status(error.status).json({ message: error.message });
     console.error('Error reading pod file:', error);
     return res.status(500).json({ message: 'Failed to read file' });
   }

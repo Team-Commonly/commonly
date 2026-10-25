@@ -163,13 +163,13 @@ describe('toolsForConfig', () => {
     expect(names(toolsForConfig({ tools: ['commonly_post_message'] }))).not.toContain('commonly_agent_status');
   });
 
-  test('the propose_action schema teaches both action types', () => {
+  test('the propose_action schema teaches each supported action type', () => {
     // The enum in the tool schema is what the model sees — if the schema
     // lags the service's KNOWN_ACTION_TYPES, Scout can never propose the
     // new action no matter what the prompt says.
     const tools = toolsForConfig({ tools: ['commonly_propose_action'] });
     const schema = tools[0].function.parameters.properties.actionType;
-    expect(schema.enum.sort()).toEqual(['connect_local_agent', 'create_pod']);
+    expect(schema.enum.sort()).toEqual(['connect_local_agent', 'create_playbook', 'create_pod']);
   });
 
   // TASK-266: running code is opt-in by declaration AND needs a sandbox key.
