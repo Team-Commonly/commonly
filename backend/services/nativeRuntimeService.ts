@@ -54,6 +54,7 @@ import {
 import {
   buildByoHandoffPayload,
   defaultByoHandoffName,
+  availableByoHandoffName,
   type ByoHandoffAdapter,
 } from './byoHandoffService';
 import { appendLongTermMemory } from './agentMemoryService';
@@ -934,7 +935,7 @@ export async function dispatchTool(
         const agentName = args.name
           ? String(args.name)
           : defaultByoHandoffName(owner?.username, adapter);
-        const payload = buildByoHandoffPayload({
+        let payload = buildByoHandoffPayload({
           adapter,
           os: args.os,
           podId: ctx.podId,
@@ -944,6 +945,21 @@ export async function dispatchTool(
         });
         if ('error' in payload) {
           return { content: { ok: false, error: payload.error }, error: 'handoff_invalid' };
+        }
+        if (!args.name) {
+          const { AgentRegistry } = require('../models/AgentRegistry');
+          const availableName = await availableByoHandoffName(
+            payload.agentName,
+            async (name) => Boolean(await AgentRegistry.exists({ agentName: name })),
+          );
+          const availablePayload = buildByoHandoffPayload({
+            adapter, os: args.os, podId: ctx.podId, agentName: availableName,
+            memoryFrom: ctx.agentName, memoryInstance: ctx.instanceId || 'default',
+          });
+          if ('error' in availablePayload) {
+            return { content: { ok: false, error: availablePayload.error }, error: 'handoff_invalid' };
+          }
+          payload = availablePayload;
         }
         const AgentMessageService = require('./agentMessageService');
         const result = await AgentMessageService.postMessage({
