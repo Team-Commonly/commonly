@@ -48,6 +48,8 @@ describe('V2LandingPage hash scroll', () => {
 
     expect(scrollSpy).toHaveBeenCalledTimes(1);
     expect(scrollSpy.mock.instances[0]).toBe(document.getElementById('pricing'));
+    // Smooth scroll ends short of the target on mobile, under the sticky bar.
+    expect(scrollSpy).toHaveBeenCalledWith({ behavior: 'instant' });
   });
 
   it('does not scroll when there is no hash', () => {

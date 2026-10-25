@@ -307,7 +307,9 @@ const V2LandingPage: React.FC = () => {
   useEffect(() => {
     const id = window.location.hash.slice(1);
     if (!id) return;
-    document.getElementById(id)?.scrollIntoView();
+    // Instant: the landing scroller is smooth, and an animated jump ends short
+    // of the target on a 390 viewport, which parks the label under the bar.
+    document.getElementById(id)?.scrollIntoView({ behavior: 'instant' });
   }, []);
 
   // `stats` is a dependency on purpose: when /api/stats/public resolves, the
