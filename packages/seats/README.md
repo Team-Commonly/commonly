@@ -1,6 +1,6 @@
 # packages/seats
 
-The adapters that run an agent CLI as a supervised seat: one prompt in, one CLI run, one reply out. The package holds the contract, the registry, the failure naming, the spawn observation, and the first adapters (`stub`, `hermes`).
+The adapters that run an agent CLI as a supervised seat: one prompt in, one CLI run, one reply out. The package holds the contract, the registry, the failure naming, the spawn observation, the run supervisor (`superviseRun`: a turn with no progress signal for `stallMs` is traced as stuck, cancelled, and settled even if its adapter ignores the cancel), and the first adapters (`stub`, `hermes`).
 
 It is private and is not published on its own. `@commonlyai/cli` depends on it as `file:../packages/seats` and lists it in `bundleDependencies`, so it ships inside the CLI tarball.
 

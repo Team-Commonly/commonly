@@ -16,6 +16,7 @@ import { homedir, tmpdir } from 'node:os';
 import { delimiter, join, resolve, sep } from 'node:path';
 import { traceOf } from '../trace/events.js';
 import { runFailure } from '../failures.js';
+import { MIN_CREDENTIAL_LENGTH } from '../upstream-refusal.js';
 import { validateGrant } from './grant.js';
 
 // Same spirit as the goose adapter's SAFE_ENV: locale, terminal and TLS trust
@@ -103,8 +104,10 @@ const grantIssued = (meta) => {
  *
  * `require` lists credential names the adapter cannot run without; one the
  * grant does not name fails the run as credential_denied before any spawn.
- * A named credential that cannot be resolved fails it the same way: a run
- * that silently lacks its key fails later and less legibly.
+ * A named credential that cannot be resolved, or that resolves to fewer than
+ * MIN_CREDENTIAL_LENGTH characters, fails it the same way: a run that
+ * silently lacks its key fails later and less legibly, and a value that short
+ * would slip past the refusal-text reader's redaction.
  *
  * Events go to `trace`, else ctx.trace: grant.issued (only with grantMeta,
  * first), then credential.granted {names} or credential.denied {name, reason}.
@@ -120,9 +123,14 @@ export const prepareRunEnv = async ({
   const issued = grantMeta ? grantIssued(grantMeta) : null;
   if (issued) hook.emit('grant.issued', issued);
   const realHomes = [...new Set([baseEnv.HOME, homedir()].filter(Boolean))];
+  const DENIED = {
+    not_granted: 'is not in the run grant',
+    unresolved: 'could not be resolved',
+    too_short: `resolved to a value shorter than ${MIN_CREDENTIAL_LENGTH} characters`,
+  };
   const deny = (name, reason, values) => {
     hook.emit('credential.denied', { name, reason });
-    return runFailure('credential_denied', `${name} ${reason === 'not_granted' ? 'is not in the run grant' : 'could not be resolved'}`, { credentials: values });
+    return runFailure('credential_denied', `${name} ${DENIED[reason]}`, { credentials: values });
   };
 
   const granted = new Set(valid.credentials.map((c) => c.name));
@@ -139,6 +147,9 @@ export const prepareRunEnv = async ({
       // A resolver's error text may quote the secret it failed on; drop it.
       try { value = await resolveOne(spec, { baseEnv, resolveSecret }); } catch { value = undefined; }
       if (!usable(value)) throw deny(spec.name, 'unresolved', values);
+      // A value this short cannot be told apart from ordinary text, so the
+      // refusal-text reader would not redact it. Refuse it here, before spawn.
+      if (value.length < MIN_CREDENTIAL_LENGTH) throw deny(spec.name, 'too_short', values);
       values.push(value);
       env[spec.name] = value;
     }

@@ -333,7 +333,7 @@ built in Go runs its tests with `-race` in CI.
 | kind | data | default actor |
 |---|---|---|
 | `credential.granted` | `{names: [NAME]}` | `system` |
-| `credential.denied` | `{name, reason}`, where `reason` is `not_granted` or `unresolved` | `system` |
+| `credential.denied` | `{name, reason}`, where `reason` is `not_granted`, `unresolved` or `too_short` (a value under 8 characters) | `system` |
 
 These cover the environment credentials a run is started with. Values never
 appear here: `NAME` is an environment variable name matching
@@ -434,11 +434,21 @@ What's new or changed in `EVENT_TYPES`:
      and a writer refuses one that is not name-shaped.
    - Agent-authored text, such as message chunks and tool titles, belongs to
      the agent and could repeat a value the agent holds. A writer that knows
-     the run's credential values replaces every occurrence of 8 characters or
-     more with `[redacted]` before the line is hashed.
+     the run's credential values replaces every occurrence of each, whatever
+     its length, with `[redacted]` before the line is hashed. A writer does
+     not grant a credential shorter than 8 characters (`credential.denied`,
+     `too_short`).
+   - Message and thought chunks are scrubbed per stream, not per line, so a
+     value split across chunks is caught. A writer holds back a chunk's tail
+     while it could begin a known value, and writes it with the stream's next
+     chunk. If the stream ends first, the held tail is a partial value, so the
+     writer writes `[redacted]` as a chunk of its own in its place, before the
+     next `attempt.started`, `attempt.settled` or `run.settled`. A short
+     ordinary tail that happened to begin a value is redacted too. A held tail
+     lives only in the writer's memory: a writer that crashes before the next
+     write loses it, and never writes it.
    - That replacement covers known values only. A value the writer was not
-     given, or one the agent transformed (base64, split across chunks), passes
-     through.
+     given, or one the agent transformed (base64, say), passes through.
 2. **Readers ignore unknown fields and skip unknown kinds.** A reader that
    meets a kind it doesn't know still checks the chain over that line.
 3. **`v` bumps only on a breaking change:**

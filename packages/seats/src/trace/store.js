@@ -14,7 +14,6 @@ import { join } from 'node:path';
 import {
   appendEntry, hashLine, kindOfType, readRecord, traceTypeOf, validateActor, verifyRecord, BOARD_ACTOR,
 } from '../record/format.js';
-import { redactKnownCredentials } from '../upstream-refusal.js';
 
 const RUN_ID = /^[A-Za-z0-9_-]{6,64}$/;
 const readJsonl = (path) => (existsSync(path)
@@ -23,15 +22,55 @@ const readJsonl = (path) => (existsSync(path)
   })
   : []);
 
-/** Known credential values never reach a line, even inside agent text. */
+/**
+ * Known credential values never reach a line, even inside agent text. Every
+ * registered value is replaced, whatever its length: the eight-character
+ * floor in redactKnownCredentials belongs to the refusal-text reader, not to
+ * the record. `secrets` is kept longest first, so a value that contains a
+ * shorter one is replaced whole rather than in pieces.
+ */
+const scrubText = (text, secrets) => {
+  let out = text;
+  for (const value of secrets) out = out.split(value).join('[redacted]');
+  return out;
+};
+
 const scrub = (value, secrets) => {
   if (secrets.length === 0) return value;
-  if (typeof value === 'string') return redactKnownCredentials(value, secrets);
+  if (typeof value === 'string') return scrubText(value, secrets);
   if (Array.isArray(value)) return value.map((item) => scrub(item, secrets));
   if (value && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, scrub(item, secrets)]));
   }
   return value;
+};
+
+/**
+ * Streamed agent text arrives in deltas, so a value can be split across two or
+ * more of them and match none on its own. Each stream (kind + actor) is
+ * scrubbed over a rolling window instead: the held tail is joined to the next
+ * delta, the join is scrubbed, and the longest suffix of the result that
+ * could still begin a known value is held back again. What is written is the
+ * rest.
+ *
+ * Why that is enough: an occurrence that started inside written text and ran
+ * past its end would make the written part plus the held tail a proper prefix
+ * of that value, a longer such suffix than the one held. So no value spans a
+ * written boundary, and each written piece is itself scrubbed. The tail is
+ * shorter than the longest value, and only as long as an actual prefix match.
+ */
+const STREAMED_KINDS = new Set(['agent.message_chunk', 'agent.thought_chunk']);
+// The held text is written out before these, so it stays in its own attempt
+// and is never lost at settle, whichever path (ok, failure, cancel, kill) got there.
+const FLUSH_BEFORE = new Set(['attempt.started', 'attempt.settled', 'run.settled']);
+
+const heldLength = (text, secrets) => {
+  const longest = secrets.length ? secrets[0].length : 0;
+  for (let start = Math.max(0, text.length - longest + 1); start < text.length; start += 1) {
+    const tail = text.slice(start);
+    if (secrets.some((value) => value.length > tail.length && value.startsWith(tail))) return text.length - start;
+  }
+  return 0;
 };
 
 /** What readRun has always returned, plus the envelope: `type` is the trace name. */
@@ -70,11 +109,12 @@ export const createTraceStore = ({ root, now = () => new Date() } = {}) => {
     let seq = 0;
     let settled = false;
     let broken = false;
-    const secrets = [];
+    const secrets = []; // longest first; see scrubText
+    const streams = new Map(); // stream key → { kind, actor, held }
     const grants = new Map(); // open grants: grantId → { parentGrantId, binding, expiresAt }
     const startedAt = now();
 
-    const write = (kind, data, actor) => {
+    const writeLine = (kind, data, actor) => {
       const line = appendEntry(last, {
         runId, taskId, podId, ts: now().toISOString(), kind, data: scrub(data, secrets), actor,
       }, { runActor });
@@ -97,6 +137,31 @@ export const createTraceStore = ({ root, now = () => new Date() } = {}) => {
       return asEvent(entry);
     };
 
+    /** A streamed delta's text, less a tail that could begin a known value. */
+    const windowed = (kind, data, actor) => {
+      if (!STREAMED_KINDS.has(kind) || typeof data?.text !== 'string') return data;
+      const key = JSON.stringify([kind, actor ?? null]);
+      const joined = scrubText(`${streams.get(key)?.held ?? ''}${data.text}`, secrets);
+      const cut = joined.length - heldLength(joined, secrets);
+      if (cut < joined.length) streams.set(key, { kind, actor, held: joined.slice(cut) });
+      else streams.delete(key);
+      return { ...data, text: joined.slice(0, cut) };
+    };
+
+    const write = (kind, data, actor) => writeLine(kind, windowed(kind, data, actor), actor);
+
+    /**
+     * The stream has ended, so each held tail can no longer complete a value.
+     * A tail is held only while it is a prefix of a known value, so it is part
+     * of a credential: write the marker in its place, never the prefix.
+     */
+    const flushStreams = () => {
+      for (const [key, { kind, actor }] of streams) {
+        streams.delete(key);
+        writeLine(kind, { text: '[redacted]' }, actor);
+      }
+    };
+
     const revoke = (grantIds, reason, actor) => (grantIds.length ? write('grant.revoked', { grantIds, reason }, actor) : null);
 
     const emit = (type, data = {}, options = {}) => {
@@ -104,6 +169,7 @@ export const createTraceStore = ({ root, now = () => new Date() } = {}) => {
       if (!kind) throw new Error(`unknown trace event type: ${type}`);
       if (settled) return null;
       if (broken) throw new Error(`run ${runId}: the record is broken after a failed write`);
+      if (FLUSH_BEFORE.has(kind)) flushStreams();
       const event = write(kind, data, options?.actor);
       if (kind === 'task.done') {
         // The board closed the task: every grant bound to it ends, in one write.
@@ -142,8 +208,10 @@ export const createTraceStore = ({ root, now = () => new Date() } = {}) => {
       return revoke([...grants].filter(([, g]) => g.expiresAt && Date.parse(g.expiresAt) <= cutoff).map(([id]) => id), 'expired');
     };
 
+    /** Every non-empty string is scrubbed from here on, whatever its length. */
     const redact = (values = []) => {
-      for (const value of values) if (typeof value === 'string' && !secrets.includes(value)) secrets.push(value);
+      for (const value of values) if (typeof value === 'string' && value && !secrets.includes(value)) secrets.push(value);
+      secrets.sort((a, b) => b.length - a.length);
     };
 
     append(indexPath, {

@@ -74,6 +74,9 @@ export const bodyFromError = (value) => {
   return text.replace(STATUS_PREFIX, '').trim();
 };
 
+/** The shortest value the refusal-text reader treats as a credential. */
+export const MIN_CREDENTIAL_LENGTH = 8;
+
 /**
  * Replace credential values this spawn was handed with a marker.
  *
@@ -82,11 +85,16 @@ export const bodyFromError = (value) => {
  * value is in the lines around the secret. Values shorter than eight characters
  * are ignored: redacting a one-character "credential" would corrupt ordinary
  * prose, and no issued credential is that short.
+ *
+ * The floor belongs to this reader only. The trace store scrubs every value
+ * registered with it, whatever its length, and the valet refuses to grant a
+ * credential shorter than this (credential_denied), so no granted value is
+ * ever below the floor.
  */
 export const redactKnownCredentials = (text, credentials = []) => {
   let out = String(text ?? '');
   for (const value of credentials) {
-    if (typeof value !== 'string' || value.length < 8) continue;
+    if (typeof value !== 'string' || value.length < MIN_CREDENTIAL_LENGTH) continue;
     out = out.split(value).join('[redacted]');
   }
   return out;
@@ -350,5 +358,5 @@ export const spawnCredentials = (ctx = {}, envNames = []) => {
   return [
     ctx.runtimeToken,
     ...envNames.map((name) => env[name]),
-  ].filter((value) => typeof value === 'string' && value.length >= 8);
+  ].filter((value) => typeof value === 'string' && value.length >= MIN_CREDENTIAL_LENGTH);
 };
