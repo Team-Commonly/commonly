@@ -225,6 +225,8 @@ describe('read-only git runs the five subcommands', () => {
     expect(env.PATH).toBe('/usr/bin');
     expect(env.GIT_CONFIG_NOSYSTEM).toBe('1');
     expect(env.GIT_CONFIG_GLOBAL).toBe('/dev/null');
+    expect(env.GIT_NO_LAZY_FETCH).toBe('1');
+    expect(env.GIT_ALLOW_PROTOCOL).toBe('none');
     expect(env.GIT_CEILING_DIRECTORIES.length).toBeGreaterThan(0);
   });
 
@@ -504,5 +506,65 @@ describe('read-only git holds a submodule to the same rules', () => {
     } finally {
       await inParent(['config', '--unset', 'status.submoduleSummary']);
     }
+  });
+});
+
+// A partial clone leaves objects on its remote. Bare git fetches one the moment
+// a command needs it; the guarded call reports it missing and contacts nothing.
+describe('read-only git never contacts a remote', () => {
+  let base;
+  let clone;
+  const present = (oid) => bareGit(['cat-file', '-e', oid], {
+    cwd: clone,
+    env: {
+      ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_NO_LAZY_FETCH: '1',
+    },
+  }).then(() => true, () => false);
+  const missingBlob = async (rev) => {
+    const oid = (await bareGit(['rev-parse', `${rev}:f.txt`], { cwd: clone })).stdout.trim();
+    expect(await present(oid)).toBe(false);
+    return oid;
+  };
+
+  beforeAll(async () => {
+    base = mkdtempSync(join(tmpdir(), 'git-ro-partial-'));
+    const src = join(base, 'src');
+    clone = join(base, 'clone');
+    const id = ['-c', 'user.name=t', '-c', 'user.email=t@t'];
+    mkdirSync(src);
+    await bareGit(['init', '-q'], { cwd: src });
+    await bareGit(['config', 'uploadpack.allowFilter', 'true'], { cwd: src });
+    for (const content of ['one', 'two', 'three']) {
+      writeFileSync(join(src, 'f.txt'), `${content}\n`);
+      // eslint-disable-next-line no-await-in-loop
+      await bareGit(['add', 'f.txt'], { cwd: src });
+      // eslint-disable-next-line no-await-in-loop
+      await bareGit([...id, 'commit', '-q', '-m', content], { cwd: src });
+    }
+    // Only the checked-out version of f.txt is downloaded; the older two are not.
+    await bareGit(['clone', '-q', '--filter=blob:none', `file://${src}`, clone], { cwd: base });
+  });
+
+  afterAll(() => rmSync(base, { recursive: true, force: true }));
+
+  test('a missing object stays missing (control: bare git fetches it)', async () => {
+    const oid = await missingBlob('HEAD~1');
+    const result = await runReadonlyGit({ subcommand: 'show', args: [oid], root: clone, git: GIT });
+    expect(result.ok).toBe(false);
+    expect(await present(oid)).toBe(false);
+    expect((await bareGit(['show', oid], { cwd: clone })).stdout).toBe('two\n');
+    expect(await present(oid)).toBe(true);
+  });
+
+  test('each guard holds alone, so git older than 2.44 fetches nothing either', async () => {
+    const oid = await missingBlob('HEAD~2');
+    for (const dropped of ['GIT_NO_LAZY_FETCH', 'GIT_ALLOW_PROTOCOL']) {
+      const env = readonlyGitEnv({ root: clone });
+      delete env[dropped];
+      // eslint-disable-next-line no-await-in-loop
+      const outcome = await bareGit(['show', oid], { cwd: clone, env }).then(() => 'fetched', () => 'refused');
+      expect(outcome).toBe('refused');
+    }
+    expect(await present(oid)).toBe(false);
   });
 });

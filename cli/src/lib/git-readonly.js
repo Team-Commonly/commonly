@@ -37,6 +37,10 @@
  *    status never rewrites the index), and GIT_CEILING_DIRECTORIES stops
  *    repository discovery at the workspace. The only repository git can open
  *    is one rooted there, so `show HEAD:<path>` cannot reach a file above it.
+ *    No git it runs contacts a remote: lazy fetching is off, so a partial
+ *    clone reports an object it lacks as missing instead of fetching it, and
+ *    no transport is allowed, which covers git older than 2.44, where
+ *    GIT_NO_LAZY_FETCH does nothing.
  * 5. Outside this module, the seat's sandbox (Seatbelt or bwrap) mounts the
  *    workspace read-only.
  * 6. A committed `.env` or `.env.*` stays as far out of reach as the file
@@ -44,8 +48,8 @@
  *    (`.env`, `HEAD:.env`, `:0:sub/.env.local`, `-L1,5:.env`) is refused, and
  *    status, log, diff and show run with pathspecs excluding them, so no patch,
  *    pickaxe match or blob id comes from one whatever path or glob the caller
- *    named. `--follow` takes exactly one path, so it is refused. What this cannot stop is `show <blob id>` with an id learned
- *    somewhere else.
+ *    named. `--follow` takes exactly one path, so it is refused. What this
+ *    cannot stop is `show <blob id>` with an id learned somewhere else.
  */
 import { execFile } from 'child_process';
 import { realpathSync } from 'fs';
@@ -251,6 +255,9 @@ export const readonlyGitEnv = ({ root, baseEnv = process.env }) => {
     GIT_ATTR_NOSYSTEM: '1',
     GIT_OPTIONAL_LOCKS: '0',
     GIT_TERMINAL_PROMPT: '0',
+    GIT_NO_LAZY_FETCH: '1',
+    // A name no transport uses, so every protocol is refused.
+    GIT_ALLOW_PROTOCOL: 'none',
     GIT_PAGER: 'cat',
     PAGER: 'cat',
     GIT_CEILING_DIRECTORIES: dirname(realOrResolved(root)),
