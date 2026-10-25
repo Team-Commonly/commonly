@@ -41,7 +41,7 @@
  *    (`.env`, `HEAD:.env`, `:0:sub/.env.local`, `-L1,5:.env`) is refused, and
  *    status, log, diff and show run with pathspecs excluding them, so no patch,
  *    pickaxe match or blob id comes from one whatever path or glob the caller
- *    named. What this cannot stop is `show <blob id>` with an id learned
+ *    named. `--follow` takes exactly one path, so it is refused. What this cannot stop is `show <blob id>` with an id learned
  *    somewhere else.
  */
 import { execFile } from 'child_process';
@@ -66,6 +66,7 @@ export const DENIED_LONG_OPTIONS = Object.freeze({
   '--config-env': 'sets configuration',
   '--paginate': 'runs a pager',
   '--show-signature': 'runs gpg to check a signature',
+  '--follow': 'needs exactly one path, and every log here also carries the .env excludes',
 });
 
 // Real options that are also prefixes of a denied one. Git takes an exact name

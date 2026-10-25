@@ -273,6 +273,14 @@ describe('read-only git keeps committed .env files out of reach', () => {
     expect(refusal({ subcommand: 'log', args: ['-L', '1,1:sub/.env.local'] })).toMatch(/names a \.env file/);
   });
 
+  test('--follow is refused, since it takes one path and the excludes add more (control: git rejects it with them)', async () => {
+    await expect(bareGit(['log', '--follow', '--', 'tracked.txt', ':(exclude,glob)**/.env']))
+      .rejects.toMatchObject({ stderr: expect.stringMatching(/exactly one pathspec/) });
+    for (const args of [['--follow', '--', 'tracked.txt'], ['--foll', '--', 'tracked.txt']]) {
+      expect(refusal({ subcommand: 'log', args })).toMatch(/--follow/);
+    }
+  });
+
   test('a patch, a glob, a pickaxe and a raw listing all leave it out (control: bare log -p shows it)', async () => {
     expect((await bareGit(['log', '-p'])).stdout).toContain(SECRET);
     for (const [subcommand, args] of [['log', ['-p']], ['log', ['-p', '--', '.en*', 'sub/*']],
