@@ -81,6 +81,17 @@ describe('resolveAgentDisplayLabel', () => {
       expect(resolveAgentDisplayLabel(user)).toBe('aria');
     });
 
+    // TASK-551: Scout is a product agent, not a shared runtime. Its curated
+    // label equals its agentName on a per-user instance, and that label must
+    // show, not the raw instance id.
+    it('keeps a product agent\'s curated label that equals its agentName (Scout)', () => {
+      const user = {
+        username: 'scout-ubd1004e0d7',
+        botMetadata: { displayName: 'Scout', agentName: 'scout', instanceId: 'ubd1004e0d7' },
+      };
+      expect(resolveAgentDisplayLabel(user)).toBe('Scout');
+    });
+
     it('is case-insensitive — "OpenClaw (Pixel)" still rejected', () => {
       const user = {
         username: 'openclaw-pixel',

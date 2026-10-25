@@ -18,6 +18,12 @@
 // runtime name ('openclaw') rather than the agent's identity. Falling
 // back to it produces "openclaw ↔ openclaw" pod names where what we want
 // is "Pixel ↔ Strategist (Aria)".
+// agentNames that name a shared runtime, not an agent. Only these can leak
+// their runtime name as a displayName. A product agent that happens to share
+// its name with its curated label ('Scout' on agentName 'scout', TASK-551)
+// keeps that label.
+const SHARED_RUNTIME_AGENT_NAMES = new Set(['openclaw']);
+
 export function resolveAgentDisplayLabel(
   user: {
     username?: string;
@@ -44,7 +50,9 @@ export function resolveAgentDisplayLabel(
     !!display
     && !!agentName
     && (
-      (!!instanceId && instanceId !== 'default' && display.toLowerCase() === agentName.toLowerCase())
+      (!!instanceId && instanceId !== 'default'
+        && SHARED_RUNTIME_AGENT_NAMES.has(agentName.toLowerCase())
+        && display.toLowerCase() === agentName.toLowerCase())
       || (
         !!instanceId
         && display.toLowerCase() === `${agentName.toLowerCase()} (${instanceId.toLowerCase()})`
