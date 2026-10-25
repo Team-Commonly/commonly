@@ -66,13 +66,9 @@ const refresh = async (): Promise<ModelCatalog> => {
     };
   }
   try {
-    const config = { headers: { Authorization: `Bearer ${key}` }, timeout: 30_000 };
-    const results = await Promise.allSettled([
-      axios.get(`${base}/model/info`, config),
-      axios.get(`${base}/health`, config),
-    ]);
-    const info = results[0].status === 'fulfilled' ? results[0].value.data?.data : null;
-    const health = results[1].status === 'fulfilled' ? results[1].value.data : null;
+    const config = { headers: { Authorization: `Bearer ${key}` }, timeout: 10_000 };
+    const { data } = await axios.get(`${base}/model/info`, config);
+    const info = data?.data;
     const routes: any[] = Array.isArray(info) ? info.filter((route: any) => (
       typeof route.model_name === 'string'
       && (!route.model_info?.mode
@@ -81,8 +77,16 @@ const refresh = async (): Promise<ModelCatalog> => {
     routes.forEach((route) => {
       knownModels.set(route.model_name, knownModels.get(route.model_name) || route.model_name);
     });
-    const healthy = Array.isArray(health?.healthy_endpoints) ? health.healthy_endpoints : [];
-    const unhealthy = Array.isArray(health?.unhealthy_endpoints) ? health.unhealthy_endpoints : [];
+    // Probe chat deployments separately: one stalled route must not erase all
+    // healthy results, and this screen must not probe image/embedding routes.
+    const healthResults = await Promise.allSettled(routes.map((route) => axios.get(`${base}/health`, {
+      ...config,
+      params: route.model_info?.id != null
+        ? { model_id: route.model_info.id } : { model: route.model_name },
+    })));
+    const health = healthResults.flatMap((result) => (result.status === 'fulfilled' ? [result.value.data] : []));
+    const healthy = health.flatMap((entry) => (Array.isArray(entry?.healthy_endpoints) ? entry.healthy_endpoints : []));
+    const unhealthy = health.flatMap((entry) => (Array.isArray(entry?.unhealthy_endpoints) ? entry.unhealthy_endpoints : []));
     const matches = (endpoint: any, route: any) => {
       if (endpoint.model_id != null && route.model_info?.id != null) {
         return String(endpoint.model_id) === String(route.model_info.id);

@@ -80,3 +80,20 @@ test('does not guess across ambiguous legacy health results without deployment i
   expect(catalog.modelAvailability(result, 'a').available).toBe(false);
   expect(catalog.modelAvailability(result, 'b').available).toBe(false);
 });
+
+test('a timed-out deployment cannot erase healthy results and non-chat routes are not probed', async () => {
+  const get = require('axios').get;
+  get.mockImplementation((url, config) => {
+    if (url.endsWith('/model/info')) return Promise.resolve({ data: { data: [
+      route('good', 'g'), route('stalled', 's'),
+      { ...route('embedding-only', 'e'), model_info: { id: 'e', mode: 'embedding' } },
+    ] } });
+    if (config.params.model_id === 'g') return Promise.resolve({ data: { healthy_endpoints: [{ model_id: 'g' }] } });
+    return Promise.reject(new Error('timeout'));
+  });
+  const result = await catalog.getModelCatalog();
+  expect(catalog.modelAvailability(result, 'good').available).toBe(true);
+  expect(catalog.modelAvailability(result, 'stalled').available).toBe(false);
+  expect(result.models.some((model) => model.id === 'embedding-only')).toBe(false);
+  expect(get.mock.calls.filter(([, config]) => config.params).map(([, config]) => config.params.model_id)).toEqual(['g', 's']);
+});

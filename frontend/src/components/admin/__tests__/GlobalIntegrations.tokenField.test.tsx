@@ -139,6 +139,7 @@ describe('instance Anthropic model options', () => {
     await waitFor(() => expect(screen.getByLabelText('Dev Agent Primary Model')).toHaveTextContent('Claude Opus 4.6'));
     const save = screen.getByRole('button', { name: 'Save Model Policy' });
     expect(save.disabled).toBe(!available);
+    expect(screen.getByRole('button', { name: 'Save + Apply To All Agents' }).disabled).toBe(!available);
     if (!available) expect(screen.getAllByText('The upstream rejected this route’s credentials')[0]).toBeInTheDocument();
     else expect(screen.queryByText('The upstream rejected this route’s credentials')).not.toBeInTheDocument();
     fireEvent.mouseDown(screen.getByLabelText('Dev Agent Primary Model'));
@@ -167,4 +168,16 @@ it('offers a newly discovered route without selecting it on a provider change', 
   fireEvent.click(choice);
   await waitFor(() => expect(screen.getByLabelText('Dev Agent Primary Model')).toHaveTextContent('New model from gateway'));
   expect(screen.getByRole('button', { name: 'Save Model Policy' })).not.toBeDisabled();
+});
+
+
+it('disables both save actions when model health is unconfirmed', async () => {
+  mockGet.mockResolvedValue({ data: {
+    ...globalResponse.data,
+    modelPolicy: { openclaw: { provider: 'anthropic', model: 'anthropic/claude-opus-4-6' } },
+  } });
+  renderPage();
+  await waitFor(() => expect(screen.getByLabelText('Dev Agent Primary Model')).toHaveTextContent('anthropic/claude-opus-4-6'));
+  expect(screen.getByRole('button', { name: 'Save Model Policy' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Save + Apply To All Agents' })).toBeDisabled();
 });

@@ -1141,7 +1141,7 @@ const GlobalIntegrations = () => {
             <Button
               variant="outlined"
               onClick={handleSaveAndApplyModelPolicy}
-              disabled={saving || applyingModelPolicy}
+              disabled={saving || applyingModelPolicy || !selectedModel?.available}
             >
               {applyingModelPolicy ? 'Applying...' : 'Save + Apply To All Agents'}
             </Button>

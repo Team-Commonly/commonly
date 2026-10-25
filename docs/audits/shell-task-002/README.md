@@ -24,7 +24,7 @@ At 390×844 and 1440×1000:
 | Open unavailable choices | [options](options-390.png) | [options](options-1440.png) |
 | Independent local Claude choice | [BYO](install-390.png) | [BYO](install-1440.png) |
 
-Validation: 30 focused backend tests and 24 focused frontend tests pass.
+Validation: 31 focused backend tests and 25 focused frontend tests pass.
 Backend tests cover failing configured credentials, recovered health after cache
 expiry, a removed route, new routes, ambiguous older health, mixed-health route
 deployments and concurrent readers. Route tests cover the shared catalogue and

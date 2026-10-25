@@ -1,11 +1,13 @@
 # Instance model catalogue and route health
 
 `backend/services/modelAvailability.ts` is the shared hosted/native model list.
-It reads LiteLLM's `/model/info` and `/health` using the server credential, caches
+It reads LiteLLM's `/model/info` and per-deployment `/health` using the server credential, caches
 one snapshot for five minutes, and shares a pending refresh between concurrent
 readers. A subsequent read after expiry refreshes both inputs. No model request
 is made for each picker interaction. `/health` may make real low-token probes;
-its result is separate from gateway readiness or a configured route list.
+its result is separate from gateway readiness or a configured route list. Only
+chat-capable deployments are probed. Individual 10-second timeouts preserve
+healthy results when another route stalls; image/embedding routes are not probed.
 
 The catalogue includes discovered chat/completion/responses routes and retains
 previously offered choices, plus routes discovered earlier in the process.
