@@ -24,6 +24,10 @@ The capture fixture asserts that Pause, Copy and connect actions measure at leas
 
 Scout retains Pause: the existing installation status PATCH accepts active/paused without a runtime restriction, and the event routing selects active installations. This control pauses the installation while preserving memory and membership, as requested in TASK-546. The model remains the raw ID from the run receipt, preserving its exact readback rather than inventing a display name.
 
+## Reach per pod review follow-up
+
+Heartbeat off hides the interval and daily-turn estimate. The capture exercises off → on → off for BYO, hosted and Scout at both widths in both languages, saves separate Reach crops, and measures the enabled interval select at a minimum 44px on phone. Scout still omits the turn estimate when enabled. The Chinese toggle is “心跳”; “间隔” labels only the select.
+
 ## Reproduce
 
 Start the normal frontend dev server on `127.0.0.1:3546`, then run `node capture.cjs` in an environment with Playwright installed. `PLAYWRIGHT_MODULE` can point to an existing installation; `OUTPUT_DIR` changes the destination. The fixture defaults to the system Chrome executable on macOS. If node_modules is a worktree symlink, allow its real directory in the local Vite server’s `server.fs.allow`; otherwise font URLs are refused. The capture asserts the Signal font loads before taking images. The source uses fake identities and a fixed receipt, so the displayed values can be checked against the intercepted responses.

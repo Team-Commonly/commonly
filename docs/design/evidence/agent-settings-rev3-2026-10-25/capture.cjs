@@ -6,16 +6,16 @@ const browser=await chromium.launch({executablePath:'/Applications/Google Chrome
 fs.mkdirSync(outDir,{recursive:true});
 for(const lang of ['en','zh-CN']) for(const kind of ['byo','hosted','scout','never']) for(const width of [1440,390]){
  const context=await browser.newContext({viewport:{width,height:width===390?844:1000}}); const page=await context.newPage(); const errors=[];page.on('pageerror',e=>errors.push(e.message));
- let paused=false;
+ let paused=false;let heartbeatEnabled=false;
  const runtime={runtimeType:kind==='scout'?'native':kind==='hosted'?'hosted':'wrapper',adapter:kind==='byo'?'codex':undefined};
  const receipt={harness:'claude',version:'2.1',model:'claude-sonnet-4-5',effort:'high',at:'2026-10-25T16:40:00Z'};
  const installation=()=>({name:kind,instanceId:'default',displayName:kind==='scout'?'Scout':kind==='hosted'?'Launch plan agent':'Maya agent',runtime,status:paused?'paused':'active',installedBy:'fixture-owner'});
  await page.route('**/*',route=>['127.0.0.1','localhost'].includes(new URL(route.request().url()).hostname)?route.continue():route.abort());
  await page.route('**/api/**',async route=>{const req=route.request();const u=new URL(req.url());let data={};
- if(req.method()==='PATCH'){paused=req.postDataJSON().status==='paused';data={agent:installation()};}
+ if(req.method()==='PATCH'){const patch=req.postDataJSON();if('status' in patch)paused=patch.status==='paused';if('heartbeatEnabled' in patch)heartbeatEnabled=patch.heartbeatEnabled;data={agent:installation()};}
  else if(u.pathname==='/api/auth/user')data={_id:'fixture-owner',username:'alex',email:'fixture@example.invalid',verified:true};
  else if(u.pathname==='/api/pods')data=[{_id:'fixture-pod',name:'Launch plan',type:'chat',createdBy:{_id:'fixture-owner'}}];
- else if(u.pathname.includes('manage-settings'))data={writablePodId:'fixture-pod',installations:[{podId:'fixture-pod',podName:'Launch plan',status:paused?'paused':'active',heartbeatMinutes:60}],turnCap:30,userRunCeiling:120,usage:kind==='hosted'?{used:12,cap:30,resetsAt:'2026-10-26T00:00:00Z'}:null,processConnected:kind==='byo',runtimeManaged:kind==='byo',runtimeObservation:kind==='byo'?{lastSpawn:receipt,lastTurnAt:'2026-10-25T16:41:00Z',turnRunning:false}:null,runtimeRun:kind==='hosted'||kind==='scout'?{model:'deepseek-v4-flash',startedAt:'2026-10-25T16:40:00Z',completedAt:'2026-10-25T16:41:00Z',status:'succeeded'}:null,heldTask:kind==='hosted'?{taskId:'TASK-6',podId:'fixture-pod',podName:'Launch plan'}:null};
+ else if(u.pathname.includes('manage-settings'))data={writablePodId:'fixture-pod',installations:[{podId:'fixture-pod',podName:'Launch plan',status:paused?'paused':'active',heartbeatEnabled,heartbeatMinutes:60}],turnCap:30,userRunCeiling:120,usage:kind==='hosted'?{used:12,cap:30,resetsAt:'2026-10-26T00:00:00Z'}:null,processConnected:kind==='byo',runtimeManaged:kind==='byo',runtimeObservation:kind==='byo'?{lastSpawn:receipt,lastTurnAt:'2026-10-25T16:41:00Z',turnRunning:false}:null,runtimeRun:kind==='hosted'||kind==='scout'?{model:'deepseek-v4-flash',startedAt:'2026-10-25T16:40:00Z',completedAt:'2026-10-25T16:41:00Z',status:'succeeded'}:null,heldTask:kind==='hosted'?{taskId:'TASK-6',podId:'fixture-pod',podName:'Launch plan'}:null};
  else if(u.pathname===`/api/registry/pods/fixture-pod/agents`)data={agents:[{...installation(),connection:{state:kind==='never'?'never':kind==='byo'?'stale':'available',lastSeenAt:'2026-10-25T16:40:00Z'}}]};
  else if(u.pathname===`/api/registry/pods/fixture-pod/agents/${kind}`)data={agent:installation()};
  else if(u.pathname==='/api/agent-binding/placement')data={boundMachineId:'fixture-machine',activeMachines:[{machineId:'fixture-machine',name:'Laptop'}],boundMachineRevoked:false};
@@ -49,6 +49,18 @@ for(const lang of ['en','zh-CN']) for(const kind of ['byo','hosted','scout','nev
  await page.locator('.v2-agent-settings').evaluate(el=>el.closest('.v2-feature__body').scrollTop=0);
  await page.screenshot({path:`${outDir}/${lang}-${kind}-${width}.png`,fullPage:true});
  console.log(lang,kind,width,JSON.stringify({errors,overflow:await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),h2:await page.locator('h2').allTextContents()}));
+ if(kind!=='never') {
+ const reach=page.getByRole('heading',{name:lang==='en'?'Reach per pod':'各 Pod 的唤醒设置',exact:true}).locator('..');
+ const toggle=reach.getByRole('checkbox',{name:lang==='en'?'Heartbeat':'心跳',exact:true});
+ if(await reach.locator('select').count())throw new Error('Heartbeat off exposes interval');
+ if(await reach.getByText(/turns\/day|次运行.*天/).count())throw new Error('Heartbeat off exposes estimate');
+ await reach.screenshot({path:`${outDir}/${lang}-${kind}-reach-off-${width}.png`});
+ await toggle.click();const interval=reach.locator('select');await interval.waitFor();
+ const box=await interval.boundingBox();if(width===390 && (!box || box.height<44))throw new Error('Interval below 44px');
+ await reach.screenshot({path:`${outDir}/${lang}-${kind}-reach-on-${width}.png`});
+ console.log('heartbeat',lang,kind,width,box.height);
+ await toggle.click();await interval.waitFor({state:'hidden'});
+ }
  if(kind==='byo' && lang==='en'){
  await page.goto('http://127.0.0.1:3546/v2/agents');
  const name=page.getByRole('link',{name:'Maya agent',exact:true}); await name.waitFor();

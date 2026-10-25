@@ -76,8 +76,25 @@ describe('per-agent Wake and Pods settings', () => {
     expect(screen.getAllByText('New pod')).toHaveLength(2);
   });
 
+  it('hides interval and turn estimates while heartbeat is off', async () => {
+    renderSettings();
+    const toggle = await screen.findByLabelText('Heartbeat');
+    expect(screen.queryByLabelText('Interval')).toBeNull();
+    expect(screen.queryByText(/turns\/day/)).toBeNull();
+    fireEvent.click(toggle);
+    expect(await screen.findByLabelText('Interval')).toBeInTheDocument();
+    expect(screen.getByText('24 turns/day · 30 available')).toBeInTheDocument();
+    await waitFor(() => expect(toggle).toBeEnabled());
+    fireEvent.click(toggle);
+    await waitFor(() => expect(screen.queryByLabelText('Interval')).toBeNull());
+    expect(screen.queryByText(/turns\/day/)).toBeNull();
+  });
+
   it('previews heartbeat turns against the plan cap before saving', async () => {
     renderSettings();
+    fireEvent.click(await screen.findByLabelText('Heartbeat'));
+    await screen.findByLabelText('Interval');
+    updatePod.mockClear();
     expect(await screen.findByText('24 turns/day · 30 available')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Interval'), { target: { value: '30' } });
     expect(screen.getByText(/48 turns\/day · 30 available/)).toBeInTheDocument();
@@ -88,7 +105,7 @@ describe('per-agent Wake and Pods settings', () => {
   it('states the daily turn count clearly when the cap is unavailable', async () => {
     client.get.mockResolvedValue({ data: { activePodCount: 1, podCount: 1, installations: [{
         podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: false, humanOnly: false,
-        boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60,
+        boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 60,
       }] } });
     renderSettings();
     expect(await screen.findByText('24 turns/day · plan cap unavailable')).toBeInTheDocument();

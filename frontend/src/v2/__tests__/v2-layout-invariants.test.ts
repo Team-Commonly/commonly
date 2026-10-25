@@ -5161,6 +5161,7 @@ describe('D44 rev3 agent Settings', () => {
     expect(ruleBody(settings, '.v2-agent-runtime-summary dd')).toContain('overflow-wrap: anywhere');
     expect(ruleBody(settings, '.v2-agent-runtime-summary__command code')).toContain('min-width: 0');
     expect(ruleBody(settings, '.v2-agent-runtime-summary__command code')).toContain('overflow-wrap: normal');
+    expect(settings).toContain('.v2-root .v2-agent-settings .v2-agent-wake-pods select,');
     expect(settings).toContain('.v2-root .v2-agent-settings button:not(.MuiButtonBase-root),');
     expect(settings).toContain('.v2-root .v2-agent-settings a.v2-agent-settings__action { min-height: 44px; }');
     expect(settings).toContain('white-space: pre-wrap; overflow-x: auto');

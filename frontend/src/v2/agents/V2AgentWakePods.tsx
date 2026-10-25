@@ -159,7 +159,7 @@ const V2AgentWakePods: React.FC<{
                 onChange={(event) => { void save(entry, { heartbeatEnabled: event.target.checked,
                   heartbeatMinutes: draftMinutes[entry.podId] ?? entry.heartbeatMinutes }); }} />
             </label>
-            <label className="v2-agent-wake-pods__row v2-agent-wake-pods__subrow">
+            {entry.heartbeatEnabled && <label className="v2-agent-wake-pods__row v2-agent-wake-pods__subrow">
               <span>{t('agentSettings.heartbeatInterval')}</span>
               <select value={draftMinutes[entry.podId] ?? entry.heartbeatMinutes} disabled={busyPod === entry.podId}
                 onChange={(event) => { setDraftMinutes((current) => ({ ...current,
@@ -169,8 +169,8 @@ const V2AgentWakePods: React.FC<{
                     <option value={minutes} key={minutes}>{t('agentSettings.everyMinutes', { count: minutes })}</option>
                   ))}
               </select>
-            </label>
-            {showTurnEstimate && <p className="v2-agent-wake-pods__hint">
+            </label>}
+            {entry.heartbeatEnabled && showTurnEstimate && <p className="v2-agent-wake-pods__hint">
               {turnCap === null
                 ? t('agentSettings.capUnavailable', {
                   count: Math.ceil(1440 / (draftMinutes[entry.podId] ?? entry.heartbeatMinutes)),

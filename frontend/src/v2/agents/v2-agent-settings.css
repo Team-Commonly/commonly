@@ -133,6 +133,7 @@
 .v2-agent-runtime-summary__command code span { display: inline-block; white-space: nowrap; }
 @media (max-width: 760px) {
   .v2-agent-status { flex-wrap: wrap; padding: 12px; }
+  .v2-root .v2-agent-settings .v2-agent-wake-pods select,
   .v2-root .v2-agent-settings button:not(.MuiButtonBase-root),
   .v2-root .v2-agent-settings a.v2-agent-settings__action { min-height: 44px; }
   .v2-root .v2-agent-settings .v2-agent-status .v2-agent-settings__action { width: 100%; justify-content: center; }

@@ -2638,7 +2638,7 @@
     "wakeOnMessage": "收到消息时唤醒",
     "humanOnly": "仅限真人消息",
     "boardWake": "看板变更时唤醒",
-    "heartbeat": "心跳间隔",
+    "heartbeat": "心跳",
     "heartbeatInterval": "间隔",
     "turnsPerDay": "每天{{count}}次 · 上限{{cap}}次",
     "capUnavailable": "每天{{count}}次 · 套餐上限暂不可用",
