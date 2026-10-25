@@ -230,7 +230,7 @@ describe('notifyPodAgents', () => {
     mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
 
     await notifyPodAgents(POD_ID, task({ assignee: 'sprint-impl' }), 'updated',
-      { userId: HUMAN_ID, isAgent: false }, { assignee: 'scout' });
+      { userId: AGENT_ID, isAgent: true }, { assignee: 'scout' });
 
     // A messageId would re-engage the wrapper's claim gate and put us back to
     // one-looker-per-change — dedupe at the wrong layer. Contention belongs on
@@ -260,7 +260,7 @@ describe('notifyPodAgents', () => {
     await notifyPodAgents(POD_ID, task(), 'updated', { userId: AGENT_ID, isAgent: true });
 
     const [, update] = AgentEvent.findOneAndUpdate.mock.calls[0];
-    expect(update.$set).toBeUndefined();
+    expect(update.$set).toEqual({ 'payload.wakeReason': 'assignee' });
   });
 
   it('never wakes the actor about their own edit', async () => {
