@@ -58,7 +58,8 @@ test('grant validation refuses unknown fields, bad names and bad patterns', () =
   const bad = [
     [null, /must be an object/],
     [{ credential: [] }, /unknown field credential/],
-    [{ network: { allow: ['api.x'] } }, /network rules are not enforced yet/],
+    [{ network: { allow: ['api.x'] } }, /must name a port/],
+    [{ credentials: [{ name: 'HTTPS_PROXY', from: 'env' }] }, /reserved/],
     [{ tools: { allow: [], permit: [] } }, /unknown field tools\.permit/],
     [{ tools: { allow: 'read' } }, /tools\.allow must be an array/],
     [{ tools: { allow: ['write'] } }, /unknown tool kind "write"/],

@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { prepareRunEnv } from '../src/valet/env.js';
-import { sandboxRunArgv, REAL_HOME_LOGIN_PATHS } from '../src/valet/sandbox.js';
+import { sandboxRunArgv, startRunEgress, REAL_HOME_LOGIN_PATHS } from '../src/valet/sandbox.js';
 import { buildSeatbeltProfile } from '../src/sandbox/seatbelt.js';
 import { RunFailure } from '../src/failures.js';
 
@@ -16,6 +16,7 @@ const onMac = process.platform === 'darwin';
 const macTest = onMac ? test : test.skip;
 
 const recorder = () => { const events = []; return { events, emit: (type, data) => events.push({ type, data }) }; };
+// Each run gets its egress handle; sandboxRunArgv refuses a run without one.
 const withRun = async (fn) => {
   const root = mkdtempSync(join(tmpdir(), 'seats-sandbox-'));
   const run = await prepareRunEnv({
@@ -23,7 +24,18 @@ const withRun = async (fn) => {
     baseEnv: { ...process.env, HOME: REAL_HOME, OPENAI_API_KEY: GRANTED, ANTHROPIC_API_KEY: WITHHELD },
     root,
   });
-  try { return await fn(run, root); } finally { await run.cleanup(); rmSync(root, { recursive: true, force: true }); }
+  const handles = [];
+  const egressFor = async (forRun = run, platform = process.platform) => {
+    const egress = await startRunEgress({ run: forRun, platform });
+    handles.push(egress);
+    return egress;
+  };
+  run.egress = await egressFor();
+  try { return await fn(run, root, egressFor); } finally {
+    for (const egress of handles) await egress.close();
+    await run.cleanup();
+    rmSync(root, { recursive: true, force: true });
+  }
 };
 
 // Positive controls: a denial only means something if the target exists.
@@ -58,10 +70,10 @@ process.stdout.write(JSON.stringify({
 }));`;
 
 const confined = (run, root, extra = {}) => {
-  const { argv, sandbox } = sandboxRunArgv({ argv: [process.execPath, '-e', PROBE, REAL_HOME, root], run, ...extra });
+  const { argv, env, sandbox } = sandboxRunArgv({ argv: [process.execPath, '-e', PROBE, REAL_HOME, root], run, egress: run.egress, ...extra });
   assert.equal(sandbox, 'seatbelt');
   const child = spawnSync(argv[0], argv.slice(1), {
-    env: run.env, cwd: extra.workspace?.path || run.home, encoding: 'utf8', timeout: 20_000,
+    env, cwd: extra.workspace?.path || run.home, encoding: 'utf8', timeout: 20_000,
   });
   assert.equal(child.error, undefined);
   assert.equal(child.status, 0, child.stderr);
@@ -118,7 +130,7 @@ const sbplRules = (profile) => {
 const KEYCHAIN = /com\.apple\.(?:securityd|SecurityServer)/;
 
 macTest('the composed profile allows no securityd lookup, and denies it outright', () => withRun(async (run) => {
-  const { argv } = sandboxRunArgv({ argv: ['/usr/bin/true'], run });
+  const { argv } = sandboxRunArgv({ argv: ['/usr/bin/true'], run, egress: run.egress });
   assert.equal(argv[0], '/usr/bin/sandbox-exec');
   const rules = sbplRules(argv[2]);
   assert.deepEqual(rules.filter((rule) => rule.startsWith('(allow') && KEYCHAIN.test(rule)), []);
@@ -133,7 +145,7 @@ macTest('the composed profile allows no securityd lookup, and denies it outright
 }));
 
 macTest('the login-path denies come after every allow, for every real HOME the run names', () => withRun(async (run) => {
-  const { argv } = sandboxRunArgv({ argv: ['/usr/bin/true'], run });
+  const { argv } = sandboxRunArgv({ argv: ['/usr/bin/true'], run, egress: run.egress });
   const rules = sbplRules(argv[2]);
   const lastAllow = rules.findLastIndex((rule) => rule.startsWith('(allow'));
   for (const path of REAL_HOME_LOGIN_PATHS) {
@@ -150,32 +162,54 @@ test('the Seatbelt builder keeps its old output when the new options take their 
   assert.throws(() => buildSeatbeltProfile({ ...opts, denyPaths: ['relative'] }), /denyPaths entry must be an absolute path/);
 });
 
-test('no sandbox is a named failure unless the caller accepts it', () => withRun(async (run) => {
+test('no sandbox is a named failure unless the caller accepts it', () => withRun(async (run, root, egressFor) => {
   const missing = { seatbelt: () => ({ available: false, error: 'sandbox-exec preflight failed' }) };
+  const darwin = await egressFor(run, 'darwin');
   assert.throws(
-    () => sandboxRunArgv({ argv: ['/usr/bin/true'], run, platform: 'darwin', detect: missing }),
+    () => sandboxRunArgv({ argv: ['/usr/bin/true'], run, egress: darwin, platform: 'darwin', detect: missing }),
     (error) => error instanceof RunFailure && error.kind === 'unsupported' && /sandbox-exec preflight failed/.test(error.message),
   );
+  const win = await egressFor(run, 'win32');
   assert.throws(
-    () => sandboxRunArgv({ argv: ['/usr/bin/true'], run, platform: 'win32' }),
+    () => sandboxRunArgv({ argv: ['/usr/bin/true'], run, egress: win, platform: 'win32' }),
     (error) => error instanceof RunFailure && error.kind === 'unsupported' && /win32/.test(error.message),
   );
   const trace = recorder();
-  const accepted = sandboxRunArgv({ argv: ['/usr/bin/true', '-x'], run, platform: 'win32', require: false, trace });
-  assert.deepEqual(accepted, { argv: ['/usr/bin/true', '-x'], sandbox: 'none', reason: 'no supported OS sandbox on win32' });
+  const accepted = sandboxRunArgv({ argv: ['/usr/bin/true', '-x'], run, egress: win, platform: 'win32', require: false, trace });
+  assert.deepEqual(accepted, {
+    argv: ['/usr/bin/true', '-x'], env: run.env, sandbox: 'none', egress: 'none', reason: 'no supported OS sandbox on win32',
+  });
   assert.deepEqual(trace.events, [{ type: 'sandbox.applied', data: { sandbox: 'none', reason: 'no supported OS sandbox on win32' } }]);
+  // An unsandboxed darwin run gets no proxy variables either: a route with no fence.
+  const none = sandboxRunArgv({ argv: ['/usr/bin/true'], run, egress: darwin, platform: 'darwin', detect: missing, require: false });
+  assert.equal(none.egress, 'none');
+  assert.deepEqual(none.env, run.env);
 }));
 
 macTest('a sandboxed result is traced too', () => withRun(async (run) => {
   const trace = recorder();
-  assert.equal(sandboxRunArgv({ argv: ['/usr/bin/true'], run, trace }).sandbox, 'seatbelt');
+  assert.equal(sandboxRunArgv({ argv: ['/usr/bin/true'], run, egress: run.egress, trace }).sandbox, 'seatbelt');
   assert.deepEqual(trace.events, [{ type: 'sandbox.applied', data: { sandbox: 'seatbelt' } }]);
 }));
 
-test('a run placed where the sandbox cannot hold it is refused', () => withRun(async (run) => {
-  assert.throws(() => sandboxRunArgv({ argv: ['true'], run }), /absolute path/);
-  assert.throws(() => sandboxRunArgv({ argv: ['/usr/bin/true'], run: {} }), /prepareRunEnv/);
-  assert.throws(() => sandboxRunArgv({ argv: ['/usr/bin/true'], run: { ...run, home: REAL_HOME } }), /holds the real HOME/);
-  assert.throws(() => sandboxRunArgv({ argv: ['/usr/bin/true'], run: { ...run, home: join(REAL_HOME, '.commonly', 'x') } }), /inside a login path/);
-  assert.throws(() => sandboxRunArgv({ argv: ['/usr/bin/true'], run, workspace: { path: join(REAL_HOME, '.ssh') } }), /workspace is inside a login path/);
+test('a run placed where the sandbox cannot hold it is refused', () => withRun(async (run, root, egressFor) => {
+  const { egress } = run;
+  assert.throws(() => sandboxRunArgv({ argv: ['true'], run, egress }), /absolute path/);
+  assert.throws(() => sandboxRunArgv({ argv: ['/usr/bin/true'], run: {}, egress }), /prepareRunEnv/);
+  const atRealHome = { ...run, home: REAL_HOME };
+  const atRealHomeEgress = await egressFor(atRealHome);
+  assert.throws(() => sandboxRunArgv({ argv: ['/usr/bin/true'], run: atRealHome, egress: atRealHomeEgress }), /holds the real HOME/);
+  const inLogin = { ...run, home: join(REAL_HOME, '.commonly', 'x') };
+  const inLoginEgress = await egressFor(inLogin);
+  assert.throws(() => sandboxRunArgv({ argv: ['/usr/bin/true'], run: inLogin, egress: inLoginEgress }), /inside a login path/);
+  assert.throws(() => sandboxRunArgv({ argv: ['/usr/bin/true'], run, egress, workspace: { path: join(REAL_HOME, '.ssh') } }), /workspace is inside a login path/);
+}));
+
+test('sandboxRunArgv refuses a run without its own egress handle', () => withRun(async (run, root, egressFor) => {
+  assert.throws(() => sandboxRunArgv({ argv: ['/usr/bin/true'], run }), /egress must be startRunEgress's result/);
+  assert.throws(() => sandboxRunArgv({ argv: ['/usr/bin/true'], run, egress: { port: run.egress.port } }), /egress must be/);
+  const otherEgress = await egressFor({ ...run });
+  assert.throws(() => sandboxRunArgv({ argv: ['/usr/bin/true'], run, egress: otherEgress }), /egress must be/);
+  const winEgress = await egressFor(run, 'win32');
+  assert.throws(() => sandboxRunArgv({ argv: ['/usr/bin/true'], run, egress: winEgress, platform: process.platform }), /another platform/);
 }));

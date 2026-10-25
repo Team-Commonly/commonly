@@ -314,6 +314,28 @@ const withoutKeychainServices = (baseline) => KEYCHAIN_MACH_SERVICES.reduce((tex
   return text.replace(line, '');
 }, baseline);
 
+// The baseline's one unfiltered network rule. A run whose egress goes through
+// a proxy is built without it (allowNetworkOutbound: false), so outbound
+// network is only what loopbackNetworkPorts names.
+const NETWORK_OUTBOUND_RULE = '\n(allow network-outbound)\n';
+
+const withoutNetworkOutbound = (baseline) => {
+  if (baseline.split(NETWORK_OUTBOUND_RULE).length !== 2) {
+    throw new Error('Seatbelt baseline must hold one unfiltered network-outbound allow to drop it');
+  }
+  return baseline.replace(NETWORK_OUTBOUND_RULE, '\n');
+};
+
+// Direct DNS, by the two routes a sandboxed process has to it: any host's port
+// 53 over UDP or TCP, and mDNSResponder's socket, which libinfo's
+// getaddrinfo() uses (Seatbelt matches it at its /private path). Both are
+// reachable under the baseline's network-outbound allow; the mDNSResponder
+// mach service is not, since no baseline rule admits it. Appended last, so it
+// wins over every allow.
+const DNS_DENY_RULE = `(deny network-outbound
+  (remote ip "*:53")
+  (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))`;
+
 const escapeSbplString = (value) => String(value)
   .replaceAll('\\', '\\\\')
   .replaceAll('"', '\\"')
@@ -384,6 +406,11 @@ export const buildSeatbeltProfile = ({
   // Paths no rule may open, even when a broader allow (a workspace that holds
   // them) would. Appended last so they win.
   denyPaths = [],
+  // false drops the baseline's unfiltered network-outbound allow, leaving
+  // only loopbackNetworkPorts: the shape for a run whose egress is proxied.
+  allowNetworkOutbound = true,
+  // true denies direct DNS (port 53 and mDNSResponder) after every allow.
+  denyDns = false,
 }) => {
   for (const [path, label] of [
     [workspacePath, 'workspacePath'],
@@ -467,8 +494,12 @@ export const buildSeatbeltProfile = ({
     `(deny file-read* file-write* ${subpath(path)})`
   )).join('\n');
 
+  let baseline = PLATFORM_BASELINE.trim();
+  if (!allowKeychainServices) baseline = withoutKeychainServices(baseline);
+  if (!allowNetworkOutbound) baseline = withoutNetworkOutbound(baseline);
+
   return [
-    allowKeychainServices ? PLATFORM_BASELINE.trim() : withoutKeychainServices(PLATFORM_BASELINE.trim()),
+    baseline,
     executableRules,
     executableSymlinkRules,
     `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(resolvedWorkspace)}"))`,
@@ -486,6 +517,7 @@ export const buildSeatbeltProfile = ({
     ...claudeRuntimeRules,
     keychainDenyRule,
     denyRules,
+    denyDns ? DNS_DENY_RULE : '',
   ].filter(Boolean).join('\n\n');
 };
 

@@ -23,6 +23,8 @@ export const EVENT_TYPES = Object.freeze([
   'credential.granted', // { names: [...] }  names only, never values
   'credential.denied', // { name, reason?: 'not_granted'|'unresolved' }
   'sandbox.applied', // { sandbox: 'seatbelt'|'bwrap'|'none', reason? }  reason only when none
+  'egress.allowed', // { host, port }  a proxy tunnel opened; never headers, bodies or addresses
+  'egress.denied', // { host, port, reason }  host/port null when unparseable; reason in EGRESS_DENIAL_REASONS
   'process.exited', // { code, signal }
 ]);
 

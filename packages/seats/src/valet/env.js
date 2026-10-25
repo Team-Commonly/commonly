@@ -18,7 +18,8 @@
  *     fails the run as unsupported, or returns sandbox: 'none' when the caller
  *     passed require: false. Spawning run.env without sandboxRunArgv is the
  *     same unenforced case.
- * Network egress is not fenced on any platform.
+ * Network egress is fenced by sandbox.js too: the run reaches only its
+ * grant's network.allow hosts and its provider, through egress-proxy.js.
  */
 import { mkdtemp, mkdir, chmod, readFile, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
@@ -86,10 +87,12 @@ const resolveOne = async (spec, { baseEnv, resolveSecret }) => {
 
 /**
  * prepareRunEnv({ grant, baseEnv, resolveSecret, root?, require?, trace?, ctx? })
- *   → { env, home, cleanup, granted: [names], realHomes: [paths] }
+ *   → { env, home, cleanup, granted: [names], realHomes: [paths], network }
  *
  * `realHomes` names the login homes this run was cut from, so sandboxRunArgv
- * can deny them; it never enters `env`.
+ * can deny them; it never enters `env`. `network` is the grant's validated
+ * egress allowlist, carried on the run so startRunEgress fences the run by
+ * the grant it was built from rather than one passed in beside it.
  *
  * `require` lists credential names the adapter cannot run without; one the
  * grant does not name fails the run as credential_denied before any spawn.
@@ -133,5 +136,5 @@ export const prepareRunEnv = async ({
   }
   const names = valid.credentials.map((c) => c.name);
   hook.emit('credential.granted', { names });
-  return { env, home, cleanup, granted: names, realHomes };
+  return { env, home, cleanup, granted: names, realHomes, network: valid.network };
 };

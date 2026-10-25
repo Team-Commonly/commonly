@@ -5,6 +5,7 @@
  *   {
  *     credentials: [{ name: 'OPENAI_API_KEY', from: 'env'|'file'|'resolver', ref? }],
  *     tools: { allow: [pattern], ask: [pattern], deny: [pattern] },
+ *     network: { allow: ['api.example.com:443', '*.example.com:443'] },
  *   }
  *
  * `from: 'env'` copies baseEnv[ref ?? name]; `from: 'file'` reads the absolute
@@ -22,20 +23,31 @@
  *
  * Precedence is deny > ask > allow, and a call no rule names is denied.
  *
- * `network` rules are refused for now rather than accepted and ignored: a run
- * would believe it was fenced when nothing enforces the fence. TODO: egress
- * allowlist once a sandbox can enforce it.
+ * `network.allow` names the hosts a run may open a connection to, each as
+ * `host:port` or `*.suffix:port`. Egress is deny-by-default: no `network`
+ * field allows nothing, and the run's model provider is added by the caller
+ * (sandbox.js), not by the grant. A wildcard matches one or more labels under
+ * its suffix and never the bare suffix: `*.example.com:443` admits
+ * `api.example.com` and `a.b.example.com`, not `example.com`. Entries are
+ * names, never addresses: an IP literal, a bare `*`, a scheme, userinfo, a
+ * path or a port outside 1-65535 is refused, and so is a wildcard whose
+ * suffix is one label (`*.com`). The proxy that enforces this is
+ * egress-proxy.js; the sandbox makes it the only way out.
  */
+
+import { isIP } from 'node:net';
 
 export const TOOL_KINDS = Object.freeze(['read', 'edit', 'delete', 'move', 'search', 'execute', 'think', 'fetch', 'other']);
 export const CREDENTIAL_SOURCES = Object.freeze(['env', 'file', 'resolver']);
 const RULE_LISTS = ['deny', 'ask', 'allow']; // checked in this order: the precedence
+export const EGRESS_MAX_ENTRIES = 256;
 const VALIDATED = Symbol('validated grant');
 
 const ENV_NAME = /^[A-Z_][A-Z0-9_]*$/;
 // Names the run env is built from. A credential under one of these names would
 // overwrite the boundary itself (a granted HOME points back at the real login).
-const RESERVED_NAME = /^(?:HOME|PATH|TMPDIR|USER|LOGNAME|SHELL|PWD|LANG|LC_[A-Z0-9_]+|TERM|TZ|NO_COLOR|CI|SSL_CERT_FILE|SSL_CERT_DIR|XDG_[A-Z0-9_]+)$/;
+// The proxy variables are the egress route sandbox.js sets.
+const RESERVED_NAME = /^(?:HOME|PATH|TMPDIR|USER|LOGNAME|SHELL|PWD|LANG|LC_[A-Z0-9_]+|TERM|TZ|NO_COLOR|CI|SSL_CERT_FILE|SSL_CERT_DIR|XDG_[A-Z0-9_]+|HTTPS?_PROXY|ALL_PROXY|NO_PROXY|NODE_USE_ENV_PROXY)$/;
 
 const fail = (message) => { throw new Error(`grant: ${message}`); };
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -74,12 +86,87 @@ const validateCredential = (credential, index, seen) => {
   return Object.freeze(ref === undefined ? { name, from } : { name, from, ref });
 };
 
+const LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/** Lower case, one trailing dot dropped: the form a host is compared in. */
+export const normalizeHost = (host) => String(host).toLowerCase().replace(/\.$/, '');
+
+/**
+ * A DNS name, not an address. A numeric last label is refused because
+ * resolvers read `2130706433`, `0x7f.1` and `127.1` as IPv4.
+ */
+export const isHostName = (host) => {
+  if (typeof host !== 'string' || host.length === 0 || host.length > 253) return false;
+  const labels = host.split('.');
+  return labels.every((label) => LABEL.test(label)) && !/^(?:\d+|0x[0-9a-f]*)$/.test(labels.at(-1));
+};
+
+const parsePort = (text) => (/^[1-9]\d{0,4}$/.test(text) && Number(text) <= 65535 ? Number(text) : null);
+
+/**
+ * Parse one network.allow entry into { entry, host, port, wildcard }. For a
+ * wildcard, `host` is the suffix. Exported so the proxy reads its allowlist
+ * through the same rules the grant was checked by.
+ */
+export const parseEgressEntry = (entry, where = 'network.allow entry') => {
+  if (typeof entry !== 'string' || !entry) fail(`${where} must be a non-empty string`);
+  if (entry.includes('://')) fail(`${where} must not carry a scheme: write host:port`);
+  if (/[@/?#\s\\[\]]/.test(entry)) fail(`${where} must be host:port with no userinfo, path, brackets or spaces`);
+  const colon = entry.lastIndexOf(':');
+  if (colon === -1) fail(`${where} must name a port (host:port)`);
+  const port = parsePort(entry.slice(colon + 1));
+  if (port === null) fail(`${where} has a port outside 1-65535`);
+  const raw = entry.slice(0, colon);
+  if (raw === '*') fail(`${where} may not be a bare *`);
+  const wildcard = raw.startsWith('*.');
+  const host = normalizeHost(wildcard ? raw.slice(2) : raw);
+  if (host.includes('*')) fail(`${where} may use * only as a whole leading label (*.example.com)`);
+  if (isIP(host) || host.includes(':')) fail(`${where} is an IP address; name the host instead`);
+  if (!isHostName(host)) fail(`${where} is not a valid host name`);
+  if (wildcard && !host.includes('.')) fail(`${where} wildcards a one-label suffix; name at least two labels`);
+  const normal = `${wildcard ? '*.' : ''}${host}:${port}`;
+  return Object.freeze({ entry: normal, host, port, wildcard });
+};
+
+const validateNetwork = (network) => {
+  if (!isPlainObject(network)) fail('network must be an object');
+  if ('allowIps' in network) fail('network.allowIps is not supported; name hosts in network.allow');
+  refuseUnknownKeys(network, ['allow'], 'network.');
+  const allow = network.allow ?? [];
+  if (!Array.isArray(allow)) fail('network.allow must be an array');
+  if (allow.length > EGRESS_MAX_ENTRIES) fail(`network.allow holds more than ${EGRESS_MAX_ENTRIES} entries`);
+  const seen = new Set();
+  return Object.freeze({
+    allow: Object.freeze(allow.map((entry, i) => {
+      const parsed = parseEgressEntry(entry, `network.allow[${i}]`);
+      if (seen.has(parsed.entry)) fail(`network.allow[${i}] repeats ${parsed.entry}`);
+      seen.add(parsed.entry);
+      return parsed;
+    })),
+  });
+};
+
+/**
+ * The allow entry that admits host:port, or null. `exact` on the result says
+ * whether it named the host itself (the proxy lets only an exact entry reach
+ * a private address), so an exact entry wins over a wildcard that also fits.
+ */
+export const matchEgress = (allow, host, port) => {
+  const name = normalizeHost(host);
+  if (!isHostName(name) || !Number.isInteger(port)) return null;
+  // An exact entry is looked for first: it is what admits a private address.
+  const exact = allow.find((parsed) => !parsed.wildcard && parsed.port === port && parsed.host === name);
+  if (exact) return { entry: exact.entry, exact: true };
+  const wild = allow.find((parsed) => parsed.wildcard && parsed.port === port
+    && name.length > parsed.host.length + 1 && name.endsWith(`.${parsed.host}`));
+  return wild ? { entry: wild.entry, exact: false } : null;
+};
+
 /** Validate and freeze a grant. Throws on the first problem; never repairs one. */
 export const validateGrant = (grant) => {
   if (grant && grant[VALIDATED]) return grant;
   if (!isPlainObject(grant)) fail('must be an object');
-  if ('network' in grant) fail('network rules are not enforced yet; remove the field rather than rely on it');
-  refuseUnknownKeys(grant, ['credentials', 'tools'], '');
+  refuseUnknownKeys(grant, ['credentials', 'tools', 'network'], '');
   const credentials = grant.credentials ?? [];
   if (!Array.isArray(credentials)) fail('credentials must be an array');
   const seen = new Set();
@@ -96,6 +183,7 @@ export const validateGrant = (grant) => {
     [VALIDATED]: true,
     credentials: Object.freeze(credentials.map((c, i) => validateCredential(c, i, seen))),
     tools: Object.freeze(rules),
+    network: validateNetwork(grant.network ?? {}),
   });
 };
 const matches = (parsed, kind, title) => (parsed.kind === '*' || parsed.kind === kind)
