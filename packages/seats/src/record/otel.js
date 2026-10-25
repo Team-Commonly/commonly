@@ -106,7 +106,7 @@ const spansOfRun = (entries) => {
     attributes: attrs([['seats.run.id', head.runId], ['seats.task.id', head.taskId], ['seats.pod.id', head.podId]]),
   });
   const spans = [run];
-  let attempt = null; // { span, number, tools: Map<toolCallId, span>, usage }
+  let attempt = null; // { span, number, tools: Map<toolCallId, span>, usage, context, sessionId }
   const cards = new Map(); // decisionCardId → the span its request sits on
   const end = (s, ts) => { if (s && s.endTimeUnixNano === null) s.endTimeUnixNano = nanos(ts); };
   const closeAttempt = (ts) => {
@@ -116,6 +116,13 @@ const spansOfRun = (entries) => {
       attempt.span.attributes.push(...attrs([
         ['gen_ai.usage.input_tokens', attempt.usage.inputTokens], ['gen_ai.usage.output_tokens', attempt.usage.outputTokens],
       ]));
+    }
+    attempt.span.attributes.push(...attrs([
+      ['seats.usage.context_tokens', attempt.context.tokens], ['seats.usage.context_size', attempt.context.size],
+    ]));
+    // The session an attempt opened names the conversation when attempt.started did not.
+    if (attempt.sessionId && !attempt.span.attributes.some((a) => a.key === 'gen_ai.conversation.id')) {
+      attempt.span.attributes.push(attr('gen_ai.conversation.id', attempt.sessionId));
     }
     end(attempt.span, ts);
     attempt = null;
@@ -144,7 +151,9 @@ const spansOfRun = (entries) => {
         ]),
       });
       spans.push(s);
-      attempt = { span: s, number: data.attempt, agentName, tools: new Map(), usage: null };
+      attempt = {
+        span: s, number: data.attempt, agentName, tools: new Map(), usage: null, context: { tokens: null, size: null }, sessionId: null,
+      };
     } else if (kind === 'attempt.settled' && attempt && attempt.number === data.attempt) {
       attempt.span.attributes.push(attr('seats.attempt.outcome', data.outcome));
       if (FAILED_OUTCOMES.has(data.outcome)) fail(attempt.span, data.failure?.kind || data.outcome);
@@ -183,11 +192,17 @@ const spansOfRun = (entries) => {
       if (tool && (data.status === 'completed' || data.status === 'failed')) end(tool, entry.ts);
     } else if (kind === 'usage' && attempt) {
       attempt.usage = data;
+      // Context fill comes from the stream's usage updates; a later entry without it keeps the last known.
+      if (Number.isInteger(data.contextTokens)) attempt.context.tokens = data.contextTokens;
+      if (Number.isInteger(data.contextSize)) attempt.context.size = data.contextSize;
       attempt.span.events.push(eventOf(entry));
     } else if (kind === 'permission.requested' || kind === 'permission.decided') {
       const target = attempt?.tools.get(data.toolCallId) || current();
       target.events.push(eventOf(entry));
       if (data.decisionCardId && !cards.has(data.decisionCardId)) cards.set(data.decisionCardId, target);
+    } else if (kind === 'session.opened') {
+      if (attempt && typeof data.sessionId === 'string') attempt.sessionId = data.sessionId;
+      current().events.push(eventOf(entry));
     } else if (kind === 'decision.ruled') {
       // A ruling on a card that a request rode on joins that request; any other is an event where it happened.
       (cards.get(data.decisionCardId) || current()).events.push(eventOf(entry));

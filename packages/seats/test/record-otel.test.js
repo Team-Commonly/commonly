@@ -224,3 +224,35 @@ test('sandbox.applied is an event on the span current at the time', () => {
   assert.equal(attrOf(seatbelt, 'seats.sandbox').stringValue, 'seatbelt');
   assert.equal(attrOf(seatbelt, 'seats.reason'), undefined);
 });
+
+test('session.opened is an event that names the attempt\'s conversation; context usage lands on the attempt span', () => {
+  const base = { v: 1, schema: 'seats.record', runId: 'run-ses-0001', prev: null, actor: { type: 'system', id: 'seats' } };
+  const agent = { type: 'agent', id: 'u-agent-ana' };
+  const entries = [
+    { ...base, seq: 1, ts: '2026-10-25T12:00:00.000Z', kind: 'attempt.started', actor: agent, data: { attempt: 1, adapter: 'acp' } },
+    {
+      ...base, seq: 2, ts: '2026-10-25T12:00:01.000Z', kind: 'session.opened',
+      data: { method: 'new', sessionId: 'ses-2', requestedSessionId: 'ses-1', fallback: 'session/resume answered error -32601' },
+    },
+    { ...base, seq: 3, ts: '2026-10-25T12:00:02.000Z', kind: 'usage', actor: agent, data: { contextTokens: 900, contextSize: 128000 } },
+    { ...base, seq: 4, ts: '2026-10-25T12:00:03.000Z', kind: 'usage', actor: agent, data: { inputTokens: 1200, outputTokens: 80, contextTokens: null } },
+    { ...base, seq: 5, ts: '2026-10-25T12:00:04.000Z', kind: 'attempt.started', actor: agent, data: { attempt: 2, adapter: 'acp', sessionId: 'ses-9' } },
+    { ...base, seq: 6, ts: '2026-10-25T12:00:05.000Z', kind: 'session.opened', data: { method: 'resume', sessionId: 'ses-other' } },
+    { ...base, seq: 7, ts: '2026-10-25T12:00:06.000Z', kind: 'run.settled', data: { outcome: 'ok' } },
+  ];
+  const spans = spansOf(toOtlpJson(entries));
+  const [first, second] = spans.filter((s) => s.name.startsWith('invoke_agent'));
+  const opened = first.events.find((e) => e.name === 'session.opened');
+  assert.equal(attrOf(opened, 'seats.method').stringValue, 'new');
+  assert.equal(attrOf(opened, 'seats.requested_session_id').stringValue, 'ses-1');
+  assert.equal(attrOf(opened, 'seats.fallback').stringValue, 'session/resume answered error -32601');
+  assert.equal(attrOf(first, 'gen_ai.conversation.id').stringValue, 'ses-2');
+  assert.equal(attrOf(first, 'seats.usage.context_tokens').intValue, '900', 'a later usage without context keeps the last known');
+  assert.equal(attrOf(first, 'seats.usage.context_size').intValue, '128000');
+  assert.equal(attrOf(first, 'gen_ai.usage.input_tokens').intValue, '1200');
+  const seen = first.events.find((e) => e.name === 'usage');
+  assert.equal(attrOf(seen, 'seats.context_tokens').intValue, '900');
+  // attempt.started's own sessionId wins; one conversation id per span.
+  assert.deepEqual(second.attributes.filter((a) => a.key === 'gen_ai.conversation.id').map((a) => a.value.stringValue), ['ses-9']);
+  assert.equal(attrOf(second, 'seats.usage.context_tokens'), undefined);
+});

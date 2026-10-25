@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
-  appendEntry, argsDigestOf, canonicalLine, hashLine, readRecord, verifyRecord, EGRESS_DENIED_REASONS, KINDS, ON_BEHALF_ROLES, SANDBOXES, RECORD_VERSION, RECORD_SCHEMA, toolSurfaceOf,
+  appendEntry, argsDigestOf, canonicalLine, hashLine, readRecord, verifyRecord, EGRESS_DENIED_REASONS, KINDS, ON_BEHALF_ROLES, SANDBOXES, SESSION_METHODS, RECORD_VERSION, RECORD_SCHEMA, toolSurfaceOf,
 } from '../src/record/format.js';
 
 const RUN = 'run-fmt-0001';
@@ -444,4 +444,45 @@ test('sandbox.applied: {sandbox, reason?}, the reason only when the run is unsan
   for (const reason of ['', 42, null]) assert.throws(() => at({ sandbox: 'none', reason }), /sandbox.applied.reason/, `reason ${reason}`);
   // No other field.
   assert.throws(() => at({ sandbox: 'bwrap', egress: 'proxy' }), /unknown field sandbox.applied.egress/);
+});
+
+test('session.opened: {method, sessionId, requestedSessionId?, fallback?}, the pair only when a new session replaced a requested one', () => {
+  assert.deepEqual(KINDS['session.opened'], { group: 'attempt', actor: 'system' });
+  assert.deepEqual(SESSION_METHODS, ['new', 'resume', 'load']);
+  const at = (data) => JSON.parse(appendEntry(null, { ...ENV, ts: ts(), kind: 'session.opened', data }, { runActor: AGENT }));
+  const opened = at({ method: 'resume', sessionId: 'ses-1' });
+  assert.deepEqual(opened.data, { method: 'resume', sessionId: 'ses-1' });
+  assert.deepEqual(opened.actor, { type: 'system', id: 'seats' });
+  // method: new, resume or load.
+  at({ method: 'load', sessionId: 'ses-1' });
+  for (const method of ['open', undefined, 'NEW']) assert.throws(() => at({ method, sessionId: 'ses-1' }), /session.opened.method/, `method ${method}`);
+  // sessionId: required, a non-empty string.
+  at({ method: 'new', sessionId: '01JB5Z' });
+  for (const sessionId of [undefined, '', 7]) assert.throws(() => at({ method: 'new', sessionId }), /needs a sessionId/, `sessionId ${sessionId}`);
+  // requestedSessionId and fallback: together, and only on a new session.
+  const replaced = { method: 'new', sessionId: 'ses-2', requestedSessionId: 'ses-1' };
+  assert.deepEqual(at({ ...replaced, fallback: 'session/resume answered error -32603' }).data, { ...replaced, fallback: 'session/resume answered error -32603' });
+  at({ ...replaced, fallback: 'agent supports neither session/resume nor session/load' });
+  at({ ...replaced, fallback: 'session/load answered error 404' });
+  assert.throws(() => at(replaced), /come together/);
+  assert.throws(() => at({ method: 'new', sessionId: 'ses-2', fallback: 'session/load answered error 404' }), /come together/);
+  assert.throws(() => at({ ...replaced, method: 'resume', fallback: 'session/load answered error 404' }), /only when method is new/);
+  assert.throws(() => at({ ...replaced, requestedSessionId: '', fallback: 'session/load answered error 404' }), /requestedSessionId must be/);
+  // fallback: one of the two forms the adapter writes, nothing else.
+  for (const fallback of ['it broke', 'session/new answered error 1', 'session/load answered error x', 'session/load answered error 1; rm -rf', null, '']) {
+    assert.throws(() => at({ ...replaced, fallback }), /session.opened.fallback/, `fallback ${JSON.stringify(fallback)}`);
+  }
+  assert.throws(() => at({ method: 'new', sessionId: 'ses-2', cwd: '/home/ana' }), /unknown field session.opened.cwd/);
+});
+
+test('usage: contextTokens and contextSize are integers >= 0, or null when unknown', () => {
+  const at = (data) => JSON.parse(appendEntry(null, { ...ENV, ts: ts(), kind: 'usage', data }, { runActor: AGENT }));
+  const filled = at({ inputTokens: null, outputTokens: null, totalTokens: null, cost: null, contextTokens: 41000, contextSize: 200000 });
+  assert.equal(filled.data.contextTokens, 41000);
+  assert.equal(filled.data.contextSize, 200000);
+  at({ contextTokens: 0, contextSize: null });
+  at({ inputTokens: 10, outputTokens: 2 });
+  for (const key of ['contextTokens', 'contextSize']) {
+    for (const value of [-1, 1.5, '41000', Number.NaN]) assert.throws(() => at({ [key]: value }), new RegExp(`usage.${key}`), `${key} ${value}`);
+  }
 });
