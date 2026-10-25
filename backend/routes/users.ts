@@ -2,6 +2,7 @@
 // DB-backed polling route below (same established pattern as messages.ts).
 import rateLimit from 'express-rate-limit';
 import { createHash } from 'crypto';
+import { AccountDeletionError, deleteOwnAccount } from '../services/accountDeletionService';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 // eslint-disable-next-line global-require
 const express = require('express');
@@ -86,6 +87,36 @@ const profileWriteUserLimit = rateLimit({
   handler: (_req: unknown, res: any) => res.status(429).json({
     msg: 'rate limit exceeded: 30 profile writes per 15 minutes',
   }),
+});
+
+const accountDeletionRateLimit = rateLimit({
+  windowMs: 15 * 60_000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+});
+
+router.delete('/me', accountDeletionRateLimit, auth, async (req: any, res: any) => {
+  if (req.authType !== 'jwt') {
+    return res.status(403).json({
+      code: 'BROWSER_SESSION_REQUIRED', error: 'Sign in through the browser to delete your account.',
+    });
+  }
+  if (req.body?.confirmation !== 'DELETE') {
+    return res.status(400).json({ code: 'CONFIRMATION_REQUIRED', error: 'Confirm account deletion by typing DELETE.' });
+  }
+  try {
+    const bearer = req.get('Authorization')?.replace(/^Bearer\s+/i, '') || req.get('x-auth-token') || '';
+    await deleteOwnAccount(String(req.userId), bearer, req.body?.password);
+    return res.status(204).send();
+  } catch (error) {
+    if (error instanceof AccountDeletionError) {
+      return res.status(error.status).json({ code: error.code, error: error.message });
+    }
+    console.error('Account deletion failed:', error instanceof Error ? error.name : 'Unknown error');
+    return res.status(503).json({ error: 'Account deletion could not finish. Please retry to complete cleanup.' });
+  }
 });
 
 router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: any, res: any) => {

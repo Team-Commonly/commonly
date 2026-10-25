@@ -197,7 +197,7 @@ const generateUsername = async (hint: string, email: string) => {
 };
 
 const issueSession = (user: any) => {
-  const token = issueSessionToken(user);
+  const token = issueSessionToken(user, undefined, undefined, Math.floor(Date.now() / 1000));
   return {
     token,
     verified: user.verified,

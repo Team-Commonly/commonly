@@ -87,6 +87,7 @@ export interface IUser extends Document {
   banned: boolean;
   // Incrementing this invalidates every browser session without rotating JWT_SECRET.
   tokenVersion: number;
+  accountDeletionRequestedAt?: Date;
   bannedAt?: Date;
   banReason?: string;
   profilePicture: string;
@@ -256,6 +257,7 @@ const userSchema = new Schema<IUser>({
   verified: { type: Boolean, default: false },
   banned: { type: Boolean, default: false },
   tokenVersion: { type: Number, default: 0 },
+  accountDeletionRequestedAt: { type: Date },
   bannedAt: { type: Date },
   banReason: { type: String },
   profilePicture: { type: String, default: 'default' },

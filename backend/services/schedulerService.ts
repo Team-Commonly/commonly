@@ -546,6 +546,24 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // A late upload can outlive the deletion request and fail its own cleanup.
+    // Durable intents contain only opaque user ids; this sweep can retry after
+    // the User row is gone. Deletes are idempotent across backend replicas.
+    const accountDeletionUploadJob: CronJob = cron.schedule(
+      '* * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { sweepAccountDeletions } = require('./accountDeletionService');
+          await sweepAccountDeletions();
+        } catch (error) {
+          const errorName = error instanceof Error ? error.name : 'Unknown error';
+          console.error('[account-deletion] sweep failed:', errorName);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     const spawnCredentialReapJob: CronJob = cron.schedule(
       '*/5 * * * *',
       async () => {
@@ -623,6 +641,7 @@ class SchedulerService {
       decisionCardReconcileJob,
       approvalToolCallSweepJob,
       spawnCredentialReapJob,
+      accountDeletionUploadJob,
       spendAlarmJob,
       ...(process.env.SYNTHETIC_ACCOUNT_PURGE === 'true' ? [syntheticAccountPurgeJob] : []),
     ];

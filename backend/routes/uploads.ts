@@ -38,6 +38,8 @@ const multer = require('multer');
 // eslint-disable-next-line global-require
 const File = require('../models/File');
 // eslint-disable-next-line global-require
+const User = require('../models/User');
+// eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
@@ -211,11 +213,16 @@ const handleUpload = async (
       return;
     }
 
+    const uploader = await User.findById(uploaderId).select('accountDeletionRequestedAt').lean();
+    if (!uploader || uploader.accountDeletionRequestedAt) {
+      res.status(403).json({ msg: 'Account deletion is in progress. Uploads are disabled.' });
+      return;
+    }
     const store = getObjectStore();
 
     const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
     const ext = path.extname(req.file.originalname);
-    const fileName = `${uniqueSuffix}${ext}`;
+    const fileName = `user-${uploaderId}-${uniqueSuffix}${ext}`;
     const kind = kindFromName(req.file.originalname);
     const podId = req.body?.podId?.toString().trim() || null;
 
@@ -233,6 +240,17 @@ const handleUpload = async (
       podId,
     });
     await newFile.save();
+
+    // A request authenticated before deletion may finish its upload after the
+    // deletion scan. Recheck AFTER metadata exists: either the scan owns it,
+    // or this request removes both the bytes and its metadata.
+    const remainingUploader = await User.findById(uploaderId).select('accountDeletionRequestedAt').lean();
+    if (!remainingUploader || remainingUploader.accountDeletionRequestedAt) {
+      await store.delete(fileName);
+      await File.deleteOne({ _id: newFile._id });
+      res.status(403).json({ msg: 'Account deletion is in progress. Upload discarded.' });
+      return;
+    }
 
     // Stored upload references must survive hostname changes. Callers can
     // persist this response directly without baking the current API origin

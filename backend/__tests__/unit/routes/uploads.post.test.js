@@ -25,6 +25,10 @@ jest.mock('../../../models/File', () => {
 });
 const File = require('../../../models/File');
 
+jest.mock('../../../models/User', () => ({
+  findById: jest.fn(() => ({ select: () => ({ lean: async () => ({ _id: 'user1' }) }) })),
+}));
+
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
   req.userId = 'user1';
   next();
