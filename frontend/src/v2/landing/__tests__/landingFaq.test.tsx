@@ -1,5 +1,5 @@
 import React from 'react';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
 import i18n from '../../../i18n';
@@ -62,6 +62,19 @@ describe('V2LandingPage FAQ', () => {
   it('renders no FAQ and no FAQPage markup on zh', async () => {
     await i18n.changeLanguage('zh');
     const { container } = renderLanding();
+
+    expect(container.querySelector('#faq')).toBeNull();
+    expect(jsonLd()).toBeNull();
+  });
+
+  it('removes the FAQ and its JSON-LD when the page switches from en to zh', async () => {
+    const { container } = renderLanding();
+    expect(container.querySelector('#faq')).not.toBeNull();
+    expect(jsonLd()).not.toBeNull();
+
+    await act(async () => {
+      await i18n.changeLanguage('zh');
+    });
 
     expect(container.querySelector('#faq')).toBeNull();
     expect(jsonLd()).toBeNull();
