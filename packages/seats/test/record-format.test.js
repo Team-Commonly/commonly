@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
-  appendEntry, argsDigestOf, canonicalLine, hashLine, readRecord, verifyRecord, EGRESS_DENIED_REASONS, KINDS, ON_BEHALF_ROLES, RECORD_VERSION, RECORD_SCHEMA, toolSurfaceOf,
+  appendEntry, argsDigestOf, canonicalLine, hashLine, readRecord, verifyRecord, EGRESS_DENIED_REASONS, KINDS, ON_BEHALF_ROLES, SANDBOXES, RECORD_VERSION, RECORD_SCHEMA, toolSurfaceOf,
 } from '../src/record/format.js';
 
 const RUN = 'run-fmt-0001';
@@ -425,4 +425,23 @@ test('egress.denied: {host, port, reason}, the reason from a closed set, null ta
   assert.throws(() => egress('egress.denied', { host: 'Evil.example', port: 443, reason: 'not_allowed' }), /egress.denied.host/);
   assert.throws(() => egress('egress.denied', { host: 'evil.example', port: 70000, reason: 'not_allowed' }), /egress.denied.port/);
   assert.throws(() => egress('egress.denied', { host: 'evil.example', port: 443, reason: 'not_allowed', status: 403 }), /unknown field egress.denied.status/);
+});
+
+test('sandbox.applied: {sandbox, reason?}, the reason only when the run is unsandboxed', () => {
+  assert.deepEqual(KINDS['sandbox.applied'], { group: 'sandbox', actor: 'system' });
+  assert.deepEqual(SANDBOXES, ['seatbelt', 'bwrap', 'none']);
+  const at = (data) => JSON.parse(appendEntry(null, { ...ENV, ts: ts(), kind: 'sandbox.applied', data }, { runActor: AGENT }));
+  const applied = at({ sandbox: 'seatbelt' });
+  assert.deepEqual(applied.data, { sandbox: 'seatbelt' });
+  assert.deepEqual(applied.actor, { type: 'system', id: 'seats' });
+  // sandbox: one of seatbelt, bwrap, none.
+  at({ sandbox: 'bwrap' });
+  for (const sandbox of ['docker', undefined, null, 'Seatbelt']) assert.throws(() => at({ sandbox }), /sandbox.applied.sandbox/, `sandbox ${sandbox}`);
+  // reason: a non-empty string, and only beside none.
+  assert.deepEqual(at({ sandbox: 'none', reason: 'no supported OS sandbox on win32' }).data, { sandbox: 'none', reason: 'no supported OS sandbox on win32' });
+  at({ sandbox: 'none' });
+  assert.throws(() => at({ sandbox: 'seatbelt', reason: 'because' }), /only when sandbox is none/);
+  for (const reason of ['', 42, null]) assert.throws(() => at({ sandbox: 'none', reason }), /sandbox.applied.reason/, `reason ${reason}`);
+  // No other field.
+  assert.throws(() => at({ sandbox: 'bwrap', egress: 'proxy' }), /unknown field sandbox.applied.egress/);
 });

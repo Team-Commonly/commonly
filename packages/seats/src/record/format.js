@@ -30,6 +30,7 @@ export const EGRESS_DENIED_REASONS = Object.freeze([
   'bad_request', 'not_connect', 'ip_literal', 'not_allowed', 'unresolved', 'private_address', 'unreachable',
 ]);
 const EGRESS_TARGETLESS = new Set(['bad_request', 'not_connect']);
+export const SANDBOXES = Object.freeze(['seatbelt', 'bwrap', 'none']);
 export const REDACTED = '[redacted]';
 
 /** The actors a writer records for its own bookkeeping, and for the board. */
@@ -66,6 +67,8 @@ export const KINDS = Object.freeze({
   'liveness.stalled': Object.freeze({ group: 'activity', actor: 'system' }),
   'liveness.recovery': Object.freeze({ group: 'activity', actor: 'system' }),
   'process.exited': Object.freeze({ group: 'activity', actor: 'system' }),
+  // The run's confinement, recorded once per spawn, beside its egress.
+  'sandbox.applied': Object.freeze({ group: 'sandbox', actor: 'system' }),
   'egress.allowed': Object.freeze({ group: 'egress', actor: 'system' }),
   'egress.denied': Object.freeze({ group: 'egress', actor: 'system' }),
 });
@@ -346,6 +349,15 @@ const CHECKS = {
     if (data.failure !== undefined && data.failure !== null) {
       const { kind } = data.failure;
       if (kind !== null && kind !== undefined && !FAILURE_KINDS[kind]) fail(`attempt.settled.failure.kind ${kind} is not a FAILURE_KINDS key`);
+    }
+    return data;
+  },
+  'sandbox.applied': (data) => {
+    refuseUnknownKeys(data, ['sandbox', 'reason'], 'sandbox.applied.');
+    if (!SANDBOXES.includes(data.sandbox)) fail(`sandbox.applied.sandbox must be one of ${SANDBOXES.join(', ')}`);
+    if (data.reason !== undefined) {
+      if (data.sandbox !== 'none') fail('sandbox.applied.reason is set only when sandbox is none');
+      if (!isText(data.reason)) fail('sandbox.applied.reason must be a non-empty string');
     }
     return data;
   },

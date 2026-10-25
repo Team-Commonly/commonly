@@ -207,3 +207,20 @@ test('egress entries are events on the span current at the time', () => {
   assert.equal(attrOf(denied, 'seats.reason').stringValue, 'not_allowed');
   assert.equal(attrOf(attempt, 'error.type'), undefined, 'a denial is an event, not an error status');
 });
+
+test('sandbox.applied is an event on the span current at the time', () => {
+  const base = { v: 1, schema: 'seats.record', runId: 'run-sbx-0001', prev: null, actor: { type: 'system', id: 'seats' } };
+  const entries = [
+    { ...base, seq: 1, ts: '2026-10-25T12:00:00.000Z', kind: 'sandbox.applied', data: { sandbox: 'none', reason: 'no supported OS sandbox on win32' } },
+    { ...base, seq: 2, ts: '2026-10-25T12:00:01.000Z', kind: 'attempt.started', actor: { type: 'agent', id: 'u-agent-ana' }, data: { attempt: 1 } },
+    { ...base, seq: 3, ts: '2026-10-25T12:00:02.000Z', kind: 'sandbox.applied', data: { sandbox: 'seatbelt' } },
+    { ...base, seq: 4, ts: '2026-10-25T12:00:03.000Z', kind: 'run.settled', data: { outcome: 'ok' } },
+  ];
+  const spans = spansOf(toOtlpJson(entries));
+  const none = spans.find((s) => s.name === 'seats.run').events.find((e) => e.name === 'sandbox.applied');
+  assert.equal(attrOf(none, 'seats.sandbox').stringValue, 'none');
+  assert.equal(attrOf(none, 'seats.reason').stringValue, 'no supported OS sandbox on win32');
+  const seatbelt = spans.find((s) => s.name.startsWith('invoke_agent')).events.find((e) => e.name === 'sandbox.applied');
+  assert.equal(attrOf(seatbelt, 'seats.sandbox').stringValue, 'seatbelt');
+  assert.equal(attrOf(seatbelt, 'seats.reason'), undefined);
+});

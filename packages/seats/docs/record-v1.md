@@ -321,6 +321,21 @@ These cover the environment credentials a run is started with. Values never
 appear here: `NAME` is an environment variable name matching
 `[A-Z_][A-Z0-9_]*`.
 
+### Sandbox
+
+| kind | data | default actor |
+|---|---|---|
+| `sandbox.applied` | `{sandbox, reason?}` | `system` |
+
+- `sandbox` is the OS sandbox the run's process was started in: `seatbelt`
+  (macOS), `bwrap` (Linux), or `none`.
+- `reason` says why there was none. It is set only when `sandbox` is `none`,
+  and is a non-empty string. A writer may leave it out when it has no
+  reason to give.
+- No other field is allowed.
+- It is its own group, not part of Attempt: it records how the process was
+  confined, not what the attempt did or how it ended.
+
 ### Egress
 
 A sandboxed run reaches the network only through the egress proxy, which
@@ -422,8 +437,8 @@ What's new or changed in `EVENT_TYPES`:
      lines still verify.
 
    A later revision, also at `v: 1`, added the optional `actor.onBehalfOf`
-   and the kinds `egress.allowed` and `egress.denied`. Lines without them
-   are unchanged.
+   and the kinds `sandbox.applied`, `egress.allowed` and `egress.denied`.
+   Lines without them are unchanged.
 4. **One writer per file.** A single process appends lines in `seq` order.
 
 ## 4. What the hash chain proves, and what it doesn't
@@ -475,8 +490,8 @@ operates it.
   that carried its `decisionCardId`, and otherwise on the span current at
   the time.
 - **Every other kind is an event on the span current at the time.** That
-  covers grants, credentials, claims, `task.done`, results, liveness, egress
-  and `tool.update`. An egress denial is an event, not an error status.
+  covers grants, credentials, claims, `task.done`, results, liveness,
+  `sandbox.applied`, egress and `tool.update`. An egress denial is an event, not an error status.
 - **Span ids** are the first 8 bytes of
   SHA-256(`"seats.record/span/" + runId + "/" + seq`), where `seq` belongs to
   the entry that opens the span. The run span uses `0`. Exporting the same

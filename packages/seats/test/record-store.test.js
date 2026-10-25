@@ -173,3 +173,12 @@ test('the store records the egress proxy\'s trace types', () => withStore((store
   assert.deepEqual(store.readRun('run-st-egr1').map((e) => e.kind), ['egress.allowed', 'egress.denied', 'egress.denied', 'run.settled']);
   assert.deepEqual(verifyRecord(readFileSync(fileOf(root, 'run-st-egr1'), 'utf8')).errors, []);
 }));
+
+test('the store records sandbox.applied', () => withStore((store, root) => {
+  const run = store.startRun({ runId: 'run-st-sbx1', actor: AGENT });
+  run.emit('sandbox.applied', { sandbox: 'none', reason: 'no supported OS sandbox on win32' });
+  assert.throws(() => run.emit('sandbox.applied', { sandbox: 'bwrap', reason: 'x' }), /only when sandbox is none/);
+  run.emit('run.settled', { outcome: 'ok', durationMs: 1, attempts: 1 });
+  assert.deepEqual(store.readRun('run-st-sbx1').map((e) => e.kind), ['sandbox.applied', 'run.settled']);
+  assert.deepEqual(verifyRecord(readFileSync(fileOf(root, 'run-st-sbx1'), 'utf8')).errors, []);
+}));
