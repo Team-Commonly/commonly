@@ -889,3 +889,29 @@ test('Grant again on an existing empty-audience row requires an explicit new sel
   fireEvent.click(submit);
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({ audience: ['a1'], target: { kind: 'pod', id: 'p2' } }), expect.anything()));
 });
+
+
+test.each([
+  { label: 'human-only', audience: ['u1'], selected: false },
+  { label: 'mixed human and agent', audience: ['u1', 'a1'], selected: true },
+])('Grant again restores only current agents from a $label legacy audience', async ({ audience, selected }) => {
+  mockTwoEntries({ catalog: [githubEntry], grants: { p1: [], p2: [{ ...grantRevoked, effectiveAudience: audience }] } });
+  renderTools();
+  fireEvent.click(await screen.findByRole('button', { name: 'Grant again' }));
+  const form = await screen.findByRole('complementary', { name: 'Add GitHub' });
+  const scout = within(form).getByRole('checkbox', { name: 'Scout' });
+  const submit = within(form).getByRole('button', { name: 'Grant' });
+  expect(scout.checked).toBe(selected);
+  if (!selected) {
+    expect(submit).toBeDisabled();
+    expect(within(form).getByText('Select at least one agent to grant access.')).toBeInTheDocument();
+    fireEvent.click(submit);
+    expect(axios.post).not.toHaveBeenCalled();
+    fireEvent.click(scout);
+  }
+  expect(submit).toBeEnabled();
+  fireEvent.click(submit);
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({
+    target: { kind: 'pod', id: 'p2' }, audience: ['a1'],
+  }), expect.anything()));
+});

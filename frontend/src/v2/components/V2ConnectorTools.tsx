@@ -425,12 +425,13 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   const openDraft = (entry: ToolCatalogEntry, from?: ToolGrant) => {
     const podId = from ? (grantPodId(from) || podIds[0] || '') : (podIds[0] || '');
     const modes = entryGrantModes(entry);
+    const agentIds = (seats[podId] || []).map((seat) => seat.userId).filter((id): id is string => Boolean(id));
     setDraft({
       entry,
       podId,
       connectionId: entry.connections[0]?.connectionId || '',
       writeMode: from && modes.includes(from.writeMode) ? from.writeMode : modes[0] || 'read',
-      audience: from ? from.effectiveAudience : (seats[podId] || []).map((seat) => seat.userId).filter((id): id is string => Boolean(id)),
+      audience: from ? agentIds.filter((id) => from.effectiveAudience.includes(id)) : agentIds,
       expiryDays: 7,
       replaces: from && !isDead(from) ? from.grantId : null,
     });
@@ -456,8 +457,12 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   const draftTools = (entry: ToolCatalogEntry | null, mode: GrantWriteMode): string[] => (entry?.tools || [])
     .filter((tool) => MODE_RANK[tool.requiredWriteMode] <= MODE_RANK[mode]).map((tool) => tool.name);
 
+  const selectedAgentIds = (draft ? seats[draft.podId] || [] : [])
+    .map((seat) => seat.userId)
+    .filter((id): id is string => typeof id === 'string' && Boolean(id) && draft?.audience.includes(id) === true);
+
   const submitDraft = async () => {
-    if (!draft || !draftEntry || draft.audience.length === 0) return;
+    if (!draft || !draftEntry || selectedAgentIds.length === 0) return;
     setBusy(true);
     setError(null);
     setJoinPolicyFixPodId(null);
@@ -471,7 +476,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
         target: { kind: 'pod', id: draft.podId },
         tools: draftTools(draftEntry, draft.writeMode),
         writeMode: draft.writeMode,
-        audience: draft.audience,
+        audience: selectedAgentIds,
         expiresAt,
       });
       // A resolved request alone is not a mint receipt (for example, an HTML
@@ -937,7 +942,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
                 </label>
               ))}
             </fieldset>
-            {draft.audience.length === 0 && (
+            {selectedAgentIds.length === 0 && (
               <p className="v2-connector-aside__note" role="status">{t('tools.emptyAudienceNotice', {
                 defaultValue: 'Select at least one agent to grant access.',
               })}</p>
@@ -952,7 +957,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
             </label>
           </div>
           <div className="v2-connector-aside__actions">
-            <button type="button" className="v2-connector-aside__primary" disabled={busy || !draft.connectionId || !draft.podId || draft.audience.length === 0 || tools.length === 0} onClick={() => { void submitDraft(); }}>
+            <button type="button" className="v2-connector-aside__primary" disabled={busy || !draft.connectionId || !draft.podId || selectedAgentIds.length === 0 || tools.length === 0} onClick={() => { void submitDraft(); }}>
               {busy ? t('tools.granting', { defaultValue: 'Granting…' }) : t('tools.grantAct', { defaultValue: 'Grant' })}
             </button>
             <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => setDraft(null)}>
