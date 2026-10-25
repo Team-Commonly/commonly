@@ -28,6 +28,8 @@ const buildApp = () => {
   // A multipart route, as pods.ts and uploads.ts have: multer parses its
   // fields after the global guard, so the route runs the guard again.
   app.post('/multipart', multer().none(), refuseDollarKeys, ok);
+  // A urlencoded route parser, as auth.ts has for the OAuth start form.
+  app.post('/form', express.urlencoded({ extended: false, limit: '4kb' }), refuseDollarKeys, ok);
   app.post('/multipart-unguarded', multer().none(), (req, res) => res.json({ body: req.body }));
   return app;
 };
@@ -43,6 +45,20 @@ describe('refuseDollarKeys', () => {
     const res = await request(app).get(url);
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ code: DOLLAR_KEY_REFUSED, field });
+  });
+
+  test('refuses a query key past qs depth 5, kept literally with `$` inside it', async () => {
+    const res = await request(app).get('/x?a[b][c][d][e][f][$gt]=1');
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ code: DOLLAR_KEY_REFUSED, field: 'query.a.b.c.d.e.f.[$gt]' });
+  });
+
+  test('refuses a `$` key in a urlencoded body parsed after the global guard', async () => {
+    const res = await request(app).post('/form').type('form').send('$gt=1');
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ code: DOLLAR_KEY_REFUSED, field: 'body.$gt' });
+    const okRes = await request(app).post('/form').type('form').send('invite=abc');
+    expect(okRes.status).toBe(200);
   });
 
   test('refuses a body key at any depth, arrays included', async () => {
@@ -167,6 +183,13 @@ describe('refuseDollarKeys', () => {
       expect(res.status).toBe(200);
     });
 
+    test('the walk still descends into event_payload, so the depth cap applies', async () => {
+      const res = await request(app).post('/api/webhooks/slack/events')
+        .send({ event: { metadata: { event_payload: nest(MAX_KEY_DEPTH) } } });
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ code: KEY_LIMIT_EXCEEDED, limit: 'MAX_KEY_DEPTH' });
+    });
+
     test('refuses a key elsewhere in the event', async () => {
       const res = await request(app).post('/api/webhooks/slack/events').send({ event: { $x: 1 } });
       expect(res.status).toBe(400);
@@ -253,5 +276,9 @@ describe('where the guard is mounted', () => {
   test('both multipart routes run it after multer', () => {
     expect(src('routes/pods.ts')).toMatch(/upload\.single\('qrCode'\), refuseDollarKeys,/);
     expect(src('routes/uploads.ts')).toMatch(/return refuseDollarKeys\(req as never, res as never, next as never\);/);
+  });
+
+  test('the OAuth start form runs it after its urlencoded parser', () => {
+    expect(src('routes/auth.ts')).toMatch(/express\.urlencoded\(\{ extended: false, limit: '4kb' \}\), refuseDollarKeys, startOAuth\)/);
   });
 });

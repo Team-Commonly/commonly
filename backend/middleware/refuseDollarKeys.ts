@@ -86,9 +86,12 @@ const pathOf = (frame: Frame | null, key?: string): string => {
   return parts.reverse().join('.');
 };
 
+const startsWithDollar = (key: string) => key.startsWith('$');
+
 export const scanKeys = (
   value: unknown,
   isExempt: (path: KeyPath, key: string) => boolean = () => false,
+  isDollarKey: (key: string) => boolean = startsWithDollar,
 ): KeyScan => {
   if (!isContainer(value)) return null;
   const stack: Frame[] = [{ node: value, parent: null, key: '', depth: 0, head: [] }];
@@ -108,11 +111,14 @@ export const scanKeys = (
     if (seen > MAX_KEYS) return { kind: 'limit', limit: 'keys', max: MAX_KEYS, field: pathOf(frame) };
     for (let i = 0; i < keys.length; i += 1) {
       const key = keys[i];
-      if (key.startsWith('$') && !isExempt(frame.head, key)) {
+      if (isDollarKey(key) && !isExempt(frame.head, key)) {
         return { kind: 'dollar', field: pathOf(frame, key) };
       }
-      // Exempt keys are walked too: an exemption allows a key at a path,
-      // never everything beneath it.
+      // Exemptions match on the first three segments only (`head`), so an
+      // exemption covers the whole subtree under that prefix: every key below
+      // event.metadata.event_payload, and each JSON Schema keyword at any depth
+      // inside a component's schema field. Other `$` keys there are still
+      // refused, and the walk still descends, so the caps still apply.
       const child = (node as Record<string, unknown>)[key];
       if (!isContainer(child)) continue;
       if (frame.depth + 1 > MAX_KEY_DEPTH) {
@@ -181,8 +187,14 @@ const discardUploads = (req: Request) => {
   });
 };
 
+// The query is refused for a `$` anywhere in a key, not just at its start:
+// qs stops nesting at depth 5 and keeps the rest of a key literally, so
+// `a[b][c][d][e][f][$gt]=1` arrives with a key `[$gt]` under `f`. No query exemption
+// exists, so this never refuses something the body rule would allow.
+const containsDollar = (key: string) => key.includes('$');
+
 export const refuseDollarKeys = (req: Request, res: Response, next: NextFunction) => {
-  const refused = check(res, 'query', scanKeys(req.query))
+  const refused = check(res, 'query', scanKeys(req.query, undefined, containsDollar))
     || check(res, 'body', scanKeys(req.body, (path, key) => exemptBodyKey(req, path, key)));
   if (!refused) return next();
   discardUploads(req);
