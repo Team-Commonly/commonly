@@ -170,4 +170,62 @@ describe('SchedulerService automatic heartbeat dispatch lease', () => {
     expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(0);
     expect(enqueue).not.toHaveBeenCalled();
   });
+
+  describe('per-install digest wake wait (config.digestWake.afterMinutes)', () => {
+    // Earned 2026-10-25: these wakes were 330 of 1,821 seat turns in 24h,
+    // 311 of them empty; 15 seats got 0 posts from them. Those seats get a
+    // longer wait, and every other install keeps the 60-minute default.
+    const minutesAgo = (m) => new Date(NOW.getTime() - m * 60000);
+    const seed = async (config, unreadMinutesAgo) => {
+      const scope = { agentName: 'kai', instanceId: 'default', podId: new mongoose.Types.ObjectId() };
+      await AgentInstallation.collection.insertOne({ ...scope, status: 'active',
+        version: '1.0.0', installedBy: new mongoose.Types.ObjectId(), ...(config ? { config } : {}) });
+      await AgentEvent.collection.insertOne({ ...scope, type: 'message.posted', status: 'pending',
+        deliveryMode: 'digest', attempts: 0, createdAt: minutesAgo(unreadMinutesAgo) });
+      return scope;
+    };
+
+    it('keeps 60 minutes when the install sets nothing', async () => {
+      jest.spyOn(AgentEventService, 'enqueue').mockResolvedValue({});
+      await seed(null, 61);
+      expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(1);
+    });
+
+    it('waits for the override before waking', async () => {
+      const enqueue = jest.spyOn(AgentEventService, 'enqueue').mockResolvedValue({});
+      const scope = await seed({ digestWake: { afterMinutes: 240 } }, 61);
+      expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(0);
+      await AgentEvent.collection.insertOne({ ...scope, type: 'message.posted', status: 'pending',
+        deliveryMode: 'digest', attempts: 0, createdAt: minutesAgo(241) });
+      expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(1);
+      expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ ...scope, type: 'heartbeat' }));
+    });
+
+    it('counts a turn anywhere inside the longer wait as recent', async () => {
+      jest.spyOn(AgentEventService, 'enqueue').mockResolvedValue({});
+      const scope = await seed({ digestWake: { afterMinutes: 240 } }, 300);
+      await AgentEvent.collection.insertOne({ ...scope, type: 'chat.mention', status: 'acked',
+        deliveryMode: 'wake', attempts: 1, deliveredAt: minutesAgo(120), createdAt: minutesAgo(121) });
+      expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(0);
+    });
+
+    it('applies the override to digest folded past retention', async () => {
+      jest.spyOn(AgentEventService, 'enqueue').mockResolvedValue({});
+      const scope = { agentName: 'kai', instanceId: 'default', podId: new mongoose.Types.ObjectId() };
+      await AgentInstallation.collection.insertOne({ ...scope, status: 'active', version: '1.0.0',
+        installedBy: new mongoose.Types.ObjectId(), config: { digestWake: { afterMinutes: 240 } } });
+      await AgentDigestState.collection.insertOne({ ...scope, unreadCount: 2, revision: 2,
+        lastEventIds: ['a', 'b'], unreadSince: minutesAgo(90), updatedAt: NOW });
+      expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(0);
+    });
+
+    it('clamps an override to 60..1440 and ignores a non-number', () => {
+      const wait = (afterMinutes) => SchedulerService.resolveDigestWakeAfterMinutes({ config: { digestWake: { afterMinutes } } });
+      expect(wait(5)).toBe(60);
+      expect(wait(100000)).toBe(1440);
+      expect(wait('soon')).toBe(60);
+      expect(wait(240)).toBe(240);
+      expect(SchedulerService.resolveDigestWakeAfterMinutes(null)).toBe(60);
+    });
+  });
 });
