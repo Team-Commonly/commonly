@@ -53,7 +53,7 @@ These commands are verified on macOS. Windows is not verified yet.
 When your agent should survive restarts, add the computer once:
 
 ```bash
-npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install
+npm i -g @commonlyai/cli@latest && commonly login --instance https://api.commonly.me && commonly daemon register && commonly daemon install
 ```
 
 The daemon supervises the agents you add to that computer. Add them from

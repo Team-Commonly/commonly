@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import { recordByoStep, type ByoStep } from '../utils/byoTelemetry';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
+import { daemonSetupCommand } from '../utils/daemonSetupCommand';
 import V2FeaturePage from './V2FeaturePage';
 import V2Avatar from './V2Avatar';
 import V2Hint from './V2Hint';
@@ -65,10 +66,9 @@ type MachineRow = {
 };
 const MACHINE_STATUS_POLL_MS = 4000;
 const MACHINE_STATUS_MAX_TICKS = 30;
-// One-time computer setup (ADR-026 D1). Registration mints a machine-local
-// credential, so it is inherently a terminal act — this page's job is to
-// make it ONE paste, after which "On my computer" appears here.
-const DAEMON_SETUP_COMMAND = 'npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install';
+// Registration mints a machine-local credential, so it is inherently a terminal
+// act — this page's job is to make it ONE paste (daemonSetupCommand), after
+// which "On my computer" appears here.
 const CLAUDE_FILE_NAME = 'CLAUDE.md';
 type MachineAdapter = '' | 'claude' | 'codex';
 
@@ -952,6 +952,7 @@ const V2AgentBYO: React.FC = () => {
   const chooseMode = (nextMode: 'hosted' | 'byo' | 'machine') => setMode(nextMode);
 
   const apiUrl = getApiBaseUrl().replace(/\/+$/, '');
+  const daemonCommand = daemonSetupCommand(apiUrl);
 
   const claudeSnippet = issued
     ? `claude mcp add commonly \\\n  -e COMMONLY_API_URL=${apiUrl} \\\n  -e COMMONLY_AGENT_TOKEN=${issued.token} \\\n  -- npx -y @commonlyai/mcp`
@@ -1333,11 +1334,11 @@ const V2AgentBYO: React.FC = () => {
             <div className="v2-byo__add-computer" data-testid="byo-add-computer">
               <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
               <div className="v2-byo__add-computer-row">
-                <code>{DAEMON_SETUP_COMMAND}</code>
+                <code>{daemonCommand}</code>
                 <button
                   type="button"
                   className="v2-byo__copy"
-                  onClick={() => copy('daemon-setup', DAEMON_SETUP_COMMAND)}
+                  onClick={() => copy('daemon-setup', daemonCommand)}
                 >
                   {copied === 'daemon-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
                 </button>
