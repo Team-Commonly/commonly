@@ -25,9 +25,11 @@ export function parseCard(source: unknown): ElementNode | null {
     const pairs = tokenize('()[]{}');
     const closing = new Map([[pairs[0].t, pairs[1].t], [pairs[2].t, pairs[3].t], [pairs[4].t, pairs[5].t]]);
     const stack: number[] = [];
-    for (const t of tokens) {
+    for (const [index, t] of tokens.entries()) {
       if (closing.has(t.t)) { stack.push(closing.get(t.t)!); if (stack.length > 64) return null; }
       else if ([...closing.values()].includes(t.t) && stack.pop() !== t.t) return null;
+      if (typeof t.v === 'string' && tokens[index + 1]?.t === pairs[0].t
+        && parseExpression([t]).k !== 'Str' && !names.has(t.v) && !['Action', 'OpenUrl'].includes(t.v)) return null;
     }
     if (stack.length) return null;
     const statements = split(tokens);
@@ -37,7 +39,10 @@ export function parseCard(source: unknown): ElementNode | null {
       walkAST(parseExpression(s.tokens), n => {
         if (n.k === 'Comp') {
           if (n.fn || (!names.has(n.name) && !['Action', 'OpenUrl'].includes(n.name))) throw new Error('Unsupported capability');
+          if (n.name === 'Action' && (n.args.length !== 1 || n.args[0]?.k !== 'Comp' || n.args[0].name !== 'OpenUrl')) throw new Error('Action requires one parsed OpenUrl');
           if (n.name === 'OpenUrl' && (n.args.length !== 1 || n.args[0]?.k !== 'Str' || !cardHref(n.args[0].v))) throw new Error('Link refused');
+        } else if (n.k === 'Ref' && ['Query', 'Mutation', 'Run', 'Action', 'OpenUrl'].includes(n.n)) {
+          throw new Error('Capability must be a permitted parsed call');
         } else if (!['Str', 'Num', 'Bool', 'Null', 'Arr', 'Ref'].includes(n.k)) throw new Error('Not static');
       });
     }

@@ -16,3 +16,20 @@ test('permits only exact approved HTTPS hosts without credentials or ports', () 
     expect(cardHref(url)).toBeNull();
   }
 });
+
+test.each([
+  'OpenUrl("javascript:alert(1)")',
+  'Action(OpenUrl("javascript:alert(1)"))',
+  'Action',
+  'OpenUrl',
+  'Query("private")',
+  'Mutation("private")',
+  'Run("private")',
+  'Unknown("x")',
+])('refuses dormant expression %s before mounting the runtime', dormant => {
+  expect(parseCard(`root = Text("Safe root")\nunused = ${dormant}`)).toBeNull();
+});
+
+test('accepts a static root with a dormant approved HTTPS action control', () => {
+  expect(parseCard('root = Text("Safe root")\nunused = Action(@OpenUrl("https://github.com/org/repo"))')).not.toBeNull();
+});
