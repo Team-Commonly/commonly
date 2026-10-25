@@ -1,0 +1,124 @@
+name: FerretDB bridge evidence
+on:
+  workflow_dispatch:
+  # A new dispatch workflow is not registered until it exists on default.
+  # Draft-PR execution supplies evidence without merging this experiment.
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths: ['.github/workflows/ferretdb-bridge.yml', 'scripts/ci/ferretdb-*']
+permissions:
+  contents: read
+jobs:
+  bridge:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    services:
+      postgres:
+        # Matched pair: https://docs.ferretdb.io/v2.8/installation/ferretdb/docker/
+        image: ghcr.io/ferretdb/postgres-documentdb:17-0.108.0-ferretdb-2.8.0
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      ferretdb:
+        image: ghcr.io/ferretdb/ferretdb:2.8.0
+        env:
+          FERRETDB_POSTGRESQL_URL: postgres://postgres:postgres@postgres:5432/postgres
+          FERRETDB_TELEMETRY: disabled
+        ports: ['27017:27017']
+      redis:
+        image: redis:7.4.2-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CI: 'true'
+      NODE_ENV: test
+      JWT_SECRET: ferretdb-ci-only-not-a-secret
+      FRONTEND_URL: http://localhost:3000
+      INTEGRATION_TEST: 'true'
+      MONGO_URI: mongodb://postgres:postgres@localhost:27017/commonly-test?authSource=admin
+      PG_HOST: localhost
+      PG_PORT: '5432'
+      PG_DATABASE: postgres
+      PG_USER: postgres
+      PG_PASSWORD: postgres
+      PG_SSL_ENABLED: 'false'
+      REDIS_URL: redis://localhost:6379
+      REGISTRATION_INVITE_ONLY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: mkdir -p evidence
+      - run: npm ci --include=dev --prefix backend
+      - run: npm ci --include=dev --prefix cli
+      - name: Wait for authenticated wire protocol
+        working-directory: backend
+        run: |
+          node <<'JS'
+          const { MongoClient } = require('mongodb');
+          (async () => {
+            for (let n = 0; n < 40; n++) {
+              const c = new MongoClient(process.env.MONGO_URI, { serverSelectionTimeoutMS: 2000 });
+              try { await c.connect(); await c.db().command({ ping: 1 }); await c.close(); return; }
+              catch (e) { await c.close(); if (n === 39) throw e; await new Promise(r => setTimeout(r, 1500)); }
+            }
+          })().catch(e => { console.error(e); process.exit(1); });
+          JS
+      - name: Existing backend integration suites, unchanged
+        id: integration
+        timeout-minutes: 25
+        continue-on-error: true
+        working-directory: backend
+        run: |
+          set -o pipefail
+          npx jest --testPathPattern=__tests__/service --runInBand --forceExit --json --outputFile=../evidence/jest.json 2>&1 | tee ../evidence/integration.log
+      - name: Boot unchanged backend and smoke HTTP APIs
+        id: smoke
+        if: ${{ !cancelled() && steps.integration.outcome != 'skipped' }}
+        continue-on-error: true
+        working-directory: backend
+        run: |
+          # Separate Mongo database from suite teardown; PG schema is the existing one.
+          export MONGO_URI='mongodb://postgres:postgres@localhost:27017/commonly-smoke?authSource=admin'
+          node -r ts-node/register/transpile-only server.ts > ../evidence/backend.log 2>&1 &
+          BACKEND_PID=$!
+          trap 'kill "$BACKEND_PID" 2>/dev/null || true' EXIT
+          node ../scripts/ci/ferretdb-smoke.cjs 2>&1 | tee ../evidence/smoke.log
+      - name: Service logs
+        if: always()
+        env:
+          FERRET_ID: ${{ job.services.ferretdb.id }}
+          POSTGRES_ID: ${{ job.services.postgres.id }}
+        run: |
+          docker logs "$FERRET_ID" > evidence/ferretdb.log 2>&1
+          docker logs "$POSTGRES_ID" > evidence/postgres.log 2>&1
+      - name: Evidence summary
+        if: always()
+        env:
+          INTEGRATION_OUTCOME: ${{ steps.integration.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+        run: node scripts/ci/ferretdb-report.cjs >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ferretdb-evidence
+          path: evidence/
+      - name: Require both legs
+        if: always()
+        env:
+          INTEGRATION_OUTCOME: ${{ steps.integration.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+        run: test "$INTEGRATION_OUTCOME" = success && test "$SMOKE_OUTCOME" = success
