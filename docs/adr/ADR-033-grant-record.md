@@ -102,6 +102,16 @@ written by the board (`actor {type: system, id: board}`).
   `approval: failed`, decided by policy, so it approves nothing. This writer goes live once that
   branch merges (open question 8).
 
+**D5 acceptance.** A service test at the `chooseDecision` boundary must fail if D5 is reverted:
+- On a parked-call card, the credential owner and the asking agent's owner can each rule. Any other
+  pod member gets a 403, and after the refusal the card is still `pending`, has no `ruling`, and no
+  record line was written.
+- Each successful ruling writes exactly one line. A parked-call card writes one `permission.decided`
+  with `decisionCardId` and `decidedByRole` `credential-owner` or `agent-owner`. Any other card writes
+  one `decision.ruled`, with `agent-owner` for the agent's owner and `pod-member` for anyone else.
+- A `permission.decided` line carrying `pod-member`, or a `null` `decidedBy`, is refused by the
+  format (`fb686d4f` covers this at the format layer; the service test covers the route).
+
 **R1. Redact forwarding is a launch blocker.** Agent-authored text (message chunks, tool titles, and
 the `question` of `permission.requested`, which is normally the tool call's title) is scrubbed only of
 credential values the writer was given (spec §3 rule 1, and spec §2 Approval for `question`). The
