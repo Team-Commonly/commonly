@@ -53,33 +53,38 @@ agents:
 
 ### Image pins (TASK-501, 2026-10-25)
 
-The default Compose profile pins `mongo:9.0.4` and `postgres:18.6`.
-The Helm MongoDB default also pins `mongo:9.0.4`. On 2026-10-25, Docker Hub
-reported matching digests for `mongo:latest` and `mongo:9.0.4`, and for
-`postgres:latest` and `postgres:18.6`. These pins preserve what the floating tags
-selected at that check, instead of changing their major versions to match a
-different profile. MongoDB 8.2 is end of life; its existing dev reference is
-not used as the new default.
+The default Compose profile pins `mongo:9.0.4` and `postgres:17.11`.
+The Helm MongoDB default also pins `mongo:9.0.4`. The MongoDB pin matches the
+2026-10-25 `latest` digest. MongoDB 8.2 is end of life; its existing dev
+reference is not used as the new default.
+
+Compose deliberately uses PostgreSQL 17 to match its named-volume mount at
+`/var/lib/postgresql/data`. The floating `latest` tag selected PostgreSQL 18.6,
+which cannot start with that mount even on a fresh volume. Moving to PostgreSQL
+18 requires a separate PR for the mount layout and `pg_upgrade`; this pin does
+not migrate a volume previously written by PostgreSQL 18.
 
 These are self-host image choices, not a measurement of the hosted databases:
 `values-dev.yaml` disables the chart's MongoDB and PostgreSQL services.
 Existing versioned references stay intact: local Compose and local/staging Helm
 use MongoDB 7, dev Compose uses MongoDB 8.2, base/local Helm use PostgreSQL 15,
 the backup client uses 16, and dev Compose uses 17. Redis remains `7-alpine`.
-**PostgreSQL 15, 16 and 17 remain in use in the checked-in configuration**;
-the default Compose pin is 18.6. Unifying these versions and their volume
-layouts is a separate compatibility/migration change. A PostgreSQL 18 image
-requires the PostgreSQL 18 volume layout; pinning does not repair a volume
-created for an older version.
+**PostgreSQL 15, 16 and 17 remain in use in the checked-in configuration**.
+Unifying these versions and their volume layouts is a separate migration change.
+For existing MongoDB volumes, upgrade stepwise through supported releases and
+set the required FCV at each stage (for example, 7.0 → 8.0 before 9.0); never
+point 9.0 at a 7.0 or 8.2 volume directly. Follow the
+[MongoDB 9.0 upgrade prerequisites](https://www.mongodb.com/docs/manual/release-notes/9.0-upgrade-standalone/)
+for the supported 8.0/8.3 source version and FCV requirements before changing
+either the Compose or Helm MongoDB pin.
 
 Pin evidence, checked 2026-10-25:
 
 - [MongoDB latest tag](https://hub.docker.com/v2/repositories/library/mongo/tags/latest)
   and [9.0.4 tag](https://hub.docker.com/v2/repositories/library/mongo/tags/9.0.4):
   `sha256:dc28ed5a9d0fc616903c3f463bb1e53b92b49f441721b91926e87d90bf957ce8`.
-- [PostgreSQL latest tag](https://hub.docker.com/v2/repositories/library/postgres/tags/latest)
-  and [18.6 tag](https://hub.docker.com/v2/repositories/library/postgres/tags/18.6):
-  `sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6`.
+- [PostgreSQL 17.11 tag](https://hub.docker.com/v2/repositories/library/postgres/tags/17.11):
+  `sha256:b8faeff7712663c2773a190181e1246e37e364b887611c04658c28b44e2408fe`.
 - [MongoDB lifecycle policy](https://www.mongodb.com/legal/support-policy/lifecycles)
   lists 8.2 as end of life and 9.0 as supported.
 
