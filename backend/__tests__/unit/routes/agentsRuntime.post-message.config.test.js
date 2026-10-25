@@ -1,3 +1,4 @@
+const catalogueRevision = require('../../../config/uiCardCatalogueRevision.json');
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => next());
 jest.mock('../../../middleware/auth', () => (req, res, next) => next());
 jest.mock('../../../middleware/apiTokenScopes', () => ({
@@ -220,12 +221,21 @@ describe('agentsRuntime post message installation config forwarding', () => {
 
 describe('agent card route boundary', () => {
   const installation = { podId: 'pod-1', agentName: 'openclaw', instanceId: 'default', config: {} };
-  const payload = { kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hello")' };
+  const payload = { ...catalogueRevision, kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hello")' };
   const handler = getRouteHandler('/pods/:podId/messages', 'post');
   const req = (body) => ({ params: { podId: 'pod-1' }, body: { continueAnyway: true, ...body },
     agentInstallation: installation, agentInstallations: [installation] });
   const response = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
   beforeEach(() => { jest.clearAllMocks(); findNonMemberMentionNotices.mockResolvedValue([]); });
+  it('returns a visible 400 reason for an unknown catalogue revision before writing', async () => {
+    const res = response();
+    await handler(req({ messageType: 'card', payload: { ...payload, catalogRev: 999 }, content: 'fallback' }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'invalid_ui_card', message: expect.stringContaining('catalogRev'),
+    }));
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+  });
   it('forwards a validated UI payload unchanged to the durable message writer', async () => {
     AgentMessageService.postMessage.mockResolvedValue({ success: true });
     const res = response();
@@ -234,6 +244,13 @@ describe('agent card route boundary', () => {
       messageType: 'card', payload, content: 'fallback',
     }));
     expect(res.status).not.toHaveBeenCalled();
+  });
+  it('refuses system messages without a payload before persistence', async () => {
+    const res = response();
+    await handler(req({ messageType: 'system', content: 'hello' }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+    expect(findNonMemberMentionNotices).not.toHaveBeenCalled();
   });
   it.each([
     { ...payload, kind: 'approval' },
@@ -277,8 +294,35 @@ describe('bot-token send-time freshness', () => {
     });
   });
 
+  it.each(['ui', 'approval'])('validates bot-token card kind %s before writing', async (kind) => {
+    const payload = { ...catalogueRevision, kind, v: 1, lang: 'openui@1', source: 'root = Text("hello")' };
+    AgentMessageService.postMessage.mockResolvedValue({ success: true });
+    const res = response();
+    await getRouteHandler('/bot/pods/:podId/messages', 'post')({ ...req,
+      body: { content: 'fallback', messageType: 'card', payload, continueAnyway: true } }, res);
+    if (kind === 'ui') {
+      expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+        content: 'fallback', messageType: 'card', payload,
+      }));
+      expect(res.status).not.toHaveBeenCalled();
+    } else {
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+      expect(findNonMemberMentionNotices).not.toHaveBeenCalled();
+    }
+  });
+  it('refuses system messages without a payload on the bot-token route', async () => {
+    const res = response();
+    await getRouteHandler('/bot/pods/:podId/messages', 'post')({ ...req,
+      body: { content: 'hello', messageType: 'system', continueAnyway: true } }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+    expect(findNonMemberMentionNotices).not.toHaveBeenCalled();
+  });
+
   it('stamps only a successful bot-token message read and holds a stale post', async () => {
     const messages = [{ id: 'm1', content: 'new message' }];
+    Object.defineProperty(messages, 'readSource', { value: 'postgres' });
     AgentMessageService.getRecentMessages.mockResolvedValue(messages);
     const get = getRouteHandler('/bot/pods/:podId/messages', 'get');
     const getRes = response();

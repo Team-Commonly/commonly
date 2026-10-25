@@ -268,6 +268,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root .v2-byo__needs')).toContain('color: var(--v2-text-primary)');
   });
 
+  // #2670: the Cursor rule card's header names an unbroken save path; without
+  // these two declarations it pushes the Copy button out of the card at 390px.
+  test('Cursor rule card header wraps its save path inside the card', () => {
+    expect(ruleBody(v2, '.v2-connect__rule .v2-connect__code-head span')).toContain('min-width: 0');
+    expect(ruleBody(v2, '.v2-connect__rule .v2-connect__code-head code')).toContain('overflow-wrap: anywhere');
+  });
+
   test('Your Team card name owns its line so the category chip cannot crush it', () => {
     // Direction C: the name sits in its own column of the card head; the
     // crush guard is min-width 0 on the name and the head, not a flex basis.

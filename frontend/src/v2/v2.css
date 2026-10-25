@@ -6818,6 +6818,12 @@ body.modern-ui.v2-canvas {
   font: 400 13px/20px var(--v2-font);
 }
 .v2-root .v2-connect__cursor .v2-connect__link { margin-top: 0; }
+.v2-connect__rule { margin-top: 12px; }
+.v2-connect__rule .v2-connect__code-head span { min-width: 0; }
+.v2-connect__rule .v2-connect__code-head code {
+  font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}
 
 .v2-connect__actions {
   display: flex;

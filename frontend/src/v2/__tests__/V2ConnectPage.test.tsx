@@ -6,6 +6,7 @@ import axios from '../../utils/axiosConfig';
 import { AuthContext } from '../../context/AuthContext';
 import V2ConnectPage from '../components/V2ConnectPage';
 import V2AccountMenu from '../components/V2AccountMenu';
+import { CURSOR_PROJECT_RULE, CURSOR_PROJECT_RULE_PATH } from '../utils/cursorProjectRule';
 
 jest.mock('../../utils/axiosConfig', () => {
   const mock = {
@@ -67,6 +68,18 @@ describe('V2ConnectPage', () => {
       if (previousApiUrl === undefined) delete process.env.REACT_APP_API_URL;
       else process.env.REACT_APP_API_URL = previousApiUrl;
     }
+  });
+
+  test('offers the Cursor project rule with its path and copies it verbatim', async () => {
+    const clipboard = { writeText: jest.fn().mockResolvedValue(undefined) };
+    Object.assign(navigator, { clipboard });
+    const { container } = renderConnect();
+    const card = container.querySelector('.v2-connect__rule');
+    expect(card).not.toBeNull();
+    expect(card.textContent).toContain(CURSOR_PROJECT_RULE_PATH);
+    expect(card.querySelector('pre').textContent).toBe(CURSOR_PROJECT_RULE);
+    fireEvent.click(card.querySelector('button.v2-connect__copy'));
+    await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith(CURSOR_PROJECT_RULE));
   });
 
   test('gives every member a copyable CLI/MCP start and does not tease instance keys', async () => {

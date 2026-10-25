@@ -2215,6 +2215,7 @@
     "loadFailed": "无法加载产物。"
   },
   "tools": {
+    "emptyAudienceNotice": "请至少选择一个智能体以授予访问权限。",
     "makePodInviteOnly": "将此 Pod 设为仅限邀请",
     "podInviteOnlyNow": "此 Pod 现已设为仅限邀请。再次选择“授权”继续。",
     "joinPolicyError": "无法将此 Pod 设为仅限邀请。",

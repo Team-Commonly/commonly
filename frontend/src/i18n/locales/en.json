@@ -2224,6 +2224,7 @@
     "loadFailed": "Could not load artifacts."
   },
   "tools": {
+    "emptyAudienceNotice": "Select at least one agent to grant access.",
     "makePodInviteOnly": "Make this pod invite-only",
     "podInviteOnlyNow": "This pod is invite-only. Select Grant to continue.",
     "joinPolicyError": "Could not make this pod invite-only.",

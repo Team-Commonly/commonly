@@ -10,6 +10,8 @@ const mockPool = {
   query: jest.fn().mockResolvedValue({ rows: [{ ok: 1 }] }),
 };
 const mockCreateClient = jest.fn();
+const mockIsDraining = jest.fn().mockReturnValue(false);
+jest.mock('../../../services/agentEventService', () => ({ isInProcessDraining: () => mockIsDraining() }));
 
 jest.mock('mongoose', () => mockMongoose);
 jest.mock('redis', () => ({ createClient: mockCreateClient }));
@@ -41,6 +43,7 @@ const buildApp = () => {
 
 describe('GET /api/health/ready', () => {
   beforeEach(() => {
+    mockIsDraining.mockReturnValue(false);
     mockMongoose.connection.readyState = 1;
     mockPool.query.mockResolvedValue({ rows: [{ ok: 1 }] });
     mockPgRoutesAreMounted.mockReturnValue(true);
@@ -52,6 +55,12 @@ describe('GET /api/health/ready', () => {
 
     if (originalK8sMode === undefined) delete process.env.AGENT_PROVISIONER_K8S;
     else process.env.AGENT_PROVISIONER_K8S = originalK8sMode;
+  });
+
+  it('refuses readiness while hosted turns drain', async () => {
+    mockIsDraining.mockReturnValue(true);
+    const res = await request(buildApp()).get('/api/health/ready').expect(503);
+    expect(res.body.reason).toBe('hosted runtime draining');
   });
 
   it('returns ready when MongoDB and PostgreSQL are available without probing Redis', async () => {

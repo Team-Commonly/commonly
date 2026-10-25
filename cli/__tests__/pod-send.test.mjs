@@ -21,7 +21,7 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks());
 
 test('sends UI JSON on the real pod command with the content fallback', async () => {
-  const payload = { kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hi")' };
+  const payload = { catalogId: 'commonly.ui', catalogRev: 1, catalogHash: 'sha256:bb8b4de07f90c06ee48f254d86478b5bd347c738b3e86cf65e2f32e26534db57', kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hi")' };
   await run('--payload', JSON.stringify(payload));
   expect(post).toHaveBeenCalledTimes(1);
   expect(post).toHaveBeenCalledWith('/api/agents/runtime/pods/pod-1/messages', {

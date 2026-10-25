@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import GitHubAppService from './githubAppService';
 
 /**
  * skillsRefreshService
@@ -57,18 +58,19 @@ const resolveLocalCatalogPath = (): string => {
   return path.resolve(__dirname, '../../docs/skills/awesome-agent-skills-index.json');
 };
 
-const buildGitHubHeaders = (): Record<string, string> => {
-  const headers: Record<string, string> = {
+// One credential per refresh run. The App installation token is the default
+// (an hour is longer than a run); GitHubAppService falls back to GITHUB_PAT only
+// when no App is configured. With neither, requests go out unauthenticated at
+// the 60/h anonymous limit, which still covers a small catalog.
+const buildGitHubHeaders = async (): Promise<Record<string, string>> => {
+  const base: Record<string, string> = {
     'User-Agent': 'commonly-skills-refresh',
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
   };
-  const token = process.env.GITHUB_PAT;
-  if (token) {
-    // Fine-grained PATs use `Bearer`; classic PATs accept it too.
-    headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
+  if (!GitHubAppService.isConfigured() && !GitHubAppService.isPatConfigured()) return base;
+  const authed = await GitHubAppService._apiHeaders();
+  return { ...base, Authorization: authed.Authorization };
 };
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => {
@@ -119,9 +121,10 @@ const parseRepoString = (repo: unknown): { owner: string; name: string } | null 
 const fetchRepoStats = async (
   owner: string,
   name: string,
+  headers: Record<string, string>,
 ): Promise<{ stars: number | null; forks: number | null; rateLimited: boolean; authFailed: boolean }> => {
   const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
-  const response = await fetch(url, { headers: buildGitHubHeaders() });
+  const response = await fetch(url, { headers });
   if (response.status === 401 || response.status === 403) {
     // 403 with x-ratelimit-remaining=0 is the rate-limit signal; distinguish
     // from an auth failure by checking the header.
@@ -213,15 +216,25 @@ export const refreshSkillsIndex = async (): Promise<RefreshResult> => {
   const statsByRepo = new Map<string, { stars: number; forks: number }>();
   let stopDueToAuth = false;
   let stopDueToRateLimit = false;
+  let githubHeaders: Record<string, string> | null = null;
+  if (uniqueRepos.size > 0) {
+    try {
+      githubHeaders = await buildGitHubHeaders();
+    } catch (error) {
+      stopDueToAuth = true;
+      errors.push(new Error(`GitHub App token mint failed: ${(error as Error).message}`));
+    }
+  }
 
   // Walk repos sequentially with a delay — avoids secondary rate-limit bursts.
   for (const [key, parsed] of uniqueRepos) {
+    if (!githubHeaders) break;
     try {
       // eslint-disable-next-line no-await-in-loop
-      const { stars, forks, rateLimited, authFailed } = await fetchRepoStats(parsed.owner, parsed.name);
+      const { stars, forks, rateLimited, authFailed } = await fetchRepoStats(parsed.owner, parsed.name, githubHeaders);
       if (authFailed) {
         stopDueToAuth = true;
-        errors.push(new Error(`GitHub auth failed for ${key} — check GITHUB_PAT`));
+        errors.push(new Error(`GitHub auth failed for ${key} — check the GitHub App credentials`));
         break;
       }
       if (rateLimited) {

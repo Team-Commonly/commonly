@@ -1,17 +1,35 @@
+const catalogueRevision = require('../../../config/uiCardCatalogueRevision.json');
 const { validateAgentCardPayload, UI_CARD_MAX_BYTES } = require('../../../services/uiCardValidation');
 
-const card = (source = 'root = Text("hello")') => ({ kind: 'ui', v: 1, lang: 'openui@1', source });
+const card = (source = 'root = Text("hello")') => ({ ...catalogueRevision, kind: 'ui', v: 1, lang: 'openui@1', source });
 const validate = (payload = card(), content = 'Text fallback', type = 'card') => (
   validateAgentCardPayload(type, payload, content)
 );
 
 describe('untrusted UI card write validation', () => {
+  it.each([
+    { catalogId: 'other.ui' }, { catalogRev: 2 }, { catalogRev: '1' },
+    { catalogHash: 'sha256:forged' }, { catalogRev: undefined },
+    { catalogId: undefined }, { catalogHash: undefined },
+  ])('visibly refuses an unsupported catalogue tuple %#', (fields) => {
+    expect(() => validate({ ...card(), ...fields })).toThrow(expect.objectContaining({
+      statusCode: 400, code: 'invalid_ui_card', message: expect.stringMatching(/catalog/),
+    }));
+  });
   it('keeps ordinary text backwards compatible', () => {
     expect(() => validateAgentCardPayload(undefined, undefined, 'hello')).not.toThrow();
+  });
+  it.each(['system', 'approval', null, 1])('refuses non-agent message type %s without a payload', (type) => {
+    expect(() => validateAgentCardPayload(type, undefined, 'hello')).toThrow('text or card');
   });
   it('accepts a complete known component without evaluating it', () => {
     expect(() => validate()).not.toThrow();
     expect(() => validate(card('root = Text("Query Mutation @Run are just quoted text")'))).not.toThrow();
+    expect(() => validate(card('root = Text("hello")\nunused = Action(@OpenUrl("https://commonly.me"))'))).not.toThrow();
+    expect(() => validate(card('root = Text("# hello 🌍")'))).not.toThrow();
+  });
+  it.each(['#', '🌍', '`', '\\'])('rejects source characters omitted by tokenization: %s', (suffix) => {
+    expect(() => validate(card('root = Text("hello")' + suffix))).toThrow('unsupported source characters');
   });
   it.each([
     null, [], {}, { ...card(), kind: 'approval' }, { ...card(), kind: 'decision' },
@@ -28,6 +46,12 @@ describe('untrusted UI card write validation', () => {
     expect(() => validate(card(), 'fallback', 'text')).toThrow();
     expect(() => validateAgentCardPayload('card', undefined, 'fallback')).toThrow();
   });
+  it('rejects source lines discarded by the statement splitter', () => {
+    expect(() => validate(card('root = Text("hello")\nnot valid'))).toThrow('discarded');
+    expect(() => validate(card('garbage\nroot = Text("hello")'))).toThrow('discarded');
+    expect(() => validate(card('root = Text("hello")\nunused ='))).toThrow('discarded');
+    expect(() => validate(card('root = Text(\n"hello"\n)\n\n'))).not.toThrow();
+  });
   it.each([
     'root = Unknown("hello")',
     'root = Text("hello")\nunused = Unknown("hello")',
@@ -36,6 +60,11 @@ describe('untrusted UI card write validation', () => {
     'root = Text("hello")\nunused = Mutation("tool", {})',
     'root = Text(Action(@Run(q)))',
     'root = Text("hello")\nunused = Action(@Run(q))',
+    'root = Text("hello")\nunused = OpenUrl("javascript:alert(1)")',
+    'root = Text("hello")\nunused = Action("javascript:alert(1)")',
+    'root = Text("hello")\nunused = OpenUrl("http://example.com")',
+    'root = Text("hello")\nunused = Action("http://example.com")',
+    'root = Text("hello")\nunused = Action(OpenUrl("javascript:alert(1)"))',
     'root = Text("hello") Query("tool", {})',
     'root = Text("hello") Unknown("hidden")',
     'root = Text(@Fetch("https://example.org"))',
@@ -93,6 +122,16 @@ describe('untrusted UI card write validation', () => {
   });
   it('refuses deeply nested input before recursive parsing', () => {
     expect(() => validate(card('root = Text(' + '['.repeat(1000) + '0' + ']'.repeat(1000) + ')'))).toThrow('nesting');
+  });
+  it('enforces exact nesting and statement count boundaries', () => {
+    const nested = (count) => 'root = ' + 'Card("title", ['.repeat(count)
+      + 'Text(["hello"])' + '])'.repeat(count);
+    expect(() => validate(card(nested(31)))).not.toThrow(); // 64 brackets
+    expect(() => validate(card(nested(32)))).toThrow('64 nesting');
+    const statements = (count) => 'root = Text("hello")\n'
+      + Array.from({ length: count - 1 }, (_, i) => 'unused' + i + ' = "literal"').join('\n');
+    expect(() => validate(card(statements(256)))).not.toThrow();
+    expect(() => validate(card(statements(257)))).toThrow('256 statements');
   });
   it('limits serialized payload bytes, including multibyte Unicode and exact boundary', () => {
     const prefix = 'root = Text("';
