@@ -120,19 +120,9 @@ const app = express();
 // `req.protocol`, so a URL built as `${req.protocol}://...` is https behind the
 // TLS edge instead of http (Mixed Content on every page load).
 app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
-const buildAllowedOrigins = () => {
-  const raw = process.env.FRONTEND_URL;
-  if (raw && raw.trim()) {
-    return raw
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean);
-  }
-  return ['http://localhost:3000', 'https://commonly.me'];
-};
+const { buildAllowedOrigins, corsOptions } = require('./middleware/corsPolicy');
 
 const allowedOrigins = buildAllowedOrigins();
-const isAllowedOrigin = (origin: any) => !origin || allowedOrigins.includes(origin);
 
 const server = http.createServer(app);
 const io = socketIo(server, {
@@ -166,25 +156,8 @@ const { bindSocketIO: bindTaskEventSocketIO } = require('./services/taskEventSer
 
 const PORT = process.env.PORT || 5000;
 
-// Middleware
-app.use(
-  cors({
-    origin: (origin: any, callback: any) => {
-      if (isAllowedOrigin(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
-    // Slack OAuth starts in the authenticated shell and returns through an
-    // unauthenticated callback. The browser-bound nonce is HttpOnly on the
-    // API origin, so the authorize-url request must be allowed to persist it
-    // when the shell is served from commonly.me.
-    credentials: true,
-  }),
-);
+// Middleware. A disallowed origin is refused with 403 (middleware/corsPolicy).
+app.use(cors(corsOptions(allowedOrigins)));
 
 // Raw body middleware for Discord signature verification
 app.use('/api/discord/interactions', express.raw({ type: 'application/json' }));
