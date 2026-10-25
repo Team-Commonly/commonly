@@ -243,6 +243,17 @@ describe('validateEnvironmentSpec', () => {
     expect(unknown.errors.join(' ')).toMatch(/sandbox\.allow must be an array of: write, web/);
   });
 
+  test('refuses a write grant on a read-only seat rather than let the jail quietly drop it', () => {
+    const result = validateEnvironmentSpec({
+      sandbox: { mode: 'read-only', trust: 'workspace', allow: ['write'] },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors.join(' ')).toMatch(/sandbox\.allow 'write' cannot be combined with sandbox\.mode 'read-only'/);
+    expect(validateEnvironmentSpec({
+      sandbox: { mode: 'read-only', trust: 'workspace', allow: ['web'] },
+    }).ok).toBe(true);
+  });
+
   test('rejects bad sandbox.trust', () => {
     const res = validateEnvironmentSpec({
       sandbox: { mode: 'workspace', trust: 'sometimes' },

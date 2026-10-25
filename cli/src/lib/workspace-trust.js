@@ -112,8 +112,11 @@ export const workspaceTurnPlacement = ({
   if (environment?.sandbox?.trust !== 'workspace' || allPodsConfirmedPrivate(installations)) {
     return { environment, cwd, reason: null };
   }
+  // Its write/web grants widen the workspace tier only, so the public turn
+  // drops them rather than carry them into a room strangers can read.
+  const { allow: _grants, ...sandbox } = environment.sandbox;
   return {
-    environment: { ...environment, sandbox: { ...environment.sandbox, trust: 'public' } },
+    environment: { ...environment, sandbox: { ...sandbox, trust: 'public' } },
     cwd: scratchDir,
     reason: installations === null ? 'its pods could not be read' : PUBLIC_POD_REASON,
   };

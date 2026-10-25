@@ -1313,6 +1313,50 @@ describe('claude adapter — a workspace seat', () => {
     expect(fs.existsSync(path.join(cwd, '.claude'))).toBe(false);
   });
 
+  const toolLists = (args) => ({
+    allowed: args.slice(args.indexOf('--allowedTools') + 1, args.indexOf('--disallowedTools')),
+    denied: args.slice(args.indexOf('--disallowedTools') + 1),
+  });
+
+  test('a write grant hands it Edit, Write and Bash and a writable project, with .git held read-only', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await workspaceSpawn(impl, { mode: 'workspace', trust: 'workspace', allow: ['write'] });
+
+    const { args } = calls[0];
+    const { allowed, denied } = toolLists(args);
+    expect(allowed).toEqual(expect.arrayContaining(['Edit', 'Write', 'Bash']));
+    expect(denied).not.toContain('Edit');
+    expect(denied).not.toContain('Write');
+    expect(denied).not.toContain('Bash');
+    expect(denied).toEqual(expect.arrayContaining(['WebFetch', 'WebSearch', 'NotebookEdit', 'Task', 'Read(./.env.*)']));
+    const realCwd = fs.realpathSync(cwd);
+    expect(args[1]).toContain(`(allow file-read* file-test-existence file-write* (subpath "${realCwd}"))`);
+    expect(args[1]).toContain(`(deny file-write* (subpath "${path.join(realCwd, '.git')}"))`);
+  });
+
+  test('a web grant hands it WebFetch alone, with the project still read-only', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await workspaceSpawn(impl, { mode: 'workspace', trust: 'workspace', allow: ['web'] });
+
+    const { args } = calls[0];
+    const { allowed, denied } = toolLists(args);
+    expect(allowed).toContain('WebFetch');
+    expect(denied).not.toContain('WebFetch');
+    expect(denied).toEqual(expect.arrayContaining(['WebSearch', 'Bash', 'Write', 'Edit', 'NotebookEdit', 'Task']));
+    expect(args[1]).not.toContain(`file-write* (subpath "${fs.realpathSync(cwd)}"))`);
+  });
+
+  test('a public seat whose record carries grants gets none of them', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await workspaceSpawn(impl, { mode: 'workspace', trust: 'public', allow: ['write', 'web'] });
+
+    const { allowed, denied } = toolLists(calls[0].args);
+    for (const tool of ['Edit', 'Write', 'Bash', 'WebFetch']) {
+      expect(allowed).not.toContain(tool);
+      expect(denied).toContain(tool);
+    }
+  });
+
   test('under bwrap it refuses to spawn', async () => {
     const { impl, calls } = makeSpawnImpl();
     await expect(workspaceSpawn(impl, { mode: 'bwrap', trust: 'workspace' }))

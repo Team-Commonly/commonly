@@ -1,4 +1,6 @@
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import {
+  mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync,
+} from 'fs';
 import { homedir, tmpdir } from 'os';
 import { join } from 'path';
 
@@ -76,6 +78,53 @@ describe('macOS Seatbelt profile', () => {
     expect(profile).not.toContain(
       `(allow file-read* file-test-existence file-write* (subpath "${resolvedWorkspace}"))`,
     );
+  });
+
+  // TASK-294: a workspace seat granted write keeps its project's .git
+  // read-only, so every change it makes shows in `git status`.
+  test('a writable workspace can hold named entries read-only', () => {
+    const profile = buildSeatbeltProfile({
+      workspacePath: workspace,
+      workspaceAccess: 'write',
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      readOnlyWorkspaceEntries: ['.git'],
+    });
+    const resolvedWorkspace = realpathSync(workspace);
+
+    expect(profile).toContain(
+      `(allow file-read* file-test-existence file-write* (subpath "${resolvedWorkspace}"))`,
+    );
+    expect(profile).toContain(`(deny file-write* (subpath "${join(resolvedWorkspace, '.git')}"))`);
+    // The deny must come after the allow it narrows: in SBPL the last match wins.
+    expect(profile.indexOf(`(deny file-write* (subpath "${join(resolvedWorkspace, '.git')}"))`))
+      .toBeGreaterThan(profile.indexOf(`file-write* (subpath "${resolvedWorkspace}"))`));
+  });
+
+  test('a symlinked read-only entry is held at its target too', () => {
+    const target = join(root, 'elsewhere-git');
+    mkdirSync(target);
+    symlinkSync(target, join(workspace, '.git'));
+    const profile = buildSeatbeltProfile({
+      workspacePath: workspace,
+      workspaceAccess: 'write',
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      readOnlyWorkspaceEntries: ['.git'],
+    });
+
+    expect(profile).toContain(`(deny file-write* (subpath "${join(realpathSync(workspace), '.git')}"))`);
+    expect(profile).toContain(`(deny file-write* (subpath "${realpathSync(target)}"))`);
+  });
+
+  test.each(['', '.', '..', 'a/b', '../x', 7])('rejects %p as a read-only workspace entry', (entry) => {
+    expect(() => buildSeatbeltProfile({
+      workspacePath: workspace,
+      workspaceAccess: 'write',
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      readOnlyWorkspaceEntries: [entry],
+    })).toThrow(/readOnlyWorkspaceEntries entries must be names inside the workspace/);
   });
 
   test('OpenCode config roots remain read-only in the generated profile', () => {

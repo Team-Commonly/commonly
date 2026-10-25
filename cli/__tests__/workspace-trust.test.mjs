@@ -143,6 +143,14 @@ describe('workspace turn placement', () => {
     });
   });
 
+  test('a public turn drops the write and web grants, and a private one keeps them', () => {
+    const granted = { model: 'm', sandbox: { mode: 'workspace', trust: 'workspace', allow: ['write', 'web'] } };
+    expect(place({ environment: granted, installations: [priv, pub] }).environment).toEqual({
+      model: 'm', sandbox: { mode: 'workspace', trust: 'public' },
+    });
+    expect(place({ environment: granted, installations: [priv] }).environment).toBe(granted);
+  });
+
   test('a failed read and an empty list both fail closed', () => {
     expect(place({ installations: null })).toMatchObject({
       cwd: '/tmp/scratch', reason: 'its pods could not be read',

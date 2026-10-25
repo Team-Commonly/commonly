@@ -340,6 +340,8 @@ export const validateEnvironmentSpec = (spec) => {
             "sandbox.allow applies only to trust 'workspace' "
             + `(got trust ${JSON.stringify(trust)})`,
           );
+        } else if (allow.includes('write') && mode === 'read-only') {
+          errors.push("sandbox.allow 'write' cannot be combined with sandbox.mode 'read-only'");
         }
       }
       if (network !== undefined) {

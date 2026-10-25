@@ -139,8 +139,22 @@ const PUBLIC_DENIED_TOOLS = [
   'Task',
 ];
 // TASK-294: a workspace seat is confined as a public one is, except that its
-// folder is the person's project, which the jail holds read-only.
+// folder is the person's project, which the jail holds read-only unless the
+// seat was granted write, and whose .git it holds read-only either way.
 const isConfinedTrust = (trust) => trust === 'public' || trust === 'workspace';
+// What each `sandbox.allow` grant moves out of the denies. `web` grants
+// WebFetch alone: WebSearch, NotebookEdit and Task stay denied at every tier.
+// Bash and Write land wherever the jail lets them, so the jail, not this list,
+// bounds a write.
+const WORKSPACE_ALLOW_TOOLS = {
+  write: ['Edit', 'Write', 'Bash'],
+  web: ['WebFetch'],
+};
+// The grants a seat's environment carries. They widen the workspace tier
+// only, so any other trust gets none, whatever its record says.
+const workspaceGrants = (sandbox) => (
+  sandbox?.trust === 'workspace' && Array.isArray(sandbox.allow) ? sandbox.allow : []
+);
 // A workspace seat reads its project's history through one read-only git tool
 // (git-readonly-server.js). The server runs inside the jail, so the jail must
 // admit its code (cli/src/lib, plus package.json for the module type) and the
@@ -296,8 +310,10 @@ const buildClaudeEnv = (input, state, expansionEnv = {}, credentialFile = null, 
 
 const absoluteToolDeny = (path) => `Read(/${path}/**)`;
 
-const buildPublicClaudePolicyArgs = (mcpToolPatterns, { trust } = {}) => {
+const buildPublicClaudePolicyArgs = (mcpToolPatterns, { trust, allow = [] } = {}) => {
   const home = homedir();
+  // `allow` is already narrowed to a workspace seat's grants (workspaceGrants).
+  const granted = allow.flatMap((grant) => WORKSPACE_ALLOW_TOOLS[grant] || []);
   const deniedReads = [
     absoluteToolDeny(join(home, '.commonly')),
     absoluteToolDeny(join(home, '.claude')),
@@ -325,8 +341,9 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, { trust } = {}) => {
     '--strict-mcp-config',
     '--no-chrome',
     '--permission-mode', 'dontAsk',
-    '--allowedTools', 'Read(./**)', ...mcpToolPatterns,
-    '--disallowedTools', ...PUBLIC_DENIED_TOOLS, ...deniedReads, ...workspaceDenies,
+    '--allowedTools', 'Read(./**)', ...granted, ...mcpToolPatterns,
+    '--disallowedTools', ...PUBLIC_DENIED_TOOLS.filter((tool) => !granted.includes(tool)),
+    ...deniedReads, ...workspaceDenies,
   ];
 };
 
@@ -690,6 +707,7 @@ const prepareArgv = async (innerArgv, ctx) => {
 
   const sandboxTrust = env.sandbox?.trust;
   const sandboxMode = resolvePublicSandboxMode(env.sandbox);
+  const grants = workspaceGrants(env.sandbox);
   const publicNativeSandbox = isConfinedTrust(sandboxTrust)
     && PUBLIC_SANDBOX_MODES.has(sandboxMode);
   // A public trust is ONE contract on both platforms: the jail bounds the
@@ -743,7 +761,7 @@ const prepareArgv = async (innerArgv, ctx) => {
     }
     innerArgv = [
       ...innerArgv,
-      ...buildPublicClaudePolicyArgs(allowedPatterns, { trust: sandboxTrust }),
+      ...buildPublicClaudePolicyArgs(allowedPatterns, { trust: sandboxTrust, allow: grants }),
       ...(ctx.publicSkillArgs || []),
     ];
     const claudeBin = resolveClaudePath(claudeEnv);
@@ -755,7 +773,9 @@ const prepareArgv = async (innerArgv, ctx) => {
       .filter((command) => typeof command === 'string' && isAbsolute(command));
     const wrapped = wrapArgvWithSeatbelt([claudeBin, ...innerArgv], {
       workspacePath: ctx.cwd,
-      workspaceAccess: sandboxTrust === 'workspace' || sandboxMode === 'read-only' ? 'read' : 'write',
+      workspaceAccess: sandboxMode === 'read-only'
+        || (sandboxTrust === 'workspace' && !grants.includes('write')) ? 'read' : 'write',
+      readOnlyWorkspaceEntries: sandboxTrust === 'workspace' ? ['.git'] : [],
       executablePath: claudeBin,
       statePath: ctx.publicClaudeState.statePath,
       mcpConfigDir: ctx.mcpConfigDir,
