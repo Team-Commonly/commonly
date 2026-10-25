@@ -102,25 +102,6 @@ class DMService {
     return dmPod;
   }
 
-  static async isCompatibleStalePod(dmPod: InstanceType<typeof Pod>, ownerId: unknown, agentId: unknown): Promise<boolean> {
-    const ownerIdStr = String(ownerId);
-    const agentIdStr = String(agentId);
-    const otherMemberIds = (dmPod.members || [])
-      .map((member: unknown) => String((member as unknown as Record<string, unknown>)?._id || member))
-      .filter((id: string) => id !== ownerIdStr);
-
-    if (!otherMemberIds.length) return true;
-
-    const botMembers = await User.find({
-      _id: { $in: otherMemberIds },
-      isBot: true,
-    }).select('_id').lean();
-
-    if (!botMembers.length) return true;
-
-    return botMembers.some((member) => String((member as unknown as Record<string, unknown>)._id) === agentIdStr);
-  }
-
   /**
    * Find or create a private agent-admin pod between an agent user and its
    * installer (the owner who installed the agent into a pod). Agent-admin is
@@ -162,28 +143,9 @@ class DMService {
     });
     if (fallback) return DMService.ensureDmMembers(fallback, ownerId, agentId);
 
-    // Repair stale pods that match this agent hint but are missing one of the
-    // expected members (for example older records with owner-only membership).
-    const staleCandidates = await Pod.find({
-      type: 'agent-admin',
-      members: ownerId,
-      $or: [
-        { description: { $regex: descriptionPattern, $options: 'i' } },
-        { name: { $regex: namePattern, $options: 'i' } },
-      ],
-    })
-      .sort({ updatedAt: -1 })
-      .limit(5);
-    const staleChecks = await Promise.all(
-      staleCandidates.map(async (candidate) => ({
-        candidate,
-        compatible: await DMService.isCompatibleStalePod(candidate, ownerId, agentId),
-      })),
-    );
-    const stale = staleChecks.find((row) => row.compatible)?.candidate || null;
-    if (stale) {
-      return DMService.ensureDmMembers(stale, ownerId, agentId);
-    }
+    // Display names, including an exact legacy label, are not stable identity.
+    // An owner-only pod may belong to another agent with the same name. Leave
+    // ambiguous private pods untouched and create a new room for this pair.
 
     // Create a new DM pod. Use the agent's curated displayName (from
     // botMetadata) instead of the runtime-leaning agentName, so the pod

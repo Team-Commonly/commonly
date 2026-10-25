@@ -185,14 +185,26 @@ describe('DMService — agent rooms', () => {
     expect(await Pod.countDocuments({ type: 'agent-admin' })).toBe(1);
   });
 
-  it('repairs a legacy composite-label DM by its complete description', async () => {
+  it.each(['nova', 'openclaw (nova)'])('never repairs an owner-only pod from an ambiguous exact label %s', async (label) => {
     agentUser.botMetadata = { agentName: 'openclaw', instanceId: 'nova', displayName: 'openclaw (nova)' };
     await agentUser.save();
-    const legacy = await Pod.create({ name: 'Private notes', description: 'Debug channel for openclaw (nova)',
+    const unrelated = await Pod.create({ name: `DM: ${label}`, description: `Debug channel for ${label}`,
       type: 'agent-admin', createdBy: humanUser._id, members: [humanUser._id], joinPolicy: 'invite-only' });
+    const room = await DMService.getOrCreateAgentDM(agentUser._id, humanUser._id, { agentName: 'openclaw', instanceId: 'nova' });
+    expect(room._id.toString()).not.toBe(unrelated._id.toString());
+    expect((await Pod.findById(unrelated._id)).members.map(String)).toEqual([humanUser._id.toString()]);
+    expect(room.members.map(String).sort()).toEqual([agentUser._id, humanUser._id].map(String).sort());
+  });
+
+  it('reuses a legacy composite label only when the requested agent is already a member', async () => {
+    agentUser.botMetadata = { agentName: 'legacy-runtime', instanceId: 'nova', displayName: 'legacy-runtime (nova)' };
+    await agentUser.save();
+    const legacy = await Pod.create({ name: 'Private notes', description: 'Debug channel for legacy-runtime (nova)',
+      type: 'agent-admin', createdBy: humanUser._id, members: [humanUser._id, agentUser._id], joinPolicy: 'invite-only' });
     const room = await DMService.getOrCreateAgentDM(agentUser._id, humanUser._id, { agentName: 'openclaw', instanceId: 'nova' });
     expect(room._id.toString()).toBe(legacy._id.toString());
     expect(room.members.map(String).sort()).toEqual([agentUser._id, humanUser._id].map(String).sort());
+    expect(await Pod.countDocuments({ type: 'agent-admin' })).toBe(1);
   });
 
 });
