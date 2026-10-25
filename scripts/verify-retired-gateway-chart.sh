@@ -4,6 +4,14 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 task_tmp=$(mktemp -d)
 trap 'rm -rf "$task_tmp"' EXIT
+has_retired_reference() {
+  sed '/^[[:space:]]*#/d' | grep -Eiq '^[[:space:]-]*(name|claimName|storageClassName|app|image|secretKey|key):.*(clawdbot|filestore-sc|GITHUB_PAT|CLAWDBOT|MOLTBOT)'
+}
+# Positive control: a surviving PVC reference must fail the same check.
+if ! printf 'spec:\n  storageClassName: filestore-sc\n' | has_retired_reference; then
+  echo 'Retirement detector missed the StorageClass control' >&2
+  exit 1
+fi
 for lane in default dev staging local; do
   values=(-f k8s/helm/commonly/values.yaml)
   if [[ "$lane" != default ]]; then
@@ -15,7 +23,7 @@ for lane in default dev staging local; do
     --set agents.clawdbot.persistence.workspace.enabled=true \
     --set agentProvisioning.createWorkspacePvc=true \
     --set githubPat.enabled=true > "$task_tmp/$lane.yaml"
-  if sed '/^[[:space:]]*#/d' "$task_tmp/$lane.yaml" | grep -Eiq '^[[:space:]-]*(name|claimName|app|image|secretKey|key):.*(clawdbot|filestore-sc|GITHUB_PAT|CLAWDBOT|MOLTBOT)' ; then
+  if has_retired_reference < "$task_tmp/$lane.yaml"; then
     echo "Retired gateway resource or credential rendered in $lane" >&2
     exit 1
   fi
