@@ -421,9 +421,11 @@ describe('agent runtime tokens', () => {
     const existing = await request(app).post('/api/registry/pods/pod-1/agents/clawd-bot/user-token').send({});
     expect(existing.body).toMatchObject({ existing: true, token: null, requiresRotation: true });
     expect(agentUser.generateApiToken).not.toHaveBeenCalled();
+    expect(agentUser.save).toHaveBeenCalledTimes(1);
     const rotated = await request(app).post('/api/registry/pods/pod-1/agents/clawd-bot/user-token').send({ force: true });
     expect(rotated.body).toMatchObject({ existing: false, token: 'cm_new' });
     expect(agentUser.generateApiToken).toHaveBeenCalledTimes(1);
+    expect(agentUser.save).toHaveBeenCalledTimes(2);
   });
 
   it('returns user token metadata when present', async () => {

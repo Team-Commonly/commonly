@@ -59,6 +59,7 @@ describe('API token storage rollout', () => {
       expect(after.apiTokenCreatedAt).toEqual(row.apiTokenCreatedAt);
       expect(after.isBot).toBe(row.isBot);
       expect(after.apiTokenHash).toBe(hash(row.apiToken));
+      expect(after.apiTokenLast4).toBe(row.apiToken.slice(-4));
       expect(after.apiToken).toBeUndefined();
     }
     expect(await backfillApiTokenStorage({ apply: true })).toEqual({ candidates: 0, migrated: 0, conflicts: 0, skipped: 0, remaining: 0 });
@@ -82,7 +83,9 @@ describe('API token storage rollout', () => {
     await users().updateOne({ _id: user._id }, { $set: { apiToken: 'cm_old', apiTokenHash: hash('cm_current') } });
     expect((await get('cm_old')).status).toBe(401);
     expect((await get('cm_current')).status).toBe(200);
+    const before = await users().findOne({ _id: user._id });
     expect(await backfillApiTokenStorage({ apply: true })).toMatchObject({ conflicts: 1, migrated: 0, remaining: 1 });
+    expect(await users().findOne({ _id: user._id })).toEqual(before);
   });
   it.each(['rotate', 'revoke'])('does not undo concurrent %s', async (operation) => {
     const user = await create(`race-${operation}`);
@@ -150,6 +153,20 @@ describe('API token storage rollout', () => {
     expect(result.status).toBe(1);
     expect(result.stdout).toBe('');
     expect(result.stderr).toBe('[api-token-storage] Failed. No values logged; rerun dry-run to inspect counts.\n');
+  });
+
+  it('reuses a digest-only credential through the real agent identity and issuance services', async () => {
+    const identity = require('../../services/agentIdentityService');
+    const { issueUserTokenForInstallation } = require('../../routes/registry/tokens');
+    const bot = await identity.getOrCreateAgentUser('storage-probe', { instanceId: 'test' });
+    const token = bot.generateApiToken();
+    await bot.save();
+    const result = await issueUserTokenForInstallation({ agentName: 'storage-probe', instanceId: 'test', scopes: ['agent:context:read'] });
+    expect(result).toMatchObject({ existing: true, token: null, requiresRotation: true });
+    const stored = await users().findOne({ _id: bot._id });
+    expect(stored.apiTokenHash).toBe(hash(token));
+    expect(stored.apiToken).toBeUndefined();
+    expect((await get(token)).status).toBe(200);
   });
 
 });

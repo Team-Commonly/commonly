@@ -99,8 +99,15 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
       }
       touchLastActive(user._id.toString());
       return next();
-    } catch {
-      console.error('API token validation failed');
+    } catch (error: unknown) {
+      const failure = error as { name?: string; code?: unknown } | null;
+      const category = ['MongoNetworkError', 'MongoServerSelectionError',
+        'MongoNetworkTimeoutError', 'MongoServerError', 'MongooseError'].includes(failure?.name || '')
+        ? failure!.name : 'UnknownError';
+      const code = typeof failure?.code === 'number' && Number.isFinite(failure.code) ? failure.code : undefined;
+      // Closed diagnostic vocabulary: driver messages, arbitrary names and
+      // string codes may contain query values and must never reach logs.
+      console.error('API token validation failed', { category, code });
       return res.status(401).json({ msg: 'API token validation failed' });
     }
   }

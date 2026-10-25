@@ -406,6 +406,11 @@ agentTokensRouter.post('/pods/:podId/agents/:name/user-token', tokenRouteLimit, 
       return res.status(404).json({ error: 'Agent not installed in this pod' });
     }
 
+    if (force === true) {
+      const refusal = await credentialRefusal(userId, installation.agentName || name, normalizedInstanceId);
+      if (refusal) return res.status(403).json(refusal);
+    }
+
     const issued = await issueUserTokenForInstallation({
       agentName: name,
       instanceId: normalizedInstanceId,
