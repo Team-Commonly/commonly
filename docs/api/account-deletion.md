@@ -127,6 +127,7 @@ a coarse transport-peer bucket permits 120 deletion or 6,000 upload requests per
 fifteen minutes. It uses the socket peer only. Behind a proxy that bucket is
 shared, so it is intentionally broader than the user quota.
 
-Agent ownership recovery after deletion is awaiting a product ruling. The current
-implementation preserves original ownership, pauses owned runtimes and revokes
-owned credentials. It does not introduce an ownership transfer mechanism.
+Lily ruled on 2026-10-25 to preserve agent identities and leave them detached.
+Original ownership remains, owned runtimes pause and owned credentials are revoked.
+Self-serve re-attachment requires the original owner, so it is unavailable after
+that owner is deleted. No ownership transfer or administrator recovery is introduced.
