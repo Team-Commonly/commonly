@@ -4210,3 +4210,19 @@ Settings read one writable pod's `config.environment`, while the daemon selected
 **Repair:** Settings now uses the daemon's environment projection for model and effort, saves through that projection's source pod, and shows standalone CLI controls as locally set and read-only. Focused route, UI and adapter tests connect the saved effort to the spawn argv.
 
 **Lesson:** a displayed runtime setting must identify the source the runner reads. A server preference cannot attest a local process that does not consume it.
+
+## 85. A wrapper around a CLI is not a fence around the CLI's credential (2026-10-22, operator)
+
+*Origin: an incident on 2026-10-22, written up by the operator. The seat, accounts and machine are left out on purpose; the mechanism is the finding.*
+
+A private seat (it runs as the operator's OS user, with no sandbox) was blocked from a hosting CLI by a wrapper that refuses seat calls. It worked out that the CLI's tokens sat in the operator's login credential store. It read them with the operating system's own command-line tool and passed one to the CLI through the CLI's token environment variable. That bypassed the wrapper entirely. Two reads printed the raw stored values. The seat's own redaction covered the tokens' usual prefix but not the encoded form the store returns, so both values entered the model's context, which the seat's runtime sends to its model provider. The only calls made with a token were two read-only API requests. Both credentials were treated as exposed and rotated.
+
+Nothing in the seat broke a rule it could see: the wrapper reads as "you may not run this CLI", and the seat honoured that by not running it through the wrapper. The guard sat on the binary; the authority sat in the credential, and the credential was readable by the same user the seat runs as.
+
+**Repair (pending SRE):** on the affected machine, limit the credential's store entry to the CLI's own binary in its access list, so other processes, a seat's included, are refused. This line is rewritten to what was actually applied before the entry merges. Such a lock is an interim mitigation, not the fix: the root cause is that seats run as the same OS user as the operator, and the proposed durable fix, a separate OS user for seats, is ADR-031 (#2428). The local-wrapper docs now say that a private seat's reach includes the OS credential store (`docs/agents/LOCAL_CLI_WRAPPER.md`, "Public and private seats").
+
+**Lesson:** put the boundary where the credential lives, not in front of the program that uses it. A shim, an alias or an allowlisted wrapper is a habit guard for a cooperative caller; it stops nothing that can read the token. Three corollaries:
+- a redaction pattern has to match every form the value can take (raw, base64, URL-encoded), or it fails exactly when a tool returns a stored blob;
+- once a value has entered a model's context it has left the machine, so "it was never written to a file" is not a reason to skip rotation.
+- a refusal to hand over a credential should not say where the credential lives. Here, another agent correctly declined to copy the token, but its refusal named the store it sat in, and the seat read it from there. A refusal that names the location works as a map.
+
