@@ -4,11 +4,21 @@
  * variables, a fresh HOME whose XDG dirs sit inside it, and only the
  * credentials its grant names.
  *
- * What this is NOT: a filesystem sandbox. A process that already knows an
- * absolute path (/Users/<you>/.claude) can still open it, and macOS keychain
- * items are reached through the user's security session, not through HOME.
- * This removes the paths a CLI discovers its login by; an OS sandbox
- * (Seatbelt, bwrap) is what stops a process that goes looking.
+ * This removes the paths a CLI discovers its login by. It does not stop a
+ * process that already knows one (/Users/<you>/.claude) or asks the macOS
+ * keychain through the user's security session; sandbox.js does, by wrapping
+ * the run's argv:
+ *   - macOS (Seatbelt): enforced. Writes only inside this HOME; the real
+ *     HOME's login paths (REAL_HOME_LOGIN_PATHS) denied by absolute path;
+ *     securityd's mach services denied, so no keychain item is reachable.
+ *   - Linux with a working bwrap: only this HOME (and a workspace, if given)
+ *     is mounted, so the real HOME is absent. The argv shape is unit-tested;
+ *     it has not been run on a Linux host.
+ *   - Linux without bwrap, Windows, anything else: NOT enforced. sandboxRunArgv
+ *     fails the run as unsupported, or returns sandbox: 'none' when the caller
+ *     passed require: false. Spawning run.env without sandboxRunArgv is the
+ *     same unenforced case.
+ * Network egress is not fenced on any platform.
  */
 import { mkdtemp, mkdir, chmod, readFile, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
@@ -22,7 +32,7 @@ import { validateGrant } from './grant.js';
 // login this boundary exists to hide.
 export const BASE_ENV_ALLOWLIST = /^(?:PATH|LANG|LC_[A-Z0-9_]+|TERM|TZ|SSL_CERT_FILE|SSL_CERT_DIR|NO_COLOR|CI)$/;
 
-const isInside = (path, dir) => {
+export const isInside = (path, dir) => {
   const a = resolve(path);
   const b = resolve(dir);
   return a === b || a.startsWith(b.endsWith(sep) ? b : b + sep);
@@ -76,7 +86,10 @@ const resolveOne = async (spec, { baseEnv, resolveSecret }) => {
 
 /**
  * prepareRunEnv({ grant, baseEnv, resolveSecret, root?, require?, trace?, ctx? })
- *   → { env, home, cleanup, granted: [names] }
+ *   → { env, home, cleanup, granted: [names], realHomes: [paths] }
+ *
+ * `realHomes` names the login homes this run was cut from, so sandboxRunArgv
+ * can deny them; it never enters `env`.
  *
  * `require` lists credential names the adapter cannot run without; one the
  * grant does not name fails the run as credential_denied before any spawn.
@@ -120,5 +133,5 @@ export const prepareRunEnv = async ({
   }
   const names = valid.credentials.map((c) => c.name);
   hook.emit('credential.granted', { names });
-  return { env, home, cleanup, granted: names };
+  return { env, home, cleanup, granted: names, realHomes };
 };

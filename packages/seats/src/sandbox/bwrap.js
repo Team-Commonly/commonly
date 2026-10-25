@@ -161,7 +161,12 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
     flags.push('--ro-bind-try', p, p);
   }
 
-  flags.push('--bind', opts.workspacePath, opts.workspacePath);
+  // 'read' mounts the workspace read-only, matching Seatbelt's workspaceAccess.
+  const workspaceAccess = opts.workspaceAccess || 'write';
+  if (!['read', 'write'].includes(workspaceAccess)) {
+    throw new Error('wrapArgvWithBwrap opts.workspaceAccess must be read or write');
+  }
+  flags.push(workspaceAccess === 'read' ? '--ro-bind' : '--bind', opts.workspacePath, opts.workspacePath);
   flags.push('--chdir', opts.workspacePath);
   flags.push('--setenv', 'HOME', opts.homePath || opts.workspacePath);
 

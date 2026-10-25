@@ -292,6 +292,28 @@ const PLATFORM_BASELINE = String.raw`
   (global-name "com.apple.securityd.xpc"))
 `;
 
+// securityd's mach services: every keychain read goes through them, by any
+// path. A run whose credentials come from its env, not the keychain, is built
+// without them (allowKeychainServices: false).
+const KEYCHAIN_MACH_SERVICES = Object.freeze([
+  'com.apple.SecurityServer',
+  'com.apple.securityd',
+  'com.apple.securityd.xpc',
+]);
+
+/**
+ * The baseline minus the keychain services. Each line must be found exactly
+ * once: if the baseline is ever reworded, this throws instead of silently
+ * leaving the services in.
+ */
+const withoutKeychainServices = (baseline) => KEYCHAIN_MACH_SERVICES.reduce((text, name) => {
+  const line = `\n  (global-name "${name}")`;
+  if (text.split(line).length !== 2) {
+    throw new Error(`Seatbelt baseline must name ${name} exactly once to drop it`);
+  }
+  return text.replace(line, '');
+}, baseline);
+
 const escapeSbplString = (value) => String(value)
   .replaceAll('\\', '\\\\')
   .replaceAll('"', '\\"')
@@ -356,6 +378,12 @@ export const buildSeatbeltProfile = ({
   readOnlyDirectories = [],
   loopbackNetworkPorts = [],
   allowClaudeRuntimeAccess = false,
+  // false drops securityd's mach services and denies them explicitly, for a
+  // run that holds its credentials in its env and must not reach the keychain.
+  allowKeychainServices = true,
+  // Paths no rule may open, even when a broader allow (a workspace that holds
+  // them) would. Appended last so they win.
+  denyPaths = [],
 }) => {
   for (const [path, label] of [
     [workspacePath, 'workspacePath'],
@@ -374,6 +402,10 @@ export const buildSeatbeltProfile = ({
   }
   if (!['read', 'write'].includes(workspaceAccess)) {
     throw new Error('Seatbelt workspaceAccess must be read or write');
+  }
+  for (const path of denyPaths) assertAbsolutePath(path, 'denyPaths entry');
+  if (allowClaudeRuntimeAccess && !allowKeychainServices) {
+    throw new Error('Seatbelt allowClaudeRuntimeAccess needs the keychain services');
   }
 
   const resolvedWorkspace = realpathOrSelf(workspacePath);
@@ -429,8 +461,14 @@ export const buildSeatbeltProfile = ({
     ];
   })() : [];
 
+  const keychainDenyRule = allowKeychainServices ? '' : `(deny mach-lookup\n${
+    KEYCHAIN_MACH_SERVICES.map((name) => `  (global-name "${name}")`).join('\n')})`;
+  const denyRules = [...new Set(denyPaths.map(realpathOrSelf))].map((path) => (
+    `(deny file-read* file-write* ${subpath(path)})`
+  )).join('\n');
+
   return [
-    PLATFORM_BASELINE.trim(),
+    allowKeychainServices ? PLATFORM_BASELINE.trim() : withoutKeychainServices(PLATFORM_BASELINE.trim()),
     executableRules,
     executableSymlinkRules,
     `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(resolvedWorkspace)}"))`,
@@ -446,6 +484,8 @@ export const buildSeatbeltProfile = ({
     `(deny file-read* file-write* ${subpath(join(resolvedWorkspace, '.codex'))})`,
     `(deny file-read* file-write* ${literal(join(resolvedWorkspace, '.env'))})`,
     ...claudeRuntimeRules,
+    keychainDenyRule,
+    denyRules,
   ].filter(Boolean).join('\n\n');
 };
 

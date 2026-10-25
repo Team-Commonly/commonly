@@ -22,6 +22,7 @@ export const EVENT_TYPES = Object.freeze([
   'liveness.recovery', // { action: 'cancel'|'kill'|'retry', attempt }
   'credential.granted', // { names: [...] }  names only, never values
   'credential.denied', // { name, reason?: 'not_granted'|'unresolved' }
+  'sandbox.applied', // { sandbox: 'seatbelt'|'bwrap'|'none', reason? }  reason only when none
   'process.exited', // { code, signal }
 ]);
 
