@@ -90,11 +90,12 @@ test('a pid reused by another process is left alone; the descendant the snapshot
   const parent = startParent(pidFile, 2, true);
   // An unrelated process: not in the parent's tree at all.
   const unrelated = spawn('sleep', ['300'], { stdio: 'ignore' });
+  const unrelatedStarted = once(unrelated, 'spawn');
   let real;
   let reused;
   try {
     [real, reused] = await readPids(pidFile, 2);
-    await once(unrelated, 'spawn');
+    await unrelatedStarted;
     const table = readProcessTable();
     assert.ok(table, 'ps is unavailable, so the walk cannot run');
     assert.ok(readProcess(reused), 'the reused stand-in is not running');
