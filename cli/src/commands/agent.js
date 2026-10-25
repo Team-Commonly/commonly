@@ -1793,7 +1793,7 @@ export const performRun = ({
           const delivery = await deliverChatReply({
             client,
             podId: eventPodId,
-            text: "This seat has no model configured. Set its model and restart the runner to resume the pending message.",
+            text: "This agent has no model set; add environment.model to its configuration.",
             limit: chatCharLimit,
             maxChunks: maxChatChunks,
             log,

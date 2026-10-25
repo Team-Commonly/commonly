@@ -1399,7 +1399,7 @@ describe('performRun', () => {
     expect(spawn).toHaveBeenCalledTimes(2);
     expect(replyPosts(post)).toEqual([[
       '/api/agents/runtime/pods/pod-abc/messages',
-      { content: 'This seat has no model configured. Set its model and restart the runner to resume the pending message.' },
+      { content: 'This agent has no model set; add environment.model to its configuration.' },
     ]]);
     expect(ackPosts(post)).toHaveLength(0);
     expect(wasEventHandled('my-stub', event._id)).toBe(false);
