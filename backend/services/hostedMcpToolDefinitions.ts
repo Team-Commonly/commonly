@@ -253,7 +253,7 @@ const openHostedMcpSession = async (
       { failure, vendorStatus });
   };
 
-  const sdkFetch: typeof fetch = async (url, init = {}) => {
+  const sdkFetch: typeof fetch = async (url, init: RequestInit = {}) => {
     // We only consume responses to requests. The SDK probes an optional GET
     // event channel after initialized; do not open a background vendor stream
     // for this short-lived, request/response-only broker session.
