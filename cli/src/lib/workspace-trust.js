@@ -68,6 +68,8 @@ export const workspaceStartDirRefusal = (dir, { home = homedir() } = {}) => {
   return null;
 };
 
+const PUBLIC_POD_REASON = 'a pod it answers in is publicly readable, or did not report whether it is';
+
 /**
  * Where a first-run claude seat may read (TASK-294), from three facts the
  * bootstrap already holds: the adapter it detected, the rooms its token
@@ -82,10 +84,7 @@ export const firstRunWorkspace = ({
 } = {}) => {
   if (adapterName !== 'claude') return null;
   if (!allPodsConfirmedPrivate(installations)) {
-    return {
-      workspacePath: null,
-      reason: 'a pod it answers in is publicly readable, or did not report whether it is',
-    };
+    return { workspacePath: null, reason: PUBLIC_POD_REASON };
   }
   const refusal = workspaceStartDirRefusal(startDir, home === undefined ? {} : { home });
   if (refusal) {
@@ -98,6 +97,32 @@ export const firstRunWorkspace = ({
   return { workspacePath: realOrResolved(startDir), reason: null };
 };
 
+/**
+ * Where one turn of a seat runs, and under which trust. A pod can turn public
+ * after attach, so a `workspace` seat's rooms are re-read before every turn
+ * (`installations` is that read, or `null` when it failed). A turn that cannot
+ * confirm them all private runs as a `public` seat in its scratch folder: the
+ * confinement it would have had without the workspace. Any other trust runs
+ * where and as it was started.
+ */
+export const workspaceTurnPlacement = ({
+  environment, workspacePath, installations, scratchDir,
+} = {}) => {
+  const cwd = workspacePath || scratchDir;
+  if (environment?.sandbox?.trust !== 'workspace' || allPodsConfirmedPrivate(installations)) {
+    return { environment, cwd, reason: null };
+  }
+  return {
+    environment: { ...environment, sandbox: { ...environment.sandbox, trust: 'public' } },
+    cwd: scratchDir,
+    reason: installations === null ? 'its pods could not be read' : PUBLIC_POD_REASON,
+  };
+};
+
 export default {
-  podIsConfirmedPrivate, allPodsConfirmedPrivate, workspaceStartDirRefusal, firstRunWorkspace,
+  podIsConfirmedPrivate,
+  allPodsConfirmedPrivate,
+  workspaceStartDirRefusal,
+  firstRunWorkspace,
+  workspaceTurnPlacement,
 };

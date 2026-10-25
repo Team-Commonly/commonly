@@ -62,7 +62,7 @@ import {
   resolveWorkspace,
   validateEnvironmentSpec,
 } from '../lib/environment.js';
-import { firstRunWorkspace, podIsConfirmedPrivate } from '../lib/workspace-trust.js';
+import { firstRunWorkspace, podIsConfirmedPrivate, workspaceTurnPlacement } from '../lib/workspace-trust.js';
 import {
   ADAPTERS_WITH_DEFAULT_MCP,
   ADAPTERS_WITH_GRANT_BROKER,
@@ -1490,8 +1490,40 @@ export const performRun = ({
   // as binary-not-found — so we ensure it up front to avoid the confusing
   // diagnostic. ADR-008: when an environment spec was attached, the resolved
   // workspace path replaces the /tmp default.
-  const agentCwd = workspacePath || join(tmpdir(), 'commonly-agents', agentName);
+  const scratchCwd = join(tmpdir(), 'commonly-agents', agentName);
+  const agentCwd = workspacePath || scratchCwd;
   if (!existsSync(agentCwd)) mkdirSync(agentCwd, { recursive: true });
+  // TASK-294: a pod can turn public after attach, so a workspace seat re-reads
+  // its pods before every turn, and a turn it cannot confirm (a failed read
+  // included) runs as a public seat in the scratch folder. Moving the cwd
+  // moves claude's session store, so that turn's resume fails "no
+  // conversation" and claude.js starts it fresh.
+  let lastPlacementReason = null;
+  const placeTurn = async () => {
+    if (seatEnvironment?.sandbox?.trust !== 'workspace') {
+      return { environment: seatEnvironment, cwd: agentCwd };
+    }
+    let installations = null;
+    try {
+      const identity = await client.get('/api/agents/runtime/installations', {}, {
+        signal: AbortSignal.timeout(5000),
+      });
+      installations = Array.isArray(identity?.installations) ? identity.installations : [];
+    } catch {
+      installations = null;
+    }
+    const placement = workspaceTurnPlacement({
+      environment: seatEnvironment, workspacePath: agentCwd, installations, scratchDir: scratchCwd,
+    });
+    if (placement.reason !== lastPlacementReason) {
+      log(placement.reason
+        ? `this turn runs as a public seat in ${scratchCwd}, because ${placement.reason}`
+        : `every pod is confirmed private again; turns read ${agentCwd}`);
+      lastPlacementReason = placement.reason;
+    }
+    if (!existsSync(placement.cwd)) mkdirSync(placement.cwd, { recursive: true });
+    return placement;
+  };
   const batchLimit = Math.min(50, Math.max(1, Number(inboxBatchLimit) || 10));
 
   const processEvent = async (event) => {
@@ -1765,6 +1797,7 @@ export const performRun = ({
     // ADR-005 §Memory bridge: read long_term before spawn, inject via ctx,
     // and (if the adapter returns a summary) patch-sync back after.
     const memoryLongTerm = await readLongTerm(client, { onError });
+    const placement = await placeTurn();
 
     // Sharpen TASK-129: focus is a turn-start read, not an enqueue-time
     // snapshot. Read through the authorized runtime context route immediately
@@ -1908,7 +1941,7 @@ export const performRun = ({
       // only for tests and has no commit-making child process.
       if (adapter?.name !== 'stub') {
         commitAttribution = prepareCommitAttribution({
-          cwd: agentCwd,
+          cwd: placement.cwd,
           env: process.env,
           agentName,
           displayName,
@@ -1938,11 +1971,11 @@ export const performRun = ({
         providerKey,
         timeoutMs: effectiveTurnTimeoutMs,
         sessionId,
-        cwd: agentCwd,
+        cwd: placement.cwd,
         env: commitAttribution?.env || process.env,
         commitAttributionEnv: commitAttribution?.sandboxEnv || null,
         memoryLongTerm,
-        environment: seatEnvironment,
+        environment: placement.environment,
         onSkillsLinked: ({ mounted, conflicted }) => {
           skillMount = {
             mounted: [...new Set([...serverSkills.mounted, ...mounted.map(reportedSkillName)])],

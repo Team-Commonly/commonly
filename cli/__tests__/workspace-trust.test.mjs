@@ -15,6 +15,7 @@ import {
   firstRunWorkspace,
   podIsConfirmedPrivate,
   workspaceStartDirRefusal,
+  workspaceTurnPlacement,
 } from '../src/lib/workspace-trust.js';
 
 describe('pod visibility', () => {
@@ -116,6 +117,46 @@ describe('first-run workspace', () => {
       expect(firstRunWorkspace({
         adapterName, installations: [priv], startDir: repo, home,
       })).toBeNull();
+    });
+  });
+});
+
+describe('workspace turn placement', () => {
+  const priv = { publicRead: false, communityListed: false };
+  const pub = { publicRead: false, communityListed: true };
+  const workspace = { model: 'm', sandbox: { trust: 'workspace' } };
+  const place = (overrides) => workspaceTurnPlacement({
+    environment: workspace, workspacePath: '/w/repo', scratchDir: '/tmp/scratch', ...overrides,
+  });
+
+  test('a turn whose pods are all private reads the workspace', () => {
+    expect(place({ installations: [priv, priv] })).toEqual({
+      environment: workspace, cwd: '/w/repo', reason: null,
+    });
+  });
+
+  test('one listed pod runs the turn as a public seat in the scratch folder', () => {
+    expect(place({ installations: [priv, pub] })).toEqual({
+      environment: { model: 'm', sandbox: { trust: 'public' } },
+      cwd: '/tmp/scratch',
+      reason: 'a pod it answers in is publicly readable, or did not report whether it is',
+    });
+  });
+
+  test('a failed read and an empty list both fail closed', () => {
+    expect(place({ installations: null })).toMatchObject({
+      cwd: '/tmp/scratch', reason: 'its pods could not be read',
+    });
+    expect(place({ installations: [] }).environment.sandbox.trust).toBe('public');
+  });
+
+  test('any other trust runs where and as it started, whatever its pods say', () => {
+    const publicSeat = { sandbox: { trust: 'public' } };
+    expect(place({ environment: publicSeat, installations: [pub] })).toEqual({
+      environment: publicSeat, cwd: '/w/repo', reason: null,
+    });
+    expect(place({ environment: null, workspacePath: null, installations: null })).toEqual({
+      environment: null, cwd: '/tmp/scratch', reason: null,
     });
   });
 });
