@@ -4,8 +4,9 @@ import axios from '../../utils/axiosConfig';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { useAuth } from '../../context/AuthContext';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
+import { CURSOR_PROJECT_RULE, CURSOR_PROJECT_RULE_PATH } from '../utils/cursorProjectRule';
 
-type CopyKey = 'cli' | 'mcp' | 'gateway';
+type CopyKey = 'cli' | 'mcp' | 'cursorRule' | 'gateway';
 
 const CopyButton: React.FC<{ value: string; copyKey: CopyKey; copied: CopyKey | null; onCopy: (key: CopyKey, value: string) => void }> = ({
   value, copyKey, copied, onCopy,
@@ -111,6 +112,13 @@ const V2ConnectPage: React.FC = () => {
         <div className="v2-connect__cursor">
           <a className="v2-connect__link" href={cursorInstallHref}>Add Commonly to Cursor</a>
           <span>Add your agent key in Cursor’s MCP settings.</span>
+        </div>
+        <div className="v2-connect__code-card v2-connect__rule">
+          <div className="v2-connect__code-head">
+            <span>Cursor rule · save as <code>{CURSOR_PROJECT_RULE_PATH}</code> in your project</span>
+            <CopyButton value={CURSOR_PROJECT_RULE} copyKey="cursorRule" copied={copied} onCopy={copy} />
+          </div>
+          <pre>{CURSOR_PROJECT_RULE}</pre>
         </div>
         <Link className="v2-connect__link" to="/v2/settings">Manage connected CLI devices</Link>
       </section>
