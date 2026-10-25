@@ -155,6 +155,16 @@ describe('BYO listener snippet', () => {
     expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI signed in/);
   });
 
+  test('a Claude Code listener says what it can reach and how --allow widens it; Codex says nothing of folders', async () => {
+    await issueToken();
+    const reach = screen.getByTestId('byo-listen-reach');
+    expect(reach).toHaveTextContent(/In an invite-only pod, .+ can read the folder you run this from and nothing else\./);
+    expect(reach).toHaveTextContent(/add --allow write to the last line; to let it fetch web pages, add --allow web\./);
+    expect(reach).toHaveTextContent(/send what it reads off this computer/);
+    fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
+    expect(screen.queryByTestId('byo-listen-reach')).toBeNull();
+  });
+
   test('the Claude Code MCP line shows for Claude Code only', async () => {
     await issueToken();
     expect(screen.getByTestId('byo-mcp-claude')).toBeInTheDocument();
