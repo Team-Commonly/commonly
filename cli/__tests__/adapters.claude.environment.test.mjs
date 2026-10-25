@@ -1072,6 +1072,28 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
     expect(args[args.indexOf('--setting-sources') + 1]).toBe('');
   });
 
+  // D48 (TASK-545). A public seat has no subagent to spawn and works no board
+  // rows, so its fresh session carries the memory cues and not the habits. The
+  // legacy `internal` record reads as public, so it is held to the same line.
+  // Seatbelt wraps argv and spends `-p` on its profile, so the prompt is found
+  // by its content rather than by the flag.
+  test.each(['public', 'internal'])('a fresh trust=%s seat is not taught the row-working habits', async (trust) => {
+    const { impl, calls } = makeSpawnImpl();
+    await publicSpawn(impl, {
+      environment: { model: 'test-model',
+        sandbox: { mode: 'workspace', trust },
+        skills: { claude: [skillSrc] },
+      },
+    });
+
+    expect(calls[0].cmd).toBe('/usr/bin/sandbox-exec');
+    const promptArg = calls[0].args.find((arg) => String(arg).includes('=== Current turn ==='));
+    expect(promptArg).toBeDefined();
+    expect(promptArg).toContain('=== Fresh session ===');
+    expect(promptArg).not.toContain('=== Working a row ===');
+    expect(promptArg).not.toContain('Agent tool');
+  });
+
   test('a private seat loads skills natively and gets no appended prompt', async () => {
     const { impl, calls } = makeSpawnImpl();
     await claude.spawn('hi', {
