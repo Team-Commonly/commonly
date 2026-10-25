@@ -427,10 +427,15 @@ What's new or changed in `EVENT_TYPES`:
      and a writer refuses one that is not name-shaped.
    - Agent-authored text, such as message chunks and tool titles, belongs to
      the agent and could repeat a value the agent holds. A writer that knows
-     the run's credential values replaces every occurrence of 8 characters or
-     more with `[redacted]` before the line is hashed.
+     the run's credential values replaces every occurrence of each non-empty known value
+     with `[redacted]` before the line is hashed. For streamed message and
+     thought text, a possible credential prefix stays in memory until the
+     next chunk from the same actor and kind resolves it. At run settlement,
+     remaining harmless prefixes are written before `run.settled`. A crash
+     can lose that held suffix (at most the longest value minus one character
+     per stream), but never writes it early.
    - That replacement covers known values only. A value the writer was not
-     given, or one the agent transformed (base64, split across chunks), passes
+     given, or one the agent transformed (such as base64), passes
      through.
 2. **Readers ignore unknown fields and skip unknown kinds.** A reader that
    meets a kind it doesn't know still checks the chain over that line.

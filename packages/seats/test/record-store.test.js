@@ -193,3 +193,71 @@ test('the store records session.opened and context usage', () => withStore((stor
   assert.deepEqual(store.readRun('run-st-ses1').map((e) => e.kind), ['attempt.started', 'session.opened', 'usage', 'run.settled']);
   assert.deepEqual(verifyRecord(readFileSync(fileOf(root, 'run-st-ses1'), 'utf8')).errors, []);
 }));
+
+for (const secret of ['sk-test-stream-canary-123456', 'abc123']) {
+  test(`redact: every split of a ${secret.length}-character credential stays private`, () => withStore((store, root) => {
+    for (let cut = 1; cut < secret.length; cut += 1) {
+      const runId = `run-split-${secret.length}-${cut}`;
+      const run = store.startRun({ runId, actor: AGENT });
+      run.redact([secret]);
+      run.emit('agent.message_chunk', { text: `before ${secret.slice(0, cut)}` });
+      // An unrelated event must not flush a potentially secret suffix.
+      run.emit('usage', { inputTokens: 1 });
+      const during = store.readRun(runId).filter(e => e.kind === 'agent.message_chunk').map(e => e.data.text).join('');
+      assert.equal(during, 'before ', 'a potential credential prefix stays in memory');
+      run.emit('agent.message_chunk', { text: `${secret.slice(cut)} after` });
+      run.emit('run.settled', { outcome: 'ok', durationMs: 1, attempts: 1 });
+      const events = store.readRun(runId);
+      const text = events.filter(e => e.kind === 'agent.message_chunk').map(e => e.data.text).join('');
+      assert.equal(text, 'before [redacted] after');
+      assert.equal(readFileSync(fileOf(root, runId), 'utf8').includes(secret), false);
+      assert.equal(store.verifyRun(runId).ok, true);
+      for (const e of events.filter(e => e.kind === 'agent.message_chunk')) assert.deepEqual(e.actor, AGENT);
+      assert.equal(events.at(-1).kind, 'run.settled');
+    }
+  }));
+}
+
+test('redact: short credentials in metadata and single-character streamed deltas are scrubbed', () => withStore((store) => {
+  const run = store.startRun({ runId: 'run-short-stream' });
+  run.redact(['abc123', '']);
+  for (const text of 'safe abc123 suffix') run.emit('agent.message_chunk', { text });
+  run.emit('tool.call', { toolCallId: 't', title: 'token abc123' });
+  run.emit('run.settled', { outcome: 'ok', durationMs: 1, attempts: 1 });
+  const events = store.readRun(run.runId);
+  assert.equal(events.filter(e => e.kind === 'agent.message_chunk').map(e => e.data.text).join(''), 'safe [redacted] suffix');
+  assert.equal(events.find(e => e.kind === 'tool.call').data.title, 'token [redacted]');
+}));
+
+test('redact: a harmless trailing prefix is retained at settle, without crossing runs', () => withStore((store) => {
+  const a = store.startRun({ runId: 'run-tail-one', actor: AGENT });
+  const b = store.startRun({ runId: 'run-tail-two', actor: AGENT });
+  a.redact(['secret123']);
+  b.redact(['secret123']);
+  a.emit('agent.message_chunk', { text: 'ordinary sec' });
+  b.emit('agent.message_chunk', { text: 'ret123' });
+  a.emit('run.settled', { outcome: 'failed', failure: { kind: 'exited', detail: 'stopped' }, durationMs: 1, attempts: 1 });
+  b.emit('run.settled', { outcome: 'ok', durationMs: 1, attempts: 1 });
+  const texts = runId => store.readRun(runId).filter(e => e.kind === 'agent.message_chunk').map(e => e.data.text).join('');
+  assert.equal(texts(a.runId), 'ordinary sec');
+  assert.equal(texts(b.runId), 'ret123');
+  assert.equal(store.verifyRun(a.runId).ok, true);
+}));
+
+test('redact: actors have separate suffixes, and a rejected settle cannot flush a secret prefix', () => withStore((store) => {
+  const run = store.startRun({ runId: 'run-actor-stream', actor: AGENT });
+  const other = { type: 'agent', id: 'u-other', owner: 'u-ana' };
+  run.redact(['secret123', 'secret']);
+  run.emit('agent.message_chunk', { text: 'secret' }, { actor: AGENT });
+  run.emit('agent.message_chunk', { text: '123' }, { actor: other });
+  assert.throws(() => run.emit('run.settled', { outcome: 'ok' }, { actor: { type: 'human', id: 'invalid id' } }));
+  const pending = store.readRun(run.runId).filter(e => e.kind === 'agent.message_chunk' && e.actor.id === AGENT.id).map(e => e.data.text).join('');
+  assert.equal(pending, '', 'a rejected settle must leave the prefix in memory');
+  run.emit('agent.message_chunk', { text: '123 done' }, { actor: AGENT });
+  run.emit('run.settled', { outcome: 'ok', durationMs: 1, attempts: 1 });
+  const entries = store.readRun(run.runId);
+  const textFor = id => entries.filter(e => e.kind === 'agent.message_chunk' && e.actor.id === id).map(e => e.data.text).join('');
+  assert.equal(textFor(AGENT.id), '[redacted] done');
+  assert.equal(textFor(other.id), '123');
+  assert.equal(store.verifyRun(run.runId).ok, true);
+}));

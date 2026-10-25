@@ -84,7 +84,8 @@ const echoingAdapter = ({ baseURL, envRoot, fail, seen }) => ({
       });
       const deltas = await sseDeltas(response);
       seen.reply = deltas.join('');
-      for (const text of deltas) ctx.trace.emit('agent.message_chunk', { text }, as);
+      // Force the known value across record writes, including one-character deltas.
+      for (const delta of deltas) for (const text of delta) ctx.trace.emit('agent.message_chunk', { text }, as);
       ctx.trace.emit('tool.call', {
         toolCallId: 'tc-1', title: `printenv ${KEY_NAME}`, kind: 'execute', status: 'pending', surface: 'native',
       }, as);

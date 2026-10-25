@@ -12,9 +12,28 @@ import { randomUUID } from 'node:crypto';
 import { appendFileSync, mkdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  appendEntry, hashLine, kindOfType, readRecord, traceTypeOf, validateActor, verifyRecord, BOARD_ACTOR,
+  appendEntry, canonicalLine, hashLine, kindOfType, readRecord, traceTypeOf, validateActor, verifyRecord, BOARD_ACTOR,
 } from '../record/format.js';
-import { redactKnownCredentials } from '../upstream-refusal.js';
+// Match original input once: replacement markers must not be scrubbed again
+// when a second credential happens to be a substring of the marker.
+const redactText = (input, secrets, final = true) => {
+  let text = '';
+  let offset = 0;
+  while (offset < input.length) {
+    const rest = input.slice(offset);
+    if (!final && secrets.some(secret => secret.length > rest.length && secret.startsWith(rest))) break;
+    const match = secrets.find(secret => input.startsWith(secret, offset));
+    if (match) {
+      text += '[redacted]';
+      offset += match.length;
+    } else {
+      text += input[offset];
+      offset += 1;
+    }
+  }
+  return { text, tail: input.slice(offset) };
+};
+const STREAM_KINDS = new Set(['agent.message_chunk', 'agent.thought_chunk']);
 
 const RUN_ID = /^[A-Za-z0-9_-]{6,64}$/;
 const readJsonl = (path) => (existsSync(path)
@@ -26,7 +45,7 @@ const readJsonl = (path) => (existsSync(path)
 /** Known credential values never reach a line, even inside agent text. */
 const scrub = (value, secrets) => {
   if (secrets.length === 0) return value;
-  if (typeof value === 'string') return redactKnownCredentials(value, secrets);
+  if (typeof value === 'string') return redactText(value, secrets).text;
   if (Array.isArray(value)) return value.map((item) => scrub(item, secrets));
   if (value && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, scrub(item, secrets)]));
@@ -71,12 +90,22 @@ export const createTraceStore = ({ root, now = () => new Date() } = {}) => {
     let settled = false;
     let broken = false;
     const secrets = [];
+    const streams = new Map(); // actor + kind → at most maxCredentialLength - 1 held characters
     const grants = new Map(); // open grants: grantId → { parentGrantId, binding, expiresAt }
     const startedAt = now();
 
-    const write = (kind, data, actor) => {
+    const write = (kind, data, actor, final = false) => {
+      let streamChange;
+      let safeData = scrub(data, secrets);
+      if (STREAM_KINDS.has(kind) && typeof data.text === 'string' && secrets.length) {
+        const key = canonicalLine({ kind, actor: actor ?? runActor ?? null });
+        const previous = streams.get(key);
+        const { text, tail } = redactText((previous?.tail || '') + data.text, secrets, final);
+        safeData = { ...safeData, text };
+        streamChange = { key, tail, kind, actor };
+      }
       const line = appendEntry(last, {
-        runId, taskId, podId, ts: now().toISOString(), kind, data: scrub(data, secrets), actor,
+        runId, taskId, podId, ts: now().toISOString(), kind, data: safeData, actor,
       }, { runActor });
       try {
         appendFileSync(path, `${line}\n`, { mode: 0o600 });
@@ -84,6 +113,11 @@ export const createTraceStore = ({ root, now = () => new Date() } = {}) => {
         // Some bytes may have landed; a chain cannot continue past an unknown tail.
         broken = true;
         throw error;
+      }
+      if (streamChange) {
+        const { key, tail } = streamChange;
+        if (tail) streams.set(key, streamChange);
+        else streams.delete(key);
       }
       last = line;
       seq += 1;
@@ -104,6 +138,15 @@ export const createTraceStore = ({ root, now = () => new Date() } = {}) => {
       if (!kind) throw new Error(`unknown trace event type: ${type}`);
       if (settled) return null;
       if (broken) throw new Error(`run ${runId}: the record is broken after a failed write`);
+      // Settle is the last possible chunk. Release harmless unfinished prefixes
+      // before sealing the chain; unrelated events never flush those prefixes.
+      if (kind === 'run.settled') {
+        // A rejected settlement must not release a prefix before more chunks.
+        appendEntry(last, {
+          runId, taskId, podId, ts: startedAt.toISOString(), kind, data: scrub(data, secrets), actor: options?.actor,
+        }, { runActor });
+        for (const stream of [...streams.values()]) write(stream.kind, { text: '' }, stream.actor, true);
+      }
       const event = write(kind, data, options?.actor);
       if (kind === 'task.done') {
         // The board closed the task: every grant bound to it ends, in one write.
@@ -143,7 +186,8 @@ export const createTraceStore = ({ root, now = () => new Date() } = {}) => {
     };
 
     const redact = (values = []) => {
-      for (const value of values) if (typeof value === 'string' && !secrets.includes(value)) secrets.push(value);
+      for (const value of values) if (typeof value === 'string' && value.length > 0 && !secrets.includes(value)) secrets.push(value);
+      secrets.sort((a, b) => b.length - a.length);
     };
 
     append(indexPath, {
