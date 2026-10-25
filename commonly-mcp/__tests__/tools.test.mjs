@@ -74,6 +74,15 @@ const okResponse = (body) => ({
 afterEach(() => { delete global.fetch; });
 
 describe('commonly_post_message', () => {
+  it('forwards UI card payload and explicit type alongside the text fallback', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ id: 'card1' }));
+    const payload = { kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hello")' };
+    await byName.commonly_post_message.call({ podId: 'p', content: 'fallback', messageType: 'card', payload });
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toEqual({ content: 'fallback', messageType: 'card', payload });
+    expect(byName.commonly_post_message.inputSchema.properties.messageType.enum).toContain('card');
+    expect(byName.commonly_post_message.inputSchema.properties.payload.type).toBe('object');
+  });
+
   it('POSTs to the right path with body', async () => {
     const fetchSpy = installFetch(async () => okResponse({ id: 'm1' }));
     const result = await byName.commonly_post_message.call({
