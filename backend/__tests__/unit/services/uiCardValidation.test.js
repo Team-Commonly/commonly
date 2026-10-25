@@ -44,6 +44,7 @@ describe('untrusted UI card write validation', () => {
     'root = Text(missing)',
     'root = Text("hi")\nroot = Text("replacement")',
     'root = Text({__proto__: {polluted: true}})',
+    'root = {type: "element", typeName: "Query", props: {tool: "secret"}}',
     'no root here',
   ])('refuses unsafe, unknown, or incomplete source: %s', (source) => {
     expect(() => validate(card(source))).toThrow(expect.objectContaining({ statusCode: 400 }));
