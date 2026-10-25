@@ -12,6 +12,7 @@ import V2AgentSkills from '../components/V2AgentSkills';
 import V2Avatar from '../components/V2Avatar';
 import V2AgentIdentitySection from './V2AgentIdentitySection';
 import V2RuntimeControls from '../components/V2RuntimeControls';
+import V2AgentProviderKey from '../components/V2AgentProviderKey';
 import V2AgentStatus from './V2AgentStatus';
 import V2AgentRuntimeSummary, { agentRuntimeKind } from './V2AgentRuntimeSummary';
 import './v2-agent-settings.css';
@@ -257,11 +258,14 @@ const V2AgentSettingsPage: React.FC = () => {
       {connectionState === 'never' ? <section className="v2-agent-settings__section" aria-labelledby="agent-runtime-heading">
         <h2 id="agent-runtime-heading">{t('agentSettings.rev3.runtime')}</h2>{runtimeSummary}
       </section> : <V2AgentRuntimeGrants name={agentName} instanceId={instanceId} runtime={runtime} section="runtime" runtimeTitle={t('agentSettings.rev3.runtime')}
+        showProviderKey={false}
         onSaveRuntime={runtimeEditable ? updateRuntime : undefined}
         runtimeSummary={runtimeSummary} />}
       {runtimeManaged && runtimeEditable && <details className="v2-agent-settings__runtime-details">
         <summary>{t('agentSettings.rev3.editRuntime')}</summary>
         <V2RuntimeControls runtime={runtime} onSave={updateRuntime} />
+        <V2AgentProviderKey name={agentName} instanceId={instanceId} editable={Boolean(runtimeEditable && runtimeManaged)}
+          capability={ownKeyCapability} harness={describeRuntime(runtime).adapter || runtime.adapter || ''} />
       </details>}
 
       {connectionState !== 'never' && <>

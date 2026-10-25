@@ -44,6 +44,7 @@ interface Props {
   runtimeSummary?: React.ReactNode;
   runtimeTitle?: string;
   grantsTitle?: string;
+  showProviderKey?: boolean;
 }
 
 const WALKED_ADAPTERS: Record<string, string> = {
@@ -72,7 +73,7 @@ const dateLabel = (value: string | null): string => {
 };
 
 const V2AgentRuntimeGrants: React.FC<Props> = ({
-  name, instanceId, runtime, onSaveRuntime, section = 'both', runtimeSummary, runtimeTitle, grantsTitle,
+  name, instanceId, runtime, onSaveRuntime, section = 'both', runtimeSummary, runtimeTitle, grantsTitle, showProviderKey = true,
 }) => {
   const { t } = useTranslation();
   const api = useV2Api();
@@ -206,7 +207,7 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
             )}
           </div>
         )}
-        {details.mode !== 'native' && details.mode !== 'hosted' && <V2AgentProviderKey key={`${name}/${instanceId}`} name={name} instanceId={instanceId} editable={Boolean(onSaveRuntime && runtime.managed)} capability={runtime.ownKeyCapability} harness={details.adapter || runtime.adapter || ''} />}
+        {showProviderKey && details.mode !== 'native' && details.mode !== 'hosted' && <V2AgentProviderKey key={`${name}/${instanceId}`} name={name} instanceId={instanceId} editable={Boolean(onSaveRuntime && runtime.managed)} capability={runtime.ownKeyCapability} harness={details.adapter || runtime.adapter || ''} />}
         {placementError && <p role="alert">{placementError}</p>}
       </section>}
       {section !== 'runtime' && <section className="v2-agent-settings__section" aria-labelledby="agent-grants-heading">
