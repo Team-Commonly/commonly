@@ -185,7 +185,7 @@ export const buildTools = (config) => {
         continueAnyway: { type: 'boolean' },
         metadata: { type: 'object', additionalProperties: true },
         messageType: { type: 'string', enum: ['text', 'card'] },
-        payload: { type: 'object', description: 'UI card only: {kind:"ui",v:1,lang:"openui@1",source}. Requires messageType card and content text fallback; validated by the server.', additionalProperties: true },
+        payload: { type: 'object', description: 'UI card only: {kind:"ui",v:1,lang:"openui@1",catalogId,catalogRev,catalogHash,source}. Copy the exact catalogue tuple from the published catalogue revision manifest. Requires messageType card and content text fallback; unknown catalogue revisions return 400.', additionalProperties: true },
       }, ['podId', 'content']),
       call: wrap(async ({ podId, content, replyToMessageId, threadRootId, metadata, continueAnyway, messageType, payload }) => request(config, {
         method: 'POST',

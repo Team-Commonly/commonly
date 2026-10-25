@@ -3,7 +3,14 @@ import {
 } from '@openuidev/lang-core';
 import type { ElementNode, LibraryJSONSchema } from '@openuidev/lang-core';
 import Ajv from 'ajv';
+import { createHash } from 'crypto';
 import catalogue from '../config/uiCardCatalogue.json';
+import revision from '../config/uiCardCatalogueRevision.json';
+
+// A revision is immutable: property insertion order is OpenUI's positional ABI.
+export const UI_CARD_CATALOGUE = Object.freeze({ ...revision });
+const catalogueHash = `sha256:${createHash('sha256').update(JSON.stringify(catalogue)).digest('hex')}`;
+if (catalogueHash !== revision.catalogHash) throw new Error('UI catalogue revision hash mismatch');
 
 export const UI_CARD_MAX_BYTES = 32 * 1024;
 const schema = catalogue as LibraryJSONSchema;
@@ -102,9 +109,12 @@ export function validateAgentCardPayload(
   const envelope = payload as Record<string, unknown>;
   if (envelope.kind !== 'ui' || envelope.v !== 1 || envelope.lang !== 'openui@1'
     || typeof envelope.source !== 'string' || !envelope.source.trim()
-    || Object.keys(envelope).some((key) => !['kind', 'v', 'lang', 'source'].includes(key))) {
-    refuse('Expected {kind:"ui",v:1,lang:"openui@1",source}');
+    || Object.keys(envelope).some((key) => !['kind', 'v', 'lang', 'source', 'catalogId', 'catalogRev', 'catalogHash'].includes(key))) {
+    refuse('Expected {kind:"ui",v:1,lang:"openui@1",catalogId,catalogRev,catalogHash,source}');
   }
+  if (envelope.catalogId !== revision.catalogId) refuse('Unsupported UI catalogId');
+  if (envelope.catalogRev !== revision.catalogRev) refuse('Unsupported UI catalogRev');
+  if (envelope.catalogHash !== revision.catalogHash) refuse('UI catalogHash does not match catalogRev');
   if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > UI_CARD_MAX_BYTES) {
     refuse('UI card payload exceeds 32 KB');
   }

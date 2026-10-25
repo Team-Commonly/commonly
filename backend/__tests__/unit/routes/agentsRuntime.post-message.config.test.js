@@ -1,3 +1,4 @@
+const catalogueRevision = require('../../../config/uiCardCatalogueRevision.json');
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => next());
 jest.mock('../../../middleware/auth', () => (req, res, next) => next());
 jest.mock('../../../middleware/apiTokenScopes', () => ({
@@ -220,12 +221,21 @@ describe('agentsRuntime post message installation config forwarding', () => {
 
 describe('agent card route boundary', () => {
   const installation = { podId: 'pod-1', agentName: 'openclaw', instanceId: 'default', config: {} };
-  const payload = { kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hello")' };
+  const payload = { ...catalogueRevision, kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hello")' };
   const handler = getRouteHandler('/pods/:podId/messages', 'post');
   const req = (body) => ({ params: { podId: 'pod-1' }, body: { continueAnyway: true, ...body },
     agentInstallation: installation, agentInstallations: [installation] });
   const response = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
   beforeEach(() => { jest.clearAllMocks(); findNonMemberMentionNotices.mockResolvedValue([]); });
+  it('returns a visible 400 reason for an unknown catalogue revision before writing', async () => {
+    const res = response();
+    await handler(req({ messageType: 'card', payload: { ...payload, catalogRev: 999 }, content: 'fallback' }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'invalid_ui_card', message: expect.stringContaining('catalogRev'),
+    }));
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+  });
   it('forwards a validated UI payload unchanged to the durable message writer', async () => {
     AgentMessageService.postMessage.mockResolvedValue({ success: true });
     const res = response();
@@ -285,7 +295,7 @@ describe('bot-token send-time freshness', () => {
   });
 
   it.each(['ui', 'approval'])('validates bot-token card kind %s before writing', async (kind) => {
-    const payload = { kind, v: 1, lang: 'openui@1', source: 'root = Text("hello")' };
+    const payload = { ...catalogueRevision, kind, v: 1, lang: 'openui@1', source: 'root = Text("hello")' };
     AgentMessageService.postMessage.mockResolvedValue({ success: true });
     const res = response();
     await getRouteHandler('/bot/pods/:podId/messages', 'post')({ ...req,
@@ -312,6 +322,7 @@ describe('bot-token send-time freshness', () => {
 
   it('stamps only a successful bot-token message read and holds a stale post', async () => {
     const messages = [{ id: 'm1', content: 'new message' }];
+    Object.defineProperty(messages, 'readSource', { value: 'postgres' });
     AgentMessageService.getRecentMessages.mockResolvedValue(messages);
     const get = getRouteHandler('/bot/pods/:podId/messages', 'get');
     const getRes = response();

@@ -12,6 +12,9 @@ cannot write their kinds through this surface.
     "kind": "ui",
     "v": 1,
     "lang": "openui@1",
+    "catalogId": "commonly.ui",
+    "catalogRev": 1,
+    "catalogHash": "sha256:bb8b4de07f90c06ee48f254d86478b5bd347c738b3e86cf65e2f32e26534db57",
     "source": "root = Text(\"Hello\")"
   }
 }
@@ -33,7 +36,7 @@ A device token from `commonly login` receives HTTP 401 without a human-writer
 fallback:
 
 ```sh
-commonly pod send <podId> 'A readable text fallback.' --payload '{"kind":"ui","v":1,"lang":"openui@1","source":"root = Text(\"Hello\")"}'
+commonly pod send <podId> 'A readable text fallback.' --payload '{"kind":"ui","v":1,"lang":"openui@1","catalogId":"commonly.ui","catalogRev":1,"catalogHash":"sha256:bb8b4de07f90c06ee48f254d86478b5bd347c738b3e86cf65e2f32e26534db57","source":"root = Text(\"Hello\")"}'
 ```
 
 Cards are sent only through the validated agent writer. Unlike the existing
@@ -43,6 +46,9 @@ the source is required before retrying.
 
 ## Write boundary
 
+- `catalogId`, `catalogRev` and `catalogHash` are required and must match the
+  supported revision manifest. Unknown IDs/revisions and mismatched hashes return
+  HTTP 400 with an explicit reason; the server never stamps a missing tuple.
 - Envelope version is exactly `v: 1`, language is exactly `openui@1`. Additional
   client fields (including a claimed `runId`) are refused.
 - The whole JSON envelope, serialized in UTF-8, must be at most 32,768 bytes.
@@ -79,8 +85,15 @@ must be credential-free HTTPS; the renderer further restricts hostnames.
 The canonical serializable catalogue is `backend/config/uiCardCatalogue.json`.
 TASK-498 generates the frontend copy and checks drift because the backend and
 frontend images have separate Docker build contexts. Names and positional prop
-order are part of the stored `openui@1` contract; incompatible changes need a
-new envelope/language version and reader compatibility.
+order are part of the stored contract. The immutable revision tuple is in
+`backend/config/uiCardCatalogueRevision.json`. `catalogHash` is `sha256:` plus the
+lowercase SHA-256 of `JSON.stringify` applied to the parsed catalogue, preserving
+property insertion order. A fixed revision-1 order/hash test fails if any schema
+or prop order changes. Never update that revision in place: a changed schema
+requires a new revision and a reader that explicitly supports it. The frontend
+generates a byte-identical manifest copy and chooses its renderer by the full
+tuple. Unsupported tuples show the required text fallback with an unsupported
+note, never the current catalogue as a guess.
 
 The parser is MIT licensed. Installation telemetry was disabled for the local
 install (`npm install --ignore-scripts`); its runtime telemetry is opt-in and is

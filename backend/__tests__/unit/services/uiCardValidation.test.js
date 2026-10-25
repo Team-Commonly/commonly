@@ -1,11 +1,21 @@
+const catalogueRevision = require('../../../config/uiCardCatalogueRevision.json');
 const { validateAgentCardPayload, UI_CARD_MAX_BYTES } = require('../../../services/uiCardValidation');
 
-const card = (source = 'root = Text("hello")') => ({ kind: 'ui', v: 1, lang: 'openui@1', source });
+const card = (source = 'root = Text("hello")') => ({ ...catalogueRevision, kind: 'ui', v: 1, lang: 'openui@1', source });
 const validate = (payload = card(), content = 'Text fallback', type = 'card') => (
   validateAgentCardPayload(type, payload, content)
 );
 
 describe('untrusted UI card write validation', () => {
+  it.each([
+    { catalogId: 'other.ui' }, { catalogRev: 2 }, { catalogRev: '1' },
+    { catalogHash: 'sha256:forged' }, { catalogRev: undefined },
+    { catalogId: undefined }, { catalogHash: undefined },
+  ])('visibly refuses an unsupported catalogue tuple %#', (fields) => {
+    expect(() => validate({ ...card(), ...fields })).toThrow(expect.objectContaining({
+      statusCode: 400, code: 'invalid_ui_card', message: expect.stringMatching(/catalog/),
+    }));
+  });
   it('keeps ordinary text backwards compatible', () => {
     expect(() => validateAgentCardPayload(undefined, undefined, 'hello')).not.toThrow();
   });

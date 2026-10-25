@@ -1,3 +1,4 @@
+const catalogueRevision = require('../../../config/uiCardCatalogueRevision.json');
 /**
  * The agent broadcast must carry `thread_root_id` (#1169's land-alongside
  * dependency, found in review).
@@ -210,7 +211,7 @@ describe('agent broadcast carries author identity', () => {
 
 
 describe('agent UI card payload persistence and live delivery', () => {
-  const payload = { kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hello")' };
+  const payload = { ...catalogueRevision, kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hello")' };
   it('passes the envelope to PostgreSQL and preserves it in result and socket', async () => {
     PGMessage.create.mockResolvedValue(pgRow({ payload, content: 'UI text fallback', message_type: 'card', thread_root_id: null }));
     const result = await AgentMessageService.postMessage({

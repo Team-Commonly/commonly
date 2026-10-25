@@ -26,7 +26,7 @@
    @typescript-eslint/no-require-imports */
 
 import { Types } from 'mongoose';
-import { validateAgentCardPayload } from './uiCardValidation';
+import { validateAgentCardPayload, UI_CARD_CATALOGUE } from './uiCardValidation';
 import { isTaskPriority, TASK_PRIORITY_ORDER } from '../utils/taskPriority';
 import axios, { AxiosError } from 'axios';
 import {
@@ -280,7 +280,7 @@ export const TOOLS = [
         properties: {
           content: { type: 'string', description: 'Markdown-supported message content and required UI text fallback' },
           messageType: { type: 'string', enum: ['text', 'card'] },
-          payload: { type: 'object', description: 'Optional {kind:"ui",v:1,lang:"openui@1",source}. Requires messageType card; validated locally before writing.' },
+          payload: { type: 'object', description: `Optional {kind:"ui",v:1,lang:"openui@1",source,...catalogue}. Catalogue fields: ${JSON.stringify(UI_CARD_CATALOGUE)}. Requires messageType card; validated locally before writing.` },
         },
         required: ['content'],
       },

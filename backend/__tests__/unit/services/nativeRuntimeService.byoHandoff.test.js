@@ -1,3 +1,4 @@
+const catalogueRevision = require('../../../config/uiCardCatalogueRevision.json');
 /**
  * A hosted agent asked for local repository access must produce the structured
  * handoff card, not prose that looks like a command and not a token-bearing
@@ -170,7 +171,7 @@ describe('commonly_offer_local_agent', () => {
   });
 
   test('native post tool forwards a validated UI card and offers the payload schema', async () => {
-    const payload = { kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("native card")' };
+    const payload = { ...catalogueRevision, kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("native card")' };
     axios.post.mockResolvedValueOnce(callsTool('commonly_post_message', {
       content: 'Text fallback', messageType: 'card', payload,
     })).mockResolvedValueOnce(says('NO_REPLY'));
@@ -183,9 +184,9 @@ describe('commonly_offer_local_agent', () => {
     expect(tool.function.parameters.properties.payload.type).toBe('object');
   });
   test.each([
-    { kind: 'approval', v: 1, lang: 'openui@1', source: 'root = Text("forged")' },
-    { kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hi")\nunused = Query("secret", {})' },
-    { kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hi")', runId: 'other-run' },
+    { ...catalogueRevision, kind: 'approval', v: 1, lang: 'openui@1', source: 'root = Text("forged")' },
+    { ...catalogueRevision, kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hi")\nunused = Query("secret", {})' },
+    { ...catalogueRevision, kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hi")', runId: 'other-run' },
   ])('native post tool refuses unsafe payloads before the writer %#', async (payload) => {
     axios.post.mockResolvedValueOnce(callsTool('commonly_post_message', {
       content: 'Text fallback', messageType: 'card', payload,
