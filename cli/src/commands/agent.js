@@ -61,6 +61,7 @@ import {
   refuseWorkspaceTrust,
   resolveWorkspace,
   validateEnvironmentSpec,
+  WORKSPACE_SANDBOX_ALLOW,
 } from '../lib/environment.js';
 import { firstRunWorkspace, podIsConfirmedPrivate, workspaceTurnPlacement } from '../lib/workspace-trust.js';
 import {
@@ -299,6 +300,53 @@ export const printAttachRunGuidance = ({
 // a foreground run re-bootstraps from the Connect page's env exports after the
 // local record is removed; a daemon-managed seat is switched through the
 // registry, which the daemon applies on its next pass.
+// `run --allow write,web`: the grants a first-run workspace seat starts with
+// (TASK-294). An unknown name is refused rather than dropped.
+export const parseAllowGrants = (value) => {
+  if (value === undefined || value === null) return [];
+  const requested = String(value).split(',').map((grant) => grant.trim()).filter(Boolean);
+  if (!requested.length || requested.some((grant) => !WORKSPACE_SANDBOX_ALLOW.includes(grant))) {
+    throw new Error(`--allow takes ${WORKSPACE_SANDBOX_ALLOW.join(' and/or ')}, comma-separated `
+      + `(got ${JSON.stringify(String(value))})`);
+  }
+  return WORKSPACE_SANDBOX_ALLOW.filter((grant) => requested.includes(grant));
+};
+
+// Grants are fixed when the token file is written. A later --allow that
+// differs is refused with the way to change them, never applied quietly.
+export const checkRunAllowRequest = ({ record, requested = [] }) => {
+  if (!requested.length) return { ok: true };
+  const savedList = record?.environment?.sandbox?.allow || [];
+  const saved = WORKSPACE_SANDBOX_ALLOW.filter((grant) => savedList.includes(grant));
+  if (saved.join(',') === requested.join(',')) return { ok: true };
+  const name = record.agentName;
+  return {
+    ok: false,
+    message: [
+      `'${name}' was set up with ${saved.length ? `--allow ${saved.join(',')}` : 'no --allow'}; `
+        + `--allow ${requested.join(',')} was not applied.`,
+      `To change it: commonly agent detach ${name} --force, then re-run with the Connect-page `
+        + `env exports and --allow ${requested.join(',')}.`,
+    ].join('\n'),
+  };
+};
+
+// What a first-run workspace seat may do, said once at bootstrap. A write
+// grant hands it Bash, whose commands reach the network, so that line never
+// claims the seat is offline.
+const workspaceGrantLine = (workspacePath, allow) => {
+  const write = allow.includes('write');
+  const web = allow.includes('web');
+  if (!write) {
+    return web
+      ? `this agent can read ${workspacePath}, run read-only git there, and fetch web pages; it cannot edit files.`
+      : `this agent can read ${workspacePath} and run read-only git there; it cannot edit files or reach the web.`;
+  }
+  return `this agent can read and edit files in ${workspacePath} and run commands there`
+    + (web ? ', and fetch web pages' : '')
+    + '. Its commands can reach the network. Its .git stays read-only, so it cannot commit.';
+};
+
 export const checkRunAdapterRequest = ({ record, requestedAdapter, tokenPath }) => {
   const requested = String(requestedAdapter || '').trim().toLowerCase();
   if (!requested) return { ok: true };
@@ -324,6 +372,7 @@ export const bootstrapAgentRecordFromEnv = async ({
   log = () => {},
   startDir = process.cwd(),
   home,
+  allow = [],
 }) => {
   const runtimeToken = (env.COMMONLY_AGENT_TOKEN || '').trim();
   if (!runtimeToken) return null;
@@ -410,9 +459,15 @@ export const bootstrapAgentRecordFromEnv = async ({
   const workspace = firstRunWorkspace({
     adapterName, installations: installs, startDir, home,
   });
+  if (allow.length && !workspace?.workspacePath) {
+    throw new Error(`--allow ${allow.join(',')} applies only to an agent that works in the folder it `
+      + 'starts in, and this one '
+      + (workspace?.reason
+        ? `would read only its scratch folder, because ${workspace.reason}.${workspace.fix ? ` ${workspace.fix}` : ''}`
+        : 'does not.'));
+  }
   if (workspace?.workspacePath) {
-    log(`this agent can read ${workspace.workspacePath} and run read-only git there; `
-      + 'it cannot edit files or reach the web.');
+    log(workspaceGrantLine(workspace.workspacePath, allow));
   } else if (workspace?.reason) {
     log(`this agent can read only its own scratch folder, because ${workspace.reason}.`
       + (workspace.fix ? ` ${workspace.fix}` : ''));
@@ -427,7 +482,7 @@ export const bootstrapAgentRecordFromEnv = async ({
     runtimeToken,
     adapter: adapterName,
     environment: workspace?.workspacePath
-      ? { ...environment, sandbox: { trust: 'workspace' } }
+      ? { ...environment, sandbox: { trust: 'workspace', ...(allow.length ? { allow } : {}) } }
       : environment,
     workspacePath: workspace?.workspacePath || null,
   };
@@ -3786,7 +3841,15 @@ Docs:
     .option('--cascade-grace <n>', `Extra turns allowed when this seat was directly addressed; 0 disables the grace (env ${CASCADE_ENV_VARS.addressedGrace}, default ${CASCADE_DEFAULTS.addressedGrace})`)
     .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
     .option('--refusal-handoff <agent>', 'Agent to @mention when the model provider refuses a request\'s content; the request is acked as refused, never retried')
+    .option('--allow <grants>', 'On first run of an agent that works in its folder, also let it edit files and run commands (write) and/or fetch web pages (web), comma-separated. Commands reach the network.')
     .action(async (name, opts) => {
+      let allow;
+      try {
+        allow = parseAllowGrants(opts.allow);
+      } catch (err) {
+        console.error(`${stamp()} [${name}] ${err.message}`);
+        process.exit(1);
+      }
       let record = loadAgentToken(name);
       let bootstrapped = false;
       if (!record) {
@@ -3797,6 +3860,7 @@ Docs:
             name,
             adapterOverride: opts.adapter || null,
             log: (line) => console.log(`${stamp()} [${name}] ${line}`),
+            allow,
           });
         } catch (err) {
           console.error(`${stamp()} [${name}] ${err.message}`);
@@ -3836,6 +3900,11 @@ Docs:
         );
       }
 
+      const allowRequest = checkRunAllowRequest({ record, requested: allow });
+      if (!allowRequest.ok) {
+        console.error(`${stamp()} [${name}] ${allowRequest.message}`);
+        process.exit(1);
+      }
       const adapterRequest = checkRunAdapterRequest({
         record, requestedAdapter: opts.adapter, tokenPath: tokenFile(name),
       });

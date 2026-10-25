@@ -33,6 +33,8 @@ const {
   loadAgentToken,
   buildDefaultEnvironment,
   bootstrapAgentRecordFromEnv,
+  parseAllowGrants,
+  checkRunAllowRequest,
   NO_AGENT_CLI_CODE,
   savedSeatLacksDefaultSandbox,
   BOOTSTRAP_ADAPTER_DETECT_ORDER,
@@ -853,7 +855,9 @@ describe('bootstrapAgentRecordFromEnv', () => {
         ...row, publicRead, communityListed: false,
       })),
     });
-    const run = async ({ response, startDir = repo, registry = makeRegistry() } = {}) => {
+    const run = async ({
+      response, startDir = repo, registry = makeRegistry(), allow,
+    } = {}) => {
       const lines = [];
       const record = await bootstrapAgentRecordFromEnv({
         name: 'smoke-agent',
@@ -863,6 +867,7 @@ describe('bootstrapAgentRecordFromEnv', () => {
         log: (line) => lines.push(line),
         startDir,
         home,
+        ...(allow ? { allow } : {}),
       });
       return { record, lines };
     };
@@ -906,6 +911,79 @@ describe('bootstrapAgentRecordFromEnv', () => {
       expect(record.workspacePath).toBeNull();
       expect(record.environment.sandbox?.trust).not.toBe('workspace');
       expect(lines.some((line) => /scratch folder|can read/.test(line))).toBe(false);
+    });
+
+    test('a write grant lands on the record, and the line says its commands reach the network', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), allow: ['write'] });
+      expect(record.environment.sandbox).toEqual({ trust: 'workspace', allow: ['write'] });
+      const said = lines.find((line) => line.includes(fs.realpathSync(repo)));
+      expect(said).toMatch(/can read and edit files in .* and run commands there\./);
+      expect(said).toMatch(/commands can reach the network/);
+      expect(said).toMatch(/\.git stays read-only, so it cannot commit/);
+    });
+
+    test('a web grant alone reads, runs read-only git and fetches pages, and still cannot edit', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), allow: ['web'] });
+      expect(record.environment.sandbox).toEqual({ trust: 'workspace', allow: ['web'] });
+      expect(lines.some((line) => /run read-only git there, and fetch web pages; it cannot edit files\./
+        .test(line))).toBe(true);
+    });
+
+    test('both grants are named in one line', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), allow: ['write', 'web'] });
+      expect(record.environment.sandbox).toEqual({ trust: 'workspace', allow: ['write', 'web'] });
+      expect(lines.some((line) => /run commands there, and fetch web pages\. Its commands can reach the network/
+        .test(line))).toBe(true);
+    });
+
+    test('grants on a seat that will not work in its folder are refused with the reason', async () => {
+      const response = withVisibility(false);
+      response.installations[1] = { ...response.installations[1], publicRead: true };
+      await expect(run({ response, allow: ['write'] }))
+        .rejects.toThrow(/--allow write applies only to an agent that works in the folder it starts in.*scratch folder, because .*publicly readable/);
+    });
+
+    test('grants on a codex seat are refused rather than dropped', async () => {
+      await expect(run({
+        response: withVisibility(false), registry: makeRegistry({ claudeFound: false }), allow: ['web'],
+      })).rejects.toThrow(/--allow web applies only to an agent that works in the folder it starts in/);
+    });
+  });
+
+  // TASK-294: `run --allow`, read once when the token file is written.
+  describe('run --allow', () => {
+    test('takes write and web, comma-separated, in a fixed order, once each', () => {
+      expect(parseAllowGrants(undefined)).toEqual([]);
+      expect(parseAllowGrants('web,write')).toEqual(['write', 'web']);
+      expect(parseAllowGrants(' write , write,')).toEqual(['write']);
+    });
+
+    test.each(['', ',', 'bash', 'write,net', 'Write'])('refuses %j rather than dropping it', (value) => {
+      expect(() => parseAllowGrants(value)).toThrow(/--allow takes write and\/or web, comma-separated/);
+    });
+
+    const saved = (allow) => ({
+      agentName: 'smoke-agent',
+      environment: { sandbox: { trust: 'workspace', ...(allow ? { allow } : {}) } },
+    });
+
+    test('a run without --allow keeps whatever the token file holds', () => {
+      expect(checkRunAllowRequest({ record: saved(['write']), requested: [] })).toEqual({ ok: true });
+    });
+
+    test('a run that asks for the grants the token file holds goes ahead', () => {
+      expect(checkRunAllowRequest({ record: saved(['write', 'web']), requested: ['write', 'web'] }))
+        .toEqual({ ok: true });
+    });
+
+    test('a run that asks for other grants is refused with the way to change them', () => {
+      const none = checkRunAllowRequest({ record: saved(), requested: ['write'] });
+      expect(none.ok).toBe(false);
+      expect(none.message).toMatch(/'smoke-agent' was set up with no --allow; --allow write was not applied\./);
+      expect(none.message).toMatch(/commonly agent detach smoke-agent --force, then re-run .* --allow write/);
+      const fewer = checkRunAllowRequest({ record: saved(['write', 'web']), requested: ['write'] });
+      expect(fewer.ok).toBe(false);
+      expect(fewer.message).toMatch(/was set up with --allow write,web; --allow write was not applied/);
     });
   });
 
