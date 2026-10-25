@@ -13,7 +13,6 @@
     "stopped": "Stopped: {{kind}}",
     "running": "This run is still in progress.",
     "refresh": "Refresh trace",
-    "limited": "This stored trace was size-limited. {{turns}} turns and {{calls}} tool calls are omitted. Large content fields are also capped.",
     "empty": "No turns recorded yet.",
     "turn": "Turn {{number}}",
     "tokens": "tokens",
@@ -24,7 +23,27 @@
     "outcome": "Outcome",
     "notRecorded": "Not recorded",
     "unavailable": "Broker trail unavailable.",
-    "builtIn": "Built-in tool. No connector credential."
+    "builtIn": "Built-in tool. No connector credential.",
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "succeeded": "Succeeded",
+      "failed": "Failed",
+      "interrupted": "Interrupted"
+    },
+    "trigger": {
+      "mention": "Mention",
+      "heartbeat": "Heartbeat",
+      "task.assigned": "Task assignment",
+      "chat.message": "Chat message",
+      "pod.join": "Pod join",
+      "first_contact": "First contact",
+      "manual": "Manual"
+    },
+    "limitedBoth": "This stored trace was size-limited. {{turns}} turns and {{calls}} tool calls are omitted. Large content fields are also capped.",
+    "limitedTurns": "This stored trace was size-limited. {{turns}} turns are omitted. Large content fields are also capped.",
+    "limitedCalls": "This stored trace was size-limited. {{calls}} tool calls are omitted. Large content fields are also capped.",
+    "limitedContent": "This stored trace was size-limited. Large content fields are capped."
   },
   "common": {
     "brandName": "Commonly",

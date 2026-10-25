@@ -1,6 +1,7 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import i18n from '../../i18n';
 import V2RunTrace from '../components/V2RunTrace';
 import V2RunTraceLink from '../components/V2RunTraceLink';
 
@@ -20,7 +21,8 @@ const trace = {
 const setup = () => render(<MemoryRouter initialEntries={[`/v2/pods/${POD}/runs/${RUN}`]}>
   <Routes><Route path="/v2/pods/:podId/runs/:runId" element={<V2RunTrace />} /></Routes>
 </MemoryRouter>);
-beforeEach(() => { mockGet.mockReset(); });
+beforeEach(async () => { mockGet.mockReset(); await i18n.changeLanguage('en'); });
+afterEach(async () => { await i18n.changeLanguage('en'); });
 test('server-bound link derives its destination from IDs and refuses arbitrary URLs', () => {
   const { rerender } = render(<MemoryRouter><V2RunTraceLink podId={POD} runId={RUN} /></MemoryRouter>);
   expect(screen.getByRole('link', { name: 'View run trace' })).toHaveAttribute('href', `/v2/pods/${POD}/runs/${RUN}`);
@@ -52,4 +54,29 @@ test('discloses truncation and missing broker rows without inventing attribution
   setup();
   await screen.findByText('Broker trail unavailable.');
   expect(screen.getByText(/2 turns and 3 tool calls are omitted/)).toBeInTheDocument();
+});
+
+test.each([
+  [0, 2, '2 tool calls are omitted', '0 turns'],
+  [2, 0, '2 turns are omitted', '0 tool calls'],
+  [0, 0, 'Large content fields are capped', 'are omitted'],
+])('size disclosure omits empty counts (%i turns, %i calls)', async (turns, calls, expected, absent) => {
+  mockGet.mockResolvedValue({ run: { ...trace, traceTruncated: true, omittedTurns: turns, omittedToolCalls: calls } });
+  setup();
+  await screen.findByText(new RegExp(expected));
+  expect(screen.queryByText(new RegExp(absent))).not.toBeInTheDocument();
+});
+test('Chinese status, trigger, region label and nonzero truncation clause are localized', async () => {
+  await act(async () => { await i18n.changeLanguage('zh-CN'); });
+  mockGet.mockResolvedValue({ run: { ...trace, traceTruncated: true, omittedToolCalls: 2 } });
+  setup();
+  await screen.findByText('已完成 · 提及');
+  expect(screen.getByRole('region', { name: '运行轨迹' })).toBeInTheDocument();
+  expect(screen.getByText(/省略了2次工具调用/)).toBeInTheDocument();
+  expect(screen.queryByText(/0轮/)).not.toBeInTheDocument();
+});
+test('future enum values remain visible instead of showing translation keys', async () => {
+  mockGet.mockResolvedValue({ run: { ...trace, status: 'future-status', trigger: 'future-trigger' } });
+  setup();
+  await screen.findByText('future-status · future-trigger');
 });

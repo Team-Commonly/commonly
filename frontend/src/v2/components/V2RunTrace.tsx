@@ -37,22 +37,26 @@ const V2RunTrace: React.FC = () => {
     return () => { live = false; };
   }, [api, podId, runId, attempt, t]);
 
-  return <section className="v2-run-trace" aria-label="Run trace">
+  const enumLabel = (group: 'status' | 'trigger', value: string) => t(`runTrace.${group}.${value}`, { defaultValue: value });
+  const limitedKey = trace?.omittedTurns && trace?.omittedToolCalls ? 'limitedBoth'
+    : trace?.omittedTurns ? 'limitedTurns' : trace?.omittedToolCalls ? 'limitedCalls' : 'limitedContent';
+
+  return <section className="v2-run-trace" aria-labelledby="run-trace-title">
     <Link className="v2-run-trace__back" to={`/v2/pods/${encodeURIComponent(podId || '')}`}>{t('runTrace.back')}</Link>
-    <h1>{t('runTrace.title')}</h1>
+    <h1 id="run-trace-title">{t('runTrace.title')}</h1>
     <p className="v2-run-trace__retention">{t('runTrace.retention')}</p>
     {!trace && !error && <p role="status">{t('runTrace.loading')}</p>}
     {error && <div role="alert"><p>{error}</p><button type="button" onClick={retry}>{t('runTrace.retry')}</button></div>}
     {trace && <>
       <div className="v2-run-trace__summary">
-        <strong>{trace.agentName}</strong><span>{trace.status} · {trace.trigger}</span>
+        <strong>{trace.agentName}</strong><span>{enumLabel('status', trace.status)} · {enumLabel('trigger', trace.trigger)}</span>
         <span>{t('runTrace.counts', { turns: trace.turns.length, tokens: trace.totalTokens })}</span>
         <time dateTime={trace.startedAt}>{new Date(trace.startedAt).toLocaleString(i18n.resolvedLanguage)}</time>
         <code>{trace.id}</code>
         {trace.errorKind && <span>{t('runTrace.stopped', { kind: trace.errorKind })}</span>}
         {['queued', 'running'].includes(trace.status) && <p>{t('runTrace.running')} <button type="button" onClick={retry}>{t('runTrace.refresh')}</button></p>}
       </div>
-      {trace.traceTruncated && <p role="status">{t('runTrace.limited', { turns: trace.omittedTurns, calls: trace.omittedToolCalls })}</p>}
+      {trace.traceTruncated && <p role="status">{t(`runTrace.${limitedKey}`, { turns: trace.omittedTurns, calls: trace.omittedToolCalls })}</p>}
       {!trace.turns.length && <p>{t('runTrace.empty')}</p>}
       <ol className="v2-run-trace__turns">
         {trace.turns.map((turn) => <li key={turn.turnIndex}>
