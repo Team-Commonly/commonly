@@ -83,26 +83,43 @@ real('Postgres migrations: real DDL, rollback and competing boots', () => {
     expect(await runPgMigrations(pool, directory)).toEqual(['0002_second.sql']);
   });
 
-  it('serializes two boots behind the same session lock and executes SQL once', async () => {
+  it('serializes two boots despite an unrelated waiter and executes SQL once', async () => {
     write('0001_once.sql', 'CREATE TABLE once_only (id INTEGER); INSERT INTO once_only VALUES (1);');
     const blocker = await pool.connect();
     const lock = [1129270605, 504];
     const boots = [];
+    const bootPids = [];
+    // Observe each real checked-out connection without replacing its queries.
+    const bootPool = {
+      connect: async () => {
+        const client = await pool.connect();
+        bootPids.push(client.processID);
+        return client;
+      },
+    };
+    let unrelated;
     try {
       await blocker.query('SELECT pg_advisory_lock($1::integer, $2::integer)', lock);
-      boots.push(runPgMigrations(pool, directory), runPgMigrations(pool, directory));
+      const outsider = await pool.connect();
+      unrelated = outsider.query('SELECT pg_advisory_lock($1::integer, $2::integer)', lock)
+        .then(() => outsider.query('SELECT pg_advisory_unlock($1::integer, $2::integer)', lock))
+        .finally(() => outsider.release());
+      boots.push(runPgMigrations(bootPool, directory), runPgMigrations(bootPool, directory));
       // Observe both waiters in Postgres itself; no sleep-based timing claim.
       await waitFor(async () => {
-        const result = await pool.query(`SELECT count(*)::int AS n FROM pg_locks
+        const result = await pool.query(`SELECT count(*)::int AS total,
+            count(*) FILTER (WHERE pid = ANY($3::integer[]))::int AS own FROM pg_locks
           WHERE locktype = 'advisory' AND classid = $1 AND objid = $2 AND NOT granted
-            AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`, lock);
-        return result.rows[0].n === 2;
+            AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`, [...lock, bootPids]);
+        // Other Tier-1 workers share the lock even in separate schemas. Count
+        // our two PIDs, and prove the extra waiter really is present too.
+        return result.rows[0].own === 2 && result.rows[0].total >= 3;
       });
     } finally {
       await blocker.query('SELECT pg_advisory_unlock($1::integer, $2::integer)', lock);
       blocker.release();
       // Drain both even if the lock assertion fails, so cleanup never hangs.
-      await Promise.allSettled(boots);
+      await Promise.allSettled([...boots, unrelated]);
     }
     expect((await Promise.all(boots)).sort((a, b) => a.length - b.length)).toEqual([[], ['0001_once.sql']]);
     expect((await pool.query('SELECT * FROM once_only')).rows).toEqual([{ id: 1 }]);

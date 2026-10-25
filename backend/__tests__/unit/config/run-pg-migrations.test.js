@@ -61,6 +61,26 @@ describe('Postgres migrations (pg-mem)', () => {
     await expect(runPgMigrations(pool, directory)).rejects.toThrow('missing');
   });
 
+  it('refuses a removed applied file while a later file remains, even with identical SQL', async () => {
+    const initial = fs.readFileSync(path.join(directory, '0001_initial.sql'), 'utf8');
+    await runPgMigrations(pool, directory);
+    fs.rmSync(path.join(directory, '0001_initial.sql'));
+    // Same checksum, different version: checksum alone cannot identify history.
+    write('0002_later.sql', initial);
+    await expect(runPgMigrations(pool, directory)).rejects.toThrow('history mismatch: 0001_initial.sql');
+    expect((await pool.query('SELECT version FROM schema_migrations')).rows).toEqual([{ version: '0001_initial.sql' }]);
+  });
+
+  it('refuses an older image whose file list is shorter than applied history', async () => {
+    await runPgMigrations(pool, directory);
+    write('0002_later.sql', 'ALTER TABLE example ADD COLUMN label TEXT;');
+    await runPgMigrations(pool, directory);
+    fs.rmSync(path.join(directory, '0002_later.sql'));
+    await expect(runPgMigrations(pool, directory)).rejects.toThrow('history mismatch: 0002_later.sql');
+    expect((await pool.query('SELECT version FROM schema_migrations ORDER BY version')).rows)
+      .toEqual([{ version: '0001_initial.sql' }, { version: '0002_later.sql' }]);
+  });
+
   it.each([
     ['0001_duplicate.sql', 'SELECT 1;', 'duplicate'],
     ['oops.sql', 'SELECT 1;', 'Invalid'],
