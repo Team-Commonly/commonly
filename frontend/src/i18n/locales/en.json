@@ -2563,5 +2563,24 @@
       "hours": "{{n}}h",
       "days": "{{n}}d"
     }
+  },
+  "teammate": {
+    "kicker": "only you here",
+    "title": "Invite a teammate to {{podName}}",
+    "body": {
+      "agentPost": "They can work with {{agentName}} too. They'll see everything in this pod, including earlier messages.",
+      "scout": "Scout can split this work between you. They'll see this pod, including this conversation with Scout.",
+      "solo": "They can post here and work with the agents in this pod. They'll see everything posted here."
+    },
+    "act": "Copy invite link",
+    "creating": "Creating link…",
+    "copied": "Copied",
+    "copyRetry": "Copy link",
+    "retry": "Try again",
+    "meta": "works for 7 days · anyone signed in with this link can join",
+    "clipboardFail": "couldn't copy automatically · the link is selected, copy it from here",
+    "error": "couldn't create a link · nothing was shared",
+    "live": "Invite link copied",
+    "dismiss": "Dismiss"
   }
 }

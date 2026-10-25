@@ -316,6 +316,8 @@ describe('V2Thread just-created Pod starter panel', () => {
     expect(await screen.findByRole('button', { name: 'Run it here' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Bring your own' })).toBeInTheDocument();
     expect(screen.queryByText('Bring in people or an agent, or start the conversation yourself.')).not.toBeInTheDocument();
+    expect(axios.post).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy invite link' }));
     await waitFor(() => {
       expect(axios.post).toHaveBeenCalledWith(
         '/api/pods/p1/invites',
@@ -326,7 +328,6 @@ describe('V2Thread just-created Pod starter panel', () => {
 
     const inviteUrl = `${window.location.origin}/v2/invite/${token}`;
     expect(await screen.findByLabelText('Invite link for this pod')).toHaveValue(inviteUrl);
-    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
     await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(inviteUrl));
 
     fireEvent.click(screen.getByRole('button', { name: 'Run it here' }));
@@ -441,5 +442,48 @@ describe('V2Thread just-created Pod starter panel', () => {
 
     expect(screen.queryByText('Your pod is ready')).not.toBeInTheDocument();
     expect(sessionStorage.getItem('v2.justCreated.p1')).toBeNull();
+  });
+});
+
+describe('second-person prompt placements', () => {
+  beforeEach(() => {
+    jest.clearAllMocks(); sessionStorage.clear(); localStorage.clear();
+    axios.get.mockImplementation((url) => Promise.resolve({ data: /\/invites$/.test(url) ? [] : {} }));
+  });
+  const member = { _id: 'u1', username: 'solo-user', isBot: false };
+  const agent = { _id: 'bot', username: 'scout', isBot: true };
+  const messages = [
+    { id: '10', pod_id: 'p1', user_id: 'u1', content: 'Help with this launch', message_type: 'text', created_at: '2026-10-25T10:00:00Z', user: { username: 'solo-user', isBot: false } },
+    { id: '11', pod_id: 'p1', user_id: 'bot', content: 'Here is the first plan', message_type: 'text', created_at: '2026-10-25T10:01:00Z', user: { username: 'scout', isBot: true } },
+  ];
+  const withReply = (pod = { _id: 'p1', name: 'Launch', type: 'chat' }) => makeDetail({
+    pod, members: [member, agent], messages, hasMore: false,
+    agents: [{ agentName: 'scout', instanceId: 'default', status: 'active', displayName: 'Scout' }],
+  });
+  test('the empty state offers the card without minting or taking composer focus', async () => {
+    renderChat(makeDetail());
+    expect(await screen.findByRole('region', { name: 'Invite a teammate to My Workspace' })).toBeInTheDocument();
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(screen.getByRole('textbox')).toHaveFocus();
+  });
+  test('the group reply offers one prompt and joining a second human removes it', async () => {
+    const detail = withReply();
+    const view = renderChat(detail);
+    expect(await screen.findByText(/They can work with Scout too/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Copy invite link' })).toHaveLength(1);
+    view.rerender(<AuthContext.Provider value={authValue}><MemoryRouter>
+      <V2Thread detail={{ ...detail, members: [...detail.members, { _id: 'other', isBot: false }] }} />
+    </MemoryRouter></AuthContext.Provider>);
+    expect(screen.queryByRole('button', { name: 'Copy invite link' })).not.toBeInTheDocument();
+  });
+  test('Scout’s owned workspace discloses the conversation being shared', async () => {
+    const detail = withReply({ _id: 'p1', name: 'My Workspace', type: 'chat', createdBy: { _id: 'u1' } });
+    const username = 'scout-u0123456789';
+    detail.agents = [{ agentName: 'scout', instanceId: 'u0123456789', status: 'active', displayName: 'Scout' }];
+    detail.members = [member, { ...agent, username }];
+    detail.messages = [messages[0], { ...messages[1], user: { username, isBot: true } }];
+    renderChat(detail);
+    expect(await screen.findByText(/including this conversation with Scout/)).toBeInTheDocument();
+    expect(axios.post).not.toHaveBeenCalled();
   });
 });

@@ -59,6 +59,7 @@ interface V2ThreadMessagesProps {
   error: string | null;
   starterPanel?: React.ReactNode;
   emptyState?: React.ReactNode;
+  afterMessage?: { messageId: string; content: React.ReactNode };
   agentDeliveryHint?: { messageId: string; mentionHandle: string } | null;
   // A pod with no installed agent answers nothing by construction, so there is
   // no handle to suggest — a different row, in the same slot.
@@ -150,6 +151,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   error,
   starterPanel,
   emptyState,
+  afterMessage,
   agentDeliveryHint,
   noAgentsHint,
   onAddAgent,
@@ -331,6 +333,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                   )}
                 </p>
               )}
+              {afterMessage?.messageId === String(message.id) && afterMessage.content}
               {agentDeliveryHint?.messageId === message.id && (
                 <div className="v2-chat__delivery-hint" role="status">
                   <Trans
@@ -405,8 +408,8 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                   </button>
                 )}
                 {renderedReplyEntries(shownReplies).map(({ sourceId, message: reply, ruling }, replyIndex, renderedReplies) => (
+                  <React.Fragment key={reply.id}>
                   <V2MessageRow
-                    key={reply.id}
                     message={reply}
                     sourceMessageId={ruling ? sourceId : undefined}
                     decision={ruling ? undefined : decisionByMessageId.get(sourceId)}
@@ -423,6 +426,8 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                     grouped={isGroupedWithPrevious(reply, renderedReplies[replyIndex - 1]?.message)}
                     insideThreadRoot={item.rootId}
                   />
+                  {afterMessage?.messageId === String(reply.id) && afterMessage.content}
+                  </React.Fragment>
                 ))}
                 <div className="v2-thread-replies__foot">
                   <button type="button" className="v2-thread-replies__collapse" onClick={() => setOpen(item.rootId, false)}>
@@ -451,6 +456,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
               </div>
             )}
             </div>
+            {collapsed && item.replies.some((reply) => String(reply.id) === afterMessage?.messageId) && afterMessage?.content}
           </div>
         );
       })}

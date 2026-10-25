@@ -4973,3 +4973,15 @@ test('TASK-435 runtime columns can shrink on phones without dropping the observe
   expect(ruleBody(css, '.v2-runtime-controls__observed')).toContain('overflow-wrap: anywhere');
   expect(css).toContain('content: attr(data-label)');
 });
+
+test('teammate invite cards keep one-column phone controls at the 44px minimum', () => {
+  const css = read('../components/V2BringTeammate.css');
+  const phone = blockContaining(css, '@media (max-width: 760px)', '.v2-teammate');
+  expect(phone).toContain('grid-template-columns: minmax(0, 1fr)');
+  expect(phone).toContain('height: 44px');
+  expect(phone).toContain('flex-basis: 44px');
+  expect(css).toContain('width: calc(100% - 36px)');
+  expect(css).toContain('.v2-teammate.v2-teammate--message');
+  expect(css).toContain('.v2-teammate .v2-teammate__copy {');
+  expect(css).toContain('max-width: 100%');
+});
