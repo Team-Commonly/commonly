@@ -9,7 +9,7 @@ import { buildMemoryPreamble } from '../memory-bridge.js';
 import { deliverSeatCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
 import { writeCredentialFile } from '../credential-file.js';
-import { normalizeSandboxTrust, validateEnvironmentSpec } from '../environment.js';
+import { normalizeSandboxTrust, refuseWorkspaceTrust, validateEnvironmentSpec } from '../environment.js';
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
@@ -234,6 +234,7 @@ export default {
   async spawn(prompt, ctx = {}) {
     const seatModel = requireSeatModel(ctx.environment, 'qwen', true);
     const sandbox = normalizeSandboxTrust(ctx.environment?.sandbox);
+    refuseWorkspaceTrust(sandbox, 'qwen');
     const isPublic = sandbox?.trust === 'public';
     const mode = isPublic ? resolvePublicSandboxMode(sandbox) : null;
     if (isPublic && !['workspace', 'read-only', 'bwrap'].includes(mode)) {

@@ -1254,3 +1254,28 @@ describe('bootstrapAgentRecordFromEnv', () => {
     expect(record.podId).toBe('pod-stale');
   });
 });
+
+describe('resolveAttachSandbox — workspace trust (TASK-294)', () => {
+  test('a claude seat resolves the same host mode a public one does', () => {
+    expect(resolveAttachSandbox({
+      environment: { sandbox: { trust: 'workspace' } }, adapterName: 'claude', platform: 'darwin',
+    })).toEqual({ mode: 'workspace', trust: 'workspace' });
+    expect(resolveAttachSandbox({
+      environment: { sandbox: { trust: 'workspace' } }, adapterName: 'claude', platform: 'linux',
+    })).toEqual({ mode: 'bwrap', trust: 'workspace' });
+  });
+
+  test('every other adapter is refused before anything is published', () => {
+    for (const adapterName of ['codex', 'opencode', 'qwen', 'pi', 'goose', 'dsh']) {
+      expect(() => resolveAttachSandbox({
+        environment: { sandbox: { trust: 'workspace' } }, adapterName, platform: 'darwin',
+      })).toThrow(new RegExp(`^${adapterName} adapter: sandbox\\.trust=workspace is claude-only for now`));
+    }
+  });
+
+  test('beside mode none it is refused, never run unsandboxed', () => {
+    expect(() => resolveAttachSandbox({
+      environment: { sandbox: { trust: 'workspace', mode: 'none' } }, adapterName: 'claude',
+    })).toThrow(/sandbox\.trust=workspace requires an enforced sandbox mode/);
+  });
+});

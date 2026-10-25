@@ -138,3 +138,35 @@ describe('public-pod sandbox gate', () => {
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/could not read pod visibility/i));
   });
 });
+
+// A `workspace` seat lets the room read its start directory (TASK-294), so the
+// gate needs the pod CONFIRMED private and fails closed on anything less.
+describe('workspace trust needs a confirmed private pod', () => {
+  const WORKSPACE = { sandbox: { trust: 'workspace' } };
+  const CONFIRMED_PRIVATE = { _id: 'p2', name: 'My Workspace', publicRead: false, communityListed: false };
+
+  test('accepts a pod that reports itself private in both fields', async () => {
+    await expect(assertSandboxDeclaredForPublicPod({
+      client: clientFor(CONFIRMED_PRIVATE), podId: 'p2', environment: WORKSPACE,
+    })).resolves.toBeUndefined();
+  });
+
+  test('refuses a publicly readable pod', async () => {
+    await expect(assertSandboxDeclaredForPublicPod({
+      client: clientFor({ ...PUBLIC_POD, communityListed: false }), podId: 'p1', environment: WORKSPACE,
+    })).rejects.toThrow(/"Commonly HQ" is publicly readable, so sandbox\.trust=workspace/);
+  });
+
+  test('refuses a pod that does not report both fields, rather than guessing private', async () => {
+    await expect(assertSandboxDeclaredForPublicPod({
+      client: clientFor(PRIVATE_POD), podId: 'p2', environment: WORKSPACE,
+    })).rejects.toThrow(/did not report its visibility/);
+  });
+
+  test('refuses when the visibility read fails, where a public declaration only warns', async () => {
+    const client = { get: jest.fn().mockRejectedValue(new Error('offline')) };
+    await expect(assertSandboxDeclaredForPublicPod({
+      client, podId: 'p2', environment: WORKSPACE,
+    })).rejects.toThrow(/requires confirmed private pod visibility/);
+  });
+});

@@ -539,10 +539,20 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
     const allPodIds = [...podIds.map(String), ...dmPodIds.map(String)];
 
     const pods = allPodIds.length > 0
-      ? await Pod.find({ _id: { $in: allPodIds } }).select('_id name type').lean()
+      ? await Pod.find({ _id: { $in: allPodIds } }).select('_id name type publicRead communityListed').lean()
       : [];
 
     const podMap = Object.fromEntries(pods.map((p: any) => [String(p._id), p]));
+
+    // Whether strangers can read each room this seat answers in (TASK-294). A
+    // `workspace`-trust CLI seat reads it before every turn and runs that turn
+    // public unless every pod here is private, so the effective booleans are
+    // reported (an absent stored field means false, as everywhere else that
+    // reads `publicRead || communityListed`). A pod that no longer exists gets
+    // neither field, which the CLI reads as not-private.
+    const podVisibility = (pod: any) => (pod?._id
+      ? { publicRead: pod.publicRead === true, communityListed: pod.communityListed === true }
+      : {});
 
     const installationList = installations.map((inst: any) => {
       const pod = podMap[String(inst?.podId)] || {};
@@ -557,6 +567,7 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
         // Known runtime kinds (such as a connect-page `webhook`) stay null.
         // Expose only this non-secret discriminator, never the full config.
         runtimeAdapter: adapterForRuntimeBinding(inst?.config?.runtime),
+        ...podVisibility(pod),
         type: 'installation',
       };
     });
@@ -569,6 +580,7 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
         podType: pod.type || 'agent-admin',
         instanceId,
         status: 'active',
+        ...podVisibility(pod),
         type: 'dm',
       };
     });

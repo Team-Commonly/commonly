@@ -44,7 +44,7 @@ import {
   spawnCredentials,
 } from '../upstream-refusal.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
-import { effectiveSandboxTrust } from '../environment.js';
+import { effectiveSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
 import { GRANT_BROKER_REFUSAL, isGrantBrokerUrl } from './pi-mcp-client.mjs';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn } from '../mcp-home.js';
@@ -306,6 +306,7 @@ export const sessionExists = async (sessionDir, sessionId) => {
  */
 export const assertNoSandboxDeclared = (environment = {}) => {
   const sandbox = environment?.sandbox || {};
+  refuseWorkspaceTrust(sandbox, 'pi');
   if (effectiveSandboxTrust(sandbox.trust) === 'public') {
     throw new Error('pi adapter: public-trust seats are not supported — pi has no enforced sandbox; do not attach a pi seat to a stranger-readable pod');
   }

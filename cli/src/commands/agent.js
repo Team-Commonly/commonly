@@ -58,9 +58,11 @@ import {
   environmentForServer,
   normalizeSandboxTrust,
   parseEnvironmentFile,
+  refuseWorkspaceTrust,
   resolveWorkspace,
   validateEnvironmentSpec,
 } from '../lib/environment.js';
+import { podIsConfirmedPrivate } from '../lib/workspace-trust.js';
 import {
   ADAPTERS_WITH_DEFAULT_MCP,
   ADAPTERS_WITH_GRANT_BROKER,
@@ -616,6 +618,29 @@ export const assertSandboxDeclaredForPublicPod = async ({
     return;
   }
 
+  // A `workspace` seat lets the room read its start directory (TASK-294), so it
+  // needs the pod CONFIRMED private, not merely not known to be public: a pod
+  // whose visibility cannot be read fails closed here, the way dsh does above.
+  if (environment?.sandbox?.trust === 'workspace') {
+    let pod;
+    try {
+      pod = await client.get(`/api/pods/${podId}`);
+    } catch {
+      throw new Error(
+        'sandbox.trust=workspace requires confirmed private pod visibility before attach, '
+        + 'and this pod\'s visibility could not be read',
+      );
+    }
+    if (podIsConfirmedPrivate(pod)) return;
+    const label = pod?.name ? `"${pod.name}"` : podId;
+    const reported = typeof pod?.publicRead === 'boolean' && typeof pod?.communityListed === 'boolean';
+    throw new Error(
+      `${label} ${reported ? 'is publicly readable' : 'did not report its visibility'}, so `
+      + 'sandbox.trust=workspace would let people you do not control read this agent\'s start '
+      + 'directory. Declare "sandbox": { "trust": "public" } for this pod, or attach to a private pod.',
+    );
+  }
+
   // Normalized FIRST (Vera 71715, Wren 71718): the predicate below reads a
   // legacy `internal` record as the `public` it means, the same mapping the
   // attach gate and both adapters use. Reading it raw refused a record that
@@ -842,11 +867,20 @@ export const resolveAttachSandbox = ({
 } = {}) => {
   const sandbox = normalizeSandboxTrust(environment?.sandbox);
   const trust = sandbox?.trust;
+  // `workspace` is claude-only for now (TASK-294). Refused here with the words
+  // the adapter would use at spawn, so the attach fails before anything is
+  // published rather than at the seat's first turn.
+  if (trust === 'workspace' && adapterName !== 'claude') {
+    refuseWorkspaceTrust(sandbox, adapterName || 'this');
+  }
+  // Both confined trusts take their mode from the host the same way; they
+  // differ in what the policy inside the sandbox allows, not in the sandbox.
+  const confined = trust === 'public' || trust === 'workspace';
   const mode = sandbox?.mode
-    || (trust === 'public' ? resolvePublicSandboxMode(sandbox, platform) : 'none');
-  if (trust === 'public' && mode === 'none') {
+    || (confined ? resolvePublicSandboxMode(sandbox, platform) : 'none');
+  if (confined && mode === 'none') {
     throw new Error(
-      'sandbox.trust=public requires an enforced sandbox mode; refusing to attach unsandboxed',
+      `sandbox.trust=${trust} requires an enforced sandbox mode; refusing to attach unsandboxed`,
     );
   }
   // Moved in from the call site (Vera 71675): this is the check the raw compare
@@ -854,7 +888,7 @@ export const resolveAttachSandbox = ({
   // pure — a mode and an adapter name — so it belongs with the derivation, and
   // its witnesses live beside it.
   if ((mode === 'workspace' || mode === 'read-only')
-    && (trust !== 'public' || !ADAPTERS_WITH_DEFAULT_SANDBOX.has(adapterName))) {
+    && (!confined || !ADAPTERS_WITH_DEFAULT_SANDBOX.has(adapterName))) {
     throw new Error(
       `sandbox.mode=${mode} requires public trust and an adapter with sandbox enforcement`,
     );

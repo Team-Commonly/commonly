@@ -9,7 +9,7 @@ import { homedir, tmpdir } from 'os';
 import { basename, join } from 'path';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { commonlyMcpServer } from '../default-environment.js';
-import { effectiveSandboxTrust, validateEnvironmentSpec } from '../environment.js';
+import { effectiveSandboxTrust, refuseWorkspaceTrust, validateEnvironmentSpec } from '../environment.js';
 import { deliverSeatCredential } from '../mcp-credential-delivery.js';
 import { describeMcpCommand } from '../mcp-server-version.js';
 import { writeCredentialFile } from '../credential-file.js';
@@ -23,6 +23,7 @@ const SAFE_ENV = /^(?:PATH|LANG|LC_[A-Z_]+|TERM|USER|LOGNAME|NO_COLOR|CI|SSL_CER
 
 export const assertPrivateDsh = (environment = {}) => {
   const sandbox = environment?.sandbox || {};
+  refuseWorkspaceTrust(sandbox, 'dsh');
   if (effectiveSandboxTrust(sandbox.trust) === 'public') {
     throw new Error('dsh adapter: public-trust seats are not supported; nested Seatbelt fails closed');
   }

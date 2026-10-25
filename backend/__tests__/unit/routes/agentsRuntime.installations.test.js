@@ -9,11 +9,14 @@ const mockInstallation = {
   config: { runtime: { runtimeType: 'webhook', adapter: 'opencode', model: 'openai/gpt-5.4' } },
 };
 
+let mockAuthorizedPodIds = ['pod-1'];
+let mockPods = [{ _id: 'pod-1', name: 'Connector room', type: 'team' }];
+
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, _res, next) => {
   req.agentUser = { _id: 'agent-1', username: 'writer' };
   req.agentInstallation = mockInstallation;
   req.agentInstallations = [mockInstallation];
-  req.agentAuthorizedPodIds = ['pod-1'];
+  req.agentAuthorizedPodIds = mockAuthorizedPodIds;
   next();
 });
 jest.mock('../../../middleware/auth', () => (_req, _res, next) => next());
@@ -22,7 +25,7 @@ jest.mock('../../../middleware/apiTokenScopes', () => ({
 }));
 jest.mock('../../../models/Pod', () => ({
   find: jest.fn(() => ({
-    select: () => ({ lean: async () => [{ _id: 'pod-1', name: 'Connector room', type: 'team' }] }),
+    select: () => ({ lean: async () => mockPods }),
   })),
 }));
 jest.mock('../../../services/agentEventService', () => ({}));
@@ -101,5 +104,58 @@ describe('GET /installations runtime adapter projection', () => {
     } finally {
       mockInstallation.config = config;
     }
+  });
+});
+
+// A `workspace`-trust CLI seat runs a turn with its start directory readable only
+// when every room it answers in is private (TASK-294), and this list is where it
+// learns that.
+describe('GET /installations pod visibility', () => {
+  const withPods = async (pods, authorized, run) => {
+    const [savedPods, savedAuthorized] = [mockPods, mockAuthorizedPodIds];
+    mockPods = pods;
+    mockAuthorizedPodIds = authorized;
+    try {
+      await run();
+    } finally {
+      mockPods = savedPods;
+      mockAuthorizedPodIds = savedAuthorized;
+    }
+  };
+
+  test('a pod with no stored visibility is reported private, as the effective booleans', async () => {
+    await withPods([{ _id: 'pod-1', name: 'Room', type: 'team' }], ['pod-1'], async () => {
+      const response = await request(app).get('/api/agents/runtime/installations');
+      expect(response.status).toBe(200);
+      expect(response.body.installations[0]).toMatchObject({ publicRead: false, communityListed: false });
+    });
+  });
+
+  test('a publicly readable or listed pod is reported as such', async () => {
+    await withPods([{
+      _id: 'pod-1', name: 'Room', type: 'team', publicRead: true, communityListed: true,
+    }], ['pod-1'], async () => {
+      const response = await request(app).get('/api/agents/runtime/installations');
+      expect(response.body.installations[0]).toMatchObject({ publicRead: true, communityListed: true });
+    });
+  });
+
+  test('a pod that no longer exists carries neither field, so the CLI cannot read it as private', async () => {
+    await withPods([], ['pod-1'], async () => {
+      const response = await request(app).get('/api/agents/runtime/installations');
+      expect(response.body.installations[0]).not.toHaveProperty('publicRead');
+      expect(response.body.installations[0]).not.toHaveProperty('communityListed');
+    });
+  });
+
+  test('DM pods the seat answers in carry the same fields', async () => {
+    await withPods([
+      { _id: 'pod-1', name: 'Room', type: 'team' },
+      { _id: 'dm-1', name: 'DM', type: 'agent-room', publicRead: false, communityListed: false },
+    ], ['pod-1', 'dm-1'], async () => {
+      const response = await request(app).get('/api/agents/runtime/installations');
+      const dm = response.body.installations.find((entry) => entry.podId === 'dm-1');
+      expect(dm).toMatchObject({ type: 'dm', publicRead: false, communityListed: false });
+    });
   });
 });
