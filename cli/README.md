@@ -43,7 +43,10 @@ revision-checked copy before joining the pod, creating an installation or postin
 a greeting. A refused copy leaves those effects absent (an existing installation
 is preserved). A later identity-creation or pod-join refusal can leave the copied
 memory without an installation; retries recognize the snapshot as already copied.
-Memory is not rolled back across those later operations. Correct the error and
+The server claims the registry name before copying. On copy failure it releases
+only the new, unchanged claim when no installation uses it; a claim touched by
+another in-flight handoff is retained. Memory is not rolled back across later
+identity or pod-join operations. Correct the error and
 retry before running the local agent.
 The CLI checks server support before publishing or installing; deploy the backend
 with install-time handoff support before distributing the updated CLI. A retry resumes only your matching active local installation,

@@ -160,6 +160,8 @@ installRouter.get('/install/memory-handoff', installRateLimit, auth, (_req: any,
 });
 
 installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), installRateLimit, auth, async (req: any, res: any) => {
+  let handoffRegistryClaim: { id: unknown; agentName: string; userId: unknown; version: number } | null = null;
+  let handoffFinished = false;
   try {
     const {
       agentName, podId, version, config = {}, scopes = [], instanceId, displayName, gatewayId, description,
@@ -291,7 +293,6 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     // direct getByName() resolves them. Membership check above is the gate.
     // Set when the self-serve branch below has already checked the hosted cap.
     let hostedCapChecked = false;
-    let deferredRegistry = false;
     if (!agent) {
       const requestedRuntimeType = String(
         (config && config.runtime && (config.runtime as any).runtimeType) || '',
@@ -366,10 +367,12 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         publisher: { userId, name: resolveUsername(req) },
         ephemeral: true,
       };
-      // A refused handoff must not reserve a self-serve name. Constructing the
-      // model is local; persist it only once the fallible copy has succeeded.
-      deferredRegistry = req.body.memoryFrom !== undefined;
-      agent = deferredRegistry ? new AgentRegistry(registryData) : await AgentRegistry.create(registryData);
+      // The unique registry row claims ownership BEFORE private memory is
+      // written under this name. An unsaved document is not a claim.
+      agent = await AgentRegistry.create(registryData);
+      if (req.body.memoryFrom !== undefined) {
+        handoffRegistryClaim = { id: agent._id, agentName: agent.agentName, userId, version: agent.__v };
+      }
       console.log('[cap self-serve-install]', {
         user: String(userId),
         pod: String(podId),
@@ -385,10 +388,23 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       status: 'active',
     });
 
-    const copyMemory = () => copyInstallHandoffMemory({
-      source: req.body.memoryFrom, agentName: safeAgentName, instanceId: normalizedInstanceId,
-      userId, registryOwner: agent.publisher?.userId, runtime: normalizeConfigMap(config)?.runtime,
-    });
+    const copyMemory = async () => {
+      if (req.body.memoryFrom !== undefined) {
+        // Fence cleanup against another in-flight handoff. A stale reader must
+        // touch the persisted claim before writing memory, or refuse if the
+        // claim was released. The creator only releases its own untouched revision.
+        const claimed = await AgentRegistry.findOneAndUpdate({
+          _id: agent._id,
+          ...(handoffRegistryClaim ? { __v: handoffRegistryClaim.version } : {}),
+        }, { $inc: { __v: 1 } }, { new: true }).select('__v').lean();
+        if (!claimed) throw Object.assign(new Error('Agent name claim changed; retry attach'), { status: 409 });
+        if (handoffRegistryClaim) handoffRegistryClaim.version = claimed.__v;
+      }
+      return copyInstallHandoffMemory({
+        source: req.body.memoryFrom, agentName: safeAgentName, instanceId: normalizedInstanceId,
+        userId, registryOwner: agent.publisher?.userId, runtime: normalizeConfigMap(config)?.runtime,
+      });
+    };
 
     if (existingInPod) {
       if (req.body.resumeExisting === true) {
@@ -698,7 +714,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     }
 
     const memoryCopy = await copyMemory();
-    if (deferredRegistry) await agent.save();
+    handoffFinished = true;
 
     // Identity before the installation row (TASK-133 b): a refused identity must
     // not leave an AgentInstallation behind, and that refusal is the one error in
@@ -1056,6 +1072,26 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       hasExistingRuntimeToken: globalAgent.agentUser?.agentRuntimeTokens?.length > 0,
     });
   } catch (error) {
+    if (handoffRegistryClaim && !handoffFinished) {
+      try {
+        // Only roll back the claim made by THIS request. Existing/published
+        // rows and any name with a retained installation must survive.
+        const inUse = await AgentInstallation.countDocuments({ agentName: handoffRegistryClaim.agentName });
+        if (!inUse) {
+          await AgentRegistry.deleteOne({
+            _id: handoffRegistryClaim.id,
+            __v: handoffRegistryClaim.version,
+            'publisher.userId': handoffRegistryClaim.userId,
+            ephemeral: true,
+          });
+        }
+      } catch (cleanupError) {
+        console.error('[install] handoff claim cleanup failed:', (cleanupError as Error).message);
+        return res.status(503).json({
+          error: 'Memory handoff failed and its name claim could not be released; retry attach',
+        });
+      }
+    }
     console.error('Error installing agent:', error);
     const status = (error as { status?: number }).status;
     res.status(status === 400 || status === 403 || status === 409 ? status : 500)
