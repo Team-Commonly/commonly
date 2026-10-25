@@ -8,6 +8,7 @@
 // No optimistic update: an approval is exactly the kind of state where the
 // server's word is the only honest one (same discipline as reactions).
 import React, { useEffect, useState } from 'react';
+import V2PlaybookConsent from './V2PlaybookConsent';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
@@ -181,6 +182,7 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
   // Partial success is its own truth: the pod exists (user owns it) but the
   // agent couldn't join and would 403 on every post — say so, don't say done.
   const agentJoinFailed = execution?.agentJoined === false;
+  const playbook = payload.actionType === 'playbook_step' || payload.actionType === 'create_playbook';
   const action = describeAction(payload.actionType, payload.params);
   const prose = payload.summary || message.content;
   const toolCallReady = !needsToolCall || !!pendingToolCall;
@@ -221,13 +223,13 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
 
   return (
     <div className="v2-msg v2-msg--system v2-msg--card" data-testid="approval-card">
-      <div className="v2-approval">
+      <div className={`v2-approval${playbook ? ' v2-approval--playbook' : ''}`}>
         <div className="v2-approval__head">
-          <span className="v2-approval__badge">{t('approvalCard.badge')}</span>
-          <span className="v2-approval__agent">{authorLabel}</span>
+          <span className="v2-approval__badge">{t(playbook ? 'playbooks.consent.needsYou' : 'approvalCard.badge')}</span>
+          <span className="v2-approval__agent">{playbook ? t('playbooks.consent.from', { name: String(payload.params?.agentLabel || authorLabel), role: String(payload.params?.agentRole || 'agent') }) : authorLabel}</span>
           {time && <span className="v2-approval__time">{time}</span>}
         </div>
-        {pendingToolCall ? (
+        {playbook ? <V2PlaybookConsent actionType={payload.actionType!} params={payload.params || {}} /> : pendingToolCall ? (
           <>
             <div className="v2-approval__action" data-testid="approval-action">
               {pendingToolCall.tool}
@@ -319,7 +321,8 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
                 ? t('approvalCard.approvedAgentJoinFailed', { agent: payload.agentName || 'agent' })
                 : connectPath
                   ? t('approvalCard.approvedSeatReady')
-                  : t('approvalCard.approved')}
+                  : t(payload.actionType === 'create_playbook' ? 'playbooks.consent.savedOff' : 'approvalCard.approved')}
+            {payload.actionType === 'create_playbook' && !payload.executionError && <button type="button" className="v2-approval__result-link" onClick={() => navigate(`/v2/pods/${message.pod_id}/playbooks`)}>{t('playbooks.open')}</button>}
             {connectPath && !payload.executionError && (
               <button
                 type="button"

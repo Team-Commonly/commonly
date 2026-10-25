@@ -81,7 +81,7 @@ test('On is rollout-gated, Run is On-gated and a repeated request ID reuses its 
   const runs = await api('get', `${base()}/${id}/runs`);
   expect(runs.body.runs).toHaveLength(1);
   expect(runs.body.runs[0].notes).toContain('Manual input');
-  expect(runs.body.runs[0].steps[0]).toMatchObject({ taskId: first.body.stepTaskId, guard: 'person', assignee: 'owner' });
+  expect(runs.body.runs[0].steps[0]).toMatchObject({ taskId: first.body.stepTaskId, key: 'work', guard: 'person', assignee: 'owner' });
 });
 test('a successful edit pauses an On workflow and saves its new contract and source', async () => {
   const id = await create(); process.env.PLAYBOOKS_ENABLED = 'true';
@@ -160,4 +160,33 @@ test('builtin seed gallery is repeatable and Use this makes a private Off copy w
   expect((await use('not-a-seed', {})).status).toBe(404);
   expect((await request(app).get(`/api/pods/${pod._id}/playbooks/gallery`).set('x-test-user', String(outsider._id))).status)
     .toBe(403);
+});
+
+test('run cards project only this pod’s playbook approvals, not another pod or broker arguments', async () => {
+  const Approval = require('../../models/ApprovalAction').default;
+  const id = await create(); process.env.PLAYBOOKS_ENABLED = 'true'; await turnOn(id);
+  const run = await api('post', `${base()}/${id}/run`).send({ input: '', requestId: randomUUID() });
+  const card = await Approval.create({ podId: pod._id, ownerUserId: human._id, agentName: 'checker',
+    actionType: 'playbook_step', summary: 'Review output', messageId: 'card-message', params: { title: 'Do it manually', taskId: run.body.stepTaskId } });
+  await Task.updateOne({ podId: pod._id, taskId: run.body.stepTaskId }, { $set: { ruling: { state: 'awaiting', approvalId: String(card._id) } } });
+  const listed = await api('get', `${base()}/${id}/runs`);
+  expect(listed.body.cards).toEqual([expect.objectContaining({ id: 'card-message', payload: expect.objectContaining({ actionType: 'playbook_step', params: { title: 'Do it manually', taskId: run.body.stepTaskId } }) })]);
+  await Approval.updateOne({ _id: card._id }, { $set: { podId: outsider._id } });
+  expect((await api('get', `${base()}/${id}/runs`)).body.cards).toEqual([]);
+  await Approval.updateOne({ _id: card._id }, { $set: { podId: pod._id, actionType: 'tool_call', params: { secret: 'broker-argument' } } });
+  expect((await api('get', `${base()}/${id}/runs`)).body.cards).toEqual([]);
+});
+
+test('editing a completed workflow cannot rewrite its historical step identity or done checks', async () => {
+  const id = await create(); process.env.PLAYBOOKS_ENABLED = 'true'; await turnOn(id);
+  const run = await api('post', `${base()}/${id}/run`).send({ input: 'Original input', requestId: randomUUID() });
+  await Task.updateMany({ podId: pod._id }, { $set: { status: 'done' } });
+  const changed = draft(); changed.definition.steps[0].key = 'new-work'; changed.definition.done = [{ says: 'New check', check: 'done', step: 'new-work' }];
+  expect((await api('put', `${base()}/${id}`).send(changed)).status).toBe(200);
+  const history = (await api('get', `${base()}/${id}/runs`)).body.runs[0];
+  expect(history.taskId).toBe(run.body.runTaskId);
+  expect(history.definition).toEqual(draft().definition);
+  expect(history.steps[0].key).toBe('work');
+  expect(history.bindings.owner).toBe(String(human._id));
+  expect(history.members).toEqual([expect.objectContaining({ userId: String(human._id), handle: 'owner' })]);
 });

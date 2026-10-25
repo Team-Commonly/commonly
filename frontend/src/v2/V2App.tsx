@@ -38,6 +38,7 @@ const UserProfile = React.lazy(() => import('../components/UserProfile'));
 const V2AgentBYO = React.lazy(() => import('./components/V2AgentBYO'));
 const V2ConnectPage = React.lazy(() => import('./components/V2ConnectPage'));
 const V2ConnectorsPage = React.lazy(() => import('./components/V2ConnectorsPage'));
+const V2Playbooks = React.lazy(() => import('./components/V2Playbooks'));
 const V2PodBoard = React.lazy(() => import('./components/V2PodBoard'));
 const V2RunTrace = React.lazy(() => import('./components/V2RunTrace'));
 const V2ActivityPage = React.lazy(() => import('./components/V2ActivityPage'));
@@ -238,6 +239,7 @@ const V2App: React.FC = () => {
                 {/* Board must precede the param routes: the static "board"
                     segment outranks both pods/:podId and pods/:podType/:roomId
                     in v6 matching, but keeping it first makes intent legible. */}
+                <Route path="pods/:podId/playbooks" element={feature('Playbooks', <V2Playbooks />, false, false, 'v2-feature--playbooks')} />
                 <Route
                   path="pods/:podId/board"
                   element={feature(

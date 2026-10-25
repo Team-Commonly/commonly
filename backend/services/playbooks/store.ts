@@ -188,16 +188,22 @@ export const listPlaybookRuns = async (podId: string, userId: string, installati
   const installation = await Installation.findOne({ _id: installationId, targetType: 'pod', targetId: podId }).lean();
   const book = installation && await Installable.findOne({ installableId: installation.installableId }).lean();
   if (!book || !isPlaybook(book)) throw new PlaybookError('playbook_not_found', 'Playbook not found', 404);
+  const definition = validatePlaybook(playbookDefinition(book));
   const runs = await Task.find({ podId, source: 'playbook', guard: 'kernel', parentTask: null,
     sourceRef: { $regex: `^playbook:${installationId.toLowerCase()}:` } }).sort({ createdAt: -1 }).limit(20)
-    .select('taskId title status notes updates createdAt completedAt').lean();
+    .select('taskId title status notes updates createdAt completedAt playbookSnapshot').lean();
   const steps = await Task.find({ podId, source: 'playbook', parentTask: { $in: runs.map((run) => run.taskId) } })
-    .select('taskId title parentTask status assignee guard ruling completedBy prUrl taskNum').sort({ taskNum: 1 }).lean();
-  return runs.map((run) => ({ taskId: run.taskId, status: run.status, notes: run.notes,
+    .select('taskId title parentTask status assignee guard ruling completedBy prUrl taskNum sourceRef').sort({ taskNum: 1 }).lean();
+  return runs.map((run) => {
+    const historical = validatePlaybook(run.playbookSnapshot?.definition || definition);
+    return { definition: historical,
+    bindings: run.playbookSnapshot?.bindings || playbookConfig(installation).bindings || {},
+    members: run.playbookSnapshot?.members || [], taskId: run.taskId, status: run.status, notes: run.notes,
     createdAt: run.createdAt, completedAt: run.completedAt, lastUpdate: run.updates.at(-1)?.text || '',
-    steps: steps.filter((step) => step.parentTask === run.taskId).map((step) => ({ taskId: step.taskId, title: step.title,
+    steps: steps.filter((step) => step.parentTask === run.taskId).map((step) => ({ taskId: step.taskId, key: historical.steps[Number(step.sourceRef?.split(':').at(-1)) - 1]?.key, title: step.title,
       status: step.status, assignee: step.assignee, guard: step.guard, ruling: step.ruling || null,
-      completedBy: step.completedBy || null, prUrl: step.prUrl || null })) }));
+      completedBy: step.completedBy || null, prUrl: step.prUrl || null })) };
+  });
 };
 
 /** Native Scout gets this projection only after the same current-membership check. */

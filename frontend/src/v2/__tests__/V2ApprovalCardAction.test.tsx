@@ -330,3 +330,29 @@ describe('tool-call approval details stay owner-scoped', () => {
     expect(screen.getByText(en.approvalCard.decline)).toBeEnabled();
   });
 });
+
+describe('playbook consent', () => {
+  test('server step and receipt replace a misleading summary; approval does not attest sending', async () => {
+    mockPost.mockResolvedValue({ approval: { actionType: 'playbook_step', status: 'resolved', decision: 'approved' } });
+    renderCard({ kind: 'approval-card', approvalId: 'step-card', status: 'flagged', ownerUserId: 'viewer-1', actionType: 'playbook_step',
+      summary: 'Already sent automatically', params: { title: 'Send manually', runTaskId: 'TASK-1', act: 'actor', writeGap: 'linkedin', actorLabel: 'Lily', agentRole: 'checker', agentLabel: 'Vera', output: { kind: 'post', excerpt: '<script>text, never HTML</script>', url: '/v2/pods/pod-1#message-checked' } } });
+    expect(screen.getByTestId('approval-action')).toHaveTextContent('Approve “Send manually” in TASK-1');
+    expect(screen.getByText('· from Vera (checker)')).toBeInTheDocument();
+    expect(screen.getByText("Approving doesn't send anything. Lily sends it in LinkedIn, then marks it done here.")).toBeInTheDocument();
+    expect(screen.queryByText('Already sent automatically')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open checked output' })).toHaveAttribute('href', '/v2/pods/pod-1#message-checked');
+    fireEvent.click(screen.getByText(en.approvalCard.approve));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/api/approvals/step-card/resolve', { decision: 'approved' }));
+    expect(mockPost).toHaveBeenCalledTimes(1);
+  });
+  test('unsafe receipt links are not clickable and proposal consent never says it is already saved', () => {
+    renderCard({ kind: 'approval-card', approvalId: 'draft-card', status: 'flagged', ownerUserId: 'viewer-1', actionType: 'create_playbook', params: { title: 'Outreach', definition: { private: 'shape' } } });
+    expect(screen.getByTestId('approval-action')).toHaveTextContent('Save “Outreach” as a playbook');
+    expect(screen.getByText('Saving keeps it Off. Bind roles and turn On before running.')).toBeInTheDocument();
+    expect(screen.queryByText(/"private"/)).not.toBeInTheDocument();
+  });
+  test('unsafe receipt URLs remain plain text', () => {
+    renderCard({ kind: 'approval-card', status: 'flagged', actionType: 'playbook_step', params: { title: 'Review', act: 'kernel', output: { excerpt: 'Receipt', url: 'javascript:alert(1)' } } });
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+});

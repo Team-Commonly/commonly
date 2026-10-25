@@ -68,6 +68,7 @@ test('D8 approval unlocks only; the bound person must separately attest manual c
   const card = await Approval.findById(proposed.approvalId);
   expect(String(card.ownerUserId)).toBe(String(person._id));
   expect(card.params.effect).toBe('none');
+  expect(card.params).toMatchObject({ actorLabel: 'sender', agentLabel: 'checker', agentRole: 'checker', writeGap: 'linkedin' });
   expect((await decide(proposed.approvalId, 'approved', outsider)).status).toBe(403);
   expect((await decide(proposed.approvalId, 'approved', agent)).status).toBe(403);
   expect((await decide(proposed.approvalId, 'approved')).status).toBe(200);

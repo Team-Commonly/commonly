@@ -3,6 +3,7 @@ import { PlaybookDefinition, PlaybookError, validatePlaybook } from './definitio
 export interface PlaybookMember {
   userId: string;
   handle: string;
+  label?: string;
   kind: 'agent' | 'person';
   runtime?: 'native' | 'byo';
   agentName?: string;

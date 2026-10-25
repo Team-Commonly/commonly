@@ -1818,7 +1818,7 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-tertiary);
   cursor: pointer;
 }
-.v2-root button.v2-catchup__dismiss:hover { color: var(--v2-text); }
+.v2-root button.v2-catchup__dismiss:hover { color: var(--v2-text-primary); }
 .v2-catchup__body {
   margin-top: 6px;
   max-height: 220px;
@@ -10641,6 +10641,9 @@ body.modern-ui.v2-canvas {
  * zh-CN. Guarded by v2-layout-invariants.test.ts.
  * ------------------------------------------------------------------------ */
 .v2-root:lang(zh) .v2-rail__brand,
+.v2-root:lang(zh) .v2-playbooks h1,
+.v2-root:lang(zh) .v2-playbooks h2,
+.v2-root:lang(zh) .v2-playbooks h3,
 .v2-root:lang(zh) .v2-board__detail .v2-modal__title,
 .v2-root:lang(zh) .v2-tools__title,
 .v2-root:lang(zh) .v2-tools__count strong,
@@ -13380,3 +13383,55 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-board__new:hover, .v2-root button.v2-board__create-submit:not(:disabled):hover { background: var(--v2-text-secondary); border-color: var(--v2-text-secondary); }
 
 .v2-board__owner-time { color: var(--v2-text-muted); }
+
+/* Pod playbooks: D77 panel and approval artboard. */
+.v2-playbooks { width: 100%; min-width: 0; overflow-y: auto; padding: 28px; background: var(--v2-bg); color: var(--v2-text-primary); }
+.v2-playbooks header, .v2-playbooks__bar, .v2-playbooks__actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.v2-playbooks header { padding-bottom: 22px; border-bottom: 1px solid var(--v2-border-soft); }
+.v2-playbooks h1, .v2-playbooks h2, .v2-playbooks h3 { font-family: var(--v2-font-display); letter-spacing: -.03em; margin: 0; }
+.v2-playbooks h1 { font-size: 32px; line-height: 38px; }
+.v2-playbooks h2 { font-size: 22px; line-height: 28px; }
+.v2-playbooks h3 { font-size: 18px; }
+.v2-playbooks p { font-size: 13px; color: var(--v2-text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; }
+.v2-playbooks small { display: block; font: 500 12px/18px var(--v2-font-mono); color: var(--v2-text-tertiary); }
+.v2-playbooks button, .v2-playbooks input, .v2-playbooks select, .v2-playbooks textarea { font: inherit; color: inherit; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-bg); min-height: 36px; padding: 7px 12px; max-width: 100%; }
+.v2-playbooks button { font-weight: 600; font-size: 13px; cursor: pointer; }
+.v2-playbooks button:disabled { cursor: default; color: var(--v2-text-muted); }
+.v2-playbooks button:focus-visible, .v2-playbooks input:focus-visible, .v2-playbooks select:focus-visible, .v2-playbooks textarea:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; }
+.v2-playbooks .v2-playbooks__run:not(:disabled) { background: var(--v2-ink); color: var(--v2-on-ink); border-color: var(--v2-ink); }
+.v2-playbooks__layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 24px; margin-top: 24px; }
+.v2-playbooks nav { display: flex; flex-direction: column; gap: 8px; }
+.v2-playbooks nav button { text-align: left; padding: 14px; font: 600 16px var(--v2-font-display); }
+.v2-playbooks nav button[aria-current=true] { border-color: var(--v2-accent); }
+.v2-playbooks__detail { min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.v2-playbooks__actions { justify-content: flex-start; gap: 8px; }
+.v2-playbooks__form, .v2-playbooks__gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.v2-playbooks label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; }
+.v2-playbooks textarea { min-height: 90px; resize: vertical; }
+.v2-playbooks__steps { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--v2-border-soft); }
+.v2-playbooks__steps li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--v2-border-soft); }
+.v2-playbooks__steps li > span { font: 500 12px var(--v2-font-mono); color: var(--v2-accent); }
+.v2-playbooks__panel { min-width: 0; padding: 18px; border: 1px solid var(--v2-border); border-radius: 6px; }
+.v2-playbooks__gallery article { padding: 18px; border: 1px solid var(--v2-border); border-radius: 4px; }
+.v2-playbooks__checks { list-style: none; padding: 0; }
+.v2-playbooks__checks li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--v2-border-soft); }
+.v2-playbooks__receipt { white-space: pre-wrap; overflow-wrap: anywhere; margin: 14px 0; padding-left: 12px; border-left: 2px solid var(--v2-border); }
+@media (max-width: 760px) {
+  .v2-playbooks { padding: 20px; }
+  .v2-playbooks__layout { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .v2-playbooks nav { flex-direction: row; overflow-x: auto; padding-bottom: 4px; }
+  .v2-playbooks nav button { min-width: 210px; }
+  .v2-playbooks__form, .v2-playbooks__gallery { grid-template-columns: minmax(0, 1fr); }
+  .v2-playbooks h1 { font-size: 28px; }
+}
+
+.v2-playbooks fieldset { border: 0; padding: 0; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.v2-playbooks summary { cursor: pointer; font-weight: 600; }
+.v2-approval--playbook { border: 1px solid var(--v2-accent); border-radius: 6px; box-shadow: none; padding: 18px; gap: 12px; }
+.v2-approval--playbook .v2-approval__head { flex-wrap: wrap; gap: 4px; }
+.v2-approval--playbook .v2-approval__badge, .v2-approval--playbook .v2-approval__agent { font: 500 12px/18px var(--v2-font-mono); color: var(--v2-text-tertiary); letter-spacing: 0; text-transform: none; }
+.v2-approval--playbook .v2-approval__action { font: 600 18px/24px var(--v2-font-display); }
+.v2-approval--playbook .v2-approval__pitch { border: 0; padding: 0; margin: 0; }
+.v2-playbooks .v2-msg--card { padding: 0; margin: 16px 0; }
+.v2-feature--playbooks .v2-feature__body { padding: 0; }
+.v2-feature--playbooks .v2-feature__legacy { max-width: none; }

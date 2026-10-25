@@ -94,3 +94,19 @@ Local Mongo suites and browser artboards do not substitute for those walks.
 The Playbooks UI and card rendering require their own real-browser evidence
 at desktop and 390px, then Vera's gate. TASK-275's scheduled PR/merge dates
 and the protected deployment batch remain separate release gates.
+
+### D77 UI acceptance (2026-10-25 ruling)
+
+Use `frontend/design-system/preview/components-playbooks.html` as the approved
+panel/card reference. Disabled Run is bordered; approval explicitly says it
+sends nothing. The actor point header names the checking agent and role. The
+person step says who approves and sends, and its completion predicate says
+“Marked done by” that person. Approval and authenticated manual completion are
+independent records.
+
+A non-author must walk a real production run at **390px and 1440px**, comparing
+Off, On, waiting approval, approved-but-not-complete, declined/Ask again and
+manual completion against the artboard. Keep the pod/run/card IDs, screenshots
+and witness identity on TASK-275. Local mocked-API component walks and the two
+non-admin staging runs are separate evidence; neither closes this production
+acceptance requirement.

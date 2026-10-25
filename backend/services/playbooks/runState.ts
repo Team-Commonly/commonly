@@ -107,6 +107,7 @@ export const startPlaybookRun = async (options: {
     const bound = await bindCurrentRun(podId, installation, installable);
     const config = playbookConfig(installation);
     const result = await insertRow({ podId, source: 'playbook', sourceRef: `playbook:${installation._id}:${triggerKey}`,
+      playbookSnapshot: { definition: bound.book, bindings: config.bindings, members: Array.from(bound.members.values()) },
       title: 'Playbook run', guard: 'kernel', status: 'claimed', claimedBy: String(config.onBy),
       assignee: bound.members.size ? (await User.findById(config.onBy).select('username').lean())?.username : null,
       notes: `${installable.name}\n${label}\n\nInput:\n${input}`, updates: [update(label)],

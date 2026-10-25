@@ -47,7 +47,7 @@ const OPAQUE_PLACEHOLDERS = [
   // Runtime ownership names the visible blocking Pods and installers.
   'blockers', 'harness', 'effort', 'model',
   // runTrace.call inserts the opaque PG call ID, not a number.
-  'id',
+  'id', 'run', 'person',
 ];
 
 // The exception runs the safe way: a name that is usually opaque and is a number

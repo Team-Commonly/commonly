@@ -1,4 +1,6 @@
 import express from 'express';
+import ApprovalAction from '../models/ApprovalAction';
+import { buildCardPayload } from '../services/approvalActionService';
 import rateLimit from 'express-rate-limit';
 import mongoose from 'mongoose';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
@@ -93,7 +95,13 @@ router.post('/:podId/playbooks/:installationId/run', limit, auth, human, async (
   } catch (error) { return failure(error, res); }
 });
 router.get('/:podId/playbooks/:installationId/runs', limit, auth, human, async (req: HumanRequest, res) => {
-  try { return res.json({ runs: await listPlaybookRuns(req.params.podId, caller(req), req.params.installationId) }); }
+  try {
+    const runs = await listPlaybookRuns(req.params.podId, caller(req), req.params.installationId);
+    const ids = runs.flatMap((run) => run.steps.flatMap((step) => step.ruling?.approvalId ? [step.ruling.approvalId] : []));
+    const cards = await ApprovalAction.find({ _id: { $in: ids }, podId: req.params.podId, actionType: 'playbook_step' });
+    return res.json({ runs, cards: cards.map((card) => ({ id: String(card.messageId || card._id),
+      pod_id: req.params.podId, content: '', payload: buildCardPayload(card) })) });
+  }
   catch (error) { return failure(error, res); }
 });
 router.post('/:podId/playbooks/:installationId/steps/:taskId/ask-again', limit, auth, human,

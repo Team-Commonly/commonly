@@ -85,7 +85,9 @@ export const describePlaybookPoint = async (podId: string, taskId: string, reser
     const output = await precedingOutput(podId, prior, agent.userId);
     return { ...point, agent, ownerUserId: members.get(definition.approval.by)!.userId,
       params: { taskId, runTaskId: point.root.taskId, installationId: point.installationId,
-        title: definition.title, act: definition.approval.act, effect: 'none', output },
+        title: definition.title, act: definition.approval.act, effect: 'none', output,
+        actorLabel: members.get(definition.role)?.label || members.get(definition.role)?.handle || definition.role,
+        writeGap: definition.writeGap || null, agentLabel: agent.label || agent.handle, agentRole: preceding?.role || firstAgentRole?.key || '' },
       summary: `${definition.title}: ${definition.approval.act === 'kernel' ? 'Runs when approved' : 'Enforced on the record, not on the action'}` };
   });
 };

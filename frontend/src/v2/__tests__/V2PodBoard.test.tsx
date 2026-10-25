@@ -660,3 +660,22 @@ test('a delayed Follow response cannot replace another follower from the current
   expect(await screen.findByRole('button', { name: /Following/ })).toHaveAttribute('aria-pressed', 'true');
   expect(document.querySelectorAll('.v2-board__watcher')).toHaveLength(2);
 });
+
+test('playbook records use guarded completion and waiting/kernel points expose no move', async () => {
+  const tasks = [
+    { taskId: 'TASK-701', title: 'Manual send', source: 'playbook', guard: 'person', assignee: 'alice', status: 'claimed', ruling: { state: 'approved' }, updates: [] },
+    { taskId: 'TASK-702', title: 'Await approval', source: 'playbook', guard: 'person', assignee: 'alice', status: 'claimed', ruling: { state: 'awaiting' }, updates: [] },
+    { taskId: 'TASK-703', title: 'Run root', source: 'playbook', guard: 'kernel', assignee: 'alice', status: 'claimed', updates: [] },
+  ];
+  wireAxios(tasks); let settle;
+  axios.post.mockImplementation(() => new Promise((resolve) => { settle = resolve; }));
+  renderBoard();
+  const send = (await screen.findByText('Manual send')).closest('article');
+  expect(within((await screen.findByText('Await approval')).closest('article')).queryByRole('button', { name: 'Done' })).not.toBeInTheDocument();
+  expect(within((await screen.findByText('Run root')).closest('article')).queryByRole('button', { name: 'Done' })).not.toBeInTheDocument();
+  fireEvent.click(within(send).getByRole('button', { name: 'Done' }));
+  expect(axios.post).toHaveBeenCalledWith('/api/v1/tasks/pod-1/TASK-701/complete', {}, expect.anything());
+  expect(axios.patch).not.toHaveBeenCalled();
+  expect(within(screen.getByRole('region', { name: 'In Progress' })).getByText('Manual send')).toBeInTheDocument();
+  await act(async () => settle({ data: { task: { ...tasks[0], status: 'done' } } }));
+});

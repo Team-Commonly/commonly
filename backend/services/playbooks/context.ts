@@ -16,13 +16,14 @@ export const loadPlaybookContext = async (podId: string): Promise<PlaybookContex
   podId = String(pod._id);
   const ids = Array.from(new Set((pod.members || []).map(String)));
   const [users, installations, grants, grantPodRefusal] = await Promise.all([
-    User.find({ _id: { $in: ids } }).select('username isBot botType botMetadata').lean(),
+    User.find({ _id: { $in: ids } }).select('username displayName isBot botType botMetadata').lean(),
     AgentInstallation.find({ podId, status: 'active' }).select('agentName instanceId config').lean(),
     selectLiveGrantsForIdentities({ identityIds: ids, podIds: [podId] }),
     outsiderGrantPodRefusal({ kind: 'pod', id: podId }),
   ]);
   const members: PlaybookMember[] = users.map((user: any) => {
     const member: PlaybookMember = { userId: String(user._id), handle: user.username,
+      label: user.displayName || user.botMetadata?.displayName || user.username,
       kind: user.isBot || user.botType ? 'agent' : 'person' };
     if (member.kind === 'agent' && user.botType === 'agent') {
       const name = String(user.botMetadata?.agentName || '').toLowerCase();

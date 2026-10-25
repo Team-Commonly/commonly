@@ -5023,3 +5023,14 @@ describe('run trace layout', () => {
     expect(css).toMatch(/grid-template-columns: minmax\(0, 1fr\)/);
   });
 });
+
+describe('playbook panel layout', () => {
+  const css = read('../v2.css');
+  test('phone panel stacks without shrinking role fields and disabled Run stays bordered', () => {
+    const phone = mediaBlockContaining(css, '.v2-playbooks__layout');
+    expect(phone).toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(ruleBody(css, '.v2-playbooks__detail')).toContain('min-width: 0');
+    expect(css).toContain('.v2-playbooks .v2-playbooks__run:not(:disabled)');
+    expect(ruleBody(css, '.v2-approval--playbook')).toContain('box-shadow: none');
+  });
+});

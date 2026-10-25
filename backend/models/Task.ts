@@ -50,6 +50,8 @@ export interface ITask extends Document {
   lapsedFrom?: string | null;
   ruling?: ITaskRuling;
   guard?: 'kernel' | 'person';
+  // Runner-owned history; editing a procedure must not reinterpret a finished run.
+  playbookSnapshot?: { definition: unknown; bindings: Record<string, string>; members: Array<{ userId: string; label?: string; handle: string; kind: string }> };
   completedBy?: string;
   completedAt?: Date | null;
   prUrl?: string | null;
@@ -96,6 +98,7 @@ const TaskSchema = new Schema<ITask>(
       }, { _id: false }),
     },
     guard: { type: String, enum: ['kernel', 'person'] },
+    playbookSnapshot: { type: Schema.Types.Mixed },
     completedBy: { type: String, ref: 'User' },
     completedAt: { type: Date, default: null },
     prUrl: { type: String, default: null },

@@ -28,6 +28,9 @@ const PRIORITIES: TaskPriority[] = ['P0', 'P1', 'P2', 'P3'];
 type CanonicalStatus = 'pending' | 'claimed' | 'blocked' | 'done';
 
 interface BoardTask {
+  source?: string;
+  guard?: string;
+  ruling?: { state: string };
   taskId: string;
   title: string;
   priority?: TaskPriority;
@@ -146,6 +149,7 @@ const V2PodBoard: React.FC = () => {
   const connectionRef = useRef({ podId: null as string | null, wasConnected: false, hasConnected: false });
 
   const [tasks, setTasks] = useState<BoardTask[]>([]);
+  const [moveError, setMoveError] = useState<string | null>(null);
   const [taskWriteAllowed, setTaskWriteAllowed] = useState(false);
   const reloadTasksRef = useRef<() => void>(() => undefined);
   const taskLoadPendingRef = useRef(false);
@@ -584,24 +588,33 @@ const V2PodBoard: React.FC = () => {
     return () => { socket.off('task_updated', onTaskUpdated); };
   }, [podId, socket, connected, load, loadFocus]);
 
+  const canMovePlaybook = (task: BoardTask, to: CanonicalStatus) => task.source !== 'playbook' || (
+    task.guard !== 'kernel' && (!task.ruling || task.ruling.state === 'approved')
+    && task.assignee === currentUser?.username && !currentUser?.isBot
+    && ['claimed', 'done', 'blocked'].includes(to) && task.status !== 'done'
+  );
   const moveTask = useCallback(async (task: BoardTask, to: CanonicalStatus) => {
-    if (!podId || task.status === to) return;
+    if (!podId || task.status === to || !canMovePlaybook(task, to)) return;
     const previous = task;
-    setTasks((prev) => prev.map((item) => (item.taskId === task.taskId ? { ...item, status: to } : item)));
-    setSelected((prev) => (prev && prev.taskId === task.taskId ? { ...prev, status: to } : prev));
+    setMoveError(null);
+    if (task.source !== 'playbook') {
+      setTasks((prev) => prev.map((item) => (item.taskId === task.taskId ? { ...item, status: to } : item)));
+      setSelected((prev) => (prev && prev.taskId === task.taskId ? { ...prev, status: to } : prev));
+    }
     try {
-      const res = await api.patch<{ task: BoardTask }>(
-        `/api/v1/tasks/${podId}/${encodeURIComponent(task.taskId)}`,
-        { status: to },
-      );
+      const path = `/api/v1/tasks/${podId}/${encodeURIComponent(task.taskId)}`;
+      const res = task.source === 'playbook' && (to === 'done' || to === 'claimed')
+        ? await api.post<{ task: BoardTask }>(`${path}/${to === 'done' ? 'complete' : 'claim'}`, {})
+        : await api.patch<{ task: BoardTask }>(path, { status: to });
       const updated = res.task;
       setTasks((prev) => prev.map((item) => (item.taskId === updated.taskId ? updated : item)));
       setSelected((prev) => (prev && prev.taskId === updated.taskId ? updated : prev));
     } catch {
+      setMoveError(t('board.detail.saveError'));
       setTasks((prev) => prev.map((item) => (item.taskId === previous.taskId ? previous : item)));
       setSelected((prev) => (prev && prev.taskId === previous.taskId ? previous : prev));
     }
-  }, [api, podId]);
+  }, [api, podId, currentUser, t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const createTask = useCallback(async () => {
     const title = newTitle.trim();
@@ -642,6 +655,7 @@ const V2PodBoard: React.FC = () => {
 
   return (
     <div className="v2-board" data-testid="v2-board">
+      {moveError && <p role="alert">{moveError}</p>}
       <header className="v2-board__head">
         <button
           type="button"
@@ -759,7 +773,7 @@ const V2PodBoard: React.FC = () => {
                       {ownerLine(task)}
                     </button>
                     <div className="v2-board__card-actions">
-                      {col.moves.map((move) => (
+                      {col.moves.filter((move) => canMovePlaybook(task, move.to)).map((move) => (
                         <button
                           key={move.to}
                           type="button"
@@ -806,7 +820,7 @@ const V2PodBoard: React.FC = () => {
               </div>
               <dl className="v2-board__ownership">
                 <dt><label htmlFor="task-priority">{t('board.detail.priority')}</label></dt>
-                <dd><select id="task-priority" value={selected.priority || 'P2'} disabled={detailSaving || !taskWriteAllowed} onChange={(event) => updateDetail(selected, { priority: event.target.value as TaskPriority })}>
+                <dd><select id="task-priority" value={selected.priority || 'P2'} disabled={detailSaving || !taskWriteAllowed || selected.source === 'playbook'} onChange={(event) => updateDetail(selected, { priority: event.target.value as TaskPriority })}>
                   {PRIORITIES.map((priority) => <option key={priority} value={priority}>{priority}</option>)}
                 </select></dd>
                 <dt>{t('board.detail.assignedTo')}</dt>
@@ -833,7 +847,7 @@ const V2PodBoard: React.FC = () => {
               {detailError && <p className="v2-modal__error" role="alert">{detailError}</p>}
               {selected.notes && <p className="v2-board__detail-notes">{selected.notes}</p>}
               <div className="v2-board__detail-moves">
-                {(COLUMNS.find((c) => c.statuses.includes(selected.status))?.moves || []).map((move) => (
+                {(COLUMNS.find((c) => c.statuses.includes(selected.status))?.moves || []).filter((move) => canMovePlaybook(selected, move.to)).map((move) => (
                   <button
                     key={move.to}
                     type="button"

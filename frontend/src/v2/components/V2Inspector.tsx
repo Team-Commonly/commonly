@@ -289,6 +289,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
 
         {lightbox && <V2Lightbox images={[{ src: `/api/uploads/${lightbox.fileName}`, name: lightbox.name }]} index={0} onClose={() => setLightbox(null)} />}
         <footer className="v2-workspace-inspector__foot">
+          <button type="button" onClick={() => navigate(`/v2/pods/${pod._id}/playbooks`)}>{t('playbooks.open')}</button>
           {onOpenInvite && <button type="button" onClick={onOpenInvite}>{t('inspector.workspace.members')}</button>}
           <button type="button" onClick={() => navigate('/v2/agents')}>{t('inspector.workspace.manage')}</button>
         </footer>
