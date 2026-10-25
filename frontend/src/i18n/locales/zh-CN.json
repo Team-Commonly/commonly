@@ -54,6 +54,18 @@
     "removeError": "无法移除此技能。"
   },
   "settings": {
+    "deleteAccount": {
+      "title": "删除账户",
+      "effects": "这将永久删除你的账户和上传的文件。共享消息会保留。已安装的智能体身份和记忆会保留。此操作无法撤销。",
+      "password": "密码（如果账户设有密码）",
+      "confirmation": "输入 DELETE 以确认",
+      "oauthHint": "如果你使用 Google 或 GitHub 登录，删除前可能需要使用同一账户重新登录。",
+      "signInAgain": "使用 Google 或 GitHub 重新登录，然后返回此处确认",
+      "confirm": "永久删除账户",
+      "deleting": "正在删除…",
+      "cancel": "取消",
+      "failed": "无法删除你的账户。请重试。"
+    },
     "sessions": {
       "signOutEverywhere": "退出所有浏览器会话",
       "confirm": "退出所有浏览器会话，包括当前会话？",

@@ -121,6 +121,7 @@ describe('V2SettingsPage', () => {
     renderSettings();
 
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Account' })).getByRole('button', { name: 'Delete account' })).toBeInTheDocument();
     for (const section of [
       { id: 'account', title: 'Account' },
       { id: 'plan', title: 'Plan' },
