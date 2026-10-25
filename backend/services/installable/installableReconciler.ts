@@ -78,7 +78,7 @@ const sweepStaleLocks = async (now: Date): Promise<{ completed: number; errored:
 };
 
 const sweepActiveInstallations = async (): Promise<{ staleComponents: number; clearedPauseProjections: number }> => {
-  const active = await InstallableInstallation.find({ status: 'active' }).lean() as IInstallableInstallation[];
+  const active = await InstallableInstallation.find({ status: 'active', 'components.projectionIds.integrationId': { $exists: true } }).lean() as IInstallableInstallation[];
   let staleComponents = 0;
   let clearedPauseProjections = 0;
   for (const installation of active) {

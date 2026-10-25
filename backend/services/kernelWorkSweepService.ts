@@ -188,7 +188,7 @@ class KernelWorkSweepService {
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const { notifyLeaseWarning } = require('./taskEventService');
 
-    const candidates = await Task.find({ $or: KernelWorkSweepService.lapsedConditions(now) })
+    const candidates = await Task.find({ source: { $ne: 'playbook' }, $or: KernelWorkSweepService.lapsedConditions(now) })
       .select('_id podId taskId title status assignee claimedBy rescueDeferrals')
       .lean() as TaskRow[];
 
@@ -213,7 +213,7 @@ class KernelWorkSweepService {
         // suppresses the KERNEL's rescue, not the board.
         // eslint-disable-next-line no-await-in-loop
         const held = await Task.findOneAndUpdate(
-          { _id: t._id, $or: KernelWorkSweepService.lapsedConditions(now) },
+          { _id: t._id, source: { $ne: 'playbook' }, $or: KernelWorkSweepService.lapsedConditions(now) },
           {
             $set: { rescueDeferrals: used + 1 },
             $push: {
@@ -252,7 +252,7 @@ class KernelWorkSweepService {
         // The lapsed predicate travels INTO the filter: if the holder renewed
         // after our find, no branch matches and this is a no-op. The server
         // arbitrates, not our snapshot.
-        { _id: t._id, $or: KernelWorkSweepService.lapsedConditions(now) },
+        { _id: t._id, source: { $ne: 'playbook' }, $or: KernelWorkSweepService.lapsedConditions(now) },
         {
           $set: {
             status: 'pending',
@@ -302,6 +302,7 @@ class KernelWorkSweepService {
     const actionable = await Task.aggregate([
       {
         $match: {
+          source: { $ne: 'playbook' },
           status: 'pending',
           $expr: { $lt: ['$offeredAt', '$updatedAt'] },
           $or: [{ assignee: null }, { assignee: '' }, { assignee: { $exists: false } }],

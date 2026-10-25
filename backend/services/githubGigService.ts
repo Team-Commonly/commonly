@@ -80,8 +80,8 @@ export const buildGithubGigCard = (eventType: string, payload: any, location: No
 export const completeTaskForMergedPull = async (podId: string, href: string): Promise<void> => {
   const at = new Date();
   const task = await Task.findOneAndUpdate(
-    { podId: new Types.ObjectId(podId), prUrl: href, status: { $in: ['pending', 'claimed'] } },
-    { $set: { status: 'done', completedAt: at }, $push: { updates: {
+    { podId: new Types.ObjectId(podId), source: { $ne: 'playbook' }, prUrl: href, status: { $in: ['pending', 'claimed'] } },
+    { $set: { status: 'done', completedAt: at }, $unset: { completedBy: 1 }, $push: { updates: {
       text: 'Completed automatically — linked pull request merged', author: 'system', authorId: null, createdAt: at,
     } } },
     { new: true },

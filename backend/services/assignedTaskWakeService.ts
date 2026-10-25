@@ -56,6 +56,7 @@ async function actionableRows(rows: Row[]): Promise<Row[]> {
 
 export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eligible: number; woken: number }> {
   const open = await Task.find({
+    source: { $ne: 'playbook' },
     status: { $in: ['pending', 'claimed'] },
     $or: [
       { assignee: { $type: 'string', $ne: '' } },

@@ -11,6 +11,13 @@ export interface ITaskUpdate {
   createdAt: Date;
 }
 
+export interface ITaskRuling {
+  state: 'awaiting' | 'approved' | 'declined';
+  approvalId: Types.ObjectId;
+  decidedBy?: Types.ObjectId;
+  decidedAt?: Date;
+}
+
 export interface ITask extends Document {
   podId: Types.ObjectId;
   taskNum: number;
@@ -41,6 +48,9 @@ export interface ITask extends Document {
   // not — clearing them is what makes the row findable again, and it is also
   // what erased the only record of whose work it was.
   lapsedFrom?: string | null;
+  ruling?: ITaskRuling;
+  guard?: 'kernel' | 'person';
+  completedBy?: string;
   completedAt?: Date | null;
   prUrl?: string | null;
   notes?: string | null;
@@ -77,6 +87,16 @@ const TaskSchema = new Schema<ITask>(
     offeredAt: { type: Date },
     rescueDeferrals: { type: Number, default: 0 },
     lapsedFrom: { type: String, default: null },
+    ruling: {
+      type: new Schema({
+        state: { type: String, enum: ['awaiting', 'approved', 'declined'], required: true },
+        approvalId: { type: Schema.Types.ObjectId, ref: 'ApprovalAction', required: true },
+        decidedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+        decidedAt: Date,
+      }, { _id: false }),
+    },
+    guard: { type: String, enum: ['kernel', 'person'] },
+    completedBy: { type: String, ref: 'User' },
     completedAt: { type: Date, default: null },
     prUrl: { type: String, default: null },
     notes: { type: String, default: null },
@@ -94,6 +114,7 @@ const TaskSchema = new Schema<ITask>(
   { timestamps: true },
 );
 
+TaskSchema.index({ 'ruling.approvalId': 1 }, { sparse: true });
 TaskSchema.index({ podId: 1, status: 1 });
 TaskSchema.index({ watchers: 1, podId: 1, updatedAt: -1 });
 TaskSchema.index({ watcherDeliveryPendingAt: 1, _id: 1 }, { partialFilterExpression: { watcherDeliveryPendingAt: { $type: 'date' } } });

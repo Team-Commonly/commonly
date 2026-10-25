@@ -133,6 +133,7 @@ type OfferRevision = {
   _id?: unknown;
   taskId?: unknown;
   updatedAt?: unknown;
+  source?: string;
 };
 
 /**
@@ -237,7 +238,7 @@ export async function notifyPodAgents(
   // A deletion leaves nothing to pick up, and a tombstone wake spends a model
   // turn to discover there is no work.
   if (kind === 'deleted') return;
-  if (!podId || !task) return;
+  if (!podId || !task || task.source === 'playbook') return;
 
   try {
     /* eslint-disable global-require, @typescript-eslint/no-require-imports */
@@ -552,6 +553,8 @@ export async function notifyFoundWork(
   now: Date = new Date(),
 ): Promise<{ woken: number }> {
   if (!podId || !items?.length) return { woken: 0 };
+  items = items.filter((item) => item.source !== 'playbook');
+  if (!items.length) return { woken: 0 };
   try {
     /* eslint-disable global-require, @typescript-eslint/no-require-imports */
     const { AgentInstallation } = require('../models/AgentRegistry');
