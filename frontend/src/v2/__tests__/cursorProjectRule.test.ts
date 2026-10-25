@@ -28,6 +28,12 @@ describe('Cursor project rule', () => {
     named.forEach((tool) => expect(tools).toContain(`name: '${tool}'`));
   });
 
+  test('the rule keeps its context, handoff and key-safety instructions', () => {
+    expect(CURSOR_PROJECT_RULE).toMatch(/call `commonly_get_context` with that pod's id before you start/);
+    expect(CURSOR_PROJECT_RULE).toMatch(/post a short result or handoff[^.]*`commonly_post_message`/);
+    expect(CURSOR_PROJECT_RULE).toMatch(/Keep agent keys out of pod messages, URLs, logs and committed files/);
+  });
+
   test('the rule does not claim Cursor answers @mentions or point at this repo', () => {
     expect(CURSOR_PROJECT_RULE).toMatch(/does not wake Cursor for @mentions/);
     expect(CURSOR_PROJECT_RULE).not.toMatch(/AGENTS\.md|REVIEW\.md/);
