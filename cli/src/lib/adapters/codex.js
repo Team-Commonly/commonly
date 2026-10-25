@@ -1,5 +1,6 @@
 import { codexRuntimeInventory } from '../native-runtime-inventory.js';
 import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
+import { spawnInOwnGroup, wantsOwnProcessGroup } from '@commonlyai/seats/process-group';
 /**
  * codex adapter — wraps the local `codex` CLI as a Commonly agent.
  *
@@ -572,14 +573,15 @@ const CODEX_PROVIDER_KEY_ENVS = [
   'CODEX_API_KEY',
 ];
 
-const runCodex = ({ args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {} }) => new Promise((resolve, reject) => {  // stdio: ['ignore', 'pipe', 'pipe'] — without this, child_process.spawn
+// `ownGroup`: see runClaude in claude.js.
+const runCodex = ({ args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false }) => new Promise((resolve, reject) => {  // stdio: ['ignore', 'pipe', 'pipe'] — without this, child_process.spawn
   // defaults stdin to a fresh pipe. Codex 0.125.0's `exec` then blocks on
   // `Reading additional input from stdin...` because it sees an open pipe
   // and waits for input that never arrives. Interactive runs are fine because
   // codex detects a TTY and uses the argv prompt directly. Setting stdin to
   // `'ignore'` gives codex /dev/null → immediate EOF → it falls back to the
   // argv prompt as intended. Surfaced live during ADR-005 Phase 2 smoke.
-  const proc = spawnImpl('codex', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const proc = spawnInOwnGroup(spawnImpl, 'codex', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] }, { ownGroup });
   observeSpawn(proc, onSpawn, controls);
   let stderr = '';
   let timedOut = false;
@@ -745,6 +747,7 @@ export default {
         // nothing left to compare a tail against.
         credentials: spawnCredentials(ctx, CODEX_PROVIDER_KEY_ENVS),
         spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(args.indexOf('exec') + (args[args.indexOf('exec') + 1] === 'resume' ? 3 : 1), -1), { modelFlag: '--model', valueFlags: ['-c', '-o', '--permission-profile'], codex: true }), // test seam only — do not use in production
+        ownGroup: wantsOwnProcessGroup(ctx),
       });
 
       let text = '';

@@ -82,6 +82,7 @@ import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
+import { createSeatStop } from '../lib/seat-stop.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import { describeUpstreamRefusal } from '../lib/upstream-refusal.js';
 import {
@@ -3836,12 +3837,16 @@ Docs:
       // SIGTERM is the daemon's idle-boundary handoff signal. `stop()` stops
       // future polls but lets the in-flight turn finish and ack before the
       // event loop drains; exiting here would cut a model turn in half.
-      const requestStop = () => {
+      // seat-stop also arms the supervised-group deadline before launchd's
+      // SIGKILL, and kills any group still live when the process exits.
+      const seatStop = createSeatStop({ name, stop });
+      const requestStop = (signal) => {
         console.log(`\n${stamp()} [${name}] stopping after the current turn...`);
-        stop();
+        seatStop.requestStop(signal);
       };
       process.on('SIGINT', requestStop);
       process.on('SIGTERM', requestStop);
+      process.once('exit', seatStop.onExit);
     });
 
   // ── detach (ADR-005) ──────────────────────────────────────────────────────
