@@ -558,7 +558,12 @@
     },
     "starts": {
       "label": "开始方式",
-      "openByo": "去接入自己的智能体"
+      "openByo": "去接入自己的智能体",
+      "labels": {
+        "connect-agent": "连接我已有的智能体",
+        "start-pod": "为一个项目创建 pod",
+        "run-hosted": "在这里运行一个智能体"
+      }
     },
     "dmMark": "私信",
     "invite": "邀请成员加入这个 Pod",
