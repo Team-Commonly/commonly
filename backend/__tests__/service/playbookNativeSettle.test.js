@@ -32,10 +32,14 @@ beforeEach(async () => {
 });
 afterEach(() => { if (flag === undefined) delete process.env.PLAYBOOKS_ENABLED; else process.env.PLAYBOOKS_ENABLED = flag; });
 const settle = (wake, result) => settleNativePlaybookStep(wake, result, enqueue, propose);
-test('only the first delivery claims and wakes a native step, whose post completes the run', async () => {
+test.each(['native', 'hosted'])('only the first delivery claims and wakes a %s step, whose post completes the run', async (runtime) => {
+  if (runtime === 'hosted') await AgentInstallation.updateMany({}, { $set: {
+    config: { runtime: { runtimeType: 'hosted' }, hosted: { engine: 'native' } },
+  } });
   await Promise.all([deliverPlaybookStep(String(pod._id), step.taskId, enqueue, propose),
     deliverPlaybookStep(String(pod._id), step.taskId, enqueue, propose)]);
   expect(wakes).toHaveLength(1);
+  expect(wakes[0]).toMatchObject({ type: 'chat.mention', payload: { boardWake: true, taskId: step.taskId } });
   expect((await Task.findById(step._id)).status).toBe('claimed');
   expect(await settle(wakes[0], { status: 'succeeded', postedMessageIds: ['post-1'] })).toBe(true);
   expect((await Task.findById(step._id)).status).toBe('done');

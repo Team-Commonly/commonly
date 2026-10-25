@@ -223,6 +223,17 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
     expect(axios.post).toHaveBeenCalledTimes(1);
   });
 
+  test('an addressed playbook assignment runs on the hosted native engine', async () => {
+    const result = await runAgent(hostedInstall(), {
+      type: 'chat.mention', eventId: '507f1f77bcf86cd799439015',
+      payload: { boardWake: true, taskId: 'TASK-414', playbookTaskId: 'TASK-414',
+        content: '[Playbook step assigned to you: TASK-414] Post the review.' },
+    });
+    expect(result.status).toBe('succeeded');
+    expect(AgentRun.create).toHaveBeenCalledTimes(1);
+    expect(axios.post).toHaveBeenCalledTimes(1);
+  });
+
   // Search and code runs are on every plan (Cofounder, 2026-10-16), offered
   // only where this instance holds the key, and bounded per turn.
   describe('web search and code runs', () => {

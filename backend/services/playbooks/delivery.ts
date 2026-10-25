@@ -7,7 +7,7 @@ import { describePlaybookPoint } from './rulings';
 
 export type ProposePlaybookCard = typeof import('../approvalActionService').proposeAction;
 
-export type PlaybookWake = { agentName: string; instanceId: string; podId: string; type: 'message.posted';
+export type PlaybookWake = { agentName: string; instanceId: string; podId: string; type: 'chat.mention';
   payload: Record<string, unknown> };
 
 /** Enqueue is supplied by the event service itself or its caller, avoiding an event/runtime import cycle. */
@@ -53,8 +53,8 @@ export const deliverPlaybookStep = async (
       : 'Claim this task, do the step, then complete it with your task tools. Keep any PR link on the row.',
   ].join('\n\n');
   try {
-    await enqueue({ podId, agentName: actor.agentName, instanceId: actor.instanceId || 'default', type: 'message.posted',
-      payload: { podId, content, triggerAuthor: 'kernel', playbookTaskId: taskId,
+    await enqueue({ podId, agentName: actor.agentName, instanceId: actor.instanceId || 'default', type: 'chat.mention',
+      payload: { podId, content, triggerAuthor: 'kernel', boardWake: true, taskId, playbookTaskId: taskId,
         playbookAttempt: offered.rescueDeferrals || 0,
         ...(actor.runtime === 'native' ? { playbookClaimedAt: now.toISOString(), playbookActorId: actor.userId } : {}) } });
   } catch (error) {
