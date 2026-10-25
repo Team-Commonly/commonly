@@ -10,7 +10,7 @@
  * is indistinguishable from a hung one, which is why the window is long.
  */
 import { RunFailure, runFailure, failureKindOf, FAILURE_KINDS } from './failures.js';
-import { scrubAdapterFailure, spawnCredentials } from './upstream-refusal.js';
+import { redactKnownCredentials, scrubAdapterFailure, spawnCredentials } from './upstream-refusal.js';
 
 export const SUPERVISOR_DEFAULTS = Object.freeze({
   // Longer than the quiet stretches a healthy turn has: a long-context first
@@ -73,9 +73,10 @@ const outcomeOf = (failure) => {
 
 // An adapter that threw a bare Error broke the RunFailure rule; its text is
 // still scrubbed before it reaches the trace, and it carries no kind rather
-// than a guessed one.
+// than a guessed one. A RunFailure's detail keeps its shape but loses any
+// credential this spawn was handed, whoever built it.
 const failureData = (failure, credentials) => (failure instanceof RunFailure
-  ? { kind: failure.kind, detail: failure.detail }
+  ? { kind: failure.kind, detail: redactKnownCredentials(failure.detail, credentials) }
   : { kind: null, detail: scrubAdapterFailure(String(failure?.message ?? failure ?? ''), { credentials }).detail });
 
 const sessionIdOf = (failure) => {
@@ -242,6 +243,11 @@ export const superviseRun = async ({ adapter, prompt, ctx = {}, store, policy = 
   if (!store || typeof store.startRun !== 'function') throw new Error('superviseRun needs a trace store');
   const settings = resolvePolicy(policy);
   const run = store.startRun({ runId, adapter: adapter.name, label });
+  // The runtime token rides in ctx, not through the valet, so the store would
+  // not otherwise know to scrub it from agent text.
+  if (typeof run.redact === 'function' && typeof ctx.runtimeToken === 'string' && ctx.runtimeToken) {
+    run.redact([ctx.runtimeToken]);
+  }
   const startedAt = Date.now();
   const external = ctx.signal;
   let attempt = 0;

@@ -23,7 +23,7 @@ export const EVENT_TYPES = Object.freeze([
   'liveness.stalled', // { idleMs, windowMs }
   'liveness.recovery', // { action: 'cancel'|'kill'|'retry', attempt }
   'credential.granted', // { names: [...] }  names only, never values
-  'credential.denied', // { name, reason?: 'not_granted'|'unresolved' }
+  'credential.denied', // { name, reason?: 'not_granted'|'unresolved'|'too_short' }
   'process.exited', // { code, signal }
   // Record kinds with no earlier trace name (docs/record-v1.md has the full data).
   'task.claimed', // { leaseUntil? }  mirrors the board's claim; the board stays the source of truth
