@@ -1,12 +1,48 @@
 import { Types } from 'mongoose';
 import ApprovalAction, { IApprovalAction } from '../../models/ApprovalAction';
 import Task from '../../models/Task';
+import MongoMessage from '../../models/Message';
 import { PlaybookError, validatePlaybook } from './definition';
 import { loadPlaybookContext } from './context';
 import { preflightPlaybook } from './preflight';
 import { withPlaybookLock, playbookConfig, playbookDefinition, requirePlaybookHuman } from './store';
 import { advancePlaybookRun } from './runState';
 import { publishPlaybookTask, blockPlaybookRun } from './observations';
+
+/** Only a stored post by the preceding actor in this pod is presented as output. */
+const precedingOutput = async (podId: string, source: any, actorId: string) => {
+  if (!source) return null;
+  const notes = { taskId: source.taskId, kind: 'notes',
+    url: `/v2/pods/${podId}/board`, excerpt: String(source.notes || '').slice(0, 600) };
+  const receipt = [...source.updates].reverse().find((entry: any) => entry.author === 'playbook'
+    && entry.text.startsWith('Native result posted: '));
+  const ids = String(receipt?.text || '').replace(/^Native result posted: /, '').split(', ').slice(-10).reverse();
+  for (const id of ids) {
+    let message: { pod?: unknown; author?: unknown; content?: string; at?: unknown } | null = null;
+    if (/^[a-f0-9]{24}$/.test(id)) {
+      const row = await MongoMessage.findOne({ _id: id, podId, userId: actorId }).select('content createdAt').lean();
+      if (row) message = { pod: podId, author: actorId, content: row.content, at: row.createdAt };
+    } else if (process.env.PG_HOST && /^\d+$/.test(id)) {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const PGMessage = require('../../models/pg/Message');
+      const row = await PGMessage.findById(id);
+      if (row) message = { pod: row.pod_id, author: row.user_id, content: row.content, at: row.createdAt };
+    }
+    const at = new Date(message?.at as string).getTime();
+    if (message?.content && String(message.pod) === podId && String(message.author) === actorId
+      && at >= source.createdAt.getTime() && at <= (source.completedAt?.getTime() || Date.now())) {
+      return { taskId: source.taskId, kind: 'post', url: `/v2/pods/${podId}#message-${id}`,
+        excerpt: message.content.slice(0, 600) };
+    }
+  }
+  if (source.prUrl) {
+    try {
+      const link = new URL(source.prUrl);
+      if (link.protocol === 'https:') return { ...notes, kind: 'pr', url: link.href };
+    } catch { /* Invalid stored links remain plain step notes. */ }
+  }
+  return notes;
+};
 
 export const loadPlaybookPoint = async (podId: string, taskId: string) => {
   const step = await Task.findOne({ podId, taskId, source: 'playbook', parentTask: { $ne: null } });
@@ -37,9 +73,13 @@ export const describePlaybookPoint = async (podId: string, taskId: string, reser
     const firstAgentRole = book.roles.find((role) => role.kind === 'agent');
     const agent = members.get(preceding?.role || firstAgentRole?.key || '');
     if (!agent?.agentName) throw new PlaybookError('agent_role_required', 'An approval point requires an active agent role');
+    const priorIndex = preceding && book.steps.indexOf(preceding);
+    const prior = typeof priorIndex === 'number' ? await Task.findOne({ podId, source: 'playbook',
+      sourceRef: `${point.root.sourceRef}:${priorIndex + 1}` }).lean() : null;
+    const output = await precedingOutput(podId, prior, agent.userId);
     return { ...point, agent, ownerUserId: members.get(definition.approval.by)!.userId,
       params: { taskId, runTaskId: point.root.taskId, installationId: point.installationId,
-        title: definition.title, act: definition.approval.act, effect: 'none' },
+        title: definition.title, act: definition.approval.act, effect: 'none', output },
       summary: `${definition.title}: ${definition.approval.act === 'kernel' ? 'Runs when approved' : 'Enforced on the record, not on the action'}` };
   });
 };

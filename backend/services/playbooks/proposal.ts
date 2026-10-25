@@ -13,6 +13,9 @@ export const validatePlaybookProposal = async (
   const { podId: requestedPodId, ...draft } = params;
   const podId = String(requestedPodId || cardPodId).toLowerCase();
   if (!Types.ObjectId.isValid(podId)) throw new PlaybookError('invalid_pod', 'Choose a pod you belong to', 400);
+  if (podId !== cardPodId.toLowerCase()) {
+    throw new PlaybookError('proposal_pod_mismatch', 'Propose this draft from the target pod', 403);
+  }
   const { book, schedule } = validatePlaybookDraft(draft as unknown as DraftInput);
   const username = AgentIdentityService.buildAgentUsername(AgentIdentityService.resolveAgentType(agentName), instanceId);
   const actor = await User.findOne({ username, isBot: true }).select('_id').lean();

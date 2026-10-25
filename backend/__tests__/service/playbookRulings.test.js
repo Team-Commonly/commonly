@@ -161,3 +161,27 @@ test('Ask again replaces the card id and rejects a late application of the old d
   await complete(renewed, person);
   expect((await Task.findById(root._id)).status).toBe('done');
 });
+
+test('approval context links the preceding actor’s stored post, and refuses foreign pod/author receipts', async () => {
+  await start();
+  const Message = require('../../models/Message');
+  const prior = await Task.findOne({ podId: pod._id, sourceRef: `${root.sourceRef}:1` });
+  const postId = new mongoose.Types.ObjectId();
+  await Message.collection.insertOne({ _id: postId, podId: pod._id, userId: agent._id,
+    content: 'Checked reply: our response is ready.', createdAt: new Date() });
+  await Task.updateOne({ _id: prior._id }, { $set: { completedAt: new Date() },
+    $push: { updates: { author: 'playbook', text: `Native result posted: ${postId}`, createdAt: new Date() } } });
+  const describe = () => describePlaybookPoint(String(pod._id), point.taskId, String(point.ruling.approvalId));
+  const card = await describe();
+  expect(card.params.output).toEqual({ taskId: prior.taskId, kind: 'post',
+    url: `/v2/pods/${pod._id}#message-${postId}`, excerpt: 'Checked reply: our response is ready.' });
+  await Message.collection.updateOne({ _id: postId }, { $set: { podId: new mongoose.Types.ObjectId() } });
+  expect((await describe()).params.output.kind).toBe('notes');
+  await Message.collection.updateOne({ _id: postId }, { $set: { podId: pod._id, userId: person._id } });
+  expect((await describe()).params.output.kind).toBe('notes');
+  await Task.updateOne({ _id: prior._id }, { $set: { prUrl: 'https://github.com/Team-Commonly/commonly/pull/1' } });
+  expect((await describe()).params.output).toMatchObject({ kind: 'pr',
+    url: 'https://github.com/Team-Commonly/commonly/pull/1' });
+  await Task.updateOne({ _id: prior._id }, { $set: { prUrl: 'javascript:alert(1)' } });
+  expect((await describe()).params.output.kind).toBe('notes');
+});

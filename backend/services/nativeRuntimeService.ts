@@ -376,7 +376,7 @@ export const TOOLS = [
               + 'For connect_local_agent: { name (required — '
               + 'lowercase letters/digits/dashes, e.g. "sams-claude"), adapter? ("claude" for '
               + 'Claude Code, "codex" for Codex: what they told you they run) }. '
-              + 'For create_playbook: { podId?, title, definition: {v:1, roles:[{key,kind:"agent"|"person"}], '
+              + 'For create_playbook (this pod only): { podId?, title, definition: {v:1, roles:[{key,kind:"agent"|"person"}], '
               + 'steps:[{key,title,role,do,reads?,delivers?,approval?:{by,act:"actor"|"kernel",effect:"none"},writeGap?}], '
               + 'done:[{says,check:"done"|"approved"|"by-person"|"has-pr",step}]}, sourceText?, bindings?, '
               + 'schedule?:{cron,timezone} }. Only Run and daily/weekday/weekly schedules are supported. '

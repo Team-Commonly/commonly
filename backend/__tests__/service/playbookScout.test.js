@@ -140,13 +140,21 @@ test.each(['human', 'agent'])('Approve rechecks the %s membership before creatin
   expect(card.executionError).toBeTruthy();
   expect(await Installation.countDocuments()).toBe(0); expect(await PodAsset.countDocuments()).toBe(0);
 });
-test('a target pod requires the proposer and an accountable current human member', async () => {
+test('a draft cannot send a proposal into another pod, even if its actor belongs to both', async () => {
   const target = await Pod.create({ name: 'Other team', createdBy: other._id, members: [other._id] });
   expect((await propose({ ...draft(), podId: String(target._id) })).ok).toBe(false);
   await Pod.updateOne({ _id: target._id }, { $addToSet: { members: bot._id } });
   const result = await propose({ ...draft(), podId: String(target._id) });
-  expect(result.ok).toBe(true);
+  expect(result.ok).toBe(false); expect(result.error).toContain('target pod');
+  expect(await Approval.countDocuments()).toBe(0); expect(await Installation.countDocuments()).toBe(0);
+});
+test('a departed installer and creator cannot become an undecidable draft approver', async () => {
+  await Pod.updateOne({ _id: pod._id }, { $pull: { members: { $in: [human._id, other._id] } } });
+  expect((await propose()).ok).toBe(false);
+  expect(await Approval.countDocuments()).toBe(0);
+});
+test('a departed installer falls back only to a creator who is still a human member', async () => {
+  await Pod.updateOne({ _id: pod._id }, { $pull: { members: human._id } });
+  const result = await propose(); expect(result.ok).toBe(true);
   expect(String((await Approval.findById(result.approvalId)).ownerUserId)).toBe(String(other._id));
-  await decide(result.approvalId, 'approved', other);
-  expect(String((await Installation.findOne()).targetId)).toBe(String(target._id));
 });
