@@ -150,4 +150,16 @@ describe('DMService — agent rooms', () => {
 
     expect(room.name).toBe('tarik');
   });
+  it.each(['nova', 'Nova [reviewer]'])('reuses the agent-admin pod created with resolved label %s', async (label) => {
+    agentUser.botMetadata = { agentName: 'openclaw', instanceId: 'nova', displayName: label === 'nova' ? 'openclaw (nova)' : label };
+    await agentUser.save();
+    const options = { agentName: 'openclaw', instanceId: 'nova' };
+    const first = await DMService.getOrCreateAgentDM(agentUser._id, humanUser._id, options);
+    const second = await DMService.getOrCreateAgentDM(agentUser._id, humanUser._id, options);
+    expect(first.name).toBe(`DM: ${label}`);
+    expect(second._id.toString()).toBe(first._id.toString());
+    expect(await Pod.countDocuments({ type: 'agent-admin' })).toBe(1);
+    expect(second.members.map(String).sort()).toEqual([agentUser._id, humanUser._id].map(String).sort());
+  });
+
 });

@@ -130,12 +130,20 @@ class DMService {
     const agentId = String(agentUserId);
     const ownerId = String(ownerUserId);
 
+    const agentUser = await User.findById(agentId)
+      .select('username botMetadata')
+      .lean<{ username?: string; botMetadata?: { displayName?: string; instanceId?: string } } | null>();
+    const labelFallback = (agentName && agentName !== 'agent') ? agentName : 'agent';
+    const label = resolveAgentDisplayLabel(agentUser, labelFallback);
+    const searchLabels = [...new Set([agentName, label].filter((value): value is string => Boolean(value)))];
+    const searchPattern = searchLabels.map((value) => DMService.escapeRegex(value)).join('|');
+
     // Look for an existing agent-admin pod where both users are members and
     // the agent name matches (prevents cross-agent DM collisions).
     const existing = await Pod.findOne({
       type: 'agent-admin',
       members: { $all: [agentId, ownerId] },
-      description: { $regex: `\\b${agentName}\\b`, $options: 'i' },
+      description: { $regex: `\\b(?:${searchPattern})\\b`, $options: 'i' },
     });
     if (existing) return DMService.ensureDmMembers(existing, ownerId, agentId);
 
@@ -144,19 +152,18 @@ class DMService {
     const fallback = await Pod.findOne({
       type: 'agent-admin',
       members: { $all: [agentId, ownerId] },
-      name: { $regex: agentName, $options: 'i' },
+      name: { $regex: searchPattern, $options: 'i' },
     });
     if (fallback) return DMService.ensureDmMembers(fallback, ownerId, agentId);
 
     // Repair stale pods that match this agent hint but are missing one of the
     // expected members (for example older records with owner-only membership).
-    const safeAgentName = DMService.escapeRegex(agentName || 'agent');
     const staleCandidates = await Pod.find({
       type: 'agent-admin',
       members: ownerId,
       $or: [
-        { description: { $regex: `\\b${safeAgentName}\\b`, $options: 'i' } },
-        { name: { $regex: safeAgentName, $options: 'i' } },
+        { description: { $regex: `\\b(?:${searchPattern})\\b`, $options: 'i' } },
+        { name: { $regex: searchPattern, $options: 'i' } },
       ],
     })
       .sort({ updatedAt: -1 })
@@ -176,11 +183,6 @@ class DMService {
     // botMetadata) instead of the runtime-leaning agentName, so the pod
     // name reads "DM: Aria" not "DM: openclaw (aria)" — the latter
     // surfaces back into agent chat via heartbeat pod-list rendering.
-    const agentUser = await User.findById(agentId)
-      .select('username botMetadata')
-      .lean<{ username?: string; botMetadata?: { displayName?: string; instanceId?: string } } | null>();
-    const labelFallback = (agentName && agentName !== 'agent') ? agentName : 'agent';
-    const label = resolveAgentDisplayLabel(agentUser, labelFallback);
     const dmPod = new Pod({
       name: `DM: ${label}`,
       description: `Debug channel for ${label}`,
