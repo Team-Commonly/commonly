@@ -229,6 +229,8 @@ describe('a hosted run in a granted pod', () => {
       // seat-confinement refusal is out of scope for it (Wren, TASK-175).
       hostedTurn: true,
       noOutboundRelay: false,
+      runId: 'run-1',
+      runPodId: POD,
       tool: 'github.list_issues',
       args: { state: 'open' },
     });

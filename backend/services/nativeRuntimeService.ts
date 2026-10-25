@@ -621,6 +621,7 @@ export const toolsForConfig = (
 // --- tool dispatcher -------------------------------------------------------
 
 interface DispatchContext {
+  runId?: string;
   installation: any;
   podId: string;
   agentName: string;
@@ -806,7 +807,12 @@ export async function dispatchTool(
           // bridge appears between this check and message storage.
           noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
           answeringMessageId: ctx.answeringMessageId,
+          runId: ctx.runId,
+          ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
         });
+        if (result?.refused) {
+          return { content: { ok: false, posted: false, result }, error: 'message_post_refused' };
+        }
         return { content: { ok: true, posted: true, result } };
       }
 
@@ -851,6 +857,8 @@ export async function dispatchTool(
           payload: { kind: 'starts', starts: [{ id: 'run-hosted', label: HOSTED_OFFER_LABEL, href }] },
           noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
           answeringMessageId: ctx.answeringMessageId,
+          runId: ctx.runId,
+          ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
         });
         return { content: { ok: true, posted: true, result } };
       }
@@ -898,6 +906,8 @@ export async function dispatchTool(
           payload,
           noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
           answeringMessageId: ctx.answeringMessageId,
+          runId: ctx.runId,
+          ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
           authorKind: 'kernel',
         });
         return { content: { ok: true, posted: true, result } };
@@ -950,6 +960,8 @@ export async function dispatchTool(
         // fallback never double-posts narration beside the card.
         const { proposeAction } = require('./approvalActionService');
         const result = await proposeAction({
+          runId: ctx.runId,
+          ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
           podId: String(ctx.podId),
           agentName: ctx.agentName,
           instanceId: ctx.instanceId,
@@ -1811,6 +1823,7 @@ export async function runAgent(
   }
 
   const dispatchCtx: DispatchContext = {
+    runId,
     installation,
     podId,
     agentName,
@@ -2124,6 +2137,8 @@ export async function runAgent(
           // dispatcher handles it below.
           const brokerCall = webTaintedAway ? null : await dispatchHostedBrokerTool({
             projection: broker,
+            runId: dispatchCtx.runId,
+            runPodId: String(dispatchCtx.podId),
             name: toolName,
             args: parsedArgs,
             agentUserId: seatUserId,
@@ -2184,6 +2199,7 @@ export async function runAgent(
               : parsedArgs,
             result: result.recorded ?? result.content,
             error: result.error,
+            outcome: result.error ? 'failed' : 'ok',
             elapsedMs: elapsed,
           });
           if (toolName === 'commonly_post_message' && !result.error) {
@@ -2289,6 +2305,8 @@ export async function runAgent(
             metadata: { source: 'native-runtime', fallback: true },
             noOutboundRelay: Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen),
             answeringMessageId: dispatchCtx.answeringMessageId,
+            runId,
+            runPodId: String(podId),
           });
           // The message service suppresses a bare NO_REPLY (and other
           // silent output) without throwing. That is a normal declined turn,
@@ -2335,6 +2353,8 @@ export async function runAgent(
           metadata: { source: 'native-runtime', runFailed: true },
           noOutboundRelay: Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen),
           answeringMessageId: dispatchCtx.answeringMessageId,
+          runId,
+          runPodId: String(podId),
         });
       } catch (postErr) {
         console.warn('[native-runtime] failed-run line not posted:', (postErr as Error).message);

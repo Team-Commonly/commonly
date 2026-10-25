@@ -4995,3 +4995,14 @@ test('TASK-435 runtime columns can shrink on phones without dropping the observe
   expect(ruleBody(css, '.v2-runtime-controls__observed')).toContain('overflow-wrap: anywhere');
   expect(css).toContain('content: attr(data-label)');
 });
+
+describe('run trace layout', () => {
+  const css = read('../components/V2RunTrace.css');
+  test('long attribution IDs wrap, phone records stack, and links meet touch height', () => {
+    expect(css).toContain('overflow-wrap: anywhere');
+    expect(css).toContain('min-width: 0');
+    expect(css).toContain('min-height: 44px');
+    expect(css).toMatch(/@media \(max-width: 760px\)/);
+    expect(css).toMatch(/grid-template-columns: minmax\(0, 1fr\)/);
+  });
+});

@@ -113,6 +113,7 @@ describe('commonly_offer_local_agent', () => {
     const posted = AgentMessageService.postMessage.mock.calls[0][0];
     expect(posted.messageType).toBe('card');
     expect(posted.payload.kind).toBe('byo-handoff');
+    expect(posted.runId).toBe('run-1');
     expect(posted.payload.agentName).toBe('sam-xu-opencode');
     expect(posted.payload.commands.mac).toContain('commonly agent attach opencode');
     expect(posted.payload.commands.mac).toContain('--memory-from scout --memory-instance default');
