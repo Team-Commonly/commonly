@@ -166,3 +166,34 @@ test('copying a heading or memory text does not count as copying the command', a
   fireEvent.copy(document.querySelector('.v2-byo__memory-text'));
   await tick(30000); expect(offer()).toBeInTheDocument();
 });
+
+const offerEvents = () => axios.post.mock.calls
+  .filter(([url, body]) => url === '/api/stats/byo-step' && body.step.startsWith('hosted-offer-'))
+  .map(([, body]) => body);
+test.each(['timer', 'exit'])('records offer shown once via %s despite later timers and exit intent', async (trigger) => {
+  const view = await issue();
+  expect(offerEvents()).toEqual([]);
+  if (trigger === 'timer') await tick(30000);
+  else fireEvent.mouseLeave(document.documentElement, { clientY: 0 });
+  expect(offer()).toBeInTheDocument();
+  await tick(60000);
+  fireEvent.mouseLeave(document.documentElement, { clientY: 0 });
+  expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }]);
+  view.unmount(); await issue(); await tick(30000);
+  expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }]);
+});
+test('records accepted offer activation once while hosted lookup is pending', async () => {
+  await issue(); await tick(30000);
+  const get = axios.get.getMockImplementation(); let resolveName;
+  axios.get.mockImplementation((url) => url.startsWith('/api/registry/agents/next-free-name?')
+    ? new Promise(resolve => { resolveName = resolve; }) : get(url));
+  const button = offer(); fireEvent.click(button); fireEvent.click(button);
+  expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }, { step: 'hosted-offer-clicked' }]);
+  await act(async () => resolveName({ data: { name: 'sam-agent' } }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/hosted/provision', { agentName: 'sam-agent' }, expect.anything()));
+});
+test('copy suppression emits neither hosted-offer event', async () => {
+  await issue(); fireEvent.copy(screen.getByTestId('byo-listen').querySelector('.v2-byo__command'));
+  await tick(60000); fireEvent.mouseLeave(document.documentElement, { clientY: 0 });
+  expect(offerEvents()).toEqual([]);
+});

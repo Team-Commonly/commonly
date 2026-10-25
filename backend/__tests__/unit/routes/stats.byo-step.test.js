@@ -58,6 +58,14 @@ describe('POST /api/stats/byo-step', () => {
     expect(JSON.stringify(mockInsertOne.mock.calls[0][0])).not.toContain('cm_agent_secret');
   });
 
+  it.each(['hosted-offer-shown', 'hosted-offer-clicked'])('accepts %s without copied-command marks or extra payload', async (step) => {
+    const res = await request(app).post('/api/stats/byo-step')
+      .send({ step, command: 'fixture-only-secret', agentName: 'private-agent' });
+    expect(res.status).toBe(200);
+    expect(mockMarkByoCommandCopied).not.toHaveBeenCalled();
+    expect(mockInsertOne).toHaveBeenCalledWith({ userId: 'human-1', step, at: expect.any(Date) });
+  });
+
   it('rejects unknown steps without writing a mark or telemetry event', async () => {
     const res = await request(app)
       .post('/api/stats/byo-step')
