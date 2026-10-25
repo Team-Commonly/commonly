@@ -1684,6 +1684,7 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
     // Reuse the agent's current virtual key when LiteLLM still recognises it
     // (see readPvcVirtualKey for where it lives).
     const existingKey = await readPvcVirtualKey(agentId);
+    let staleOwnedKey: string | null = null;
 
     if (existingKey && existingKey !== masterKey) {
       // Safety: never delete the master key even if found on PVC
@@ -1701,10 +1702,7 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
         if (ownedByAgent && allowsMini && allowsDeepSeek) {
           return existingKey;
         }
-        if (info) {
-          await axios.delete(`${baseUrl}/key/delete`, { headers, data: { keys: [existingKey] } }).catch(() => {});
-          console.log(`[litellm] Deleted ${ownedByAgent ? 'stale-allowlist' : 'misowned'} OpenRouter key for ${agentId}`);
-        }
+        if (ownedByAgent) staleOwnedKey = existingKey;
       } catch (_: any) { /* key not in DB — fall through */ }
     }
 
@@ -1736,11 +1734,15 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
       },
       { headers },
     );
-    const newKey = resp.data?.key || null;
-    if (newKey) console.log(`[litellm] Issued OpenRouter virtual key for ${agentId}`);
+    const newKey = resp.data?.key;
+    if (typeof newKey !== 'string' || !newKey.startsWith('sk-') || newKey === masterKey) return null;
+    if (staleOwnedKey && staleOwnedKey !== newKey) {
+      await axios.delete(`${baseUrl}/key/delete`, { headers, data: { keys: [staleOwnedKey] } }).catch(() => {});
+    }
+    console.log(`[litellm] Issued OpenRouter virtual key for ${agentId}`);
     return newKey;
   } catch (err: any) {
-    console.warn(`[litellm] OpenRouter virtual key generation failed for ${agentId}: ${err.message}`);
+    console.warn(`[litellm] Community virtual key generation failed for ${agentId}; retry provisioning`);
     return null;
   }
 };
@@ -2185,11 +2187,8 @@ const applyOpenClawModelDefaults = async (config: any) => {
   // Community traffic already fell through dead Nemotron to this LiteLLM
   // group. Select it directly (TASK-004); never use the dev Codex pool.
   config.agents.defaults.model.primary = 'openrouter/deepseek-v4-flash';
-  config.agents.defaults.model.fallbacks = Array.from(new Set([
-    'google/gemini-2.5-flash',
-    'google/gemini-2.5-flash-lite',
-    'google/gemini-2.0-flash',
-  ]));
+  // D81: a hosted default failure must not substitute another vendor.
+  config.agents.defaults.model.fallbacks = [];
 
   // HARD GUARDRAIL: community fallback chain MUST NOT include any
   // openai-codex/* model. Codex quota is paid and shared across the
@@ -2443,14 +2442,15 @@ const provisionOpenClawAccount = async ({
 
   // Route OpenRouter calls through LiteLLM when available (everything-via-LiteLLM
   // mode). Dev agents reuse their Codex virtual key (already grants OpenRouter
-  // model access); community agents get a separate OR-only key. If virtual-key
-  // issuance fails (e.g. LiteLLM DB down), fall back to LITELLM_MASTER_KEY so
-  // the agent still routes through LiteLLM rather than burning raw keys direct.
+  // model access); community agents require their own scoped key. Failed
+  // issuance must not grant the shared master credential.
   if (process.env.LITELLM_BASE_URL) {
-    const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
     const openRouterKey = isDevAgent
       ? codexVirtualKey
-      : (await issueLiteLLMOpenRouterKey(accountId)) || masterKey || null;
+      : await issueLiteLLMOpenRouterKey(accountId);
+    if (!isDevAgent && !openRouterKey) {
+      throw new Error('Community model key unavailable; retry provisioning');
+    }
     if (openRouterKey) {
       await injectOpenRouterKeyToAgentAuthProfiles('clawdbot-gateway', accountId, openRouterKey);
     }

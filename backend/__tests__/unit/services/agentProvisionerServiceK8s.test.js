@@ -396,11 +396,8 @@ describe('agentProvisionerServiceK8s', () => {
     expect(config.models.providers.openrouter.models).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'deepseek-v4-flash' }),
     ]));
-    // Trinity removed 2026-05-03 (deregistered at OpenRouter, 404). Gemini
-    // entries remain as inert placeholders until GEMINI_API_KEY is reinstated.
-    expect(config.agents.defaults.model.fallbacks).toEqual(
-      expect.arrayContaining(['google/gemini-2.5-flash']),
-    );
+    // D81: no cross-vendor substitution after the hosted primary fails.
+    expect(config.agents.defaults.model.fallbacks).toEqual([]);
     expect(config.agents.defaults.model.fallbacks).not.toContain('openrouter/arcee-ai/trinity-large-preview:free');
     expect(config.agents.defaults.model.fallbacks).not.toContain('openai-codex/gpt-5.4-mini');
     expect(config.agents.defaults.model.fallbacks).not.toContain('openai-codex/gpt-5.4');
@@ -638,9 +635,30 @@ describe('community virtual key permits the explicit DeepSeek primary', () => {
 
   it('refreshes an old key that lacks the primary alias and permits its wire model id', async () => {
     await expect(issueLiteLLMOpenRouterKey('liz')).resolves.toBe('sk-community-new');
+    expect(axios.delete.mock.invocationCallOrder[0]).toBeGreaterThan(axios.post.mock.invocationCallOrder[0]);
     expect(axios.post).toHaveBeenCalledWith('http://litellm:4000/key/generate', expect.objectContaining({
       models: expect.arrayContaining(['deepseek-v4-flash', 'openrouter/deepseek-v4-flash']),
     }), expect.anything());
+  });
+
+  it.each(['error', 'missing', 'master'])('preserves the old key and refuses community master fallback on %s issuance', async (mode) => {
+    if (mode === 'error') axios.post.mockRejectedValue(new Error('unavailable'));
+    else axios.post.mockResolvedValue({ data: mode === 'master' ? { key: 'sk-master-test' } : {} });
+    k8s.__mock.execCommands = [];
+    const writes = k8s.__mock.replaceNamespacedConfigMap.mock.calls.length;
+    await expect(provisionAgentRuntime({
+      runtimeType: 'moltbot', agentName: 'openclaw', instanceId: 'liz',
+      runtimeToken: 'test', baseUrl: 'http://backend', heartbeat: null,
+    })).rejects.toThrow('Community model key unavailable');
+    expect(axios.delete).not.toHaveBeenCalled();
+    expect(k8s.__mock.replaceNamespacedConfigMap.mock.calls).toHaveLength(writes);
+    expect(k8s.__mock.execCommands.join('\n')).not.toContain('sk-master-test');
+  });
+
+  it('does not delete a key owned by another agent during replacement', async () => {
+    axios.get.mockResolvedValue({ data: { info: { metadata: { agent_id: 'other' }, models: [] } } });
+    await expect(issueLiteLLMOpenRouterKey('liz')).resolves.toBe('sk-community-new');
+    expect(axios.delete).not.toHaveBeenCalled();
   });
 
   it('reuses an owned key that already allows the explicit primary', async () => {
