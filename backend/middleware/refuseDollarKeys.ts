@@ -1,3 +1,4 @@
+import { unlink } from 'fs';
 import type { Request, Response, NextFunction } from 'express';
 
 // Request keys that start with `$` are refused, in the query string and in the
@@ -161,11 +162,25 @@ const check = (res: Response, where: string, scan: KeyScan) => {
   return scan.kind === 'dollar' ? refuse(res, where, scan.field) : refuseLimit(res, where, scan);
 };
 
-export const refuseDollarKeys = (req: Request, res: Response, next: NextFunction) => (
-  check(res, 'query', scanKeys(req.query))
-  || check(res, 'body', scanKeys(req.body, (path, key) => exemptBodyKey(req, path, key)))
-  || next()
-);
+// On a multipart route, multer has already written any disk-stored file by the
+// time this runs. A refused request never reaches the handler that would keep
+// or remove it, so the guard removes it.
+const discardUploads = (req: Request) => {
+  const { file, files } = req as Request & { file?: { path?: unknown }; files?: unknown };
+  const all: Array<{ path?: unknown }> = [];
+  if (file) all.push(file);
+  if (Array.isArray(files)) all.push(...files);
+  else if (files && typeof files === 'object') Object.values(files).forEach((list) => { if (Array.isArray(list)) all.push(...list); });
+  all.forEach(({ path }) => { if (typeof path === 'string') unlink(path, () => {}); });
+};
+
+export const refuseDollarKeys = (req: Request, res: Response, next: NextFunction) => {
+  const refused = check(res, 'query', scanKeys(req.query))
+    || check(res, 'body', scanKeys(req.body, (path, key) => exemptBodyKey(req, path, key)));
+  if (!refused) return next();
+  discardUploads(req);
+  return refused;
+};
 
 // CJS compat for the require()-style imports used elsewhere in backend/.
 // eslint-disable-next-line @typescript-eslint/no-require-imports

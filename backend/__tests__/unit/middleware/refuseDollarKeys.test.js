@@ -5,6 +5,7 @@
 // the global express.json(), then the guard, then the routes.
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const express = require('express');
 const multer = require('multer');
@@ -174,6 +175,26 @@ describe('refuseDollarKeys', () => {
   });
 
   describe('multipart fields', () => {
+    test('a refused request leaves no uploaded file on disk', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'refuse-dollar-'));
+      try {
+        const diskApp = express();
+        diskApp.post('/qr', multer({ dest: dir }).single('qrCode'), refuseDollarKeys, (req, res) => res.json({ ok: true }));
+        const res = await request(diskApp).post('/qr').field('podId[$ne]', 'x').attach('qrCode', Buffer.from('png'), 'qr.png');
+        expect(res.status).toBe(400);
+        // The unlink is fire-and-forget; give it a moment to land.
+        for (let i = 0; i < 20 && fs.readdirSync(dir).length; i += 1) {
+          await new Promise((r) => { setTimeout(r, 25); });
+        }
+        expect(fs.readdirSync(dir)).toEqual([]);
+        const kept = await request(diskApp).post('/qr').field('podId', 'x').attach('qrCode', Buffer.from('png'), 'qr.png');
+        expect(kept.status).toBe(200);
+        expect(fs.readdirSync(dir)).toHaveLength(1);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
     test('multer builds nested objects from bracketed field names, which is why it needs its own check', async () => {
       const res = await request(app).post('/multipart-unguarded').field('podId[$ne]', 'x');
       expect(res.body.body).toEqual({ podId: { $ne: 'x' } });
