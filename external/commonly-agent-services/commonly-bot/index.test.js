@@ -135,43 +135,58 @@ test('deployed and standalone pod summaries request the routed non-Claude defaul
 });
 
 
-test('failed social rewrite names its feature/model and still posts heuristic content', () => {
-  const env = {
-    ...process.env,
-    COMMONLY_SOCIAL_POST_TO_FEED: '1',
-    COMMONLY_SOCIAL_REPHRASE_ENABLED: '1',
-    COMMONLY_SOCIAL_REPHRASE_MODEL: 'deepseek-v4-flash',
-    COMMONLY_SOCIAL_IMAGE_ENABLED: '0',
-    COMMONLY_SOCIAL_PUBLISH_EXTERNAL: '0',
-    LITELLM_BASE_URL: 'http://fake-llm',
-    OPENROUTER_API_KEY: '',
-    GEMINI_API_KEY: '',
-  };
-  const result = execFileSync(process.execPath, ['-e', `
-    const assert = require('node:assert/strict');
-    const { handleEvent } = require('./index');
-    const calls = [];
-    const warnings = [];
-    console.warn = (line) => warnings.push(line);
-    global.fetch = async (url, options = {}) => {
-      calls.push({ url, body: options.body && JSON.parse(options.body) });
-      let data = {};
-      if (url.endsWith('/context')) data = { pod: { name: 'Testing' } };
-      else if (url.endsWith('/api/posts?category=Social')) data = [{ content: 'Testing deploy finished', source: { provider: 'x' } }];
-      else if (url.endsWith('/social-policy')) data = { policy: { socialMode: 'rewrite' } };
-      else if (url.endsWith('/v1/chat/completions')) return { ok: false, status: 401, text: async () => 'bad key' };
-      else if (url.includes('category=Social')) data = [];
-      return { ok: true, json: async () => data };
+for (const [mode, reason] of [
+  ['http-error', 'failed'],
+  ['missing', 'rejected=missing-summary'],
+  ['blank', 'rejected=missing-summary'],
+  ['copied', 'rejected=source-overlap'],
+]) {
+  test(`${mode} social rewrite names its feature/model and still posts heuristic content`, () => {
+    const env = {
+      ...process.env,
+      COMMONLY_TEST_REWRITE_MODE: mode,
+      COMMONLY_TEST_REWRITE_REASON: reason,
+      COMMONLY_SOCIAL_POST_TO_FEED: '1',
+      COMMONLY_SOCIAL_REPHRASE_ENABLED: '1',
+      COMMONLY_SOCIAL_REPHRASE_MODEL: 'deepseek-v4-flash',
+      COMMONLY_SOCIAL_IMAGE_ENABLED: '0',
+      COMMONLY_SOCIAL_PUBLISH_EXTERNAL: '0',
+      LITELLM_BASE_URL: 'http://fake-llm',
+      OPENROUTER_API_KEY: '',
+      GEMINI_API_KEY: '',
     };
-    handleEvent({ runtimeToken: 'test', userToken: 'test' }, { _id: 'curate-1', type: 'curate', podId: 'pod-1' }).then(() => {
-      assert.deepEqual(warnings, ['[commonly-bot] feature=social-rephrase model=deepseek-v4-flash failed; using heuristic feed post']);
-      const feed = calls.find((call) => call.url.endsWith('/api/posts'));
-      assert.match(feed.body.content, /A notable update/);
-      assert.ok(calls.at(-1).url.endsWith('/curate-1/ack'));
-    }).catch((error) => { console.error(error); process.exit(1); });
-  `], { cwd: __dirname, env, encoding: 'utf8' });
-  assert.equal(result, '');
-});
+    const result = execFileSync(process.execPath, ['-e', `
+      const assert = require('node:assert/strict');
+      const { handleEvent } = require('./index');
+      const calls = [];
+      const warnings = [];
+      console.warn = (line) => warnings.push(line);
+      global.fetch = async (url, options = {}) => {
+        calls.push({ url, body: options.body && JSON.parse(options.body) });
+        let data = {};
+        if (url.endsWith('/context')) data = { pod: { name: 'Testing' } };
+        else if (url.endsWith('/api/posts?category=Social')) data = [{ content: 'Testing deploy finished', source: { provider: 'x' } }];
+        else if (url.endsWith('/social-policy')) data = { policy: { socialMode: 'rewrite' } };
+        else if (url.endsWith('/v1/chat/completions')) {
+          if (process.env.COMMONLY_TEST_REWRITE_MODE === 'http-error') return { ok: false, status: 401, text: async () => 'bad key' };
+          const reply = process.env.COMMONLY_TEST_REWRITE_MODE === 'missing' ? { why: 'No summary' }
+            : { summary: process.env.COMMONLY_TEST_REWRITE_MODE === 'blank' ? '  ' : 'Testing deploy finished' };
+          data = { choices: [{ message: { content: JSON.stringify(reply) } }] };
+        }
+        else if (url.includes('category=Social')) data = [];
+        return { ok: true, json: async () => data };
+      };
+      handleEvent({ runtimeToken: 'test', userToken: 'test' }, { _id: 'curate-1', type: 'curate', podId: 'pod-1' }).then(() => {
+        assert.deepEqual(warnings, ['[commonly-bot] feature=social-rephrase model=deepseek-v4-flash ' + process.env.COMMONLY_TEST_REWRITE_REASON + '; using heuristic feed post']);
+        const feed = calls.find((call) => call.url.endsWith('/api/posts'));
+        assert.match(feed.body.content, /A notable update/);
+        assert.ok(calls.at(-1).url.endsWith('/curate-1/ack'));
+      }).catch((error) => { console.error(error); process.exit(1); });
+    `], { cwd: __dirname, env, encoding: 'utf8' });
+    assert.equal(result, '');
+  });
+
+}
 
 test('chart and dynamic gateways no longer consume a direct Anthropic key or route', () => {
   const root = path.resolve(__dirname, '../../..');

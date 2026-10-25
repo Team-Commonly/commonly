@@ -232,9 +232,15 @@ const rephraseSocialPost = async ({ post, podName }) => {
       { model: SOCIAL_REPHRASE_MODEL, temperature: 0.5, maxTokens: 300 },
     );
     const parsed = parseJsonBlock(raw);
-    if (!parsed?.summary) return null;
+    if (typeof parsed?.summary !== 'string' || !parsed.summary.trim()) {
+      console.warn(`[commonly-bot] feature=social-rephrase model=${SOCIAL_REPHRASE_MODEL} rejected=missing-summary; using heuristic feed post`);
+      return null;
+    }
     const overlap = lexicalOverlap(sourceText, parsed.summary);
-    if (overlap > 0.7) return null;
+    if (overlap > 0.7) {
+      console.warn(`[commonly-bot] feature=social-rephrase model=${SOCIAL_REPHRASE_MODEL} rejected=source-overlap; using heuristic feed post`);
+      return null;
+    }
     return {
       summary: String(parsed.summary).trim(),
       why: String(parsed.why || '').trim(),
