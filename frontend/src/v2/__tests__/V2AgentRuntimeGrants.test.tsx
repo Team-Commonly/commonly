@@ -55,7 +55,7 @@ test('runtime labels only recognize walked adapters and distinguish daemon from 
 
 test('shows the native engine for a native agent', async () => {
   renderSection({ runtimeType: 'native' });
-  expect(await screen.findByText('Native engine')).toBeInTheDocument();
+  expect(await screen.findByText('read only · runs on commonly')).toBeInTheDocument();
   expect(screen.queryByText('Hosted')).not.toBeInTheDocument();
 });
 
@@ -109,7 +109,7 @@ test('a revoked target after preflight keeps the old placement visible and shows
 
 test('shows this agent grant and requires a second click to revoke through the existing route', async () => {
   renderSection();
-  expect(await screen.findByText('On a computer, via the daemon')).toBeInTheDocument();
+  expect(await screen.findByText('changes apply on the next spawn')).toBeInTheDocument();
   expect(screen.getByRole('option', { name: 'Claude Code 1' })).toBeInTheDocument();
   expect(await screen.findByText(/Work · Granted by Owner/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
@@ -127,7 +127,7 @@ test('model changes delegate to the shared settings hook; a single CLI has no ed
   expect(axios.post).not.toHaveBeenCalled();
 
   rerender(<AuthContext.Provider value={authValue}><V2AgentRuntimeGrants name="other" instanceId="default" runtime={{ runtimeType: 'webhook', host: 'byo', adapter: 'hermes' }} onSaveRuntime={saveRuntime} /></AuthContext.Provider>);
-  expect(await screen.findByText('Single CLI')).toBeInTheDocument();
+  expect(await screen.findByText('read only · this seat runs from the cli')).toBeInTheDocument();
   expect(screen.getByLabelText('model')).toBeDisabled();
 });
 

@@ -21,6 +21,7 @@ const agentHooksRoutes = require('./agentHooks');
 
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 const auth = require('../middleware/auth');
+const daemonAuth = require('../middleware/daemonAuth');
 const AgentEventService = require('../services/agentEventService');
 const HostedRuntimeMeter = require('../services/hostedRuntimeService');
 const AgentIdentityService = require('../services/agentIdentityService');
@@ -505,13 +506,13 @@ router.delete('/messages/:messageId/claim', phase4RateLimit, agentRuntimeAuth, a
   }
 });
 
-router.post('/provider-key/launch', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/provider-key/launch', phase4RateLimit, daemonAuth('agents:adopt'), async (req: any, res: any) => {
   try { return await launchProviderKey(req, res); } catch {
     return res.status(503).json({ code: 'provider_key_unavailable' });
   }
 });
 
-router.post('/observation', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/observation', phase4RateLimit, daemonAuth('agents:adopt'), async (req: any, res: any) => {
   try {
     return await recordRuntimeObservation(req, res);
   } catch {

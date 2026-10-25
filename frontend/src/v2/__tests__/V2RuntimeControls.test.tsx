@@ -25,6 +25,8 @@ test('missing model inventory permits text, but missing effort inventory never p
   render(<Controls runtime={{ ...runtime, inventory: [{ ...runtime.inventory[0], efforts: [] }] }} onSave={save} />);
   expect(screen.getByLabelText('effort')).toBeDisabled();
   expect(screen.getByText(/max stays stored, not sent/)).toBeInTheDocument();
+  expect(screen.queryByText(/stored choice unsupported/)).toBeNull();
+  expect(screen.getByLabelText('effort')).not.toHaveClass('is-unsupported');
   const effortRow = screen.getByLabelText('effort').closest('.v2-runtime-controls__row')!;
   expect(within(effortRow as HTMLElement).queryByLabelText('pending next spawn')).toBeNull();
   fireEvent.change(screen.getByLabelText('model'), { target: { value: 'new-unlisted-model' } });
@@ -36,6 +38,9 @@ test('read-only seats keep all columns, with disabled controls and no save', () 
   for (const field of ['harness','model','effort']) expect(screen.getByLabelText(field)).toBeDisabled();
   expect(screen.getByText('read only · this seat runs from the cli')).toBeInTheDocument();
   expect(screen.queryByRole('button')).toBeNull();
+  expect(screen.queryByText(/model list unavailable/)).toBeNull();
+  expect(screen.queryByText(/max · stored/)).toBeNull();
+  expect(screen.getByLabelText('effort')).toHaveValue('max');
   expect(screen.getAllByText('unconfirmed')).toHaveLength(3);
 });
 test('key input clears before the request and does not echo a failure response', async () => {
@@ -68,4 +73,12 @@ test('OpenCode provider qualification alone does not leave a permanent pending m
   const modelRow = screen.getByLabelText('model').closest('.v2-runtime-controls__row')!;
   expect(within(modelRow as HTMLElement).queryByLabelText('pending next spawn')).toBeNull();
   expect(screen.getByText('explicit-provider/saved-model')).toBeInTheDocument();
+});
+
+test('read-only inventory mismatch preserves the saved model without claiming a stored override', () => {
+  render(<Controls runtime={{ ...runtime, managed: false,
+    inventory: [{ ...runtime.inventory[0], models: ['other-model'] }] }} />);
+  expect(screen.getByLabelText('model')).toHaveValue('saved-model');
+  expect(screen.queryByText(/saved-model · stored/)).toBeNull();
+  expect(screen.queryByText(/stored choice unsupported/)).toBeNull();
 });

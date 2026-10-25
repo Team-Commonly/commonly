@@ -13,8 +13,8 @@ const manage = async (method, body = {}, user = owner) => {
   await manageProviderKey({ method, body, params: { name: 'key-seat' }, query: {}, user: { id: user } }, res);
   return res;
 };
-const launch = (extra = {}) => ({ body: { harness: 'opencode', providerId: 'test-provider', baseURL: 'https://api.example.com/v1' },
-  agentCredential: { ownerUserId: owner, machineId: 'machine-key', scopes: ['runtime'] },
+const launch = (extra = {}) => ({ body: { agentName: 'key-seat', instanceId: 'default', harness: 'opencode', providerId: 'test-provider', baseURL: 'https://api.example.com/v1' },
+  machine: { ownerUserId: String(owner), machineId: 'machine-key' },
   agentUser: bot, agentInstallation: installation, ...extra });
 beforeAll(async () => {
   process.env.CONNECTOR_SECRET_KEYS = `test:${Buffer.alloc(32, 7).toString('base64')}`;
@@ -55,10 +55,10 @@ it('owner reads only four metadata fields; encryption stays out of config and mo
 it.each(['child', 'owner', 'machine', 'identity'])('%s cannot resolve another seat key', async (kind) => {
   await manage('PUT', { key: material });
   const req = launch();
-  if (kind === 'child') req.agentCredential.scopes = ['spawn'];
-  if (kind === 'owner') req.agentCredential.ownerUserId = other;
-  if (kind === 'machine') req.agentCredential.machineId = 'other';
-  if (kind === 'identity') req.agentUser = { ...bot.toObject(), _id: other };
+  if (kind === 'child') { delete req.machine; req.agentCredential = { scopes: ['spawn'] }; }
+  if (kind === 'owner') req.machine.ownerUserId = String(other);
+  if (kind === 'machine') req.machine.machineId = 'other';
+  if (kind === 'identity') req.body.agentName = 'other';
   const res = response(); await launchProviderKey(req, res);
   expect(res.statusCode).toBe(403);
   expect(JSON.stringify(res.body)).not.toContain(material);
@@ -178,13 +178,12 @@ it('the real secret sweep keeps a referenced own key and removes an abandoned en
   const res = response(); await launchProviderKey(launch(), res);
   expect(res.body.key).toBe(material);
 });
-it('real HTTP auth separates owner metadata, lifetime runner resolution, spawn children and revocation', async () => {
+it('real HTTP auth separates owner metadata, daemon resolution and fallback seat refusal, spawn children and revocation', async () => {
   const express = require('express'); const request = require('supertest'); const jwt = require('jsonwebtoken');
   const Credential = require('../../models/AgentCredential');
   const { issueDaemonCredential } = require('../../services/daemonCredentialService');
   const { issueRuntimeTokenForAgent } = require('../../routes/registry/tokens');
   const { mintSpawnCredential } = require('../../services/spawnCredentialService');
-  const runtimeAuth = require('../../middleware/agentRuntimeAuth');
   const { hash } = require('../../utils/secret');
   process.env.JWT_SECRET = 'own-key-http-fixture';
   await User.create({ _id: owner, username: 'http-key-owner', email: 'http-key-owner@test.invalid', password: 'password123' });
@@ -197,8 +196,7 @@ it('real HTTP auth separates owner metadata, lifetime runner resolution, spawn c
   expect(child.ok).toBe(true);
   const app = express(); app.use(express.json());
   app.use('/api/registry', require('../../routes/registry/provider-key'));
-  app.post('/launch', runtimeAuth, launchProviderKey);
-  app.post('/observation', runtimeAuth, require('../../services/agentRuntimeObservation').recordRuntimeObservation);
+  app.use('/api/agents/runtime', require('../../routes/agentsRuntime'));
   const ownerToken = jwt.sign({ id: String(owner) }, process.env.JWT_SECRET);
   const url = '/api/registry/agents/key-seat/provider-key?instanceId=default';
   const saved = await request(app).put(url).set('Authorization', `Bearer ${ownerToken}`).send({ key: material });
@@ -206,17 +204,26 @@ it('real HTTP auth separates owner metadata, lifetime runner resolution, spawn c
   expect(Object.keys(saved.body).sort()).toEqual(['lastUsedAt','set','setAt','setBy']);
   expect(JSON.stringify(saved.body)).not.toContain(material);
   const body = launch().body;
-  const resolved = await request(app).post('/launch').set('Authorization', `Bearer ${issued.token}`).send(body);
+  const metadataOnly = await request(app).post('/api/agents/runtime/provider-key/launch').set('Authorization', `Bearer ${daemon.token}`)
+    .send({ ...body, metadataOnly: true });
+  expect(metadataOnly.body).toEqual({ set: true });
+  expect((await Key.findOne()).lastUsedAt).toBeNull();
+  const resolved = await request(app).post('/api/agents/runtime/provider-key/launch').set('Authorization', `Bearer ${daemon.token}`).send(body);
   expect({ status: resolved.status, body: resolved.status === 200 ? null : resolved.body }).toEqual({ status: 200, body: null }); expect(resolved.body.key).toBe(material);
-  const refused = await request(app).post('/launch').set('Authorization', `Bearer ${child.token}`).send(body);
-  expect(refused.status).toBe(403); expect(JSON.stringify(refused.body)).not.toContain(material);
-  const observed = await request(app).post('/observation').set('Authorization', `Bearer ${issued.token}`)
-    .send({ event: 'spawn', harness: 'opencode', version: '1.19.0', model: 'test-provider/m', effort: null });
+  const refused = await request(app).post('/api/agents/runtime/provider-key/launch').set('Authorization', `Bearer ${child.token}`).send(body);
+  expect(refused.status).toBe(401); expect(JSON.stringify(refused.body)).not.toContain(material);
+  const fallbackChild = await request(app).post('/api/agents/runtime/provider-key/launch').set('Authorization', `Bearer ${issued.token}`).send(body);
+  expect(fallbackChild.status).toBe(401); expect(JSON.stringify(fallbackChild.body)).not.toContain(material);
+  const observed = await request(app).post('/api/agents/runtime/observation').set('Authorization', `Bearer ${daemon.token}`)
+    .send({ agentName: 'key-seat', instanceId: 'default', event: 'spawn', harness: 'opencode', version: '1.19.0', model: 'test-provider/m', effort: null });
   expect(observed.status).toBe(200);
-  const forged = await request(app).post('/observation').set('Authorization', `Bearer ${child.token}`)
-    .send({ event: 'spawn', harness: 'opencode', version: '1.19.0', model: 'forged', effort: null });
-  expect(forged.status).toBe(403);
-  await Credential.revokeCascade(root._id);
-  const revoked = await request(app).post('/launch').set('Authorization', `Bearer ${issued.token}`).send(body);
+  const forged = await request(app).post('/api/agents/runtime/observation').set('Authorization', `Bearer ${child.token}`)
+    .send({ agentName: 'key-seat', instanceId: 'default', event: 'spawn', harness: 'opencode', version: '1.19.0', model: 'forged', effort: null });
+  const fallbackReceipt = await request(app).post('/api/agents/runtime/observation').set('Authorization', `Bearer ${issued.token}`)
+    .send({ agentName: 'key-seat', event: 'connected' });
+  expect(fallbackReceipt.status).toBe(401);
+  expect(forged.status).toBe(401);
+  await Credential.revokeCascade(daemon.credential._id);
+  const revoked = await request(app).post('/api/agents/runtime/provider-key/launch').set('Authorization', `Bearer ${daemon.token}`).send(body);
   expect(revoked.status).toBe(401); expect(JSON.stringify(revoked.body)).not.toContain(material);
 });

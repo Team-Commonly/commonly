@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import AgentRuntimeObservation from '../models/AgentRuntimeObservation';
-import Machine from '../models/Machine';
-import { isSpawnCredential } from './spawnCredentialService';
+import { machineRunnerContext } from './agentProviderKey';
 
 import { WALKED_HARNESSES } from './runtimeInventory';
 const scalar = (value: unknown, max = 256): value is string => typeof value === 'string'
@@ -9,17 +8,11 @@ const scalar = (value: unknown, max = 256): value is string => typeof value === 
   && !Array.from(value).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127);
 
 export const recordRuntimeObservation = async (req: Request, res: Response): Promise<Response> => {
-  const credential = req.agentCredential;
-  const machineId = req.agentUser?.botMetadata?.machineId;
-  // The lifetime runner holds this bearer; its model/tool child gets a spawn
-  // credential and cannot manufacture a receipt. Never trust a body identity.
-  if (!credential || isSpawnCredential(credential) || !machineId
-    || credential.machineId !== machineId || !credential.ownerUserId || !req.agentUser
-    || !(await Machine.exists({ machineId, ownerUserId: credential.ownerUserId }))) {
-    return res.status(403).json({ code: 'machine_runner_required' });
-  }
+  const target = await machineRunnerContext(req);
+  if (!target) return res.status(403).json({ code: 'machine_runner_required' });
+  const machineId = target.bot.botMetadata!.machineId;
   const body = req.body;
-  const fields = ['event', 'harness', 'version', 'model', 'effort', 'outcome', 'at'];
+  const fields = ['agentName', 'instanceId', 'event', 'harness', 'version', 'model', 'effort', 'outcome', 'at'];
   if (!body || !['connected', 'spawn', 'settled'].includes(body.event)
     || Object.keys(body).some((key) => !fields.includes(key))
     || (body.at !== undefined && (typeof body.at !== 'string' || body.at.length > 40
@@ -39,7 +32,7 @@ export const recordRuntimeObservation = async (req: Request, res: Response): Pro
   });
   if (body.event === 'settled') Object.assign(set, { turnRunning: false, lastTurnAt: now,
     ...(body.outcome ? { lastSpawnOutcome: body.outcome } : {}) });
-  await AgentRuntimeObservation.updateOne({ agentUserId: req.agentUser._id }, {
+  await AgentRuntimeObservation.updateOne({ agentUserId: target.bot._id }, {
     $set: set, ...(body.event === 'connected' ? {} : { $setOnInsert: { connectedAt: now } }),
   }, { upsert: true });
   return res.json({ recorded: true });

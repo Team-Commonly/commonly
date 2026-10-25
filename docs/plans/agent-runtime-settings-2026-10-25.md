@@ -49,10 +49,12 @@ unconfined modes have disabled key controls. Claude/Anthropic and Codex/OpenAI
 mappings do not authorize a bearer-env exception.
 
 Owner GET/PUT/DELETE responses contain only the four metadata fields. A separate
-root-runner-only launch POST resolves material into the parent process, which
+machine-daemon-authenticated launch POST resolves material into the parent process, which
 hands it directly to the existing per-spawn proxy. It is never written to a
-vendor-key file or passed through model/tool env. Spawn credentials cannot call
-that endpoint. A changed provider ID or destination refuses before resolution.
+vendor-key file or passed through model/tool env. Neither seat nor spawn credentials can call that endpoint, including seat bearers
+inherited during mint fallback. The parent uses only a metadata read when minting
+fell back, and names a delivery refusal before starting an own-key turn. Spawn
+receipts use the same daemon-only authority; fallback children cannot forge them. A changed provider ID or destination refuses before resolution.
 Each set creates immutable encrypted material and atomically binds its ref with
 the destination; generation fences prevent late sets and removal cleanup from
 overwriting a newer choice. The secret sweep retains only referenced material.

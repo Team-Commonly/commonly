@@ -119,6 +119,34 @@ describe('performRun', () => {
     expect(createClient).not.toHaveBeenCalled();
   });
 
+  test.each([429, 503, 404])('own-key mint fallback HTTP %i refuses the real turn before model spawn', async (status) => {
+    const { createOwnKeyResolver } = await import('../src/lib/own-key-launch.js');
+    const { openSpawnCredential } = await import('../src/lib/spawn-credential.js');
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: jest.fn().mockResolvedValue({ events: [makeEvent()] }), post: mockPost });
+    const launchPost = jest.fn(async () => ({ set: true }));
+    const resolveOwnProviderKey = createOwnKeyResolver({ instanceUrl: 'http://localhost:5000', machineId: 'machine', agentName: 'my-stub',
+      loadRecord: () => ({ machineId: 'machine', instanceUrl: 'http://localhost:5000', daemonToken: 'cm_daemon_parent' }),
+      clientFactory: () => ({ post: launchPost }) });
+    const spawn = jest.fn();
+    const close = jest.fn();
+    const { stop } = performRun({ instanceUrl: 'http://localhost:5000', token: 'cm_agent_fallback',
+      agentName: 'my-stub', instanceId: 'default', reportRuntime: true, resolveOwnProviderKey,
+      adapter: { name: 'opencode', supportsProvider: true, detect: stubAdapter.detect, spawn },
+      environment: { model: 'm', provider: { id: 'p', baseURL: 'https://provider.invalid/v1' } },
+      spawnCredentialLeaseFactory: () => ({ open: () => openSpawnCredential({ client: { post: async () => {
+        throw Object.assign(new Error('mint unavailable'), { status });
+      } }, seatToken: 'cm_agent_fallback', spawnId: 'test' }), close }), setTimeoutImpl: noopTimeout });
+    await drainMicrotasks(); stop();
+    expect(launchPost).toHaveBeenCalledWith('/api/agents/runtime/provider-key/launch', expect.objectContaining({ metadataOnly: true }));
+    expect(spawn).not.toHaveBeenCalled();
+    expect(replyPosts(mockPost)).toHaveLength(0);
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(ackPosts(mockPost)).toEqual(expect.arrayContaining([[expect.any(String), expect.objectContaining({
+      result: expect.objectContaining({ reason: 'own-key-requires-scoped-spawn', outcome: 'no_action' }),
+    })]]));
+  });
+
   test('event with content → adapter.spawn receives sandboxed attribution → reply posted → acked', async () => {
     // Make the full attribution env differ from sandboxEnv at the adapter seam.
     process.env.GIT_CONFIG_COUNT = '1';

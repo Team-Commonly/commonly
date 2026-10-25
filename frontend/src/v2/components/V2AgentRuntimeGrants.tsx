@@ -131,13 +131,6 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
   }, [runtime.runtimeType, loadPlacement, t]);
 
   const details = useMemo(() => describeRuntime(runtime), [runtime]);
-  const modeLabel = {
-    native: t('agentManage.runtime.native', { defaultValue: 'Native engine' }),
-    hosted: t('agentManage.runtime.hosted', { defaultValue: 'Hosted' }),
-    daemon: t('agentManage.runtime.daemon', { defaultValue: 'On a computer, via the daemon' }),
-    cli: t('agentManage.runtime.cli', { defaultValue: 'Single CLI' }),
-    unknown: t('agentManage.runtime.unknown', { defaultValue: 'Runtime details unavailable' }),
-  }[details.mode];
   const revoke = async (grantId: string) => {
     setBusy(true);
     setGrantsError('');
@@ -186,7 +179,6 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
     <div className="v2-agent-runtime-grants">
       <section className="v2-agent-settings__section" aria-labelledby="agent-runtime-heading">
         <h2 id="agent-runtime-heading">{t('agentManage.controls.title')}</h2>
-        <p className="v2-runtime-controls__meta">{modeLabel}</p>
         <V2RuntimeControls runtime={runtime} onSave={onSaveRuntime} />
         {details.mode === 'daemon' && placement && (
           <div className="v2-agent-runtime-grants__edit" data-testid="agent-machine-placement">

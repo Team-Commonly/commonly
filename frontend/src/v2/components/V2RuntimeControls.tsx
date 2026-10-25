@@ -36,13 +36,13 @@ const V2RuntimeControls: React.FC<{ runtime: RuntimeSettings; onSave?: (update: 
   const models = selected?.models;
   const last = runtime.observation?.lastSpawn;
   const confirmed = runtime.observation?.confirmed;
-  const unsupportedHarness = Boolean(inventory.length && !selected?.installed);
-  const unsupportedModel = Boolean(models?.length && model && !models.includes(model));
+  const unsupportedHarness = Boolean(editable && inventory.length && !selected?.installed);
+  const unsupportedModel = Boolean(editable && models?.length && model && !models.includes(model));
   const storedEffort = Boolean(effort && !levels.includes(effort));
-  const unsupportedEffort = editable && storedEffort;
+  const unsupportedEffort = editable && storedEffort && levels.length > 0;
   const changed = harness !== savedHarness || model !== (runtime.model || '') || effort !== (runtime.effort || '');
   const pending = (field: 'harness' | 'model' | 'effort') => {
-    if (!last || (field === 'effort' && !levels.length)) return false;
+    if (!last || (field === 'effort' && (!levels.length || (runtime.effort && !levels.includes(runtime.effort))))) return false;
     let desired = field === 'harness' ? savedHarness : runtime[field] || null;
     // OpenCode's native argument qualifies the configured upstream model with
     // the explicitly declared provider. That spelling alone is not a change.
@@ -79,19 +79,20 @@ const V2RuntimeControls: React.FC<{ runtime: RuntimeSettings; onSave?: (update: 
             {!inventory.some((row) => row.harness === harness) && <option value={harness}>{LABELS[harness] || harness || k('unknown')}</option>}
             {inventory.map((row) => <option key={row.harness} value={row.harness} disabled={!row.installed}>{LABELS[row.harness] || row.harness}{row.version ? ` ${row.version}` : ''}{row.installed ? '' : ` · ${k('notInstalled')}`}</option>)}
           </select> : field === 'model' ? (models?.length ? <select id="runtime-model" disabled={!editable || busy} value={model} className={unsupportedModel ? 'is-unsupported' : ''} onChange={(event) => setModel(event.target.value)}>
-            {(!model || unsupportedModel) && <option value={model}>{model ? `${model} · ${k('stored')}` : k('default')}</option>}
+            {(!model || !models.includes(model)) && <option value={model}>{model ? editable ? `${model} · ${k('stored')}` : model : k('default')}</option>}
             {models.map((option) => <option value={option} key={option}>{option}</option>)}
           </select> : <input id="runtime-model" disabled={!editable || busy} value={model} onChange={(event) => setModel(event.target.value)} />)
             : <select id="runtime-effort" disabled={!editable || busy || !levels.length} className={unsupportedEffort ? 'is-unsupported' : ''} value={effort} onChange={(event) => setEffort(event.target.value)}>
               <option value="">{k('default')}</option>
-              {storedEffort && <option value={effort}>{effort} · {k('stored')}</option>}
+              {editable && storedEffort && <option value={effort}>{effort} · {k('stored')}</option>}
+              {!editable && storedEffort && <option value={effort}>{effort}</option>}
               {levels.map((level) => <option key={level} value={level}>{level}</option>)}
             </select>}
-          {field === 'model' && !models?.length && <small>{k('modelsUnavailable')}</small>}
+          {editable && field === 'model' && !models?.length && <small>{k('modelsUnavailable')}</small>}
           {editable && field === 'effort' && !levels.length && effort && <small>{k('effortUnavailable', { harness: LABELS[harness] || harness, effort })}</small>}
         </div>
-        <span className="v2-runtime-controls__observed">{value(last, field)}</span>
-        <span className="v2-runtime-controls__observed">{value(confirmed, field, true)}</span>
+        <span className="v2-runtime-controls__observed" data-label={k('lastSpawn')}>{value(last, field)}</span>
+        <span className="v2-runtime-controls__observed" data-label={k('confirmed')}>{value(confirmed, field, true)}</span>
       </div>)}
     </div>
     {(unsupportedHarness || unsupportedModel || unsupportedEffort) && <p className="v2-runtime-controls__refusal">{k('unsupported', { harness: value(last, 'harness'), model: value(last, 'model'), effort: value(last, 'effort') })}</p>}

@@ -8,7 +8,6 @@ import * as secrets from './connectorSecrets';
 import { AGENT_PROVIDER_KEY } from './connectorSecretKinds';
 import { projectSeatEnvironments, seatEnvironmentKey } from './seatEnvironmentProjection';
 import { ownsRuntimeIdentity } from './runtimeIdentityOwnership';
-import { isSpawnCredential } from './spawnCredentialService';
 import { effectiveSandboxTrust } from './grantBrokerConfinement';
 
 export const ownKeyCapability = (runtime: any, environment: any) => {
@@ -86,21 +85,21 @@ export const manageProviderKey = async (req: Request, res: Response): Promise<Re
   return res.json(metadata(row));
 };
 
+export const machineRunnerContext = async (req: Request) => {
+  const machine = (req as any).machine;
+  const agentName = req.body?.agentName;
+  const instanceId = req.body?.instanceId || 'default';
+  if (!machine || typeof agentName !== 'string' || typeof instanceId !== 'string') return null;
+  const target = await context(machine.ownerUserId, agentName, instanceId);
+  return target?.bot.botMetadata?.machineId === machine.machineId ? target : null;
+};
+
 export const launchProviderKey = async (req: Request, res: Response): Promise<Response> => {
   res.set('Cache-Control', 'no-store');
-  const credential = req.agentCredential;
-  if (!credential || isSpawnCredential(credential) || !credential.ownerUserId
-    || !req.agentUser || credential.machineId !== req.agentUser.botMetadata?.machineId) {
-    return res.status(403).json({ code: 'machine_runner_required' });
-  }
-  const installation = req.agentInstallation;
-  if (!installation) return res.status(403).json({ code: 'machine_runner_required' });
-  const target = await context(String(credential.ownerUserId), installation.agentName,
-    installation.instanceId || 'default');
-  if (!target || String(target.bot._id) !== String(req.agentUser._id)) {
-    return res.status(403).json({ code: 'machine_runner_required' });
-  }
-  const row = await AgentProviderKey.findOne({ agentUserId: target.bot._id, ownerUserId: credential.ownerUserId });
+  const target = await machineRunnerContext(req);
+  const machine = (req as any).machine;
+  if (!target) return res.status(403).json({ code: 'machine_runner_required' });
+  const row = await AgentProviderKey.findOne({ agentUserId: target.bot._id, ownerUserId: machine.ownerUserId });
   if (!row?.secretRef) return res.json({ set: false });
   const provider = target.seat.environment?.provider as { id?: string; baseURL?: string } | undefined;
   if (!target.capability.available || req.body?.harness !== 'opencode'
@@ -108,11 +107,13 @@ export const launchProviderKey = async (req: Request, res: Response): Promise<Re
     || provider?.id !== row.providerId || provider?.baseURL !== row.baseURL) {
     return res.status(409).json({ code: 'own_key_provider_changed' });
   }
+  if (req.body?.metadataOnly === true) return res.json({ set: true });
   const key = await secrets.get(row.secretRef);
   const used = await AgentProviderKey.updateOne({ _id: row._id, secretRef: row.secretRef, generation: row.generation },
     { $set: { lastUsedAt: new Date() } });
   if (!used.matchedCount) return res.status(409).json({ code: 'provider_key_changed' });
-  // This endpoint is exclusively for the lifetime runner's parent process.
+  // Only the authenticated machine daemon can resolve material. Seat bearers
+  // can reach model children during mint fallback and are never sufficient.
   // No config/owner read or model-child credential can resolve the material.
   return res.json({ set: true, key });
 };

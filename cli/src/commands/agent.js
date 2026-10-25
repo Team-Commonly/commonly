@@ -1,3 +1,4 @@
+import { createOwnKeyResolver, createMachineReportClient } from '../lib/own-key-launch.js';
 import { WALKED_HARNESSES } from '../lib/runtime-inventory.js';
 import { createRuntimeReporter } from '../lib/runtime-observation.js';
 /**
@@ -1265,6 +1266,8 @@ export const performRun = ({
   // The agent to @mention when the model provider refuses a request's content
   // (lib/content-refusal.js). Null: the refusal notice names no one.
   reportRuntime = false,
+  resolveOwnProviderKey = null,
+  runtimeReportClient = null,
   refusalHandoff = null,
 }) => {
   reportRuntime = reportRuntime && WALKED_HARNESSES.includes(adapter?.name);
@@ -1275,7 +1278,10 @@ export const performRun = ({
   const effectiveTurnTimeoutMs = Number.isFinite(requestedTurnTimeout) && requestedTurnTimeout > 0
     ? Math.min(requestedTurnTimeout, 2_147_483_647) : 15 * 60 * 1000;
   const client = createClient({ instance: instanceUrl, token });
-  const runtimeReporter = createRuntimeReporter({ client, harness: adapter.name, detect: () => adapter.detect() });
+  const runtimeReporter = createRuntimeReporter({
+    client: runtimeReportClient || { post: async () => {} },
+    harness: adapter.name, detect: () => adapter.detect(),
+  });
   const runtimeConnected = reportRuntime ? runtimeReporter.connect() : Promise.resolve();
   const missingModelNotices = new Set();
   const handoffAgent = sanitizeHandoffAgent(refusalHandoff);
@@ -1821,17 +1827,15 @@ export const performRun = ({
       }
       await runtimeConnected;
       let providerKey;
-      if (reportRuntime) {
-        let launch;
+      if (reportRuntime && resolveOwnProviderKey) {
         try {
-          launch = await client.post('/api/agents/runtime/provider-key/launch', {
-            harness: adapter.name, providerId: seatEnvironment?.provider?.id,
-            baseURL: seatEnvironment?.provider?.baseURL,
-          });
+          providerKey = await resolveOwnProviderKey({ opened, harness: adapter.name,
+            provider: seatEnvironment?.provider });
         } catch (error) {
-          if (![404, 405].includes(error.status)) throw new Error('Own provider key could not be resolved; retry after checking Settings');
+          if (!error.ownKeySpawnRefused) throw error;
+          return { outcome: 'no_action', refused: { reason: 'delivery-refused' },
+            reason: 'own-key-requires-scoped-spawn' };
         }
-        if (launch?.set) providerKey = launch.key;
       }
       result = await adapter.spawn(frameDecisionForkRule(promptForSpawn), {
         onSpawn: reportRuntime ? (controls) => {
@@ -3574,6 +3578,10 @@ Docs:
         // TASK-102 part B: the operator's TTL ask, if any. Unset means the
         // server's published default, which is the only lifetime we can justify
         // without an operator saying otherwise.
+        runtimeReportClient: createMachineReportClient({ instanceUrl: record.instanceUrl,
+          machineId: record.machineId, agentName: record.agentName, instanceId: record.instanceId }),
+        resolveOwnProviderKey: createOwnKeyResolver({ instanceUrl: record.instanceUrl,
+          machineId: record.machineId, agentName: record.agentName, instanceId: record.instanceId }),
         reportRuntime: Boolean(record.machineId || process.env.COMMONLY_MANAGED_RUNNER === '1'),
         spawnCredentialTtlSeconds: resolveSpawnTtlSeconds(process.env),
         refusalHandoff: opts.refusalHandoff || null,

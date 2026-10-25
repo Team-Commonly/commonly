@@ -4966,8 +4966,10 @@ test('TASK-482 offer follows the final CTA so existing commands and controls can
 
 test('TASK-435 runtime columns can shrink on phones without dropping the observed values', () => {
   const css = read('../components/V2RuntimeControls.css');
-  expect(css).toContain('minmax(0, 1.4fr) repeat(2, minmax(0, 1fr))');
+  expect(css).toContain('@media (max-width: 760px)');
+  expect(css).toContain('grid-template-columns: minmax(0, 1fr)');
+  expect(css).toContain('width: 100%; min-height: 44px');
   expect(ruleBody(css, '.v2-runtime-controls__saved')).toContain('min-width: 0');
   expect(ruleBody(css, '.v2-runtime-controls__observed')).toContain('overflow-wrap: anywhere');
-  expect(css).toContain('grid-column: 1 / -1');
+  expect(css).toContain('content: attr(data-label)');
 });
