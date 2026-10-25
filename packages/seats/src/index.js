@@ -7,3 +7,6 @@ export { createHermesAdapter } from './adapters/hermes.js';
 export { RunFailure, runFailure, failureKindOf, FAILURE_KINDS } from './failures.js';
 export { EVENT_TYPES, isEventType, traceOf, NULL_TRACE } from './trace/events.js';
 export { createTraceStore } from './trace/store.js';
+export { validateGrant, matchToolCall, TOOL_KINDS, CREDENTIAL_SOURCES } from './valet/grant.js';
+export { prepareRunEnv, BASE_ENV_ALLOWLIST } from './valet/env.js';
+export { createPermissionPolicy, DEFAULT_APPROVE_TIMEOUT_MS } from './valet/permissions.js';

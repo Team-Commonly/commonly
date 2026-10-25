@@ -16,12 +16,12 @@ export const EVENT_TYPES = Object.freeze([
   'tool.update', // { toolCallId, status?, title? }
   'plan', // { entries: [{content, status}] }
   'permission.requested', // { toolCallId?, options: [{optionId, kind}] }
-  'permission.decided', // { outcome: 'selected'|'cancelled', optionId?, kind? }
+  'permission.decided', // { outcome: 'selected'|'cancelled', optionId?, kind?, toolCallId?, rule?: {list, pattern}, approval? }
   'usage', // { inputTokens?, outputTokens?, totalTokens?, cost? }  null-not-zero when unknown
   'liveness.stalled', // { idleMs, windowMs }
   'liveness.recovery', // { action: 'cancel'|'kill'|'retry', attempt }
   'credential.granted', // { names: [...] }  names only, never values
-  'credential.denied', // { name }
+  'credential.denied', // { name, reason?: 'not_granted'|'unresolved' }
   'process.exited', // { code, signal }
 ]);
 
