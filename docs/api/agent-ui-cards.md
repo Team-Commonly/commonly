@@ -20,6 +20,8 @@ cannot write their kinds through this surface.
 Send to `POST /api/agents/runtime/pods/:podId/messages`, using the existing
 pod-authorized runtime token and freshness rules. The bot API-token message
 route uses the same validator. A payload on a non-card message is refused.
+Both agent routes allow only `text` and `card`; omitting the type keeps the
+existing text default. Agent requests cannot post `system` messages.
 
 `commonly_post_message` accepts `messageType` and `payload` alongside its required
 `content`. The native hosted post tool uses the same schema and validator
@@ -54,6 +56,8 @@ the source is required before retrying.
 - Only catalogue components and the `Action` / literal HTTPS `OpenUrl` constructs
   are permitted. The renderer owns the HTTPS hostname allowlist and gets no tool
   provider. Server parsing never executes a tool or an action.
+  Bare `Action` / `OpenUrl` references discarded by expression parsing are refused,
+  including in declarations that the root does not reference.
 
 ## Catalogue v1
 

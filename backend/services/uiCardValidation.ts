@@ -92,6 +92,9 @@ export function validateAgentCardPayload(
   payload: unknown,
   content: unknown,
 ): void {
+  if (messageType !== undefined && messageType !== 'text' && messageType !== 'card') {
+    refuse('Agent messageType must be text or card');
+  }
   if (payload === undefined && messageType !== 'card') return;
   if (messageType !== 'card') refuse('UI payload requires messageType card');
   if (typeof content !== 'string' || !content.trim()) refuse('UI card requires a content text fallback');
@@ -154,6 +157,10 @@ export function validateAgentCardPayload(
             refuse(`UI card call is not allowed: ${node.name}`);
           }
           if (node.fn) refuse('UI card functions are not allowed');
+          if (node.name === 'Action' && (node.args.length !== 1
+            || node.args[0].k !== 'Comp' || node.args[0].name !== 'OpenUrl')) {
+            refuse('Action requires one parsed OpenUrl call');
+          }
           if (node.name === 'OpenUrl') {
             const [url] = node.args;
             if (node.args.length !== 1 || url?.k !== 'Str') refuse('OpenUrl requires a literal https URL');
@@ -162,7 +169,7 @@ export function validateAgentCardPayload(
               refuse('OpenUrl requires a literal https URL');
             }
           }
-        } else if (node.k === 'Ref' && ['Query', 'Mutation', 'Run'].includes(node.n)) {
+        } else if (node.k === 'Ref' && ['Query', 'Mutation', 'Run', 'Action', 'OpenUrl'].includes(node.n)) {
           refuse(`UI card capability is not allowed: ${node.n}`);
         } else if (node.k === 'Obj') {
           if (node.entries.some(([key]) => ['__proto__', 'prototype', 'constructor'].includes(key))) {

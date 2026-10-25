@@ -235,6 +235,13 @@ describe('agent card route boundary', () => {
     }));
     expect(res.status).not.toHaveBeenCalled();
   });
+  it('refuses system messages without a payload before persistence', async () => {
+    const res = response();
+    await handler(req({ messageType: 'system', content: 'hello' }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+    expect(findNonMemberMentionNotices).not.toHaveBeenCalled();
+  });
   it.each([
     { ...payload, kind: 'approval' },
     { ...payload, source: 'root = Text("hello")\nq = Query("secret", {})' },
@@ -293,6 +300,14 @@ describe('bot-token send-time freshness', () => {
       expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
       expect(findNonMemberMentionNotices).not.toHaveBeenCalled();
     }
+  });
+  it('refuses system messages without a payload on the bot-token route', async () => {
+    const res = response();
+    await getRouteHandler('/bot/pods/:podId/messages', 'post')({ ...req,
+      body: { content: 'hello', messageType: 'system', continueAnyway: true } }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+    expect(findNonMemberMentionNotices).not.toHaveBeenCalled();
   });
 
   it('stamps only a successful bot-token message read and holds a stale post', async () => {

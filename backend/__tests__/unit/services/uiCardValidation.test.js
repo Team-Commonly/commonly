@@ -9,9 +9,13 @@ describe('untrusted UI card write validation', () => {
   it('keeps ordinary text backwards compatible', () => {
     expect(() => validateAgentCardPayload(undefined, undefined, 'hello')).not.toThrow();
   });
+  it.each(['system', 'approval', null, 1])('refuses non-agent message type %s without a payload', (type) => {
+    expect(() => validateAgentCardPayload(type, undefined, 'hello')).toThrow('text or card');
+  });
   it('accepts a complete known component without evaluating it', () => {
     expect(() => validate()).not.toThrow();
     expect(() => validate(card('root = Text("Query Mutation @Run are just quoted text")'))).not.toThrow();
+    expect(() => validate(card('root = Text("hello")\nunused = Action(@OpenUrl("https://commonly.me"))'))).not.toThrow();
   });
   it.each([
     null, [], {}, { ...card(), kind: 'approval' }, { ...card(), kind: 'decision' },
@@ -42,6 +46,11 @@ describe('untrusted UI card write validation', () => {
     'root = Text("hello")\nunused = Mutation("tool", {})',
     'root = Text(Action(@Run(q)))',
     'root = Text("hello")\nunused = Action(@Run(q))',
+    'root = Text("hello")\nunused = OpenUrl("javascript:alert(1)")',
+    'root = Text("hello")\nunused = Action("javascript:alert(1)")',
+    'root = Text("hello")\nunused = OpenUrl("http://example.com")',
+    'root = Text("hello")\nunused = Action("http://example.com")',
+    'root = Text("hello")\nunused = Action(OpenUrl("javascript:alert(1)"))',
     'root = Text("hello") Query("tool", {})',
     'root = Text("hello") Unknown("hidden")',
     'root = Text(@Fetch("https://example.org"))',
