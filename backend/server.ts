@@ -365,6 +365,9 @@ mongoose.connection.once('open', () => {
         console.error('[agent-bootstrap] Error:', err.message);
       });
 
+      require('./services/playbooks/gallery').seedPlaybookGallery().catch((err: any) =>
+        console.error('[playbook-gallery] bootstrap failed:', err?.message || err),
+      );
       require('./scripts/seed-native-agents').seedNativeAgents().catch((err: any) =>
         console.error('[native-seed] failed:', err?.message || err),
       );

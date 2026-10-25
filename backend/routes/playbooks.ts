@@ -7,6 +7,7 @@ import { createOffPlaybook, editPlaybook, setPlaybookOn, requirePlaybookHuman,
   listPlaybooks, listPlaybookRuns, playbookOptions } from '../services/playbooks/store';
 import { runPlaybookManually, askAgainForPlaybookPoint } from '../services/playbooks/runner';
 import { loadPlaybookPoint } from '../services/playbooks/rulings';
+import { listPlaybookGallery, copyGalleryPlaybook } from '../services/playbooks/gallery';
 
 const auth = require('../middleware/auth');
 const router = express.Router();
@@ -43,6 +44,19 @@ router.get('/:podId/playbooks', limit, auth, human, async (req: HumanRequest, re
 router.get('/:podId/playbooks/options', limit, auth, human, async (req: HumanRequest, res) => {
   try { return res.json(await playbookOptions(req.params.podId, caller(req))); }
   catch (error) { return failure(error, res); }
+});
+router.get('/:podId/playbooks/gallery', limit, auth, human, async (req: HumanRequest, res) => {
+  try { return res.json({ playbooks: await listPlaybookGallery(req.params.podId, caller(req)) }); }
+  catch (error) { return failure(error, res); }
+});
+router.post('/:podId/playbooks/gallery/:seedId', limit, auth, human, async (req: HumanRequest, res) => {
+  try {
+    if (!bodyKeys(req.body, ['timezone']) || (req.body.timezone !== undefined && typeof req.body.timezone !== 'string')) {
+      return res.status(400).json({ error: 'invalid_schedule', message: 'Choose your timezone' });
+    }
+    const row = await copyGalleryPlaybook(req.params.podId, caller(req), req.params.seedId, req.body.timezone as string);
+    return res.status(201).json({ id: String(row._id), on: false });
+  } catch (error) { return failure(error, res); }
 });
 router.post('/:podId/playbooks', limit, auth, human, async (req: HumanRequest, res) => {
   try {

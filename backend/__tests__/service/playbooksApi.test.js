@@ -127,3 +127,37 @@ test('a foreign pod installation never leaks through a guessed installation ID',
   expect(result.status).toBe(404); expect(result.body).not.toHaveProperty('runs');
   expect((await api('get', `/api/pods/${other._id}/playbooks`)).body.playbooks).toEqual([]);
 });
+
+test('builtin seed gallery is repeatable and Use this makes a private Off copy with explicit schedule timezone', async () => {
+  const { seedPlaybookGallery } = require('../../services/playbooks/gallery');
+  await seedPlaybookGallery(); await seedPlaybookGallery();
+  expect(await Installable.countDocuments({ source: 'builtin' })).toBe(2);
+  expect(await Installation.countDocuments()).toBe(0);
+  const gallery = await request(app).get(`/api/pods/${pod._id}/playbooks/gallery`).set('x-test-user', String(human._id));
+  expect(gallery.status).toBe(200); expect(gallery.body.playbooks).toHaveLength(2);
+  const seed = gallery.body.playbooks.find((row) => row.id === 'builtin-playbook-pipeline-review');
+  expect(seed.scheduleCron).toBe('0 9 * * 1');
+  const { AIRTABLE_ENTRY } = require('../../integrations/hostedMcp/airtable');
+  const { hostedMcpToolName } = require('../../services/hostedMcpEntryService');
+  const pinnedReadNames = AIRTABLE_ENTRY.tools.filter((tool) => tool.class === 'read')
+    .map((tool) => hostedMcpToolName(AIRTABLE_ENTRY, tool));
+  expect(pinnedReadNames).toEqual(expect.arrayContaining(seed.definition.steps[0].reads));
+  const use = (id, body) => request(app).post(`/api/pods/${pod._id}/playbooks/gallery/${id}`)
+    .set('x-test-user', String(human._id)).send(body);
+  expect((await use(seed.id, {})).status).toBe(400);
+  expect((await use(seed.id, { timezone: 'not/a-zone' })).status).toBe(400);
+  expect(await Installation.countDocuments()).toBe(0);
+  const used = await use(seed.id, { timezone: 'America/Los_Angeles' });
+  expect(used.status).toBe(201); expect(used.body.on).toBe(false);
+  const copy = await Installation.findById(used.body.id);
+  expect(copy.status).toBe('paused'); expect(copy.installableId).not.toBe(seed.id);
+  expect(copy.components[0].config.get('schedule')).toEqual({ cron: '0 9 * * 1', timezone: 'America/Los_Angeles' });
+  const copiedManifest = await Installable.findOne({ installableId: copy.installableId });
+  expect(copiedManifest.source).toBe('user'); expect(String(copiedManifest.owner)).toBe(String(human._id));
+  expect(copiedManifest.components[0].metadata.playbook).toEqual(seed.definition);
+  expect((await PodAsset.findOne()).content).toContain('Airtable');
+  expect(await Task.countDocuments()).toBe(0);
+  expect((await use('not-a-seed', {})).status).toBe(404);
+  expect((await request(app).get(`/api/pods/${pod._id}/playbooks/gallery`).set('x-test-user', String(outsider._id))).status)
+    .toBe(403);
+});
