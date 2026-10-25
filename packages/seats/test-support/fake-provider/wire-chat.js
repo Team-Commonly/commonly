@@ -2,6 +2,12 @@
  * OpenAI chat completions (`POST /v1/chat/completions`). The text, refusal and
  * failure bodies are byte-for-byte what the provider sent before scripts
  * existed; other tracks' checks read them.
+ *
+ * A thought (`[[think:X]]` or a script `thought`) is sent the way
+ * DeepSeek-compatible and OpenRouter-compatible chat servers send reasoning:
+ * `message.reasoning_content` on a non-stream reply, and `delta.reasoning_content`
+ * chunks, before any content, on a stream. The OpenAI chat API itself has no
+ * reasoning field, so a client that ignores it still reads the same answer.
  */
 import { textOf } from './turns.js';
 
@@ -55,7 +61,7 @@ export const respond = (turn, { reply, body, model, n, usage }) => {
   const sse = reply.sse();
   const chunk = (delta, finishReason = null, extra = {}) => sse.event(null, { id, object: 'chat.completion.chunk', created, model: modelName, choices: [{ index: 0, delta, finish_reason: finishReason }], ...extra });
   chunk({ role: 'assistant', content: '' });
-  if (turn.thought) chunk({ reasoning_content: turn.thought });
+  if (turn.thought) for (const part of halves(turn.thought)) chunk({ reasoning_content: part });
   if (turn.refuse !== null) chunk({ refusal: turn.refuse });
   for (const text of turn.text) chunk({ content: text });
   calls.forEach((c, i) => {

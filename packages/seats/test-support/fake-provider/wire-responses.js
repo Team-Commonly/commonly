@@ -13,10 +13,16 @@ export const refusalDefault = 'inband';
 const TOOL_CALL_ITEMS = new Set(['function_call', 'custom_tool_call', 'local_shell_call']);
 const TOOL_OUTPUT_ITEMS = new Set(['function_call_output', 'custom_tool_call_output', 'local_shell_call_output']);
 
-export const entries = (body) => {
-  if (typeof body?.input === 'string') return [{ role: 'user', text: body.input, toolCalls: [] }];
+/** The request's own input as a list of items (a bare string is one user message). */
+export const inputItems = (body) => {
+  if (typeof body?.input === 'string') return [{ type: 'message', role: 'user', content: body.input }];
+  return Array.isArray(body?.input) ? body.input : [];
+};
+
+/** Conversation entries for this request: the chained context (if any), then its own input. */
+export const entries = (body, prior = []) => {
   const out = [];
-  for (const item of Array.isArray(body?.input) ? body.input : []) {
+  for (const item of [...prior, ...inputItems(body)]) {
     if (TOOL_OUTPUT_ITEMS.has(item?.type)) {
       const output = typeof item.output === 'string' ? item.output : textOf(item.output);
       out.push({ role: 'tool', text: '', toolResults: [{ callId: item.call_id || null, output, isError: false }] });
@@ -42,6 +48,43 @@ export const errorBody = (status, error = {}) => ({
 });
 const REFUSAL_ERROR = { error: { message: 'The request was rejected by the content policy.', type: 'invalid_request_error', param: null, code: 'content_policy_violation' } };
 
+/**
+ * Stateful chaining. A stored response (`store` is true unless the request says
+ * false) is kept by id with its whole context: the context it chained from, its
+ * own input, and its output. A request naming it in `previous_response_id`
+ * continues from that context, so a follow-up can carry only the new items
+ * (for example one `function_call_output`).
+ *
+ * An unknown or unstored id is refused the way the real API refuses it: HTTP 400,
+ *   { error: { message: "Previous response with id '<id>' not found.",
+ *              type: 'invalid_request_error', param: 'previous_response_id',
+ *              code: 'previous_response_not_found' } }
+ * Source: OpenAI's public docs, "WebSocket mode" guide
+ * (https://developers.openai.com/api/docs/guides/websocket-mode), which shows
+ * this error object (status 400, code previous_response_not_found, param
+ * previous_response_id, message "Previous response with id 'resp_abc' not found.")
+ * and says it is returned when the id cannot be resolved and `store=false`. The
+ * HTTP endpoint wraps the same object in the standard `{ error }` envelope, and
+ * returns the same 400 and message for an id it cannot find.
+ */
+export const previousNotFound = (id) => ({
+  error: {
+    message: `Previous response with id '${id}' not found.`,
+    type: 'invalid_request_error',
+    param: 'previous_response_id',
+    code: 'previous_response_not_found',
+  },
+});
+
+/** Resolve `previous_response_id` against the store: { prior: items } or { error }. */
+export const resolvePrior = (body, store) => {
+  const id = body?.previous_response_id;
+  if (id === undefined || id === null) return { prior: [] };
+  const stored = store.get(String(id));
+  if (!stored) return { error: { status: 400, body: previousNotFound(id) } };
+  return { prior: stored.context };
+};
+
 const argsOf = (call) => (typeof call.arguments === 'string' ? call.arguments : JSON.stringify(call.arguments));
 const halves = (s) => (s.length < 2 ? [s] : [s.slice(0, Math.ceil(s.length / 2)), s.slice(Math.ceil(s.length / 2))]);
 
@@ -63,7 +106,7 @@ const outputItems = (turn, n, calls) => {
   return items;
 };
 
-export const respond = (turn, { reply, body, model, n, usage }) => {
+export const respond = (turn, { reply, body, model, n, usage, remember }) => {
   if (turn.error && !turn.error.inStream) {
     reply.json(turn.error.status, errorBody(turn.error.status, turn.error), turn.error.headers);
     return [];
@@ -84,14 +127,18 @@ export const respond = (turn, { reply, body, model, n, usage }) => {
   const response = (status, output, extra = {}) => ({
     id: `resp_fake_${n}`, object: 'response', created_at: Math.floor(Date.now() / 1000), status,
     error: null, incomplete_details: null, instructions: null, model: body.model || model,
-    output, parallel_tool_calls: true, tool_choice: 'auto', tools: [], metadata: {}, usage: null, ...extra,
+    output, parallel_tool_calls: true, tool_choice: 'auto', tools: [], metadata: {}, usage: null,
+    previous_response_id: body.previous_response_id ?? null, store: body.store !== false, ...extra,
   });
+  // A finished response is stored whether or not the client saw all of it.
+  const finish = () => remember?.(`resp_fake_${n}`, items);
   const finalStatus = incomplete ? 'incomplete' : 'completed';
   const finalExtra = { usage: usageBody, ...(incomplete ? { incomplete_details: { reason: 'max_output_tokens' } } : {}) };
 
   if (!body.stream) {
     if (turn.error) { reply.json(turn.error.status, errorBody(turn.error.status, turn.error)); return calls; }
     reply.json(200, response(finalStatus, items, finalExtra));
+    finish();
     return calls;
   }
 
@@ -136,6 +183,7 @@ export const respond = (turn, { reply, body, model, n, usage }) => {
     });
   } else {
     emit(incomplete ? 'response.incomplete' : 'response.completed', { response: response(finalStatus, items, finalExtra) });
+    finish();
   }
   sse.end();
   return calls;

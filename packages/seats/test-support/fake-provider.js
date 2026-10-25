@@ -29,6 +29,11 @@
  *   refuseAs: 'error'|'inband', error: CODE | {status, type, message, inStream, headers},
  *   cut: N | {after, mode: 'silent'|'close'} }
  *
+ * Responses chaining: a finished response is stored by id (unless the request
+ * sent `store: false`); a request with `previous_response_id` continues from that
+ * response's whole context, and an unknown id gets the real API's 400
+ * `previous_response_not_found`. `chains` records which id chained to which.
+ *
  * Capture: `requests` holds model calls (the shape older checks read, plus
  * format/path/headers/body/receivedAt); `allRequests` holds every HTTP request.
  * Auth header values are redacted to their scheme. `findInRequests(needle)`
@@ -107,6 +112,8 @@ export const startFakeProvider = async ({
   const toolCalls = [];
   const toolResults = [];
   const open = new Set();
+  const stored = new Map(); // Responses: id -> { context } for previous_response_id
+  const chains = []; // Responses: { request, from, to, found } per chained request
   let turns = loadScript(script);
   let position = 0;
 
@@ -156,8 +163,21 @@ export const startFakeProvider = async ({
       const usage = { input: Math.max(1, Math.ceil(bytes.length / 4)), output: 1 };
       if (route.countTokens) { route.wire.countTokens(openReply(res, null), usage); return; }
 
-      const facts = conversationFacts(route.wire.entries(body));
       const n = requests.length + 1;
+      const chained = route.wire.resolvePrior ? route.wire.resolvePrior(body, stored) : { prior: [] };
+      const previousResponseId = body.previous_response_id ?? null;
+      if (chained.error) {
+        Object.assign(record, {
+          model: body.model, stream: !!body.stream, authorization: req.headers.authorization ? 'present' : 'absent',
+          auth: authOf(req.headers), toolResults: [], directive: 'fail', scriptTurn: null, previousResponseId, responseId: null,
+        });
+        requests.push(record);
+        chains.push({ request: n - 1, from: previousResponseId, to: null, found: false });
+        // A refused chain never reaches the model, so it does not use up a script turn.
+        openReply(res, null).json(chained.error.status, chained.error.body);
+        return;
+      }
+      const facts = conversationFacts(route.wire.entries(body, chained.prior));
       const call = Object.assign(record, {
         model: body.model,
         stream: !!body.stream,
@@ -165,6 +185,9 @@ export const startFakeProvider = async ({
         auth: authOf(req.headers),
         toolResults: facts.toolResults,
       });
+      if (route.wire.resolvePrior) {
+        Object.assign(call, { previousResponseId, responseId: null, priorItems: chained.prior.length });
+      }
       const { turn, scriptTurn } = nextTurn(call, facts);
       Object.assign(call, { directive: turn.kind, scriptTurn });
       requests.push(call);
@@ -172,7 +195,13 @@ export const startFakeProvider = async ({
 
       if (turn.stall) return; // hold the socket open, never answer
       usage.output = Math.max(1, Math.ceil((turn.text.join('').length + (turn.thought || '').length) / 4));
-      const emitted = route.wire.respond(turn, { reply: openReply(res, turn.cut), body, model, n, usage });
+      const remember = (id, output) => {
+        call.responseId = id;
+        if (previousResponseId !== null) chains.push({ request: n - 1, from: previousResponseId, to: id, found: true });
+        if (body.store === false) return;
+        stored.set(id, { context: [...chained.prior, ...route.wire.inputItems(body), ...output] });
+      };
+      const emitted = route.wire.respond(turn, { reply: openReply(res, turn.cut), body, model, n, usage, remember });
       for (const c of emitted) toolCalls.push({ request: n - 1, id: c.id, name: c.name, arguments: c.arguments ?? c.input });
       call.toolCalls = emitted.map((c) => ({ id: c.id, name: c.name }));
     });
@@ -206,6 +235,10 @@ export const startFakeProvider = async ({
     allRequests,
     toolCalls,
     toolResults,
+    /** Responses chaining: which response id each `previous_response_id` request continued, and into which id. */
+    chains,
+    /** Ids a later request may chain from (stored, finished responses). */
+    get storedResponseIds() { return [...stored.keys()]; },
     findInRequests,
     get scriptPosition() { return position; },
     /** Swap the script and rewind, so one provider can serve several scripted checks. */
