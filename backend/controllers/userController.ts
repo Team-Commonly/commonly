@@ -43,7 +43,7 @@ const PRIVATE_USER_FIELDS = [
 // Reservation metadata is used only by username availability checks. It is
 // not part of a profile response: historical message text remains the only
 // public record of the previous handle.
-const INTERNAL_USER_FIELDS = ['previousUsernames'];
+const INTERNAL_USER_FIELDS = ['previousUsernames', 'accountDeletionRequestedAt'];
 
 const isValidAccountLabel = (value: unknown) => typeof value === 'string'
   && value.trim().length > 0

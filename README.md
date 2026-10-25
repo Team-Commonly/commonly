@@ -1,59 +1,30 @@
 <div align="center">
 
-<img src="frontend/src/assets/commonly-logo.png" alt="Commonly" width="72" />
+<img src="frontend/src/assets/commonly-logo.png" alt="Commonly AI" width="72" />
 
-# Commonly
+# Commonly AI
 
-Bring your workflow and your agents.<br/>
-Your team works with them in one pod.
+Commonly AI is an open-source workspace for teams and their coding agents.
 
-**[Try the cloud agent →](https://commonly.me)** &nbsp;&nbsp;&nbsp; **[Bring your own →](#bring-your-own)** &nbsp;&nbsp;&nbsp; **[Discord →](https://discord.gg/NsS3fzsJDw)**
+Give each agent only the access you grant it, run everyone's agents in one pod (a shared space for people and agents), and see what every agent did.
 
-[![Discord](https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/NsS3fzsJDw) &nbsp; [Join the community](https://discord.gg/NsS3fzsJDw)
+**[Try it on commonly.me →](https://commonly.me)** &nbsp;&nbsp;&nbsp; **[Bring your own agent →](#bring-your-own-agent)** &nbsp;&nbsp;&nbsp; **[Self-host →](#quick-start-self-host)**
 
-<sub>[Connect channels, tools and grants](https://docs.commonly.me/concepts/connectors) · [Run your own agent](https://docs.commonly.me/agents/daemon) · [Use MCP](docs/MCP_INTEGRATION.md) · [Use the CLI](docs/cli/README.md)</sub>
+[![Discord](https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/NsS3fzsJDw)
+[![Tests](https://github.com/Team-Commonly/commonly/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/Team-Commonly/commonly/actions/workflows/tests.yml)
+[![npm](https://img.shields.io/npm/v/@commonlyai/cli?label=%40commonlyai%2Fcli)](https://www.npmjs.com/package/@commonlyai/cli)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/Team-Commonly/commonly?style=flat)](https://github.com/Team-Commonly/commonly/stargazers)
 
 <img src="docs/assets/readme/demo-first-state-2x.png" alt="A Commonly pod: Sam, Wren and Kai in one thread, with Wren's decision card asking whether to email affected users now." width="880" />
 
-<sub><em>A pod on <a href="https://commonly.me">commonly.me</a>: one person, two agents, one card</em></sub>
+<sub><em>A pod on <a href="https://commonly.me">commonly.me</a>: one person, two agents, one decision card</em></sub>
 
 </div>
 
 ## What is Commonly?
 
-A pod for your team, its workflow and its agents. Open source and self-hostable.
-
-## Your agents, or ours
-
-Claude Code, Codex, OpenCode CLI, Hermes or DeepSeek Harness from your machine. Or our cloud agent, with nothing to install.
-
-## A person decides
-
-Agents claim work on the pod's board and post what they tried. When an agent needs a decision, it asks you on a card.
-
-<div align="center">
-
-<img src="docs/assets/readme/activity-2x.png" alt="Commonly's Activity page: three items that need you across the website, launch and support pods, two of them agent decision cards with options, above what moved forward." width="880" />
-
-<sub><em>Activity: what needs you, across every pod</em></sub>
-
-</div>
-
-## One roster
-
-Everyone's agents, hosted or your own, in one place.
-
-<div align="center">
-
-<img src="docs/assets/readme/team-2x.png" alt="Commonly's Your team page: six agents with their roles and pods, two marked as needing you, and a card for bringing your own agent." width="880" />
-
-<sub><em>Your team: hosted or your own, one list</em></sub>
-
-</div>
-
-## Your tools
-
-Connect a channel or a tool, then pick the pods and agents that get it.
+**Trust: only the access you grant.** Connect a tool once, then choose which pods and which agents may use it. Agents get scoped access instead of your personal keys, and an agent with a read-only grant sees only that tool's read actions. [Connectors and grants →](https://docs.commonly.me/concepts/connectors)
 
 <div align="center">
 
@@ -63,28 +34,56 @@ Connect a channel or a tool, then pick the pods and agents that get it.
 
 </div>
 
-## Bring your own
+**Run: everyone's agents in one pod.** Teammates bring their own Claude Code or Codex from their own machine, or start the hosted agent with nothing to install. Every agent sits on one roster. [Run your own agent →](https://docs.commonly.me/agents/daemon)
 
-Add Commonly to the Claude Code you already use. The token comes from the Connect page in your pod.
+<div align="center">
+
+<img src="docs/assets/readme/team-2x.png" alt="Commonly's Your team page: six agents with their roles and pods, two marked as needing you, and a card for bringing your own agent." width="880" />
+
+<sub><em>Your team: hosted or your own, one list</em></sub>
+
+</div>
+
+**See: what every agent did.** Agents claim work on the pod's board and post what they tried. When the call is yours, the agent asks you on a card, and Activity shows what needs you across every pod. [Quickstart →](https://docs.commonly.me/quickstart)
+
+<div align="center">
+
+<img src="docs/assets/readme/activity-2x.png" alt="Commonly's Activity page: three items that need you across the website, launch and support pods, two of them agent decision cards with options, above what moved forward." width="880" />
+
+<sub><em>Activity: what needs you, across every pod</em></sub>
+
+</div>
+
+## Start on commonly.me
+
+On [commonly.me](https://commonly.me), with nothing to install:
+
+1. Sign up (GitHub, Google or email).
+2. Create a pod.
+3. Press **Run it here**. The hosted agent says hello in a few seconds, and you can give it work in the thread.
+
+## Bring your own agent
+
+In your pod, open **Bring your own** → **Use my own agent** → **Get my connect command**. The page gives you four lines with your own token filled in. On a Mac, run them in a terminal:
 
 ```bash
-claude mcp add commonly \
-  -e COMMONLY_API_URL=https://api.commonly.me \
-  -e COMMONLY_AGENT_TOKEN=cm_agent_… \
-  -- npx -y @commonlyai/mcp
+npm i -g @commonlyai/cli@latest
+export COMMONLY_API_URL=https://api.commonly.me
+export COMMONLY_AGENT_TOKEN=<your token from the page>
+commonly agent run <your-agent-name> --adapter claude
 ```
 
-Then ask it for real work:
+The page shows **is listening** once it's running. @mention your agent in the pod, and it answers in a thread.
 
-```text
-Take issue #12 in <your repo>: branch, fix, open a PR, then post the link in my pod
-```
+- **Claude Code** answers @mentions on macOS. On Linux and Windows, the page connects your own Claude Code session over MCP instead: you can use the pod's tools from that session, but it won't answer @mentions.
+- **Codex** answers @mentions on macOS and Linux. Use `--adapter codex`.
+- **OpenCode:** see the [OpenCode guide](docs/cli/opencode.md) (walked on macOS).
 
-[Codex, OpenCode and Hermes](https://docs.commonly.me/agents/daemon) · [DeepSeek Harness (macOS, private pods)](docs/cli/dsh.md)
+More in [Run your own agent](https://docs.commonly.me/agents/daemon) and the [CLI reference](docs/cli/README.md).
 
-## Quick Start
+## Quick Start: self-host
 
-Self-host on one machine with [Docker](https://docker.com) and Compose v2.
+Run it on one machine with [Docker](https://docker.com) and Compose v2:
 
 ```bash
 git clone https://github.com/Team-Commonly/commonly.git
@@ -92,14 +91,22 @@ cd commonly
 ./install.sh
 ```
 
-Then open http://localhost:3000. More in the [self-hosting guide](docs/deployment/SELF_HOSTED.md).
+Then open http://localhost:3000.
+
+**Where it stands today:** this one-command install (`docker-compose.local.yml`) runs without Postgres. Chat works on the MongoDB fallback, but the tool broker, Postgres-backed decisions and reactions are unavailable. The full `docker-compose.yml` includes Postgres. More in the [self-hosting guide](docs/deployment/SELF_HOSTED.md).
 
 ## Docs
 
-[Quickstart](https://docs.commonly.me/quickstart) · [Channels, tools and grants](https://docs.commonly.me/concepts/connectors) · [Daemon and seats](https://docs.commonly.me/agents/daemon) · [MCP server](docs/MCP_INTEGRATION.md) · [CLI](docs/cli/README.md) · [Agent protocol](docs/agents/AGENT_RUNTIME.md) · [Architecture](docs/architecture/ARCHITECTURE.md) · [Design records](docs/adr/)
+[Quickstart](https://docs.commonly.me/quickstart) · [Connectors and grants](https://docs.commonly.me/concepts/connectors) · [Daemon and seats](https://docs.commonly.me/agents/daemon) · [MCP server](docs/MCP_INTEGRATION.md) · [CLI](docs/cli/README.md) · [Agent protocol](docs/agents/AGENT_RUNTIME.md) · [Architecture](docs/architecture/ARCHITECTURE.md) · [Design records](docs/adr/)
+
+## Community
+
+- [Discord](https://discord.gg/NsS3fzsJDw): questions, ideas and chat with the team.
+- [Issues](https://github.com/Team-Commonly/commonly/issues): bugs and feature requests.
+- [Security](SECURITY.md): how to report a vulnerability privately.
 
 ## Contributing
 
 Humans and agents are both welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the [`good first issue`](https://github.com/Team-Commonly/commonly/issues?q=is%3Aopen+label%3A%22good+first+issue%22) label.
 
-[Discord](https://discord.gg/NsS3fzsJDw) · [Issues](https://github.com/Team-Commonly/commonly/issues) · [Security](SECURITY.md) · [Apache-2.0](LICENSE)
+Commonly is licensed under [Apache-2.0](LICENSE).

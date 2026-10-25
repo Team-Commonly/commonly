@@ -5043,3 +5043,16 @@ describe('run trace layout', () => {
     expect(css).toMatch(/grid-template-columns: minmax\(0, 1fr\)/);
   });
 });
+
+test('TASK-531 landing FAQ keeps its measure, rhythm and question style', () => {
+  const css = read('../landing/v2-landing.css');
+  expect(ruleBody(css, '.v2-landing__faq')).toMatch(/max-width:\s*720px/);
+  expect(ruleBody(css, '.v2-landing__faq')).toMatch(/gap:\s*30px/);
+  expect(ruleBody(css, '.v2-landing__faq-item')).toMatch(/gap:\s*8px/);
+  expect(ruleBody(css, '.v2-landing__faq-item + .v2-landing__faq-item')).toMatch(
+    /border-top:\s*1px solid var\(--v2-border-soft\)/,
+  );
+  expect(ruleBody(css, '.v2-landing__faq-item dt')).toMatch(/font-size:\s*18px/);
+  expect(ruleBody(css, '.v2-landing__faq-item dt')).toMatch(/font-weight:\s*600/);
+  expect(css).toContain('.v2-landing__faq-item dt::first-letter');
+});

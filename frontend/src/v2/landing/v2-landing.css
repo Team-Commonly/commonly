@@ -1561,3 +1561,31 @@
 :lang(zh) .v2-landing__cta-title {
   letter-spacing: 0;
 }
+
+/* FAQ: capped measure; items are separated by a hairline and a 30px gap, and
+   each question sits 8px above its answer. The question is body-weight, not
+   a card title, so the list reads as text rather than as a row of cards. */
+.v2-landing__faq {
+  margin: 0;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+.v2-landing__faq-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.v2-landing__faq-item + .v2-landing__faq-item {
+  border-top: 1px solid var(--v2-border-soft);
+  padding-top: 30px;
+}
+.v2-landing__faq-item dt {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--v2-text-primary);
+}
+.v2-landing__faq-item dt::first-letter { text-transform: uppercase; }
+.v2-landing__faq-item dd { margin: 0; }

@@ -87,6 +87,7 @@ export interface IUser extends Document {
   banned: boolean;
   // Incrementing this invalidates every browser session without rotating JWT_SECRET.
   tokenVersion: number;
+  accountDeletionRequestedAt?: Date;
   bannedAt?: Date;
   banReason?: string;
   profilePicture: string;
@@ -279,6 +280,7 @@ const userSchema = new Schema<IUser>({
   verified: { type: Boolean, default: false },
   banned: { type: Boolean, default: false },
   tokenVersion: { type: Number, default: 0 },
+  accountDeletionRequestedAt: { type: Date },
   bannedAt: { type: Date },
   banReason: { type: String },
   profilePicture: { type: String, default: 'default' },
@@ -518,6 +520,11 @@ userSchema.methods.getOrCreateDigestUnsubscribeToken = function (): string {
   }
   return this.digestUnsubscribeToken;
 };
+
+// Recovery scans only authorized deletion markers, ordered for bounded retries.
+userSchema.index({ accountDeletionRequestedAt: 1, _id: 1 }, {
+  partialFilterExpression: { accountDeletionRequestedAt: { $exists: true } },
+});
 
 export default mongoose.model<IUser, IUserModel>('User', userSchema);
 // CJS compat: let require() return the default export directly

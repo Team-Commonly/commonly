@@ -100,7 +100,8 @@ describe('Administrator role concurrency', () => {
     const [alice, bob] = await Promise.all([makeAdmin(`write-${kind}-alice`), makeAdmin(`write-${kind}-bob`)]);
     const Lock = require('../../models/AdminUserMutationLock');
     if (kind === 'ban') await User.updateOne({ _id: bob._id }, { $set: { role: 'user' } });
-    const write = jest.spyOn(User.prototype, kind === 'delete' ? 'deleteOne' : 'save')
+    const write = (kind === 'role' ? jest.spyOn(User, 'findOneAndUpdate')
+      : jest.spyOn(User.prototype, kind === 'delete' ? 'deleteOne' : 'save'))
       .mockRejectedValueOnce(new Error('write outcome unknown'));
     try {
       const pending = kind === 'delete' ? request(app).delete(`/api/admin/users/${bob._id}`)
@@ -131,12 +132,12 @@ describe('Administrator role concurrency', () => {
     const bob = await User.create({ username: 'promotion-bob', email: 'promotion-bob@example.test',
       password: 'Role-concurrency-test-123!', role: 'user' });
     const writing = deferred(); const resume = deferred();
-    const save = User.prototype.save;
-    jest.spyOn(User.prototype, 'save').mockImplementation(async function (...args) {
-      if (String(this._id) === String(bob._id) && this.role === 'admin') {
+    const update = User.findOneAndUpdate.bind(User);
+    jest.spyOn(User, 'findOneAndUpdate').mockImplementation(async (...args) => {
+      if (String(args[0]._id) === String(bob._id) && args[1].$set?.role === 'admin') {
         writing.resolve(); await resume.promise;
       }
-      return save.apply(this, args);
+      return update(...args);
     });
     const first = request(app).patch(`/api/admin/users/${bob._id}/role`)
       .set('Authorization', `Bearer ${issueSessionToken(alice)}`).send({ role: 'admin' }).then((res) => res);

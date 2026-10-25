@@ -25,8 +25,12 @@ jest.mock('../../../models/File', () => {
 });
 const File = require('../../../models/File');
 
+jest.mock('../../../models/User', () => ({
+  findById: jest.fn(() => ({ select: () => ({ lean: async () => ({ _id: 'user1' }) }) })),
+}));
+
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
-  req.userId = 'user1';
+  req.userId = /^Bearer quota-test-/.test(req.get('Authorization') || '') ? 'quota-user' : 'user1';
   next();
 });
 
@@ -66,6 +70,18 @@ describe('uploads POST / (ADR-002 Phase 1)', () => {
     expect(File.__saveMock).toHaveBeenCalled();
     expect(res.body.url).toMatch(/^\/api\/uploads\/[^/]+\.png$/);
     expect(res.body.url).not.toMatch(/^https?:\/\//);
+  });
+
+  it('limits one user despite forged forwarding headers and rotating sessions', async () => {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      await request(app).post('/api/uploads')
+        .set('Authorization', `Bearer quota-test-${attempt % 2}`)
+        .set('cf-connecting-ip', `198.51.100.${attempt}`)
+        .set('X-Forwarded-For', `203.0.113.${attempt}`).expect(400);
+    }
+    await request(app).post('/api/uploads').set('Authorization', 'Bearer quota-test-new')
+      .set('cf-connecting-ip', '192.0.2.1').expect(429);
+    await request(app).post('/api/uploads').expect(400);
   });
 
   it('returns 400 when no file is provided', async () => {

@@ -155,7 +155,8 @@ const setupPgDb = async () => {
       implementation: () => require('crypto').randomUUID(),
     });
 
-    pgPool = pgDb.adapters.createPg().pool();
+    const { Pool } = pgDb.adapters.createPg();
+    pgPool = new Pool();
 
     await pgPool.query(`
       CREATE TABLE IF NOT EXISTS pods (

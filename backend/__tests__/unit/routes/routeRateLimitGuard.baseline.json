@@ -148,7 +148,6 @@
   "routes/skills.ts POST /:skillId/rating [unlimited]",
   "routes/skills.ts POST /import [unlimited]",
   "routes/test-bot.ts POST /discord-summary [unlimited]",
-  "routes/uploads.ts POST / [unlimited]",
   "routes/users.ts DELETE /:id/follow [unlimited]",
   "routes/users.ts GET /:id [unlimited]",
   "routes/users.ts GET /:id/public-activity [unlimited]",

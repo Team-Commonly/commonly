@@ -1275,6 +1275,60 @@ describe('performRun', () => {
     );
   });
 
+  // TASK-293: the wrapper posts any final text that is not exactly NO_REPLY, so
+  // every prompt whose final text reaches the pod says so. Pinned as a literal
+  // rather than imported, so rewording the line is a deliberate test change.
+  const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
+    + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary.';
+
+  const firstPromptFor = async (events) => {
+    createClient.mockReturnValue({
+      get: jest.fn().mockResolvedValue({ events }),
+      post: jest.fn().mockResolvedValue({}),
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    return spawn.mock.calls[0][0];
+  };
+
+  test.each([
+    ['a heartbeat wake', { _id: 'evt-hb-posted-line', type: 'heartbeat', payload: { content: 'Run your heartbeat checklist.' } }],
+    ['a mention', { _id: 'evt-mention-posted-line' }],
+  ])('the inbox-batch prompt for %s says its final text is posted unless it is exactly NO_REPLY', async (_label, overrides) => {
+    const prompt = await firstPromptFor([makeEvent(overrides)]);
+    expect(prompt).toContain('[Inbox batch: 1 new event in this pod.');
+    expect(prompt).toContain(FINAL_TEXT_IS_POSTED);
+  });
+
+  test('the agent.ask.response prompt says its final text is posted unless it is exactly NO_REPLY', async () => {
+    const prompt = await firstPromptFor([makeEvent({
+      _id: 'evt-ask-response-posted-line',
+      type: 'agent.ask.response',
+      payload: { requestId: 'ask-456', fromAgent: 'reviewer', response: 'Ship it.' },
+    })]);
+    expect(prompt).toContain('[Private agent consultation response]');
+    expect(prompt).toContain(FINAL_TEXT_IS_POSTED);
+  });
+
+  test('the agent.ask prompt does not say its final text is posted: that text goes to the requester', async () => {
+    const prompt = await firstPromptFor([makeEvent({
+      _id: 'evt-ask-posted-line',
+      type: 'agent.ask',
+      payload: { requestId: 'ask-789', fromAgent: 'planner', question: 'Ready?' },
+    })]);
+    expect(prompt).toContain('@planner asks:');
+    expect(prompt).not.toContain(FINAL_TEXT_IS_POSTED);
+  });
+
   test('decision.ruled spawns a turn with the durable pick, rather than dropping it as an unknown event', async () => {
     const events = [makeEvent({
       _id: 'evt-decision-ruled',

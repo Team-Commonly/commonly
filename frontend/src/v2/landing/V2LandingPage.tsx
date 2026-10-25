@@ -5,6 +5,7 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import V2LangSwitch from '../components/V2LangSwitch';
 import DemoWorkspace from './DemoWorkspace';
+import { LANDING_FAQ, buildFaqPageJsonLd } from './landingFaq';
 import '../v2.css';
 import './v2-landing.css';
 import './demo-workspace.css';
@@ -299,6 +300,22 @@ const V2LandingPage: React.FC = () => {
   const appHref = isAuthenticated ? '/v2' : '/v2/register';
   const primaryLabel = isAuthenticated ? t('landing.actions.openApp') : t('landing.actions.getStarted');
   const locale = i18n.resolvedLanguage || i18n.language;
+  const isEnglish = locale.startsWith('en');
+  // FAQPage JSON-LD follows the visible FAQ: present on en, removed otherwise.
+  useEffect(() => {
+    const id = 'landing-faq-jsonld';
+    const existing = document.getElementById(id) as HTMLScriptElement | null;
+    if (!isEnglish) {
+      existing?.remove();
+      return undefined;
+    }
+    const script = existing ?? document.createElement('script');
+    script.id = id;
+    script.type = 'application/ld+json';
+    script.textContent = JSON.stringify(buildFaqPageJsonLd());
+    if (!existing) document.head.appendChild(script);
+    return () => { document.getElementById(id)?.remove(); };
+  }, [isEnglish]);
   const rotatingTerms = [
     t('landing.hero.terms.claudeCode'),
     t('landing.hero.terms.codex'),
@@ -317,6 +334,18 @@ const V2LandingPage: React.FC = () => {
     if (typeof IntersectionObserver === 'undefined') return;
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
     setMotion(true);
+  }, []);
+
+  // A fresh load of `/#pricing` (the /pricing redirect) makes the browser try
+  // the fragment scroll before React has rendered the sections, so it finds
+  // nothing and the page stays at the hero. Scroll once after mount. The
+  // scroller's scroll-padding-top keeps the target clear of the sticky bar.
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (!id) return;
+    // Instant: the landing scroller is smooth, and an animated jump ends short
+    // of the target on a 390 viewport, which parks the label under the bar.
+    document.getElementById(id)?.scrollIntoView({ behavior: 'instant' });
   }, []);
 
   // `stats` is a dependency on purpose: when /api/stats/public resolves, the
@@ -864,6 +893,23 @@ const V2LandingPage: React.FC = () => {
             {t('landing.pricing.foot')}
           </p>
         </section>
+
+        {/* ---- FAQ (en only: the JSON-LD must describe text the page shows) ---- */}
+        {isEnglish && (
+          <section className="v2-landing__section" id="faq">
+            <div className="v2-landing__section-head" data-reveal>
+              <h2 className="v2-landing__h2">{t('landing.faq.title')}</h2>
+            </div>
+            <dl className="v2-landing__faq">
+              {LANDING_FAQ.map((item) => (
+                <div className="v2-landing__faq-item" key={item.question}>
+                  <dt>{item.question}</dt>
+                  <dd className="v2-landing__card-text">{item.answer}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        )}
 
         {/* ---- Final CTA ---- */}
         <section className="v2-landing__cta">

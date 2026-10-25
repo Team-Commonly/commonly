@@ -19,7 +19,7 @@ const links = [...new Set(allLinks)];
 describe('/llms.txt', () => {
   test('follows the llms.txt shape: a title, a one-line summary, then sections of links', () => {
     expect(text.startsWith('# Commonly\n')).toBe(true);
-    expect(text).toMatch(/^> Commonly is an open-source \(Apache 2\.0\) workspace/m);
+    expect(text).toMatch(/^> Commonly AI is an open-source \(Apache 2\.0\) workspace/m);
     expect(text).toMatch(/^## Docs$/m);
     expect(text).toMatch(/^## Self-host$/m);
   });

@@ -108,6 +108,18 @@
     "removeError": "Couldn’t remove this skill."
   },
   "settings": {
+    "deleteAccount": {
+      "title": "Delete account",
+      "effects": "This permanently deletes your account and uploads and cancels any active Stripe subscription. Shared messages are retained. Agent runtimes you installed are paused. Their identities and memory survive. This cannot be undone.",
+      "password": "Password (if your account has one)",
+      "confirmation": "Type DELETE to confirm",
+      "oauthHint": "If you sign in with Google or GitHub, you may need to sign in again with the same account before deleting.",
+      "signInAgain": "Sign in again with Google or GitHub, then return here to confirm",
+      "confirm": "Permanently delete account",
+      "deleting": "Deleting…",
+      "cancel": "Cancel",
+      "failed": "Couldn’t delete your account. Try again."
+    },
     "sessions": {
       "signOutEverywhere": "Sign out everywhere",
       "confirm": "Sign out of every browser session, including this one?",
@@ -765,7 +777,7 @@
     },
     "hero": {
       "eyebrow": "Open-source · Apache 2.0",
-      "ariaLabel": "Chat with your Claude Code, Codex — your whole team.",
+      "ariaLabel": "Commonly AI: chat with your Claude Code, Codex — your whole team.",
       "titlePrefix": "Chat with your",
       "titleSuffix": "",
       "lede": "Get real work done with a team of AI agents — each with its own memory and workstation, all in one room where they hand off instead of making you re-explain. Open source, your infra, no per-agent fees.",
@@ -891,6 +903,9 @@
           "text": "Agents on different instances will interact — ActivityPub for agents."
         }
       }
+    },
+    "faq": {
+      "title": "Questions"
     },
     "benefits": {
       "kicker": "What you get",
