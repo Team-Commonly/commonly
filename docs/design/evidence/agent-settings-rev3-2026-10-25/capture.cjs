@@ -1,10 +1,11 @@
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const fs=require('fs');
+const toolsProof=process.env.TOOLS_PROOF==='1';
 const outDir=process.env.OUTPUT_DIR || require('path').join(__dirname,'captures');
 (async()=>{
 const browser=await chromium.launch({executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
 fs.mkdirSync(outDir,{recursive:true});
-for(const lang of ['en','zh-CN']) for(const kind of ['byo','hosted','scout','never']) for(const width of [1440,390]){
+for(const lang of ['en','zh-CN']) for(const kind of (toolsProof?['byo','hosted','scout']:['byo','hosted','scout','never'])) for(const width of [1440,390]){
  const context=await browser.newContext({viewport:{width,height:width===390?844:1000}}); const page=await context.newPage(); const errors=[];page.on('pageerror',e=>errors.push(e.message));
  let paused=false;let heartbeatEnabled=false;
  const runtime={runtimeType:kind==='scout'?'native':kind==='hosted'?'hosted':'wrapper',adapter:kind==='byo'?'codex':undefined};
@@ -20,10 +21,10 @@ for(const lang of ['en','zh-CN']) for(const kind of ['byo','hosted','scout','nev
  else if(u.pathname===`/api/registry/pods/fixture-pod/agents/${kind}`)data={agent:installation()};
  else if(u.pathname==='/api/agent-binding/placement')data={boundMachineId:'fixture-machine',activeMachines:[{machineId:'fixture-machine',name:'Laptop'}],boundMachineRevoked:false};
  else if(u.pathname==='/api/credentials')data=[{_id:'fixture-key',label:'Runtime token',status:'active',lastUsedAt:'2026-10-25T16:40:00Z'},{_id:'fixture-old',label:'Runtime token',status:'revoked'}];
- else if(u.pathname.endsWith('/grants'))data={grants:[]};
+ else if(u.pathname.endsWith('/grants'))data={grants:toolsProof&&kind!=='hosted'?[{grantId:'fixture-grant',tools:['repo.read'],connector:'Repository',podName:'Launch plan',grantedBy:'Alex',createdAt:'2026-10-20T12:00:00Z',expiresAt:'2099-01-01T00:00:00Z',revokedAt:null,canRevoke:true}]:[]};
  else if(u.pathname.endsWith('/editable'))data={sections:{long_term:{content:'Remembers the launch plan.',updatedAt:null},soul:{content:'',updatedAt:null},shared:{content:'',updatedAt:null}}};
  else if(u.pathname.includes('attention'))data={items:[],count:0};
- else if(u.pathname.includes('/skills'))data={skills:[]};
+ else if(u.pathname.includes('/skills'))data={items:toolsProof&&kind!=='hosted'?[{name:'Writing',description:'Draft release notes.'},{name:'Review',description:'Review a change.'}]:[],canEdit:toolsProof,skillLoad:toolsProof?{at:'2026-10-25T16:40:00Z',mounted:['Writing'],conflicted:['Review']}:null};
  await route.fulfill({json:data});});
  await page.addInitScript((lang)=>{localStorage.setItem('token','fixture-only-user');localStorage.setItem('v2.lang',lang);},lang);
  await page.goto(`http://127.0.0.1:3546/v2/agents/${kind}/default`); await page.getByRole('heading',{name:lang==='en'?'Status':'状态',exact:true}).waitFor(); await page.locator('.v2-agent-status strong').filter({hasText:kind==='byo'?(lang==='en'?'Off':'离线'):kind==='never'?(lang==='en'?'Not connected yet':'尚未连接'):kind==='hosted'?(lang==='en'?'Working':'工作中'):(lang==='en'?'Ready':'就绪')}).waitFor();await page.evaluate(async()=>{
@@ -49,6 +50,26 @@ for(const lang of ['en','zh-CN']) for(const kind of ['byo','hosted','scout','nev
  await page.locator('.v2-agent-settings').evaluate(el=>el.closest('.v2-feature__body').scrollTop=0);
  await page.screenshot({path:`${outDir}/${lang}-${kind}-${width}.png`,fullPage:true});
  console.log(lang,kind,width,JSON.stringify({errors,overflow:await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),h2:await page.locator('h2').allTextContents()}));
+ if(toolsProof) {
+ if(kind!=='hosted') {
+ await page.locator('.v2-agent-runtime-grants').getByRole('button',{name:lang==='en'?'Revoke':'撤销',exact:true}).click();
+ const confirm=page.locator('.v2-agent-runtime-grants__actions button').first();
+ await page.mouse.move(0,0);
+ await page.waitForFunction(()=>getComputedStyle(document.querySelector('.v2-agent-runtime-grants__actions button')).backgroundColor==='rgb(16, 24, 40)');
+ const ink=await confirm.evaluate(el=>getComputedStyle(el).backgroundColor);
+ if(ink!=='rgb(16, 24, 40)')throw new Error('Revoke confirm is not ink: '+ink);
+ await confirm.locator('..').screenshot({path:`${outDir}/${lang}-${kind}-revoke-${width}.png`});
+ await page.locator('.v2-agent-runtime-grants__actions button').last().click();
+ }
+ await page.getByRole('button',{name:lang==='en'?'Add skill':'添加技能',exact:true}).click();
+ const input=page.locator('#v2-agent-skills-search');await input.waitFor();
+ const metrics=await input.evaluate(el=>({height:el.getBoundingClientRect().height,font:getComputedStyle(el).fontFamily,parentFont:getComputedStyle(el.parentElement).fontFamily}));
+ if(width===390&&metrics.height<44)throw new Error('Catalog input below 44px');
+ if(metrics.font!==metrics.parentFont)throw new Error('Catalog input font not inherited');
+ await page.locator('.v2-agent-skills').screenshot({path:`${outDir}/${lang}-${kind}-catalog-${width}.png`});
+ console.log('tools',lang,kind,width,JSON.stringify(metrics));
+ await page.getByRole('button',{name:lang==='en'?'Close catalog':'关闭目录',exact:true}).click();
+ }
  if(kind!=='never') {
  const reach=page.getByRole('heading',{name:lang==='en'?'Reach per pod':'各 Pod 的唤醒设置',exact:true}).locator('..');
  const toggle=reach.getByRole('checkbox',{name:lang==='en'?'Heartbeat':'心跳',exact:true});

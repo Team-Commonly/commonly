@@ -44,8 +44,10 @@
 .v2-root .v2-agent-settings button:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
 .v2-root .v2-agent-settings button:disabled { opacity: .55; cursor: default; }
 .v2-root .v2-agent-settings .v2-agent-settings__section-head button { background: var(--v2-ink); color: var(--v2-on-ink); border-color: var(--v2-ink); }
+.v2-root .v2-agent-settings .v2-agent-runtime-grants__actions button:first-child,
 .v2-root .v2-agent-settings .v2-agent-settings__actions button:first-child { background: var(--v2-ink); color: var(--v2-on-ink); border-color: var(--v2-ink); }
 .v2-root .v2-agent-settings .v2-agent-settings__section-head button:hover,
+.v2-root .v2-agent-settings .v2-agent-runtime-grants__actions button:first-child:hover,
 .v2-root .v2-agent-settings .v2-agent-settings__actions button:first-child:hover { background: var(--v2-ink-hover); }
 .v2-root .v2-agent-settings a.v2-agent-settings__action {
   display: inline-flex;
@@ -133,6 +135,7 @@
 .v2-agent-runtime-summary__command code span { display: inline-block; white-space: nowrap; }
 @media (max-width: 760px) {
   .v2-agent-status { flex-wrap: wrap; padding: 12px; }
+  .v2-root .v2-agent-settings .v2-agent-skills__catalog input,
   .v2-root .v2-agent-settings .v2-agent-wake-pods select,
   .v2-root .v2-agent-settings button:not(.MuiButtonBase-root),
   .v2-root .v2-agent-settings a.v2-agent-settings__action { min-height: 44px; }
@@ -157,3 +160,5 @@
 .v2-agent-settings .v2-agent-settings__section { padding: 16px 0 8px; }
 .v2-agent-settings__error, .v2-agent-settings [role="alert"] { color: var(--v2-text-primary); }
 .v2-agent-settings .v2-agent-skills h3 { margin: 0; font: 700 16px/22px var(--v2-font-display); }
+
+.v2-root .v2-agent-settings .v2-agent-skills__catalog input { font: inherit; }

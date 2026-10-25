@@ -1,0 +1,36 @@
+en byo 1440 {"errors":[],"overflow":false,"h2":["Identity","Status","Runtime","Reach per pod","Memory","What it can use","Usage","Access key","Remove"]}
+tools en byo 1440 {"height":40,"font":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif","parentFont":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif"}
+heartbeat en byo 1440 33
+en byo 390 {"errors":[],"overflow":false,"h2":["Identity","Status","Runtime","Reach per pod","Memory","What it can use","Usage","Access key","Remove"]}
+tools en byo 390 {"height":44,"font":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif","parentFont":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif"}
+heartbeat en byo 390 44
+en hosted 1440 {"errors":[],"overflow":false,"h2":["Identity","Status","Runtime","Reach per pod","Memory","What it can use","Usage","Remove"]}
+tools en hosted 1440 {"height":40,"font":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif","parentFont":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif"}
+heartbeat en hosted 1440 33
+en hosted 390 {"errors":[],"overflow":false,"h2":["Identity","Status","Runtime","Reach per pod","Memory","What it can use","Usage","Remove"]}
+tools en hosted 390 {"height":44,"font":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif","parentFont":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif"}
+heartbeat en hosted 390 44
+en scout 1440 {"errors":[],"overflow":false,"h2":["Identity","Status","Runtime","Reach per pod","Memory","What it can use","Remove"]}
+tools en scout 1440 {"height":40,"font":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif","parentFont":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif"}
+heartbeat en scout 1440 33
+en scout 390 {"errors":[],"overflow":false,"h2":["Identity","Status","Runtime","Reach per pod","Memory","What it can use","Remove"]}
+tools en scout 390 {"height":44,"font":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif","parentFont":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif"}
+heartbeat en scout 390 44
+zh-CN byo 1440 {"errors":[],"overflow":false,"h2":["身份","状态","运行方式","各 Pod 的唤醒设置","记忆","可用能力","用量","访问密钥","移除"]}
+tools zh-CN byo 1440 {"height":40,"font":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif","parentFont":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif"}
+heartbeat zh-CN byo 1440 33
+zh-CN byo 390 {"errors":[],"overflow":false,"h2":["身份","状态","运行方式","各 Pod 的唤醒设置","记忆","可用能力","用量","访问密钥","移除"]}
+tools zh-CN byo 390 {"height":44,"font":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif","parentFont":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif"}
+heartbeat zh-CN byo 390 44
+zh-CN hosted 1440 {"errors":[],"overflow":false,"h2":["身份","状态","运行方式","各 Pod 的唤醒设置","记忆","可用能力","用量","移除"]}
+tools zh-CN hosted 1440 {"height":40,"font":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif","parentFont":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif"}
+heartbeat zh-CN hosted 1440 33
+zh-CN hosted 390 {"errors":[],"overflow":false,"h2":["身份","状态","运行方式","各 Pod 的唤醒设置","记忆","可用能力","用量","移除"]}
+tools zh-CN hosted 390 {"height":44,"font":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif","parentFont":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif"}
+heartbeat zh-CN hosted 390 44
+zh-CN scout 1440 {"errors":[],"overflow":false,"h2":["身份","状态","运行方式","各 Pod 的唤醒设置","记忆","可用能力","移除"]}
+tools zh-CN scout 1440 {"height":40,"font":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif","parentFont":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif"}
+heartbeat zh-CN scout 1440 33
+zh-CN scout 390 {"errors":[],"overflow":false,"h2":["身份","状态","运行方式","各 Pod 的唤醒设置","记忆","可用能力","移除"]}
+tools zh-CN scout 390 {"height":44,"font":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif","parentFont":"\"IBM Plex Sans\", \"SF Pro Text\", -apple-system, \"system-ui\", \"Segoe UI\", Roboto, sans-serif"}
+heartbeat zh-CN scout 390 44

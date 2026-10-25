@@ -28,6 +28,10 @@ Scout retains Pause: the existing installation status PATCH accepts active/pause
 
 Heartbeat off hides the interval and daily-turn estimate. The capture exercises off → on → off for BYO, hosted and Scout at both widths in both languages, saves separate Reach crops, and measures the enabled interval select at a minimum 44px on phone. Scout still omits the turn estimate when enabled. The Chinese toggle is “心跳”; “间隔” labels only the select.
 
+## What it can use review follow-up
+
+The catalog search inherits the page font and has a 44px minimum height on phone. The grant revoke confirmation uses the same ink first action as other page confirmations. Run the fixture with `TOOLS_PROOF=1` to cover BYO/Scout with grants and loaded/conflicted skills, and hosted with no grants/skills, in en/zh at both widths. This mode opens the revoke confirmation without submitting it, checks its computed ink fill, opens the catalog, and checks search height and inherited font.
+
 ## Reproduce
 
 Start the normal frontend dev server on `127.0.0.1:3546`, then run `node capture.cjs` in an environment with Playwright installed. `PLAYWRIGHT_MODULE` can point to an existing installation; `OUTPUT_DIR` changes the destination. The fixture defaults to the system Chrome executable on macOS. If node_modules is a worktree symlink, allow its real directory in the local Vite server’s `server.fs.allow`; otherwise font URLs are refused. The capture asserts the Signal font loads before taking images. The source uses fake identities and a fixed receipt, so the displayed values can be checked against the intercepted responses.
