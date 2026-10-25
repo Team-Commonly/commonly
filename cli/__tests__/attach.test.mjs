@@ -145,6 +145,24 @@ describe('updateAgentConfiguration', () => {
     agentName: 'juno', podId: 'pod-9', instanceId: 'writer', runtimeToken: 'cm_agent_j',
   };
 
+  test('page key edits only model controls and preserves the local environment', async () => {
+    const client = { get: jest.fn(), patch: jest.fn(async () => ({ podId: 'owned-pod' })) };
+    const environment = { workspace: { path: './own' }, sandbox: { trust: 'public', mode: 'workspace' }, model: 'old' };
+    const result = await updateAgentConfiguration({ client, record: { ...record, environment }, runtimeKey: true, model: 'new', effort: 'high' });
+    expect(client.get).not.toHaveBeenCalled();
+    expect(client.patch).toHaveBeenCalledWith('/api/agents/runtime/configuration', {
+      agentName: 'juno', instanceId: 'writer', model: 'new', effort: 'high',
+    });
+    expect(result.environment).toEqual({ ...environment, model: 'new', effort: 'high' });
+    expect(result.podId).toBe('owned-pod');
+  });
+
+  test.each([{ adapter: 'claude' }, { envPath: '/tmp/env.json' }])('page key cannot edit broader runtime declarations: %j', async (options) => {
+    const client = { patch: jest.fn() };
+    await expect(updateAgentConfiguration({ client, record, runtimeKey: true, model: 'new', ...options })).rejects.toThrow('owner login');
+    expect(client.patch).not.toHaveBeenCalled();
+  });
+
   test('reuses the registry PATCH route for runtime controls and full env specs', async () => {
     const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn(async () => ({ success: true })) };
     const environment = {
