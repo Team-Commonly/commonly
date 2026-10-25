@@ -15,5 +15,8 @@
   ],
   "engines": {
     "node": ">=20.0.0"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\""
   }
 }
