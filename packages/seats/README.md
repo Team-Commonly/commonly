@@ -9,11 +9,12 @@ It is private and is not published on its own. `@commonlyai/cli` depends on it a
 - A push to `main` touching `cli/` or `packages/seats/` triggers
   [npm publish](../../.github/workflows/npm-publish.yml). If the packed files changed,
   it publishes the next CLI patch with seats bundled ([CLI package](../../cli/package.json)).
-  [Deploy Dev](../../.github/workflows/deploy-dev.yml) builds service images separately.
+  [Deploy Dev](../../.github/workflows/deploy-dev.yml) is manually dispatched and builds service images separately.
 - The publish job assigns the version. PRs leave version lines alone
   ([version guard](../../.github/workflows/package-version-guard.yml), TASK-466).
-- Fleet seats use a pinned CLI. Update that pin and restart the seat to load a release.
-  Publishing to npm does not update an already running seat.
+- Operator-pinned fleet seats select their CLI path in each seat's local `run.sh` launcher,
+  outside this repo. Update that pin and restart the seat to load a release.
+  Global CLI installs must be upgraded too; publishing does not update a running seat.
 - Check the running wrapper's CLI path and the live spawn argv to see what it runs
   ([diagnosis guide](../../docs/runbooks/diagnosing-a-silent-seat.md#2-read-the-live-spawn--the-prompt-is-in-argv)).
   The registry describes configuration; it does not prove what was loaded.
