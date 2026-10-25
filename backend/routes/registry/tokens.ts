@@ -425,11 +425,12 @@ const issueUserTokenForInstallation = async ({
   const normalizedScopes = normalizeScopes(scopes);
 
   // Preserve existing token unless force-rotation is requested
-  if (agentUser.apiToken && !force) {
+  if ((agentUser.apiTokenHash || agentUser.apiToken) && !force) {
     agentUser.apiTokenScopes = normalizedScopes;
     await agentUser.save();
     return {
-      token: agentUser.apiToken,
+      token: agentUser.apiTokenHash ? null : agentUser.apiToken,
+      requiresRotation: Boolean(agentUser.apiTokenHash),
       scopes: normalizedScopes,
       createdAt: agentUser.apiTokenCreatedAt,
       existing: true,

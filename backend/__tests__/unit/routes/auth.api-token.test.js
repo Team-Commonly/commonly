@@ -74,4 +74,13 @@ describe('GET /api/auth/api-token', () => {
     expect(JSON.stringify(response.body)).not.toContain(rawToken);
     expect(User.findById).toHaveBeenCalledWith('user-1');
   });
+  it('reports digest-only metadata without returning the digest', async () => {
+    User.findById.mockReturnValue({ select: jest.fn().mockResolvedValue({
+      apiTokenHash: 'a'.repeat(64), apiTokenLast4: '1234', apiTokenScopes: [],
+    }) });
+    const response = await request(app).get('/api/auth/api-token');
+    expect(response.body).toEqual({ hasToken: true, createdAt: null, scopes: [], last4: '1234' });
+    expect(JSON.stringify(response.body)).not.toContain('a'.repeat(64));
+  });
+
 });

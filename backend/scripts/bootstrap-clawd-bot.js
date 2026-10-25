@@ -61,7 +61,7 @@ async function bootstrapOpenClawBot() {
     }
 
     // Generate API token if not exists
-    if (!cuzBot.apiToken) {
+    if (!(cuzBot.apiTokenHash || cuzBot.apiToken)) {
       const token = cuzBot.generateApiToken();
       await cuzBot.save();
       console.log('\n🔑 Generated new API token:');

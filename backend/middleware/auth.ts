@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
 import User from '../models/User';
+import { findApiTokenUser } from '../services/apiTokenService';
 import { hashDeviceCredential } from '../services/deviceAuthorizationService';
 import { loadSessionAccount, sessionRefusal } from '../services/sessionAccountService';
 
@@ -47,12 +48,7 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
 
   if (token.startsWith('cm_')) {
     try {
-      // `apiToken` is the historical single plaintext bearer. Device-login
-      // bearers share its public cm_ prefix but are stored only as a hash so a
-      // database read cannot impersonate a CLI session.
-      let user: any = await User.findOne({ apiToken: token }).select(
-        '_id username email role apiTokenScopes apiTokenCreatedAt banned accountDeletionRequestedAt',
-      );
+      let user: any = await findApiTokenUser(token);
 
       let isDeviceToken = false;
       const deviceTokenHash = hashDeviceCredential(token);
@@ -103,8 +99,8 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
       }
       touchLastActive(user._id.toString());
       return next();
-    } catch (err: unknown) {
-      console.error('API token validation error:', (err as Error).message);
+    } catch {
+      console.error('API token validation failed');
       return res.status(401).json({ msg: 'API token validation failed' });
     }
   }

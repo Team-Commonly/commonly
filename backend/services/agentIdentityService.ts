@@ -477,9 +477,9 @@ class AgentIdentityService {
 
     const instanceId = options.instanceId || 'default';
     const username = buildAgentUsername(resolvedType, instanceId);
-    // `apiToken` is `select: false`; ask for it explicitly or an existing
-    // agent credential looks absent and gets rotated out from under the fleet.
-    let agentUser = await User.findOne({ username }).select('+apiToken');
+    // Explicitly load both credential representations so issuance recognizes
+    // existing tokens throughout the storage migration.
+    let agentUser = await User.findOne({ username }).select('+apiToken +apiTokenHash');
 
     // buildAgentUsername is not injective: ("foo-bar", "default") and
     // ("foo", "bar") both address "foo-bar". Check even pre-isBot legacy
