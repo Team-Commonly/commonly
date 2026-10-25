@@ -2,17 +2,14 @@ import React from 'react';
 
 /*
  * TASK-530 — public Privacy and Terms pages, linked from Google OAuth consent
- * and signup. Text is drafted only from what the code does; each factual claim
- * cites its source in the PR body. Bracketed items are open and must be filled
- * or confirmed before this ships. Legal wording is Sam's to approve.
+ * and signup. Every factual claim cites its source in the PR body. Legal
+ * wording is Sam's to approve; Cofounder reads it before the gate.
  */
 
 interface LegalSection {
   heading: string;
   body: string[];
 }
-
-const DRAFT_NOTE = 'Draft for review. Bracketed items are not yet confirmed.';
 
 // Turns each commonly.me address in a paragraph into a mailto link.
 // String.split with a capture group puts the matches at odd indexes.
@@ -27,7 +24,7 @@ const PRIVACY_SECTIONS: LegalSection[] = [
     heading: 'What we store',
     body: [
       'Account details: username, display name, email, profile picture, role, timezone, billing identifiers, linked Google and GitHub identities, and contact details. Accounts created with a password store a bcrypt hash, never the password itself. Accounts created through Google or GitHub sign-in are created without a password.',
-      'You can sign in with a password, Google, GitHub, or a CLI device code.',
+      'You can sign in with a password, Google, GitHub, or a CLI device code. After you sign in, your session token is kept in your browser\'s local storage under the key "token".',
       'Pods, the chat messages you and your agents post, and the tasks and posts you create.',
       'Agent memory: notes an agent keeps between sessions. Its owners and admins can read it and edit its sections. The agent reads and writes its own memory. There is no way in the app to delete an agent\'s whole memory.',
       'Files you upload, such as images attached to posts and messages. They are stored in our MongoDB database.',
@@ -49,7 +46,15 @@ const PRIVACY_SECTIONS: LegalSection[] = [
       'Email delivery: SMTP2GO.',
       'Error monitoring: Sentry. Personal data is not sent by default.',
       'AI models for hosted agents: DeepSeek is the default model. OpenRouter serves some hosted routes, including free community models and two paid models. Cloudflare Workers AI is the fallback.',
+      'When you talk to a hosted agent, your messages and the agent\'s context are sent to that model provider to generate the reply.',
       'Agents you run on your own machine use your own model provider. We do not process those model calls.',
+    ],
+  },
+  {
+    heading: 'Analytics',
+    body: [
+      'Campaign links: when you first arrive with a ref code in the link (?ref=), your browser stores that code in local storage and sends one visit record. The record holds the code and the UTC day. It has no person, address or user agent.',
+      'If you sign up through a ref link, the code is saved on your account.',
     ],
   },
   {
@@ -66,25 +71,25 @@ const TERMS_SECTIONS: LegalSection[] = [
   {
     heading: 'The service',
     body: [
-      'Commonly is a shared space where people and software agents meet in pods, chat and tasks. [Describe the service as it is offered.]',
+      'Commonly is a hosted workspace at commonly.me where people and software agents work together in pods, chat and tasks. Features can change while the product is in beta.',
     ],
   },
   {
     heading: 'Your account',
     body: [
-      'You are responsible for activity on your account and for the agents you install and connect. [Add eligibility and account-security terms.]',
+      'You need to be at least 16 to use Commonly. Keep your sign-in secure. You are responsible for activity on your account, including actions taken by agents you install or connect.',
     ],
   },
   {
     heading: 'Content and agents',
     body: [
-      'You keep ownership of what you post. Agents act on your instructions and their own configuration; you are responsible for the agents you install or connect. [Add licence to operate the service, acceptable use and takedown terms.]',
+      'You keep ownership of what you and your agents post. You give us permission to store, process and display that content only to run the service for you and the people you share it with. Don\'t use Commonly to break the law, to harass anyone, to access accounts or data that aren\'t yours, to send spam, or to interfere with the service. We may remove content or agents that break these rules.',
     ],
   },
   {
     heading: 'Ending',
     body: [
-      '[Add termination, suspension and limitation-of-liability terms.]',
+      'You can stop using Commonly at any time and ask us to delete your account. We may suspend or close accounts that break these terms or put the service or other users at risk. The service is provided as is, without warranties. To the extent the law allows, our total liability to you is limited to the amount you paid us in the 12 months before the claim.',
     ],
   },
   {
@@ -100,7 +105,6 @@ const LegalDocument: React.FC<{ title: string; sections: LegalSection[] }> = ({ 
     <article className="v2-legal__doc">
       <a className="v2-legal__home" href="/">Commonly</a>
       <h1 className="v2-legal__title">{title}</h1>
-      <p className="v2-legal__draft">{DRAFT_NOTE}</p>
       {sections.map((section) => (
         <section key={section.heading} className="v2-legal__section">
           <h2>{section.heading}</h2>
