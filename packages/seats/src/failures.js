@@ -16,6 +16,8 @@ export const FAILURE_KINDS = Object.freeze({
   cancelled: { retryable: false, meaning: 'the run was cancelled' },
   credential_denied: { retryable: false, meaning: 'the run asked for a credential its grant does not allow' },
   unsupported: { retryable: false, meaning: 'the CLI or its version is outside what this adapter supports' },
+  refusal_retry_loop: { retryable: false, meaning: 'the provider rejected a request (4xx) the CLI would retry; stopped at the first one on the wire' },
+  provider_unavailable: { retryable: true, meaning: 'the provider answered 5xx, 408 or 429, or was unreachable; stopped at the first one on the wire' },
 });
 
 export class RunFailure extends Error {

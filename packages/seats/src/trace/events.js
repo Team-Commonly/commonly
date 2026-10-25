@@ -9,6 +9,7 @@
 export const EVENT_TYPES = Object.freeze([
   'run.started', // { adapter, cli: {name, version}?, sessionId?, attempt }
   'run.settled', // { outcome: 'ok'|'failed'|'stuck'|'cancelled', failure?: {kind, detail}, durationMs, attempts }
+  'session.opened', // { method: 'new'|'resume'|'load', sessionId, requestedSessionId?, fallback? }  fallback names why a requested session was not reopened
   'turn.prompt_sent', // { chars }
   'agent.message_chunk', // { text }
   'agent.thought_chunk', // { chars }  thoughts are counted, not stored
@@ -17,7 +18,7 @@ export const EVENT_TYPES = Object.freeze([
   'plan', // { entries: [{content, status}] }
   'permission.requested', // { toolCallId?, options: [{optionId, kind}] }
   'permission.decided', // { outcome: 'selected'|'cancelled', optionId?, kind? }
-  'usage', // { inputTokens?, outputTokens?, totalTokens?, cost? }  null-not-zero when unknown
+  'usage', // { inputTokens?, outputTokens?, totalTokens?, cost?, contextTokens?, contextSize? }  null-not-zero when unknown
   'liveness.stalled', // { idleMs, windowMs }
   'liveness.recovery', // { action: 'cancel'|'kill'|'retry', attempt }
   'credential.granted', // { names: [...] }  names only, never values
