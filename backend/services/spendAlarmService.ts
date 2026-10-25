@@ -211,7 +211,7 @@ export const composeSpendPage = (
     + `across ${spend.runs} run${spend.runs === 1 ? '' : 's'}.${handle}`;
 };
 
-const pageSre = async (content: string): Promise<void> => {
+export const pageSre = async (content: string): Promise<void> => {
   const podId = String(process.env.SPEND_ALARM_POD_ID || '').trim();
   if (!podId) return;
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports

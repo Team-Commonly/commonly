@@ -40,5 +40,11 @@
     "description": "A user's priced model spend for the UTC day crossed SPEND_ALARM_USD_PER_DAY (default $2). One line per user per day from backend/services/spendAlarmService.ts; the userId, the amount and the token split are in the same log line.",
     "filter": "resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"backend\" AND jsonPayload.alarm=\"user_spend\"",
     "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
+  },
+  {
+    "name": "litellm_key_budget_near_limit",
+    "description": "A LiteLLM virtual key passed 80% of its max_budget (TASK-555). One line per key per budget period from backend/services/litellmBudgetAlarmService.ts; the key alias, spend, budget and reset time are in the same log line.",
+    "filter": "resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"backend\" AND jsonPayload.alarm=\"litellm_budget\"",
+    "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
   }
 ]

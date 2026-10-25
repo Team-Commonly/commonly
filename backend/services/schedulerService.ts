@@ -600,6 +600,14 @@ class SchedulerService {
         } catch (error) {
           console.error('[spend-alarm] check failed:', error);
         }
+        // TASK-555: warn at 80% of any LiteLLM key budget (litellmBudgetAlarmService).
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { checkLiteLLMBudgets } = require('./litellmBudgetAlarmService');
+          await checkLiteLLMBudgets();
+        } catch (error) {
+          console.error('[budget-alarm] check failed:', (error as Error).message);
+        }
       },
       { scheduled: false, timezone: 'UTC' },
     );

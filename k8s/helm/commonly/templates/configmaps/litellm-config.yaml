@@ -31,6 +31,14 @@ data:
         litellm_params:
           model: deepseek/deepseek-v4-flash
           api_key: os.environ/DEEPSEEK_API_KEY
+          # $60 per month across every caller of this group (TASK-555). Over
+          # it, LiteLLM answers 429 "crossed budget". Like deepseek-flash-1017
+          # below, the month-to-date figure is in the router cache and a
+          # LiteLLM restart resets it: this is a backstop. The durable caps
+          # are the per-service keys (backend $40, commonly-bot $20, in
+          # LiteLLM's Postgres), and the budget alarm watches those.
+          max_budget: 60
+          budget_duration: 1mo
 
       # DeepSeek V4.1 Flash, 1017 build. DeepSeek publishes no dated snapshot
       # id: per api-docs.deepseek.com/updates, 2026-10-17, `deepseek-flash` is

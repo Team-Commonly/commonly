@@ -561,6 +561,14 @@ cloudflared:
 # LiteLLM proxy (model gateway + request logging)
 litellm:
   enabled: false
+  # Per-service LiteLLM virtual keys (TASK-555). When true, backend and
+  # commonly-bot call LiteLLM with their own budgeted keys
+  # (<keyPrefix>litellm-backend-key, <keyPrefix>litellm-commonly-bot-key) as
+  # LITELLM_API_KEY instead of the master key. A key's budget lives in
+  # LiteLLM's Postgres, so it survives a LiteLLM restart; mint both keys in
+  # Secret Manager before enabling, or ExternalSecrets rejects the bundle.
+  serviceKeys:
+    fromSecret: false
   # When true, bypass LiteLLM for Codex calls. moltbot.json's openai-codex
   # provider points at chatgpt.com directly via OpenClaw's native
   # openai-codex-responses handler. Workaround for BerriAI/litellm#25429

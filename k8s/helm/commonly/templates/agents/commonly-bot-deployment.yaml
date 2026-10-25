@@ -52,6 +52,15 @@ spec:
               name: api-keys
               key: litellm-master-key
               optional: true
+        {{- if .Values.litellm.serviceKeys.fromSecret }}
+        # Model calls use this budgeted key (TASK-555); litellm-client.js
+        # prefers LITELLM_API_KEY over the master key.
+        - name: LITELLM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: litellm-commonly-bot-key
+        {{- end }}
         - name: GEMINI_API_KEY
           valueFrom:
             secretKeyRef:

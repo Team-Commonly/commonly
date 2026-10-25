@@ -1,0 +1,140 @@
+/**
+ * LiteLLM key budget alarm (TASK-555).
+ *
+ * The durable spend caps are LiteLLM virtual-key budgets (max_budget plus
+ * budget_duration). They live in LiteLLM's Postgres, so a LiteLLM restart
+ * keeps them. Backend and commonly-bot each call on their own budgeted key,
+ * and the dsh writers have one. Over a budget, LiteLLM answers 422
+ * budget_exceeded and the caller fails. This sweep warns first: at
+ * BUDGET_ALARM_FRACTION of any budgeted key it logs one `alarm:
+ * litellm_budget` line per key per budget period, and pages SRE the same way
+ * the user spend alarm does. A log-based metric turns the line into an email
+ * (k8s/monitoring).
+ *
+ * Group caps in litellm-config.yaml (deployment max_budget) are not covered.
+ * LiteLLM keeps their month-to-date figure in the router cache and exposes no
+ * endpoint for it, so they are a restart-resettable backstop behind the keys.
+ *
+ * It reports and never blocks. The master key is needed only to list keys.
+ */
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const axios = require('axios');
+
+export const BUDGET_ALARM_FRACTION = 0.8;
+const PAGE_SIZE = 100;
+// A bound on pages, so a malformed total_pages cannot loop the sweep.
+const MAX_PAGES = 20;
+
+export interface LiteLLMKeyRow {
+  token?: string;
+  key_alias?: string | null;
+  spend?: number | null;
+  max_budget?: number | null;
+  budget_duration?: string | null;
+  budget_reset_at?: string | null;
+}
+
+export interface BudgetAlarm {
+  keyAlias: string;
+  spendUsd: number;
+  maxBudgetUsd: number;
+  percent: number;
+  budgetDuration: string | null;
+  resetsAt: string | null;
+}
+
+// The alias names the key in the log and the page. A key without one is
+// named by the first 8 characters of LiteLLM's stored hash, which is not the
+// key itself. Either way the text is reduced to an identifier, because the
+// page lands in an inbox an SRE model session reads.
+const keyLabel = (row: LiteLLMKeyRow): string => {
+  const alias = String(row.key_alias || '').replace(/[^A-Za-z0-9._-]/g, '').slice(0, 60);
+  if (alias) return alias;
+  return `key:${String(row.token || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8) || 'unknown'}`;
+};
+
+// What remembers an alarm. The label is lossy (two aliases can sanitise to
+// the same text), so dedup keys on LiteLLM's stored hash and falls back to
+// the raw alias. It is never logged or posted.
+const keyIdentity = (row: LiteLLMKeyRow): string => (
+  row.token ? `token:${row.token}` : `alias:${String(row.key_alias || '')}`
+);
+
+const nearBudget = (row: LiteLLMKeyRow, fraction: number): boolean => (
+  Number(row.max_budget) > 0 && Number(row.spend || 0) >= fraction * Number(row.max_budget)
+);
+
+export const keysNearBudget = (
+  rows: LiteLLMKeyRow[],
+  fraction: number = BUDGET_ALARM_FRACTION,
+): BudgetAlarm[] => rows
+  .filter((row) => nearBudget(row, fraction))
+  .map((row) => {
+    const spendUsd = Number(row.spend || 0);
+    const maxBudgetUsd = Number(row.max_budget);
+    return {
+      keyAlias: keyLabel(row),
+      spendUsd: Number(spendUsd.toFixed(4)),
+      maxBudgetUsd,
+      percent: Math.round((spendUsd / maxBudgetUsd) * 100),
+      budgetDuration: row.budget_duration || null,
+      resetsAt: row.budget_reset_at || null,
+    };
+  });
+
+export const listLiteLLMKeys = async (): Promise<LiteLLMKeyRow[] | null> => {
+  const baseUrl = (process.env.LITELLM_BASE_URL || '').trim().replace(/\/$/, '');
+  const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
+  if (!baseUrl || !masterKey) return null;
+  const rows: LiteLLMKeyRow[] = [];
+  for (let page = 1; page <= MAX_PAGES; page += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const resp = await axios.get(`${baseUrl}/key/list`, {
+      params: { return_full_object: true, page, size: PAGE_SIZE },
+      headers: { Authorization: `Bearer ${masterKey}` },
+      timeout: 15000,
+    });
+    const keys = Array.isArray(resp?.data?.keys) ? resp.data.keys : [];
+    rows.push(...keys);
+    const totalPages = Number(resp?.data?.total_pages) || 1;
+    if (page >= totalPages || keys.length === 0) break;
+  }
+  return rows;
+};
+
+export const composeBudgetPage = (alarm: BudgetAlarm, mention?: string): string => {
+  const handle = mention ? ` @${mention}` : '';
+  const reset = alarm.resetsAt ? ` It resets ${alarm.resetsAt}.` : '';
+  return `[budget alarm] LiteLLM key ${alarm.keyAlias} has spent $${alarm.spendUsd.toFixed(2)} of its `
+    + `$${alarm.maxBudgetUsd} budget (${alarm.percent}%). At 100% its calls fail.${reset}${handle}`;
+};
+
+// One line per key per budget period (keyed on the key and its reset time). In memory
+// only, like the user spend alarm: after a restart a key still over the line
+// is logged once more.
+const alarmed = new Set<string>();
+
+export const checkLiteLLMBudgets = async (): Promise<BudgetAlarm[]> => {
+  const rows = await listLiteLLMKeys();
+  if (!rows) return [];
+  const freshRows = rows.filter((row) => nearBudget(row, BUDGET_ALARM_FRACTION)
+    && !alarmed.has(`${keyIdentity(row)}:${row.budget_reset_at || null}`));
+  const fresh = keysNearBudget(freshRows);
+  const mention = String(process.env.SPEND_ALARM_MENTION || '').trim() || undefined;
+  freshRows.forEach((row) => alarmed.add(`${keyIdentity(row)}:${row.budget_reset_at || null}`));
+  for (const alarm of fresh) {
+    console.warn(JSON.stringify({ alarm: 'litellm_budget', thresholdFraction: BUDGET_ALARM_FRACTION, ...alarm }));
+    try {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const { pageSre } = require('./spendAlarmService');
+      // eslint-disable-next-line no-await-in-loop
+      await pageSre(composeBudgetPage(alarm, mention));
+    } catch (error) {
+      console.warn(`[budget-alarm] SRE page failed for ${alarm.keyAlias}; the log line stands:`, (error as Error).message);
+    }
+  }
+  return fresh;
+};
+
+/** Test seam: forget which keys were already logged. */
+export const resetBudgetAlarmMemory = (): void => { alarmed.clear(); };

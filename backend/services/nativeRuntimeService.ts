@@ -138,15 +138,23 @@ function normalizeConfig(config: unknown): PlainConfig {
   return config as PlainConfig;
 }
 
-function resolveLiteLLM(): { baseUrl: string; apiKey: string } | null {
+export function resolveLiteLLM(): { baseUrl: string; apiKey: string } | null {
   const baseUrl = (process.env.LITELLM_BASE_URL || '').trim().replace(/\/$/, '');
-  const apiKey = (
-    process.env.LITELLM_MASTER_KEY
-    || process.env.LITELLM_API_KEY
-    || ''
-  ).trim();
+  // The backend's budgeted service key first, like llmService (TASK-555); the
+  // master key only where no service key is deployed. A hosted turn on the
+  // master key would bypass the backend's budget.
+  const apiKey = (process.env.LITELLM_API_KEY || '').trim()
+    || (process.env.LITELLM_MASTER_KEY || '').trim();
   if (!baseUrl || !apiKey) return null;
   return { baseUrl, apiKey };
+}
+
+// LiteLLM serves /guardrails/apply_guardrail to proxy admins only: a virtual
+// key gets 401 "Only proxy admin can be used" (measured 2026-10-25, v1.106.2).
+// So the standalone guard check keeps the master key; model calls, which carry
+// their guardrails in the request body, accept the service key.
+export function guardrailCheckKey(litellm: { apiKey: string }): string {
+  return (process.env.LITELLM_MASTER_KEY || '').trim() || litellm.apiKey;
 }
 
 export function isNativeRuntimeAvailable(): boolean {
@@ -171,7 +179,7 @@ async function textsTheGuardStops(
           `${litellm.baseUrl}/guardrails/apply_guardrail`,
           { guardrail_name: guardrailName, text },
           {
-            headers: { Authorization: `Bearer ${litellm.apiKey}`, 'Content-Type': 'application/json' },
+            headers: { Authorization: `Bearer ${guardrailCheckKey(litellm)}`, 'Content-Type': 'application/json' },
             timeout: GUARD_CHECK_TIMEOUT_MS,
             validateStatus: () => true,
           },
