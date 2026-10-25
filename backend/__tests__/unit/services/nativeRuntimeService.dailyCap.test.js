@@ -106,7 +106,7 @@ describe('nativeRuntimeService daily run cap (D4)', () => {
     AgentRun.countDocuments.mockResolvedValue(3);
     const result = await runAgent(installation(), mentionTrigger);
     expect(result).toEqual({
-      runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
+      runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0, postedMessageIds: [],
     });
     expect(MessageClaimService.claim).not.toHaveBeenCalled();
     expect(AgentRun.create).not.toHaveBeenCalled();

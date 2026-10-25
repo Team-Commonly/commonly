@@ -1,3 +1,5 @@
+import { proposeAction } from './approvalActionService';
+import { settleNativePlaybookStep } from './playbooks/nativeSettle';
 import crypto from 'crypto';
 import { Types } from 'mongoose';
 import Task from '../models/Task';
@@ -1655,7 +1657,9 @@ class AgentEventService {
             console.warn('[native-runtime] digest settle failed:', digestErr.message);
           });
         }
-        return result;
+        const playbookManaged = await settleNativePlaybookStep({ podId: String(event.podId),
+          agentName, instanceId, payload: event.payload }, result, (wake) => this.enqueue(wake), proposeAction);
+        return { ...result, playbookManaged };
       };
       await Promise.resolve(runWithDigest()).then(
       // Two-argument .then, deliberately, NOT .then().catch(): a chained
@@ -1664,10 +1668,10 @@ class AgentEventService {
       // actually succeeded as 'failed'. The rejection handler here is scoped
       // to runAgent alone. Both terminal calls swallow their own errors so
       // this stays fire-and-forget for the caller.
-        (runResult: { status?: string; error?: string; runId?: string; totalTurns?: number }) => {
+        (runResult: { status?: string; error?: string; runId?: string; totalTurns?: number; playbookManaged?: boolean }) => {
           turnFinished();
           if (runResult?.status === 'drained') return undefined;
-          return (runResult?.status === 'failed'
+          return (runResult?.status === 'failed' && !runResult.playbookManaged
           ? this.recordFailure(
             eventIdStr,
             agentName,
@@ -1680,7 +1684,7 @@ class AgentEventService {
           agentName,
           instanceId,
           runResult?.runId && Number(runResult.totalTurns) > 0
-            ? { outcome: 'acknowledged', reason: 'native-runtime-completed' }
+            ? { outcome: 'acknowledged', reason: runResult.playbookManaged ? 'playbook-step-settled' : 'native-runtime-completed' }
             : { outcome: 'no_action', reason: 'native-no-turn' },
           nativeDeliveryId,
           'native',

@@ -17,6 +17,9 @@ import ApprovalAction, {
 } from '../models/ApprovalAction';
 import Pod from '../models/Pod';
 import User from '../models/User';
+import { advancePlaybookRun } from './playbooks/runState';
+import { deliverPlaybookStep } from './playbooks/delivery';
+import { applyPlaybookRuling, describePlaybookPoint } from './playbooks/rulings';
 import { assertAgentRuntimeMayJoinPod } from './outsiderGrantAgentJoinPolicy';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -31,7 +34,7 @@ const CARD_KIND = 'approval-card';
 // with arbitrary membership breaks the §3.10 invariant.
 const CREATABLE_POD_TYPES = new Set(['chat', 'team']);
 
-const KNOWN_ACTION_TYPES = new Set<ApprovalActionType>(['create_pod', 'connect_local_agent', 'tool_call']);
+const KNOWN_ACTION_TYPES = new Set<ApprovalActionType>(['create_pod', 'connect_local_agent', 'tool_call', 'playbook_step']);
 
 // Same shape the registry install route enforces for self-serve names (no
 // scoped @publisher/ names for local seats). Mirrors the BYO page's
@@ -131,6 +134,8 @@ export const buildOwnerCardPayload = (
 };
 
 interface ProposeOptions {
+  /** Runner-only reservation already stored on the guarded step. Never copied from HTTP/model input. */
+  reservedApprovalId?: string;
   /** Internal runtime identity, never copied from the agent HTTP body. */
   runId?: string;
   runPodId?: string;
@@ -160,6 +165,12 @@ interface ProposeResult {
 }
 
 const validateParams = (actionType: ApprovalActionType, params: Record<string, unknown>): string | null => {
+  if (actionType === 'playbook_step') {
+    return typeof params.taskId === 'string' && /^TASK-\d+$/.test(params.taskId)
+      && typeof params.runTaskId === 'string' && /^TASK-\d+$/.test(params.runTaskId)
+      && typeof params.installationId === 'string' && /^[a-f0-9]{24}$/.test(params.installationId)
+      ? null : 'playbook_step must name its run and step';
+  }
   if (actionType === 'create_pod') {
     const name = String(params.name || '').trim();
     if (!name) return 'params.name is required for create_pod';
@@ -408,10 +419,26 @@ export const proposeActionForRuntime = async (input: {
 
 export const proposeAction = async (options: ProposeOptions): Promise<ProposeResult> => {
   const {
-    podId, agentName, instanceId, displayName, actionType, params, summary, installationConfig,
+    podId, agentName, instanceId, displayName, actionType, params: requestedParams, summary, installationConfig,
     ownerUserId: requestedOwnerUserId, agentUserId, toolCall, noOutboundRelay, approvalExpiresAt,
   } = options;
 
+  let params = requestedParams;
+  let point: Awaited<ReturnType<typeof describePlaybookPoint>> | undefined;
+  if (actionType === 'playbook_step') {
+    if (!options.reservedApprovalId || !/^[a-f0-9]{24}$/.test(options.reservedApprovalId)) {
+      return { ok: false, error: 'playbook_step cards are created by the workflow runner' };
+    }
+    try {
+      point = await describePlaybookPoint(podId, String(params?.taskId || ''), options.reservedApprovalId);
+      if (point.agent.agentName !== agentName || point.agent.instanceId !== (instanceId || 'default')) {
+        return { ok: false, error: 'playbook_step must use the bound agent identity' };
+      }
+      params = point.params;
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    }
+  }
   if (!KNOWN_ACTION_TYPES.has(actionType as ApprovalActionType)) {
     return {
       ok: false,
@@ -448,8 +475,8 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     instanceId: instanceId || 'default',
     status: 'active',
   });
-  const ownerUserId = actionType === 'tool_call'
-    ? await resolveHumanDecider([requestedOwnerUserId])
+  const ownerUserId = actionType === 'tool_call' || actionType === 'playbook_step'
+    ? await resolveHumanDecider([point?.ownerUserId || requestedOwnerUserId])
     : await resolveHumanDecider([install?.installedBy, pod.createdBy]);
   if (!ownerUserId) {
     return {
@@ -477,7 +504,14 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     }
   }
 
-  const row = await ApprovalAction.create({
+  const reserved = point ? await ApprovalAction.findById(options.reservedApprovalId) : null;
+  if (reserved && (reserved.actionType !== 'playbook_step' || String(reserved.podId) !== podId
+    || String(reserved.ownerUserId) !== ownerUserId || reserved.params?.taskId !== params.taskId)) {
+    return { ok: false, error: 'playbook approval reservation does not match' };
+  }
+  if (reserved?.messageId) return { ok: true, approvalId: String(reserved._id), messageId: reserved.messageId };
+  const row = reserved || await ApprovalAction.create({
+    ...(point ? { _id: options.reservedApprovalId } : {}),
     ...(options.runId ? { runId: options.runId,
       ...(options.runPodId ? { runPodId: options.runPodId } : {}) } : {}),
     podId,
@@ -811,9 +845,9 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
   // the owner's pod. Route-level auth already excludes agent tokens; this is
   // defense in depth against a future dualAuth slip.
   const caller = await User.findById(callerUserId)
-    .select('isBot username displayName')
-    .lean() as { isBot?: boolean; username?: string; displayName?: string } | null;
-  if (!caller || caller.isBot) {
+    .select('isBot botType username displayName')
+    .lean() as { isBot?: boolean; botType?: string; username?: string; displayName?: string } | null;
+  if (!caller || caller.isBot || caller.botType) {
     return { status: 403, body: { error: 'Only a human can decide an approval' } };
   }
 
@@ -953,6 +987,8 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
       await postToolCallRoomReceipt(transitioned,
         caller.displayName?.trim() || caller.username?.trim() || callerUserId);
     }
+  } else if (transitioned.actionType === 'playbook_step') {
+    await applyPlaybookRuling(transitioned);
   } else if (parkedCall) {
     transitioned.toolCallEnding = 'declined';
     transitioned.toolCallCode = 'approval_declined';
@@ -961,7 +997,15 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
   }
 
   await updateCardEverywhere(transitioned);
-  if (decision === 'approved' && !parkedCall) {
+  if (transitioned.actionType === 'playbook_step' && decision === 'approved' && !transitioned.executionError) {
+    const next = await advancePlaybookRun(String(transitioned.podId), String(transitioned.params.taskId));
+    if (next) {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const events = require('./agentEventService');
+      await deliverPlaybookStep(String(transitioned.podId), next.taskId, (event) => events.enqueue(event), proposeAction);
+    }
+  }
+  if (decision === 'approved' && !parkedCall && transitioned.actionType !== 'playbook_step') {
     await enqueueApprovalResolvedEvent(transitioned, {
       userId: String(callerUserId),
       username: caller.displayName?.trim() || caller.username?.trim() || 'The workspace owner',
@@ -1039,6 +1083,7 @@ export const sweepExpiredToolCallApprovals = async (now = new Date()): Promise<n
 // ── executors (D2: user authority owns the result) ──────────────────────────
 
 const executeAction = async (row: IApprovalAction): Promise<unknown> => {
+  if (row.actionType === 'playbook_step') return applyPlaybookRuling(row);
   if (row.actionType === 'create_pod') return executeCreatePod(row);
   if (row.actionType === 'connect_local_agent') return executeConnectLocalAgent(row);
   throw new Error(`no executor for actionType '${row.actionType}'`);

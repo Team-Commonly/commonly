@@ -19,7 +19,8 @@ export const checkPlaybookDone = (
     if (row?.status !== 'done') failed.push(`${step.title}: not complete`);
     if (step.approval && row?.ruling?.state !== 'approved') failed.push(`${step.title}: approval required`);
     const role = book.roles.find((entry) => entry.key === step.role);
-    if (role?.kind === 'person' && (!row?.completedBy || !people.has(row.completedBy))) {
+    if (role?.kind === 'person' && step.approval?.act !== 'kernel'
+      && (!row?.completedBy || !people.has(row.completedBy))) {
       failed.push(`${step.title}: completion by a person required`);
     }
   }

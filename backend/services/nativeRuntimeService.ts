@@ -78,6 +78,8 @@ export interface NativeRunResult {
   totalTurns: number;
   totalTokens: number;
   finalMessage?: string;
+  /** Successfully stored direct pod posts; silence, approval proposals and failed posts do not count. */
+  postedMessageIds: string[];
   errorKind?: string;
   errorMessage?: string;
 }
@@ -709,6 +711,7 @@ const byOtherAuthors = (
 };
 
 interface DispatchResult {
+  postedMessageId?: string;
   content: unknown;
   error?: string;
   /** Names the source when the content is third-party text, so the turn marks it untrusted. */
@@ -813,7 +816,9 @@ export async function dispatchTool(
         if (result?.refused) {
           return { content: { ok: false, posted: false, result }, error: 'message_post_refused' };
         }
-        return { content: { ok: true, posted: true, result } };
+        const postedMessageId = result?.success && !result?.skipped && !result?.refused
+          ? String(result.message?.id || result.message?._id || '') : '';
+        return { content: { ok: true, posted: true, result }, ...(postedMessageId ? { postedMessageId } : {}) };
       }
 
       case 'commonly_offer_hosted_agent': {
@@ -1402,6 +1407,7 @@ function failedResult(
   return {
     runId,
     status: 'failed',
+    postedMessageIds: [],
     totalTurns,
     totalTokens,
     errorKind,
@@ -1574,7 +1580,7 @@ export async function runAgent(
     if (decline) {
       // Acked by the caller, with no AgentRun: nothing ran.
       return {
-        runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
+        runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0, postedMessageIds: [],
       };
     }
   }
@@ -1626,7 +1632,7 @@ export async function runAgent(
           + `in pod ${podId} — declining until UTC midnight`,
         );
         return {
-          runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
+          runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0, postedMessageIds: [],
         };
       }
     } catch (err) {
@@ -1717,7 +1723,7 @@ export async function runAgent(
           + `claimed by ${claim.claimedBy || 'another agent'}`,
         );
         return {
-          runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
+          runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0, postedMessageIds: [],
         };
       } else if (claim) {
         // ADR-018 D3, the rule the CLI wrapper has always had: losing a CAS
@@ -1921,6 +1927,7 @@ export async function runAgent(
   let finalMessage: string | undefined;
   let turnIndex = 0;
   let postedViaTool = false;
+  const postedMessageIds: string[] = [];
   let modelFailureReason: string | undefined;
 
   // Row B (TASK-132): the seat's grant broker, assembled ONCE PER RUN at turn
@@ -2210,6 +2217,7 @@ export async function runAgent(
             outcome: result.error ? 'failed' : 'ok',
             elapsedMs: elapsed,
           });
+          if (result.postedMessageId && !result.error) postedMessageIds.push(result.postedMessageId);
           if (toolName === 'commonly_post_message' && !result.error) {
             postedViaTool = true;
             finalMessage = typeof (parsedArgs as any)?.content === 'string'
@@ -2321,6 +2329,10 @@ export async function runAgent(
           // not a user-visible final message; retaining textOut here would
           // complete the claim and swallow the human wake a second time.
           if (!postResult?.skipped) finalMessage = textOut;
+          if (postResult?.success && !postResult?.skipped && !postResult?.refused) {
+            const id = postResult.message?.id || postResult.message?._id;
+            if (id) postedMessageIds.push(String(id));
+          }
         } catch (postErr) {
           // The reply did not reach the pod, so the run did not answer: it
           // fails, and a hosted one gets the fixed handling below (vera on #2305).
@@ -2412,6 +2424,7 @@ export async function runAgent(
     status: run.status === 'succeeded' ? 'succeeded' : 'failed',
     totalTurns: run.turns.length,
     totalTokens: run.totalTokens,
+    postedMessageIds,
     finalMessage,
     errorKind: run.errorKind,
     errorMessage: run.errorMessage,

@@ -489,6 +489,22 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    const playbookScheduleJob: CronJob = cron.schedule('* * * * *', async () => {
+      try {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const { tickPlaybookSchedules } = require('./playbooks/runner');
+        await tickPlaybookSchedules();
+      } catch (error) { console.error('[playbook-schedule] tick failed:', error); }
+    }, { scheduled: false, timezone: 'UTC' });
+
+    const playbookReconcileJob: CronJob = cron.schedule('7,17,27,37,47,57 * * * *', async () => {
+      try {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const { reconcilePlaybookRuns } = require('./playbooks/runner');
+        await reconcilePlaybookRuns();
+      } catch (error) { console.error('[playbook-reconcile] pass failed:', error); }
+    }, { scheduled: false, timezone: 'UTC' });
+
     // Installable cleanup is deliberately lease-free. A rollout can run this
     // on two replicas, but every sweep mutation is a status+claimId CAS and
     // revoke/delete is idempotent. A duplicate pass is wasted work, never a
@@ -619,6 +635,8 @@ class SchedulerService {
       missedAgentMentionJob,
       kernelWorkSweepJob,
       assignedTaskWakeJob,
+      playbookScheduleJob,
+      playbookReconcileJob,
       installableReconcileJob,
       decisionCardReconcileJob,
       approvalToolCallSweepJob,

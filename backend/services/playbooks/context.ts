@@ -4,6 +4,7 @@ import { AgentInstallation } from '../../models/AgentRegistry';
 import { selectLiveGrantsForIdentities } from '../grantBrokerProjectionService';
 import { allToolDefinitions } from '../toolBrokerService';
 import { outsiderGrantPodRefusal } from '../outsiderGrantPodEligibility';
+import AgentIdentityService from '../agentIdentityService';
 import { runsInNarrowedProcess } from '../hostedEngine';
 import { PlaybookError } from './definition';
 import type { PlaybookContext, PlaybookMember } from './preflight';
@@ -27,10 +28,12 @@ export const loadPlaybookContext = async (podId: string): Promise<PlaybookContex
       const instanceId = String(user.botMetadata?.instanceId || 'default');
       const matches = installations.filter((row: any) => row.agentName === name
         && String(row.instanceId || 'default') === instanceId);
-      if (name && matches.length === 1) {
+      const native = matches.length === 1 && runsInNarrowedProcess(matches[0]);
+      const canonical = AgentIdentityService.buildAgentUsername(AgentIdentityService.resolveAgentType(name), instanceId);
+      if (name && matches.length === 1 && (!native || user.username === canonical)) {
         member.agentName = name;
         member.instanceId = instanceId;
-        member.runtime = runsInNarrowedProcess(matches[0]) ? 'native' : 'byo';
+        member.runtime = native ? 'native' : 'byo';
       }
     }
     return member;

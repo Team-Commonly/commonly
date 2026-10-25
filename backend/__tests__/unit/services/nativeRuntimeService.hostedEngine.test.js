@@ -508,7 +508,7 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
     'a %s event is acked with no run and no model call, as the Durable Object did',
     async (type) => {
       const result = await runAgent(hostedInstall(), { ...mention, type });
-      expect(result).toEqual({ runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0 });
+      expect(result).toEqual({ runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0, postedMessageIds: [] });
       expect(AgentRun.create).not.toHaveBeenCalled();
       expect(axios.post).not.toHaveBeenCalled();
     },

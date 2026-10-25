@@ -30,7 +30,7 @@ export type ApprovalToolCallEnding = 'ran' | 'failed' | 'refused' | 'declined' |
 // executor in services/approvalExecutors.ts — the enum here only widens in
 // the same PR as an executor, so a card can never exist for an action the
 // kernel cannot run.
-export type ApprovalActionType = 'create_pod' | 'connect_local_agent' | 'tool_call';
+export type ApprovalActionType = 'create_pod' | 'connect_local_agent' | 'tool_call' | 'playbook_step';
 
 /** Server-only envelope for a parked broker call. canonicalArgs is present
  * only while the action is flagged and is scrubbed on every terminal write. */
@@ -98,7 +98,7 @@ const ApprovalActionSchema = new Schema<IApprovalAction>(
     agentName: { type: String, required: true, lowercase: true, trim: true },
     agentUserId: { type: String },
     instanceId: { type: String, default: 'default' },
-    actionType: { type: String, enum: ['create_pod', 'connect_local_agent', 'tool_call'], required: true },
+    actionType: { type: String, enum: ['create_pod', 'connect_local_agent', 'tool_call', 'playbook_step'], required: true },
     params: { type: Schema.Types.Mixed, default: {} },
     // Mixed keeps this optional for legacy action rows. The service validates
     // the required envelope fields before a tool_call row is created.

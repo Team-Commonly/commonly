@@ -156,7 +156,7 @@ describe('nativeRuntimeService claim-before-act (ADR-018 D3)', () => {
     MessageClaimService.claim.mockResolvedValue({ claimed: false, claimedBy: 'task-clerk' });
     const result = await runAgent(installation, ambientTrigger);
     expect(result).toEqual({
-      runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
+      runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0, postedMessageIds: [],
     });
     expect(AgentRun.create).not.toHaveBeenCalled();
     expect(axios.post).not.toHaveBeenCalled();
@@ -229,6 +229,7 @@ describe('nativeRuntimeService claim-before-act (ADR-018 D3)', () => {
     });
 
     expect(result.status).toBe('succeeded');
+    expect(result.postedMessageIds).toEqual([]);
     expect(MessageClaimHandoffService.release).toHaveBeenCalledWith({
       messageId: 'msg-human',
       agentName: 'pod-summarizer',
@@ -275,7 +276,9 @@ describe('nativeRuntimeService claim-before-act (ADR-018 D3)', () => {
       mockHolderEvent.mockResolvedValue(null);
       axios.post.mockResolvedValueOnce(postCall({ content: 'Here is the answer.', answeringMessageId: 'msg-999' })).mockResolvedValueOnce(done);
 
-      await runAgent(withPostTool, mentionTrigger);
+      AgentMessageService.postMessage.mockResolvedValueOnce({ success: true, message: { id: 'stored-tool-post' } });
+      const result = await runAgent(withPostTool, mentionTrigger);
+      expect(result.postedMessageIds).toEqual(['stored-tool-post']);
 
       expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
       expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
@@ -288,7 +291,9 @@ describe('nativeRuntimeService claim-before-act (ADR-018 D3)', () => {
         status: 200, headers: {}, data: { choices: [{ message: { role: 'assistant', content: 'Plain answer.' } }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } },
       });
 
-      await runAgent(installation, mentionTrigger);
+      AgentMessageService.postMessage.mockResolvedValueOnce({ success: true, message: { id: 'stored-fallback-post' } });
+      const result = await runAgent(installation, mentionTrigger);
+      expect(result.postedMessageIds).toEqual(['stored-fallback-post']);
 
       expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
         content: 'Plain answer.', metadata: expect.objectContaining({ fallback: true }), answeringMessageId: 'msg-77',

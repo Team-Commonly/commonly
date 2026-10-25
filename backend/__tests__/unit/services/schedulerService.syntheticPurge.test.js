@@ -15,8 +15,11 @@ const purgeJobStarted = () => cron.schedule.mock.results
 
 describe('scheduler: synthetic-account purge opt-in', () => {
   const original = process.env.SYNTHETIC_ACCOUNT_PURGE;
+  beforeEach(() => jest.useFakeTimers());
   afterEach(() => {
     scheduler.stop();
+    jest.clearAllTimers();
+    jest.useRealTimers();
     cron.schedule.mockClear();
     if (original === undefined) delete process.env.SYNTHETIC_ACCOUNT_PURGE;
     else process.env.SYNTHETIC_ACCOUNT_PURGE = original;

@@ -33,6 +33,9 @@ export const latestScheduleSlot = (input: unknown, onAt: Date, now = new Date())
   key: string; at: Date; label: string;
 } | null => {
   const schedule = validateSchedule(input);
+  if (!Number.isFinite(onAt.getTime()) || !Number.isFinite(now.getTime())) {
+    throw new PlaybookError('invalid_schedule_activation', 'Schedule needs a valid turn-on timestamp', 400);
+  }
   const [minute, hour, , , weekday] = schedule.cron.split(' ');
   const intended = Number(hour) * 60 + Number(minute);
   const format = formatter(schedule.timezone);

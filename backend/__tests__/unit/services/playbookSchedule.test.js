@@ -36,3 +36,7 @@ test('catches a midnight spring gap across the local date boundary', () => {
   expect(slot.key).toBe('schedule:2026-09-06T00:30');
   expect(slot.at.toISOString()).toBe('2026-09-06T04:00:00.000Z');
 });
+
+test('refuses an invalid activation timestamp instead of running a pre-On slot', () => {
+  expect(() => latestScheduleSlot(schedule('0 9 * * *'), new Date('invalid'))).toThrow('turn-on timestamp');
+});

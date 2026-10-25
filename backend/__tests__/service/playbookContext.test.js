@@ -15,7 +15,7 @@ afterAll(closeMongoDb);
 beforeEach(async () => {
   await clearMongoDb();
   human = await User.create({ username: 'human', email: 'human@example.test', password: 'test-password' });
-  agent = await User.create({ username: 'worker', email: 'worker@example.test', password: 'test-password',
+  agent = await User.create({ username: 'native-agent-worker', email: 'worker@example.test', password: 'test-password',
     isBot: true, botType: 'agent', botMetadata: { agentName: 'native-agent', instanceId: 'worker' } });
   pod = await Pod.create({ name: 'Playbook test', createdBy: human._id, members: [human._id, agent._id],
     publicRead: false, joinPolicy: 'invite-only' });
@@ -32,7 +32,7 @@ test('loads verified members, active native runtime and only currently pinned al
   const context = await loadPlaybookContext(String(pod._id));
   expect(context.grantPodRefusal).toBeNull();
   expect(context.members.find((m) => m.userId === String(agent._id))).toMatchObject({
-    handle: 'worker', kind: 'agent', agentName: 'native-agent', instanceId: 'worker', runtime: 'native' });
+    handle: 'native-agent-worker', kind: 'agent', agentName: 'native-agent', instanceId: 'worker', runtime: 'native' });
   expect(context.tools).toEqual([{ name: 'github.read', mode: 'read', audience: [String(agent._id)] }]);
 });
 test('revocation, expiry and current membership take effect on the next load', async () => {
@@ -56,4 +56,10 @@ test('paused installations cannot satisfy an agent role and make reads ineligibl
   const context = await loadPlaybookContext(String(pod._id));
   expect(context.members.find((m) => m.userId === String(agent._id)).runtime).toBeUndefined();
   expect(context.grantPodRefusal).toBe('non_native_agent');
+});
+
+test('metadata aliases cannot bind a native role to a different posting identity', async () => {
+  await User.updateOne({ _id: agent._id }, { $set: { username: 'metadata-alias' } });
+  const context = await loadPlaybookContext(String(pod._id));
+  expect(context.members.find((m) => m.userId === String(agent._id)).runtime).toBeUndefined();
 });
