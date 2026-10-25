@@ -39,6 +39,7 @@ describe('agent send-time freshness', () => {
     expect(hold.message).toContain('continueAnyway:true');
     expect(Message.countDocuments).toHaveBeenCalledWith({
       podId: 'pod-id',
+      $nor: [{ messageType: 'system', 'payload.kind': 'system-action' }],
       $and: [
         { $or: [{ userId: { $ne: 'agent-id' } }, { authorKind: 'kernel' }] },
         { $or: [
@@ -129,4 +130,18 @@ describe('agent send-time freshness', () => {
     expect(pool.query.mock.calls[0][1]).toEqual(['pod-id', 4, 6, 'agent-id', [5, 6]]);
     expect(Cursor.updateOne).toHaveBeenCalledTimes(1);
   });
+
+  it('excludes system actions from both PostgreSQL send holds and omitted-read checks', async () => {
+  jest.clearAllMocks();
+  process.env.PG_HOST = 'configured';
+  pool.query.mockResolvedValue({ rows: [] });
+  await Freshness.unseenMessages('agent-id', 'pod-id');
+  await Freshness.recordRead('agent-id', 'pod-id', { at: new Date(), revision: 10 }, []);
+  expect(pool.query.mock.calls).toHaveLength(2);
+  for (const [sql] of pool.query.mock.calls) {
+    expect(sql).toContain("NOT (m.message_type = 'system' AND COALESCE(m.payload->>'kind', '') = 'system-action')");
+    expect(sql.indexOf("= 'system-action'")).toBeLessThan(sql.indexOf('LIMIT'));
+  }
+});
+
 });
