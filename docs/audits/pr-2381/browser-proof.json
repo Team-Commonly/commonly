@@ -6,22 +6,32 @@
       "width": 1440,
       "overflow": false,
       "approveHeights": [
-        32,
-        32
+        33,
+        33
       ],
       "allOwnKeysVisible": true,
-      "exactJsonPreserved": true
+      "exactJsonPreserved": true,
+      "loadedFonts": [
+        "IBM Plex Sans",
+        "IBM Plex Sans",
+        "IBM Plex Mono"
+      ]
     },
     {
       "lang": "en",
       "width": 390,
       "overflow": false,
       "approveHeights": [
-        32,
-        32
+        33,
+        33
       ],
       "allOwnKeysVisible": true,
-      "exactJsonPreserved": true
+      "exactJsonPreserved": true,
+      "loadedFonts": [
+        "IBM Plex Sans",
+        "IBM Plex Sans",
+        "IBM Plex Mono"
+      ]
     },
     {
       "lang": "zh-CN",
@@ -32,7 +42,12 @@
         34
       ],
       "allOwnKeysVisible": true,
-      "exactJsonPreserved": true
+      "exactJsonPreserved": true,
+      "loadedFonts": [
+        "IBM Plex Sans",
+        "IBM Plex Sans",
+        "IBM Plex Mono"
+      ]
     },
     {
       "lang": "zh-CN",
@@ -43,9 +58,15 @@
         34
       ],
       "allOwnKeysVisible": true,
-      "exactJsonPreserved": true
+      "exactJsonPreserved": true,
+      "loadedFonts": [
+        "IBM Plex Sans",
+        "IBM Plex Sans",
+        "IBM Plex Mono"
+      ]
     }
   ],
   "errors": [],
-  "posts": 0
+  "posts": 0,
+  "failedResponses": []
 }

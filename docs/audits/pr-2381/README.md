@@ -25,8 +25,10 @@ The en/zh-CN captures at 1440 and 390 show all inherited-key rows. Opening the
 second card's disclosure preserves every JSON own key. Both consent controls
 remain usable, with zero page errors, zero POSTs and no horizontal overflow.
 `browser-proof.json` records the measurements. Existing base button heights
-remain 32px in en and 34px in zh-CN, including at 390; this repair does not
+remain 33px in en and 34px in zh-CN, including at 390; this repair does not
 claim a new mobile target-size gate.
 
 These are local component fixtures, not a deployed consent flow or a vendor
 execution. Current-head code/security and UX re-gates remain required.
+
+The refreshed proof verifies IBM Plex Sans/Mono loaded and records zero HTTP error responses. The local server explicitly allowed the real dependency directory behind the worktree symlink; earlier captures without loaded fonts are superseded.
