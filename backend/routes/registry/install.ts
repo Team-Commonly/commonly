@@ -291,6 +291,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     // direct getByName() resolves them. Membership check above is the gate.
     // Set when the self-serve branch below has already checked the hosted cap.
     let hostedCapChecked = false;
+    let deferredRegistry = false;
     if (!agent) {
       const requestedRuntimeType = String(
         (config && config.runtime && (config.runtime as any).runtimeType) || '',
@@ -354,7 +355,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         context: { required: [], optional: [] },
         runtime: { type: 'standalone', connection: 'rest' },
       };
-      agent = await AgentRegistry.create({
+      const registryData = {
         agentName: synthManifest.name,
         displayName: String(displayName || agentName),
         description: synthManifest.description,
@@ -364,7 +365,11 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         registry: 'private',
         publisher: { userId, name: resolveUsername(req) },
         ephemeral: true,
-      });
+      };
+      // A refused handoff must not reserve a self-serve name. Constructing the
+      // model is local; persist it only once the fallible copy has succeeded.
+      deferredRegistry = req.body.memoryFrom !== undefined;
+      agent = deferredRegistry ? new AgentRegistry(registryData) : await AgentRegistry.create(registryData);
       console.log('[cap self-serve-install]', {
         user: String(userId),
         pod: String(podId),
@@ -693,6 +698,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     }
 
     const memoryCopy = await copyMemory();
+    if (deferredRegistry) await agent.save();
 
     // Identity before the installation row (TASK-133 b): a refused identity must
     // not leave an AgentInstallation behind, and that refusal is the one error in

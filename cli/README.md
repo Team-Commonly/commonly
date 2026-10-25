@@ -41,7 +41,10 @@ refuses to replace different existing local memory or copy into a non-private
 long-term section. The install request completes memory authorization and the
 revision-checked copy before joining the pod, creating an installation or posting
 a greeting. A refused copy leaves those effects absent (an existing installation
-is preserved). Correct the error and retry before running the local agent.
+is preserved). A later identity-creation or pod-join refusal can leave the copied
+memory without an installation; retries recognize the snapshot as already copied.
+Memory is not rolled back across those later operations. Correct the error and
+retry before running the local agent.
 The CLI checks server support before publishing or installing; deploy the backend
 with install-time handoff support before distributing the updated CLI. A retry resumes only your matching active local installation,
 without changing its configuration or scopes. Repeating a copy with identical memory is safe.

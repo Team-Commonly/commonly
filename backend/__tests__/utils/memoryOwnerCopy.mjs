@@ -1,5 +1,5 @@
-/** Copy only long-term memory using the logged-in owner's revision-checked API. */
-export const copyHandoffMemory = async (client, {
+/** Test fixture for the owner editor API; attach uses install-time handoff. */
+export const copyOwnerMemory = async (client, {
   sourceAgentName, sourceInstanceId = 'default', targetAgentName, targetInstanceId = 'default',
 }) => {
   const endpoint = (name, instance) => `/api/agent-memory/${encodeURIComponent(name)}/${encodeURIComponent(instance)}/editable`;

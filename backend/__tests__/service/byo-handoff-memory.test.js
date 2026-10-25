@@ -57,12 +57,12 @@ describe('hosted memory copied into a local agent', () => {
   const runCopy = async (actor, extra = '') => {
     const cliRoot = path.resolve(__dirname, '../../../cli/src/lib');
     const script = `
-      import {copyHandoffMemory} from ${JSON.stringify(pathToFileURL(path.join(cliRoot, 'handoff-memory.js')).href)};
+      import {copyOwnerMemory} from ${JSON.stringify(pathToFileURL(path.resolve(__dirname, '../utils/memoryOwnerCopy.mjs')).href)};
       import {readLongTerm,buildMemoryPreamble} from ${JSON.stringify(pathToFileURL(path.join(cliRoot, 'memory-bridge.js')).href)};
       import {createClient} from ${JSON.stringify(pathToFileURL(path.join(cliRoot, 'api.js')).href)};
       const client=createClient({instance:process.env.TEST_BASE,token:process.env.TEST_OWNER_TOKEN});
       ${extra}
-      const result=await copyHandoffMemory(client,{sourceAgentName:'hosted-handoff',targetAgentName:'local-handoff'});
+      const result=await copyOwnerMemory(client,{sourceAgentName:'hosted-handoff',targetAgentName:'local-handoff'});
       const runtime=createClient({instance:process.env.TEST_BASE,token:process.env.TEST_RUNTIME_TOKEN});
       const memory=await readLongTerm(runtime);
       console.log(JSON.stringify({result,preamble:buildMemoryPreamble('first local turn',memory,{freshSession:true})}));`;
@@ -86,6 +86,91 @@ describe('hosted memory copied into a local agent', () => {
     .set('Authorization', `Bearer ${jwt.sign({ id: String(actor._id) }, SECRET)}`)
     .send({ agentName: 'local-handoff', podId: String(pod._id), resumeExisting: true, memoryFrom,
       config: { runtime: { host: 'byo', runtimeType: 'stub', adapter: 'stub' } }, scopes: [] });
+
+  it.each([
+    { memoryFrom: null },
+    { memoryFrom: {} },
+    { memoryFrom: { agentName: 'hosted-handoff' } },
+    { memoryFrom: { agentName: { $ne: null }, instanceId: 'default' } },
+    { runtime: { host: 'cloud', runtimeType: 'stub', adapter: 'stub' } },
+    { runtime: { host: 'byo', runtimeType: 'stub' } },
+  ])('refuses malformed or unsupported handoff before effects: %j', async (override) => {
+    await AgentInstallation.deleteOne({ agentName: 'local-handoff' });
+    const result = await request(base).post('/api/registry/install')
+      .set('Authorization', `Bearer ${jwt.sign({ id: String(owner._id) }, SECRET)}`)
+      .send({ agentName: 'local-handoff', podId: String(pod._id),
+        memoryFrom: { agentName: 'hosted-handoff', instanceId: 'default' },
+        ...('memoryFrom' in override ? { memoryFrom: override.memoryFrom } : {}),
+        config: { runtime: override.runtime || { host: 'byo', runtimeType: 'stub', adapter: 'stub' } } });
+    expect(result.status).toBe(400);
+    expect(await AgentInstallation.countDocuments({ agentName: 'local-handoff' })).toBe(0);
+    expect(await AgentMemory.findOne({ agentName: 'local-handoff' })).toBeNull();
+  });
+
+  it('refuses a fresh target whose registry publisher is someone else', async () => {
+    await AgentInstallation.deleteOne({ agentName: 'local-handoff' });
+    await AgentRegistry.updateOne({ agentName: 'local-handoff' }, { $set: { 'publisher.userId': outsider._id } });
+    try {
+      const result = await attach();
+      expect(result.status).toBe(403);
+      expect(result.body.error).toMatch(/ownership of the source and target/);
+      expect(await AgentInstallation.countDocuments({ agentName: 'local-handoff' })).toBe(0);
+      expect(await AgentMemory.findOne({ agentName: 'local-handoff' })).toBeNull();
+    } finally {
+      await AgentRegistry.updateOne({ agentName: 'local-handoff' }, { $set: { 'publisher.userId': owner._id } });
+    }
+  });
+
+  it('does not expose the capability to an unauthenticated request', async () => {
+    const result = await request(base).get('/api/registry/install/memory-handoff');
+    expect(result.status).toBe(401);
+    expect(result.body.installTimeMemoryHandoff).not.toBe(true);
+  });
+
+  it('a refused self-serve handoff creates no registry row', async () => {
+    const name = 'refused-selfserve-handoff';
+    await AgentMemory.create({ agentName: name, instanceId: 'default', content: 'independent local memory' });
+    const result = await request(base).post('/api/registry/install')
+      .set('Authorization', `Bearer ${jwt.sign({ id: String(owner._id) }, SECRET)}`)
+      .send({ agentName: name, podId: String(pod._id), memoryFrom: { agentName: 'hosted-handoff', instanceId: 'default' },
+        config: { runtime: { host: 'byo', runtimeType: 'wrapper', adapter: 'stub' } } });
+    expect(result.status).toBe(409);
+    expect(await AgentRegistry.countDocuments({ agentName: name })).toBe(0);
+    expect(await AgentInstallation.countDocuments({ agentName: name })).toBe(0);
+  });
+
+  it('persists a new self-serve registry only after a successful handoff', async () => {
+    const name = 'fresh-selfserve-handoff';
+    jest.spyOn(AgentMessageService, 'postMessage').mockResolvedValue({ id: 'fixture-greeting' });
+    const result = await request(base).post('/api/registry/install')
+      .set('Authorization', `Bearer ${jwt.sign({ id: String(owner._id) }, SECRET)}`)
+      .send({ agentName: name, podId: String(pod._id), memoryFrom: { agentName: 'hosted-handoff', instanceId: 'default' },
+        config: { runtime: { host: 'byo', runtimeType: 'wrapper', adapter: 'stub' } } });
+    expect(result.status).toBe(200);
+    expect(result.body.memoryCopy.copied).toBe(true);
+    expect(await AgentRegistry.countDocuments({ agentName: name })).toBe(1);
+    expect(await AgentInstallation.countDocuments({ agentName: name })).toBe(1);
+    expect((await AgentMemory.findOne({ agentName: name }).lean()).content).toContain('remember-X-468');
+  });
+
+  it('records the residual memory when a real human username blocks identity creation', async () => {
+    const name = 'identity-refusal-handoff';
+    await User.create({ username: name, email: `${name}@test.com`, password: 'password123' });
+    await AgentRegistry.create({ agentName: name, displayName: name, description: 'Identity refusal fixture',
+      manifest: { name, version: '1.0.0', context: { required: [] } },
+      latestVersion: '1.0.0', registry: 'private', publisher: { userId: owner._id, name: owner.username } });
+    const post = jest.spyOn(AgentMessageService, 'postMessage');
+    const result = await request(base).post('/api/registry/install')
+      .set('Authorization', `Bearer ${jwt.sign({ id: String(owner._id) }, SECRET)}`)
+      .send({ agentName: name, podId: String(pod._id), memoryFrom: { agentName: 'hosted-handoff', instanceId: 'default' },
+        config: { runtime: { host: 'byo', runtimeType: 'stub', adapter: 'stub' } } });
+    expect(result.status).toBe(409);
+    expect(result.body.code).toBe('agent_username_conflict');
+    expect(await AgentInstallation.countDocuments({ agentName: name })).toBe(0);
+    expect(post).not.toHaveBeenCalled();
+    expect((await AgentMemory.findOne({ agentName: name }).lean()).content).toContain('remember-X-468');
+    expect((await User.findOne({ username: name }).lean()).isBot).toBe(false);
+  });
 
   it('a memory collision leaves no installation, pod join or greeting', async () => {
     await AgentInstallation.deleteOne({ agentName: 'local-handoff' });
