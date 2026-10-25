@@ -284,6 +284,32 @@ describe('read-only git keeps committed .env files out of reach', () => {
     }
   });
 
+  test('--full-diff is refused, since it shows every file a picked commit changed (control: the guarded argv plus it shows .env)', async () => {
+    const own = mkdtempSync(join(tmpdir(), 'git-ro-full-diff-'));
+    try {
+      const inOwn = (args) => bareGit(args, { cwd: own });
+      await inOwn(['init', '-q']);
+      writeFileSync(join(own, '.env'), `TOKEN=${SECRET}\n`);
+      writeFileSync(join(own, 'a.txt'), 'a\n');
+      await inOwn(['add', '-f', '.env', 'a.txt']);
+      await inOwn(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'both']);
+      // The guarded `log -p` argv, run as is and with --full-diff spliced in.
+      const { argv } = readonlyGitArgv({ subcommand: 'log', args: ['-p'], root: own });
+      const at = argv.indexOf('log') + 1;
+      const env = readonlyGitEnv({ root: own });
+      expect((await execFileAsync(GIT, argv, { cwd: own, env })).stdout).not.toContain(SECRET);
+      const spliced = [...argv.slice(0, at), '--full-diff', ...argv.slice(at)];
+      expect((await execFileAsync(GIT, spliced, { cwd: own, env })).stdout).toContain(SECRET);
+      for (const [subcommand, args] of [['log', ['-p', '--full-diff']], ['log', ['--raw', '--full-diff']],
+        ['log', ['--full-d']], ['show', ['--full-diff']]]) {
+        expect(refusal({ subcommand, args })).toMatch(/--full-diff/);
+      }
+      expect((await run('log', ['-p', '--full-history'])).ok).toBe(true);
+    } finally {
+      rmSync(own, { recursive: true, force: true });
+    }
+  });
+
   test('a patch, a glob, a pickaxe and a raw listing all leave it out (control: bare log -p shows it)', async () => {
     expect((await bareGit(['log', '-p'])).stdout).toContain(SECRET);
     for (const [subcommand, args] of [['log', ['-p']], ['log', ['-p', '--', '.en*', 'sub/*']],
