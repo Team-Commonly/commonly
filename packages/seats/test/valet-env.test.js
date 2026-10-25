@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync as readdir, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync as readdir, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { prepareRunEnv } from '../src/valet/env.js';
@@ -34,8 +34,19 @@ const probe = (env, cwd) => {
 };
 
 test('a real child sees only the granted key, a throwaway HOME, and no path to the real login', () => withScratch(async (root) => {
+  // A planted "real" home with both login dirs, so the result never depends on the host
+  // (a CI runner or a bare container has neither).
+  const loginHome = mkdtempSync(join(tmpdir(), 'seats-login-home-'));
+  for (const dir of ['.claude', '.codex']) {
+    mkdirSync(join(loginHome, dir), { mode: 0o700 });
+    writeFileSync(join(loginHome, dir, 'credentials.json'), '{"planted":true}');
+  }
+  // Positive control: a child given that HOME directly can reach both, so "not reachable" below is a real result.
+  const direct = probe({ ...process.env, HOME: loginHome }, loginHome);
+  assert.equal(direct.claude, true, 'positive control: the probe sees ~/.claude when HOME points at it');
+  assert.equal(direct.codex, true, 'positive control: the probe sees ~/.codex when HOME points at it');
   // The parent's own env, with both secrets planted, is the base the run is cut from.
-  const baseEnv = { ...process.env, HOME: REAL_HOME, OPENAI_API_KEY: GRANTED, ANTHROPIC_API_KEY: WITHHELD, CLAUDE_CONFIG_DIR: join(REAL_HOME, '.claude') };
+  const baseEnv = { ...process.env, HOME: loginHome, OPENAI_API_KEY: GRANTED, ANTHROPIC_API_KEY: WITHHELD, CLAUDE_CONFIG_DIR: join(loginHome, '.claude') };
   const trace = recorder();
   const run = await prepareRunEnv({
     grant: { credentials: [{ name: 'OPENAI_API_KEY', from: 'env' }] }, baseEnv, root, trace,
@@ -50,13 +61,11 @@ test('a real child sees only the granted key, a throwaway HOME, and no path to t
     assert.equal(seen.homedir, run.home);
     assert.ok(run.home.startsWith(root));
     for (const [name, value] of Object.entries(seen.env)) {
+      assert.ok(!value.includes(loginHome), `${name} leaks the login HOME path: ${value}`);
       assert.ok(!value.includes(REAL_HOME), `${name} leaks the real HOME path: ${value}`);
     }
-    // Positive control: the real login dir exists, so "not reachable" is a real result.
-    if (existsSync(join(REAL_HOME, '.claude'))) assert.equal(seen.claude, false, '~/.claude is not reachable via HOME');
-    else assert.fail('positive control missing: no ~/.claude on this host');
-    if (existsSync(join(REAL_HOME, '.codex'))) assert.equal(seen.codex, false, '~/.codex is not reachable via HOME');
-    else assert.fail('positive control missing: no ~/.codex on this host');
+    assert.equal(seen.claude, false, '~/.claude is not reachable via HOME');
+    assert.equal(seen.codex, false, '~/.codex is not reachable via HOME');
     for (const name of ['XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME', 'TMPDIR']) {
       assert.ok(seen.env[name].startsWith(`${run.home}/`), `${name} sits inside the run HOME`);
       assert.equal(statSync(seen.env[name]).mode & 0o777, 0o700, `${name} is 0700`);
@@ -66,6 +75,7 @@ test('a real child sees only the granted key, a throwaway HOME, and no path to t
     assert.deepEqual(trace.events, [{ type: 'credential.granted', data: { names: ['OPENAI_API_KEY'] } }]);
   } finally {
     await run.cleanup();
+    rmSync(loginHome, { recursive: true, force: true });
   }
   assert.equal(existsSync(run.home), false, 'cleanup removes the HOME');
 }));
