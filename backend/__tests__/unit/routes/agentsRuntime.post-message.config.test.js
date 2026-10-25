@@ -246,6 +246,13 @@ describe('agent card route boundary', () => {
     expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
     expect(findNonMemberMentionNotices).not.toHaveBeenCalled();
   });
+  it('refuses a fallback that the existing sanitizer suppresses', async () => {
+    AgentMessageService.sanitizeAgentContent.mockReturnValueOnce('');
+    const res = response();
+    await handler(req({ messageType: 'card', payload, content: 'NO_REPLY' }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+  });
   it('keeps the pod authorization check ahead of parsing', async () => {
     const res = response();
     await handler({ ...req({ payload }), params: { podId: 'other' } }, res);
