@@ -15,6 +15,7 @@ const {
   isDirectlyJoinable,
 } = require('../services/podListing');
 const User = require('../models/User');
+const { validatePodParent } = require('../services/podParentService');
 // Add PGPod at the top level if it's available
 let PGPod: any;
 let PGMessage: any;
@@ -436,12 +437,15 @@ exports.createPod = async (req: any, res: any) => {
       });
     }
 
+    const parentError = await validatePodParent(parentPod, req.userId);
+    if (parentError) return res.status(parentError.status).json(parentError);
+
     const newPod = new Pod({
       name,
       description,
       type,
       joinPolicy: joinPolicy === 'invite-only' ? 'invite-only' : 'open',
-      parentPod: parentPod || null,
+      parentPod: parentPod ?? null,
       createdBy: req.userId,
       members: [req.userId],
     });
@@ -487,6 +491,33 @@ exports.createPod = async (req: any, res: any) => {
   } catch (err: any) {
     console.error(err.message);
     res.status(500).send('Server Error');
+  }
+};
+
+// Parent changes require child administration and write membership in the parent.
+exports.updatePodParent = async (req: any, res: any) => {
+  try {
+    const childId = req.params.id;
+    if (typeof childId !== 'string' || !/^[a-f\d]{24}$/i.test(childId)) {
+      return res.status(400).json({ code: 'invalid_pod_id', msg: 'Invalid pod ID' });
+    }
+    if (!Object.prototype.hasOwnProperty.call(req.body || {}, 'parentPod')) {
+      return res.status(400).json({ code: 'parent_pod_required', msg: 'parentPod is required; use null to detach' });
+    }
+    const pod = await Pod.findById(childId);
+    if (!pod) return res.status(400).json({ code: 'pod_not_found', msg: 'Pod not found' });
+    const userId = req.userId || req.user?.id || req.user?._id;
+    if (pod.createdBy.toString() !== String(userId) && !isGlobalAdminRequest(req)) {
+      return res.status(403).json({ code: 'pod_admin_required', msg: 'Only pod admins can change its parent' });
+    }
+    const parentError = await validatePodParent(req.body.parentPod, userId, childId);
+    if (parentError) return res.status(parentError.status).json(parentError);
+    pod.parentPod = req.body.parentPod === null ? undefined : req.body.parentPod;
+    await pod.save();
+    return res.json(pod);
+  } catch (err: any) {
+    console.error('Error changing pod parent:', err.message);
+    return res.status(500).json({ code: 'pod_parent_update_failed', msg: 'Server Error' });
   }
 };
 

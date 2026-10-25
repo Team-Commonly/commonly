@@ -12,7 +12,7 @@ const auth = require('../middleware/auth');
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 const { refuseDollarKeys } = require('../middleware/refuseDollarKeys');
 // eslint-disable-next-line global-require
-const { getAllPods, getPodsByType, getPodById, createPod, joinPod, leavePod, removeMember, deletePod } = require('../controllers/podController');
+const { getAllPods, getPodsByType, getPodById, createPod, joinPod, leavePod, removeMember, deletePod, updatePodParent } = require('../controllers/podController');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 const User = require('../models/User');
@@ -440,6 +440,8 @@ const podAdminRateLimit = rateLimit({
   legacyHeaders: false,
   keyGenerator: cloudflareIpRateLimitKeyGenerator,
 });
+
+router.patch('/:id/parent', podAdminRateLimit, auth, updatePodParent);
 
 /**
  * PATCH /api/pods/:id/contacts
