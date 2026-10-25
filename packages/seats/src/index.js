@@ -11,3 +11,5 @@ export { superviseRun, SUPERVISOR_DEFAULTS, DEFAULT_RETRY_ON } from './superviso
 export {
   REFUSAL_FORMATS, refusalSignalsOf, createRefusalDetector, findRefusal, createRefusalTap, refusalDropped,
 } from './wire/refusal.js';
+export { startProviderRelay } from './wire/provider-relay.js';
+export { COVERAGE, COMPAT_NOT_COVERED, compatRefusalStatus } from './coverage.js';

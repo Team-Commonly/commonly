@@ -67,6 +67,7 @@ import { supportedGitHooks } from '../commit-attribution.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
+import { routeCodexThroughRelay } from './codex-provider-route.js';
 import { resolveSkillSource, skillsAsText } from '../skill-prompt.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
@@ -466,6 +467,7 @@ const buildArgs = ({
   prompt,
   outputFile,
   mcpFlags = [],
+  providerFlags = [],
   publicSandboxMode = null,
   model = null,
   effort = null,
@@ -504,6 +506,7 @@ const buildArgs = ({
     ...(model ? ['--model', String(model)] : []),
     ...(effort ? ['-c', 'model_reasoning_effort=' + toml(effort)] : []),
     ...mcpFlags,
+    ...providerFlags,
     '-o',
     outputFile,
   ];
@@ -699,7 +702,7 @@ export default {
       const publicSandboxMode = sandbox?.trust === 'public'
         ? sandbox?.mode ?? 'workspace'
         : null;
-      const args = buildArgs({
+      const argSpec = {
         sessionId: ctx.sessionId || null,
         prompt: fullPrompt,
         outputFile,
@@ -709,7 +712,8 @@ export default {
         model: seatModel,
         effort: ctx.environment?.effort,
         commitAttributionEnv: ctx.commitAttributionEnv,
-      });
+      };
+      let args = buildArgs(argSpec);
       const childEnv = { ...(ctx.env || process.env), ...mcp.forwardedEnv };
       // Derived from the process environment, so the bootstrap export has to be
       // taken back out: the declaration above moved our server onto the file,
@@ -726,6 +730,19 @@ export default {
       if (publicSandboxMode !== null) {
         childEnv.CODEX_HOME = await preparePublicCodexHome(ctx);
         await writePublicCodexInstructions(childEnv.CODEX_HOME, ctx);
+      }
+      // Only when the supervisor runs a relay for this turn. Resolved against
+      // the CODEX_HOME codex will actually read, so it comes after the public
+      // home is prepared; with no relay the argv is exactly what it was.
+      if (ctx.providerRelay) {
+        args = buildArgs({
+          ...argSpec,
+          providerFlags: routeCodexThroughRelay({
+            relay: ctx.providerRelay,
+            env: childEnv,
+            ignoreUserConfig: publicSandboxMode !== null,
+          }),
+        });
       }
 
       const { threadId } = await runCodex({

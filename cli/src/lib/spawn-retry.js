@@ -112,6 +112,10 @@ const errorText = (error) => [
   .join('\n');
 
 export const classifySpawnFailure = (error) => {
+  // A supervised run whose provider refused in-band while the CLI exited 0
+  // (packages/seats, wire/refusal.js). Its message carries no provider words,
+  // so it is named by kind; it is the same deterministic refusal as below.
+  if (error?.kind === 'refusal_dropped') return SPAWN_FAILURE_CLASS.CONTENT_REFUSED;
   const text = errorText(error);
   // First: the refusal text carries none of the words below today, but a
   // refusal must never be read as a transient condition and retried.

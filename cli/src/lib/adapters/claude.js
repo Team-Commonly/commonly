@@ -71,6 +71,7 @@ import {
 } from '../environment.js';
 import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from '../sandbox/mode.js';
+import { routeClaudeThroughRelay } from './claude-provider-route.js';
 import {
   publicClaudeStateRoot,
   wrapArgvWithSeatbelt,
@@ -884,6 +885,9 @@ export default {
       if ((publicNativeSandbox || publicBwrapSandbox) && ctx.commitAttributionEnv) {
         Object.assign(claudeEnv, ctx.commitAttributionEnv);
       }
+      // Only when the supervisor runs a relay for this turn; set last so
+      // nothing above can replace it.
+      routeClaudeThroughRelay({ relay: ctx.providerRelay, claudeEnv, environment: ctx.environment });
       const spawnCtx = {
         ...ctx,
         mcpConfigPath: mcpConfig?.file || null,
@@ -948,6 +952,9 @@ export default {
         if ((publicNativeSandbox || publicBwrapSandbox) && ctx.commitAttributionEnv) {
           Object.assign(retryCtx.claudeEnv, ctx.commitAttributionEnv);
         }
+        routeClaudeThroughRelay({
+          relay: ctx.providerRelay, claudeEnv: retryCtx.claudeEnv, environment: ctx.environment,
+        });
         const retry = await prepareArgv(retryBase, retryCtx);
         const stdout = await runClaude({
           cmd: retry.cmd,

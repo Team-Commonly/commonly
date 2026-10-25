@@ -6,6 +6,7 @@ import { createServer, request as httpRequest } from 'http';
 import { request as httpsRequest } from 'https';
 import { chmod, lstat, open, unlink, writeFile } from 'fs/promises';
 import { isAbsolute, relative, sep } from 'path';
+import { isPlainRequestTarget, withoutHeaders } from '@commonlyai/seats/wire/http-relay';
 
 // Providers sometimes echo request headers in an error response. Redact the
 // material across arbitrary stream chunk boundaries before any model sees it.
@@ -151,11 +152,7 @@ export const startProviderProxy = async ({
     let target;
     try {
       const requestPath = incoming.url || '/';
-      if (!requestPath.startsWith('/') || requestPath.startsWith('//')) {
-        rejectBadRequest();
-        return;
-      }
-      if (/%(?:2f|5c|2e)/i.test(requestPath)) {
+      if (!isPlainRequestTarget(requestPath)) {
         rejectBadRequest();
         return;
       }
@@ -194,12 +191,7 @@ export const startProviderProxy = async ({
       return;
     }
 
-    const headers = Object.fromEntries(Object.entries(incoming.headers)
-      .filter(([name]) => ![
-        'authorization', 'connection', 'host', 'keep-alive', 'proxy-authenticate',
-        'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade',
-        'x-api-key',
-      ].includes(name.toLowerCase())));
+    const headers = withoutHeaders(incoming.headers, ['authorization', 'host', 'x-api-key']);
     headers.authorization = `Bearer ${upstreamKey}`;
     headers.host = target.host;
     headers['accept-encoding'] = 'identity';
@@ -219,11 +211,7 @@ export const startProviderProxy = async ({
       if (response.headers['content-encoding'] && response.headers['content-encoding'] !== 'identity') {
         response.resume(); outgoing.writeHead(502).end('Compressed provider responses are not supported'); return;
       }
-      const responseHeaders = Object.fromEntries(Object.entries(response.headers)
-        .filter(([name]) => ![
-          'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
-          'te', 'trailer', 'transfer-encoding', 'upgrade',
-        ].includes(name.toLowerCase())));
+      const responseHeaders = withoutHeaders(response.headers);
       delete responseHeaders['content-length'];
       for (const [name, value] of Object.entries(responseHeaders)) {
         if (typeof value === 'string') responseHeaders[name] = value.split(upstreamKey).join('[redacted]');

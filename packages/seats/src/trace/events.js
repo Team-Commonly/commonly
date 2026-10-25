@@ -23,6 +23,8 @@ export const EVENT_TYPES = Object.freeze([
   'credential.granted', // { names: [...] }  names only, never values
   'credential.denied', // { name }
   'process.exited', // { code, signal }
+  'provider.relay', // { status: 'covered'|'not_covered', reason?, tripped?, requests, attempt }  supervisor only; tripped is a failure kind
+  'provider.refusal', // { format, signal, attempt }  a verdict: never the refusal's text
 ]);
 
 const KNOWN = new Set(EVENT_TYPES);

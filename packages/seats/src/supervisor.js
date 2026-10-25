@@ -11,6 +11,8 @@
  */
 import { RunFailure, runFailure, failureKindOf, FAILURE_KINDS } from './failures.js';
 import { scrubAdapterFailure, spawnCredentials } from './upstream-refusal.js';
+import { refusalDropped } from './wire/refusal.js';
+import { startProviderRelay } from './wire/provider-relay.js';
 
 export const SUPERVISOR_DEFAULTS = Object.freeze({
   // Longer than the quiet stretches a healthy turn has: a long-context first
@@ -28,7 +30,7 @@ export const DEFAULT_RETRY_ON = Object.freeze(['stuck', 'exited', 'timeout']);
 // setTimeout overflows past this and fires immediately.
 const MAX_TIMER_MS = 2_147_483_647;
 // The supervisor's own events; an adapter writing them would forge the run's outcome.
-const SUPERVISOR_EVENTS = new Set(['run.started', 'run.settled']);
+const SUPERVISOR_EVENTS = new Set(['run.started', 'run.settled', 'provider.relay', 'provider.refusal']);
 
 const windowOf = (value, fallback) => {
   if (value === undefined || value === null) return fallback;
@@ -88,6 +90,27 @@ const ignoredCancel = (reason, graceMs) => {
   failure.adapterIgnoredCancel = true;
   return failure;
 };
+
+// What the relay saw on one attempt, as trace events, plus the settle rule for a
+// clean exit. Verdicts only: the refusal text stays in memory for the rule and
+// is taken off the failure before it is returned.
+const settleRelay = (relay, run, attempt, outcome) => {
+  const verdict = relay.verdict;
+  for (const { format, signal } of verdict.refusals) run.emit('provider.refusal', { format, signal, attempt });
+  if (outcome.failure) return outcome;
+  const dropped = refusalDropped({ refusals: relay.refusals, result: outcome.result });
+  if (!dropped) return outcome;
+  dropped.refusal = { format: dropped.refusal.format, signal: dropped.refusal.signal };
+  return { failure: dropped };
+};
+
+const relayVerdictData = (verdict, attempt) => ({
+  status: verdict.status,
+  ...(verdict.reason ? { reason: verdict.reason } : {}),
+  ...(verdict.tripped ? { tripped: verdict.tripped.kind } : {}),
+  requests: verdict.requests,
+  attempt,
+});
 
 const callerCancel = (signal) => (failureKindOf(signal.reason) === 'cancelled'
   ? signal.reason : runFailure('cancelled', 'cancelled by the caller'));
@@ -230,9 +253,16 @@ const runAttempt = ({ adapter, prompt, ctx, run, settings, attempt, sessionId, e
  * @param {(info: {runId, adapter, attempt, idleMs, windowMs}) => void} [args.policy.onStalled]
  * @param {string} [args.runId]
  * @param {string} [args.label]
- * @returns {Promise<{ runId: string, outcome: string, attempts: number, result?: object, failure?: Error }>}
+ * @param {false|{ ca?: string|Buffer|Array, start?: Function }} [args.relay]  run the CLI's provider
+ *   traffic through a loopback relay (wire/provider-relay.js) the supervisor starts here and closes
+ *   on every settle path. The adapter receives `ctx.providerRelay` ({ bind, notCovered }); a clean
+ *   exit whose responses carried a dropped in-band refusal settles as `refusal_dropped`. The result
+ *   then carries `relay`: { status: 'covered'|'not_covered', reason?, requests, refusals: [{format, signal}] }.
+ * @returns {Promise<{ runId: string, outcome: string, attempts: number, result?: object, failure?: Error, relay?: object }>}
  */
-export const superviseRun = async ({ adapter, prompt, ctx = {}, store, policy = {}, runId, label } = {}) => {
+export const superviseRun = async ({
+  adapter, prompt, ctx = {}, store, policy = {}, runId, label, relay: relayOptions = false,
+} = {}) => {
   if (!adapter || typeof adapter.spawn !== 'function') throw new Error('superviseRun needs an adapter with spawn()');
   if (!store || typeof store.startRun !== 'function') throw new Error('superviseRun needs a trace store');
   const settings = resolvePolicy(policy);
@@ -242,12 +272,24 @@ export const superviseRun = async ({ adapter, prompt, ctx = {}, store, policy = 
   let attempt = 0;
   let sessionId = ctx.sessionId || null;
   let last = { failure: null };
+  let relay = null;
+  let relayVerdict = null;
 
   try {
+    if (relayOptions) {
+      const start = typeof relayOptions.start === 'function' ? relayOptions.start : startProviderRelay;
+      relay = await start({ ca: relayOptions.ca });
+    }
     for (;;) {
       attempt += 1;
+      relay?.beginAttempt();
       run.emit('run.started', { adapter: adapter.name, ...(sessionId ? { sessionId } : {}), attempt });
-      last = await runAttempt({ adapter, prompt, ctx, run, settings, attempt, sessionId, external });
+      const attemptCtx = relay ? { ...ctx, providerRelay: relay.handle } : ctx;
+      last = await runAttempt({ adapter, prompt, ctx: attemptCtx, run, settings, attempt, sessionId, external });
+      if (relay) {
+        last = settleRelay(relay, run, attempt, last);
+        relayVerdict = relay.verdict;
+      }
       if (!last.failure || external?.aborted || !shouldRetry(last.failure, attempt, settings)) break;
       sessionId = sessionIdOf(last.failure) || sessionId;
       run.emit('liveness.recovery', { action: 'retry', attempt: attempt + 1 });
@@ -256,9 +298,18 @@ export const superviseRun = async ({ adapter, prompt, ctx = {}, store, policy = 
     // The supervisor's own fault (a trace write failing, say) still settles the run.
     last = { failure: error };
   }
+  // Every settle path reaches here: ok, failed, stuck, cancelled, or the
+  // supervisor's own fault. An abandoned adapter's child loses the relay too.
+  if (relay) {
+    relayVerdict = relayVerdict || relay.verdict;
+    try { await relay.close(); } catch { /* the port is the OS's once the server is gone */ }
+  }
 
   const outcome = outcomeOf(last.failure);
   const credentials = spawnCredentials(ctx, [adapter.providerKeyEnv].filter(Boolean));
+  if (relayVerdict) {
+    try { run.emit('provider.relay', relayVerdictData(relayVerdict, attempt)); } catch { /* the outcome is still returned */ }
+  }
   try {
     run.emit('run.settled', {
       outcome,
@@ -272,5 +323,6 @@ export const superviseRun = async ({ adapter, prompt, ctx = {}, store, policy = 
     outcome,
     attempts: attempt,
     ...(last.failure ? { failure: last.failure } : { result: last.result }),
+    ...(relayVerdict ? { relay: relayVerdict } : {}),
   };
 };

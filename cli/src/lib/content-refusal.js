@@ -32,11 +32,16 @@ export const isContentRefusal = (error) => (
  * `outcome: 'error'` is terminal on the kernel side; the event is acked, not
  * requeued.
  */
-export const contentRefusedResult = () => ({
+export const contentRefusedResult = (error = null) => ({
   outcome: 'error',
   refused: { reason: 'upstream-refused' },
   reason: CONTENT_REFUSED_REASON,
-  details: { failureClass: SPAWN_FAILURE_CLASS.CONTENT_REFUSED },
+  details: {
+    failureClass: SPAWN_FAILURE_CLASS.CONTENT_REFUSED,
+    // Only a supervised run can see a refusal the CLI dropped; name it so the
+    // ledger can tell the two apart. Absent otherwise.
+    ...(error?.kind === 'refusal_dropped' ? { failureKind: 'refusal_dropped' } : {}),
+  },
 });
 
 // A full 40-hex commit id. Shorter hex runs are not taken: the server's pod

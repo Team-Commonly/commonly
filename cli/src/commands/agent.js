@@ -85,6 +85,8 @@ import { hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-c
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import { describeUpstreamRefusal } from '../lib/upstream-refusal.js';
+import { superviseRun } from '@commonlyai/seats/supervisor';
+import { createTraceStore } from '@commonlyai/seats/trace/store';
 import {
   DEFAULT_HOOK_TIMEOUT_MS,
   clampHookTimeoutMs,
@@ -1222,6 +1224,17 @@ const extractPrompt = (event) => {
  * Every enforcement failure fails OPEN — a kernel without the claim route or
  * an unreachable upload endpoint must never produce a silent agent (#887).
  */
+// The supervisor's policy for a run-loop spawn. The stall window is off: a
+// claude spawn in text mode writes nothing until it answers, so silence is not
+// a hang there. The wall-clock budget sits past the adapter's own timeout, so
+// the adapter's timeout error still wins when the adapter enforces it, and the
+// supervisor only settles a spawn that outlived it. Retries stay with the run
+// loop.
+export const supervisedRunPolicy = (turnTimeoutMs) => ({
+  stallMs: 0,
+  timeoutMs: Math.min(turnTimeoutMs + 60_000, 2_147_483_647),
+});
+
 export const performRun = ({
   instanceUrl,
   token,
@@ -1269,6 +1282,12 @@ export const performRun = ({
   resolveOwnProviderKey = null,
   runtimeReportClient = null,
   refusalHandoff = null,
+  // Off unless COMMONLY_SUPERVISE_RUNS=1: each spawn runs under the seats
+  // supervisor, with its provider traffic through a per-run loopback relay
+  // that reads responses for in-band refusals the CLI drops. Off, the spawn
+  // path is the plain adapter call it has always been.
+  superviseRuns = process.env.COMMONLY_SUPERVISE_RUNS === '1',
+  traceRoot = null,
 }) => {
   reportRuntime = reportRuntime && WALKED_HARNESSES.includes(adapter?.name);
   if (environment?.provider !== undefined && !adapter?.supportsProvider) {
@@ -1278,6 +1297,15 @@ export const performRun = ({
   const effectiveTurnTimeoutMs = Number.isFinite(requestedTurnTimeout) && requestedTurnTimeout > 0
     ? Math.min(requestedTurnTimeout, 2_147_483_647) : 15 * 60 * 1000;
   const client = createClient({ instance: instanceUrl, token });
+  // Created on the first supervised spawn, never when supervision is off.
+  let runTraceStore = null;
+  const supervisedTraceStore = () => {
+    if (!runTraceStore) {
+      const seat = String(agentName || 'agent').replace(/[^A-Za-z0-9._-]/g, '_');
+      runTraceStore = createTraceStore({ root: traceRoot || join(homedir(), '.commonly', 'traces', seat) });
+    }
+    return runTraceStore;
+  };
   const runtimeReporter = createRuntimeReporter({
     client: runtimeReportClient || { post: async () => {} },
     harness: adapter.name, detect: () => adapter.detect(),
@@ -1837,7 +1865,8 @@ export const performRun = ({
             reason: 'own-key-requires-scoped-spawn' };
         }
       }
-      result = await adapter.spawn(frameDecisionForkRule(promptForSpawn), {
+      const spawnPrompt = frameDecisionForkRule(promptForSpawn);
+      const spawnCtx = {
         onSpawn: reportRuntime ? (controls) => {
           observedSpawn = true;
           return runtimeReporter.spawn(controls);
@@ -1867,7 +1896,25 @@ export const performRun = ({
         instanceUrl,
         agentName,
         metadata: { event },
-      });
+      };
+      if (superviseRuns) {
+        const supervised = await superviseRun({
+          adapter,
+          prompt: spawnPrompt,
+          ctx: spawnCtx,
+          store: supervisedTraceStore(),
+          policy: supervisedRunPolicy(effectiveTurnTimeoutMs),
+          relay: {},
+          label: event.type,
+        });
+        // A failure is thrown exactly as the adapter's own would be, so the
+        // run loop's classification and retry apply unchanged; a dropped
+        // refusal classifies as content_refused (spawn-retry.js).
+        if (supervised.failure) throw supervised.failure;
+        result = supervised.result;
+      } else {
+        result = await adapter.spawn(spawnPrompt, spawnCtx);
+      }
       spawnCompleted = true;
     } finally {
       try {
@@ -2495,7 +2542,7 @@ export const performRun = ({
       } catch (err) {
         if (!isContentRefusal(err)) throw err;
         if (actionEntries.length === 1) {
-          actionEntries[0].result = contentRefusedResult();
+          actionEntries[0].result = contentRefusedResult(err);
         } else {
           log(
             `[inbox.batch] the model provider refused this batch's content (content_refused); `
@@ -2513,7 +2560,7 @@ export const performRun = ({
                 deferredError = itemErr;
                 break;
               }
-              entry.result = contentRefusedResult();
+              entry.result = contentRefusedResult(itemErr);
             }
           }
         }
@@ -2743,7 +2790,7 @@ export const performRun = ({
             if (isContentRefusal(err)) {
               // A refused private item is acked without a pod notice: it has no
               // pod to post into, and its sender's ask expires on its own.
-              result = contentRefusedResult();
+              result = contentRefusedResult(err);
               log(`[${event.type}] the model provider refused the content of event ${event._id} (content_refused) — acked as refused, not retried`);
             } else {
               // Do not record or ack: the kernel must retain the event for

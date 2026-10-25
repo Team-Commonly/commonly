@@ -29,12 +29,15 @@
  *   refuseAs: 'error'|'inband', error: CODE | {status, type, message, inStream, headers},
  *   cut: N | {after, mode: 'silent'|'close'} }
  *
+ * `tls: { key, cert }` serves the same routes over HTTPS.
+ *
  * Capture: `requests` holds model calls (the shape older checks read, plus
  * format/path/headers/body/receivedAt); `allRequests` holds every HTTP request.
  * Auth header values are redacted to their scheme. `findInRequests(needle)`
  * searches the unredacted traffic, so a canary in a header is still found.
  */
 import { createServer } from 'node:http';
+import { createServer as createTlsServer } from 'node:https';
 import { readFileSync } from 'node:fs';
 import zlib from 'node:zlib';
 import { normaliseTurn, turnFromDirectives, conversationFacts, parseDirectives } from './fake-provider/turns.js';
@@ -99,7 +102,7 @@ const modelList = (model) => ({
 });
 
 export const startFakeProvider = async ({
-  model = 'fake-model', defaultReply = 'PONG', port = 0, script = null, scriptFilter = null,
+  model = 'fake-model', defaultReply = 'PONG', port = 0, script = null, scriptFilter = null, tls = null,
 } = {}) => {
   const requests = [];
   const allRequests = [];
@@ -122,7 +125,8 @@ export const startFakeProvider = async ({
     return { turn: turnFromDirectives(facts.prompt, facts.toolRounds, { defaultReply }), scriptTurn: null };
   };
 
-  const server = createServer((req, res) => {
+  // `tls: { key, cert }` serves HTTPS, for a client that must verify the cert it is handed.
+  const server = (tls ? (handler) => createTlsServer(tls, handler) : createServer)((req, res) => {
     open.add(res);
     res.on('close', () => open.delete(res));
     const chunks = [];
@@ -179,7 +183,7 @@ export const startFakeProvider = async ({
   });
   await new Promise((resolve) => server.listen(port, '127.0.0.1', resolve));
   const { port: bound } = server.address();
-  const origin = `http://127.0.0.1:${bound}`;
+  const origin = `${tls ? 'https' : 'http'}://127.0.0.1:${bound}`;
 
   /** Every place `needle` reached the provider: body, URL, or any header value (unredacted). */
   const findInRequests = (needle) => {
