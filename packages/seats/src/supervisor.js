@@ -165,12 +165,17 @@ const runAttempt = ({ adapter, prompt, ctx, run, settings, attempt, sessionId, e
 
   // Counts as progress only while this attempt is live, so a cancelled
   // attempt's late output cannot keep the next one alive or reach the trace.
+  // The emit options (the entry's actor) pass through unchanged. `redact` is
+  // offered only when the run has one, so prepareRunEnv cannot hand its
+  // values to a no-op; it is not gated on `live`, since adding a value to
+  // scrub is never unsafe.
   const trace = {
-    emit(type, data) {
+    emit(type, data, options) {
       if (!live || SUPERVISOR_EVENTS.has(type)) return null;
       touch();
-      return run.emit(type, data);
+      return run.emit(type, data, options);
     },
+    ...(typeof run.redact === 'function' ? { redact: (values) => run.redact(values) } : {}),
   };
 
   // Wraps the caller's onSpawn: every argument reaches it unchanged.
