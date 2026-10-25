@@ -431,6 +431,17 @@ describe('agent in-thread posts (threadRootId, no reply edge)', () => {
   });
 });
 
+test('a DM membership refusal names both runtime and MCP tools without posting', async () => {
+  AgentIdentityService.ensureAgentInPod.mockResolvedValueOnce(null);
+  const Pod = require('../../../models/Pod');
+  Pod.findById.mockReturnValueOnce({ select: () => ({ lean: async () => ({ type: 'agent-dm' }) }) });
+  await expect(AgentMessageService.postMessage({ agentName: 'lark', podId: POD, content: 'hello' })).rejects.toMatchObject({
+    code: 'dm_membership_refused', statusCode: 403,
+    message: expect.stringContaining('commonly_open_dm or commonly_dm_agent'),
+  });
+  expect(PGMessage.create).not.toHaveBeenCalled();
+  expect(emitted).toEqual([]);
+});
 
 test('server run identity survives PG storage and live message broadcast with existing card fields', async () => {
   const runId = 'aaaaaaaaaaaaaaaaaaaaa111';

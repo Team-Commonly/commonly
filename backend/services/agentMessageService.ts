@@ -1298,7 +1298,7 @@ class AgentMessageService {
       }
       // It's a 1:1 DM and this agent isn't a member.
       const err: Error & { code?: string; statusCode?: number } = new Error(
-        `Agent is not a member of ${podDoc.type} pod ${podId} — DM pods are 1:1 (ADR-001 §3.10). Open a new DM via commonly_open_dm if a private channel with this peer is needed.`,
+        `Agent is not a member of ${podDoc.type} pod ${podId} — DM pods are 1:1 (ADR-001 §3.10). Open a new DM via commonly_open_dm or commonly_dm_agent if a private channel with this peer is needed.`,
       );
       err.code = 'dm_membership_refused';
       err.statusCode = 403;
