@@ -16,8 +16,9 @@ At the measured deletion head, `isAccountDeleting` returns true if a receipt
 exists or the User has a deletion marker. It does not treat a missing User as
 true. Runtime token issuance/backfill and runtime authentication consume this
 predicate. Removing both User and receipt therefore removes that refusal
-witness. This is a source-read finding, not a demonstrated authentication
-bypass; a full missing-owner credential test is still required.
+witness. A controlled retirement probe below confirms successful issuance;
+a full authenticated-request probe is still required before calling it an
+authentication bypass.
 
 Sources at the measured head:
 
@@ -57,6 +58,42 @@ Sources:
 - [Upload write and compensation](https://github.com/Team-Commonly/commonly/blob/ddb363c74b17f50d3c913b1f56587330961d4e91/backend/routes/uploads.ts)
 - [Mongo put and prefix deletion](https://github.com/Team-Commonly/commonly/blob/ddb363c74b17f50d3c913b1f56587330961d4e91/backend/services/objectStore/drivers/mongoDriver.ts)
 - [Existing paired service probes](https://github.com/Team-Commonly/commonly/blob/ddb363c74b17f50d3c913b1f56587330961d4e91/backend/__tests__/service/accountDeletion.test.js)
+
+## Controlled delayed-issuance probe
+
+The existing paired `revokes a token minted or backfilled after deletion
+completed` cases pause a credential create/upsert while deletion returns 204.
+The legacy reprovision case pauses the agent User save and has no issuer ledger.
+For this audit, each hook removed the receipt after 204 and before resuming its
+write. No production code changed.
+
+All three refusal expectations failed because issuance resolved successfully.
+The control implementation with its receipt retained previously passed these
+cases. The test file was restored after the probe. This proves that receipt
+removal changes issuer behavior, including the legacy no-ledger path. It does
+not yet prove that a subsequent runtime request succeeds: installation status,
+lineage and other authorization predicates must also be tested.
+
+## Writer inventory started at the measured head
+
+This table is a source-read inventory of the listed surfaces, not a claim that
+all producers have been found. Authentication before a handler starts is not a
+durable record that the handler has finished.
+
+| Producer | Side effects to account for | Retirement proof still needed |
+| --- | --- | --- |
+| `routes/uploads.ts`, `ObjectStore.put` | MediaObject bytes, then File metadata | A put already authorized before deletion may finish later; compensate or retain retry intent on uncertain failure. |
+| `routes/registry/tokens.ts` | AgentCredential create/backfill, agent User token array, installation token array | Current pre/post deletion refusal depends on the receipt; legacy no-ledger path is included in the failing probe. |
+| `services/spawnCredentialService.ts` | Legacy seat upsert, child credential create, renewal | Parent/status lineage is distinct from proving all owner-side writes have stopped. Trace every caller and unknown outcome. |
+| `services/machineService.ts`, `daemonCredentialService.ts` | Machine create and daemon credential create | The device-token path rechecks the device; browser/API registration has a different postcondition. Machine existence alone does not prove a live owner. |
+| `services/deviceAuthorizationService.ts` | DeviceAuthorization decisions/consumption, atomic User token push | A non-upserting User update cannot recreate a removed User, but late DeviceAuthorization rows and the marked-User interval still need a completed-write witness. |
+| `controllers/oauthController.ts` | OAuth state creation/consumption and session exchange | State TTL is not proof that all server-side callbacks finished. Trace state ownership and every callback write. |
+| `services/accountDeletionService.ts` | Revocation, PG anonymization, upload cleanup and sweep timestamps | Final cleanup must follow the last writer; a clean scan alone cannot establish that ordering. |
+
+The inventory must also cover registration/provisioning callers, legacy scripts,
+metadata writers outside these routes, socket-triggered work and workers started
+by old binaries. No active-operation registry is present in the audited deletion
+implementation.
 
 ## Capacity model and its limits
 
