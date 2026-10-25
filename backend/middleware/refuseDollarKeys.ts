@@ -48,33 +48,88 @@ const isContainer = (value: unknown): value is Record<string, unknown> | unknown
   Array.isArray(value) || Object.prototype.toString.call(value) === '[object Object]'
 );
 
-// The dotted path of the first `$` key, or null. Iterative, so a deeply
-// nested body cannot exhaust the stack.
+// The walk visits each key and array element once. A frame keeps its parent
+// and its own key instead of a copy of the whole path, so a chain N deep costs
+// O(N) rather than O(N^2); the dotted path is built only for the key that is
+// refused. Exemptions look at most three segments deep, so each frame carries
+// just those (`head`).
+//
+// Two caps bound the work on a body the parser accepted. A container deeper
+// than MAX_KEY_DEPTH, or more than MAX_KEYS keys and elements in total, stops
+// the walk and the request is refused, naming the cap. Neither is reachable by
+// a legitimate client: the global express.json() keeps a body under 100 KB
+// (about 50,000 values at most), and Mongo itself refuses nesting past 100.
+export const MAX_KEY_DEPTH = 64;
+export const MAX_KEYS = 100_000;
+export const KEY_LIMIT_EXCEEDED = 'key_limit_exceeded';
+
+const HEAD_SEGMENTS = 3;
+
+interface Frame {
+  node: Record<string, unknown> | unknown[];
+  parent: Frame | null;
+  key: string;
+  depth: number;
+  head: string[];
+}
+
+export type KeyScan =
+  | { kind: 'dollar'; field: string }
+  | { kind: 'limit'; limit: 'depth' | 'keys'; max: number; field: string }
+  | null;
+
+const pathOf = (frame: Frame | null, key?: string): string => {
+  const parts: string[] = key === undefined ? [] : [key];
+  for (let f = frame; f && f.parent; f = f.parent) parts.push(f.key);
+  return parts.reverse().join('.');
+};
+
+export const scanKeys = (
+  value: unknown,
+  isExempt: (path: KeyPath, key: string) => boolean = () => false,
+): KeyScan => {
+  if (!isContainer(value)) return null;
+  const stack: Frame[] = [{ node: value, parent: null, key: '', depth: 0, head: [] }];
+  let seen = 0;
+  while (stack.length) {
+    const frame = stack.pop() as Frame;
+    const { node } = frame;
+    const keys = Array.isArray(node) ? null : Object.keys(node);
+    const count = keys ? keys.length : (node as unknown[]).length;
+    seen += count;
+    if (seen > MAX_KEYS) return { kind: 'limit', limit: 'keys', max: MAX_KEYS, field: pathOf(frame) };
+    for (let i = 0; i < count; i += 1) {
+      const key = keys ? keys[i] : String(i);
+      if (keys && key.startsWith('$') && !isExempt(frame.head, key)) {
+        return { kind: 'dollar', field: pathOf(frame, key) };
+      }
+      // Exempt keys are walked too: an exemption allows a key at a path,
+      // never everything beneath it.
+      const child = keys ? (node as Record<string, unknown>)[key] : (node as unknown[])[i];
+      if (!isContainer(child)) continue;
+      if (frame.depth + 1 > MAX_KEY_DEPTH) {
+        return { kind: 'limit', limit: 'depth', max: MAX_KEY_DEPTH, field: pathOf(frame, key) };
+      }
+      stack.push({
+        node: child,
+        parent: frame,
+        key,
+        depth: frame.depth + 1,
+        head: frame.head.length < HEAD_SEGMENTS ? [...frame.head, key] : frame.head,
+      });
+    }
+  }
+  return null;
+};
+
+// The dotted path of the first `$` key, or null (a cap that was hit counts as
+// no `$` key here; refuseDollarKeys refuses those separately).
 export const findDollarKey = (
   value: unknown,
   isExempt: (path: KeyPath, key: string) => boolean = () => false,
 ): string | null => {
-  if (!isContainer(value)) return null;
-  const stack: Array<{ node: unknown; path: string[] }> = [{ node: value, path: [] }];
-  while (stack.length) {
-    const { node, path } = stack.pop() as { node: unknown; path: string[] };
-    if (Array.isArray(node)) {
-      node.forEach((child, index) => {
-        if (isContainer(child)) stack.push({ node: child, path: [...path, String(index)] });
-      });
-    } else if (isContainer(node)) {
-      const keys = Object.keys(node);
-      for (let i = 0; i < keys.length; i += 1) {
-        const key = keys[i];
-        if (key.startsWith('$') && !isExempt(path, key)) return [...path, key].join('.');
-        // Exempt keys are walked too: an exemption allows a key at a path,
-        // never everything beneath it.
-        const child = (node as Record<string, unknown>)[key];
-        if (isContainer(child)) stack.push({ node: child, path: [...path, key] });
-      }
-    }
-  }
-  return null;
+  const scan = scanKeys(value, isExempt);
+  return scan && scan.kind === 'dollar' ? scan.field : null;
 };
 
 const refuse = (res: Response, where: string, field: string) => res.status(400).json({
@@ -83,14 +138,31 @@ const refuse = (res: Response, where: string, field: string) => res.status(400).
   field: `${where}.${field}`,
 });
 
-export const refuseDollarKeys = (req: Request, res: Response, next: NextFunction) => {
-  const inQuery = findDollarKey(req.query);
-  if (inQuery) return refuse(res, 'query', inQuery);
-  const inBody = findDollarKey(req.body, (path, key) => exemptBodyKey(req, path, key));
-  if (inBody) return refuse(res, 'body', inBody);
-  return next();
+const refuseLimit = (res: Response, where: string, scan: { limit: 'depth' | 'keys'; max: number; field: string }) => (
+  res.status(400).json({
+    message: scan.limit === 'depth'
+      ? `The ${where} is nested more than ${scan.max} levels deep`
+      : `The ${where} has more than ${scan.max} keys and array elements`,
+    code: KEY_LIMIT_EXCEEDED,
+    limit: scan.limit === 'depth' ? 'MAX_KEY_DEPTH' : 'MAX_KEYS',
+    max: scan.max,
+    field: scan.field ? `${where}.${scan.field}` : where,
+  })
+);
+
+const check = (res: Response, where: string, scan: KeyScan) => {
+  if (!scan) return null;
+  return scan.kind === 'dollar' ? refuse(res, where, scan.field) : refuseLimit(res, where, scan);
 };
+
+export const refuseDollarKeys = (req: Request, res: Response, next: NextFunction) => (
+  check(res, 'query', scanKeys(req.query))
+  || check(res, 'body', scanKeys(req.body, (path, key) => exemptBodyKey(req, path, key)))
+  || next()
+);
 
 // CJS compat for the require()-style imports used elsewhere in backend/.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { refuseDollarKeys, findDollarKey, DOLLAR_KEY_REFUSED };
+module.exports = {
+  refuseDollarKeys, findDollarKey, scanKeys, DOLLAR_KEY_REFUSED, KEY_LIMIT_EXCEEDED, MAX_KEY_DEPTH, MAX_KEYS,
+};

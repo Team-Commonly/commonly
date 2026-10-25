@@ -9,7 +9,9 @@ const path = require('path');
 const express = require('express');
 const multer = require('multer');
 const request = require('supertest');
-const { refuseDollarKeys, findDollarKey, DOLLAR_KEY_REFUSED } = require('../../../middleware/refuseDollarKeys');
+const {
+  refuseDollarKeys, findDollarKey, scanKeys, DOLLAR_KEY_REFUSED, KEY_LIMIT_EXCEEDED, MAX_KEY_DEPTH, MAX_KEYS,
+} = require('../../../middleware/refuseDollarKeys');
 
 const buildApp = () => {
   const app = express();
@@ -59,11 +61,50 @@ describe('refuseDollarKeys', () => {
     expect(res.status).toBe(200);
   });
 
-  test('a deeply nested body does not exhaust the stack', async () => {
-    let body = { leaf: 1 };
-    for (let i = 0; i < 5000; i += 1) body = { n: body };
-    const res = await request(app).post('/x').send(body);
-    expect(res.status).toBe(200);
+  // `levels` containers below the root: the root is depth 0, the innermost
+  // container is depth `levels`.
+  const nest = (levels, leaf = { leaf: 1 }) => {
+    let body = leaf;
+    for (let i = 1; i < levels; i += 1) body = { n: body };
+    return { n: body };
+  };
+
+  describe('caps', () => {
+    test('a body nested exactly MAX_KEY_DEPTH levels passes', async () => {
+      const res = await request(app).post('/x').send(nest(MAX_KEY_DEPTH));
+      expect(res.status).toBe(200);
+    });
+
+    test('a $ key at the depth cap is still found', async () => {
+      const res = await request(app).post('/x').send(nest(MAX_KEY_DEPTH, { $where: '1' }));
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe(DOLLAR_KEY_REFUSED);
+    });
+
+    test('one level past the cap is refused, naming the depth limit', async () => {
+      const res = await request(app).post('/x').send(nest(MAX_KEY_DEPTH + 1));
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ code: KEY_LIMIT_EXCEEDED, limit: 'MAX_KEY_DEPTH', max: MAX_KEY_DEPTH });
+      expect(res.body.message).toContain(String(MAX_KEY_DEPTH));
+      expect(res.body.field.startsWith('body.n.n')).toBe(true);
+    });
+
+    test('a 5000-deep body is refused at the cap without exhausting the stack', async () => {
+      const res = await request(app).post('/x').send(nest(5000));
+      expect(res.status).toBe(400);
+      expect(res.body.limit).toBe('MAX_KEY_DEPTH');
+    });
+
+    test('a $ key past the depth cap is not reported as passing', async () => {
+      const res = await request(app).post('/x').send(nest(MAX_KEY_DEPTH + 5, { $where: '1' }));
+      expect(res.status).toBe(400);
+    });
+
+    test('more than MAX_KEYS keys and elements is refused, naming the key limit', () => {
+      const wide = { a: new Array(MAX_KEYS).fill(0), b: 1 };
+      expect(scanKeys(wide)).toMatchObject({ kind: 'limit', limit: 'keys', max: MAX_KEYS });
+      expect(scanKeys({ a: new Array(MAX_KEYS - 1).fill(0) })).toBeNull();
+    });
   });
 
   describe('marketplace publish: JSON Schema keywords in schema fields only', () => {
