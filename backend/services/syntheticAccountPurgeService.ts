@@ -1,3 +1,4 @@
+import { DM_POD_TYPES_GUARD } from './agentIdentityService';
 import { withAdminUserMutationLock } from './adminUserMutationService';
 /*
  * Purge the throwaway accounts the stranger journey signs up (TASK-260).
@@ -12,7 +13,7 @@ import { withAdminUserMutationLock } from './adminUserMutationService';
  *
  *   per synthetic user H (all three must hold: username pattern, email domain,
  *   not a bot) and older than minAgeMs:
- *     pods created by H     → deletePodCascade + the pod-keyed rows it does not
+ *     disposable pods by H → deletePodCascade + the pod-keyed rows it does not
  *                             cover (tasks, agent events/runs, approvals,
  *                             attention items, first-message and silence marks,
  *                             PG message claims)
@@ -32,6 +33,9 @@ import { withAdminUserMutationLock } from './adminUserMutationService';
  *   - no one else has an installation of that name;
  *   - its bot user, if any, was created at or after H (an account cannot own
  *     an identity older than itself).
+ * DMs with participants outside this disposable footprint retain their historical
+ * pair and data. A disposable bot used by another DM or a Scout installed by
+ * another owner refuses the account purge. Shared-pod membership still removes H.
  * Memory is deleted only for the seat's own (name, 'default') instance. Names
  * are not yet owned by an identity (TASK-270); once they are, the seat test
  * becomes "the seat's owner is H". Dry run is the default.
@@ -47,6 +51,7 @@ const PodMemberFirstMessage = require('../models/PodMemberFirstMessage');
 const OnboardingSilenceEpisode = require('../models/OnboardingSilenceEpisode');
 const AgentMemory = require('../models/AgentMemory');
 const Summary = require('../models/Summary');
+const AgentCredential = require('../models/AgentCredential');
 const { AgentRegistry, AgentInstallation } = require('../models/AgentRegistry');
 const { perUserInstanceId } = require('./personaHireService');
 const { deletePodCascade } = require('./podDeletionService');
@@ -69,6 +74,8 @@ export interface AccountReport {
   refused?: string;
   pods: string[];
   scoutBot: string | null;
+  /** Historical DMs retained for a participant outside the disposable footprint. */
+  preservedDms: string[];
   seats: string[];
   /** Seats left alone, and why. */
   skippedSeats: { name: string; reason: string }[];
@@ -168,7 +175,11 @@ const purgeSyntheticAccountsUnlocked = async (
     const ownIds = new Set([humanId, scoutBot && String(scoutBot._id), ...seatBots.map((b: any) => String(b._id))]
       .filter(Boolean) as string[]);
 
-    const pods = await Pod.find({ createdBy: human._id }).select('_id members').lean();
+    const createdPods = await Pod.find({ createdBy: human._id }).select('_id type members').lean();
+    const preservedDms = createdPods.filter((pod: any) => DM_POD_TYPES_GUARD.has(String(pod.type))
+      && (pod.members || []).some((member: unknown) => !ownIds.has(String(member))));
+    const preservedIds = new Set(preservedDms.map((pod: any) => String(pod._id)));
+    const pods = createdPods.filter((pod: any) => !preservedIds.has(String(pod._id)));
     const account: AccountReport = {
       userId: humanId,
       username: human.username,
@@ -176,9 +187,28 @@ const purgeSyntheticAccountsUnlocked = async (
       scoutBot: scoutBot ? scoutUsername : null,
       seats: seatNames,
       skippedSeats,
+      preservedDms: preservedDms.map((pod: any) => String(pod._id)),
     };
     report.accounts.push(account);
-    const foreignIds = pods.flatMap((p: any) => (p.members || []).map(String)).filter((m: string) => !ownIds.has(m));
+    // A disposable bot can acquire a life outside this throwaway footprint.
+    // Refuse rather than deleting an identity another DM still depends on.
+    if (scoutBot && await AgentInstallation.exists({
+      agentName: 'scout', instanceId: perUserInstanceId(humanId), installedBy: { $ne: human._id },
+    })) {
+      account.refused = 'the disposable Scout is installed by another user';
+      continue;
+    }
+    const disposableBotIds = [scoutBot?._id, ...seatBots.map((bot: any) => bot._id)].filter(Boolean);
+    const botDms = disposableBotIds.length ? await Pod.find({
+      type: { $in: [...DM_POD_TYPES_GUARD] }, members: { $in: disposableBotIds },
+    }).select('createdBy members').lean() : [];
+    if (botDms.some((pod: any) => String(pod.createdBy) !== humanId
+      || (pod.members || []).some((member: unknown) => !ownIds.has(String(member))))) {
+      account.refused = 'a disposable agent participates in a DM outside the synthetic footprint';
+      continue;
+    }
+    const foreignIds = createdPods.flatMap((p: any) => (p.members || []).map(String))
+      .filter((member: string) => !ownIds.has(member));
     const foreignHuman = foreignIds.length
       ? await User.findOne({ _id: { $in: foreignIds }, isBot: { $ne: true } }).select('_id').lean()
       : null;
@@ -228,13 +258,31 @@ const purgeSyntheticAccountsUnlocked = async (
     await remove('onboardingsilenceepisodes', OnboardingSilenceEpisode, { userId: human._id });
     await remove('podmemberfirstmessages', PodMemberFirstMessage, { userId: human._id });
     if (apply) {
+      const credentials = await AgentCredential.find({ ownerUserId: human._id }).select('_id').lean();
       beginWrite();
-      const res = await Pod.updateMany({ members: human._id }, { $pull: { members: human._id } });
+      await AgentCredential.revokeCascade(credentials.map((credential: any) => credential._id));
+      const paused = await AgentInstallation.updateMany(
+        { installedBy: human._id, status: 'active' }, { $set: { status: 'paused' } },
+      );
+      tally('agentinstallations.paused', paused.modifiedCount);
+      const res = await Pod.updateMany(
+        { members: human._id, type: { $nin: [...DM_POD_TYPES_GUARD] } },
+        { $pull: { members: human._id } },
+      );
       tally('pod.members', res.modifiedCount);
     } else {
-      tally('pod.members', await Pod.countDocuments({ members: human._id, createdBy: { $ne: human._id } }));
+      tally('agentinstallations.paused', await AgentInstallation.countDocuments({
+        installedBy: human._id, status: 'active', podId: { $nin: pods.map((pod: any) => pod._id) },
+      }));
+      tally('pod.members', await Pod.countDocuments({
+        members: human._id, createdBy: { $ne: human._id }, type: { $nin: [...DM_POD_TYPES_GUARD] },
+      }));
     }
-    await pgRemove('pg.pod_members', 'DELETE FROM pod_members WHERE user_id = $1', [humanId]);
+    const dmTypes = [...DM_POD_TYPES_GUARD];
+    const dmParams = dmTypes.map((_type, index) => `$${index + 2}`).join(', ');
+    await pgRemove('pg.pod_members',
+      `DELETE FROM pod_members WHERE user_id = $1
+       AND pod_id NOT IN (SELECT id FROM pods WHERE type IN (${dmParams}))`, [humanId, ...dmTypes]);
     await pgRemove('pg.users', 'DELETE FROM users WHERE _id = $1', [humanId]);
     await remove('users', User, { _id: human._id });
   }

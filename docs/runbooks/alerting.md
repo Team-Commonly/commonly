@@ -300,6 +300,28 @@ as uid 65534 with a read-only root filesystem and no capabilities. The
 `/register` limit is 10 per hour per client IP, and the cluster egress IP is
 not shared with anyone's laptop.
 
+### Synthetic purge and historical DMs (TASK-005)
+
+The purge retains both historical member IDs in Mongo and PostgreSQL for
+`agent-room` and `agent-dm`. Ordinary shared pods lose the synthetic member.
+A synthetic-created DM with a participant outside the disposable footprint is
+reported in `preservedDms` and retained with its messages and installations.
+Only active installations owned by the purged human pause; their recorded credential
+ledger roots and descendants are revoked. Unrelated other-owner keys and installations,
+and independent agent identities and memory, remain. The pod/member projection
+and runtime context retain an opaque missing-user ID with a `Deleted user` label.
+This uses the same read projection as account deletion (#2721).
+
+A DM wholly within the disposable footprint can still be cascaded. If a disposable
+Scout or seat bot is used in a DM outside that footprint, or the Scout is
+installed by another owner, the whole account is
+refused rather than deleting that identity. The existing refusal for a
+synthetic-created pod another human joined remains. Inspect `refused` and
+`preservedDms` in the dry-run report; do not force a refused candidate through.
+The global administrator mutation lock and uncertain-write recovery rules still
+apply ([runbook](admin-user-mutation-lock.md)). This change does not add a durable
+late-producer fence to synthetic purge or implement receipt retirement.
+
 ### User spend
 
 "One user's agent spend passed the daily line" (WARNING) fires when a user's

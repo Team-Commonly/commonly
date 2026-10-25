@@ -1,3 +1,4 @@
+import { podMemberPopulate } from '../services/podMemberPopulate';
 import path from 'path';
 import fs from 'fs';
 import { createHash } from 'crypto';
@@ -625,7 +626,7 @@ router.get('/:id/children', auth, async (req: AuthReq, res: Res) => {
     if (!canViewParent) return res.status(403).json({ msg: 'Not authorized to view child pods' });
     const children = await Pod.find({ parentPod: parentId })
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture')
+      .populate(podMemberPopulate('username profilePicture'))
       .sort({ name: 1 });
     const visibleChildren = [];
     for (const child of children) {
