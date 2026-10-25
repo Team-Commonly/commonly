@@ -389,6 +389,47 @@ describe('OAuth Controller', () => {
       }
     });
 
+    it.each(['github', 'google'].flatMap((provider) => [[provider, false], [provider, true]]))(
+      'resolves the %s linked identity as one record (existing link: %s)', async (provider, linked) => {
+        process.env.GOOGLE_OAUTH_CLIENT_ID = 'google-client';
+        process.env.GOOGLE_OAUTH_CLIENT_SECRET = 'google-secret';
+        const otherProvider = provider === 'github' ? 'google' : 'github';
+        const unrelated = await User.create({
+          username: 'unrelated-person', email: 'unrelated@example.com', verified: true,
+          authProviders: [
+            { provider: otherProvider, providerId: '12345' },
+            { provider, providerId: 'other-id' },
+          ],
+        });
+        const intended = await User.create({
+          username: 'intended-person', email: 'intended@example.com', verified: true, password: 'test-password',
+          authProviders: linked ? [{ provider, providerId: '12345' }] : [],
+        });
+        const before = (await User.findById(unrelated._id)).toObject();
+        await seedState({ provider });
+        // An existing provider link must work even when its asserted email changes.
+        const email = linked ? 'changed@example.com' : intended.email;
+        if (provider === 'github') mockGithubProfile({ id: 12345, email });
+        else {
+          axios.post.mockResolvedValueOnce({ data: { access_token: 'google-token' } });
+          axios.get.mockResolvedValueOnce({ data: {
+            sub: '12345', email, email_verified: true, name: 'Intended Person',
+          } });
+        }
+        const res = mockRes();
+        await oauthController.oauthCallback({ ...callbackReq(), params: { provider } }, res);
+        expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('/v2/oauth/complete?'));
+        const state = await OAuthLoginState.findOne({ state: 'state-1' });
+        expect(String(state.userId)).toBe(String(intended._id));
+        expect(state.exchangeCode).toEqual(expect.any(String));
+        expect(await User.countDocuments({})).toBe(2);
+        expect((await User.findById(unrelated._id)).toObject()).toEqual(before);
+        expect((await User.findById(intended._id)).authProviders.map((entry) => ({
+          provider: entry.provider, providerId: entry.providerId,
+        }))).toEqual([{ provider, providerId: '12345' }]);
+      },
+    );
+
     it('creates a new verified passwordless user and redirects with an exchange code', async () => {
       await seedState();
       mockGithubProfile();
