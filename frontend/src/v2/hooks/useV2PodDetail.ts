@@ -85,7 +85,12 @@ export interface V2Message {
   // (approval-card and byo-handoff). Server-composed; survives normalizeMessage via
   // the `...raw` spread — declared here so consumers can read it typed.
   payload?: {
+    runId?: string;
+    runPodId?: string;
     kind?: string;
+    action?: string;
+    actorName?: string;
+    taskId?: string;
     elements?: unknown[];
     // kind 'starts': offers rendered as buttons under the message (first
     // session, direction B). A plain start sends its label as the person's own

@@ -4210,3 +4210,13 @@ Settings read one writable pod's `config.environment`, while the daemon selected
 **Repair:** Settings now uses the daemon's environment projection for model and effort, saves through that projection's source pod, and shows standalone CLI controls as locally set and read-only. Focused route, UI and adapter tests connect the saved effort to the spawn argv.
 
 **Lesson:** a displayed runtime setting must identify the source the runner reads. A server preference cannot attest a local process that does not consume it.
+
+## 85. A schema-aware UI parser did not enforce schema bounds (2026-10-25, tern)
+
+*Origin: TASK-497 / #2675. `@openuidev/lang-core` 1.0.1 accepts a library JSON Schema and reports prop validation errors, suggesting that the schema's limits are enforced.*
+
+Measured with `createParser(catalogue).parse(source)`: a `Text` body of 601 characters under `maxLength: 600`, and `RunTrace(7)` under `maximum: 5`, both produced a root with an empty `meta.errors` array. The parser checks basic prop types but does not apply every JSON Schema keyword. Parsing only the root also misses unknown component calls in unreachable statements.
+
+**Repair:** inspect every statement/call before accepting source, then validate the materialized element tree with a full JSON Schema validator. Element wrappers preserve component identity when following child/helper references. `backend/__tests__/unit/services/uiCardValidation.test.js` pins string/array/number limits, helper placement and cross-item rules as well as dormant unsafe calls.
+
+**Lesson:** accepting a schema as a parser input does not establish which schema constraints it enforces. Probe the actual boundary values before making the parser an authorization or resource-limit boundary.

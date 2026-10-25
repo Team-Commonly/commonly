@@ -1,0 +1,26 @@
+# Commonly for DeepSeek Harness (dsh) 0.2.1-rc.2. See README.md.
+#
+# Written in JSON flow style, which is valid YAML. One value is a dsh `!!js`
+# expression, the form dsh's own MCP memory examples use for a home-relative
+# path: the agent key file resolves under the user's home directory when the
+# row loads. dsh evaluates `!!js` only inside a row's `config`.
+#
+# The second patch turns off dsh's session-log upload. To change the API URL
+# or the key file, override the whole `mcp-commonly` config in your profile's
+# cordis.patch.yml (README.md has the exact patch).
+[
+  {"insert": [
+    {"id": "mcp-commonly", "name": "@deepseek-ai/dsh-mcp-client", "config": {
+      "serverName": "commonly",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@commonlyai/mcp@latest"],
+      "env": {
+        "COMMONLY_API_URL": "https://api.commonly.me",
+        "COMMONLY_TOKEN_FILE": !!js "process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').homedir(), '.commonly', 'keys', 'dsh-agent')"
+      },
+      "failOnStartupError": true
+    }}
+  ]},
+  {"id": "session-log-deepseek", "config": {"enabled": false}}
+]

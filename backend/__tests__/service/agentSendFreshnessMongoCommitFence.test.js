@@ -28,6 +28,19 @@ describe('agent freshness: delayed Mongo-only write', () => {
     await Cursor.deleteMany({});
   });
 
+  it('ignores claim lines for sends and cursor advancement but still holds ordinary peer chat', async () => {
+    await Message.collection.insertOne({ podId, userId: peerId, content: 'peer claimed TASK-406',
+      messageType: 'system', payload: { kind: 'system-action' }, createdAt: new Date(), freshnessCommittedAt: new Date(), freshnessPending: false });
+    expect(await Freshness.unseenMessages(agentId, podId)).toBeNull();
+    const start = await Freshness.readStart(podId);
+    await Freshness.recordRead(agentId, podId, start, []);
+    expect(await Cursor.findById(`${agentId}:${podId}`).lean()).not.toBeNull();
+    await Message.collection.insertOne({ podId, userId: peerId, content: 'ordinary peer chat',
+      messageType: 'text', createdAt: new Date(), freshnessPending: true });
+    const hold = await Freshness.unseenMessages(agentId, podId);
+    expect(hold).toMatchObject({ unseenCount: 1, messages: [{ content: 'ordinary peer chat' }] });
+  });
+
   it('holds an insert whose createdAt predates a successful read but whose save finishes later', async () => {
     const peerMessage = new Message({
       podId,

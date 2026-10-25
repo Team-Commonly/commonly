@@ -268,6 +268,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root .v2-byo__needs')).toContain('color: var(--v2-text-primary)');
   });
 
+  // #2670: the Cursor rule card's header names an unbroken save path; without
+  // these two declarations it pushes the Copy button out of the card at 390px.
+  test('Cursor rule card header wraps its save path inside the card', () => {
+    expect(ruleBody(v2, '.v2-connect__rule .v2-connect__code-head span')).toContain('min-width: 0');
+    expect(ruleBody(v2, '.v2-connect__rule .v2-connect__code-head code')).toContain('overflow-wrap: anywhere');
+  });
+
   test('Your Team card name owns its line so the category chip cannot crush it', () => {
     // Direction C: the name sits in its own column of the card head; the
     // crush guard is min-width 0 on the name and the head, not a flex basis.
@@ -1046,6 +1053,21 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // regressed on exactly that). Higher specificity wins regardless of order.
     expect(v2).toContain('.v2-msg.v2-msg--system {');
     expect(ruleBody(v2, '.v2-msg.v2-msg--system')).toContain('display: block');
+  });
+
+  test('system actions align with message text and keep the avatar and time in their own slots', () => {
+    const rule = ruleBody(v2, '.v2-system-action-line');
+    expect(rule).toContain('display: grid');
+    expect(rule).toContain('grid-template-columns: 16px minmax(0, max-content) auto minmax(0, 1fr) auto');
+    expect(rule).toContain('margin-left: 36px');
+    expect(rule).toContain('width: calc(100% - 36px)');
+    expect(ruleBody(v2, '.v2-thread .v2-system-action-line .v2-avatar')).toContain('width: 16px');
+    expect(ruleBody(v2, '.v2-system-action-line__action')).toContain('grid-column: 3;');
+    expect(ruleBody(v2, '.v2-system-action-line time')).toContain('grid-column: 5');
+    expect(ruleBody(v2, '.v2-system-action-line__name')).toContain('color: var(--v2-text-primary)');
+    expect(ruleBody(v2, '.v2-system-action-line__verb')).toContain('color: var(--v2-text-tertiary)');
+    expect(ruleBody(v2, '.v2-system-action-line__object')).toContain('var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-system-action-line time')).toContain('var(--v2-font-mono)');
   });
 
   test('the feedback popover overrides the legacy dark MUI paper theme', () => {
@@ -4992,4 +5014,15 @@ test('standalone teammate invite button keeps desktop and phone touch targets', 
   expect(standalone).toContain('min-height: 32px');
   expect(standalone).toContain('margin-top: auto');
   expect(css).toMatch(/@media \(max-width: 760px\) \{\s*\.v2-chat__new-pod-action--invite > \.v2-chat__new-pod-copy \{ min-height: 44px;/);
+});
+
+describe('run trace layout', () => {
+  const css = read('../components/V2RunTrace.css');
+  test('long attribution IDs wrap, phone records stack, and links meet touch height', () => {
+    expect(css).toContain('overflow-wrap: anywhere');
+    expect(css).toContain('min-width: 0');
+    expect(css).toContain('min-height: 44px');
+    expect(css).toMatch(/@media \(max-width: 760px\)/);
+    expect(css).toMatch(/grid-template-columns: minmax\(0, 1fr\)/);
+  });
 });

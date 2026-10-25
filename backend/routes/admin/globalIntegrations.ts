@@ -15,6 +15,10 @@ const GlobalModelConfigService = require('../../services/globalModelConfigServic
 // eslint-disable-next-line global-require
 const { isListedPodMember } = require('../../utils/isPodMember');
 const externalFeedService = require('../../services/externalFeedService');
+const mongoose = require('mongoose');
+const {
+  storeFeedTokens, readFeedAccessToken, hasFeedAccessToken,
+} = require('../../services/feedCredentials');
 
 let PGPod = null;
 if (process.env.PG_HOST) {
@@ -176,10 +180,24 @@ const adminWriteLimiter = rateLimit({
 /**
  * The admin forms send accessToken only when a new one is typed; a blank
  * field keeps the token already on file. A new integration still needs one.
+ * Answers whether the save has a token: the typed one, or a stored one whose
+ * ref still resolves (`services/feedCredentials`).
  */
-const keepOrReplaceAccessToken = (typed: unknown, existing: any): string => (
-  typed ? String(typed) : String(existing?.config?.accessToken || '')
+const hasTypedOrStoredAccessToken = async (typed: unknown, existing: any): Promise<boolean> => (
+  Boolean(String(typed || '').trim()) || hasFeedAccessToken(existing?.config)
 );
+
+/**
+ * The row's config without the token fields. Credentials are stored through
+ * connectorSecrets and the row keeps only the refs, so a save also clears any
+ * token field the stored config still names.
+ */
+const configWithoutTokens = (config: any): Record<string, unknown> => {
+  const plain = config?.toObject ? config.toObject() : { ...(config || {}) };
+  delete plain.accessToken;
+  delete plain.refreshToken;
+  return plain;
+};
 
 const upsertXIntegration = async ({
   requesterId,
@@ -202,7 +220,7 @@ const upsertXIntegration = async ({
   requesterId: any;
   globalPodId: any;
   enabled?: any;
-  accessToken: any;
+  accessToken?: any;
   refreshToken?: any;
   tokenType?: any;
   tokenExpiresAt?: any;
@@ -235,10 +253,14 @@ const upsertXIntegration = async ({
   const normalizedScopes = Array.isArray(oauthScopes)
     ? oauthScopes.map((entry) => String(entry || '').trim()).filter(Boolean)
     : [];
+  // The secrets are keyed by the row's id, so a new row's id is minted first.
+  const integrationId = xIntegration?._id || new mongoose.Types.ObjectId();
+  const refs = await storeFeedTokens(String(integrationId), 'x', { accessToken, refreshToken });
   const nextConfig = {
-    ...(xIntegration?.config || {}),
-    accessToken,
-    refreshToken: refreshToken || xIntegration?.config?.refreshToken || '',
+    ...configWithoutTokens(xIntegration?.config),
+    ...refs,
+    accessToken: undefined,
+    refreshToken: undefined,
     tokenType: tokenType || xIntegration?.config?.tokenType || 'bearer',
     tokenExpiresAt: tokenExpiresAt || xIntegration?.config?.tokenExpiresAt || null,
     oauthScopes: normalizedScopes.length ? normalizedScopes : (xIntegration?.config?.oauthScopes || []),
@@ -277,6 +299,7 @@ const upsertXIntegration = async ({
     await xIntegration.save();
   } else {
     xIntegration = await Integration.create({
+      _id: integrationId,
       podId: globalPodId,
       type: 'x',
       status: enabled ? 'connected' : 'disconnected',
@@ -573,15 +596,14 @@ router.post('/x', adminWriteLimiter, auth, adminAuth, async (req: any, res: any)
     // Find or create global pod
     const globalPod = await ensureGlobalSocialFeedPod(requesterId);
     const existing = await Integration.findOne({ type: 'x', podId: globalPod._id });
-    const effectiveAccessToken = keepOrReplaceAccessToken(accessToken, existing);
-    if (!effectiveAccessToken) {
+    if (!await hasTypedOrStoredAccessToken(accessToken, existing)) {
       return res.status(400).json({ error: 'Username, userId, and accessToken are required' });
     }
     const xIntegration = await upsertXIntegration({
       requesterId,
       globalPodId: globalPod._id,
       enabled,
-      accessToken: effectiveAccessToken,
+      accessToken,
       existing,
       username,
       userId,
@@ -629,16 +651,19 @@ router.post('/instagram', adminWriteLimiter, auth, adminAuth, async (req: any, r
       type: 'instagram',
       podId: globalPod._id,
     });
-    const effectiveAccessToken = keepOrReplaceAccessToken(accessToken, instagramIntegration);
-    if (!effectiveAccessToken) {
+    if (!await hasTypedOrStoredAccessToken(accessToken, instagramIntegration)) {
       return res.status(400).json({ error: 'Username, igUserId, and accessToken are required' });
     }
+    const integrationId = instagramIntegration?._id || new mongoose.Types.ObjectId();
+    const refs = await storeFeedTokens(String(integrationId), 'instagram', { accessToken });
 
     if (instagramIntegration) {
       // Update existing
       instagramIntegration.config = {
-        ...instagramIntegration.config,
-        accessToken: effectiveAccessToken,
+        ...configWithoutTokens(instagramIntegration.config),
+        ...refs,
+        accessToken: undefined,
+        refreshToken: undefined,
         username,
         igUserId,
         category: 'Social',
@@ -651,12 +676,13 @@ router.post('/instagram', adminWriteLimiter, auth, adminAuth, async (req: any, r
     } else {
       // Create new
       instagramIntegration = await Integration.create({
+        _id: integrationId,
         podId: globalPod._id,
         type: 'instagram',
         status: enabled ? 'connected' : 'disconnected',
         isActive: enabled,
         config: {
-          accessToken: effectiveAccessToken,
+          ...refs,
           username,
           igUserId,
           category: 'Social',
@@ -754,7 +780,7 @@ router.get('/x/following', auth, adminAuth, async (req: any, res: any) => {
       return res.status(404).json({ error: 'X integration not found' });
     }
 
-    const accessToken = xIntegration?.config?.accessToken;
+    const accessToken = await readFeedAccessToken(xIntegration?.config);
     const userId = xIntegration?.config?.userId;
     if (!accessToken || !userId) {
       return res.status(400).json({ error: 'X integration missing OAuth user context' });

@@ -51,6 +51,8 @@ const LOCAL_AGENT_SCOPES = [
 ];
 
 export interface CardPayload {
+  runId?: string;
+  runPodId?: string;
   kind: typeof CARD_KIND;
   approvalId: string;
   actionType: ApprovalActionType;
@@ -86,6 +88,8 @@ const legacyToolCallOutcome = (row: IApprovalAction): Partial<CardPayload> => {
 
 export const buildCardPayload = (row: IApprovalAction): CardPayload => ({
   kind: CARD_KIND,
+  ...(row.runId ? { runId: String(row.runId),
+    ...(row.runPodId ? { runPodId: String(row.runPodId) } : {}) } : {}),
   approvalId: String(row._id),
   actionType: row.actionType,
   summary: row.summary,
@@ -127,6 +131,9 @@ export const buildOwnerCardPayload = (
 };
 
 interface ProposeOptions {
+  /** Internal runtime identity, never copied from the agent HTTP body. */
+  runId?: string;
+  runPodId?: string;
   podId: string;
   agentName: string;
   instanceId: string;
@@ -471,6 +478,8 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
   }
 
   const row = await ApprovalAction.create({
+    ...(options.runId ? { runId: options.runId,
+      ...(options.runPodId ? { runPodId: options.runPodId } : {}) } : {}),
     podId,
     ownerUserId,
     agentName: String(agentName).toLowerCase(),
@@ -496,6 +505,8 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     podId: String(podId),
     messageType: 'card',
     payload: buildCardPayload(row),
+    runId: options.runId,
+    runPodId: options.runPodId,
     content: `[approval needed] ${trimmedSummary}`,
     metadata: { source: 'approval-card', approvalId: String(row._id) },
     installationConfig,

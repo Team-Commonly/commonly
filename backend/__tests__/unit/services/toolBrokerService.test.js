@@ -469,13 +469,17 @@ describe('tool broker guard rails', () => {
       tools: ['github.close_issue'], writeMode: 'write-with-confirm', budget: { calls: 1 },
     }));
     await expect(callTool({
-      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.close_issue', args: { issueNumber: 7 },
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.close_issue',
+      runId: 'aaaaaaaaaaaaaaaaaaaaa111', runPodId: 'bbbbbbbbbbbbbbbbbbbbb111', args: { issueNumber: 7 },
     })).rejects.toMatchObject({ code: 'approval_required' });
     expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
     expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
       outcome: 'pending_approval', reason: 'approval_required',
     }));
     expect(mockGithub.closeIssue).not.toHaveBeenCalled();
+    expect(require('../../../services/approvalActionService').proposeAction).toHaveBeenCalledWith(expect.objectContaining({
+      runId: 'aaaaaaaaaaaaaaaaaaaaa111', runPodId: 'bbbbbbbbbbbbbbbbbbbbb111',
+    }));
   });
 });
 

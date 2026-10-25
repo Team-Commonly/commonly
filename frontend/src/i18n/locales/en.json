@@ -1,4 +1,58 @@
 {
+  "runTrace": {
+    "title": "Run trace",
+    "back": "Back to pod",
+    "view": "View run trace",
+    "linkRetention": "Cards: 30-day default. Trace persists.",
+    "retention": "Cards have a 30-day default retention. Pod policy and storage limits can change it. This trace persists after the card expires.",
+    "loading": "Loading run trace…",
+    "access": "This trace is unavailable, or you no longer have access to its pod.",
+    "error": "Could not load the run trace. Try again.",
+    "retry": "Try again",
+    "counts": "Recorded turns: {{turns}} · {{tokens}} tokens",
+    "stopped": "Stopped: {{kind}}",
+    "running": "This run is still in progress.",
+    "refresh": "Refresh trace",
+    "empty": "No turns recorded yet.",
+    "turn": "Turn {{number}}",
+    "tokens": "tokens",
+    "noTools": "No tool calls.",
+    "call": "Call {{id}}",
+    "grant": "Grant",
+    "owner": "Credential owner",
+    "outcome": "Outcome",
+    "notRecorded": "Not recorded",
+    "unavailable": "Broker trail unavailable.",
+    "builtIn": "Built-in tool. No connector credential.",
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "succeeded": "Succeeded",
+      "failed": "Failed",
+      "interrupted": "Interrupted"
+    },
+    "trigger": {
+      "mention": "Mention",
+      "heartbeat": "Heartbeat",
+      "task.assigned": "Task assignment",
+      "chat.message": "Chat message",
+      "pod.join": "Pod join",
+      "first_contact": "First contact",
+      "manual": "Manual"
+    },
+    "outcomes": {
+      "ok": "ok",
+      "failed": "failed",
+      "refused": "refused",
+      "pending": "pending",
+      "pending_approval": "pending approval",
+      "unavailable": "unavailable"
+    },
+    "limitedBoth": "This stored trace was size-limited. {{turns}} turns and {{calls}} tool calls are omitted. Large content fields are also capped.",
+    "limitedTurns": "This stored trace was size-limited. {{turns}} turns are omitted. Large content fields are also capped.",
+    "limitedCalls": "This stored trace was size-limited. {{calls}} tool calls are omitted. Large content fields are also capped.",
+    "limitedContent": "This stored trace was size-limited. Large content fields are capped."
+  },
   "common": {
     "brandName": "Commonly",
     "brandWordmark": "commonly",
@@ -484,6 +538,9 @@
   "podChat": {
     "firstTask": {
       "addFailed": "Couldn’t add the task. Try again."
+    },
+    "systemActions": {
+      "taskClaimedVerb": "claimed"
     },
     "starts": {
       "label": "Ways to start"
@@ -2224,6 +2281,7 @@
     "loadFailed": "Could not load artifacts."
   },
   "tools": {
+    "emptyAudienceNotice": "Select at least one agent to grant access.",
     "makePodInviteOnly": "Make this pod invite-only",
     "podInviteOnlyNow": "This pod is invite-only. Select Grant to continue.",
     "joinPolicyError": "Could not make this pod invite-only.",

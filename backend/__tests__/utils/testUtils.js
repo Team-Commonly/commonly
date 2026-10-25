@@ -1,5 +1,3 @@
-const fs = require('fs');
-const path = require('path');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { newDb } = require('pg-mem');
@@ -139,13 +137,14 @@ const setupPgDb = async () => {
         ssl: false,
       });
       await pgPool.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
-      const schemaPath = path.join(__dirname, '..', '..', 'config', 'schema.sql');
-      const schema = fs.readFileSync(schemaPath, 'utf8');
-      await pgPool.query(schema);
+      // Exercise the boot runner so later migrations reach tier-1 fixtures too.
+      // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+      const { runPgMigrations } = require('../../config/run-pg-migrations');
+      await runPgMigrations(pgPool);
       // Same cross-file-contamination concern as Mongo: TRUNCATE on setup so
       // each suite starts with an empty schema.
       await pgPool.query('TRUNCATE TABLE messages, pod_members, pods, users RESTART IDENTITY CASCADE');
-      console.log('[tier1] Connected to real Postgres, applied schema.sql, truncated tables');
+      console.log('[tier1] Connected to real Postgres, applied migrations, truncated tables');
       return pgPool;
     }
 

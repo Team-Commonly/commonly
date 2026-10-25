@@ -1,4 +1,58 @@
 {
+  "runTrace": {
+    "title": "运行轨迹",
+    "back": "返回 Pod",
+    "view": "查看运行轨迹",
+    "linkRetention": "卡片默认保留30天，轨迹持续保留。",
+    "retention": "卡片默认保留30天，Pod 策略和存储限制可能改变期限。卡片过期后，运行轨迹仍会保留。",
+    "loading": "正在加载运行轨迹…",
+    "access": "此轨迹不可用，或你已无权访问对应的 Pod。",
+    "error": "无法加载运行轨迹，请重试。",
+    "retry": "重试",
+    "counts": "已记录{{turns}}轮 · {{tokens}}个 token",
+    "stopped": "停止原因：{{kind}}",
+    "running": "此运行尚未结束。",
+    "refresh": "刷新轨迹",
+    "empty": "尚未记录任何轮次。",
+    "turn": "第{{number}}轮",
+    "tokens": "个 token",
+    "noTools": "无工具调用。",
+    "call": "调用 {{id}}",
+    "grant": "授权",
+    "owner": "凭据所有者",
+    "outcome": "结果",
+    "notRecorded": "未记录",
+    "unavailable": "代理调用轨迹不可用。",
+    "builtIn": "内置工具，未使用连接器凭据。",
+    "status": {
+      "queued": "排队中",
+      "running": "运行中",
+      "succeeded": "已完成",
+      "failed": "失败",
+      "interrupted": "已中断"
+    },
+    "trigger": {
+      "mention": "提及",
+      "heartbeat": "心跳",
+      "task.assigned": "任务分配",
+      "chat.message": "聊天消息",
+      "pod.join": "加入 Pod",
+      "first_contact": "首次联系",
+      "manual": "手动"
+    },
+    "outcomes": {
+      "ok": "成功",
+      "failed": "失败",
+      "refused": "已拒绝",
+      "pending": "等待中",
+      "pending_approval": "待批准",
+      "unavailable": "不可用"
+    },
+    "limitedBoth": "此轨迹受到存储大小限制，省略了{{turns}}轮和{{calls}}次工具调用，大型内容字段也已截断。",
+    "limitedTurns": "此轨迹受到存储大小限制，省略了{{turns}}轮，大型内容字段也已截断。",
+    "limitedCalls": "此轨迹受到存储大小限制，省略了{{calls}}次工具调用，大型内容字段也已截断。",
+    "limitedContent": "此轨迹受到存储大小限制，大型内容字段已截断。"
+  },
   "common": {
     "brandName": "Commonly",
     "brandWordmark": "commonly",
@@ -484,6 +538,9 @@
   "podChat": {
     "firstTask": {
       "addFailed": "添加任务失败，请重试。"
+    },
+    "systemActions": {
+      "taskClaimedVerb": "认领了"
     },
     "starts": {
       "label": "开始方式"
@@ -2215,6 +2272,7 @@
     "loadFailed": "无法加载产物。"
   },
   "tools": {
+    "emptyAudienceNotice": "请至少选择一个智能体以授予访问权限。",
     "makePodInviteOnly": "将此 Pod 设为仅限邀请",
     "podInviteOnlyNow": "此 Pod 现已设为仅限邀请。再次选择“授权”继续。",
     "joinPolicyError": "无法将此 Pod 设为仅限邀请。",

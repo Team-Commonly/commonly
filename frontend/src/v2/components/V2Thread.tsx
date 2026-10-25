@@ -32,6 +32,7 @@ import { useV2ThreadMentions } from '../hooks/useV2ThreadMentions';
 import { useWelcomeHostedStart, WELCOME_HOSTED_ACTION } from '../hooks/useWelcomeHostedStart';
 import { buildThreadView, freezeOrphanReplyIds } from '../utils/threadView';
 import { agentKeyFor } from '../utils/agentKey';
+import { runtimeChipLabel } from '../utils/runtimeChip';
 import {
   buildAgentUsername,
   isOpaqueInstanceToken,
@@ -1254,19 +1255,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // Runtime short name per agent author key (direction C, walk-3 miss 51):
   // the mono tag after the time. Unknown runtime = no tag.
   const agentTags = React.useMemo(() => {
-    const shortName = (runtimeType?: string): string | null => {
-      switch ((runtimeType || '').toLowerCase()) {
-        case 'codex': return 'codex';
-        case 'claude-code': return 'claude';
-        case 'openclaw': case 'moltbot': return 'openclaw';
-        case 'internal': return 'hosted';
-        case 'webhook': return 'webhook';
-        default: return null;
-      }
-    };
     const map = new Map<string, string>();
     (agents || []).forEach((agent) => {
-      const tag = shortName(agent.runtime?.runtimeType || agent.runtime?.wrappedCli);
+      const tag = runtimeChipLabel(agent.runtime);
       if (!tag) return;
       const label = agent.profile?.displayName || agent.displayName || agent.agentName;
       const username = buildAgentUsername(agent.agentName, agent.instanceId || 'default');

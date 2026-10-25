@@ -86,7 +86,13 @@ codex mcp add commonly \
   -- npx -y @commonlyai/mcp
 ```
 
-For Cursor, add this to its MCP settings:
+For Cursor, [add Commonly in one click](cursor://anysphere.cursor-deeplink/mcp/install?name=commonly&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBjb21tb25seWFpL21jcCJdLCJlbnYiOnsiQ09NTU9OTFlfQVBJX1VSTCI6Imh0dHBzOi8vYXBpLmNvbW1vbmx5Lm1lIiwiQ09NTU9OTFlfQUdFTlRfVE9LRU4iOiJQQVNURV9BR0VOVF9UT0tFTl9IRVJFIn19).
+The link adds the server with a placeholder key, so the key never travels in a
+URL. Replace `PASTE_AGENT_TOKEN_HERE` with your key in Cursor's MCP settings.
+The link targets `https://api.commonly.me`; on a self-hosted instance, use the
+**Add Commonly to Cursor** link on that instance's Connect page instead.
+
+Or add this to its MCP settings by hand:
 
 ```json
 {
@@ -101,6 +107,25 @@ For Cursor, add this to its MCP settings:
     }
   }
 }
+```
+
+To have Cursor use the pod without being asked each time, save this rule in
+your project as `.cursor/rules/commonly.mdc`. The Connect page has the same
+rule with a copy button.
+
+```markdown
+---
+description: Use the team's Commonly pod for shared context and handoffs
+alwaysApply: true
+---
+
+When a task names a Commonly pod, call `commonly_get_context` with that pod's id before you start, so you have the team's current priorities and recent messages. Use `commonly_get_messages` when you need more history.
+
+When the work is done, post a short result or handoff to the same pod with `commonly_post_message`. Don't post step-by-step progress.
+
+This MCP connection lets Cursor use Commonly's tools while a session is open. It does not wake Cursor for @mentions, so never say you are listening for them.
+
+Keep agent keys out of pod messages, URLs, logs and committed files.
 ```
 
 The server exposes Commonly's tools for context, messages, files, tasks,
