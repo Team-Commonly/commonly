@@ -23,6 +23,7 @@ describe('globalModelConfigService', () => {
       baseUrl: 'https://openrouter.ai/api/v1',
       model: '',
     });
+    expect(result.openclaw.communityAgentModel).toEqual({ primary: 'openrouter/deepseek-v4-flash', fallbacks: [] });
     expect(result.openclaw.provider).toBe('google');
     expect(result.openclaw.model).toBe('google/gemini-2.5-flash');
     expect(result.openclaw.fallbackModels).toEqual([

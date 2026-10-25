@@ -99,7 +99,7 @@ const mock = {
 const k8s = require('@kubernetes/client-node');
 const {
   restartAgentRuntime, provisionAgentRuntime, buildPvcVirtualKeyReadScript, issueLiteLLMVirtualKey,
-  readOpenClawIdentityFile, getAgentRuntimeLogs,
+  readOpenClawIdentityFile, getAgentRuntimeLogs, issueLiteLLMOpenRouterKey,
 } = require('../../../services/agentProvisionerServiceK8s');
 const { CYCLES_DIRECTIVE_MARKER } = require('../../../routes/registry/presets');
 
@@ -388,9 +388,14 @@ describe('agentProvisionerServiceK8s', () => {
     expect(config.agents.defaults.contextPruning.ttl).toBe('90m');
     expect(config.agents.defaults.contextPruning.keepLastAssistants).toBe(2);
     // Community agents (cuz is not in DEFAULT_DEV_AGENT_IDS) inherit the
-    // gateway-level default — nemotron, no openai-codex. Codex is gated to
+    // gateway-level default — DeepSeek, no openai-codex. Codex is gated to
     // dev agents via the per-agent override in provisionOpenClawAccount.
-    expect(config.agents.defaults.model.primary).toBe('openrouter/nvidia/nemotron-3-super-120b-a12b:free');
+    expect(config.agents.defaults.model.primary).toBe('openrouter/deepseek-v4-flash');
+    const communityChain = [config.agents.defaults.model.primary, ...config.agents.defaults.model.fallbacks];
+    expect(communityChain.some((model) => model.includes('nemotron'))).toBe(false);
+    expect(config.models.providers.openrouter.models).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'deepseek-v4-flash' }),
+    ]));
     // Trinity removed 2026-05-03 (deregistered at OpenRouter, 404). Gemini
     // entries remain as inert placeholders until GEMINI_API_KEY is reinstated.
     expect(config.agents.defaults.model.fallbacks).toEqual(
@@ -581,4 +586,69 @@ describe('runtime account log filtering', () => {
       expect(result.logs).toBe(own);
     },
   );
+});
+
+describe('TASK-004 community model isolation', () => {
+  it('keeps the dev per-agent override unchanged when provisioning the community default', async () => {
+    await provisionAgentRuntime({
+      runtimeType: 'moltbot', agentName: 'openclaw', instanceId: 'theo',
+      runtimeToken: 'test', baseUrl: 'http://backend', heartbeat: null,
+    });
+    const payload = k8s.__mock.replaceNamespacedConfigMap.mock.calls.at(-1)[2];
+    const config = JSON.parse(payload.data['moltbot.json']);
+    const dev = config.agents.list.find((agent) => agent.id === 'theo');
+    expect(dev.model).toEqual({
+      primary: 'openai-codex/gpt-5.4-mini',
+      fallbacks: [
+        'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
+        'google/gemini-2.5-flash', 'google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash',
+      ],
+    });
+    expect(config.agents.defaults.model.primary).toBe('openrouter/deepseek-v4-flash');
+  });
+
+  it.each(['claude-code', 'webhook'])('does not provision gateway models for BYO %s', async (runtimeType) => {
+    const writes = k8s.__mock.replaceNamespacedConfigMap.mock.calls.length;
+    await expect(provisionAgentRuntime({ runtimeType, instanceId: 'local-claude' }))
+      .resolves.toMatchObject({ external: true, runtimeType });
+    expect(k8s.__mock.replaceNamespacedConfigMap.mock.calls).toHaveLength(writes);
+  });
+});
+
+describe('community virtual key permits the explicit DeepSeek primary', () => {
+  const axios = require('axios');
+  let saved;
+  beforeEach(() => {
+    saved = { base: process.env.LITELLM_BASE_URL, master: process.env.LITELLM_MASTER_KEY };
+    process.env.LITELLM_BASE_URL = 'http://litellm:4000';
+    process.env.LITELLM_MASTER_KEY = 'sk-master-test';
+    k8s.__mock.execStdout = 'sk-community-existing';
+    jest.spyOn(axios, 'get').mockResolvedValue({ data: { info: {
+      metadata: { agent_id: 'liz' }, models: ['gpt-5.4-mini'],
+    } } });
+    jest.spyOn(axios, 'delete').mockResolvedValue({});
+    jest.spyOn(axios, 'post').mockResolvedValue({ data: { key: 'sk-community-new' } });
+  });
+  afterEach(() => {
+    k8s.__mock.execStdout = '';
+    jest.restoreAllMocks();
+    if (saved.base === undefined) delete process.env.LITELLM_BASE_URL; else process.env.LITELLM_BASE_URL = saved.base;
+    if (saved.master === undefined) delete process.env.LITELLM_MASTER_KEY; else process.env.LITELLM_MASTER_KEY = saved.master;
+  });
+
+  it('refreshes an old key that lacks the primary alias and permits its wire model id', async () => {
+    await expect(issueLiteLLMOpenRouterKey('liz')).resolves.toBe('sk-community-new');
+    expect(axios.post).toHaveBeenCalledWith('http://litellm:4000/key/generate', expect.objectContaining({
+      models: expect.arrayContaining(['deepseek-v4-flash', 'openrouter/deepseek-v4-flash']),
+    }), expect.anything());
+  });
+
+  it('reuses an owned key that already allows the explicit primary', async () => {
+    axios.get.mockResolvedValue({ data: { info: {
+      metadata: { agent_id: 'liz' }, models: ['gpt-5.4-mini', 'deepseek-v4-flash'],
+    } } });
+    await expect(issueLiteLLMOpenRouterKey('liz')).resolves.toBe('sk-community-existing');
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(axios.delete).not.toHaveBeenCalled();
+  });
 });
