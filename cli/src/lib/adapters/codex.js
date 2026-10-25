@@ -1,3 +1,5 @@
+import { codexRuntimeInventory } from '../native-runtime-inventory.js';
+import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
 /**
  * codex adapter — wraps the local `codex` CLI as a Commonly agent.
  *
@@ -570,7 +572,7 @@ const CODEX_PROVIDER_KEY_ENVS = [
   'CODEX_API_KEY',
 ];
 
-const runCodex = ({ args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn }) => new Promise((resolve, reject) => {  // stdio: ['ignore', 'pipe', 'pipe'] — without this, child_process.spawn
+const runCodex = ({ args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {} }) => new Promise((resolve, reject) => {  // stdio: ['ignore', 'pipe', 'pipe'] — without this, child_process.spawn
   // defaults stdin to a fresh pipe. Codex 0.125.0's `exec` then blocks on
   // `Reading additional input from stdin...` because it sees an open pipe
   // and waits for input that never arrives. Interactive runs are fine because
@@ -578,6 +580,7 @@ const runCodex = ({ args, cwd, env, timeoutMs, credentials = [], spawnImpl = chi
   // `'ignore'` gives codex /dev/null → immediate EOF → it falls back to the
   // argv prompt as intended. Surfaced live during ADR-005 Phase 2 smoke.
   const proc = spawnImpl('codex', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  observeSpawn(proc, onSpawn, controls);
   let stderr = '';
   let timedOut = false;
   const events = makeEventParser();
@@ -625,9 +628,11 @@ export default {
   // `runtimeType` and differ only on `host`.
   runtimeType: 'codex',
 
+  inventory: codexRuntimeInventory,
+
   async detect() {
     try {
-      const res = spawnSync('codex', ['--version'], { encoding: 'utf8' });
+      const res = spawnSync('codex', ['--version'], { encoding: 'utf8', timeout: 5000 });
       if (res.error || res.status !== 0) return null;
       // `codex --version` prints e.g. "codex-cli 0.125.0" — last token is
       // the version. Defensive against future format tweaks: if no
@@ -734,7 +739,7 @@ export default {
         // already removed the token from the child copy, and after that there is
         // nothing left to compare a tail against.
         credentials: spawnCredentials(ctx, CODEX_PROVIDER_KEY_ENVS),
-        spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
+        spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(args.indexOf('exec') + (args[args.indexOf('exec') + 1] === 'resume' ? 3 : 1), -1), { modelFlag: '--model', valueFlags: ['-c', '-o', '--permission-profile'], codex: true }), // test seam only — do not use in production
       });
 
       let text = '';

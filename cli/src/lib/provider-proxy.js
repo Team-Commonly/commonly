@@ -1,3 +1,4 @@
+import { Transform } from 'node:stream';
 /** The per-spawn loopback proxy shared by OpenAI-compatible CLI adapters. */
 import { randomBytes, timingSafeEqual } from 'crypto';
 import { constants as fsConstants, realpathSync } from 'fs';
@@ -5,6 +6,30 @@ import { createServer, request as httpRequest } from 'http';
 import { request as httpsRequest } from 'https';
 import { chmod, lstat, open, unlink, writeFile } from 'fs/promises';
 import { isAbsolute, relative, sep } from 'path';
+
+// Providers sometimes echo request headers in an error response. Redact the
+// material across arbitrary stream chunk boundaries before any model sees it.
+export const redactProviderMaterial = (material) => {
+  const secret = Buffer.from(material);
+  let pending = Buffer.alloc(0);
+  return new Transform({
+    transform(chunk, _encoding, done) {
+      pending = Buffer.concat([pending, Buffer.from(chunk)]);
+      while (pending.length >= secret.length) {
+        const index = pending.indexOf(secret);
+        if (index >= 0) {
+          this.push(pending.subarray(0, index)); this.push('[redacted]');
+          pending = pending.subarray(index + secret.length);
+        } else {
+          const count = pending.length - secret.length + 1;
+          this.push(pending.subarray(0, count)); pending = pending.subarray(count);
+        }
+      }
+      done();
+    },
+    flush(done) { this.push(pending); pending = Buffer.alloc(0); done(); },
+  });
+};
 
 const isPathWithin = (parent, candidate) => {
   const fromParent = relative(parent, candidate);
@@ -68,7 +93,7 @@ const readProviderKey = async (keyFile, adapterLabel) => {
 };
 
 export const startProviderProxy = async ({
-  provider, keyFile, tokenFile, socketPath, isolatedPort, adapterLabel = 'OpenCode',
+  provider, keyFile, keyMaterial, tokenFile, socketPath, isolatedPort, adapterLabel = 'OpenCode',
 }) => {
   const upstream = new URL(provider.baseURL);
   if (socketPath && (!isAbsolute(socketPath)
@@ -80,7 +105,8 @@ export const startProviderProxy = async ({
     throw new Error(`${adapterLabel} provider.baseURL must be an http(s) URL without embedded credentials or query data`);
   }
   const basePath = upstream.pathname.replace(/\/+$/, '') || '/';
-  const upstreamKey = await readProviderKey(keyFile, adapterLabel);
+  const upstreamKey = keyMaterial === undefined ? await readProviderKey(keyFile, adapterLabel) : keyMaterial;
+  if (typeof upstreamKey !== 'string' || !upstreamKey || /[\r\n]/.test(upstreamKey)) throw new Error('Invalid provider key');
   const proxyToken = randomBytes(32).toString('base64url');
   await writeFile(tokenFile, proxyToken, { encoding: 'utf8', mode: 0o600 });
   await chmod(tokenFile, 0o600);
@@ -176,6 +202,7 @@ export const startProviderProxy = async ({
       ].includes(name.toLowerCase())));
     headers.authorization = `Bearer ${upstreamKey}`;
     headers.host = target.host;
+    headers['accept-encoding'] = 'identity';
     const request = (target.protocol === 'https:' ? httpsRequest : httpRequest)({
       protocol: target.protocol,
       hostname: target.hostname,
@@ -189,13 +216,21 @@ export const startProviderProxy = async ({
         outgoing.writeHead(502).end('Provider redirects are not supported');
         return;
       }
+      if (response.headers['content-encoding'] && response.headers['content-encoding'] !== 'identity') {
+        response.resume(); outgoing.writeHead(502).end('Compressed provider responses are not supported'); return;
+      }
       const responseHeaders = Object.fromEntries(Object.entries(response.headers)
         .filter(([name]) => ![
           'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
           'te', 'trailer', 'transfer-encoding', 'upgrade',
         ].includes(name.toLowerCase())));
+      delete responseHeaders['content-length'];
+      for (const [name, value] of Object.entries(responseHeaders)) {
+        if (typeof value === 'string') responseHeaders[name] = value.split(upstreamKey).join('[redacted]');
+        else if (Array.isArray(value)) responseHeaders[name] = value.map((entry) => entry.split(upstreamKey).join('[redacted]'));
+      }
       outgoing.writeHead(response.statusCode || 502, responseHeaders);
-      response.pipe(outgoing);
+      response.pipe(redactProviderMaterial(upstreamKey)).pipe(outgoing);
     });
     request.on('error', () => {
       if (!outgoing.headersSent) outgoing.writeHead(502);

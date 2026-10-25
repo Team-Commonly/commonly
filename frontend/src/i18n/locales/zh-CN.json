@@ -482,7 +482,9 @@
     }
   },
   "podChat": {
-    "firstTask": { "addFailed": "添加任务失败，请重试。" },
+    "firstTask": {
+      "addFailed": "添加任务失败，请重试。"
+    },
     "starts": {
       "label": "开始方式"
     },
@@ -2375,6 +2377,53 @@
       "cancel": "取消",
       "loadError": "无法加载连接器授权。",
       "revokeError": "无法撤销授权。"
+    },
+    "controls": {
+      "title": "运行方式",
+      "nextSpawn": "更改在下次启动时生效",
+      "readOnlyHosted": "只读 · 在 commonly 上运行",
+      "readOnlyCli": "只读 · 此席位通过 cli 运行",
+      "saved": "已保存",
+      "lastSpawn": "上次启动",
+      "confirmed": "已确认",
+      "harness": "运行器",
+      "model": "模型",
+      "effort": "推理强度",
+      "unconfirmed": "未确认",
+      "default": "运行器默认",
+      "pending": "等待下次启动",
+      "unknown": "未知",
+      "notInstalled": "未安装",
+      "stored": "已存储",
+      "modelsUnavailable": "模型列表不可用 · 下次启动时检查",
+      "effortUnavailable": "{{harness}} 未报告推理强度 · {{effort}} 保留存储，不会传入",
+      "unsupported": "存储选项不受支持 · 上次启动：{{harness}} · {{model}} · {{effort}}",
+      "save": "保存",
+      "saveError": "无法保存运行设置。",
+      "process": "进程",
+      "turn": "回合",
+      "connected": "已连接",
+      "disconnected": "未连接",
+      "running": "运行中",
+      "noTurn": "未报告回合",
+      "saveRuntime": "保存运行设置",
+      "spawnFailed": "启动失败 · 上次启动：{{harness}} · {{model}} · {{effort}}",
+      "notReported": "未报告"
+    },
+    "providerKey": {
+      "title": "使用自己的 API 密钥",
+      "readOnly": "在 cli 运行位置设置 · 不在此管理",
+      "unavailable": "{{harness}} 暂不支持自有密钥",
+      "provider": "{{provider}} 的密钥",
+      "input": "API 密钥",
+      "save": "保存密钥",
+      "cancel": "取消",
+      "replace": "替换密钥",
+      "setAction": "设置密钥",
+      "remove": "移除",
+      "set": "已设置",
+      "loadError": "无法加载密钥状态。",
+      "saveError": "无法更新密钥。请重新输入后重试。"
     }
   },
   "agentSettings": {
@@ -2382,7 +2431,13 @@
     "displayName": "显示名称",
     "persona": "角色设定",
     "tone": "语气",
-    "toneOptions": { "friendly": "友好", "professional": "专业", "casual": "随和", "formal": "正式", "technical": "技术型" },
+    "toneOptions": {
+      "friendly": "友好",
+      "professional": "专业",
+      "casual": "随和",
+      "formal": "正式",
+      "technical": "技术型"
+    },
     "specialties": "专长（用逗号分隔）",
     "boundaries": "行为边界（用逗号分隔）",
     "personaNotes": "角色备注",
@@ -2470,7 +2525,11 @@
     "workspace": "允许编辑仓库",
     "saveTrust": "保存信任模式",
     "memory": "记忆",
-    "section": { "long_term": "长期", "soul": "身份", "shared": "共享" },
+    "section": {
+      "long_term": "长期",
+      "soul": "身份",
+      "shared": "共享"
+    },
     "saveMemory": "保存记忆",
     "loadingMemory": "正在加载记忆…",
     "retry": "重试",

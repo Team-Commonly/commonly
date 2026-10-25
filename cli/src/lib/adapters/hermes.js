@@ -1,3 +1,4 @@
+import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
 /** Hermes 0.22.2 local CLI wrapper. Hermes owns provider I/O; this file only spawns it. */
 import { requireSeatModel, seatModelRequired } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
@@ -49,10 +50,11 @@ export const readHermesJsonl = (line, state) => {
   }
 };
 
-const runHermes = ({ args, prompt, cwd, env, timeoutMs, spawnImpl, credentials }) => new Promise((resolve, reject) => {
+const runHermes = ({ args, prompt, cwd, env, timeoutMs, spawnImpl, credentials, onSpawn, controls = {} }) => new Promise((resolve, reject) => {
   const child = (spawnImpl || childSpawn)('hermes', args, {
     cwd, env, stdio: ['pipe', 'pipe', 'pipe'],
   });
+  observeSpawn(child, onSpawn, controls);
   const state = { started: false, result: null };
   const decoder = new StringDecoder('utf8');
   let buffer = '';
@@ -190,7 +192,7 @@ export default {
       ? Math.min(requestedTimeout, DEFAULT_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS;
     return runHermes({
       args, prompt: fullPrompt, cwd: ctx.cwd, env, timeoutMs,
-      spawnImpl: ctx._spawnImpl,
+      spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args, { modelFlag: '--model', valueFlags: ['--query-file', '--format', '--provider', '--source', '--resume'] }),
       credentials: spawnCredentials(ctx, ['OPENROUTER_API_KEY']),
     });
   },

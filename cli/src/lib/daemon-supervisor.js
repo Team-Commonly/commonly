@@ -64,6 +64,7 @@ export const createDaemonSupervisor = ({
   spawnChild, // (agentName) => child emitting 'exit'; must expose .kill()
   loadToken, // (agentName) => token record | null
   saveToken, // (agentName, record) => void
+  runtimeInventory = async () => undefined,
   resolveAdapter, // async (runtime) => adapter name for THIS machine
   persistState = () => {}, // (agentStates) => void; must not persist secrets
   log = () => {},
@@ -343,6 +344,7 @@ export const createDaemonSupervisor = ({
         const workspacePath = workspacePathFor(nextEnvironment);
         const nextRecord = {
           ...existing,
+          machineId: record.machineId,
           ...(adapterChanged ? { adapter: nextAdapter } : {}),
           environment: nextEnvironment,
           ...(workspacePath ? { workspacePath } : {}),
@@ -445,6 +447,7 @@ export const createDaemonSupervisor = ({
       instanceId: row.instanceId,
       runtimeToken: minted.token,
       instanceUrl: record.instanceUrl,
+      machineId: record.machineId,
       podId: row.podIds?.[0] || null,
       adapter,
       ...(recordEnvironment ? { environment: recordEnvironment } : {}),
@@ -552,7 +555,7 @@ export const createDaemonSupervisor = ({
   const heartbeat = async () => {
     if (stopped || now() < reconnectAfter) return;
     try {
-      await client.post(`/api/machines/${record.machineDbId}/heartbeat`, { agents: agentStates() });
+      await client.post(`/api/machines/${record.machineDbId}/heartbeat`, { agents: agentStates(), runtimeInventory: await runtimeInventory() });
       connectionRestored();
     } catch (error) {
       connectionFailure(error, 'heartbeat failed');

@@ -1,3 +1,4 @@
+import { normalizeRuntimeInventory, HarnessInventory } from './runtimeInventory';
 import crypto from 'crypto';
 import { Types } from 'mongoose';
 import Machine, { IMachine, IMachineAgentState } from '../models/Machine';
@@ -17,6 +18,8 @@ export interface MachineView {
   lastSeenAt: Date | null;
   status: 'online' | 'offline';
   agentStates: IMachineAgentState[];
+  runtimeInventory: HarnessInventory[];
+  inventoryAt: Date | null;
 }
 
 // D5 heartbeat payload bounds. A daemon reports every agent it supervises;
@@ -67,6 +70,8 @@ const serializeMachine = (machine: IMachine | LeanMachine, now = new Date()): Ma
     status: lastSeenAt && now.getTime() - lastSeenAt.getTime() <= MACHINE_OFFLINE_AFTER_MS
       ? 'online'
       : 'offline',
+    runtimeInventory: normalizeRuntimeInventory(machine.runtimeInventory) || [],
+    inventoryAt: machine.inventoryAt ? new Date(machine.inventoryAt as string | Date) : null,
     agentStates: ((machine.agentStates || []) as IMachineAgentState[]).map((s) => ({
       agentName: s.agentName,
       instanceId: s.instanceId,
@@ -191,6 +196,7 @@ export async function machineHasLiveAuthorization(
 export async function recordMachineHeartbeat(
   machine: IMachine,
   agentStates?: unknown,
+  runtimeInventory?: unknown,
 ): Promise<MachineView> {
   machine.lastSeenAt = new Date();
   machine.status = 'online';
@@ -198,6 +204,8 @@ export async function recordMachineHeartbeat(
   // Phase-1 daemon keeps working); one WITH the array replaces it wholesale.
   const normalized = normalizeAgentStates(agentStates);
   if (normalized !== null) machine.agentStates = normalized;
+  const inventory = normalizeRuntimeInventory(runtimeInventory);
+  if (inventory !== null) { machine.runtimeInventory = inventory; machine.inventoryAt = new Date(); }
   await machine.save();
   return serializeMachine(machine.toObject ? machine.toObject() : machine);
 }

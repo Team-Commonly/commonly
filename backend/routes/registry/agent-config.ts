@@ -30,6 +30,7 @@ const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecVa
 const { ownsRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
 const { configWriteRefusal, runtimeKeepingType } = require('../../services/configWriteGuard');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
+const { runtimeControlRefusal } = require('../../services/runtimeControlValidation');
 const { hostedEngineInEffect } = require('../../services/hostedEngine');
 
 const agentConfigRouter = express.Router();
@@ -177,6 +178,12 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         });
       }
     }
+
+    const savedConfig = normalizeConfigMap(installation.config) || {};
+    const controlRefusal = await runtimeControlRefusal({ agentName: name.toLowerCase(),
+      instanceId: normalizedInstanceId, ownerUserId: String(installation.installedBy),
+      config, effectiveHarness: savedConfig.runtime?.adapter });
+    if (controlRefusal) return res.status(422).json({ code: 'unsupported_runtime_control', error: controlRefusal });
 
     // Being this row's installer is not enough to point its push webhook
     // somewhere new. The webhook's replies are posted as the agent identity, so

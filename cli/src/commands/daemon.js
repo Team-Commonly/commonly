@@ -1,3 +1,4 @@
+import { collectRuntimeInventory } from '../lib/runtime-inventory.js';
 /**
  * commonly daemon <subcommand>
  *
@@ -474,6 +475,8 @@ Examples:
           // exit parks it on macOS; systemd honors 77 directly.
           process.exitCode = saved || process.platform !== 'darwin' ? 77 : 0;
         };
+        let cachedInventory;
+        let inventoryCheckedAt = 0;
         supervisor = createDaemonSupervisor({
           record,
           client,
@@ -488,10 +491,18 @@ Examples:
             chmodSync(seatLog, 0o600);
             return spawn(process.execPath, [process.argv[1], 'agent', 'run', agentName], {
               stdio: ['ignore', out, out],
+              env: { ...process.env, COMMONLY_MANAGED_RUNNER: '1' },
             });
           },
           loadToken: loadAgentToken,
           saveToken: saveAgentToken,
+          runtimeInventory: async () => {
+            if (!cachedInventory || Date.now() - inventoryCheckedAt > 300_000) {
+              cachedInventory = await collectRuntimeInventory(getAdapter);
+              inventoryCheckedAt = Date.now();
+            }
+            return cachedInventory;
+          },
           resolveAdapter: (runtime) => resolveAdapterForRuntime(runtime),
           log: stampLog,
           persistState: (seats) => saveDaemonState({

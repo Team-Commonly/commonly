@@ -3,6 +3,9 @@ import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
 import { hostedCapsForOwner, userRunCeilingForOwner } from '../../services/hostedRuntimeService';
 import { projectSeatEnvironments, seatEnvironmentKey } from '../../services/seatEnvironmentProjection';
+const { ownKeyCapability } = require('../../services/agentProviderKey');
+const Machine = require('../../models/Machine');
+const AgentRuntimeObservation = require('../../models/AgentRuntimeObservation');
 const express = require('express');
 const auth = require('../../middleware/auth');
 const { AgentInstallation } = require('../../models/AgentRegistry');
@@ -76,6 +79,8 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     for (const key of ['runtimeType', 'adapter']) {
       if (typeof runtime[key] === 'string') runtimeControls[key] = runtime[key];
     }
+    const declaredProvider = environment.provider as { id?: string } | undefined;
+    if (typeof declaredProvider?.id === 'string') runtimeControls.providerId = declaredProvider.id;
     if (runtime.host === 'cloud' || runtime.host === 'byo') runtimeControls.host = runtime.host;
     // The identity binding, rather than this pod's runtime declaration, tells
     // us whether the daemon owns the next spawn. A Settings write can make an
@@ -85,8 +90,15 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       'botMetadata.agentName': String(req.params.name).toLowerCase(),
       'botMetadata.instanceId': normalizeInstanceId(req.query.instanceId),
     }).select('botMetadata.machineId').lean();
+    const machine = binding?.botMetadata?.machineId ? await Machine.findOne({
+      machineId: binding.botMetadata.machineId, ownerUserId: quotaOwner,
+    }).select('runtimeInventory inventoryAt lastSeenAt agentStates').lean() : null;
+    const observation = binding && machine ? await AgentRuntimeObservation.findOne({
+      agentUserId: binding._id, machineId: binding.botMetadata.machineId,
+    }).select('connectedAt lastSeenAt lastSpawn lastSpawnOutcome turnRunning lastTurnAt -_id').lean() : null;
     const runtimeManaged = Boolean(binding?.botMetadata?.machineId);
     if (runtimeManaged && !runtimeControls.runtimeType) runtimeControls.runtimeType = 'wrapper';
+    const runtimeSavedControls = { ...runtimeControls };
     // A standalone `agent run` reads its local token record. Hosted/native
     // turns read their own run config (installation.config.model or the service
     // default), not the daemon projection. Neither path can be attested by an
@@ -105,6 +117,15 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
         : source ? String(source.podId)
           : (!seat?.sourcePodId && writable ? String(writable.podId) : null),
       runtimeControls,
+      runtimeSavedControls,
+      ownKeyCapability: runtimeManaged ? ownKeyCapability(runtime, environment) : { available: false, provider: null },
+      runtimeObservation: observation ? { ...observation, confirmed: null } : null,
+      processConnected: machine ? Boolean(machine.lastSeenAt && Date.now() - new Date(machine.lastSeenAt).getTime() < 90_000
+        && machine.agentStates?.some((entry: any) => entry.agentName === String(req.params.name).toLowerCase()
+          && entry.instanceId === normalizeInstanceId(req.query.instanceId) && entry.state === 'running')) : null,
+      runtimeInventory: machine?.runtimeInventory || [],
+      runtimeInventoryAt: machine?.inventoryAt || null,
+      machineLastSeenAt: machine?.lastSeenAt || null,
       runtimeManaged,
       runtimeEditable: runtimeManaged && (!seat?.sourcePodId || Boolean(source)),
       installations: visible

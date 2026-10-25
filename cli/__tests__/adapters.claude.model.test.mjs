@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 /**
  * The claude adapter must pin the model when ctx.environment.model is set.
  *
@@ -105,4 +106,34 @@ describe('claude adapter — model pinning', () => {
     expect(retry.args).toContain('--session-id');
     expect(flagValue(retry.args, '--model')).toBe('claude-opus-5');
   });
+});
+
+test('the last-spawn callback witnesses actual fresh and recovery arguments', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-receipt-'));
+  const calls = [];
+  const reports = [];
+  let n = 0;
+  try {
+    await claude.spawn('literal --model is prompt content', {
+      cwd, sessionId: 'old', environment: { model: 'receipt-model', effort: 'high' },
+      onSpawn: (receipt) => reports.push(receipt),
+      _spawnImpl: (cmd, args) => {
+        calls.push({ cmd, args });
+        const proc = new EventEmitter();
+        proc.stdout = new EventEmitter(); proc.stderr = new EventEmitter(); proc.kill = () => {};
+        const index = n++;
+        setImmediate(() => {
+          proc.emit('spawn');
+          if (index === 0) proc.stderr.emit('data', 'session id already in use');
+          else proc.stdout.emit('data', 'done');
+          proc.emit('close', index === 0 ? 1 : 0);
+        });
+        return proc;
+      },
+    });
+    expect(calls).toHaveLength(2); expect(reports).toHaveLength(2);
+    calls.forEach(({ args }, index) => expect(reports[index]).toMatchObject({
+      model: args[args.indexOf('--model') + 1], effort: args[args.indexOf('--effort') + 1],
+    }));
+  } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
 });

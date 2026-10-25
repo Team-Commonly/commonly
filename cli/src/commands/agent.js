@@ -1,3 +1,6 @@
+import { createOwnKeyResolver, createMachineReportClient } from '../lib/own-key-launch.js';
+import { WALKED_HARNESSES } from '../lib/runtime-inventory.js';
+import { createRuntimeReporter } from '../lib/runtime-observation.js';
 /**
  * commonly agent <subcommand>
  *
@@ -1262,8 +1265,12 @@ export const performRun = ({
   sleepImpl = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
   // The agent to @mention when the model provider refuses a request's content
   // (lib/content-refusal.js). Null: the refusal notice names no one.
+  reportRuntime = false,
+  resolveOwnProviderKey = null,
+  runtimeReportClient = null,
   refusalHandoff = null,
 }) => {
+  reportRuntime = reportRuntime && WALKED_HARNESSES.includes(adapter?.name);
   if (environment?.provider !== undefined && !adapter?.supportsProvider) {
     throw new Error('environment.provider requires a provider-capable adapter');
   }
@@ -1271,6 +1278,11 @@ export const performRun = ({
   const effectiveTurnTimeoutMs = Number.isFinite(requestedTurnTimeout) && requestedTurnTimeout > 0
     ? Math.min(requestedTurnTimeout, 2_147_483_647) : 15 * 60 * 1000;
   const client = createClient({ instance: instanceUrl, token });
+  const runtimeReporter = createRuntimeReporter({
+    client: runtimeReportClient || { post: async () => {} },
+    harness: adapter.name, detect: () => adapter.detect(),
+  });
+  const runtimeConnected = reportRuntime ? runtimeReporter.connect() : Promise.resolve();
   const missingModelNotices = new Set();
   const handoffAgent = sanitizeHandoffAgent(refusalHandoff);
   if (refusalHandoff && !handoffAgent) {
@@ -1321,12 +1333,18 @@ export const performRun = ({
   // the adapter spawns with, and the stored record keeps its broker, so the
   // daemon stays the layer that judges a host it knows. Applied once for the
   // run rather than per turn: `agent run` reads its record once at boot.
-  const seatEnvironment = withholdGrantBroker(environment, adapter?.name, {
+  const requestedSeatEnvironment = withholdGrantBroker(environment, adapter?.name, {
     instanceUrl,
     onRefuse: (refusal, names) => log(
       `${refusal.code} (${refusal.reason}) — withholding ${names.join(', ')}: ${refusal.detail}`,
     ),
   });
+  // Without native effort inventory a machine runner cannot promise that a
+  // stored effort is supported. Preserve the record and use harness default.
+  // Standalone CLI behavior remains under the operator's control.
+  const runtimeInventoryPromise = reportRuntime ? Promise.resolve(adapter.inventory?.()).then((value) => value || { models: null, efforts: [] })
+    .catch(() => ({ models: null, efforts: [] })) : Promise.resolve(null);
+  let seatEnvironment = requestedSeatEnvironment;
   // OpenCode retains tool-call IDs in its resumed history. A Gemini proxy
   // marks those IDs with signature references, so changing providers must
   // start a fresh session before another upstream can receive them.
@@ -1384,6 +1402,10 @@ export const performRun = ({
   const batchLimit = Math.min(50, Math.max(1, Number(inboxBatchLimit) || 10));
 
   const processEvent = async (event) => {
+    const inventory = await runtimeInventoryPromise;
+    if (reportRuntime && requestedSeatEnvironment && !inventory?.efforts.includes(requestedSeatEnvironment.effort)) {
+      seatEnvironment = { ...requestedSeatEnvironment, effort: undefined };
+    }
     const eventPodId = event.podId || podId;
     const prompt = extractPrompt(event);
     if (!prompt || !eventPodId) {
@@ -1785,6 +1807,7 @@ export const performRun = ({
       ? { mounted: serverSkills.mounted, conflicted: serverSkills.conflicted, ...(skillReadUnavailable ? { status: 'unavailable' } : {}) }
       : null;
     let spawnCompleted = false;
+    let observedSpawn = false;
     let commitAttribution = null;
     try {
       // The local CLI is a wrapper for a Commonly seat, so its Git commits
@@ -1802,7 +1825,24 @@ export const performRun = ({
           effort: seatEnvironment?.effort,
         });
       }
+      await runtimeConnected;
+      let providerKey;
+      if (reportRuntime && resolveOwnProviderKey) {
+        try {
+          providerKey = await resolveOwnProviderKey({ opened, harness: adapter.name,
+            provider: seatEnvironment?.provider });
+        } catch (error) {
+          if (!error.ownKeySpawnRefused) throw error;
+          return { outcome: 'no_action', refused: { reason: 'delivery-refused' },
+            reason: 'own-key-requires-scoped-spawn' };
+        }
+      }
       result = await adapter.spawn(frameDecisionForkRule(promptForSpawn), {
+        onSpawn: reportRuntime ? (controls) => {
+          observedSpawn = true;
+          return runtimeReporter.spawn(controls);
+        } : undefined,
+        providerKey,
         timeoutMs: effectiveTurnTimeoutMs,
         sessionId,
         cwd: agentCwd,
@@ -1831,6 +1871,7 @@ export const performRun = ({
       spawnCompleted = true;
     } finally {
       try {
+        if (reportRuntime) await runtimeReporter.settled(observedSpawn ? spawnCompleted ? 'completed' : 'failed' : null);
         commitAttribution?.cleanup();
       } finally {
         if (spawnCompleted && skillMount) {
@@ -3537,6 +3578,11 @@ Docs:
         // TASK-102 part B: the operator's TTL ask, if any. Unset means the
         // server's published default, which is the only lifetime we can justify
         // without an operator saying otherwise.
+        runtimeReportClient: createMachineReportClient({ instanceUrl: record.instanceUrl,
+          machineId: record.machineId, agentName: record.agentName, instanceId: record.instanceId }),
+        resolveOwnProviderKey: createOwnKeyResolver({ instanceUrl: record.instanceUrl,
+          machineId: record.machineId, agentName: record.agentName, instanceId: record.instanceId }),
+        reportRuntime: Boolean(record.machineId || process.env.COMMONLY_MANAGED_RUNNER === '1'),
         spawnCredentialTtlSeconds: resolveSpawnTtlSeconds(process.env),
         refusalHandoff: opts.refusalHandoff || null,
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),

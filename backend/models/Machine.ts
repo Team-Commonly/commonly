@@ -14,6 +14,8 @@ export interface IMachineAgentState {
   restarts: number;
 }
 
+import type { HarnessInventory } from '../services/runtimeInventory';
+
 export interface IMachine extends Document {
   ownerUserId: Types.ObjectId;
   // Opaque server-assigned identifier. Agent identities bind to this value in
@@ -26,6 +28,8 @@ export interface IMachine extends Document {
   lastSeenAt: Date | null;
   status: MachineStatus;
   agentStates: IMachineAgentState[];
+  runtimeInventory: HarnessInventory[];
+  inventoryAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -42,6 +46,8 @@ const MachineSchema = new Schema<IMachine>(
     status: { type: String, enum: ['online', 'offline'], default: 'offline' },
     // D5: replaced wholesale by each heartbeat that carries an agents array —
     // the daemon's report is the truth, so no per-entry merging.
+    runtimeInventory: { type: Schema.Types.Mixed, default: [] },
+    inventoryAt: { type: Date, default: null },
     agentStates: {
       type: [{
         _id: false,

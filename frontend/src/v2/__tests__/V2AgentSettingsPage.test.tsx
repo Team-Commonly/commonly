@@ -439,9 +439,9 @@ test('runtime editor writes environment controls through the shared settings hoo
   axios.patch.mockResolvedValue({ data: { updated: true } });
   axios.get.mockImplementation((url) => {
     if (url.includes('/manage-settings')) return Promise.resolve({ data: {
-      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+      runtimeManaged: true, runtimeInventory: [{ harness: 'claude', installed: true, version: '1', models: null, efforts: ['low', 'medium', 'high', 'xhigh'] }], writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
     } });
-    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { runtimeManaged: true, runtimeInventory: [{ harness: 'claude', installed: true, version: '1', models: null, efforts: ['low', 'medium', 'high', 'xhigh'] }], writablePodId: 'pod-1' } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya',
       runtime: { runtimeType: 'wrapper' },
@@ -451,7 +451,7 @@ test('runtime editor writes environment controls through the shared settings hoo
     return Promise.resolve({ data: [] });
   });
   renderPage();
-  const model = await screen.findByLabelText('Model');
+  const model = await screen.findByLabelText('model');
   await screen.findByRole('heading', { name: 'Wake' });
   await screen.findByRole('heading', { name: 'Policy' });
   await screen.findByRole('heading', { name: 'Skills' });
@@ -459,23 +459,23 @@ test('runtime editor writes environment controls through the shared settings hoo
   expect(sections).toEqual(expect.arrayContaining(['Identity', 'Policy', 'Skills']));
   expect(sections.indexOf('Key')).toBeLessThan(sections.indexOf('Identity'));
   expect(sections.indexOf('Identity')).toBeLessThan(sections.indexOf('Wake'));
-  expect(sections.indexOf('Key')).toBeLessThan(sections.indexOf('Runtime'));
-  expect(sections.indexOf('Wake')).toBeLessThan(sections.indexOf('Runtime'));
-  expect(sections.indexOf('Runtime')).toBeLessThan(sections.indexOf('Connector grants'));
+  expect(sections.indexOf('Key')).toBeLessThan(sections.indexOf('How it runs'));
+  expect(sections.indexOf('Wake')).toBeLessThan(sections.indexOf('How it runs'));
+  expect(sections.indexOf('How it runs')).toBeLessThan(sections.indexOf('Connector grants'));
   expect(sections.indexOf('Connector grants')).toBeLessThan(sections.indexOf('Policy'));
   expect(sections.indexOf('Policy')).toBeLessThan(sections.indexOf('Skills'));
   fireEvent.change(model, { target: { value: 'new-model' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
     '/api/registry/pods/pod-1/agents/maya-claude',
-    { config: { environment: { model: 'new-model' } }, instanceId: 'default' },
+    { config: { environment: { model: 'new-model' }, runtime: { adapter: 'claude' } }, instanceId: 'default' },
   ));
 });
 
 test('runtime editor keeps a wrapper model when no environment override exists', async () => {
   axios.get.mockImplementation((url) => {
     if (url.includes('/manage-settings')) return Promise.resolve({ data: {
-      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+      runtimeManaged: true, runtimeInventory: [{ harness: 'claude', installed: true, version: '1', models: null, efforts: ['low', 'medium', 'high', 'xhigh'] }], writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
     } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya',
@@ -484,15 +484,15 @@ test('runtime editor keeps a wrapper model when no environment override exists',
     return Promise.resolve({ data: [] });
   });
   renderPage();
-  expect(await screen.findByLabelText('Model')).toHaveValue('selected-model');
-  expect(screen.getByLabelText('Effort')).toHaveValue('medium');
+  expect(await screen.findByLabelText('model')).toHaveValue('selected-model');
+  expect(screen.getByLabelText('effort')).toHaveValue('medium');
 });
 
 test('runtime editor shows the daemon-selected effort instead of a different pod config', async () => {
   axios.patch.mockResolvedValue({ data: { updated: true } });
   axios.get.mockImplementation((url) => {
     if (url.includes('/manage-settings')) return Promise.resolve({ data: {
-      writablePodId: 'skills-pod', runtimeSourcePodId: 'source-pod',
+      runtimeManaged: true, runtimeInventory: [{ harness: 'claude', installed: true, version: '1', models: null, efforts: ['low', 'medium', 'high', 'xhigh'] }], writablePodId: 'skills-pod', runtimeSourcePodId: 'source-pod',
       runtimeControls: { runtimeType: 'wrapper', adapter: 'claude', model: 'opus', effort: 'high' },
       runtimeEditable: true, installations: [
         { podId: 'skills-pod', podName: 'Work', status: 'active' },
@@ -507,21 +507,22 @@ test('runtime editor shows the daemon-selected effort instead of a different pod
     return Promise.resolve({ data: [] });
   });
   renderPage();
-  const effort = await screen.findByLabelText('Effort');
+  const effort = await screen.findByLabelText('effort');
   expect(effort).toHaveValue('high');
   fireEvent.change(effort, { target: { value: 'xhigh' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
     '/api/registry/pods/source-pod/agents/maya-claude',
-    { config: { environment: { effort: 'xhigh' } }, instanceId: 'default' },
+    { config: { environment: { effort: 'xhigh' }, runtime: { adapter: 'claude' } }, instanceId: 'default' },
   ));
 });
 
-test('standalone CLI settings do not claim a local effort or offer a remote save', async () => {
+test('standalone CLI settings label the saved preference without claiming a runtime receipt or offering a save', async () => {
   axios.get.mockImplementation((url) => {
     if (url.includes('/manage-settings')) return Promise.resolve({ data: {
       writablePodId: 'pod-1', runtimeSourcePodId: null, runtimeManaged: false,
       runtimeEditable: false, runtimeControls: { runtimeType: 'wrapper', adapter: 'claude', model: '', effort: '' },
+      runtimeSavedControls: { runtimeType: 'wrapper', adapter: 'claude', model: 'opus', effort: 'max' },
       installations: [{ podId: 'pod-1', podName: 'Work', status: 'active' }],
     } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
@@ -532,7 +533,49 @@ test('standalone CLI settings do not claim a local effort or offer a remote save
     return Promise.resolve({ data: [] });
   });
   renderPage();
-  expect(await screen.findByText('Single CLI')).toBeInTheDocument();
-  expect(screen.queryByText('max')).not.toBeInTheDocument();
+  expect(await screen.findByText('read only · this seat runs from the cli')).toBeInTheDocument();
+  expect(screen.getByLabelText('effort')).toHaveValue('max');
+  expect(screen.getByLabelText('effort')).toBeDisabled();
+  expect(screen.getAllByText('unconfirmed')).toHaveLength(3);
   expect(screen.queryByRole('button', { name: 'Save runtime' })).not.toBeInTheDocument();
+});
+
+test('runner facts refresh without resetting unsaved controls, and a failed read becomes unreported', async () => {
+  jest.useFakeTimers();
+  let failed = false;
+  let connected = true;
+  let running = true;
+  const at = '2026-10-25T05:00:00Z';
+  axios.get.mockImplementation((url) => {
+    if (url.includes('/manage-settings')) {
+      if (failed) return Promise.reject(new Error('offline'));
+      return Promise.resolve({ data: { writablePodId: 'pod-1', runtimeSourcePodId: 'pod-1',
+        runtimeManaged: true, runtimeEditable: true, runtimeControls: { runtimeType: 'wrapper', adapter: 'claude', model: 'saved' },
+        runtimeInventory: [{ harness: 'claude', installed: true, version: '2.1', models: null, efforts: [] }],
+        processConnected: connected, runtimeObservation: { connectedAt: at, lastSeenAt: at, turnRunning: running,
+          lastTurnAt: at, lastSpawn: { harness: 'claude', version: '2.1', model: 'actual', effort: null, at }, confirmed: null },
+        installations: [{ podId: 'pod-1', podName: 'Work', status: 'active' }],
+      } });
+    }
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'wrapper', adapter: 'claude' },
+    } } });
+    if (url.includes('/grants')) return Promise.resolve({ data: { grants: [] } });
+    return Promise.resolve({ data: [] });
+  });
+  const view = renderPage();
+  try {
+    const input = await screen.findByLabelText('model');
+    fireEvent.change(input, { target: { value: 'unsaved-draft' } });
+    expect(screen.getByText('process').closest('div')).toHaveTextContent('connected');
+    connected = false; running = false;
+    await act(async () => { jest.advanceTimersByTime(30_000); });
+    expect(input).toHaveValue('unsaved-draft');
+    expect(screen.getByText('process').closest('div')).toHaveTextContent('disconnected');
+    expect(screen.queryByText('running')).toBeNull();
+    failed = true;
+    await act(async () => { jest.advanceTimersByTime(30_000); });
+    expect(screen.getByText('process').closest('div')).toHaveTextContent('not reported');
+    expect(input).toHaveValue('unsaved-draft');
+  } finally { view.unmount(); jest.useRealTimers(); }
 });

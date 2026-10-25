@@ -1,3 +1,4 @@
+jest.mock('../../../services/runtimeControlValidation', () => ({ runtimeControlRefusal: jest.fn(async () => null) }));
 // Security, 2026-10-15 (Rhea on #2224): PATCH /api/registry/pods/:podId/agents/:name
 // let an agent's installer shallow-merge any `config` key. A self-serve
 // install could become `native` (Commonly's model account, past the install

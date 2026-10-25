@@ -94,7 +94,7 @@ describe('machine lifecycle routes', () => {
     // service owns validation.
     expect(mockRecordMachineHeartbeat).toHaveBeenCalledWith(expect.objectContaining({
       machineId: 'daemon-machine',
-    }), agents);
+    }), agents, undefined);
     expect(mockFindMachine).toHaveBeenCalledWith({
       _id: '0123456789abcdef01234567',
       machineId: 'daemon-machine',
