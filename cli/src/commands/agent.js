@@ -22,7 +22,6 @@ import { createHash } from 'crypto';
 
 import { requireSeatModel } from '../lib/adapters/seat-model.js';
 import { createClient } from '../lib/api.js';
-import { copyHandoffMemory } from '../lib/handoff-memory.js';
 import {
   buildSpawnId,
   createSpawnCredentialLease,
@@ -987,6 +986,13 @@ export const performAttach = async ({
   // server via legacy normalization).
   const runtimeType = adapter.runtimeType || adapter.name;
 
+  if (memoryFrom) {
+    const capability = await client.get('/api/registry/install/memory-handoff');
+    if (capability?.installTimeMemoryHandoff !== true) {
+      throw new Error('Server does not support install-time memory handoff; upgrade the server before attaching');
+    }
+  }
+
   // Idempotent publish — already-published is expected and fine. Install will
   // surface the real error if the manifest is truly unusable.
   try {
@@ -1010,7 +1016,9 @@ export const performAttach = async ({
   // on config.environment so cross-driver implementations can realize it
   // server-side without re-reading the user's file.
   const installResult = await client.post('/api/registry/install', {
-    ...(memoryFrom ? { resumeExisting: true } : {}),
+    ...(memoryFrom ? {
+      resumeExisting: true, memoryFrom: { agentName: memoryFrom, instanceId: memoryInstance },
+    } : {}),
     agentName,
     podId,
     displayName: displayName || agentName,
@@ -1034,10 +1042,8 @@ export const performAttach = async ({
   const instanceId = installation.instanceId || 'default';
 
   if (memoryFrom) {
-    const memoryCopy = await copyHandoffMemory(client, {
-      sourceAgentName: memoryFrom, sourceInstanceId: memoryInstance,
-      targetAgentName: installation.agentName, targetInstanceId: instanceId,
-    });
+    const memoryCopy = installResult.memoryCopy;
+    if (!memoryCopy) throw new Error('Server does not support install-time memory handoff; upgrade the server before attaching');
     log(memoryCopy.reason === 'source-empty'
       ? 'hosted agent has no long-term memory to copy'
       : 'hosted long-term memory is present in the local agent');

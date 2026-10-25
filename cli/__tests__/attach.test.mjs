@@ -378,7 +378,8 @@ const makeClient = ({ publishOk = true, runtimeToken = null } = {}) => {
     }
     throw new Error(`unexpected POST to ${route}`);
   });
-  return { post, get: jest.fn() };
+  return { post, get: jest.fn(async (route) => (route === '/api/registry/install/memory-handoff'
+    ? { installTimeMemoryHandoff: true } : undefined)) };
 };
 
 describe('performAttach', () => {
@@ -494,45 +495,50 @@ describe('performAttach', () => {
     );
   });
 
-  test('attach copies hosted memory before returning the local runnable token', async () => {
+  test('attach sends the handoff in the install request and consumes its result', async () => {
     const client = makeClient({ runtimeToken: 'cm_agent_local' });
-    const get = client.get;
-    client.get = jest.fn(async (route) => {
-      if (route === '/api/agent-memory/hosted/source-1/editable') return { sections: { long_term: { content: 'remember X' } } };
-      if (route === '/api/agent-memory/local/default/editable') return { sections: { long_term: { content: '', updatedAt: null, visibility: 'private' } } };
-      return get(route);
+    const post = client.post;
+    client.post = jest.fn(async (route, body) => {
+      const result = await post(route, body);
+      return route === '/api/registry/install' ? { ...result, memoryCopy: { copied: true } } : result;
     });
-    client.patch = jest.fn().mockResolvedValue({});
     const result = await performAttach({ client, adapterName: 'stub', agentName: 'local', podId: 'pod-1',
       memoryFrom: 'hosted', memoryInstance: 'source-1' });
     expect(result.runtimeToken).toBe('cm_agent_local');
-    expect(client.post.mock.calls.find(([route]) => route === '/api/registry/install')[1].resumeExisting).toBe(true);
-    expect(client.patch).toHaveBeenCalledWith('/api/agent-memory/local/default/editable/long_term',
-      { copyFrom: { agentName: 'hosted', instanceId: 'source-1' }, expectedUpdatedAt: null });
+    expect(client.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
+      resumeExisting: true, memoryFrom: { agentName: 'hosted', instanceId: 'source-1' },
+    }));
+    expect(client.get.mock.calls.some(([route]) => route.startsWith('/api/agent-memory'))).toBe(false);
   });
 
-  test('a refused memory copy preserves the saved token; a safe retry can rotate and complete', async () => {
-    const existing = { agentName: 'local', instanceId: 'default', podId: 'pod-1', runtimeToken: 'cm_agent_old', adapter: 'stub' };
-    saveAgentToken('local', existing);
+  test.each([undefined, {}, { installTimeMemoryHandoff: false }])('an older server refuses before publish or install: %j', async (capability) => {
     const client = makeClient();
-    const get = client.get;
-    let targetContent = 'independent note';
-    client.get = jest.fn(async (route) => {
-      if (route === '/api/agent-memory/hosted/default/editable') return { sections: { long_term: { content: 'remember X' } } };
-      if (route === '/api/agent-memory/local/default/editable') return { sections: { long_term: { content: targetContent, visibility: 'private', updatedAt: null } } };
-      return get(route);
+    client.get.mockResolvedValue(capability);
+    await expect(performAttach({ client, adapterName: 'stub', agentName: 'local', podId: 'pod-1', memoryFrom: 'hosted' }))
+      .rejects.toThrow(/upgrade the server/);
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
+  test('a missing capability endpoint refuses before publish or install', async () => {
+    const client = makeClient();
+    client.get.mockRejectedValue(new Error('Not found'));
+    await expect(performAttach({ client, adapterName: 'stub', agentName: 'local', podId: 'pod-1', memoryFrom: 'hosted' }))
+      .rejects.toThrow('Not found');
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
+  test('a refused install-time copy preserves the saved token and never mints another', async () => {
+    saveAgentToken('local', { agentName: 'local', runtimeToken: 'cm_agent_old' });
+    const client = makeClient();
+    const post = client.post;
+    client.post = jest.fn(async (route, body) => {
+      if (route === '/api/registry/install') throw new Error('Local agent already has different memory');
+      return post(route, body);
     });
-    client.patch = jest.fn().mockResolvedValue({});
-    const args = { client, adapterName: 'stub', agentName: 'local', podId: 'pod-1', memoryFrom: 'hosted' };
-    await expect(performAttach(args)).rejects.toThrow(/different memory/);
+    await expect(performAttach({ client, adapterName: 'stub', agentName: 'local', podId: 'pod-1', memoryFrom: 'hosted' }))
+      .rejects.toThrow(/different memory/);
     expect(loadAgentToken('local').runtimeToken).toBe('cm_agent_old');
     expect(client.post.mock.calls.some(([route]) => route.endsWith('/runtime-tokens'))).toBe(false);
-    targetContent = '';
-    const result = await performAttach(args);
-    expect(result.runtimeToken).toBe('cm_agent_from_tokens_route');
-    expect(client.patch.mock.invocationCallOrder[0]).toBeLessThan(client.post.mock.invocationCallOrder.at(-1));
-    saveAgentToken('local', { ...existing, runtimeToken: result.runtimeToken });
-    expect(loadAgentToken('local').runtimeToken).toBe('cm_agent_from_tokens_route');
   });
 
   test('omits config.wakeOnMessage by default (ADR-018 ambient wake is opt-in)', async () => {
