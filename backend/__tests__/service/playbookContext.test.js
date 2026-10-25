@@ -63,3 +63,13 @@ test('metadata aliases cannot bind a native role to a different posting identity
   const context = await loadPlaybookContext(String(pod._id));
   expect(context.members.find((m) => m.userId === String(agent._id)).runtime).toBeUndefined();
 });
+
+test('upper-case pod IDs preserve grants and cannot hide a lower-case bridge gate', async () => {
+  await grant();
+  const id = String(pod._id).toUpperCase();
+  expect((await loadPlaybookContext(id)).tools).toHaveLength(1);
+  const Integration = require('../../models/Integration');
+  await Integration.create({ type: 'slack', scope: 'user', status: 'connected', createdBy: human._id,
+    config: { gates: { [String(pod._id)]: { enabled: true, since: new Date() } } } });
+  expect((await loadPlaybookContext(id)).grantPodRefusal).toBe('pod_bridged');
+});

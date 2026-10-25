@@ -13,6 +13,7 @@ import type { PlaybookContext, PlaybookMember } from './preflight';
 export const loadPlaybookContext = async (podId: string): Promise<PlaybookContext> => {
   const pod = await Pod.findById(podId).select('members').lean();
   if (!pod) throw new PlaybookError('pod_not_found', 'Pod not found', 404);
+  podId = String(pod._id);
   const ids = Array.from(new Set((pod.members || []).map(String)));
   const [users, installations, grants, grantPodRefusal] = await Promise.all([
     User.find({ _id: { $in: ids } }).select('username isBot botType botMetadata').lean(),

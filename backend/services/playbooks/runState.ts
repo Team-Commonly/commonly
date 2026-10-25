@@ -101,7 +101,7 @@ export const startPlaybookRun = async (options: {
     if (installation.status !== 'active') throw new PlaybookError('playbook_off', 'Turn this playbook On first');
     const bound = await bindCurrentRun(podId, installation, installable);
     const config = playbookConfig(installation);
-    const result = await insertRow({ podId, source: 'playbook', sourceRef: `playbook:${installationId}:${triggerKey}`,
+    const result = await insertRow({ podId, source: 'playbook', sourceRef: `playbook:${installation._id}:${triggerKey}`,
       title: 'Playbook run', guard: 'kernel', status: 'claimed', claimedBy: String(config.onBy),
       assignee: bound.members.size ? (await User.findById(config.onBy).select('username').lean())?.username : null,
       notes: `${installable.name}\n${label}\n\nInput:\n${input}`, updates: [update(label)],

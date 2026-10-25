@@ -33,12 +33,14 @@ const complete = (task) => completeTaskWithRevision({ podId: pod._id, taskId: ta
 test.each([false, true])('duplicate trigger and advancement converge under legacy=%s indexes', async (legacy) => {
   if (legacy) await Task.collection.createIndex({ podId: 1, sourceRef: 1 }, { unique: true,
     partialFilterExpression: { sourceRef: { $type: 'string' } }, name: 'playbook_test_legacy_ref' });
+  options.installationId = options.installationId.toUpperCase();
   const fired = await Promise.allSettled([startPlaybookRun(options), startPlaybookRun(options)]);
   const accepted = fired.filter((r) => r.status === 'fulfilled');
   expect(accepted.length).toBeGreaterThan(0);
   expect(await Task.countDocuments({ parentTask: null })).toBe(1);
   expect(await Task.countDocuments({ parentTask: { $ne: null } })).toBe(1);
   const { run, step } = accepted[0].value;
+  expect(run.sourceRef).toContain(`playbook:${String(installation._id)}:`);
   const replay = await startPlaybookRun(options);
   expect(String(replay.run._id)).toBe(String(run._id));
   await complete(step);

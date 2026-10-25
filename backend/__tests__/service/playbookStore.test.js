@@ -53,7 +53,8 @@ test('bots cannot create, and an open run prevents rebinding ownership', async (
   const row = await create(); process.env.PLAYBOOKS_ENABLED = 'true';
   await Task.create({ podId: pod._id, taskId: 'TASK-001', taskNum: 1, title: 'Run', source: 'playbook',
     guard: 'kernel', sourceRef: `playbook:${row._id}:manual:test` });
-  await expect(toggle(row)).rejects.toMatchObject({ code: 'run_open' });
+  await expect(setPlaybookOn(String(pod._id), String(user._id), String(row._id).toUpperCase(),
+    { owner: String(user._id) }, true)).rejects.toMatchObject({ code: 'run_open' });
   expect((await Installation.findById(row._id)).status).toBe('paused');
 });
 test('connector install refuses a playbook before creating a projection', async () => {
@@ -77,4 +78,17 @@ test('one installation lease serializes concurrent lifecycle operations and rele
   await expect(withPlaybookLock(String(pod._id), String(row._id), async () => { throw new Error('failed'); }))
     .rejects.toThrow('failed');
   expect((await Installation.findById(row._id)).claimId).toBeUndefined();
+});
+
+test('failed draft creation removes only its own manifest and source asset', async () => {
+  const existing = await create();
+  const beforeBooks = await Installable.find().lean();
+  const PodAsset = require('../../models/PodAsset');
+  const beforeAssets = await PodAsset.find().lean();
+  const failed = jest.spyOn(Installation, 'create').mockRejectedValueOnce(new Error('installation write failed'));
+  try { await expect(create()).rejects.toThrow('installation write failed'); }
+  finally { failed.mockRestore(); }
+  expect(await Installable.find().lean()).toEqual(beforeBooks);
+  expect(await PodAsset.find().lean()).toEqual(beforeAssets);
+  expect((await Installation.findById(existing._id)).status).toBe('paused');
 });
