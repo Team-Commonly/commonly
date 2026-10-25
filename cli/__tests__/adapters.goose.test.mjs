@@ -1,8 +1,9 @@
 import { EventEmitter } from 'node:events';
 import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { jest } from '@jest/globals';
 import goose, {
-  TESTED_GOOSE_VERSIONS, assertNoSandboxDeclared, extensionArgs, readGooseStream,
+  TESTED_GOOSE_VERSIONS, assertSandboxSupported, extensionArgs, readGooseStream,
 } from '../src/lib/adapters/goose.js';
 import { commonlyMcpServer } from '../src/lib/default-environment.js';
 
@@ -67,12 +68,12 @@ test('private Goose turn isolates its home, takes Commonly MCP through a token f
   expect(existsSync(launched.options.env.HOME)).toBe(false);
 });
 
-test.each(['public', 'internal'])('refuses %s trust at the adapter gate before spawning', async (trust) => {
+test.each(['public', 'internal'])('refuses %s trust without an explicit provider before spawning', async (trust) => {
   const ctx = baseCtx();
   ctx.environment.sandbox = { trust };
   const spawnImpl = jest.fn();
   await expect(goose.spawn('hello', { ...ctx, _spawnImpl: spawnImpl }))
-    .rejects.toThrow(/public-trust seats are not supported/);
+    .rejects.toThrow(/public seats require an explicit provider/);
   expect(spawnImpl).not.toHaveBeenCalled();
 });
 
@@ -85,8 +86,44 @@ test.each(['workspace', 'bwrap'])('refuses %s confinement before spawning', asyn
   expect(spawnImpl).not.toHaveBeenCalled();
 });
 
+test.each([
+  [],
+  [{ name: 'other', transport: 'stdio', command: ['node', '/tmp/other.js'] }],
+  [commonlyMcpServer(), { name: 'other', transport: 'stdio', command: ['node', '/tmp/other.js'] }],
+  [{ name: 'commonly', transport: 'http', url: 'https://api.commonly.me/mcp' }],
+].map((servers) => [servers]))('public Goose rejects a noncanonical extension set before launch', (servers) => {
+  expect(() => extensionArgs(servers, { publicSeat: true })).toThrow(/only the Commonly/);
+});
+
+test.each(['none', 'container'])('public Goose refuses unsupported mode %s', (mode) => {
+  expect(() => assertSandboxSupported({ sandbox: { trust: 'public', mode } })).toThrow(/enforced sandbox/);
+});
+
+test('public Goose refuses a recognized source entry instead of granting its ancestor', () => {
+  const mcpReadDirectories = [];
+  expect(() => extensionArgs([{ name: 'commonly', transport: 'stdio',
+    command: [process.execPath, fileURLToPath(new URL('../../commonly-mcp/src/index.js', import.meta.url))],
+  }], { publicSeat: true, mcpReadDirectories })).toThrow(/absolute prepared entry/);
+  expect(mcpReadDirectories).toEqual([]);
+});
+
+test('public Goose refuses a restricted network declaration it cannot enforce', () => {
+  expect(() => assertSandboxSupported({ provider: {}, model: 'fixture',
+    sandbox: { trust: 'public', network: { policy: 'restricted' } },
+  })).toThrow(/restricted networking/);
+});
+
+test.each(['public', 'internal'])('Goose %s trust refuses extra host read paths', (trust) => {
+  const environment = { provider: {}, model: 'fixture',
+    sandbox: { trust, filesystem: { 'read-outside': ['/'] } } };
+  expect(() => assertSandboxSupported(environment)).toThrow(/read-outside/);
+  expect(() => assertSandboxSupported({ ...environment,
+    sandbox: { trust, filesystem: { 'read-outside': [] } },
+  })).not.toThrow();
+});
+
 test('none mode is allowed, and missing provider key fails before spawning', async () => {
-  expect(() => assertNoSandboxDeclared({ sandbox: { trust: 'private', mode: 'none' } })).not.toThrow();
+  expect(() => assertSandboxSupported({ sandbox: { trust: 'private', mode: 'none' } })).not.toThrow();
   const ctx = baseCtx();
   delete ctx.env.COMMONLY_LITELLM_KEY;
   const spawnImpl = jest.fn();
