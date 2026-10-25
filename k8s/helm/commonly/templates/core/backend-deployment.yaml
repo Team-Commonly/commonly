@@ -290,12 +290,6 @@ spec:
               name: api-keys
               key: openai-api-key
               optional: true
-        - name: ANTHROPIC_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: anthropic-api-key
-              optional: true
 
         {{- if .Values.discord.enabled }}
 

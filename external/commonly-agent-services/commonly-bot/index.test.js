@@ -172,3 +172,22 @@ test('failed social rewrite names its feature/model and still posts heuristic co
   `], { cwd: __dirname, env, encoding: 'utf8' });
   assert.equal(result, '');
 });
+
+test('chart and dynamic gateways no longer consume a direct Anthropic key or route', () => {
+  const root = path.resolve(__dirname, '../../..');
+  const chart = path.join(root, 'k8s/helm/commonly');
+  const routes = fs.readFileSync(path.join(chart, 'templates/configmaps/litellm-config.yaml'), 'utf8');
+  assert.doesNotMatch(routes, /model_name:\s*claude-|model:\s*anthropic\//i);
+  assert.doesNotMatch(routes, /ANTHROPIC_API_KEY|["']claude-[^"']*["']/);
+  for (const file of [
+    'templates/core/backend-deployment.yaml',
+    'templates/ops/ops-runner-deployment.yaml',
+    'templates/agents/litellm-deployment.yaml',
+    'templates/agents/clawdbot-deployment.yaml',
+    'templates/secrets/local-secrets.yaml',
+    'values-local.yaml',
+  ]) {
+    assert.doesNotMatch(fs.readFileSync(path.join(chart, file), 'utf8'), /ANTHROPIC_API_KEY|anthropic-api-key|anthropicApiKey/);
+  }
+  assert.doesNotMatch(fs.readFileSync(path.join(root, 'backend/services/gatewayProvisionerServiceK8s.ts'), 'utf8'), /ANTHROPIC_API_KEY|anthropic-api-key/);
+});
