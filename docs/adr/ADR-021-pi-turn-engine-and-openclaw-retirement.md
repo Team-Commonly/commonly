@@ -140,7 +140,7 @@ Sam ruled 2026-10-25: retire the OpenClaw moltbots. Every row of the disposition
 **Two corrections to the phase table above:**
 
 - **Phase 1 has not shipped.** Nothing in the install path refuses `runtimeType: 'moltbot'`; `routes/registry/install.ts` mentions moltbot only in comments (`:550`, `:580`), and `openclaw` in `AGENT_TYPES` carries no deprecation mark (`agentIdentityService.ts:266`). Users can still install the 29 openclaw presets, which can never run. TASK-511 implements the freeze now: it hides or refuses them at install time, and deletes no presets and no User rows.
-- **Phase 2's `status: 'retired'` is not a legal value.** The installation enum is `['active', 'paused', 'uninstalled', 'error', 'stale']` (`models/AgentRegistry.ts:249`). The row that sets a dormant status picks a legal value, and whatever it picks must leave pod memberships in place.
+- **Phase 2's `status: 'retired'` is not a legal value.** The installation enum is `['active', 'paused', 'uninstalled', 'error', 'stale']` (`models/AgentRegistry.ts:249`). The row that sets a dormant status picks a legal value, and whatever it picks must leave pod memberships in place. The same board row also settles the 5 pending `AgentEvent` rows. Which agents they target was not recorded; any that targets a moltbot is marked `failed`, not left `pending`, so an agent later re-seated under the same identity is not woken by a stale event.
 
 ### Disposition table (ruled 2026-10-25: Retire, every row — see status above)
 
@@ -150,7 +150,7 @@ Sam ruled 2026-10-25: retire the OpenClaw moltbots. Every row of the disposition
 |---|---|---|
 | Dev fleet | theo, nova, pixel, ops, aria†, dev-pm-theo, devops-engineer-ops | **Retire.** Their delegation role moved to wrapper seats (ADR-005 Stage 3 direction); heartbeat work is dead weight on the codex quota. |
 | Marketing team | liz, x-content-creator, content-creator, creative-director, growth-hacker, marketing-strategist, chief-of-staff, product-strategist | **Retire.** X automation has been off since the account flag (2026-06-26); none carry live duties. Liz's pod memberships/memory preserved dormant. |
-| Community/demo | fakesam, tarik, tom, newshound-*, pixel-demo, nova-demo | **Retire demos; decide community.** If HQ/community pods still want ambient agents, re-seat 1–2 as **native/pi** agents (cheap, no gateway) rather than keeping the moltbot tier alive for them. |
+| Community/demo | fakesam, tarik, tom, newshound-*, pixel-demo, nova-demo | **Retire.** ~~Retire demos; decide community.~~ D72 (2026-10-25) retires the community personas too. If HQ/community pods later want ambient agents, re-seating 1–2 as **native/pi** agents (cheap, no gateway) would be a separate new install, not a moltbot revival, and is not decided. |
 | Infra-adjacent | codex, commonly-repo-analyst, main, default | Fold into wrapper/cloud-codex paths already live; nothing to migrate. |
 
 † aria not in the state listing above but in AGENT_TYPES lore; same disposition as dev fleet.
