@@ -14,6 +14,8 @@ import {
 } from '../src/adapters/acp-launch.js';
 import { RunFailure } from '../src/failures.js';
 import { startFakeProvider } from '../test-support/fake-provider.js';
+import { recordTrace } from '../test-support/record-trace.js';
+import { after } from 'node:test';
 
 const GOOSE = process.env.SEATS_GOOSE_BIN || join(homedir(), '.commonly', 'goose-1.54.0', 'goose');
 const OPENCODE = process.env.SEATS_OPENCODE_BIN
@@ -73,14 +75,29 @@ const withProvider = async (fn) => {
   }
 };
 
-const runCtx = ({ binary, recorder, home, cwd, events, ...extra }) => ({
+// Every run writes a real record-v1 store, so a real agent's stream meets the
+// strict writer: an entry the record would refuse fails the test.
+const STORE_ROOT = mkdtempSync(join(tmpdir(), 'seats-acp-real-store-'));
+const records = [];
+
+const runCtx = ({ binary, recorder, home, cwd, events, ...extra }) => {
+  const record = recordTrace({ root: STORE_ROOT, secrets: [KEY] });
+  records.push(record);
+  return {
   _binaryPath: binary,
   cwd,
   env: { PATH: '/usr/bin:/bin', HOME: home },
   provider: { baseURL: recorder.baseURL, apiKey: KEY, model: 'fake-model' },
-  trace: { emit: (type, data) => events.push({ type, data }) },
+  trace: { emit: (type, data) => { record.trace.emit(type, data); events.push({ type, data }); } },
   timeoutMs: 120000,
   ...extra,
+  };
+};
+
+after(() => {
+  try {
+    for (const record of records) assert.equal(record.verify()?.ok, true, 'every real run left a verifiable record');
+  } finally { rmSync(STORE_ROOT, { recursive: true, force: true }); }
 });
 
 const chatRequests = (recorder) => recorder.bodies.filter((body) => Array.isArray(body.messages));

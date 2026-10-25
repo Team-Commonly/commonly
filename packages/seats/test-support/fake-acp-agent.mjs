@@ -7,6 +7,7 @@
  *   FAKE_ACP_VERSION   protocolVersion to answer initialize with (default 1)
  *   FAKE_ACP_CAPS      comma list of `resume`, `load`
  *   FAKE_ACP_FAIL      comma list of `resume`, `load` to answer with an error
+ *   FAKE_ACP_FAIL_CODE that error's code as JSON (default -32002); `absent` omits it
  *
  * Turn behaviour comes from a directive in the prompt text:
  *   (none)                    thought, tool call + update, plan, usage, "PONG"
@@ -23,6 +24,7 @@
  *   [[hang-permission]]       ask permission and wait; on cancel answer cancelled
  *   [[rpc-error:CODE:MSG]]    answer the prompt with a JSON-RPC error
  *   [[echo-session]]          reply SESSION:<sessionId>
+ *   [[bad-usage]]             a usage_update with a string `used` and a negative `size`, then OK
  *   [[grandchild:THEN]]       start a grandchild that ignores SIGTERM, log its pid
  *                             ({event:'grandchild', pid}), then THEN: `hang`
  *                             (answers cancel), `reply` (end_turn) or `exit` (exit 0)
@@ -38,6 +40,11 @@ const log = (entry) => { if (process.env.FAKE_ACP_LOG) appendFileSync(process.en
 const write = (message) => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`);
 const caps = new Set(String(process.env.FAKE_ACP_CAPS || '').split(',').filter(Boolean));
 const fails = new Set(String(process.env.FAKE_ACP_FAIL || '').split(',').filter(Boolean));
+const failError = () => {
+  const raw = process.env.FAKE_ACP_FAIL_CODE;
+  if (raw === 'absent') return { message: 'Resource not found' };
+  return { code: raw === undefined ? -32002 : JSON.parse(raw), message: 'Resource not found' };
+};
 
 let nextId = 1;
 const waiting = new Map();
@@ -63,7 +70,7 @@ const ALLOW_ONLY = [
 ];
 
 const permission = (sessionId, options) => ask('session/request_permission', {
-  sessionId, toolCall: { toolCallId: 'tc-1', title: 'Edit file', kind: 'edit' }, options,
+  sessionId, toolCall: { toolCallId: 'tc-1', title: process.env.FAKE_ACP_PERMISSION_TITLE || 'Edit file', kind: 'edit' }, options,
 });
 
 const runPrompt = async (id, { sessionId, prompt }) => {
@@ -74,6 +81,11 @@ const runPrompt = async (id, { sessionId, prompt }) => {
   switch (kind) {
     case 'reply': chunk(sessionId, arg); return answer('end_turn');
     case 'stop': return answer(arg);
+    case 'bad-usage':
+      update(sessionId, { sessionUpdate: 'usage_update', used: '42', size: -1 });
+      update(sessionId, { sessionUpdate: 'usage_update', used: 1.5, size: 1000 });
+      chunk(sessionId, 'OK');
+      return answer('end_turn');
     case 'echo-session': chunk(sessionId, `SESSION:${sessionId}`); return answer('end_turn');
     case 'permission':
     case 'permission-noreject': {
@@ -180,10 +192,10 @@ const handle = (message) => {
       });
     case 'session/new': return write({ id, result: { sessionId: 'sess-new-1' } });
     case 'session/resume':
-      if (fails.has('resume')) return write({ id, error: { code: -32002, message: 'Resource not found' } });
+      if (fails.has('resume')) return write({ id, error: failError() });
       return write({ id, result: {} });
     case 'session/load':
-      if (fails.has('load')) return write({ id, error: { code: -32002, message: 'Resource not found' } });
+      if (fails.has('load')) return write({ id, error: failError() });
       chunk(params.sessionId, 'REPLAYED');
       return write({ id, result: {} });
     case 'session/prompt': return runPrompt(id, params);

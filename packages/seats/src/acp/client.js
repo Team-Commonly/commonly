@@ -113,8 +113,15 @@ export const createAcpClient = ({
       return;
     }
     const { resolve, reject, method } = pending.get(message.id);
+    // JSON-RPC 2.0: an error is an object whose code is an integer. Anything
+    // else is a broken answer, not an error the adapter can classify, and it
+    // fails every pending request with it.
+    if (message.error != null && (!isObject(message.error) || !Number.isInteger(message.error.code))) {
+      protocolError(`agent answered ${method} with an error whose code is not an integer: ${JSON.stringify(message.error?.code ?? null).slice(0, 40)}`);
+      return;
+    }
     pending.delete(message.id);
-    if (message.error) reject(new AcpRpcError(method, message.error));
+    if (message.error != null) reject(new AcpRpcError(method, message.error));
     else resolve(message.result);
   };
 

@@ -11,7 +11,7 @@ import {
   launchGoose, launchOpencode, readGooseReplyFailure, acpGoose, acpOpencode,
 } from '../src/adapters/acp-launch.js';
 import { RunFailure, runFailure } from '../src/failures.js';
-import { isEventType } from '../src/trace/events.js';
+import { recordTrace } from '../test-support/record-trace.js';
 import { startFakeProvider } from '../test-support/fake-provider.js';
 
 const AGENT = fileURLToPath(new URL('../test-support/fake-acp-agent.mjs', import.meta.url));
@@ -44,19 +44,15 @@ const harness = ({ env = {}, ...options } = {}) => {
     },
     ...options,
   });
-  const events = [];
-  const trace = {
-    emit(type, data) {
-      assert.ok(isEventType(type), `unknown trace type ${type}`);
-      events.push({ type, data });
-    },
-  };
+  // Every emit goes through a real record-v1 store: the strict writer.
+  const record = recordTrace({ root: join(dir, 'store'), secrets: [KEY] });
+  const { events, trace } = record;
   const received = () => (existsSync(logPath)
     ? readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line)) : []);
   const methods = () => received().map((entry) => entry.method || entry.event || (entry.result !== undefined ? 'response' : 'error'));
   const ctx = (extra = {}) => ({ trace, provider: { baseURL: 'http://127.0.0.1:9/v1', apiKey: KEY, model: 'm' }, ...extra });
   const done = () => rmSync(dir, { recursive: true, force: true });
-  return { adapter, events, received, methods, ctx, state, done };
+  return { adapter, events, received, methods, ctx, state, done, record };
 };
 
 const types = (events) => events.map((event) => event.type);
@@ -194,8 +190,16 @@ test('permission without a hook: reject_once if offered, otherwise cancelled', a
     const rejected = await h.adapter.spawn('[[permission]]', h.ctx());
     assert.equal(rejected.text, 'PERM:{"outcome":"selected","optionId":"reject"}');
     const requested = h.events.find((e) => e.type === 'permission.requested').data;
-    assert.deepEqual(requested, { toolCallId: 'tc-1', options: [{ optionId: 'allow', kind: 'allow_once' }, { optionId: 'reject', kind: 'reject_once' }] });
-    assert.deepEqual(h.events.find((e) => e.type === 'permission.decided').data, { outcome: 'selected', optionId: 'reject', kind: 'reject_once' });
+    assert.deepEqual(requested, {
+      toolCallId: 'tc-1',
+      options: [{ optionId: 'allow', kind: 'allow_once' }, { optionId: 'reject', kind: 'reject_once' }],
+      question: 'edit: Edit file',
+      askedOf: { id: 'policy', role: 'policy' },
+    });
+    assert.deepEqual(h.events.find((e) => e.type === 'permission.decided').data, {
+      outcome: 'selected', optionId: 'reject', kind: 'reject_once', toolCallId: 'tc-1',
+      rule: { list: 'default', pattern: null }, decidedBy: 'policy', decidedByRole: 'policy',
+    });
 
     const cancelled = await h.adapter.spawn('[[permission-noreject]]', h.ctx());
     assert.equal(cancelled.text, 'PERM:{"outcome":"cancelled"}');
@@ -221,6 +225,75 @@ test('permission with a hook: its answer is used only when it names an offered o
     assert.equal(thrown.text, 'PERM:{"outcome":"selected","optionId":"reject"}');
     const declined = await h.adapter.spawn('[[permission]]', h.ctx({ decidePermission: async () => ({ outcome: 'cancelled' }) }));
     assert.equal(declined.text, 'PERM:{"outcome":"cancelled"}');
+    // A hook that fails is recorded as the policy deciding, with approval failed.
+    const decided = h.events.filter((e) => e.type === 'permission.decided').map((e) => e.data);
+    assert.deepEqual(decided.map((d) => [d.rule.list, d.approval, d.decidedBy]), [
+      ['ask', 'approved', null], ['default', 'failed', 'policy'], ['default', 'failed', 'policy'], ['ask', 'rejected', null],
+    ]);
+    assert.equal(h.record.verify().ok, true);
+  } finally { h.done(); }
+});
+
+test('permission records name the approver, the decider and the grant (record-v1)', async () => {
+  const h = harness();
+  try {
+    const approver = { id: 'user-ben', role: 'credential-owner' };
+    await h.adapter.spawn('[[permission]]', h.ctx({
+      askedOf: approver,
+      grantId: 'g-42',
+      decidePermission: async () => ({
+        outcome: 'selected', optionId: 'allow', decidedBy: 'user-ben', decidedByRole: 'credential-owner',
+      }),
+    }));
+    const requested = h.events.find((e) => e.type === 'permission.requested').data;
+    assert.deepEqual(requested.askedOf, approver);
+    assert.equal(requested.grantId, 'g-42');
+    assert.equal(requested.question, 'edit: Edit file');
+    assert.deepEqual(h.events.find((e) => e.type === 'permission.decided').data, {
+      outcome: 'selected', optionId: 'allow', kind: 'allow_once', toolCallId: 'tc-1',
+      rule: { list: 'ask', pattern: null }, approval: 'approved',
+      decidedBy: 'user-ben', decidedByRole: 'credential-owner', grantId: 'g-42',
+    });
+    // The written record: the decision's actor is the human who decided.
+    const lines = h.record.lines();
+    assert.equal(lines.find((l) => l.kind === 'permission.decided').actor.id, 'user-ben');
+    assert.equal(h.record.verify().ok, true);
+  } finally { h.done(); }
+});
+
+test('an approver that is not an id token, or a decider that names nobody valid, is never recorded as a person', async () => {
+  const h = harness();
+  try {
+    await h.adapter.spawn('[[permission]]', h.ctx({
+      askedOf: { id: 'Ben Smith', role: 'credential-owner' },
+      grantId: 'g-7',
+      decidePermission: async () => ({ outcome: 'selected', optionId: 'allow', decidedBy: 'Ben Smith', decidedByRole: 'boss' }),
+    }));
+    assert.deepEqual(h.events.find((e) => e.type === 'permission.requested').data.askedOf, { id: 'grant:g-7', role: 'policy' });
+    const decided = h.events.find((e) => e.type === 'permission.decided').data;
+    assert.equal(decided.decidedBy, null);
+    assert.equal(decided.decidedByRole, null);
+  } finally { h.done(); }
+});
+
+test('the question is agent text: credentials are scrubbed out of it and it stays short', async () => {
+  const h = harness({ env: { FAKE_ACP_PERMISSION_TITLE: `Upload with key ${KEY} ${'x'.repeat(400)}` } });
+  try {
+    await h.adapter.spawn('[[permission]]', h.ctx());
+    const { question } = h.events.find((e) => e.type === 'permission.requested').data;
+    assert.ok(!question.includes(KEY), question);
+    assert.match(question, /^edit: Upload with key \[redacted\]/);
+    assert.ok(question.length <= 200);
+  } finally { h.done(); }
+});
+
+test('a decider that records its own permission entries is not double-recorded', async () => {
+  const h = harness();
+  try {
+    await h.adapter.spawn('[[permission]]', h.ctx({
+      permissionsRecordedByDecider: true, decidePermission: async () => ({ outcome: 'selected', optionId: 'allow' }),
+    }));
+    assert.ok(!h.events.some((e) => e.type.startsWith('permission.')));
   } finally { h.done(); }
 });
 
@@ -292,7 +365,10 @@ test('abort answers a pending permission request cancelled before the turn ends'
     assert.deepEqual(answer.outcome, { outcome: 'cancelled' });
     const order = h.methods();
     assert.ok(order.indexOf('response') < order.indexOf('session/cancel'), `permission answered before cancel: ${order}`);
-    assert.deepEqual(h.events.find((e) => e.type === 'permission.decided').data, { outcome: 'cancelled', optionId: undefined, kind: undefined });
+    assert.deepEqual(h.events.find((e) => e.type === 'permission.decided').data, {
+      outcome: 'cancelled', toolCallId: 'tc-1', rule: { list: 'default', pattern: null },
+      approval: 'aborted', decidedBy: 'policy', decidedByRole: 'policy',
+    });
   } finally { h.done(); }
 });
 
@@ -507,6 +583,45 @@ test('an agent that exits mid-turn or ends normally leaves no descendant behind'
   assert.equal(await grandchildOutlives('[[grandchild:reply]]', () => ({}), async (run) => {
     assert.equal((await run).text, 'SPAWNED');
   }), false);
+});
+
+test('a session error whose code is not an integer is a protocol failure, never a fallback', async () => {
+  for (const code of ['"NOT_FOUND"', 'absent', '1.5', 'null']) {
+    const h = harness({ env: { FAKE_ACP_CAPS: 'resume', FAKE_ACP_FAIL: 'resume', FAKE_ACP_FAIL_CODE: code } });
+    try {
+      const error = await rejectsKind(h.adapter.spawn('hi', h.ctx({ sessionId: 'sess-old' })), 'protocol');
+      assert.match(error.message, /session\/resume with an error whose code is not an integer/, code);
+      assert.ok(!h.events.some((e) => e.type === 'session.opened'), 'no fallback is recorded');
+      assert.equal(h.record.verify().ok, true);
+    } finally { h.done(); }
+  }
+});
+
+test('a prompt answered with a non-integer error code is a protocol failure', async () => {
+  const h = harness();
+  try {
+    await rejectsKind(h.adapter.spawn('[[rpc-error:oops:content policy]]', h.ctx()), 'protocol');
+  } finally { h.done(); }
+});
+
+test('context counts the record cannot hold are recorded as unknown, not refused', async () => {
+  const h = harness();
+  try {
+    const result = await h.adapter.spawn('[[bad-usage]]', h.ctx());
+    assert.equal(result.text, 'OK');
+    assert.equal(result.contextTokens, undefined);
+    const usage = h.events.filter((e) => e.type === 'usage').map((e) => [e.data.contextTokens, e.data.contextSize]);
+    assert.deepEqual(usage, [[null, null], [null, 1000]]);
+  } finally { h.done(); }
+});
+
+test('a trace writer that refuses an entry ends the run with its error instead of crashing', async () => {
+  const h = harness();
+  try {
+    const refusing = { emit(type) { if (type === 'tool.call') throw new Error('record: refused'); } };
+    const error = await h.adapter.spawn('hello', h.ctx({ trace: refusing })).then(() => null, (e) => e);
+    assert.match(String(error?.message), /record: refused/);
+  } finally { h.done(); }
 });
 
 const providerAttempts = (h) => h.received().filter((entry) => entry.event === 'provider-attempt').map((entry) => entry.status);

@@ -14,7 +14,8 @@ import { AcpRpcError, createAcpClient, DEFAULT_MAX_LINE_CHARS } from '../acp/cli
 import { RunFailure, runFailure } from '../failures.js';
 import { startProviderWatch } from '../provider-watch.js';
 import { traceOf } from '../trace/events.js';
-import { scrubAdapterFailure, spawnCredentials } from '../upstream-refusal.js';
+import { argsDigestOf, DECIDED_BY_ROLES, isUserId, policyActorId } from '../record/format.js';
+import { redactKnownCredentials, scrubAdapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
 export const ACP_PROTOCOL_VERSION = 1;
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
@@ -99,19 +100,40 @@ export const defaultPermissionDecision = (options = []) => {
   return reject ? { outcome: 'selected', optionId: reject.optionId } : { outcome: 'cancelled' };
 };
 
-/** A hook answer is used only when it names an option the agent offered. */
+/** A hook answer is used only when it names an option the agent offered; else null. */
 const checkedDecision = (decision, options) => {
   if (decision?.outcome === 'cancelled') return { outcome: 'cancelled' };
   if (decision?.outcome === 'selected' && options.some((option) => option?.optionId === decision.optionId)) {
     return { outcome: 'selected', optionId: decision.optionId };
   }
-  return defaultPermissionDecision(options);
+  return null;
+};
+
+/** How a permission ask pending at stop is answered: cancelled, as ACP requires. */
+const ABORTED_ANSWER = Object.freeze({ decision: Object.freeze({ outcome: 'cancelled' }), by: 'aborted' });
+
+const isAsker = (value) => value !== null && typeof value === 'object'
+  && isUserId(value.id) && DECIDED_BY_ROLES.includes(value.role);
+
+/**
+ * The record's human-readable ask: the tool call's kind and title, scrubbed of
+ * this spawn's credentials (it is agent text) and kept short.
+ */
+const questionOf = (toolCall, credentials) => {
+  const kind = typeof toolCall?.kind === 'string' && toolCall.kind ? toolCall.kind : 'tool';
+  const title = typeof toolCall?.title === 'string' ? toolCall.title.trim() : '';
+  const text = title ? `${kind}: ${title}` : `${kind} call`;
+  return redactKnownCredentials(text, credentials).slice(0, QUESTION_CHARS);
 };
 
 const abortFailure = (signal) => (signal?.reason instanceof RunFailure
   ? signal.reason : runFailure('cancelled', 'the run was aborted'));
 
 const textOf = (content) => (content?.type === 'text' && typeof content.text === 'string' ? content.text : '');
+
+const QUESTION_CHARS = 200;
+/** A context count the record accepts: an integer >= 0, else null (unknown). */
+const count = (value) => (Number.isInteger(value) && value >= 0 ? value : null);
 
 const usageFromPrompt = (usage) => ({
   inputTokens: usage.inputTokens ?? null,
@@ -148,14 +170,14 @@ const traceUpdate = (trace, update, turn) => {
       });
       return;
     case 'usage_update':
-      turn.contextTokens = Number.isFinite(update.used) ? update.used : turn.contextTokens;
+      turn.contextTokens = count(update.used) ?? turn.contextTokens;
       trace.emit('usage', {
         inputTokens: null,
         outputTokens: null,
         totalTokens: null,
         cost: update.cost ? { amount: update.cost.amount, currency: update.cost.currency } : null,
-        contextTokens: update.used ?? null,
-        contextSize: update.size ?? null,
+        contextTokens: count(update.used),
+        contextSize: count(update.size),
       });
       break;
     default:
@@ -166,6 +188,12 @@ const runTurn = ({
   name, launched, prompt, ctx, memoryPreamble, readReplyFailure, maxLineChars, timings, wire,
 }) => new Promise((resolveRun, rejectRun) => {
   const trace = traceOf(ctx);
+  // A trace writer that refuses an entry (record-v1's emit throws on data it
+  // cannot record) ends the run with that error; it never escapes into a
+  // stream handler, where it would crash the host instead.
+  const emit = (type, data) => {
+    try { trace.emit(type, data); } catch (error) { stop(error); }
+  };
   const credentials = acpCredentials(ctx, launched.env);
   const cwd = launched.cwd ?? ctx.cwd ?? process.cwd();
   const turn = { text: '', contextTokens: undefined };
@@ -200,38 +228,79 @@ const runTurn = ({
     });
   };
 
+  // Who decides, for the record. With a hook, the run's approver (ctx.askedOf)
+  // is asked; without one, or when the hook fails, the reject default is the
+  // policy deciding. A decider that writes its own permission entries (the
+  // valet's policy given a trace) sets ctx.permissionsRecordedByDecider.
+  const hasHook = typeof ctx.decidePermission === 'function';
+  const grantId = typeof ctx.grantId === 'string' && ctx.grantId ? ctx.grantId : undefined;
+  const policy = { id: policyActorId(grantId), role: 'policy' };
+  const recordPermissions = ctx.permissionsRecordedByDecider !== true;
+
+  /** Resolves { decision, by }: by is 'hook' (with its attribution), 'default', 'failed' or 'aborted'. */
   const decide = (params) => {
     const options = Array.isArray(params?.options) ? params.options : [];
-    if (stopping) return Promise.resolve({ outcome: 'cancelled' });
+    if (stopping) return Promise.resolve({ decision: { outcome: 'cancelled' }, by: 'aborted' });
     return new Promise((resolve) => {
-      const answer = (decision) => {
+      const answer = (result) => {
         if (!pendingPermissions.delete(answer)) return;
-        resolve(decision);
+        resolve(result);
       };
       pendingPermissions.add(answer);
-      const ask = typeof ctx.decidePermission === 'function'
-        ? Promise.resolve().then(() => ctx.decidePermission(params)) : Promise.resolve(null);
-      ask.then((decision) => answer(checkedDecision(decision, options)),
-        () => answer(defaultPermissionDecision(options)));
+      if (!hasHook) { answer({ decision: defaultPermissionDecision(options), by: 'default' }); return; }
+      Promise.resolve().then(() => ctx.decidePermission(params)).then((raw) => {
+        const decision = checkedDecision(raw, options);
+        if (!decision) { answer({ decision: defaultPermissionDecision(options), by: 'failed' }); return; }
+        answer({
+          decision,
+          by: 'hook',
+          decidedBy: isUserId(raw?.decidedBy) ? raw.decidedBy : null,
+          decidedByRole: DECIDED_BY_ROLES.includes(raw?.decidedByRole) ? raw.decidedByRole : null,
+        });
+      }, () => answer({ decision: defaultPermissionDecision(options), by: 'failed' }));
     });
   };
 
   const onRequest = async (method, params) => {
     if (method !== 'session/request_permission') return undefined;
     const options = Array.isArray(params?.options) ? params.options : [];
-    trace.emit('permission.requested', {
-      toolCallId: params?.toolCall?.toolCallId,
-      options: options.map((option) => ({ optionId: option?.optionId, kind: option?.kind })),
-    });
-    const outcome = await decide(params);
-    const kind = options.find((option) => option?.optionId === outcome.optionId)?.kind;
-    trace.emit('permission.decided', { outcome: outcome.outcome, optionId: outcome.optionId, kind });
-    return { outcome };
+    const toolCall = params?.toolCall || {};
+    const toolCallId = typeof toolCall.toolCallId === 'string' ? toolCall.toolCallId : null;
+    const argsDigest = argsDigestOf(toolCall.rawInput);
+    const shared = { ...(grantId ? { grantId } : {}), ...(argsDigest ? { argsDigest } : {}) };
+    if (recordPermissions) {
+      emit('permission.requested', {
+        toolCallId,
+        options: options.map((option) => ({ optionId: option?.optionId, kind: option?.kind })),
+        question: questionOf(toolCall, credentials),
+        askedOf: hasHook && isAsker(ctx.askedOf) ? { id: ctx.askedOf.id, role: ctx.askedOf.role } : policy,
+        ...shared,
+      });
+    }
+    const result = await decide(params);
+    const { decision } = result;
+    if (recordPermissions) {
+      const kind = options.find((option) => option?.optionId === decision.optionId)?.kind;
+      const asked = result.by !== 'default';
+      const approval = { hook: kind?.startsWith('allow') ? 'approved' : 'rejected', failed: 'failed', aborted: 'aborted' }[result.by];
+      emit('permission.decided', {
+        outcome: decision.outcome,
+        ...(decision.optionId ? { optionId: decision.optionId, kind } : {}),
+        toolCallId,
+        rule: { list: result.by === 'hook' ? 'ask' : 'default', pattern: null },
+        ...(asked && hasHook ? { approval } : {}),
+        ...(result.by === 'hook'
+          ? { decidedBy: result.decidedBy, decidedByRole: result.decidedByRole }
+          : { decidedBy: 'policy', decidedByRole: 'policy' }),
+        ...shared,
+      });
+    }
+    return { outcome: decision };
   };
 
   const onNotification = (method, params) => {
     if (method !== 'session/update' || !sessionId || params?.sessionId !== sessionId) return;
-    traceUpdate(trace, params.update, turn);
+    traceUpdate({ emit }, params.update, turn);
   };
 
   const client = createAcpClient({
@@ -247,7 +316,7 @@ const runTurn = ({
   });
   child.once('exit', (code, signal) => {
     exitInfo = { code, signal };
-    trace.emit('process.exited', { code, signal });
+    emit('process.exited', { code, signal });
     resolveGone();
     const done = () => client.close(exitedFailure());
     if (child.stdout.readableEnded) { done(); return; }
@@ -266,7 +335,7 @@ const runTurn = ({
     if (stopping || settled) return;
     stopping = failure;
     if (pendingPermissions.size) {
-      for (const answer of [...pendingPermissions]) answer({ outcome: 'cancelled' });
+      for (const answer of [...pendingPermissions]) answer(ABORTED_ANSWER);
       // The answers are written a few microtasks later; let them reach the
       // agent before the cancel does, so it never sees a cancel with its
       // permission questions still open.
@@ -310,7 +379,7 @@ const runTurn = ({
       for (const way of ways) {
         try {
           await client.request(`session/${way}`, { ...base, sessionId: wanted });
-          trace.emit('session.opened', { method: way, sessionId: wanted });
+          emit('session.opened', { method: way, sessionId: wanted });
           return { id: wanted, fresh: false };
         } catch (error) {
           if (!(error instanceof AcpRpcError)) throw error;
@@ -322,7 +391,7 @@ const runTurn = ({
     if (typeof created?.sessionId !== 'string' || !created.sessionId) {
       throw runFailure('protocol', 'session/new returned no sessionId');
     }
-    trace.emit('session.opened', {
+    emit('session.opened', {
       method: 'new', sessionId: created.sessionId, ...(wanted ? { requestedSessionId: wanted, fallback } : {}),
     });
     return { id: created.sessionId, fresh: true };
@@ -342,10 +411,10 @@ const runTurn = ({
     const text = memoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: session.fresh });
     if (stopping) throw stopping;
     promptInFlight = call('session/prompt', { sessionId, prompt: [{ type: 'text', text }] });
-    trace.emit('turn.prompt_sent', { chars: text.length });
+    emit('turn.prompt_sent', { chars: text.length });
     const response = await promptInFlight;
     if (stopping) throw stopping;
-    if (response?.usage) trace.emit('usage', usageFromPrompt(response.usage));
+    if (response?.usage) emit('usage', usageFromPrompt(response.usage));
     const reason = response?.stopReason;
     if (reason === 'end_turn') {
       const replyFailure = readReplyFailure?.(turn.text, { credentials });
@@ -390,7 +459,7 @@ const runTurn = ({
     settled = true;
     clearTimeout(timer);
     ctx.signal?.removeEventListener('abort', onAbort);
-    for (const answer of [...pendingPermissions]) answer({ outcome: 'cancelled' });
+    for (const answer of [...pendingPermissions]) answer(ABORTED_ANSWER);
     await terminate();
     if (end.error) rejectRun(end.error); else resolveRun(end.result);
   });
