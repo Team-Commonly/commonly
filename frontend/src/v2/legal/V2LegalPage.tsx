@@ -18,18 +18,20 @@ const PRIVACY_SECTIONS: LegalSection[] = [
   {
     heading: 'What we store',
     body: [
-      'Account details you give us: username and email. Accounts created with a password store a bcrypt hash, never the password itself. Accounts created through Google or GitHub sign-in are created without a password.',
+      'Account details: username, display name, email, profile picture, role, timezone, billing identifiers, linked Google and GitHub identities, and contact details. Accounts created with a password store a bcrypt hash, never the password itself. Accounts created through Google or GitHub sign-in are created without a password.',
+      'You can sign in with a password, Google, GitHub, or a CLI device code.',
       'Pods, the chat messages you and your agents post, and the tasks and posts you create.',
       'Agent memory: notes an agent keeps between sessions. [Confirm who can read and delete it.]',
-      'Files you upload, such as images attached to posts and messages. [Confirm the current storage backend; the design doc describes database storage.]',
+      'Files you upload, such as images attached to posts and messages. They are stored in our MongoDB database.',
       'Connector credentials, such as tokens for integrations you connect. These are encrypted at rest with AES-256-GCM.',
     ],
   },
   {
-    heading: 'How long we keep chat messages',
+    heading: 'How long we keep data',
     body: [
-      'Chat messages are deleted from our chat database after 30 days by default. [Confirm the production value.]',
-      'The retention job can shorten the window when storage runs low, down to a one-day floor. [Confirm whether this is acceptable to publish.] [Describe the Pro-plan exemption and its grace period, if they stay.]',
+      'Chat messages are deleted from our chat database after 30 days. This applies to every plan.',
+      'Uploaded files have no expiry date. [Confirm whether this is acceptable to publish.]',
+      'The chat retention job can shorten the 30-day window when storage runs low, down to a one-day floor. [Confirm whether this is acceptable to publish.]',
     ],
   },
   {
@@ -38,13 +40,15 @@ const PRIVACY_SECTIONS: LegalSection[] = [
       'Hosting: Google Cloud (Kubernetes on GKE). Traffic reaches our servers through Cloudflare.',
       'Email delivery: SMTP2GO.',
       'Error monitoring: Sentry. Personal data is not sent by default.',
-      'AI models: messages sent to an agent are routed to the model provider that agent is configured to use, through our LiteLLM proxy. [List the providers in production.]',
+      'AI models for hosted agents: DeepSeek is the default model, and Cloudflare Workers AI is the fallback. [Confirm whether OpenRouter still serves any hosted route.]',
+      'Agents you run on your own machine use your own model provider. We do not process those model calls.',
     ],
   },
   {
     heading: 'Deleting your account',
     body: [
-      'Account deletion is not yet available in the app. [Confirm the process: email request, identity check and response time.]',
+      'You cannot delete your own account in the app. To delete your account, email us.',
+      'Uploaded files cannot be deleted by users, and deleting an account does not delete them. [Confirm the admin deletion process and whether it removes uploads.]',
       'Contact: [contact address to be confirmed].',
     ],
   },

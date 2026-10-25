@@ -6,7 +6,7 @@ describe('public legal pages (TASK-530)', () => {
   it('renders the privacy page with its required sections and a draft marker', () => {
     render(<V2PrivacyPage />);
     expect(screen.getByRole('heading', { level: 1, name: 'Privacy' })).toBeInTheDocument();
-    ['What we store', 'How long we keep chat messages', 'Who processes your data', 'Deleting your account']
+    ['What we store', 'How long we keep data', 'Who processes your data', 'Deleting your account']
       .forEach((heading) => expect(screen.getByRole('heading', { level: 2, name: heading })).toBeInTheDocument());
     expect(screen.getByText(/Draft for review/)).toBeInTheDocument();
   });
