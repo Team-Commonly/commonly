@@ -32,7 +32,8 @@ was in an earlier ADR"). That earlier ADR is ADR-016, which parks the idea, and 
 exist in the backend with **zero** v2 UI."
 
 **Ruling.** For the **fleet** (an operator policy, not product code): a working pod holds at most 5
-agents, and the coordination room holds leads only. For the **product**: there is **no hard cap**.
+agents, and the coordination room holds leads only ([`docs/agents/pod-size-and-goal.md`](../agents/pod-size-and-goal.md)).
+For the **product**: there is **no hard cap**.
 Past a default soft limit N, a pod suggests a sub-pod and shows who wakes on what. Goal, done
 condition and owner are first-class fields, not chat text. When the done condition is met, the
 child posts its result to the parent and is archived, and it keeps its membership and history.
