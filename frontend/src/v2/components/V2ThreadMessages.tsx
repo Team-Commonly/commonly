@@ -429,7 +429,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                     grouped={isGroupedWithPrevious(reply, renderedReplies[replyIndex - 1]?.message)}
                     insideThreadRoot={item.rootId}
                   />
-                  {afterMessage?.messageId === String(reply.id) && afterMessage.content}
+                  {afterMessage?.messageId === sourceId && afterMessage.content}
                   </React.Fragment>
                 ))}
                 <div className="v2-thread-replies__foot">

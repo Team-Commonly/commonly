@@ -1449,11 +1449,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     .map((agent) => buildAgentUsername(agent.agentName, agent.instanceId || 'default').toLowerCase()));
   const teammateMoment = soloHuman && !hasMore && !loading && !firstRunVisible
     ? teammateInviteMoment(messages, currentUserId || '', agentAuthorKeys, scoutKeys, scoutWorkspace) : null;
-  const teammateCard = teammateMoment ? <V2BringTeammate
-    key={`${pod._id}.${currentUserId}.${teammateMoment.source}`} podId={pod._id} podName={pod.name}
-    userId={currentUserId || ''} source={teammateMoment.source}
-    agentName={agentDisplayNames.get(teammateMoment.username.toLowerCase()) || teammateMoment.username}
-  /> : null;
+
+  const teammateSource = teammateMoment?.source || (scoutWorkspace ? 'scout-first-session' : 'first-agent-post');
 
   // Bot-bot agent-dm — used to choose the "X and Y haven't talked yet" empty
   // state and to phrase the read-only banner appropriately.
@@ -1776,7 +1773,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
 
         {firstTaskError && <div className="v2-chat__error" role="alert">{firstTaskError}</div>}
         <div className="v2-thread__transcript">
-          <V2ThreadMessages
+          <V2BringTeammate podId={pod._id} podName={pod.name} userId={currentUserId || ''}
+            source={teammateSource}
+            agentName={teammateMoment ? agentDisplayNames.get(teammateMoment.username.toLowerCase()) || teammateMoment.username : undefined}
+            enabled={Boolean(teammateMoment)}>
+            {(teammateCard) => <V2ThreadMessages
             messages={messages}
             threadView={threadView}
             threadState={threadState}
@@ -1887,7 +1888,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             onAddAgent={onOpenInvite ? () => onOpenInvite(AGENT_INVITE_TAB) : undefined}
             messagesContainerRef={messagesContainerRef}
             messagesEndRef={messagesEndRef}
-          />
+          />}
+          </V2BringTeammate>
           <V2ThreadHistoryStatus
             historySearch={historySearch}
             onRetryHistorySearch={() => { void retryHistorySearch(); }}

@@ -448,6 +448,8 @@ describe('V2Thread just-created Pod starter panel', () => {
 describe('second-person prompt placements', () => {
   beforeEach(() => {
     jest.clearAllMocks(); sessionStorage.clear(); localStorage.clear();
+    axios.post.mockReset();
+    navigator.clipboard.writeText.mockReset().mockResolvedValue(undefined);
     axios.get.mockImplementation((url) => Promise.resolve({ data: /\/invites$/.test(url) ? [] : {} }));
   });
   const member = { _id: 'u1', username: 'solo-user', isBot: false };
@@ -486,4 +488,29 @@ describe('second-person prompt placements', () => {
     expect(await screen.findByText(/including this conversation with Scout/)).toBeInTheDocument();
     expect(axios.post).not.toHaveBeenCalled();
   });
+  test('a pending invite press completes once across expanding and collapsing its thread', async () => {
+    let finish;
+    axios.post.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const detail = withReply();
+    detail.messages = [messages[0], { ...messages[1], thread_root_id: '10' }];
+    renderChat(detail);
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy invite link' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Expand thread, 1 reply' }));
+    expect(screen.getByRole('button', { name: 'Creating link…' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse' }));
+    await act(async () => { finish({ data: { token: 'a'.repeat(32) } }); });
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(`${window.location.origin}/v2/invite/${'a'.repeat(32)}`);
+    expect(axios.post).toHaveBeenCalledTimes(1);
+  });
+
+  test('dismissing the state-owned invite leaves the transcript and composer mounted', async () => {
+    renderChat(withReply());
+    fireEvent.click(await screen.findByRole('button', { name: 'Dismiss' }));
+    expect(screen.queryByRole('button', { name: 'Copy invite link' })).not.toBeInTheDocument();
+    expect(screen.getAllByText('Rendered message')).toHaveLength(2);
+    expect(screen.getByRole('textbox')).toBeInTheDocument();
+  });
+
 });

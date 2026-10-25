@@ -35,3 +35,9 @@ shared classification policy and never returns invite tokens or person IDs.
 Usage measurement starts at deployment: legacy redemption counters are not
 backfilled as teammate joins. Telemetry failures do not undo a successful mint
 or membership join. The endpoint reports the forward-only limitation explicitly.
+
+The inline card's request state is owned above `V2ThreadMessages`; its view can
+move between collapsed, visible and hidden-prefix reply slots without cancelling
+a pending press. The owner renders no wrapper DOM, and remains inert until the
+first-reply moment qualifies. Pod, viewer and placement still key its lifetime.
+Settled reply views match the original source message ID, not the ruling's ID.

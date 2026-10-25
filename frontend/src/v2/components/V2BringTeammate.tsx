@@ -18,10 +18,13 @@ interface Props {
   userId: string;
   source: TeammateInviteSource;
   agentName?: string;
+  enabled?: boolean;
+  /** Keep request state above transcript slots that move during thread toggles. */
+  children?: (card: React.ReactNode) => React.ReactNode;
 }
 
 /** State and pending requests belong to one viewer/pod/placement. */
-const BringTeammateContent: React.FC<Props> = ({ podId, podName, userId, source, agentName }) => {
+const BringTeammateContent: React.FC<Props> = ({ podId, podName, userId, source, agentName, enabled = true, children }) => {
   const { t } = useTranslation();
   const api = useV2Api();
   const apiRef = useRef(api);
@@ -52,20 +55,25 @@ const BringTeammateContent: React.FC<Props> = ({ podId, podName, userId, source,
   }, [podId, source, userId]);
 
   useEffect(() => {
-    const epoch = ++generation.current;
+    generation.current += 1;
     active.current = !dismissed;
-    if (!dismissed) {
-      lookup.current = readExisting();
-      // Failed reads never authorize a blind mint; the next press retries GET.
-      void lookup.current.then((existing) => {
-        if (active.current && generation.current === epoch) setUrl(existing);
-      }).catch(() => { if (generation.current === epoch) lookup.current = null; });
-    }
+    lookup.current = null;
     return () => {
       active.current = false;
       clearTimeout(copiedTimer.current);
     };
   }, [dismissed, readExisting]);
+
+  useEffect(() => {
+    if (!enabled || dismissed || lookup.current) return;
+    const epoch = generation.current;
+    lookup.current = readExisting();
+    // Visibility changes do not cancel a press while its thread slot moves.
+    // Scope changes and explicit dismissal still invalidate the request.
+    void lookup.current.then((existing) => {
+      if (active.current && generation.current === epoch) setUrl(existing);
+    }).catch(() => { if (generation.current === epoch) lookup.current = null; });
+  }, [enabled, dismissed, readExisting]);
 
   useEffect(() => {
     if (state === 'manual') { field.current?.focus(); field.current?.select(); }
@@ -116,11 +124,10 @@ const BringTeammateContent: React.FC<Props> = ({ podId, podName, userId, source,
     }
   };
 
-  if (dismissed) return null;
   const body = source === 'first-agent-post' ? 'agentPost' : source === 'scout-first-session' ? 'scout' : 'solo';
   const label = state === 'creating' ? 'creating' : state === 'copied' ? 'copied'
     : state === 'manual' ? 'copyRetry' : state === 'error' ? 'retry' : 'act';
-  return (
+  const card = enabled && !dismissed ? (
     <section className={`v2-teammate${source === 'solo-pod' ? ' v2-teammate--empty' : ' v2-teammate--message'}`} aria-label={t('teammate.title', { podName })}>
       <div className="v2-teammate__kicker">{t('teammate.kicker')}</div>
       <h3>{t('teammate.title', { podName })}</h3>
@@ -145,7 +152,8 @@ const BringTeammateContent: React.FC<Props> = ({ podId, podName, userId, source,
       {state === 'error' && <p className="v2-teammate__error" role="alert">{t('teammate.error')}</p>}
       <span className="v2-teammate__live" role="status" aria-live="polite">{state === 'copied' ? t('teammate.live') : ''}</span>
     </section>
-  );
+  ) : null;
+  return children ? <>{children(card)}</> : card;
 };
 const V2BringTeammate: React.FC<Props> = (props) => (
   <BringTeammateContent key={`${props.podId}.${props.userId}.${props.source}`} {...props} />

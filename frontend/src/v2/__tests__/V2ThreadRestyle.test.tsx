@@ -230,11 +230,13 @@ describe('direction C threading restyle (PR 2b)', () => {
         { kind: 'card', rootId: '20', replyCount: replies.length, participants: [], lastActivityAt: null, replies },
       ],
       settledDecisionByMessageId: new Map([['21', { value: 'Ship it', by: 'Sam', messageId: '22' }]]),
+      afterMessage: { messageId: '21', content: <div data-testid="settled-invite">Invite</div> },
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Expand thread, 2 replies' }));
     const block = container.querySelector('.v2-thread-block--open');
     expect(block.querySelectorAll('.v2-thread-replies .v2-msg')).toHaveLength(1);
+    expect(screen.getAllByTestId('settled-invite')).toHaveLength(1);
     expect(block.querySelector('[data-testid="decision-ruling-row"]')).toHaveTextContent('Ship it');
     expect(block.querySelectorAll('#message-22')).toHaveLength(1);
     Element.prototype.scrollIntoView = jest.fn();
