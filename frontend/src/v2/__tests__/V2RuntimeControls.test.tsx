@@ -1,4 +1,5 @@
 import React from 'react';
+import i18n from '../../i18n';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import Controls from '../components/V2RuntimeControls';
 import Key from '../components/V2AgentProviderKey';
@@ -81,4 +82,21 @@ test('read-only inventory mismatch preserves the saved model without claiming a 
   expect(screen.getByLabelText('model')).toHaveValue('saved-model');
   expect(screen.queryByText(/saved-model · stored/)).toBeNull();
   expect(screen.queryByText(/stored choice unsupported/)).toBeNull();
+});
+
+
+test.each(['en', 'zh-CN'])('runtime observation dates use app language (%s)', async (language) => {
+  await i18n.changeLanguage(language);
+  const connectedAt = '2026-10-23T16:00:00Z';
+  const lastTurnAt = '2026-10-24T16:00:00Z';
+  const view = render(<Controls runtime={{ ...runtime, processConnected: true,
+    observation: { ...runtime.observation, connectedAt, lastTurnAt, turnRunning: false } }} />);
+  try {
+    const formatted = (value: string) => new Date(value).toLocaleString(language, {
+      year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+    expect(screen.getByText(`${i18n.t('agentManage.controls.connected')} · ${formatted(connectedAt)}`)).toBeInTheDocument();
+    expect(screen.getByText(formatted(lastTurnAt))).toBeInTheDocument();
+    expect(screen.getByText(`${i18n.t('agentManage.controls.lastSpawn')} · ${formatted(at)}`)).toBeInTheDocument();
+  } finally { view.unmount(); await i18n.changeLanguage('en'); }
 });

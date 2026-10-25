@@ -66,16 +66,16 @@ export const describeRuntime = (runtime: Runtime): { mode: 'native' | 'hosted' |
   return { mode, adapter: WALKED_ADAPTERS[adapterKey] || null };
 };
 
-const dateLabel = (value: string | null): string => {
+const dateLabel = (value: string | null, language: string): string => {
   if (!value) return '';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString();
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(language);
 };
 
 const V2AgentRuntimeGrants: React.FC<Props> = ({
   name, instanceId, runtime, onSaveRuntime, section = 'both', runtimeSummary, runtimeTitle, grantsTitle, showProviderKey = true,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const api = useV2Api();
   const [grants, setGrants] = useState<AgentGrant[]>([]);
   const [loading, setLoading] = useState(true);
@@ -229,8 +229,8 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
                   <strong>{grant.connector || grant.tools[0]?.split('.')[0] || t('agentManage.grants.tool', { defaultValue: 'Tool' })}</strong>
                   <span>{grant.tools.join(', ')}</span>
                 </div>
-                <p>{grant.podName || t('agentManage.grants.direct', { defaultValue: 'Direct to this agent' })} · {t('agentManage.grants.by', { defaultValue: 'Granted by' })} {grant.grantedBy || t('agentManage.grants.unknown', { defaultValue: 'unknown' })} · {dateLabel(grant.createdAt)}</p>
-                <p>{ended ? t('agentManage.grants.ended', { defaultValue: 'Ended' }) : t('agentManage.grants.ends', { defaultValue: 'Ends' })} {dateLabel(grant.revokedAt || grant.expiresAt)}</p>
+                <p>{grant.podName || t('agentManage.grants.direct', { defaultValue: 'Direct to this agent' })} · {t('agentManage.grants.by', { defaultValue: 'Granted by' })} {grant.grantedBy || t('agentManage.grants.unknown', { defaultValue: 'unknown' })} · {dateLabel(grant.createdAt, i18n.language)}</p>
+                <p>{ended ? t('agentManage.grants.ended', { defaultValue: 'Ended' }) : t('agentManage.grants.ends', { defaultValue: 'Ends' })} {dateLabel(grant.revokedAt || grant.expiresAt, i18n.language)}</p>
                 {!ended && grant.canRevoke && (confirmGrantId === grant.grantId ? (
                   <div className="v2-agent-runtime-grants__actions">
                     <button type="button" disabled={busy} onClick={() => { void revoke(grant.grantId); }}>{t('agentManage.grants.confirmRevoke', { defaultValue: 'Yes, revoke it' })}</button>

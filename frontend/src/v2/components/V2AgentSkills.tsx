@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { formatAgentTimestamp } from '../agents/formatAgentTimestamp';
 import axios from '../../utils/axiosConfig';
 import './v2-agent-skills.css';
 
@@ -24,7 +25,7 @@ const loadLabel = (skill: SkillItem, load: SkillLoad | null, t: (key: string) =>
 };
 
 const V2AgentSkills: React.FC<Props> = ({ podId, podName, agentName, instanceId, subsection = false }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [skills, setSkills] = useState<SkillItem[]>([]);
   const [skillLoad, setSkillLoad] = useState<SkillLoad | null>(null);
   const [canEdit, setCanEdit] = useState(false);
@@ -144,7 +145,7 @@ const V2AgentSkills: React.FC<Props> = ({ podId, podName, agentName, instanceId,
           ))}
         </div> : <p className="v2-agent-skills__empty">{t('agentSkills.empty')}</p>
       )}
-      {skillLoad?.at && <p className="v2-agent-skills__reported">{t('agentSkills.reported', { date: new Date(skillLoad.at).toLocaleString() })}</p>}
+      {skillLoad?.at && <p className="v2-agent-skills__reported">{t('agentSkills.reported', { date: formatAgentTimestamp(skillLoad.at, i18n.language) })}</p>}
       {catalogOpen && canEdit && <div className="v2-agent-skills__catalog">
         <label htmlFor="v2-agent-skills-search">{t('agentSkills.find')}</label>
         <input id="v2-agent-skills-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('agentSkills.search')} />

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import React from 'react';
+import i18n from '../../i18n';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import V2AgentRuntimeGrants, { describeRuntime } from '../components/V2AgentRuntimeGrants';
 import { AuthContext } from '../../context/AuthContext';
@@ -197,4 +198,17 @@ test('a late placement error cannot follow a runtime switch', async () => {
   await act(async () => { rejectPlacement(new Error('fixture late error')); });
   await screen.findByText('read only · runs on commonly');
   await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+});
+
+
+test.each(['en', 'zh-CN'])('grant dates use app language (%s)', async (language) => {
+  await i18n.changeLanguage(language);
+  const view = renderSection();
+  try {
+    const grant = response.grants[0];
+    const date = new Date(grant.createdAt).toLocaleDateString(language);
+    expect(await screen.findByText(`Work · ${i18n.t('agentManage.grants.by')} Owner · ${date}`)).toBeInTheDocument();
+    const expiry = new Date(grant.expiresAt).toLocaleDateString(language);
+    expect(screen.getByText(`${i18n.t('agentManage.grants.ends')} ${expiry}`)).toBeInTheDocument();
+  } finally { view.unmount(); await i18n.changeLanguage('en'); }
 });

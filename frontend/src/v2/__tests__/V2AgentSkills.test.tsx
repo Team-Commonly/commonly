@@ -1,5 +1,6 @@
 // @ts-nocheck
 import React from 'react';
+import i18n from '../../i18n';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import axios from '../../utils/axiosConfig';
 import V2AgentSkills from '../components/V2AgentSkills';
@@ -57,4 +58,16 @@ test('shows unavailable rather than not loaded when the last skill read failed',
   render(<V2AgentSkills podId="pod" podName="Planning" agentName="scout" instanceId="default" />);
   expect(await screen.findAllByText('Skill status unavailable at last spawn')).toHaveLength(2);
   expect(screen.queryByText('Not loaded at last spawn')).not.toBeInTheDocument();
+});
+
+
+test.each(['en', 'zh-CN'])('skill report date uses app language (%s)', async (language) => {
+  await i18n.changeLanguage(language);
+  const view = render(<V2AgentSkills podId="pod" podName="Planning" agentName="scout" instanceId="default" />);
+  try {
+    const date = new Date(installed.skillLoad.at).toLocaleString(language, {
+      year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+    expect(await screen.findByText(i18n.t('agentSkills.reported', { date }))).toBeInTheDocument();
+  } finally { view.unmount(); await i18n.changeLanguage('en'); }
 });
