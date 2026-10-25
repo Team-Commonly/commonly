@@ -185,6 +185,10 @@ class GitHubAppService {
    * broker tool stays fail-closed even if its caller forgets to pass forceApp.
    */
   static async _apiHeaders(installationId?: string, forceApp = false): Promise<Record<string, string>> {
+    // An explicit installationId is app-only even when it is empty, so a blank
+    // value can neither pick the default installation nor reach the PAT.
+    const appOnly = forceApp || installationId !== undefined;
+    if (installationId !== undefined && !installationId) throw new Error('github_not_configured');
     const resolvedInstallationId = installationId || process.env.GITHUB_APP_INSTALLATION_ID_COMMONLY;
     const appConfigured = !!(
       process.env.GITHUB_APP_ID
@@ -194,7 +198,7 @@ class GitHubAppService {
     let credential: string | undefined;
     if (appConfigured) {
       credential = (await this.getInstallationToken(resolvedInstallationId as string)).token;
-    } else if (!forceApp && !installationId && process.env.GITHUB_PAT) {
+    } else if (!appOnly && process.env.GITHUB_PAT) {
       console.warn('[github] GitHub App not configured; falling back to GITHUB_PAT');
       credential = process.env.GITHUB_PAT;
     }

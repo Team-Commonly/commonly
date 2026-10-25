@@ -64,6 +64,13 @@ describe('GitHubAppService._apiHeaders credential precedence', () => {
     expect(mint).not.toHaveBeenCalled();
   });
 
+  it('rejects an explicit empty installationId instead of using the default or the PAT', async () => {
+    configureApp();
+    process.env.GITHUB_PAT = 'shared-pat';
+    await expect(GitHubAppService._apiHeaders('')).rejects.toThrow('github_not_configured');
+    expect(mint).not.toHaveBeenCalled();
+  });
+
   it('throws when nothing is configured', async () => {
     await expect(GitHubAppService._apiHeaders()).rejects.toThrow('github_not_configured');
   });
