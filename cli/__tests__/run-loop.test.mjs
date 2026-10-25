@@ -1374,6 +1374,82 @@ describe('performRun', () => {
     expect(ackPosts(mockPost)).toHaveLength(1);
   });
 
+  test.each(['claude', 'codex'])('%s BYO missing model reaches spawn and acknowledges its reply', async (name) => {
+    const prior = process.env.COMMONLY_REQUIRE_SEAT_MODEL;
+    delete process.env.COMMONLY_REQUIRE_SEAT_MODEL;
+    let stop;
+    try {
+      const realAdapter = (await import(`../src/lib/adapters/${name}.js`)).default;
+      const event = makeEvent({ _id: `evt-byo-model-${name}` });
+      const get = jest.fn(async (route) => route.endsWith('/messages')
+        ? { messages: [] } : { events: [event] });
+      const post = jest.fn().mockResolvedValue({});
+      createClient.mockReturnValue({ get, post });
+      const spawn = jest.fn().mockResolvedValue({ text: 'BYO reply', newSessionId: null });
+      ({ stop } = performRun({
+        instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+        agentName: 'my-stub', environment: {}, adapter: { ...realAdapter, spawn },
+        setTimeoutImpl: () => 0,
+      }));
+      await drainMicrotasks();
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(replyPosts(post)).toEqual([[
+        '/api/agents/runtime/pods/pod-abc/messages', { content: 'BYO reply' },
+      ]]);
+      expect(ackPosts(post)).toHaveLength(1);
+      expect(wasEventHandled('my-stub', event._id)).toBe(true);
+    } finally {
+      stop?.();
+      if (prior === undefined) delete process.env.COMMONLY_REQUIRE_SEAT_MODEL;
+      else process.env.COMMONLY_REQUIRE_SEAT_MODEL = prior;
+    }
+  });
+
+  test.each([['claude', '1'], ['codex', '1'], ['qwen', undefined], ['dsh', undefined]])('%s missing model posts one notice and retains the event even if credential minting would refuse', async (name, requirement) => {
+    const priorModelRequirement = process.env.COMMONLY_REQUIRE_SEAT_MODEL;
+    if (requirement === undefined) delete process.env.COMMONLY_REQUIRE_SEAT_MODEL;
+    else process.env.COMMONLY_REQUIRE_SEAT_MODEL = requirement;
+    const realAdapter = (await import(`../src/lib/adapters/${name}.js`)).default;
+    const event = makeEvent({ _id: `evt-model-${name}` });
+    const get = jest.fn(async (route) => route.endsWith('/messages')
+      ? { messages: [] } : { events: [event] });
+    const post = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get, post });
+    const scheduled = [];
+    const errors = [];
+    const open = jest.fn(async () => {
+      throw Object.assign(new Error('mint refused'), { spawnCredentialRefused: true, status: 403 });
+    });
+    const leaseFactory = jest.fn(() => ({ open, close: jest.fn() }));
+    const spawn = jest.fn((...args) => realAdapter.spawn(...args));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      agentName: 'my-stub', environment: {},
+      adapter: { ...realAdapter, spawn },
+      setTimeoutImpl: (callback) => { scheduled.push(callback); return 0; },
+      onError: (error) => errors.push(error),
+      spawnCredentialLeaseFactory: leaseFactory,
+    });
+    await drainMicrotasks();
+    expect(scheduled).toHaveLength(1);
+    await scheduled.shift()();
+    await drainMicrotasks();
+    stop();
+    expect(spawn).not.toHaveBeenCalled();
+    expect(leaseFactory).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+    expect(replyPosts(post)).toEqual([[
+      '/api/agents/runtime/pods/pod-abc/messages',
+      { content: 'This agent has no model set; add environment.model to its configuration.' },
+    ]]);
+    expect(ackPosts(post)).toHaveLength(0);
+    expect(wasEventHandled('my-stub', event._id)).toBe(false);
+    expect(errors).toHaveLength(2);
+    expect(errors[0].code).toBe('agent_spawn_retry_scheduled');
+    if (priorModelRequirement === undefined) delete process.env.COMMONLY_REQUIRE_SEAT_MODEL;
+    else process.env.COMMONLY_REQUIRE_SEAT_MODEL = priorModelRequirement;
+  });
+
   test('adapter.spawn throws → no post, no ack (re-delivery path)', async () => {
     const events = [makeEvent({ _id: 'evt-boom' })];
     const mockGet = jest.fn().mockResolvedValue({ events });

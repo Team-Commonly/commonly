@@ -88,7 +88,7 @@ describe('codex adapter — a public seat gets its declared skills as AGENTS.md'
     sessionId: null,
     cwd: workspace,
     agentName: 'skill-test-agent',
-    environment,
+    environment: { model: 'test-model', ...environment },
     env: { ...process.env, CODEX_HOME: operatorHome },
     _publicCodexHome: publicHome,
     _spawnImpl: impl,

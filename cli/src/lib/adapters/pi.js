@@ -32,6 +32,7 @@
  * Contract (see stub.js): detect() and spawn(prompt, ctx) → { text, newSessionId }.
  */
 
+import { requireSeatModel } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { mkdir, readdir, writeFile } from 'fs/promises';
@@ -65,7 +66,6 @@ export const DEFAULT_PROVIDER = Object.freeze({
   api: 'openai-completions',
   apiKeyEnv: 'COMMONLY_LITELLM_KEY',
 });
-export const DEFAULT_MODEL = 'deepseek-v4-flash';
 
 // ADR-008 `effort` → pi `--thinking`. pi's ladder is off/minimal/low/medium/high/xhigh/max.
 const THINKING = { none: 'off', off: 'off', minimal: 'minimal', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' };
@@ -390,6 +390,7 @@ const runPi = ({ args, cwd, env, payload, timeoutMs, credentials = [], spawnImpl
 });
 
 export default {
+  requiresModel: true,
   name: 'pi',
 
   // TASK-049: the variable this adapter needs from the environment of whatever
@@ -409,12 +410,13 @@ export default {
   },
 
   async spawn(prompt, ctx = {}) {
+    const seatModel = requireSeatModel(ctx.environment, 'pi', true);
     // pi has no enforced sandbox. claude.js and codex.js refuse a public-trust
     // seat they cannot confine; so does this adapter, and it refuses any declared
     // sandbox mode rather than run unconfined under a spec that promised one.
     assertNoSandboxDeclared(ctx.environment);
     const provider = resolveProvider(ctx.environment);
-    const model = ctx.environment?.model || DEFAULT_MODEL;
+    const model = seatModel;
     const thinking = thinkingFor(ctx.environment?.effort);
     const baseEnv = ctx.env || process.env;
     if (!baseEnv[provider.apiKeyEnv]) {

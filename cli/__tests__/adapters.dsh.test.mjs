@@ -58,7 +58,7 @@ test('public and any declared sandbox mode refuse before a child starts', async 
   expect(() => assertPrivateDsh({ sandbox: { mode: 'none' } })).toThrow(/sandbox.mode/);
   await withSeat(async (ctx) => {
     const spawn = jest.fn();
-    await expect(dsh.spawn('hi', { ...ctx, environment: { ...ctx.environment, sandbox: { trust: 'public' } }, _spawnImpl: spawn }))
+    await expect(dsh.spawn('hi', { ...ctx, environment: { model: 'test-model', ...ctx.environment, sandbox: { trust: 'public' } }, _spawnImpl: spawn }))
       .rejects.toThrow(/public-trust/);
     expect(spawn).not.toHaveBeenCalled();
   });
@@ -69,7 +69,7 @@ test('unprobed release refuses even for private seats', async () => {
     spawnSyncMock.mockReturnValue({ status: 0, stdout: 'dsh 0.2.1-rc.3\n' });
     const spawn = jest.fn();
     await expect(dsh.validateEnvironment(ctx.environment, ctx.cwd)).rejects.toThrow(/not smoke-tested/);
-    await expect(dsh.spawn('hi', { ...ctx, _spawnImpl: spawn })).rejects.toThrow(/not smoke-tested/);
+    await expect(dsh.spawn('hi', { environment: { model: 'test-model' }, ...ctx, _spawnImpl: spawn })).rejects.toThrow(/not smoke-tested/);
     expect(spawn).not.toHaveBeenCalled();
   });
 });
@@ -78,7 +78,7 @@ test('one patch selects proxy pi-ai, disables native routes and upload, and moun
   await withSeat(async (ctx) => {
     await writeFile(join(ctx.cwd, '.env'), 'DEEPSEEK_API_KEY=project-shadow\nDSH_HOME=/tmp/project-shadow\n');
     const calls = [];
-    const result = await dsh.spawn('hello', { ...ctx, _spawnImpl: (binary, args, options) => {
+    const result = await dsh.spawn('hello', { environment: { model: 'test-model' }, ...ctx, _spawnImpl: (binary, args, options) => {
       const patchPath = args[args.indexOf('--patch') + 1];
       const patchText = readFileSync(patchPath, 'utf8');
       const credentialFile = JSON.parse(patchText).at(-1).insert[0].config.env.COMMONLY_TOKEN_FILE;
@@ -128,19 +128,19 @@ test('one patch selects proxy pi-ai, disables native routes and upload, and moun
 test('an MCP declaration without file delivery or with extra tools refuses', async () => {
   await withSeat(async (ctx) => {
     const extra = { name: 'other', transport: 'stdio', command: ['node', 'other.js'] };
-    await expect(dsh.spawn('hi', { ...ctx, environment: { ...ctx.environment, mcp: [extra] } }))
+    await expect(dsh.spawn('hi', { ...ctx, environment: { model: 'test-model', ...ctx.environment, mcp: [extra] } }))
       .rejects.toThrow(/only the Commonly MCP/);
     const old = { name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@0.3.7'], env: {
       COMMONLY_API_URL: '${COMMONLY_API_URL}', COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
     } };
-    await expect(dsh.spawn('hi', { ...ctx, environment: { ...ctx.environment, mcp: [old] } }))
+    await expect(dsh.spawn('hi', { ...ctx, environment: { model: 'test-model', ...ctx.environment, mcp: [old] } }))
       .rejects.toThrow(/file-backed credentials/);
     const base = { name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'],
       env: { COMMONLY_API_URL: '${COMMONLY_API_URL}', COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' } };
-    await expect(dsh.spawn('hi', { ...ctx, environment: { ...ctx.environment,
+    await expect(dsh.spawn('hi', { ...ctx, environment: { model: 'test-model', ...ctx.environment,
       mcp: [{ ...base, env: { ...base.env, COMMONLY_API_URL: 'https://wrong.example' } }] } }))
       .rejects.toThrow(/this spawn's credential file/);
-    await expect(dsh.spawn('hi', { ...ctx, environment: { ...ctx.environment,
+    await expect(dsh.spawn('hi', { ...ctx, environment: { model: 'test-model', ...ctx.environment,
       mcp: [{ ...base, command: ['sh', '-c', 'echo attacker', '@commonlyai/mcp@latest'] }] } }))
       .rejects.toThrow(/recognized stdio/);
   });
@@ -151,13 +151,13 @@ test('foreign session starts fresh; this seat session resumes', async () => {
     const id = 'session-11111111-1111-1111-1111-111111111111';
     const calls = [];
     const impl = (_cmd, args) => { calls.push(args); return fakeChild(); };
-    await dsh.spawn('first', { ...ctx, sessionId: 'session-22222222-2222-2222-2222-222222222222', _spawnImpl: impl });
+    await dsh.spawn('first', { environment: { model: 'test-model' }, ...ctx, sessionId: 'session-22222222-2222-2222-2222-222222222222', _spawnImpl: impl });
     expect(calls[0]).not.toContain('--session-id');
     const dir = join(ctx._dshHome, 'sessions', 'workspace', id);
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'session.v4.jsonl.zstd'), 'mock');
     expect(await sessionExists(ctx._dshHome, id)).toBe(true);
-    await dsh.spawn('again', { ...ctx, sessionId: id, _spawnImpl: impl });
+    await dsh.spawn('again', { environment: { model: 'test-model' }, ...ctx, sessionId: id, _spawnImpl: impl });
     expect(calls[1]).toEqual(expect.arrayContaining(['--session-id', id]));
   });
 });
