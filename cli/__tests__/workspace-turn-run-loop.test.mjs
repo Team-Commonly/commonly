@@ -87,6 +87,8 @@ describe('performRun workspace turn placement', () => {
     });
     expect(ctx.cwd).toBe(workspaceDir);
     expect(ctx.environment.sandbox.trust).toBe('workspace');
+    // Skills are copied here, not into the project (the claude adapter).
+    expect(ctx.skillMountDir).toBe(scratchDir);
     expect(get).toHaveBeenCalledWith('/api/agents/runtime/installations', {}, {
       signal: expect.any(AbortSignal),
     });

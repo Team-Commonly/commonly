@@ -1974,6 +1974,7 @@ export const performRun = ({
         timeoutMs: effectiveTurnTimeoutMs,
         sessionId,
         cwd: placement.cwd,
+        skillMountDir: scratchCwd,
         env: commitAttribution?.env || process.env,
         commitAttributionEnv: commitAttribution?.sandboxEnv || null,
         memoryLongTerm,

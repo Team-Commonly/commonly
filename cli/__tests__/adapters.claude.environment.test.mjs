@@ -1196,3 +1196,131 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
     expect(appended(calls[1].args)).toContain('## Skill: house-rules');
   });
 });
+
+// TASK-294: a workspace seat is confined as a public one is, with the person's
+// project held read-only, and nothing written into that project by the host.
+describe('claude adapter — a workspace seat', () => {
+  let cwd;
+  let skillSrc;
+  let publicState;
+  let scratch;
+  const originalPlatform = process.platform;
+
+  beforeEach(() => {
+    cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-workspace-'));
+    publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+    scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-workspace-scratch-'));
+    skillSrc = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-skill-src-')), 'house-rules');
+    fs.mkdirSync(skillSrc);
+    fs.writeFileSync(
+      path.join(skillSrc, 'SKILL.md'),
+      '---\nname: house-rules\ndescription: How to behave in a pod.\n---\n\n# Being a member\n\nOrient before you post.\n',
+      'utf8',
+    );
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    spawnSync.mockImplementation((cmd) => (
+      cmd === 'which' ? { status: 0, stdout: '/usr/bin/true\n' } : { status: 0, stdout: '' }
+    ));
+  });
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+    spawnSync.mockReset();
+    for (const dir of [cwd, publicState, scratch, path.dirname(skillSrc)]) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  const workspaceSpawn = (impl, sandbox = { mode: 'workspace', trust: 'workspace' }) => claude.spawn('hi', {
+    agentName: 'workspace-test',
+    sessionId: null,
+    cwd,
+    skillMountDir: scratch,
+    env: { PATH: process.env.PATH, COMMONLY_HOST_SECRET: 'must-not-inherit' },
+    environment: { model: 'test-model',
+      sandbox,
+      skills: { claude: [skillSrc] },
+      mcp: [{
+        name: 'commonly',
+        transport: 'stdio',
+        command: [process.execPath, path.join(scratch, 'server.mjs')],
+      }],
+    },
+    _publicClaudeState: publicState,
+    _spawnImpl: impl,
+  });
+
+  test('runs in Seatbelt with its project read-only and the public tool policy', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await workspaceSpawn(impl);
+
+    expect(calls).toHaveLength(1);
+    const { cmd, args, opts } = calls[0];
+    expect(cmd).toBe('/usr/bin/sandbox-exec');
+    const realCwd = fs.realpathSync(cwd);
+    expect(args[1]).toContain(`(allow file-read* file-test-existence (subpath "${realCwd}"))`);
+    expect(args[1]).not.toContain(`(allow file-read* file-test-existence file-write* (subpath "${realCwd}"))`);
+    expect(args).toContain('Read(./**)');
+    expect(args).toContain('mcp__commonly__*');
+    const denied = args.slice(args.indexOf('--disallowedTools') + 1);
+    expect(denied).toEqual(expect.arrayContaining([
+      'Bash', 'Write', 'Edit', 'WebFetch', 'WebSearch', 'Task',
+      'Read(./.env)', 'Read(./.env.*)', 'mcp__commonly__commonly_self_install_into_pod',
+    ]));
+    expect(opts.env.HOME).toBe(publicState);
+    expect(opts.env.COMMONLY_HOST_SECRET).toBeUndefined();
+  });
+
+  test('a public seat keeps the denies it had, without the workspace ones', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await workspaceSpawn(impl, { mode: 'workspace', trust: 'public' });
+
+    const { args } = calls[0];
+    expect(args).not.toContain('Read(./.env.*)');
+    expect(args).not.toContain('mcp__commonly__commonly_self_install_into_pod');
+    expect(args[1]).toContain(`(allow file-read* file-test-existence file-write* (subpath "${fs.realpathSync(cwd)}"))`);
+  });
+
+  test('its skills are copied to the scratch folder, never into the project, and arrive as prompt text', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await workspaceSpawn(impl);
+
+    expect(fs.existsSync(path.join(cwd, '.claude'))).toBe(false);
+    expect(fs.existsSync(path.join(scratch, '.claude', 'skills', 'house-rules', 'SKILL.md'))).toBe(true);
+    const { args } = calls[0];
+    const text = args[args.indexOf('--append-system-prompt') + 1];
+    expect(text).toContain('## Skill: house-rules');
+  });
+
+  test('without a scratch folder its skills are skipped rather than written into the project', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await claude.spawn('hi', {
+      agentName: 'workspace-test',
+      sessionId: null,
+      cwd,
+      env: { PATH: process.env.PATH },
+      environment: { model: 'test-model',
+        sandbox: { mode: 'workspace', trust: 'workspace' },
+        skills: { claude: [skillSrc] },
+      },
+      _publicClaudeState: publicState,
+      _spawnImpl: impl,
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(fs.existsSync(path.join(cwd, '.claude'))).toBe(false);
+  });
+
+  test('under bwrap it refuses to spawn', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await expect(workspaceSpawn(impl, { mode: 'bwrap', trust: 'workspace' }))
+      .rejects.toThrow(/workspace Claude agents run on macOS only for now/);
+    expect(calls).toHaveLength(0);
+  });
+
+  test('with an unenforced mode it refuses rather than falls through to a bare spawn', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await expect(workspaceSpawn(impl, { mode: 'none', trust: 'workspace' }))
+      .rejects.toThrow(/workspace Claude agents require an enforced sandbox mode/);
+    expect(calls).toHaveLength(0);
+  });
+});
