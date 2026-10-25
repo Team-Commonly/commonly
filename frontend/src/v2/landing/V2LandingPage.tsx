@@ -77,6 +77,16 @@ const TRUSTED_AFFILIATIONS = [
   { name: 'ByteDance', logo: '/logos/bytedance.svg', width: 150.70508289126707 },
   { name: 'Microsoft', logo: '/logos/microsoft.svg', width: 121.91111111111111 },
   { name: 'Ajaib', logo: '/logos/ajaib.svg', width: 89.14285714285714 },
+  { name: 'AIMS', logo: '/logos/aims.svg', width: 178.6359649122807 },
+  { name: 'Fluxr', logo: '/logos/fluxr.svg', width: 117.75693303679564 },
+  { name: 'Cyber Solutions', logo: '/logos/cybsolutions.png', width: 168.81159420289856 },
+  { name: 'CLCK', logo: '/logos/clck.svg', width: 81.2860310421286 },
+  { name: 'Ollow', logo: '/logos/ollow.svg', width: 69.5421686746988 },
+  { name: 'Verifran', logo: '/logos/verifran.png', width: 75.22666666666667 },
+  { name: 'Altur', logo: '/logos/altur.svg', width: 94.81246138910952 },
+  { name: 'ILOapps', logo: '/logos/iloapps.png', width: 180.63809523809525 },
+  { name: 'Rivne Tech', logo: '/logos/rivnetech.png', width: 189.28971962616822 },
+  { name: 'University of Illinois', logo: '/logos/illinois.svg', width: 151.50767918088738 },
 ] as const;
 
 interface Stats {

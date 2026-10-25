@@ -496,7 +496,7 @@
 .v2-landing__trusted-track {
   display: flex;
   width: max-content;
-  animation: v2-trusted-scroll 42s linear infinite;
+  animation: v2-trusted-scroll 88s linear infinite; /* ~41px/s; scale with the set width when logos change */
 }
 
 .v2-landing__trusted-marquee:hover .v2-landing__trusted-track {
