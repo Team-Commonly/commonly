@@ -363,11 +363,11 @@ describe('COMMONLY_SUPERVISE_RUNS=1 with the real codex adapter', () => {
     '',
   ].join('\n');
 
-  const traceEvents = () => {
-    const runsDir = path.join(home, '.commonly', 'traces', 'rhea', 'runs');
-    return fs.readdirSync(runsDir).flatMap((file) => fs.readFileSync(path.join(runsDir, file), 'utf8')
-      .split('\n').filter(Boolean).map((line) => JSON.parse(line)));
-  };
+  // The canary keeps no run record: the supervised turn's trace is in memory
+  // and its verdicts reach disk only as the metric line.
+  const metricLines = () => fs.readFileSync(path.join(home, '.commonly', 'state', 'seats-canary', 'rhea.jsonl'), 'utf8')
+    .split('\n').filter(Boolean).map((line) => JSON.parse(line));
+  const noRunRecord = () => expect(fs.existsSync(path.join(home, '.commonly', 'traces'))).toBe(false);
 
   test('an in-band refusal the CLI drops while exiting 0 settles refusal_dropped and is acked once as refused', async () => {
     const { run, provider } = await runCodexTurn({
@@ -387,15 +387,22 @@ describe('COMMONLY_SUPERVISE_RUNS=1 with the real codex adapter', () => {
       // No empty reply was posted as if the turn had answered.
       expect(run.posts().filter((p) => !String(p.content).includes('refused the content'))).toEqual([]);
 
-      const events = traceEvents();
-      const relay = events.find((e) => e.type === 'provider.relay');
-      expect(relay.data).toMatchObject({ status: 'covered', requests: 1 });
-      expect(events.find((e) => e.type === 'provider.refusal').data).toMatchObject({ format: 'openai-responses' });
-      expect(events.at(-1)).toMatchObject({ type: 'run.settled', data: { outcome: 'failed', failure: { kind: 'refusal_dropped' } } });
+      noRunRecord();
+      expect(metricLines()).toEqual([expect.objectContaining({
+        path: 'supervised',
+        adapter: 'codex',
+        outcome: 'failed',
+        failure: 'refusal_dropped',
+        failureClass: 'content_refused',
+        relay: true,
+        relayStatus: 'covered',
+        relayRequests: 1,
+        relayRefusals: 1,
+      })]);
 
       // Neither the auth nor the refusal text is in any file the run left.
       const files = filesUnder(home);
-      expect(files.some((f) => f.includes(`${path.sep}traces${path.sep}`))).toBe(true);
+      expect(files.some((f) => f.endsWith(`${path.sep}rhea.jsonl`))).toBe(true);
       for (const file of files) {
         const text = fs.readFileSync(file, 'utf8');
         expect({ file, auth: text.includes(CANARY_KEY), refusal: text.includes(CANARY_REFUSAL) })
@@ -409,9 +416,17 @@ describe('COMMONLY_SUPERVISE_RUNS=1 with the real codex adapter', () => {
     try {
       expect(run.acks()[0].result).toEqual({ outcome: 'posted' });
       expect(run.posts().map((p) => p.content)).toContain('review: PASS');
-      const events = traceEvents();
-      expect(events.find((e) => e.type === 'provider.relay').data.status).toBe('covered');
-      expect(events.at(-1)).toMatchObject({ type: 'run.settled', data: { outcome: 'ok' } });
+      noRunRecord();
+      expect(metricLines()).toEqual([expect.objectContaining({
+        path: 'supervised', outcome: 'ok', failure: null, relayStatus: 'covered', relayRequests: 1, relayRefusals: 0,
+        stallMs: 15 * 60 * 1000, exitCode: 0, exitObserved: true, killed: false,
+      })]);
+      // The reply was posted, and is in no file the run left: no record writer.
+      for (const file of filesUnder(home)) {
+        const text = fs.readFileSync(file, 'utf8');
+        expect({ file, reply: text.includes('review: PASS'), auth: text.includes(CANARY_KEY) })
+          .toEqual({ file, reply: false, auth: false });
+      }
     } finally { await provider.close(); }
   });
 
@@ -422,10 +437,10 @@ describe('COMMONLY_SUPERVISE_RUNS=1 with the real codex adapter', () => {
     });
     try {
       expect(run.acks()[0].result).toEqual({ outcome: 'posted' });
-      const relay = traceEvents().find((e) => e.type === 'provider.relay');
-      expect(relay.data.status).toBe('not_covered');
-      expect(relay.data.reason).toMatch(/amazon-bedrock/);
-      expect(relay.data.requests).toBe(0);
+      noRunRecord();
+      expect(metricLines()).toEqual([expect.objectContaining({
+        path: 'supervised', outcome: 'ok', relay: true, relayStatus: 'not_covered', relayRequests: 0,
+      })]);
     } finally { await provider.close(); }
   });
 });

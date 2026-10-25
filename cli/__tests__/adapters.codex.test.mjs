@@ -1018,3 +1018,35 @@ describe('codex: the carve-out for a reference the file channel cannot carry (TA
     expect(env.COMMONLY_AGENT_TOKEN).toBeUndefined();
   });
 });
+
+// The supervised path (COMMONLY_SUPERVISE_RUNS=1) cancels a stuck or overdue
+// turn by aborting ctx.signal; the adapter answers with the same SIGTERM its own
+// timeout sends. The plain path passes no signal and the child is never signalled.
+describe('codex adapter — supervisor abort (ctx.signal)', () => {
+  const hangingChild = () => {
+    const proc = new EventEmitter();
+    proc.stdout = new EventEmitter();
+    proc.stderr = new EventEmitter();
+    proc.kill = jest.fn(() => { setImmediate(() => proc.emit('close', null)); return true; });
+    const done = setTimeout(() => proc.emit('close', 0), 200);
+    proc.once('close', () => clearTimeout(done));
+    return proc;
+  };
+
+  test('an abort mid-turn sends the child SIGTERM', async () => {
+    const child = hangingChild();
+    const controller = new AbortController();
+    const pending = codex.spawn('hi', {
+      environment: { model: 'test-model' }, sessionId: null, signal: controller.signal, _spawnImpl: () => child,
+    });
+    setTimeout(() => controller.abort(new Error('stuck')), 20);
+    await expect(pending).rejects.toThrow();
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+
+  test('with no signal (the plain path) the child is never signalled', async () => {
+    const child = hangingChild();
+    await codex.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: () => child }).catch(() => {});
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+});

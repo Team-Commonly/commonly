@@ -85,8 +85,7 @@ import { hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-c
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import { describeUpstreamRefusal } from '../lib/upstream-refusal.js';
-import { superviseRun } from '@commonlyai/seats/supervisor';
-import { createTraceStore } from '@commonlyai/seats/trace/store';
+import { createTurnRunner, supervisedRunPolicy } from '../lib/supervised-turn.js';
 import {
   DEFAULT_HOOK_TIMEOUT_MS,
   clampHookTimeoutMs,
@@ -1224,16 +1223,10 @@ const extractPrompt = (event) => {
  * Every enforcement failure fails OPEN — a kernel without the claim route or
  * an unreachable upload endpoint must never produce a silent agent (#887).
  */
-// The supervisor's policy for a run-loop spawn. The stall window is off: a
-// claude spawn in text mode writes nothing until it answers, so silence is not
-// a hang there. The wall-clock budget sits past the adapter's own timeout, so
-// the adapter's timeout error still wins when the adapter enforces it, and the
-// supervisor only settles a spawn that outlived it. Retries stay with the run
-// loop.
-export const supervisedRunPolicy = (turnTimeoutMs) => ({
-  stallMs: 0,
-  timeoutMs: Math.min(turnTimeoutMs + 60_000, 2_147_483_647),
-});
+// The supervisor's policy for a run-loop spawn: lib/supervised-turn.js has the
+// stall windows per adapter (codex 15 min, claude off) and their evidence, the
+// cancel grace, and the wall-clock backstop past the adapter's own timeout.
+export { supervisedRunPolicy };
 
 export const performRun = ({
   instanceUrl,
@@ -1284,10 +1277,11 @@ export const performRun = ({
   refusalHandoff = null,
   // Off unless COMMONLY_SUPERVISE_RUNS=1: each spawn runs under the seats
   // supervisor, with its provider traffic through a per-run loopback relay
-  // that reads responses for in-band refusals the CLI drops. Off, the spawn
-  // path is the plain adapter call it has always been.
+  // (on for codex, off for claude by default; lib/supervised-turn.js) that
+  // reads responses for in-band refusals the CLI drops. Off, the spawn path is
+  // the plain adapter call it has always been. Either way one metadata line
+  // per turn goes to ~/.commonly/state/seats-canary/<agent>.jsonl.
   superviseRuns = process.env.COMMONLY_SUPERVISE_RUNS === '1',
-  traceRoot = null,
 }) => {
   reportRuntime = reportRuntime && WALKED_HARNESSES.includes(adapter?.name);
   if (environment?.provider !== undefined && !adapter?.supportsProvider) {
@@ -1297,15 +1291,12 @@ export const performRun = ({
   const effectiveTurnTimeoutMs = Number.isFinite(requestedTurnTimeout) && requestedTurnTimeout > 0
     ? Math.min(requestedTurnTimeout, 2_147_483_647) : 15 * 60 * 1000;
   const client = createClient({ instance: instanceUrl, token });
-  // Created on the first supervised spawn, never when supervision is off.
-  let runTraceStore = null;
-  const supervisedTraceStore = () => {
-    if (!runTraceStore) {
-      const seat = String(agentName || 'agent').replace(/[^A-Za-z0-9._-]/g, '_');
-      runTraceStore = createTraceStore({ root: traceRoot || join(homedir(), '.commonly', 'traces', seat) });
-    }
-    return runTraceStore;
-  };
+  // The supervised run keeps its trace in memory, metadata only; no record of
+  // a run is written to disk on either path (lib/supervised-turn.js).
+  const turnRunner = createTurnRunner({
+    seat: agentName, turnTimeoutMs: effectiveTurnTimeoutMs, supervise: superviseRuns, log,
+  });
+  if (superviseRuns) log(turnRunner.describe(adapter?.name));
   const runtimeReporter = createRuntimeReporter({
     client: runtimeReportClient || { post: async () => {} },
     harness: adapter.name, detect: () => adapter.detect(),
@@ -1897,24 +1888,10 @@ export const performRun = ({
         agentName,
         metadata: { event },
       };
-      if (superviseRuns) {
-        const supervised = await superviseRun({
-          adapter,
-          prompt: spawnPrompt,
-          ctx: spawnCtx,
-          store: supervisedTraceStore(),
-          policy: supervisedRunPolicy(effectiveTurnTimeoutMs),
-          relay: {},
-          label: event.type,
-        });
-        // A failure is thrown exactly as the adapter's own would be, so the
-        // run loop's classification and retry apply unchanged; a dropped
-        // refusal classifies as content_refused (spawn-retry.js).
-        if (supervised.failure) throw supervised.failure;
-        result = supervised.result;
-      } else {
-        result = await adapter.spawn(spawnPrompt, spawnCtx);
-      }
+      // Supervised or plain, a failure is thrown exactly as the adapter's own
+      // would be, so the run loop's classification and retry apply unchanged;
+      // a dropped refusal classifies as content_refused (spawn-retry.js).
+      result = await turnRunner.run(adapter, spawnPrompt, spawnCtx, { eventType: event.type });
       spawnCompleted = true;
     } finally {
       try {
