@@ -2,7 +2,7 @@
 
 These are real Chromium captures of the local application with synthetic API responses. They are not production evidence. No real credentials are issued, read or revoked. All network API requests are intercepted.
 
-The fixtures cover BYO, hosted, built-in Scout and never-connected agents in English and Chinese at 1440 and 390. Each has a page capture and separate Status/Runtime captures. The hosted fixture exercises Pause and waits for Resume after the persisted readback changes. Every capture reported no browser errors or horizontal document overflow. The English BYO fixture also opens Your Team at both widths, verifies the name stays ink and links back to Settings, then follows it. Non-owner names retain the public-profile destination.
+The fixtures cover BYO, hosted, built-in Scout and never-connected agents in English and Chinese at 1440 and 390. Each has a page capture and separate Status/Runtime captures. The hosted fixture exercises Pause and waits for Resume after the persisted readback changes. Every capture reported no browser errors or horizontal document overflow. The final capture run waits for and verifies IBM Plex Sans/Mono loading. The English BYO fixture also opens Your Team at both widths, verifies the name stays ink and links back to Settings, then follows it. Non-owner names retain the public-profile destination.
 
 Reference: section 05 of the rev3 artboard attached to TASK-546. The review bundle shared in the task pod contains that reference beside these captures; the source artboard is not copied into this directory.
 
@@ -20,7 +20,7 @@ The existing OpenClaw Persona editor remains available inside the folded identit
 
 ## Reproduce
 
-Start the normal frontend dev server on `127.0.0.1:3546`, then run `node capture.cjs` in an environment with Playwright installed. `PLAYWRIGHT_MODULE` can point to an existing installation; `OUTPUT_DIR` changes the destination. The fixture defaults to the system Chrome executable on macOS. The source uses fake identities and a fixed receipt, so the displayed values can be checked against the intercepted responses.
+Start the normal frontend dev server on `127.0.0.1:3546`, then run `node capture.cjs` in an environment with Playwright installed. `PLAYWRIGHT_MODULE` can point to an existing installation; `OUTPUT_DIR` changes the destination. The fixture defaults to the system Chrome executable on macOS. If node_modules is a worktree symlink, allow its real directory in the local Vite server’s `server.fs.allow`; otherwise font URLs are refused. The capture asserts the Signal font loads before taking images. The source uses fake identities and a fixed receipt, so the displayed values can be checked against the intercepted responses.
 
 ## Completion holds
 

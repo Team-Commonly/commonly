@@ -26,7 +26,11 @@ for(const lang of ['en','zh-CN']) for(const kind of ['byo','hosted','scout','nev
  else if(u.pathname.includes('/skills'))data={skills:[]};
  await route.fulfill({json:data});});
  await page.addInitScript((lang)=>{localStorage.setItem('token','fixture-only-user');localStorage.setItem('v2.lang',lang);},lang);
- await page.goto(`http://127.0.0.1:3546/v2/agents/${kind}/default`); await page.getByRole('heading',{name:lang==='en'?'Status':'状态',exact:true}).waitFor(); await page.waitForTimeout(400);await page.evaluate(()=>document.fonts.ready);
+ await page.goto(`http://127.0.0.1:3546/v2/agents/${kind}/default`); await page.getByRole('heading',{name:lang==='en'?'Status':'状态',exact:true}).waitFor(); await page.waitForTimeout(400);await page.evaluate(async()=>{
+ await document.fonts.ready;
+ await Promise.all([document.fonts.load('400 12px "IBM Plex Sans"'),document.fonts.load('400 12px "IBM Plex Mono"')]);
+ if(!document.fonts.check('400 12px "IBM Plex Sans"')||!document.fonts.check('400 12px "IBM Plex Mono"'))throw new Error('Signal fonts missing');
+ });
  for (const title of (lang==='en'?['Status','Runtime']:['状态','运行方式'])) { const section=page.getByRole('heading',{name:title,exact:true}).locator('..'); await section.screenshot({path:`${outDir}/${lang}-${kind}-${width}-${title.toLowerCase()}.png`}); }
  await page.locator('.v2-agent-settings').evaluate(el=>el.closest('.v2-feature__body').scrollTop=0);
  await page.screenshot({path:`${outDir}/${lang}-${kind}-${width}.png`,fullPage:true});
