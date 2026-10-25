@@ -79,6 +79,8 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     for (const key of ['runtimeType', 'adapter']) {
       if (typeof runtime[key] === 'string') runtimeControls[key] = runtime[key];
     }
+    const declaredProvider = environment.provider as { id?: string } | undefined;
+    if (typeof declaredProvider?.id === 'string') runtimeControls.providerId = declaredProvider.id;
     if (runtime.host === 'cloud' || runtime.host === 'byo') runtimeControls.host = runtime.host;
     // The identity binding, rather than this pod's runtime declaration, tells
     // us whether the daemon owns the next spawn. A Settings write can make an

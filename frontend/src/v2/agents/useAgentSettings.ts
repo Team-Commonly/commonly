@@ -45,7 +45,7 @@ interface AgentAccess {
 interface ManageSettingsResponse {
   writablePodId: string | null;
   runtimeSourcePodId?: string | null;
-  runtimeControls?: { runtimeType?: string; host?: 'cloud' | 'byo'; adapter?: string; model?: string; effort?: string };
+  runtimeControls?: { providerId?: string; runtimeType?: string; host?: 'cloud' | 'byo'; adapter?: string; model?: string; effort?: string };
   runtimeSavedControls?: ManageSettingsResponse['runtimeControls'];
   ownKeyCapability?: { available: boolean; provider: string | null };
   runtimeObservation?: RuntimeObservation | null;

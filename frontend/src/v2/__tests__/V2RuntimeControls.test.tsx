@@ -60,3 +60,12 @@ test('an unmapped harness gets no setter, while a CLI gets no key API request', 
   render(<Key name="seat" instanceId="default" editable={false} harness="Codex" />);
   expect(mockApi.get).not.toHaveBeenCalled(); expect(screen.queryByRole('button')).toBeNull();
 });
+test('OpenCode provider qualification alone does not leave a permanent pending model mark', () => {
+  render(<Controls runtime={{ ...runtime, adapter: 'opencode', providerId: 'explicit-provider', effort: '',
+    inventory: [{ harness: 'opencode', installed: true, version: '1', models: null, efforts: [] }],
+    observation: { ...runtime.observation, lastSpawn: { ...receipt, harness: 'opencode', model: 'explicit-provider/saved-model', effort: null } },
+  }} onSave={jest.fn()} />);
+  const modelRow = screen.getByLabelText('model').closest('.v2-runtime-controls__row')!;
+  expect(within(modelRow as HTMLElement).queryByLabelText('pending next spawn')).toBeNull();
+  expect(screen.getByText('explicit-provider/saved-model')).toBeInTheDocument();
+});

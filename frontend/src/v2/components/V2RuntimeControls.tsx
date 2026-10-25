@@ -10,7 +10,7 @@ export interface RuntimeObservation {
 }
 export interface HarnessInventory { harness: string; installed: boolean; version: string | null; models: string[] | null; efforts: string[] }
 export interface RuntimeSettings {
-  runtimeType?: string; host?: 'cloud' | 'byo'; adapter?: string; model?: string; effort?: string; managed?: boolean;
+  providerId?: string; runtimeType?: string; host?: 'cloud' | 'byo'; adapter?: string; model?: string; effort?: string; managed?: boolean;
   ownKeyCapability?: { available: boolean; provider: string | null };
   observation?: RuntimeObservation | null; inventory?: HarnessInventory[]; processConnected?: boolean;
 }
@@ -41,8 +41,16 @@ const V2RuntimeControls: React.FC<{ runtime: RuntimeSettings; onSave?: (update: 
   const storedEffort = Boolean(effort && !levels.includes(effort));
   const unsupportedEffort = editable && storedEffort;
   const changed = harness !== savedHarness || model !== (runtime.model || '') || effort !== (runtime.effort || '');
-  const pending = (field: 'harness' | 'model' | 'effort') => Boolean(last && (field !== 'effort' || levels.length)
-    && (field === 'harness' ? savedHarness : runtime[field] || null) !== last[field]);
+  const pending = (field: 'harness' | 'model' | 'effort') => {
+    if (!last || (field === 'effort' && !levels.length)) return false;
+    let desired = field === 'harness' ? savedHarness : runtime[field] || null;
+    // OpenCode's native argument qualifies the configured upstream model with
+    // the explicitly declared provider. That spelling alone is not a change.
+    if (field === 'model' && savedHarness === 'opencode' && runtime.providerId && desired) {
+      desired = `${runtime.providerId}/${desired}`;
+    }
+    return desired !== last[field];
+  };
   const value = (receipt: RuntimeReceipt | null | undefined, field: 'harness' | 'model' | 'effort', confirmation = false) => {
     if (!receipt) return k(confirmation ? 'unconfirmed' : 'notReported');
     if (field === 'harness') return `${LABELS[receipt.harness] || receipt.harness}${receipt.version ? ` ${receipt.version}` : ''}`;
