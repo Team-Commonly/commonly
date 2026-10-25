@@ -1447,8 +1447,6 @@
       "adapterDefault": "Auto-detect on that computer",
       "adapterClaude": "Claude Code",
       "adapterCodex": "Codex",
-      "claudeRecommendation": "The Claude Code preset recommends {{model}}.",
-      "claudeOwnSession": "Your own Claude session uses your account, independently of this instance.",
       "modelLabel": "Model",
       "modelDefault": "Adapter default",
       "modelOpus": "Opus — strongest reasoning",

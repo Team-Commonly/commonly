@@ -1,3 +1,4 @@
+jest.mock('../../../services/modelAvailability', () => ({ getModelCatalog: jest.fn().mockResolvedValue({ models: [], checkedAt: 'test' }), modelAvailability: jest.fn((catalog, id) => catalog.models.find((model) => model.id === id) || { id, available: false, reason: 'No configured route' }) }));
 jest.mock('../../../middleware/auth', () => (req, res, next) => next());
 jest.mock('../../../middleware/adminAuth', () => (req, res, next) => next());
 
@@ -549,26 +550,13 @@ describe('admin global integrations route', () => {
 });
 
 
-describe('admin Anthropic availability', () => {
-  const original = process.env.ANTHROPIC_MODELS_AVAILABLE;
-  afterEach(() => {
-    if (original === undefined) delete process.env.ANTHROPIC_MODELS_AVAILABLE;
-    else process.env.ANTHROPIC_MODELS_AVAILABLE = original;
-  });
-  it.each(['false', 'true'])('returns the instance flag %s alongside unchanged policy', async (flag) => {
-    process.env.ANTHROPIC_MODELS_AVAILABLE = flag;
-    Pod.findOne.mockResolvedValue({ _id: 'global', members: ['admin-1'] });
-    Integration.findOne.mockResolvedValue(null);
-    GlobalModelConfigService.getConfig.mockResolvedValue({ openclaw: { model: 'anthropic/claude-opus-4-6' } });
-    const response = createRes();
-    await getRouteHandler('/', 'get')({ userId: 'admin-1' }, response);
-    expect(response.status).not.toHaveBeenCalledWith(500);
-    expect(response.json.mock.calls[0][0]).toMatchObject({
-      modelAvailability: { anthropic: {
-        available: flag === 'true',
-        reason: flag === 'true' ? null : 'Anthropic models are unavailable on this instance right now',
-      } },
-      modelPolicy: { openclaw: { model: 'anthropic/claude-opus-4-6' } },
-    });
-  });
+
+test('admin receives the same shared model catalogue', async () => {
+  const snapshot = { models: [{ id: 'failed-route', available: false, reason: 'Rejected credentials' }], checkedAt: 'test' };
+  require('../../../services/modelAvailability').getModelCatalog.mockResolvedValueOnce(snapshot);
+  Pod.findOne.mockResolvedValue({ _id: 'global', members: ['admin-1'] });
+  Integration.findOne.mockResolvedValue(null);
+  const res = createRes();
+  await getRouteHandler('/', 'get')({ userId: 'admin-1' }, res);
+  expect(res.json.mock.calls[0][0].modelCatalog).toEqual(snapshot);
 });

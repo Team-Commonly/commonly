@@ -132,21 +132,39 @@ describe('instance Anthropic model options', () => {
   it.each([false, true])('keeps all three options visible with availability %s', async (available) => {
     mockGet.mockResolvedValue({ data: {
       ...globalResponse.data,
-      modelAvailability: { anthropic: { available, reason: available ? null : 'Anthropic models are unavailable on this instance right now' } },
+      modelCatalog: { models: ['opus-4-6', 'sonnet-4-6', 'haiku-4-5'].map((slug, index) => ({ id: 'anthropic/claude-' + slug, label: ['Claude Opus 4.6', 'Claude Sonnet 4.6', 'Claude Haiku 4.5'][index], provider: 'anthropic', available, reason: available ? null : 'The upstream rejected this route’s credentials' })) },
       modelPolicy: { openclaw: { provider: 'anthropic', model: 'anthropic/claude-opus-4-6' } },
     } });
     renderPage();
     await waitFor(() => expect(screen.getByLabelText('Dev Agent Primary Model')).toHaveTextContent('Claude Opus 4.6'));
     const save = screen.getByRole('button', { name: 'Save Model Policy' });
     expect(save.disabled).toBe(!available);
-    if (!available) expect(screen.getByText('Anthropic models are unavailable on this instance right now')).toBeInTheDocument();
-    else expect(screen.queryByText('Anthropic models are unavailable on this instance right now')).not.toBeInTheDocument();
+    if (!available) expect(screen.getAllByText('The upstream rejected this route’s credentials')[0]).toBeInTheDocument();
+    else expect(screen.queryByText('The upstream rejected this route’s credentials')).not.toBeInTheDocument();
     fireEvent.mouseDown(screen.getByLabelText('Dev Agent Primary Model'));
     const list = await screen.findByRole('listbox', { hidden: true });
     for (const model of ['Claude Opus 4.6', 'Claude Sonnet 4.6', 'Claude Haiku 4.5']) {
-      const option = within(list).getByRole('option', { name: available ? model : model + ' (unavailable)', hidden: true });
+      const option = within(list).getByRole('option', { name: new RegExp(model), hidden: true });
       if (available) expect(option).not.toHaveAttribute('aria-disabled', 'true');
       else expect(option).toHaveAttribute('aria-disabled', 'true');
     }
   });
+});
+
+it('offers a newly discovered route without selecting it on a provider change', async () => {
+  mockGet.mockResolvedValue({ data: {
+    ...globalResponse.data,
+    modelCatalog: { models: [{ id: 'future-route', label: 'New model from gateway', provider: 'custom', available: true, reason: null }] },
+  } });
+  renderPage();
+  await waitFor(() => expect(screen.getByDisplayValue('CommonlyHQ')).toBeInTheDocument());
+  fireEvent.mouseDown(screen.getByLabelText('Dev Agent Provider'));
+  fireEvent.click(await screen.findByRole('option', { name: 'Custom', hidden: true }));
+  expect(screen.getByRole('button', { name: 'Save Model Policy' })).toBeDisabled();
+  fireEvent.mouseDown(screen.getByLabelText('Dev Agent Primary Model'));
+  const choice = await screen.findByRole('option', { name: 'New model from gateway', hidden: true });
+  expect(choice).not.toHaveAttribute('aria-disabled', 'true');
+  fireEvent.click(choice);
+  await waitFor(() => expect(screen.getByLabelText('Dev Agent Primary Model')).toHaveTextContent('New model from gateway'));
+  expect(screen.getByRole('button', { name: 'Save Model Policy' })).not.toBeDisabled();
 });

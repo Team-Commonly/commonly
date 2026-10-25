@@ -1,44 +1,57 @@
-# Instance Anthropic model availability
+# Instance model catalogue and route health
 
-`ANTHROPIC_MODELS_AVAILABLE` is the single availability flag for the instance's
-Anthropic route. It defaults to false. Key presence is insufficient: an expired
-or rejected key still exists. After repairing the key, verify a request through
-the instance route before setting this flag to `true` and redeploying the backend.
-With Helm, set `backend.env.anthropicModelsAvailable: "true"`. Set it back to
-`"false"` when that route is unavailable. Reload the screen after deployment.
+`backend/services/modelAvailability.ts` is the shared hosted/native model list.
+It reads LiteLLM's `/model/info` and `/health` using the server credential, caches
+one snapshot for five minutes, and shares a pending refresh between concurrent
+readers. A subsequent read after expiry refreshes both inputs. No model request
+is made for each picker interaction. `/health` may make real low-token probes;
+its result is separate from gateway readiness or a configured route list.
 
-The admin integrations API returns `modelAvailability.anthropic`, with
-`available` and `reason`. The three Claude options remain visible, carry an
-unavailable label and cannot be selected while disabled. A saved Claude model
-is retained and shown honestly; the UI neither hides it nor chooses a replacement.
-Saving model policy is disabled while Anthropic is selected and unavailable.
-This is UI availability metadata, not a runtime kill switch or automatic fallback.
+The catalogue includes discovered chat/completion/responses routes and retains
+previously offered choices, plus routes discovered earlier in the process.
+A removed route stays visible as unavailable. New routes appear without code
+changes. Status is per public route group: at least one matching healthy
+deployment is required. Health deployment IDs prevent a good key on one route
+from masking a rejected key on another. Older health responses without IDs are
+accepted only when the upstream model identifies a single deployment; ambiguous
+results remain unconfirmed.
 
-`GET /api/registry/presets` includes `recommendedModelAvailability` alongside
-the unchanged recommendation. `GET /api/registry/model-availability` supplies
-the same availability and the Claude Code preset's recommendation to the connect
-screen without waiting for gateway capability discovery. Both routes require auth.
+The public shape contains model ID, label, provider group, availability, a fixed
+reason and snapshot time. Provider errors, keys, endpoint URLs, budgets and
+request bodies are never returned. Reasons distinguish rejected credentials,
+rate limits/quota, failed checks, missing routes and unconfirmed health. Missing
+configuration, missing health or a failed refresh never preserves stale green.
 
-Claude Code's local/BYO adapter uses the person's own session. Its model options
-remain selectable. At connection, the screen names the preset's recommendation
-and explains the instance outage separately. The instance flag says nothing
-about the person's external credentials.
+Consumers:
+
+- Admin global integrations returns `modelCatalog` alongside existing policy;
+  the backend and agent model pickers derive choices from that list. A saved
+  missing/unhealthy model remains visible. No replacement is selected when a
+  provider changes. Periodic catalogue refresh does not overwrite policy edits.
+- Authenticated `GET /api/registry/models` supplies the same snapshot to hosted
+  model override choices and refreshes them every five minutes.
+- `GET /api/registry/presets` includes the same catalogue and each hosted
+  recommendation's status. BYO recommendations are explicitly scoped to BYO;
+  gateway failures never mark them unavailable.
+- Local CLI model inventories and the BYO form remain independent. They use the
+  person's own runtime/account. CLI model arguments accept user-supplied IDs;
+  they are not an instance model catalogue.
+
+To restore availability, repair the actual provider route/credential and let the
+next health refresh verify it. There is no manual availability flag. This
+metadata does not change runtime routing, choose a fallback or migrate installs.
 
 ## Surface scan (2026-10-25)
 
-Searched `frontend/src`, `cli/src`, and `backend/routes` for `claude-`,
-`recommendedModel`, and model picker/flag definitions.
+Searched `frontend/src`, `cli/src` and `backend/routes` for `claude-`,
+`recommendedModel`, and model picker/flag definitions. Admin `GlobalIntegrations`
+and legacy `AgentsHub` hosted model choices now read the shared list. The retired
+AgentsHub Presets tab is not reintroduced. Native settings display model/runtime
+truth; local runtime controls consume the CLI inventory. `V2AgentBYO` offers
+local aliases (`opus`, `sonnet`, `haiku`) and remains unchanged. Registry presets
+carry scope-appropriate recommendation status, including local Claude Code.
 
-- `GlobalIntegrations.tsx`: three instance model choices (Opus 4.6, Sonnet 4.6,
-  Haiku 4.5); covered by the flag.
-- `registry/presets.ts`: Claude Code recommends `claude-opus-4-6`; exposed with
-  availability metadata and stated on the current connect screen. The legacy
-  AgentsHub Presets tab was retired; no new tab is introduced.
-- `V2AgentBYO.tsx`: local Claude aliases `opus`, `sonnet`, `haiku`, using the
-  person's own account. Recommendation and instance notice are shown here.
-- `AgentsHub.tsx`: model override choices contain no Claude model IDs.
-- CLI `agent config --model <id>` and adapter model arguments are generic,
-  user-supplied local runtime settings. They offer no fixed `claude-*` catalog
-  and do not route through the instance key. They remain unchanged.
+LiteLLM contracts: [model health API](https://docs.litellm.ai/docs/proxy/health),
+[deployment health implementation](https://github.com/BerriAI/litellm/blob/main/litellm/proxy/health_check.py).
 
-Browser evidence and fixture boundaries: [TASK-002 audit](../audits/shell-task-002/README.md).
+Browser evidence: [TASK-002 audit](../audits/shell-task-002/README.md).

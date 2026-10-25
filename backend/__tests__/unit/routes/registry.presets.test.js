@@ -1,3 +1,4 @@
+jest.mock('../../../services/modelAvailability', () => ({ getModelCatalog: jest.fn().mockResolvedValue({ models: [], checkedAt: 'test' }), modelAvailability: jest.fn((catalog, id) => catalog.models.find((model) => model.id === id) || { id, available: false, reason: 'No configured route' }) }));
 jest.mock('../../../middleware/auth', () => (req, res, next) => next());
 jest.mock('../../../middleware/adminAuth', () => (req, res, next) => next());
 
@@ -193,29 +194,21 @@ describe('registry presets', () => {
 });
 
 
-describe('instance Anthropic availability', () => {
-  const original = process.env.ANTHROPIC_MODELS_AVAILABLE;
-  afterEach(() => {
-    if (original === undefined) delete process.env.ANTHROPIC_MODELS_AVAILABLE;
-    else process.env.ANTHROPIC_MODELS_AVAILABLE = original;
-  });
 
-  it.each(['false', 'true'])('reports flag %s without replacing the preset model', async (flag) => {
-    process.env.ANTHROPIC_MODELS_AVAILABLE = flag;
-    listOpenClawPlugins.mockResolvedValue({ plugins: [] });
-    const response = { json: jest.fn(), status: jest.fn().mockReturnThis() };
-    await getRouteHandler('/presets', 'get')({}, response);
-    const preset = response.json.mock.calls[0][0].presets.find((row) => row.id === 'claude-code-agent');
-    expect(preset.recommendedModel).toBe('claude-opus-4-6');
-    expect(preset.recommendedModelAvailability).toEqual({
-      available: flag === 'true',
-      reason: flag === 'true' ? null : 'Anthropic models are unavailable on this instance right now',
-    });
-    const installResponse = { json: jest.fn() };
-    getRouteHandler('/model-availability', 'get')({}, installResponse);
-    expect(installResponse.json).toHaveBeenCalledWith({
-      anthropic: preset.recommendedModelAvailability,
-      claudeCodeRecommendation: preset.recommendedModel,
-    });
-  });
+test('BYO recommendations remain independent of failed instance routes', async () => {
+  listOpenClawPlugins.mockResolvedValue({ plugins: [] });
+  const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+  await getRouteHandler('/presets', 'get')({}, res);
+  const preset = res.json.mock.calls[0][0].presets.find((row) => row.id === 'claude-code-agent');
+  expect(preset.recommendedModel).toBe('claude-opus-4-6');
+  expect(preset.recommendedModelAvailability).toMatchObject({ available: true, source: 'byo' });
+});
+
+test('the model endpoint returns the shared server catalogue', async () => {
+  const service = require('../../../services/modelAvailability');
+  const snapshot = { models: [{ id: 'new-route', available: false, reason: 'Rejected credentials' }], checkedAt: 'test' };
+  service.getModelCatalog.mockResolvedValueOnce(snapshot);
+  const res = { json: jest.fn() };
+  await getRouteHandler('/models', 'get')({}, res);
+  expect(res.json).toHaveBeenCalledWith(snapshot);
 });

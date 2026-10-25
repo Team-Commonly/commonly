@@ -1507,8 +1507,6 @@
       "adapterDefault": "在这台电脑上自动检测",
       "adapterClaude": "Claude Code",
       "adapterCodex": "Codex",
-      "claudeRecommendation": "Claude Code 预设推荐 {{model}}。",
-      "claudeOwnSession": "你自己的 Claude 会话使用你的账号，与此实例独立。",
       "modelLabel": "模型",
       "modelDefault": "适配器默认",
       "modelOpus": "Opus——推理最强",
