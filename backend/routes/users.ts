@@ -4,7 +4,7 @@ import rateLimit from 'express-rate-limit';
 import { createHash } from 'crypto';
 import { AccountDeletionError, deleteOwnAccount } from '../services/accountDeletionService';
 import {
-  cloudflareIpRateLimitKeyGenerator, transportPeerRateLimitKeyGenerator, authenticatedUserRateLimitKeyGenerator,
+  cloudflareIpRateLimitKeyGenerator, presentedCredentialRateLimitKeyGenerator, authenticatedUserRateLimitKeyGenerator,
 } from '../middleware/ipRateLimit';
 // eslint-disable-next-line global-require
 const express = require('express');
@@ -91,12 +91,12 @@ const profileWriteUserLimit = rateLimit({
   }),
 });
 
-const accountDeletionIngressLimit = rateLimit({
+const accountDeletionCredentialRateLimit = rateLimit({
   windowMs: 15 * 60_000,
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: transportPeerRateLimitKeyGenerator,
+  keyGenerator: presentedCredentialRateLimitKeyGenerator,
 });
 
 const accountDeletionRateLimit = rateLimit({
@@ -107,7 +107,7 @@ const accountDeletionRateLimit = rateLimit({
   keyGenerator: authenticatedUserRateLimitKeyGenerator,
 });
 
-router.delete('/me', accountDeletionIngressLimit, auth, accountDeletionRateLimit, async (req: any, res: any) => {
+router.delete('/me', accountDeletionCredentialRateLimit, auth, accountDeletionRateLimit, async (req: any, res: any) => {
   if (req.authType !== 'jwt') {
     return res.status(403).json({
       code: 'BROWSER_SESSION_REQUIRED', error: 'Sign in through the browser to delete your account.',

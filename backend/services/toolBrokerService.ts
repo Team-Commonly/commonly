@@ -677,12 +677,14 @@ const HOSTED_OWNER_REFUSALS: Record<SessionAccountRefusal, string> = {
   banned: 'connection_owner_banned',
   missing: 'connection_owner_missing',
   bot: 'connection_owner_bot',
+  deleting: 'connection_owner_deleting',
 };
 
 const HOSTED_OWNER_MESSAGES: Record<SessionAccountRefusal, string> = {
   banned: 'the person who connected this connection is suspended',
   missing: 'the person who connected this connection no longer exists',
   bot: 'this connection is owned by a bot account, which cannot be its granter',
+  deleting: 'the person who connected this connection is deleting their account',
 };
 
 const assertHostedOwnerUsable = async (ownerUserId?: string): Promise<void> => {

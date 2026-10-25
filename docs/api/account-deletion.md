@@ -42,10 +42,14 @@ marked account, so a concurrent promotion and deletion cannot cross that boundar
   independent agent `User` identities, memory and pod memberships survive
   (ADR-001). Installations made by other humans remain active. Legacy agent
   tokens that carry no human ownership are not reclassified as the human's token.
+- The deleted human is removed from `Pod.members` and its PG `pod_members` mirror. Pods they created remain,
+  keeping only the opaque historical `createdBy` reference; no ownership transfer
+  is performed. Other humans' and agents' memberships remain.
 - Shared messages and posts remain. PostgreSQL's author row becomes a `Deleted
   user` tombstone with no avatar so historical chat joins retain an author without
   preserving its display name. Account deletion does not scrub personal details
-  a person wrote into shared message text.
+  a person wrote into shared message text. Attachments they uploaded are removed
+  even when shared in someone else's message; retained text may have a missing attachment.
 - Any linked Stripe subscription is canceled before the account's billing
   linkage is removed. Cancellation failure refuses deletion rather than leaving
   an unreachable recurring charge. Stripe is an external billing boundary;
@@ -99,8 +103,14 @@ Bytes are removed before their `File` metadata. A failure in the deletion
 request's own storage or PG cleanup returns
 `503` and retains the human row so a re-authenticated retry can finish. Already
 removed objects are safe to delete again. Owned API/device credentials are
-revoked during cleanup; the browser session stays available for retry until the
-human row is removed. A retry after the OAuth freshness window requires another
+revoked during cleanup; the browser JWT is refused for ordinary HTTP, socket handshakes/packets,
+attachment access and hosted connector use while the deletion marker remains.
+Existing browser sockets are disconnected during access cleanup. Two canonical
+HTTP routes remain: re-authenticated `DELETE /api/users/me`, and read-only
+`GET /api/auth/user`, which returns only id, username, email, role and
+`accountDeletionPending: true` so AuthContext can reopen Settings after reload or
+fresh OAuth. This bootstrap grants no pod/profile/refresh access. Password or
+fresh OAuth proof is still required on every deletion retry. A retry after the OAuth freshness window requires another
 provider sign-in. Subscription cancellation uses an account-and-subscription-specific idempotency
 key. This does not replace provider retention policies or remove billing audit
 records and backups.
@@ -122,12 +132,29 @@ exchange code rather than constructing the accepted JWT claim in the fixture.
 
 Deletion permits ten attempts per user per fifteen minutes; human uploads permit
 sixty. These quotas run after authentication and use the durable user id, so
-rotating sessions or forged forwarding headers cannot reset them. Before auth,
-a coarse transport-peer bucket permits 120 deletion or 6,000 upload requests per
-fifteen minutes. It uses the socket peer only. Behind a proxy that bucket is
-shared, so it is intentionally broader than the user quota.
+rotating sessions or forged forwarding headers cannot reset them. Before auth, a coarse quota keys on a SHA-256 digest of the presented bearer
+(120 deletion / 6,000 upload attempts per fifteen minutes), never its plaintext.
+Requests without credentials share a separate anonymous bucket. Exhausting that
+bucket cannot block an authenticated account. Rotating invalid credentials can
+evade this coarse bound; it does not replace ingress abuse protection. The
+post-auth quota remains keyed by stable user id across valid session rotation.
+No quota keys on the shared proxy socket or untrusted forwarding headers.
 
 Lily ruled on 2026-10-25 to preserve agent identities and leave them detached.
 Original ownership remains, owned runtimes pause and owned credentials are revoked.
 Self-serve re-attachment requires the original owner, so it is unavailable after
 that owner is deleted. No ownership transfer or administrator recovery is introduced.
+
+## Remaining bounds
+
+Receipts deliberately retain the opaque id after cleanup because not every late
+producer is fenced. With N retained receipts, a healthy 100-per-minute sweep can
+take roughly ceil(N/100) ticks per full revisit; work grows with lifetime
+deletions. Retiring receipts requires a proven producer horizon, not an arbitrary
+TTL. TASK-004 tracks that capacity/retirement work.
+
+The existing administrator-demotion handler still counts then updates. Concurrent
+administrators can demote one another and leave zero administrators. This PR
+only makes role promotion versus account-deletion eligibility atomic on the
+target document; it does not fix the independent administrator-demotion race.
+TASK-003 tracks that defect separately.

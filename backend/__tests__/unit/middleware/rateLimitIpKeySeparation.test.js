@@ -1,8 +1,8 @@
 /**
  * TASK-126 — behavioural probe: no rate limiter mounted in the app may put two
  * callers that differ in the configured identity into one bucket. Existing
- * CF policies vary only cf-connecting-ip; explicit account-deletion/upload peer
- * and authenticated-user policies vary only socket peer or trusted user id.
+ * CF policies vary only cf-connecting-ip; explicit account-deletion/upload
+ * policies vary only the presented credential or trusted user id.
  * The new policies are pinned to their exact function identities and routes.
  *
  * Why each walked instance is re-mounted on a stub instead of being exercised
@@ -21,8 +21,8 @@
  *   - Three instances never answer at all through the app: their handlers need
  *     Mongo and unit mode runs without it.
  * Existing policies receive no params, auth header or user id, so their IP
- * branch remains the CF probe. The four explicit new policies receive either a
- * simulated socket peer or an authenticated user id. Every limiter still runs
+ * branch remains the CF probe. Explicit new policies receive a presented
+ * credential or authenticated user id. Every limiter still runs
  * a counted A,A,B sequence; no instance is exempted and no database is needed.
  *
  * The A,A,B sequence is deliberate: two requests cannot separate "different
@@ -36,7 +36,7 @@
 /* eslint-disable import/no-unresolved, import/extensions */
 // Express wraps middleware functions, but copies getKey unchanged. Capture
 // policy by that store method while retaining the real limiter and store. New
-// socket-peer/user quotas must be measured on their declared identity dimension.
+// Authenticated-user quotas must be measured on their declared identity dimension.
 const mockLimiterKeys = new WeakMap();
 jest.mock('express-rate-limit', () => {
   const actual = jest.requireActual('express-rate-limit');
@@ -57,7 +57,7 @@ const request = require('supertest');
 const rateLimit = require('express-rate-limit');
 const { ipKeyGenerator } = require('express-rate-limit');
 const {
-  cloudflareIpRateLimitKeyGenerator, transportPeerRateLimitKeyGenerator, authenticatedUserRateLimitKeyGenerator,
+  cloudflareIpRateLimitKeyGenerator, presentedCredentialRateLimitKeyGenerator, authenticatedUserRateLimitKeyGenerator,
 } = require('../../../middleware/ipRateLimit');
 
 // Captured at MODULE LOAD, before any test can flip it. A baseline re-read inside
@@ -136,9 +136,7 @@ const single = (instance, dimension = 'cf') => {
   const stub = express();
   stub.all('/', (req, _res, next) => {
     if (dimension === 'user') req.userId = req.get('x-probe-identity');
-    if (dimension === 'peer') {
-      Object.defineProperty(req.socket, 'remoteAddress', { value: req.get('x-probe-identity'), configurable: true });
-    }
+    if (dimension === 'credential') req.headers.authorization = `Bearer ${req.get('x-probe-identity')}`;
     next();
   }, instance, (req, res) => {
     if (typeof req.rateLimit?.remaining === 'number') {
@@ -207,8 +205,8 @@ describe('TASK-126 ip key separation', () => {
     expect(distinct.size).toBe(walked.length);
   });
 
-  it('pins the four new explicit peer/user policies without exempting them from counting', () => {
-    for (const key of [transportPeerRateLimitKeyGenerator, authenticatedUserRateLimitKeyGenerator]) {
+  it('pins the explicit credential/user policies without exempting them from counting', () => {
+    for (const key of [presentedCredentialRateLimitKeyGenerator, authenticatedUserRateLimitKeyGenerator]) {
       expect(walked.filter((w) => mockLimiterKeys.get(w.instance.getKey) === key)
         .map((w) => `${w.method.toUpperCase()} ${w.path}`).sort())
         .toEqual(['DELETE /api/users/me', 'POST /api/uploads/']);
@@ -262,10 +260,10 @@ describe('TASK-126 ip key separation', () => {
     expect(rec.r3).toBe(rec.r1);
   });
 
-  // Legacy policies keep the original anonymous CF-header probe. The four new
-  // policies use the declared socket peer or authenticated-user dimension while
+  // Legacy policies keep the original anonymous CF-header probe. New policies
+  // use their presented-credential or authenticated-user dimension while
   // holding the CF header constant. Pinning their routes prevents reclassifying
-  // a legacy raw-req.ip regression as an intentional peer policy.
+  // a legacy raw-req.ip regression as an intentional per-user policy.
   it('every walked instance counts and separates its configured identity; none collapses', async () => {
     const results = [];
     // Serial, not `Promise.all` (wren 73692): with 84 chains started in one tick,
@@ -280,8 +278,8 @@ describe('TASK-126 ip key separation', () => {
        next reads it, which is the property under test. */
     for (const [i, w] of walked.entries()) {
       const key = mockLimiterKeys.get(w.instance.getKey);
-      const dimension = key === transportPeerRateLimitKeyGenerator ? 'peer'
-        : key === authenticatedUserRateLimitKeyGenerator ? 'user' : 'cf';
+      const dimension = key === authenticatedUserRateLimitKeyGenerator ? 'user'
+        : key === presentedCredentialRateLimitKeyGenerator ? 'credential' : 'cf';
       results[i] = { path: w.path, method: w.method, dimension, ...(await observe(w.instance, i + 1, dimension)) };
     }
     /* eslint-enable no-await-in-loop, no-restricted-syntax */

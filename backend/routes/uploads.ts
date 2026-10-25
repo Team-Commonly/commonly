@@ -30,7 +30,7 @@ import {
 } from '../services/attachmentAccess';
 import { logAttachmentTokenMint } from '../services/auditService';
 import {
-  cloudflareIpRateLimitKeyGenerator, transportPeerRateLimitKeyGenerator, authenticatedUserRateLimitKeyGenerator,
+  cloudflareIpRateLimitKeyGenerator, presentedCredentialRateLimitKeyGenerator, authenticatedUserRateLimitKeyGenerator,
 } from '../middleware/ipRateLimit';
 import { normalizeAvatarUrl } from '../services/avatarService';
 // eslint-disable-next-line global-require
@@ -275,12 +275,12 @@ const handleUpload = async (
   }
 };
 
-const uploadIngressLimit = rateLimit({
+const uploadCredentialRateLimit = rateLimit({
   windowMs: 15 * 60_000,
   max: 6000,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: transportPeerRateLimitKeyGenerator,
+  keyGenerator: presentedCredentialRateLimitKeyGenerator,
 });
 
 const uploadRateLimit = rateLimit({
@@ -291,7 +291,7 @@ const uploadRateLimit = rateLimit({
   keyGenerator: authenticatedUserRateLimitKeyGenerator,
 });
 
-router.post('/', uploadIngressLimit, auth, uploadRateLimit, uploadSingle('image'), async (req: AuthReq, res: Res) => {
+router.post('/', uploadCredentialRateLimit, auth, uploadRateLimit, uploadSingle('image'), async (req: AuthReq, res: Res) => {
   if (!req.userId) {
     res.status(401).json({ msg: 'auth required' });
     return;

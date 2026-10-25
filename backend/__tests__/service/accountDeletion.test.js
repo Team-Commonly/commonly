@@ -9,6 +9,8 @@ const mockStripe = { subscriptions: { cancel: jest.fn().mockResolvedValue({ stat
 jest.mock('../../services/billingService', () => ({ stripe: () => mockStripe }));
 const User = require('../../models/User');
 const File = require('../../models/File');
+const Pod = require('../../models/Pod');
+const authController = require('../../controllers/authController');
 const MediaObject = require('../../models/MediaObject');
 const DeviceAuthorization = require('../../models/DeviceAuthorization');
 const OAuthLoginState = require('../../models/OAuthLoginState');
@@ -23,6 +25,8 @@ const AccountDeletion = require('../../models/AccountDeletion');
 const { issueSessionToken } = require('../../services/sessionTokenService');
 const { getObjectStore } = require('../../services/objectStore');
 const oauthController = require('../../controllers/oauthController');
+const auth = require('../../middleware/auth');
+const { socketAuthMiddleware } = require('../../middleware/socketAuth');
 const routes = require('../../routes/users');
 const uploads = require('../../routes/uploads');
 const adminRoutes = require('../../routes/admin/users');
@@ -51,6 +55,12 @@ describe('Self-serve account deletion', () => {
     app = express(); app.use(express.json());
     app.use('/api/users', routes); app.use('/api/uploads', uploads);
     app.use('/api/admin/users', adminRoutes);
+    app.get('/session-probe', auth, (_req, res) => res.sendStatus(204));
+    app.post('/session-probe', auth, (_req, res) => res.sendStatus(204));
+    const recovery = express.Router();
+    recovery.get('/user', auth, authController.getCurrentUser);
+    recovery.get('/profile', auth, (_req, res) => res.sendStatus(204));
+    app.use('/api/auth', recovery);
     const probeLimit = require('express-rate-limit')({ windowMs: 60000, max: 1000 });
     app.get('/runtime-probe', probeLimit, agentRuntimeAuth, (_req, res) => res.sendStatus(204));
   });
@@ -63,6 +73,8 @@ describe('Self-serve account deletion', () => {
       tokenHash: createHash('sha256').update(deviceToken).digest('hex'), label: 'Laptop' }] });
     const other = await makeUser();
     const agent = await makeUser({ isBot: true });
+    const sharedPod = await Pod.create({ name: 'Keep shared pod', createdBy: human._id,
+      members: [human._id, other._id, agent._id] });
     const memory = await AgentMemory.create({ agentName: 'surviving-agent', instanceId: 'default',
       sections: { long_term: { content: 'Remember this', visibility: 'private', byteSize: 13 } } });
     const ownInstallation = await AgentInstallation.create({ agentName: 'surviving-agent',
@@ -84,9 +96,15 @@ describe('Self-serve account deletion', () => {
       ['123456789012345678901234', 'Shared', 'chat', String(other._id)]);
     await mockPg.query('INSERT INTO messages (id,pod_id,user_id,content) VALUES ($1,$2,$3,$4)',
       ['1', '123456789012345678901234', String(human._id), 'Shared history']);
+    await mockPg.query('INSERT INTO pod_members (pod_id,user_id) VALUES ($1,$2)',
+      ['123456789012345678901234', String(human._id)]);
     const token = issueSessionToken(human);
     await deletion(app, token).expect(204);
     expect(await User.findById(human._id)).toBeNull();
+    const retainedPod = await Pod.findById(sharedPod._id);
+    expect(retainedPod.members.map(String).sort()).toEqual([String(other._id), String(agent._id)].sort());
+    expect(String(retainedPod.createdBy)).toBe(String(human._id));
+    expect((await mockPg.query('SELECT * FROM pod_members WHERE user_id = $1', [String(human._id)])).rows).toHaveLength(0);
     expect(await File.countDocuments({ uploadedBy: human._id })).toBe(0);
     expect(await MediaObject.findOne({ key: 'own.png' })).toBeNull();
     expect(await MediaObject.countDocuments()).toBe(2);
@@ -126,6 +144,7 @@ describe('Self-serve account deletion', () => {
     expect(after).not.toBeNull();
     expect(after.apiToken).toBe('cm_no-deletion');
     expect(after.accountDeletionRequestedAt).toBeUndefined();
+    await request(app).get('/session-probe').set('Authorization', `Bearer ${issueSessionToken(user)}`).expect(204);
   });
 
   it('requires fresh OAuth sign-in, not JWT issue time or refresh', async () => {
@@ -172,6 +191,15 @@ describe('Self-serve account deletion', () => {
       .attach('image', Buffer.from('late bytes'), 'late.png').expect(403);
     expect(await MediaObject.countDocuments()).toBe(0);
     expect(await File.countDocuments()).toBe(0);
+  });
+
+  it('does not let anonymous deletion attempts exhaust a proxy-wide bucket', async () => {
+    for (let attempt = 0; attempt < 121; attempt += 1) {
+      const response = await request(app).delete('/api/users/me').send({ confirmation: 'DELETE' });
+      expect([401, 429]).toContain(response.status);
+    }
+    const user = await makeUser();
+    await deletion(app, issueSessionToken(user), {}).expect(400);
   });
 
   it('limits deletion by account despite rotating JWTs and forwarding headers', async () => {
@@ -223,8 +251,27 @@ describe('Self-serve account deletion', () => {
     const after = await User.findById(user._id).select('+apiToken');
     expect(after.apiToken).toBe('cm_keep-on-billing-failure');
     expect(after.accountDeletionRequestedAt).toBeUndefined();
+    await request(app).get('/session-probe').set('Authorization', `Bearer ${issueSessionToken(user)}`).expect(204);
     expect(await MediaObject.findOne({ key: 'billing.png' })).not.toBeNull();
     expect(await File.countDocuments({ uploadedBy: user._id })).toBe(1);
+  });
+
+  it('blocks ordinary HTTP and socket access after failed cleanup but permits reauthenticated deletion retry', async () => {
+    const user = await makeUser(); const token = issueSessionToken(user);
+    await request(app).get('/session-probe').set('Authorization', `Bearer ${token}`).expect(204);
+    jest.spyOn(mockPg, 'query').mockRejectedValueOnce(new Error('PG unavailable'));
+    await deletion(app, token).expect(503);
+    await request(app).get('/session-probe').set('Authorization', `Bearer ${token}`).expect(403);
+    await request(app).post('/session-probe').set('Authorization', `Bearer ${token}`).expect(403);
+    await request(app).get('/api/auth/profile').set('Authorization', `Bearer ${token}`).expect(403);
+    const bootstrap = await request(app).get('/api/auth/user').set('Authorization', `Bearer ${token}`).expect(200);
+    expect(Object.keys(bootstrap.body).sort()).toEqual(['_id', 'username', 'email', 'role', 'accountDeletionPending'].sort());
+    expect(bootstrap.body.accountDeletionPending).toBe(true);
+    const next = jest.fn();
+    await socketAuthMiddleware({ handshake: { auth: { token } } }, next);
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
+    await deletion(app, token, { confirmation: 'DELETE', password: 'wrong' }).expect(401);
+    await deletion(app, token).expect(204);
   });
 
   it('keeps a PG failure retryable and only removes the human after anonymization succeeds', async () => {

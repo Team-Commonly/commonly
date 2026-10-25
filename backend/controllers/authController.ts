@@ -938,6 +938,10 @@ exports.getCurrentUser = async (req: any, res: any) => {
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
+    if (user.accountDeletionRequestedAt) {
+      return res.json({ _id: user._id, username: user.username, email: user.email,
+        role: user.role, accountDeletionPending: true });
+    }
     res.json(user);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

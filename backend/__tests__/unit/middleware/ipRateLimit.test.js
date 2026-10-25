@@ -31,17 +31,21 @@ describe('cloudflareIpRateLimitKeyGenerator', () => {
   });
 });
 
-const { transportPeerRateLimitKeyGenerator, authenticatedUserRateLimitKeyGenerator } = require('../../../middleware/ipRateLimit');
+const { authenticatedUserRateLimitKeyGenerator } = require('../../../middleware/ipRateLimit');
 
 describe('account mutation quota keys', () => {
-  it('uses the transport peer despite conflicting forwarding headers', () => {
-    expect(transportPeerRateLimitKeyGenerator({ socket: { remoteAddress: '192.0.2.4' },
-      ip: '203.0.113.5', headers: { 'cf-connecting-ip': '198.51.100.6' } }))
-      .toBe(ipKeyGenerator('192.0.2.4'));
-  });
   it('uses the authenticated account rather than bearer or forwarding headers', () => {
     expect(authenticatedUserRateLimitKeyGenerator({ userId: 'one', headers: { authorization: 'rotated' } }))
       .toBe('user:one');
     expect(authenticatedUserRateLimitKeyGenerator({ userId: 'two' })).toBe('user:two');
   });
+});
+
+const { presentedCredentialRateLimitKeyGenerator } = require('../../../middleware/ipRateLimit');
+it('isolates anonymous traffic from credential buckets without retaining bearer text', () => {
+  const key = (authorization) => presentedCredentialRateLimitKeyGenerator({ header: (name) => name === 'Authorization' ? authorization : undefined });
+  expect(key()).toBe('no-credential');
+  expect(key('Bearer first-secret')).not.toBe(key());
+  expect(key('Bearer first-secret')).not.toBe(key('Bearer second-secret'));
+  expect(key('Bearer first-secret')).not.toContain('first-secret');
 });

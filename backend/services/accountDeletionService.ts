@@ -4,6 +4,7 @@ import SchedulerHeartbeatLease from '../models/SchedulerHeartbeatLease';
 import User, { IUser } from '../models/User';
 import AccountDeletion from '../models/AccountDeletion';
 import File from '../models/File';
+import Pod from '../models/Pod';
 import DeviceAuthorization from '../models/DeviceAuthorization';
 import OAuthLoginState from '../models/OAuthLoginState';
 import AgentCredential from '../models/AgentCredential';
@@ -23,6 +24,7 @@ export class AccountDeletionError extends Error {
 }
 
 const revokeOwnedAccess = async (userId: string): Promise<void> => {
+  disconnectUserSessionSockets(userId);
   await User.updateOne({ _id: userId }, {
     $set: { deviceTokens: [] },
     $unset: { apiToken: 1, apiTokenCreatedAt: 1, apiTokenScopes: 1 },
@@ -31,6 +33,7 @@ const revokeOwnedAccess = async (userId: string): Promise<void> => {
   const credentials = await AgentCredential.find({ ownerUserId: userId }).select('_id').lean();
   await AgentCredential.revokeCascade(credentials.map((credential) => credential._id));
   await Machine.deleteMany({ ownerUserId: userId });
+  await Pod.updateMany({ members: userId }, { $pull: { members: userId } });
   await AgentInstallation.updateMany(
     { installedBy: userId, status: 'active' },
     { $set: { status: 'paused' } },
@@ -44,6 +47,7 @@ const anonymizeChatAuthor = async (userId: string): Promise<void> => {
   // Shared messages remain. Their PG author join keeps an anonymous tombstone;
   // it must not preserve the deleted person's display name or avatar.
   if (pool) {
+    await pool.query('DELETE FROM pod_members WHERE user_id = $1', [userId]);
     await pool.query(
       'UPDATE users SET username = $2, profile_picture = NULL, updated_at = $3 WHERE _id = $1',
       [userId, 'Deleted user', new Date()],
