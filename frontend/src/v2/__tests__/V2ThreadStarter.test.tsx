@@ -67,6 +67,7 @@ const makeDetail = (overrides = {}) => ({
   agents: [],
   sendMessage: jest.fn(),
   loading: false,
+  initialMessagesLoaded: true,
   error: null,
   refresh: jest.fn(),
   ...overrides,
@@ -107,6 +108,12 @@ describe('V2Thread teaching empty states', () => {
     // Direction C: the empty pod is one mono line; the composer (focused) carries the teaching.
     expect(screen.queryByText(/use @ to mention an agent or teammate/i)).not.toBeInTheDocument();
     expect(document.querySelector('.v2-thread__empty-line')).toHaveTextContent('no messages yet');
+  });
+
+  test('a failed first history read never shows a solo-pod invite', () => {
+    renderChat(makeDetail({ initialLoadComplete: true, initialMessagesLoaded: false, error: 'Messages unavailable' }));
+    expect(screen.queryByRole('button', { name: 'Copy invite link' })).not.toBeInTheDocument();
+    expect(document.querySelector('.v2-teammate')).toBeNull();
   });
 
   test('compact header shows singular agents and names both counts for assistive tech', () => {

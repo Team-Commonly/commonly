@@ -67,12 +67,13 @@ const BringTeammateContent: React.FC<Props> = ({ podId, podName, userId, source,
   useEffect(() => {
     if (!enabled || dismissed || lookup.current) return;
     const epoch = generation.current;
-    lookup.current = readExisting();
+    const request = readExisting();
+    lookup.current = request;
     // Visibility changes do not cancel a press while its thread slot moves.
     // Scope changes and explicit dismissal still invalidate the request.
-    void lookup.current.then((existing) => {
-      if (active.current && generation.current === epoch) setUrl(existing);
-    }).catch(() => { if (generation.current === epoch) lookup.current = null; });
+    void request.then((existing) => {
+      if (active.current && generation.current === epoch && lookup.current === request) setUrl(existing);
+    }).catch(() => { if (generation.current === epoch && lookup.current === request) lookup.current = null; });
   }, [enabled, dismissed, readExisting]);
 
   useEffect(() => {
@@ -90,7 +91,8 @@ const BringTeammateContent: React.FC<Props> = ({ podId, podName, userId, source,
     let destination = url;
     try {
       if (!destination) {
-        destination = await (lookup.current || readExisting());
+        if (!lookup.current) lookup.current = readExisting();
+        destination = await lookup.current;
         if (!stillHere()) return;
         if (!destination) {
           const created = await apiRef.current.post<{ token: string }>(`/api/pods/${podId}/invites`, {

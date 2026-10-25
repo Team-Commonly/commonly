@@ -182,6 +182,8 @@ export interface UseV2PodDetailResult {
   loading: boolean;
   /** True after the current pod's initial pod/message read has settled. */
   initialLoadComplete?: boolean;
+  /** The current pod has returned a successful messages page, including an empty page. */
+  initialMessagesLoaded?: boolean;
   error: string | null;
   /** Send failures belong beside the composer; load failures use `error`. */
   sendError: string | null;
@@ -297,6 +299,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
   // state distinct from a settled empty page so landing cannot declare a
   // target absent before the initial messages request has even started.
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const [initialMessagesLoaded, setInitialMessagesLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -339,6 +342,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     setError(null);
     setSendError(null);
     setInitialLoadComplete(false);
+    setInitialMessagesLoaded(false);
     setHasMore(false);
     setLoadingOlder(false);
     updateHistorySearch({
@@ -364,6 +368,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       const list = Array.isArray(data) ? data : [];
       if (activePodIdRef.current !== id) return;
       const normalized = chronologicalMessages(list.map(normalizeMessage));
+      setInitialMessagesLoaded(true);
       if (reconnect) {
         // A socket event (or a previously loaded history page) can arrive
         // while the catch-up request is in flight. Keep those rows and dedupe.
@@ -591,6 +596,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     loadingOlderRef.current = false;
     setLoadingOlder(false);
     setInitialLoadComplete(false);
+    setInitialMessagesLoaded(false);
     if (!podId) {
       setPod(null);
       setMessages([]);
@@ -798,6 +804,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     agents,
     loading,
     initialLoadComplete,
+    initialMessagesLoaded,
     error,
     sendError,
     hasMore,

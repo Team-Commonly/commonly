@@ -1877,7 +1877,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                   ) : (
                     <>
                       <span className="v2-thread__empty-line">{t('podChat.empty.noMessages')}</span>
-                      {soloHuman && <V2BringTeammate key={`${pod._id}.${currentUserId}.${SOLO_INVITE_SOURCE}`}
+                      {soloHuman && detail.initialMessagesLoaded && <V2BringTeammate key={`${pod._id}.${currentUserId}.${SOLO_INVITE_SOURCE}`}
                         podId={pod._id} podName={pod.name} userId={currentUserId || ''} source={SOLO_INVITE_SOURCE} />}
                     </>
                   )}

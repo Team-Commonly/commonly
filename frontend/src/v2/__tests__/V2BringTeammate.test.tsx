@@ -13,7 +13,7 @@ const props = { podId: 'pod', podName: 'Work', userId: 'person', source: 'solo-p
 const press = () => fireEvent.click(screen.getByRole('button', { name: 'teammate.act' }));
 beforeEach(() => {
   localStorage.clear();
-  jest.clearAllMocks();
+  jest.resetAllMocks();
   mockGet.mockResolvedValue([]);
   mockPost.mockResolvedValue({ token });
   mockWrite.mockResolvedValue(undefined);
@@ -101,4 +101,22 @@ test('changing pods cannot carry a prior invite or late clipboard result into th
   expect(screen.queryByText('teammate.live')).not.toBeInTheDocument();
   expect(mockPost).toHaveBeenCalledTimes(1);
   expect(mockGet).toHaveBeenCalledWith('/api/pods/different/invites');
+});
+
+test('a retry shares its read across visibility changes and retains the new link', async () => {
+  let finish!: (rows: unknown[]) => void;
+  mockGet.mockRejectedValueOnce(new Error('offline'))
+    .mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+  const view = render(<V2BringTeammate {...props} />);
+  await act(async () => { await Promise.resolve(); });
+  press();
+  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
+  view.rerender(<V2BringTeammate {...props} enabled={false} />);
+  view.rerender(<V2BringTeammate {...props} enabled />);
+  await act(async () => { finish([]); });
+  await screen.findByText('teammate.live');
+  expect(mockGet).toHaveBeenCalledTimes(2);
+  expect(mockPost).toHaveBeenCalledTimes(1);
+  expect(mockWrite).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('textbox')).toHaveValue(`${window.location.origin}/v2/invite/${token}`);
 });
