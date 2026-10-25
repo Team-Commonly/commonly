@@ -475,6 +475,47 @@ describe('performRun', () => {
     expect(ackPosts(post).map(([route]) => route)).toEqual(['/api/agents/runtime/events/evt-refused/ack']);
   });
 
+  // The server answers an intentional NO_REPLY with `silent_or_empty`. That
+  // seat read the batch and chose silence, so its digest is read; any other
+  // skip leaves the digest for the next turn (rhea, 2026-10-25).
+  test.each([
+    ['silent_or_empty', true],
+    ['duplicate_recent', false],
+  ])('a server skip as %s marks the digest read: %s', async (reason, read) => {
+    const events = [
+      makeEvent({ _id: 'evt-wake', payload: { content: 'question' } }),
+      makeEvent({ _id: 'evt-ambient', type: 'message.posted', deliveryMode: 'digest',
+        payload: { content: 'background' } }),
+    ];
+    const get = jest.fn(async (route) => (
+      route.endsWith('/messages') ? { messages: [] } : { events, inboxCount: 2 }
+    ));
+    const post = jest.fn(async (route) => (
+      route === '/api/agents/runtime/pods/pod-abc/messages'
+        ? { success: true, skipped: true, reason }
+        : {}
+    ));
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'Nothing to add.' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const acked = ackPosts(post).map(([route]) => route);
+    expect(acked).toContain('/api/agents/runtime/events/evt-wake/ack');
+    expect(acked.includes('/api/agents/runtime/events/evt-ambient/ack')).toBe(read);
+    if (read) {
+      expect(post).toHaveBeenCalledWith('/api/agents/runtime/events/evt-ambient/ack', {
+        result: { outcome: 'no_action', reason: 'digest-read' },
+      });
+    }
+  });
+
   test('a lost binding item stays read-only context while another batch item may run', async () => {
     const events = [
       makeEvent({

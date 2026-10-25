@@ -2681,9 +2681,12 @@ export const performRun = ({
         for (const entry of actionEntries) entry.result = turnResult;
         // A digest was context in this successful waking turn, never an
         // independent action. If the waking work stood down or the provider
-        // refused the batch, leave it unread for the next real turn.
+        // refused the batch, leave it unread for the next real turn. A reply
+        // the server skipped as `silent_or_empty` is the seat choosing silence
+        // (the server's answer to an intentional NO_REPLY), so it read the digest.
         if (turnResult?.outcome === 'posted'
-          || (turnResult?.outcome === 'no_action' && !turnResult?.reason)) {
+          || (turnResult?.outcome === 'no_action'
+            && (!turnResult?.reason || turnResult.reason === 'silent_or_empty'))) {
           for (const entry of activeEntries) {
             if (entry.event.deliveryMode === 'digest') {
               entry.result = { outcome: 'no_action', reason: 'digest-read' };

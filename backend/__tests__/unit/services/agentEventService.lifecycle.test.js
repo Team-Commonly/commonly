@@ -480,6 +480,7 @@ describe('driver paths reach a terminal state', () => {
     };
     const duplicate = { ...ambient, _id: 'ambient-2' };
     AgentEvent.find.mockReturnValue({ sort: () => ({ limit: () => ({ lean: async () => [ambient, duplicate] }) }) });
+    AgentEvent.countDocuments.mockResolvedValue(2);
     AgentEvent.updateOne.mockResolvedValue({ matchedCount: 1 });
     AgentEvent.updateMany.mockResolvedValue({ modifiedCount: 1 });
     AgentEvent.create.mockResolvedValue({
@@ -501,8 +502,11 @@ describe('driver paths reach a terminal state', () => {
     expect(body.payload.digestSummary).toContain('thread 40: 1 unread');
     expect(body.payload.digestSummary).toContain('1 ambient update in 1 conversation');
     expect(body.payload.digestSummary).not.toContain('ambient note');
+    // Accepted delivery reads the pod's whole backlog up to the wake's snapshot.
     expect(AgentEvent.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ _id: { $in: ['ambient-1', 'ambient-2'] }, deliveryMode: 'digest' }),
+      expect.objectContaining({
+        agentName: 'hookbot', podId: POD_P1, deliveryMode: 'digest', createdAt: { $lte: expect.any(Date) },
+      }),
       expect.objectContaining({ $set: expect.objectContaining({ status: 'acked' }) }),
     );
   });
@@ -575,9 +579,10 @@ describe('driver paths reach a terminal state', () => {
       expect(runAgent).not.toHaveBeenCalled();
     });
 
-    test('a later native wake carries digest context and settles only included rows on success', async () => {
+    test('a later native wake carries digest context and settles its backlog only on success', async () => {
       const digest = { _id: 'evt-d', payload: { username: 'alice', messageId: '42', content: 'daily update' } };
       AgentEvent.find.mockReturnValue({ sort: () => ({ limit: () => ({ lean: () => Promise.resolve([digest]) }) }) });
+      AgentEvent.countDocuments.mockResolvedValue(1);
       AgentEvent.updateMany.mockResolvedValue({ modifiedCount: 1 });
       runAgent.mockResolvedValue({ status: 'succeeded', runId: 'run-1', totalTurns: 1 });
 
@@ -586,8 +591,8 @@ describe('driver paths reach a terminal state', () => {
       expect(runAgent.mock.calls[0][1].payload.content).toContain('pod conversation: 1 unread');
       expect(runAgent.mock.calls[0][1].payload.content).not.toContain('daily update');
       expect(AgentEvent.updateMany).toHaveBeenCalledWith(
-        { _id: { $in: ['evt-d'] }, status: 'pending', deliveryMode: 'digest' },
-        { $set: { status: 'acked' } },
+        expect.objectContaining({ agentName: 'clerk', deliveryMode: 'digest', createdAt: { $lte: expect.any(Date) } }),
+        { $set: expect.objectContaining({ status: 'acked' }) },
       );
 
       jest.clearAllMocks();
