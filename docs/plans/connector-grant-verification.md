@@ -1,7 +1,7 @@
 # Connector grant verification (TASK-289)
 
 Status: draft. The scenario extends TASK-514's production app factory at
-`d8a9494d7` on `test/task-514-http-scenarios`. It is not ordinary-user onboarding
+`ede7daffd` on `test/task-514-http-scenarios`. It is not ordinary-user onboarding
 clearance and has no public activation or merge clearance.
 
 ## Current scenario
@@ -24,7 +24,7 @@ The checks cover:
   owner where resolved, and argument digests. The HTTP audit read exposes them.
 - Responses and audit rows exclude token values, the App key and raw arguments.
 
-## Unresolved acceptance boundary
+## Approved acceptance boundary
 
 At main `4eed277a8`, `POST /api/integrations/github-app` is explicitly admin-only;
 the generic connection route also rejects `github-app`. This protects the
@@ -32,9 +32,10 @@ server-held App credential. The scenario therefore names its happy path
 **admin bootstrap**. It does not promote the ordinary member to admin or seed
 an ordinary user's connection directly to make the requested path appear green.
 
-TASK-289's request for a new user to connect GitHub still needs either a
-user-owned connection flow or an explicit narrowing of this acceptance scope.
-That ruling remains pending. The security boundary remains unchanged.
+Lily approved narrowing TASK-289 to admin bootstrap on 2026-10-25
+(decision `6addd6d27f8fc798a6f6ea14`). TASK-290 tracks ordinary-user connection
+onboarding separately, coordinated with TASK-225's user-owned GitHub MCP path.
+The security boundary remains unchanged.
 
 ## Harness integration and running
 
@@ -45,16 +46,18 @@ test databases. Never point it at a shared, staging or production database.
 With the backend test dependencies installed and real test databases configured:
 
 ```sh
-INTEGRATION_TEST=true npm --prefix backend test -- --runInBand \
-  --runTestsByPath __tests__/service/verify.connectorGrant.test.js
+commonly verify connector-grant --repo /path/to/commonly
 ```
 
-The `commonly verify` CLI registry is not present at the referenced TASK-514
-head. Its owner must wire the `connector-grant` name to this scenario; this
-change does not introduce a second runner. SRE's matching staging walk uses
+The CLI selector reuses Tern's isolated shared-runner commit `cecb8bc8` from
+TASK-527/#2693, including its later entrypoint and Mongo seed-list coverage,
+and adds `connector-grant` to the same scenario registry. No
+second runner is introduced. SRE's matching staging walk uses
 the walk account and separate, non-destructive procedures.
 
-A 512 MiB Node heap cap and isolated transpilation were used for the initial
-local behavioral run. Both cases passed with real PG and the process exited with code 0. Jest warned
-about a delayed exit before it settled. This is not a final
-verification verdict or evidence of ordinary-user onboarding.
+The actual CLI command passed both HTTP cases with real PostgreSQL 16 and
+MongoDB 7, standard repository transforms and a 1024 MiB Node heap cap. It
+returned exit code 0. The shared selector passes Jest `--forceExit`, so this
+command does not prove handle cleanup. The earlier direct Jest run also passed
+both cases and settled normally after a delayed-exit warning. Neither run is
+evidence of ordinary-user onboarding.

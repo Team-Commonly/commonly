@@ -4,7 +4,8 @@
  *
  * The existing GitHub App connect route is admin-only. The first case protects
  * that boundary; the broker case explicitly uses an admin, and does NOT claim
- * ordinary-user onboarding; the acceptance scope remains unresolved.
+ * ordinary-user onboarding. Lily approved admin bootstrap on 2026-10-25;
+ * ordinary-user connection acceptance is tracked separately as TASK-290.
  * This mutating fixture is local/CI only, never a staging/prod walk.
  */
 const request = require('supertest');

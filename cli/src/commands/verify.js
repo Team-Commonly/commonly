@@ -6,14 +6,17 @@ import { spawnSync } from 'child_process';
 const SCENARIOS = {
   wave1: '__tests__/service/verify.wave1.test.js',
   'first-reply': '__tests__/service/verify.firstReply.test.js',
+  'connector-grant': '__tests__/service/verify.connectorGrant.test.js',
 };
 const testDatabase = (name) => /^(test|verify)([-_0-9]|$)|[-_]test$/.test(name || '');
 
 export const verificationPlan = (scenario, repo, env = process.env) => {
   const suite = SCENARIOS[scenario];
-  if (!suite) throw new Error(`Unknown scenario: ${scenario}. Choose wave1 or first-reply.`);
+  if (!suite) throw new Error(`Unknown scenario: ${scenario}. Choose ${Object.keys(SCENARIOS).join(', ')}.`);
   let mongoDatabase = '';
-  try { mongoDatabase = decodeURIComponent(new URL(env.MONGO_URI).pathname.slice(1)); } catch { /* refused below */ }
+  // MongoDB authorities can contain comma-separated seed hosts, unlike WHATWG URLs.
+  const mongoPath = /^mongodb(?:\+srv)?:\/\/[^/?#]+\/([^?#]*)/.exec(env.MONGO_URI || '');
+  try { mongoDatabase = decodeURIComponent(mongoPath?.[1] || ''); } catch { /* refused below */ }
   if (!env.PG_HOST || !testDatabase(env.PG_DATABASE) || !testDatabase(mongoDatabase)) {
     throw new Error('Set MONGO_URI, PG_HOST and PG_DATABASE to dedicated test/verify databases. Fixture setup clears their data.');
   }
@@ -29,7 +32,7 @@ export const verificationPlan = (scenario, repo, env = process.env) => {
 
 export const registerVerify = (program, run = spawnSync) => {
   program.command('verify <scenario>')
-    .description('Run shared real-HTTP scenarios against isolated test databases (wave1 or first-reply)')
+    .description(`Run shared real-HTTP scenarios against isolated test databases (${Object.keys(SCENARIOS).join(', ')})`)
     .option('--repo <path>', 'Commonly checkout with backend test dependencies', process.cwd())
     .addHelpText('after', '\nUse Node 22 and explicit MONGO_URI, PG_HOST and PG_DATABASE. Fixture databases are cleared.\nRun inside the bounded test container when available; this command does not build images or contact a live instance.\n')
     .action((scenario, options) => {
