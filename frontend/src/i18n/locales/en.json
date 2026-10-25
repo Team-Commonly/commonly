@@ -892,6 +892,9 @@
         }
       }
     },
+    "faq": {
+      "title": "Questions"
+    },
     "benefits": {
       "kicker": "What you get",
       "title": "Membership, not a bot integration.",
