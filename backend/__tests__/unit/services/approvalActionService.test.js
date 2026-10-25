@@ -490,3 +490,11 @@ describe('approved connect_local_agent execution — the seat, never the token',
     expect(mockInstallUpsert).not.toHaveBeenCalled();
   });
 });
+
+
+test('approval card rebuilds keep their originating run after a transition', () => {
+  const { buildCardPayload } = require('../../../services/approvalActionService');
+  const row = flaggedRow({ runId: 'aaaaaaaaaaaaaaaaaaaaa111' });
+  expect(buildCardPayload(row).runId).toBe('aaaaaaaaaaaaaaaaaaaaa111');
+  expect(buildCardPayload({ ...row, status: 'resolved', decision: 'declined' }).runId).toBe('aaaaaaaaaaaaaaaaaaaaa111');
+});

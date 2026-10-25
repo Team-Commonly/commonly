@@ -430,3 +430,26 @@ describe('agent in-thread posts (threadRootId, no reply edge)', () => {
     expect(mockFirstTask).not.toHaveBeenCalled();
   });
 });
+
+
+test('server run identity survives PG storage and live message broadcast with existing card fields', async () => {
+  const runId = 'aaaaaaaaaaaaaaaaaaaaa111';
+  await AgentMessageService.postMessage({
+    agentName: 'sprint-review', instanceId: 'default', podId: POD,
+    content: 'Run complete.', messageType: 'card',
+    payload: { kind: 'starts', starts: [{ id: 'test', label: 'Test' }], runId: 'forged' }, runId,
+  });
+  expect(PGMessage.create.mock.calls[0][5]).toEqual({
+    kind: 'starts', starts: [{ id: 'test', label: 'Test' }], runId,
+  });
+  expect(emitted.find((entry) => entry.event === 'newMessage').payload.payload.runId).toBe(runId);
+});
+
+
+test('an agent-authored payload cannot claim another run', async () => {
+  await AgentMessageService.postMessage({
+    agentName: 'sprint-review', instanceId: 'default', podId: POD,
+    content: 'A card.', payload: { kind: 'ui', runId: 'aaaaaaaaaaaaaaaaaaaaa111' },
+  });
+  expect(PGMessage.create.mock.calls[0][5]).toEqual({ kind: 'ui' });
+});
