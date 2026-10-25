@@ -36,7 +36,6 @@ const { performRun } = await import('../src/commands/agent.js');
 const {
   createTurnRunner, createMetadataStore, supervisedRunPolicy, relayEnabledFor, metricLine, STALL_DEFAULTS_MS,
 } = await import('../src/lib/supervised-turn.js');
-const { honourAbort } = await import('../src/lib/supervised-child.js');
 const { runFailure } = await import('@commonlyai/seats/failures');
 
 afterAll(() => fs.rmSync(home, { recursive: true, force: true }));
@@ -237,26 +236,6 @@ describe('the metadata store', () => {
     expect(run.events().map(({ type, action }) => [type, action ?? null]))
       .toEqual([['agent.message_chunk', null], ['liveness.recovery', 'kill'], ['run.settled', null]]);
     expect(() => run.emit('not.a.type', {})).toThrow(/unknown trace event type/);
-  });
-});
-
-describe('honourAbort', () => {
-  test('SIGTERMs on abort, at once if already aborted, and detaches', () => {
-    const proc = { kill: jest.fn() };
-    const controller = new AbortController();
-    const stop = honourAbort(proc, controller.signal);
-    controller.abort();
-    expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
-    const late = { kill: jest.fn() };
-    honourAbort(late, controller.signal);
-    expect(late.kill).toHaveBeenCalledWith('SIGTERM');
-    const detached = { kill: jest.fn() };
-    const c2 = new AbortController();
-    honourAbort(detached, c2.signal)();
-    c2.abort();
-    expect(detached.kill).not.toHaveBeenCalled();
-    expect(honourAbort(proc, undefined)).toEqual(expect.any(Function));
-    stop();
   });
 });
 

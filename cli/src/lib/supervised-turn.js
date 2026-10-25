@@ -48,8 +48,12 @@ const MAX_TIMER_MS = 2_147_483_647;
  *   Off; claude is guarded by the wall-clock backstop and the cancel ladder.
  */
 export const STALL_DEFAULTS_MS = Object.freeze({ codex: 15 * 60 * 1000, claude: 0 });
-// Above the package default (10 s): the CLI closes its MCP servers on SIGTERM,
-// and a SIGKILL that lands mid-shutdown is the orphan we least want.
+// How long after the supervisor's abort before it SIGKILLs the child's tree
+// (process-group.js). The claude and codex adapters do not act on the abort,
+// so on a stall the child is alive at the kill and its whole tree goes with it:
+// a SIGTERM to the CLI alone would let it exit first and orphan the MCP
+// servers it started in groups of their own, which the tree kill then skips.
+// An adapter that honours ctx.signal gets this long to settle.
 export const CANCEL_GRACE_MS = 15_000;
 // The wall clock sits past the adapter's own timeout, so the adapter's timeout
 // (the same SIGTERM and error as on the plain path) fires first; the

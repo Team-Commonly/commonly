@@ -1,6 +1,6 @@
 import { claudeRuntimeInventory } from '../native-runtime-inventory.js';
 import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
-import { honourAbort } from '../supervised-child.js';
+import { spawnInOwnGroup, wantsOwnProcessGroup } from '@commonlyai/seats/process-group';
 /**
  * claude adapter — wraps the local `claude` CLI as a Commonly agent.
  *
@@ -293,15 +293,15 @@ const publicSkillPromptArgs = async (skillSources) => {
   return { args: text ? ['--append-system-prompt', text] : [], included };
 };
 
-const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, signal }) => new Promise((resolve, reject) => {
-  const proc = spawnImpl(cmd, args, {
+// `ownGroup` is set only under the run supervisor, which kills the child's
+// whole group; unsupervised, the spawn options are exactly what they were.
+const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false }) => new Promise((resolve, reject) => {
+  const proc = spawnInOwnGroup(spawnImpl, cmd, args, {
     cwd,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  }, { ownGroup });
   observeSpawn(proc, onSpawn, controls);
-  // Only the supervised path passes a signal; on the plain path this is a no-op.
-  const stopAbort = honourAbort(proc, signal);
   let stdout = '';
   let stderr = '';
   let timedOut = false;
@@ -315,12 +315,10 @@ const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl
   proc.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
   proc.on('error', (err) => {
     clearTimeout(timer);
-    stopAbort();
     reject(err);
   });
   proc.on('close', (code) => {
     clearTimeout(timer);
-    stopAbort();
     if (timedOut) return reject(new Error(`claude timed out after ${timeoutMs}ms`));
     if (code !== 0) {
       // Report stdout too, not just stderr. In `-p` mode claude writes terminal
@@ -914,7 +912,8 @@ export default {
         // and its provider key is not an env var here, so the seat credential is
         // the value a tail can echo back.
         credentials: spawnCredentials(spawnCtx),
-        spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, signal: ctx.signal, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }), // test seam only — do not use in production
+        spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }), // test seam only — do not use in production
+        ownGroup: wantsOwnProcessGroup(ctx),
       });
       // TASK-440: the context this turn left, read from the transcript the
       // child wrote under its own env (an isolated HOME for public seats).
@@ -968,7 +967,8 @@ export default {
           env: retry.env,
           timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
           credentials: spawnCredentials(retryCtx),
-          spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, signal: ctx.signal, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
+          spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
+          ownGroup: wantsOwnProcessGroup(ctx),
         });
         const contextTokens = claudeContextTokens({
           cwd: ctx.cwd, sessionId: freshId,
