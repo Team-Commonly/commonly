@@ -352,12 +352,6 @@ spec:
         - name: OAUTH_CALLBACK_BASE_URL
           value: {{ .Values.backend.env.oauthCallbackBaseUrl | quote }}
         {{- end }}
-        - name: GITHUB_PAT
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: GITHUB_PAT
-              optional: true
         - name: GITHUB_APP_ID
           valueFrom:
             secretKeyRef:
