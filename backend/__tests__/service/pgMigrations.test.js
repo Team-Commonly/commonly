@@ -98,22 +98,24 @@ real('Postgres migrations: real DDL, rollback and competing boots', () => {
       },
     };
     let unrelated;
+    let outsiderPid;
     try {
       await blocker.query('SELECT pg_advisory_lock($1::integer, $2::integer)', lock);
       const outsider = await pool.connect();
+      outsiderPid = outsider.processID;
       unrelated = outsider.query('SELECT pg_advisory_lock($1::integer, $2::integer)', lock)
         .then(() => outsider.query('SELECT pg_advisory_unlock($1::integer, $2::integer)', lock))
         .finally(() => outsider.release());
       boots.push(runPgMigrations(bootPool, directory), runPgMigrations(bootPool, directory));
       // Observe both waiters in Postgres itself; no sleep-based timing claim.
       await waitFor(async () => {
-        const result = await pool.query(`SELECT count(*)::int AS total,
-            count(*) FILTER (WHERE pid = ANY($3::integer[]))::int AS own FROM pg_locks
+        const result = await pool.query(`SELECT count(*) FILTER (WHERE pid = ANY($3::integer[]))::int AS own,
+            count(*) FILTER (WHERE pid = $4::integer)::int AS outsider FROM pg_locks
           WHERE locktype = 'advisory' AND classid = $1 AND objid = $2 AND NOT granted
-            AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`, [...lock, bootPids]);
+            AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`, [...lock, bootPids, outsiderPid]);
         // Other Tier-1 workers share the lock even in separate schemas. Count
         // our two PIDs, and prove the extra waiter really is present too.
-        return result.rows[0].own === 2 && result.rows[0].total >= 3;
+        return result.rows[0].own === 2 && result.rows[0].outsider === 1;
       });
     } finally {
       await blocker.query('SELECT pg_advisory_unlock($1::integer, $2::integer)', lock);
@@ -121,6 +123,8 @@ real('Postgres migrations: real DDL, rollback and competing boots', () => {
       // Drain both even if the lock assertion fails, so cleanup never hangs.
       await Promise.allSettled([...boots, unrelated]);
     }
+    // allSettled above is cleanup, not permission to hide the control failing.
+    await unrelated;
     expect((await Promise.all(boots)).sort((a, b) => a.length - b.length)).toEqual([[], ['0001_once.sql']]);
     expect((await pool.query('SELECT * FROM once_only')).rows).toEqual([{ id: 1 }]);
     expect((await pool.query('SELECT version FROM schema_migrations')).rows).toEqual([{ version: '0001_once.sql' }]);
