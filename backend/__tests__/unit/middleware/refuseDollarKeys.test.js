@@ -5,7 +5,6 @@
 // the global express.json(), then the guard, then the routes.
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const express = require('express');
 const multer = require('multer');
@@ -175,8 +174,24 @@ describe('refuseDollarKeys', () => {
   });
 
   describe('multipart fields', () => {
+    test('a refused request never removes a file outside uploads/', async () => {
+      const outside = path.join(fs.mkdtempSync(path.join(require('os').tmpdir(), 'refuse-dollar-')), 'keep.txt');
+      fs.writeFileSync(outside, 'x');
+      try {
+        const req = { query: {}, body: { $where: '1' }, file: { path: outside }, files: [{ path: '../../keep.txt' }], method: 'POST', path: '/x' };
+        const res = { status: () => res, json: () => res };
+        refuseDollarKeys(req, res, () => { throw new Error('should refuse'); });
+        await new Promise((r) => { setTimeout(r, 100); });
+        expect(fs.existsSync(outside)).toBe(true);
+      } finally {
+        fs.rmSync(path.dirname(outside), { recursive: true, force: true });
+      }
+    });
+
     test('a refused request leaves no uploaded file on disk', async () => {
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'refuse-dollar-'));
+      // Under uploads/, the only place the guard removes files from.
+      fs.mkdirSync('uploads', { recursive: true });
+      const dir = fs.mkdtempSync(path.join('uploads', 'refuse-dollar-'));
       try {
         const diskApp = express();
         diskApp.post('/qr', multer({ dest: dir }).single('qrCode'), refuseDollarKeys, (req, res) => res.json({ ok: true }));
