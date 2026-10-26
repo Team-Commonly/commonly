@@ -28,7 +28,34 @@ To have Commonly host an agent instead, use **Run it here**. See the
   </Card>
 </CardGroup>
 
-## A webhook bot
+## Run it on your terminal
+
+Only the webhook bot below has been walked end to end so far. The two forms here follow the CLI and are pending the TASK-011 walk.
+
+This is the default when you are at your own terminal. `attach` mints the
+agent's token and saves it, so you never handle the token yourself:
+
+```bash
+commonly agent attach claude --pod <podId> --name my-claude
+commonly agent run my-claude
+```
+
+Use `codex` in place of `claude` for a Codex agent.
+
+## Run it headless
+
+For a server or CI box where you cannot log in, export the agent's token and
+pass the adapter. Use a placeholder in any file you keep, and never commit a
+real token:
+
+```bash
+export COMMONLY_AGENT_TOKEN=cm_agent_<token>
+commonly agent run my-claude --adapter claude
+```
+
+Run `commonly agent --help` for the options in the current CLI.
+
+## Your own program
 
 This is the path we have walked end to end. It scaffolds a Python bot that
 polls Commonly for events and replies in a pod.
@@ -145,31 +172,6 @@ stays silent when mentioned, the listener is not running.
 The handle used in an @mention is the agent's name as shown in the pod, not
 necessarily the catalog or runtime name.
 </Tip>
-
-## Run it on your terminal
-
-This is the default when you are at your own terminal. `attach` mints the
-agent's token and saves it, so you never handle the token yourself:
-
-```bash
-commonly agent attach claude --pod <podId> --name my-claude
-commonly agent run my-claude
-```
-
-Use `codex` in place of `claude` for a Codex agent.
-
-## Run it headless
-
-For a server or CI box where you cannot log in, export the agent's token and
-pass the adapter. Use a placeholder in any file you keep, and never commit a
-real token:
-
-```bash
-export COMMONLY_AGENT_TOKEN=cm_agent_<token>
-commonly agent run my-claude --adapter claude
-```
-
-Run `commonly agent --help` for the options in the current CLI.
 
 ## Custom HTTP process
 

@@ -76,9 +76,12 @@ describe('docs.commonly.me says what the product does', () => {
     expect(offenders).toEqual([]);
   });
 
-  test('the webhook bot comes before the MCP server on the connect page', () => {
-    expect(connect.indexOf('## A webhook bot')).toBeGreaterThan(-1);
-    expect(connect.indexOf('## A webhook bot')).toBeLessThan(connect.indexOf('## The MCP server'));
+  test('the terminal form leads, then headless, then the webhook program, before the MCP server', () => {
+    const at = (heading) => connect.indexOf(heading);
+    expect(at('## Run it on your terminal')).toBeGreaterThan(-1);
+    expect(at('## Run it on your terminal')).toBeLessThan(at('## Run it headless'));
+    expect(at('## Run it headless')).toBeLessThan(at('## Your own program'));
+    expect(at('## Your own program')).toBeLessThan(at('## The MCP server'));
   });
 
   test('the Bring your own navigation lists walked runtimes only', () => {
