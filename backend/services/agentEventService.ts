@@ -194,6 +194,7 @@ interface InstallationDoc {
   _id?: unknown;
   agentName?: string;
   instanceId?: string;
+  displayName?: string;
   podId?: unknown;
   status?: string;
   scopes?: string[];
@@ -315,6 +316,55 @@ const normalizeConfig = (config: unknown): Record<string, unknown> => {
   return config as Record<string, unknown>;
 };
 
+// Inline webhook replies take the same service path as the CAP post route
+// (agentsRuntime.ts): the unseen-messages freshness hold, postMessage with the
+// installation config, then the mention or agent-dm enqueue. Resolves to a
+// recorded outcome only when the reply was held or skipped; throws when the post fails.
+const postInlineReply = async (
+  installation: InstallationDoc, event: EventDoc, content: string,
+): Promise<{ outcome: string; reason: string } | null> => {
+  // eslint-disable-next-line global-require
+  const AgentMessageService = require('./agentMessageService');
+  // eslint-disable-next-line global-require
+  const AgentMentionService = require('./agentMentionService');
+  // eslint-disable-next-line global-require
+  const AgentSendFreshness = require('./agentSendFreshness');
+  // eslint-disable-next-line global-require
+  const PodModel = require('../models/Pod');
+
+  const agentUser = await AgentIdentityService.getOrCreateAgentUser(event.agentName, {
+    instanceId: event.instanceId || 'default',
+    displayName: installation.displayName,
+  });
+  const hold = await AgentSendFreshness.unseenMessages(agentUser._id, event.podId);
+  if (hold) return { outcome: 'skipped', reason: 'unseen_messages' };
+
+  const result = await AgentMessageService.postMessage({
+    agentName: event.agentName,
+    instanceId: event.instanceId || 'default',
+    displayName: installation.displayName,
+    podId: event.podId,
+    content,
+    replyToMessageId: null,
+    threadRootId: null,
+    installationConfig: installation.config || null,
+  });
+  if (result?.skipped) return { outcome: 'skipped', reason: String(result.reason || 'skipped') };
+  if (!result?.success || !result.message) throw new Error('post returned no message');
+
+  PodModel.findById(event.podId).select('type').lean()
+    .then((podDoc: { type?: string } | null) => {
+      const args = {
+        podId: event.podId, message: result.message, userId: agentUser._id, username: agentUser.username,
+      };
+      return podDoc?.type === 'agent-dm'
+        ? AgentMentionService.enqueueDmEvent(args)
+        : AgentMentionService.enqueueMentions(args);
+    })
+    .catch((err: Error) => console.warn('[webhook] inline reply enqueue failed:', err.message));
+  return null;
+};
+
 const deliverEventViaWebhook = async (installation: InstallationDoc, event: EventDoc): Promise<void> => {
   const runtimeConfig = (normalizeConfig(installation.config)?.runtime || {}) as Record<string, unknown>;
   const { webhookUrl, webhookSecret } = runtimeConfig as { webhookUrl?: string; webhookSecret?: string };
@@ -366,18 +416,21 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
       outcome?: string; content?: string; reason?: string;
     };
 
+    // The endpoint's claim is only what it asked for. If the inline reply does
+    // not land, record that instead of 'posted'.
+    let recordedOutcome = outcome;
+    let recordedReason = reason;
     if (outcome === 'posted' && content) {
       try {
-        // eslint-disable-next-line global-require
-        const agentMessageService = require('./agentMessageService');
-        await agentMessageService.postAgentMessage({
-          agentName: event.agentName,
-          instanceId: event.instanceId,
-          podId: event.podId,
-          content: String(content),
-        });
+        const held = await postInlineReply(installation, event, String(content));
+        if (held) {
+          recordedOutcome = held.outcome;
+          recordedReason = held.reason;
+        }
       } catch (postErr) {
         console.warn(`[webhook] Failed to post message for ${event.agentName}:`, (postErr as Error).message);
+        recordedOutcome = 'error';
+        recordedReason = 'inline_post_failed';
       }
     }
 
@@ -394,9 +447,9 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
     await AgentEvent.findByIdAndUpdate(event._id, {
       status: 'acked',
       deliveredAt: new Date(),
-      delivery: AgentEventService.normalizeDeliveryMeta({ outcome, reason }),
+      delivery: AgentEventService.normalizeDeliveryMeta({ outcome: recordedOutcome, reason: recordedReason }),
     });
-    if (digestConsumedBy(outcome, reason)) {
+    if (digestConsumedBy(recordedOutcome, recordedReason)) {
       await AgentEventService.settleLegacyDigest(event).catch((err: Error) => {
         console.warn('[webhook] digest settle failed:', err.message);
       });
@@ -807,6 +860,11 @@ class AgentEventService {
       failed,
       skipped,
     };
+  }
+
+  // Test seam: unit tests drive the real webhook delivery, not a copy of it.
+  static deliverEventViaWebhook(installation: InstallationDoc, event: EventDoc): Promise<void> {
+    return deliverEventViaWebhook(installation, event);
   }
 
   static normalizeDeliveryMeta(input: unknown = {}): DeliveryMeta | null {
