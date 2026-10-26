@@ -91,6 +91,7 @@ import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
 import { createSeatStop } from '../lib/seat-stop.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import { describeUpstreamRefusal } from '../lib/upstream-refusal.js';
+import { createTurnRunner, supervisedRunPolicy } from '../lib/supervised-turn.js';
 import {
   DEFAULT_HOOK_TIMEOUT_MS,
   clampHookTimeoutMs,
@@ -1384,6 +1385,11 @@ const extractPrompt = (event) => {
  * Every enforcement failure fails OPEN — a kernel without the claim route or
  * an unreachable upload endpoint must never produce a silent agent (#887).
  */
+// The supervisor's policy for a run-loop spawn: lib/supervised-turn.js has the
+// stall windows per adapter (codex 15 min, claude off) and their evidence, the
+// cancel grace, and the wall-clock backstop past the adapter's own timeout.
+export { supervisedRunPolicy };
+
 export const performRun = ({
   instanceUrl,
   token,
@@ -1431,6 +1437,12 @@ export const performRun = ({
   resolveOwnProviderKey = null,
   runtimeReportClient = null,
   refusalHandoff = null,
+  // Off unless COMMONLY_SUPERVISE_RUNS=1: each spawn runs under the seats
+  // supervisor (stall window, wall-clock backstop, a named failure on every
+  // settle). The CLI still talks to its provider directly. Off, the spawn path
+  // is the plain adapter call it has always been. Either way one metadata line
+  // per turn goes to ~/.commonly/state/seats-canary/<agent>.jsonl.
+  superviseRuns = process.env.COMMONLY_SUPERVISE_RUNS === '1',
 }) => {
   reportRuntime = reportRuntime && WALKED_HARNESSES.includes(adapter?.name);
   if (environment?.provider !== undefined && !adapter?.supportsProvider) {
@@ -1440,6 +1452,12 @@ export const performRun = ({
   const effectiveTurnTimeoutMs = Number.isFinite(requestedTurnTimeout) && requestedTurnTimeout > 0
     ? Math.min(requestedTurnTimeout, 2_147_483_647) : 15 * 60 * 1000;
   const client = createClient({ instance: instanceUrl, token });
+  // The supervised run keeps its trace in memory, metadata only; no record of
+  // a run is written to disk on either path (lib/supervised-turn.js).
+  const turnRunner = createTurnRunner({
+    seat: agentName, turnTimeoutMs: effectiveTurnTimeoutMs, supervise: superviseRuns, log,
+  });
+  if (superviseRuns) log(turnRunner.describe(adapter?.name));
   const runtimeReporter = createRuntimeReporter({
     client: runtimeReportClient || { post: async () => {} },
     harness: adapter.name, detect: () => adapter.detect(),
@@ -2076,7 +2094,8 @@ export const performRun = ({
             reason: 'own-key-requires-scoped-spawn' };
         }
       }
-      result = await adapter.spawn(frameDecisionForkRule(promptForSpawn), {
+      const spawnPrompt = frameDecisionForkRule(promptForSpawn);
+      const spawnCtx = {
         onSpawn: reportRuntime ? (controls) => {
           observedSpawn = true;
           return runtimeReporter.spawn(controls);
@@ -2108,7 +2127,10 @@ export const performRun = ({
         instanceUrl,
         agentName,
         metadata: { event },
-      });
+      };
+      // Supervised or plain, a failure is thrown exactly as the adapter's own
+      // would be, so the run loop's classification and retry apply unchanged.
+      result = await turnRunner.run(adapter, spawnPrompt, spawnCtx, { eventType: event.type });
       spawnCompleted = true;
     } finally {
       try {
