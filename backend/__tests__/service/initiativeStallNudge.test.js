@@ -132,6 +132,15 @@ describe('initiative stall nudge', () => {
     expect(await stallRows()).toHaveLength(0);
   });
 
+  it('with no open linked task, the first pod link routes the nudge', async () => {
+    const initiative = initiativeFor({ userId: owner._id }, [
+      link('t1'), { kind: 'pod', ref: String(pod._id), addedAt: hoursAgo(24 * 9) },
+    ]);
+    expect(await run(initiative, [taskRow('t1', 'done', [], otherPod._id)]))
+      .toMatchObject({ state: 'nudged', podId: String(pod._id), recipientUserId: String(owner._id) });
+    expect(await stallRows()).toHaveLength(1);
+  });
+
   it('with no open linked task and no pod link, nothing is written', async () => {
     const initiative = initiativeFor({ userId: owner._id }, [link('t1')]);
     expect(await run(initiative, [taskRow('t1', 'done')])).toMatchObject({ state: 'no-pod' });
