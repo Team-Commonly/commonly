@@ -141,6 +141,29 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/and the MCP line/);
   });
 
+  // Stranger journey 2026-10-26: Scout wrote the Terminal steps and asked
+  // "Want me to open that page?" instead of proposing, and no card came.
+  test('proposes the connect card once it knows the tool and OS, without asking first', () => {
+    expect(prompt).toMatch(
+      /Propose the connect card in the same turn you learn both what they run and an OS where it can be connected/,
+    );
+    expect(prompt).toMatch(/Do not ask whether to: the card is the question/);
+    expect(prompt).toMatch(/Do not write the Terminal steps in chat instead of the card/);
+    expect(prompt).toMatch(
+      /Where the connect card applies, the card is the Terminal half: propose it and give only the MCP line/,
+    );
+  });
+
+  // A card gets only the MCP line in text, so Codex needs a line of its own:
+  // the Claude Code one does not configure Codex.
+  test('gives an MCP line for each tool the card connects', () => {
+    expect(prompt).toContain('`claude mcp add commonly -e COMMONLY_API_URL=... '
+      + '-e COMMONLY_AGENT_TOKEN=... -- npx -y @commonlyai/mcp`');
+    expect(prompt).toContain('`codex mcp add commonly --env COMMONLY_API_URL=... '
+      + '--env COMMONLY_AGENT_TOKEN=... -- npx -y @commonlyai/mcp`');
+    expect(prompt).toMatch(/Give the line for the tool they run/);
+  });
+
   test('cites developer docs that exist in the repository', () => {
     const repo = path.resolve(__dirname, '../../../..');
     for (const doc of [
