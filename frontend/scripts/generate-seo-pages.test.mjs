@@ -2109,3 +2109,36 @@ test('the static / carries the landing FAQ and its FAQPage JSON-LD (TASK-531)', 
     await rm(outputDir, { recursive: true, force: true });
   }
 });
+
+
+test('the compare page is unlisted: noindex, out of the sitemap, and linked from nothing', async () => {
+  const [translationText, useCaseText, guideText, llmsText] = await Promise.all([
+    readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'public/llms.txt'), 'utf8'),
+  ]);
+  const translations = JSON.parse(translationText);
+  const useCases = JSON.parse(useCaseText);
+  const guides = JSON.parse(guideText);
+  const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
+  const template = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><style>#seo-page { color: #fff; }</style><!-- SEO_NAVIGATION_RUNTIME_START --><script>window.addEventListener(\'popstate\', () => {});</script><!-- SEO_NAVIGATION_RUNTIME_END --><link rel="modulepreload" href="/assets/chunk.js"><script type="module" crossorigin src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
+
+  const compare = pages.find((page) => page.path === '/compare/');
+  assert.equal(compare.noindex, true);
+  assert.match(renderStaticPage(template, compare), /<meta name="robots" content="noindex" \/>/);
+
+  for (const page of pages.filter((item) => item.path !== '/compare/')) {
+    assert.match(renderStaticPage(template, page), /<meta name="robots" content="index,follow" \/>/, page.path);
+    assert.doesNotMatch(renderStaticPage(template, page), /href="\/compare\/"/, page.path);
+  }
+  assert.doesNotMatch(guideText, /"\/compare\/"/);
+  assert.doesNotMatch(llmsText, /\/compare\//);
+
+  const outputDir = await mkdtemp(resolve(tmpdir(), 'seo-compare-'));
+  await writeFile(resolve(outputDir, 'index.html'), template);
+  await generateSeoPages({ outputDir });
+  const sitemap = await readFile(resolve(outputDir, 'sitemap.xml'), 'utf8');
+  assert.doesNotMatch(sitemap, /\/compare\//);
+  assert.match(sitemap, /<loc>https:\/\/commonly\.me\/use-cases\/team-chat\/<\/loc>/);
+});
