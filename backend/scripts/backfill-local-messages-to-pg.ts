@@ -25,6 +25,8 @@
  *
  *   npm run backfill:local-messages            # report only
  *   npm run backfill:local-messages -- --apply
+ *
+ * Exit codes: 0 done (or dry run), 1 some rows failed, 2 refused.
  */
 /* eslint-disable no-console, no-await-in-loop */
 
@@ -96,7 +98,7 @@ interface PgPool {
   end: () => Promise<void>;
 }
 
-const productionDeps = (pool: PgPool): LocalBackfillDeps => {
+export const productionDeps = (pool: PgPool): LocalBackfillDeps => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const Message = require('../models/Message');
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
@@ -141,6 +143,8 @@ export async function main(): Promise<void> {
     const report = await backfillLocalMessages(productionDeps(pool), { apply, force });
     console.log(`[backfill-local-messages] ${JSON.stringify(report)}`);
     if (report.refused) {
+      // Non-zero, so an upgrade script that runs this stops instead of carrying on without history.
+      process.exitCode = 2;
       console.log(`REFUSED — PostgreSQL already holds ${report.overlap} messages with no Mongo id`
         + ' that predate the newest Mongo message. They may be the same history; copying would duplicate it.'
         + ' Re-run with --force only if you have checked.');
