@@ -1108,7 +1108,11 @@ describe('the shipped catalogue cannot land half-wired', () => {
   });
 
   test('an access page is an absolute https URL or absent', () => {
-    for (const accessPage of ['github.com/apps/x/installations/new', 'http://github.com/apps/x', '', 'https://a b', 42]) {
+    for (const accessPage of [
+      'github.com/apps/x/installations/new', 'http://github.com/apps/x', '', 'https://a b', 42,
+      // Pass the prefix check, but name no host.
+      'https://#fragment', 'https://?q',
+    ]) {
       expect(() => assertHostedMcpEntries([linear({ accessPage })]))
         .toThrow(/access page is not an absolute https URL: linear/);
     }
