@@ -60,7 +60,7 @@
 .v2-ui-card .ui-more{display:block;width:100%;height:30px;border:0;border-top:1px solid var(--d);background:var(--v2-bg);font:500 11px/16px var(--mono);color:var(--s);text-align:left;padding:0 10px}
 /* 390: a table over 2 columns reflows into one stacked record per row */
 .v2-ui-card .ui-recs{display:grid;border:1px solid var(--d);border-radius:4px}
-.v2-ui-card .ui-rec{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;padding:9px 10px;border-top:1px solid var(--d)}
+.v2-ui-card .ui-rec{display:grid;grid-template-columns:minmax(0,max-content) minmax(0,1fr);gap:2px 8px;padding:9px 10px;border-top:1px solid var(--d)}
 .v2-ui-card .ui-rec:first-child{border-top:0}
 .v2-ui-card .ui-rec .a{font-size:13px;line-height:18px;font-weight:600}
 .v2-ui-card .ui-rec .c{grid-column:1/3;font:500 11px/16px var(--mono);color:var(--m)}
@@ -118,7 +118,6 @@
 .v2-ui-card { min-width:0; max-width:100%; --sans:var(--v2-font);--mono:var(--v2-font-mono); }
 .v2-ui-card .ui { overflow-wrap:anywhere; }
 .v2-ui-card .ui-recs { display:none; }
-.v2-ui-card .ui-table .ui-tb { table-layout:fixed; }
 .v2-ui-card .ui-table .ui-tb td { white-space:normal; overflow-wrap:anywhere; }
 .v2-ui-card .ui-rec dd { margin:0; min-width:0; overflow-wrap:anywhere; }
 .v2-ui-card a:focus-visible { outline:2px solid var(--v2-ink); outline-offset:2px; }
