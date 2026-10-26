@@ -11,6 +11,10 @@ describe('classifyAddress: remaining registry rows', () => {
     '2001:10::1', '2001:1ff::1', // inside IETF protocol assignments
     '3fff::1', // documentation
     '5f00::1', // segment routing
+    // globally reachable in the registry, refused on purpose
+    '192.0.0.9', '192.0.0.10', // anycast service addresses
+    '2001:1::1', '2001:1::2', '2001:1::3', // anycast service addresses
+    '2001:20::', // ORCHIDv2: identifiers, not locators
   ])('%s is reserved', (address) => {
     expect(classifyAddress(address)).toBe('reserved');
   });

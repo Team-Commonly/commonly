@@ -224,8 +224,10 @@ const inIPv4Block = (ip: number, base: string, bits: number): boolean => {
   return Math.floor(ip / blockSize) === Math.floor(ipv4ToInt(base) / blockSize);
 };
 
-// IANA's IPv4 special-purpose registry, less the globally reachable rows
-// (AS112, AMT), plus multicast.
+// IANA's IPv4 special-purpose registry, plus multicast. Globally reachable
+// rows a host can sit behind (AS112, AMT) stay public. 192.0.0.9 and
+// 192.0.0.10 are marked globally reachable but are refused on purpose: they are
+// anycast service addresses, not hosts.
 const RESERVED_V4: Array<[string, number]> = [
   ['0.0.0.0', 8], // unspecified, "this network"
   ['169.254.0.0', 16], // link-local, including 169.254.169.254
@@ -292,14 +294,17 @@ const EMBEDDED_V4: Array<[number[], number, [number, number]]> = [
   [[0x2002], 16, [1, 2]], // 6to4, 2002:aabb:ccdd::
 ];
 
-// The globally reachable rows inside 2001::/23, which otherwise is reserved.
+// The globally reachable rows inside 2001::/23 that a host can sit behind;
+// the rest of the block is reserved.
 const PUBLIC_IN_IETF_V6: Array<[number[], number]> = [
   [[0x2001, 3], 32], // AMT
   [[0x2001, 4, 0x112], 48], // AS112-v6
   [[0x2001, 0x30], 28], // drone remote ID entity tags
 ];
-// IANA's IPv6 special-purpose registry, less its globally reachable rows, plus
-// the deprecated site-local block and multicast.
+// IANA's IPv6 special-purpose registry, plus the deprecated site-local block
+// and multicast, less the rows in PUBLIC_IN_IETF_V6. 2001:1::1-3 (anycast
+// service addresses) and 2001:20::/28 (ORCHIDv2 identifiers, not locators) are
+// marked globally reachable but are refused on purpose.
 const RESERVED_V6: Array<[number[], number]> = [
   [[0x64, 0xff9b, 1], 48], // local-use IPv4/IPv6 translation
   [[0x100], 64], // discard-only
