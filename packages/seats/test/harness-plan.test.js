@@ -220,6 +220,18 @@ test('a probe that fails carries on to the seat\'s entry in the same turn, and t
   assert.deepEqual(refused.calls.map((c) => c.label), [LUNA]);
 });
 
+test('a failed probe sets the next probe by the primary\'s failure, not by an entry between', async () => {
+  const first = await run({ [LUNA]: 'quota', [HAIKU]: 'not_authenticated', [DEEPSEEK]: 'ok' });
+  assert.equal(first.state.active, 2);
+  const at = first.state.nextProbeAt;
+  const out = await runTurnWithFallback({
+    plan, state: first.state, now: at,
+    attempt: scripted({ [LUNA]: 'quota', [HAIKU]: 'provider_unsupported', [DEEPSEEK]: 'ok' }).attempt,
+  });
+  assert.equal(out.index, 2);
+  assert.equal(out.state.nextProbeAt, at + PROBE_COOLDOWN_MS.quota);
+});
+
 test('a probe that fails with not_authenticated waits out that kind\'s cooldown, not the one it fell back for', async () => {
   const first = await run({ [LUNA]: 'quota', [HAIKU]: 'ok' });
   const at = NOW + PROBE_COOLDOWN_MS.quota;
