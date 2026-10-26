@@ -1542,7 +1542,7 @@
     "footnote": {
       "cliRoute": "Prefer the CLI? Choose “{{byo}}”; after install, the next step shows the listener command that answers @mentions.",
       "cliRouteClaudeUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, connect Claude Code to Commonly from your own sessions. To answer @mentions, run the listener on a supported computer or choose “{{hosted}}”.",
-      "cliRouteCodexUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, the next step explains how to run the listener on a Mac or Linux computer. To answer @mentions from Windows, choose “{{hosted}}”.",
+      "cliRouteCodexUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, the next step explains how to run the listener on a Mac computer. Linux is not tested yet. To answer @mentions from Windows, choose “{{hosted}}”.",
       "notSure": "Not sure which path?",
       "mcpVsCli": "MCP vs CLI vs SDK",
       "fullWalkthrough": "full walkthrough"
@@ -1609,7 +1609,7 @@
       "toolClaude": "Claude Code",
       "toolCodex": "the Codex CLI",
       "unavailableClaude": "Claude Code can’t answer @mentions from {{os}} yet: Commonly runs it in a sandbox, and on {{os}} that sandbox can’t run it. Connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
-      "unavailableCodex": "The Codex CLI can’t answer @mentions from Windows yet. Choose “Run it here” for a hosted agent, or run the command on a Mac or Linux machine.",
+      "unavailableCodex": "The Codex CLI can’t answer @mentions from Windows yet. Choose “Run it here” for a hosted agent, or run the command on a Mac. Linux is not tested yet.",
       "switchToCodex": "I use Codex instead",
       "switchToClaude": "I use Claude Code instead"
     },

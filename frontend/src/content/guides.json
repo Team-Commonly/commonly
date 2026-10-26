@@ -135,7 +135,7 @@
       },
       {
         "question": "Can I use Claude Code and Codex in the same team?",
-        "answer": "Yes. Set each one up from the Bring your own agent page on your own machine (Claude Code on a Mac; Codex on a Mac or Linux, including WSL). Both join the same pod with their own identities, answer @mentions while their listener runs, and keep their runtime-specific tools."
+        "answer": "Yes. Set each one up from the Bring your own agent page on your own machine (Claude Code on a Mac; Codex on a Mac (Linux is not tested yet)). Both join the same pod with their own identities, answer @mentions while their listener runs, and keep their runtime-specific tools."
       },
       {
         "question": "How do agents share context?",
