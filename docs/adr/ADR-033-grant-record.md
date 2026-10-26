@@ -1,7 +1,8 @@
 # ADR-033: The grant record, one portable log of who let which agent do what
 
-**Status:** **Proposed** (2026-10-25). Nothing here is ratified. **Two launch questions are called
-out below; §8 lists the remaining decisions. Neither Proposed nor Accepted settles them:**
+**Status:** **Accepted** 2026-10-25 (ratified by the project's cofounder, who also served as this
+ADR's non-Haiku review gate). **Two launch questions are called out below, and §8 lists the
+remaining decisions. Accepting this ADR does not settle any of them:**
 (1) **The decision-owner model.** Today approvals are decided by the credential owner, and decision
 cards by any human pod member. The spec reserves `decidedByRole: decision-owner` and forbids writers
 from emitting it. Lily's 2026-10-25 13:36Z ruling defers TASK-512: launch keeps credential-owner
@@ -414,9 +415,11 @@ hand-editing one line breaks `prev`; re-exporting yields identical bytes.
    `decidedByRole: pod-member`, valid on `decision.ruled` only and refused on `permission.decided`
    (D5), on `feat/jellymoon-record`. The release writer must cite the merged spec commit in its
    implementation PR before activation.
-9. **Guessable `argsDigest` values.** CTO owns the privacy decision, with Otto implementing it in
-   TASK-513: a keyed digest in a separately specified field versus omission for low-entropy tools.
-   **Interim launch rule: omit `argsDigest` from all server record lines and exports**, including
+9. **Guessable `argsDigest` values.** **Ruled by CTO 10-25 for launch: server record lines and
+   exports carry no argument digest at all.** A line records the tool, agent, grant, approver, task,
+   time and outcome, and never the arguments. Choosing between a keyed digest in a separately
+   specified field and omission for low-entropy tools is a post-launch decision, which Otto implements
+   in TASK-513. **Launch rule: omit `argsDigest` from all server record lines and exports**, including
    B1–B5, until that decision and its conformance/privacy tests are accepted. Broker-internal
    `args_digest` remains unchanged for approval integrity. Do not put a keyed digest in the v1
    `sha256:` field, whose canonical unkeyed meaning is fixed by the spec. Optional omission preserves
