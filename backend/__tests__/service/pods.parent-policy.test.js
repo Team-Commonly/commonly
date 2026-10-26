@@ -5,6 +5,7 @@ const request = require('supertest');
 const mongoose = require('mongoose');
 const Pod = require('../../models/Pod');
 const Message = require('../../models/Message');
+const User = require('../../models/User');
 const { setupMongoDb, clearMongoDb, closeMongoDb } = require('../utils/testUtils');
 const owner = new mongoose.Types.ObjectId(), outsider = new mongoose.Types.ObjectId();
 jest.mock('../../middleware/auth', () => (req, res, next) => {
@@ -77,6 +78,17 @@ test('write membership in the parent does not allow changing another owner’s c
   const response = await send('patch', `/api/pods/${child._id}/parent`, { parentPod: String(root._id) });
   expect(response.status).toBe(403); expect(response.body.code).toBe('pod_admin_required');
   expect((await Pod.findById(child._id).lean()).parentPod).toBeNull();
+});
+test.each(['create', 'update'])('%s refuses a global admin who can read the parent but is not a member', async (mode) => {
+  const admin = await User.create({ username: 'parent-admin', email: 'parent-admin@test.com', password: 'password123', role: 'admin' });
+  const parent = await pod({ createdBy: outsider, members: [outsider] });
+  const child = mode === 'update' ? await pod({ createdBy: admin._id, members: [admin._id] }) : null;
+  const response = mode === 'create'
+    ? await send('post', '/api/pods', { name: 'child', type: 'team', parentPod: String(parent._id) }, admin._id)
+    : await send('patch', `/api/pods/${child._id}/parent`, { parentPod: String(parent._id) }, admin._id);
+  expect(response.status).toBe(403); expect(response.body.code).toBe('parent_pod_write_denied');
+  if (mode === 'create') expect(await Pod.countDocuments({ name: 'child' })).toBe(0);
+  else expect((await Pod.findById(child._id).lean()).parentPod).toBeNull();
 });
 test('update requires an explicit parent field and a well-formed child ID', async () => {
   const child = await pod();
