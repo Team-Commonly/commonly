@@ -50,6 +50,8 @@ spec:
           value: {{ .Values.hostedMcp.hiddenEntries | toJson | quote }}
         - name: HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST
           value: {{ .Values.hostedMcp.hiddenEntryUserAllowlist | default dict | toJson | quote }}
+        - name: GITHUB_MCP_APP_SLUG
+          value: {{ .Values.hostedMcp.githubMcp.appSlug | default "" | quote }}
         {{- if .Values.errorTracking.enabled }}
         - name: SENTRY_DSN
           valueFrom:

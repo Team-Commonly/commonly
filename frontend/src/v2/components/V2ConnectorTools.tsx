@@ -74,6 +74,11 @@ export interface ToolCatalogEntry {
   description: string;
   connectNotice?: string;
   /**
+   * Where the person chooses, at the vendor, what the connection can reach
+   * (GitHub: the App's install page, which picks the repositories).
+   */
+  accessPage?: string;
+  /**
    * The connection type this row's tools run through, and — on a hosted entry —
    * the catalogue entry the start route takes. `entryId` is absent on
    * `github-app`, whose connections are not per entry.
@@ -807,6 +812,13 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
           </span>
           {canConnectHosted && entry.connectNotice && (
             <span className="v2-connector-row__detail">{entry.connectNotice}</span>
+          )}
+          {isHosted && entry.available && entry.accessPage && (
+            <span className="v2-connector-row__detail">
+              <a href={entry.accessPage} target="_blank" rel="noopener noreferrer">
+                {t('tools.chooseAccess', { defaultValue: 'Choose what {{label}} can reach', label: entry.label })}
+              </a>
+            </span>
           )}
         </span>
         {!entry.available && (

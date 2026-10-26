@@ -2491,6 +2491,7 @@
     "connect": "Connect",
     "connectError": "Could not begin connecting. Try again in a moment.",
     "connectOwn": "connect your own {{label}} account",
+    "chooseAccess": "Choose what {{label}} can reach",
     "connection": "connection",
     "counts": "Call counts",
     "days": "in {{count}} days",

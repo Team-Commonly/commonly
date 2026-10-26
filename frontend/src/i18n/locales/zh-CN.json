@@ -2494,6 +2494,7 @@
     "connect": "连接",
     "connectError": "无法开始连接，请稍后重试。",
     "connectOwn": "连接你自己的 {{label}} 账号",
+    "chooseAccess": "选择 {{label}} 可以访问的内容",
     "connection": "连接",
     "counts": "调用次数",
     "days": "{{count}}天后",
