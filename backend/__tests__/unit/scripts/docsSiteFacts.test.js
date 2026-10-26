@@ -81,9 +81,9 @@ describe('docs.commonly.me says what the product does', () => {
   test('the Bring your own navigation lists walked runtimes only', () => {
     const groups = navigation.navigation.tabs[0].groups;
     const guides = groups.find((group) => group.group === 'Bring Your Own Agent').pages;
-    ['claude-code', 'codex', 'opencode', 'hermes', 'deepseek-harness', 'work-in-your-repo']
+    ['claude-code', 'codex', 'opencode', 'deepseek-harness', 'work-in-your-repo']
       .forEach((guide) => expect(guides).toContain(`bring-your-own/${guide}`));
-    ['qwen', 'pi', 'gemini', 'goose']
+    ['qwen', 'pi', 'gemini', 'goose', 'hermes']
       .forEach((guide) => expect(guides).not.toContain(`bring-your-own/${guide}`));
     expect(connect).not.toMatch(/--adapter (qwen|opencode|pi)\b/);
   });
