@@ -127,16 +127,28 @@ const TOP_LEVEL = Object.freeze([
 ]);
 
 // A %G placeholder (%G?, %GG, %GS, %GK, %GF, %GP, %GT) runs gpg on each signed
-// commit. A value with no %, no format: and no tformat: is looked up by
-// prefix among the built-in formats and the repository's `pretty.<name>`
-// aliases, and an alias can hold one, so only a built-in name is taken.
-const FORMAT_ARGUMENT = /^--(?:pretty|format)=([\s\S]*)$/;
+// commit, and git reads one behind a `+`, `-` or space modifier (`%+G?`,
+// `%-GG`, `% GS`) as the same placeholder. A value with no %, no format: and
+// no tformat: is looked up by prefix among the built-in formats and the
+// repository's `pretty.<name>` aliases, and an alias can hold one, so only a
+// built-in name is taken.
+const SIGNATURE_PLACEHOLDER = /%[-+ ]?G/;
 const BUILTIN_FORMATS = Object.freeze(['oneline', 'short', 'medium', 'full', 'fuller', 'reference', 'email', 'mboxrd', 'raw']);
+// Git's revision parser reads --pretty and --format only by their exact names,
+// and their format only after `=`: a bare --pretty means medium, and a bare
+// --format is an unrecognized argument. The check does not depend on that. An
+// abbreviation (`--form=`, `--pret=`) is checked like the full name, and a
+// --format that would take its format from the next argument is refused.
+const FORMAT_OPTIONS = Object.freeze(['--pretty', '--format']);
 const checkFormat = (arg) => {
-  const match = FORMAT_ARGUMENT.exec(arg);
-  if (!match) return null;
-  const value = match[1];
-  if (value.includes('%G')) return `${arg} is refused: a %G placeholder runs gpg to check a signature`;
+  const [name] = arg.split('=', 1);
+  const option = name.length >= 3 && FORMAT_OPTIONS.find((full) => full.startsWith(name));
+  if (!option) return null;
+  if (name === arg) {
+    return option === '--format' ? `${arg} is refused: give the format in the same argument, as --format=<format>` : null;
+  }
+  const value = arg.slice(name.length + 1);
+  if (SIGNATURE_PLACEHOLDER.test(value)) return `${arg} is refused: a %G placeholder runs gpg to check a signature`;
   const userFormat = value === '' || value.startsWith('format:') || value.startsWith('tformat:') || value.includes('%');
   if (userFormat || BUILTIN_FORMATS.includes(value.toLowerCase())) return null;
   return `${arg} is refused: name a built-in format (${BUILTIN_FORMATS.join(', ')}) or give format:<placeholders>`;
