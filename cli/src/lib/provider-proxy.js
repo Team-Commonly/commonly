@@ -11,6 +11,8 @@ import { isAbsolute, relative, sep } from 'path';
 // material across arbitrary stream chunk boundaries before any model sees it.
 export const redactProviderMaterial = (material) => {
   const secret = Buffer.from(material);
+  // An empty key matches everywhere and the scan below would never advance.
+  if (secret.length === 0) throw new TypeError('provider material to redact is empty');
   let pending = Buffer.alloc(0);
   return new Transform({
     transform(chunk, _encoding, done) {
@@ -24,6 +26,13 @@ export const redactProviderMaterial = (material) => {
           const count = pending.length - secret.length + 1;
           this.push(pending.subarray(0, count)); pending = pending.subarray(count);
         }
+      }
+      // Hold back only the longest tail that could still start the key, so a
+      // streamed token is not delayed until a key's length of bytes follows it.
+      let keep = Math.min(pending.length, secret.length - 1);
+      while (keep > 0 && !pending.subarray(pending.length - keep).equals(secret.subarray(0, keep))) keep -= 1;
+      if (pending.length > keep) {
+        this.push(pending.subarray(0, pending.length - keep)); pending = pending.subarray(pending.length - keep);
       }
       done();
     },
