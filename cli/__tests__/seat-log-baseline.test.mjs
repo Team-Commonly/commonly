@@ -41,3 +41,17 @@ test('the window bounds which turns count', () => {
   // the 02:00 turn closes past the window end, as a failure, and still counts
   expect(r.byAdapter.codex.timeouts).toBe(1);
 });
+
+test('a turn on the seat token, and one whose revoke failed, still close as ok', () => {
+  const log = [
+    L('01:00:00.000', '[inbox.batch] spawning codex'),
+    L('01:00:00.200', 'spawn credential unavailable (HTTP 503) — spawning with the seat token'),
+    L('01:00:20.000', '[inbox.batch] agent posted via tool this turn — not echoing CLI output'),
+    L('02:00:00.000', '[inbox.batch] spawning codex'),
+    L('02:00:40.000', 'spawn credential revoke failed (6adbd35b8522fc8abce9b7b8, 503) — the boot sweep will collect it'),
+    L('02:00:40.500', '[inbox.batch] no wrapper-post (NO_REPLY)'),
+  ].join('\n');
+  const r = baseline(log, { seat: 'nib', untilMs: Date.parse('2026-10-24T03:00:00Z'), hours: 4 });
+  expect(r.byAdapter.codex).toMatchObject({ turns: 2, ok: 2, open: 0, outcomes: { posted_via_tool: 1, no_reply: 1 } });
+  expect(r.byAdapter.codex.durationMs.max).toBe(40_000);
+});

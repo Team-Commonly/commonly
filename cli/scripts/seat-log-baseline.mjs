@@ -94,10 +94,12 @@ export const baseline = (text, { seat, untilMs = Date.now(), hours = 48, timeout
       open = null;
       continue;
     }
-    if (/^spawn credential revoked\b/.test(msg)) { open.revokedMs = at; continue; }
+    // The child's end, when the turn minted a credential. A seat-token turn
+    // mints none and logs neither line, so its outcome line is its end.
+    if (/^spawn credential (revoked|revoke failed)\b/.test(msg)) { open.revokedMs = at; continue; }
     const outcome = outcomeOf(msg);
-    if (outcome && open.revokedMs !== undefined) {
-      close(open, { endMs: open.revokedMs, ended: 'ok', outcome });
+    if (outcome) {
+      close(open, { endMs: open.revokedMs ?? at, ended: 'ok', outcome });
       open = null;
     }
   }
