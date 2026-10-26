@@ -2,6 +2,7 @@
 import { Types } from 'mongoose';
 import Task from '../models/Task';
 import GithubGigBinding from '../models/GithubGigBinding';
+import { MERGE_EVIDENCE_TEXT } from './initiativeStatus';
 
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const AgentIdentityService = require('./agentIdentityService');
@@ -82,7 +83,8 @@ export const completeTaskForMergedPull = async (podId: string, href: string): Pr
   const task = await Task.findOneAndUpdate(
     { podId: new Types.ObjectId(podId), prUrl: href, status: { $in: ['pending', 'claimed'] } },
     { $set: { status: 'done', completedAt: at }, $push: { updates: {
-      text: 'Completed automatically — linked pull request merged', author: 'system', authorId: null, createdAt: at,
+      // Initiative status reads this exact update as merge evidence (initiativeStatus.ts).
+      text: MERGE_EVIDENCE_TEXT, author: 'system', authorId: null, createdAt: at,
     } } },
     { new: true },
   );
