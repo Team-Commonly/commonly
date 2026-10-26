@@ -223,9 +223,17 @@ const inIPv4Block = (ip: number, base: string, bits: number): boolean => {
   return Math.floor(ip / blockSize) === Math.floor(ipv4ToInt(base) / blockSize);
 };
 
+// IANA's IPv4 special-purpose registry, less the globally reachable rows
+// (AS112, AMT), plus multicast.
 const RESERVED_V4: Array<[string, number]> = [
   ['0.0.0.0', 8], // unspecified, "this network"
   ['169.254.0.0', 16], // link-local, including 169.254.169.254
+  ['192.0.0.0', 24], // IETF protocol assignments
+  ['192.0.2.0', 24], // documentation (TEST-NET-1)
+  ['192.88.99.0', 24], // deprecated 6to4 relay anycast
+  ['198.18.0.0', 15], // benchmarking
+  ['198.51.100.0', 24], // documentation (TEST-NET-2)
+  ['203.0.113.0', 24], // documentation (TEST-NET-3)
   ['224.0.0.0', 4], // multicast
   ['240.0.0.0', 4], // reserved, including 255.255.255.255
 ];
@@ -260,26 +268,68 @@ const ipv6Groups = (address: string): number[] | null => {
   return groups.length === 8 ? groups : null;
 };
 
+const groupsToIPv4 = (hi: number, lo: number): string => (
+  `${Math.floor(hi / 256)}.${hi % 256}.${Math.floor(lo / 256)}.${lo % 256}`
+);
+
+// Same block when the leading `bits` bits agree. `base` may omit trailing
+// zero groups.
+const inIPv6Block = (g: number[], base: number[], bits: number): boolean => g
+  .slice(0, Math.ceil(bits / 16))
+  .every((x, i) => {
+    const blockSize = 2 ** (16 - Math.min(16, bits - (16 * i)));
+    return Math.floor(x / blockSize) === Math.floor((base[i] ?? 0) / blockSize);
+  });
+
+// Ranges that carry an IPv4 address, classified by that address so every
+// IPv4 range is refused in each of its IPv6 spellings. The pair names the two
+// groups holding it.
+const EMBEDDED_V4: Array<[number[], number, [number, number]]> = [
+  [[0, 0, 0, 0, 0, 0xffff], 96, [6, 7]], // IPv4-mapped, ::ffff:a.b.c.d
+  [[0, 0, 0, 0, 0xffff, 0], 96, [6, 7]], // IPv4-translated, ::ffff:0:a.b.c.d
+  [[0x64, 0xff9b], 96, [6, 7]], // NAT64, 64:ff9b::a.b.c.d
+  [[0x2002], 16, [1, 2]], // 6to4, 2002:aabb:ccdd::
+];
+const TEREDO: [number[], number] = [[0x2001], 32];
+
+// IANA's IPv6 special-purpose registry, less the globally reachable rows
+// outside 2001::/23, plus the deprecated site-local block and multicast.
+const RESERVED_V6: Array<[number[], number]> = [
+  [[0x64, 0xff9b, 1], 48], // local-use IPv4/IPv6 translation
+  [[0x100], 64], // discard-only
+  [[0x100, 0, 0, 1], 64], // dummy prefix
+  [[0x2001], 23], // IETF protocol assignments, after Teredo is decoded
+  [[0x2001, 0xdb8], 32], // documentation
+  [[0x3fff], 20], // documentation
+  [[0x5f00], 16], // segment routing SIDs
+  [[0xfe80], 10], // link-local
+  [[0xfec0], 10], // deprecated site-local
+  [[0xff00], 8], // multicast
+];
+const PRIVATE_V6: Array<[number[], number]> = [
+  [[0xfc00], 7], // unique-local
+];
+
 /**
- * Classify one IP address. IPv4-mapped (`::ffff:a.b.c.d`) and NAT64
- * (`64:ff9b::a.b.c.d`) addresses are classified by the IPv4 address they
- * carry, so every IPv4 range is also refused in its IPv6 spellings. Anything
- * that does not parse is `reserved`.
+ * Classify one IP address. IPv6 addresses that carry an IPv4 address (mapped,
+ * translated, NAT64, 6to4, Teredo) are classified by that IPv4 address, so
+ * every IPv4 range is also refused in its IPv6 spellings. Anything that does
+ * not parse is `reserved`.
  */
 export const classifyAddress = (address: string): AddressClass => {
   if (net.isIPv4(address)) return classifyIPv4(address);
   const g = ipv6Groups(address);
   if (!g) return 'reserved';
-  const embeddedIPv4 = () => `${Math.floor(g[6] / 256)}.${g[6] % 256}.${Math.floor(g[7] / 256)}.${g[7] % 256}`;
-  if (g.slice(0, 5).every((x) => x === 0) && g[5] === 0xffff) return classifyIPv4(embeddedIPv4());
-  if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) return classifyIPv4(embeddedIPv4());
+  const embedded = EMBEDDED_V4.find(([base, bits]) => inIPv6Block(g, base, bits));
+  if (embedded) return classifyIPv4(groupsToIPv4(g[embedded[2][0]], g[embedded[2][1]]));
+  // Teredo stores the client's IPv4 address with every bit inverted.
+  if (inIPv6Block(g, ...TEREDO)) return classifyIPv4(groupsToIPv4(0xffff - g[6], 0xffff - g[7]));
   if (g.slice(0, 6).every((x) => x === 0)) {
     // ::1 is loopback; :: and the deprecated IPv4-compatible block are not routable.
     return g[6] === 0 && g[7] === 1 ? 'private' : 'reserved';
   }
-  if (g[0] >= 0xfc00 && g[0] <= 0xfdff) return 'private'; // unique-local fc00::/7
-  if (g[0] >= 0xfe80 && g[0] <= 0xfebf) return 'reserved'; // link-local fe80::/10
-  if (g[0] >= 0xff00) return 'reserved'; // multicast ff00::/8
+  if (RESERVED_V6.some(([base, bits]) => inIPv6Block(g, base, bits))) return 'reserved';
+  if (PRIVATE_V6.some(([base, bits]) => inIPv6Block(g, base, bits))) return 'private';
   return 'public';
 };
 
