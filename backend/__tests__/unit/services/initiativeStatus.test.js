@@ -139,6 +139,36 @@ describe('deriveInitiativeStatus — one case per status row', () => {
   });
 });
 
+describe('deriveInitiativeStatus — precedence overlaps (§2)', () => {
+  const recent = [task('t1', 'done', [merge(hoursAgo(1))])];
+
+  it('a pending decision beside recent evidence is blocked', () => {
+    const r = deriveInitiativeStatus(
+      initiative([link('task', 't1'), link('decision', 'd1')]),
+      { ...none, tasks: recent, decisions: [{ _id: 'd1', title: 'Which vault?', status: 'pending' }] },
+      NOW,
+    );
+    expect(r.activity.state).toBe('moving');
+    expect(r.status).toBe('blocked');
+  });
+
+  it('a close beside recent evidence and a pending decision is closed', () => {
+    const closed = { at: hoursAgo(1), byUserId: GIVER, evidenceUrl: 'https://example.test/walk' };
+    const r = deriveInitiativeStatus(
+      initiative([link('task', 't1'), link('decision', 'd1')], { closed }),
+      { ...none, tasks: recent, decisions: [{ _id: 'd1', title: 'Which vault?', status: 'pending' }] },
+      NOW,
+    );
+    expect(r.status).toBe('closed');
+  });
+
+  it('all merged beside recent evidence is needs your check, not moving', () => {
+    const r = deriveInitiativeStatus(initiative([link('task', 't1')]), { ...none, tasks: recent }, NOW);
+    expect(r.activity.state).toBe('moving');
+    expect(r.status).toBe('needs-your-check');
+  });
+});
+
 describe('deriveInitiativeStatus — what does NOT count', () => {
   it("an owner's task update inside the window does not move a stalled initiative", () => {
     const before = deriveInitiativeStatus(
