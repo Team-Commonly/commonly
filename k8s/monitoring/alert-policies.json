@@ -405,6 +405,34 @@
     ]
   },
   {
+    "displayName": "commonly-dev: a LiteLLM key passed 80% of its budget",
+    "severity": "WARNING",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "A LiteLLM virtual key (backend, commonly-bot, or any other key with a max_budget) has spent 80% of its budget for the period. At 100% LiteLLM answers 422 budget_exceeded and every call on that key fails, so this is the warning before a feature stops. The log line names the key, the spend, the budget and the reset time. Runbook: docs/runbooks/alerting.md#litellm-key-budget"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "a LiteLLM key crossed 80% of its budget",
+        "conditionThreshold": {
+          "filter": "metric.type=\"logging.googleapis.com/user/litellm_key_budget_near_limit\" AND resource.type=\"k8s_container\"",
+          "aggregations": [
+            {
+              "alignmentPeriod": "300s",
+              "perSeriesAligner": "ALIGN_SUM",
+              "crossSeriesReducer": "REDUCE_SUM"
+            }
+          ],
+          "comparison": "COMPARISON_GT",
+          "thresholdValue": 0,
+          "duration": "0s",
+          "trigger": { "count": 1 }
+        }
+      }
+    ]
+  },
+  {
     "displayName": "commonly-dev: www.commonly.me no longer reaches the app",
     "severity": "WARNING",
     "documentation": {

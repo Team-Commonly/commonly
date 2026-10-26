@@ -379,3 +379,52 @@ A model the price table does not know is charged at an Opus-class rate, so a
 new route over-alarms instead of hiding. If the alert is about a model that
 is not in the table, add its price, with the source, rather than raising the
 threshold.
+
+### LiteLLM key budget
+
+"A LiteLLM key passed 80% of its budget" (WARNING) fires when a LiteLLM
+virtual key with a `max_budget` has spent 80% of it for the current
+`budget_duration`. Every 15 minutes the backend lists the keys with the master
+key (`GET /key/list`, `backend/services/litellmBudgetAlarmService.ts`) and logs
+one `{"alarm":"litellm_budget", ...}` line per key per budget period, naming
+the key alias, the spend, the budget and the reset time. The same text goes to
+the "SRE alerts" pod as described under *User spend*; a failed post is retried
+on the next sweep without a second log line. If the scan does not cover every
+key, it logs one `scanIncomplete` line on the same metric, so the alert can
+also mean "some keys were not checked". `truncated` means `/key/list` has more
+pages than the sweep reads (20 pages of 100): raise the bound in the service.
+`failed` means a page request failed: check LiteLLM's health first. Either
+way the keys already read are still checked, and the line repeats only after
+a complete scan in between.
+
+The keys that matter (TASK-555, minted 2026-10-25):
+
+| key alias | used by | budget |
+|---|---|---|
+| `svc-backend` | backend + ops-runner (`LITELLM_API_KEY`, SM `litellm-backend-key`) | $40 / 30 days |
+| `svc-commonly-bot` | commonly-bot (`LITELLM_API_KEY`, SM `litellm-commonly-bot-key`) | $20 / 30 days |
+
+Both are gated by `litellm.serviceKeys.fromSecret`. Budgets and spend live in
+LiteLLM's Postgres, so they survive a LiteLLM restart (verified 2026-10-25: a
+key exhausted before a rollout restart still answered 422 after it). The
+`max_budget` on the `deepseek-v4-flash` deployment in the LiteLLM config is a
+router-cache backstop only and resets on every LiteLLM restart.
+
+**At 100%** LiteLLM answers `422 budget_exceeded` and every call on that key
+fails: backend summaries, embeddings and native-runtime turns for
+`svc-backend`, the bot's replies for `svc-commonly-bot`. The guardrail check in
+`nativeRuntimeService` keeps using the master key (the route is admin-only), so
+it is not affected.
+
+When it fires:
+
+1. Read the log line for the key and the spend.
+2. Break the spend down by model and day: `GET /spend/logs` for that key, or
+   the LiteLLM UI. A single model or a single day carrying it is a loop or a
+   misroute; fix that, not the budget.
+3. Steady growth is real use. Raise the budget with
+   `POST /key/update {"key": ..., "max_budget": ...}` using the master key,
+   and update the table above in the same PR.
+4. If the key is already blocked and the cause is not fixed yet, unset
+   `litellm.serviceKeys.fromSecret` only as a last resort: the services fall
+   back to the master key, which has no budget.

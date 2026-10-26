@@ -295,6 +295,11 @@ describe('paging SRE in a pod', () => {
     expect(text.startsWith('[spend alarm] u1 spent $3.00')).toBe(true);
   });
 
+  test('pageSre throws when SPEND_ALARM_POD_ID is unset, so no caller counts the page as sent', async () => {
+    await expect(spend.pageSre('x')).rejects.toThrow('SPEND_ALARM_POD_ID is not set');
+    expect(AgentMessageService._postToTarget).not.toHaveBeenCalled();
+  });
+
   test('with SPEND_ALARM_POD_ID unset there is no post, and the log line stands', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     await overTheLine();

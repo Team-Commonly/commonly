@@ -347,6 +347,10 @@ cloudflared:
 
 litellm:
   enabled: true
+  # TASK-555: budgeted service keys (backend $40/30d, commonly-bot $20/30d),
+  # minted 2026-10-25 and stored in Secret Manager.
+  serviceKeys:
+    fromSecret: true
   # The base image pin must match the shared boot script. v1.106.2 includes
   # spend-log tool-index retention and the headless device-login guard;
   # BerriAI/litellm#48153 tracks the remaining ChatGPT Responses input patch.
