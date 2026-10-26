@@ -166,21 +166,39 @@ export const render = (r) => {
   return out.join('\n');
 };
 
-const main = (argv) => {
+export const main = (argv, { stdout = process.stdout, stderr = process.stderr } = {}) => {
   const args = [...argv];
   const seat = args.shift();
   if (!seat || seat.startsWith('-')) {
-    process.stderr.write('usage: seat-log-baseline.mjs <seat> [--until <ISO>] [--hours 48] [--log <path>] [--timeout-ms 2700000] [--json]\n');
+    stderr.write('usage: seat-log-baseline.mjs <seat> [--until <ISO>] [--hours 48] [--log <path>] [--timeout-ms 2700000] [--json]\n');
     return 2;
   }
-  const opt = (name, fallback) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : fallback; };
-  const untilMs = opt('--until') ? Date.parse(opt('--until')) : Date.now();
-  if (Number.isNaN(untilMs)) { process.stderr.write('--until is not a date\n'); return 2; }
+  // A malformed option is a usage error (status 2), never a stack trace or a
+  // report computed from NaN.
+  const usage = (message) => { stderr.write(`${message}\n`); return 2; };
+  const opt = (name, fallback) => {
+    const i = args.indexOf(name);
+    if (i < 0) return fallback;
+    const value = args[i + 1];
+    return value === undefined || value.startsWith('--') ? null : value;
+  };
+  const num = (name, fallback) => {
+    const value = opt(name, fallback);
+    const n = value === null ? NaN : Number(value);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  const until = opt('--until');
+  if (until === null) return usage('--until needs a value');
+  const untilMs = until === undefined ? Date.now() : Date.parse(until);
+  if (Number.isNaN(untilMs)) return usage('--until is not a date');
   const logPath = opt('--log', path.join(os.homedir(), '.commonly', 'logs', `${seat}.log`));
-  const result = baseline(fs.readFileSync(logPath, 'utf8'), {
-    seat, untilMs, hours: Number(opt('--hours', 48)), timeoutMs: Number(opt('--timeout-ms', 2_700_000)),
-  });
-  process.stdout.write(`${args.includes('--json') ? JSON.stringify(result, null, 2) : render(result)}\n`);
+  if (logPath === null) return usage('--log needs a value');
+  const hours = num('--hours', 48);
+  if (hours === null) return usage('--hours must be a positive number');
+  const timeoutMs = num('--timeout-ms', 2_700_000);
+  if (timeoutMs === null) return usage('--timeout-ms must be a positive number');
+  const result = baseline(fs.readFileSync(logPath, 'utf8'), { seat, untilMs, hours, timeoutMs });
+  stdout.write(`${args.includes('--json') ? JSON.stringify(result, null, 2) : render(result)}\n`);
   return 0;
 };
 

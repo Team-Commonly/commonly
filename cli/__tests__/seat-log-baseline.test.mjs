@@ -1,4 +1,8 @@
-import { baseline, render } from '../scripts/seat-log-baseline.mjs';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+
+import { baseline, main, render } from '../scripts/seat-log-baseline.mjs';
 
 const L = (ts, msg, seat = 'nib') => `2026-10-24T${ts}Z [${seat}] ${msg}`;
 const LOG = [
@@ -54,4 +58,34 @@ test('a turn on the seat token, and one whose revoke failed, still close as ok',
   const r = baseline(log, { seat: 'nib', untilMs: Date.parse('2026-10-24T03:00:00Z'), hours: 4 });
   expect(r.byAdapter.codex).toMatchObject({ turns: 2, ok: 2, open: 0, outcomes: { posted_via_tool: 1, no_reply: 1 } });
   expect(r.byAdapter.codex.durationMs.max).toBe(40_000);
+});
+
+test('a malformed option is a usage error, not a stack trace or a NaN report', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'seat-log-baseline-'));
+  try {
+    const log = join(dir, 'nib.log');
+    writeFileSync(log, LOG);
+    const run = (...args) => {
+      const out = [];
+      const err = [];
+      const status = main(['nib', ...args], { stdout: { write: (t) => out.push(t) }, stderr: { write: (t) => err.push(t) } });
+      return { status, out: out.join(''), err: err.join('') };
+    };
+    for (const [args, message] of [
+      [['--log'], '--log needs a value'],
+      [['--log', '--json'], '--log needs a value'],
+      [['--log', log, '--hours'], '--hours must be a positive number'],
+      [['--log', log, '--hours', 'abc'], '--hours must be a positive number'],
+      [['--log', log, '--timeout-ms', 'x'], '--timeout-ms must be a positive number'],
+      [['--log', log, '--until'], '--until needs a value'],
+      [['--log', log, '--until', 'yesterday'], '--until is not a date'],
+    ]) {
+      expect(run(...args)).toEqual({ status: 2, out: '', err: `${message}\n` });
+    }
+    const ok = run('--log', log, '--until', '2026-10-24T07:00:00Z', '--hours', '48', '--json');
+    expect(ok.status).toBe(0);
+    expect(JSON.parse(ok.out).byAdapter.codex.turns).toBe(4);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
