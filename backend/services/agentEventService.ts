@@ -99,7 +99,10 @@ const DIGEST_FRAME_ROWS = 8;
 // NO_REPLY (a suppressed runtime failure is `runtime_*_suppressed` instead), so
 // it is the seat's decision, not a refusal. Treating it as unread left a
 // silent seat's digest pending, and the hourly unread-digest wake re-woke it to
-// be silent again (rhea, 2026-10-25).
+// be silent again (rhea, 2026-10-25). A turn that printed nothing acks as
+// `empty-output`, which is not a read: that is what a silently failing seat
+// sends every turn, and reading on it would drain a backlog nobody saw
+// (sable, #2753).
 const digestConsumedBy = (outcome?: string, reason?: string): boolean => outcome === 'posted'
   || outcome === 'acknowledged'
   || (outcome === 'no_action' && (!reason || reason === 'silent_or_empty'));

@@ -282,7 +282,7 @@ describe('performRun', () => {
     expect(lines.some((line) => line.includes('upstream refused'))).toBe(false);
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-1/ack',
-      { result: { outcome: 'no_action' } },
+      { result: { outcome: 'no_action', reason: 'empty-output' } },
     );
   });
 
@@ -514,6 +514,38 @@ describe('performRun', () => {
         result: { outcome: 'no_action', reason: 'digest-read' },
       });
     }
+  });
+
+  // Only the sentinel is a choice. A seat that prints nothing every turn (a
+  // crash, a timeout, a lost route that says nothing) must not drain the
+  // digest it never saw (sable, #2753).
+  test.each([
+    ['NO_REPLY', { outcome: 'no_action' }, true],
+    ['', { outcome: 'no_action', reason: 'empty-output' }, false],
+  ])('a reply of %j acks the wake as %j and reads the digest: %s', async (text, wakeResult, read) => {
+    const events = [
+      makeEvent({ _id: 'evt-wake', payload: { content: 'question' } }),
+      makeEvent({ _id: 'evt-ambient', type: 'message.posted', deliveryMode: 'digest',
+        payload: { content: 'background' } }),
+    ];
+    const get = jest.fn(async (route) => (
+      route.endsWith('/messages') ? { messages: [] } : { events, inboxCount: 2 }
+    ));
+    const post = jest.fn(async () => ({}));
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith('/api/agents/runtime/events/evt-wake/ack', { result: wakeResult });
+    const acked = ackPosts(post).map(([route]) => route);
+    expect(acked.includes('/api/agents/runtime/events/evt-ambient/ack')).toBe(read);
   });
 
   test('a lost binding item stays read-only context while another batch item may run', async () => {

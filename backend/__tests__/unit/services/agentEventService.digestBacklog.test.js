@@ -106,6 +106,9 @@ describe('a consumed wake settles the digest backlog up to its snapshot', () => 
   test.each([
     [{ outcome: 'no_action', reason: 'claim-held' }],
     [{ outcome: 'no_action', reason: 'duplicate_recent' }],
+    // Empty output is not the NO_REPLY sentinel: a seat failing silently every
+    // turn must leave its backlog pending, not drain it (sable, #2753).
+    [{ outcome: 'no_action', reason: 'empty-output' }],
     [{ outcome: 'error' }],
   ])('a non-consuming outcome settles nothing: %j', async (result) => {
     await seedBacklog();

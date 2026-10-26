@@ -76,7 +76,7 @@ import {
   formatPodFocusFrame,
   readPodFocus,
 } from '../lib/pod-focus.js';
-import { claimReleaseFor, ackResultFor } from '../lib/claim-outcome.js';
+import { claimReleaseFor, ackResultFor, EMPTY_OUTPUT } from '../lib/claim-outcome.js';
 import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
@@ -2214,6 +2214,13 @@ export const performRun = ({
         },
       };
     }
+    // Empty output is not the sentinel. A seat that answered `NO_REPLY` read
+    // its batch and chose silence; one that printed nothing may have crashed,
+    // timed out or lost its route without saying so. The bare `no_action`
+    // stays the sentinel's alone, because a digest counts as read only on
+    // that (sable, #2753). Release, hand-off and spawn counting treat
+    // `empty-output` exactly as they treat a bare decline.
+    if (!delivered && !replyText) return { outcome: 'no_action', reason: EMPTY_OUTPUT };
     return { outcome: delivered ? 'posted' : 'no_action' };
   };
 
@@ -2683,7 +2690,10 @@ export const performRun = ({
         // independent action. If the waking work stood down or the provider
         // refused the batch, leave it unread for the next real turn. A reply
         // the server skipped as `silent_or_empty` is the seat choosing silence
-        // (the server's answer to an intentional NO_REPLY), so it read the digest.
+        // (the server's answer to an intentional NO_REPLY), so it read the
+        // digest. Empty output (`empty-output`) is not a choice anyone can see:
+        // a broken seat produces it every turn, and reading on it would drain
+        // the backlog that seat never saw.
         if (turnResult?.outcome === 'posted'
           || (turnResult?.outcome === 'no_action'
             && (!turnResult?.reason || turnResult.reason === 'silent_or_empty'))) {
@@ -2917,7 +2927,8 @@ export const performRun = ({
           }
           const batchSpawned = batch.entries.some((entry) => (
             entry.result?.outcome === 'posted'
-            || (entry.result?.outcome === 'no_action' && !entry.result?.reason)
+            || (entry.result?.outcome === 'no_action'
+              && (!entry.result?.reason || entry.result.reason === EMPTY_OUTPUT))
           ));
           if (batchSpawned) {
             consecutiveSpawnFailures = 0;
