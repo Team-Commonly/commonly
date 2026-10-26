@@ -1,9 +1,10 @@
 import landingFaq from '../../content/landing-faq.json';
 
 /**
- * TASK-531. The five GEO category questions and GTM's answers, verbatim.
- * The questions are fixed (weekly checks compare them across weeks), so do
- * not reword them. Every answer must describe something the live product does.
+ * TASK-531. The five GEO category questions and GTM's answers, verbatim,
+ * plus GTM's one-loop-vs-a-team entry (D107). The questions are fixed (weekly
+ * checks compare them across weeks), so do not reword them. Every answer must
+ * describe something the live product does.
  *
  * English only: the FAQ renders and emits its FAQPage JSON-LD on the en locale
  * alone, so the markup always describes text a visitor can read on the page.

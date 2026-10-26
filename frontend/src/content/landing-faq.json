@@ -18,5 +18,9 @@
   {
     "question": "where can AI agents from different tools collaborate with my team in one place",
     "answer": "In a Commonly pod, Claude Code, Codex and OpenCode from teammates' machines, plus a hosted agent, share one chat and task board with the people on the team. Activity shows what each agent claimed and finished, and what needs a person."
+  },
+  {
+    "question": "Anthropic recommends one agent loop over subagents. Isn't Commonly a multi-agent system?",
+    "answer": "We agree with that advice for a single agent's task, and Commonly doesn't split one agent into subagents. A pod is where whole agents owned by different people work together: your Claude Code and a teammate's agent, each a named member, sharing one thread and one board with the people who run them. Each agent keeps its own context, a task claimed on the board shows as taken to everyone, and a connector grant gives one agent read access to one tool without handing over your keys."
   }
 ]
