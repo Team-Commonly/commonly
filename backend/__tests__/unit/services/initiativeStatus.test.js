@@ -25,9 +25,15 @@ const GIVER = 'giver-1';
 const OWNER = 'owner-1';
 const PR = 'https://github.com/Team-Commonly/commonly/pull/42';
 
-const merge = (at) => ({ text: MERGE_EVIDENCE_TEXT, author: 'system', authorId: null, createdAt: at });
-const ownerNote = (at) => ({ text: 'Lease renewed, still working', author: 'pike', authorId: 'seat-1', createdAt: at });
-const task = (id, status, updates = [], prUrl = null) => ({ _id: id, status, updates, prUrl });
+const merge = (at) => ({
+  text: MERGE_EVIDENCE_TEXT, author: 'system', authorId: null, createdAt: at, 
+});
+const ownerNote = (at) => ({
+  text: 'Lease renewed, still working', author: 'pike', authorId: 'seat-1', createdAt: at, 
+});
+const task = (id, status, updates = [], prUrl = null) => ({
+  _id: id, status, updates, prUrl, 
+});
 const initiative = (links, extra = {}) => ({
   createdAt: hoursAgo(24 * 10), direction: GIVER, ownerId: OWNER, links, ...extra,
 });
@@ -48,11 +54,18 @@ describe('deriveInitiativeStatus — one case per status row', () => {
   it('moving: a ruled decision inside the window', () => {
     const r = deriveInitiativeStatus(
       initiative([link('decision', 'd1')]),
-      { ...none, decisions: [{ _id: 'd1', title: 'Pick A', status: 'ruled', ruling: { at: hoursAgo(1) } }] },
+      {
+        ...none,
+        decisions: [{
+          _id: 'd1', title: 'Pick A', status: 'ruled', ruling: { at: hoursAgo(1) }, 
+        }], 
+      },
       NOW,
     );
     expect(r.status).toBe('moving');
-    expect(r.evidence).toEqual([{ kind: 'decision', linkKind: 'decision', ref: 'd1', at: hoursAgo(1) }]);
+    expect(r.evidence).toEqual([{
+      kind: 'decision', linkKind: 'decision', ref: 'd1', at: hoursAgo(1), 
+    }]);
   });
 
   it('stalled since <date>: newest evidence is older than the window, dated by that evidence', () => {
@@ -88,7 +101,9 @@ describe('deriveInitiativeStatus — one case per status row', () => {
 
   it('waiting on you: the pending decision has an open decision item for the giver', () => {
     const attention = [
-      { kind: 'decision', status: 'open', recipientUserId: GIVER, source: { type: 'decision_request', id: 'd1' } },
+      {
+        kind: 'decision', status: 'open', recipientUserId: GIVER, source: { type: 'decision_request', id: 'd1' }, 
+      },
     ];
     const r = deriveInitiativeStatus(
       initiative([link('decision', 'd1')]),
@@ -101,8 +116,12 @@ describe('deriveInitiativeStatus — one case per status row', () => {
 
   it('a decision item addressed to someone else is blocked, not waiting on you', () => {
     const attention = [
-      { kind: 'decision', status: 'open', recipientUserId: 'someone-else', source: { type: 'decision_request', id: 'd1' } },
-      { kind: 'decision', status: 'done', recipientUserId: GIVER, source: { type: 'decision_request', id: 'd1' } },
+      {
+        kind: 'decision', status: 'open', recipientUserId: 'someone-else', source: { type: 'decision_request', id: 'd1' }, 
+      },
+      {
+        kind: 'decision', status: 'done', recipientUserId: GIVER, source: { type: 'decision_request', id: 'd1' }, 
+      },
     ];
     const r = deriveInitiativeStatus(
       initiative([link('decision', 'd1')]),
@@ -126,7 +145,9 @@ describe('deriveInitiativeStatus — one case per status row', () => {
   });
 
   it('closed: a close record by the giver', () => {
-    const closed = { at: hoursAgo(1), byUserId: GIVER, evidenceUrl: 'https://example.test/walk', note: 'walked' };
+    const closed = {
+      at: hoursAgo(1), byUserId: GIVER, evidenceUrl: 'https://example.test/walk', note: 'walked', 
+    };
     const r = deriveInitiativeStatus(initiative([link('task', 't1')], { closed }), { ...none, tasks: [task('t1', 'done')] }, NOW);
     expect(r.status).toBe('closed');
     expect(r.needsCheck).toBe(false);
@@ -186,8 +207,12 @@ describe('deriveInitiativeStatus — what does NOT count', () => {
   });
 
   it('other system-authored task updates are not merge evidence', () => {
-    const starter = { text: 'Starter task created', author: 'system', authorId: null, createdAt: hoursAgo(1) };
-    const spoofed = { text: MERGE_EVIDENCE_TEXT, author: 'system', authorId: 'seat-1', createdAt: hoursAgo(1) };
+    const starter = {
+      text: 'Starter task created', author: 'system', authorId: null, createdAt: hoursAgo(1), 
+    };
+    const spoofed = {
+      text: MERGE_EVIDENCE_TEXT, author: 'system', authorId: 'seat-1', createdAt: hoursAgo(1), 
+    };
     const r = deriveInitiativeStatus(
       initiative([link('task', 't1')]),
       { ...none, tasks: [task('t1', 'claimed', [starter, spoofed])] },
@@ -217,7 +242,7 @@ describe('deriveInitiativeStatus — what does NOT count', () => {
     expect(r.status).toBe('needs-your-check');
   });
 
-  it("a task the owner flagged blocked stays a note on its part, not the status", () => {
+  it('a task the owner flagged blocked stays a note on its part, not the status', () => {
     const r = deriveInitiativeStatus(
       initiative([link('task', 't1'), link('task', 't2')]),
       { ...none, tasks: [task('t1', 'blocked'), task('t2', 'done', [merge(hoursAgo(2))])] },
@@ -237,8 +262,12 @@ describe('deriveInitiativeStatus — parts and cadence', () => {
     );
     expect(r.status).toBe('moving');
     expect(r.parts).toEqual([
-      { kind: 'task', ref: 't1', state: 'moving', since: hoursAgo(2) },
-      { kind: 'task', ref: 't2', state: 'stalled', since: hoursAgo(30) },
+      {
+        kind: 'task', ref: 't1', state: 'moving', since: hoursAgo(2), 
+      },
+      {
+        kind: 'task', ref: 't2', state: 'stalled', since: hoursAgo(30), 
+      },
     ]);
   });
 
