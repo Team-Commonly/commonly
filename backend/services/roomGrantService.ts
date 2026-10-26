@@ -256,8 +256,8 @@ export const onTaskClosed = async (task: {
   try {
     await revokeTaskGrants({ podId: String(task.podId), taskId: task.taskId, closedEpoch: task.grantEpoch || 1 });
   } catch (error) {
-    console.error(`[grants] task.done revocation write failed for ${String(task.podId)}/${task.taskId};`
-      + ' the epoch fence still refuses its grants', error);
+    console.error('[grants] task.done revocation write failed for %s/%s; the epoch fence still refuses its grants',
+      String(task.podId), task.taskId, error);
   }
 };
 
