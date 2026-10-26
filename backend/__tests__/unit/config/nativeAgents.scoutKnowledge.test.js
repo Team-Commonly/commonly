@@ -154,6 +154,16 @@ describe('Scout onboarding knowledge', () => {
     );
   });
 
+  // A card gets only the MCP line in text, so Codex needs a line of its own:
+  // the Claude Code one does not configure Codex.
+  test('gives an MCP line for each tool the card connects', () => {
+    expect(prompt).toContain('`claude mcp add commonly -e COMMONLY_API_URL=... '
+      + '-e COMMONLY_AGENT_TOKEN=... -- npx -y @commonlyai/mcp`');
+    expect(prompt).toContain('`codex mcp add commonly --env COMMONLY_API_URL=... '
+      + '--env COMMONLY_AGENT_TOKEN=... -- npx -y @commonlyai/mcp`');
+    expect(prompt).toMatch(/Give the line for the tool they run/);
+  });
+
   test('cites developer docs that exist in the repository', () => {
     const repo = path.resolve(__dirname, '../../../..');
     for (const doc of [
