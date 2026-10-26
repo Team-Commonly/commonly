@@ -16,12 +16,15 @@ type RateLimitRequest = {
 // The key is taken before any route's auth check runs, so the token branch
 // buckets by the PRESENTED credential: two requests carrying the same header
 // share a bucket whether or not that header authenticates anything. The
-// no-header branch defers to `cloudflareIpRateLimitKeyGenerator`, which owns the
+// credential is read the way `auth` reads it (`auth.ts:34-35`): `Authorization`,
+// else `x-auth-token`. Read only the first, an `x-auth-token` caller fell to the
+// address branch and shared one budget with every caller behind its address.
+// The no-header branch defers to `cloudflareIpRateLimitKeyGenerator`, which owns the
 // `cf-connecting-ip`-then-`req.ip` rule (`ipRateLimit.ts:49`) — read on its own
 // here, `req.ip` is a cloudflared pod address for every external caller, so this
 // branch was one instance-wide bucket (`server.ts:94-101`, TASK-110's class).
 export const integrationsRateLimitKey = (req: RateLimitRequest): string => {
-  const authHeader = req.get?.('authorization');
+  const authHeader = req.get?.('authorization') || req.get?.('x-auth-token');
   if (authHeader) {
     return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
   }

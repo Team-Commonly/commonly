@@ -8,7 +8,8 @@
 //
 // WHAT IT WITNESSES. The write budget is a count: 30 succeed in the window and
 // the 31st is refused with the limiter's own body. Two presented bearer tokens
-// are two buckets. And the no-header branch buckets by the Cloudflare-recorded
+// are two buckets, and so are two `x-auth-token` values, the header `auth` falls
+// back to. And the no-header branch buckets by the Cloudflare-recorded
 // address, so two requests differing only in `req.ip` share a bucket while two
 // differing only in `cf-connecting-ip` do not.
 //
@@ -114,5 +115,21 @@ describe('integrationsRateLimitKey', () => {
     expect(integrationsRateLimitKey(withToken('Bearer one', '10.0.0.1')))
       .not.toBe(integrationsRateLimitKey(withToken('Bearer two', '10.0.0.1')));
     expect(integrationsRateLimitKey(withToken('Bearer one', '10.0.0.1'))).toMatch(/^tok:/);
+  });
+
+  it('buckets an x-auth-token by that token, and lets Authorization win as auth does', () => {
+    const withHeaders = (headers, ip) => ({ get: (name) => headers[name], headers, ip });
+
+    // Two x-auth-token callers behind one address are two buckets. Keyed by the
+    // address instead, they would share one 30-write budget.
+    const one = withHeaders({ 'x-auth-token': 'one' }, '10.0.0.1');
+    const two = withHeaders({ 'x-auth-token': 'two' }, '10.0.0.1');
+    expect(integrationsRateLimitKey(one)).not.toBe(integrationsRateLimitKey(two));
+    expect(integrationsRateLimitKey(one)).toMatch(/^tok:/);
+
+    // `auth` reads Authorization first (auth.ts:34-35), so the key does too.
+    const both = withHeaders({ authorization: 'Bearer one', 'x-auth-token': 'two' }, '10.0.0.1');
+    expect(integrationsRateLimitKey(both))
+      .toBe(integrationsRateLimitKey(withHeaders({ authorization: 'Bearer one' }, '10.0.0.1')));
   });
 });
