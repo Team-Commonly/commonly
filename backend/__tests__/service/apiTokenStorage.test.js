@@ -14,6 +14,9 @@ const probeLimit = rateLimit({ windowMs: 60000, max: 10000 });
 app.get('/private', probeLimit, auth, (req, res) => res.json({ id: req.userId, scopes: req.apiTokenScopes }));
 const get = (token) => request(app).get('/private').set('Authorization', `Bearer ${token}`);
 const users = () => mongoose.connection.collection('users');
+// Auth stamps lastActive asynchronously; migration assertions exclude only
+// this unrelated telemetry field while comparing every credential/account field.
+const withoutLastActive = ({ lastActive, ...row }) => row;
 const create = (name, isBot = false) => User.create({ username: name, email: `${name}@example.test`, isBot, password: 'test-password', apiTokenScopes: ['messages:read'] });
 describe('API token storage rollout', () => {
   beforeAll(setupMongoDb);
@@ -47,7 +50,7 @@ describe('API token storage rollout', () => {
     for (const token of tokens) expect((await get(token)).status).toBe(200);
     const before = await users().find().toArray();
     expect(await backfillApiTokenStorage()).toMatchObject({ candidates: 2, migrated: 0, remaining: 2 });
-    expect(await users().find().toArray()).toEqual(before);
+    expect((await users().find().toArray()).map(withoutLastActive)).toEqual(before.map(withoutLastActive));
     expect(await backfillApiTokenStorage({ apply: true })).toMatchObject({ migrated: 2, remaining: 0 });
     for (const token of tokens) {
       const response = await get(token);
@@ -85,7 +88,7 @@ describe('API token storage rollout', () => {
     expect((await get('cm_current')).status).toBe(200);
     const before = await users().findOne({ _id: user._id });
     expect(await backfillApiTokenStorage({ apply: true })).toMatchObject({ conflicts: 1, migrated: 0, remaining: 1 });
-    expect(await users().findOne({ _id: user._id })).toEqual(before);
+    expect(withoutLastActive(await users().findOne({ _id: user._id }))).toEqual(withoutLastActive(before));
   });
   it.each(['rotate', 'revoke'])('does not undo concurrent %s', async (operation) => {
     const user = await create(`race-${operation}`);

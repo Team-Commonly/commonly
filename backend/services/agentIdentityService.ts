@@ -395,7 +395,11 @@ async function resolveCollisionFreeDisplayName(
   // If the name already carries a parenthetical suffix, treat as
   // already-disambiguated and pass through. Avoids "Pixel (Pixel-Demo) (Pixel-Demo)"
   // loops when the same install reprovisions.
-  if (/\([^)]+\)\s*$/.test(trimmed)) return trimmed;
+  // String scans keep this linear even for a long run of opening brackets.
+  const finalClose = trimmed.length - 1;
+  const previousClose = trimmed.lastIndexOf(')', finalClose - 1);
+  const opening = trimmed.indexOf('(', previousClose + 1);
+  if (trimmed.endsWith(')') && opening >= 0 && opening < finalClose - 1) return trimmed;
 
   const peerQuery: Record<string, unknown> = {
     'botMetadata.displayName': trimmed,
