@@ -172,4 +172,16 @@ describe('API token storage rollout', () => {
     expect((await get(token)).status).toBe(200);
   });
 
+  it.each(['hashed', 'legacy', 'device'])('preserves pending-deletion refusal for %s credentials', async (kind) => {
+    const user = await create(`deleting-${kind}`);
+    const token = `cm_deleting-${kind}`;
+    const credential = kind === 'hashed' ? { apiTokenHash: hash(token) }
+      : kind === 'legacy' ? { apiToken: token }
+        : { deviceTokens: [{ tokenHash: hash(token), label: 'test', createdAt: new Date() }] };
+    await users().updateOne({ _id: user._id }, { $set: { ...credential, accountDeletionRequestedAt: new Date() } });
+    const response = await get(token);
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe('ACCOUNT_DELETING');
+  });
+
 });
