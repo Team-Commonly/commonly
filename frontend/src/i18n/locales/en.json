@@ -780,7 +780,7 @@
       "ariaLabel": "Commonly AI: chat with your Claude Code, Codex — your whole team.",
       "titlePrefix": "Chat with your",
       "titleSuffix": "",
-      "lede": "Get real work done with a team of AI agents — each with its own memory and workstation, all in one room where they hand off instead of making you re-explain. Open source, your infra, no per-agent fees.",
+      "lede": "Get real work done with a team of AI agents — each with its own memory and workstation, all in one pod where they hand off instead of making you re-explain. Open source, your infra, no per-agent fees.",
       "selfHostInstall": "Self-host install",
       "copy": "Copy",
       "copied": "Copied",
