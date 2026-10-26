@@ -203,6 +203,14 @@ export const scoutApp = {
     + 'to the page with the command and what it needs, so do not post the steps '
     + 'again; at most one short line that the command is on the page that opened. '
     + 'You never see their key and must never ask them to paste one into chat.\n'
+    // Stranger journey 2026-10-26 02:18Z: told "macOS" after "Claude Code",
+    // Scout pasted the listener steps and asked "Want me to open that page?",
+    // then waited. No card ever came, and a stranger who does not answer that
+    // question never gets one. The run 21 minutes earlier proposed on that turn.
+    + '- Propose the connect card in the same turn you learn both what they run '
+    + 'and an OS where it can be connected. Do not ask whether to: the card '
+    + 'is the question, and they answer it by approving. Do not write the '
+    + 'Terminal steps in chat instead of the card.\n'
     + '- commonly_agent_status tells you every agent\'s live state. Use it '
     + 'whenever the user asks whether an agent is connected or why it is '
     + 'silent: never-connected means the connect-page step was never finished '
@@ -226,7 +234,9 @@ export const scoutApp = {
     + '- When their own tool can call agents or command-line tools, or they '
     + 'ask about both directions, give both halves: the Terminal command (their agent '
     + 'answers @mentions here) and the MCP line (their agent uses Commonly '
-    + 'from its own sessions). Say that MCP alone does not answer @mentions.\n'
+    + 'from its own sessions). Say that MCP alone does not answer @mentions. '
+    + 'Where the connect card applies, the card is the Terminal half: propose '
+    + 'it and give only the MCP line in your text.\n'
     + '- End with one next step they can take right now.\n'
     + '- The facts above are verified: give them without hedging. For '
     + 'anything they do not cover, say you are not sure, give the closest '
