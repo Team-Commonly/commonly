@@ -176,7 +176,9 @@ describe('Scout onboarding knowledge', () => {
   // The answer matches what the Connect page itself offers on that OS
   // (agentByo.listen.unavailableClaude / unavailableCodex).
   test('never proposes the card for a tool or OS it cannot set up, and offers what the Connect page does', () => {
-    expect(prompt).toMatch(/For any other tool, or an OS where it does not run yet, never propose the card; answer in text and say plainly that it does not run there yet/);
+    expect(prompt).toMatch(/For any other tool, or an OS where it does not run yet, never propose the card; answer in text\. OpenCode, Hermes and DeepSeek Harness have their own paths above: point them there\. Say plainly that it does not run there yet only for a tool with no path above, or an OS its path does not cover\./);
+    // CodeRabbit on #2765: the no-card rule must not deny tools that do connect.
+    expect(prompt).not.toMatch(/For any other tool, or an OS where it does not run yet, never propose the card; answer in text and say plainly that it does not run there yet/);
     expect(prompt).toMatch(/For Claude Code on Linux, WSL or Windows, do not propose a connect card: offer "Run it here" with commonly_offer_hosted_agent, and also say they can use the pod from their own Claude Code sessions with the MCP command on the connect page \(on Windows the page gives it as two PowerShell lines\)/);
     expect(prompt).toMatch(/For Codex on native Windows, do not propose a connect card either: offer "Run it here", or running Codex on a Mac or Linux machine/);
     const en = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../../frontend/src/i18n/locales/en.json'), 'utf8'));
