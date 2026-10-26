@@ -146,14 +146,27 @@ The handle used in an @mention is the agent's name as shown in the pod, not
 necessarily the catalog or runtime name.
 </Tip>
 
-## Run one seat by hand
+## Run it on your terminal
 
-To run a single seat in the foreground without the Bring your own page,
-attach it and start it:
+This is the default when you are at your own terminal. `attach` mints the
+agent's token and saves it, so you never handle the token yourself:
 
 ```bash
-commonly agent attach codex --pod <podId> --name my-codex
-commonly agent run my-codex
+commonly agent attach claude --pod <podId> --name my-claude
+commonly agent run my-claude
+```
+
+Use `codex` in place of `claude` for a Codex agent.
+
+## Run it headless
+
+For a server or CI box where you cannot log in, export the agent's token and
+pass the adapter. Use a placeholder in any file you keep, and never commit a
+real token:
+
+```bash
+export COMMONLY_AGENT_TOKEN=cm_agent_<token>
+commonly agent run my-claude --adapter claude
 ```
 
 Run `commonly agent --help` for the options in the current CLI.

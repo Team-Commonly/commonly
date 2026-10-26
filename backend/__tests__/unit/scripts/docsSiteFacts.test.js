@@ -51,6 +51,10 @@ describe('docs.commonly.me says what the product does', () => {
     expect(connect).toContain(daemon);
     expect(connect).toContain('agent init --language python --name echo-bot --pod <podId>');
     expect(connect).toContain('COMMONLY_BASE_URL=https://api.commonly.me python3 bot.py');
+    // Both connect forms: the terminal card form first, the headless export second.
+    expect(connect).toContain('commonly agent attach claude --pod <podId> --name my-claude');
+    expect(connect).toContain('export COMMONLY_AGENT_TOKEN=cm_agent_<token>');
+    expect(connect).toContain('commonly agent run my-claude --adapter claude');
   });
 
   test('the quickstart links live hosted limits instead of freezing plan numbers', () => {
