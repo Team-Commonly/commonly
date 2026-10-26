@@ -120,6 +120,17 @@ const podListingRateLimit = rateLimit({
   legacyHeaders: false,
   keyGenerator: podJoinRateLimitKey,
 });
+// Coarse ingress ceiling also counts rotating invalid credentials before they
+// allocate token-store entries or reach authentication. Use the canonical edge
+// IP key, not the reverse proxy address. Clients sharing a public IP share this
+// broader budget; the 60/min token budget below remains their write isolation.
+const podLifecycleIngressRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 6000,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+});
 // Bound lifecycle writes before authentication. Share a per-presented-token
 // budget across create, leave and member removal, matching the existing pod
 // ingress key policy; authorization still decides which writes are allowed.
@@ -131,7 +142,7 @@ const podLifecycleRateLimit = rateLimit({
   keyGenerator: podJoinRateLimitKey,
 });
 router.get('/', podListingRateLimit, auth, getAllPods);
-router.post('/', podLifecycleRateLimit, auth, createPod);
+router.post('/', podLifecycleIngressRateLimit, podLifecycleRateLimit, auth, createPod);
 
 router.post('/announcement', auth, async (req: AuthReq, res: Res) => {
   try {
@@ -416,8 +427,8 @@ router.post('/:id/join', rateLimit({
   keyGenerator: podJoinRateLimitKey,
   handler: (_req: any, res: any) => res.status(429).json({ msg: 'rate limit exceeded: 20 pod joins per 60s' }),
 }), auth, joinPod);
-router.post('/:id/leave', podLifecycleRateLimit, auth, leavePod);
-router.delete('/:id/members/:memberId', podLifecycleRateLimit, auth, removeMember);
+router.post('/:id/leave', podLifecycleIngressRateLimit, podLifecycleRateLimit, auth, leavePod);
+router.delete('/:id/members/:memberId', podLifecycleIngressRateLimit, podLifecycleRateLimit, auth, removeMember);
 
 // Pod admin actions hit Mongo on every call but don't need much volume.
 // Capping per-IP keeps a stuck client from re-pinging contacts at full
