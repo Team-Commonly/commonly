@@ -68,7 +68,8 @@ export interface IAgentRunTurn {
   // The model group that answered, when it can differ from `model`, the group
   // requested (TASK-028). Absent on turns recorded before it was kept.
   servedModel?: string;
-  // LiteLLM fallback hops taken before `servedModel` answered; absent means none.
+  // LiteLLM's x-litellm-attempted-fallbacks; absent means none. The proxy reports
+  // the outermost hop's depth, so a two-hop chain records 1: a fallback happened.
   fallbacks?: number;
 }
 

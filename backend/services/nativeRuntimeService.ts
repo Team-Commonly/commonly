@@ -1415,10 +1415,10 @@ function extractCallId(data: LiteLLMResponse, headers: Record<string, unknown>):
 }
 
 // Which model group answered the call (TASK-028). LiteLLM's router names it in
-// x-litellm-model-group on every response and counts the fallback hops it took
-// in x-litellm-attempted-fallbacks (v1.106.2). The proxy restamps the body's
-// `model` to the requested group unless a fallback happened, so the body comes
-// second. Native calls send disable_fallbacks (D81), so the two differ only if
+// x-litellm-model-group on every response, and x-litellm-attempted-fallbacks
+// says a fallback happened (v1.106.2; it is the outermost hop's depth, so 1 on a
+// two-hop chain). The proxy restamps the body's `model` to the requested group
+// unless a fallback happened, so the body comes second. Native calls send disable_fallbacks (D81), so the two differ only if
 // something overrode it, such as a key whose metadata sets disable_fallbacks.
 function servedModelOf(
   data: LiteLLMResponse,
