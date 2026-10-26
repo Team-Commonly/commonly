@@ -7,7 +7,6 @@ import { AuthContext } from '../../context/AuthContext';
 import { ATTENTION_CHANGED, notifyAttentionChanged } from '../hooks/useV2PodAttention';
 import V2PageHead from './V2PageHead';
 import V2Hint from './V2Hint';
-import { shortTimeSince } from '../utils/shortTime';
 
 type ActivityWindow = 'today' | '7d';
 
@@ -151,7 +150,16 @@ const readActivitySnapshot = (accountId: string): ActivitySnapshot | null => {
   }
 };
 
-const relativeTime = (value: string | null | undefined): string => shortTimeSince(value);
+const relativeTime = (value: string | null | undefined): string => {
+  if (!value) return '';
+  const elapsed = Math.max(0, Date.now() - new Date(value).getTime());
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+};
 
 const V2ActivityPage: React.FC = () => {
   const location = useLocation();
