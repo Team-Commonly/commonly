@@ -9,6 +9,11 @@
  *   [[refuse]]      answer HTTP 400 with a content-policy error body
  *   [[fail:CODE]]   answer HTTP CODE
  * Serves POST /v1/chat/completions (stream and non-stream) and GET /v1/models.
+ *
+ * `servedModel` makes completions name a model other than the one requested,
+ * as a router that substitutes one would; `null` names none at all.
+ * `echoAuthorization` replies with the request's Authorization header, as a
+ * provider that echoes request headers in an error body would.
  */
 import { createServer } from 'node:http';
 
@@ -22,7 +27,11 @@ const directiveOf = (body) => {
   return match ? { kind: match[1], arg: match[2] ?? '' } : { kind: 'reply', arg: '' };
 };
 
-export const startFakeProvider = async ({ model = 'fake-model', defaultReply = 'PONG', port = 0 } = {}) => {
+export const startFakeProvider = async ({
+  model = 'fake-model', defaultReply = 'PONG', port = 0, servedModel, echoAuthorization = false,
+} = {}) => {
+  const served = (requested) => (servedModel === undefined ? { model: requested || model }
+    : servedModel === null ? {} : { model: servedModel });
   const requests = [];
   const open = new Set();
   const server = createServer((req, res) => {
@@ -54,22 +63,22 @@ export const startFakeProvider = async ({ model = 'fake-model', defaultReply = '
         res.end(JSON.stringify({ error: { message: 'fake provider failure', type: 'server_error' } }));
         return;
       }
-      const text = directive.arg || defaultReply;
+      const text = echoAuthorization ? String(req.headers.authorization || '') : (directive.arg || defaultReply);
       const id = `chatcmpl-fake-${requests.length}`;
       const created = Math.floor(Date.now() / 1000);
       const usage = { prompt_tokens: 10, completion_tokens: 1, total_tokens: 11 };
       if (body.stream) {
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
-        const chunk = (delta, finish = null, extra = {}) => res.write(`data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created, model: body.model || model, choices: [{ index: 0, delta, finish_reason: finish }], ...extra })}\n\n`);
+        const chunk = (delta, finish = null, extra = {}) => res.write(`data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created, ...served(body.model), choices: [{ index: 0, delta, finish_reason: finish }], ...extra })}\n\n`);
         chunk({ role: 'assistant', content: '' });
         chunk({ content: text });
         chunk({}, 'stop', body.stream_options?.include_usage ? {} : { usage });
-        if (body.stream_options?.include_usage) res.write(`data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created, model: body.model || model, choices: [], usage })}\n\n`);
+        if (body.stream_options?.include_usage) res.write(`data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created, ...served(body.model), choices: [], usage })}\n\n`);
         res.end('data: [DONE]\n\n');
         return;
       }
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ id, object: 'chat.completion', created, model: body.model || model, choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }], usage }));
+      res.end(JSON.stringify({ id, object: 'chat.completion', created, ...served(body.model), choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }], usage }));
     });
   });
   await new Promise((resolve) => server.listen(port, '127.0.0.1', resolve));
