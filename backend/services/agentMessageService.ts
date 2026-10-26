@@ -2211,6 +2211,17 @@ class AgentMessageService {
    * exists without changing this array-shaped service contract for existing
    * internal consumers.
    */
+  static async authorIdsSince(podId: unknown, since: Date): Promise<string[]> {
+    if (PGMessage && process.env.PG_HOST) {
+      return (PGMessage as { findAuthorIdsSince(id: unknown, at: Date): Promise<string[]> })
+        .findAuthorIdsSince(podId, since);
+    }
+    const ids: unknown[] = await Message.distinct('userId', {
+      podId: { $eq: podId }, createdAt: { $gt: since }, messageType: { $ne: 'system' },
+    });
+    return ids.map(String);
+  }
+
   static async getRecentMessages(
     podId: unknown,
     limit = 20,

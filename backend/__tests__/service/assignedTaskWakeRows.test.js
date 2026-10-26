@@ -6,6 +6,7 @@ const Task = require('../../models/Task');
 const User = require('../../models/User');
 const Message = require('../../models/Message');
 const AgentEvent = require('../../models/AgentEvent');
+const AgentTaskRowWakeState = require('../../models/AgentTaskRowWakeState');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentEventService = require('../../services/agentEventService');
 const { dispatchAssignedTaskWakes } = require('../../services/assignedTaskWakeService');
@@ -94,6 +95,44 @@ describe('a row the agent created for itself', () => {
     expect(await wakes(62)).toBe(0);
   });
 
+  // Agent accounts from before `isBot` carry only the install markers.
+  it.each([
+    ['botType', { botType: 'agent' }],
+    ['botMetadata.agentName', { botMetadata: { agentName: 'openclaw', instanceId: 'aria' } }],
+  ])('is not re-armed by a legacy agent account marked only by %s', async (_marker, markers) => {
+    const { insertedId } = await User.collection.insertOne({ username: 'legacy-aria', ...markers });
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await say(insertedId, 10);
+    expect(await wakes(31)).toBe(0);
+  });
+
+  it('sees a person who posted before a long run of other agents', async () => {
+    const other = await User.create({
+      username: 'other-bot', email: 'other-bot@example.test', password: 'test-password', isBot: true, botType: 'agent',
+    });
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await say(person._id, 2);
+    await Message.collection.insertMany(Array.from({ length: 60 }, (_, i) => ({
+      podId, userId: other._id, content: `status ${i}`, messageType: 'text', createdAt: new Date(at(3).getTime() + i * 1000),
+    })));
+    expect(await wakes(31)).toBe(1);
+  });
+
+  it('queues no wake it could not record, and wakes once the record works', async () => {
+    const write = jest.spyOn(AgentTaskRowWakeState, 'bulkWrite').mockRejectedValueOnce(new Error('mongo down'));
+    try {
+      expect(await wakes(0)).toBe(0);
+      expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+      expect(await wakes(1)).toBe(1);
+      await settle('succeeded', 2);
+      expect(await wakes(32)).toBe(0);
+    } finally {
+      write.mockRestore();
+    }
+  });
+
   it('is re-armed by a person creating or updating a row in the pod', async () => {
     expect(await wakes(0)).toBe(1);
     await settle('succeeded', 1);
@@ -139,6 +178,30 @@ describe('a row a person created or assigned', () => {
       expect.objectContaining({ author: 'codex', authorId: String(agent._id) }),
     ]);
     expect(stopped.updatedAt).toEqual(before);
+  });
+
+  it('stays quiet when the stop note cannot be written, and the next pass writes it once', async () => {
+    const realUpdate = Task.updateOne.bind(Task);
+    let refusals = 2;
+    const spy = jest.spyOn(Task, 'updateOne').mockImplementation((filter, update, ...rest) => {
+      if (update?.$push?.updates?.text === STOPPED && refusals > 0) {
+        refusals -= 1;
+        return Promise.reject(new Error('write refused'));
+      }
+      return realUpdate(filter, update, ...rest);
+    });
+    try {
+      for (const minutes of [0, 31, 62]) {
+        await wakes(minutes); // eslint-disable-line no-await-in-loop
+        await settle('failed', minutes + 1); // eslint-disable-line no-await-in-loop
+      }
+      expect(await wakes(93)).toBe(0);
+      expect((await row()).updates || []).toEqual([]);
+      expect(await wakes(124)).toBe(0);
+      expect((await row()).updates.filter((update) => update.text === STOPPED)).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('starts again after a person updates the stopped row', async () => {

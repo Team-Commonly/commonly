@@ -7,6 +7,7 @@ import Task from '../models/Task';
 import User from '../models/User';
 import Pod from '../models/Pod';
 import { AgentInstallation } from '../models/AgentRegistry';
+import { carriesAgentMarkers } from './agentIdentityService';
 
 const DELAY_MS = 5 * 60 * 1000;
 const INTERVAL_MS = 30 * 60 * 1000;
@@ -46,10 +47,16 @@ function selfCreated(row: Row, install: Installation, principalId: string): bool
   return Boolean(minted) && normalized(minted?.[1]) === normalized(install.agentName);
 }
 
+// Agent rows written before `isBot` existed carry only the install markers,
+// so a person is a row with neither the flag nor those markers.
 async function anyHuman(ids: unknown[]): Promise<boolean> {
   const unique = [...new Set(ids.map((id) => String(id || '')))].filter((id) => Types.ObjectId.isValid(id));
   if (!unique.length) return false;
-  return Boolean(await User.exists({ _id: { $in: unique }, isBot: { $ne: true } }));
+  const users = await User.find({ _id: { $in: unique }, isBot: { $ne: true } })
+    .select('botType botMetadata.agentName').lean() as Array<{
+      botType?: string | null; botMetadata?: { agentName?: string | null } | null;
+    }>;
+  return users.some((user) => !carriesAgentMarkers(user));
 }
 
 const updatedSince = (row: Row, since: Date): unknown[] => (row.updates || [])
@@ -62,11 +69,7 @@ async function humanActedInPodSince(podId: unknown, since: Date): Promise<boolea
   const AgentMessageService = require('./agentMessageService');
   let authors: unknown[] = [];
   try {
-    const recent = await AgentMessageService.getRecentMessages(podId, 50) as Array<{
-      createdAt?: unknown; userId?: { _id?: unknown } | unknown; user_id?: unknown;
-    }>;
-    authors = recent.filter((message) => new Date(String(message.createdAt || 0)) > since)
-      .map((message) => (message.userId as { _id?: unknown })?._id || message.userId || message.user_id);
+    authors = await AgentMessageService.authorIdsSince(podId, since);
   } catch (error) {
     // Unread means no wake: a row the agent set itself waits for a person anyway.
     console.warn('[assigned-task-wake] pod activity unreadable:', String(podId), (error as Error).message);
@@ -120,12 +123,20 @@ async function stopRow(row: Row, state: RowState, install: Installation, princip
     { $set: { stoppedAt: now } },
   );
   if (!stopped.modifiedCount) return;
-  state.stoppedAt = now;
-  await Task.updateOne(
+  const writeNote = () => Task.updateOne(
     { _id: row._id },
     { $push: { updates: { text: STOPPED_NOTE, author: install.agentName, authorId: principalId, createdAt: now } } },
     { timestamps: false },
   );
+  try {
+    await writeNote().catch(writeNote);
+  } catch (error) {
+    // Un-stop so the next dispatch says so again, rather than a silent stop.
+    await AgentTaskRowWakeState.updateOne({ _id: state._id, stoppedAt: now }, { $set: { stoppedAt: null } });
+    console.error('[assigned-task-wake] stop note not written:', state._id, (error as Error).message);
+    return;
+  }
+  state.stoppedAt = now;
 }
 
 // The rows that may wake this seat now. A row the agent created for itself
@@ -139,12 +150,18 @@ async function wakeableRows(
     .lean() as RowState[];
   await countOutcomes(states);
   const byRow = new Map(states.map((state) => [state._id, state]));
+  // Every row here is in the install's pod; read its activity once per cutoff.
+  const actedSince = new Map<number, Promise<boolean>>();
+  const humanActedSince = (since: Date): Promise<boolean> => {
+    if (!actedSince.has(since.getTime())) actedSince.set(since.getTime(), humanActedInPodSince(install.podId, since));
+    return actedSince.get(since.getTime()) as Promise<boolean>;
+  };
   const wakeable: Row[] = [];
   for (const row of owned) {
     const state = byRow.get(rowKey(seat, row));
     if (selfCreated(row, install, principalId)) {
       // eslint-disable-next-line no-await-in-loop
-      if (!state?.lastWakeAt || await humanActedInPodSince(row.podId, new Date(state.lastWakeAt))) wakeable.push(row);
+      if (!state?.lastWakeAt || await humanActedSince(new Date(state.lastWakeAt))) wakeable.push(row);
       continue;
     }
     if (!state) {
@@ -302,6 +319,14 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
         await AgentTaskWakeState.updateOne({ _id: key, lastWakeAt: now }, { $unset: { lastWakeAt: 1 } });
         continue;
       }
+      const shown = current.slice(0, 5);
+      const recordRows = (update: Record<string, unknown>) => AgentTaskRowWakeState.bulkWrite(shown.map((row) => ({
+        updateOne: { filter: { _id: rowKey(key, row) }, update: { $set: update }, upsert: true },
+      })));
+      // Recorded before the wake is queued: a wake the stop rule cannot see
+      // must not happen. On failure the slot is returned below and nothing queues.
+      // eslint-disable-next-line no-await-in-loop
+      await recordRows({ lastWakeAt: now, lastWakeEventId: null });
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const AgentEventService = require('./agentEventService');
       enqueueStarted = true;
@@ -312,25 +337,21 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
         payload: {
           triggerAuthor: 'kernel', assignedTaskWake: true,
           content: '[Your assigned work is still open]\n\n'
-            + current.slice(0, 5).map((row) => `- ${row.taskId}: ${row.title.slice(0, 220)}`).join('\n')
+            + shown.map((row) => `- ${row.taskId}: ${row.title.slice(0, 220)}`).join('\n')
             + '\n\nContinue the next actionable row. Recheck its current state and claim it before starting. '
             + 'If you are waiting on a dependency or operator gate, mark the row blocked with the reason. '
             + 'Post only an action or a materially useful result.',
         },
       });
       woken += 1;
+      const linkWake = () => recordRows({ lastWakeEventId: wake?._id ?? null });
       try {
         // eslint-disable-next-line no-await-in-loop
-        await AgentTaskRowWakeState.bulkWrite(current.slice(0, 5).map((row) => ({
-          updateOne: {
-            filter: { _id: rowKey(key, row) },
-            update: { $set: { lastWakeAt: now, lastWakeEventId: wake?._id ?? null } },
-            upsert: true,
-          },
-        })));
+        await linkWake().catch(linkWake);
       } catch (stateError) {
-        // The wake is queued. Without its row record a self-set row can wake once more.
-        console.error('[assigned-task-wake] row state not recorded:', key, (stateError as Error).message);
+        // The rows already carry lastWakeAt, so a self-set row still waits for a
+        // person. Only this one run's outcome goes uncounted toward the stop.
+        console.error('[assigned-task-wake] wake not linked to rows:', key, (stateError as Error).message);
       }
     } catch (error) {
       if ((error as { code?: number }).code === 11000 && !reserved) continue;
