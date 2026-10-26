@@ -99,10 +99,9 @@ const SETUP_OS_OPTIONS: Array<{ os: SetupOs; labelKey: string }> = [
 // host check leaves Codex alone (it confines with its own profiles, not
 // Seatbelt or bubblewrap), but this page's command is bash `export` lines,
 // which PowerShell cannot run, and Codex on native Windows is unmeasured.
-// Not drift: the page only offers what it has seen work.
-const listenerRunsOn = (os: SetupOs, adapter: 'claude' | 'codex'): boolean => (
-  os === 'mac' || (os === 'linux' && adapter === 'codex')
-);
+// Not drift: the page only offers what it has seen work. Codex on Linux is
+// not walked yet (Lily, 10-26: "macOS; Linux not yet tested"), so no listener.
+const listenerRunsOn = (os: SetupOs): boolean => os === 'mac';
 type ModelOption = { value: string; labelKey: string };
 const CLAUDE_MODEL_OPTIONS: ModelOption[] = [
   { value: 'opus', labelKey: 'agentByo.form.modelOpus' },
@@ -199,7 +198,7 @@ const V2AgentBYO: React.FC = () => {
   // Where the person sets up, defaulted from this browser. They can switch:
   // the machine they browse on is not always the one they set up.
   const [setupOs, setSetupOs] = useState<SetupOs>(browserOs);
-  const listenerAvailable = listenerRunsOn(setupOs, listenAdapter);
+  const listenerAvailable = listenerRunsOn(setupOs);
   // Live listening verification (#887 class, second half). #888 made the
   // listening step legible; this makes it CHECKABLE — the page polls the
   // kernel until THIS agent's runtime token authenticates for the first time

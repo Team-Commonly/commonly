@@ -253,7 +253,7 @@ describe('BYO listener snippet', () => {
       expect(screen.getByTestId('byo-mcp-claude')).not.toHaveTextContent(/command above/);
     });
 
-    test('Linux with Claude Code: no listener command, and the bash MCP command; with Codex the listener is back', async () => {
+    test('Linux with Claude Code or Codex: no listener command, and the bash MCP command; Codex says it is not tested yet', async () => {
       setUserAgent(LINUX);
       await issueToken();
       expect(screen.getByTestId('byo-setup-os-linux')).toHaveAttribute('aria-pressed', 'true');
@@ -263,8 +263,8 @@ describe('BYO listener snippet', () => {
       expect(mcpBox()).toMatch(/-- npx -y @commonlyai\/mcp$/);
       expect(screen.getByTestId('byo-mcp-claude')).not.toHaveTextContent(/command above|Optional/);
       fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
-      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/ --adapter codex$/);
-      expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI signed in/);
+      expect(listener()).toBeUndefined();
+      expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/The Codex CLI can’t answer @mentions from Linux yet\. .*Linux is not tested yet\./);
     });
 
     test('Codex on Windows says so, and offers hosted or another machine', async () => {
