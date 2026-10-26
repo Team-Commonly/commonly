@@ -96,7 +96,10 @@ def emit(outcome, original_model_group, kwargs, original_exception):
         line = json.dumps(fallback_line(outcome, original_model_group, kwargs, original_exception), default=str)
     except Exception as error:
         line = json.dumps({'alarm': 'model_fallback', 'outcome': outcome, 'signalError': type(error).__name__})
-    print(line, flush=True)
+    try:
+        print(line, flush=True)
+    except Exception:
+        pass  # No stdout to write to; the caller's answer comes first.
 
 
 class ModelFallbackSignal(CustomLogger):

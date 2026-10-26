@@ -142,6 +142,13 @@ class FallbackLine(unittest.TestCase):
         kwargs['model'] = {'model': DEEPSEEK}
         self.assertEqual(signal.fallback_line('served', NEMOTRON, kwargs, None)['fallback'], DEEPSEEK)
 
+    def test_a_closed_stdout_does_not_raise_into_the_request(self):
+        closed = io.StringIO()
+        closed.close()
+        with contextlib.redirect_stdout(closed):
+            asyncio.run(served(NEMOTRON, hop_kwargs(), NotFoundError('x')))
+            asyncio.run(failed(NEMOTRON, hop_kwargs(), NotFoundError('x')))
+
     def test_malformed_events_still_print_one_line_and_never_raise(self):
         class Unprintable:
             def __str__(self):
