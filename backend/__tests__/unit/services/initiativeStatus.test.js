@@ -132,10 +132,16 @@ describe('deriveInitiativeStatus — one case per status row', () => {
     expect(r.waitingOnYou).toEqual([]);
   });
 
-  it('needs your check: every linked task done and a PR merged, with no close; never a stall', () => {
+  it('needs your check: every linked task done with its own merge, no close; never a stall', () => {
     const r = deriveInitiativeStatus(
       initiative([link('task', 't1'), link('pr', PR)]),
-      { ...none, tasks: [task('t1', 'done'), task('t2', 'done', [merge(hoursAgo(24 * 5))], PR)] },
+      {
+        ...none,
+        tasks: [
+          task('t1', 'done', [merge(hoursAgo(24 * 6))]),
+          task('t2', 'done', [merge(hoursAgo(24 * 5))], PR),
+        ],
+      },
       NOW,
     );
     expect(r.status).toBe('needs-your-check');
@@ -230,6 +236,33 @@ describe('deriveInitiativeStatus — what does NOT count', () => {
     );
     expect(r.status).toBe('stalled');
     expect(r.needsCheck).toBe(false);
+  });
+
+  it('a hand-closed task beside a merged one is not needs-your-check', () => {
+    const r = deriveInitiativeStatus(
+      initiative([link('task', 't1'), link('task', 't2')]),
+      {
+        ...none,
+        tasks: [task('t1', 'done', [merge(hoursAgo(2))]), task('t2', 'done', [ownerNote(hoursAgo(1))])],
+      },
+      NOW,
+    );
+    expect(r.needsCheck).toBe(false);
+    expect(r.status).toBe('moving');
+    expect(r.parts.find((p) => p.ref === 't2').state).toBe('stalled');
+  });
+
+  it('a PR link whose tasks mix a merge and a hand close is not a merged part', () => {
+    const r = deriveInitiativeStatus(
+      initiative([link('pr', PR)]),
+      {
+        ...none,
+        tasks: [task('t1', 'done', [merge(hoursAgo(2))], PR), task('t2', 'done', [], PR)],
+      },
+      NOW,
+    );
+    expect(r.needsCheck).toBe(false);
+    expect(r.parts[0].state).toBe('moving');
   });
 
   it('a close written by anyone but the giver is ignored', () => {
