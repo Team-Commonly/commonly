@@ -198,6 +198,15 @@ describe('wrapArgvWithBwrap', () => {
     expect(argv[homeIndex + 1]).toBe('/home/u/.commonly/claude-homes/abc');
   });
 
+  itLinux('in a writable workspace a read-only entry is bound strictly, so a missing one stops bwrap', () => {
+    const argv = wrapArgvWithBwrap(['claude'], {}, {
+      workspacePath: '/tmp/ws', readOnlyWorkspaceEntries: ['.git'],
+    });
+    const at = (flag, p) => argv.findIndex((arg, i) => arg === flag && argv[i + 1] === p && argv[i + 2] === p);
+    expect(at('--ro-bind', '/tmp/ws/.git')).toBeGreaterThan(at('--bind', '/tmp/ws'));
+    expect(at('--ro-bind-try', '/tmp/ws/.git')).toBe(-1);
+  });
+
   itLinux('rejects a relative writable path and a workspace entry that leaves the workspace', () => {
     expect(() => wrapArgvWithBwrap(['claude'], {}, {
       workspacePath: '/tmp/ws', writablePaths: ['state'],

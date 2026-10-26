@@ -1497,17 +1497,47 @@ describe('claude adapter — a workspace seat on Linux', () => {
   });
 
   test('a write grant makes the project writable and keeps its .git read-only', async () => {
+    const gitDir = path.join(cwd, '.git');
+    fs.mkdirSync(gitDir);
     const { impl, calls } = childImpl();
     await linuxSpawn(impl, { trust: 'workspace', allow: ['write'] });
 
     const outer = calls[0].args.slice(0, calls[0].args.indexOf('--'));
     expect(flagTriples(outer, '--bind')).toEqual([[state, state], [cwd, cwd]]);
-    const gitDir = path.join(cwd, '.git');
-    const triples = flagTriples(outer, '--ro-bind-try');
-    expect(triples).toContainEqual([gitDir, gitDir]);
+    // Strict, not -try: a .git that vanished must stop bwrap, not go unbound.
+    expect(flagTriples(outer, '--ro-bind')).toContainEqual([gitDir, gitDir]);
     // .git is bound after the project, so it lands on top of it.
     const bindAt = (flag, p) => outer.findIndex((arg, i) => arg === flag && outer[i + 1] === p);
-    expect(bindAt('--ro-bind-try', gitDir)).toBeGreaterThan(bindAt('--bind', cwd));
+    expect(bindAt('--ro-bind', gitDir)).toBeGreaterThan(bindAt('--bind', cwd));
+  });
+
+  test('a write grant on a project with no .git refuses, and creates nothing in it', async () => {
+    const { impl, calls } = childImpl();
+    await expect(linuxSpawn(impl, { trust: 'workspace', allow: ['write'] }))
+      .rejects.toThrow(/need the project to be a git repository/);
+    expect(calls).toHaveLength(0);
+    expect(fs.readdirSync(cwd)).toEqual([]);
+  });
+
+  test('a write grant refuses a .git that is a symlink', async () => {
+    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-linux-git-'));
+    try {
+      fs.symlinkSync(elsewhere, path.join(cwd, '.git'));
+      const { impl, calls } = childImpl();
+      await expect(linuxSpawn(impl, { trust: 'workspace', allow: ['write'] }))
+        .rejects.toThrow(/need the project to be a git repository/);
+      expect(calls).toHaveLength(0);
+    } finally {
+      fs.rmSync(elsewhere, { recursive: true, force: true });
+    }
+  });
+
+  test('without a write grant a project with no .git still runs, read-only', async () => {
+    const { impl, calls } = childImpl();
+    await linuxSpawn(impl);
+    const outer = calls[0].args.slice(0, calls[0].args.indexOf('--'));
+    expect(flagTriples(outer, '--ro-bind')).toContainEqual([cwd, cwd]);
+    expect(fs.readdirSync(cwd)).toEqual([]);
   });
 
   test('refuses a login that is a symlink, and spawns nothing', async () => {

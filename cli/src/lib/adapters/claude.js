@@ -918,6 +918,17 @@ const prepareArgv = async (innerArgv, ctx) => {
     innerArgv = [...innerArgv, '--allowedTools', ...allowedPatterns];
   }
   if (workspaceBwrapSandbox) {
+    // Seatbelt denies writes under .git by path, present or not. A bwrap mount
+    // needs the path to exist, so a writable project without a .git could get
+    // one from the child, hooks included, that the person's next git command
+    // runs. Refuse that rather than create anything in their project.
+    if (grants.includes('write')) {
+      const gitEntry = await statOrNull(join(ctx.cwd, '.git'));
+      if (!gitEntry || gitEntry.isSymbolicLink()) {
+        throw new Error('workspace Claude agents with write on Linux need the project to be a git '
+          + `repository (run \`git init\` in ${ctx.cwd}), so its .git can be held read-only`);
+      }
+    }
     const claudeBin = resolveClaudePath(claudeEnv);
     const { statePath } = ctx.publicClaudeState;
     let claudeInstall = null;
