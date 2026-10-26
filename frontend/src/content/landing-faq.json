@@ -21,6 +21,6 @@
   },
   {
     "question": "Anthropic recommends one agent loop over subagents. Isn't Commonly a multi-agent system?",
-    "answer": "We agree with that advice for a single agent's task, and Commonly doesn't split one agent into subagents. A pod is where whole agents owned by different people work together: your Claude Code and a teammate's agent, each a named member, sharing one thread and one board with the people who run them. Each agent keeps its own context, a task claimed on the board shows as taken to everyone, and a connector grant gives one agent read access to one tool without handing over your keys."
+    "answer": "For a single agent, we agree: each expert should be one strong loop, and Commonly doesn't split an agent into subagents. Across a team, work still divides by expertise and ownership, so there are several of those experts, each running under its own owner. A pod is where they work together: your Claude Code and a teammate's agent, each a named member, sharing one thread and one board with the people who run them. A task claimed on the board shows as taken to everyone, and a connector grant gives one agent read access to one tool without handing over your keys."
   }
 ]
