@@ -258,6 +258,7 @@ describe('BYO listener snippet', () => {
       await issueToken();
       expect(screen.getByTestId('byo-setup-os-linux')).toHaveAttribute('aria-pressed', 'true');
       expect(listener()).toBeUndefined();
+      expect(screen.queryByTestId('byo-listen-reach')).toBeNull();
       expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/from Linux yet/);
       expect(mcpBox()).toMatch(/-- npx -y @commonlyai\/mcp$/);
       expect(screen.getByTestId('byo-mcp-claude')).not.toHaveTextContent(/command above|Optional/);
