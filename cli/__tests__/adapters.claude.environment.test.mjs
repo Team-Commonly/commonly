@@ -1414,16 +1414,48 @@ describe('claude adapter — a workspace seat on Linux', () => {
   let operatorClaude;
   const login = '{"claudeAiOauth":{"accessToken":"test-only"}}\n';
 
+  let claudeInstall;
+  // `which claude` answers with a real file, as on a host with Claude Code
+  // installed; the jail binds its folder.
+  const whichFinds = (bin) => spawnSync.mockImplementation((cmd) => (cmd === 'which'
+    ? { status: 0, stdout: `${bin}\n` } : undefined));
+
   beforeEach(() => {
     cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-linux-ws-'));
     state = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-linux-state-'));
     operatorClaude = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-linux-login-'));
+    claudeInstall = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-linux-install-'));
+    fs.writeFileSync(path.join(claudeInstall, 'claude'), '#!/bin/sh\n', { mode: 0o755 });
     fs.writeFileSync(path.join(operatorClaude, '.credentials.json'), login, { mode: 0o600 });
+    whichFinds(path.join(claudeInstall, 'claude'));
     Object.defineProperty(process, 'platform', { value: 'linux' });
   });
   afterEach(() => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
-    for (const dir of [cwd, state, operatorClaude]) fs.rmSync(dir, { recursive: true, force: true });
+    spawnSync.mockReset();
+    for (const dir of [cwd, state, operatorClaude, claudeInstall]) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  // TASK-027: a jail that cannot carry claude fails closed before the login
+  // is copied, never spawning a namespace claude cannot start in.
+  test.each([
+    ['not on PATH', () => spawnSync.mockImplementation(() => undefined), /`claude` could not be resolved/],
+    ['a dangling link', () => whichFinds(path.join(os.tmpdir(), 'cli-claude-missing', 'claude')), /cli-claude-missing\/claude` could not be resolved/],
+  ])('refuses when claude is %s, before the login is copied', async (_label, arrange, message) => {
+    arrange();
+    const { impl, calls } = childImpl();
+    await expect(linuxSpawn(impl)).rejects.toThrow(message);
+    expect(calls).toHaveLength(0);
+    expect(fs.existsSync(path.join(state, '.claude', '.credentials.json'))).toBe(false);
+  });
+
+  test('binds the folder claude is installed in, read-only', async () => {
+    const { impl, calls } = childImpl();
+    await linuxSpawn(impl);
+    expect(calls).toHaveLength(1);
+    const outer = calls[0].args.slice(0, calls[0].args.indexOf('--'));
+    const binds = outer.flatMap((arg, i) => (/^--ro-bind/.test(arg) ? [outer[i + 1]] : []));
+    expect(binds).toContain(fs.realpathSync(claudeInstall));
   });
 
   // Plays the child: it looks for its login under the HOME it was given and

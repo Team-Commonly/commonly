@@ -75,14 +75,25 @@ describe('hostSandboxRefusal', () => {
 
   // Ubuntu run, 2026-10-16: under bwrap a confined spawn could not even start
   // Claude Code (`execvp …/.local/bin/claude: No such file or directory`).
-  test('Claude Code on Linux (WSL included) stops at start with its options, before any detection', () => {
+  // A public Linux seat still stops here: only the workspace jail (#2784)
+  // carries Claude's install and login, and it never runs for a public pod.
+  test('a public Claude Code seat on Linux (WSL included) stops at start with its options, before any detection', () => {
     const message = hostSandboxRefusal({
       environment: connectPage, adapterName: 'claude', platform: 'linux', detectBwrap: never, detectSeatbelt: never,
     });
-    expect(message).toMatch(/on Linux \(WSL included\) that sandbox\ncannot run Claude Code yet/);
+    expect(message).toMatch(/On Linux \(WSL included\) it does that only\nfor an agent whose pods are all invite-only/);
+    expect(message).toContain('From an invite-only pod');
     expect(message).toContain('`claude mcp add` command');
     expect(message).toContain('"Run it here"');
     expect(message).not.toContain('bubblewrap');
+  });
+
+  test('a Claude Code bwrap seat with no workspace trust is refused on Linux the same way', () => {
+    for (const sandbox of [{ mode: 'bwrap' }, { trust: 'public', mode: 'bwrap' }, { trust: 'internal' }]) {
+      expect(hostSandboxRefusal({
+        environment: { sandbox }, adapterName: 'claude', platform: 'linux', detectBwrap: never, detectSeatbelt: never,
+      })).toMatch(/pods are all invite-only/);
+    }
   });
 
   test('on Linux, a missing bubblewrap stops an OpenCode seat with the install line', () => {
@@ -100,12 +111,25 @@ describe('hostSandboxRefusal', () => {
     const args = { environment: workspace, adapterName: 'claude' };
     expect(hostSandboxRefusal({ ...args, platform: 'win32', detectBwrap: never, detectSeatbelt: never }))
       .toMatch(/no sandbox for Windows yet/);
-    expect(hostSandboxRefusal({ ...args, platform: 'linux', detectBwrap: never, detectSeatbelt: never }))
-      .toMatch(/cannot run Claude Code yet/);
+    expect(hostSandboxRefusal({ ...args, platform: 'linux', detectBwrap: available, detectSeatbelt: never }))
+      .toBeNull();
     expect(hostSandboxRefusal({ ...args, platform: 'darwin', detectBwrap: never, detectSeatbelt: available })).toBeNull();
     expect(hostSandboxRefusal({
       ...args, platform: 'darwin', detectBwrap: never, detectSeatbelt: missing('sandbox-exec preflight failed: exit 1'),
     })).toMatch(/^This seat runs in a macOS Seatbelt sandbox \(sandbox\.mode=workspace\)/);
+  });
+
+  // TASK-027: the bubblewrap probe is the gate for a workspace Claude seat on
+  // Linux. Every way it can fail is a refusal, never a run without the jail.
+  test('a workspace Claude seat on Linux runs only when bubblewrap can start a namespace', () => {
+    const args = { environment: { sandbox: { trust: 'workspace', allow: ['write'] } }, adapterName: 'claude', platform: 'linux', detectSeatbelt: never };
+    expect(hostSandboxRefusal({ ...args, detectBwrap: available })).toBeNull();
+    expect(hostSandboxRefusal({ ...args, detectBwrap: missing('bwrap not found on PATH. Install bubblewrap: `sudo apt install bubblewrap` (Debian/Ubuntu, WSL).') }))
+      .toMatch(/^This seat runs in a bubblewrap sandbox, which is not available here\. bwrap not found on PATH/);
+    expect(hostSandboxRefusal({ ...args, detectBwrap: missing('bubblewrap is installed but cannot start a sandbox on this machine (setting up uid map: Permission denied).') }))
+      .toMatch(/cannot start a sandbox on this machine \(setting up uid map: Permission denied\)/);
+    expect(hostSandboxRefusal({ ...args, detectBwrap: missing('bwrap detection failed: spawnSync bwrap EACCES') }))
+      .toMatch(/not available here\. bwrap detection failed/);
   });
 
   test('a legacy internal trust reads as public', () => {

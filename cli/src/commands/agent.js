@@ -1835,6 +1835,23 @@ export const performRun = ({
     event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger,
   }) => {
     const placement = await placeTurn();
+    // A workspace turn placed public (its pod turned public, or its pods could
+    // not be read) is confined as a public seat, which this host may not be
+    // able to do: Claude Code on Linux has only the workspace jail. Refuse it
+    // as the run start would, before anything is read or spawned. The model
+    // never runs and nothing is posted, and a human's message is handed to
+    // another listener (claim-outcome.js) rather than left for a retry.
+    if (placement.reason) {
+      const turnRefusal = hostSandboxRefusal({ environment: placement.environment, adapterName: adapter.name });
+      if (turnRefusal) {
+        log(`turn refused, because ${placement.reason}: ${turnRefusal.replace(/\n\s*/g, ' ')}`);
+        return {
+          outcome: 'no_action',
+          refused: { reason: 'delivery-refused' },
+          reason: 'host-cannot-confine-turn',
+        };
+      }
+    }
     // TASK-440: a cold, large session starts fresh at wake instead of being
     // resumed. The restart note leads the prompt; memory still reaches the
     // fresh session through the adapter's preamble.
