@@ -126,10 +126,13 @@ Limits to know:
   cannot clone over git, call the GitHub API, or push.
 - The seat's Commonly credential file is readable inside the profile, because
   the MCP server needs it.
-- Two routes out remain by design: the provider receives what the run sends
-  it, and the instance relay carries whatever the seat's own Commonly token
+- Three routes out remain by design. The provider receives what the run
+  sends it. The instance relay carries whatever the seat's own Commonly token
   allows, such as a post to a pod the seat is in. Anything the run can read,
-  that credential included, can leave through either.
+  that credential included, can leave through either of those two. The
+  egress proxy is the third: it opens tunnels to the three GitHub download
+  hosts only, and refuses github.com, api.github.com and every other host.
+  A request to a download host can still carry data in its URL.
 - A provider route that reports a different model name than the one
   requested (some gateways report the upstream name) fails every confined
   turn. Check one turn before relying on it.
