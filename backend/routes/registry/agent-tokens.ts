@@ -56,10 +56,11 @@ const {
 const agentTokensRouter = express.Router();
 
 /**
- * Pod membership is not enough to mint, force-rotate or revoke a runtime token.
- * The token acts as the agent in every pod where that identity is installed, so
- * these routes apply the same sole-installer rule as the daemon routes. Admins
- * are exempt, because operators renew shared fleet seats.
+ * Pod membership is not enough to mint, force-rotate or revoke a runtime token,
+ * or to issue or revoke the agent's user token. Either one acts as the agent in
+ * every pod where that identity is installed, so these routes apply the same
+ * sole-installer rule as the daemon routes. Admins are exempt, because
+ * operators renew shared fleet seats.
  */
 const credentialRefusal = async (userId: unknown, agentName: string, instanceId: string) => {
   if (await isGlobalAdminUser(userId)) return null;
@@ -342,7 +343,7 @@ agentTokensRouter.get('/pods/:podId/agents/:name/user-token', tokenRouteLimit, a
     const resolvedType = AgentIdentityService.resolveAgentType(name);
     const agentUsername = AgentIdentityService.buildAgentUsername(resolvedType, instanceId);
     // Needs +apiToken (select:false on the field) to report hasToken correctly.
-    const agentUser = await User.findOne({ username: agentUsername }).select('+apiToken').lean();
+    const agentUser = await User.findOne({ username: agentUsername, isBot: true }).select('+apiToken').lean();
     if (!agentUser || !agentUser.apiToken) {
       return res.json({ hasToken: false, scopes: [], scopeMode: 'none' });
     }
@@ -406,6 +407,12 @@ agentTokensRouter.post('/pods/:podId/agents/:name/user-token', tokenRouteLimit, 
       return res.status(404).json({ error: 'Agent not installed in this pod' });
     }
 
+    // The user token signs in as the agent's User in every pod and room that
+    // User belongs to, and an existing token is returned as-is, so issuing it
+    // takes the same sole-installer rule as the runtime-token routes.
+    const refusal = await credentialRefusal(userId, installation.agentName || name, normalizedInstanceId);
+    if (refusal) return res.status(403).json(refusal);
+
     const issued = await issueUserTokenForInstallation({
       agentName: name,
       instanceId: normalizedInstanceId,
@@ -460,9 +467,12 @@ agentTokensRouter.delete('/pods/:podId/agents/:name/user-token', tokenRouteLimit
       return res.status(404).json({ error: 'Agent not installed in this pod' });
     }
 
+    const refusal = await credentialRefusal(userId, installation.agentName || name, instanceId);
+    if (refusal) return res.status(403).json(refusal);
+
     const resolvedType = AgentIdentityService.resolveAgentType(name);
     const agentUsername = AgentIdentityService.buildAgentUsername(resolvedType, instanceId);
-    const agentUser = await User.findOne({ username: agentUsername });
+    const agentUser = await User.findOne({ username: agentUsername, isBot: true });
     if (!agentUser) {
       return res.status(404).json({ error: 'Agent user not found' });
     }
