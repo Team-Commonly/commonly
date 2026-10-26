@@ -331,7 +331,10 @@ data:
       # deepseek_tool_shim flattens codex's namespace tools into plain function
       # tools for the deepseek-flash-1017 group only, which DeepSeek requires;
       # source in files/litellm/deepseek_tool_shim.py, mounted from this ConfigMap.
-      callbacks: ["rate_limit_signal.proxy_handler_instance", "deepseek_tool_shim.proxy_handler_instance"]
+      # model_fallback_signal prints one {"alarm":"model_fallback"} line per
+      # fallback in router_settings.fallbacks, naming requested and fallback
+      # groups (TASK-003); the `model_fallback` log metric counts them.
+      callbacks: ["rate_limit_signal.proxy_handler_instance", "deepseek_tool_shim.proxy_handler_instance", "model_fallback_signal.proxy_handler_instance"]
 
     guardrails:
       # Anti-pattern content guardrails for the public-launch exposure. Both are
@@ -401,4 +404,6 @@ data:
     {{- .Files.Get "files/litellm/deepseek_tool_shim.py" | nindent 4 }}
   deepseek_tool_shim_core.py: |
     {{- .Files.Get "files/litellm/deepseek_tool_shim_core.py" | nindent 4 }}
+  model_fallback_signal.py: |
+    {{- .Files.Get "files/litellm/model_fallback_signal.py" | nindent 4 }}
 {{- end }}

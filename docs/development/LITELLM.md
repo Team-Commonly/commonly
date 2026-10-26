@@ -123,6 +123,21 @@ a fake upstream. One quirk to expect: the `response.created` echo of the request
 tools still shows the flat names. To shim another DeepSeek group, add it to
 `SHIM_MODEL_GROUPS`. Tests are in `backend/__tests__/unit/helm/litellmDeepseekToolShim.test.js`.
 
+**Model fallback signal** (`/app/model_fallback_signal.py`, same source dir and
+mount; the third callback). When `router_settings.fallbacks` answers a request
+from another group, the caller still sees the group it asked for, so a
+community agent whose Nemotron route fails looks healthy while DeepSeek does
+the work (TASK-003). The callback prints one JSON line per fallback hop:
+`{"alarm":"model_fallback","outcome":"served"|"failed","requested","fallback","attempt","reason","keyAlias"}`.
+`reason` is the requested group's error, on one line and capped at 300 chars.
+No prompt, response or key hash goes into the line. The `model_fallback` log
+metric in `k8s/monitoring/log-metrics.json` counts these lines. Native hosted
+turns send `disable_fallbacks` (D81), so every count comes from another caller:
+the moltbot gateway, commonly-bot, or platform features through `llmService`.
+Verified 2026-10-26 against the real 1.106.2 Router with a local upstream that
+returns OpenRouter's 404 for Nemotron. Tests are in
+`backend/__tests__/unit/helm/litellmModelFallbackSignal.test.js`.
+
 **Why this works:** LiteLLM's `Authenticator.get_access_token()` calls `_read_auth_file()`
 on every request — there's no in-memory token caching. So a `rename` of `auth.json` is
 picked up within ~1 request, no pod restart needed.
