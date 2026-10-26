@@ -4,6 +4,7 @@ WORKDIR /app
 
 COPY package*.json ./
 
+ENV OPENUI_TELEMETRY_DISABLED=1
 RUN npm install
 
 COPY . .
