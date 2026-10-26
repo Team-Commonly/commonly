@@ -118,6 +118,11 @@ elif ! grep -Eq '^JWT_SECRET=.+$' "$ENV_FILE" \
   err "$ENV_FILE needs a non-default JWT_SECRET. Set one, then run this command again."
   exit 1
 fi
+# The local profile runs Postgres (TASK-503); an older .env has no password for it.
+if ! grep -Eq '^PG_PASSWORD=.+$' "$ENV_FILE"; then
+  ( umask 077; printf 'PG_PASSWORD=%s\n' "$(openssl rand -hex 24)" >> "$ENV_FILE" )
+  ok "Added a generated Postgres password to .env"
+fi
 
 # ── 2. Bring the stack up ───────────────────────────────────────────────────
 section "Starting local Commonly stack"
