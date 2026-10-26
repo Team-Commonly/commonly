@@ -2,6 +2,8 @@
 
 **House rule, ruled by Sam on 2026-09-27.** A seat picks its addressee by what it needs.
 
+How seats spend turns, models and quota (switch rather than park, `NO_REPLY` over narration, routed rows, the 5-agent pod cap) is in [fleet-efficiency.md](fleet-efficiency.md).
+
 | a seat needs | address | how |
 |---|---|---|
 | operator work: a press, a deploy, a merge order, a review routed, a fix to an operator's PR | the operator account that owns the lane: `@lily-shen` for the Sharpen lane (landing, README, UI), `@connector-ops` for connectors, `@gtm-ops` for GTM while its seats run | a mention in the lane's pod, or on the PR |
