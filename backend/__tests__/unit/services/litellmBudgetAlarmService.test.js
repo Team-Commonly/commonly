@@ -221,6 +221,24 @@ describe('checkLiteLLMBudgets', () => {
     expect(mockPageSre).toHaveBeenCalledTimes(2);
   });
 
+  test.each([
+    ['{}', {}],
+    ['{keys:null}', { keys: null }],
+  ])('a 200 page with no keys array (%s) is a failed scan, logged and paged', async (_label, data) => {
+    axios.get.mockResolvedValueOnce({ data });
+    expect(await budget.checkLiteLLMBudgets()).toEqual([]);
+    expect(alarmLines()).toEqual([{ alarm: 'litellm_budget', scanIncomplete: 'failed', pagesRead: 0, totalPages: null }]);
+    expect(mockPageSre).toHaveBeenCalledTimes(1);
+    expect(mockPageSre.mock.calls[0][0]).toMatch(/failed after 0 pages/);
+  });
+
+  test('an explicit empty keys array is a complete, empty scan', async () => {
+    axios.get.mockResolvedValueOnce({ data: { keys: [] } });
+    expect(await budget.checkLiteLLMBudgets()).toEqual([]);
+    expect(alarmLines()).toEqual([]);
+    expect(mockPageSre).not.toHaveBeenCalled();
+  });
+
   test('an empty page that reports more pages is an incomplete scan', async () => {
     axios.get
       .mockResolvedValueOnce(page([key({ key_alias: 'a' })], 3))

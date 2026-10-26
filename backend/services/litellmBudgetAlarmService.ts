@@ -109,7 +109,13 @@ export const listLiteLLMKeys = async (): Promise<KeyScan | null> => {
       console.warn(`[budget-alarm] /key/list page ${page} failed:`, (error as Error).message);
       return { rows, incomplete: { reason: 'failed', pagesRead: page - 1, totalPages } };
     }
-    const keys = Array.isArray(resp?.data?.keys) ? resp.data.keys : [];
+    // A 200 without a keys array is a broken page, not an empty list; only
+    // an explicit [] counts as zero keys.
+    if (!Array.isArray(resp?.data?.keys)) {
+      console.warn(`[budget-alarm] /key/list page ${page} has no keys array`);
+      return { rows, incomplete: { reason: 'failed', pagesRead: page - 1, totalPages } };
+    }
+    const keys: LiteLLMKeyRow[] = resp.data.keys;
     rows.push(...keys);
     const reported = Number(resp?.data?.total_pages);
     if (Number.isInteger(reported) && reported > 0) {
