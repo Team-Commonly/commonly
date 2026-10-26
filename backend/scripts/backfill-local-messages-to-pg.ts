@@ -26,7 +26,8 @@
  *   npm run backfill:local-messages            # report only
  *   npm run backfill:local-messages -- --apply
  *
- * Exit codes: 0 done (or dry run), 1 some rows failed, 2 refused.
+ * Exit codes: 0 done, or a dry run that would proceed; 1 some rows failed;
+ * 2 refused (a dry run that finds the overlap refuses too, so it also exits 2).
  */
 /* eslint-disable no-console, no-await-in-loop */
 

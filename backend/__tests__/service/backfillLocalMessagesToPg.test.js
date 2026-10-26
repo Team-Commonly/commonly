@@ -116,6 +116,30 @@ d('TASK-503: local-upgrade backfill into PostgreSQL', () => {
     expect(await pgCopies()).toEqual(ids);
   });
 
+  test('a pod that exists only in MongoDB is mirrored into PG, then its message copies', async () => {
+    const mongoOnlyPod = new mongoose.Types.ObjectId();
+    await mongoose.connection.db.collection('pods').insertOne({
+      _id: mongoOnlyPod,
+      name: 'mongo-only-backfill-503',
+      type: 'chat',
+      createdBy: new mongoose.Types.ObjectId(USER),
+      members: [new mongoose.Types.ObjectId(USER)],
+    });
+    const doc = await MongoMessage.create({
+      podId: mongoOnlyPod, userId: USER, content: `${MARKER} mongo-only pod`, messageType: 'text',
+    });
+    try {
+      const report = await backfillLocalMessages(productionDeps(pool), { apply: true, force: true });
+      expect(report).toMatchObject({ pending: 1, moved: 1, failed: 0 });
+      expect(await pgCopies()).toEqual([doc._id.toString()]);
+      const { rows } = await pool.query('SELECT id FROM pods WHERE id = $1', [mongoOnlyPod.toHexString()]);
+      expect(rows).toHaveLength(1);
+    } finally {
+      await pool.query('DELETE FROM messages WHERE pod_id = $1', [mongoOnlyPod.toHexString()]);
+      await pool.query('DELETE FROM pods WHERE id = $1', [mongoOnlyPod.toHexString()]);
+    }
+  });
+
   test('refuses when PG holds unmarked history older than the newest Mongo message', async () => {
     await pgUnmarked('copied by an older migration', new Date('2026-01-01T00:00:00Z'));
     await mongoMessage('same history', new Date('2026-01-02T00:00:00Z'));

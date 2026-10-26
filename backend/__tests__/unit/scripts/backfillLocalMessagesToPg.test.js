@@ -83,9 +83,10 @@ describe('main() exit code', () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
-  it('failed rows set 1; a clean run and a dry run set 0', async () => {
+  it('failed rows set 1; a clean run and a clean dry run set 0; a refused dry run sets 2', async () => {
     expect((await run(fakeDeps({ copy: async () => { throw new Error('boom'); } }))).exitCode).toBe(1);
     expect((await run(fakeDeps())).exitCode).toBe(0);
     expect((await run(fakeDeps(), ['node', 'script'])).exitCode).toBe(0);
+    expect((await run(fakeDeps({ overlap: 4 }), ['node', 'script'])).exitCode).toBe(2);
   });
 });
