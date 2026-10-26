@@ -250,7 +250,7 @@ export const runTurnWithFallback = async ({
     // Why this attempt is not on the seat's entry: what failed above it, a
     // probe moving up, or the entries above it skipped.
     let reason = null;
-    if (fresh) reason = lastKind || (probing && index < current.active ? 'probe' : 'blocked');
+    if (fresh) reason = index < current.active ? 'probe' : (lastKind || 'blocked');
     try {
       // eslint-disable-next-line no-await-in-loop
       const result = await attempt(entry, {
@@ -281,7 +281,9 @@ export const runTurnWithFallback = async ({
       // failed the probe, so the turn carries on to the seat's own entry; a
       // refusal never does.
       if (!FALLBACK_KINDS.includes(kind) && (!probeFailed || kind === 'refusal')) throw failWith(error, current);
-      if (FALLBACK_KINDS.includes(kind)) lastKind = kind;
+      // Only a failure at or below the seat's entry is a reason to move down
+      // from it; a probe's failures above it are the probe's own (probeKind).
+      if (FALLBACK_KINDS.includes(kind) && index >= current.active) lastKind = kind;
       if (probeFailed && probeKind === null) probeKind = kind || 'unnamed';
       lastError = error;
     } finally {

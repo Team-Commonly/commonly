@@ -232,6 +232,26 @@ test('a failed probe sets the next probe by the primary\'s failure, not by an en
   assert.equal(out.state.nextProbeAt, at + PROBE_COOLDOWN_MS.quota);
 });
 
+test('a switch names its own reason: a move up is a probe, a move down past a skip is blocked', async () => {
+  // The seat is on DEEPSEEK; the primary fails its probe and HAIKU, above the
+  // seat, answers. Nothing above DEEPSEEK failed from DEEPSEEK's point of view.
+  const onThird = await run({ [LUNA]: 'quota', [HAIKU]: 'not_authenticated', [DEEPSEEK]: 'ok' });
+  const up = scripted({ [LUNA]: 'quota', [HAIKU]: 'ok' });
+  const moved = await runTurnWithFallback({ plan, state: onThird.state, now: onThird.state.nextProbeAt, attempt: up.attempt });
+  assert.deepEqual(up.calls.map((c) => c.switch), [
+    { from: DEEPSEEK, to: LUNA, reason: 'probe' }, { from: DEEPSEEK, to: HAIKU, reason: 'probe' },
+  ]);
+  assert.equal(moved.state.reason, 'recovered');
+  // The seat is on HAIKU; the probe fails, HAIKU is at its cap, DEEPSEEK
+  // serves. HAIKU did not fail with quota; it was skipped.
+  const onSecond = await run({ [LUNA]: 'quota', [HAIKU]: 'ok' });
+  const down = scripted({ [LUNA]: 'quota', [DEEPSEEK]: 'ok' });
+  const acquire = async (entry) => (entryLabel(entry) === HAIKU ? { unavailable: 'at its cap' } : {});
+  const past = await runTurnWithFallback({ plan, state: onSecond.state, now: onSecond.state.nextProbeAt, attempt: down.attempt, acquire });
+  assert.deepEqual(down.calls.map((c) => c.switch?.reason), ['probe', 'blocked']);
+  assert.equal(past.state.reason, 'blocked');
+});
+
 test('a probe that fails with not_authenticated waits out that kind\'s cooldown, not the one it fell back for', async () => {
   const first = await run({ [LUNA]: 'quota', [HAIKU]: 'ok' });
   const at = NOW + PROBE_COOLDOWN_MS.quota;
