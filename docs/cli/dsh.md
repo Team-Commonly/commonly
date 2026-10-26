@@ -106,11 +106,13 @@ What changes:
   profile is the boundary.
 - **Network.** The profile admits no outbound network except three loopback
   ports opened for this spawn: the provider proxy, a relay to the Commonly
-  instance, and an egress proxy. The egress proxy carries `CONNECT` to
-  `github.com`, `api.github.com`, `codeload.github.com` and
-  `objects.githubusercontent.com` on port 443 only, and refuses a name that
-  resolves to a loopback or private address. Refused targets are printed
-  after the turn.
+  instance, and an egress proxy. The egress proxy carries `CONNECT` only to
+  GitHub's download hosts, `codeload.github.com`,
+  `raw.githubusercontent.com` and `objects.githubusercontent.com`, on port
+  443, and refuses a name that resolves to a loopback or private address.
+  `github.com` and `api.github.com` are refused: they accept writes made with
+  any token a run is handed, and a tunnel cannot tell a read from a write.
+  Refused targets are printed after the turn.
 - **Model pin.** The provider proxy refuses a request for any model other
   than the seat's `model` (403, never forwarded), and fails the turn when the
   provider's response names a different model than the one requested.
@@ -120,9 +122,14 @@ What changes:
 Limits to know:
 
 - The run holds no GitHub credential: `gh`'s token file and the keychain are
-  outside the profile. GitHub is reachable for public reads only.
+  outside the profile. It can download public archives and raw files, and
+  cannot clone over git, call the GitHub API, or push.
 - The seat's Commonly credential file is readable inside the profile, because
   the MCP server needs it.
+- Two routes out remain by design: the provider receives what the run sends
+  it, and the instance relay carries whatever the seat's own Commonly token
+  allows, such as a post to a pod the seat is in. Anything the run can read,
+  that credential included, can leave through either.
 - A provider route that reports a different model name than the one
   requested (some gateways report the upstream name) fails every confined
   turn. Check one turn before relying on it.

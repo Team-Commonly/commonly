@@ -1,4 +1,5 @@
 import { Transform } from 'node:stream';
+import { StringDecoder } from 'node:string_decoder';
 /** The per-spawn loopback proxy shared by OpenAI-compatible CLI adapters. */
 import { randomBytes, timingSafeEqual } from 'crypto';
 import { constants as fsConstants, realpathSync } from 'fs';
@@ -52,6 +53,9 @@ const MAX_PINNED_RESPONSE_BYTES = 16 * 1024 * 1024;
  * unverified, which counts as a failure: the pin is only as good as the check.
  */
 const servedModelCheck = ({ pinned, stream, onServed }) => {
+  // A chunk boundary can fall inside a multi-byte character; the decoder
+  // carries the partial bytes into the next chunk instead of mangling both.
+  const decoder = new StringDecoder('utf8');
   let pending = '';
   let held = '';
   let named = false;
@@ -73,7 +77,7 @@ const servedModelCheck = ({ pinned, stream, onServed }) => {
     transform(chunk, _encoding, done) {
       size += chunk.length;
       if (size > MAX_PINNED_RESPONSE_BYTES) { done(new Error('provider response exceeded the pinned-model check limit')); return; }
-      pending += chunk.toString('utf8');
+      pending += decoder.write(chunk);
       if (!stream) { done(); return; }
       const end = pending.lastIndexOf('\n');
       if (end < 0) { done(); return; }
@@ -87,6 +91,7 @@ const servedModelCheck = ({ pinned, stream, onServed }) => {
       done(null, release);
     },
     flush(done) {
+      pending += decoder.end();
       try {
         if (stream) checkLine(pending);
         else {

@@ -1,7 +1,7 @@
 import { once } from 'events';
 import { connect, createServer } from 'net';
 
-import { GITHUB_HOSTS, isNonPublicAddress, startEgressProxy } from '../src/lib/egress-proxy.js';
+import { GITHUB_CONTENT_HOSTS, isNonPublicAddress, startEgressProxy } from '../src/lib/egress-proxy.js';
 
 // A raw CONNECT through the proxy; resolves with the status line and the socket.
 const tunnel = async (port, target) => {
@@ -99,14 +99,18 @@ describe('egress proxy', () => {
     expect(proxy.stats().opened).toBe(0);
   });
 
-  test('defaults to the GitHub hosts on 443', async () => {
-    expect(GITHUB_HOSTS).toEqual([
-      'github.com', 'api.github.com', 'codeload.github.com', 'objects.githubusercontent.com',
+  test('defaults to GitHub\'s download hosts on 443, and refuses the hosts that take writes', async () => {
+    expect(GITHUB_CONTENT_HOSTS).toEqual([
+      'codeload.github.com', 'raw.githubusercontent.com', 'objects.githubusercontent.com',
     ]);
-    proxy = await startEgressProxy({ _resolve: async () => [{ address: '127.0.0.1' }] });
-    const { status, socket } = await tunnel(proxy.port, 'api.deepseek.com:443');
-    expect(status).toBe('HTTP/1.1 403 Forbidden');
-    socket.destroy();
+    proxy = await startEgressProxy({ _resolve: async () => [{ address: '140.82.112.3' }] });
+    for (const target of ['api.deepseek.com:443', 'github.com:443', 'api.github.com:443', 'gist.github.com:443', 'uploads.github.com:443']) {
+      // eslint-disable-next-line no-await-in-loop
+      const { status, socket } = await tunnel(proxy.port, target);
+      expect([target, status]).toEqual([target, 'HTTP/1.1 403 Forbidden']);
+      socket.destroy();
+    }
+    expect(proxy.stats().refusals.map((r) => r.reason)).toEqual(Array(5).fill('not allowlisted'));
   });
 
   test.each([

@@ -15,10 +15,13 @@ import { createServer } from 'http';
 import { BlockList, connect, isIP } from 'net';
 import { lookup } from 'dns/promises';
 
-export const GITHUB_HOSTS = Object.freeze([
-  'github.com',
-  'api.github.com',
+// GitHub's download hosts only. github.com and api.github.com accept writes
+// (git push, gists, issues) made with any token a run is handed, and a tunnel
+// cannot tell a read from a write, so they would be an outbound route for
+// anything the run can read. These hosts only serve content.
+export const GITHUB_CONTENT_HOSTS = Object.freeze([
   'codeload.github.com',
+  'raw.githubusercontent.com',
   'objects.githubusercontent.com',
 ]);
 
@@ -60,7 +63,7 @@ const parseTarget = (target) => {
  * exist for tests only, so a test can reach a loopback upstream.
  */
 export const startEgressProxy = async ({
-  allowHosts = GITHUB_HOSTS,
+  allowHosts = GITHUB_CONTENT_HOSTS,
   allowPorts = [443],
   _resolve = (host) => lookup(host, { all: true, verbatim: true }),
   _allowPrivate = false,

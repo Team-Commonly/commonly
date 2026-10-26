@@ -14,6 +14,8 @@
  * as a router that substitutes one would; `null` names none at all.
  * `echoAuthorization` replies with the request's Authorization header, as a
  * provider that echoes request headers in an error body would.
+ * `splitMultibyte` sends a completion in two writes, the cut inside its first
+ * multi-byte character, as a TCP chunk boundary can.
  */
 import { createServer } from 'node:http';
 
@@ -28,7 +30,7 @@ const directiveOf = (body) => {
 };
 
 export const startFakeProvider = async ({
-  model = 'fake-model', defaultReply = 'PONG', port = 0, servedModel, echoAuthorization = false,
+  model = 'fake-model', defaultReply = 'PONG', port = 0, servedModel, echoAuthorization = false, splitMultibyte = false,
 } = {}) => {
   const served = (requested) => (servedModel === undefined ? { model: requested || model }
     : servedModel === null ? {} : { model: servedModel });
@@ -67,18 +69,24 @@ export const startFakeProvider = async ({
       const id = `chatcmpl-fake-${requests.length}`;
       const created = Math.floor(Date.now() / 1000);
       const usage = { prompt_tokens: 10, completion_tokens: 1, total_tokens: 11 };
+      const send = (payload) => {
+        const bytes = Buffer.from(payload);
+        const cut = splitMultibyte ? bytes.findIndex((byte) => byte >= 0x80) + 1 : 0;
+        if (cut <= 0) { res.end(bytes); return; }
+        res.write(bytes.subarray(0, cut));
+        setTimeout(() => res.end(bytes.subarray(cut)), 30);
+      };
       if (body.stream) {
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
-        const chunk = (delta, finish = null, extra = {}) => res.write(`data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created, ...served(body.model), choices: [{ index: 0, delta, finish_reason: finish }], ...extra })}\n\n`);
-        chunk({ role: 'assistant', content: '' });
-        chunk({ content: text });
-        chunk({}, 'stop', body.stream_options?.include_usage ? {} : { usage });
-        if (body.stream_options?.include_usage) res.write(`data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created, ...served(body.model), choices: [], usage })}\n\n`);
-        res.end('data: [DONE]\n\n');
+        const chunk = (delta, finish = null, extra = {}) => `data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created, ...served(body.model), choices: [{ index: 0, delta, finish_reason: finish }], ...extra })}\n\n`;
+        let events = chunk({ role: 'assistant', content: '' }) + chunk({ content: text })
+          + chunk({}, 'stop', body.stream_options?.include_usage ? {} : { usage });
+        if (body.stream_options?.include_usage) events += `data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created, ...served(body.model), choices: [], usage })}\n\n`;
+        send(`${events}data: [DONE]\n\n`);
         return;
       }
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ id, object: 'chat.completion', created, ...served(body.model), choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }], usage }));
+      send(JSON.stringify({ id, object: 'chat.completion', created, ...served(body.model), choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }], usage }));
     });
   });
   await new Promise((resolve) => server.listen(port, '127.0.0.1', resolve));

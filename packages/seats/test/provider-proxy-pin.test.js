@@ -134,3 +134,17 @@ test('a pin must be a non-empty string', async () => {
     }), /pinnedModel must be a non-empty string/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('a multi-byte character split across chunks reaches the CLI intact, stream and not', async () => {
+  await withProxy({ provider: { splitMultibyte: true } }, async ({ complete, proxy }) => {
+    const plain = await complete({ model: PIN, messages: [{ role: 'user', content: '[[reply:你好，世界]]' }] });
+    assert.equal(plain.status, 200);
+    assert.equal((await plain.json()).choices[0].message.content, '你好，世界');
+    const streamed = await received(complete({ model: PIN, stream: true, messages: [{ role: 'user', content: '[[reply:你好，世界]]' }] }));
+    assert.equal(streamed.status, 200);
+    assert.match(streamed.text, /你好，世界/);
+    assert.doesNotMatch(streamed.text, /\uFFFD/);
+    assert.equal(proxy.modelCheck().failures.length, 0);
+  });
+});
+
