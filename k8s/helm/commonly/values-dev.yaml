@@ -450,6 +450,9 @@ hostedMcp:
     # The 10-27 prod walk failed before Airtable's consent screen ("invalid client_id
     # or mismatched redirect_uri"). Hidden until TASK-318 lands and a walk passes.
     - airtable
+    # Hidden until a fresh non-admin account walks connect, grant, call and
+    # refusal end to end (TASK-290). That account joins the runner-only allowlist overlay (#2950).
+    - github-mcp
   googleCalendar:
     enabled: false
   # Commonly Connect App's client ID and secret each have an enabled version
