@@ -47,14 +47,15 @@ function selfCreated(row: Row, install: Installation, principalId: string): bool
   return Boolean(minted) && normalized(minted?.[1]) === normalized(install.agentName);
 }
 
-// Agent rows written before `isBot` existed carry only the install markers,
-// so a person is a row with neither the flag nor those markers.
+// Agent rows written before `isBot` existed carry only the install markers
+// (the derived address, botType, agentName), so a person is a row with neither
+// the flag nor any of those markers.
 async function anyHuman(ids: unknown[]): Promise<boolean> {
   const unique = [...new Set(ids.map((id) => String(id || '')))].filter((id) => Types.ObjectId.isValid(id));
   if (!unique.length) return false;
   const users = await User.find({ _id: { $in: unique }, isBot: { $ne: true } })
-    .select('botType botMetadata.agentName').lean() as Array<{
-      botType?: string | null; botMetadata?: { agentName?: string | null } | null;
+    .select('email botType botMetadata.agentName').lean() as Array<{
+      email?: string | null; botType?: string | null; botMetadata?: { agentName?: string | null } | null;
     }>;
   return users.some((user) => !carriesAgentMarkers(user));
 }
@@ -325,6 +326,8 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
       })));
       // Recorded before the wake is queued: a wake the stop rule cannot see
       // must not happen. On failure the slot is returned below and nothing queues.
+      // A partial failure can leave some rows with lastWakeAt and no event id:
+      // they wait for a person as usual and this run is not counted for them.
       // eslint-disable-next-line no-await-in-loop
       await recordRows({ lastWakeAt: now, lastWakeEventId: null });
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports

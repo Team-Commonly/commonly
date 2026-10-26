@@ -99,6 +99,7 @@ describe('a row the agent created for itself', () => {
   it.each([
     ['botType', { botType: 'agent' }],
     ['botMetadata.agentName', { botMetadata: { agentName: 'openclaw', instanceId: 'aria' } }],
+    ['its derived address', { email: 'openclaw-aria@agents.commonly.local' }],
   ])('is not re-armed by a legacy agent account marked only by %s', async (_marker, markers) => {
     const { insertedId } = await User.collection.insertOne({ username: 'legacy-aria', ...markers });
     expect(await wakes(0)).toBe(1);

@@ -164,12 +164,21 @@ describe('native turn with commonly_web_search', () => {
     AgentMessageService.postMessage.mockReset().mockResolvedValue({ success: true });
   });
 
-  test('a run that posts after an earlier capped refusal reports no decline', async () => {
-    AgentMessageService.postMessage.mockResolvedValueOnce({ success: true, message: { id: 'posted-1' } });
-    axios.post.mockResolvedValueOnce(toolCalls(call('p1', 'commonly_post_message', { content: 'Done.' })))
-      .mockResolvedValueOnce(finalReply);
+  test('a run that posted before its capped refusal is not reported as a decline', async () => {
+    const capped = { success: false, refused: true, reason: 'consecutive_run_cap', consecutive: 3 };
+    AgentMessageService.postMessage.mockResolvedValueOnce({ success: true, message: { id: 'posted-1' } })
+      .mockResolvedValueOnce(capped);
+    axios.post.mockResolvedValueOnce(toolCalls(
+      call('p1', 'commonly_post_message', { content: 'Done.' }),
+      call('p2', 'commonly_post_message', { content: 'One more thing.' }),
+    )).mockResolvedValueOnce(finalReply);
     const result = await runAgent(install, mention);
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(2);
+    expect(savedRun.turns[0].toolCalls[1]).toEqual(expect.objectContaining({ error: 'message_post_refused' }));
+    expect(result.status).toBe('succeeded');
     expect(result.noActionReason).toBeUndefined();
+    axios.post.mockReset();
+    AgentMessageService.postMessage.mockReset().mockResolvedValue({ success: true });
   });
 
   test('results reach the model marked untrusted; the run keeps the count and the addresses only', async () => {
