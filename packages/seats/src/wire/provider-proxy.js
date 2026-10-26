@@ -1,6 +1,6 @@
 import { Transform } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
-/** The per-spawn loopback proxy shared by OpenAI-compatible CLI adapters. */
+/** The per-spawn loopback proxy that holds a provider key for a CLI (OpenAI chat, Anthropic Messages, OpenAI Responses). */
 import { randomBytes, timingSafeEqual } from 'crypto';
 import { constants as fsConstants, realpathSync } from 'fs';
 import { createServer, request as httpRequest } from 'http';
@@ -167,11 +167,30 @@ const readProviderKey = async (keyFile, adapterLabel) => {
   }
 };
 
+// The routes a CLI on each wire may call, relative to the configured base
+// path, and the header the real key goes out in. Anything else is refused.
+const WIRES = Object.freeze({
+  'openai-chat': { routes: [['POST', 'chat/completions'], ['GET', 'models']], auth: 'bearer' },
+  'anthropic-messages': {
+    routes: [['POST', 'v1/messages'], ['POST', 'v1/messages/count_tokens'], ['GET', 'v1/models']],
+    auth: 'x-api-key',
+  },
+  'openai-responses': { routes: [['POST', 'responses'], ['GET', 'models']], auth: 'bearer' },
+});
+export const PROVIDER_WIRES = Object.freeze(Object.keys(WIRES));
+
+const presents = (value, expected) => {
+  const supplied = Buffer.from(typeof value === 'string' ? value : '');
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
+};
+
 export const startProviderProxy = async ({
-  provider, keyFile, keyMaterial, tokenFile, socketPath, isolatedPort, adapterLabel = 'OpenCode',
+  provider, keyFile, keyMaterial, tokenFile, socketPath, isolatedPort, adapterLabel = 'OpenCode', wire = 'openai-chat',
   // When set, every completion must request this model and be served by it.
   pinnedModel,
 }) => {
+  const wireSpec = WIRES[wire];
+  if (!wireSpec) throw new Error(`${adapterLabel} provider wire must be one of ${PROVIDER_WIRES.join(', ')}`);
   if (pinnedModel !== undefined && (typeof pinnedModel !== 'string' || !pinnedModel.trim())) {
     throw new Error(`${adapterLabel} pinnedModel must be a non-empty string`);
   }
@@ -189,8 +208,13 @@ export const startProviderProxy = async ({
   const upstreamKey = keyMaterial === undefined ? await readProviderKey(keyFile, adapterLabel) : keyMaterial;
   if (typeof upstreamKey !== 'string' || !upstreamKey || /[\r\n]/.test(upstreamKey)) throw new Error('Invalid provider key');
   const proxyToken = randomBytes(32).toString('base64url');
-  await writeFile(tokenFile, proxyToken, { encoding: 'utf8', mode: 0o600 });
-  await chmod(tokenFile, 0o600);
+  // A caller that hands the token to its child in memory needs no file.
+  if (tokenFile) {
+    await writeFile(tokenFile, proxyToken, { encoding: 'utf8', mode: 0o600 });
+    await chmod(tokenFile, 0o600);
+  }
+  const bearerToken = Buffer.from(`Bearer ${proxyToken}`);
+  const bareToken = Buffer.from(proxyToken);
 
   const logRefusedRequest = (method, requestPath) => {
     let normalizedPath = '/';
@@ -204,29 +228,34 @@ export const startProviderProxy = async ({
     process.stderr.write(`[${adapterLabel.toLowerCase()}] provider proxy refused ${safeMethod} ${normalizedPath}\n`);
   };
 
+  // A refusal answers before the request body has been read. A keep-alive
+  // client that reuses that socket can have its next request reset, so every
+  // refusal on every wire also closes the connection.
+  const refuse = (incoming, outgoing, status, headers = {}, body = undefined) => {
+    incoming.resume();
+    outgoing.writeHead(status, { ...headers, connection: 'close' });
+    outgoing.end(body);
+  };
+
   const server = createServer((incoming, outgoing) => {
-    const supplied = Buffer.from(incoming.headers.authorization || '');
-    const expected = Buffer.from(`Bearer ${proxyToken}`);
-    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
-      incoming.resume();
-      outgoing.writeHead(401).end();
+    // Anthropic clients send their key as x-api-key, the others as a Bearer.
+    if (!presents(incoming.headers.authorization, bearerToken)
+      && !presents(incoming.headers['x-api-key'], bareToken)) {
+      refuse(incoming, outgoing, 401);
       return;
     }
     if (!['GET', 'POST'].includes(incoming.method || '')) {
-      incoming.resume();
-      outgoing.writeHead(405).end();
+      refuse(incoming, outgoing, 405);
       return;
     }
     const rejectRoute = (path) => {
       logRefusedRequest(incoming.method, path);
-      incoming.resume();
-      outgoing.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
-      outgoing.end(`Unsupported provider request: ${incoming.method || 'UNKNOWN'} ${path}`);
+      refuse(incoming, outgoing, 403, { 'content-type': 'text/plain; charset=utf-8' },
+        `Unsupported provider request: ${incoming.method || 'UNKNOWN'} ${path}`);
     };
     const rejectBadRequest = () => {
       logRefusedRequest(incoming.method, incoming.url);
-      incoming.resume();
-      outgoing.writeHead(400).end();
+      refuse(incoming, outgoing, 400);
     };
 
     let target;
@@ -241,8 +270,8 @@ export const startProviderProxy = async ({
         return;
       }
       // The CLI owns this local request path, so never use it as an outbound
-      // URL. The OpenAI-compatible chat provider needs only these fixed routes;
-      // parse the incoming URL against a loopback sentinel, then select a
+      // URL. Each wire needs only the fixed routes in WIRES; parse the
+      // incoming URL against a loopback sentinel, then select a
       // constant endpoint after matching the configured base path exactly.
       // This keeps a CLI request from turning the proxy into an arbitrary
       // path/URL fetcher (including paths on a local provider host).
@@ -252,17 +281,13 @@ export const startProviderProxy = async ({
         return;
       }
       const configuredPath = basePath === '/' ? '' : basePath;
-      let endpoint;
-      if (incoming.method === 'POST'
-        && requested.pathname === `${configuredPath}/chat/completions`) {
-        endpoint = 'chat/completions';
-      } else if (incoming.method === 'GET'
-        && requested.pathname === `${configuredPath}/models`) {
-        endpoint = 'models';
-      } else {
+      const route = wireSpec.routes.find(([method, path]) => incoming.method === method
+        && requested.pathname === `${configuredPath}/${path}`);
+      if (!route) {
         rejectRoute(requested.pathname);
         return;
       }
+      const endpoint = route[1];
       target = {
         path: `${configuredPath}/${endpoint}`,
         protocol: upstream.protocol,
@@ -281,7 +306,8 @@ export const startProviderProxy = async ({
         'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade',
         'x-api-key',
       ].includes(name.toLowerCase())));
-    headers.authorization = `Bearer ${upstreamKey}`;
+    if (wireSpec.auth === 'x-api-key') headers['x-api-key'] = upstreamKey;
+    else headers.authorization = `Bearer ${upstreamKey}`;
     headers.host = target.host;
     headers['accept-encoding'] = 'identity';
     const pinned = pinnedModel !== undefined && target.path.endsWith('/chat/completions');
@@ -378,6 +404,12 @@ export const startProviderProxy = async ({
     });
   });
 
+  // A WebSocket client (codex on the Responses wire) falls back to HTTP SSE on
+  // 426. Nothing is relayed over an upgrade, so no token check is needed first.
+  server.on('upgrade', (_incoming, socket) => {
+    socket.end('HTTP/1.1 426 Upgrade Required\r\nconnection: close\r\ncontent-length: 0\r\n\r\n');
+  });
+
   await new Promise((resolve, reject) => {
     server.once('error', reject);
     const started = () => {
@@ -399,6 +431,7 @@ export const startProviderProxy = async ({
   const proxyBaseURL = new URL(upstream.pathname, `http://127.0.0.1:${port}`).toString();
   return {
     baseURL: proxyBaseURL,
+    token: proxyToken,
     tokenFile,
     socketPath,
     port,
