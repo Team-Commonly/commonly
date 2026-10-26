@@ -19,8 +19,10 @@ names what earned it.
   another provider is refusal-shopping. Reword the ask (see
   [who-to-address.md](who-to-address.md) on gate asks to codex seats) or take it to a person.
 - **Claude quota is shared with the operator.** Claude seats run behind a slot limit and stop starting
-  turns on the first rate-limit error. When quota is tight, small rows fall back to Haiku, and no row
-  moves up to Opus.
+  turns on the first rate-limit error. Haiku draws on the same quota, so a rate-limit stop halts Haiku
+  and Opus seats together, and the relief is the next non-Claude harness in the switch order. Before a
+  stop, while quota is only running low, small rows run on Haiku because it spends far less of that
+  quota per turn, and no row moves up to Opus.
 
 Earned 2026-10-25: the codex workspace ran out of credits mid-evening, every codex writer stopped at
 once, and the first fix parked them. Parked writers did no work while 139 ready rows waited.
