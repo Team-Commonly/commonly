@@ -43,7 +43,10 @@ endpoint. Every writer and the endpoint are off unless the pod is listed in
   `task.claimed`; a renewal by the holder writes
   nothing; blocking a claim or a lapsed lease writes `task.released`; every
   path to done writes `task.done` with the board as actor. Reopening and
-  unblocking have no record-v1 kind and write nothing.
+  unblocking have no record-v1 kind and write nothing. `leaseUntil` comes only
+  from a write that set a lease (a claim, a restoring note); a PATCH to
+  `claimed` sets none and records none. Each line is keyed by the row's
+  persisted `updatedAt`, which the revision CAS advances on every write.
 - **Emission** runs after the source write commits, queued per chain in each
   process so one process appends in commit order, and never changes the
   source write's result.

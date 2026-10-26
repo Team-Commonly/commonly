@@ -668,6 +668,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
       to: 'claimed',
       at: now,
       actor: requestActor(req),
+      leaseUntil: task.claimExpiresAt,
       renewal: preClaim?.status === 'claimed' && preClaim.claimedBy === claimedBy,
     });
     // Same-holder continuation: the seat that already held (or just lapsed
@@ -957,7 +958,15 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
       leaseRenewed = Boolean(task);
       // A note that restores a lapsed claim is a claim, and the record says so.
       if (task) {
-        recordTaskTransition({ podId, task, from: 'pending', to: 'claimed', at: now, actor: requestActor(req) });
+        recordTaskTransition({
+          podId,
+          task,
+          from: 'pending',
+          to: 'claimed',
+          at: now,
+          actor: requestActor(req),
+          leaseUntil: task.claimExpiresAt,
+        });
       }
     }
 

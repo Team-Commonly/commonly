@@ -9,11 +9,22 @@ export type TaskStatus = 'pending' | 'claimed' | 'done' | 'blocked' | string;
 
 export type TaskTransition = {
   podId: unknown;
-  task: { _id?: unknown; taskId?: unknown; claimExpiresAt?: Date | null } | null | undefined;
+  task: { _id?: unknown; taskId?: unknown; updatedAt?: Date | null } | null | undefined;
   from: TaskStatus | null | undefined;
   to: TaskStatus;
-  /** When the source write committed; also keys a redelivery to one write. */
+  /**
+   * When the source write committed. The event key prefers the row's own
+   * `updatedAt`, which the revision CAS persists and advances on every write
+   * (`max(now, previous + 1)`), so two transitions never share a key and a
+   * redelivery of one always does. `at` keys writers that bypass the CAS.
+   */
   at: Date;
+  /**
+   * task.claimed: the lease this write set. Only a writer that sets a lease
+   * (a claim, or a note that restores one) passes it. A PATCH to `claimed`
+   * sets none, and the row's older lease must not be reported as this one's.
+   */
+  leaseUntil?: Date | null;
   /** Who made the change. Unused for task.done, whose actor is the board. */
   actor?: RecordActor | null;
   /** task.done: the user who completed it, when a user did. */
@@ -32,8 +43,7 @@ export type TaskTransition = {
 export const taskTransitionLine = (change: TaskTransition): RecordLineInput | null => {
   const { from, to } = change;
   if (to === 'claimed' && !(change.renewal ?? from === 'claimed')) {
-    const lease = change.task?.claimExpiresAt;
-    const leaseUntil = lease instanceof Date ? lease.toISOString() : undefined;
+    const leaseUntil = change.leaseUntil instanceof Date ? change.leaseUntil.toISOString() : undefined;
     return { kind: 'task.claimed', actor: change.actor ?? null, data: leaseUntil ? { leaseUntil } : {} };
   }
   if (to === 'done' && from !== 'done') {
@@ -55,5 +65,6 @@ export const recordTaskTransition = (change: TaskTransition): void => {
   const line = taskTransitionLine(change);
   if (!line) return;
   const source = change.task?._id ? String(change.task._id) : taskId;
-  emitRecord({ podId, taskId }, `${line.kind}/${source}/${change.at.toISOString()}`, [line]);
+  const revision = change.task?.updatedAt instanceof Date ? change.task.updatedAt : change.at;
+  emitRecord({ podId, taskId }, `${line.kind}/${source}/${revision.toISOString()}`, [line]);
 };

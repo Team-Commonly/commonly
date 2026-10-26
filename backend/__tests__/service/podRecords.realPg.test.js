@@ -159,6 +159,24 @@ real('task record route on real PostgreSQL and MongoDB', () => {
     ]);
   });
 
+  it('a PATCH to claimed records the claim without reporting the row\'s older lease as its own', async () => {
+    expect((await claim()).status).toBe(200);
+    const asOwner = as(generateTestToken(owner._id));
+    expect((await request(app).patch(`/api/v1/tasks/${pod._id}/TASK-1`).set(asOwner).send({ status: 'blocked' })).status).toBe(200);
+    // The first claim's lease is still on the row; this PATCH sets none.
+    expect((await Task.findOne({ podId: pod._id, taskId: 'TASK-1' }).lean()).claimExpiresAt).toBeInstanceOf(Date);
+    expect((await request(app).patch(`/api/v1/tasks/${pod._id}/TASK-1`).set(asOwner).send({ status: 'in_progress' })).status).toBe(200);
+    await flushRecordWrites();
+    const res = await read(generateTestToken(owner._id));
+    const lines = res.text.trimEnd().split('\n').map((line) => JSON.parse(line));
+    expect(lines.map((l) => [l.kind, l.data])).toEqual([
+      ['task.claimed', { leaseUntil: expect.any(String) }],
+      ['task.released', { reason: 'blocked' }],
+      ['task.claimed', {}],
+    ]);
+    expect(lines[2].actor).toEqual({ type: 'human', id: String(owner._id) });
+  });
+
   it('refuses everyone else before any record byte is read', async () => {
     await claim();
     await flushRecordWrites();
