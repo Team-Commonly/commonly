@@ -170,7 +170,7 @@ Mapping, reference digest section to derived field:
 |---|---|
 | Waiting on you | `waiting on you` rows |
 | Needs your check | `needs your check` rows, for the giver only |
-| Status, per initiative | The heading leads with the initiative's **motion**: *moving* if any link has evidence in the window, otherwise *stalled since \<date\>*, or *closed* / *needs your check* when those apply. Pending decisions follow as lines, e.g. "moving, three parts blocked on you". This matches the reference digest. The single selected status from the precedence in section 2 still drives sorting, the waiting-on-you section and the nudge. |
+| Status, per initiative | The heading leads with the initiative's **motion**: *moving* if any link has evidence in the window, otherwise *stalled since \<date\>*, or *closed* / *needs your check* when those apply. Pending decisions follow, named by their title ("moving, blocked on <title>") or counted ("moving, 3 decisions blocked on you"). A link has no part field, so the digest never names parts. This matches the reference digest. The single selected status from the precedence in section 2 still drives sorting, the waiting-on-you section and the nudge. |
 | Stalled part inside a moving initiative | per-link status, with its `stalled since` date shown beside the moving line |
 | What moved in the window | merge and resolved-decision records dated inside it |
 | Next step, with owner | the open link (Task `pending` or `claimed`) with the lowest `taskNum`, owner `claimedBy \|\| assignee`. If no open task, the pending decision. (`taskNum` at `models/Task.ts:16`.) |
@@ -194,6 +194,10 @@ Mapping, reference digest section to derived field:
     (`attentionItemService.ts:49-64`), as the same kind of AttentionItem. The
     agent is not woken, so ADR-018's wake policy is untouched. If there is no
     installer, the digest lists the stall with "no human to nudge" and nothing is sent.
+- **Nudge pod.** `AttentionItem.podId` is required, and an initiative spans pods. The pod is the
+  one of the owner's open linked Task with the lowest `taskNum`, the same rule as *Next step* in
+  section 3. Failing that, it is the first `pod` link. Failing both, nothing is sent and the digest
+  shows "no pod to route". The installer lookup runs in that pod. Each fallback has a test in row 3.
 - **The one new piece.** `AttentionSourceType` is a closed union
   (`models/AttentionItem.ts:4`: `message | approval | decision_request | task`).
   Adding `'initiative'` is the single schema change. The `source.type` enum in
