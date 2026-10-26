@@ -140,20 +140,36 @@ export const exitCodeFor = (report: Pick<LocalBackfillReport, 'refused' | 'faile
   return 0;
 };
 
-export async function main(): Promise<void> {
-  const apply = process.argv.includes('--apply');
-  const force = process.argv.includes('--force');
+export interface OpenedStores { deps: LocalBackfillDeps; close: () => Promise<void> }
+
+/** Connects both stores for a real run. main() takes it as a parameter so a test can swap it. */
+export const openStores = async (): Promise<OpenedStores> => {
   if (!process.env.MONGO_URI) throw new Error('MONGO_URI is required');
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const { pool } = require('../config/db-pg') as { pool: PgPool | null };
   if (!pool) throw new Error('PostgreSQL is not configured (PG_HOST unset)');
-
   await mongoose.connect(process.env.MONGO_URI);
+  const close = async () => { await mongoose.disconnect(); await pool.end(); };
   try {
     if (!await ensureLegacyIdIndex()) throw new Error('could not ensure the legacy_mongo_id index');
-    const report = await backfillLocalMessages(productionDeps(pool), { apply, force });
+  } catch (err) {
+    await close();
+    throw err;
+  }
+  return { deps: productionDeps(pool), close };
+};
+
+/** Runs the backfill, sets process.exitCode (see exitCodeFor) and returns it. */
+export async function main(
+  argv: string[] = process.argv,
+  open: () => Promise<OpenedStores> = openStores,
+): Promise<number> {
+  const apply = argv.includes('--apply');
+  const force = argv.includes('--force');
+  const { deps, close } = await open();
+  try {
+    const report = await backfillLocalMessages(deps, { apply, force });
     console.log(`[backfill-local-messages] ${JSON.stringify(report)}`);
-    process.exitCode = exitCodeFor(report);
     if (report.refused) {
       console.log(`REFUSED — PostgreSQL already holds ${report.overlap} messages with no Mongo id`
         + ' that predate the newest Mongo message. They may be the same history; copying would duplicate it.'
@@ -161,9 +177,10 @@ export async function main(): Promise<void> {
     } else if (!apply) {
       console.log('DRY RUN — nothing written. Re-run with --apply.');
     }
+    process.exitCode = exitCodeFor(report);
+    return process.exitCode;
   } finally {
-    await mongoose.disconnect();
-    await pool.end();
+    await close();
   }
 }
 

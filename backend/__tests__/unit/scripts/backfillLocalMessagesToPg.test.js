@@ -1,6 +1,6 @@
 jest.mock('../../../services/pgMessageReconcileService', () => ({ copyOne: jest.fn(), ensureLegacyIdIndex: jest.fn() }));
 
-const { backfillLocalMessages, exitCodeFor } = require('../../../scripts/backfill-local-messages-to-pg');
+const { backfillLocalMessages, main } = require('../../../scripts/backfill-local-messages-to-pg');
 
 const doc = (id) => ({ _id: { toString: () => id }, podId: 'p', userId: 'u', content: id, createdAt: new Date('2026-01-01') });
 
@@ -60,17 +60,32 @@ describe('backfillLocalMessages', () => {
   });
 });
 
-describe('exitCodeFor', () => {
-  it('a refused run exits 2, so an upgrade script stops', async () => {
-    const report = await backfillLocalMessages(fakeDeps({ overlap: 4 }), { apply: true });
-    expect(report.refused).toBe(true);
-    expect(exitCodeFor(report)).toBe(2);
+describe('main() exit code', () => {
+  const run = async (deps, argv = ['node', 'script', '--apply']) => {
+    const close = jest.fn(async () => {});
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const before = process.exitCode;
+    try {
+      const code = await main(argv, async () => ({ deps, close }));
+      return { code, exitCode: process.exitCode, close };
+    } finally {
+      process.exitCode = before;
+      log.mockRestore();
+    }
+  };
+
+  it('a refused run sets process.exitCode to 2 and closes the stores', async () => {
+    const deps = fakeDeps({ overlap: 4 });
+    const { code, exitCode, close } = await run(deps);
+    expect(exitCode).toBe(2);
+    expect(code).toBe(2);
+    expect(deps.copy).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
   });
 
-  it('a run with failed rows exits 1, and a clean run or dry run exits 0', async () => {
-    const failing = await backfillLocalMessages(fakeDeps({ copy: async () => { throw new Error('boom'); } }), { apply: true });
-    expect(exitCodeFor(failing)).toBe(1);
-    expect(exitCodeFor(await backfillLocalMessages(fakeDeps(), { apply: true }))).toBe(0);
-    expect(exitCodeFor(await backfillLocalMessages(fakeDeps()))).toBe(0);
+  it('failed rows set 1; a clean run and a dry run set 0', async () => {
+    expect((await run(fakeDeps({ copy: async () => { throw new Error('boom'); } }))).exitCode).toBe(1);
+    expect((await run(fakeDeps())).exitCode).toBe(0);
+    expect((await run(fakeDeps(), ['node', 'script'])).exitCode).toBe(0);
   });
 });
