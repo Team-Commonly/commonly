@@ -34,7 +34,7 @@ const X_HANDLE = 'https://x.com/sam_commonly';
 // before install.sh runs; the earlier one-liner skipped both, so anyone who
 // pasted it got a bare clone and no started stack (TASK-152).
 const SELF_HOST_COMMAND = 'git clone https://github.com/Team-Commonly/commonly.git && cd commonly && ./install.sh';
-const ADR_COUNT = 31;
+const ADR_COUNT = 32;
 // A count on a marketing page drifts silently: nothing on the page notices a
 // new ADR, and docs/ is outside this image's build context so the page cannot
 // count at build time. The TASK-167 row D test counts docs/adr/ADR-*.md and
