@@ -119,11 +119,16 @@ Decision: seat credentials are **0600 files in the seat user's home**, not keych
   merge/close/delete fence), but becomes a guard against habit again: the boundary is now that
   the only token the seat can reach cannot do what the guard forbids. Which account that token
   belongs to is U3. Its effective permissions are repository contents and pull requests, read and
-  write, on the public repo only. A contents-write token can delete refs, so the deletion fence
-  does not rest on the token: the `main` ruleset blocks deletion, force-push and direct push for
-  every actor outside its bypass list, and no seat token is on that list. A seat can still delete a
-  branch it pushed, which costs nothing it could not push again. Closing a PR stacked on a deleted
-  base is the remaining harm, and the guard keeps fencing `--delete-branch` for that reason.
+  write, on the public repo only. A contents-write token can delete refs and push to any branch
+  it is not stopped from, so the fence cannot rest on the token. Measured 2026-10-26: classic
+  branch protection on `main` refuses deletion and force-push, but does not apply to admins and
+  has no push restriction, and the ruleset that carries those rules is disabled. Any write token
+  can push to `main` directly today. **Precondition for the first seat token:** an active ruleset
+  on `main` that refuses deletion, force-push and direct push for every actor outside its bypass
+  list, with the merge queue as the only path in. No seat token is on that list. A seat can still
+  delete a branch it pushed, which costs nothing it could not push again. Closing a PR stacked on
+  a deleted base is the remaining harm, and the guard keeps fencing `--delete-branch` for that
+  reason.
 - **Model providers.** Where the adapter supports it (opencode, qwen and the other
   OpenAI-compatible adapters), keys go through the provider proxy in
   `packages/seats/src/wire/provider-proxy.js`: the wrapper validates a 0600 non-symlink key file,
@@ -208,8 +213,8 @@ is not confined by Seatbelt.
    `~/.commonly/tokens`, `~/.commonly/state` and each private repo directory are refused.
 4. An operator-written 0600 decoy in `/private/tmp` is refused.
 5. `gh auth status` as the seat shows only the seat token; an admin-scoped API call (reading
-   branch protection), deleting `main` (refused by the ruleset) and a workflow-file push are
-   refused by GitHub.
+   branch protection), deleting `main`, a direct push to `main` (both refused by the D3 ruleset) and a workflow-file
+   push are refused by GitHub.
 6. `kill -0` against an operator process returns `EPERM`; `launchctl print gui/<operator uid>`
    is refused.
 7. Writing the seat's own `run.sh`, its plist, the CLI prefix or `seat-gh-guard` is refused.
