@@ -50,8 +50,11 @@
  *    pickaxe match or blob id comes from one whatever path or glob the caller
  *    named. `--follow` takes exactly one path, so it is refused, and so is
  *    `--full-diff`, which lets pathspecs pick commits and then shows every
- *    file each one changed. What this cannot stop is `show <blob id>` with an
- *    id learned somewhere else.
+ *    file each one changed. A line range (log and show `-L<range>:<file>`)
+ *    takes no pathspec, so it is taken only as the first argument, in one
+ *    piece, where git cannot read it as another option's value, and its file
+ *    is name-checked. What this cannot stop is `show <blob id>` with an id
+ *    learned somewhere else.
  */
 import { execFile } from 'child_process';
 import { realpathSync } from 'fs';
@@ -149,9 +152,24 @@ const ENV_EXCLUDES = Object.freeze([
 ]);
 // blame takes one literal file, so the name check above covers it. A
 // blob-to-blob diff (`diff A:f B:f`) takes no pathspec and is refused by git
-// here; `diff A B -- f` is the same diff. log -L also takes none, so its file
-// is name-checked instead.
+// here; `diff A B -- f` is the same diff. A line range takes none either (see
+// checkLineRange), so its file is name-checked instead.
 const PATHSPEC_SUBCOMMANDS = new Set(['status', 'log', 'diff', 'show']);
+
+// log and show trace a line range (-L<range>:<file>), and git refuses a
+// pathspec with one, so that call runs without the .env excludes. Only a token
+// git is sure to read as -L may turn them off: the first argument, with its
+// range in it. After another argument, git can read it as that option's value;
+// a bare -L takes the next argument as its range, which the name check may
+// read as an option instead. status and diff take no -L at all.
+const LINE_RANGE_SUBCOMMANDS = new Set(['log', 'show']);
+const checkLineRange = (arg, index, subcommand) => {
+  if (!LINE_RANGE_SUBCOMMANDS.has(subcommand)) return `-L is refused for ${subcommand}: only log and show trace a line range`;
+  if (index > 0 || arg.length === 2) {
+    return `${arg} is refused: give one line range, as the first argument and in one piece (-L<start>,<end>:<file>), so git cannot read it as another option's value`;
+  }
+  return null;
+};
 
 const MAX_ARGS = 64;
 const MAX_ARG_LENGTH = 4096;
@@ -220,7 +238,7 @@ export const readonlyGitArgv = ({ subcommand, args = [], root }) => {
   if (typeof root !== 'string' || !isAbsolute(root)) return refuse('the workspace is not an absolute path');
   let pathsOnly = false;
   let lineRange = false;
-  for (const arg of args) {
+  for (const [index, arg] of args.entries()) {
     if (arg.length > MAX_ARG_LENGTH || arg.includes('\0')) return refuse('an argument is too long or contains NUL');
     if (pathsOnly || arg === '-' || !arg.startsWith('-')) {
       if (escapesRoot(root, arg)) return refuse(`${arg} is refused: it is outside the workspace`);
@@ -231,8 +249,12 @@ export const readonlyGitArgv = ({ subcommand, args = [], root }) => {
       const reason = arg.startsWith('--') ? checkLongOption(arg) || checkFormat(arg) : checkShortOption(arg, subcommand);
       if (reason) return refuse(reason);
       if (arg.startsWith('-L')) {
-        lineRange = true;
         if (namesEnvFile(arg.slice(2))) return refuse(`${arg} is refused: ${NAMES_ENV_FILE}`);
+        if (PATHSPEC_SUBCOMMANDS.has(subcommand)) {
+          const lineRangeReason = checkLineRange(arg, index, subcommand);
+          if (lineRangeReason) return refuse(lineRangeReason);
+          lineRange = true;
+        }
       }
     }
   }

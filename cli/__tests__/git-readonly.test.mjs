@@ -282,7 +282,7 @@ describe('read-only git keeps committed .env files out of reach', () => {
     }
     expect(refusal({ subcommand: 'blame', args: ['sub/.env.local'] })).toMatch(/names a \.env file/);
     expect(refusal({ subcommand: 'log', args: ['-L1,1:.env'] })).toMatch(/names a \.env file/);
-    expect(refusal({ subcommand: 'log', args: ['-L', '1,1:sub/.env.local'] })).toMatch(/names a \.env file/);
+    expect(refusal({ subcommand: 'log', args: ['-L1,1:sub/.env.local'] })).toMatch(/names a \.env file/);
   });
 
   test('--follow is refused, since it takes one path and the excludes add more (control: git rejects it with them)', async () => {
@@ -317,6 +317,22 @@ describe('read-only git keeps committed .env files out of reach', () => {
     } finally {
       rmSync(own, { recursive: true, force: true });
     }
+  });
+
+  test('-L turns the excludes off only where git is sure to read it as a line range: log or show, first, in one piece', async () => {
+    // CodeRabbit r4373012618: after another argument, git can read -L… as that option's value.
+    expect(refusal({ subcommand: 'diff', args: ['--src-prefix', '-Lx', 'HEAD~1', 'HEAD'] })).toMatch(/-L is refused for diff/);
+    expect(refusal({ subcommand: 'status', args: ['-L1,1:tracked.txt'] })).toMatch(/-L is refused for status/);
+    for (const subcommand of ['log', 'show']) {
+      for (const args of [['-p', '-L1,1:tracked.txt'], ['-L', '1,1:tracked.txt'], ['-L1,1:tracked.txt', '-L1,1:tracked.txt']]) {
+        expect(refusal({ subcommand, args })).toMatch(/as the first argument and in one piece/);
+      }
+      expect(readonlyGitArgv({ subcommand, args: ['-L1,1:tracked.txt', '-p'], root: repo }).argv.slice(-2))
+        .toEqual(['-L1,1:tracked.txt', '-p']);
+      expect((await run(subcommand, ['-L1,1:tracked.txt'])).text).toContain('first line');
+    }
+    // blame's -L names no file and blame takes no excludes, so it keeps its usual form.
+    expect((await run('blame', ['-L', '1,1', 'tracked.txt'])).text).toContain('first line');
   });
 
   test('a patch, a glob, a pickaxe and a raw listing all leave it out (control: bare log -p shows it)', async () => {
