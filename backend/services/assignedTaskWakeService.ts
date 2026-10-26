@@ -35,6 +35,25 @@ type RowState = {
 type WakeEvent = { _id: unknown; status?: string; delivery?: { outcome?: string; reason?: string | null } };
 
 const rowKey = (seat: string, row: Row): string => `${seat}|${String(row._id)}`;
+
+// The dispatcher runs every minute, so a gate that keeps holding a seat would
+// repeat its line each run. Each (seat, rows, gate) logs once per interval.
+const skipLoggedAt = new Map<string, number>();
+function logSkip(install: Installation, rows: Row[], gate: string, now: Date): void {
+  const seat = `${install.agentName}/${install.instanceId || 'default'}`;
+  const taskIds = rows.map((row) => row.taskId).join(',') || '-';
+  const key = `${seat}|${taskIds}|${gate}`;
+  const last = skipLoggedAt.get(key);
+  if (last !== undefined && now.getTime() - last < INTERVAL_MS) return;
+  if (skipLoggedAt.size > 5000) {
+    skipLoggedAt.forEach((at, logged) => {
+      if (now.getTime() - at >= INTERVAL_MS) skipLoggedAt.delete(logged);
+    });
+  }
+  skipLoggedAt.set(key, now.getTime());
+  console.debug(`[assigned-task-wake] skip seat=${seat} rows=${taskIds} gate=${gate}`);
+}
+
 // Native rows record no author: their id is minted `N-<num>-<agentName>-<base36>`.
 // Rows created through the API open with a "Created by" update carrying the author's id.
 const NATIVE_TASK_ID = /^N-\d+-(.+)-[0-9a-z]+$/;
@@ -166,6 +185,7 @@ async function wakeableRows(
     if (selfCreated(row, install, principalId)) {
       // eslint-disable-next-line no-await-in-loop
       if (!state?.lastWakeAt || await humanActedSince(new Date(state.lastWakeAt))) wakeable.push(row);
+      else logSkip(install, [row], 'awaiting-human', now);
       continue;
     }
     if (!state) {
@@ -180,10 +200,14 @@ async function wakeableRows(
       wakeable.push(row);
       continue;
     }
-    if (state.stoppedAt) continue;
+    if (state.stoppedAt) {
+      logSkip(install, [row], 'stopped', now);
+      continue;
+    }
     if ((state.failures || 0) >= STOP_AFTER_FAILURES) {
       // eslint-disable-next-line no-await-in-loop
       await stopRow(row, state, install, principalId, now);
+      logSkip(install, [row], 'stopped', now);
       continue;
     }
     wakeable.push(row);
@@ -199,14 +223,14 @@ async function holdsFloor(install: Installation, principalId: string): Promise<b
   return AgentMessageService.holdsFloor(install.podId, principalId, pod?.type);
 }
 
-function owns(row: Row, install: Installation, principalId: string): boolean {
+function owns(row: Row, install: Installation, principalId: string | null): boolean {
   const name = normalized(install.agentName);
   const instance = normalized(install.instanceId || 'default');
   const alias = instance === 'default' ? name : instance;
   const holder = normalized(row.claimedBy);
   if (row.status === 'claimed') {
     // A stale assignment never wakes a different seat from the live claimant.
-    return holder === principalId || holder === alias;
+    return (principalId !== null && holder === principalId) || holder === alias;
   }
   return normalized(row.assignee) === alias;
 }
@@ -261,7 +285,11 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
     const key = seatKey(install.agentName, install.instanceId);
     if (visited.has(key)) continue;
     const principalId = principalIds.get(key);
-    if (!principalId) continue;
+    if (!principalId) {
+      const named = rows.filter((row) => String(row.podId) === String(install.podId) && owns(row, install, null));
+      if (named.length) logSkip(install, named, 'no-principal', now);
+      continue;
+    }
     const assigned = rows.filter((row) => String(row.podId) === String(install.podId)
       && owns(row, install, principalId));
     if (!assigned.length) continue;
@@ -288,13 +316,25 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
     };
     // eslint-disable-next-line no-await-in-loop
     const last = await AgentEvent.findOne(completionFilter).sort({ 'delivery.updatedAt': -1 }).lean();
-    if (!last?.delivery?.updatedAt) continue;
+    if (!last?.delivery?.updatedAt) {
+      logSkip(install, owned, 'no-completed-turn', now);
+      continue;
+    }
     const dueAt = new Date(new Date(last.delivery.updatedAt).getTime() + DELAY_MS);
-    if (dueAt > now) continue;
+    if (dueAt > now) {
+      logSkip(install, owned, 'delay', now);
+      continue;
+    }
     // eslint-disable-next-line no-await-in-loop
-    if (await hasOtherWork(install.agentName, install.instanceId)) continue;
+    if (await hasOtherWork(install.agentName, install.instanceId)) {
+      logSkip(install, owned, 'other-work', now);
+      continue;
+    }
     // eslint-disable-next-line no-await-in-loop
-    if (await holdsFloor(install, principalId)) continue;
+    if (await holdsFloor(install, principalId)) {
+      logSkip(install, owned, 'floor', now);
+      continue;
+    }
     eligible += 1;
     let reserved = false;
     let enqueueStarted = false;
@@ -321,6 +361,7 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
       if (!active || busy || !current.length || String(newest?._id) !== String(last._id)) {
         // eslint-disable-next-line no-await-in-loop
         await AgentTaskWakeState.updateOne({ _id: key, lastWakeAt: now }, { $unset: { lastWakeAt: 1 } });
+        logSkip(install, owned, 'recheck', now);
         continue;
       }
       const shown = current.slice(0, 5);
@@ -369,7 +410,10 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
         console.error('[assigned-task-wake] wake not linked to rows:', key, (stateError as Error).message);
       }
     } catch (error) {
-      if ((error as { code?: number }).code === 11000 && !reserved) continue;
+      if ((error as { code?: number }).code === 11000 && !reserved) {
+        logSkip(install, owned, 'seat-interval', now);
+        continue;
+      }
       if (reserved && !enqueueStarted) {
         // No queue write was attempted, so returning this slot is safe.
         // eslint-disable-next-line no-await-in-loop
