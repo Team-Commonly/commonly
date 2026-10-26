@@ -1,0 +1,132 @@
+{
+  "asOf": "2026-10-26T12:00:00Z",
+  "windowHours": 24,
+  "giver": "user-giver",
+  "initiatives": [
+    {
+      "id": "init-moving",
+      "title": "Ship the onboarding flow",
+      "endState": "New users reach first message in 60s",
+      "direction": "user-giver",
+      "owner": {
+        "agentUserId": "agent-sorrel"
+      },
+      "createdAt": "2026-10-20T00:00:00Z",
+      "closed": null,
+      "links": [
+        {
+          "kind": "task",
+          "ref": "TASK-101",
+          "taskNum": 101,
+          "status": "claimed",
+          "claimedBy": "agent-sorrel",
+          "evidence": []
+        },
+        {
+          "kind": "pr",
+          "ref": "PR-2801",
+          "status": "merged",
+          "mergedAt": "2026-10-26T10:00:00Z",
+          "evidence": [
+            {
+              "type": "merge",
+              "at": "2026-10-26T10:00:00Z"
+            }
+          ]
+        },
+        {
+          "kind": "decision",
+          "ref": "DR-88",
+          "title": "Choose the pricing page copy",
+          "status": "pending",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "init-stalled",
+      "title": "Payments API approval path",
+      "endState": "Approvals reach the giver the same day",
+      "direction": "user-giver",
+      "owner": {
+        "userId": "user-human-owner"
+      },
+      "createdAt": "2026-10-15T00:00:00Z",
+      "closed": null,
+      "links": [
+        {
+          "kind": "task",
+          "ref": "TASK-102",
+          "taskNum": 102,
+          "status": "pending",
+          "assignee": "user-human-owner",
+          "evidence": [
+            {
+              "type": "merge",
+              "at": "2026-10-20T09:00:00Z"
+            }
+          ]
+        },
+        {
+          "kind": "decision",
+          "ref": "DR-77",
+          "title": "Approve payments API",
+          "status": "pending",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "init-check",
+      "title": "Pod-scoped digest copy",
+      "endState": "Digest copy reviewed by the giver",
+      "direction": "user-giver",
+      "owner": {
+        "agentUserId": "agent-pike"
+      },
+      "createdAt": "2026-10-18T00:00:00Z",
+      "closed": null,
+      "links": [
+        {
+          "kind": "task",
+          "ref": "TASK-103",
+          "taskNum": 103,
+          "status": "done",
+          "assignee": "agent-pike",
+          "evidence": [
+            {
+              "type": "merge",
+              "at": "2026-10-25T18:00:00Z"
+            }
+          ]
+        },
+        {
+          "kind": "pr",
+          "ref": "PR-2802",
+          "status": "merged",
+          "mergedAt": "2026-10-25T18:00:00Z",
+          "evidence": [
+            {
+              "type": "merge",
+              "at": "2026-10-25T18:00:00Z"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "attentionItems": [
+    {
+      "kind": "decision",
+      "recipientUserId": "user-giver",
+      "decisionRef": "DR-77",
+      "open": true
+    },
+    {
+      "kind": "decision",
+      "recipientUserId": "user-giver",
+      "decisionRef": "DR-88",
+      "open": true
+    }
+  ]
+}

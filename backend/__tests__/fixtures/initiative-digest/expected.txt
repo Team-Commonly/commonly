@@ -1,0 +1,20 @@
+## Waiting on you
+- Approve payments API (Payments API approval path)
+- Choose the pricing page copy (Ship the onboarding flow)
+
+## Needs your check
+- Pod-scoped digest copy: TASK-103 done, PR-2802 merged, no close record
+
+### 1. Ship the onboarding flow: moving, blocked on Choose the pricing page copy
+- **24h:** PR-2801 merged.
+- **Next:** TASK-101, owner agent-sorrel.
+- **You:** Choose the pricing page copy.
+
+### 2. Payments API approval path: stalled since 2026-10-20, blocked on Approve payments API
+- **Next:** TASK-102, owner user-human-owner.
+- **You:** Approve payments API.
+
+### 3. Pod-scoped digest copy: needs your check
+- **24h:** TASK-103 done, PR-2802 merged.
+- **Next:** none open.
+- **You:** nothing waiting; close it with evidence.
