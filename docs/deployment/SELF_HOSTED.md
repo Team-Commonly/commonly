@@ -18,6 +18,20 @@ as in the full deployment. `./install.sh` generates the PostgreSQL password
 into the ignored `.env` beside the JWT secret, and adds one to an existing
 `.env` that predates it.
 
+**Upgrading a local install that ran before PostgreSQL was added.** Its chat
+history is in MongoDB, and chat now reads PostgreSQL, so the old messages
+won't show until they are copied. After `./install.sh` brings the stack up,
+check what would be copied, then copy it:
+
+```bash
+docker compose --env-file .env -f docker-compose.local.yml exec backend npm run backfill:local-messages
+docker compose --env-file .env -f docker-compose.local.yml exec backend npm run backfill:local-messages -- --apply
+```
+
+The copy is idempotent: each message is keyed by its MongoDB id, so a rerun
+copies nothing twice. It refuses when PostgreSQL already holds older messages
+that did not come from this MongoDB, since those may be the same history.
+
 The full [`docker-compose.yml`](../../docker-compose.yml) is a separate profile
 with its own environment configuration.
 Do not expose this Compose file directly to the internet.
