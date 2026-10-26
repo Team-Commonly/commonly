@@ -38,6 +38,27 @@ test('turns, durations, timeouts, exits, restarts, and an open turn, from timest
   expect(out).toMatch(/the log cannot tell/);
 });
 
+test('ask outcomes close a turn, and a refused spawn credential is not a turn', () => {
+  const log = [
+    L('01:00:00.000', '[agent.ask] spawning codex'),
+    L('01:00:10.000', '[agent.ask] routed private response (42 bytes)'),
+    L('02:00:00.000', '[agent.ask] spawning codex'),
+    L('02:00:10.000', '[agent.ask] response already routed by agent tool'),
+    L('03:00:00.000', '[agent.ask] spawning codex'),
+    L('03:00:10.000', '[agent.ask] no private response (empty output)'),
+    L('04:00:00.000', '[inbox.batch] spawning codex'),
+    L('04:00:00.300', 'spawn credential refused (HTTP 403) — not spawning'),
+    L('05:00:00.000', '[inbox.batch] spawning codex'),
+    L('05:00:20.000', '[inbox.batch] no wrapper-post (NO_REPLY)'),
+  ].join('\n');
+  const r = baseline(log, { seat: 'nib', untilMs: Date.parse('2026-10-24T06:00:00Z'), hours: 8 });
+  expect(r.byAdapter.codex).toMatchObject({
+    turns: 4, ok: 4, open: 0, unclosed: 0, outcomes: { private_response: 2, no_private_response: 1, no_reply: 1 },
+  });
+  expect(r.counts.spawnRefused).toBe(1);
+  expect(render(r)).toMatch(/spawns refused a credential 1/);
+});
+
 test('the window bounds which turns count', () => {
   const r = baseline(LOG, { seat: 'nib', untilMs: Date.parse('2026-10-24T02:30:00Z'), hours: 2 });
   expect(r.byAdapter.codex.turns).toBe(2);

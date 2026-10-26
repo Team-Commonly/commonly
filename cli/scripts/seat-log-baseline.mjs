@@ -17,6 +17,8 @@
  *   - "processing failed"         (the spawn threw; failed)
  *   - a restart ("stopping after the current turn" / "polling … for events")
  *     or the next "spawning"       (no close seen; counted as unclosed)
+ * A "spawn credential refused" after "spawning" means the child never ran: it
+ * is counted as a refused spawn, not a turn.
  * A turn still open at the end of the window is "open", not a hang.
  */
 import fs from 'fs';
@@ -41,7 +43,8 @@ const outcomeOf = (msg) => {
   if (/no wrapper-post \(empty output\)/.test(msg)) return 'empty_output';
   if (/agent posted via tool/.test(msg) || /posted via tool, then/.test(msg)) return 'posted_via_tool';
   if (/\bposted \d+ bytes\b/.test(msg)) return 'wrapper_posted';
-  if (/routed private response/.test(msg)) return 'private_response';
+  if (/routed private response/.test(msg) || /response already routed by agent tool/.test(msg)) return 'private_response';
+  if (/\bno private response\b/.test(msg)) return 'no_private_response';
   if (/server skipped the post/.test(msg)) return 'server_skipped';
   if (/wrapper delivery refused/.test(msg)) return 'delivery_refused';
   return null;
@@ -61,7 +64,7 @@ export const baseline = (text, { seat, untilMs = Date.now(), hours = 48, timeout
   const fromMs = untilMs - hours * 3_600_000;
   const turns = [];
   let open = null;
-  const counts = { untimestamped: 0, pollErrors: 0, restarts: 0, otherSeatLines: 0 };
+  const counts = { untimestamped: 0, pollErrors: 0, restarts: 0, otherSeatLines: 0, spawnRefused: 0 };
   const close = (turn, fields) => { Object.assign(turn, fields); turns.push(turn); };
 
   for (const line of text.split('\n')) {
@@ -97,6 +100,13 @@ export const baseline = (text, { seat, untilMs = Date.now(), hours = 48, timeout
     // The child's end, when the turn minted a credential. A seat-token turn
     // mints none and logs neither line, so its outcome line is its end.
     if (/^spawn credential (revoked|revoke failed)\b/.test(msg)) { open.revokedMs = at; continue; }
+    // "spawning" is logged before the credential lease, so a refused lease
+    // follows it: the child never ran, and there is no turn to time.
+    if (/^spawn credential refused\b/.test(msg)) {
+      if (open.startMs >= fromMs && open.startMs <= untilMs) counts.spawnRefused += 1;
+      open = null;
+      continue;
+    }
     const outcome = outcomeOf(msg);
     if (outcome) {
       close(open, { endMs: open.revokedMs ?? at, ended: 'ok', outcome });
@@ -160,7 +170,7 @@ export const render = (r) => {
     if (a.durationMs) out.push(`    duration p50 ${fmtMs(a.durationMs.p50)} p90 ${fmtMs(a.durationMs.p90)} p99 ${fmtMs(a.durationMs.p99)} max ${fmtMs(a.durationMs.max)} (n=${a.durationMs.n})`);
     out.push(`    outcomes ${JSON.stringify(a.outcomes)}`);
   }
-  out.push(`  restarts ${r.counts.restarts}, poll errors ${r.counts.pollErrors}, untimestamped lines (whole log) ${r.counts.untimestamped}`);
+  out.push(`  restarts ${r.counts.restarts}, poll errors ${r.counts.pollErrors}, spawns refused a credential ${r.counts.spawnRefused}, untimestamped lines (whole log) ${r.counts.untimestamped}`);
   out.push('  the log cannot tell:');
   for (const l of r.cannotTell) out.push(`    - ${l}`);
   return out.join('\n');
