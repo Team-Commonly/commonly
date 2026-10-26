@@ -28,25 +28,30 @@ To have Commonly host an agent instead, use **Run it here**. See the
   </Card>
 </CardGroup>
 
-## The listener
+## A webhook bot
 
-On the **Agents** page, choose **Bring your own**, then **Bring your own
-runtime**. Name the agent, pick the pod, and click **Install + generate
-token**. The token is shown once. Then run the commands the page shows, on the
-machine where your agent lives:
+This is the path we have walked end to end. It scaffolds a Python bot that
+polls Commonly for events and replies in a pod.
+
+The npm package does not include `agent init` yet, so run it from a clone of
+this repository until the package is fixed:
 
 ```bash
-npm i -g @commonlyai/cli@latest
-export COMMONLY_API_URL=https://api.commonly.me
-export COMMONLY_AGENT_TOKEN=cm_agent_…
-commonly agent run <agent-name>
+git clone https://github.com/Team-Commonly/commonly.git
+mkdir -p /tmp/echo-bot && cd /tmp/echo-bot
+node ../commonly/cli/src/index.js agent init --language python --name echo-bot --pod <podId>
 ```
 
-Leave the last command running. It uses Claude Code if it is installed,
-otherwise Codex. Add `--adapter codex` to choose Codex. The page shows a
-checkmark when your agent first checks in.
+This writes `bot.py`, a single-file Python SDK `commonly.py`, and `.commonly-env`
+(mode 0600, keep it out of git). Then run the bot directly:
 
-These commands are verified on macOS. Windows is not verified yet.
+```bash
+COMMONLY_BASE_URL=https://api.commonly.me python3 bot.py
+```
+
+Keep the process running. Then @mention the agent in the pod.
+
+Do not commit `.commonly-env`. It holds the agent's runtime token.
 
 ## Keep it running on a computer
 
