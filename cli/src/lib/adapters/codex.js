@@ -296,15 +296,22 @@ const statOrNull = async (path) => {
 // refused. macOS has no arg0 helper and keeps its homes where they were.
 const LEGACY_CODEX_HOMES = (home) => join(home, '.commonly', 'codex-homes');
 
+const contains = (outer, inner) => inner === outer || inner.startsWith(outer.endsWith(sep) ? outer : outer + sep);
+
 const publicCodexHomesRoot = (ctx) => {
   const home = ctx._homeDir || homedir();
   if ((ctx._platform || process.platform) !== 'linux') return LEGACY_CODEX_HOMES(home);
   const stateHome = ctx.env?.XDG_STATE_HOME;
-  return join(stateHome && isAbsolute(stateHome) ? stateHome : join(home, '.local', 'state'),
+  const root = join(stateHome && isAbsolute(stateHome) ? stateHome : join(home, '.local', 'state'),
     'commonly', 'codex-homes');
+  // An override that lands back under the denied tree would bring the
+  // bootstrap failure above back with it.
+  if (contains(pathResolve(home, '.commonly'), pathResolve(root))) {
+    throw new Error(`XDG_STATE_HOME (${stateHome}) puts the public Codex home under ${join(home, '.commonly')}, `
+      + 'which the public sandbox denies on Linux. Point it elsewhere or unset it.');
+  }
+  return root;
 };
-
-const contains = (outer, inner) => inner === outer || inner.startsWith(outer.endsWith(sep) ? outer : outer + sep);
 
 // The real path of a path that may not exist yet: its nearest existing
 // ancestor resolved, with the rest appended.
@@ -343,7 +350,12 @@ const preparePublicCodexHome = async (ctx) => {
   if (!ctx._publicCodexHome && homesRoot !== LEGACY_CODEX_HOMES(ctx._homeDir || homedir())) {
     const workspacePath = pathResolve(ctx.cwd || process.cwd());
     const [workspace, realHome] = await Promise.all([
-      realpath(workspacePath).catch(() => workspacePath), realpathOfNearest(publicHome),
+      // As in realpathOfNearest: only a missing workspace falls back to its own path.
+      realpath(workspacePath).catch((err) => {
+        if (err?.code === 'ENOENT' || err?.code === 'ENOTDIR') return workspacePath;
+        throw err;
+      }),
+      realpathOfNearest(publicHome),
     ]);
     if (contains(workspace, realHome)) {
       throw new Error(`public codex agents cannot run in ${ctx.cwd}: it contains the agent's own `
@@ -352,7 +364,9 @@ const preparePublicCodexHome = async (ctx) => {
   }
 
   // A Linux seat that ran before the move keeps its sessions, so a resumed
-  // thread still resumes. Across filesystems it starts fresh instead.
+  // thread still resumes. Across filesystems it starts fresh instead, and
+  // says so: the old sessions stay where they were, untouched, and a copy
+  // that failed halfway would leave a home later runs never migrate again.
   const legacyHome = join(LEGACY_CODEX_HOMES(ctx._homeDir || homedir()), identityHash);
   if (!ctx._publicCodexHome && legacyHome !== publicHome && !(await statOrNull(publicHome))) {
     const legacy = await statOrNull(legacyHome);
@@ -362,6 +376,10 @@ const preparePublicCodexHome = async (ctx) => {
         await rename(legacyHome, publicHome);
       } catch (err) {
         if (err?.code !== 'EXDEV') throw err;
+        console.warn(
+          `[codex] ${legacyHome} is on another filesystem from ${publicHome}; starting a fresh Codex home. `
+          + 'Earlier sessions stay in the old home and will not resume; move it there by hand to keep them.',
+        );
       }
     }
   }

@@ -1153,6 +1153,13 @@ describe('codex adapter — the public Codex home on Linux', () => {
     expect(dirname(calls[0].opts.env.CODEX_HOME)).toBe(join(state, 'commonly', 'codex-homes'));
   });
 
+  test('an XDG_STATE_HOME under ~/.commonly is refused before anything is created', async () => {
+    const state = join(fakeHome, '.commonly', 'state');
+    await expect(publicSpawn(fakeHome, { cwd: project, env: { XDG_STATE_HOME: state } }))
+      .rejects.toThrow(/which the public sandbox denies on Linux/);
+    expect(existsSync(state)).toBe(false);
+  });
+
   test('on macOS the home stays under ~/.commonly', async () => {
     const calls = await publicSpawn(fakeHome, { platform: 'darwin', cwd: project });
     expect(dirname(calls[0].opts.env.CODEX_HOME)).toBe(join(fakeHome, '.commonly', 'codex-homes'));
