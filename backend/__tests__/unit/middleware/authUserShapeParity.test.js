@@ -25,7 +25,7 @@ let mockApiTokenUser = null;
 // is invisible; with this one it reddens.
 const project = (row, fields) => {
   if (!row) return row;
-  const keys = String(fields).split(/\s+/).filter(Boolean);
+  const keys = String(fields).split(/\s+/).filter(Boolean).map((key) => key.replace(/^\+/, ''));
   return Object.fromEntries(keys.filter((k) => k in row).map((k) => [k, row[k]]));
 };
 
@@ -69,6 +69,7 @@ describe('auth middleware: both token branches leave the same req.user shape', (
       banned: false, username: 'lily', email: 'lily@example.com', role: 'admin',
     };
     mockApiTokenUser = {
+      apiTokenHash: require('crypto').createHash('sha256').update('cm_testtoken').digest('hex'),
       _id: ID, username: 'lily', email: 'lily@example.com', role: 'admin', banned: false,
     };
   });

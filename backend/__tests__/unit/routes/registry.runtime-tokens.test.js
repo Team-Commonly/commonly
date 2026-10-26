@@ -406,6 +406,28 @@ describe('agent runtime tokens', () => {
     expect(agentUser.save).toHaveBeenCalled();
   });
 
+
+  it('preserves an existing digest until explicit rotation', async () => {
+    Pod.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue({
+      _id: 'pod-1', createdBy: 'user-1', members: ['user-1'],
+    }) });
+    AgentInstallation.findOne.mockResolvedValue({ agentName: 'clawd-bot', podId: 'pod-1', status: 'active' });
+    const agentUser = {
+      _id: 'agent-1', apiTokenHash: 'a'.repeat(64),
+      generateApiToken: jest.fn().mockReturnValue('cm_new'), save: jest.fn().mockResolvedValue(true),
+    };
+    AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
+    AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
+    const existing = await request(app).post('/api/registry/pods/pod-1/agents/clawd-bot/user-token').send({});
+    expect(existing.body).toMatchObject({ existing: true, token: null, requiresRotation: true });
+    expect(agentUser.generateApiToken).not.toHaveBeenCalled();
+    expect(agentUser.save).toHaveBeenCalledTimes(1);
+    const rotated = await request(app).post('/api/registry/pods/pod-1/agents/clawd-bot/user-token').send({ force: true });
+    expect(rotated.body).toMatchObject({ existing: false, token: 'cm_new' });
+    expect(agentUser.generateApiToken).toHaveBeenCalledTimes(1);
+    expect(agentUser.save).toHaveBeenCalledTimes(2);
+  });
+
   it('returns user token metadata when present', async () => {
     Pod.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
