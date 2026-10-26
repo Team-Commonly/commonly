@@ -33,6 +33,7 @@ jest.mock('../../../models/ToolCall', () => ({
 // `/:podId/grants` as type=<podId>, id='grants' if it were mounted first
 // (Wren 67721 / Vera 67727). The controller is stubbed so that shadowing shows.
 jest.mock('../../../controllers/podController', () => ({
+  updatePodParent: jest.fn(),
   getAllPods: jest.fn((req, res) => res.status(500).json({ shadowed: 'getAllPods' })),
   getPodsByType: jest.fn((req, res) => res.status(500).json({ shadowed: 'getPodsByType' })),
   getPodById: jest.fn((req, res) => res.status(500).json({ shadowed: 'getPodById', params: req.params })),

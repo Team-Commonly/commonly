@@ -22,6 +22,8 @@ if (process.env.PG_HOST) {
 }
 
 export const deletePodCascade = async (podId: string): Promise<void> => {
+  // A hierarchy link is not ownership. Keep children and their contents.
+  await Pod.updateMany({ parentPod: podId }, { $unset: { parentPod: 1 } });
   await Message.deleteMany({ podId });
   if (PGMessage) {
     await PGMessage.deleteByPodId(podId);
