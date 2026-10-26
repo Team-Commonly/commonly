@@ -1,6 +1,6 @@
 jest.mock('../../../services/pgMessageReconcileService', () => ({ copyOne: jest.fn(), ensureLegacyIdIndex: jest.fn() }));
 
-const { backfillLocalMessages } = require('../../../scripts/backfill-local-messages-to-pg');
+const { backfillLocalMessages, exitCodeFor } = require('../../../scripts/backfill-local-messages-to-pg');
 
 const doc = (id) => ({ _id: { toString: () => id }, podId: 'p', userId: 'u', content: id, createdAt: new Date('2026-01-01') });
 
@@ -57,5 +57,20 @@ describe('backfillLocalMessages', () => {
     const deps = fakeDeps({ copy: async (d) => { if (d._id.toString() === 'a2') throw new Error('bad'); return 'moved'; } });
     const report = await backfillLocalMessages(deps, { apply: true, batchSize: 1 });
     expect(report).toMatchObject({ moved: 2, failed: 1 });
+  });
+});
+
+describe('exitCodeFor', () => {
+  it('a refused run exits 2, so an upgrade script stops', async () => {
+    const report = await backfillLocalMessages(fakeDeps({ overlap: 4 }), { apply: true });
+    expect(report.refused).toBe(true);
+    expect(exitCodeFor(report)).toBe(2);
+  });
+
+  it('a run with failed rows exits 1, and a clean run or dry run exits 0', async () => {
+    const failing = await backfillLocalMessages(fakeDeps({ copy: async () => { throw new Error('boom'); } }), { apply: true });
+    expect(exitCodeFor(failing)).toBe(1);
+    expect(exitCodeFor(await backfillLocalMessages(fakeDeps(), { apply: true }))).toBe(0);
+    expect(exitCodeFor(await backfillLocalMessages(fakeDeps()))).toBe(0);
   });
 });

@@ -129,6 +129,17 @@ export const productionDeps = (pool: PgPool): LocalBackfillDeps => {
   };
 };
 
+/**
+ * The process exit code for a finished run: 1 when rows failed, 2 when the run
+ * refused, so an upgrade script that runs this stops instead of carrying on
+ * without history; 0 otherwise (including a dry run).
+ */
+export const exitCodeFor = (report: Pick<LocalBackfillReport, 'refused' | 'failed'>): number => {
+  if (report.failed) return 1;
+  if (report.refused) return 2;
+  return 0;
+};
+
 export async function main(): Promise<void> {
   const apply = process.argv.includes('--apply');
   const force = process.argv.includes('--force');
@@ -142,16 +153,14 @@ export async function main(): Promise<void> {
     if (!await ensureLegacyIdIndex()) throw new Error('could not ensure the legacy_mongo_id index');
     const report = await backfillLocalMessages(productionDeps(pool), { apply, force });
     console.log(`[backfill-local-messages] ${JSON.stringify(report)}`);
+    process.exitCode = exitCodeFor(report);
     if (report.refused) {
-      // Non-zero, so an upgrade script that runs this stops instead of carrying on without history.
-      process.exitCode = 2;
       console.log(`REFUSED — PostgreSQL already holds ${report.overlap} messages with no Mongo id`
         + ' that predate the newest Mongo message. They may be the same history; copying would duplicate it.'
         + ' Re-run with --force only if you have checked.');
     } else if (!apply) {
       console.log('DRY RUN — nothing written. Re-run with --apply.');
     }
-    if (report.failed) process.exitCode = 1;
   } finally {
     await mongoose.disconnect();
     await pool.end();
