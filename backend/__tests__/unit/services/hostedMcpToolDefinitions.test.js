@@ -768,6 +768,74 @@ describe('hosted-MCP results are bounded', () => {
   });
 });
 
+// TASK-014: the credential a call presented never comes back in its result.
+// A refusal and a result share the exact-value step; only a refusal also gets
+// the token-shaped patterns, which would eat a result's ordinary ids.
+describe('hosted-MCP results carry no credential', () => {
+  const TOKEN = 'lin_oauth_TOKEN_SENTINEL_0123456789abcdef';
+  const ISSUE_ID = 'issue_01HZX8Q4C7B2M9N5P3R6T8V0WY';
+  const depsReplying = (result, status = 200) => makeDeps({
+    credentialFor: jest.fn(async () => ({ token: TOKEN })),
+    fetcher: jest.fn(async () => jsonResponse(
+      status === 200 ? { jsonrpc: '2.0', id: 1, result } : result,
+      status,
+    )),
+  });
+
+  it('removes the credential from a text result', async () => {
+    const deps = depsReplying({ content: [{ type: 'text', text: `authorised as ${TOKEN} for ENG` }] });
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).resolves.toEqual({
+      content: [{ type: 'text', text: 'authorised as [redacted] for ENG' }],
+    });
+  });
+
+  it('removes it from structuredContent, at any depth and in keys', async () => {
+    const deps = depsReplying({
+      content: [{ type: 'text', text: 'ok' }],
+      structuredContent: {
+        viewer: { token: TOKEN, teams: [{ name: 'ENG', links: [`https://x.test/?t=${TOKEN}`] }] },
+        [TOKEN]: 'keyed',
+      },
+    });
+    const result = await definitionFor('linear.list_issues', deps).call({}, CONNECTION);
+    expect(JSON.stringify(result)).not.toContain(TOKEN);
+    expect(result.structuredContent).toEqual({
+      viewer: { token: '[redacted]', teams: [{ name: 'ENG', links: ['https://x.test/?t=[redacted]'] }] },
+      '[redacted]': 'keyed',
+    });
+  });
+
+  it('removes it from the vendor\'s tool-level failure too', async () => {
+    const deps = depsReplying({ isError: true, content: [{ type: 'text', text: `${TOKEN} lacks scope` }] });
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).resolves.toEqual({
+      isError: true, content: [{ type: 'text', text: '[redacted] lacks scope' }],
+    });
+  });
+
+  it('removes it before the cap, so a cut cannot leave part of it behind', async () => {
+    const text = `${'a'.repeat(HOSTED_MCP_MAX_RESULT_CHARS - 10)}${TOKEN}${'b'.repeat(10_000)}`;
+    const deps = depsReplying({ content: [{ type: 'text', text }] });
+    const result = await definitionFor('linear.list_issues', deps).call({}, CONNECTION);
+    expect(result.truncated).toBe(true);
+    expect(result.content[0].text.endsWith('[redacted]')).toBe(true);
+    expect(JSON.stringify(result)).not.toContain(TOKEN.slice(0, 10));
+  });
+
+  it('keeps a long ordinary id in a result, which a refusal still redacts', async () => {
+    const vendor = {
+      content: [{ type: 'text', text: `created ${ISSUE_ID}` }],
+      structuredContent: { issue: { id: ISSUE_ID } },
+    };
+    await expect(definitionFor('linear.list_issues', depsReplying(vendor)).call({}, CONNECTION))
+      .resolves.toEqual(vendor);
+
+    const refused = depsReplying({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: `no ${ISSUE_ID}` } }, 400);
+    await expect(definitionFor('linear.list_issues', refused).call({}, CONNECTION)).rejects.toMatchObject({
+      code: 'provider_error', details: { vendorError: 'JSON-RPC -32000: no [redacted]' },
+    });
+  });
+});
+
 // TASK-496: exercise the real SDK and transport against captured vendor tool
 // lists. No Client/transport methods are mocked and no provider account is used.
 describe('SDK transport with Linear and Atlassian fixtures', () => {

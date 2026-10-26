@@ -1,5 +1,6 @@
 import { Transform } from 'node:stream';
-/** The per-spawn loopback proxy shared by OpenAI-compatible CLI adapters. */
+import { StringDecoder } from 'node:string_decoder';
+/** The per-spawn loopback proxy that holds a provider key for a CLI (OpenAI chat, Anthropic Messages, OpenAI Responses). */
 import { randomBytes, timingSafeEqual } from 'crypto';
 import { constants as fsConstants, realpathSync } from 'fs';
 import { createServer, request as httpRequest } from 'http';
@@ -37,6 +38,71 @@ export const redactProviderMaterial = (material) => {
       done();
     },
     flush(done) { this.push(pending); pending = Buffer.alloc(0); done(); },
+  });
+};
+
+const MAX_PINNED_REQUEST_BYTES = 8 * 1024 * 1024;
+const MAX_PINNED_RESPONSE_BYTES = 16 * 1024 * 1024;
+
+/**
+ * Checks that every completion an upstream serves names the pinned model.
+ * SSE is checked line by line, and nothing is released until a line has named
+ * the pinned model; after that only checked lines are released, so a chunk
+ * naming another model never reaches the CLI. Any other body is held whole and
+ * released only after its `model` is checked. A body that names no model is
+ * unverified, which counts as a failure: the pin is only as good as the check.
+ */
+const servedModelCheck = ({ pinned, stream, onServed }) => {
+  // A chunk boundary can fall inside a multi-byte character; the decoder
+  // carries the partial bytes into the next chunk instead of mangling both.
+  const decoder = new StringDecoder('utf8');
+  let pending = '';
+  let held = '';
+  let named = false;
+  let size = 0;
+  const check = (value) => {
+    if (typeof value !== 'string') return;
+    named = true;
+    onServed(value);
+    if (value !== pinned) throw new Error(`served model ${JSON.stringify(value)} is not the pinned ${JSON.stringify(pinned)}`);
+  };
+  const checkLine = (line) => {
+    const data = /^data:\s?(.*)$/.exec(line.replace(/\r$/, ''))?.[1];
+    if (data === undefined || data.trim() === '[DONE]' || !data.trim()) return;
+    let parsed;
+    try { parsed = JSON.parse(data); } catch { return; }
+    check(parsed?.model);
+  };
+  return new Transform({
+    transform(chunk, _encoding, done) {
+      size += chunk.length;
+      if (size > MAX_PINNED_RESPONSE_BYTES) { done(new Error('provider response exceeded the pinned-model check limit')); return; }
+      pending += decoder.write(chunk);
+      if (!stream) { done(); return; }
+      const end = pending.lastIndexOf('\n');
+      if (end < 0) { done(); return; }
+      const complete = pending.slice(0, end + 1);
+      pending = pending.slice(end + 1);
+      try { complete.split('\n').forEach(checkLine); } catch (error) { done(error); return; }
+      held += complete;
+      if (!named) { done(); return; }
+      const release = held;
+      held = '';
+      done(null, release);
+    },
+    flush(done) {
+      pending += decoder.end();
+      try {
+        if (stream) checkLine(pending);
+        else {
+          let parsed;
+          try { parsed = JSON.parse(pending); } catch { parsed = null; }
+          check(parsed?.model);
+        }
+        if (!named) throw new Error(`provider response named no model; the pinned ${JSON.stringify(pinned)} cannot be verified`);
+      } catch (error) { done(error); return; }
+      done(null, held + pending);
+    },
   });
 };
 
@@ -101,9 +167,34 @@ const readProviderKey = async (keyFile, adapterLabel) => {
   }
 };
 
+// The routes a CLI on each wire may call, relative to the configured base
+// path, and the header the real key goes out in. Anything else is refused.
+const WIRES = Object.freeze({
+  'openai-chat': { routes: [['POST', 'chat/completions'], ['GET', 'models']], auth: 'bearer' },
+  'anthropic-messages': {
+    routes: [['POST', 'v1/messages'], ['POST', 'v1/messages/count_tokens'], ['GET', 'v1/models']],
+    auth: 'x-api-key',
+  },
+  'openai-responses': { routes: [['POST', 'responses'], ['GET', 'models']], auth: 'bearer' },
+});
+export const PROVIDER_WIRES = Object.freeze(Object.keys(WIRES));
+
+const presents = (value, expected) => {
+  const supplied = Buffer.from(typeof value === 'string' ? value : '');
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
+};
+
 export const startProviderProxy = async ({
-  provider, keyFile, keyMaterial, tokenFile, socketPath, isolatedPort, adapterLabel = 'OpenCode',
+  provider, keyFile, keyMaterial, tokenFile, socketPath, isolatedPort, adapterLabel = 'OpenCode', wire = 'openai-chat',
+  // When set, every completion must request this model and be served by it.
+  pinnedModel,
 }) => {
+  const wireSpec = WIRES[wire];
+  if (!wireSpec) throw new Error(`${adapterLabel} provider wire must be one of ${PROVIDER_WIRES.join(', ')}`);
+  if (pinnedModel !== undefined && (typeof pinnedModel !== 'string' || !pinnedModel.trim())) {
+    throw new Error(`${adapterLabel} pinnedModel must be a non-empty string`);
+  }
+  const modelState = { requested: new Set(), served: new Set(), refused: 0, failures: [] };
   const upstream = new URL(provider.baseURL);
   if (socketPath && (!isAbsolute(socketPath)
     || !Number.isInteger(isolatedPort) || isolatedPort < 1 || isolatedPort > 65535)) {
@@ -117,8 +208,13 @@ export const startProviderProxy = async ({
   const upstreamKey = keyMaterial === undefined ? await readProviderKey(keyFile, adapterLabel) : keyMaterial;
   if (typeof upstreamKey !== 'string' || !upstreamKey || /[\r\n]/.test(upstreamKey)) throw new Error('Invalid provider key');
   const proxyToken = randomBytes(32).toString('base64url');
-  await writeFile(tokenFile, proxyToken, { encoding: 'utf8', mode: 0o600 });
-  await chmod(tokenFile, 0o600);
+  // A caller that hands the token to its child in memory needs no file.
+  if (tokenFile) {
+    await writeFile(tokenFile, proxyToken, { encoding: 'utf8', mode: 0o600 });
+    await chmod(tokenFile, 0o600);
+  }
+  const bearerToken = Buffer.from(`Bearer ${proxyToken}`);
+  const bareToken = Buffer.from(proxyToken);
 
   const logRefusedRequest = (method, requestPath) => {
     let normalizedPath = '/';
@@ -132,29 +228,34 @@ export const startProviderProxy = async ({
     process.stderr.write(`[${adapterLabel.toLowerCase()}] provider proxy refused ${safeMethod} ${normalizedPath}\n`);
   };
 
+  // A refusal answers before the request body has been read. A keep-alive
+  // client that reuses that socket can have its next request reset, so every
+  // refusal on every wire also closes the connection.
+  const refuse = (incoming, outgoing, status, headers = {}, body = undefined) => {
+    incoming.resume();
+    outgoing.writeHead(status, { ...headers, connection: 'close' });
+    outgoing.end(body);
+  };
+
   const server = createServer((incoming, outgoing) => {
-    const supplied = Buffer.from(incoming.headers.authorization || '');
-    const expected = Buffer.from(`Bearer ${proxyToken}`);
-    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
-      incoming.resume();
-      outgoing.writeHead(401).end();
+    // Anthropic clients send their key as x-api-key, the others as a Bearer.
+    if (!presents(incoming.headers.authorization, bearerToken)
+      && !presents(incoming.headers['x-api-key'], bareToken)) {
+      refuse(incoming, outgoing, 401);
       return;
     }
     if (!['GET', 'POST'].includes(incoming.method || '')) {
-      incoming.resume();
-      outgoing.writeHead(405).end();
+      refuse(incoming, outgoing, 405);
       return;
     }
     const rejectRoute = (path) => {
       logRefusedRequest(incoming.method, path);
-      incoming.resume();
-      outgoing.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
-      outgoing.end(`Unsupported provider request: ${incoming.method || 'UNKNOWN'} ${path}`);
+      refuse(incoming, outgoing, 403, { 'content-type': 'text/plain; charset=utf-8' },
+        `Unsupported provider request: ${incoming.method || 'UNKNOWN'} ${path}`);
     };
     const rejectBadRequest = () => {
       logRefusedRequest(incoming.method, incoming.url);
-      incoming.resume();
-      outgoing.writeHead(400).end();
+      refuse(incoming, outgoing, 400);
     };
 
     let target;
@@ -169,8 +270,8 @@ export const startProviderProxy = async ({
         return;
       }
       // The CLI owns this local request path, so never use it as an outbound
-      // URL. The OpenAI-compatible chat provider needs only these fixed routes;
-      // parse the incoming URL against a loopback sentinel, then select a
+      // URL. Each wire needs only the fixed routes in WIRES; parse the
+      // incoming URL against a loopback sentinel, then select a
       // constant endpoint after matching the configured base path exactly.
       // This keeps a CLI request from turning the proxy into an arbitrary
       // path/URL fetcher (including paths on a local provider host).
@@ -180,17 +281,13 @@ export const startProviderProxy = async ({
         return;
       }
       const configuredPath = basePath === '/' ? '' : basePath;
-      let endpoint;
-      if (incoming.method === 'POST'
-        && requested.pathname === `${configuredPath}/chat/completions`) {
-        endpoint = 'chat/completions';
-      } else if (incoming.method === 'GET'
-        && requested.pathname === `${configuredPath}/models`) {
-        endpoint = 'models';
-      } else {
+      const route = wireSpec.routes.find(([method, path]) => incoming.method === method
+        && requested.pathname === `${configuredPath}/${path}`);
+      if (!route) {
         rejectRoute(requested.pathname);
         return;
       }
+      const endpoint = route[1];
       target = {
         path: `${configuredPath}/${endpoint}`,
         protocol: upstream.protocol,
@@ -209,45 +306,108 @@ export const startProviderProxy = async ({
         'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade',
         'x-api-key',
       ].includes(name.toLowerCase())));
-    headers.authorization = `Bearer ${upstreamKey}`;
+    if (wireSpec.auth === 'x-api-key') headers['x-api-key'] = upstreamKey;
+    else headers.authorization = `Bearer ${upstreamKey}`;
     headers.host = target.host;
     headers['accept-encoding'] = 'identity';
-    const request = (target.protocol === 'https:' ? httpsRequest : httpRequest)({
-      protocol: target.protocol,
-      hostname: target.hostname,
-      port: target.port,
-      path: target.path,
-      method: incoming.method,
-      headers,
-    }, (response) => {
-      if (response.statusCode >= 300 && response.statusCode < 400) {
-        response.resume();
-        outgoing.writeHead(502).end('Provider redirects are not supported');
+    const pinned = pinnedModel !== undefined && target.path.endsWith('/chat/completions');
+    const forward = (body) => {
+      let streamed = false;
+      if (body) {
+        headers['content-length'] = String(body.length);
+        try { streamed = JSON.parse(body.toString('utf8'))?.stream === true; } catch { /* checked before forward */ }
+      }
+      const request = (target.protocol === 'https:' ? httpsRequest : httpRequest)({
+        protocol: target.protocol,
+        hostname: target.hostname,
+        port: target.port,
+        path: target.path,
+        method: incoming.method,
+        headers,
+      }, (response) => {
+        if (response.statusCode >= 300 && response.statusCode < 400) {
+          response.resume();
+          outgoing.writeHead(502).end('Provider redirects are not supported');
+          return;
+        }
+        if (response.headers['content-encoding'] && response.headers['content-encoding'] !== 'identity') {
+          response.resume(); outgoing.writeHead(502).end('Compressed provider responses are not supported'); return;
+        }
+        const responseHeaders = Object.fromEntries(Object.entries(response.headers)
+          .filter(([name]) => ![
+            'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+            'te', 'trailer', 'transfer-encoding', 'upgrade',
+          ].includes(name.toLowerCase())));
+        delete responseHeaders['content-length'];
+        for (const [name, value] of Object.entries(responseHeaders)) {
+          if (typeof value === 'string') responseHeaders[name] = value.split(upstreamKey).join('[redacted]');
+          else if (Array.isArray(value)) responseHeaders[name] = value.map((entry) => entry.split(upstreamKey).join('[redacted]'));
+        }
+        const ok = response.statusCode >= 200 && response.statusCode < 300;
+        if (!pinned || !ok) {
+          outgoing.writeHead(response.statusCode || 502, responseHeaders);
+          response.pipe(redactProviderMaterial(upstreamKey)).pipe(outgoing);
+          return;
+        }
+        const sse = streamed || /text\/event-stream/i.test(String(response.headers['content-type'] || ''));
+        const check = servedModelCheck({
+          pinned: pinnedModel, stream: sse, onServed: (served) => modelState.served.add(served),
+        });
+        const fail = (error) => {
+          modelState.failures.push(error.message);
+          process.stderr.write(`[${adapterLabel.toLowerCase()}] provider proxy: ${error.message}\n`);
+          response.destroy();
+          if (!outgoing.headersSent) outgoing.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' }).end('Served model check failed');
+          else outgoing.destroy();
+        };
+        check.on('error', fail);
+        // A stream's headers go out at once; a whole body waits for its check.
+        if (sse) outgoing.writeHead(response.statusCode, responseHeaders);
+        else check.once('data', () => { if (!outgoing.headersSent) outgoing.writeHead(response.statusCode, responseHeaders); });
+        response.pipe(check).pipe(redactProviderMaterial(upstreamKey)).pipe(outgoing);
+      });
+      request.on('error', () => {
+        if (!outgoing.headersSent) outgoing.writeHead(502);
+        outgoing.end('Provider request failed');
+      });
+      outgoing.on('close', () => request.destroy());
+      incoming.on('aborted', () => request.destroy());
+      if (body) request.end(body);
+      else incoming.pipe(request);
+    };
+    if (!pinned) {
+      forward(null);
+      return;
+    }
+    // A pinned proxy reads the request first: a completion for any other model
+    // is refused here, before the provider bills it.
+    const chunks = [];
+    let size = 0;
+    incoming.on('data', (chunk) => {
+      size += chunk.length;
+      if (size <= MAX_PINNED_REQUEST_BYTES) chunks.push(chunk);
+    });
+    incoming.on('end', () => {
+      if (size > MAX_PINNED_REQUEST_BYTES) { outgoing.writeHead(413).end(); return; }
+      const body = Buffer.concat(chunks);
+      let requested;
+      try { requested = JSON.parse(body.toString('utf8'))?.model; } catch { requested = undefined; }
+      if (requested !== pinnedModel) {
+        modelState.refused += 1;
+        process.stderr.write(`[${adapterLabel.toLowerCase()}] provider proxy refused a completion for an unpinned model\n`);
+        outgoing.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
+        outgoing.end(`This seat is pinned to ${pinnedModel}`);
         return;
       }
-      if (response.headers['content-encoding'] && response.headers['content-encoding'] !== 'identity') {
-        response.resume(); outgoing.writeHead(502).end('Compressed provider responses are not supported'); return;
-      }
-      const responseHeaders = Object.fromEntries(Object.entries(response.headers)
-        .filter(([name]) => ![
-          'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
-          'te', 'trailer', 'transfer-encoding', 'upgrade',
-        ].includes(name.toLowerCase())));
-      delete responseHeaders['content-length'];
-      for (const [name, value] of Object.entries(responseHeaders)) {
-        if (typeof value === 'string') responseHeaders[name] = value.split(upstreamKey).join('[redacted]');
-        else if (Array.isArray(value)) responseHeaders[name] = value.map((entry) => entry.split(upstreamKey).join('[redacted]'));
-      }
-      outgoing.writeHead(response.statusCode || 502, responseHeaders);
-      response.pipe(redactProviderMaterial(upstreamKey)).pipe(outgoing);
+      modelState.requested.add(requested);
+      forward(body);
     });
-    request.on('error', () => {
-      if (!outgoing.headersSent) outgoing.writeHead(502);
-      outgoing.end('Provider request failed');
-    });
-    outgoing.on('close', () => request.destroy());
-    incoming.on('aborted', () => request.destroy());
-    incoming.pipe(request);
+  });
+
+  // A WebSocket client (codex on the Responses wire) falls back to HTTP SSE on
+  // 426. Nothing is relayed over an upgrade, so no token check is needed first.
+  server.on('upgrade', (_incoming, socket) => {
+    socket.end('HTTP/1.1 426 Upgrade Required\r\nconnection: close\r\ncontent-length: 0\r\n\r\n');
   });
 
   await new Promise((resolve, reject) => {
@@ -271,9 +431,18 @@ export const startProviderProxy = async ({
   const proxyBaseURL = new URL(upstream.pathname, `http://127.0.0.1:${port}`).toString();
   return {
     baseURL: proxyBaseURL,
+    token: proxyToken,
     tokenFile,
     socketPath,
     port,
+    /** The pin's verdict so far: what was asked for, what was served, and what failed. */
+    modelCheck: () => ({
+      pinned: pinnedModel ?? null,
+      requested: [...modelState.requested],
+      served: [...modelState.served],
+      refused: modelState.refused,
+      failures: [...modelState.failures],
+    }),
     close: () => new Promise((resolve) => {
       server.close(async () => {
         if (socketPath) await unlink(socketPath).catch(() => {});

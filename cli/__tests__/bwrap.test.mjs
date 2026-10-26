@@ -181,6 +181,43 @@ describe('wrapArgvWithBwrap', () => {
     expect(argv).not.toContain('/home/operator/.config/commonly');
   });
 
+  itLinux('binds an adapter-owned HOME writable, separate from a read-only workspace', () => {
+    const argv = wrapArgvWithBwrap(['claude'], {}, {
+      workspacePath: '/tmp/ws',
+      workspaceReadOnly: true,
+      homePath: '/home/u/.commonly/claude-homes/abc',
+      writablePaths: ['/home/u/.commonly/claude-homes/abc'],
+      readOnlyWorkspaceEntries: ['.git'],
+    });
+    const at = (flag, p) => argv.findIndex((arg, i) => arg === flag && argv[i + 1] === p && argv[i + 2] === p);
+    expect(at('--bind', '/home/u/.commonly/claude-homes/abc')).toBeGreaterThan(-1);
+    expect(at('--ro-bind', '/tmp/ws')).toBeGreaterThan(-1);
+    expect(at('--bind', '/tmp/ws')).toBe(-1);
+    expect(at('--ro-bind-try', '/tmp/ws/.git')).toBeGreaterThan(at('--ro-bind', '/tmp/ws'));
+    const homeIndex = argv.indexOf('HOME');
+    expect(argv[homeIndex + 1]).toBe('/home/u/.commonly/claude-homes/abc');
+  });
+
+  itLinux('in a writable workspace a read-only entry is bound strictly, so a missing one stops bwrap', () => {
+    const argv = wrapArgvWithBwrap(['claude'], {}, {
+      workspacePath: '/tmp/ws', readOnlyWorkspaceEntries: ['.git'],
+    });
+    const at = (flag, p) => argv.findIndex((arg, i) => arg === flag && argv[i + 1] === p && argv[i + 2] === p);
+    expect(at('--ro-bind', '/tmp/ws/.git')).toBeGreaterThan(at('--bind', '/tmp/ws'));
+    expect(at('--ro-bind-try', '/tmp/ws/.git')).toBe(-1);
+  });
+
+  itLinux('rejects a relative writable path and a workspace entry that leaves the workspace', () => {
+    expect(() => wrapArgvWithBwrap(['claude'], {}, {
+      workspacePath: '/tmp/ws', writablePaths: ['state'],
+    })).toThrow(/writablePaths entries must be absolute/);
+    for (const entry of ['../outside', '/etc', 'a/../../b']) {
+      expect(() => wrapArgvWithBwrap(['claude'], {}, {
+        workspacePath: '/tmp/ws', readOnlyWorkspaceEntries: [entry],
+      })).toThrow(/relative names inside the workspace/);
+    }
+  });
+
   itLinux('rejects relative adapter-owned transient paths', () => {
     expect(() => wrapArgvWithBwrap(
       ['claude'],

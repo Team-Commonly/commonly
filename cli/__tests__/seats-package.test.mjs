@@ -66,7 +66,7 @@ describe('packages/seats', () => {
   });
 
   test('the CLI provider proxy is the package module', () => {
-    expect(Object.keys(cliProxy).sort()).toEqual(['redactProviderMaterial', 'resolveProviderKeyFile', 'startProviderProxy']);
+    expect(Object.keys(cliProxy).sort()).toEqual(['PROVIDER_WIRES', 'redactProviderMaterial', 'resolveProviderKeyFile', 'startProviderProxy']);
     for (const name of Object.keys(cliProxy)) expect(cliProxy[name]).toBe(seatsProxy[name]);
   });
 

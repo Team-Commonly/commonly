@@ -3,13 +3,17 @@
  * and which tool calls it may make without asking, only after asking, or never.
  *
  *   {
- *     credentials: [{ name: 'OPENAI_API_KEY', from: 'env'|'file'|'resolver', ref? }],
+ *     credentials: [{ name: 'OPENAI_API_KEY', from: 'env'|'file'|'resolver', ref?, inject? }],
  *     tools: { allow: [pattern], ask: [pattern], deny: [pattern] },
  *   }
  *
  * `from: 'env'` copies baseEnv[ref ?? name]; `from: 'file'` reads the absolute
  * path in `ref`; `from: 'resolver'` asks the host's resolveSecret(name, spec),
  * with `ref` as an opaque hint for it.
+ *
+ * `inject: true` keeps the value out of the run: its env gets a per-run proxy
+ * token under the name instead, and a loopback provider proxy adds the real
+ * key to outbound requests. Default false: the run holds the value.
  *
  * A tool pattern is `<kind>` or `<kind>:<title glob>`, where kind is one of
  * ACP's ToolKind values or `*`. `execute` matches every execute call;
@@ -61,8 +65,8 @@ const parsePattern = (pattern, where) => {
 const validateCredential = (credential, index, seen) => {
   const where = `credentials[${index}]`;
   if (!isPlainObject(credential)) fail(`${where} must be an object`);
-  refuseUnknownKeys(credential, ['name', 'from', 'ref'], `${where}.`);
-  const { name, from, ref } = credential;
+  refuseUnknownKeys(credential, ['name', 'from', 'ref', 'inject'], `${where}.`);
+  const { name, from, ref, inject } = credential;
   if (typeof name !== 'string' || !ENV_NAME.test(name)) fail(`${where}.name must be an ENV_NAME (A-Z, 0-9, _)`);
   if (RESERVED_NAME.test(name)) fail(`${where}.name ${name} is reserved for the run env`);
   if (seen.has(name)) fail(`${where}.name ${name} is granted twice`);
@@ -71,7 +75,8 @@ const validateCredential = (credential, index, seen) => {
   if (ref !== undefined && (typeof ref !== 'string' || !ref)) fail(`${where}.ref must be a non-empty string`);
   if (from === 'env' && ref !== undefined && !ENV_NAME.test(ref)) fail(`${where}.ref must be an ENV_NAME for from: env`);
   if (from === 'file' && (ref === undefined || !ref.startsWith('/'))) fail(`${where}.ref must be an absolute path for from: file`);
-  return Object.freeze(ref === undefined ? { name, from } : { name, from, ref });
+  if (inject !== undefined && typeof inject !== 'boolean') fail(`${where}.inject must be true or false`);
+  return Object.freeze({ name, from, ...(ref === undefined ? {} : { ref }), ...(inject ? { inject } : {}) });
 };
 
 /** Validate and freeze a grant. Throws on the first problem; never repairs one. */

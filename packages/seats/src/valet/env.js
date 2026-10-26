@@ -19,6 +19,7 @@ import { traceOf } from '../trace/events.js';
 import { runFailure } from '../failures.js';
 import { MIN_CREDENTIAL_LENGTH } from '../upstream-refusal.js';
 import { validateGrant } from './grant.js';
+import { startProviderProxy } from '../wire/provider-proxy.js';
 
 // Same spirit as the goose adapter's SAFE_ENV: locale, terminal and TLS trust
 // only. USER/LOGNAME are left out on purpose; they name the account whose
@@ -104,8 +105,8 @@ const grantIssued = (meta) => {
 };
 
 /**
- * prepareRunEnv({ grant, baseEnv, resolveSecret, root?, require?, trace?, ctx?, grantMeta? })
- *   → { env, home, cleanup, granted: [names], grantId? }
+ * prepareRunEnv({ grant, baseEnv, resolveSecret, root?, require?, trace?, ctx?, grantMeta?, upstreams? })
+ *   → { env, home, cleanup, granted: [names], injected: { NAME: { baseURL, wire } }, grantId? }
  *
  * `require` lists credential names the adapter cannot run without; one the
  * grant does not name fails the run as credential_denied before any spawn.
@@ -114,14 +115,25 @@ const grantIssued = (meta) => {
  * silently lacks its key fails later and less legibly, and a value that short
  * would slip past the refusal-text reader's redaction.
  *
+ * A credential the grant marks `inject: true` never reaches the env. The host
+ * names its provider in `upstreams[NAME]` ({ baseURL, wire }, wire defaulting
+ * to openai-chat); the run gets a loopback provider proxy holding the value in
+ * memory, env[NAME] becomes that proxy's token, and `injected[NAME].baseURL`
+ * is where the host points the CLI. cleanup() closes the proxies. One with no
+ * upstream fails as credential_denied (no_upstream) before it is resolved.
+ * The proxy listens on 127.0.0.1, so a run without the host's network
+ * (bwrap --unshare-net) cannot reach it yet.
+ *
  * Events go to `trace`, else ctx.trace: grant.issued (only with grantMeta,
- * first), then credential.granted {names} or credential.denied {name, reason}.
+ * first), then credential.granted {names, injected?} or credential.denied
+ * {name, reason}. `injected` lists the names held by a proxy; the rest of
+ * `names` are held by the run.
  * Values never enter an event or a message, and a hook that offers
- * redact(values) is handed the resolved values so the record can scrub them
- * out of agent text too.
+ * redact(values) is handed the resolved values and each proxy token, so the
+ * record can scrub them out of agent text too.
  */
 export const prepareRunEnv = async ({
-  grant, baseEnv = {}, resolveSecret, root, require: required = [], trace, ctx, grantMeta,
+  grant, baseEnv = {}, resolveSecret, root, require: required = [], trace, ctx, grantMeta, upstreams = {},
 } = {}) => {
   const valid = validateGrant(grant);
   const hook = trace && typeof trace.emit === 'function' ? trace : traceOf(ctx);
@@ -132,6 +144,7 @@ export const prepareRunEnv = async ({
     not_granted: 'is not in the run grant',
     unresolved: 'could not be resolved',
     too_short: `resolved to a value shorter than ${MIN_CREDENTIAL_LENGTH} characters`,
+    no_upstream: 'is marked inject, but the host named no upstream for it',
   };
   const deny = (name, reason, values) => {
     hook.emit('credential.denied', { name, reason });
@@ -143,11 +156,18 @@ export const prepareRunEnv = async ({
   if (missing) throw deny(missing, 'not_granted', []);
 
   const { home, dirs } = await makeHome(root);
-  const cleanup = () => rm(home, { recursive: true, force: true });
+  const proxies = [];
+  const cleanup = async () => {
+    await Promise.all(proxies.splice(0).map((proxy) => proxy.close()));
+    await rm(home, { recursive: true, force: true });
+  };
   const env = { ...pickBaseEnv(baseEnv, realHomes), HOME: home, ...dirs };
   const values = [];
+  const injected = {};
   try {
     for (const spec of valid.credentials) {
+      const upstream = spec.inject ? upstreams[spec.name] : undefined;
+      if (spec.inject && !upstream) throw deny(spec.name, 'no_upstream', values);
       let value;
       // A resolver's error text may quote the secret it failed on; drop it.
       try { value = await resolveOne(spec, { baseEnv, resolveSecret }); } catch { value = undefined; }
@@ -156,14 +176,26 @@ export const prepareRunEnv = async ({
       // refusal-text reader would not redact it. Refuse it here, before spawn.
       if (value.length < MIN_CREDENTIAL_LENGTH) throw deny(spec.name, 'too_short', values);
       values.push(value);
-      env[spec.name] = value;
+      if (upstream) {
+        const wire = upstream.wire ?? 'openai-chat';
+        const proxy = await startProviderProxy({
+          provider: { baseURL: upstream.baseURL }, keyMaterial: value, wire, adapterLabel: 'Valet',
+        });
+        proxies.push(proxy);
+        env[spec.name] = proxy.token;
+        injected[spec.name] = { baseURL: proxy.baseURL, wire };
+      } else {
+        env[spec.name] = value;
+      }
     }
   } catch (error) {
     await cleanup();
     throw error;
   }
-  if (typeof hook.redact === 'function') hook.redact(values);
+  // A proxy token authorizes provider calls until cleanup, so the record scrubs it too.
+  if (typeof hook.redact === 'function') hook.redact([...values, ...proxies.map((proxy) => proxy.token)]);
   const names = valid.credentials.map((c) => c.name);
-  hook.emit('credential.granted', { names });
-  return { env, home, cleanup, granted: names, ...(issued ? { grantId: issued.grantId } : {}) };
+  const proxied = Object.keys(injected);
+  hook.emit('credential.granted', proxied.length ? { names, injected: proxied } : { names });
+  return { env, home, cleanup, granted: names, injected, ...(issued ? { grantId: issued.grantId } : {}) };
 };

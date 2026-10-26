@@ -16,14 +16,20 @@ type RateLimitRequest = {
 // The key is taken before any route's auth check runs, so the token branch
 // buckets by the PRESENTED credential: two requests carrying the same header
 // share a bucket whether or not that header authenticates anything. The
-// no-header branch defers to `cloudflareIpRateLimitKeyGenerator`, which owns the
+// credential is the token `auth` extracts (`auth.ts:34-35`): `Authorization`
+// without its `Bearer ` prefix, else `x-auth-token`. Hash a raw header instead
+// and one token sent three ways (`Bearer t`, bare `t`, `x-auth-token: t`) holds
+// three budgets; read `Authorization` alone and an `x-auth-token` caller shares
+// its address's budget with every caller behind that address.
+// The no-header branch defers to `cloudflareIpRateLimitKeyGenerator`, which owns the
 // `cf-connecting-ip`-then-`req.ip` rule (`ipRateLimit.ts:49`) — read on its own
 // here, `req.ip` is a cloudflared pod address for every external caller, so this
 // branch was one instance-wide bucket (`server.ts:94-101`, TASK-110's class).
 export const integrationsRateLimitKey = (req: RateLimitRequest): string => {
-  const authHeader = req.get?.('authorization');
-  if (authHeader) {
-    return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
+  const credential = req.get?.('authorization')?.replace('Bearer ', '')
+    || req.get?.('x-auth-token');
+  if (credential) {
+    return `tok:${createHash('sha256').update(credential).digest('hex').slice(0, 16)}`;
   }
   // Structural type → the helper's express `Request`: this module keeps its own
   // type so the key stays unit-testable without an express request.
