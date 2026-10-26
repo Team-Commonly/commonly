@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync as readdir, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync as readdir, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { delimiter, join, sep } from 'node:path';
 import { prepareRunEnv } from '../src/valet/env.js';
@@ -97,6 +97,16 @@ test('the base env keeps only the allowlist, and PATH loses entries under the re
       'XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME']);
     assert.equal(run.env.PATH, '/usr/bin:/bin');
   } finally { await run.cleanup(); }
+}));
+
+test('a HOME reached through a symlink loses PATH entries under its resolved path too', () => withScratch(async (root) => {
+  const real = join(realpathSync(root), 'real-home');
+  mkdirSync(real);
+  const link = join(root, 'home-link');
+  symlinkSync(real, link);
+  const baseEnv = { HOME: link, PATH: `/usr/bin:${real}/work/node_modules/.bin:${link}/.local/bin:/bin` };
+  const run = await prepareRunEnv({ grant: {}, baseEnv, root });
+  try { assert.equal(run.env.PATH, '/usr/bin:/bin'); } finally { await run.cleanup(); }
 }));
 
 test('file and resolver credentials resolve; resolveSecret sees the name and spec', () => withScratch(async (root) => {
