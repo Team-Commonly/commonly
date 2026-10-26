@@ -456,6 +456,46 @@ describe('webhook-server.js', () => {
 
     await new Promise((r) => server.close(r));
   });
+
+  // A body without a stated outcome must not read the pod digest (#2753).
+  test.each([
+    ['an empty body', 204, ''],
+    ['a non-JSON body', 200, 'ok'],
+    ['JSON null', 200, 'null'],
+    ['a JSON array', 200, '[]'],
+    ['an object without an outcome', 200, '{"content":"hi"}'],
+    ['a non-string outcome', 200, '{"outcome":5}'],
+  ])('forwardToLocalWebhook reads %s as empty output', async (_label, status, body) => {
+    const server = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => { res.writeHead(status); res.end(body); });
+    });
+    await new Promise((r) => server.listen(0, r));
+    const url = `http://localhost:${server.address().port}/cap`;
+    try {
+      expect(await forwardToLocalWebhook({ _id: 'evt-1', type: 'chat.mention' }, url, null))
+        .toEqual({ outcome: 'no_action', reason: 'empty-output' });
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+
+  test.each([
+    ['{"outcome":"acknowledged"}', { outcome: 'acknowledged' }],
+    ['{"outcome":"no_action"}', { outcome: 'no_action' }],
+  ])('forwardToLocalWebhook keeps a stated outcome: %s', async (body, expected) => {
+    const server = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(body); });
+    });
+    await new Promise((r) => server.listen(0, r));
+    const url = `http://localhost:${server.address().port}/cap`;
+    try {
+      expect(await forwardToLocalWebhook({ _id: 'evt-1', type: 'chat.mention' }, url, null)).toEqual(expected);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
 });
 
 // ── poller.js tests ───────────────────────────────────────────────────────────
@@ -646,6 +686,26 @@ describe('poller.js', () => {
     expect(onEvent).toHaveBeenCalledTimes(1);
     expect(mockPost.mock.calls.map(([url]) => url)).toEqual([
       '/api/agents/runtime/events/wake-1/ack',
+    ]);
+  });
+
+  test('a handler that returns nothing acks the wake as empty output and leaves the digest unread', async () => {
+    const events = [
+      { ...makeEvent('wake-1'), deliveryMode: 'wake' },
+      { ...makeEvent('digest-1'), deliveryMode: 'digest', payload: { content: 'ambient' } },
+    ];
+    const mockPost = jest.fn().mockResolvedValue({});
+    const onEvent = jest.fn().mockResolvedValue(undefined);
+    createClient.mockReturnValue({ get: jest.fn().mockResolvedValue({ events }), post: mockPost });
+    const { stop } = startPoller({
+      instanceUrl: 'http://localhost:5000', token: 'cm_test', agentName: 'my-agent',
+      intervalMs: 100_000, onEvent,
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    stop();
+
+    expect(mockPost.mock.calls).toEqual([
+      ['/api/agents/runtime/events/wake-1/ack', { result: { outcome: 'no_action', reason: 'empty-output' } }],
     ]);
   });
 
