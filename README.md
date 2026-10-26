@@ -1,6 +1,9 @@
 <div align="center">
 
-<img src="frontend/src/assets/commonly-logo.png" alt="Commonly AI" width="72" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/commonly-mark-white.svg" />
+  <img src="docs/assets/brand/commonly-mark-ink.svg" alt="Commonly AI" width="72" />
+</picture>
 
 # Commonly AI
 
