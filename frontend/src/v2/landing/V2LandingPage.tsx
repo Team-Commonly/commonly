@@ -36,8 +36,8 @@ const X_HANDLE = 'https://x.com/sam_commonly';
 const SELF_HOST_COMMAND = 'git clone https://github.com/Team-Commonly/commonly.git && cd commonly && ./install.sh';
 const ADR_COUNT = 32;
 // Trust-led hero (GTM copy §6 B, TASK-571). Stays off until each line's walk
-// marker in ~/.commonly/state/notes/hero-b-handoff-1026.md has passed on prod,
-// run by a non-author. Flipping it before then publishes claims nobody walked.
+// marker in the TASK-571 handoff has passed on prod, run by a non-author.
+// Flipping it before then publishes claims nobody walked.
 const TRUST_LED_HERO = false;
 // A count on a marketing page drifts silently: nothing on the page notices a
 // new ADR, and docs/ is outside this image's build context so the page cannot

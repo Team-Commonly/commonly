@@ -22,9 +22,9 @@ describe('Trust-led hero copy (TASK-571)', () => {
     expect(trustHero.proof).toBe('Each connector call through a grant is recorded.');
   });
 
-  test('no claim the walks have not earned: no "only", "needs", "tried", "any agent" or "zero trust"', () => {
+  test('no claim the walks have not earned: no "only", "needs", "tried", "first", "enforced", "zero trust", "any agent" or "nobody else"', () => {
     Object.values(trustHero).forEach((line) => {
-      expect(line).not.toMatch(/\b(only|needs|tried|zero trust)\b/i);
+      expect(line).not.toMatch(/\b(only|needs|tried|first|enforced|zero trust|nobody else)\b/i);
       expect(line).not.toMatch(/any agent/i);
     });
   });
