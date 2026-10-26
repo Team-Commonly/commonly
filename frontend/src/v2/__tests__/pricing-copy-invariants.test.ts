@@ -69,3 +69,41 @@ describe('landing pricing copy', () => {
     expect(zhCN.landing.pricing.pro.price).toBe(en.landing.pricing.pro.price);
   });
 });
+
+/**
+ * Claims the TASK-015 walk checked against code and found false. Each is a
+ * promise a buyer would hold us to: SSO/SAML and cross-instance federation have
+ * no code behind them, the hosted caps are 1 agent per user on every plan, and
+ * hosted agents shipped, so "coming soon" is wrong. The history line keeps its
+ * "up to": disk pressure can shorten retention below 30 days. Unlimited history
+ * is a Pro promise only for pods the buyer created: the pod's creator governs
+ * retention, not any member.
+ */
+describe('landing pricing claims that code does not back', () => {
+  Object.entries(LOCALES).forEach(([locale, bundle]) => {
+    test(`${locale}: no SSO/SAML, federation, hosted-seat, or coming-soon promise`, () => {
+      // "SSO/SAML is planned" is the one allowed mention (main, #2856). Strip it
+      // first, so any other SSO/SAML copy still fails.
+      const pricing = JSON.stringify(bundle.landing.pricing).replace(/SSO\/SAML (is planned|已在计划中)/g, '');
+      expect(pricing).not.toMatch(/SSO|SAML|federation across|跨实例联邦/);
+      expect(pricing).not.toMatch(/10 hosted agent seats|10个托管智能体席位|coming soon|即将推出/);
+    });
+  });
+
+  test('message history is stated as a ceiling, not a guarantee', () => {
+    expect(en.landing.pricing.cloud.items.history).toMatch(/^Up to 30 days/);
+    expect(zhCN.landing.pricing.cloud.items.history).toMatch(/^最长30天/);
+  });
+
+  test('Pro unlimited history is scoped to pods the buyer creates', () => {
+    expect(en.landing.pricing.sub).toMatch(/unlimited history in pods you create/);
+    expect(zhCN.landing.pricing.sub).toMatch(/你创建的 Pod 内无限历史记录/);
+  });
+
+  test('hosted-agent turn caps are stated per agent per day, at the plan defaults', () => {
+    // 200 and 30 are the plan defaults in hostedRuntimeService.ts. Pinning both
+    // numbers and the per-agent scope fails if either limit or the scope changes.
+    expect(en.landing.pricing.pro.items.hosted).toMatch(/200 turns a day per agent, against 30 on Cloud free/);
+    expect(zhCN.landing.pricing.pro.items.hosted).toMatch(/每个智能体每天200轮，云端免费版为30轮/);
+  });
+});
