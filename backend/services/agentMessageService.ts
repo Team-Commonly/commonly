@@ -843,6 +843,17 @@ class AgentMessageService {
     return run;
   }
 
+  /**
+   * Whether this agent's next post in the pod would be refused by the run cap.
+   * The same pieces postMessage reads: no cap in a 1:1 or an agent-admin pod.
+   */
+  static async holdsFloor(podId: unknown, userId: unknown, podType: unknown): Promise<boolean> {
+    if (podType === 'agent-admin' || AgentMessageService.isOneToOnePod(podType)) return false;
+    const cap = AgentMessageService.resolveConsecutiveRunCap();
+    if (cap <= 0) return false;
+    return (await AgentMessageService.countConsecutiveRun(podId, userId)) >= cap;
+  }
+
   static async findRecentDuplicate(options: {
     podId: unknown;
     userId: unknown;
@@ -2200,6 +2211,28 @@ class AgentMessageService {
    * exists without changing this array-shaped service contract for existing
    * internal consumers.
    */
+  static async authorIdsSince(podId: unknown, since: Date): Promise<string[]> {
+    const mongo = Message.distinct('userId', {
+      podId: { $eq: podId }, createdAt: { $gt: since }, messageType: { $ne: 'system' },
+    }) as Promise<unknown[]>;
+    if (!PGMessage || !process.env.PG_HOST) return (await mongo).map(String);
+    // A post that fell back to MongoDB while PostgreSQL was failing is only
+    // there until it is reconciled, so read both. An author either store
+    // returns did post, so one store failing keeps the other's authors; only
+    // both failing leaves nothing to answer with.
+    const [pg, fallback] = await Promise.allSettled([
+      (PGMessage as { findAuthorIdsSince(id: unknown, at: Date): Promise<string[]> }).findAuthorIdsSince(podId, since),
+      mongo,
+    ]);
+    if (pg.status === 'rejected' && fallback.status === 'rejected') throw pg.reason;
+    const ids: string[] = [];
+    for (const [store, read] of [['postgres', pg], ['mongo', fallback]] as const) {
+      if (read.status === 'fulfilled') ids.push(...read.value.map(String));
+      else console.warn(`[agent-message] ${store} author read failed:`, String(podId), (read.reason as Error)?.message);
+    }
+    return [...new Set(ids)];
+  }
+
   static async getRecentMessages(
     podId: unknown,
     limit = 20,

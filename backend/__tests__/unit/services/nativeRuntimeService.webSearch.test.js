@@ -139,6 +139,48 @@ describe('native turn with commonly_web_search', () => {
     expect(JSON.parse(toolMessages(1)[0].content)).toEqual(expect.objectContaining({ posted, ok: posted }));
   });
 
+  test('a post refused because the agent holds the floor ends the run that round, as a decline', async () => {
+    const capped = { success: false, refused: true, reason: 'consecutive_run_cap', consecutive: 3, guidance: 'attach it with commonly_attach_file' };
+    AgentMessageService.postMessage.mockResolvedValue(capped);
+    const post = (id) => toolCalls(call(id, 'commonly_post_message', { content: 'Here is the update.' }));
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('s1', 'commonly_web_search', { query: 'q' })))
+      .mockResolvedValueOnce(post('p1'))
+      .mockResolvedValueOnce(post('p2'))
+      .mockResolvedValueOnce(post('p3'))
+      .mockResolvedValueOnce(finalReply);
+
+    const result = await runAgent(install, mention);
+
+    expect(axios.post).toHaveBeenCalledTimes(2);
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+    expect(result).toEqual(expect.objectContaining({ status: 'succeeded', totalTurns: 2, noActionReason: 'consecutive_run_cap' }));
+    expect(savedRun.turns[1].toolCalls[0]).toEqual(expect.objectContaining({ error: 'message_post_refused' }));
+    const refusal = JSON.stringify(savedRun.turns[1].toolCalls[0].result);
+    expect(refusal).toContain('Wait for someone else to speak');
+    expect(refusal).not.toContain('commonly_attach_file');
+    // The queued retries were never requested; drop them so they cannot answer the next test.
+    axios.post.mockReset();
+    AgentMessageService.postMessage.mockReset().mockResolvedValue({ success: true });
+  });
+
+  test('a run that posted before its capped refusal is not reported as a decline', async () => {
+    const capped = { success: false, refused: true, reason: 'consecutive_run_cap', consecutive: 3 };
+    AgentMessageService.postMessage.mockResolvedValueOnce({ success: true, message: { id: 'posted-1' } })
+      .mockResolvedValueOnce(capped);
+    axios.post.mockResolvedValueOnce(toolCalls(
+      call('p1', 'commonly_post_message', { content: 'Done.' }),
+      call('p2', 'commonly_post_message', { content: 'One more thing.' }),
+    )).mockResolvedValueOnce(finalReply);
+    const result = await runAgent(install, mention);
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(2);
+    expect(savedRun.turns[0].toolCalls[1]).toEqual(expect.objectContaining({ error: 'message_post_refused' }));
+    expect(result.status).toBe('succeeded');
+    expect(result.noActionReason).toBeUndefined();
+    axios.post.mockReset();
+    AgentMessageService.postMessage.mockReset().mockResolvedValue({ success: true });
+  });
+
   test('results reach the model marked untrusted; the run keeps the count and the addresses only', async () => {
     axios.post
       .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_web_search', { query: 'node 26 release' })))
