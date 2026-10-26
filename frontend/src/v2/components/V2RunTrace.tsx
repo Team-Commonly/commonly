@@ -9,7 +9,8 @@ export interface RunTrace {
   trigger: string; startedAt: string; completedAt?: string; totalTokens: number;
   errorKind?: string; traceTruncated: boolean; omittedTurns: number; omittedToolCalls: number;
   turns: Array<{
-    turnIndex: number; model: string; elapsedMs: number; totalTokens?: number;
+    turnIndex: number; model: string; servedModel?: string; fallbacks?: number;
+    elapsedMs: number; totalTokens?: number;
     toolCalls: Array<{
       name: string; elapsedMs: number; callId?: string; outcome: string;
       trail?: { grantId?: string; credentialOwnerId?: string | null; outcome: string } | null;
@@ -61,7 +62,9 @@ const V2RunTrace: React.FC = () => {
       <ol className="v2-run-trace__turns">
         {trace.turns.map((turn) => <li key={turn.turnIndex}>
           <h2>{t('runTrace.turn', { number: turn.turnIndex + 1 })}</h2>
-          <p className="v2-run-trace__meta">{turn.model} · {turn.elapsedMs} ms · {turn.totalTokens ?? '—'} {t('runTrace.tokens')}</p>
+          <p className="v2-run-trace__meta">{turn.servedModel && turn.servedModel !== turn.model
+            ? t('runTrace.served', { requested: turn.model, served: turn.servedModel })
+            : turn.model} · {turn.elapsedMs} ms · {turn.totalTokens ?? '—'} {t('runTrace.tokens')}</p>
           {!turn.toolCalls.length && <p>{t('runTrace.noTools')}</p>}
           {turn.toolCalls.map((call, index) => <div className="v2-run-trace__call" key={`${call.callId || call.name}-${index}`}>
             <strong>{call.name}</strong><span>{enumLabel('outcomes', call.outcome)} · {call.elapsedMs} ms</span>

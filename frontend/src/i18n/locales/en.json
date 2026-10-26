@@ -16,6 +16,7 @@
     "empty": "No turns recorded yet.",
     "turn": "Turn {{number}}",
     "tokens": "tokens",
+    "served": "Asked {{requested}}, answered by {{served}}",
     "noTools": "No tool calls.",
     "call": "Call {{id}}",
     "grant": "Grant",

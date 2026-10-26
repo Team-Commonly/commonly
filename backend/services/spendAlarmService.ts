@@ -95,7 +95,9 @@ export const userSpendForDay = async (now: Date = new Date()): Promise<UserSpend
     { $unwind: '$turns' },
     {
       $group: {
-        _id: { userId: '$userId', model: '$turns.model' },
+        // Priced by the model that answered: a fallback bills the group that
+        // served it, not the one asked for (TASK-028). Older turns kept only `model`.
+        _id: { userId: '$userId', model: { $ifNull: ['$turns.servedModel', '$turns.model'] } },
         runs: { $addToSet: '$_id' },
         promptTokens: { $sum: { $ifNull: ['$turns.promptTokens', 0] } },
         completionTokens: { $sum: { $ifNull: ['$turns.completionTokens', 0] } },

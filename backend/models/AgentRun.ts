@@ -65,6 +65,11 @@ export interface IAgentRunTurn {
   llmResponseText?: string;
   elapsedMs: number;
   liteLLMCallId?: string;
+  // The model group that answered, when it can differ from `model`, the group
+  // requested (TASK-028). Absent on turns recorded before it was kept.
+  servedModel?: string;
+  // LiteLLM fallback hops taken before `servedModel` answered; absent means none.
+  fallbacks?: number;
 }
 
 export interface IAgentRun extends Document {
@@ -132,6 +137,8 @@ const AgentRunTurnSchema = new Schema<IAgentRunTurn>(
     llmResponseText: { type: String },
     elapsedMs: { type: Number, default: 0 },
     liteLLMCallId: { type: String },
+    servedModel: { type: String },
+    fallbacks: { type: Number },
   },
   { _id: false },
 );

@@ -16,6 +16,7 @@
     "empty": "尚未记录任何轮次。",
     "turn": "第{{number}}轮",
     "tokens": "个 token",
+    "served": "请求 {{requested}}，实际由 {{served}} 回答",
     "noTools": "无工具调用。",
     "call": "调用 {{id}}",
     "grant": "授权",

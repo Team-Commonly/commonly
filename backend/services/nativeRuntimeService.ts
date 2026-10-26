@@ -1395,6 +1395,7 @@ interface LiteLLMChoice {
 }
 
 interface LiteLLMResponse {
+  model?: string;
   choices?: LiteLLMChoice[];
   usage?: {
     prompt_tokens?: number;
@@ -1411,6 +1412,24 @@ function extractCallId(data: LiteLLMResponse, headers: Record<string, unknown>):
     | string
     | undefined;
   return headerId ? String(headerId) : undefined;
+}
+
+// Which model group answered the call (TASK-028). LiteLLM's router names it in
+// x-litellm-model-group on every response and counts the fallback hops it took
+// in x-litellm-attempted-fallbacks (v1.106.2). The proxy restamps the body's
+// `model` to the requested group unless a fallback happened, so the body comes
+// second. Native calls send disable_fallbacks (D81), so the two differ only if
+// something overrode it, such as a key whose metadata sets disable_fallbacks.
+function servedModelOf(
+  data: LiteLLMResponse,
+  headers: Record<string, unknown>,
+  requested: string,
+): { servedModel: string; fallbacks?: number } {
+  const group = headers?.['x-litellm-model-group'];
+  const hops = Number(headers?.['x-litellm-attempted-fallbacks']);
+  const servedModel = (typeof group === 'string' && group)
+    || (typeof data?.model === 'string' && data.model) || requested;
+  return { servedModel, ...(Number.isInteger(hops) && hops > 0 ? { fallbacks: hops } : {}) };
 }
 
 function mapTriggerType(raw: string): NativeRunTrigger['type'] {
@@ -2142,6 +2161,7 @@ export async function runAgent(
         llmResponseText: (msg.content as string | null) || undefined,
         elapsedMs: 0,
         liteLLMCallId: extractCallId(llmResponse, responseHeaders),
+        ...servedModelOf(llmResponse, responseHeaders, model),
       };
 
       const toolCalls = msg.tool_calls || [];
