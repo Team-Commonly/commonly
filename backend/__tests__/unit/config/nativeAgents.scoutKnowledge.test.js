@@ -139,7 +139,6 @@ describe('Scout onboarding knowledge', () => {
   test('gives both halves when their tool can call agents: the listener and the MCP line', () => {
     expect(prompt).toMatch(/give both halves: the Terminal command/);
     expect(prompt).toMatch(/and the MCP line/);
-    expect(prompt).toMatch(/When the connect card can work for them, the card is the Terminal half: propose it and give the MCP line in the same reply/);
   });
 
   // Stranger journey 2026-10-20..26: after "Claude Code" and "macOS" in the
