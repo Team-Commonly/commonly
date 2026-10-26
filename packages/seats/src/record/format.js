@@ -371,7 +371,13 @@ const CHECKS = {
     optionalArgsDigest(data, 'tool.call');
     return data;
   },
-  'credential.granted': (data) => ({ ...data, names: envNames(data.names ?? [], 'credential.granted.names') }),
+  'credential.granted': (data) => {
+    const names = envNames(data.names ?? [], 'credential.granted.names');
+    if (data.injected === undefined) return { ...data, names };
+    const injected = envNames(data.injected, 'credential.granted.injected');
+    if (!injected.every((name) => names.includes(name))) fail('credential.granted.injected must be a subset of names');
+    return { ...data, names, injected };
+  },
   'credential.denied': (data) => {
     envNames([data.name], 'credential.denied.name');
     return data;
