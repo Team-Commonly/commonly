@@ -128,14 +128,20 @@ mount; the third callback). When `router_settings.fallbacks` answers a request
 from another group, the caller still sees the group it asked for, so a
 community agent whose Nemotron route fails looks healthy while DeepSeek does
 the work (TASK-003). The callback prints one JSON line per fallback hop:
-`{"alarm":"model_fallback","outcome":"served"|"failed","requested","fallback","attempt","reason","keyAlias"}`.
-`reason` is the requested group's error, on one line and capped at 300 chars.
-No prompt, response or key hash goes into the line. The `model_fallback` log
-metric in `k8s/monitoring/log-metrics.json` counts these lines. Native hosted
-turns send `disable_fallbacks` (D81), so every count comes from another caller:
-the moltbot gateway, commonly-bot, or platform features through `llmService`.
+`{"alarm":"model_fallback","outcome","requested","from","fallback","attempt","reason"}`.
+`requested` is the group the caller asked for; `from` is the group that failed
+at this hop. The chart chains two hops (gpt-5.4 → nemotron → deepseek), and the
+router runs the inner hop inside the outer one, so the hop whose fallback
+answered logs first: it is `served`, and the outer hop of the same request is
+`passed`. `failed` means the fallback did not answer. `reason` is the failure's
+class and status only. The error message stays out, because a provider can
+echo the request into it, and so do the key and its alias. The `model_fallback` log
+metric in `k8s/monitoring/log-metrics.json` counts these lines, one per hop.
+Native hosted turns send `disable_fallbacks` (D81), so every count comes from
+another caller: the moltbot gateway, commonly-bot, or platform features
+through `llmService`.
 Verified 2026-10-26 against the real 1.106.2 Router with a local upstream that
-returns OpenRouter's 404 for Nemotron. Tests are in
+returns OpenRouter's 404 for Nemotron, one hop and two. Tests are in
 `backend/__tests__/unit/helm/litellmModelFallbackSignal.test.js`.
 
 **Why this works:** LiteLLM's `Authenticator.get_access_token()` calls `_read_auth_file()`

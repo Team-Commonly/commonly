@@ -9,6 +9,7 @@ attempted_fallbacks.
 """
 import asyncio
 import contextlib
+import dataclasses
 import importlib.util
 import io
 import json
@@ -37,14 +38,26 @@ class NotFoundError(Exception):
     status_code = 404
 
 
-def hop_kwargs(metadata_name='metadata'):
+@dataclasses.dataclass(slots=True)
+class Attempts:
+    """Stands in for AttemptedFallbackTargets, the object a request shares across
+    hops. Shaped like v1.106.2's: a slots dataclass, so unhashable and not
+    weak-referenceable, which a plain stub would hide."""
+    keys: frozenset = frozenset()
+
+
+GPT = 'gpt-5.4'
+
+
+def hop_kwargs(metadata_name='metadata', attempts=None, requested=NEMOTRON, fallback=DEEPSEEK, depth=1):
     return {
-        'model': DEEPSEEK,
+        'model': fallback,
         'messages': [{'role': 'user', 'content': 'private prompt text'}],
+        'attempted_targets': attempts if attempts is not None else Attempts(),
         metadata_name: {
-            'original_model_group': NEMOTRON,
-            'model_group': DEEPSEEK,
-            'attempted_fallbacks': 1,
+            'original_model_group': requested,
+            'model_group': fallback,
+            'attempted_fallbacks': depth,
             'user_api_key_alias': 'community-agent-key',
             'user_api_key_hash': 'hash-should-not-appear',
         },
@@ -58,39 +71,71 @@ def captured_lines(hook, *args):
     return [json.loads(line) for line in out.getvalue().splitlines() if line.strip()]
 
 
+served = signal.proxy_handler_instance.log_success_fallback_event
+failed = signal.proxy_handler_instance.log_failure_fallback_event
+
+
 class FallbackLine(unittest.TestCase):
     def test_a_served_fallback_names_both_groups_and_the_reason(self):
         error = NotFoundError('OpenrouterException - No endpoints found for nvidia/nemotron-3-super-120b-a12b:free.')
-        lines = captured_lines(signal.proxy_handler_instance.log_success_fallback_event, NEMOTRON, hop_kwargs(), error)
-        self.assertEqual(lines, [{
+        self.assertEqual(captured_lines(served, NEMOTRON, hop_kwargs(), error), [{
             'alarm': 'model_fallback',
             'outcome': 'served',
             'requested': NEMOTRON,
+            'from': NEMOTRON,
             'fallback': DEEPSEEK,
             'attempt': 1,
-            'reason': 'NotFoundError 404: OpenrouterException - No endpoints found for nvidia/nemotron-3-super-120b-a12b:free.',
-            'keyAlias': 'community-agent-key',
+            'reason': 'NotFoundError 404',
         }])
 
     def test_a_failed_fallback_is_reported_with_its_outcome(self):
-        lines = captured_lines(signal.proxy_handler_instance.log_failure_fallback_event, NEMOTRON, hop_kwargs(), NotFoundError('gone'))
+        lines = captured_lines(failed, NEMOTRON, hop_kwargs(), NotFoundError('gone'))
         self.assertEqual(len(lines), 1)
         self.assertEqual(lines[0]['outcome'], 'failed')
         self.assertEqual((lines[0]['requested'], lines[0]['fallback']), (NEMOTRON, DEEPSEEK))
 
+    def test_in_a_two_hop_chain_only_the_hop_that_answered_is_served(self):
+        # gpt-5.4 -> nemotron -> deepseek, as the chart chains them. The router
+        # runs the inner hop inside the outer one, so the inner hop logs first.
+        attempts = Attempts()
+        inner = captured_lines(served, NEMOTRON, hop_kwargs(attempts=attempts, requested=GPT, depth=2), NotFoundError('x'))
+        outer = captured_lines(served, GPT, hop_kwargs(attempts=attempts, requested=GPT, fallback=NEMOTRON), RuntimeError('x'))
+        self.assertEqual([(l['outcome'], l['requested'], l['from'], l['fallback']) for l in inner + outer], [
+            ('served', GPT, NEMOTRON, DEEPSEEK),
+            ('passed', GPT, GPT, NEMOTRON),
+        ])
+        # Another request starts fresh.
+        self.assertEqual(captured_lines(served, NEMOTRON, hop_kwargs(), None)[0]['outcome'], 'served')
+
+    def test_requests_are_remembered_up_to_a_bound(self):
+        first = Attempts()
+        captured_lines(served, NEMOTRON, hop_kwargs(attempts=first), None)
+        for _ in range(signal.ANSWERED_MAX):
+            captured_lines(served, NEMOTRON, hop_kwargs(), None)
+        self.assertEqual(len(signal._ANSWERED), signal.ANSWERED_MAX)
+        self.assertNotIn(id(first), signal._ANSWERED)
+
+    def test_a_hop_without_its_request_object_is_taken_at_its_word(self):
+        kwargs = hop_kwargs()
+        del kwargs['attempted_targets']
+        for _ in range(2):
+            self.assertEqual(captured_lines(served, NEMOTRON, kwargs, None)[0]['outcome'], 'served')
+
     def test_the_litellm_metadata_name_is_read_too(self):
         line = signal.fallback_line('served', NEMOTRON, hop_kwargs('litellm_metadata'), None)
-        self.assertEqual((line['attempt'], line['keyAlias'], line['reason']), (1, 'community-agent-key', None))
+        self.assertEqual((line['attempt'], line['requested'], line['reason']), (1, NEMOTRON, None))
 
-    def test_no_request_content_or_key_hash_is_logged(self):
+    def test_no_request_content_key_or_alias_is_logged(self):
         out = json.dumps(signal.fallback_line('served', NEMOTRON, hop_kwargs(), NotFoundError('x')))
-        self.assertNotIn('private prompt text', out)
-        self.assertNotIn('hash-should-not-appear', out)
+        for secret in ('private prompt text', 'hash-should-not-appear', 'community-agent-key'):
+            self.assertNotIn(secret, out)
 
-    def test_the_reason_is_one_line_and_bounded(self):
-        line = signal.fallback_line('served', NEMOTRON, hop_kwargs(), RuntimeError('a\n' + 'b' * 1000))
-        self.assertNotIn('\n', line['reason'])
-        self.assertLessEqual(len(line['reason']), len('RuntimeError: ') + signal.REASON_MAX)
+    def test_the_reason_never_carries_the_error_message(self):
+        # A provider can echo the request into its error, prompt included.
+        error = NotFoundError('400 invalid request: messages[0].content="private prompt text"')
+        line = signal.fallback_line('served', NEMOTRON, hop_kwargs(), error)
+        self.assertEqual(line['reason'], 'NotFoundError 404')
+        self.assertEqual(signal.fallback_line('served', NEMOTRON, hop_kwargs(), RuntimeError('a\nb'))['reason'], 'RuntimeError')
 
     def test_a_dict_fallback_target_falls_back_to_the_metadata_group(self):
         kwargs = hop_kwargs()
@@ -101,8 +146,8 @@ class FallbackLine(unittest.TestCase):
         class Unprintable:
             def __str__(self):
                 raise ValueError('no str')
-        for args in ((None, None, None), (NEMOTRON, {'model': DEEPSEEK}, Unprintable())):
-            lines = captured_lines(signal.proxy_handler_instance.log_success_fallback_event, *args)
+        for args in ((None, None, None), (NEMOTRON, {'model': DEEPSEEK, 'attempted_targets': []}, Unprintable())):
+            lines = captured_lines(served, *args)
             self.assertEqual(len(lines), 1)
             self.assertEqual(lines[0]['alarm'], 'model_fallback')
 

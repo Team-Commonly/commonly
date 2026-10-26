@@ -25,7 +25,7 @@
   },
   {
     "name": "model_fallback",
-    "description": "LiteLLM answered (outcome=served) or tried to answer (outcome=failed) a request from a model group other than the one requested, via router_settings.fallbacks (TASK-003). One line per fallback hop from k8s/helm/commonly/files/litellm/model_fallback_signal.py. The requested and fallback groups, the reason the requested group failed and the key alias are in the same log line. Native hosted turns refuse fallbacks (D81), so every count comes from another caller: the moltbot gateway, commonly-bot, or platform features.",
+    "description": "LiteLLM answered (outcome=served) or tried to answer (outcome=failed) a request from a model group other than the one requested, via router_settings.fallbacks (TASK-003). One line per fallback hop from k8s/helm/commonly/files/litellm/model_fallback_signal.py; on a two-hop chain the hop that answered is served and the outer hop is passed. The requested group, the group that failed, the fallback group and the failure's class and status are in the same log line. Native hosted turns refuse fallbacks (D81), so every count comes from another caller: the moltbot gateway, commonly-bot, or platform features.",
     "filter": "resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"litellm\" AND jsonPayload.alarm=\"model_fallback\"",
     "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
   },
