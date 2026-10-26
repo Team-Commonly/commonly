@@ -783,6 +783,15 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     );
   };
 
+  // Where the person who connected a hosted entry picks what it reaches (for
+  // GitHub, the App's install page). Shown on the offer and on the details of
+  // their live grant, since a grant takes the entry off the offer list.
+  const renderAccessLink = (entry: ToolCatalogEntry) => (
+    <a href={entry.accessPage} target="_blank" rel="noopener noreferrer">
+      {t('tools.chooseAccess', { defaultValue: 'Choose what {{label}} can reach', label: entry.label })}
+    </a>
+  );
+
   const renderNotYet = (entry: ToolCatalogEntry) => {
     const canAdd = entry.available && entry.connections.length > 0 && podIds.length > 0;
     const canInstallGithubApp = isAdmin && entry.installableId === 'github' && entry.available && entry.connections.length === 0;
@@ -814,11 +823,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
             <span className="v2-connector-row__detail">{entry.connectNotice}</span>
           )}
           {isHosted && entry.available && entry.accessPage && (
-            <span className="v2-connector-row__detail">
-              <a href={entry.accessPage} target="_blank" rel="noopener noreferrer">
-                {t('tools.chooseAccess', { defaultValue: 'Choose what {{label}} can reach', label: entry.label })}
-              </a>
-            </span>
+            <span className="v2-connector-row__detail">{renderAccessLink(entry)}</span>
           )}
         </span>
         {!entry.available && (
@@ -1034,6 +1039,11 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
               </>
             )}
           </dl>
+          {/* The granter is the connection's owner (the hosted mint refuses anyone
+              else), so the page they reach is the one that bounds this grant. */}
+          {!dead && isGranter(grant) && entry?.connectionType === 'hosted-mcp' && entry.available && entry.accessPage && (
+            <p className="v2-connector-aside__note">{renderAccessLink(entry)}</p>
+          )}
           {staleAfterChange?.oldGrantId === grant.grantId && (
             <div className="v2-connector-aside__actions" role="alert">
               <p className="v2-connector-aside__note">{t('tools.staleAfterChange', { defaultValue: 'The new grant is live. This old one still is too — its revoke did not go through.' })}</p>

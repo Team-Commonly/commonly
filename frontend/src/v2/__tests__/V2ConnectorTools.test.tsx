@@ -857,6 +857,25 @@ test('a hosted connector links to where the person chooses its reach, before and
   expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull();
 });
 
+// A live grant takes the entry off the offer list, so the page moves to the
+// grant's details. Only the granter, who owns the connection, is sent there.
+test('a live hosted grant keeps the reach link on its details for the granter only', async () => {
+  const accessPage = 'https://github.com/apps/commonly-connect/installations/new';
+  const entry = { ...linearEntry, accessPage };
+  mockTwoEntries({ catalog: [entry], grants: { p1: [grantLinear], p2: [] } });
+  const first = renderTools();
+  fireEvent.click(await screen.findByRole('button', { name: 'View Linear in Launch pod' }));
+  const aside = await screen.findByRole('complementary', { name: 'Grant details' });
+  expect(within(aside).getByRole('link', { name: 'Choose what Linear can reach' })).toHaveAttribute('href', accessPage);
+  first.unmount();
+
+  mockTwoEntries({ catalog: [entry], grants: { p1: [{ ...grantLinear, grantedBy: 'u2' }], p2: [] } });
+  renderTools();
+  fireEvent.click(await screen.findByRole('button', { name: 'View Linear in Launch pod' }));
+  const other = await screen.findByRole('complementary', { name: 'Grant details' });
+  expect(within(other).queryByRole('link', { name: /can reach/ })).toBeNull();
+});
+
 test('a hosted connector without an access page offers no reach link', async () => {
   mockApi([{ ...linearEntry, connections: [] }]);
   renderTools();

@@ -184,6 +184,21 @@ export const assertHostedMcpEntries = (
         );
       }
     }
+    // The catalogue hands this page to a person as a link. The prefix check
+    // alone accepts `https://#fragment`, which has no host to open.
+    if (entry.accessPage !== undefined) {
+      let page: URL | null = null;
+      try {
+        if (typeof entry.accessPage === 'string' && /^https:\/\/[^\s]+$/.test(entry.accessPage)) {
+          page = new URL(entry.accessPage);
+        }
+      } catch {
+        page = null;
+      }
+      if (!page || page.protocol !== 'https:' || !page.hostname) {
+        throw new Error(`hosted-mcp entry access page is not an absolute https URL: ${entry.id}`);
+      }
+    }
     // What removal will do with this entry
     // (services/connectionRemovalService.ts). A `revoke` that names no kind,
     // both, or a URL that is not https is not a refusal at call time — the
@@ -192,10 +207,6 @@ export const assertHostedMcpEntries = (
     // rows would end in a person holding an authorization nobody can revoke.
     // Refusing the entry at module load is the only place this can be caught
     // before that happens.
-    if (entry.accessPage !== undefined
-      && (typeof entry.accessPage !== 'string' || !/^https:\/\/[^\s]+$/.test(entry.accessPage))) {
-      throw new Error(`hosted-mcp entry access page is not an absolute https URL: ${entry.id}`);
-    }
     const revokeRefusal = hostedMcpRevokeRefusal(entry);
     if (revokeRefusal) {
       throw new Error(`hosted-mcp entry revoke ${revokeRefusal}: ${entry.id}`);
