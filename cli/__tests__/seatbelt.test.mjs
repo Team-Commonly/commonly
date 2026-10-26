@@ -217,6 +217,36 @@ describe('macOS Seatbelt profile', () => {
     })).toThrow(/valid TCP ports/);
   });
 
+  test('a loopback profile drops open network and the Security services, and nothing else', () => {
+    const port = 54321;
+    const base = {
+      workspacePath: workspace,
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      mcpConfigDir: mcp,
+      loopbackNetworkPorts: [port],
+    };
+    const open = buildSeatbeltProfile(base);
+    expect(buildSeatbeltProfile({ ...base, network: 'open' })).toBe(open);
+    expect(open).toMatch(/^\(allow network-outbound\)$/m);
+    expect(open).toContain('(global-name "com.apple.SecurityServer")');
+
+    const loopback = buildSeatbeltProfile({ ...base, network: 'loopback' });
+    expect(loopback).not.toMatch(/^\(allow network-outbound\)$/m);
+    expect(loopback).not.toContain('AF_SYSTEM');
+    for (const service of ['SecurityServer', 'securityd', 'ocspd', 'networkd', 'SystemConfiguration']) {
+      expect(loopback).not.toContain(`com.apple.${service}`);
+    }
+    expect(loopback).toContain(`(allow network-outbound (remote tcp "localhost:${port}"))`);
+    // Every line a loopback profile carries, the open one carries too.
+    const openLines = new Set(open.split('\n'));
+    expect(loopback.split('\n').filter((line) => !openLines.has(line))).toEqual([]);
+    const outbound = loopback.split('\n').filter((line) => line.includes('network-outbound'));
+    expect(outbound).toEqual([`(allow network-outbound (remote tcp "localhost:${port}"))`]);
+
+    expect(() => buildSeatbeltProfile({ ...base, network: 'none' })).toThrow(/open or loopback/);
+  });
+
   test('Claude gets the login-keychain file on request, and never the shared Claude temp root', () => {
     const keychains = join(homedir(), 'Library', 'Keychains');
     const claudeTmp = `/private/tmp/claude-${typeof process.getuid === 'function' ? process.getuid() : '0'}`;

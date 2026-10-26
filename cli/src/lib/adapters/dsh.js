@@ -1,12 +1,28 @@
 import { observeSpawn } from '../runtime-observation.js';
-/** DeepSeek Harness 0.2.1-rc.2, private seats only. Configuration is per spawn. */
+/**
+ * DeepSeek Harness 0.2.1-rc.2, private seats only. Configuration is per spawn.
+ *
+ * A seat runs plain, or confined: `sandbox: { mode: 'workspace', network:
+ * { policy: 'restricted' } }` runs dsh inside one Seatbelt profile that writes
+ * only the workspace and the seat's home, reaches only three loopback ports
+ * (the provider proxy, the Commonly instance relay and the GitHub egress
+ * proxy), and cannot reach the Security services the keychain sits behind.
+ * The provider proxy is pinned to the seat's model and checks the model each
+ * response names. dsh's own sandbox is turned off inside it, because a second
+ * Seatbelt cannot be applied under the first.
+ */
+import { spawnInOwnGroup, wantsOwnProcessGroup } from '@commonlyai/seats/process-group';
 import { requireSeatModel } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
-import { existsSync } from 'fs';
+import { existsSync, realpathSync } from 'fs';
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
-import { basename, join } from 'path';
+import { basename, delimiter, isAbsolute, join, sep } from 'path';
+import { startEgressProxy } from '../egress-proxy.js';
+import { startInstanceProxy } from '../instance-proxy.js';
+import { prepareMcpSpawn, selectedMcpVersionDir } from '../mcp-home.js';
+import { detectSeatbelt, wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { commonlyMcpServer } from '../default-environment.js';
 import { effectiveSandboxTrust, refuseWorkspaceTrust, validateEnvironmentSpec } from '../environment.js';
@@ -21,15 +37,56 @@ const PROXY_KEY_ENV = 'COMMONLY_DSH_PROXY_KEY';
 const MAX_TIMEOUT_MS = 15 * 60 * 1000;
 const SAFE_ENV = /^(?:PATH|LANG|LC_[A-Z_]+|TERM|USER|LOGNAME|NO_COLOR|CI|SSL_CERT_FILE|SSL_CERT_DIR)$/;
 
-export const assertPrivateDsh = (environment = {}) => {
+/** True for the one confined shape this adapter enforces; throws on any other sandbox. */
+export const isConfinedDsh = (environment = {}) => {
   const sandbox = environment?.sandbox || {};
   refuseWorkspaceTrust(sandbox, 'dsh');
   if (effectiveSandboxTrust(sandbox.trust) === 'public') {
     throw new Error('dsh adapter: public-trust seats are not supported; nested Seatbelt fails closed');
   }
-  if (sandbox.mode !== undefined) {
-    throw new Error(`dsh adapter: sandbox.mode=${sandbox.mode} cannot be enforced by this adapter`);
+  if (sandbox.mode === undefined) return false;
+  const { mode, network, ...rest } = sandbox;
+  const networkKeys = Object.keys(network || {});
+  if (mode === 'workspace' && network?.policy === 'restricted'
+    && networkKeys.length === 1 && Object.keys(rest).length === 0) return true;
+  throw new Error(`dsh adapter: sandbox.mode=${mode} cannot be enforced by this adapter; `
+    + "the one confined shape is { mode: 'workspace', network: { policy: 'restricted' } }");
+};
+
+export const assertPrivateDsh = (environment = {}) => { isConfinedDsh(environment); };
+
+const onPath = (name, env) => {
+  if (isAbsolute(name)) return existsSync(name) ? name : null;
+  for (const dir of String(env?.PATH || '').split(delimiter)) {
+    if (dir && existsSync(join(dir, name))) return join(dir, name);
   }
+  return null;
+};
+
+/**
+ * The script a dsh executable runs, and the outermost node_modules holding it:
+ * a confined run starts that script with this node, and reads that tree only.
+ */
+export const resolveDshEntry = (binary, env) => {
+  const found = onPath(binary, env);
+  if (!found) throw new Error(`dsh adapter: a confined seat could not find ${binary} on PATH`);
+  const entry = realpathSync(found);
+  const parts = entry.split(sep);
+  const root = parts.indexOf('node_modules');
+  if (root < 1 || !/\.(?:c|m)?js$/.test(entry)) {
+    throw new Error(`dsh adapter: a confined seat runs dsh from its node package; ${found} resolves to ${entry}`);
+  }
+  return { entry, packages: parts.slice(0, root + 1).join(sep) };
+};
+
+/** Fail a confined turn whose provider traffic broke the model pin. */
+export const assertServedModel = (check, credentials) => {
+  if (!check.refused && !check.failures.length) return;
+  const parts = [
+    ...(check.refused ? [`${check.refused} request(s) for a model other than ${check.pinned} refused`] : []),
+    ...check.failures,
+  ];
+  throw adapterFailure('dsh', `served model check failed: ${parts.join('; ')}`, { credentials, limit: 500 });
 };
 
 /** A stable home per agent and Commonly instance, never the operator's ~/.dsh. */
@@ -71,9 +128,17 @@ export const resolveCommonlyMcp = (declared, ctx) => {
   if (servers.length !== 1 || servers[0]?.name !== 'commonly') {
     throw new Error('dsh adapter: PR 1 supports only the Commonly MCP server');
   }
-  const server = servers[0];
-  if ((server.transport || 'stdio') !== 'stdio'
-    || !isCommonlyCommand(server.command) || !describeMcpCommand(server.command)?.isCommonly) {
+  const isCommonly = (entry) => (entry.transport || 'stdio') === 'stdio'
+    && isCommonlyCommand(entry.command) && !!describeMcpCommand(entry.command)?.isCommonly;
+  if (!isCommonly(servers[0])) {
+    throw new Error('dsh adapter: Commonly MCP must be a recognized stdio @commonlyai/mcp command');
+  }
+  // A confined seat runs the warmed build it can read, never a package runner,
+  // and that build is held to the same check as the declaration.
+  const server = ctx.prepareCommand
+    ? { ...servers[0], command: ctx.prepareCommand(servers[0].command) }
+    : servers[0];
+  if (!isCommonly(server)) {
     throw new Error('dsh adapter: Commonly MCP must be a recognized stdio @commonlyai/mcp command');
   }
   const delivery = deliverSeatCredential(server, {
@@ -101,7 +166,9 @@ export const resolveCommonlyMcp = (declared, ctx) => {
 };
 
 /** JSON is valid YAML; a generated patch has no expression or quoting ambiguity. */
-export const buildPatch = ({ proxyBaseURL, model, cwd, mcp, effort, deepseekOfficial = false }) => ([
+export const buildPatch = ({
+  proxyBaseURL, model, cwd, mcp, effort, deepseekOfficial = false, confined = false,
+}) => ([
   { id: 'llm-pi-ai', config: { providers: {
     commonly: {
       apiKeyEnv: PROXY_KEY_ENV, api: 'openai-completions', baseURL: proxyBaseURL,
@@ -124,7 +191,9 @@ export const buildPatch = ({ proxyBaseURL, model, cwd, mcp, effort, deepseekOffi
   { id: 'llm-deepseek', disabled: true },
   { id: 'llm-deepseek-account', disabled: true },
   { id: 'session-log-deepseek', config: { enabled: false } },
-  { id: 'sandbox-policy', config: { mode: 'workspace-write', workspaceRoot: cwd } },
+  // Confined, the outer Seatbelt is the sandbox: dsh's own would nest a second
+  // one, which macOS refuses, so it is off.
+  { id: 'sandbox-policy', config: { mode: confined ? 'danger-full-access' : 'workspace-write', workspaceRoot: cwd } },
   { insert: [mcp] },
 ]);
 
@@ -169,8 +238,10 @@ const parseEvent = (line, state) => {
   }
 };
 
-export const runDsh = ({ binary, args, cwd, env, timeoutMs, credentials, spawnImpl = childSpawn, onSpawn, controls = {} }) => new Promise((resolve, reject) => {
-  const proc = spawnImpl(binary, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+export const runDsh = ({
+  binary, args, cwd, env, timeoutMs, credentials, spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
+}) => new Promise((resolve, reject) => {
+  const proc = spawnInOwnGroup(spawnImpl, binary, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] }, { ownGroup });
   observeSpawn(proc, onSpawn, controls);
   const state = { sessionId: null, final: null, error: null, buffer: '' };
   let stderr = '';
@@ -252,7 +323,14 @@ export default {
 
   async spawn(prompt, ctx = {}) {
     const seatModel = requireSeatModel(ctx.environment, 'dsh', true);
-    assertPrivateDsh(ctx.environment);
+    const confined = isConfinedDsh(ctx.environment);
+    if (confined) {
+      if ((ctx._platform || process.platform) !== 'darwin') {
+        throw new Error('dsh adapter: a confined seat needs Seatbelt, which is macOS only');
+      }
+      const seatbelt = (ctx._detectSeatbelt || detectSeatbelt)();
+      if (!seatbelt.available) throw new Error(`dsh adapter: a confined seat needs Seatbelt: ${seatbelt.error}`);
+    }
     if (!ctx.environment?.provider || !ctx.environment?.model) {
       throw new Error('dsh requires environment.provider and environment.model');
     }
@@ -270,19 +348,39 @@ export default {
     const tempDir = await mkdtemp(join(tmpdir(), 'commonly-dsh-'));
     await chmod(tempDir, 0o700);
     let proxy;
+    let relay;
+    let egress;
     try {
       const credential = writeCredentialFile(ctx.runtimeToken, { agentName: 'commonly', root: tempDir });
       proxy = await startProviderProxy({
         provider: ctx.environment.provider, keyFile,
         tokenFile: join(tempDir, 'provider-proxy-token'), adapterLabel: 'dsh',
+        ...(confined ? { pinnedModel: seatModel } : {}),
       });
       const bearer = (await readFile(proxy.tokenFile, 'utf8')).trim();
+      const mcpDirectories = [];
+      if (confined) {
+        relay = await startInstanceProxy({ instanceUrl: ctx.instanceUrl });
+        egress = await (ctx._startEgressProxy || startEgressProxy)();
+      }
       const mcp = resolveCommonlyMcp(ctx.environment?.mcp, {
-        credentialFile: credential.path, instanceUrl: ctx.instanceUrl,
+        credentialFile: credential.path,
+        instanceUrl: confined ? relay.url : ctx.instanceUrl,
+        ...(confined ? {
+          prepareCommand: (command) => {
+            const warmed = (ctx._prepareMcpSpawn || prepareMcpSpawn)(command, { apiUrl: ctx.instanceUrl, publicSeat: true });
+            const directory = warmed && (ctx._selectedMcpVersionDir || selectedMcpVersionDir)(warmed);
+            if (!directory) {
+              throw new Error('dsh adapter: a confined seat runs only a warmed Commonly MCP build, and none is ready on this host');
+            }
+            mcpDirectories.push(directory);
+            return [process.execPath, warmed[1]];
+          },
+        } : {}),
       });
       const patchData = buildPatch({
         proxyBaseURL: proxy.baseURL, model: seatModel,
-        cwd: ctx.cwd, mcp, effort: ctx.environment.effort,
+        cwd: ctx.cwd, mcp, effort: ctx.environment.effort, confined,
         deepseekOfficial: new URL(ctx.environment.provider.baseURL).hostname === 'api.deepseek.com',
       });
       const patch = JSON.stringify(patchData, null, 2);
@@ -300,11 +398,51 @@ export default {
       const requested = Number(ctx.timeoutMs);
       const timeoutMs = Number.isFinite(requested) && requested > 0
         ? Math.min(requested, MAX_TIMEOUT_MS) : MAX_TIMEOUT_MS;
-      return await runDsh({
-        binary, args, cwd: ctx.cwd, env, timeoutMs,
-        credentials: [...spawnCredentials(ctx, []), bearer], spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: { model: passedModel || null, effort: passedProvider.reasoning || null },
-      });
+      let command = binary;
+      let commandArgs = args;
+      if (confined) {
+        const { entry, packages } = resolveDshEntry(binary, sourceEnv);
+        const tempWork = join(home, 'tmp');
+        await mkdir(tempWork, { recursive: true, mode: 0o700 });
+        env.TMPDIR = tempWork;
+        for (const name of ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy']) env[name] = egress.url;
+        env.NO_PROXY = '127.0.0.1,localhost';
+        env.no_proxy = env.NO_PROXY;
+        [command, ...commandArgs] = (ctx._wrapArgvWithSeatbelt || wrapArgvWithSeatbelt)([process.execPath, entry, ...args], {
+          workspacePath: ctx.cwd,
+          workspaceAccess: 'write',
+          executablePath: process.execPath,
+          statePath: home,
+          mcpConfigDir: tempDir,
+          network: 'loopback',
+          loopbackNetworkPorts: [proxy.port, relay.port, egress.port],
+          readOnlyDirectories: [packages, ...mcpDirectories],
+        });
+      }
+      const credentials = [...spawnCredentials(ctx, []), bearer];
+      let result;
+      let failure;
+      try {
+        result = await runDsh({
+          binary: command, args: commandArgs, cwd: ctx.cwd, env, timeoutMs, credentials,
+          spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, ownGroup: wantsOwnProcessGroup(ctx),
+          controls: { model: passedModel || null, effort: passedProvider.reasoning || null },
+        });
+      } catch (error) {
+        failure = error;
+      }
+      // A broken pin is the reason a turn failed, whatever dsh said about it.
+      if (confined) {
+        const { refusals } = egress.stats();
+        // eslint-disable-next-line no-console
+        if (refusals.length) console.warn(`[dsh] egress refused: ${refusals.map((r) => `${r.target} (${r.reason})`).join(', ')}`);
+        assertServedModel(proxy.modelCheck(), credentials);
+      }
+      if (failure) throw failure;
+      return result;
     } finally {
+      try { await egress?.close(); } catch { /* best effort */ }
+      try { await relay?.close(); } catch { /* best effort */ }
       try { await proxy?.close(); } catch { /* best effort */ }
       await rm(tempDir, { recursive: true, force: true });
     }
