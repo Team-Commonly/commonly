@@ -162,12 +162,9 @@ export class AgentDisplayNameTakenError extends Error {
  * sets (`getOrCreateAgentUser`, create and upgrade arms alike).
  */
 export const carriesAgentMarkers = (row: {
-  email?: string | null;
   botType?: string | null;
   botMetadata?: { agentName?: string | null } | null;
-}): boolean => isReservedAgentEmail(row.email)
-  || Boolean(row.botType)
-  || Boolean(row.botMetadata?.agentName);
+}): boolean => Boolean(row.botType) || Boolean(row.botMetadata?.agentName);
 
 export const isAgentOwnedRow = (
   row: {

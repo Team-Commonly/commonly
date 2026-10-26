@@ -7,7 +7,7 @@ import Task from '../models/Task';
 import User from '../models/User';
 import Pod from '../models/Pod';
 import { AgentInstallation } from '../models/AgentRegistry';
-import { carriesAgentMarkers } from './agentIdentityService';
+import { carriesAgentMarkers, isReservedAgentEmail } from './agentIdentityService';
 
 const DELAY_MS = 5 * 60 * 1000;
 const INTERVAL_MS = 30 * 60 * 1000;
@@ -49,7 +49,9 @@ function selfCreated(row: Row, install: Installation, principalId: string): bool
 
 // Agent rows written before `isBot` existed carry only the install markers
 // (the derived address, botType, agentName), so a person is a row with neither
-// the flag nor any of those markers.
+// the flag nor any of those markers. The address is checked as a domain here,
+// not through isAgentOwnedRow: that guards adoption, where only this seat's own
+// address counts. Erring toward "agent" only keeps a self-set row quiet.
 async function anyHuman(ids: unknown[]): Promise<boolean> {
   const unique = [...new Set(ids.map((id) => String(id || '')))].filter((id) => Types.ObjectId.isValid(id));
   if (!unique.length) return false;
@@ -57,7 +59,7 @@ async function anyHuman(ids: unknown[]): Promise<boolean> {
     .select('email botType botMetadata.agentName').lean() as Array<{
       email?: string | null; botType?: string | null; botMetadata?: { agentName?: string | null } | null;
     }>;
-  return users.some((user) => !carriesAgentMarkers(user));
+  return users.some((user) => !isReservedAgentEmail(user.email) && !carriesAgentMarkers(user));
 }
 
 const updatedSince = (row: Row, since: Date): unknown[] => (row.updates || [])
