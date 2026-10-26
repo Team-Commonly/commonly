@@ -610,6 +610,19 @@ describe('driver paths reach a terminal state', () => {
       acknowledge.mockRestore();
     });
 
+    test('a run that stopped because the agent holds the floor settles as a decline with that reason', async () => {
+      AgentEvent.find.mockReturnValue({ sort: () => ({ limit: () => ({ lean: () => Promise.resolve([]) }) }) });
+      runAgent.mockResolvedValue({ status: 'succeeded', runId: 'run-1', totalTurns: 2, noActionReason: 'consecutive_run_cap' });
+      const acknowledge = jest.spyOn(AgentEventService, 'acknowledge').mockResolvedValue({});
+      await enqueueNative();
+      expect(acknowledge).toHaveBeenCalledWith(
+        'evt-n', 'clerk', 'default',
+        { outcome: 'no_action', reason: 'consecutive_run_cap' },
+        null, 'native',
+      );
+      acknowledge.mockRestore();
+    });
+
     test('a podId shaped like a query operator is never looked up or run in-process', async () => {
       AgentInstallation.findOne.mockReturnValue({ lean: () => Promise.resolve(nativeInstall) });
       AgentEvent.create.mockResolvedValue({ _id: 'evt-x', agentName: 'clerk', instanceId: 'default', type: 'chat.mention', payload: {} });

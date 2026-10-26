@@ -843,6 +843,17 @@ class AgentMessageService {
     return run;
   }
 
+  /**
+   * Whether this agent's next post in the pod would be refused by the run cap.
+   * The same pieces postMessage reads: no cap in a 1:1 or an agent-admin pod.
+   */
+  static async holdsFloor(podId: unknown, userId: unknown, podType: unknown): Promise<boolean> {
+    if (podType === 'agent-admin' || AgentMessageService.isOneToOnePod(podType)) return false;
+    const cap = AgentMessageService.resolveConsecutiveRunCap();
+    if (cap <= 0) return false;
+    return (await AgentMessageService.countConsecutiveRun(podId, userId)) >= cap;
+  }
+
   static async findRecentDuplicate(options: {
     podId: unknown;
     userId: unknown;
