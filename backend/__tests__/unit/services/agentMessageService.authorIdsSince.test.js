@@ -1,7 +1,8 @@
 /**
  * Who posted in a pod since a time: the assigned-task wake reads this to decide
  * whether a person acted. On PostgreSQL a post that fell back to MongoDB is only
- * in MongoDB until it is reconciled, so both stores are read.
+ * in MongoDB until it is reconciled, so both stores are read. One store failing
+ * keeps the other's authors; both failing throws, and the wake fails closed.
  */
 const AgentMessageService = require('../../../services/agentMessageService');
 const Message = require('../../../models/Message');
@@ -32,10 +33,26 @@ describe('authorIdsSince', () => {
     expect(Message.distinct).toHaveBeenCalledWith('userId', expect.objectContaining({ createdAt: { $gt: SINCE } }));
   });
 
-  test('a failed PostgreSQL read is not hidden by the fallback read', async () => {
+  // An author either store returns did post. During a PostgreSQL outage the
+  // posts land in MongoDB, so that read is the one that sees them.
+  test('a failed PostgreSQL read keeps the MongoDB authors', async () => {
     process.env.PG_HOST = 'localhost';
     PGMessage.findAuthorIdsSince.mockRejectedValue(new Error('pg down'));
     Message.distinct.mockResolvedValue(['person-2']);
+    expect(await AgentMessageService.authorIdsSince('pod-1', SINCE)).toEqual(['person-2']);
+  });
+
+  test('a failed MongoDB read keeps the PostgreSQL authors', async () => {
+    process.env.PG_HOST = 'localhost';
+    PGMessage.findAuthorIdsSince.mockResolvedValue(['person-1']);
+    Message.distinct.mockRejectedValue(new Error('mongo down'));
+    expect(await AgentMessageService.authorIdsSince('pod-1', SINCE)).toEqual(['person-1']);
+  });
+
+  test('both reads failing throws', async () => {
+    process.env.PG_HOST = 'localhost';
+    PGMessage.findAuthorIdsSince.mockRejectedValue(new Error('pg down'));
+    Message.distinct.mockRejectedValue(new Error('mongo down'));
     await expect(AgentMessageService.authorIdsSince('pod-1', SINCE)).rejects.toThrow('pg down');
   });
 

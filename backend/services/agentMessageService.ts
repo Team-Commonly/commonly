@@ -2217,12 +2217,20 @@ class AgentMessageService {
     }) as Promise<unknown[]>;
     if (!PGMessage || !process.env.PG_HOST) return (await mongo).map(String);
     // A post that fell back to MongoDB while PostgreSQL was failing is only
-    // there until it is reconciled, so read both.
-    const [pg, fallback] = await Promise.all([
+    // there until it is reconciled, so read both. An author either store
+    // returns did post, so one store failing keeps the other's authors; only
+    // both failing leaves nothing to answer with.
+    const [pg, fallback] = await Promise.allSettled([
       (PGMessage as { findAuthorIdsSince(id: unknown, at: Date): Promise<string[]> }).findAuthorIdsSince(podId, since),
       mongo,
     ]);
-    return [...new Set([...pg, ...fallback.map(String)])];
+    if (pg.status === 'rejected' && fallback.status === 'rejected') throw pg.reason;
+    const ids: string[] = [];
+    for (const [store, read] of [['postgres', pg], ['mongo', fallback]] as const) {
+      if (read.status === 'fulfilled') ids.push(...read.value.map(String));
+      else console.warn(`[agent-message] ${store} author read failed:`, String(podId), (read.reason as Error)?.message);
+    }
+    return [...new Set(ids)];
   }
 
   static async getRecentMessages(

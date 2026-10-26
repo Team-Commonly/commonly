@@ -1,3 +1,8 @@
+// The fixture writes pod messages to MongoDB, so the service must read them
+// there. With PG_HOST set (the Tier 1 job), the floor and author reads go to
+// PostgreSQL, which these tests never write; the store read itself is covered
+// in agentMessageService.authorIdsSince.test.js.
+process.env.PG_HOST = '';
 const mongoose = require('mongoose');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils');
 jest.mock('jsonwebtoken', () => ({}));
