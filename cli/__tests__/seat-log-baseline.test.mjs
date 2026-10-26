@@ -78,7 +78,12 @@ test('a malformed option is a usage error, not a stack trace or a NaN report', (
       [['--log', log, '--hours', 'abc'], '--hours must be a positive number'],
       [['--log', log, '--timeout-ms', 'x'], '--timeout-ms must be a positive number'],
       [['--log', log, '--until'], '--until needs a value'],
-      [['--log', log, '--until', 'yesterday'], '--until is not a date'],
+      [['--log', log, '--until', 'yesterday'], '--until is not an ISO date'],
+      [['--log', log, '--until', 'Oct 24 2026'], '--until is not an ISO date'],
+      [['--log', log, '--until', '2026-02-31T00:00:00Z'], '--until is not an ISO date'],
+      // No zone: Date.parse would read it as host-local time.
+      [['--log', log, '--until', '2026-10-24T07:00:00'], '--until is not an ISO date'],
+      [['--log', log, '--hours', '1000000000000'], '--hours puts the window start outside the supported date range'],
     ]) {
       expect(run(...args)).toEqual({ status: 2, out: '', err: `${message}\n` });
     }

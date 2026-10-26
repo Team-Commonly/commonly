@@ -166,6 +166,17 @@ export const render = (r) => {
   return out.join('\n');
 };
 
+// Date.parse accepts "Oct 24 2026" and rolls 2026-02-31 into March, so the
+// documented ISO form is checked here, and the date must survive a round trip.
+const ISO_DATE = /^(\d{4}-\d{2}-\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
+const parseIsoDate = (value) => {
+  const match = ISO_DATE.exec(value);
+  if (!match) return null;
+  const ms = Date.parse(value);
+  if (Number.isNaN(ms)) return null;
+  return new Date(Date.parse(match[1])).toISOString().slice(0, 10) === match[1] ? ms : null;
+};
+
 export const main = (argv, { stdout = process.stdout, stderr = process.stderr } = {}) => {
   const args = [...argv];
   const seat = args.shift();
@@ -189,12 +200,15 @@ export const main = (argv, { stdout = process.stdout, stderr = process.stderr } 
   };
   const until = opt('--until');
   if (until === null) return usage('--until needs a value');
-  const untilMs = until === undefined ? Date.now() : Date.parse(until);
-  if (Number.isNaN(untilMs)) return usage('--until is not a date');
+  const untilMs = until === undefined ? Date.now() : parseIsoDate(until);
+  if (untilMs === null) return usage('--until is not an ISO date');
   const logPath = opt('--log', path.join(os.homedir(), '.commonly', 'logs', `${seat}.log`));
   if (logPath === null) return usage('--log needs a value');
   const hours = num('--hours', 48);
   if (hours === null) return usage('--hours must be a positive number');
+  if (Number.isNaN(new Date(untilMs - hours * 3_600_000).getTime())) {
+    return usage('--hours puts the window start outside the supported date range');
+  }
   const timeoutMs = num('--timeout-ms', 2_700_000);
   if (timeoutMs === null) return usage('--timeout-ms must be a positive number');
   const result = baseline(fs.readFileSync(logPath, 'utf8'), { seat, untilMs, hours, timeoutMs });
