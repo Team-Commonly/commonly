@@ -291,15 +291,22 @@ const EMBEDDED_V4: Array<[number[], number, [number, number]]> = [
   [[0x64, 0xff9b], 96, [6, 7]], // NAT64, 64:ff9b::a.b.c.d
   [[0x2002], 16, [1, 2]], // 6to4, 2002:aabb:ccdd::
 ];
-const TEREDO: [number[], number] = [[0x2001], 32];
 
-// IANA's IPv6 special-purpose registry, less the globally reachable rows
-// outside 2001::/23, plus the deprecated site-local block and multicast.
+// The globally reachable rows inside 2001::/23, which otherwise is reserved.
+const PUBLIC_IN_IETF_V6: Array<[number[], number]> = [
+  [[0x2001, 3], 32], // AMT
+  [[0x2001, 4, 0x112], 48], // AS112-v6
+  [[0x2001, 0x30], 28], // drone remote ID entity tags
+];
+// IANA's IPv6 special-purpose registry, less its globally reachable rows, plus
+// the deprecated site-local block and multicast.
 const RESERVED_V6: Array<[number[], number]> = [
   [[0x64, 0xff9b, 1], 48], // local-use IPv4/IPv6 translation
   [[0x100], 64], // discard-only
   [[0x100, 0, 0, 1], 64], // dummy prefix
-  [[0x2001], 23], // IETF protocol assignments, after Teredo is decoded
+  // IETF protocol assignments. This includes Teredo, refused outright because
+  // it is reached through a relay rather than at the address checked.
+  [[0x2001], 23],
   [[0x2001, 0xdb8], 32], // documentation
   [[0x3fff], 20], // documentation
   [[0x5f00], 16], // segment routing SIDs
@@ -314,7 +321,7 @@ const GLOBAL_UNICAST_V6: [number[], number] = [[0x2000], 3];
 
 /**
  * Classify one IP address. IPv6 addresses that carry an IPv4 address (mapped,
- * translated, NAT64, 6to4, Teredo) are classified by that IPv4 address, so
+ * translated, NAT64, 6to4) are classified by that IPv4 address, so
  * every IPv4 range is also refused in its IPv6 spellings. Anything that does
  * not parse, and any IPv6 address outside global unicast that no table names,
  * is `reserved`. IPv4 has no unassigned space: every address outside the
@@ -326,12 +333,11 @@ export const classifyAddress = (address: string): AddressClass => {
   if (!g) return 'reserved';
   const embedded = EMBEDDED_V4.find(([base, bits]) => inIPv6Block(g, base, bits));
   if (embedded) return classifyIPv4(groupsToIPv4(g[embedded[2][0]], g[embedded[2][1]]));
-  // Teredo stores the client's IPv4 address with every bit inverted.
-  if (inIPv6Block(g, ...TEREDO)) return classifyIPv4(groupsToIPv4(0xffff - g[6], 0xffff - g[7]));
   if (g.slice(0, 6).every((x) => x === 0)) {
     // ::1 is loopback; :: and the deprecated IPv4-compatible block are not routable.
     return g[6] === 0 && g[7] === 1 ? 'private' : 'reserved';
   }
+  if (PUBLIC_IN_IETF_V6.some(([base, bits]) => inIPv6Block(g, base, bits))) return 'public';
   if (RESERVED_V6.some(([base, bits]) => inIPv6Block(g, base, bits))) return 'reserved';
   if (PRIVATE_V6.some(([base, bits]) => inIPv6Block(g, base, bits))) return 'private';
   // Everything outside global unicast is unassigned or reserved, so an address
