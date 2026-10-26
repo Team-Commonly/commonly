@@ -1,3 +1,4 @@
+import { escapeHtml } from '../utils/escapeHtml';
 import { isReservedEmailDomain } from '../utils/reservedEmailDomain';
 // eslint-disable-next-line global-require
 const Summary = require('../models/Summary');
@@ -84,12 +85,6 @@ const primaryUrl = (raw: string | undefined, fallback: string): string => {
   return (configured || fallback).replace(/\/$/, '');
 };
 
-const escapeHtml = (value: unknown): string => String(value || '')
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
-  .replace(/'/g, '&#39;');
 
 const cleanMarkdownLine = (line: string): string => line
   .replace(/^[-*]\s+/, '')

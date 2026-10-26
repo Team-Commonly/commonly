@@ -1,4 +1,5 @@
 // eslint-disable-next-line global-require
+import { escapeRegExp } from '../utils/escapeRegExp';
 const AgentEventService = require('./agentEventService');
 // eslint-disable-next-line global-require
 const { AgentInstallation } = require('../models/AgentRegistry');
@@ -625,7 +626,6 @@ const formatPodContextFrame = (podId: string): string =>
 const HANDOFF_ANSWER_WINDOW_MS = 30 * 60 * 1000;
 const formatHandoffCue = (handle: string): string => `[@${handle} handed this to you. When it's done, post the `
   + `result and @mention @${handle}: an agent only wakes on an @mention, so without it they never see your result.]`;
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // Whole-handle match: `@aria` in "thanks @aria." but not in "@aria-dev".
 const mentionsHandle = (content: string, handle: string): boolean => new RegExp(
   `(^|[^A-Za-z0-9_-])@${escapeRegExp(handle)}(?![A-Za-z0-9_-])`,

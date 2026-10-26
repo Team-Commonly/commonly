@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { useV2Api } from '../hooks/useV2Api';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
+import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 
 interface V2InviteModalProps {
   open: boolean;
@@ -42,17 +43,14 @@ const creatorName = (invite: ManagedInvite, t: TFunction): string => (
 
 const relativeCreatedAt = (value: string, t: TFunction, locale: string): string => {
   const created = new Date(value).getTime();
-  const elapsed = Date.now() - created;
-  if (!Number.isFinite(created) || elapsed < 0) return t('inviteModal.time.recently');
-  const minutes = Math.floor(elapsed / 60_000);
-  if (minutes < 1) return t('inviteModal.time.justNow');
-  const format = (count: number) => new Intl.NumberFormat(locale).format(count);
-  if (minutes < 60) return t('inviteModal.time.minutesAgo', { count: minutes, formattedCount: format(minutes) });
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return t('inviteModal.time.hoursAgo', { count: hours, formattedCount: format(hours) });
-  const days = Math.floor(hours / 24);
-  if (days < 7) return t('inviteModal.time.daysAgo', { count: days, formattedCount: format(days) });
-  return new Date(value).toLocaleDateString(locale);
+  if (Number.isFinite(created) && Date.now() - created >= 7 * 24 * 60 * 60_000) {
+    return new Date(value).toLocaleDateString(locale);
+  }
+  return localizeRelativeTime(value, t, {
+    includeFuture: false,
+    rounding: 'floor',
+    missing: t('inviteModal.time.recently'),
+  });
 };
 
 const expiryLabel = (value: string | null | undefined, t: TFunction, locale: string): string => {

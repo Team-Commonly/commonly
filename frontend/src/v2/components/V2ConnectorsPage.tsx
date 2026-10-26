@@ -12,7 +12,7 @@ import { useRelativeNow } from '../hooks/useRelativeNow';
 import { V2Pod, V2PodMember } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
 import { ActGlyph, MarkGlyph, MarkName } from '../icons/glyphs';
-import V2ConnectorTools, { type HostedMcpManualRevokeNotice } from './V2ConnectorTools';
+import V2ConnectorTools, { type HostedMcpManualRevokeNotice, shortAge as sharedShortAge } from './V2ConnectorTools';
 import { hostedMcpErrorNotice } from './hostedMcpErrorNotice';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 import V2PageHead from './V2PageHead';
@@ -792,16 +792,7 @@ const V2ConnectorsPage: React.FC = () => {
 
   // The age as a unit-suffixed number from the timestamp ("23d", "5m", "just now"),
   // and a verb line built from a key — the kicker's source of truth.
-  const shortAge = (date?: string | null): string => {
-    const timestamp = date ? new Date(date).getTime() : NaN;
-    if (!Number.isFinite(timestamp)) return t('time.age.justNow', { defaultValue: 'just now' });
-    const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000));
-    if (minutes < 1) return t('time.age.justNow', { defaultValue: 'just now' });
-    if (minutes < 60) return t('time.age.minutes', { defaultValue: '{{n}}m', n: minutes });
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return t('time.age.hours', { defaultValue: '{{n}}h', n: hours });
-    return t('time.age.days', { defaultValue: '{{n}}d', n: Math.floor(hours / 24) });
-  };
+  const shortAge = (date?: string | null): string => sharedShortAge(date, now, t);
   const ageLine = (verb: 'added' | 'started' | 'since' | 'paused' | 'slackAnswered', date?: string | null): string => {
     const age = shortAge(date);
     switch (verb) {

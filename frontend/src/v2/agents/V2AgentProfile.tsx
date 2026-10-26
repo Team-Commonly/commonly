@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import axios from 'axios';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import V2Avatar from '../components/V2Avatar';
 import { presetCharacterOptions } from '../../utils/avatarUtils';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
+import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 import '../v2.css';
 import './v2-agent-profile.css';
 import './v2-agent-settings.css';
@@ -69,19 +71,8 @@ interface MemoryIndex {
   pods?: PodEntry[];
 }
 
-const timeAgo = (iso?: string | null): string => {
-  if (!iso) return '';
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '';
-  const s = Math.max(1, Math.floor((Date.now() - then) / 1000));
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
-};
+const timeAgo = (iso: string | null | undefined, t: TFunction): string =>
+  localizeRelativeTime(iso, t, { pastEvent: true, rounding: 'floor', missing: '' });
 
 // Auth-aware chrome: anonymous visitors get the conversion nav (What is Commonly? /
 // Sign in / Sign up); a signed-in viewer gets a link back into the app instead —
@@ -451,7 +442,7 @@ const V2AgentProfile: React.FC = () => {
                     <li key={p.id} className="v2-aprofile__pod">
                       <Link className="v2-aprofile__pod-name" to={`/v2/pods/${p.id}`}>{p.name}</Link>
                       {p.lastMessage?.snippet && <span className="v2-aprofile__pod-msg">“{p.lastMessage.snippet}”</span>}
-                      {p.lastActive && <span className="v2-aprofile__pod-when">{t('agentProfile.pods.activeAgo', { time: timeAgo(p.lastActive) })}</span>}
+                      {p.lastActive && <span className="v2-aprofile__pod-when">{t('agentProfile.pods.activeAgo', { time: timeAgo(p.lastActive, t) })}</span>}
                       {ownerPods && (
                         <button
                           type="button"
@@ -511,7 +502,7 @@ const V2AgentProfile: React.FC = () => {
                     updated: memIndex.lastAgentWrite
                       ? t('agentProfile.memory.lastSavedClause', {
                         section: memorySectionLabel(memIndex.lastAgentWrite.section),
-                        time: timeAgo(memIndex.lastAgentWrite.updatedAt),
+                        time: timeAgo(memIndex.lastAgentWrite.updatedAt, t),
                       })
                       : '',
                   })}
@@ -543,7 +534,7 @@ const V2AgentProfile: React.FC = () => {
                   {t('agentProfile.memory.persistent')}
                   {memory.lastAgentWrite && ` ${t('agentProfile.memory.lastSaved', {
                     section: memoryKindLabel(memory.lastAgentWrite.kind),
-                    time: timeAgo(memory.lastAgentWrite.updatedAt),
+                    time: timeAgo(memory.lastAgentWrite.updatedAt, t),
                   })}`}
                 </p>
               </div>
@@ -561,7 +552,7 @@ const V2AgentProfile: React.FC = () => {
                   <li key={i} className="v2-aprofile__run">
                     <span className={`v2-aprofile__run-dot v2-aprofile__run-dot--${a.errorKind ? 'err' : a.status}`} />
                     <span className="v2-aprofile__run-label">{a.trigger || a.status}</span>
-                    <span className="v2-aprofile__muted">{t('agentProfile.activity.turnsAgo', { count: a.turns, time: timeAgo(a.startedAt) })}</span>
+                    <span className="v2-aprofile__muted">{t('agentProfile.activity.turnsAgo', { count: a.turns, time: timeAgo(a.startedAt, t) })}</span>
                   </li>
                 ))}
               </ul>

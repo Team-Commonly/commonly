@@ -96,3 +96,37 @@ describe('localizeWindow', () => {
     expect(localizeWindow(3_600_000, i18n.t.bind(i18n))).toMatch(/[a-z]/);
   });
 });
+
+// TASK-005: the hand-rolled helpers folded onto this one. Each call site passes
+// pastEvent and rounding 'floor', and the zh copy comes from the shared time.age keys.
+describe('localizeRelativeTime as the fold target (TASK-005)', () => {
+  beforeAll(async () => {
+    await i18nReady;
+  });
+
+  afterAll(async () => {
+    await i18n.changeLanguage('en');
+  });
+
+  const render = async (offsetMs: number) => {
+    const now = Date.parse('2026-10-23T07:30:00.000Z');
+    const date = new Date(now - offsetMs).toISOString();
+    const opts = { now, pastEvent: true, rounding: 'floor' as const, missing: '' };
+    await i18n.changeLanguage('en');
+    const en = localizeRelativeTime(date, i18n.t.bind(i18n), opts);
+    await i18n.changeLanguage('zh-CN');
+    const zh = localizeRelativeTime(date, i18n.t.bind(i18n), opts);
+    return { en, zh };
+  };
+
+  test('floors minutes and hours in English and translates them in zh-CN', async () => {
+    await expect(render(90_000)).resolves.toMatchObject({ en: '1m ago', zh: '1分钟前' });
+    await expect(render(5 * 3_600_000 + 30 * 60_000)).resolves.toMatchObject({ en: '5h ago', zh: '5小时前' });
+  });
+
+  test('a missing timestamp renders the caller-supplied fallback, not the em dash', async () => {
+    const opts = { missing: '' };
+    await i18n.changeLanguage('en');
+    expect(localizeRelativeTime(null, i18n.t.bind(i18n), opts)).toBe('');
+  });
+});

@@ -1,3 +1,4 @@
+import { escapeRegExp } from '../../utils/escapeRegExp';
 import React, { useEffect, useRef, useState } from 'react';
 import V2Lightbox, { type V2LightboxImage } from './V2Lightbox';
 import { Link, useNavigate } from 'react-router-dom';
@@ -600,7 +601,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   const isSelfAuthored = meUsername === rawUsername.toLowerCase();
   const mentionsMe = !isSelfAuthored
     && !!meUsername
-    && new RegExp(`@${meUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(stripped);
+    && new RegExp(`@${escapeRegExp(meUsername)}\\b`, 'i').test(stripped);
 
   // --- reactions state, hoisted from the render tail so the hover cluster
   // owns the trigger while the chips row keeps rendering below the text ---

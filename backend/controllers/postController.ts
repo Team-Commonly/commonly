@@ -1,3 +1,4 @@
+import { escapeRegExp } from '../utils/escapeRegExp';
 const mongoose = require('mongoose');
 const Post = require('../models/Post');
 const Pod = require('../models/Pod');
@@ -97,7 +98,7 @@ exports.searchPosts = async (req: any, res: any) => {
       // reaches Mongo. Raw user input as a `$regex` value allowed both
       // catastrophic-backtracking ReDoS (e.g. `(a+)+b`) and, if an object was
       // passed, operator injection. Escaping makes it a literal substring match.
-      const term = String(query).slice(0, 200).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const term = escapeRegExp(String(query).slice(0, 200));
       searchQuery.$or = [
         { content: { $regex: term, $options: 'i' } },
         { 'comments.text': { $regex: term, $options: 'i' } },

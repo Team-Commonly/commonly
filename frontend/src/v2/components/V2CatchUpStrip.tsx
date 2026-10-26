@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
+import type { TFunction } from 'i18next';
+import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 
 // Sam's 2026-09-01 ruling: a constant TL;DR of what the agents are doing,
 // living where the question is actually felt — pinned above the messages of
@@ -20,20 +22,8 @@ interface Props {
   podId: string;
 }
 
-const relTime = (
-  iso: string | undefined,
-  t: (key: string, opts?: Record<string, unknown>) => string,
-): string => {
-  if (!iso) return '';
-  const ms = Date.now() - new Date(iso).getTime();
-  if (Number.isNaN(ms) || ms < 0) return '';
-  const min = Math.floor(ms / 60000);
-  if (min < 1) return t('podChat.catchup.justNow');
-  if (min < 60) return t('podChat.catchup.minutesAgo', { count: min });
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return t('podChat.catchup.hoursAgo', { count: hr });
-  return t('podChat.catchup.daysAgo', { count: Math.floor(hr / 24) });
-};
+const relTime = (iso: string | undefined, t: TFunction): string =>
+  localizeRelativeTime(iso, t, { includeFuture: false, rounding: 'floor', missing: '' });
 
 const V2CatchUpStrip: React.FC<Props> = ({ podId }) => {
   const { t } = useTranslation();

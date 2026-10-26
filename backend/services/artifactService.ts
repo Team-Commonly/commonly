@@ -7,6 +7,7 @@
  * One query serves both surfaces — the inspector's Files pane (podId fixed)
  * and the Artifacts page (podId absent) — over a caller-supplied pod scope.
  */
+import { escapeRegExp } from '../utils/escapeRegExp';
 import type { Types } from 'mongoose';
 
 const File = require('../models/File');
@@ -70,7 +71,7 @@ export function clampLimit(raw: unknown): number {
 export function nameFilter(q: string | null | undefined): Record<string, unknown> | null {
   const needle = String(q || '').trim();
   if (!needle) return null;
-  return { originalName: new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') };
+  return { originalName: new RegExp(escapeRegExp(needle), 'i') };
 }
 
 export interface ArtifactItem {

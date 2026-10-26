@@ -15,7 +15,7 @@ const navigationRuntimeStart = '<!-- SEO_NAVIGATION_RUNTIME_START -->';
 const navigationRuntimeEnd = '<!-- SEO_NAVIGATION_RUNTIME_END -->';
 const viteEntryAssetPrefix = 'src="/assets/index-';
 
-const escapeHtml = (value) => String(value)
+export const escapeHtml = (value) => (value == null ? '' : String(value))
   .replaceAll('&', '&amp;')
   .replaceAll('<', '&lt;')
   .replaceAll('>', '&gt;')

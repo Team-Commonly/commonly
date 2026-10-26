@@ -2072,3 +2072,10 @@ test('puts route content, canonical metadata, and structured data in the documen
   assert.match(rendered, /document\.documentElement/);
   assert.match(rendered, /type="module"/);
 });
+
+test('escapeHtml renders null and undefined as an empty string, not "null"', async () => {
+  const { escapeHtml } = await import('./generate-seo-pages.mjs');
+  assert.equal(escapeHtml(null), '');
+  assert.equal(escapeHtml(undefined), '');
+  assert.equal(escapeHtml('<b>"x"</b>'), '&lt;b&gt;&quot;x&quot;&lt;/b&gt;');
+});
