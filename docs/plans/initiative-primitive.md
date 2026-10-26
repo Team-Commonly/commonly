@@ -4,19 +4,19 @@ Status: proposal, for CTO review. Pin: `ec85e625c` (main). No code.
 
 ## Problem
 
-Sam's directions get handed to many agents and then go quiet. A lead cannot see
-which direction is moving without asking each owner. The manual version we run
-today (a ledger of Sam's directions grouped into initiatives, plus a daily
-digest) works only because someone writes it by hand, so the status is whatever
-the writer believes. The product version must produce the same digest from
-records that already exist, detect stalls without anyone declaring them, and
-add at most one new piece: the nudge.
+Directions given to agents get handed off and then go quiet. A direction-giver
+cannot see which direction is moving without asking each owner. The manual
+version works only because someone writes it by hand: an operator-kept ledger of
+directions, grouped into initiatives, with a hand-written daily digest. The
+status is whatever the writer believes. The product version must produce the
+same digest from records that already exist, detect stalls without anyone
+declaring them, and add at most one new piece: the nudge.
 
-Reference spec: the manual digest. Its rules are at the top of the initiatives
-index (`initiatives-1025.md`, the status table). A status counts only dated
-evidence: a merge, a deploy, a send, a walk or a measurement. A plan, an
-assignment or a promise does not count. `done` needs the end state observed.
-Section 3 maps the digest sections onto derived fields.
+Reference spec: the hand-written digest and its status rules. A status counts
+only dated evidence: a merge, a deploy, a send, a walk or a measurement. A plan,
+an assignment or a promise does not count. `done` needs the end state observed,
+and a person other than the owner observes it. Section 3 maps the digest
+sections onto derived fields.
 
 ## 1. Data model
 
@@ -25,10 +25,12 @@ Section 3 maps the digest sections onto derived fields.
 ```
 Initiative {
   _id, title, endState (one line),
-  direction (user id of whoever gave the direction),
+  direction (user id of the direction-giver),
   owner { userId | agentUserId },        // stored; set by the lead, never by status
   links: [{ kind: 'task' | 'pr' | 'pod' | 'decision', ref, addedAt }],
-  nudges: [{ episodeStart, nudgedAt }],   // dedupe for agent owners (section 4)
+  cadence { windowHours: 24, digest: 'weekly' },   // one setting per initiative
+  closed { at, byUserId, evidenceUrl, note } | null,  // section 2, close-with-evidence
+  nudges: [{ episodeStart, nudgedAt }],   // audit trail of sent nudges (section 4)
   createdAt, archivedAt
 }
 ```
@@ -50,15 +52,18 @@ Prior art, and what it reserves:
   the ledger. This proposal adds no claim or disposition fields. Decision links
   point at the ledger rows. If ADR-028 ratifies, `owner` should reference its
   claim record. ADR-028 is unratified, so nothing here depends on it.
+- **ADR-033** (Accepted 2026-10-25, `docs/adr/ADR-033-grant-record.md` on main
+  at `97f2ac1d`, after the pin). Section 5 covers it. v1 adds no record kind
+  and writes no `seats.record` line.
 - **Pod focus** (`backend/models/Pod.ts:112-115`, `podFocusService.ts:9-14`).
   A pod-scoped goal with `nextTaskIds`. One pod only, no derived status. Leave it alone.
 
 ## 2. Status derivation
 
-Rule for every row: status is computed from the evidence records below. No
-owner-written field sets a status. Each record is cited at the pin.
+Rule for every row: status is computed from the evidence records below, or from
+the close record. No owner-written field sets a status. Each record is cited at the pin.
 
-**Evidence records (the only inputs):**
+**Evidence records (the only inputs to moving and stalled):**
 
 - **Merge.** The system update that `completeTaskForMergedPull` pushes onto a
   Task when its linked PR merges: `author: 'system'`, `authorId: null`
@@ -66,6 +71,16 @@ owner-written field sets a status. Each record is cited at the pin.
   evidence date.
 - **Resolved decision.** A DecisionRequest with `status: 'ruled'`, dated by
   `ruling.at` (`models/DecisionRequest.ts:25, :84`).
+
+**Close record (the reference's `done`):**
+
+- Only the direction-giver can close an initiative. The close writes
+  `closed = {at, byUserId, evidenceUrl, note}`: one evidence URL (a walk, a
+  deploy log, a sent message) and a one-line note. The close is a dated record,
+  not a status field, and it is a write that ends a record (Tier 2, section 6).
+- If the owner is also the giver, the view shows **closed by owner**. That
+  close is not an independent observation, so the digest flags it rather than
+  counting it as done.
 
 **Not evidence, deliberately excluded:**
 
@@ -75,29 +90,26 @@ owner-written field sets a status. Each record is cited at the pin.
   read as moving.
 - `POST /complete` (`routes/tasksApi.ts:714, :729`) and PATCH `status` (`:1010`).
   Any pod writer can set `done` there, so it is self-reported.
+- A merge alone. A merged PR is not the end state.
 
 **Records v1 cannot see.** A deploy, a send, a walk and a measurement have no
-record at the pin. v1 counts none of them, so an initiative whose only progress
-is a deploy will read as stalled. The digest must say so rather than hide it.
+record that the derivation reads. Until a close record exists, an initiative
+whose only progress is one of those reads as stalled. The digest says so
+rather than hides it.
 
 | Status | Rule | Derived from |
 |---|---|---|
-| **moving** | At least one link has evidence dated inside the window (default 24 h, a setting) | merge record, resolved decision |
-| **stalled since \<date\>** | The newest evidence is older than the window. The date is that evidence's date. If an initiative has no evidence at all, the date is its `createdAt`. | same |
+| **moving** | At least one link has evidence dated inside the window (default 24 h) | merge record, resolved decision |
+| **stalled since \<date\>** | The newest evidence is older than the window. The date is that evidence's date. With no evidence at all, the date is `createdAt`. A stalled part is shown inside a moving initiative with its own date. | same |
 | **blocked on X** | A link is a pending DecisionRequest (`models/DecisionRequest.ts:41, :77`). X is its title. | `DecisionRequest.status` |
-| **waiting on you** | A pending decision for which an open AttentionItem of `kind='decision'` exists with `recipientUserId = Sam` (`models/AttentionItem.ts:3`; written per human member at `services/attentionItemService.ts:452-457`) | `AttentionItem` |
-| **merged, end state unverified** | Every linked Task is `done` and a linked PR has a merge record | merge record, plus Task status |
-
-**Not derived in v1: `done`.** The reference's `done` needs the end state
-observed (live, walked, sent). No record of that exists at the pin, so v1
-cannot produce it. An initiative whose tasks all merged shows
-`merged, end state unverified` until a person closes it with an evidence link,
-and even that link is out of v1 (section 5).
+| **waiting on you** | A pending decision linked to the initiative, with an open AttentionItem of `kind='decision'` and `recipientUserId = initiative.direction` (`models/AttentionItem.ts:3`; per-member fan-out at `services/attentionItemService.ts:452-457`) | `AttentionItem` |
+| **needs your check** | Every linked Task is `done` and a linked PR has a merge record, with no close record. Shown to the giver under "Needs your check". It is never a stall and never nudges. | merge record, plus Task status |
+| **closed** | A close record exists by the giver. **closed by owner** when the owner is the giver. | close record |
 
 **Blocked on the owner's own flag is excluded.** `Task.status = 'blocked'`
 (`models/Task.ts:5`) is an owner-written field. v1 shows it as a note on the
 link, not as a status. This departs from the reference, where "blocked" can
-name Sam's hands or an outside party; those cases come from pending decisions.
+name the giver's hands or an outside party; those cases come from pending decisions.
 
 **Other findings that shape the rules:**
 
@@ -129,6 +141,8 @@ Reuse what exists:
 - **Scope.** The existing digest is per user (`dailyDigestService.ts:171`), with
   no pod parameter. The initiative digest is a new generator that reads
   `Initiative` rows, groups them by `direction`, and reuses delivery and the kill switch.
+- **Cadence.** The window and digest cadence are one setting per initiative
+  (`cadence`, section 1), defaulting to 24 h for the window and weekly for the digest.
 
 Delivery:
 
@@ -143,16 +157,17 @@ Mapping, reference digest section to derived field:
 
 | Digest section | Derived field |
 |---|---|
-| Waiting on Sam | `waiting on you` rows |
+| Waiting on you | `waiting on you` rows |
+| Needs your check | `needs your check` rows, for the giver only |
 | Status, per initiative | the status column in section 2 |
 | Stalled part inside a moving initiative | per-link status, with its `stalled since` date shown beside the moving line |
-| What moved in 24 h | merge and resolved-decision records dated in the last 24 h |
+| What moved in the window | merge and resolved-decision records dated inside it |
 | Next step, with owner | the open link (Task `pending` or `claimed`) with the lowest `taskNum`, owner `claimedBy \|\| assignee`. If no open task, the pending decision. (`taskNum` at `models/Task.ts:16`.) |
 
 ## 4. Stall and nudge
 
 - **Detection.** An initiative is stalled when its status is `stalled since`
-  (section 2). The window is the same 24 h setting.
+  (section 2). `needs your check` is never a stall and never nudges.
 - **Episode.** `episodeStart` is the timestamp of the newest evidence record
   when the stall began. A stall with no evidence at all uses the initiative's
   `createdAt`. Using evidence time, not run time, keeps each run from minting a
@@ -173,48 +188,57 @@ Mapping, reference digest section to derived field:
   Adding `'initiative'` is the single schema change. The `source.type` enum in
   the schema (`:55`) gets the same value.
 - **Dedupe for the agent path.** The installer path also writes an AttentionItem,
-  so the same unique index covers it. `nudges` on the Initiative is not needed
-  for dedupe and is kept only as an audit trail of which episode was sent.
+  so the same unique index covers it. `nudges` on the Initiative is an audit
+  trail only.
 - **Not used.** ADR-017 (`ADR-017-attention-routing.md:3`, Proposed) has a
   blocker concept at :81–94. It is unratified and is not relied on. ADR-018
   (Accepted) governs any path that wakes an agent, and v1 does not take one.
 
-## 5. Out of v1
+## 5. Out of v1, and the ADR-033 path
 
 - Initiative creation UI. v1 creates rows through the API or a script.
-- A `done` status and any evidence record for deploy, send, walk or measurement.
 - Counting unlinked merged PRs as progress (needs a PR-to-task sync that does not exist).
 - Cross-workspace or federated initiatives.
 - Per-pod digests (new code, see section 3).
-- Manual status overrides.
-- A daily cadence for the card. Weekly is v1; daily is a setting if it is free.
+- Manual status overrides. The close record is the only human write that changes the view.
+
+**v2 evidence path (ADR-033).** ADR-033 (Accepted) defines the record for agent
+runs: `result.reported` with `refs: [{type, id}]`, `tool.call` with
+`surface: commonly`, `task.done` (written by the board), and `decision.ruled`.
+Those lines can carry evidence for work an agent performed. They have no kind
+for a human deploy, a send or a walk. So v2 can count an agent's sent message
+or walk through `result.reported`, and a human deploy still needs either a new
+kind or the close record. The ADR's own gaps apply: `commonly_*` calls are not
+recorded server-side until TASK-513 ships.
+
+**v1 conflicts with ADR-033: none.** v1 writes no `seats.record` line. Its close
+record lives in the `Initiative` collection, not in the record format. It reads
+merge and decision records and does not treat a `task.done` line as evidence.
+It does not move the board (ADR-033 D4), and it adds no field to the record
+format. A v2 reader of `result.reported` can be added later without changing v1.
 
 ## 6. Effort for an 11-02 v1
 
 Initiatives plus a weekly digest. Each item names its witness and tier.
-Tiers: **haiku** for mechanical work, **opus** for kernel, record or auth, and
-**review** for a non-author gate.
+Tiers: **general** for ordinary work, **opus** for kernel, record or auth,
+**Tier 2** for writes that end a record or touch the attention path (two
+gates, one non-Haiku), and **review** for a non-author gate.
 
-| # | Item | Witness | Tier | Depends on ADR-033 |
-|---|---|---|---|---|
-| 1 | `Initiative` model and link validation | Unit: rejects unknown link kinds | opus | no |
-| 2 | Status derivation over merge and resolved-decision records only | Unit table, one case per status row, including a Task `updates[]` write that must NOT change status | opus | no |
-| 3 | Stall detection; AttentionItem nudge for human owners and installer; `'initiative'` source type | Service test: two stalls in one episode produce one row; agent owner with no installer produces none | opus | no |
-| 4 | Weekly digest generator and email, behind `digest.sending` | Dry run against a seeded initiative | haiku | no |
-| 5 | Activity quiet card (new section) | Presence test plus browser check (v2 layout rule) | haiku | no |
-| 6 | Reproduce the reference digest from a seeded fixture | Diff of section titles, ordering and status lines | review | no |
-
-None of the items depends on ADR-033 at the pin. Items 3 and 5 touch the
-attention path and need the review tier.
+| # | Item | Witness | Tier |
+|---|---|---|---|
+| 1 | `Initiative` model and link validation | Unit: rejects unknown link kinds; `cadence` defaults to 24 h and weekly | general |
+| 2 | Status derivation over merge and resolved-decision records only | Unit table, one case per status row, including a Task `updates[]` write that must NOT change status, and a merge that must read `needs your check` and not stall | opus, Tier 2 |
+| 3 | Stall detection; AttentionItem nudge for human owners and the installer; `'initiative'` source type | Service test: two stalls in one episode produce one row; agent owner with no installer produces none; `needs your check` produces no nudge | opus, Tier 2 |
+| 4 | Weekly digest generator and email, behind `digest.sending` | Dry run against a seeded initiative | haiku |
+| 5 | Activity quiet card (new section) | Presence test plus a 390 and 1440 browser walk against ux-lead's artboard (due 10-28) | Tier 1 |
+| 6 | Reproduce the reference digest from a seeded fixture | Diff of section titles, ordering and status lines | review |
+| 7 | Close-with-evidence: giver-only write of the close record, and the "closed by owner" label | Unit: a non-giver close is refused; owner-as-giver shows "closed by owner" | general, Tier 2 |
 
 ## Open items
 
-- **ADR-033 not read.** It is absent at the pin. It merged as Accepted on main
-  (`97f2ac1d`, #2691) after this pin. It is not cited above. Check it before v1
-  relies on any grant or record field.
-- **Reference digest gate.** Step 6 is still open, because the generator is not
-  written. The rules above are taken from the reference index and the 10-25
-  digest on this seat, and nothing has been diffed against a generated output yet.
-- **Deploy, send and walk have no record.** This is a known gap of v1, not a fix.
-  The digest will show initiatives as stalled when their only progress is one of
-  those.
+- **ADR-033 read.** Its record kinds are in section 5. The v2 evidence path
+  needs a decision on human deploy, send and walk records. That is a v2 question.
+- **Reference digest gate.** Step 6 is still open. The generator is not written,
+  so nothing has been diffed against a generated output yet.
+- **Deploy, send and walk have no record in v1.** This is a known gap, not a fix.
+  The digest will show such initiatives as stalled until a close record exists.
