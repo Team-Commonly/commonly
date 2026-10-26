@@ -44,6 +44,18 @@ test.each([
   expect(await RoomGrant.countDocuments()).toBe(0);
 });
 
+test('a binding records endsOn task.done, the only v1 value, and refuses any other', async () => {
+  const grant = await service.mintGrant(input());
+  expect(grant.binding.toObject()).toEqual({ ...binding, endsOn: 'task.done' });
+  await expect(service.mintGrant(input({ binding: { ...binding, endsOn: 'task.done' } }))).resolves.toBeTruthy();
+  for (const endsOn of ['expiresAt', 'task.closed', null]) {
+    // eslint-disable-next-line no-await-in-loop
+    await expect(service.mintGrant(input({ binding: { ...binding, endsOn } })))
+      .rejects.toMatchObject({ code: 'invalid_task_binding' });
+  }
+  expect(await RoomGrant.countDocuments()).toBe(2);
+});
+
 test('closed tasks cannot mint and a stale read cannot make a grant usable after close/reopen', async () => {
   const grant = await service.mintGrant(input());
   await Task.updateOne({ podId: POD, taskId: 'TASK-1' }, { $set: { status: 'done' }, $inc: { grantEpoch: 1 } });
@@ -56,7 +68,7 @@ test('closed tasks cannot mint and a stale read cannot make a grant usable after
 test('a task binding is inherited by attenuation and expiry remains a ceiling', async () => {
   const parent = await service.mintGrant(input());
   const child = await service.attenuateGrant({ parentGrantId: parent.grantId, expiresAt: new Date(Date.now() + 7200000) });
-  expect(child.binding.toObject()).toEqual(binding);
+  expect(child.binding.toObject()).toEqual({ ...binding, endsOn: 'task.done' });
   expect(child.taskEpoch).toBe(parent.taskEpoch);
   expect(child.expiresAt.getTime()).toBe(parent.expiresAt.getTime());
   await expect(service.attenuateGrant({ parentGrantId: parent.grantId, binding: null }))
@@ -71,7 +83,7 @@ test('the close hook revokes bound descendants, once, without touching another p
   const unbound = await service.mintGrant(input({ binding: undefined }));
   await service.revokeTaskGrants({ ...binding, closedEpoch: 1 });
   expect((await RoomGrant.findById(parent._id)).revokedAt).toBeInstanceOf(Date);
-  expect((await RoomGrant.findById(child._id)).revocationReason).toBe('task.closed');
+  expect((await RoomGrant.findById(child._id)).revocationReason).toBe('task.done');
   expect((await RoomGrant.findById(unbound._id)).revokedAt).toBeNull();
   await expect(service.revokeTaskGrants({ ...binding, closedEpoch: 1 })).resolves.toBe(0);
 });

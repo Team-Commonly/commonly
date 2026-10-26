@@ -237,7 +237,7 @@ const assertGrantLineageActive = async (
 
 const markMintedGrantRejected = async (grantId: string, error: RoomGrantError): Promise<never> => {
   await RoomGrant.updateOne({ grantId }, { $set: { revokedAt: new Date(),
-    ...(error.code === 'task_closed' ? { revocationReason: 'task.closed' } : {}),
+    ...(error.code === 'task_closed' ? { revocationReason: 'task.done' } : {}),
   } });
   throw error;
 };
@@ -260,12 +260,18 @@ export const effectiveAudience = (
 /** Task IDs are pod-local: always resolve the complete board tuple. */
 export const normalizeTaskBinding = (value: unknown): RoomGrantTaskBinding | undefined => {
   if (value === undefined) return undefined;
-  const binding = value as Partial<RoomGrantTaskBinding> | null;
+  const binding = value as Partial<Record<keyof RoomGrantTaskBinding, unknown>> | null;
   if (!binding || typeof binding.taskId !== 'string' || !binding.taskId.trim()
     || typeof binding.podId !== 'string' || !Types.ObjectId.isValid(binding.podId)) {
     throw new RoomGrantError('invalid_task_binding', 'binding requires taskId and podId');
   }
-  return { taskId: binding.taskId.trim(), podId: new Types.ObjectId(binding.podId).toHexString() };
+  if (binding.endsOn !== undefined && binding.endsOn !== 'task.done') {
+    throw new RoomGrantError(
+      'invalid_task_binding',
+      "binding.endsOn must be 'task.done': a task-bound grant ends when its task closes",
+    );
+  }
+  return { taskId: binding.taskId.trim(), podId: new Types.ObjectId(binding.podId).toHexString(), endsOn: 'task.done' };
 };
 
 const loadOpenBoundTask = async (binding: RoomGrantTaskBinding) => {
@@ -322,13 +328,12 @@ const assertTaskContext = async (grant: IRoomGrant | Record<string, unknown>, op
 };
 
 /** Hook successful close transitions. An old close never revokes new grants issued after reopen. */
-export const revokeTaskGrants = async ({ taskId, podId, closedEpoch }: RoomGrantTaskBinding & {
-  closedEpoch: number;
-}): Promise<number> => {
+export const revokeTaskGrants = async ({ taskId, podId, closedEpoch }: Pick<RoomGrantTaskBinding, 'taskId' | 'podId'>
+  & { closedEpoch: number }): Promise<number> => {
   const result = await RoomGrant.updateMany({
     'binding.taskId': taskId, 'binding.podId': podId,
     taskEpoch: { $lt: closedEpoch }, revokedAt: null,
-  }, { $set: { revokedAt: new Date(), revocationReason: 'task.closed' } });
+  }, { $set: { revokedAt: new Date(), revocationReason: 'task.done' } });
   return result.modifiedCount;
 };
 

@@ -46,7 +46,7 @@ test.each(['complete', 'patch', 'github', 'onboarding'])('%s close revokes the b
   expect(task.status).toBe('done');
   expect(task.grantEpoch).toBe(1);
   const revoked = await RoomGrant.findById(grant._id);
-  expect(revoked.revocationReason).toBe('task.closed');
+  expect(revoked.revocationReason).toBe('task.done');
   expect(revoked.revokedAt).toBeInstanceOf(Date);
   await expect(assertGrantUsable({ grantId: grant.grantId, agentUserId: mockActor.id, currentMemberIds: [mockActor.id] }))
     .rejects.toMatchObject({ code: 'grant_revoked' });

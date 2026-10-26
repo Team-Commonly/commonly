@@ -419,7 +419,7 @@ describe('task-bound mint', () => {
   test('stores the authorized task tuple and ignores caller epoch values', async () => {
     const res = await mint({ binding: { taskId: 'TASK-1', podId: POD }, taskEpoch: 999 });
     expect(res.status).toBe(201);
-    expect(res.body.binding).toEqual({ taskId: 'TASK-1', podId: POD });
+    expect(res.body.binding).toEqual({ taskId: 'TASK-1', podId: POD, endsOn: 'task.done' });
     expect(res.body.taskEpoch).toBe(0);
   });
   test.each([
@@ -429,6 +429,12 @@ describe('task-bound mint', () => {
   ])('rejects foreign or missing task context without saving: %p', async (binding) => {
     const res = await mint({ binding });
     expect([400, 404]).toContain(res.status);
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+  test('refuses a binding that ends on anything but task.done, without saving', async () => {
+    const res = await mint({ binding: { taskId: 'TASK-1', podId: POD, endsOn: 'expiresAt' } });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_task_binding');
     expect(await RoomGrant.countDocuments({})).toBe(0);
   });
   test('rejects a closed task', async () => {
