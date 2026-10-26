@@ -25,6 +25,9 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 export type ApprovalStatus = 'flagged' | 'resolved' | 'expired' | 'moot';
 export type ApprovalDecision = 'approved' | 'declined';
 export type ApprovalToolCallEnding = 'ran' | 'failed' | 'refused' | 'declined' | 'expired';
+/** record-v1 `decidedByRole` values a parked call can carry today. The spec
+ * reserves `decision-owner`; delegated approval is deferred (TASK-512). */
+export type ToolCallDecidedByRole = 'credential-owner' | 'policy';
 
 // Registry of executable action types. Adding an action means adding its
 // executor in services/approvalExecutors.ts — the enum here only widens in
@@ -71,6 +74,13 @@ export interface IApprovalAction extends Document {
   decision?: ApprovalDecision;
   resolvedBy?: Types.ObjectId;
   resolvedAt?: Date;
+  /**
+   * tool_call only: who decided the parked call, stored when the decision
+   * commits so the grant record reads it instead of inferring it (ADR-033 B3/B4).
+   * A user id with `credential-owner`, or `policy` for both when it expired.
+   */
+  decidedBy?: string;
+  decidedByRole?: ToolCallDecidedByRole;
   // ADR-017:201 remains the legacy default. tool_call is terminal on expiry
   // because it authorizes disclosure to an external provider.
   decidedAfterExpiry?: boolean;
@@ -112,6 +122,8 @@ const ApprovalActionSchema = new Schema<IApprovalAction>(
     decision: { type: String, enum: ['approved', 'declined'] },
     resolvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     resolvedAt: { type: Date },
+    decidedBy: { type: String },
+    decidedByRole: { type: String, enum: ['credential-owner', 'policy'] },
     decidedAfterExpiry: { type: Boolean },
     executedAt: { type: Date },
     executionResult: { type: Schema.Types.Mixed },
