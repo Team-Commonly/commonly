@@ -119,7 +119,11 @@ Decision: seat credentials are **0600 files in the seat user's home**, not keych
   merge/close/delete fence), but becomes a guard against habit again: the boundary is now that
   the only token the seat can reach cannot do what the guard forbids. Which account that token
   belongs to is U3. Its effective permissions are repository contents and pull requests, read and
-  write, on the public repo only. A contents-write token can delete refs and push to any branch
+  write, on the public repo only, and the provider must enforce that: the token is a fine-grained
+  token or a GitHub App installation restricted to that one repository, never a classic or
+  account-wide token. Before the first seat token is issued, record its repository allowlist and
+  run a negative probe: a write to a second repository the same account can reach must be refused.
+  A contents-write token can delete refs and push to any branch
   it is not stopped from, so the fence cannot rest on the token. Measured 2026-10-26: classic
   branch protection on `main` refuses deletion and force-push, but does not apply to admins and
   has no push restriction, and the ruleset that carries those rules is disabled. Any write token
