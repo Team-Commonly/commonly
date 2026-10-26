@@ -89,7 +89,11 @@ written by the board (`actor {type: system, id: board}`).
 - **A card tied to a parked call** (B3) may be ruled only by the credential owner. For this tool-call
   path, ADR-020 D3's "workspace owner" means the connection's credential owner:
   `toolBrokerService.callTool` supplies `connection.ownerUserId` to `ApprovalAction.ownerUserId`,
-  and `resolveApproval` checks that stored owner. This interpretation changes no ADR-020 authority.
+  and `resolveApproval` checks that stored owner. This narrows ADR-020 D3 on this path: when the
+  credential owner and the workspace owner are different people, only the credential owner can rule,
+  and the workspace owner cannot. Whether the workspace owner must also rule is open. It belongs to
+  TASK-512's deferred delegation question, which is Sam's call, and needs an approval-boundary test
+  (creator ≠ workspace owner) before any change ships.
   The asking agent's owner, when a different person, must not approve the credential's use.
   Only the broker's park path (B2) writes the stored card-to-call tie. Once set it is immutable;
   `chooseDecision` derives its authorization branch from that stored tie, never request input or
