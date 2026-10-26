@@ -29,6 +29,7 @@
  * the connection is made to the address that was checked (a pinned `lookup`),
  * so a second DNS answer cannot substitute another; every redirect hop is
  * resolved and checked the same way. See `classifyAddress` for the ranges.
+ * Its tables mirror IANA's IPv4 and IPv6 special-purpose registries, last checked 2026-10-26.
  *
  * `getFromPublicAddress` — a GET of a URL an AGENT chose, for a page it reads
  * mid-turn. The same address check and pin as `postToPublicAddress`, held
@@ -309,12 +310,15 @@ const RESERVED_V6: Array<[number[], number]> = [
 const PRIVATE_V6: Array<[number[], number]> = [
   [[0xfc00], 7], // unique-local
 ];
+const GLOBAL_UNICAST_V6: [number[], number] = [[0x2000], 3];
 
 /**
  * Classify one IP address. IPv6 addresses that carry an IPv4 address (mapped,
  * translated, NAT64, 6to4, Teredo) are classified by that IPv4 address, so
  * every IPv4 range is also refused in its IPv6 spellings. Anything that does
- * not parse is `reserved`.
+ * not parse, and any IPv6 address outside global unicast that no table names,
+ * is `reserved`. IPv4 has no unassigned space: every address outside the
+ * tables is allocated unicast.
  */
 export const classifyAddress = (address: string): AddressClass => {
   if (net.isIPv4(address)) return classifyIPv4(address);
@@ -330,7 +334,9 @@ export const classifyAddress = (address: string): AddressClass => {
   }
   if (RESERVED_V6.some(([base, bits]) => inIPv6Block(g, base, bits))) return 'reserved';
   if (PRIVATE_V6.some(([base, bits]) => inIPv6Block(g, base, bits))) return 'private';
-  return 'public';
+  // Everything outside global unicast is unassigned or reserved, so an address
+  // no row above places is refused until it is classified on purpose.
+  return inIPv6Block(g, ...GLOBAL_UNICAST_V6) ? 'public' : 'reserved';
 };
 
 const privateAddressesAllowed = (): boolean => process.env.OUTBOUND_WEBHOOK_ALLOW_PRIVATE_ADDRESSES === 'true';
