@@ -2212,14 +2212,17 @@ class AgentMessageService {
    * internal consumers.
    */
   static async authorIdsSince(podId: unknown, since: Date): Promise<string[]> {
-    if (PGMessage && process.env.PG_HOST) {
-      return (PGMessage as { findAuthorIdsSince(id: unknown, at: Date): Promise<string[]> })
-        .findAuthorIdsSince(podId, since);
-    }
-    const ids: unknown[] = await Message.distinct('userId', {
+    const mongo = Message.distinct('userId', {
       podId: { $eq: podId }, createdAt: { $gt: since }, messageType: { $ne: 'system' },
-    });
-    return ids.map(String);
+    }) as Promise<unknown[]>;
+    if (!PGMessage || !process.env.PG_HOST) return (await mongo).map(String);
+    // A post that fell back to MongoDB while PostgreSQL was failing is only
+    // there until it is reconciled, so read both.
+    const [pg, fallback] = await Promise.all([
+      (PGMessage as { findAuthorIdsSince(id: unknown, at: Date): Promise<string[]> }).findAuthorIdsSince(podId, since),
+      mongo,
+    ]);
+    return [...new Set([...pg, ...fallback.map(String)])];
   }
 
   static async getRecentMessages(

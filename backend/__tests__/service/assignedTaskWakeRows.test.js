@@ -9,6 +9,7 @@ const AgentEvent = require('../../models/AgentEvent');
 const AgentTaskRowWakeState = require('../../models/AgentTaskRowWakeState');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentEventService = require('../../services/agentEventService');
+const AgentMessageService = require('../../services/agentMessageService');
 const { dispatchAssignedTaskWakes } = require('../../services/assignedTaskWakeService');
 
 const STOPPED = 'I stopped retrying this after repeated errors. Reassign it or update it to try again.';
@@ -129,6 +130,54 @@ describe('a row the agent created for itself', () => {
       expect(await wakes(1)).toBe(1);
       await settle('succeeded', 2);
       expect(await wakes(32)).toBe(0);
+    } finally {
+      write.mockRestore();
+    }
+  });
+
+  it('stays quiet when the pod read fails and nobody updated a row', async () => {
+    const read = jest.spyOn(AgentMessageService, 'authorIdsSince').mockRejectedValue(new Error('pg down'));
+    try {
+      expect(await wakes(0)).toBe(1);
+      await settle('succeeded', 1);
+      await say(person._id, 10);
+      expect(await wakes(31)).toBe(0);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  it('is still re-armed by a person updating a row when the pod read fails', async () => {
+    const read = jest.spyOn(AgentMessageService, 'authorIdsSince').mockRejectedValue(new Error('pg down'));
+    try {
+      expect(await wakes(0)).toBe(1);
+      await settle('succeeded', 1);
+      await Task.create({
+        podId, taskNum: 5, taskId: 'TASK-5', title: 'Unrelated', status: 'done',
+        updates: [{ text: 'Created by row-owner', author: 'row-owner', authorId: String(person._id), createdAt: at(10) }],
+      });
+      expect(await wakes(31)).toBe(1);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  it('clears the stamp on rows a failed write reached, so their first wake is not lost', async () => {
+    await Task.create({
+      podId, taskNum: 6, taskId: 'N-6-codex-mvid77ql', title: 'Second own row', assignee: 'forge', source: 'agent',
+    });
+    const original = AgentTaskRowWakeState.bulkWrite.bind(AgentTaskRowWakeState);
+    const write = jest.spyOn(AgentTaskRowWakeState, 'bulkWrite').mockImplementationOnce(async (ops) => {
+      await original(ops.slice(0, 1));
+      throw new Error('write failed after the first row');
+    });
+    try {
+      expect(await wakes(0)).toBe(0);
+      expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+      expect(await wakes(1)).toBe(1);
+      const { content } = AgentEventService.enqueue.mock.calls[0][0].payload;
+      expect(content).toContain('N-4-codex-mvid77qk');
+      expect(content).toContain('N-6-codex-mvid77ql');
     } finally {
       write.mockRestore();
     }

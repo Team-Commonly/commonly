@@ -70,17 +70,18 @@ const updatedSince = (row: Row, since: Date): unknown[] => (row.updates || [])
 async function humanActedInPodSince(podId: unknown, since: Date): Promise<boolean> {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const AgentMessageService = require('./agentMessageService');
-  let authors: unknown[] = [];
+  const rows = await Task.find({ podId, 'updates.createdAt': { $gt: since } })
+    .select('updates.authorId updates.createdAt').lean() as Row[];
+  if (await anyHuman(rows.flatMap((row) => updatedSince(row, since)))) return true;
   try {
-    authors = await AgentMessageService.authorIdsSince(podId, since);
+    return await anyHuman(await AgentMessageService.authorIdsSince(podId, since));
   } catch (error) {
-    // Unread means no wake: a row the agent set itself waits for a person anyway.
+    // Fails closed: re-arming on an unreadable pod would bring back the
+    // thirty-minute loop for as long as the read keeps failing. A missed re-arm
+    // costs one delayed wake; the next update to a row re-arms it.
     console.warn('[assigned-task-wake] pod activity unreadable:', String(podId), (error as Error).message);
     return false;
   }
-  const rows = await Task.find({ podId, 'updates.createdAt': { $gt: since } })
-    .select('updates.authorId updates.createdAt').lean() as Row[];
-  return anyHuman([...authors, ...rows.flatMap((row) => updatedSince(row, since))]);
 }
 
 // 'open' until the wake's run settles; a run that did nothing for its own
@@ -328,10 +329,19 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
       })));
       // Recorded before the wake is queued: a wake the stop rule cannot see
       // must not happen. On failure the slot is returned below and nothing queues.
-      // A partial failure can leave some rows with lastWakeAt and no event id:
-      // they wait for a person as usual and this run is not counted for them.
-      // eslint-disable-next-line no-await-in-loop
-      await recordRows({ lastWakeAt: now, lastWakeEventId: null });
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await recordRows({ lastWakeAt: now, lastWakeEventId: null });
+      } catch (recordError) {
+        // An ordered write can stamp some rows before it fails. Those rows were
+        // not woken, so clear the stamp: at worst one extra wake, never a lost one.
+        // eslint-disable-next-line no-await-in-loop
+        await AgentTaskRowWakeState.updateMany(
+          { _id: { $in: shown.map((row) => rowKey(key, row)) }, lastWakeAt: now },
+          { $set: { lastWakeAt: null } },
+        ).catch((clearError: Error) => console.error('[assigned-task-wake] stamp not cleared:', key, clearError.message));
+        throw recordError;
+      }
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const AgentEventService = require('./agentEventService');
       enqueueStarted = true;
