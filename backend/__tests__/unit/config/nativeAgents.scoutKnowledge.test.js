@@ -126,7 +126,7 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/DeepSeek Harness \(dsh\) through its attach guide, walked on macOS with other OSs unverified/);
     expect(prompt).not.toMatch(/On Linux \(WSL included\), Codex only/);
     expect(prompt).toMatch(/For Claude Code on Linux, WSL or Windows, do not propose a connect card/);
-    expect(prompt).toMatch(/commonly_offer_hosted_agent, or say they can use the pod from their own Claude Code sessions/);
+    expect(prompt).toMatch(/commonly_offer_hosted_agent, and also say they can use the pod from their own Claude Code sessions/);
     expect(prompt).not.toMatch(/Windows is not verified yet/);
   });
 
@@ -139,6 +139,50 @@ describe('Scout onboarding knowledge', () => {
   test('gives both halves when their tool can call agents: the listener and the MCP line', () => {
     expect(prompt).toMatch(/give both halves: the Terminal command/);
     expect(prompt).toMatch(/and the MCP line/);
+  });
+
+  // Stranger journey 2026-10-20..26: after "Claude Code" and "macOS" in the
+  // person's own words, Scout typed the Terminal steps out in 6 of 46 runs and
+  // the card never came.
+  test('proposes the connect card once the tool and a supported OS are known, however the person arrived', () => {
+    expect(prompt).toMatch(/Once they have named Claude Code or Codex and an OS on that list, propose the card in that same reply/);
+    expect(prompt).toMatch(/then propose the connect card when the card rule below allows it/);
+    expect(prompt).toMatch(/propose the card in that same reply, whether they came from the welcome button or asked in their own words/);
+    expect(prompt).toMatch(/Do not type out the Terminal steps, and do not ask whether they want it set up, in its place/);
+  });
+
+  // Rhea on #2765: the prompt is the only guard before the card, so the pairs
+  // it may go out for are listed, not inferred.
+  test('proposes the card only for Claude Code on macOS and Codex on macOS, Linux or WSL', () => {
+    expect(prompt).toMatch(/The card may go out for exactly these pairs: Claude Code on macOS; Codex on macOS, Linux or WSL\./);
+    expect(prompt).toMatch(/Any other OS, such as native Windows, ChromeOS, iPad or iPhone, Android or FreeBSD, gets a text answer and no card/);
+    ['ChromeOS', 'iPad', 'Android'].forEach((os) => expect(prompt).toContain(os));
+  });
+
+  test('asks about Codex in ChatGPT, and takes a plain "Codex" as the CLI', () => {
+    expect(prompt).toMatch(/A plain "Codex" answers that question and counts as the CLI/);
+    expect(prompt).toMatch(/When they say Codex together with ChatGPT, the web, the cloud or an app, as in "I use Codex in ChatGPT", ask whether they run the Codex CLI in a terminal, with no card in that reply/);
+  });
+
+  test('does not take the Claude app or ChatGPT for the command-line tool', () => {
+    expect(prompt).toMatch(/the Claude app \(desktop or phone\) and claude\.ai are not Claude Code, and the ChatGPT app, chatgpt\.com and Codex in ChatGPT are not the Codex CLI/);
+    expect(prompt).toMatch(/When they say "Claude" or "ChatGPT" without saying which, ask whether they run Claude Code or the Codex CLI in a terminal, and propose no card until they say they do/);
+    expect(prompt).toMatch(/A bare "Claude" or "ChatGPT" never settles it, on macOS too, and even when you had asked "Claude Code or Codex": ask that one question first, with no card in that reply/);
+    expect(prompt).toMatch(/Before you propose the card, check their own messages, not yours: one of them must say "Claude Code" or "Codex"\. If none does, ask instead/);
+    expect(prompt).toMatch(/If they only use the app, there is nothing of theirs to connect: offer "Run it here"/);
+  });
+
+  // The answer matches what the Connect page itself offers on that OS
+  // (agentByo.listen.unavailableClaude / unavailableCodex).
+  test('never proposes the card for a tool or OS it cannot set up, and offers what the Connect page does', () => {
+    expect(prompt).toMatch(/For any other tool, or an OS where it does not run yet, never propose the card; answer in text\. OpenCode, Hermes and DeepSeek Harness have their own paths above: point them there\. Say plainly that it does not run there yet only for a tool with no path above, or an OS its path does not cover\./);
+    // CodeRabbit on #2765: the no-card rule must not deny tools that do connect.
+    expect(prompt).not.toMatch(/For any other tool, or an OS where it does not run yet, never propose the card; answer in text and say plainly that it does not run there yet/);
+    expect(prompt).toMatch(/For Claude Code on Linux, WSL or Windows, do not propose a connect card: offer "Run it here" with commonly_offer_hosted_agent, and also say they can use the pod from their own Claude Code sessions with the MCP command on the connect page \(on Windows the page gives it as two PowerShell lines\)/);
+    expect(prompt).toMatch(/For Codex on native Windows, do not propose a connect card either: offer "Run it here", or running Codex on a Mac or Linux machine/);
+    const en = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../../frontend/src/i18n/locales/en.json'), 'utf8'));
+    expect(en.agentByo.listen.unavailableClaude).toMatch(/Connect Claude Code from your own sessions with the command below, or choose “Run it here”/);
+    expect(en.agentByo.listen.unavailableCodex).toMatch(/Choose “Run it here” for a hosted agent, or run the command on a Mac or Linux machine/);
   });
 
   // Stranger journey 2026-10-26: Scout wrote the Terminal steps and asked
