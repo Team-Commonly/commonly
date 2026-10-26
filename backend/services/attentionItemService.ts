@@ -23,7 +23,7 @@ const { humansAnsweredBy } = require('./agentAnswerService');
 // eslint-disable-next-line global-require
 const { isListedPodMember } = require('../utils/isPodMember');
 
-type SourceType = 'message' | 'approval' | 'approval_action' | 'decision_request' | 'task';
+type SourceType = 'message' | 'approval' | 'approval_action' | 'decision_request' | 'task' | 'initiative';
 type Kind = 'mention' | 'approval' | 'decision' | 'handoff' | 'blocked';
 type MentionOptions = {
   isAlreadyAcknowledged?: (recipientUserId: unknown, legacyMentionId: string) => boolean;
@@ -549,6 +549,61 @@ export const recordTaskAttention = async (task: any, options: TaskAttentionOptio
   }
 };
 
+// Initiative v1 design (#2788) §4: one nudge per stall
+// episode. The episode start is part of the source id, so every run inside one
+// episode upserts onto the same row and the next episode opens a new one. The
+// row goes to one current human member of the pod: the owner when the owner is
+// a person, otherwise the agent's installer. No agent is woken.
+const INITIATIVE_STALL = 'stall';
+export const initiativeStallSourceId = (initiativeId: unknown, episodeStart: Date): string => (
+  `initiative:${String(initiativeId)}:${INITIATIVE_STALL}:${episodeStart.toISOString()}`
+);
+
+export const recordInitiativeStall = async (stall: {
+  initiativeId: unknown; title: string; podId: unknown; episodeStart: Date;
+  ownerUserId?: unknown; ownerAgentUserId?: unknown;
+}, options: RecordOptions = {}): Promise<{ recipientUserId: string | null; failed?: true }> => {
+  try {
+    const { podId } = stall;
+    if (!podId || !stall.initiativeId) return { recipientUserId: null };
+    const target = stall.ownerUserId ? String(stall.ownerUserId)
+      : stall.ownerAgentUserId ? await installerForAgent(stall.ownerAgentUserId, podId) : null;
+    if (!target) return { recipientUserId: null };
+    const recipient = (await currentHumanMembers(podId)).find((member) => String(member._id) === target);
+    if (!recipient) return { recipientUserId: null };
+    const pod = await Pod.findById(podId).select('name').lean();
+    await recordForRecipients([recipient], {
+      podId, kind: 'blocked' as Kind, sourceType: 'initiative' as SourceType,
+      sourceId: initiativeStallSourceId(stall.initiativeId, stall.episodeStart),
+      title: `Stalled: ${compact(stall.title, 200)}`,
+      detail: `No merge or ruling since ${stall.episodeStart.toISOString().slice(0, 10)}.`,
+      podName: pod?.name || 'Pod', emailRecipientId: target, suppressEmail: options.suppressEmail,
+    });
+    return { recipientUserId: target };
+  } catch (error) {
+    console.warn('[attention] initiative stall materialization failed:', (error as Error).message);
+    return { recipientUserId: null, failed: true };
+  }
+};
+
+// Closes this initiative's open stall rows, except the current episode's. A
+// card for a stall that has ended would otherwise sit in the queue forever.
+export const resolveInitiativeStalls = async (initiativeId: unknown, keepSourceId?: string): Promise<void> => {
+  const prefix = escapeRegExp(`initiative:${String(initiativeId)}:${INITIATIVE_STALL}:`);
+  try {
+    await AttentionItem.updateMany(
+      {
+        'source.type': 'initiative',
+        'source.id': keepSourceId ? { $regex: `^${prefix}`, $ne: keepSourceId } : { $regex: `^${prefix}` },
+        status: 'open',
+      },
+      { $set: { status: 'resolved', resolvedAt: new Date() } },
+    );
+  } catch (error) {
+    console.warn('[attention] initiative stall resolution failed; leaving items visible:', (error as Error).message);
+  }
+};
+
 export const resolveTaskAttention = async (task: any): Promise<void> => {
   const taskKey = String(task?._id || task?.taskId || '').trim();
   if (!taskKey) return;
@@ -885,6 +940,6 @@ export const hasEverHadAttention = async (recipientUserId: unknown): Promise<boo
 // excluding true decisions and approvals.
 export const acknowledgeMention = acknowledgeAttention;
 
-export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepMissedAgentMentions, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
+export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepMissedAgentMentions, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordInitiativeStall, resolveInitiativeStalls, initiativeStallSourceId, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepMissedAgentMentions, AGENT_MENTION_MISSED_DAYS, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_CANDIDATE_RE, isHandoffRequest, handoffRecipients };
+module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepMissedAgentMentions, AGENT_MENTION_MISSED_DAYS, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordInitiativeStall, resolveInitiativeStalls, initiativeStallSourceId, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_CANDIDATE_RE, isHandoffRequest, handoffRecipients };
