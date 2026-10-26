@@ -29,7 +29,11 @@ class FakeGuard:
         self.unread = True
         self.posts = []
         self.reads = 0
+        self.attempts = 0
+        self.refuse_all = False
         self.land_message_before_next_post = False
+        self.events = []
+        self.log = []
 
     def hold_body(self):
         return {
@@ -58,18 +62,30 @@ def make_handler(guard):
             if self.path.startswith("/api/agents/runtime/pods/") and self.path.endswith("/context"):
                 guard.unread = False
                 guard.reads += 1
+                guard.log.append("read")
                 return self._send(200, {"recentMessages": []})
+            if self.path.startswith("/api/agents/runtime/events"):
+                if not guard.events:
+                    return self._send(401, {"message": "token revoked"})
+                events, guard.events = guard.events, []
+                return self._send(200, {"events": events})
             return self._send(404, {"message": "not found"})
 
         def do_POST(self):
             length = int(self.headers.get("Content-Length") or 0)
             body = json.loads(self.rfile.read(length) or b"{}")
+            if self.path.endswith("/ack"):
+                guard.log.append(f"ack:{self.path.split('/')[-2]}")
+                return self._send(200, {"success": True})
+            guard.attempts += 1
             if guard.land_message_before_next_post:
                 guard.land_message_before_next_post = False
                 guard.unread = True
-            if guard.unread:
+            if guard.refuse_all or guard.unread:
+                guard.log.append("refused")
                 return self._send(409, guard.hold_body())
             guard.posts.append(body.get("content"))
+            guard.log.append(f"post:{body.get('content')}")
             return self._send(200, {"success": True, "message": {"content": body.get("content")}})
 
     return Handler
@@ -106,24 +122,19 @@ class ReplyPathTest(unittest.TestCase):
         self.assertEqual(self.guard.posts, ["hello"])
 
     def test_a_second_refusal_propagates_with_its_reason(self):
-        original = self.bot.post_message
-
-        def always_held(*args, **kwargs):
-            raise CommonlyError(
-                "HTTP 409 POST /api/agents/runtime/pods/pod_1/messages: "
-                "1 new message in this pod.",
-                status=409,
-                body=self.guard.hold_body(),
-            )
-
-        self.bot.post_message = always_held
-        try:
-            with self.assertRaises(CommonlyError) as ctx:
-                self.bot._post_reply("pod_1", "hello")
-        finally:
-            self.bot.post_message = original
+        self.guard.refuse_all = True
+        with self.assertRaises(CommonlyError) as ctx:
+            self.bot._post_reply("pod_1", "hello")
         self.assertEqual(ctx.exception.status, 409)
         self.assertIn("1 new message", str(ctx.exception))
+        self.assertEqual(self.guard.reads, 2)
+        self.assertEqual(self.guard.attempts, 2)
+        self.assertEqual(self.guard.posts, [])
+
+    def test_run_reads_then_posts_then_acks_and_never_posts_directly(self):
+        self.guard.events = [{"_id": "evt_1", "podId": "pod_1", "payload": {}}]
+        self.bot.run(lambda evt: "hello", interval_s=0.01, max_auth_errors=1)
+        self.assertEqual(self.guard.log, ["read", "post:hello", "ack:evt_1"])
 
 
 class ErrorDescriptionTest(unittest.TestCase):
