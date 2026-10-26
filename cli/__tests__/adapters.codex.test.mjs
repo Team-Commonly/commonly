@@ -1183,6 +1183,20 @@ describe('codex adapter — the public Codex home on Linux', () => {
     expect(existsSync(state)).toBe(false);
   });
 
+  test('a refused workspace is found through a symlinked state directory', async () => {
+    const first = await publicSpawn(fakeHome, { platform: 'darwin', cwd: project });
+    const legacy = first[0].opts.env.CODEX_HOME;
+    await mkdir(join(legacy, 'sessions'), { recursive: true });
+    await writeFile(join(legacy, 'sessions', 'thread.jsonl'), 'kept\n');
+
+    // The state path names no part of the workspace; only resolving the link shows it is inside.
+    await symlink(project, join(fakeHome, 'link'));
+    await expect(publicSpawn(fakeHome, { cwd: project, env: { XDG_STATE_HOME: join(fakeHome, 'link', 'state') } }))
+      .rejects.toThrow(/contains the agent's own Codex home/);
+    expect(readFileSync(join(legacy, 'sessions', 'thread.jsonl'), 'utf8')).toBe('kept\n');
+    expect(existsSync(join(project, 'state'))).toBe(false);
+  });
+
   test('a workspace that contains the home is refused before Codex runs', async () => {
     const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
     const env = { ...process.env, CODEX_HOME: join(fakeHome, '.codex') };

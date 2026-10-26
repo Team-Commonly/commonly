@@ -315,8 +315,11 @@ const realpathOfNearest = async (path) => {
     try {
       return join(await realpath(current), ...rest);
     } catch (err) {
+      // Only a missing path walks up. Anything else (EACCES, ELOOP) would leave
+      // the containment check comparing a path nobody resolved: fail closed.
+      if (err?.code !== 'ENOENT' && err?.code !== 'ENOTDIR') throw err;
       const parent = dirname(current);
-      if (err?.code !== 'ENOENT' || parent === current) return join(current, ...rest);
+      if (parent === current) return join(current, ...rest);
       rest.unshift(basename(current));
       current = parent;
     }
