@@ -52,6 +52,19 @@ test.each(['complete', 'patch', 'github', 'onboarding'])('%s close revokes the b
     .rejects.toMatchObject({ code: 'grant_revoked' });
 });
 
+test('a failed revocation write leaves the close committed and the grant refused by its epoch', async () => {
+  const spy = jest.spyOn(RoomGrant, 'updateMany').mockRejectedValueOnce(new Error('revocation write failed'));
+  expect((await request(app).post(`/tasks/${POD}/TASK-1/complete`).send({})).status).toBe(200);
+  expect(spy).toHaveBeenCalledTimes(1);
+  spy.mockRestore();
+  expect((await Task.findOne({ podId: POD, taskId: 'TASK-1' })).status).toBe('done');
+  expect((await RoomGrant.findById(grant._id)).revokedAt).toBeNull();
+  await Task.updateOne({ podId: POD, taskId: 'TASK-1' }, { $set: { status: 'claimed', claimedByUserId: mockActor.id,
+    claimExpiresAt: new Date(Date.now() + 60000) } });
+  await expect(assertGrantUsable({ grantId: grant.grantId, agentUserId: mockActor.id, currentMemberIds: [mockActor.id] }))
+    .rejects.toMatchObject({ code: 'task_closed' });
+});
+
 test('claim stamps authenticated identity and refuses renewal by a different User sharing its display key', async () => {
   await Task.updateOne({ taskId: 'TASK-1' }, { $set: { status: 'pending' } });
   mockActor.bot = true;

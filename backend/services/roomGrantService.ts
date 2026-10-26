@@ -242,11 +242,23 @@ const markMintedGrantRejected = async (grantId: string, error: RoomGrantError): 
   throw error;
 };
 
+/**
+ * Runs after the close write commits. That write already moved the task's
+ * grantEpoch, so every bound grant is refused at use from that instant; this
+ * write records the revocation. A failure is logged, not thrown: a 500 after a
+ * committed close would skip the caller's remaining close work, and a retry
+ * finds the task done and never reaches this hook again.
+ */
 export const onTaskClosed = async (task: {
   podId?: unknown; taskId?: string; status?: string; grantEpoch?: number;
 }): Promise<void> => {
   if (task.status !== 'done' || !task.podId || !task.taskId) return;
-  await revokeTaskGrants({ podId: String(task.podId), taskId: task.taskId, closedEpoch: task.grantEpoch || 1 });
+  try {
+    await revokeTaskGrants({ podId: String(task.podId), taskId: task.taskId, closedEpoch: task.grantEpoch || 1 });
+  } catch (error) {
+    console.error(`[grants] task.done revocation write failed for ${String(task.podId)}/${task.taskId};`
+      + ' the epoch fence still refuses its grants', error);
+  }
 };
 
 export const effectiveAudience = (
