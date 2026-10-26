@@ -1352,7 +1352,8 @@ describe('performRun', () => {
   // every prompt whose final text reaches the pod says so. Pinned as a literal
   // rather than imported, so rewording the line is a deliberate test change.
   const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
-    + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary.';
+    + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary. '
+    + 'When an acknowledgement is all you\'d post, react with `commonly_react_to_message` instead of posting or staying silent; never instead of a reply someone asked for.';
 
   const firstPromptFor = async (events) => {
     createClient.mockReturnValue({
