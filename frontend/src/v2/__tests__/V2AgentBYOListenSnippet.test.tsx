@@ -47,9 +47,9 @@ const authValue = {
   updateProfile: jest.fn(),
 };
 
-const issueToken = async (runner?: 'codex') => {
+const issueToken = async (runner?: 'codex', pod = {}) => {
   axios.get.mockImplementation((url) => {
-    if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat' }] });
+    if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat', ...pod }] });
     if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
     return Promise.resolve({ data: {} });
   });
@@ -256,10 +256,11 @@ describe('BYO listener snippet', () => {
     expect(lines.filter((l) => l.trimStart().startsWith('#'))).toHaveLength(0);
   });
 
-  // Where the listener runs: Mac with either CLI, Linux with Codex. Claude Code
-  // under Linux's sandbox could not start (ubuntu run 38982219348) and native
-  // Windows has none; there the page says so and offers MCP and hosted. The
-  // Windows MCP command is PowerShell lines through cmd /c (windows-latest).
+  // Where the listener runs: Mac with either CLI, Linux with Codex, and Linux
+  // with Claude Code in an invite-only pod (TASK-027: the CLI refuses a public
+  // Claude Code seat under bubblewrap). Native Windows has no sandbox; there
+  // the page says so and offers MCP and hosted. The Windows MCP command is
+  // PowerShell lines through cmd /c (windows-latest).
   describe('where the listener runs', () => {
     const realUserAgent = window.navigator.userAgent;
     const setUserAgent = (value) => Object.defineProperty(window.navigator, 'userAgent', { value, configurable: true });
@@ -319,7 +320,8 @@ describe('BYO listener snippet', () => {
       expect(screen.getByTestId('byo-setup-os-linux')).toHaveAttribute('aria-pressed', 'true');
       expect(listener()).toBeUndefined();
       expect(screen.queryByTestId('byo-listen-reach')).toBeNull();
-      expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/from Linux yet/);
+      expect(screen.getByTestId('byo-listen-unavailable'))
+        .toHaveTextContent(/On Linux, Claude Code answers @mentions only in an invite-only pod, and this one isn’t/);
       expect(screen.queryByTestId('byo-listen-npm-hint')).toBeNull();
       expect(mcpBox()).toMatch(/-- npx -y @commonlyai\/mcp$/);
       expect(screen.getByTestId('byo-mcp-claude')).not.toHaveTextContent(/command above|Optional/);
@@ -332,6 +334,38 @@ describe('BYO listener snippet', () => {
       expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/The Codex CLI can’t answer @mentions from Linux yet\. .*Linux is not tested yet\./);
       expect(screen.queryByTestId('byo-listen-npm-hint')).toBeNull();
       expect(screen.queryByTestId('byo-listen-reach-codex')).toBeNull();
+    });
+
+    const PRIVATE_POD = { joinPolicy: 'invite-only', publicRead: false, communityListed: false };
+
+    test('Linux with Claude Code in an invite-only pod: the listener command and the Linux reach note', async () => {
+      setUserAgent(LINUX);
+      await issueToken(undefined, PRIVATE_POD);
+      expect(screen.getByTestId('byo-setup-os-linux')).toHaveAttribute('aria-pressed', 'true');
+      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/ --adapter claude$/);
+      expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
+      expect(screen.getByTestId('byo-listen-reach')).toHaveTextContent(/^On Linux, .* answers only while every pod it's in is private, invite-only/);
+      expect(screen.getByTestId('byo-listen-reach')).toHaveTextContent(/bubblewrap \(bwrap\)/);
+    });
+
+    // The CLI treats a pod that does not report a flag as public, so the page
+    // must not offer a listener the CLI would refuse.
+    test.each([
+      ['open to join', { ...PRIVATE_POD, joinPolicy: 'open' }],
+      ['listed in Community', { ...PRIVATE_POD, communityListed: true }],
+      ['publicRead not reported', { joinPolicy: 'invite-only', communityListed: false }],
+      ['communityListed not reported', { joinPolicy: 'invite-only', publicRead: false }],
+    ])('Linux with Claude Code in a pod %s: no listener command', async (_label, pod) => {
+      setUserAgent(LINUX);
+      await issueToken(undefined, pod);
+      expect(listener()).toBeUndefined();
+      expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/under “Who can join” in pod settings/);
+    });
+
+    test('Mac with Claude Code keeps the macOS reach note', async () => {
+      setUserAgent(MAC);
+      await issueToken(undefined, PRIVATE_POD);
+      expect(screen.getByTestId('byo-listen-reach')).toHaveTextContent(/^By default, on macOS/);
     });
 
     test('Codex on Windows says so, and offers hosted or another machine', async () => {

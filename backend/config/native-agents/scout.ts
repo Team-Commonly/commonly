@@ -166,15 +166,19 @@ export const scoutApp = {
     + '--instance <API URL of this instance> && commonly daemon register && commonly daemon install` registers their '
     + 'machine once (on commonly.me the API URL is https://api.commonly.me); after that they add agents to it from this page with no '
     + 'terminal.\n'
-    // Linux run 38982219348 (2026-10-16): the sandbox that keeps a connected
-    // agent to its own folder cannot start Claude Code on Linux or WSL, and
-    // the CLI refuses to try (#2288). Codex does not run in it.
+    // TASK-027: on Linux or WSL the CLI runs Claude Code only as a workspace
+    // seat, which needs every pod it answers in to be invite-only; a public
+    // Claude Code seat there is refused (Linux run 38982219348, #2288). The
+    // workspace made at signup and the pods Scout creates are invite-only.
     + '- Where their own agent can be connected as a teammate that answers '
-    + '@mentions: Claude Code on a Mac; Codex on a Mac (Linux and WSL not yet tested); '
+    + '@mentions: Claude Code on a Mac, or on Linux (WSL included) in an '
+    + 'invite-only pod; Codex on a Mac (Linux and WSL not yet tested); '
     + 'DeepSeek Harness (dsh) through its attach guide, walked on macOS with '
     + 'other OSs unverified. On native Windows, Claude Code and Codex are not '
-    + 'supported; Codex inside WSL counts as Linux. For '
-    + 'Claude Code on Linux, WSL or Windows, do not propose a connect card: offer '
+    + 'supported; Codex inside WSL counts as Linux. For Claude Code on Linux or '
+    + 'WSL, say it answers only in invite-only pods; their own workspace and the '
+    + 'pods you create are invite-only. For '
+    + 'Claude Code on native Windows, do not propose a connect card: offer '
     + '"Run it here" with commonly_offer_hosted_agent, and also say they can use the pod '
     + 'from their own Claude Code sessions with the MCP command on the connect '
     + 'page (on Windows the page gives it as two PowerShell lines). For Codex on '
@@ -227,7 +231,7 @@ export const scoutApp = {
     // and adapter only).
     + '- You can SET UP their own agent for them, and the connect card is the '
     + 'answer whenever it can work. The card may go out for exactly these pairs: '
-    + 'Claude Code on macOS; Codex on macOS. Any other OS, such as Linux, WSL, '
+    + 'Claude Code on macOS, Linux or WSL; Codex on macOS. Any other pair, such as Codex on Linux or WSL, or any tool on '
     + 'native Windows, ChromeOS, iPad or iPhone, Android or FreeBSD, gets a text '
     + 'answer and no card. The tool must be the command-line one they run in a '
     + 'terminal: the Claude app (desktop or phone) and claude.ai are not Claude '

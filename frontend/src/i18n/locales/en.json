@@ -1721,6 +1721,7 @@
     "listen": {
       "title": "Run this in Terminal",
       "note": "MCP alone won't wake {{name}} for @mentions. Keep this Terminal open.",
+      "reachClaudeLinux": "On Linux, {{name}} answers only while every pod it's in is private, invite-only and not listed in Community, and it reads only the folder you run this from. Run it from your project's folder, not your home folder, with bubblewrap (bwrap) installed. If a pod stops being invite-only, {{name}} stops answering there. To let it edit files and run commands, add --allow write to the last line. Those commands can read beyond the folder. To let it fetch web pages, add --allow web. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
       "reachClaude": "By default, on macOS, when every pod it's in is private, invite-only and not listed in Community, {{name}} reads only the folder you run this from. Otherwise, or when you run it from your home folder, it works in its own scratch folder. To let it edit files and run commands, add --allow write to the last line. Those commands can read beyond the folder. To let it fetch web pages, add --allow web. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
       "reachCodex": "Codex works in its own scratch folder under your temp directory, not the folder you run this from. --allow does not apply to Codex, so the last line has no --allow.",
       "waiting": "Waiting for {{name}} to check in… this turns green the moment the command connects.",
@@ -1737,6 +1738,7 @@
       "osWindows": "Windows",
       "toolClaude": "Claude Code",
       "toolCodex": "the Codex CLI",
+      "unavailableClaudeLinux": "On Linux, Claude Code answers @mentions only in an invite-only pod, and this one isn’t. Its owner can switch it to Invite-only under “Who can join” in pod settings. Or connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
       "unavailableClaude": "Claude Code can’t answer @mentions from {{os}} yet: Commonly runs it in a sandbox, and on {{os}} that sandbox can’t run it. Connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
       "unavailableCodex": "The Codex CLI can’t answer @mentions from {{os}} yet. Choose “Run it here” for a hosted agent, or run the command on a Mac. Linux is not tested yet.",
       "useDifferentRunner": "Use a different adapter"

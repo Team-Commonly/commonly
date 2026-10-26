@@ -75,9 +75,11 @@ const CLAUDE_FILE_NAME = 'CLAUDE.md';
 type MachineAdapter = '' | 'claude' | 'codex';
 
 // Where the listener runs (cli 0.1.106 stops elsewhere, with directions):
-// Commonly runs it in a sandbox. Seatbelt runs Claude Code and Codex on a Mac;
-// on Linux (WSL included) the bubblewrap namespace cannot start Claude Code
-// yet (ubuntu run 38982219348), and native Windows has no sandbox for either.
+// Commonly runs it in a sandbox. Seatbelt runs Claude Code and Codex on a Mac.
+// On Linux (WSL included) bubblewrap runs Codex, and Claude Code only as a
+// workspace seat, which the CLI allows only while every pod it answers in is
+// invite-only (TASK-027); a public Claude Code seat there is refused. Native
+// Windows has no sandbox for either.
 // PowerShell also has no `export`, so a Windows visitor gets PowerShell lines
 // for the MCP connection instead (windows-latest, 2026-10-16).
 type SetupOs = 'mac' | 'linux' | 'windows';
@@ -103,7 +105,19 @@ const SETUP_OS_OPTIONS: Array<{ os: SetupOs; labelKey: string }> = [
 // which PowerShell cannot run, and Codex on native Windows is unmeasured.
 // Not drift: the page only offers what it has seen work. Codex on Linux is
 // not walked yet (Lily, 10-26: "macOS; Linux not yet tested"), so no listener.
-const listenerRunsOn = (os: SetupOs): boolean => os === 'mac';
+// Claude Code on Linux runs only in a pod that passes the CLI's own test
+// (workspace-trust.js podIsConfirmedPrivate): both flags reported and false,
+// and invite-only. A pod that omits a flag is not private.
+const podIsConfirmedPrivate = (pod?: V2Pod): boolean => (
+  typeof pod?.publicRead === 'boolean'
+  && typeof pod?.communityListed === 'boolean'
+  && !pod.publicRead
+  && !pod.communityListed
+  && pod.joinPolicy === 'invite-only'
+);
+const listenerRunsOn = (os: SetupOs, adapter: 'claude' | 'codex', pod?: V2Pod): boolean => (
+  os === 'mac' || (os === 'linux' && adapter === 'claude' && podIsConfirmedPrivate(pod))
+);
 type ModelOption = { value: string; labelKey: string };
 const CLAUDE_MODEL_OPTIONS: ModelOption[] = [
   { value: 'opus', labelKey: 'agentByo.form.modelOpus' },
@@ -200,7 +214,11 @@ const V2AgentBYO: React.FC = () => {
   // Where the person sets up, defaulted from this browser. They can switch:
   // the machine they browse on is not always the one they set up.
   const [setupOs, setSetupOs] = useState<SetupOs>(browserOs);
-  const listenerAvailable = listenerRunsOn(setupOs);
+  const listenerAvailable = listenerRunsOn(
+    setupOs,
+    listenAdapter,
+    pods.find((p) => p._id === (issued?.podId || podId)),
+  );
   // Live listening verification (#887 class, second half). #888 made the
   // listening step legible; this makes it CHECKABLE — the page polls the
   // kernel until THIS agent's runtime token authenticates for the first time
@@ -1605,7 +1623,9 @@ const V2AgentBYO: React.FC = () => {
                 ? t('agentByo.listen.needs', {
                   tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex') : t('agentByo.listen.toolClaude'),
                 })
-                : t(listenAdapter === 'claude' ? 'agentByo.listen.unavailableClaude' : 'agentByo.listen.unavailableCodex', {
+                : t(listenAdapter === 'claude'
+                  ? (setupOs === 'linux' ? 'agentByo.listen.unavailableClaudeLinux' : 'agentByo.listen.unavailableClaude')
+                  : 'agentByo.listen.unavailableCodex', {
                   os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
                 })}{' '}
               <button
@@ -1659,7 +1679,7 @@ const V2AgentBYO: React.FC = () => {
             )}
             {listenerAvailable && listenAdapter === 'claude' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-reach">
-                {t('agentByo.listen.reachClaude', { name: issued.agentName })}
+                {t(setupOs === 'linux' ? 'agentByo.listen.reachClaudeLinux' : 'agentByo.listen.reachClaude', { name: issued.agentName })}
               </p>
             )}
             {listenerAvailable && listenAdapter === 'codex' && (
