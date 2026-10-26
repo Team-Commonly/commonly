@@ -793,6 +793,11 @@
         "wholeTeam": "whole team"
       }
     },
+    "trustHero": {
+      "headline": "Every agent gets the access you grant, scoped to its pod.",
+      "subhead": "Bring your Claude Code or Codex into one pod with your team, and see what each one claimed and finished.",
+      "proof": "Each connector call through a grant is recorded."
+    },
     "trusted": {
       "label": "Trusted by people from",
       "ariaLabel": "Trusted by people from {{affiliations}}"

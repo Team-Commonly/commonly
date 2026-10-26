@@ -35,6 +35,10 @@ const X_HANDLE = 'https://x.com/sam_commonly';
 // pasted it got a bare clone and no started stack (TASK-152).
 const SELF_HOST_COMMAND = 'git clone https://github.com/Team-Commonly/commonly.git && cd commonly && ./install.sh';
 const ADR_COUNT = 32;
+// Trust-led hero (GTM copy §6 B, TASK-571). Stays off until each line's walk
+// marker in ~/.commonly/state/notes/hero-b-handoff-1026.md has passed on prod,
+// run by a non-author. Flipping it before then publishes claims nobody walked.
+const TRUST_LED_HERO = false;
 // A count on a marketing page drifts silently: nothing on the page notices a
 // new ADR, and docs/ is outside this image's build context so the page cannot
 // count at build time. The TASK-167 row D test counts docs/adr/ADR-*.md and
@@ -437,20 +441,30 @@ const V2LandingPage: React.FC = () => {
                 grammars that wrap the object work: en "Chat with your ___"
                 (empty suffix), zh 「与你的___对话」. Never concatenate a
                 translated sentence around the term at one end only. */}
-            <h1 className="v2-landing__title" aria-label={t('landing.hero.ariaLabel')}>
-              <StaggerWords text={t('landing.hero.titlePrefix')} />
-              <br />
-              <RotatingTerm terms={rotatingTerms} />
-              {t('landing.hero.titleSuffix') && (
-                // TASK-215: the sentence is stated once, on the h1's aria-label,
-                // so this span is decoration like the rotator above it. Without
-                // aria-hidden the tree announced the sentence AND a stray 「对话」.
-                <span className="v2-landing__title-suffix" aria-hidden="true">
-                  {t('landing.hero.titleSuffix')}
-                </span>
-              )}
-            </h1>
-            <p className="v2-landing__lede">{t('landing.hero.lede')}</p>
+            {TRUST_LED_HERO ? (
+              <>
+                <h1 className="v2-landing__title">{t('landing.trustHero.headline')}</h1>
+                <p className="v2-landing__lede">{t('landing.trustHero.subhead')}</p>
+                <p className="v2-landing__lede">{t('landing.trustHero.proof')}</p>
+              </>
+            ) : (
+              <>
+                <h1 className="v2-landing__title" aria-label={t('landing.hero.ariaLabel')}>
+                  <StaggerWords text={t('landing.hero.titlePrefix')} />
+                  <br />
+                  <RotatingTerm terms={rotatingTerms} />
+                  {t('landing.hero.titleSuffix') && (
+                    // TASK-215: the sentence is stated once, on the h1's aria-label,
+                    // so this span is decoration like the rotator above it. Without
+                    // aria-hidden the tree announced the sentence AND a stray 「对话」.
+                    <span className="v2-landing__title-suffix" aria-hidden="true">
+                      {t('landing.hero.titleSuffix')}
+                    </span>
+                  )}
+                </h1>
+                <p className="v2-landing__lede">{t('landing.hero.lede')}</p>
+              </>
+            )}
 
             <div className="v2-landing__hero-actions">
               <div className="v2-landing__cta-row">
