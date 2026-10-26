@@ -259,6 +259,7 @@ request, and the OTLP export places it there.
 | `session.opened` | `{method, sessionId, requestedSessionId?, fallback?}` | `system` |
 | `attempt.settled` | `{attempt, outcome, failure?: {kind, detail}}` | `system` |
 | `run.settled` | `{outcome, failure?, durationMs, attempts}` | `system` |
+| `harness.switched` | `{from, to, reason}` | `system` |
 
 - `outcome` is `ok`, `failed`, `stuck` or `cancelled`.
 - `failure.kind` is a key of `FAILURE_KINDS` in `src/failures.js`, or `null`
@@ -274,6 +275,17 @@ request, and the OTLP export places it there.
     nor session/load`, or `session/<resume|load> answered error <code>`
     with the JSON-RPC error's integer code;
   - no other field is allowed.
+- `harness.switched` comes before the `attempt.started` of an attempt that
+  runs on another entry of the seat's run config than the one the seat was on
+  (`src/harness-plan.js`):
+  - `from` and `to` are entry labels, `harness/model` or
+    `harness/model@effort`, written the one canonical way and never equal;
+  - `reason` is a key of `SWITCH_REASONS`: `not_authenticated`, `quota` or
+    `provider_unsupported` (the entry above failed that way), `blocked`
+    (the entries above were skipped), `probe` (a probe moved back up the
+    list) or `operator` (an operator switched the seat);
+  - no other field is allowed. The attempt that follows starts a fresh
+    session.
 - `run.settled` is the last line of a complete record. Nothing is written
   after it.
 - If an attempt has no `attempt.settled`, the record says only that the next
@@ -497,6 +509,10 @@ What's new or changed in `EVENT_TYPES`:
    `egress.denied` and `agent.retry`, `contextTokens` and `contextSize` on
    `usage`, and the `pod-member` value of `decidedByRole`. Lines without them
    are unchanged.
+
+   A later revision, also at `v: 1`, added the kind `harness.switched` and the
+   failure kinds `not_authenticated`, `quota`, `provider_unsupported` and
+   `capacity`. Lines without them are unchanged.
 4. **One writer per file.** A single process appends lines in `seq` order.
 
 ## 4. What the hash chain proves, and what it doesn't
@@ -549,7 +565,7 @@ operates it.
   the time.
 - **Every other kind is an event on the span current at the time.** That
   covers grants, credentials, claims, `task.done`, results, liveness,
-  `session.opened`, `sandbox.applied`, egress and `tool.update`. An egress denial is an event, not an error status.
+  `session.opened`, `harness.switched`, `sandbox.applied`, egress and `tool.update`. An egress denial is an event, not an error status.
 - **Span ids** are the first 8 bytes of
   SHA-256(`"seats.record/span/" + runId + "/" + seq`), where `seq` belongs to
   the entry that opens the span. The run span uses `0`. Exporting the same
