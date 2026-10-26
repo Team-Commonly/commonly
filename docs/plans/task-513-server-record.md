@@ -2,8 +2,50 @@
 
 Status: server boundary ruled by Lily on 2026-10-25 at 15:45:17Z, decision
 `6ade1e1d22a5cac4a3985799` (pod message 86051): **Task and pod chains**.
-The shared record package is not yet on main and ADR-033 remains Proposed.
-No writer or public read surface is enabled by this document.
+The CTO's 10-25 launch plan (task note, 2026-10-26 04:09Z) settles the two
+items this document left open: record-v1 and its writer are on main
+(`packages/seats`, #2739), and server lines carry no `argsDigest` at launch.
+
+Slice 1 (TASK-559) implements the store, the board's lines and the read
+endpoint. Every writer and the endpoint are off unless the pod is listed in
+`RECORD_V1_PODS`; nothing is public until a non-author walks it (slice 4).
+
+| slice | row | scope |
+|---|---|---|
+| 1 | TASK-559 | migration 0002, chain store, vendored writer, board lines, `GET /api/pods/:podId/record/tasks/:taskId` |
+| 2 | TASK-560 | grant lines and the B1–B5 connector mappings |
+| 3 | TASK-561 | `commonly_*` lines, a client-declared tool name checked against the route |
+| 4 | TASK-562 | v2 view, browser checks, non-author walk |
+
+### Decisions taken in slice 1
+
+- **One writer implementation, two copies.** The backend image builds from
+  `backend/` alone and is CommonJS; the writer is ESM in `packages/seats`.
+  `backend/vendor/seats/src` holds byte-identical copies of `format.js`,
+  `otel.js` and their imports, and a unit test fails when a copy differs or a
+  copied file imports one that was not copied. `npm run sync:seats-record`
+  refreshes them. The alternative, a second Docker build context, touches
+  every place the backend image is built (deploy-dev, deploy-staging, the kind
+  smoke test, both compose files).
+- **runId per chain** is `srv-task-<32 hex>` or `srv-pod-<32 hex>`, a SHA-256
+  over the pod and task (ADR-033 §8 q3, option a). The chain row stores it.
+- **The head is stored beside the lines** (`record_chains.head_seq`,
+  `head_hash`) and served as `X-Record-Head` / `X-Record-Entries`, the spec's
+  outside record of the last line (§4).
+- **Readers.** `canViewPod` decides existence (404 otherwise, so the route
+  confirms nothing). Lines then go to actual pod members only, agents
+  included. They carry approver and credential-owner ids verbatim, and a
+  hash-chained line cannot be redacted without breaking verification; those
+  are the ids `runTraces` withholds from admins and agent-DM observers, so
+  those readers get a 403.
+- **Board lines** mirror committed transitions: a fresh claim, a takeover or a
+  resumed blocked task writes `task.claimed`; a renewal by the holder writes
+  nothing; blocking a claim or a lapsed lease writes `task.released`; every
+  path to done writes `task.done` with the board as actor. Reopening and
+  unblocking have no record-v1 kind and write nothing.
+- **Emission** runs after the source write commits, queued per chain in each
+  process so one process appends in commit order, and never changes the
+  source write's result.
 
 ## Measured inputs (2026-10-25)
 
@@ -73,12 +115,10 @@ backend-sequenced PG chain per task, separate pod chains for taskless calls,
 and every pod-attributable commonly call, reads included. Explicit validated
 context is required; a recent task claim is never a task-binding source.
 
-Implementation must reuse the shared record-v1 writer/verifier/exporter. The
-pinned package is still absent from main; its landing or a coordinated tracked
-module extraction is required before wiring the backend writer. ADR-033 is
-still open/Proposed at e2c89e2f with reviewer HOLDs. Its approval and stored
-parked-call binding rules must be resolved before enablement. These are real
-integration dependencies; the server-boundary choice is no longer pending.
+Implementation reuses the shared record-v1 writer/verifier/exporter, now on
+main via #2739 and vendored byte-identically as described above. ADR-033 (#2691)
+is marked Accepted but not merged. Its approval and stored parked-call binding
+rules (D5) gate slice 2's approval lines, not slice 1.
 
 ## Interim digest rule (2026-10-25)
 

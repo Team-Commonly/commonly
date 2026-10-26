@@ -29,6 +29,10 @@ const { resolveAgentDisplayLabel } = require('../services/agentIdentityService')
 const { recordTaskAttention, resolveTaskAttention } = require('../services/attentionItemService');
 // eslint-disable-next-line global-require
 const { parseAssignee, toSingleLineTitle } = require('../utils/taskFieldNormalization');
+// eslint-disable-next-line global-require
+const { requestActor } = require('../services/recordService');
+// eslint-disable-next-line global-require
+const { recordTaskTransition } = require('../services/taskRecordService');
 
 /**
  * Who made this board change, for the agent fan-out.
@@ -657,6 +661,15 @@ router.post('/:podId/:taskId/claim', rateLimit({
     }
     const { task, previous: preClaim } = result;
     emitTaskUpdated(podId, task, 'updated');
+    recordTaskTransition({
+      podId,
+      task,
+      from: preClaim?.status,
+      to: 'claimed',
+      at: now,
+      actor: requestActor(req),
+      renewal: preClaim?.status === 'claimed' && preClaim.claimedBy === claimedBy,
+    });
     // Same-holder continuation: the seat that already held (or just lapsed
     // from) this task re-claimed it. The board UI still updates (socket emit
     // above); the room is NOT woken — a lease timestamp is not an event.
@@ -751,6 +764,7 @@ router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req
     // tasks completed here.
     await resolveTaskAttention(task);
     emitTaskUpdated(podId, task, 'updated');
+    recordTaskTransition({ podId, task, from: null, to: 'done', at: now, doneBy: userId });
     notifyAgents(req, podId, task, 'updated', { status: 'claimed' });
     return res.json({ task });
   } catch (err) {
@@ -1110,6 +1124,17 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     if (fieldUpdates.status === 'blocked') await recordTaskAttention(task, { includeBlocked: true });
     if (fieldUpdates.status !== undefined && fieldUpdates.status !== 'blocked') await resolveTaskAttention(task);
     emitTaskUpdated(podId, task, 'updated');
+    if (fieldUpdates.status !== undefined && previousTask && writeTime) {
+      recordTaskTransition({
+        podId,
+        task,
+        from: previousTask.status,
+        to: String(fieldUpdates.status),
+        at: writeTime,
+        actor: requestActor(req),
+        doneBy: userId,
+      });
+    }
     notifyAgents(req, podId, task, 'updated', previousTask);
     return res.json({ task });
   } catch (err) {

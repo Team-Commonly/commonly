@@ -10,6 +10,8 @@ const AgentIdentityService = require('./agentIdentityService');
 const AgentMessageService = require('./agentMessageService');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { emitTaskUpdated } = require('./taskEventService');
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { recordTaskTransition } = require('./taskRecordService');
 
 type Element =
   | { type: 'Text'; text: string }
@@ -94,6 +96,7 @@ export const completeTaskForMergedPull = async (podId: string, href: string): Pr
     );
     if (!task) return;
     emitTaskUpdated(podId, task, 'updated');
+    recordTaskTransition({ podId, task, from: null, to: 'done', at });
   }
 };
 

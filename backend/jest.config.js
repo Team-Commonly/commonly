@@ -16,6 +16,9 @@ module.exports = {
   // parallel workers never race the download lock (the CI flake root cause).
   globalSetup: '<rootDir>/__tests__/utils/globalSetup.js',
   transform: {
+    // The vendored record-v1 closure is ESM (byte-identical to
+    // packages/seats/src); ts-jest down-levels it to CommonJS like tsc does.
+    '/vendor/seats/.+\\.js$': ['ts-jest', { tsconfig: { allowJs: true, checkJs: false } }],
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: { allowJs: true, checkJs: false } }],
     '^.+\\.jsx?$': 'babel-jest',
   },
@@ -26,6 +29,7 @@ module.exports = {
     '!**/coverage/**',
     '!**/jest.config.js',
     '!**/__tests__/utils/**',
+    '!vendor/**',
     '!server.ts',
     '!server.js',
   ],
