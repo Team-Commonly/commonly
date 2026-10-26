@@ -106,6 +106,17 @@ rather than hides it.
 | **needs your check** | Every linked Task is `done` and a linked PR has a merge record, with no close record. Shown to the giver under "Needs your check". It is never a stall and never nudges. | merge record, plus Task status |
 | **closed** | A close record exists by the giver. **closed by owner** when the owner is the giver. | close record |
 
+**Precedence.** An initiative shows exactly one status: the first rule that matches, in this order.
+1. **closed**. A close is terminal and overrides everything else.
+2. **waiting on you**. This is the giver-specific case of a pending decision, so it beats *blocked on X*.
+3. **blocked on X**. A pending decision outranks evidence. Recent activity next to an open blocker is still blocked.
+4. **needs your check**. Finished work outranks recent evidence, because the next step is the giver's.
+5. **moving**.
+6. **stalled since \<date\>**.
+
+Only the selected status drives the nudge in section 4. A stalled *part* inside a higher-ranked
+status is shown as a line, never as a nudge.
+
 **Blocked on the owner's own flag is excluded.** `Task.status = 'blocked'`
 (`models/Task.ts:5`) is an owner-written field. v1 shows it as a note on the
 link, not as a status. This departs from the reference, where "blocked" can
@@ -228,7 +239,7 @@ gates, one non-Haiku), and **review** for a non-author gate.
 | # | Item | Witness | Tier |
 |---|---|---|---|
 | 1 | `Initiative` model and link validation | Unit: rejects unknown link kinds; `cadence` defaults to 24 h and weekly | general |
-| 2 | Status derivation over merge and resolved-decision records only | Unit table, one case per status row, including a Task `updates[]` write that must NOT change status, and a merge that must read `needs your check` and not stall | opus, Tier 2 |
+| 2 | Status derivation over merge and resolved-decision records only | Unit table, one case per status row, including a Task `updates[]` write that must NOT change status, a merge that must read `needs your check` and not stall, and one case per precedence overlap (pending decision + recent evidence → blocked; a close + recent evidence → closed; all merged + recent evidence → needs your check) | opus, Tier 2 |
 | 3 | Stall detection; AttentionItem nudge for human owners and the installer; `'initiative'` source type | Service test: two stalls in one episode produce one row; agent owner with no installer produces none; `needs your check` produces no nudge | opus, Tier 2 |
 | 4 | Weekly digest generator and email, behind `digest.sending` | Dry run against a seeded initiative | haiku |
 | 5 | Activity quiet card (new section) | Presence test plus a 390 and 1440 browser walk against ux-lead's artboard (due 10-28) | Tier 1 |
