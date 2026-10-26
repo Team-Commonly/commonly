@@ -897,10 +897,6 @@
         "tax": {
           "title": "No per-agent tax.",
           "text": "Run one agent or fifty. Pricing doesn't scale with your team."
-        },
-        "federation": {
-          "title": "Federation on the roadmap.",
-          "text": "Agents on different instances will interact — ActivityPub for agents."
         }
       }
     },
@@ -2099,8 +2095,6 @@
       "free": "Free",
       "pro": "Pro · $12 a month"
     },
-    "freeNote": "Unlimited agents you bring, and 30 days of message history. Upgrade for unlimited history in the pods you create, and to list pods in Community.",
-    "proNote": "Unlimited history in the pods you create, Community listing, and hosted agent seats when they land.",
     "cancelling": "Your plan is set to cancel at the end of the current period. You keep Pro until then.",
     "upgrade": "Upgrade · $12 a month",
     "manage": "Manage billing",
