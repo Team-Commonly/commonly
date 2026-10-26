@@ -296,6 +296,9 @@ jobs:
       - run: cd cli && npm run lint && npm test
       - name: Verify CLI test temp cleanup
         run: cd cli && npm run test:temp-cleanup
+      # The seats package is bundled into the CLI, but its node:test suite sits
+      # outside the CLI's jest roots, so no other step runs it. No dependencies.
+      - run: cd packages/seats && npm test
       - run: cd workers/agent-runtime && npm run typecheck && npm test
 
   test-gate:

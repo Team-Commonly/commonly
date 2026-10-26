@@ -11,6 +11,7 @@
  * (Seatbelt, bwrap) is what stops a process that goes looking.
  */
 import { randomUUID } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { mkdtemp, mkdir, chmod, readFile, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { delimiter, join, resolve, sep } from 'node:path';
@@ -35,6 +36,10 @@ const isInside = (path, dir) => {
  * read the user's login (~/.local/bin/claude). Adapters run their CLI by
  * absolute path, so the run loses nothing it needs.
  */
+// A HOME reached through a symlink (macOS /var -> /private/var) shows up in
+// PATH under its resolved path too, e.g. npm's cwd-derived node_modules/.bin.
+const spellings = (dir) => { try { return [dir, realpathSync(dir)]; } catch { return [dir]; } };
+
 const scrubPath = (value, realHomes) => value.split(delimiter)
   .filter((entry) => entry && !realHomes.some((home) => isInside(entry, home)))
   .join(delimiter);
@@ -122,7 +127,7 @@ export const prepareRunEnv = async ({
   const hook = trace && typeof trace.emit === 'function' ? trace : traceOf(ctx);
   const issued = grantMeta ? grantIssued(grantMeta) : null;
   if (issued) hook.emit('grant.issued', issued);
-  const realHomes = [...new Set([baseEnv.HOME, homedir()].filter(Boolean))];
+  const realHomes = [...new Set([baseEnv.HOME, homedir()].filter(Boolean).flatMap(spellings))];
   const DENIED = {
     not_granted: 'is not in the run grant',
     unresolved: 'could not be resolved',
