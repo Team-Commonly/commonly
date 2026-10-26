@@ -17,8 +17,8 @@
  *   - "processing failed"         (the spawn threw; failed)
  *   - a restart ("stopping after the current turn" / "polling … for events")
  *     or the next "spawning"       (no close seen; counted as unclosed)
- * A "spawn credential refused" after "spawning" means the child never ran: it
- * is counted as a refused spawn, not a turn.
+ * A "spawn credential refused" or "lease failed" after "spawning" means the
+ * child never ran: it is counted as such, not as a turn.
  * A turn still open at the end of the window is "open", not a hang.
  */
 import fs from 'fs';
@@ -64,7 +64,10 @@ export const baseline = (text, { seat, untilMs = Date.now(), hours = 48, timeout
   const fromMs = untilMs - hours * 3_600_000;
   const turns = [];
   let open = null;
-  const counts = { untimestamped: 0, pollErrors: 0, restarts: 0, otherSeatLines: 0, spawnRefused: 0 };
+  const counts = { untimestamped: 0, pollErrors: 0, restarts: 0, otherSeatLines: 0, spawnRefused: 0, leaseFailed: 0 };
+  // The first "polling" line in the log is the seat's first start, not a
+  // restart; one before the window still makes the next one a restart.
+  let polledBefore = false;
   const close = (turn, fields) => { Object.assign(turn, fields); turns.push(turn); };
 
   for (const line of text.split('\n')) {
@@ -74,6 +77,9 @@ export const baseline = (text, { seat, untilMs = Date.now(), hours = 48, timeout
     const [, ts, who, msg] = m;
     const at = Date.parse(ts);
     if (seat && who !== seat) { counts.otherSeatLines += 1; continue; }
+    const polling = /^polling \S+ for events/.test(msg);
+    const restarted = polling && polledBefore;
+    if (polling) polledBefore = true;
     if (at < fromMs || at > untilMs) {
       // A turn that opened inside the window may close just past it; let it.
       if (!(open && at > untilMs)) continue;
@@ -85,15 +91,18 @@ export const baseline = (text, { seat, untilMs = Date.now(), hours = 48, timeout
       open = { startMs: at, eventType: spawn[1], adapter: spawn[2] };
       continue;
     }
-    if (/^stopping after the current turn/.test(msg) || /^polling \S+ for events/.test(msg)) {
-      if (at <= untilMs) counts.restarts += /^polling/.test(msg) ? 1 : 0;
+    if (/^stopping after the current turn/.test(msg) || polling) {
+      if (at <= untilMs && restarted) counts.restarts += 1;
       if (open) { close(open, { endMs: at, ended: 'restart' }); open = null; }
       continue;
     }
     if (/^(fetch failed|poll failed|HTTP \d{3}\b)/.test(msg)) { if (at <= untilMs) counts.pollErrors += 1; continue; }
     if (!open) continue;
+    // The model answered and every delivery rung threw; the processing
+    // failure that follows is the reply's, not the adapter's.
+    if (/\bERROR reply NOT delivered\b/.test(msg)) { open.replyLost = true; continue; }
     if (/processing failed/.test(msg)) {
-      close(open, { endMs: at, ended: 'failed', ...failureOf(msg) });
+      close(open, { endMs: at, ended: 'failed', ...(open.replyLost ? { name: 'reply_delivery_error' } : failureOf(msg)) });
       open = null;
       continue;
     }
@@ -102,8 +111,9 @@ export const baseline = (text, { seat, untilMs = Date.now(), hours = 48, timeout
     if (/^spawn credential (revoked|revoke failed)\b/.test(msg)) { open.revokedMs = at; continue; }
     // "spawning" is logged before the credential lease, so a refused lease
     // follows it: the child never ran, and there is no turn to time.
-    if (/^spawn credential refused\b/.test(msg)) {
-      if (open.startMs >= fromMs && open.startMs <= untilMs) counts.spawnRefused += 1;
+    const notSpawned = /^spawn credential (refused|lease failed)\b/.exec(msg);
+    if (notSpawned) {
+      if (open.startMs >= fromMs && open.startMs <= untilMs) counts[notSpawned[1] === 'refused' ? 'spawnRefused' : 'leaseFailed'] += 1;
       open = null;
       continue;
     }
@@ -121,7 +131,7 @@ export const baseline = (text, { seat, untilMs = Date.now(), hours = 48, timeout
   const byAdapter = {};
   for (const t of turns) {
     const a = (byAdapter[t.adapter] ||= {
-      turns: 0, ok: 0, failed: 0, timeouts: 0, exits: {}, errors: 0, unclosed: 0, cutByRestart: 0, open: 0,
+      turns: 0, ok: 0, failed: 0, timeouts: 0, exits: {}, replyLost: 0, errors: 0, unclosed: 0, cutByRestart: 0, open: 0,
       atOrOverTimeout: 0, outcomes: {}, durations: [],
     });
     a.turns += 1;
@@ -131,6 +141,7 @@ export const baseline = (text, { seat, untilMs = Date.now(), hours = 48, timeout
       a.failed += 1;
       if (t.name === 'adapter_timeout') a.timeouts += 1;
       else if (t.name === 'adapter_exit') a.exits[t.exitCode] = (a.exits[t.exitCode] || 0) + 1;
+      else if (t.name === 'reply_delivery_error') a.replyLost += 1;
       else a.errors += 1;
     }
     if (t.ended === 'unclosed') a.unclosed += 1;
@@ -164,13 +175,13 @@ export const render = (r) => {
   if (!adapters.length) out.push('  no turns in the window');
   for (const [name, a] of adapters) {
     out.push(`  ${name}: ${a.turns} turns, ${a.ok} ok, ${a.failed} failed`
-      + ` (${a.timeouts} timed out, exits ${JSON.stringify(a.exits)}, ${a.errors} other)`
+      + ` (${a.timeouts} timed out, exits ${JSON.stringify(a.exits)}, ${a.replyLost} replies not delivered, ${a.errors} other)`
       + `, ${a.cutByRestart} cut by restart, ${a.unclosed} unclosed, ${a.open} still open at the window end`);
     out.push(`    reached the turn budget: ${a.atOrOverTimeout}`);
     if (a.durationMs) out.push(`    duration p50 ${fmtMs(a.durationMs.p50)} p90 ${fmtMs(a.durationMs.p90)} p99 ${fmtMs(a.durationMs.p99)} max ${fmtMs(a.durationMs.max)} (n=${a.durationMs.n})`);
     out.push(`    outcomes ${JSON.stringify(a.outcomes)}`);
   }
-  out.push(`  restarts ${r.counts.restarts}, poll errors ${r.counts.pollErrors}, spawns refused a credential ${r.counts.spawnRefused}, untimestamped lines (whole log) ${r.counts.untimestamped}`);
+  out.push(`  restarts ${r.counts.restarts}, poll errors ${r.counts.pollErrors}, spawns refused a credential ${r.counts.spawnRefused}, credential lease failures ${r.counts.leaseFailed}, untimestamped lines (whole log) ${r.counts.untimestamped}`);
   out.push('  the log cannot tell:');
   for (const l of r.cannotTell) out.push(`    - ${l}`);
   return out.join('\n');

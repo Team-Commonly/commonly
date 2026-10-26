@@ -32,7 +32,7 @@ test('turns, durations, timeouts, exits, restarts, and an open turn, from timest
   });
   expect(r.byAdapter.codex.durationMs).toEqual({ p50: 30_000, p90: 2_700_100, p99: 2_700_100, max: 2_700_100, n: 3 });
   expect(r.byAdapter.claude).toMatchObject({ turns: 1, cutByRestart: 1 });
-  expect(r.counts).toMatchObject({ untimestamped: 1, pollErrors: 1, restarts: 1, otherSeatLines: 1 });
+  expect(r.counts).toMatchObject({ untimestamped: 1, pollErrors: 1, restarts: 0, otherSeatLines: 1 });
   const out = `${render(r)}\n${JSON.stringify(r)}`;
   expect(out).not.toMatch(/SECRET/);
   expect(out).toMatch(/the log cannot tell/);
@@ -57,6 +57,25 @@ test('ask outcomes close a turn, and a refused spawn credential is not a turn', 
   });
   expect(r.counts.spawnRefused).toBe(1);
   expect(render(r)).toMatch(/spawns refused a credential 1/);
+});
+
+test('a first start is not a restart, a failed lease is not a turn, and a lost reply is not an adapter error', () => {
+  const log = [
+    L('00:00:00.000', 'polling https://api.commonly.me for events (ctrl+c to stop)'),
+    L('01:00:00.000', '[inbox.batch] spawning codex'),
+    L('01:00:00.200', 'spawn credential lease failed (socket hang up) — not spawning'),
+    L('01:00:00.300', 'inbox batch processing failed (runtime; 1 consecutive) — 1 events remain unacked: socket hang up'),
+    L('02:00:00.000', '[chat.mention] spawning codex'),
+    L('02:00:30.000', '[chat.mention] ERROR reply NOT delivered to pod p1 — 120 bytes lost, 1 event left unacked for retry: HTTP 502'),
+    L('02:00:30.100', 'chat.mention processing failed (runtime; 1 consecutive): HTTP 502'),
+    L('03:00:00.000', 'polling https://api.commonly.me for events (ctrl+c to stop)'),
+  ].join('\n');
+  const inWindow = baseline(log, { seat: 'nib', untilMs: Date.parse('2026-10-24T04:00:00Z'), hours: 8 });
+  expect(inWindow.counts).toMatchObject({ restarts: 1, leaseFailed: 1, spawnRefused: 0 });
+  expect(inWindow.byAdapter.codex).toMatchObject({ turns: 1, failed: 1, replyLost: 1, errors: 0 });
+  // The start before the window still makes the 03:00 line a restart.
+  const late = baseline(log, { seat: 'nib', untilMs: Date.parse('2026-10-24T04:00:00Z'), hours: 1.5 });
+  expect(late.counts.restarts).toBe(1);
 });
 
 test('the window bounds which turns count', () => {
