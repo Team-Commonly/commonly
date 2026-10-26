@@ -429,6 +429,36 @@ describe('read-only git runs no gpg and no textconv', () => {
     expect(ran('gpg')).toBe(false);
   });
 
+  test('a %G placeholder behind a +, - or space modifier runs gpg (control), and is refused', async () => {
+    for (const format of ['%+G?', '%-GG', '% GS']) {
+      await cfgGit(['log', `--format=${format}`, '-1', signed]);
+      expect(ran('gpg')).toBe(true);
+    }
+    for (const arg of ['--format=%+G?', '--pretty=format:%-GK', '--pretty=tformat:%h% GF', '--format=%<(8)%+GP', '--format=%-GT']) {
+      expect((await run('log', [arg, '-1', signed])).text).toMatch(/%G placeholder runs gpg/);
+    }
+    expect(ran('gpg')).toBe(false);
+    const modified = await run('log', ['--format=%h%+s', '-1', signed]);
+    expect(modified.ok).toBe(true);
+    expect(modified.text).toContain('\nunsigned');
+  });
+
+  // git 2.54 rejects every abbreviation of --pretty and --format, and a bare
+  // --format, so none of these has a control: the check holds without that.
+  test('an abbreviation is checked like the full name, and --format never takes the next argument', () => {
+    expect(refusal({ subcommand: 'log', args: ['--form=%G?'] })).toMatch(/%G placeholder runs gpg/);
+    expect(refusal({ subcommand: 'show', args: ['--pret=format:%+GS'] })).toMatch(/%G placeholder runs gpg/);
+    expect(refusal({ subcommand: 'log', args: ['--forma=sig'] })).toMatch(/name a built-in format/);
+    for (const option of ['--format', '--form', '--for']) {
+      expect(refusal({ subcommand: 'log', args: [option, '%G?'] })).toMatch(/give the format in the same argument/);
+    }
+    for (const args of [['--form=%h'], ['--pret=oneline'], ['--pretty'], ['--pretty', '-n1']]) {
+      expect(readonlyGitArgv({ subcommand: 'log', args, root: repo }).ok).toBe(true);
+    }
+    // blame reads --pr as its own --progress.
+    expect(readonlyGitArgv({ subcommand: 'blame', args: ['--pr', 'tracked.txt'], root: repo }).ok).toBe(true);
+  });
+
   test('log.showSignature in the repository config runs gpg (control); the guarded log and show do not', async () => {
     await cfgGit(['config', 'log.showSignature', 'true']);
     try {
