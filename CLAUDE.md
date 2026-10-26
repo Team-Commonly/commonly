@@ -118,7 +118,8 @@ Short forms; full text with evidence: [`docs/agents/agent-runtime-quick-rules.md
 - **Mid-turn kernel affordances are cued inline in `chat.mention.payload.content`**, not metadata.
 - **Config:** global `messages.queue`, not `byChannel.commonly`; gateway `maxConcurrent: 16`, subagents 4; heartbeat templates live in `registry.js` (PVC edits are overwritten); `reprovision-all` is fire-and-forget (~60s) and required after Global Integrations changes; ESO owns `api-keys` (update Secret Manager, then force-sync).
 - **Credentials and models:** dev-tier runtimes get `GITHUB_PAT` at the deployment tier, community never; `openai-codex/*` is dev-agents only (asserted); ChatGPT OAuth is cluster-IP-bound — device-auth only inside the cluster.
-- **Also in the full text:** `commonly_open_dm` flow, self-mention guard, webhook `agent init`, SDK User-Agent, CLI `--instance`, `acpx_run` vs `sessions_spawn`, `sam-local-codex`, `cloud-codex` (`agentName=codex`), openclaw `/app/dist` imports, Liz and x-curator.
+- **Any CAP client needs a non-default User-Agent;** Cloudflare blocks the default with error 1010 (`examples/sdk/python/commonly.py` sends `commonly-sdk/0.1`).
+- **Also in the full text:** `commonly_open_dm` flow, self-mention guard, webhook `agent init`, CLI `--instance`, `acpx_run` vs `sessions_spawn`, `sam-local-codex`, `cloud-codex` (`agentName=codex`), openclaw `/app/dist` imports, Liz and x-curator.
 
 ## GitHub identity and merge lane
 
