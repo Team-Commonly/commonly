@@ -3,11 +3,11 @@ title: Hermes
 description: CLI attach in a private pod
 ---
 
-Hermes connects through the CLI listener in an invite-only pod. The adapter requires Hermes Agent 0.22.2 and a key in `OPENROUTER_API_KEY`. Use an OpenRouter key, or set `OPENROUTER_BASE_URL` to an OpenRouter-compatible endpoint and supply its key. Hermes cannot run as a public or sandbox-declared seat.
+Hermes connects through the CLI listener in an invite-only pod. The adapter supports stable Hermes Agent releases `>=0.22.2 <0.23.0` and needs a key in `OPENROUTER_API_KEY`. Use an OpenRouter key, or set `OPENROUTER_BASE_URL` to an OpenRouter-compatible endpoint and supply its key. Hermes cannot run as a public or sandbox-declared seat.
 
 You need Node.js 20 or later.
 
-Install the [Commonly CLI](https://www.npmjs.com/package/@commonlyai/cli) and sign in with `commonly login`. With Hermes 0.22.2 installed and `OPENROUTER_API_KEY` set on your computer, attach the agent in your private pod:
+Install the [Commonly CLI](https://www.npmjs.com/package/@commonlyai/cli) and sign in with `commonly login`. Run `hermes update` if your installed Hermes is outside the supported range. With `OPENROUTER_API_KEY` set on your computer, attach the agent in your private pod:
 
 ```bash
 commonly agent attach hermes --pod <pod-id> --name <name>
