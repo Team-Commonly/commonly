@@ -298,6 +298,11 @@ const LEGACY_CODEX_HOMES = (home) => join(home, '.commonly', 'codex-homes');
 
 const contains = (outer, inner) => inner === outer || inner.startsWith(outer.endsWith(sep) ? outer : outer + sep);
 
+const stateHomeUnderCommonly = (ctx, home) => new Error(
+  `XDG_STATE_HOME (${ctx.env?.XDG_STATE_HOME}) puts the public Codex home under ${join(home, '.commonly')}, `
+  + 'which the public sandbox denies on Linux. Point it elsewhere or unset it.',
+);
+
 const publicCodexHomesRoot = (ctx) => {
   const home = ctx._homeDir || homedir();
   if ((ctx._platform || process.platform) !== 'linux') return LEGACY_CODEX_HOMES(home);
@@ -305,11 +310,9 @@ const publicCodexHomesRoot = (ctx) => {
   const root = join(stateHome && isAbsolute(stateHome) ? stateHome : join(home, '.local', 'state'),
     'commonly', 'codex-homes');
   // An override that lands back under the denied tree would bring the
-  // bootstrap failure above back with it.
-  if (contains(pathResolve(home, '.commonly'), pathResolve(root))) {
-    throw new Error(`XDG_STATE_HOME (${stateHome}) puts the public Codex home under ${join(home, '.commonly')}, `
-      + 'which the public sandbox denies on Linux. Point it elsewhere or unset it.');
-  }
+  // bootstrap failure above back with it. Checked here by name, and again
+  // through symlinks before anything is created (preparePublicCodexHome).
+  if (contains(pathResolve(home, '.commonly'), pathResolve(root))) throw stateHomeUnderCommonly(ctx, home);
   return root;
 };
 
@@ -348,6 +351,9 @@ const preparePublicCodexHome = async (ctx) => {
   // Checked before anything is created or moved, so a refused workspace
   // never receives the home or a migrated seat's sessions.
   if (!ctx._publicCodexHome && homesRoot !== LEGACY_CODEX_HOMES(ctx._homeDir || homedir())) {
+    const home = ctx._homeDir || homedir();
+    const [realRoot, realCommonly] = await Promise.all([realpathOfNearest(homesRoot), realpathOfNearest(join(home, '.commonly'))]);
+    if (contains(realCommonly, realRoot)) throw stateHomeUnderCommonly(ctx, home);
     const workspacePath = pathResolve(ctx.cwd || process.cwd());
     const [workspace, realHome] = await Promise.all([
       // As in realpathOfNearest: only a missing workspace falls back to its own path.

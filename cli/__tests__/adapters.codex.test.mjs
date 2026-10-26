@@ -13,7 +13,9 @@
 
 import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
-import { existsSync, readFileSync, realpathSync, statSync } from 'fs';
+import {
+  existsSync, readdirSync, readFileSync, realpathSync, statSync,
+} from 'fs';
 import {
   lstat,
   mkdir,
@@ -1158,6 +1160,21 @@ describe('codex adapter — the public Codex home on Linux', () => {
     await expect(publicSpawn(fakeHome, { cwd: project, env: { XDG_STATE_HOME: state } }))
       .rejects.toThrow(/which the public sandbox denies on Linux/);
     expect(existsSync(state)).toBe(false);
+  });
+
+  test('an XDG_STATE_HOME that reaches ~/.commonly through a symlink is refused too', async () => {
+    const first = await publicSpawn(fakeHome, { platform: 'darwin', cwd: project });
+    const legacy = first[0].opts.env.CODEX_HOME;
+    await mkdir(join(legacy, 'sessions'), { recursive: true });
+    await writeFile(join(legacy, 'sessions', 'thread.jsonl'), 'kept\n');
+    const target = join(fakeHome, '.commonly', 'state');
+    await mkdir(target, { recursive: true });
+    await symlink(target, join(fakeHome, 'state-link'));
+
+    await expect(publicSpawn(fakeHome, { cwd: project, env: { XDG_STATE_HOME: join(fakeHome, 'state-link') } }))
+      .rejects.toThrow(/which the public sandbox denies on Linux/);
+    expect(readFileSync(join(legacy, 'sessions', 'thread.jsonl'), 'utf8')).toBe('kept\n');
+    expect(readdirSync(target)).toEqual([]);
   });
 
   test('on macOS the home stays under ~/.commonly', async () => {
