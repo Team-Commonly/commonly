@@ -170,6 +170,7 @@ describe('code does not point at docs that are not there', () => {
   it('resolves a vendored copy against its source package, not the repo root', () => {
     const vendored = references.filter((ref) => ref.file.startsWith('backend/vendor/seats/'));
     expect(vendored.length).toBeGreaterThan(0);
+    expect(new Set(vendored.map((ref) => docRootOf(ref.file)))).toEqual(new Set([path.join(REPO_ROOT, 'packages/seats')]));
     expect(vendored.every((ref) => fs.existsSync(path.join(REPO_ROOT, 'packages/seats', ref.doc)))).toBe(true);
     expect(docRootOf('backend/services/recordService.ts')).toBe(REPO_ROOT);
   });

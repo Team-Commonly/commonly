@@ -955,6 +955,10 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
         },
       );
       leaseRenewed = Boolean(task);
+      // A note that restores a lapsed claim is a claim, and the record says so.
+      if (task) {
+        recordTaskTransition({ podId, task, from: 'pending', to: 'claimed', at: now, actor: requestActor(req) });
+      }
     }
 
     if (!task) {

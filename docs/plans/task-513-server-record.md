@@ -38,8 +38,9 @@ endpoint. Every writer and the endpoint are off unless the pod is listed in
   hash-chained line cannot be redacted without breaking verification; those
   are the ids `runTraces` withholds from admins and agent-DM observers, so
   those readers get a 403.
-- **Board lines** mirror committed transitions: a fresh claim, a takeover or a
-  resumed blocked task writes `task.claimed`; a renewal by the holder writes
+- **Board lines** mirror committed transitions: a fresh claim, a takeover, a
+  resumed blocked task, or a holder's note that restores a lapsed claim writes
+  `task.claimed`; a renewal by the holder writes
   nothing; blocking a claim or a lapsed lease writes `task.released`; every
   path to done writes `task.done` with the board as actor. Reopening and
   unblocking have no record-v1 kind and write nothing.

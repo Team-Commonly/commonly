@@ -24,6 +24,7 @@ const { hash } = require('../../utils/secret');
 const { pool } = require('../../config/db-pg');
 const repository = require('../../repositories/recordChainRepository');
 const { flushRecordWrites } = require('../../services/recordService');
+const KernelWorkSweepService = require('../../services/kernelWorkSweepService').default;
 const { verifyRecord } = require('../../vendor/seats/src/record/format');
 const {
   setupMongoDb, closeMongoDb, clearMongoDb, setupPgDb, closePgDb, generateTestToken,
@@ -135,6 +136,27 @@ real('task record route on real PostgreSQL and MongoDB', () => {
     const otlp = await read(AGENT_TOKEN, pod._id, 'TASK-1', '?format=otlp');
     expect(otlp.status).toBe(200);
     expect(otlp.body.resourceSpans[0].scopeSpans[0].spans[0]).toMatchObject({ name: 'seats.run' });
+  });
+
+  it('records the lease lapse, the claim a note restores, and the completion, in that order', async () => {
+    expect((await claim()).status).toBe(200);
+    const lapsedAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    const { rescued } = await KernelWorkSweepService.rescueLapsed(lapsedAt);
+    expect(rescued).toHaveLength(1);
+    const note = await request(app).post(`/api/v1/tasks/${pod._id}/TASK-1/updates`).set(as(AGENT_TOKEN)).send({ text: 'still on it' });
+    expect(note).toMatchObject({ status: 200, body: { leaseRenewed: true } });
+    expect((await request(app).post(`/api/v1/tasks/${pod._id}/TASK-1/complete`).set(as(generateTestToken(owner._id))).send({})).status).toBe(200);
+    await flushRecordWrites();
+
+    const res = await read(generateTestToken(owner._id));
+    expect(verifyRecord(res.text)).toMatchObject({ ok: true, entries: 4 });
+    const lines = res.text.trimEnd().split('\n').map((line) => JSON.parse(line));
+    expect(lines.map((l) => [l.kind, l.actor && l.actor.type, l.data.reason])).toEqual([
+      ['task.claimed', 'agent', undefined],
+      ['task.released', 'system', 'lease_expired'],
+      ['task.claimed', 'agent', undefined],
+      ['task.done', 'system', undefined],
+    ]);
   });
 
   it('refuses everyone else before any record byte is read', async () => {
