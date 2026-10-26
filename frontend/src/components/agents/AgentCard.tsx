@@ -6,6 +6,7 @@
  */
 
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Card,
   CardContent,
@@ -31,6 +32,7 @@ import {
   FiberManualRecord as PulseIcon,
 } from '@mui/icons-material';
 import { normalizeUploadUrl } from '../../utils/apiBaseUrl';
+import { localizeRelativeTime } from '../../v2/utils/localizeRelativeTime';
 
 // Agent type colors
 const agentTypeColors: Record<string, string> = {
@@ -135,6 +137,7 @@ const AgentCard: React.FC<AgentCardProps> = ({
   loading = false,
 }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
 
   if (loading) {
     return <AgentCardSkeleton variant={variant} />;
@@ -153,15 +156,9 @@ const AgentCard: React.FC<AgentCardProps> = ({
   const lastHeartbeatAt = agent.lastHeartbeatAt || null;
   const iconUrl = agent.iconUrl || agent.profile?.iconUrl || agent.profile?.avatarUrl || null;
 
-  const formatHeartbeat = (ts: string | null): string | null => {
-    if (!ts) return null;
-    const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
-    if (diff < 60) return `${diff}s ago`;
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    return `${Math.floor(diff / 86400)}d ago`;
-  };
-  const heartbeatLabel = formatHeartbeat(lastHeartbeatAt);
+  const heartbeatLabel = lastHeartbeatAt
+    ? localizeRelativeTime(lastHeartbeatAt, t, { pastEvent: true, rounding: 'floor' })
+    : null;
   const heartbeatStale = lastHeartbeatAt
     ? (Date.now() - new Date(lastHeartbeatAt).getTime()) > 2 * 60 * 60 * 1000
     : true;

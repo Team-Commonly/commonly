@@ -20,6 +20,7 @@
  * replaces the scans with indexed lookups.
  */
 
+import { escapeRegExp } from '../utils/escapeRegExp';
 import jwt, { type JwtPayload } from 'jsonwebtoken';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -183,7 +184,7 @@ function isPlausibleFileName(fileName: string): boolean {
 }
 
 function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return escapeRegExp(s);
 }
 
 /**

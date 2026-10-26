@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useAuth } from '../../context/AuthContext';
+import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 import './V2CliAuthorize.css';
 
 interface AuthorizationRequest {
@@ -23,14 +26,8 @@ const errorScreen = (error: unknown): Screen => {
   return status === 410 ? 'expired' : 'error';
 };
 
-const requestAge = (createdAt: string): string => {
-  const seconds = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000));
-  if (seconds < 60) return 'just now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ago`;
-};
+const requestAge = (createdAt: string, t: TFunction): string =>
+  localizeRelativeTime(createdAt, t, { pastEvent: true, rounding: 'floor' });
 
 const currentInstance = () => {
   const baseUrl = String(axios.defaults.baseURL || window.location.origin);
@@ -38,6 +35,7 @@ const currentInstance = () => {
 };
 
 const V2CliAuthorize: React.FC = () => {
+  const { t } = useTranslation();
   const { isAuthenticated, loading, user } = useAuth();
   const location = useLocation();
   const queryCode = useMemo(() => normalizeCode(new URLSearchParams(location.search).get('code') || ''), [location.search]);
@@ -136,7 +134,7 @@ const V2CliAuthorize: React.FC = () => {
             <dl className="v2-cli-authorize__facts">
               <div><dt>Client</dt><dd>{request.clientName}{request.clientVersion ? ` ${request.clientVersion}` : ''}</dd></div>
               <div><dt>Instance</dt><dd>{currentInstance()}</dd></div>
-              <div><dt>Requested</dt><dd>{requestAge(request.createdAt)}</dd></div>
+              <div><dt>Requested</dt><dd>{requestAge(request.createdAt, t)}</dd></div>
             </dl>
             <p className="v2-cli-authorize__warning">Only approve a code you requested from your own terminal.</p>
             <div className="v2-cli-authorize__actions">

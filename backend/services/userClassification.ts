@@ -20,6 +20,8 @@
  * is what produced the `scott@agents.commonly.local` false alarm on
  * 2026-08-14. Import it; do not restate it.
  */
+import { escapeRegExp } from '../utils/escapeRegExp';
+
 export const HUMAN_FILTER = {
   isBot: { $ne: true },
   'botMetadata.agentName': { $exists: false },
@@ -53,7 +55,6 @@ export const BOT_FILTER = {
  */
 const RESERVED_EMAIL_DOMAIN_RE = /@(?:[^@\s]+\.)?(?:invalid|test|example|localhost|example\.(?:com|net|org))$/i;
 
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export const parseInternalAccounts = (raw: string | undefined) => {
   const usernames: string[] = [];
