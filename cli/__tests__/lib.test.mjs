@@ -343,7 +343,7 @@ describe('session-store.js handled-event ring', () => {
 
 // ── webhook-server.js tests ───────────────────────────────────────────────────
 
-const { startWebhookServer, forwardToLocalWebhook } = await import('../src/lib/webhook-server.js');
+const { startWebhookServer, forwardToLocalWebhook, logOnlyHandler } = await import('../src/lib/webhook-server.js');
 
 describe('webhook-server.js', () => {
   test('startWebhookServer starts and resolves with { server, url, close }', async () => {
@@ -472,6 +472,16 @@ describe('webhook-server.js', () => {
     });
     await new Promise((r) => server.listen(0, r));
     const url = `http://localhost:${server.address().port}/cap`;
+    try {
+      expect(await forwardToLocalWebhook({ _id: 'evt-1', type: 'chat.mention' }, url, null))
+        .toEqual({ outcome: 'no_action', reason: 'empty-output' });
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+
+  test('startWebhookServer answers empty output for a handler that returns nothing', async () => {
+    const { server, url } = await startOnFreePort({ onEvent: async () => undefined });
     try {
       expect(await forwardToLocalWebhook({ _id: 'evt-1', type: 'chat.mention' }, url, null))
         .toEqual({ outcome: 'no_action', reason: 'empty-output' });
@@ -703,6 +713,37 @@ describe('poller.js', () => {
     });
     await new Promise((r) => setTimeout(r, 50));
     stop();
+
+    expect(mockPost.mock.calls).toEqual([
+      ['/api/agents/runtime/events/wake-1/ack', { result: { outcome: 'no_action', reason: 'empty-output' } }],
+    ]);
+  });
+
+  // `agent connect` forwards to its own log-only server; nothing read the digest.
+  test('a wake forwarded through the agent connect server leaves the digest unread', async () => {
+    const port = await new Promise((resolve) => {
+      const probe = http.createServer();
+      probe.listen(0, () => { const p = probe.address().port; probe.close(() => resolve(p)); });
+    });
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const { server, url } = await startWebhookServer({ port, onEvent: logOnlyHandler });
+    const events = [
+      { ...makeEvent('wake-1'), deliveryMode: 'wake' },
+      { ...makeEvent('digest-1'), deliveryMode: 'digest', payload: { content: 'ambient' } },
+    ];
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: jest.fn().mockResolvedValue({ events }), post: mockPost });
+    try {
+      const { stop } = startPoller({
+        instanceUrl: 'http://localhost:5000', token: 'cm_test', agentName: 'my-agent',
+        intervalMs: 100_000, onEvent: (event) => forwardToLocalWebhook(event, url, null),
+      });
+      await new Promise((r) => setTimeout(r, 150));
+      stop();
+    } finally {
+      log.mockRestore();
+      await new Promise((r) => server.close(r));
+    }
 
     expect(mockPost.mock.calls).toEqual([
       ['/api/agents/runtime/events/wake-1/ack', { result: { outcome: 'no_action', reason: 'empty-output' } }],

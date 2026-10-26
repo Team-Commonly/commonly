@@ -48,9 +48,10 @@ export const startWebhookServer = ({
         return;
       }
 
-      let result = { outcome: 'acknowledged' };
+      // A handler that returns nothing said nothing (#2753).
+      let result = { outcome: 'no_action', reason: EMPTY_OUTPUT };
       try {
-        result = (await onEvent(event)) || { outcome: 'acknowledged' };
+        result = (await onEvent(event)) || { outcome: 'no_action', reason: EMPTY_OUTPUT };
       } catch (err) {
         result = { outcome: 'error', reason: err.message };
       }
@@ -67,6 +68,17 @@ export const startWebhookServer = ({
     resolve({ server, url, close: () => server.close() });
   });
 });
+
+/**
+ * The handler `agent connect` serves on its own port. It only logs what
+ * arrives, and no agent has read the event, so it states no outcome a read
+ * would count as: the wake still settles, and the pod digest stays unread
+ * (Sable, #2753).
+ */
+export const logOnlyHandler = async (event) => {
+  console.log(`[local] ${event.type} from pod ${event.podId}`);
+  return { outcome: 'no_action', reason: EMPTY_OUTPUT };
+};
 
 /**
  * Forward a polled event to a local webhook server.

@@ -32,7 +32,7 @@ import {
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
 import { startPoller, terminalDeliveryAckError } from '../lib/poller.js';
 import { formatDigestFrame } from '../lib/digest-frame.js';
-import { startWebhookServer, forwardToLocalWebhook } from '../lib/webhook-server.js';
+import { startWebhookServer, forwardToLocalWebhook, logOnlyHandler } from '../lib/webhook-server.js';
 import { getAdapter, listAdapterNames } from '../lib/adapters/index.js';
 import {
   getSession,
@@ -3476,11 +3476,7 @@ Docs:
         port,
         path: opts.path,
         secret: opts.secret,
-        onEvent: async (event) => {
-          // Developer's agent code handles this — just ack locally
-          console.log(`[local] ${event.type} from pod ${event.podId}`);
-          return { outcome: 'acknowledged' };
-        },
+        onEvent: logOnlyHandler,
         onReady: (url) => console.log(`Local server ready: ${url}`),
       });
 
