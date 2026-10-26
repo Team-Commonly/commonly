@@ -239,7 +239,7 @@ jobs:
             frontend/package-lock.json
       # Frontend typecheck follows shared imports into backend TypeScript.
       - run: cd backend && npm ci --include=dev
-      - run: cd frontend && npm install --legacy-peer-deps
+      - run: cd frontend && OPENUI_TELEMETRY_DISABLED=1 npm install --legacy-peer-deps
       - run: cd frontend && npm run typecheck
       - name: Run frontend tests (coverage on the nightly schedule only)
         run: |
@@ -249,7 +249,7 @@ jobs:
           else
             npx jest --watchAll=false --forceExit
           fi
-      - run: cd frontend && node --test scripts/generate-seo-pages.test.mjs scripts/nginx-routing.test.mjs
+      - run: cd frontend && node --test scripts/generate-seo-pages.test.mjs scripts/nginx-routing.test.mjs scripts/ui-card-catalogue.test.mjs
 
   tool-tests:
     name: CLI, MCP and hosted runtime tests

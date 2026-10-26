@@ -5056,3 +5056,13 @@ test('TASK-531 landing FAQ keeps its measure, rhythm and question style', () => 
   expect(ruleBody(css, '.v2-landing__faq-item dt')).toMatch(/font-weight:\s*600/);
   expect(css).toContain('.v2-landing__faq-item dt::first-letter');
 });
+
+test('OpenUI cards keep the approved phone controls and table records', () => {
+  const css = read('../cards/uiCard.css');
+  expect(css).toContain('@media (max-width:760px)');
+  expect(css).toMatch(/\.ui-ft \.ub\{height:44px/);
+  expect(css).toContain('.ui-table--records .ui-tw { display:none; }');
+  expect(css).toContain('.ui-table--records .ui-recs { display:grid; }');
+  expect(css).toContain('.v2-root .v2-msg.v2-ui-card { display:flex; flex-direction:column;');
+  expect(css).toContain('.ui.gone{border-style:dashed');
+});
