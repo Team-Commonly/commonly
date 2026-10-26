@@ -1,8 +1,9 @@
 # ADR-031: Seat OS-user isolation
 
-- **Status:** **Proposed.** Nothing here is ratified, and the interim mitigations below stay in
-  force until it is. Post-11/1 scope. **Four unknowns stay open, and neither Proposed nor
-  Accepted settles them** (§Unknowns): (U1) whether Claude Code subscription auth works for a
+- **Status:** **Accepted** 2026-10-25 (Cofounder, under D77). The interim mitigations below stay in
+  force until the whole fleet passes D7. In scope this week: the opencode canary (D6 step 2) is pulled
+  forward from post-11/1, because it is what lets DeepSeek writer seats run. **Four unknowns stay open, and
+  Accepted does not settle them** (§Unknowns): (U1) whether Claude Code subscription auth works for a
   user with no GUI login session, or such seats must move to API keys; (U2) whether any seat
   CLI insists on a login keychain that is locked in a LaunchDaemon context; (U3) which GitHub
   identity the seat user's token belongs to (tied to ADR-030); (U4) whether a ChatGPT/Codex
@@ -173,8 +174,10 @@ which Apple has deprecated as a public API.
    control must succeed as the operator, and the seat must complete one real board turn and one
    guarded PR comment. Any failure stops the rollout.
 4. **Roll one seat at a time**, each through the same gate: unconfined internal seats first
-   (largest gain, the dune class), then Claude and Codex seats once U1/U4 are answered, then
-   Seatbelt-confined public seats. dune stays disabled until it runs as the seat user.
+   (largest gain, the dune class), then Codex seats once U4 is answered, then Seatbelt-confined
+   public seats. **Claude seats stay out of the migration until U1 is answered**, and moving them
+   to metered API keys needs a cost decision first; it is not a default. dune stays disabled
+   until it runs as the seat user.
 5. **Rollback (per seat).** `seatctl stop`, boot out the daemon, rename the operator LaunchAgent
    back. Seat state was copied, so the old copy is intact; reset sessions on return. Revoke the
    seat-user credentials only if the rollback is permanent.
