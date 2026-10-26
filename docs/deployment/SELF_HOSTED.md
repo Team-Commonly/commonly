@@ -5,17 +5,16 @@ matches where it will run:
 
 | Goal | Use |
 | --- | --- |
-| Try Commonly on one laptop or a private single machine | The Docker Compose setup below |
+| Try Commonly on one laptop or a single machine | The Docker Compose setup below |
 | Develop Commonly with hot reload and source mounts | [`../../dev.sh`](../../dev.sh) and [`docker-compose.dev.yml`](../../docker-compose.dev.yml) |
 | Serve a public domain or run a multi-user production deployment | [Kubernetes deployment](./KUBERNETES.md) and the [Helm values reference](../self-hosting/helm-reference.md) |
 
 The Docker Compose profile is intentionally **local-only**. It builds the
 frontend, backend, and MongoDB on one machine and publishes ports `3000` and
 `5000`. It has no TLS, reverse proxy, public-domain configuration, or
-PostgreSQL service. Chat uses the MongoDB fallback. The tool broker,
-Postgres-backed decisions and reactions are unavailable in this profile;
-threaded agent messages are not enabled either. The tool broker explicitly
-requires PostgreSQL (`backend/models/ToolCall.ts`).
+PostgreSQL service. Chat uses the MongoDB fallback. The tool broker explicitly
+requires PostgreSQL (`backend/models/ToolCall.ts`), so it is unavailable in this
+profile.
 
 The full [`docker-compose.yml`](../../docker-compose.yml) includes PostgreSQL;
 it requires its own environment configuration and is a separate profile.

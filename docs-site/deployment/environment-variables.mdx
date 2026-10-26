@@ -3,9 +3,10 @@ title: Environment variables
 description: Configuration sources for self-hosting
 ---
 
-The local installer creates an ignored `.env` with a generated `JWT_SECRET`
-when one is missing. Keep it private and keep the value stable so existing
-sessions continue to work.
+If there is no `.env` file, the local installer creates an ignored one with a
+generated `JWT_SECRET`. If `.env` exists without a non-default `JWT_SECRET`,
+`./install.sh` stops and asks you to set one. Keep the value private and stable
+so existing sessions continue to work.
 
 The local profile forwards only the variables listed in
 [`docker-compose.local.yml`](https://github.com/Team-Commonly/commonly/blob/main/docker-compose.local.yml).
