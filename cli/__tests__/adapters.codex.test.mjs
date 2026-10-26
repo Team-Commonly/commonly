@@ -1170,6 +1170,19 @@ describe('codex adapter — the public Codex home on Linux', () => {
     expect(existsSync(legacy)).toBe(false);
   });
 
+  test('a refused workspace never receives the migrated sessions', async () => {
+    const first = await publicSpawn(fakeHome, { platform: 'darwin', cwd: project });
+    const legacy = first[0].opts.env.CODEX_HOME;
+    await mkdir(join(legacy, 'sessions'), { recursive: true });
+    await writeFile(join(legacy, 'sessions', 'thread.jsonl'), 'kept\n');
+
+    const state = join(project, 'state');
+    await expect(publicSpawn(fakeHome, { cwd: project, env: { XDG_STATE_HOME: state } }))
+      .rejects.toThrow(/contains the agent's own Codex home/);
+    expect(readFileSync(join(legacy, 'sessions', 'thread.jsonl'), 'utf8')).toBe('kept\n');
+    expect(existsSync(state)).toBe(false);
+  });
+
   test('a workspace that contains the home is refused before Codex runs', async () => {
     const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
     const env = { ...process.env, CODEX_HOME: join(fakeHome, '.codex') };

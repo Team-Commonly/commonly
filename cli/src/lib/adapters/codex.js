@@ -306,6 +306,23 @@ const publicCodexHomesRoot = (ctx) => {
 
 const contains = (outer, inner) => inner === outer || inner.startsWith(outer.endsWith(sep) ? outer : outer + sep);
 
+// The real path of a path that may not exist yet: its nearest existing
+// ancestor resolved, with the rest appended.
+const realpathOfNearest = async (path) => {
+  const rest = [];
+  let current = pathResolve(path);
+  for (;;) {
+    try {
+      return join(await realpath(current), ...rest);
+    } catch (err) {
+      const parent = dirname(current);
+      if (err?.code !== 'ENOENT' || parent === current) return join(current, ...rest);
+      rest.unshift(basename(current));
+      current = parent;
+    }
+  }
+};
+
 const preparePublicCodexHome = async (ctx) => {
   const operatorHome = ctx.env?.CODEX_HOME
     || process.env.CODEX_HOME
@@ -316,6 +333,19 @@ const preparePublicCodexHome = async (ctx) => {
   const publicHome = ctx._publicCodexHome || join(homesRoot, identityHash);
   if (pathResolve(publicHome) === pathResolve(operatorHome)) {
     throw new Error('public codex home must be isolated from the operator CODEX_HOME');
+  }
+
+  // Checked before anything is created or moved, so a refused workspace
+  // never receives the home or a migrated seat's sessions.
+  if (!ctx._publicCodexHome && homesRoot !== LEGACY_CODEX_HOMES(ctx._homeDir || homedir())) {
+    const workspacePath = pathResolve(ctx.cwd || process.cwd());
+    const [workspace, realHome] = await Promise.all([
+      realpath(workspacePath).catch(() => workspacePath), realpathOfNearest(publicHome),
+    ]);
+    if (contains(workspace, realHome)) {
+      throw new Error(`public codex agents cannot run in ${ctx.cwd}: it contains the agent's own `
+        + `Codex home (${publicHome}), which the sandbox would then expose. Run it in a project folder.`);
+    }
   }
 
   // A Linux seat that ran before the move keeps its sessions, so a resumed
@@ -335,16 +365,6 @@ const preparePublicCodexHome = async (ctx) => {
 
   await mkdir(publicHome, { recursive: true, mode: 0o700 });
   await chmod(publicHome, 0o700);
-  if (!ctx._publicCodexHome && homesRoot !== LEGACY_CODEX_HOMES(ctx._homeDir || homedir())) {
-    const workspacePath = pathResolve(ctx.cwd || process.cwd());
-    const [workspace, realHome] = await Promise.all([
-      realpath(workspacePath).catch(() => workspacePath), realpath(publicHome),
-    ]);
-    if (contains(workspace, realHome)) {
-      throw new Error(`public codex agents cannot run in ${ctx.cwd}: it contains the agent's own `
-        + `Codex home (${publicHome}), which the sandbox would then expose. Run it in a project folder.`);
-    }
-  }
 
   const sourceAuth = join(operatorHome, 'auth.json');
   const targetAuth = join(publicHome, 'auth.json');
