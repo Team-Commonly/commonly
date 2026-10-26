@@ -9,7 +9,8 @@
 // WHAT IT WITNESSES. The write budget is a count: 30 succeed in the window and
 // the 31st is refused with the limiter's own body. Two presented bearer tokens
 // are two buckets, and so are two `x-auth-token` values, the header `auth` falls
-// back to. And the no-header branch buckets by the Cloudflare-recorded
+// back to; one token is one bucket in every form `auth` accepts. And the
+// no-header branch buckets by the Cloudflare-recorded
 // address, so two requests differing only in `req.ip` share a bucket while two
 // differing only in `cf-connecting-ip` do not.
 //
@@ -131,5 +132,15 @@ describe('integrationsRateLimitKey', () => {
     const both = withHeaders({ authorization: 'Bearer one', 'x-auth-token': 'two' }, '10.0.0.1');
     expect(integrationsRateLimitKey(both))
       .toBe(integrationsRateLimitKey(withHeaders({ authorization: 'Bearer one' }, '10.0.0.1')));
+  });
+
+  it('gives one token one bucket in every form auth accepts', () => {
+    const withHeaders = (headers) => ({ get: (name) => headers[name], headers, ip: '10.0.0.1' });
+    const key = integrationsRateLimitKey(withHeaders({ authorization: 'Bearer one' }));
+
+    // `auth` strips `Bearer ` and falls back to x-auth-token, so these are the
+    // same credential to it. Keyed by the raw header, they were three budgets.
+    expect(integrationsRateLimitKey(withHeaders({ authorization: 'one' }))).toBe(key);
+    expect(integrationsRateLimitKey(withHeaders({ 'x-auth-token': 'one' }))).toBe(key);
   });
 });
