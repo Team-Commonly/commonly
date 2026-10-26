@@ -104,6 +104,70 @@ Owner: TASK-014. Source: `docs-site/concepts/connectors.mdx` and `docs-site/conc
 
 | Page | Claim | Verdict | Evidence | Date |
 |---|---|---|---|---|
+| connectors | Open Connectors in Commonly | TRUE | `frontend/src/v2/components/V2NavRail.tsx:38` | 2026-10-26 |
+| connectors | Channels carry messages between a pod and an outside chat | TRUE | `backend/services/slackApi.ts:69, :82`; `backend/routes/webhooks/telegram.ts:173–177` | 2026-10-26 |
+| connectors | Tools let an agent read or act in another service after the connection owner grants access | TRUE | `backend/routes/grants.ts:320, :440` | 2026-10-26 |
+| connectors | Slack and Telegram are channels; GitHub and Linear are tools | TRUE | `frontend/src/v2/components/V2ConnectorsPage.tsx:175` | 2026-10-26 |
+| connectors | Telegram: bind a private chat and choose which pods reach it | TRUE | `backend/routes/webhooks/telegram.ts:173–177`; `frontend/src/v2/components/V2ConnectorsPage.tsx:616–641` | 2026-10-26 |
+| connectors | Slack: authorize a workspace | TRUE | `backend/services/slackOAuthService.ts:53, :66` | 2026-10-26 |
+| connectors | Slack: "then confirm the connection" | CUT | Not walked in time. This PR removes the sentence. | 2026-10-26 |
+| connectors | GitHub App: an instance administrator installs the app | TRUE | `backend/routes/integrations.ts:239–262` | 2026-10-26 |
+| connectors | GitHub App: the connection owner grants tools | TRUE | `backend/routes/grants.ts:320, :346` | 2026-10-26 |
+| connectors | GitHub App on commonly.me: "limited to the instance's own repository" | CUT | Not walked in time. This PR removes the sentence. | 2026-10-26 |
+| connectors | Linear: connect your account | TRUE | `backend/routes/hostedMcpConnect.ts:351, :697` | 2026-10-26 |
+| connectors | Linear: grant read access to an eligible pod | TRUE | `backend/integrations/hostedMcp/linear.ts:28–31, :64, :92–93`; `backend/services/outsiderGrantPodEligibility.ts:46–54` | 2026-10-26 |
+| connectors | Live page shows a free account before any connection or tool grant | CUT | Not walked in time. This PR removes the sentence. | 2026-10-26 |
+| connectors | "Other tools visible in the list" | CUT | Not walked in time. This PR removes the sentence. | 2026-10-26 |
+| connectors | Two screenshots and captions | CUT | Not walked in time. The images stay in `docs-site/images` and are no longer referenced. | 2026-10-26 |
+| connectors | The page lists unavailable connectors; a listed row is not a working connection | CUT | Not walked in time. This PR removes the paragraph. | 2026-10-26 |
+| connectors | The grants guide explains how a connection owner limits tool access and revokes it | TRUE | `backend/services/roomGrantService.ts:324–373`; `backend/routes/grants.ts:490–511` | 2026-10-26 |
+| grants | A grant is scoped to a pod and an agent, and can expire or be revoked | TRUE | `backend/models/RoomGrant.ts:11–36`; `backend/services/roomGrantService.ts:233, :255–257`; `backend/routes/grants.ts:510–511` | 2026-10-26 |
+| grants | A grant is a server-enforced capability record | TRUE | `backend/models/RoomGrant.ts:11–36` | 2026-10-26 |
+| grants | It is not a credential, and revoking it does not replace the connector's credentials | TRUE | `backend/models/RoomGrant.ts:48`; `backend/models/AgentCredential.ts:41–58` | 2026-10-26 |
+| grants | A connected integration's owner owns the connection | TRUE | `backend/routes/grants.ts:320` | 2026-10-26 |
+| grants | Main's lifecycle: "creates a root grant for a pod or a seat" | FALSE | Fixed by this PR. `backend/services/outsiderGrantPodEligibility.ts:46`; `backend/routes/grants.ts:415–424` | 2026-10-26 |
+| grants | The connection owner creates a root grant for a pod | TRUE | `backend/routes/grants.ts:312, :320, :440` | 2026-10-26 |
+| grants | The grant names tools, write mode, audience, budget, and expiry | TRUE | `backend/models/RoomGrant.ts:30–34` | 2026-10-26 |
+| grants | An installed agent may attenuate a usable grant into a narrower child grant | TRUE | `backend/routes/grants.ts:448–467`; `backend/services/roomGrantService.ts:324–373` | 2026-10-26 |
+| grants | The broker checks the grant before each tool call and records the outcome | TRUE | `backend/services/toolBrokerService.ts:834, :1105, :1210, :1430` | 2026-10-26 |
+| grants | The connection owner can revoke; revocation cascades to children | TRUE | `backend/routes/grants.ts:510–511`; `backend/models/RoomGrant.ts:48` | 2026-10-26 |
+| grants | The root-grant route accepts GitHub App and hosted MCP, including Linear | TRUE | `backend/routes/grants.ts:346`; `backend/services/installable/toolInstallables.ts:248` | 2026-10-26 |
+| grants | Linear exposes only read tools | TRUE | `backend/integrations/hostedMcp/linear.ts:28–31, :64, :92–93` | 2026-10-26 |
+| grants | Every root grant, Linear included, works only in an eligible private pod | TRUE | `backend/services/outsiderGrantPodEligibility.ts:46–54`; `backend/routes/grants.ts:415` (unconditional call), `:467` | 2026-10-26 |
+| grants | The server derives the installation and broker from the connection | TRUE | `backend/routes/grants.ts:320–321` (comment), `:350, :402–403, :438` | 2026-10-26 |
+| grants | A grant targets a pod: `{ "kind": "pod", "id": "<podId>" }` | TRUE | `backend/services/roomGrantService.ts:13` | 2026-10-26 |
+| grants | Main's seat target and seat audience | FALSE | Fixed by this PR. Create refuses seat targets (`backend/services/outsiderGrantPodEligibility.ts:46`; `backend/routes/grants.ts:415–424`). The mint tests mock that gate (`backend/__tests__/unit/routes/grants.mint.test.js:28, :80`), so the seat 201 case at `:118` passes without it. | 2026-10-26 |
+| grants | Main's seat grant is visible to its owner and seat | FALSE | Fixed by this PR. The read branch at `backend/routes/grants.ts:533–538` exists, but POST refuses seats, and attenuation copies the parent's target (`backend/services/roomGrantService.ts:379`). | 2026-10-26 |
+| grants | Pod grants default to the pod's current members | TRUE | `backend/routes/grants.ts:371–373` | 2026-10-26 |
+| grants | Each listed audience identity must be a current member of the pod | TRUE | `backend/routes/grants.ts:384–389` | 2026-10-26 |
+| grants | The read boundary follows the pod; anyone who can view it can inspect the grant and its call trail | TRUE | `backend/routes/grants.ts:533–541` | 2026-10-26 |
+| grants | The API returns an effective audience, not a stale membership snapshot | TRUE | `backend/routes/grants.ts:100`; `backend/routes/grants.ts:606–634` | 2026-10-26 |
+| grants | The projected grant record fields | TRUE | `backend/routes/grants.ts:85–110` | 2026-10-26 |
+| grants | The projection omits the connection and broker identifiers | TRUE | `backend/routes/grants.ts:85–110`; `backend/routes/grants.ts:586–590` | 2026-10-26 |
+| grants | `grantedBy` is the connection owner | TRUE | `backend/routes/grants.ts:119` | 2026-10-26 |
+| grants | A human JWT is used for owner and pod operations; the agent token only for attenuate | TRUE | `backend/routes/grants.ts:312` (`auth`), `:448–452`, `:606–618` | 2026-10-26 |
+| grants | Anyone who can view the pod can list the grants targeting it | TRUE | `backend/routes/grants.ts:606–618` | 2026-10-26 |
+| grants | Example tool `github.list_issues` | TRUE | `backend/services/toolBrokerService.ts:198, :201` | 2026-10-26 |
+| grants | Example `expiresAt` of 2026-10-01 | FALSE | Fixed by this PR, to 2027-12-31. 2026-10-01 is past and is rejected (`backend/services/roomGrantService.ts:255–257`). | 2026-10-26 |
+| grants | `expiresAt` is required and must be in the future | TRUE | `backend/services/roomGrantService.ts:242–243, :255–257` | 2026-10-26 |
+| grants | Create verifies connection ownership, target membership, enabled tools, and audience scope | TRUE | `backend/routes/grants.ts:320, :367, :384–389, :408–412` | 2026-10-26 |
+| grants | An owner, an eligible pod member, or the target seat can read a grant | FALSE | Fixed by this PR. The pod branch has no owner exception (`backend/routes/grants.ts:539–541`). | 2026-10-26 |
+| grants | Anyone who can view the pod can read a grant and its call trail | TRUE | `backend/routes/grants.ts:533–541`; `backend/routes/grants.ts:550`; `backend/routes/grants.ts:590` | 2026-10-26 |
+| grants | Each connector call through a grant is recorded, never what the agent sent | TRUE | `backend/routes/grants.ts:566–580` | 2026-10-26 |
+| grants | Attenuation is under the same pod eligibility rule | TRUE | `backend/routes/grants.ts:467` | 2026-10-26 |
+| grants | The child cannot widen tools, audience, write mode, budget, or expiry | TRUE | `backend/services/roomGrantService.ts:338–339, :346–347, :349–351, :369–373` | 2026-10-26 |
+| grants | Attenuation uses the agent runtime token | TRUE | `backend/routes/grants.ts:55–59, :450–452` | 2026-10-26 |
+| grants | The owner revokes by DELETE or the POST revoke action, and both cascade | TRUE | `backend/routes/grants.ts:510–511`; `backend/models/RoomGrant.ts:48` | 2026-10-26 |
+| grants | Connector installation does not grant access by itself | TRUE | `backend/routes/hostedMcpConnect.ts:36`; `backend/routes/integrations.ts:51`; `backend/services/installable/installableInstallationService.ts:21` (revoke only). The only grant creator is `backend/routes/grants.ts:440`. | 2026-10-26 |
+| grants | Connector installation sets which capability is connected and where it is projected | TRUE | `backend/routes/integrations.ts:261–262`; `backend/services/installable/installableInstallationService.ts:165` | 2026-10-26 |
+| grants | Credential owns "secret material and credential lineage" | FALSE | Fixed by this PR, reworded to "a hashed agent token and its lineage". Only a hash is stored (`backend/models/AgentCredential.ts:16, :43`); lineage is at `:27, :48, :87`. | 2026-10-26 |
+| grants | Credential does not describe which tools a caller may invoke | TRUE | `backend/models/AgentCredential.ts:50`; `backend/controllers/authController.ts:275`; `backend/middleware/daemonAuth.ts:51–52` | 2026-10-26 |
+| grants | Grant does not store or reveal the connector secret | TRUE | `backend/routes/grants.ts:85–110`; `backend/models/RoomGrant.ts:30–36` | 2026-10-26 |
+| grants | Grant owns target, tools, audience, limits, and revocation | TRUE | `backend/models/RoomGrant.ts:30–36`; `backend/routes/grants.ts:510–511` | 2026-10-26 |
+| grants | Link label "Connectors and Grants" points to `/concepts/connectors` | FALSE | Fixed by this PR. The label was at `docs-site/concepts/grants.mdx:145` on main; the page title is "Connectors" (`docs-site/concepts/connectors.mdx:2`). | 2026-10-26 |
+| grants | The connectors page covers the installation and credential model | FALSE | Fixed by this PR. The page never mentioned credentials. | 2026-10-26 |
+| grants | Agent Tools is the runtime-facing tool surface | TRUE | `docs-site/agents/tools.mdx:3` | 2026-10-26 |
+| grants | The API routes listed in the code blocks | TRUE | `backend/routes/grants.ts:312, :448, :510, :511, :550, :590`; pod grants router at about `:606` | 2026-10-26 |
 
 ## Self-host
 
