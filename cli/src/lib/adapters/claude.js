@@ -63,7 +63,10 @@ import {
   writeFile,
 } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
-import { delimiter, isAbsolute, join } from 'path';
+import {
+  delimiter, dirname, isAbsolute, join,
+} from 'path';
+import { fileURLToPath } from 'url';
 
 import {
   isLegacySandboxTrust,
@@ -135,6 +138,65 @@ const PUBLIC_DENIED_TOOLS = [
   'NotebookEdit',
   'Task',
 ];
+// TASK-294: a workspace seat is confined as a public one is, except that its
+// folder is the person's project, which the jail holds read-only unless the
+// seat was granted write, and whose .git it holds read-only either way.
+const isConfinedTrust = (trust) => trust === 'public' || trust === 'workspace';
+// What each `sandbox.allow` grant moves out of the denies. `web` grants
+// WebFetch alone: WebSearch, NotebookEdit and Task stay denied at every tier.
+// Bash and Write land wherever the jail lets them, so the jail, not this list,
+// bounds a write.
+const WORKSPACE_ALLOW_TOOLS = {
+  write: ['Edit', 'Write', 'Bash'],
+  web: ['WebFetch'],
+};
+// The grants a seat's environment carries. They widen the workspace tier
+// only, so any other trust gets none, whatever its record says.
+const workspaceGrants = (sandbox) => (
+  sandbox?.trust === 'workspace' && Array.isArray(sandbox.allow) ? sandbox.allow : []
+);
+// A workspace seat reads its project's history through one read-only git tool
+// (git-readonly-server.js). The server runs inside the jail, so the jail must
+// admit its code (cli/src/lib, plus package.json for the module type) and the
+// git binary it runs.
+const WORKSPACE_GIT_SERVER = fileURLToPath(new URL('../git-readonly-server.js', import.meta.url));
+const WORKSPACE_GIT_PACKAGE_JSON = fileURLToPath(new URL('../../../package.json', import.meta.url));
+// macOS's /usr/bin/git is an xcrun shim, and it fails inside Seatbelt ("No
+// developer tools were found"). So the jail gets the binary git itself runs:
+// `git --exec-path`, resolved here on the host, holds a `git` that links to it.
+const resolveRealGit = () => {
+  const result = spawnSync('git', ['--exec-path'], { encoding: 'utf8', timeout: 5000 });
+  const execDir = result?.status === 0 ? String(result.stdout || '').trim() : '';
+  if (!execDir) return null;
+  try {
+    return realpathSync(join(execDir, 'git'));
+  } catch {
+    return null;
+  }
+};
+const withWorkspaceGit = (ctx) => {
+  if (ctx.environment?.sandbox?.trust !== 'workspace' || !ctx.cwd) return ctx;
+  const git = resolveRealGit();
+  if (!git) {
+    // eslint-disable-next-line no-console
+    console.warn('[claude] git was not found on this machine, so this workspace seat has no git tool');
+    return ctx;
+  }
+  const server = {
+    name: 'workspace_git',
+    transport: 'stdio',
+    command: [process.execPath, WORKSPACE_GIT_SERVER, '--root', ctx.cwd, '--git', git],
+  };
+  return {
+    ...ctx,
+    environment: { ...ctx.environment, mcp: [...(ctx.environment.mcp || []), server] },
+    workspaceGit: {
+      executable: git,
+      readDirectories: [dirname(WORKSPACE_GIT_SERVER)],
+      readPaths: [WORKSPACE_GIT_PACKAGE_JSON],
+    },
+  };
+};
 const PUBLIC_SAFE_ENV = /^(?:PATH|LANG|LC_[A-Z_]+|TERM|USER|LOGNAME|NO_COLOR|CI|SSL_CERT_FILE|SSL_CERT_DIR)$/;
 
 const statOrNull = async (path) => {
@@ -248,8 +310,13 @@ const buildClaudeEnv = (input, state, expansionEnv = {}, credentialFile = null, 
 
 const absoluteToolDeny = (path) => `Read(/${path}/**)`;
 
-const buildPublicClaudePolicyArgs = (mcpToolPatterns) => {
+// The tools that read or write the seat's agent-wide memory.
+const MEMORY_TOOLS = Object.freeze(['commonly_read_agent_memory', 'commonly_write_agent_memory', 'commonly_save_my_memory']);
+
+const buildPublicClaudePolicyArgs = (mcpToolPatterns, { trust, allow = [], memoryWithheld = false } = {}) => {
   const home = homedir();
+  // `allow` is already narrowed to a workspace seat's grants (workspaceGrants).
+  const granted = allow.flatMap((grant) => WORKSPACE_ALLOW_TOOLS[grant] || []);
   const deniedReads = [
     absoluteToolDeny(join(home, '.commonly')),
     absoluteToolDeny(join(home, '.claude')),
@@ -262,6 +329,26 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns) => {
     'Read(./.codex/**)',
     'Read(./.env)',
   ];
+  // A workspace seat reads a real project, so every .env variant at any depth,
+  // and what a .env directory holds, stays out of reach (the jail holds the
+  // same line). .git is denied too: its config can carry a remote URL with a
+  // token in it, and history comes through the read-only git tool, which runs
+  // in its own process. And the seat cannot install itself into a room partway
+  // through a turn: the per-turn check confirmed its pods private before the
+  // spawn.
+  const workspaceDenies = trust === 'workspace'
+    ? [
+      'Read(./.env.*)', 'Read(./**/.env)', 'Read(./**/.env.*)',
+      'Read(./.env/**)', 'Read(./**/.env/**)', 'Read(./**/.env.*/**)',
+      'Read(./.git/**)', 'Read(./**/.git/**)',
+      ...mcpToolPatterns.map((pattern) => pattern.replace(/\*$/, 'commonly_self_install_into_pod')),
+    ]
+    : [];
+  // A workspace seat's turn that runs public gets no memory in its prompt
+  // (agent.js), and no tool that would read or write it either.
+  const memoryDenies = memoryWithheld
+    ? MEMORY_TOOLS.flatMap((tool) => mcpToolPatterns.map((pattern) => pattern.replace(/\*$/, tool)))
+    : [];
   return [
     // HOME points at an isolated, sanitized state directory. Ignore settings
     // from user/project/local sources and disable slash-command extensions;
@@ -271,8 +358,9 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns) => {
     '--strict-mcp-config',
     '--no-chrome',
     '--permission-mode', 'dontAsk',
-    '--allowedTools', 'Read(./**)', ...mcpToolPatterns,
-    '--disallowedTools', ...PUBLIC_DENIED_TOOLS, ...deniedReads,
+    '--allowedTools', 'Read(./**)', ...granted, ...mcpToolPatterns,
+    '--disallowedTools', ...PUBLIC_DENIED_TOOLS.filter((tool) => !granted.includes(tool)),
+    ...deniedReads, ...workspaceDenies, ...memoryDenies,
   ];
 };
 
@@ -636,7 +724,8 @@ const prepareArgv = async (innerArgv, ctx) => {
 
   const sandboxTrust = env.sandbox?.trust;
   const sandboxMode = resolvePublicSandboxMode(env.sandbox);
-  const publicNativeSandbox = sandboxTrust === 'public'
+  const grants = workspaceGrants(env.sandbox);
+  const publicNativeSandbox = isConfinedTrust(sandboxTrust)
     && PUBLIC_SANDBOX_MODES.has(sandboxMode);
   // A public trust is ONE contract on both platforms: the jail bounds the
   // filesystem and the policy bounds the tools. The bwrap branch below used to
@@ -665,9 +754,15 @@ const prepareArgv = async (innerArgv, ctx) => {
   // non-string) used to fall through to the bare `claude` spawn below — an
   // unconfined seat with a public record, which is how a record can claim
   // confinement it never applies (Vera 69548).
-  if (sandboxTrust === 'public' && !publicNativeSandbox && sandboxMode !== 'bwrap') {
+  // bwrap points the child's HOME at its folder (childHome below), so a
+  // workspace seat's transcripts would be written into the person's project.
+  if (sandboxTrust === 'workspace' && sandboxMode === 'bwrap') {
+    throw new Error('workspace Claude agents run on macOS only for now: under bwrap '
+      + 'their transcripts would be written into the project folder');
+  }
+  if (isConfinedTrust(sandboxTrust) && !publicNativeSandbox && sandboxMode !== 'bwrap') {
     throw new Error(
-      'public Claude agents require an enforced sandbox mode '
+      `${sandboxTrust} Claude agents require an enforced sandbox mode `
       + `(workspace or read-only on macOS, bwrap elsewhere), got ${JSON.stringify(sandboxMode)}`,
     );
   }
@@ -683,7 +778,9 @@ const prepareArgv = async (innerArgv, ctx) => {
     }
     innerArgv = [
       ...innerArgv,
-      ...buildPublicClaudePolicyArgs(allowedPatterns),
+      ...buildPublicClaudePolicyArgs(allowedPatterns, {
+        trust: sandboxTrust, allow: grants, memoryWithheld: ctx.memoryWithheld === true,
+      }),
       ...(ctx.publicSkillArgs || []),
     ];
     const claudeBin = resolveClaudePath(claudeEnv);
@@ -695,13 +792,24 @@ const prepareArgv = async (innerArgv, ctx) => {
       .filter((command) => typeof command === 'string' && isAbsolute(command));
     const wrapped = wrapArgvWithSeatbelt([claudeBin, ...innerArgv], {
       workspacePath: ctx.cwd,
-      workspaceAccess: sandboxMode === 'read-only' ? 'read' : 'write',
+      workspaceAccess: sandboxMode === 'read-only'
+        || (sandboxTrust === 'workspace' && !grants.includes('write')) ? 'read' : 'write',
+      readOnlyWorkspaceEntries: sandboxTrust === 'workspace' ? ['.git'] : [],
       executablePath: claudeBin,
       statePath: ctx.publicClaudeState.statePath,
       mcpConfigDir: ctx.mcpConfigDir,
-      executablePaths: [...mcpExecutables, ...commitHookExecutables, ...originalHookExecutables],
+      executablePaths: [
+        ...mcpExecutables,
+        ...(ctx.workspaceGit ? [ctx.workspaceGit.executable] : []),
+        ...commitHookExecutables,
+        ...originalHookExecutables,
+      ],
       allowClaudeRuntimeAccess: true,
-      readOnlyDirectories: ctx.mcpReadDirectories || [],
+      readOnlyDirectories: [
+        ...(ctx.mcpReadDirectories || []),
+        ...(ctx.workspaceGit?.readDirectories || []),
+      ],
+      readOnlyPaths: ctx.workspaceGit?.readPaths || [],
     });
     return {
       cmd: wrapped[0],
@@ -721,7 +829,7 @@ const prepareArgv = async (innerArgv, ctx) => {
     }
     innerArgv = [
       ...innerArgv,
-      ...buildPublicClaudePolicyArgs(allowedPatterns),
+      ...buildPublicClaudePolicyArgs(allowedPatterns, { memoryWithheld: ctx.memoryWithheld === true }),
       ...(ctx.publicSkillArgs || []),
     ];
   } else if (allowedPatterns.length > 0) {
@@ -788,13 +896,13 @@ export default {
     // one declaration is exactly how this seat crashed with "public Claude
     // state was not prepared" instead of spawning confined.
     const ctx = rawCtx.environment
-      ? {
+      ? withWorkspaceGit({
         ...rawCtx,
         environment: {
           ...rawCtx.environment,
           sandbox: normalizeSandboxTrust(rawCtx.environment.sandbox),
         },
-      }
+      })
       : rawCtx;
     if (isLegacySandboxTrust(rawCtx.environment?.sandbox)) {
       // eslint-disable-next-line no-console
@@ -812,11 +920,12 @@ export default {
     // the only two paths that build a real prompt. buildPrompt handles
     // undefined and '' as absence itself; it does not need a guard, it needs
     // the value.
-    const publicTrust = ctx.environment?.sandbox?.trust === 'public';
+    const publicTrust = isConfinedTrust(ctx.environment?.sandbox?.trust);
     const workCues = publicTrust ? [] : WORK_CUES;
     const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
       freshSession: !isResume,
       workCues,
+      memoryWithheld: ctx.memoryWithheld === true,
     });
     const sessionFlag = isResume ? '--resume' : '--session-id';
     // Model pin from the ADR-008 environment spec. Absent it, claude picks its
@@ -842,8 +951,12 @@ export default {
 
     let mountedSkills = [];
     let skillMount = { mounted: [], conflicted: [] };
-    if (ctx.environment && ctx.cwd) {
-      const skills = await mountSkills(ctx.environment, ctx.cwd);
+    // A workspace seat's folder is the person's project, and mountSkills writes
+    // from this host process, outside any jail. Its skills are copied to the
+    // run loop's scratch folder instead and reach it as prompt text.
+    const skillDir = ctx.environment?.sandbox?.trust === 'workspace' ? ctx.skillMountDir : ctx.cwd;
+    if (ctx.environment && skillDir) {
+      const skills = await mountSkills(ctx.environment, skillDir);
       mountedSkills = skills.mounted;
       skillMount = skills;
       if (skills.conflicted.length > 0) {
@@ -948,6 +1061,7 @@ export default {
         const freshPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
           freshSession: true,
           workCues,
+          memoryWithheld: ctx.memoryWithheld === true,
         });
         const retryBase = ['-p', freshPrompt,
         '--output-format', 'text', '--session-id', freshId, ...modelArgs];

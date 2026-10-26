@@ -69,7 +69,7 @@ import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credent
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
 import { buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
 import { resolveSkillSource, skillsAsText } from '../skill-prompt.js';
-import { isLegacySandboxTrust, normalizeSandboxTrust } from '../environment.js';
+import { isLegacySandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
 // Default timeout for a single codex spawn (exec mode).
@@ -653,6 +653,7 @@ export default {
   async spawn(prompt, ctx = {}) {
     const seatModel = requireSeatModel(ctx.environment, 'codex');
     const sandbox = normalizeSandboxTrust(ctx.environment?.sandbox);
+    refuseWorkspaceTrust(sandbox, 'codex');
     // Passed through UNCOALESCED. `ctx.memoryLongTerm || ''` was here, and
     // `null || ''` is `''` — which routed the unreadable case straight into
     // the empty-memory branch and made the whole distinction unreachable from

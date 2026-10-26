@@ -540,10 +540,27 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
     const allPodIds = [...podIds.map(String), ...dmPodIds.map(String)];
 
     const pods = allPodIds.length > 0
-      ? await Pod.find({ _id: { $in: allPodIds } }).select('_id name type').lean()
+      ? await Pod.find({ _id: { $in: allPodIds } }).select('_id name type publicRead communityListed joinPolicy').lean()
       : [];
 
     const podMap = Object.fromEntries(pods.map((p: any) => [String(p._id), p]));
+
+    // Whether strangers can read or join each room this seat answers in
+    // (TASK-294). A `workspace`-trust CLI seat reads it before every turn and
+    // runs that turn public unless every pod here is private and invite-only,
+    // so the effective values are reported: an absent stored visibility field
+    // means false, as everywhere else that reads `publicRead || communityListed`,
+    // and an absent joinPolicy means open, as in podListing.ts. Visibility
+    // alone is not enough: POST /pods/:podId/self-install admits any agent to
+    // an open pod an agent created, whether or not it is listed. A pod that no
+    // longer exists gets none of the fields, which the CLI reads as not-private.
+    const podVisibility = (pod: any) => (pod?._id
+      ? {
+        publicRead: pod.publicRead === true,
+        communityListed: pod.communityListed === true,
+        joinPolicy: pod.joinPolicy === 'invite-only' ? 'invite-only' : 'open',
+      }
+      : {});
 
     const installationList = installations.map((inst: any) => {
       const pod = podMap[String(inst?.podId)] || {};
@@ -558,6 +575,7 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
         // Known runtime kinds (such as a connect-page `webhook`) stay null.
         // Expose only this non-secret discriminator, never the full config.
         runtimeAdapter: adapterForRuntimeBinding(inst?.config?.runtime),
+        ...podVisibility(pod),
         type: 'installation',
       };
     });
@@ -570,6 +588,7 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
         podType: pod.type || 'agent-admin',
         instanceId,
         status: 'active',
+        ...podVisibility(pod),
         type: 'dm',
       };
     });

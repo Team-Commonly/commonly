@@ -58,9 +58,12 @@ import {
   environmentForServer,
   normalizeSandboxTrust,
   parseEnvironmentFile,
+  refuseWorkspaceTrust,
   resolveWorkspace,
   validateEnvironmentSpec,
+  WORKSPACE_SANDBOX_ALLOW,
 } from '../lib/environment.js';
+import { firstRunWorkspace, podIsConfirmedPrivate, workspaceTurnPlacement } from '../lib/workspace-trust.js';
 import {
   ADAPTERS_WITH_DEFAULT_MCP,
   ADAPTERS_WITH_GRANT_BROKER,
@@ -297,6 +300,53 @@ export const printAttachRunGuidance = ({
 // a foreground run re-bootstraps from the Connect page's env exports after the
 // local record is removed; a daemon-managed seat is switched through the
 // registry, which the daemon applies on its next pass.
+// `run --allow write,web`: the grants a first-run workspace seat starts with
+// (TASK-294). An unknown name is refused rather than dropped.
+export const parseAllowGrants = (value) => {
+  if (value === undefined || value === null) return [];
+  const requested = String(value).split(',').map((grant) => grant.trim()).filter(Boolean);
+  if (!requested.length || requested.some((grant) => !WORKSPACE_SANDBOX_ALLOW.includes(grant))) {
+    throw new Error(`--allow takes ${WORKSPACE_SANDBOX_ALLOW.join(' and/or ')}, comma-separated `
+      + `(got ${JSON.stringify(String(value))})`);
+  }
+  return WORKSPACE_SANDBOX_ALLOW.filter((grant) => requested.includes(grant));
+};
+
+// Grants are fixed when the token file is written. A later --allow that
+// differs is refused with the way to change them, never applied quietly.
+export const checkRunAllowRequest = ({ record, requested = [] }) => {
+  if (!requested.length) return { ok: true };
+  const savedList = record?.environment?.sandbox?.allow || [];
+  const saved = WORKSPACE_SANDBOX_ALLOW.filter((grant) => savedList.includes(grant));
+  if (saved.join(',') === requested.join(',')) return { ok: true };
+  const name = record.agentName;
+  return {
+    ok: false,
+    message: [
+      `'${name}' was set up with ${saved.length ? `--allow ${saved.join(',')}` : 'no --allow'}; `
+        + `--allow ${requested.join(',')} was not applied.`,
+      `To change it: commonly agent detach ${name} --force, then re-run with the Connect-page `
+        + `env exports and --allow ${requested.join(',')}.`,
+    ].join('\n'),
+  };
+};
+
+// What a first-run workspace seat may do, said once at bootstrap. A write
+// grant hands it Bash, whose commands reach the network, so that line never
+// claims the seat is offline.
+const workspaceGrantLine = (workspacePath, allow) => {
+  const write = allow.includes('write');
+  const web = allow.includes('web');
+  if (!write) {
+    return web
+      ? `this agent can read ${workspacePath}, run read-only git there, and fetch web pages; it cannot edit files.`
+      : `this agent can read ${workspacePath} and run read-only git there; it cannot edit files or reach the web.`;
+  }
+  return `this agent can read and edit files in ${workspacePath} and run commands there`
+    + (web ? ', and fetch web pages' : '')
+    + '. Its commands can reach the network. Its .git stays read-only, so it cannot commit.';
+};
+
 export const checkRunAdapterRequest = ({ record, requestedAdapter, tokenPath }) => {
   const requested = String(requestedAdapter || '').trim().toLowerCase();
   if (!requested) return { ok: true };
@@ -320,6 +370,10 @@ export const bootstrapAgentRecordFromEnv = async ({
   adapterRegistry = { getAdapter, listAdapterNames },
   adapterOverride = null,
   log = () => {},
+  startDir = process.cwd(),
+  home,
+  allow = [],
+  platform = process.platform,
 }) => {
   const runtimeToken = (env.COMMONLY_AGENT_TOKEN || '').trim();
   if (!runtimeToken) return null;
@@ -398,6 +452,28 @@ export const bootstrapAgentRecordFromEnv = async ({
   });
   if (bindingRefusal) throw new Error(bindingRefusal);
 
+  // The daemon's baseline for a seat nobody wrote a spec for, sandbox
+  // included: this record is derived from nothing the person declared.
+  const environment = seatBaseline(buildDefaultEnvironment(adapterName), adapterName, { sandbox: true });
+  // A claude seat whose every pod is confirmed private reads the directory
+  // it was started from (TASK-294); anything else keeps the public default.
+  const workspace = firstRunWorkspace({
+    adapterName, installations: installs, startDir, home, platform,
+  });
+  if (allow.length && !workspace?.workspacePath) {
+    throw new Error(`--allow ${allow.join(',')} applies only to an agent that works in the folder it `
+      + 'starts in, and this one '
+      + (workspace?.reason
+        ? `would read only its scratch folder, because ${workspace.reason}.${workspace.fix ? ` ${workspace.fix}` : ''}`
+        : 'does not.'));
+  }
+  if (workspace?.workspacePath) {
+    log(workspaceGrantLine(workspace.workspacePath, allow));
+  } else if (workspace?.reason) {
+    log(`this agent can read only its own scratch folder, because ${workspace.reason}.`
+      + (workspace.fix ? ` ${workspace.fix}` : ''));
+  }
+
   return {
     agentName,
     displayName: identity?.displayName || primary?.displayName || agentName,
@@ -406,10 +482,10 @@ export const bootstrapAgentRecordFromEnv = async ({
     instanceUrl,
     runtimeToken,
     adapter: adapterName,
-    // The daemon's baseline for a seat nobody wrote a spec for, sandbox
-    // included: this record is derived from nothing the person declared.
-    environment: seatBaseline(buildDefaultEnvironment(adapterName), adapterName, { sandbox: true }),
-    workspacePath: null,
+    environment: workspace?.workspacePath
+      ? { ...environment, sandbox: { trust: 'workspace', ...(allow.length ? { allow } : {}) } }
+      : environment,
+    workspacePath: workspace?.workspacePath || null,
   };
 };
 
@@ -614,6 +690,31 @@ export const assertSandboxDeclaredForPublicPod = async ({
       throw new Error('dsh supports private pods only; this pod is publicly readable');
     }
     return;
+  }
+
+  // A `workspace` seat lets the room read its start directory (TASK-294), so it
+  // needs the pod CONFIRMED private, not merely not known to be public: a pod
+  // whose visibility cannot be read fails closed here, the way dsh does above.
+  if (environment?.sandbox?.trust === 'workspace') {
+    let pod;
+    try {
+      pod = await client.get(`/api/pods/${podId}`);
+    } catch {
+      throw new Error(
+        'sandbox.trust=workspace requires confirmed private pod visibility before attach, '
+        + 'and this pod\'s visibility could not be read',
+      );
+    }
+    if (podIsConfirmedPrivate(pod)) return;
+    const label = pod?.name ? `"${pod.name}"` : podId;
+    const reported = typeof pod?.publicRead === 'boolean' && typeof pod?.communityListed === 'boolean';
+    let why = 'did not report its visibility';
+    if (reported) why = pod.publicRead || pod.communityListed ? 'is publicly readable' : 'is open to join';
+    throw new Error(
+      `${label} ${why}, so sandbox.trust=workspace would let people you do not control read this `
+      + 'agent\'s start directory. Declare "sandbox": { "trust": "public" } for this pod, or attach '
+      + 'to a private, invite-only pod.',
+    );
   }
 
   // Normalized FIRST (Vera 71715, Wren 71718): the predicate below reads a
@@ -842,11 +943,20 @@ export const resolveAttachSandbox = ({
 } = {}) => {
   const sandbox = normalizeSandboxTrust(environment?.sandbox);
   const trust = sandbox?.trust;
+  // `workspace` is claude-only for now (TASK-294). Refused here with the words
+  // the adapter would use at spawn, so the attach fails before anything is
+  // published rather than at the seat's first turn.
+  if (trust === 'workspace' && adapterName !== 'claude') {
+    refuseWorkspaceTrust(sandbox, adapterName || 'this');
+  }
+  // Both confined trusts take their mode from the host the same way; they
+  // differ in what the policy inside the sandbox allows, not in the sandbox.
+  const confined = trust === 'public' || trust === 'workspace';
   const mode = sandbox?.mode
-    || (trust === 'public' ? resolvePublicSandboxMode(sandbox, platform) : 'none');
-  if (trust === 'public' && mode === 'none') {
+    || (confined ? resolvePublicSandboxMode(sandbox, platform) : 'none');
+  if (confined && mode === 'none') {
     throw new Error(
-      'sandbox.trust=public requires an enforced sandbox mode; refusing to attach unsandboxed',
+      `sandbox.trust=${trust} requires an enforced sandbox mode; refusing to attach unsandboxed`,
     );
   }
   // Moved in from the call site (Vera 71675): this is the check the raw compare
@@ -854,7 +964,7 @@ export const resolveAttachSandbox = ({
   // pure — a mode and an adapter name — so it belongs with the derivation, and
   // its witnesses live beside it.
   if ((mode === 'workspace' || mode === 'read-only')
-    && (trust !== 'public' || !ADAPTERS_WITH_DEFAULT_SANDBOX.has(adapterName))) {
+    && (!confined || !ADAPTERS_WITH_DEFAULT_SANDBOX.has(adapterName))) {
     throw new Error(
       `sandbox.mode=${mode} requires public trust and an adapter with sandbox enforcement`,
     );
@@ -1438,8 +1548,42 @@ export const performRun = ({
   // as binary-not-found — so we ensure it up front to avoid the confusing
   // diagnostic. ADR-008: when an environment spec was attached, the resolved
   // workspace path replaces the /tmp default.
-  const agentCwd = workspacePath || join(tmpdir(), 'commonly-agents', agentName);
+  const scratchCwd = join(tmpdir(), 'commonly-agents', agentName);
+  const agentCwd = workspacePath || scratchCwd;
   if (!existsSync(agentCwd)) mkdirSync(agentCwd, { recursive: true });
+  // TASK-294: a pod can turn public after attach, so a workspace seat re-reads
+  // its pods before every turn, and a turn it cannot confirm (a failed read
+  // included) runs as a public seat in the scratch folder. The session is
+  // bound to where and as what the turn runs, so a public turn never resumes
+  // a conversation that read the workspace, whatever claude's resume would
+  // find from another folder.
+  let lastPlacementReason = null;
+  const placeTurn = async () => {
+    if (seatEnvironment?.sandbox?.trust !== 'workspace') {
+      return { environment: seatEnvironment, cwd: agentCwd, binding: sessionBinding };
+    }
+    let installations = null;
+    try {
+      const identity = await client.get('/api/agents/runtime/installations', {}, {
+        signal: AbortSignal.timeout(5000),
+      });
+      installations = Array.isArray(identity?.installations) ? identity.installations : [];
+    } catch {
+      installations = null;
+    }
+    const placement = workspaceTurnPlacement({
+      environment: seatEnvironment, workspacePath: agentCwd, installations, scratchDir: scratchCwd,
+    });
+    if (placement.reason !== lastPlacementReason) {
+      log(placement.reason
+        ? `this turn runs as a public seat in ${scratchCwd}, because ${placement.reason}`
+        : `every pod is confirmed private again; turns read ${agentCwd}`);
+      lastPlacementReason = placement.reason;
+    }
+    if (!existsSync(placement.cwd)) mkdirSync(placement.cwd, { recursive: true });
+    const where = `${placement.environment.sandbox.trust}:${placement.cwd}`;
+    return { ...placement, binding: sessionBinding ? `${sessionBinding}:${where}` : where };
+  };
   const batchLimit = Math.min(50, Math.max(1, Number(inboxBatchLimit) || 10));
 
   const processEvent = async (event) => {
@@ -1690,11 +1834,12 @@ export const performRun = ({
   const runTurn = async ({
     event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger,
   }) => {
+    const placement = await placeTurn();
     // TASK-440: a cold, large session starts fresh at wake instead of being
     // resumed. The restart note leads the prompt; memory still reaches the
     // fresh session through the adapter's preamble.
-    const sessionEntry = getSessionEntry(agentName, eventPodId, { binding: sessionBinding });
-    let sessionId = getSession(agentName, eventPodId, { binding: sessionBinding });
+    const sessionEntry = getSessionEntry(agentName, eventPodId, { binding: placement.binding });
+    let sessionId = getSession(agentName, eventPodId, { binding: placement.binding });
     let recycleBriefing = null;
     if (sessionId && shouldStartFreshSession({
       lastTurn: sessionEntry?.lastTurn,
@@ -1711,8 +1856,13 @@ export const performRun = ({
       sessionId = null;
     }
     // ADR-005 §Memory bridge: read long_term before spawn, inject via ctx,
-    // and (if the adapter returns a summary) patch-sync back after.
-    const memoryLongTerm = await readLongTerm(client, { onError });
+    // and (if the adapter returns a summary) patch-sync back after. A workspace
+    // seat's turn that runs public (placement.reason) gets none of it: its
+    // memory may hold what earlier turns read in the project, and what this
+    // turn reads in an unconfirmed room must not reach the next workspace turn.
+    // The adapter also denies the memory tools for it (memoryWithheld).
+    const memoryWithheld = Boolean(placement.reason);
+    const memoryLongTerm = memoryWithheld ? undefined : await readLongTerm(client, { onError });
 
     // Sharpen TASK-129: focus is a turn-start read, not an enqueue-time
     // snapshot. Read through the authorized runtime context route immediately
@@ -1856,7 +2006,7 @@ export const performRun = ({
       // only for tests and has no commit-making child process.
       if (adapter?.name !== 'stub') {
         commitAttribution = prepareCommitAttribution({
-          cwd: agentCwd,
+          cwd: placement.cwd,
           env: process.env,
           agentName,
           displayName,
@@ -1886,11 +2036,13 @@ export const performRun = ({
         providerKey,
         timeoutMs: effectiveTurnTimeoutMs,
         sessionId,
-        cwd: agentCwd,
+        cwd: placement.cwd,
+        skillMountDir: scratchCwd,
         env: commitAttribution?.env || process.env,
         commitAttributionEnv: commitAttribution?.sandboxEnv || null,
         memoryLongTerm,
-        environment: seatEnvironment,
+        memoryWithheld,
+        environment: placement.environment,
         onSkillsLinked: ({ mounted, conflicted }) => {
           skillMount = {
             mounted: [...new Set([...serverSkills.mounted, ...mounted.map(reportedSkillName)])],
@@ -1934,7 +2086,7 @@ export const performRun = ({
       // wake can decide whether to recycle. Adapters that report nothing keep
       // resuming.
       setSession(agentName, eventPodId, result.newSessionId, {
-        binding: sessionBinding,
+        binding: placement.binding,
         contextTokens: result.contextTokens ?? null,
       });
     }
@@ -2157,7 +2309,7 @@ export const performRun = ({
         );
       }
     }
-    if (result.memorySummary) {
+    if (result.memorySummary && !memoryWithheld) {
       try {
         await syncBack(client, { summary: result.memorySummary });
         log(`[${event.type}] memory synced (${Buffer.byteLength(result.memorySummary)} bytes)`);
@@ -3708,7 +3860,15 @@ Docs:
     .option('--cascade-grace <n>', `Extra turns allowed when this seat was directly addressed; 0 disables the grace (env ${CASCADE_ENV_VARS.addressedGrace}, default ${CASCADE_DEFAULTS.addressedGrace})`)
     .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
     .option('--refusal-handoff <agent>', 'Agent to @mention when the model provider refuses a request\'s content; the request is acked as refused, never retried')
+    .option('--allow <grants>', 'On first run of an agent that works in its folder, also let it edit files and run commands (write) and/or fetch web pages (web), comma-separated. Commands reach the network.')
     .action(async (name, opts) => {
+      let allow;
+      try {
+        allow = parseAllowGrants(opts.allow);
+      } catch (err) {
+        console.error(`${stamp()} [${name}] ${err.message}`);
+        process.exit(1);
+      }
       let record = loadAgentToken(name);
       let bootstrapped = false;
       if (!record) {
@@ -3719,6 +3879,7 @@ Docs:
             name,
             adapterOverride: opts.adapter || null,
             log: (line) => console.log(`${stamp()} [${name}] ${line}`),
+            allow,
           });
         } catch (err) {
           console.error(`${stamp()} [${name}] ${err.message}`);
@@ -3758,6 +3919,11 @@ Docs:
         );
       }
 
+      const allowRequest = checkRunAllowRequest({ record, requested: allow });
+      if (!allowRequest.ok) {
+        console.error(`${stamp()} [${name}] ${allowRequest.message}`);
+        process.exit(1);
+      }
       const adapterRequest = checkRunAdapterRequest({
         record, requestedAdapter: opts.adapter, tokenPath: tokenFile(name),
       });

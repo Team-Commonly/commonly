@@ -155,6 +155,18 @@ describe('BYO listener snippet', () => {
     expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI signed in/);
   });
 
+  test('a Claude Code listener says what it can reach and how --allow widens it; Codex says nothing of folders', async () => {
+    await issueToken();
+    const reach = screen.getByTestId('byo-listen-reach');
+    expect(reach).toHaveTextContent(/By default, on macOS, when every pod it's in is private, invite-only and not listed in Community, .+ reads only the folder you run this from\. Otherwise, or when you run it from your home folder, it works in its own scratch folder\./);
+    // The folder bound is the default only: write's commands read past it.
+    expect(reach).toHaveTextContent(/add --allow write to the last line\. Those commands can read beyond the folder\./);
+    expect(reach).toHaveTextContent(/To let it fetch web pages, add --allow web\./);
+    expect(reach).toHaveTextContent(/send what it reads off this computer/);
+    fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
+    expect(screen.queryByTestId('byo-listen-reach')).toBeNull();
+  });
+
   test('the Claude Code MCP line shows for Claude Code only', async () => {
     await issueToken();
     expect(screen.getByTestId('byo-mcp-claude')).toBeInTheDocument();
@@ -246,6 +258,7 @@ describe('BYO listener snippet', () => {
       await issueToken();
       expect(screen.getByTestId('byo-setup-os-linux')).toHaveAttribute('aria-pressed', 'true');
       expect(listener()).toBeUndefined();
+      expect(screen.queryByTestId('byo-listen-reach')).toBeNull();
       expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/from Linux yet/);
       expect(mcpBox()).toMatch(/-- npx -y @commonlyai\/mcp$/);
       expect(screen.getByTestId('byo-mcp-claude')).not.toHaveTextContent(/command above|Optional/);

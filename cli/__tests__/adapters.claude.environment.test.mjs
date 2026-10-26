@@ -1077,7 +1077,10 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
   // legacy `internal` record reads as public, so it is held to the same line.
   // Seatbelt wraps argv and spends `-p` on its profile, so the prompt is found
   // by its content rather than by the flag.
-  test.each(['public', 'internal'])('a fresh trust=%s seat is not taught the row-working habits', async (trust) => {
+  // A workspace seat holds its project read-only and is denied the Agent tool,
+  // so both cues would teach it things it cannot do: parallel subagents, and
+  // slicing a row before writing code.
+  test.each(['public', 'internal', 'workspace'])('a fresh trust=%s seat is not taught the row-working habits', async (trust) => {
     const { impl, calls } = makeSpawnImpl();
     await publicSpawn(impl, {
       environment: { model: 'test-model',
@@ -1194,5 +1197,302 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
     expect(calls).toHaveLength(2);
     expect(appended(calls[1].args)).toBe(appended(calls[0].args));
     expect(appended(calls[1].args)).toContain('## Skill: house-rules');
+  });
+});
+
+// TASK-294: a workspace seat is confined as a public one is, with the person's
+// project held read-only, and nothing written into that project by the host.
+describe('claude adapter — a workspace seat', () => {
+  let cwd;
+  let skillSrc;
+  let publicState;
+  let scratch;
+  const originalPlatform = process.platform;
+
+  beforeEach(() => {
+    cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-workspace-'));
+    publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+    scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-workspace-scratch-'));
+    skillSrc = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-skill-src-')), 'house-rules');
+    fs.mkdirSync(skillSrc);
+    fs.writeFileSync(
+      path.join(skillSrc, 'SKILL.md'),
+      '---\nname: house-rules\ndescription: How to behave in a pod.\n---\n\n# Being a member\n\nOrient before you post.\n',
+      'utf8',
+    );
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    spawnSync.mockImplementation((cmd) => (
+      cmd === 'which' ? { status: 0, stdout: '/usr/bin/true\n' } : { status: 0, stdout: '' }
+    ));
+  });
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+    spawnSync.mockReset();
+    for (const dir of [cwd, publicState, scratch, path.dirname(skillSrc)]) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  const workspaceSpawn = (impl, sandbox = { mode: 'workspace', trust: 'workspace' }, extra = {}) => claude.spawn('hi', {
+    ...extra,
+    agentName: 'workspace-test',
+    sessionId: null,
+    cwd,
+    skillMountDir: scratch,
+    env: { PATH: process.env.PATH, COMMONLY_HOST_SECRET: 'must-not-inherit' },
+    environment: { model: 'test-model',
+      sandbox,
+      skills: { claude: [skillSrc] },
+      mcp: [{
+        name: 'commonly',
+        transport: 'stdio',
+        command: [process.execPath, path.join(scratch, 'server.mjs')],
+      }],
+    },
+    _publicClaudeState: publicState,
+    _spawnImpl: impl,
+  });
+
+  test('runs in Seatbelt with its project read-only and the public tool policy', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await workspaceSpawn(impl);
+
+    expect(calls).toHaveLength(1);
+    const { cmd, args, opts } = calls[0];
+    expect(cmd).toBe('/usr/bin/sandbox-exec');
+    const realCwd = fs.realpathSync(cwd);
+    expect(args[1]).toContain(`(allow file-read* file-test-existence (subpath "${realCwd}"))`);
+    expect(args[1]).not.toContain(`(allow file-read* file-test-existence file-write* (subpath "${realCwd}"))`);
+    expect(args).toContain('Read(./**)');
+    expect(args).toContain('mcp__commonly__*');
+    const denied = args.slice(args.indexOf('--disallowedTools') + 1);
+    expect(denied).toEqual(expect.arrayContaining([
+      'Bash', 'Write', 'Edit', 'WebFetch', 'WebSearch', 'Task',
+      'Read(./.env)', 'Read(./.env.*)', 'Read(./**/.env)', 'Read(./**/.env.*)',
+      'Read(./.env/**)', 'Read(./**/.env/**)', 'Read(./**/.env.*/**)',
+      'Read(./.git/**)', 'Read(./**/.git/**)',
+      'mcp__commonly__commonly_self_install_into_pod',
+    ]));
+    expect(opts.env.HOME).toBe(publicState);
+    expect(opts.env.COMMONLY_HOST_SECRET).toBeUndefined();
+  });
+
+  test('a workspace seat\'s turn that runs public gets no memory and no memory tool', async () => {
+    const memoryTools = ['mcp__commonly__commonly_read_agent_memory', 'mcp__commonly__commonly_write_agent_memory',
+      'mcp__commonly__commonly_save_my_memory'];
+    const withheld = makeSpawnImpl();
+    await workspaceSpawn(withheld.impl, { mode: 'workspace', trust: 'public' }, {
+      memoryWithheld: true, memoryLongTerm: 'notes from the project',
+    });
+    const { args } = withheld.calls[0];
+    const denied = args.slice(args.indexOf('--disallowedTools') + 1);
+    expect(denied).toEqual(expect.arrayContaining(memoryTools));
+    // The last -p: sandbox-exec's own -p carries the profile.
+    const prompt = args[args.lastIndexOf('-p') + 1];
+    expect(prompt).toContain('withheld this turn');
+    expect(prompt).not.toContain('notes from the project');
+    expect(prompt).not.toContain('(empty');
+
+    // Control: the same public spawn, not withheld, injects the memory and keeps the tools.
+    const kept = makeSpawnImpl();
+    await workspaceSpawn(kept.impl, { mode: 'workspace', trust: 'public' }, { memoryLongTerm: 'notes from the project' });
+    const keptArgs = kept.calls[0].args;
+    expect(keptArgs[keptArgs.lastIndexOf('-p') + 1]).toContain('notes from the project');
+    for (const tool of memoryTools) expect(keptArgs).not.toContain(tool);
+  });
+
+  test('a public seat keeps the denies it had, without the workspace ones', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await workspaceSpawn(impl, { mode: 'workspace', trust: 'public' });
+
+    const { args } = calls[0];
+    expect(args).not.toContain('Read(./.env.*)');
+    expect(args).not.toContain('Read(./.git/**)');
+    expect(args).not.toContain('mcp__commonly__commonly_self_install_into_pod');
+    expect(args[1]).toContain(`(allow file-read* file-test-existence file-write* (subpath "${fs.realpathSync(cwd)}"))`);
+  });
+
+  test('its skills are copied to the scratch folder, never into the project, and arrive as prompt text', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await workspaceSpawn(impl);
+
+    expect(fs.existsSync(path.join(cwd, '.claude'))).toBe(false);
+    expect(fs.existsSync(path.join(scratch, '.claude', 'skills', 'house-rules', 'SKILL.md'))).toBe(true);
+    const { args } = calls[0];
+    const text = args[args.indexOf('--append-system-prompt') + 1];
+    expect(text).toContain('## Skill: house-rules');
+  });
+
+  test('without a scratch folder its skills are skipped rather than written into the project', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await claude.spawn('hi', {
+      agentName: 'workspace-test',
+      sessionId: null,
+      cwd,
+      env: { PATH: process.env.PATH },
+      environment: { model: 'test-model',
+        sandbox: { mode: 'workspace', trust: 'workspace' },
+        skills: { claude: [skillSrc] },
+      },
+      _publicClaudeState: publicState,
+      _spawnImpl: impl,
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(fs.existsSync(path.join(cwd, '.claude'))).toBe(false);
+  });
+
+  const toolLists = (args) => ({
+    allowed: args.slice(args.indexOf('--allowedTools') + 1, args.indexOf('--disallowedTools')),
+    denied: args.slice(args.indexOf('--disallowedTools') + 1),
+  });
+
+  test('a write grant hands it Edit, Write and Bash and a writable project, with .git held read-only', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await workspaceSpawn(impl, { mode: 'workspace', trust: 'workspace', allow: ['write'] });
+
+    const { args } = calls[0];
+    const { allowed, denied } = toolLists(args);
+    expect(allowed).toEqual(expect.arrayContaining(['Edit', 'Write', 'Bash']));
+    expect(denied).not.toContain('Edit');
+    expect(denied).not.toContain('Write');
+    expect(denied).not.toContain('Bash');
+    expect(denied).toEqual(expect.arrayContaining(['WebFetch', 'WebSearch', 'NotebookEdit', 'Task', 'Read(./.env.*)']));
+    const realCwd = fs.realpathSync(cwd);
+    expect(args[1]).toContain(`(allow file-read* file-test-existence file-write* (subpath "${realCwd}"))`);
+    expect(args[1]).toContain(`(deny file-write* (subpath "${path.join(realCwd, '.git')}"))`);
+  });
+
+  test('a web grant hands it WebFetch alone, with the project still read-only', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await workspaceSpawn(impl, { mode: 'workspace', trust: 'workspace', allow: ['web'] });
+
+    const { args } = calls[0];
+    const { allowed, denied } = toolLists(args);
+    expect(allowed).toContain('WebFetch');
+    expect(denied).not.toContain('WebFetch');
+    expect(denied).toEqual(expect.arrayContaining(['WebSearch', 'Bash', 'Write', 'Edit', 'NotebookEdit', 'Task']));
+    expect(args[1]).not.toContain(`file-write* (subpath "${fs.realpathSync(cwd)}"))`);
+  });
+
+  test('a public seat whose record carries grants gets none of them', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await workspaceSpawn(impl, { mode: 'workspace', trust: 'public', allow: ['write', 'web'] });
+
+    const { allowed, denied } = toolLists(calls[0].args);
+    for (const tool of ['Edit', 'Write', 'Bash', 'WebFetch']) {
+      expect(allowed).not.toContain(tool);
+      expect(denied).toContain(tool);
+    }
+  });
+
+  test('under bwrap it refuses to spawn', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await expect(workspaceSpawn(impl, { mode: 'bwrap', trust: 'workspace' }))
+      .rejects.toThrow(/workspace Claude agents run on macOS only for now/);
+    expect(calls).toHaveLength(0);
+  });
+
+  test('with an unenforced mode it refuses rather than falls through to a bare spawn', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await expect(workspaceSpawn(impl, { mode: 'none', trust: 'workspace' }))
+      .rejects.toThrow(/workspace Claude agents require an enforced sandbox mode/);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe('claude adapter — a workspace seat\'s git tool', () => {
+  let cwd;
+  let publicState;
+  let fakeGitDirs;
+  let realGit;
+  let gitExecDir;
+  const originalPlatform = process.platform;
+  const serverPath = path.resolve('src/lib/git-readonly-server.js');
+
+  beforeEach(() => {
+    cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-git-workspace-'));
+    publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-git-state-'));
+    // `git --exec-path` names a dir whose `git` links to the binary git runs,
+    // which is what the jail must admit — never the link, never a shim.
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-git-bin-'));
+    gitExecDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-git-exec-'));
+    fakeGitDirs = [binDir, gitExecDir];
+    const binary = path.join(binDir, 'git');
+    fs.writeFileSync(binary, '#!/bin/sh\n', { mode: 0o755 });
+    fs.symlinkSync(binary, path.join(gitExecDir, 'git'));
+    realGit = fs.realpathSync(binary);
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+  });
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+    spawnSync.mockReset();
+    jest.restoreAllMocks();
+    for (const dir of [cwd, publicState, ...fakeGitDirs]) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const gitOnMachine = (execDir) => spawnSync.mockImplementation((cmd, args) => {
+    if (cmd === 'which') return { status: 0, stdout: '/usr/bin/true\n' };
+    if (cmd === 'git' && args?.[0] === '--exec-path') {
+      return execDir ? { status: 0, stdout: `${execDir}\n` } : { status: 1, stdout: '' };
+    }
+    return { status: 0, stdout: '' };
+  });
+
+  const seatSpawn = (impl, trust) => claude.spawn('hi', {
+    agentName: 'workspace-git-test',
+    sessionId: null,
+    cwd,
+    env: { PATH: process.env.PATH },
+    environment: {
+      model: 'test-model',
+      sandbox: { mode: 'workspace', trust },
+      mcp: [{ name: 'commonly', transport: 'stdio', command: [process.execPath, path.join(cwd, 'server.mjs')] }],
+    },
+    _publicClaudeState: publicState,
+    _spawnImpl: impl,
+  });
+
+  test('gets one read-only git tool, whose server code and real git binary the jail admits', async () => {
+    gitOnMachine(gitExecDir);
+    const { impl, calls } = makeSpawnImpl();
+    await seatSpawn(impl, 'workspace');
+
+    expect(calls).toHaveLength(1);
+    const { args, config } = calls[0];
+    expect(config.mcpServers.workspace_git).toEqual({
+      type: 'stdio',
+      command: process.execPath,
+      args: [serverPath, '--root', cwd, '--git', realGit],
+    });
+    expect(fs.existsSync(serverPath)).toBe(true);
+    expect(args.slice(args.indexOf('--allowedTools'))).toContain('mcp__workspace_git__*');
+    const profile = args[1];
+    expect(profile).toContain(`(allow file-read* file-test-existence file-map-executable (literal "${realGit}"))`);
+    expect(profile).toContain(`(allow file-read* file-test-existence (subpath "${fs.realpathSync(path.dirname(serverPath))}"))`);
+    expect(profile).toContain(`(allow file-read* file-test-existence (literal "${fs.realpathSync(path.resolve('package.json'))}"))`);
+  });
+
+  test('a public seat gets no git tool, even on a machine with git', async () => {
+    gitOnMachine(gitExecDir);
+    const { impl, calls } = makeSpawnImpl();
+    await seatSpawn(impl, 'public');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].config.mcpServers.workspace_git).toBeUndefined();
+    expect(calls[0].args).not.toContain('mcp__workspace_git__*');
+    expect(calls[0].args[1]).not.toContain(realGit);
+  });
+
+  test('without git on the machine, a workspace seat still runs, with no git tool', async () => {
+    gitOnMachine(null);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { impl, calls } = makeSpawnImpl();
+    await seatSpawn(impl, 'workspace');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].config.mcpServers.workspace_git).toBeUndefined();
+    expect(calls[0].args[1]).not.toContain(fs.realpathSync(path.dirname(serverPath)));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('git was not found'));
   });
 });
