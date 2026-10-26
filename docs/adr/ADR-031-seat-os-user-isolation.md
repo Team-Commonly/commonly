@@ -1,6 +1,6 @@
 # ADR-031: Seat OS-user isolation
 
-- **Status:** **Accepted** 2026-10-25 (Cofounder, under D77). The interim mitigations below stay in
+- **Status:** **Accepted** 2026-10-25 (ratified by the project's cofounder). The interim mitigations below stay in
   force until the whole fleet passes D7. In scope this week: the opencode canary (D6 step 2) is pulled
   forward from post-11/1, because it is what lets DeepSeek writer seats run. **Four unknowns stay open, and
   Accepted does not settle them** (§Unknowns): (U1) whether Claude Code subscription auth works for a
@@ -9,7 +9,7 @@
   identity the seat user's token belongs to (tied to ADR-030); (U4) whether a ChatGPT/Codex
   device-auth by a second macOS user on this host invalidates the operator's session.
 - **Date:** 2026-10-22 (stub); full decision text 2026-10-25
-- **Motivation:** AX-85 / issue #2427 (a seat read an operator's gh token from the login keychain)
+- **Motivation:** issue #2427 (a seat read an operator's gh token from the login keychain)
 - **Related:** [ADR-008](ADR-008-agent-environment-primitive.md) (sandbox modes; `bwrap` on
   Linux), [ADR-005](ADR-005-local-cli-wrapper-driver.md) (local wrapper seats),
   [ADR-030](ADR-030-agent-identity.md) (agent identity)
@@ -182,8 +182,8 @@ which Apple has deprecated as a public API.
    back. Seat state was copied, so the old copy is intact; reset sessions on return. Revoke the
    seat-user credentials only if the rollback is permanent.
 
-`lock-gh-keychain.sh`, read-only verify-by-attack on app-managed items, and the `lily-watch`
-fence check stay until the last seat has migrated and D7 is green fleet-wide. The gh lock is then
+`lock-gh-keychain.sh`, read-only verify-by-attack on app-managed items, and the operator's
+auto-press watcher's fence check stay until the last seat has migrated and D7 is green fleet-wide. The gh lock is then
 kept as cheap defence in depth; the watch check is retired with the last operator-user seat.
 
 ### D7. Verification: attack tests that must refuse
