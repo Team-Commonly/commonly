@@ -805,7 +805,10 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
   if (!row) return { status: 404, body: { error: 'Approval not found' } };
 
   if (String(row.ownerUserId) !== String(callerUserId)) {
-    return { status: 403, body: { error: 'Only the workspace owner can decide this' } };
+    // A parked call's owner is the connection owner (ADR-033 D5), not the
+    // workspace owner that legacy action cards ask.
+    const owner = row.actionType === 'tool_call' ? 'credential owner' : 'workspace owner';
+    return { status: 403, body: { error: `Only the ${owner} can decide this` } };
   }
   // ADR-017 §Decision-authorization: no agent may decide, even one holding
   // the owner's pod. Route-level auth already excludes agent tokens; this is
@@ -848,6 +851,7 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
       {
         $set: {
           status: 'expired', resolvedAt: new Date(),
+          decidedBy: 'policy', decidedByRole: 'policy',
           toolCallEnding: 'expired', toolCallCode: 'approval_expired',
         },
         $unset: { 'toolCall.canonicalArgs': 1 },
@@ -891,6 +895,8 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
         decision,
         resolvedBy: callerUserId,
         resolvedAt: new Date(),
+        // The owner check above makes the caller the connection owner.
+        ...(parkedCall ? { decidedBy: String(callerUserId), decidedByRole: 'credential-owner' } : {}),
         ...(parkedCall && decision === 'declined'
           ? { toolCallEnding: 'declined', toolCallCode: 'approval_declined' } : {}),
         ...(decidedAfterExpiry ? { decidedAfterExpiry: true } : {}),
@@ -1013,6 +1019,7 @@ export const sweepExpiredToolCallApprovals = async (now = new Date()): Promise<n
       {
         $set: {
           status: 'expired', resolvedAt: now,
+          decidedBy: 'policy', decidedByRole: 'policy',
           toolCallEnding: 'expired', toolCallCode: 'approval_expired',
         },
         $unset: { 'toolCall.canonicalArgs': 1 },

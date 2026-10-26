@@ -1,12 +1,13 @@
 // TASK-512 launch scope: a teammate's agent asks for a write under another
-// person's connection, and only the credential owner can approve it.
-// ADR-033 B3 reads the decision record from `resolvedBy` with
-// `decidedByRole: credential-owner`, so these cases pin the facts it relies on.
+// person's connection, and only the credential owner can approve it. The row
+// stores who decided (`decidedBy` + `decidedByRole`) when the decision
+// commits, so the grant record (ADR-033 B3/B4) reads it rather than infers it.
 process.env.PG_HOST = '';
 process.env.JWT_SECRET = 'teammate-approval-test-only';
 const express = require('express');
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
+
 jest.mock('../../services/githubAppService', () => ({
   getPullRequest: jest.fn(async () => ({ head: { sha: 'pinned-head' } })),
   mergePullRequest: jest.fn(async () => ({ merged: true, sha: 'merged-head' })),
@@ -42,7 +43,8 @@ app.use(express.json());
 app.use('/api/approvals', require('../../routes/approvals'));
 
 // A owns the GitHub connection. B is A's teammate and owns the agent.
-let a, b, agent, pod;
+let a; let b; let agent; let 
+  pod;
 const human = (name) => User.create({ username: name, email: `${name}@example.test`, password: 'test-password' });
 const bearer = (person) => `Bearer ${jwt.sign({ id: String(person._id), tokenVersion: 0 }, process.env.JWT_SECRET)}`;
 
@@ -54,31 +56,56 @@ beforeEach(async () => {
   a = await human('credential-a');
   b = await human('teammate-b');
   agent = await User.create({
-    username: 'agent-b', email: 'agent-b@example.test', password: 'test-password', isBot: true, botType: 'agent',
+    username: 'agent-b',
+    email: 'agent-b@example.test',
+    password: 'test-password',
+    isBot: true,
+    botType: 'agent',
     botMetadata: { agentName: 'agent-b', instanceId: 'default', ownerUserId: String(b._id) },
   });
   pod = await Pod.create({
-    name: 'Teammate approval', type: 'team', createdBy: a._id,
-    members: [a._id, b._id, agent._id], joinPolicy: 'invite-only', publicRead: false,
+    name: 'Teammate approval',
+    type: 'team',
+    createdBy: a._id,
+    members: [a._id, b._id, agent._id],
+    joinPolicy: 'invite-only',
+    publicRead: false,
   });
   await AgentInstallation.create({
-    agentName: 'agent-b', instanceId: 'default', podId: pod._id, installedBy: b._id, version: '1.0.0',
-    status: 'active', config: { runtime: { runtimeType: 'hosted' }, hosted: { engine: 'native' } },
+    agentName: 'agent-b',
+    instanceId: 'default',
+    podId: pod._id,
+    installedBy: b._id,
+    version: '1.0.0',
+    status: 'active',
+    config: { runtime: { runtimeType: 'hosted' }, hosted: { engine: 'native' } },
   });
   const connection = await Integration.create({
-    type: 'github-app', scope: 'user', status: 'connected', createdBy: a._id,
+    type: 'github-app',
+    scope: 'user',
+    status: 'connected',
+    createdBy: a._id,
     config: { installationId: 'test-install', owner: 'test-owner', repo: 'test-repo' },
   });
   await Installable.create(buildGithubToolInstallable());
   const grant = await grants.mintGrant({
-    connectionId: String(connection._id), installationId: 'test-install', brokerId: 'test-broker',
-    target: { kind: 'pod', id: String(pod._id) }, audience: [String(agent._id)],
-    tools: ['github.merge_pull_request'], writeMode: 'write-with-confirm',
+    connectionId: String(connection._id),
+    installationId: 'test-install',
+    brokerId: 'test-broker',
+    target: { kind: 'pod', id: String(pod._id) },
+    audience: [String(agent._id)],
+    tools: ['github.merge_pull_request'],
+    writeMode: 'write-with-confirm',
     expiresAt: new Date(Date.now() + 60000),
   });
   await expect(broker.callTool({
-    grantId: grant.grantId, agentUserId: String(agent._id), agentName: 'agent-b', instanceId: 'default',
-    hostedTurn: true, tool: 'github.merge_pull_request', args: { pullNumber: 7 },
+    grantId: grant.grantId,
+    agentUserId: String(agent._id),
+    agentName: 'agent-b',
+    instanceId: 'default',
+    hostedTurn: true,
+    tool: 'github.merge_pull_request',
+    args: { pullNumber: 7 },
   })).rejects.toMatchObject({ code: 'approval_required' });
 });
 
@@ -87,7 +114,13 @@ const httpDecide = (row, person, decision = 'approved') => request(app)
   .post(`/api/approvals/${row._id}/resolve`)
   .set('Authorization', bearer(person))
   // Identity fields in the body must not choose who decided.
-  .send({ decision, resolvedBy: String(b._id), decidedBy: String(b._id), callerUserId: String(b._id) });
+  .send({
+    decision,
+    resolvedBy: String(b._id),
+    callerUserId: String(b._id),
+    decidedBy: String(b._id),
+    decidedByRole: 'decision-owner',
+  });
 
 test('the teammate agent\'s write asks only the credential owner, never the agent owner', async () => {
   const row = await parked();
@@ -100,7 +133,9 @@ test('the teammate agent\'s write asks only the credential owner, never the agen
   }).lean();
   expect(queue.map((item) => String(item.recipientUserId))).toEqual([String(a._id)]);
 
-  expect((await httpDecide(row, b)).status).toBe(403);
+  const asAgentOwner = await httpDecide(row, b);
+  expect(asAgentOwner.status).toBe(403);
+  expect(asAgentOwner.body.error).toBe('Only the credential owner can decide this');
   const asAgent = await approvals.resolveApproval({
     approvalId: String(row._id), callerUserId: String(agent._id), decision: 'approved',
   });
@@ -108,6 +143,8 @@ test('the teammate agent\'s write asks only the credential owner, never the agen
   const pending = await ApprovalAction.findById(row._id);
   expect(pending.status).toBe('flagged');
   expect(pending.resolvedBy).toBeUndefined();
+  expect(pending.decidedBy).toBeUndefined();
+  expect(pending.decidedByRole).toBeUndefined();
   expect(github.mergePullRequest).not.toHaveBeenCalled();
 });
 
@@ -121,6 +158,8 @@ test('the credential owner approves the pinned merge once, and the row names the
 
   const saved = await ApprovalAction.findById(row._id);
   expect(String(saved.resolvedBy)).toBe(String(a._id));
+  expect(saved.decidedBy).toBe(String(a._id));
+  expect(saved.decidedByRole).toBe('credential-owner');
   expect(saved.toolCall.credentialOwnerId).toBe(String(a._id));
   expect(saved.toolCall.canonicalArgs).toBeUndefined();
   expect(ToolCall.create).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'ok', credentialOwnerId: String(a._id) }));
@@ -137,7 +176,25 @@ test('the credential owner declining records them without a provider call', asyn
   expect(result.body.approval).toMatchObject({ decision: 'declined', toolCallEnding: 'declined' });
   const saved = await ApprovalAction.findById(row._id);
   expect(String(saved.resolvedBy)).toBe(String(a._id));
+  expect(saved.decidedBy).toBe(String(a._id));
+  expect(saved.decidedByRole).toBe('credential-owner');
   expect(saved.toolCall.canonicalArgs).toBeUndefined();
   expect(await AttentionItem.countDocuments({ 'source.id': String(row._id), status: 'open' })).toBe(0);
+  expect(github.mergePullRequest).not.toHaveBeenCalled();
+});
+
+test.each(['sweep', 'late decision'])('an expired parked call names policy as the decider (%s)', async (path) => {
+  const row = await parked();
+  await ApprovalAction.updateOne({ _id: row._id }, { $set: { expiresAt: new Date(Date.now() - 1000) } });
+  if (path === 'sweep') {
+    expect(await approvals.sweepExpiredToolCallApprovals()).toBe(1);
+  } else {
+    expect((await httpDecide(row, a)).status).toBe(409);
+  }
+  const saved = await ApprovalAction.findById(row._id);
+  expect(saved.status).toBe('expired');
+  expect(saved.decidedBy).toBe('policy');
+  expect(saved.decidedByRole).toBe('policy');
+  expect(saved.resolvedBy).toBeUndefined();
   expect(github.mergePullRequest).not.toHaveBeenCalled();
 });
