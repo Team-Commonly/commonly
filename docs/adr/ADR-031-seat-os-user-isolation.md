@@ -118,7 +118,12 @@ Decision: seat credentials are **0600 files in the seat user's home**, not keych
   seat's config with keychain storage disabled. `seat-gh-guard` keeps its job (credit line,
   merge/close/delete fence), but becomes a guard against habit again: the boundary is now that
   the only token the seat can reach cannot do what the guard forbids. Which account that token
-  belongs to is U3.
+  belongs to is U3. Its effective permissions are repository contents and pull requests, read and
+  write, on the public repo only. A contents-write token can delete refs, so the deletion fence
+  does not rest on the token: the `main` ruleset blocks deletion, force-push and direct push for
+  every actor outside its bypass list, and no seat token is on that list. A seat can still delete a
+  branch it pushed, which costs nothing it could not push again. Closing a PR stacked on a deleted
+  base is the remaining harm, and the guard keeps fencing `--delete-branch` for that reason.
 - **Model providers.** Where the adapter supports it (opencode, qwen and the other
   OpenAI-compatible adapters), keys go through the provider proxy in
   `packages/seats/src/wire/provider-proxy.js`: the wrapper validates a 0600 non-symlink key file,
@@ -170,9 +175,9 @@ which Apple has deprecated as a public API.
    provider proxy, so it isolates the user boundary from the U1/U4 credential questions. Copy
    (do not move) its token, sessions and workspace; disable its operator LaunchAgent by rename;
    bootstrap the daemon.
-3. **Gate.** The full D7 suite must refuse from inside the seat's real spawn, every positive
-   control must succeed as the operator, and the seat must complete one real board turn and one
-   guarded PR comment. Any failure stops the rollout.
+3. **Gate.** D7 probes 1–7 must refuse in both of their contexts, every positive control must
+   succeed as the operator, and the seat must complete one real board turn and one guarded PR
+   comment. Probe 8 runs when the first public seat migrates. Any failure stops that rollout.
 4. **Roll one seat at a time**, each through the same gate: unconfined internal seats first
    (largest gain, the dune class), then Codex seats once U4 is answered, then Seatbelt-confined
    public seats. **Claude seats stay out of the migration until U1 is answered**, and moving them
@@ -188,11 +193,13 @@ kept as cheap defence in depth; the watch check is retired with the last operato
 
 ### D7. Verification: attack tests that must refuse
 
-Each probe runs **twice**: as the seat, through its real spawn path (a probe script in the
+Probes 1–7 run **twice**: as the seat, through its real spawn path (a probe script in the
 seat's argv, not a hand shell), and from a bare `sudo -u` shell of the seat user, because
 unconfined seats have a shell. A pass is an **OS refusal** (`EACCES`, `EPERM`, or a securityd
 "item not found"). A model declining to run the probe is not a pass. Each probe has a positive
-control run as the operator, so a refusal proves the boundary and not a missing file.
+control run as the operator, so a refusal proves the boundary and not a missing file. Probe 8
+runs only through a public seat's real spawn path under Seatbelt, since a bare `sudo -u` shell
+is not confined by Seatbelt.
 
 1. `security find-generic-password -s gh:github.com -w` returns no operator item; the same with
    the operator's `login.keychain-db` path given explicitly fails to open it.
@@ -201,7 +208,8 @@ control run as the operator, so a refusal proves the boundary and not a missing 
    `~/.commonly/tokens`, `~/.commonly/state` and each private repo directory are refused.
 4. An operator-written 0600 decoy in `/private/tmp` is refused.
 5. `gh auth status` as the seat shows only the seat token; an admin-scoped API call (reading
-   branch protection, deleting a protected ref) and a workflow-file push are refused by GitHub.
+   branch protection), deleting `main` (refused by the ruleset) and a workflow-file push are
+   refused by GitHub.
 6. `kill -0` against an operator process returns `EPERM`; `launchctl print gui/<operator uid>`
    is refused.
 7. Writing the seat's own `run.sh`, its plist, the CLI prefix or `seat-gh-guard` is refused.
