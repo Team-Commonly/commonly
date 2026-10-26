@@ -11,7 +11,7 @@ jest.mock('../../../services/spendAlarmService', () => ({ pageSre: (...args) => 
 const axios = require('axios');
 const budget = require('../../../services/litellmBudgetAlarmService');
 
-const ENV_KEYS = ['LITELLM_BASE_URL', 'LITELLM_MASTER_KEY', 'SPEND_ALARM_MENTION'];
+const ENV_KEYS = ['LITELLM_BASE_URL', 'LITELLM_MASTER_KEY', 'LITELLM_API_KEY', 'SPEND_ALARM_MENTION'];
 const savedEnv = {};
 
 const key = (overrides) => ({
@@ -33,6 +33,7 @@ beforeEach(() => {
   process.env.LITELLM_BASE_URL = 'http://litellm:4000/';
   process.env.LITELLM_MASTER_KEY = 'sk-master-test';
   delete process.env.SPEND_ALARM_MENTION;
+  delete process.env.LITELLM_API_KEY;
   axios.get.mockReset();
   mockPageSre.mockReset().mockResolvedValue(undefined);
   budget.resetBudgetAlarmMemory();
@@ -90,6 +91,35 @@ describe('keysNearBudget', () => {
 });
 
 describe('listLiteLLMKeys', () => {
+  const full = (prefix) => Array.from({ length: 100 }, (_, i) => key({ key_alias: `${prefix}${i}`, token: `${prefix}${i}` }));
+
+  test('keeps paging when total_pages is missing and the page is full', async () => {
+    axios.get
+      .mockResolvedValueOnce({ data: { keys: full('a') } })
+      .mockResolvedValueOnce({ data: { keys: [key({ key_alias: 'last' })] } });
+    const { rows, incomplete } = await budget.listLiteLLMKeys();
+    expect(axios.get).toHaveBeenCalledTimes(2);
+    expect(rows).toHaveLength(101);
+    expect(incomplete).toBeNull();
+  });
+
+  test('a total_pages of 0 with a full page is not read as the end', async () => {
+    axios.get
+      .mockResolvedValueOnce({ data: { keys: full('a'), total_pages: 0 } })
+      .mockResolvedValueOnce({ data: { keys: [], total_pages: 0 } });
+    const { rows, incomplete } = await budget.listLiteLLMKeys();
+    expect(axios.get).toHaveBeenCalledTimes(2);
+    expect(rows).toHaveLength(100);
+    expect(incomplete).toBeNull();
+  });
+
+  test('without total_pages, a run of full pages stops at the bound as truncated', async () => {
+    axios.get.mockResolvedValue({ data: { keys: full('a') } });
+    const { incomplete } = await budget.listLiteLLMKeys();
+    expect(axios.get).toHaveBeenCalledTimes(20);
+    expect(incomplete).toEqual({ reason: 'truncated', pagesRead: 20, totalPages: null });
+  });
+
   test('returns null without the master key, and makes no call', async () => {
     delete process.env.LITELLM_MASTER_KEY;
     expect(await budget.listLiteLLMKeys()).toBeNull();
@@ -225,9 +255,43 @@ describe('checkLiteLLMBudgets', () => {
     expect(alarmLines().filter((l) => l.scanIncomplete).length).toBe(2);
   });
 
-  test('does nothing without the master key', async () => {
+  test('alarms once, and pages, when LiteLLM is in use but the master key is missing', async () => {
     delete process.env.LITELLM_MASTER_KEY;
     expect(await budget.checkLiteLLMBudgets()).toEqual([]);
+    expect(alarmLines()).toEqual([{ alarm: 'litellm_budget', scanUnconfigured: ['LITELLM_MASTER_KEY'] }]);
+    expect(mockPageSre).toHaveBeenCalledTimes(1);
+    expect(mockPageSre.mock.calls[0][0]).toMatch(/cannot run because LITELLM_MASTER_KEY is not set/);
+
+    await budget.checkLiteLLMBudgets();
+    expect(alarmLines()).toHaveLength(1);
+    expect(mockPageSre).toHaveBeenCalledTimes(1);
+    expect(axios.get).not.toHaveBeenCalled();
+  });
+
+  test('a service key alone also counts as LiteLLM in use', async () => {
+    delete process.env.LITELLM_MASTER_KEY;
+    delete process.env.LITELLM_BASE_URL;
+    process.env.LITELLM_API_KEY = 'sk-svc-test';
+    await budget.checkLiteLLMBudgets();
+    expect(alarmLines()).toEqual([{ alarm: 'litellm_budget', scanUnconfigured: ['LITELLM_BASE_URL', 'LITELLM_MASTER_KEY'] }]);
+  });
+
+  test('stays silent when no LiteLLM setting is present at all', async () => {
+    delete process.env.LITELLM_MASTER_KEY;
+    delete process.env.LITELLM_BASE_URL;
+    expect(await budget.checkLiteLLMBudgets()).toEqual([]);
+    expect(alarmLines()).toEqual([]);
     expect(mockPageSre).not.toHaveBeenCalled();
+  });
+
+  test('an undelivered unconfigured page is retried until it goes out', async () => {
+    delete process.env.LITELLM_MASTER_KEY;
+    mockPageSre.mockRejectedValueOnce(new Error('SPEND_ALARM_POD_ID is not set'));
+    await budget.checkLiteLLMBudgets();
+    await budget.checkLiteLLMBudgets();
+    expect(mockPageSre).toHaveBeenCalledTimes(2);
+    await budget.checkLiteLLMBudgets();
+    expect(mockPageSre).toHaveBeenCalledTimes(2);
+    expect(alarmLines()).toHaveLength(1);
   });
 });

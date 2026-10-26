@@ -111,8 +111,16 @@ export const listLiteLLMKeys = async (): Promise<KeyScan | null> => {
     }
     const keys = Array.isArray(resp?.data?.keys) ? resp.data.keys : [];
     rows.push(...keys);
-    totalPages = Number(resp?.data?.total_pages) || 1;
-    if (page >= totalPages) return { rows, incomplete: null };
+    const reported = Number(resp?.data?.total_pages);
+    if (Number.isInteger(reported) && reported > 0) {
+      totalPages = reported;
+      if (page >= totalPages) return { rows, incomplete: null };
+    } else {
+      // No usable total_pages: a short page is the last one, and a full page
+      // means more may follow, so keep reading rather than call it complete.
+      totalPages = null;
+      if (keys.length < PAGE_SIZE) return { rows, incomplete: null };
+    }
     // An empty page that still reports more pages is not the end of the list.
     if (keys.length === 0) return { rows, incomplete: { reason: 'failed', pagesRead: page, totalPages } };
     if (page === MAX_PAGES) return { rows, incomplete: { reason: 'truncated', pagesRead: page, totalPages } };
@@ -139,7 +147,14 @@ const unpaged = new Map<string, BudgetAlarm>();
 // between, so a lasting failure is one alert rather than one every sweep.
 // Its SRE page is held until it is delivered, like the key pages.
 let incompleteLogged = false;
+let unconfiguredLogged = false;
 let unpagedScan: string | null = null;
+
+// The scan needs both of these. LITELLM_BASE_URL or a service key being set
+// means this deployment uses LiteLLM, so a missing piece is an alarm, not a
+// quiet skip. With none of the three set there is no LiteLLM to watch.
+const SCAN_ENV = ['LITELLM_BASE_URL', 'LITELLM_MASTER_KEY'];
+const setEnv = (name: string): boolean => Boolean((process.env[name] || '').trim());
 
 const sendPage = async (content: string): Promise<boolean> => {
   try {
@@ -155,8 +170,21 @@ const sendPage = async (content: string): Promise<boolean> => {
 
 export const checkLiteLLMBudgets = async (): Promise<BudgetAlarm[]> => {
   const scan = await listLiteLLMKeys();
-  if (!scan) return [];
   const mention = String(process.env.SPEND_ALARM_MENTION || '').trim() || undefined;
+  if (!scan) {
+    const missing = SCAN_ENV.filter((name) => !setEnv(name));
+    const usesLiteLLM = [...SCAN_ENV, 'LITELLM_API_KEY'].some(setEnv);
+    if (usesLiteLLM && !unconfiguredLogged) {
+      unconfiguredLogged = true;
+      console.warn(JSON.stringify({ alarm: 'litellm_budget', scanUnconfigured: missing }));
+      const handle = mention ? ` @${mention}` : '';
+      unpagedScan = `[budget alarm] The LiteLLM key scan cannot run because ${missing.join(' and ')} `
+        + `${missing.length === 1 ? 'is' : 'are'} not set, so no key is checked against its budget.${handle}`;
+    }
+    if (unpagedScan && await sendPage(unpagedScan)) unpagedScan = null;
+    return [];
+  }
+  unconfiguredLogged = false;
 
   // An incomplete scan can hide a key near its budget, so it alarms too, on
   // the same metric, toward over-delivery. The rows it did read are checked.
@@ -197,5 +225,6 @@ export const resetBudgetAlarmMemory = (): void => {
   alarmed.clear();
   unpaged.clear();
   incompleteLogged = false;
+  unconfiguredLogged = false;
   unpagedScan = null;
 };

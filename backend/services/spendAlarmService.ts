@@ -213,7 +213,9 @@ export const composeSpendPage = (
 
 export const pageSre = async (content: string): Promise<void> => {
   const podId = String(process.env.SPEND_ALARM_POD_ID || '').trim();
-  if (!podId) return;
+  // Throw rather than return: a caller that retries undelivered pages must
+  // not count a page with nowhere to go as sent.
+  if (!podId) throw new Error('SPEND_ALARM_POD_ID is not set');
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const AgentIdentityService = require('./agentIdentityService');
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
