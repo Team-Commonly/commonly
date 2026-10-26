@@ -32,7 +32,7 @@ import {
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
 import { startPoller, terminalDeliveryAckError } from '../lib/poller.js';
 import { formatDigestFrame } from '../lib/digest-frame.js';
-import { startWebhookServer, forwardToLocalWebhook } from '../lib/webhook-server.js';
+import { startWebhookServer, forwardToLocalWebhook, logOnlyHandler } from '../lib/webhook-server.js';
 import { getAdapter, listAdapterNames } from '../lib/adapters/index.js';
 import {
   getSession,
@@ -76,7 +76,7 @@ import {
   formatPodFocusFrame,
   readPodFocus,
 } from '../lib/pod-focus.js';
-import { claimReleaseFor, ackResultFor } from '../lib/claim-outcome.js';
+import { claimReleaseFor, ackResultFor, EMPTY_OUTPUT } from '../lib/claim-outcome.js';
 import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
@@ -2214,6 +2214,13 @@ export const performRun = ({
         },
       };
     }
+    // Empty output is not the sentinel. A seat that answered `NO_REPLY` read
+    // its batch and chose silence; one that printed nothing may have crashed,
+    // timed out or lost its route without saying so. The bare `no_action`
+    // stays the sentinel's alone, because a digest counts as read only on
+    // that (sable, #2753). Release, hand-off and spawn counting treat
+    // `empty-output` exactly as they treat a bare decline.
+    if (!delivered && !replyText) return { outcome: 'no_action', reason: EMPTY_OUTPUT };
     return { outcome: delivered ? 'posted' : 'no_action' };
   };
 
@@ -2681,9 +2688,15 @@ export const performRun = ({
         for (const entry of actionEntries) entry.result = turnResult;
         // A digest was context in this successful waking turn, never an
         // independent action. If the waking work stood down or the provider
-        // refused the batch, leave it unread for the next real turn.
+        // refused the batch, leave it unread for the next real turn. A reply
+        // the server skipped as `silent_or_empty` is the seat choosing silence
+        // (the server's answer to an intentional NO_REPLY), so it read the
+        // digest. Empty output (`empty-output`) is not a choice anyone can see:
+        // a broken seat produces it every turn, and reading on it would drain
+        // the backlog that seat never saw.
         if (turnResult?.outcome === 'posted'
-          || (turnResult?.outcome === 'no_action' && !turnResult?.reason)) {
+          || (turnResult?.outcome === 'no_action'
+            && (!turnResult?.reason || turnResult.reason === 'silent_or_empty'))) {
           for (const entry of activeEntries) {
             if (entry.event.deliveryMode === 'digest') {
               entry.result = { outcome: 'no_action', reason: 'digest-read' };
@@ -2914,7 +2927,8 @@ export const performRun = ({
           }
           const batchSpawned = batch.entries.some((entry) => (
             entry.result?.outcome === 'posted'
-            || (entry.result?.outcome === 'no_action' && !entry.result?.reason)
+            || (entry.result?.outcome === 'no_action'
+              && (!entry.result?.reason || entry.result.reason === EMPTY_OUTPUT))
           ));
           if (batchSpawned) {
             consecutiveSpawnFailures = 0;
@@ -3462,11 +3476,7 @@ Docs:
         port,
         path: opts.path,
         secret: opts.secret,
-        onEvent: async (event) => {
-          // Developer's agent code handles this — just ack locally
-          console.log(`[local] ${event.type} from pod ${event.podId}`);
-          return { outcome: 'acknowledged' };
-        },
+        onEvent: logOnlyHandler,
         onReady: (url) => console.log(`Local server ready: ${url}`),
       });
 
