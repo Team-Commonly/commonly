@@ -32,10 +32,22 @@ const tools: HostedMcpPinnedTool[] = pin.tools.map((tool) => ({
   annotations: { readOnlyHint: true },
 }));
 
+// Each instance registers its own App, so its install page comes from the
+// instance's config, like its client id. A slug GitHub could not have issued
+// offers no page rather than a link to somewhere else.
+const GITHUB_APP_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,98}[a-z0-9])?$/;
+
+export const githubMcpAccessPage = (env: NodeJS.ProcessEnv = process.env): string | undefined => {
+  const slug = String(env.GITHUB_MCP_APP_SLUG || '').trim();
+  return GITHUB_APP_SLUG.test(slug) ? `https://github.com/apps/${slug}/installations/new` : undefined;
+};
+
+const accessPage = githubMcpAccessPage();
+
 export const GITHUB_MCP_ENTRY: HostedMcpEntry = {
   id: 'github-mcp',
   title: 'GitHub',
-  description: 'Read files, issues and pull requests in repositories this GitHub App can access.',
+  description: 'Read files, issues and pull requests in the repositories you install the GitHub App on.',
   resource: 'https://api.githubcopilot.com/mcp/',
   issuer: 'https://github.com/login/oauth',
   client: 'pre-registered',
@@ -45,5 +57,6 @@ export const GITHUB_MCP_ENTRY: HostedMcpEntry = {
   tokenEndpointAuthMethod: 'client_secret_post',
   scopes: ['offline_access'],
   revoke: { page: 'https://github.com/settings/applications' },
+  ...(accessPage ? { accessPage } : {}),
   tools,
 };

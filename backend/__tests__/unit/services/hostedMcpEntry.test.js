@@ -1075,6 +1075,49 @@ describe('the shipped catalogue cannot land half-wired', () => {
       .toEqual({ page: bothURLs.page });
   });
 
+  // TASK-290: GitHub's App user token reaches only the accounts and
+  // repositories the App is installed on, so the page where a person picks
+  // them is part of connecting. Each instance registers its own App, so the
+  // page comes from the instance's config, and a slug GitHub could not have
+  // issued offers no page at all rather than a link somewhere else.
+  test('the GitHub access page is the configured App\'s install page, or none', () => {
+    const { githubMcpAccessPage } = require('../../../integrations/hostedMcp/githubMcp');
+    expect(githubMcpAccessPage({ GITHUB_MCP_APP_SLUG: 'commonly-connect' }))
+      .toBe('https://github.com/apps/commonly-connect/installations/new');
+    expect(githubMcpAccessPage({ GITHUB_MCP_APP_SLUG: ' self-host-app ' }))
+      .toBe('https://github.com/apps/self-host-app/installations/new');
+    for (const slug of [undefined, '', 'Commonly', '../evil', 'a/b', 'app?x=1', '-lead', 'trail-', 'evil.example']) {
+      expect(githubMcpAccessPage({ GITHUB_MCP_APP_SLUG: slug })).toBeUndefined();
+    }
+    const before = process.env.GITHUB_MCP_APP_SLUG;
+    try {
+      process.env.GITHUB_MCP_APP_SLUG = 'commonly-connect';
+      jest.isolateModules(() => {
+        const { GITHUB_MCP_ENTRY } = require('../../../integrations/hostedMcp/githubMcp');
+        expect(GITHUB_MCP_ENTRY.accessPage).toBe('https://github.com/apps/commonly-connect/installations/new');
+      });
+      delete process.env.GITHUB_MCP_APP_SLUG;
+      jest.isolateModules(() => {
+        const { GITHUB_MCP_ENTRY } = require('../../../integrations/hostedMcp/githubMcp');
+        expect(GITHUB_MCP_ENTRY).not.toHaveProperty('accessPage');
+      });
+    } finally {
+      if (before === undefined) delete process.env.GITHUB_MCP_APP_SLUG;
+      else process.env.GITHUB_MCP_APP_SLUG = before;
+    }
+  });
+
+  test('an access page is an absolute https URL or absent', () => {
+    for (const accessPage of ['github.com/apps/x/installations/new', 'http://github.com/apps/x', '', 'https://a b', 42]) {
+      expect(() => assertHostedMcpEntries([linear({ accessPage })]))
+        .toThrow(/access page is not an absolute https URL: linear/);
+    }
+    // Controls: an entry with no page, and one with an https page, both load.
+    expect(() => assertHostedMcpEntries([linear()])).not.toThrow();
+    expect(() => assertHostedMcpEntries([linear({ accessPage: 'https://github.com/apps/x/installations/new' })]))
+      .not.toThrow();
+  });
+
   test('a namespaced name is the entry id and the pinned name', () => {
     const entry = linear();
     expect(hostedMcpToolName(entry, entry.tools[0])).toBe('linear.list_issues');

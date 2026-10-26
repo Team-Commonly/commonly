@@ -95,6 +95,13 @@ export interface HostedMcpEntry {
    * https, and only the kind decides whether removal calls the vendor.
    */
   revoke: { page: string; endpoint?: string };
+  /**
+   * Where a person chooses, at the vendor, what this connection can reach. For
+   * GitHub that is the App's install page: its user token reaches only the
+   * accounts and repositories the App is installed on. Offered beside Connect
+   * and on the connected row, so the reach is the person's own choice; https only.
+   */
+  accessPage?: string;
   tools: HostedMcpPinnedTool[];
 }
 

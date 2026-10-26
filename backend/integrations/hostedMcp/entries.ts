@@ -192,6 +192,10 @@ export const assertHostedMcpEntries = (
     // rows would end in a person holding an authorization nobody can revoke.
     // Refusing the entry at module load is the only place this can be caught
     // before that happens.
+    if (entry.accessPage !== undefined
+      && (typeof entry.accessPage !== 'string' || !/^https:\/\/[^\s]+$/.test(entry.accessPage))) {
+      throw new Error(`hosted-mcp entry access page is not an absolute https URL: ${entry.id}`);
+    }
     const revokeRefusal = hostedMcpRevokeRefusal(entry);
     if (revokeRefusal) {
       throw new Error(`hosted-mcp entry revoke ${revokeRefusal}: ${entry.id}`);
