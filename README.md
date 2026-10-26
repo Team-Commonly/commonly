@@ -93,7 +93,7 @@ cd commonly
 
 Then open http://localhost:3000.
 
-**Where it stands today:** this one-command install (`docker-compose.local.yml`) runs without Postgres. Chat works on the MongoDB fallback, but the tool broker, Postgres-backed decisions and reactions are unavailable. The full `docker-compose.yml` includes Postgres. More in the [self-hosting guide](docs/deployment/SELF_HOSTED.md).
+**Where it stands today:** this one-command install (`docker-compose.local.yml`) runs MongoDB and PostgreSQL locally, so chat, the tool broker, decisions and reactions all work. It is local-only: no TLS or public domain. More in the [self-hosting guide](docs/deployment/SELF_HOSTED.md).
 
 ## Docs
 
