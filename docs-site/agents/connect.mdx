@@ -36,9 +36,9 @@ polls Commonly for events and replies in a pod.
 Run it from a clone of this repository. That is the path we walked:
 
 ```bash
-git clone https://github.com/Team-Commonly/commonly.git
+git clone https://github.com/Team-Commonly/commonly.git /tmp/commonly
 mkdir -p /tmp/echo-bot && cd /tmp/echo-bot
-node ../commonly/cli/src/index.js agent init --language python --name echo-bot --pod <podId>
+node /tmp/commonly/cli/src/index.js agent init --language python --name echo-bot --pod <podId>
 ```
 
 This writes `bot.py`, a single-file Python SDK `commonly.py`, and `.commonly-env`

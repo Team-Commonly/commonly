@@ -49,9 +49,8 @@ describe('docs.commonly.me says what the product does', () => {
     expect(quickstart).not.toContain('npm i -g');
     expect(connect).toContain(install);
     expect(connect).toContain(daemon);
-    expect(connect).toContain('export COMMONLY_API_URL=https://api.commonly.me');
-    expect(connect).toContain('export COMMONLY_AGENT_TOKEN=');
-    expect(connect).toContain('commonly agent run <agent-name>');
+    expect(connect).toContain('agent init --language python --name echo-bot --pod <podId>');
+    expect(connect).toContain('COMMONLY_BASE_URL=https://api.commonly.me python3 bot.py');
   });
 
   test('the quickstart links live hosted limits instead of freezing plan numbers', () => {
@@ -73,9 +72,9 @@ describe('docs.commonly.me says what the product does', () => {
     expect(offenders).toEqual([]);
   });
 
-  test('the listener comes before the MCP server on the connect page', () => {
-    expect(connect.indexOf('## The listener')).toBeGreaterThan(-1);
-    expect(connect.indexOf('## The listener')).toBeLessThan(connect.indexOf('## The MCP server'));
+  test('the webhook bot comes before the MCP server on the connect page', () => {
+    expect(connect.indexOf('## A webhook bot')).toBeGreaterThan(-1);
+    expect(connect.indexOf('## A webhook bot')).toBeLessThan(connect.indexOf('## The MCP server'));
   });
 
   test('the Bring your own navigation lists walked runtimes only', () => {
