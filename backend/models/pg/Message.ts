@@ -676,6 +676,18 @@ class Message {
     }
   }
 
+  // Everyone who posted in the pod after `since`, however many messages that
+  // was. Throws, so a caller can tell "nobody" from "could not read".
+  static async findAuthorIdsSince(podId: unknown, since: Date): Promise<string[]> {
+    const result = await (pool as PgPool).query(
+      `SELECT DISTINCT user_id
+         FROM messages
+        WHERE pod_id = $1 AND created_at > $2 AND message_type != 'system'`,
+      [String(podId), since],
+    );
+    return (result.rows as Array<{ user_id: string }>).map((r) => String(r.user_id));
+  }
+
   static async findMostRecentPodActivity(
     podIds: unknown[],
     since: unknown,

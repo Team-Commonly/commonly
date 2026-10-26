@@ -161,6 +161,11 @@ export class AgentDisplayNameTakenError extends Error {
  * refusal below could never fire. `agentName` is the leaf this writer always
  * sets (`getOrCreateAgentUser`, create and upgrade arms alike).
  */
+export const carriesAgentMarkers = (row: {
+  botType?: string | null;
+  botMetadata?: { agentName?: string | null } | null;
+}): boolean => Boolean(row.botType) || Boolean(row.botMetadata?.agentName);
+
 export const isAgentOwnedRow = (
   row: {
     email?: string | null;
@@ -169,8 +174,7 @@ export const isAgentOwnedRow = (
   },
   agentEmail: string,
 ): boolean => String(row.email || '').toLowerCase() === agentEmail.toLowerCase()
-  || Boolean(row.botType)
-  || Boolean(row.botMetadata?.agentName);
+  || carriesAgentMarkers(row);
 
 interface AgentTypeConfig {
   officialDisplayName: string;

@@ -80,6 +80,8 @@ export interface NativeRunResult {
   finalMessage?: string;
   errorKind?: string;
   errorMessage?: string;
+  /** Why a succeeded run did nothing, when the kernel stopped it. */
+  noActionReason?: string;
 }
 
 // --- tuning constants ------------------------------------------------------
@@ -647,6 +649,11 @@ interface DispatchContext {
   /** Page reads this turn has sent (TASK-267b). */
   webFetches?: number;
   /**
+   * Set when a post was refused because this agent already holds the floor.
+   * Nothing else it can do this turn changes that, so the run ends after the round.
+   */
+  floorHeld?: boolean;
+  /**
    * The addresses written in text the turn was given, never by the model: the
    * prompt, the message it answers, other authors' pod messages, search
    * results and pages read. commonly_fetch_url opens only one of these.
@@ -811,6 +818,21 @@ export async function dispatchTool(
           runId: ctx.runId,
           ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
         });
+        if (result?.refused && result.reason === 'consecutive_run_cap') {
+          // The shared guidance offers an attachment, which a web-tainted turn
+          // cannot make, and only another speaker clears the cap. Say only that.
+          ctx.floorHeld = true;
+          return {
+            content: {
+              ok: false,
+              posted: false,
+              reason: result.reason,
+              guidance: `Not posted: you have already sent ${result.consecutive} messages in a row here `
+                + 'with nobody else speaking. Wait for someone else to speak. This turn ends now.',
+            },
+            error: 'message_post_refused',
+          };
+        }
         if (result?.refused) {
           return { content: { ok: false, posted: false, result }, error: 'message_post_refused' };
         }
@@ -2274,6 +2296,12 @@ export async function runAgent(
           }
           break;
         }
+        // Only another speaker clears a held floor, so another round would
+        // only spend tokens: end the turn as a decline.
+        if (dispatchCtx.floorHeld) {
+          run.status = run.status === 'running' ? 'succeeded' : run.status;
+          break;
+        }
         // A hosted agent's greeting is one post. Given another round, the
         // model posted the greeting's last line as a second message (QA walk
         // 4, 2026-10-16), so its first-contact run ends at its first post.
@@ -2416,6 +2444,7 @@ export async function runAgent(
     finalMessage,
     errorKind: run.errorKind,
     errorMessage: run.errorMessage,
+    ...(dispatchCtx.floorHeld && !postedViaTool ? { noActionReason: 'consecutive_run_cap' } : {}),
   };
 }
 

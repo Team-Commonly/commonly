@@ -1664,7 +1664,9 @@ class AgentEventService {
       // actually succeeded as 'failed'. The rejection handler here is scoped
       // to runAgent alone. Both terminal calls swallow their own errors so
       // this stays fire-and-forget for the caller.
-        (runResult: { status?: string; error?: string; runId?: string; totalTurns?: number }) => {
+        (runResult: {
+          status?: string; error?: string; runId?: string; totalTurns?: number; noActionReason?: string;
+        }) => {
           turnFinished();
           if (runResult?.status === 'drained') return undefined;
           return (runResult?.status === 'failed'
@@ -1679,9 +1681,12 @@ class AgentEventService {
           eventIdStr,
           agentName,
           instanceId,
-          runResult?.runId && Number(runResult.totalTurns) > 0
-            ? { outcome: 'acknowledged', reason: 'native-runtime-completed' }
-            : { outcome: 'no_action', reason: 'native-no-turn' },
+          // eslint-disable-next-line no-nested-ternary
+          runResult?.noActionReason
+            ? { outcome: 'no_action', reason: runResult.noActionReason }
+            : runResult?.runId && Number(runResult.totalTurns) > 0
+              ? { outcome: 'acknowledged', reason: 'native-runtime-completed' }
+              : { outcome: 'no_action', reason: 'native-no-turn' },
           nativeDeliveryId,
           'native',
         ).catch((ackErr: Error) => {
