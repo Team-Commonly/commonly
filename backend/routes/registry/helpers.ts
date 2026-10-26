@@ -2,6 +2,7 @@
 const User = require('../../models/User');
 const Gateway = require('../../models/Gateway');
 const { AgentInstallation } = require('../../models/AgentRegistry');
+const { RUNTIME_IDENTITY_KEYS, declaredRuntimeIdentity } = require('../../utils/runtimeIdentity');
 const { isK8sMode } = require('../../services/agentProvisionerService');
 const AgentIdentityService = require('../../services/agentIdentityService').default;
 const { resolveAgentDisplayLabel } = require('../../services/agentIdentityService');
@@ -375,18 +376,7 @@ const composeInstallIntro = ({
 // first match, so a harness swap made in one pod shows in all of them (D55).
 // The four keys move as a group: an older install's adapter must not outlive
 // a newer install's runtimeType, which would bring back the stale chip.
-const RUNTIME_IDENTITY_KEYS = ['runtimeType', 'host', 'adapter', 'wrappedCli'];
-
 const runtimeIdentityKey = (agentName: any, instanceId: any) => `${agentName}:${instanceId || 'default'}`;
-
-const declaredRuntimeIdentity = (config: any): Record<string, unknown> | null => {
-  const runtime = normalizeConfigMap(config)?.runtime;
-  if (!runtime || typeof runtime !== 'object') return null;
-  if (!runtime.runtimeType && !runtime.adapter && !runtime.wrappedCli) return null;
-  return Object.fromEntries(RUNTIME_IDENTITY_KEYS
-    .filter((key) => runtime[key] !== undefined && runtime[key] !== null && runtime[key] !== '')
-    .map((key) => [key, runtime[key]]));
-};
 
 const resolveSeatRuntimeIdentities = async (installations: any[]): Promise<Map<string, Record<string, unknown>>> => {
   const resolved = new Map<string, Record<string, unknown>>();
@@ -401,7 +391,13 @@ const resolveSeatRuntimeIdentities = async (installations: any[]): Promise<Map<s
   const rows = await AgentInstallation.find({
     status: 'active',
     $or: Array.from(seats.values()),
-  }).select('agentName instanceId config.runtime updatedAt').sort({ updatedAt: -1, _id: -1 }).lean();
+  })
+    // Newest attach wins (TASK-569). Not updatedAt: the skill-load report and
+    // every settings save move it, which revived a stale harness in other pods.
+    // Rows from before runtimeIdentityAt sort after it, by their creation.
+    .select('agentName instanceId config.runtime runtimeIdentityAt createdAt')
+    .sort({ runtimeIdentityAt: -1, createdAt: -1, _id: -1 })
+    .lean();
   for (const row of rows as any[]) {
     const key = runtimeIdentityKey(row.agentName, row.instanceId);
     if (resolved.has(key)) continue;
@@ -414,7 +410,7 @@ const resolveSeatRuntimeIdentities = async (installations: any[]): Promise<Map<s
 const withSeatRuntimeIdentity = (runtime: any, identity: Record<string, unknown> | null | undefined) => {
   if (!identity) return runtime;
   const base = runtime && typeof runtime === 'object' ? { ...runtime } : {};
-  RUNTIME_IDENTITY_KEYS.forEach((key) => { delete base[key]; });
+  RUNTIME_IDENTITY_KEYS.forEach((key: string) => { delete base[key]; });
   return { ...base, ...identity };
 };
 

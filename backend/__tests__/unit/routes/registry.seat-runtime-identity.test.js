@@ -1,7 +1,9 @@
 // TASK-569 (D55): attach writes a seat's runtime identity only onto the install
 // where it ran, so the same seat showed a chip in one pod and none in another.
-// Every pod now reads the seat's identity from its most recently written
-// install, never the first match, so a harness swap shows everywhere.
+// Every pod now reads the seat's identity from its most recently attached
+// install, never the first match, so a harness swap shows everywhere. "Most
+// recent" is runtimeIdentityAt, which only identity writes move: updatedAt
+// moved on a skill-load report and revived a stale harness (Sable on #2795).
 const mongoose = require('mongoose');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
@@ -26,10 +28,11 @@ const install = (podId, runtime, extra = {}) => AgentInstallation.create({
   ...extra,
 });
 
-// Rewrites updatedAt directly so the order of writes is explicit.
+// Rewrites the identity clock directly so the order of attaches is explicit.
 const stamp = (doc, iso) => AgentInstallation.collection.updateOne(
-  { _id: doc._id }, { $set: { updatedAt: new Date(iso) } },
+  { _id: doc._id }, { $set: { runtimeIdentityAt: new Date(iso) } },
 );
+const raw = (doc) => AgentInstallation.collection.findOne({ _id: doc._id });
 
 const runtimeIn = async (doc) => {
   const fresh = await AgentInstallation.findById(doc._id).lean();
@@ -88,5 +91,71 @@ describe('seat runtime identity across pods', () => {
     await stamp(hosted, '2026-10-25T00:00:00Z');
     const runtime = await runtimeIn(bare);
     expect(runtime).toMatchObject({ runtimeType: 'hosted', host: 'cloud', model: 'm-2' });
+  });
+
+  it('a skill-load report on a stale install does not bring its old harness back', async () => {
+    const a = await install(podA, { runtimeType: 'webhook', host: 'byo', adapter: 'codex' });
+    const b = await install(podB, { runtimeType: 'claude-code', host: 'byo' });
+    await stamp(a, '2026-10-20T00:00:00Z');
+    await stamp(b, '2026-10-25T00:00:00Z');
+    // The exact write agentsRuntime.ts makes for POST .../skill-load.
+    await AgentInstallation.updateOne(
+      { _id: a._id, status: 'active' },
+      { $set: { skillLoad: { at: new Date(), mounted: ['x'], conflicted: [], status: 'available' } } },
+    );
+    expect((await runtimeIn(a)).runtimeType).toBe('claude-code');
+    expect((await runtimeIn(b)).runtimeType).toBe('claude-code');
+  });
+
+  it('a settings save that keeps the identity does not move the clock', async () => {
+    const a = await install(podA, { runtimeType: 'webhook', host: 'byo', adapter: 'codex' });
+    const b = await install(podB, { runtimeType: 'claude-code', host: 'byo' });
+    await stamp(a, '2026-10-20T00:00:00Z');
+    await stamp(b, '2026-10-25T00:00:00Z');
+    // The manage-settings.ts shape: the whole config map rewritten, runtime unchanged.
+    const doc = await AgentInstallation.findById(a._id);
+    const config = Object.fromEntries(doc.config);
+    doc.config = new Map(Object.entries({ ...config, wakeOnMessage: { enabled: true } }));
+    await doc.save();
+    expect((await raw(a)).runtimeIdentityAt.toISOString()).toBe('2026-10-20T00:00:00.000Z');
+    expect((await runtimeIn(b)).runtimeType).toBe('claude-code');
+  });
+
+  it('changing an install\'s identity, or reactivating it, makes it the newest', async () => {
+    const a = await install(podA, { runtimeType: 'webhook', host: 'byo', adapter: 'codex' });
+    const b = await install(podB, { runtimeType: 'claude-code', host: 'byo' });
+    await stamp(a, '2026-10-20T00:00:00Z');
+    await stamp(b, '2026-10-25T00:00:00Z');
+    const doc = await AgentInstallation.findById(a._id);
+    doc.config = new Map(Object.entries({ runtime: { runtimeType: 'codex', host: 'byo' } }));
+    await doc.save();
+    expect((await runtimeIn(b)).runtimeType).toBe('codex');
+
+    await stamp(a, '2026-10-20T00:00:00Z');
+    await AgentInstallation.updateOne({ _id: b._id }, { $set: { status: 'uninstalled' } });
+    const back = await AgentInstallation.findById(b._id);
+    back.status = 'active';
+    await back.save();
+    expect((await runtimeIn(a)).runtimeType).toBe('claude-code');
+  });
+
+  it('stamps the clock when an install is created with an identity, and not without one', async () => {
+    const declared = await install(podA, { runtimeType: 'claude-code', host: 'byo' });
+    const bare = await install(podB, null);
+    expect((await raw(declared)).runtimeIdentityAt).toBeInstanceOf(Date);
+    expect((await raw(bare)).runtimeIdentityAt).toBeUndefined();
+  });
+
+  it('a stamped install beats rows from before the clock, which fall back to creation order', async () => {
+    const legacyOld = await install(podA, { runtimeType: 'codex', host: 'byo' });
+    const legacyNew = await install(podB, { runtimeType: 'webhook', host: 'byo', adapter: 'codex' });
+    await AgentInstallation.collection.updateMany({}, { $unset: { runtimeIdentityAt: '' } });
+    await AgentInstallation.collection.updateOne({ _id: legacyOld._id }, { $set: { createdAt: new Date('2026-09-01T00:00:00Z') } });
+    await AgentInstallation.collection.updateOne({ _id: legacyNew._id }, { $set: { createdAt: new Date('2026-09-02T00:00:00Z') } });
+    expect((await runtimeIn(legacyOld)).adapter).toBe('codex');
+    expect((await runtimeIn(legacyOld)).runtimeType).toBe('webhook');
+    const attached = await install(podC, { runtimeType: 'claude-code', host: 'byo' });
+    await AgentInstallation.collection.updateOne({ _id: attached._id }, { $set: { createdAt: new Date('2026-08-01T00:00:00Z') } });
+    expect((await runtimeIn(legacyNew)).runtimeType).toBe('claude-code');
   });
 });
