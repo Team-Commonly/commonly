@@ -1,6 +1,6 @@
 /**
  * Initiative v1 row 2: status is derived from evidence records only
- * (docs/plans/initiative-primitive.md §2). One case per status row, plus the
+ * (the Initiative v1 design, #2788, §2). One case per status row, plus the
  * two negatives the design names: an owner's task update must NOT move an
  * initiative, and a merged initiative must read `needs your check`, not stall.
  *

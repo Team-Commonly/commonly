@@ -1,6 +1,6 @@
 /**
  * Initiative status, derived from evidence records only (Initiative v1 row 2;
- * design: docs/plans/initiative-primitive.md §2).
+ * design: the Initiative v1 design, #2788, §2).
  *
  * A status here is never written by an owner. It is a read over three kinds of
  * record, each dated by the system that wrote it:
