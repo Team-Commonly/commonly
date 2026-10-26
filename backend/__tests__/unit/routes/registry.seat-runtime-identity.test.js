@@ -158,4 +158,27 @@ describe('seat runtime identity across pods', () => {
     await AgentInstallation.collection.updateOne({ _id: attached._id }, { $set: { createdAt: new Date('2026-08-01T00:00:00Z') } });
     expect((await runtimeIn(legacyNew)).runtimeType).toBe('claude-code');
   });
+
+  it('a re-attach through upsert onto an existing row makes it the newest', async () => {
+    const a = await install(podA, { runtimeType: 'claude-code', host: 'byo' });
+    const b = await install(podB, { runtimeType: 'webhook', host: 'byo', adapter: 'codex' });
+    await stamp(a, '2026-10-20T00:00:00Z');
+    await stamp(b, '2026-10-25T00:00:00Z');
+    await AgentInstallation.upsert('sprint-review', podA, {
+      version: '1.0.0', installedBy: owner, config: { runtime: { runtimeType: 'claude-code', host: 'byo' } },
+    });
+    expect((await runtimeIn(a)).runtimeType).toBe('claude-code');
+    expect((await runtimeIn(b)).runtimeType).toBe('claude-code');
+  });
+
+  it('an upsert with no runtime (mention auto-join) leaves the clock alone', async () => {
+    const a = await install(podA, { runtimeType: 'claude-code', host: 'byo' });
+    await stamp(a, '2026-10-20T00:00:00Z');
+    await AgentInstallation.upsert('sprint-review', podB, {
+      version: '1.0.0', installedBy: owner, config: { heartbeat: { enabled: false }, autoJoinSource: 'mention-resolution' },
+    });
+    const joined = await AgentInstallation.findOne({ podId: podB }).lean();
+    expect(joined.runtimeIdentityAt).toBeUndefined();
+    expect((await runtimeIn(joined)).runtimeType).toBe('claude-code');
+  });
 });

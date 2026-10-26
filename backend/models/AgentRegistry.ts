@@ -372,11 +372,12 @@ AgentInstallationSchema.statics.upsert = async function (agentName: string, podI
   const { version, config, scopes, installedBy, instanceId = 'default', displayName } = options;
   const filter = { agentName: agentName.toLowerCase(), podId, instanceId };
   const update = {
-    $setOnInsert: {
-      agentName: agentName.toLowerCase(), podId, instanceId, installedBy, version, displayName,
-      ...(declaredRuntimeIdentity(config) ? { runtimeIdentityAt: new Date() } : {}),
-    },
+    $setOnInsert: { agentName: agentName.toLowerCase(), podId, instanceId, installedBy, version, displayName },
     $set: {
+      // An upsert that declares an identity is an attach, onto a new row or an
+      // existing one, so it moves the clock either way. findOneAndUpdate skips
+      // the pre('save') stamp, so it is set here (Sable on #2795).
+      ...(declaredRuntimeIdentity(config) ? { runtimeIdentityAt: new Date() } : {}),
       ...(config ? { config } : {}),
       ...(scopes ? { scopes } : {}),
       status: 'active',
