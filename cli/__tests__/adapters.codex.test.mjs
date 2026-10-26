@@ -13,7 +13,7 @@
 
 import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
-import { existsSync, readFileSync, statSync } from 'fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'fs';
 import {
   lstat,
   mkdir,
@@ -21,6 +21,7 @@ import {
   readFile,
   readlink,
   rm,
+  symlink,
   writeFile,
 } from 'fs/promises';
 import { tmpdir } from 'os';
@@ -32,7 +33,7 @@ await jest.unstable_mockModule('child_process', () => ({
   spawn: jest.fn(),
 }));
 
-const codex = (await import('../src/lib/adapters/codex.js')).default;
+const { default: codex, codexNativeBinary } = await import('../src/lib/adapters/codex.js');
 
 /**
  * The value the LAUNCHER exported for bootstrap, planted explicitly rather than
@@ -1079,5 +1080,140 @@ describe('codex: the carve-out for a reference the file channel cannot carry (TA
     // refused, and because that entry was refused nothing needs the value
     // forwarded — so this spawn carries no token at all.
     expect(env.COMMONLY_AGENT_TOKEN).toBeUndefined();
+  });
+});
+
+// Codex 0.164 runs its file helper from $CODEX_HOME/tmp/arg0-linux inside
+// bwrap, and a denied ancestor always wins, so on Linux a public home under
+// ~/.commonly failed every session at bootstrap. These pin where it lives now.
+describe('codex adapter — the public Codex home on Linux', () => {
+  const publicSpawn = async (fakeHome, { platform = 'linux', cwd, env = {}, extra = {} } = {}) => {
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-home"}\n'],
+      outputContents: 'ok',
+    });
+    const baseEnv = { ...process.env, CODEX_HOME: join(fakeHome, '.codex'), ...env };
+    if (!env.XDG_STATE_HOME) delete baseEnv.XDG_STATE_HOME;
+    await codex.spawn('hi', {
+      sessionId: null,
+      cwd,
+      environment: { model: 'test-model', sandbox: { trust: 'public', mode: 'workspace' } },
+      env: baseEnv,
+      agentName: 'linux-public-seat',
+      _homeDir: fakeHome,
+      _platform: platform,
+      _codexNativeBinary: () => '/opt/codex-install/bin/codex',
+      _spawnImpl: impl,
+      ...extra,
+    });
+    return calls;
+  };
+  const filesystemFlag = (calls) => calls[0].args.find((a) => a.startsWith('permissions.commonly_public.filesystem='));
+
+  let fakeHome;
+  let project;
+  beforeEach(async () => {
+    fakeHome = await mkdtemp(join(tmpdir(), 'commonly-codex-fake-home-'));
+    project = join(fakeHome, 'project');
+    await mkdir(project);
+  });
+  afterEach(async () => {
+    await rm(fakeHome, { recursive: true, force: true });
+  });
+
+  test('on Linux the home is under the XDG state dir, outside the denied ~/.commonly', async () => {
+    const calls = await publicSpawn(fakeHome, { cwd: project });
+    const home = calls[0].opts.env.CODEX_HOME;
+    expect(dirname(home)).toBe(join(fakeHome, '.local', 'state', 'commonly', 'codex-homes'));
+    expect(existsSync(home)).toBe(true);
+    expect(existsSync(join(fakeHome, '.commonly'))).toBe(false);
+    // The profile still denies ~/.commonly; the home is simply not under it.
+    expect(filesystemFlag(calls)).toContain('"~/.commonly"="deny"');
+  });
+
+  test('on Linux the profile grants read on the arg0 helper folder and the codex binary, nothing wider', async () => {
+    const calls = await publicSpawn(fakeHome, { cwd: project });
+    const home = calls[0].opts.env.CODEX_HOME;
+    const filesystem = filesystemFlag(calls);
+    expect(filesystem).toContain(`"${join(home, 'tmp', 'arg0-linux')}"="read"`);
+    expect(filesystem).toContain('"/opt/codex-install/bin/codex"="read"');
+    expect(filesystem).not.toContain(`"${home}"=`);
+    expect(existsSync(join(home, 'tmp', 'arg0-linux'))).toBe(true);
+  });
+
+  test('on macOS no helper grant is added', async () => {
+    const calls = await publicSpawn(fakeHome, { platform: 'darwin', cwd: project });
+    expect(filesystemFlag(calls)).not.toContain('arg0-linux');
+    expect(filesystemFlag(calls)).not.toContain('/opt/codex-install');
+  });
+
+  test('an absolute XDG_STATE_HOME is honoured', async () => {
+    const state = join(fakeHome, 'state-elsewhere');
+    const calls = await publicSpawn(fakeHome, { cwd: project, env: { XDG_STATE_HOME: state } });
+    expect(dirname(calls[0].opts.env.CODEX_HOME)).toBe(join(state, 'commonly', 'codex-homes'));
+  });
+
+  test('on macOS the home stays under ~/.commonly', async () => {
+    const calls = await publicSpawn(fakeHome, { platform: 'darwin', cwd: project });
+    expect(dirname(calls[0].opts.env.CODEX_HOME)).toBe(join(fakeHome, '.commonly', 'codex-homes'));
+  });
+
+  test('a home left under ~/.commonly by an earlier run moves, sessions included', async () => {
+    const first = await publicSpawn(fakeHome, { platform: 'darwin', cwd: project });
+    const legacy = first[0].opts.env.CODEX_HOME;
+    await mkdir(join(legacy, 'sessions'), { recursive: true });
+    await writeFile(join(legacy, 'sessions', 'thread.jsonl'), 'kept\n');
+
+    const calls = await publicSpawn(fakeHome, { cwd: project });
+    const home = calls[0].opts.env.CODEX_HOME;
+    expect(readFileSync(join(home, 'sessions', 'thread.jsonl'), 'utf8')).toBe('kept\n');
+    expect(existsSync(legacy)).toBe(false);
+  });
+
+  test('a workspace that contains the home is refused before Codex runs', async () => {
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const env = { ...process.env, CODEX_HOME: join(fakeHome, '.codex') };
+    delete env.XDG_STATE_HOME;
+    await expect(codex.spawn('hi', {
+      sessionId: null,
+      cwd: fakeHome,
+      environment: { model: 'test-model', sandbox: { trust: 'public', mode: 'workspace' } },
+      env,
+      agentName: 'linux-public-seat',
+      _homeDir: fakeHome,
+      _platform: 'linux',
+      _spawnImpl: impl,
+    })).rejects.toThrow(/contains the agent's own Codex home/);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe('codexNativeBinary — the binary `codex` on PATH runs', () => {
+  const targets = { x64: 'x86_64-unknown-linux-musl', arm64: 'aarch64-unknown-linux-musl' };
+  let root;
+  beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'commonly-codex-bin-')); });
+  afterEach(async () => { await rm(root, { recursive: true, force: true }); });
+
+  (targets[process.arch] ? test : test.skip)('follows the npm launcher to its platform package binary', async () => {
+    const pkg = join(root, 'lib', 'node_modules', '@openai', 'codex');
+    await mkdir(join(pkg, 'bin'), { recursive: true });
+    await writeFile(join(pkg, 'bin', 'codex.js'), '#!/usr/bin/env node\n', { mode: 0o755 });
+    const platformPkg = join(pkg, 'node_modules', '@openai', `codex-linux-${process.arch}`);
+    const vendorBin = join(platformPkg, 'vendor', targets[process.arch], 'bin');
+    await mkdir(vendorBin, { recursive: true });
+    await writeFile(join(platformPkg, 'package.json'), '{"name":"platform"}');
+    await writeFile(join(vendorBin, 'codex'), '', { mode: 0o755 });
+    await mkdir(join(root, 'bin'));
+    await symlink(join(pkg, 'bin', 'codex.js'), join(root, 'bin', 'codex'));
+
+    expect(codexNativeBinary({ PATH: `/nonexistent:${join(root, 'bin')}` }))
+      .toBe(realpathSync(join(vendorBin, 'codex')));
+  });
+
+  test('returns a native binary on PATH as itself, and null when there is none', async () => {
+    await mkdir(join(root, 'bin'));
+    await writeFile(join(root, 'bin', 'codex'), '', { mode: 0o755 });
+    expect(codexNativeBinary({ PATH: join(root, 'bin') })).toBe(realpathSync(join(root, 'bin', 'codex')));
+    expect(codexNativeBinary({ PATH: '/nonexistent' })).toBeNull();
   });
 });
