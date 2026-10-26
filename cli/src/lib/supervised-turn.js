@@ -1,6 +1,7 @@
 /**
- * One model turn of `commonly agent run`, on one of two paths, and one
- * metadata line per turn on BOTH so they can be compared (the seats canary).
+ * One model turn of `commonly agent run`, on one of two paths. The supervised
+ * path also writes one metadata line per turn (the seats canary), once the
+ * turn's outcome has reached the pod or failed to.
  *
  *   COMMONLY_SUPERVISE_RUNS=1  (read by performRun as `superviseRuns`)
  *     the turn runs under `superviseRun` from @commonlyai/seats: a stall
@@ -9,7 +10,13 @@
  *     exactly as on the plain path.
  *   anything else
  *     the plain path: `adapter.spawn(prompt, ctx)` with the caller's ctx object
- *     untouched. Only the metric line is new.
+ *     untouched, and nothing written: the flag-off run loop is main's.
+ *
+ * A turn is ok only when its outcome reached the pod: the reply was delivered
+ * or the agent chose silence. The run loop names the outcome after delivery
+ * settles (turn.finish); a spawn that threw is `failed` at once. The
+ * seat-log baseline (scripts/seat-log-baseline.mjs) maps a log to the same
+ * outcomes, so the two can be compared event for event.
  *
  * NO RECORD WRITER. The supervisor needs a trace store. The one here
  * (createMetadataStore) is in memory, lives for one turn, and keeps event type
@@ -146,10 +153,17 @@ const failureClassOf = (error) => {
   try { return classifySpawnFailure(error); } catch { return null; }
 };
 
-const inferredExitCode = (error) => {
-  const match = /\bexited with code (-?\d+)\b/.exec(String(error?.message ?? ''));
-  return match ? Number(match[1]) : null;
-};
+// What happened to a turn, named by the run loop once delivery settles.
+export const TURN_OUTCOMES = Object.freeze([
+  'delivered', // the reply reached the pod (wrapper post, the agent's own post, or an ask response)
+  'silent', // NO_REPLY, a heartbeat control word, or empty output: nothing to post
+  'reply_lost', // the model answered and every delivery rung threw
+  'claim_lost', // the lease lapsed mid-turn and a peer owns the message; reply suppressed
+  'server_skipped', // the server answered and created nothing (a duplicate, a kept heartbeat)
+  'server_refused', // the server refused the post (a run cap)
+  'upstream_refused', // the model route refused; the CLI exited with nothing to say
+]);
+export const OK_OUTCOMES = Object.freeze(['delivered', 'silent']);
 
 const EVENT_TYPE_RE = /^[A-Za-z0-9._-]{1,40}$/;
 const iso = (ms) => new Date(ms).toISOString();
@@ -160,32 +174,37 @@ const int = (value) => (Number.isInteger(value) ? value : null);
  * a short fixed word; nothing from the prompt, the reply, a failure's detail or
  * the environment can reach it.
  */
-export const metricLine = (f) => ({
-  v: 1,
-  ts: iso(f.endMs),
-  seat: String(f.seat || 'unknown').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 64),
-  adapter: String(f.adapter || 'unknown').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 32),
-  path: f.path === 'supervised' ? 'supervised' : 'legacy',
-  eventType: EVENT_TYPE_RE.test(String(f.eventType || '')) ? f.eventType : null,
-  turnStart: iso(f.startMs),
-  turnEnd: iso(f.endMs),
-  durationMs: Math.max(0, f.endMs - f.startMs),
-  outcome: f.ok ? 'ok' : 'failed',
-  failure: f.ok ? null : (f.failureName || 'adapter_error'),
-  failureSource: f.ok ? null : (f.failureSource || null),
-  failureClass: f.ok || typeof f.failureClass !== 'string' ? null : f.failureClass,
-  stalled: !!f.stalled,
-  cancelled: !!f.cancelled,
-  killed: !!f.killed,
-  exitCode: int(f.exitCode),
-  signal: typeof f.signal === 'string' && /^SIG[A-Z0-9]+$/.test(f.signal) ? f.signal : null,
-  exitObserved: !!f.exitObserved,
-  childLeftRunning: typeof f.childLeftRunning === 'boolean' ? f.childLeftRunning : null,
-  attempts: int(f.attempts),
-  stallMs: int(f.policy?.stallMs),
-  cancelGraceMs: int(f.policy?.cancelGraceMs),
-  timeoutMs: int(f.policy?.timeoutMs),
-});
+export const metricLine = (f) => {
+  const failed = f.outcome === 'failed';
+  const outcome = failed || TURN_OUTCOMES.includes(f.outcome) ? f.outcome : 'unknown';
+  return {
+    v: 1,
+    ts: iso(f.settledMs ?? f.endMs),
+    seat: String(f.seat || 'unknown').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 64),
+    adapter: String(f.adapter || 'unknown').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 32),
+    path: f.path === 'supervised' ? 'supervised' : 'legacy',
+    eventType: EVENT_TYPE_RE.test(String(f.eventType || '')) ? f.eventType : null,
+    turnStart: iso(f.startMs),
+    turnEnd: iso(f.endMs),
+    durationMs: Math.max(0, f.endMs - f.startMs),
+    outcome,
+    ok: OK_OUTCOMES.includes(outcome),
+    failure: failed ? (f.failureName || 'adapter_error') : null,
+    failureSource: failed ? (f.failureSource || null) : null,
+    failureClass: failed && typeof f.failureClass === 'string' ? f.failureClass : null,
+    stalled: !!f.stalled,
+    cancelled: !!f.cancelled,
+    killed: !!f.killed,
+    exitCode: int(f.exitCode),
+    signal: typeof f.signal === 'string' && /^SIG[A-Z0-9]+$/.test(f.signal) ? f.signal : null,
+    exitObserved: !!f.exitObserved,
+    childLeftRunning: typeof f.childLeftRunning === 'boolean' ? f.childLeftRunning : null,
+    attempts: int(f.attempts),
+    stallMs: int(f.policy?.stallMs),
+    cancelGraceMs: int(f.policy?.cancelGraceMs),
+    timeoutMs: int(f.policy?.timeoutMs),
+  };
+};
 
 const isChild = (value) => !!value && typeof value.once === 'function' && typeof value.kill === 'function';
 const isAlive = (child) => !!child && child.exitCode === null && child.signalCode === null;
@@ -241,32 +260,7 @@ export const createTurnRunner = ({
       + `metrics → ${metricsPath}${warnings.length ? `; ${warnings.join('; ')}` : ''}`;
   };
 
-  const runPlain = async (adapter, prompt, ctx, eventType) => {
-    const startMs = now();
-    try {
-      const result = await adapter.spawn(prompt, ctx);
-      // claude and codex resolve only on exit 0.
-      record({ adapter: adapter?.name, path: 'legacy', eventType, startMs, endMs: now(), ok: true, exitCode: 0 });
-      return result;
-    } catch (error) {
-      const { name, source } = failureNameOf(error);
-      record({
-        adapter: adapter?.name,
-        path: 'legacy',
-        eventType,
-        startMs,
-        endMs: now(),
-        ok: false,
-        failureName: name,
-        failureSource: source,
-        failureClass: failureClassOf(error),
-        exitCode: inferredExitCode(error),
-      });
-      throw error;
-    }
-  };
-
-  const runSupervised = async (adapter, prompt, ctx, eventType) => {
+  const runSupervised = async (adapter, prompt, ctx, eventType, hold) => {
     const startMs = now();
     const policy = supervisedRunPolicy(turnTimeoutMs, { adapterName: adapter?.name, env });
     const store = createMetadataStore({ now });
@@ -298,13 +292,13 @@ export const createTurnRunner = ({
     const recovered = (action) => events.some((e) => e.type === 'liveness.recovery' && e.action === action);
     const killed = recovered('kill');
     const named = ok ? null : failureNameOf(supervised.failure);
-    record({
+    const fields = {
       adapter: adapter?.name,
       path: 'supervised',
       eventType,
       startMs,
       endMs: now(),
-      ok,
+      outcome: ok ? undefined : 'failed',
       failureName: named?.name,
       failureSource: named?.source,
       failureClass: ok ? null : failureClassOf(supervised.failure),
@@ -317,8 +311,11 @@ export const createTurnRunner = ({
       childLeftRunning: child ? isAlive(child) : null,
       attempts: supervised.attempts,
       policy,
-    });
-    if (ok) return supervised.result;
+    };
+    // A spawn that resolved is not yet an ok turn: the line waits for the run
+    // loop to say what became of the reply.
+    if (ok) { hold(fields); return supervised.result; }
+    record(fields);
     if (named.source === 'supervisor') {
       // The name goes in the seat log. The throw takes the road a plain-path
       // failure takes: unacked, the run loop's retry policy, onError.
@@ -332,9 +329,25 @@ export const createTurnRunner = ({
     supervise,
     metricsPath,
     describe,
-    /** One model turn. Same contract as adapter.spawn(prompt, ctx). */
-    run(adapter, prompt, ctx, { eventType } = {}) {
-      return supervise ? runSupervised(adapter, prompt, ctx, eventType) : runPlain(adapter, prompt, ctx, eventType);
+    /**
+     * One model turn. `run` has adapter.spawn's contract; `finish(outcome)`
+     * writes the line once delivery has settled. Only the first finish counts,
+     * and a finish with no spawned turn behind it writes nothing.
+     */
+    begin({ eventType } = {}) {
+      let held = null;
+      let done = false;
+      return {
+        run(adapter, prompt, ctx) {
+          if (!supervise) return adapter.spawn(prompt, ctx);
+          return runSupervised(adapter, prompt, ctx, eventType, (fields) => { held = fields; });
+        },
+        finish(outcome) {
+          if (done || !held) return;
+          done = true;
+          record({ ...held, outcome, settledMs: now() });
+        },
+      };
     },
   };
 };

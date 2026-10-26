@@ -13,13 +13,18 @@
  * no timestamp (raw stderr, HTML error pages) are counted, not shown.
  *
  * A turn opens at "[<event>] spawning <adapter>" and closes at the first of:
- *   - "spawn credential revoked"  (the spawn returned; the outcome line follows)
- *   - "processing failed"         (the spawn threw; failed)
+ *   - an outcome line             (what became of the reply; see outcomeOf)
+ *   - "processing failed"         (the spawn threw: failed; or, after
+ *                                  "ERROR reply NOT delivered": reply_lost)
  *   - a restart ("stopping after the current turn" / "polling … for events")
  *     or the next "spawning"       (no close seen; counted as unclosed)
  * A "spawn credential refused" or "lease failed" after "spawning" means the
  * child never ran: it is counted as such, not as a turn.
  * A turn still open at the end of the window is "open", not a hang.
+ *
+ * Outcomes use the canary's words (TURN_OUTCOMES in
+ * src/lib/supervised-turn.js), so a log and a canary file compare event for
+ * event: a turn is ok only when it was delivered or silent.
  */
 import fs from 'fs';
 import os from 'os';
@@ -38,15 +43,20 @@ export const LIMITS = [
 const LINE_RE = /^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z) \[([^\]]+)\] (.*)$/;
 const SPAWN_RE = /^\[([A-Za-z0-9._-]{1,40})\] spawning ([a-z0-9-]{1,32})$/;
 
+const OK_OUTCOMES = ['delivered', 'silent'];
+
+// Each phrase the run loop logs once delivery settles, in the order it checks
+// them, mapped to the canary's outcome. An upstream refusal is matched first:
+// it also ends in "nothing posted" or "no private response".
 const outcomeOf = (msg) => {
-  if (/no wrapper-post \(NO_REPLY\)/.test(msg)) return 'no_reply';
-  if (/no wrapper-post \(empty output\)/.test(msg)) return 'empty_output';
-  if (/agent posted via tool/.test(msg) || /posted via tool, then/.test(msg)) return 'posted_via_tool';
-  if (/\bposted \d+ bytes\b/.test(msg)) return 'wrapper_posted';
-  if (/routed private response/.test(msg) || /response already routed by agent tool/.test(msg)) return 'private_response';
-  if (/\bno private response\b/.test(msg)) return 'no_private_response';
+  if (/^\[[^\]]+\] upstream refused \d{3}\b/.test(msg)) return 'upstream_refused';
+  if (/agent posted via tool/.test(msg) || /posted via tool, then/.test(msg)) return 'delivered';
+  if (/\bposted \d+ bytes\b/.test(msg)) return 'delivered';
+  if (/routed private response/.test(msg) || /response already routed by agent tool/.test(msg)) return 'delivered';
+  if (/no wrapper-post \(/.test(msg) || /\bno private response\b/.test(msg)) return 'silent';
+  if (/stood down — claim lost mid-turn/.test(msg)) return 'claim_lost';
   if (/server skipped the post/.test(msg)) return 'server_skipped';
-  if (/wrapper delivery refused/.test(msg)) return 'delivery_refused';
+  if (/wrapper delivery refused/.test(msg)) return 'server_refused';
   return null;
 };
 
@@ -102,7 +112,8 @@ export const baseline = (text, { seat, untilMs = Date.now(), hours = 48, timeout
     // failure that follows is the reply's, not the adapter's.
     if (/\bERROR reply NOT delivered\b/.test(msg)) { open.replyLost = true; continue; }
     if (/processing failed/.test(msg)) {
-      close(open, { endMs: at, ended: 'failed', ...(open.replyLost ? { name: 'reply_delivery_error' } : failureOf(msg)) });
+      if (open.replyLost) close(open, { endMs: open.revokedMs ?? at, ended: 'settled', outcome: 'reply_lost' });
+      else close(open, { endMs: at, ended: 'failed', ...failureOf(msg) });
       open = null;
       continue;
     }
@@ -119,29 +130,32 @@ export const baseline = (text, { seat, untilMs = Date.now(), hours = 48, timeout
     }
     const outcome = outcomeOf(msg);
     if (outcome) {
-      close(open, { endMs: open.revokedMs ?? at, ended: 'ok', outcome });
+      close(open, { endMs: open.revokedMs ?? at, ended: 'settled', outcome });
       open = null;
     }
   }
   if (open) {
-    if (open.revokedMs !== undefined) close(open, { endMs: open.revokedMs, ended: 'ok', outcome: 'unknown' });
+    if (open.revokedMs !== undefined) close(open, { endMs: open.revokedMs, ended: 'settled', outcome: 'unknown' });
     else close(open, { endMs: null, ended: 'open' });
   }
 
   const byAdapter = {};
   for (const t of turns) {
     const a = (byAdapter[t.adapter] ||= {
-      turns: 0, ok: 0, failed: 0, timeouts: 0, exits: {}, replyLost: 0, errors: 0, unclosed: 0, cutByRestart: 0, open: 0,
+      turns: 0, ok: 0, failed: 0, timeouts: 0, exits: {}, errors: 0, unclosed: 0, cutByRestart: 0, open: 0,
       atOrOverTimeout: 0, outcomes: {}, durations: [],
     });
     a.turns += 1;
     if (t.endMs !== null) t.durationMs = t.endMs - t.startMs;
-    if (t.ended === 'ok') { a.ok += 1; a.outcomes[t.outcome] = (a.outcomes[t.outcome] || 0) + 1; }
+    if (t.ended === 'settled') {
+      if (OK_OUTCOMES.includes(t.outcome)) a.ok += 1;
+      a.outcomes[t.outcome] = (a.outcomes[t.outcome] || 0) + 1;
+    }
     if (t.ended === 'failed') {
       a.failed += 1;
+      a.outcomes.failed = (a.outcomes.failed || 0) + 1;
       if (t.name === 'adapter_timeout') a.timeouts += 1;
       else if (t.name === 'adapter_exit') a.exits[t.exitCode] = (a.exits[t.exitCode] || 0) + 1;
-      else if (t.name === 'reply_delivery_error') a.replyLost += 1;
       else a.errors += 1;
     }
     if (t.ended === 'unclosed') a.unclosed += 1;
@@ -174,8 +188,8 @@ export const render = (r) => {
   const adapters = Object.entries(r.byAdapter);
   if (!adapters.length) out.push('  no turns in the window');
   for (const [name, a] of adapters) {
-    out.push(`  ${name}: ${a.turns} turns, ${a.ok} ok, ${a.failed} failed`
-      + ` (${a.timeouts} timed out, exits ${JSON.stringify(a.exits)}, ${a.replyLost} replies not delivered, ${a.errors} other)`
+    out.push(`  ${name}: ${a.turns} turns, ${a.ok} ok (delivered or silent), ${a.failed} spawns failed`
+      + ` (${a.timeouts} timed out, exits ${JSON.stringify(a.exits)}, ${a.errors} other)`
       + `, ${a.cutByRestart} cut by restart, ${a.unclosed} unclosed, ${a.open} still open at the window end`);
     out.push(`    reached the turn budget: ${a.atOrOverTimeout}`);
     if (a.durationMs) out.push(`    duration p50 ${fmtMs(a.durationMs.p50)} p90 ${fmtMs(a.durationMs.p90)} p99 ${fmtMs(a.durationMs.p99)} max ${fmtMs(a.durationMs.max)} (n=${a.durationMs.n})`);

@@ -170,7 +170,9 @@ const capture = async (env) => {
         return scenario.spawn(prompt, ctx);
       },
     };
-    const run = harness({ events: scenario.events, adapter, env });
+    // The turn budget is read from the host env; an operator's override must
+    // not change what the golden pins.
+    const run = harness({ events: scenario.events, adapter, env: { COMMONLY_AGENT_RUN_TIMEOUT_MS: undefined, ...env } });
     // eslint-disable-next-line no-await-in-loop
     await drain();
     run.handle.stop();
@@ -203,8 +205,9 @@ describe('COMMONLY_SUPERVISE_RUNS off', () => {
     }
     const golden = JSON.parse(fs.readFileSync(GOLDEN, 'utf8'));
     expect(got).toEqual(golden);
-    // Supervision leaves no trace store behind when it is off.
+    // Off, nothing is written: no trace store, and no canary line.
     expect(fs.existsSync(path.join(home, '.commonly', 'traces'))).toBe(false);
+    expect(fs.existsSync(path.join(home, '.commonly', 'state', 'seats-canary'))).toBe(false);
   });
 
   if (!WRITE_GOLDEN) {
@@ -232,6 +235,7 @@ describe('COMMONLY_SUPERVISE_RUNS off', () => {
       expect(spawns).toHaveLength(1);
       expect(spawns[0]).not.toHaveProperty('signal');
       expect(fs.existsSync(path.join(home, '.commonly', 'traces'))).toBe(false);
+      expect(fs.existsSync(path.join(home, '.commonly', 'state', 'seats-canary'))).toBe(false);
     });
   }
 });
@@ -276,7 +280,7 @@ describe('COMMONLY_SUPERVISE_RUNS=1 with the real codex adapter', () => {
   jest.setTimeout(60_000);
   const CANARY_KEY = 'sk-canary-run-loop-4c1d9e7a';
 
-  test('a clean reply is posted, the metric line says supervised and ok, and nothing else reaches disk', async () => {
+  test('a clean reply is posted, the metric line says supervised and delivered, and nothing else reaches disk', async () => {
     const { startFakeProvider } = await import('../../packages/seats/test-support/fake-provider.js');
     const codex = (await import('../src/lib/adapters/codex.js')).default;
     const provider = await startFakeProvider({ defaultReply: 'review: PASS' });
@@ -322,7 +326,7 @@ describe('COMMONLY_SUPERVISE_RUNS=1 with the real codex adapter', () => {
       const lines = fs.readFileSync(path.join(home, '.commonly', 'state', 'seats-canary', 'rhea.jsonl'), 'utf8')
         .split('\n').filter(Boolean).map((line) => JSON.parse(line));
       expect(lines).toEqual([expect.objectContaining({
-        path: 'supervised', adapter: 'codex', outcome: 'ok', failure: null,
+        path: 'supervised', adapter: 'codex', outcome: 'delivered', ok: true, failure: null,
         stallMs: 15 * 60 * 1000, exitCode: 0, exitObserved: true, killed: false,
       })]);
       // The reply was posted, and is in no file the run left: no record writer.
