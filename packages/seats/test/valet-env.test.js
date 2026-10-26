@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync as readdir, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join, sep } from 'node:path';
 import { prepareRunEnv } from '../src/valet/env.js';
 import { createTraceStore } from '../src/trace/store.js';
 import { RunFailure } from '../src/failures.js';
@@ -11,6 +11,11 @@ import { RunFailure } from '../src/failures.js';
 const REAL_HOME = homedir();
 const GRANTED = 'sk-granted-0123456789abcdef';
 const WITHHELD = 'sk-withheld-fedcba9876543210';
+
+// True when value names dir or a path inside it. A bare substring check also matches a
+// sibling that only shares the prefix: under HOME=/home/node, npm's own PATH entry
+// /home/node_modules/.bin is outside HOME, and env.js rightly keeps it.
+const namesPath = (value, dir) => new RegExp(`${dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[${sep}${delimiter}])`).test(value);
 
 const recorder = () => { const events = []; return { events, emit: (type, data) => events.push({ type, data }) }; };
 const withScratch = async (fn) => {
@@ -61,8 +66,8 @@ test('a real child sees only the granted key, a throwaway HOME, and no path to t
     assert.equal(seen.homedir, run.home);
     assert.ok(run.home.startsWith(root));
     for (const [name, value] of Object.entries(seen.env)) {
-      assert.ok(!value.includes(loginHome), `${name} leaks the login HOME path: ${value}`);
-      assert.ok(!value.includes(REAL_HOME), `${name} leaks the real HOME path: ${value}`);
+      assert.ok(!namesPath(value, loginHome), `${name} leaks the login HOME path: ${value}`);
+      assert.ok(!namesPath(value, REAL_HOME), `${name} leaks the real HOME path: ${value}`);
     }
     assert.equal(seen.claude, false, '~/.claude is not reachable via HOME');
     assert.equal(seen.codex, false, '~/.codex is not reachable via HOME');
