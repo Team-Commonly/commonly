@@ -105,5 +105,12 @@ describe('toPodMessage', () => {
     expect(row).not.toHaveProperty('is_bot');
     expect(row.message_type).toBe('text');
     expect(row.author_kind).toBeNull();
+    expect(row.pgId).toBe('');
+  });
+
+  it('carries a reconciled row\'s PG id, so its reactions still resolve', () => {
+    const row = toPodMessage({ _id: 'm1', podId: 'p1', userId: 'u1', content: 'hi', reconciledPgId: 42 });
+    expect(row.pgId).toBe('42');
+    expect(row.id).toBe('m1');
   });
 });

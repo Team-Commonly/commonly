@@ -21,7 +21,10 @@ export type PodMessageAuthor = { _id: string; username: string; profilePicture?:
 export interface PodMessage {
   id: string;
   _id: string;
-  /** The PG row id; '' for a row served from MongoDB. Reactions are keyed by it. */
+  /**
+   * The PG row id. Reactions are keyed by it. A MongoDB row carries its
+   * reconciled PG id, or '' if it was never copied to PG.
+   */
   pgId: string;
   pod_id: string;
   user_id: string;
@@ -66,7 +69,7 @@ export const toPodMessage = (doc: Record<string, unknown>): PodMessage => {
   return {
     id,
     _id: id,
-    pgId: '',
+    pgId: doc.reconciledPgId != null ? String(doc.reconciledPgId) : '',
     pod_id: String(doc.podId ?? ''),
     user_id: userIdString,
     content,
