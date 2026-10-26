@@ -55,6 +55,7 @@ import {
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   readlink,
   rename,
@@ -316,17 +317,28 @@ const claudeLoginSource = (env) => join(
   '.credentials.json',
 );
 
+// Opened once, without following a symlink, and checked on the open handle,
+// so the file read is the file checked (a FIFO cannot hold the open either).
 const carryClaudeLogin = async (env, configDir) => {
   const source = claudeLoginSource(env);
-  const sourceStat = await statOrNull(source);
-  if (sourceStat && (sourceStat.isSymbolicLink() || !sourceStat.isFile())) {
-    throw new Error(`refusing a Claude login that is not a regular file: ${source}`);
+  const refuse = () => new Error(`refusing a Claude login that is not a regular file: ${source}`);
+  let handle;
+  try {
+    handle = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      await rm(join(configDir, '.credentials.json'), { force: true });
+      return null;
+    }
+    if (err?.code === 'ELOOP') throw refuse();
+    throw err;
   }
-  if (!sourceStat) {
-    await rm(join(configDir, '.credentials.json'), { force: true });
-    return null;
+  try {
+    if (!(await handle.stat()).isFile()) throw refuse();
+    return replacePrivateFile(configDir, '.credentials.json', await handle.readFile('utf8'));
+  } finally {
+    await handle.close();
   }
-  return replacePrivateFile(configDir, '.credentials.json', await readFile(source, 'utf8'));
 };
 
 // State for a workspace seat under bwrap: the same per-seat folder the macOS

@@ -1551,6 +1551,15 @@ describe('claude adapter — a workspace seat on Linux', () => {
     expect(fs.existsSync(path.join(state, '.claude', '.credentials.json'))).toBe(false);
   });
 
+  test('refuses a login that is not a regular file, checked on the opened file', async () => {
+    const login = path.join(operatorClaude, '.credentials.json');
+    fs.rmSync(login);
+    fs.mkdirSync(login);
+    const { impl, calls } = childImpl();
+    await expect(linuxSpawn(impl)).rejects.toThrow(/refusing a Claude login that is not a regular file/);
+    expect(calls).toHaveLength(0);
+  });
+
   test('replaces a symlink the jail left at the copy, rather than writing through it', async () => {
     const victim = path.join(operatorClaude, 'victim.txt');
     fs.writeFileSync(victim, 'untouched');
