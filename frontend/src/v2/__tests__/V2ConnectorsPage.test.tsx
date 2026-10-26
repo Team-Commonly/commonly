@@ -779,6 +779,30 @@ describe('V2ConnectorsPage', () => {
     }
   });
 
+  it('warns that removing Supabase authorization disconnects everyone in the organization', async () => {
+    const revokePage = 'https://supabase.com/dashboard/org/_/apps';
+    window.history.replaceState(
+      {},
+      '',
+      `/v2/connectors?hostedMcp=connected&entryId=supabase&revokeAt=${encodeURIComponent(revokePage)}`,
+    );
+    mockGets([{
+      _id: 'i-supabase', type: 'hosted-mcp', status: 'connected',
+      config: { entryId: 'supabase', revokePage },
+    }], [{
+      ...hostedLinearCatalogEntry('i-supabase'),
+      installableId: 'supabase', label: 'Supabase', entryId: 'supabase',
+    }]);
+    renderPage();
+
+    const reviewLink = await screen.findByRole('link', { name: 'Open Supabase Authorized apps' });
+    expect(reviewLink).toHaveAttribute('href', revokePage);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Removing Commonly under Authorized apps disconnects everyone who connected that organization.',
+    );
+    expect(screen.getByRole('status')).not.toHaveTextContent('remove Commonly there');
+  });
+
   it('does not turn a callback query into a provider link unless it matches the row', async () => {
     window.history.replaceState(
       {},

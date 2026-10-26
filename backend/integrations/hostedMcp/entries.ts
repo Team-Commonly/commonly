@@ -17,9 +17,11 @@ import { ATLASSIAN_ENTRY } from './atlassian';
 import { GOOGLE_CALENDAR_ENTRY } from './googleCalendar';
 import { LINEAR_ENTRY } from './linear';
 import { SENTRY_ENTRY } from './sentry';
+import { SUPABASE_ENTRY } from './supabase';
 
 export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [
   LINEAR_ENTRY, GOOGLE_CALENDAR_ENTRY, ATLASSIAN_ENTRY, AIRTABLE_ENTRY, SENTRY_ENTRY,
+  SUPABASE_ENTRY,
 ];
 
 /**
