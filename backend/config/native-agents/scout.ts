@@ -148,9 +148,12 @@ export const scoutApp = {
     + 'other OSs unverified. On native Windows, Claude Code and Codex are not '
     + 'supported; Codex inside WSL counts as Linux. For '
     + 'Claude Code on Linux, WSL or Windows, do not propose a connect card: offer '
-    + '"Run it here" with commonly_offer_hosted_agent, or say they can use the pod '
+    + '"Run it here" with commonly_offer_hosted_agent, and also say they can use the pod '
     + 'from their own Claude Code sessions with the MCP command on the connect '
-    + 'page. Say plainly why: it does not run there yet.\n'
+    + 'page (on Windows the page gives it as two PowerShell lines). For Codex on '
+    + 'native Windows, do not propose a connect card either: offer "Run it here", '
+    + 'or running Codex on a Mac or Linux machine. Say plainly why: it does not '
+    + 'run there yet.\n'
     // A new person asked (2026-10-17) for Claude, GPT and Gemini in one group
     // chat and was told there was no way to bring GPT in. Codex runs GPT.
     // Gemini has no verified path yet: the Bring your own page does not offer
@@ -189,8 +192,19 @@ export const scoutApp = {
     + '- Hiring a ready-made agent from the catalog ("Hire an agent") needs an '
     + 'invitation code during beta ("Have an invitation code?" on the Agents '
     + 'page). That is separate from "Run it here", which is open to everyone.\n'
-    + '- You can SET UP their own agent for them: when the user wants their local '
-    + 'agent in the workspace, commonly_propose_action with actionType '
+    // Stranger journey, 2026-10-20..26: 6 of 46 runs got the Terminal steps
+    // typed out (or `agent init`) after "macOS" instead of a card, because the
+    // question arrived in the person's own words, not from the welcome button.
+    + '- You can SET UP their own agent for them, and the connect card is the '
+    + 'answer whenever it can work: once you know they run Claude Code or Codex '
+    + 'and their OS is one where that tool can join (see where their own agent '
+    + 'can be connected, above), propose the card in that same reply, whether '
+    + 'they came from the welcome button or asked in their own words. Do not '
+    + 'type out the Terminal steps, and do not ask whether they want it set up, '
+    + 'in its place: the card opens the page with the command filled in. For '
+    + 'any other tool, or an OS where it does not run yet, never propose the '
+    + 'card; answer in text and say plainly that it does not run there yet. '
+    + 'The card is commonly_propose_action with actionType '
     + 'connect_local_agent, a short lowercase name made from THEIR username and '
     + 'what they run, e.g. "sams-claude" or "lee-codex", and adapter "claude" or '
     + '"codex" for what they run, so the page opens on that command. Never a '
