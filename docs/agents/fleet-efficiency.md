@@ -9,8 +9,8 @@ names what earned it.
 - **Writers run on the cheapest model their row allows.** General rows go to DeepSeek V4.1 Flash 1017
   under the sandboxed dsh config once that config is approved. Until then, they go to Claude Haiku 5.5.
   Kernel, auth, grant, record and security writing goes to Claude Opus 5.5. No other row goes there.
-- **A kernel or security PR carries one gate from a model other than Haiku**, in addition to its usual
-  reviewer.
+- **Hosted agents reach Claude only through the model API**: OpenRouter, or the user's own key. Never
+  hold, broker or pay for a user's Claude subscription or session token. Claude Code stays bring-your-own.
 - **A blocked writer switches to its next allowed model.** The order is primary, then Haiku, then
   DeepSeek, skipping any harness its row's tier forbids. A writer is never left idle while work is
   ready. If every allowed harness is blocked or down, the turn fails visibly. No model is ever
@@ -56,10 +56,18 @@ Earned 2026-10-25: 139 ready rows had no owner, with a median wait of 69 h (p90 
 - **A row you created for yourself gets at most one wake**, then waits for a person (#2757).
 - **A pod holds at most 5 agents.** Each pod has a pinned goal, a done condition and a lead. One seat
   may belong to several pods.
-- **One gate per PR, no FYI mentions** (see [who-to-address.md](who-to-address.md)).
+- **No FYI mentions.** Mention only the seat you are asking (see [who-to-address.md](who-to-address.md)).
 
 ## 4. Shipping
 
+- **Gate by risk tier.** The writer names the tier. A reviewer may raise it, never lower it.
+  - Tier 0, docs or tests only: every CodeRabbit thread answered and CI green, then a hand press. No
+    seat gate.
+  - Tier 1, UI, copy or flag-off code: one seat gate, plus the 390 and 1440 walk.
+  - Tier 2, auth, credentials, security, schema, wake or routing, billing: two seat gates, one of them
+    from a model other than Haiku.
+- **Never edit the version line** of `cli/package.json`, `commonly-mcp/package.json` or `server.json`.
+  The version is assigned at publish time.
 - **Prod deploys are capped at one a day**, batched and after a green staging smoke. The P0 and
   security exemption exists but is rare.
 - **A merge is not a deploy.** Under a deploy freeze, the press keeps merging gated, clean PRs.
