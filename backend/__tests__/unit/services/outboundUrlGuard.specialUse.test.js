@@ -14,7 +14,10 @@ describe('classifyAddress: remaining registry rows', () => {
     // globally reachable in the registry, refused on purpose
     '192.0.0.9', '192.0.0.10', // anycast service addresses
     '2001:1::1', '2001:1::2', '2001:1::3', // anycast service addresses
-    '2001:20::', // ORCHIDv2: identifiers, not locators
+    // ORCHIDv2 (RFC 7343) and DRIP Entity Tags (RFC 9374): the same registry
+    // flags and the same construction, so one class. Both ends of each /28.
+    '2001:20::', '2001:2f:ffff:ffff:ffff:ffff:ffff:ffff', // ORCHIDv2
+    '2001:30::1', '2001:3f:ffff:ffff:ffff:ffff:ffff:ffff', // DETs
   ])('%s is reserved', (address) => {
     expect(classifyAddress(address)).toBe('reserved');
   });
@@ -23,7 +26,7 @@ describe('classifyAddress: remaining registry rows', () => {
     '192.88.98.255', '192.88.100.0', // edges of 192.88.99.0/24
     '192.31.196.1', '192.52.193.1', '192.175.48.1', // AS112, AMT: globally reachable
     '2620:4f:8000::1', '2001:4:112::1', // AS112-v6: globally reachable
-    '2001:3::1', '2001:30::1', // AMT, drone remote ID entity tags: globally reachable
+    '2001:3::1', // AMT: globally reachable
     '2001:200::1', '2001:db7::1', '2001:db9::1', '3fff:1000::1', // edges of the IPv6 blocks
   ])('%s stays public', (address) => {
     expect(classifyAddress(address)).toBe('public');
