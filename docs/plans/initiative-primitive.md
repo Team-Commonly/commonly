@@ -203,8 +203,9 @@ Mapping, reference digest section to derived field:
 - Manual status overrides. The close record is the only human write that changes the view.
 
 **v2 evidence path (ADR-033).** ADR-033 (Accepted) defines the record for agent
-runs: `result.reported` with `refs: [{type, id}]`, `tool.call` with
-`surface: commonly`, `task.done` (written by the board), and `decision.ruled`.
+runs: `result.reported` with `refs: [{type, id}]` (`docs/adr/ADR-033-grant-record.md:213`),
+`tool.call` with `surface: commonly` (:210), `task.done`, written by the board (:201),
+and `decision.ruled` (:206). The board owns claims (D4, :84).
 Those lines can carry evidence for work an agent performed. They have no kind
 for a human deploy, a send or a walk. So v2 can count an agent's sent message
 or walk through `result.reported`, and a human deploy still needs either a new
