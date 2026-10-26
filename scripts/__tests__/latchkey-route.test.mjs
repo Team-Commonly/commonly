@@ -119,7 +119,7 @@ test('backstop trips on a held heavy job and passes once every heavy job starts'
   assert.equal((await h.out()).tripped, 'true');
   await h.restore();
   const running = [job('Backend tests (1/3)', 'in_progress', ['latchkey-medium']), job('Frontend tests', 'completed', ['latchkey-small'])];
-  h = await harness({}, [[job('Backend tests (1/3)', 'queued', ['latchkey-medium'])], running, running]);
+  h = await harness({ EXPECTED_HEAVY: '2' }, [[job('Backend tests (1/3)', 'queued', ['latchkey-medium'])], running, running]);
   await h.run(backstop);
   assert.equal((await h.out()).tripped, 'false');
   await h.restore();
@@ -127,11 +127,22 @@ test('backstop trips on a held heavy job and passes once every heavy job starts'
 
 test('backstop retries failed reads, and cancels only if the run stays unreadable', async () => {
   const running = [job('Backend tests (1/3)', 'in_progress', ['latchkey-medium'])];
-  let h = await harness({}, [new Error('502'), running, running]);
+  let h = await harness({ EXPECTED_HEAVY: '1' }, [new Error('502'), running, running]);
   await h.run(backstop);
   assert.equal((await h.out()).tripped, 'false');
   await h.restore();
   h = await harness({ STUCK_SEC: '30' }, [new Error('502')]);
+  await h.run(backstop);
+  assert.equal((await h.out()).tripped, 'true');
+  await h.restore();
+});
+
+test('backstop keeps watching until every expected heavy job is listed', async () => {
+  // Two polls see only the first shard started; the second shard is listed
+  // later and is still queued past the limit, so the backstop must trip.
+  const first = [job('Backend tests (1/3)', 'in_progress', ['latchkey-medium'])];
+  const later = [...first, job('Backend tests (2/3)', 'queued', ['latchkey-medium'], 301)];
+  const h = await harness({ EXPECTED_HEAVY: '2', STUCK_SEC: '300' }, [first, first, first, later]);
   await h.run(backstop);
   assert.equal((await h.out()).tripped, 'true');
   await h.restore();

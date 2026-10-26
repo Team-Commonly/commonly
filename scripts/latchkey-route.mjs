@@ -155,6 +155,9 @@ export const route = async ({ now = () => Date.now(), wait = sleep } = {}) => {
 
 export const backstop = async ({ now = () => Date.now(), wait = sleep } = {}) => {
   const stuckSec = Number(env('STUCK_SEC', '300'));
+  // Matrix jobs are listed as they expand, so a poll can see only some of
+  // them. The backstop passes only once this many heavy jobs have started.
+  const expected = Number(env('EXPECTED_HEAVY', '6'));
   // Long enough for the heavy jobs to be queued and for any of them to pass
   // stuckSec; past it there is nothing left to watch.
   const deadline = now() + (stuckSec + 300) * 1000;
@@ -171,9 +174,9 @@ export const backstop = async ({ now = () => Date.now(), wait = sleep } = {}) =>
         return output({ tripped: true });
       }
       const heavy = heavyJobs(jobs);
-      // Two polls in a row with every heavy job started, so a matrix still
-      // being expanded is not mistaken for a finished pickup.
-      stable = heavy.length && heavy.every(started) ? stable + 1 : 0;
+      // Two polls in a row with every expected heavy job listed and started,
+      // so a matrix still being expanded is not mistaken for a finished pickup.
+      stable = heavy.length >= expected && heavy.every(started) ? stable + 1 : 0;
       if (stable >= 2) {
         summary(`All ${heavy.length} heavy Latchkey jobs were picked up.`);
         return output({ tripped: false });

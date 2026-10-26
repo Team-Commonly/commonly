@@ -150,6 +150,9 @@ jobs:
         run: node scripts/latchkey-route.mjs backstop
         env:
           GH_TOKEN: ${{ github.token }}
+          # Backend shards + frontend + service shards. Keep in step with the
+          # matrices below, or the backstop passes before every heavy job is listed.
+          EXPECTED_HEAVY: '6'
       - if: ${{ steps.watch.outputs.tripped == 'true' }}
         run: echo "heavy job held in run ${{ github.run_id }}" > latchkey-hold.txt
       - if: ${{ steps.watch.outputs.tripped == 'true' }}
