@@ -160,8 +160,13 @@ describe('Scout onboarding knowledge', () => {
     ['ChromeOS', 'iPad', 'Android'].forEach((os) => expect(prompt).toContain(os));
   });
 
+  test('asks about Codex in ChatGPT, and takes a plain "Codex" as the CLI', () => {
+    expect(prompt).toMatch(/A plain "Codex" answers that question and counts as the CLI/);
+    expect(prompt).toMatch(/When they say Codex together with ChatGPT, the web, the cloud or an app, as in "I use Codex in ChatGPT", ask whether they run the Codex CLI in a terminal, with no card in that reply/);
+  });
+
   test('does not take the Claude app or ChatGPT for the command-line tool', () => {
-    expect(prompt).toMatch(/the Claude app \(desktop or phone\) and claude\.ai are not Claude Code, and the ChatGPT app and chatgpt\.com are not the Codex CLI/);
+    expect(prompt).toMatch(/the Claude app \(desktop or phone\) and claude\.ai are not Claude Code, and the ChatGPT app, chatgpt\.com and Codex in ChatGPT are not the Codex CLI/);
     expect(prompt).toMatch(/When they say "Claude" or "ChatGPT" without saying which, ask whether they run Claude Code or the Codex CLI in a terminal, and propose no card until they say they do/);
     expect(prompt).toMatch(/A bare "Claude" or "ChatGPT" never settles it, on macOS too, and even when you had asked "Claude Code or Codex": ask that one question first, with no card in that reply/);
     expect(prompt).toMatch(/Before you propose the card, check their own messages, not yours: one of them must say "Claude Code" or "Codex"\. If none does, ask instead/);
