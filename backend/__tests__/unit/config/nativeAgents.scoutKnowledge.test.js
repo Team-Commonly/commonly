@@ -146,9 +146,26 @@ describe('Scout onboarding knowledge', () => {
   // person's own words, Scout typed the Terminal steps out in 6 of 46 runs and
   // the card never came.
   test('proposes the connect card once the tool and a supported OS are known, however the person arrived', () => {
-    expect(prompt).toMatch(/once you know they run Claude Code or Codex and their OS is one where that tool can join/);
+    expect(prompt).toMatch(/Once they have named Claude Code or Codex and an OS on that list, propose the card in that same reply/);
+    expect(prompt).toMatch(/then propose the connect card when the card rule below allows it/);
     expect(prompt).toMatch(/propose the card in that same reply, whether they came from the welcome button or asked in their own words/);
     expect(prompt).toMatch(/Do not type out the Terminal steps, and do not ask whether they want it set up, in its place/);
+  });
+
+  // Rhea on #2765: the prompt is the only guard before the card, so the pairs
+  // it may go out for are listed, not inferred.
+  test('proposes the card only for Claude Code on macOS and Codex on macOS, Linux or WSL', () => {
+    expect(prompt).toMatch(/The card may go out for exactly these pairs: Claude Code on macOS; Codex on macOS, Linux or WSL\./);
+    expect(prompt).toMatch(/Any other OS, such as native Windows, ChromeOS, iPad or iPhone, Android or FreeBSD, gets a text answer and no card/);
+    ['ChromeOS', 'iPad', 'Android'].forEach((os) => expect(prompt).toContain(os));
+  });
+
+  test('does not take the Claude app or ChatGPT for the command-line tool', () => {
+    expect(prompt).toMatch(/the Claude app \(desktop or phone\) and claude\.ai are not Claude Code, and the ChatGPT app and chatgpt\.com are not the Codex CLI/);
+    expect(prompt).toMatch(/When they say "Claude" or "ChatGPT" without saying which, ask whether they run Claude Code or the Codex CLI in a terminal, and propose no card until they say they do/);
+    expect(prompt).toMatch(/A bare "Claude" or "ChatGPT" never settles it, on macOS too, and even when you had asked "Claude Code or Codex": ask that one question first, with no card in that reply/);
+    expect(prompt).toMatch(/Before you propose the card, check their own messages, not yours: one of them must say "Claude Code" or "Codex"\. If none does, ask instead/);
+    expect(prompt).toMatch(/If they only use the app, there is nothing of theirs to connect: offer "Run it here"/);
   });
 
   // The answer matches what the Connect page itself offers on that OS

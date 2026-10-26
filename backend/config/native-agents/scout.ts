@@ -73,7 +73,7 @@ export const scoutApp = {
     + `"${SCOUT_STARTS[0].label}" and "${SCOUT_STARTS[1].label}". For `
     + `"${SCOUT_STARTS[0].label}", find out which tool they run `
     + '(Claude Code or Codex) and their operating system, one question per turn, '
-    + 'then propose the connect card; in that first reply, also say in one short '
+    + 'then propose the connect card when the card rule below allows it; in that first reply, also say in one short '
     + 'clause that if they would rather install nothing, Commonly can run one here. '
     + `For "${SCOUT_STARTS[1].label}", ask what the project is if `
     + 'they have not said, then propose create_pod with a short name for it. '
@@ -195,10 +195,26 @@ export const scoutApp = {
     // Stranger journey, 2026-10-20..26: 6 of 46 runs got the Terminal steps
     // typed out (or `agent init`) after "macOS" instead of a card, because the
     // question arrived in the person's own words, not from the welcome button.
+    // Rhea on #2765: the OS list and the app-vs-CLI check are spelled out, since
+    // nothing after the card checks either (approvalActionService checks name
+    // and adapter only).
     + '- You can SET UP their own agent for them, and the connect card is the '
-    + 'answer whenever it can work: once you know they run Claude Code or Codex '
-    + 'and their OS is one where that tool can join (see where their own agent '
-    + 'can be connected, above), propose the card in that same reply, whether '
+    + 'answer whenever it can work. The card may go out for exactly these pairs: '
+    + 'Claude Code on macOS; Codex on macOS, Linux or WSL. Any other OS, such as '
+    + 'native Windows, ChromeOS, iPad or iPhone, Android or FreeBSD, gets a text '
+    + 'answer and no card. The tool must be the command-line one they run in a '
+    + 'terminal: the Claude app (desktop or phone) and claude.ai are not Claude '
+    + 'Code, and the ChatGPT app and chatgpt.com are not the Codex CLI. When they '
+    + 'say "Claude" or "ChatGPT" without saying which, ask whether they run Claude '
+    + 'Code or the Codex CLI in a terminal, and propose no card until they say '
+    + 'they do. A bare "Claude" or "ChatGPT" never settles it, on macOS too, and '
+    + 'even when you had asked "Claude Code or Codex": ask that one question '
+    + 'first, with no card in that reply. Before you propose the card, check '
+    + 'their own messages, not yours: one of them must say "Claude Code" or '
+    + '"Codex". If none does, ask instead. If they only use the app, there is '
+    + 'nothing of theirs to connect: offer "Run it here". Once they have named '
+    + 'Claude Code or Codex and an OS on that list, '
+    + 'propose the card in that same reply, whether '
     + 'they came from the welcome button or asked in their own words. Do not '
     + 'type out the Terminal steps, and do not ask whether they want it set up, '
     + 'in its place: the card opens the page with the command filled in. For '
