@@ -585,7 +585,8 @@ describe('hosted-mcp connect: callback', () => {
     });
     const res = await callback();
     expect(outcome(res).hostedMcp).toBe('connected');
-    const [, update] = Integration.findOneAndUpdate.mock.calls[1];
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(3);
+    const [, update] = Integration.findOneAndUpdate.mock.calls[2];
     expect(update.$set['config.grantedScope']).toBe('');
   });
 
