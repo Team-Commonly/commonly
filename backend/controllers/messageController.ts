@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { listPodMessages } from '../repositories/messageRepository';
 
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
@@ -146,48 +147,31 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
     // workspace. Write-once, fire-and-forget (services/onboardingMarks.ts).
     if (!before) markPodOpened(userId, pod);
 
+    const messages = await listPodMessages(podId, { limit, before });
+    // Sprint B5: attach reactions per message in one batched query
+    // (MessageReaction.listForMessages aggregates by GROUP BY).
+    // Falls through to `messages` unchanged on any reaction lookup error.
     try {
-      const messages = await PGMessage.findByPodId(podId, limit, before);
-      // Sprint B5: attach reactions per message in one batched query
-      // (MessageReaction.listForMessages aggregates by GROUP BY).
-      // Falls through to `messages` unchanged on any reaction lookup error.
-      try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+      const MessageReaction = require('../models/pg/MessageReaction').default;
+      // Keyed by the PG row id: a reconciled message's client `id` is its
+      // Mongo id, which reaction rows do not know.
+      const ids = messages.map((m) => m.pgId).filter(Boolean);
+      if (ids.length > 0) {
+        const reactionsMap = await MessageReaction.listForMessages(ids, String(userId));
         // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-        const MessageReaction = require('../models/pg/MessageReaction').default;
-        // Keyed by the PG row id: a reconciled message's client `id` is its
-        // Mongo id, which reaction rows do not know.
-        const ids = (messages as Array<{ pgId?: string }>)
-          .map((m) => m.pgId)
-          .filter(Boolean);
-        if (ids.length > 0) {
-          const reactionsMap = await MessageReaction.listForMessages(ids, String(userId));
-          // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-          const { decorateReactionMap } = require('../services/reactionAttributionService');
-          const decorated = await decorateReactionMap(reactionsMap);
-          for (const m of messages as Array<{ pgId?: string; reactions?: unknown }>) {
-            const key = String(m.pgId || '');
-            m.reactions = decorated.get(key) || [];
-          }
+        const { decorateReactionMap } = require('../services/reactionAttributionService');
+        const decorated = await decorateReactionMap(reactionsMap);
+        for (const m of messages) {
+          m.reactions = decorated.get(String(m.pgId || '')) || [];
         }
-      } catch (rxnErr) {
-        // Non-fatal: reactions are a render enhancement.
-        // eslint-disable-next-line no-console
-        console.warn('[messages] reaction enrichment skipped:', (rxnErr as Error).message);
       }
-      res.json(await gateWelcomeHostedActions(messages as Array<Record<string, unknown>>, podId, userId));
-      return;
-    } catch (pgErr) {
-      const e = pgErr as { message?: string };
-      console.warn('PG unavailable for getMessages, falling back to MongoDB:', e.message);
+    } catch (rxnErr) {
+      // Non-fatal: reactions are a render enhancement.
+      // eslint-disable-next-line no-console
+      console.warn('[messages] reaction enrichment skipped:', (rxnErr as Error).message);
     }
-
-    const query: Record<string, unknown> = { podId };
-    if (before) query.createdAt = { $lt: new Date(before) };
-    const messages = await MongoMessage.find(query)
-      .populate('userId', 'username profilePicture')
-      .sort({ createdAt: -1 })
-      .limit(limit);
-    res.json(await gateWelcomeHostedActions(messages.map(normalizeMongo), podId, userId));
+    res.json(await gateWelcomeHostedActions(messages, podId, userId));
   } catch (err) {
     const e = err as { message?: string; kind?: string };
     console.error('Error in getMessages:', e.message);

@@ -1502,34 +1502,15 @@ export async function fetchRecentPodMessages(
   id: string; author: string; authorId: string | null; authorIsBot: boolean | null; content: string; createdAt: unknown;
 }>> {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-  const Message = require('../models/pg/Message');
-  let rows: Array<Record<string, unknown>> = [];
-  try {
-    rows = (await Message.findByPodId(String(podId), limit)) as Array<Record<string, unknown>>;
-  } catch (pgError) {
-    console.warn(
-      '[native-runtime] recent pod messages: PG fetch failed, falling back to Mongo:',
-      (pgError as Error).message,
-    );
-    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-    const MongoMessage = require('../models/Message');
-    const docs = await MongoMessage.find({ podId })
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .populate('userId', 'username isBot')
-      .lean();
-    rows = (docs as Array<Record<string, unknown>>).reverse();
-  }
+  const { listPodMessages } = require('../repositories/messageRepository');
+  const rows = await listPodMessages(String(podId), { limit }) as Array<Record<string, unknown>>;
   return rows.map((row) => {
     const user = (row.userId as Record<string, unknown> | undefined) || {};
     const authorId = user._id || row.user_id || row.user_db_id;
-    // A PG row (it has `user_id`) carries the users mirror's `is_bot` as
-    // stored; its mapper's `isBot` reads null or missing as false, so only the
-    // raw column is trusted, and a PG row without it is unknown. A Mongo row
-    // carries the populated `isBot`. Unknown is null, which gives no address.
-    let authorIsBot: boolean | null = null;
-    if ('user_id' in row) authorIsBot = typeof row.is_bot === 'boolean' ? row.is_bot : null;
-    else if (typeof user.isBot === 'boolean') authorIsBot = user.isBot;
+    // Only the raw `is_bot` is trusted: the PG mapper's `userId.isBot` reads
+    // null or missing as false. The repository carries a Mongo row's populated
+    // `isBot` into `is_bot` the same way. Unknown is null, which gives no address.
+    const authorIsBot = typeof row.is_bot === 'boolean' ? row.is_bot : null;
     return {
       id: String(row.id || row._id || ''),
       author: (user.username as string) || (row.username as string) || 'unknown',
