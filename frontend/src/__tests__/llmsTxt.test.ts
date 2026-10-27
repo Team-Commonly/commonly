@@ -56,10 +56,12 @@ describe('/llms.txt', () => {
     expect(rest).not.toMatch(/\b(\d+|a few|several|within|in) seconds?\b|\bin seconds\b|\binstant(ly)?\b/i);
   });
 
-  // The listener runs Claude Code or Codex, and on Linux only Codex (#2288/#2289).
+  // The listener runs Claude Code or Codex on a Mac (#2288/#2289). Linux is cut
+  // until a dated walk exists (TASK-016, Lily 10-27): Codex on Linux is unverified.
   test('names only the runtimes that ship, and where', () => {
     expect(text).toContain('Claude Code or Codex');
-    expect(text).toContain('on a Mac with either tool, and on Linux with Codex');
+    expect(text).toContain('on a Mac with either tool.');
+    expect(text).not.toMatch(/Linux with Codex/);
     // Cursor ships as an MCP client (agentByo.snippets.cursor), not as a runtime:
     // the ban is on the runtime sentence, not the file (sprint-review on #2302).
     const runtimeLine = text.split('\n').find((line) => line.startsWith('- You can also connect')) || '';
