@@ -15,7 +15,12 @@ jest.mock('../../../integrations', () => ({
   get: jest.fn(() => ({ ingestEvent: jest.fn().mockResolvedValue([]) })),
 }));
 
+jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
+jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
+
 const Integration = require('../../../models/Integration');
+const User = require('../../../models/User');
+const Pod = require('../../../models/Pod');
 const integrationRoutes = require('../../../routes/integrations');
 
 describe('integration ingest route', () => {
@@ -25,6 +30,8 @@ describe('integration ingest route', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    User.findById.mockResolvedValue({ _id: 'user-1', role: 'user' });
+    Pod.findById.mockResolvedValue(null);
   });
 
   it('ingests normalized messages into the buffer', async () => {
@@ -32,6 +39,7 @@ describe('integration ingest route', () => {
       lean: () => ({
         _id: 'integration-1',
         type: 'slack',
+        createdBy: 'user-1',
         config: { maxBufferSize: 200 },
       }),
     });
@@ -90,6 +98,7 @@ describe('integration ingest route', () => {
       lean: () => ({
         _id: 'integration-1',
         type: 'slack',
+        createdBy: 'user-1',
         config: {},
       }),
     });
@@ -103,5 +112,55 @@ describe('integration ingest route', () => {
       });
 
     expect(res.status).toBe(400);
+  });
+
+  // The session path is gated like the ingest-token mint: the integration's
+  // creator, the pod's creator while still a member, or an admin.
+  it('refuses a signed-in caller who could not mint an ingest token, and writes nothing', async () => {
+    Integration.findById.mockReturnValue({
+      lean: () => ({
+        _id: 'integration-1',
+        type: 'slack',
+        createdBy: 'someone-else',
+        podId: 'pod-1',
+        config: {},
+      }),
+    });
+    Pod.findById.mockResolvedValue({ createdBy: 'someone-else', members: ['someone-else', 'user-1'] });
+
+    const res = await request(app)
+      .post('/api/integrations/ingest')
+      .send({
+        provider: 'slack',
+        integrationId: 'integration-1',
+        messages: [{
+          externalId: 'm1', authorId: 'u1', authorName: 'Mallory', content: 'hi', timestamp: new Date().toISOString(), 
+        }],
+      });
+
+    expect(res.status).toBe(403);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('lets an admin session ingest into an integration it did not create', async () => {
+    User.findById.mockResolvedValue({ _id: 'user-1', role: 'admin' });
+    Integration.findById.mockReturnValue({
+      lean: () => ({
+        _id: 'integration-1', type: 'slack', createdBy: 'someone-else', config: {}, 
+      }),
+    });
+
+    const res = await request(app)
+      .post('/api/integrations/ingest')
+      .send({
+        provider: 'slack',
+        integrationId: 'integration-1',
+        messages: [{
+          externalId: 'm1', authorId: 'u1', authorName: 'Ops', content: 'hi', timestamp: new Date().toISOString(), 
+        }],
+      });
+
+    expect(res.status).toBe(200);
+    expect(Integration.findByIdAndUpdate).toHaveBeenCalledTimes(1);
   });
 });

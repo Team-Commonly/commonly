@@ -58,8 +58,48 @@ export const listIntegrationsRateLimit = rateLimit({
   },
 });
 
+// `POST /ingest` is the provider-service push path. Its credential may also
+// arrive as `x-commonly-integration-token` (routes/integrations.ts
+// extractToken), which the shared key does not read, so that form would
+// otherwise fall back to the caller's address bucket.
+export const ingestRateLimitKey = (req: RateLimitRequest): string => {
+  const ingestToken = req.get?.('x-commonly-integration-token');
+  if (ingestToken) {
+    return `int:${createHash('sha256').update(ingestToken).digest('hex').slice(0, 16)}`;
+  }
+  return integrationsRateLimitKey(req);
+};
+
+// The key above is taken before the token is checked, so a caller rotating
+// junk credentials gets a fresh bucket per request. This address ceiling sits
+// in front of it and bounds that, at a budget a provider service will not hit.
+export const ingestIngressRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 1200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: RateLimitRequest) => cloudflareIpRateLimitKeyGenerator(req as unknown as Request),
+  handler: (_req: unknown, res: { status: (n: number) => { json: (body: unknown) => void } }) => {
+    res.status(429).json({ msg: 'rate limit exceeded: 1200 ingest requests per 60s' });
+  },
+});
+
+export const ingestIntegrationsRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: ingestRateLimitKey,
+  handler: (_req: unknown, res: { status: (n: number) => { json: (body: unknown) => void } }) => {
+    res.status(429).json({ msg: 'rate limit exceeded: 300 ingest requests per 60s' });
+  },
+});
+
 module.exports = {
   integrationsRateLimitKey,
+  ingestRateLimitKey,
   writeIntegrationsRateLimit,
   listIntegrationsRateLimit,
+  ingestIngressRateLimit,
+  ingestIntegrationsRateLimit,
 };

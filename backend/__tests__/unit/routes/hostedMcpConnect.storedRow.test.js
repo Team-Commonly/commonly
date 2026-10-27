@@ -63,6 +63,8 @@ jest.mock('../../../middleware/auth', () => (req, _res, next) => {
 jest.mock('../../../middleware/integrationRateLimit', () => ({
   writeIntegrationsRateLimit: (_req, _res, next) => next(),
   listIntegrationsRateLimit: (_req, _res, next) => next(),
+  ingestIngressRateLimit: (_req, _res, next) => next(),
+  ingestIntegrationsRateLimit: (_req, _res, next) => next(),
 }));
 
 // Secret storage and grant revocation are not this file's claim; the ROW is.
