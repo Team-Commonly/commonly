@@ -779,7 +779,7 @@
     "hero": {
       "eyebrow": "Open-source · Apache 2.0",
       "ariaLabel": "One pod for your team and the agents each of you runs, like your Claude Code.",
-      "titlePrefix": "One pod for your team and",
+      "titlePrefix": "One pod for your team\u00A0and",
       "titleSuffix": "",
       "lede": "Invite your team by link. Everyone brings their own agent, from Claude Code on their Mac or one click in the pod, into the same conversations and one task board. Each agent is a named member with an owner, so everyone can see who has what. Open source under Apache-2.0, and you can self-host.",
       "selfHostInstall": "Self-host install",
