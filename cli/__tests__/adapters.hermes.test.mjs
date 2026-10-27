@@ -1,25 +1,27 @@
 /**
- * Fixtures are stdout captured from NousResearch/hermes-agent tag v0.22.2
- * (commit d923a5eb487a) on 2026-10-21. The real CLI was run twice with
+ * Fixtures are stdout captured from NousResearch/hermes-agent tags v0.22.2
+ * (commit d923a5eb487a) and v0.22.5 (commit bf0203a794a0). The real CLI was run twice with
  * --query-file - --format stream-json --provider openrouter --model test/model,
  * using an isolated HERMES_HOME and a local OpenAI-compatible test endpoint
  * answering PONG. The second capture passed --resume with the first session ID.
+ * On 0.22.5 --in replaced --no-restore-cwd for the gateway transport; the
+ * init event now has an empty session_id, while the result carries the ID.
  * No provider credential or request body is stored in these fixtures.
  */
 import { EventEmitter } from 'events';
-import { mkdtemp, readFile, rm } from 'fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { PassThrough } from 'stream';
 import { jest } from '@jest/globals';
-import hermes, { TESTED_HERMES_VERSION, readHermesJsonl } from '../src/lib/adapters/hermes.js';
+import hermes, { SUPPORTED_HERMES_VERSION_RANGE, readHermesJsonl } from '../src/lib/adapters/hermes.js';
 import { validateEnvironmentSpec } from '../src/lib/environment.js';
 
-const fixture = async (name) => readFile(
-  new URL(`./fixtures/hermes-0.22.2/${name}.jsonl`, import.meta.url), 'utf8',
+const fixture = async (name, version = '0.22.5') => readFile(
+  new URL(`./fixtures/hermes-${version}/${name}.jsonl`, import.meta.url), 'utf8',
 );
 
-const versionProbe = (version = TESTED_HERMES_VERSION) => jest.fn(() => ({
+const versionProbe = (version = '0.22.5') => jest.fn(() => ({
   status: 0, stdout: `Hermes Agent v${version} (local build)\n`,
 }));
 
@@ -45,59 +47,80 @@ const withHome = async (run) => {
   try { return await run(home); } finally { await rm(home, { recursive: true, force: true }); }
 };
 
-test('real 0.22.2 first and resumed JSONL return one final reply and a stable session', async () => {
-  const first = await fixture('first-turn');
-  const resumed = await fixture('resume');
+test('the walked 0.22.2 capture still parses, though the adapter refuses that release', async () => {
+  const events = (await fixture('first-turn', '0.22.2')).trim().split('\n').map(JSON.parse);
+  expect(events.map((event) => event.type)).toEqual(['system', 'text', 'result']);
+  expect(events[2].session_id).toBeTruthy();
+});
+
+test('real 0.22.5 JSONL keeps the resumed session in the terminal result', async () => {
+  const first = await fixture('first-turn', '0.22.5');
+  const resumed = await fixture('resume', '0.22.5');
   const firstEvents = first.trim().split('\n').map(JSON.parse);
   const resumeEvents = resumed.trim().split('\n').map(JSON.parse);
   expect(firstEvents.map((event) => event.type)).toEqual(['system', 'text', 'result']);
   expect(resumeEvents.map((event) => event.type)).toEqual(['system', 'text', 'result']);
-  expect(resumeEvents[0].session_id).toBe(firstEvents[0].session_id);
+  expect(firstEvents[0].session_id).toBe('');
+  expect(firstEvents[2].session_id).toBeTruthy();
+  expect(resumeEvents[2].session_id).toBe(firstEvents[2].session_id);
 
   await withHome(async (home) => {
     const calls = [];
     const context = {
-      cwd: home, agentName: 'pa1-test', env: { PATH: '/bin', OPENROUTER_API_KEY: 'fixture-only' },
-      _hermesHome: join(home, 'profiles', 'pa1'), _spawnSyncImpl: versionProbe(),
+      environment: { model: 'test-model' }, cwd: home, agentName: 'pa1-test', env: { OPENROUTER_API_KEY: 'fixture-only' },
+      _hermesHome: join(home, 'profiles', 'pa1'), _spawnSyncImpl: versionProbe('0.22.5'),
     };
-    const firstResult = await hermes.spawn('Reply PONG', { environment: { model: 'test-model' },
+    const firstResult = await hermes.spawn('Reply PONG', {
       ...context, _spawnImpl: recordedSpawn(first, (...call) => calls.push(call)),
     });
-    expect(firstResult).toEqual({ text: 'PONG', newSessionId: firstEvents[0].session_id });
-
-    const resumeResult = await hermes.spawn('Reply again', { environment: { model: 'test-model' },
+    expect(firstResult).toEqual({ text: 'PONG', newSessionId: firstEvents[2].session_id });
+    const resumeResult = await hermes.spawn('Reply again', {
       ...context, sessionId: firstResult.newSessionId,
       _spawnImpl: recordedSpawn(resumed, (...call) => calls.push(call)),
     });
     expect(resumeResult).toEqual({ text: 'PONG', newSessionId: firstResult.newSessionId });
-    expect(calls).toHaveLength(2);
-    for (const [command, args, options] of calls) {
-      expect(command).toBe('hermes');
-      expect(args).toEqual(expect.arrayContaining([
-        'chat', '--oneshot', '--query-file', '-', '--format', 'stream-json',
-        '--provider', 'openrouter', '--source', 'tool',
-      ]));
-      expect(args.join(' ')).not.toContain('fixture-only');
-      expect(args.join(' ')).not.toContain('Reply');
-      expect(options.stdio).toEqual(['pipe', 'pipe', 'pipe']);
-      expect(options.env.HERMES_HOME).toBe(join(home, 'profiles', 'pa1'));
-    }
-    expect(calls[1][1]).toEqual(expect.arrayContaining(['--resume', firstResult.newSessionId]));
-    expect(calls[0][1]).not.toContain('--resume');
+    expect(calls[0][1]).toEqual(expect.arrayContaining(['--in', home]));
+    expect(calls[1][1]).toEqual(expect.arrayContaining(['--in', home, '--resume', firstResult.newSessionId]));
   });
 });
 
-test('refuses any Hermes version other than 0.22.2 before starting a turn', async () => {
+test('accepts stable Hermes 0.22 releases from 0.22.5 onward', async () => {
+  await withHome(async (home) => {
+    const recording = await fixture('first-turn');
+    for (const version of ['0.22.5', '0.22.9']) {
+      // eslint-disable-next-line no-await-in-loop
+      await expect(hermes.spawn('hello', { environment: { model: 'test-model' },
+        cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
+        _spawnSyncImpl: versionProbe(version), _spawnImpl: recordedSpawn(recording),
+      })).resolves.toMatchObject({ text: 'PONG' });
+    }
+  });
+});
+
+test('refuses Hermes outside the supported stable range before starting a turn', async () => {
   await withHome(async (home) => {
     const child = jest.fn();
-    for (const version of ['0.22.3', '0.22.1', '0.22.2+1.gabcdef0']) {
-      // A post-release checkout may retain the 0.22.2 prefix but is not the pin.
+    for (const version of ['0.22.2', '0.22.3', '0.22.4', '0.22.1', '0.23.0', '0.23.5', '1.0.0', '1.22.5', '0.22.5+1.gabcdef0', '0.22.6-rc.1']) {
+      // Development builds and prereleases are outside the tested stable-release contract.
       // eslint-disable-next-line no-await-in-loop
       await expect(hermes.spawn('hello', { environment: { model: 'test-model' },
         cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
         _spawnSyncImpl: versionProbe(version), _spawnImpl: child,
-      })).rejects.toThrow(`Hermes ${version} is unsupported; this adapter requires 0.22.2`);
+      })).rejects.toThrow(`Hermes ${version} is unsupported; this adapter supports ${SUPPORTED_HERMES_VERSION_RANGE}. Run hermes update`);
     }
+    expect(child).not.toHaveBeenCalled();
+  });
+});
+
+test('missing Hermes on Windows names the supported range and platform-neutral install guide', async () => {
+  await withHome(async (home) => {
+    const child = jest.fn();
+    const missing = hermes.spawn('hello', { environment: { model: 'test-model' },
+      cwd: home, _hermesHome: home,
+      _spawnSyncImpl: jest.fn(() => ({ error: { code: 'ENOENT' } })), _spawnImpl: child,
+    });
+    await expect(missing).rejects.toThrow(`Hermes Agent ${SUPPORTED_HERMES_VERSION_RANGE} is not on PATH; install for your OS: https://hermes-agent.nousresearch.com/docs/getting-started/installation`);
+    await expect(missing).rejects.not.toThrow(/curl|bash/);
     expect(child).not.toHaveBeenCalled();
   });
 });
@@ -106,7 +129,7 @@ test('retries a failed cold-home version probe before the first turn', async () 
   await withHome(async (home) => {
     const probe = jest.fn()
       .mockReturnValueOnce({ status: null, signal: 'SIGTERM', error: { code: 'ETIMEDOUT' } })
-      .mockReturnValueOnce({ status: 0, stdout: 'Hermes Agent v0.22.2 (local build)\n' });
+      .mockReturnValueOnce({ status: 0, stdout: 'Hermes Agent v0.22.5 (local build)\n' });
     const recording = await fixture('first-turn');
     await expect(hermes.spawn('hello', { environment: { model: 'test-model' },
       cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
@@ -257,5 +280,92 @@ test('rejects invalid JSONL and a process that exits before its terminal result'
       cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
       _spawnSyncImpl: versionProbe(), _spawnImpl: recordedSpawn(`${recording}\n`),
     })).rejects.toThrow('without a complete JSONL result');
+  });
+});
+
+describe('profile .env: the key reaches a 0.22.5 detached gateway', () => {
+  const KEY = 'sk-or-v1-profileenvsentinel0123456789';
+  const modeOf = async (path) => (await stat(path)).mode & 0o777;
+  const turn = async (home, env, observed = []) => hermes.spawn('hello', {
+    environment: { model: 'test-model' }, cwd: home, _hermesHome: join(home, 'profile'), env,
+    _spawnSyncImpl: versionProbe(), onSpawn: (event) => observed.push(event),
+    _spawnImpl: recordedSpawn(await fixture('first-turn', '0.22.5'), (...call) => observed.push(call)),
+  });
+
+  test('creates the profile .env at 0600 in a 0700 home, and leaves it for the gateway', async () => {
+    await withHome(async (home) => {
+      const observed = [];
+      await turn(home, { OPENROUTER_API_KEY: KEY, OPENROUTER_BASE_URL: 'https://openrouter.example/api/v1' }, observed);
+      const profile = join(home, 'profile');
+      expect(await readFile(join(profile, '.env'), 'utf8'))
+        .toBe(`OPENROUTER_API_KEY=${KEY}\nOPENROUTER_BASE_URL=https://openrouter.example/api/v1\n`);
+      expect(await modeOf(join(profile, '.env'))).toBe(0o600);
+      expect(await modeOf(profile)).toBe(0o700);
+      expect((await readdir(profile)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
+      expect(observed.length).toBeGreaterThan(0);
+      for (const event of observed) {
+        const { env, ...rest } = Array.isArray(event) ? { ...event[2], args: event[1] } : event;
+        expect(JSON.stringify(rest)).not.toContain(KEY);
+      }
+    });
+  });
+
+  test('keeps the user\'s own lines and overwrites only the keys the wrapper owns', async () => {
+    await withHome(async (home) => {
+      const profile = join(home, 'profile');
+      await mkdir(profile, { recursive: true });
+      await writeFile(join(profile, '.env'), [
+        '# my profile', 'TELEGRAM_BOT_TOKEN=user-owned', 'OPENROUTER_API_KEY=stale-key',
+        'export OPENROUTER_BASE_URL=https://stale.example', 'OPENROUTER_API_KEY_BACKUP=user-backup', '',
+      ].join('\n'), { mode: 0o600 });
+      await turn(home, { OPENROUTER_API_KEY: KEY, OPENROUTER_BASE_URL: 'https://openrouter.example/api/v1' });
+      expect(await readFile(join(profile, '.env'), 'utf8')).toBe([
+        '# my profile', 'TELEGRAM_BOT_TOKEN=user-owned', 'OPENROUTER_API_KEY_BACKUP=user-backup',
+        `OPENROUTER_API_KEY=${KEY}`, 'OPENROUTER_BASE_URL=https://openrouter.example/api/v1', '',
+      ].join('\n'));
+    });
+  });
+
+  test('an unset base URL leaves the user\'s base URL line alone', async () => {
+    await withHome(async (home) => {
+      const profile = join(home, 'profile');
+      await mkdir(profile, { recursive: true });
+      await writeFile(join(profile, '.env'), 'OPENROUTER_BASE_URL=https://mine.example\n', { mode: 0o600 });
+      await turn(home, { OPENROUTER_API_KEY: KEY });
+      expect(await readFile(join(profile, '.env'), 'utf8'))
+        .toBe(`OPENROUTER_BASE_URL=https://mine.example\nOPENROUTER_API_KEY=${KEY}\n`);
+    });
+  });
+
+  test('a rewrite never loosens the mode, and tightens a loose file or home', async () => {
+    await withHome(async (home) => {
+      const profile = join(home, 'profile');
+      await turn(home, { OPENROUTER_API_KEY: KEY });
+      await turn(home, { OPENROUTER_API_KEY: `${KEY}rotated` });
+      expect(await modeOf(join(profile, '.env'))).toBe(0o600);
+      expect(await readFile(join(profile, '.env'), 'utf8')).toBe(`OPENROUTER_API_KEY=${KEY}rotated\n`);
+
+      await chmod(join(profile, '.env'), 0o644);
+      await chmod(profile, 0o755);
+      await turn(home, { OPENROUTER_API_KEY: `${KEY}rotated` });
+      expect(await modeOf(join(profile, '.env'))).toBe(0o600);
+      expect(await modeOf(profile)).toBe(0o700);
+    });
+  });
+
+  test('neither a refused value nor a failed write puts the key in the error', async () => {
+    await withHome(async (home) => {
+      const multiline = `${KEY}\nINJECTED=1`;
+      const refused = turn(home, { OPENROUTER_API_KEY: multiline });
+      await expect(refused).rejects.toThrow('OPENROUTER_API_KEY contains characters');
+      await refused.catch((error) => expect(`${error.message}${error.stack}`).not.toContain(KEY));
+      await expect(readFile(join(home, 'profile', '.env'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+
+      await mkdir(join(home, 'profile', '.env'), { recursive: true });
+      const failed = turn(home, { OPENROUTER_API_KEY: KEY });
+      await expect(failed).rejects.toThrow('Hermes profile .env');
+      await failed.catch((error) => expect(`${error.message}${error.stack}`).not.toContain(KEY));
+      expect((await readdir(join(home, 'profile'))).filter((name) => name.endsWith('.tmp'))).toEqual([]);
+    });
   });
 });

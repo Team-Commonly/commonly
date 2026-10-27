@@ -1,7 +1,7 @@
-/** Hermes 0.22.2 local CLI wrapper. Hermes owns provider I/O; this file only spawns it. */
+/** Hermes 0.22 local CLI wrapper. Hermes owns provider I/O; this file only spawns it. */
 import { spawn as childSpawn, spawnSync } from 'child_process';
-import { createHash } from 'crypto';
-import { mkdir } from 'fs/promises';
+import { createHash, randomBytes } from 'crypto';
+import { chmod, mkdir, readFile, rename, rm, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
 import { StringDecoder } from 'string_decoder';
@@ -9,11 +9,64 @@ import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
 import { requireSeatModel } from '../seat-model.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
-export const TESTED_HERMES_VERSION = '0.22.2';
+export const SUPPORTED_HERMES_VERSION_RANGE = '>=0.22.5 <0.23.0';
+const supportsHermesVersion = (version) => {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version || '');
+  if (!match) return false;
+  return Number(match[1]) === 0 && Number(match[2]) === 22 && Number(match[3]) >= 5;
+};
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const VERSION_TIMEOUT_MS = 15000;
 const MAX_STDERR_CHARS = 4096;
 const MAX_LINE_CHARS = 1024 * 1024;
+// Keys the wrapper owns in the profile's .env. Every other line is the user's.
+const PROFILE_ENV_KEYS = ['OPENROUTER_API_KEY', 'OPENROUTER_BASE_URL'];
+const PLAIN_ENV_VALUE = /^[A-Za-z0-9_\-.:/+=@%~]+$/;
+
+const definedKey = (line) => {
+  const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(line);
+  return match ? match[1] : null;
+};
+
+// From 0.22.5 the detached gateway serves a profiles/<hash> home with a child
+// env scrubbed of credentials and overlaid with that profile's own .env
+// (tools/environments/local.py, served_profile_child_env), so a key in the
+// spawn env never reaches the model. Hermes documents <profile>/.env as where
+// a profile's API keys live (website/docs/user-guide/profiles.md). The file
+// stays after the turn: the gateway outlives the spawn and rereads it.
+export const syncProfileEnv = async (home, env) => {
+  const owned = PROFILE_ENV_KEYS.filter((key) => env[key]);
+  for (const key of owned) {
+    if (!PLAIN_ENV_VALUE.test(env[key])) {
+      throw new Error(`${key} contains characters a Hermes .env line cannot carry unquoted; refusing to write it`);
+    }
+  }
+  const path = join(home, '.env');
+  let current = '';
+  try {
+    current = await readFile(path, 'utf8');
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw new Error(`Cannot read the Hermes profile .env (${error?.code || 'read failed'})`);
+  }
+  const kept = current.split(/\r?\n/).filter((line, index, lines) => (
+    !owned.includes(definedKey(line)) && !(index === lines.length - 1 && line === '')
+  ));
+  const next = `${[...kept, ...owned.map((key) => `${key}=${env[key]}`)].join('\n')}\n`;
+  await chmod(home, 0o700);
+  if (next === current) {
+    await chmod(path, 0o600);
+    return;
+  }
+  const temp = join(home, `.env.${process.pid}.${randomBytes(6).toString('hex')}.tmp`);
+  try {
+    await writeFile(temp, next, { mode: 0o600, flag: 'wx' });
+    await chmod(temp, 0o600);
+    await rename(temp, path);
+  } catch (error) {
+    await rm(temp, { force: true });
+    throw new Error(`Cannot write the Hermes profile .env (${error?.code || 'write failed'})`);
+  }
+};
 
 const readVersion = (env, spawnSyncImpl = spawnSync) => {
   let probe;
@@ -24,8 +77,8 @@ const readVersion = (env, spawnSyncImpl = spawnSync) => {
     if (probe.error?.code === 'ENOENT') return null;
     if (probe.error || probe.status !== 0) continue;
     const version = String(probe.stdout || '').match(/Hermes Agent v([^\s]+)/i)?.[1];
-    if (version !== TESTED_HERMES_VERSION) {
-      throw new Error(`Hermes ${version || 'unknown'} is unsupported; this adapter requires ${TESTED_HERMES_VERSION}`);
+    if (!supportsHermesVersion(version)) {
+      throw new Error(`Hermes ${version || 'unknown'} is unsupported; this adapter supports ${SUPPORTED_HERMES_VERSION_RANGE}. Run hermes update if yours is older than 0.22.5; releases 0.23 and later are not supported yet`);
     }
     return version;
   }
@@ -182,13 +235,18 @@ export const createHermesAdapter = ({
     await mkdir(home, { recursive: true, mode: 0o700 });
     const env = { ...(ctx.env || process.env), HERMES_HOME: home };
     if (!readVersion(env, ctx._spawnSyncImpl)) {
-      throw new Error('Hermes Agent 0.22.2 is not on PATH');
+      throw new Error(`Hermes Agent ${SUPPORTED_HERMES_VERSION_RANGE} is not on PATH; install for your OS: https://hermes-agent.nousresearch.com/docs/getting-started/installation`);
     }
     if (!env.OPENROUTER_API_KEY) {
       throw new Error('Supply the operator OPENROUTER_API_KEY through Secret Manager before running Hermes');
     }
+    await syncProfileEnv(home, env);
+    const cwd = ctx.cwd || process.cwd();
+    // 0.22.5's gateway rejects --no-restore-cwd; --in pins the workspace on
+    // both fresh and resumed turns. 0.22.2-0.22.4 are refused above, so no
+    // version-keyed flag is needed.
     const args = ['chat', '--oneshot', '--query-file', '-', '--format', 'stream-json',
-      '--provider', 'openrouter', '--source', 'tool', '--no-restore-cwd'];
+      '--provider', 'openrouter', '--source', 'tool', '--in', cwd];
     if (seatModel) args.push('--model', seatModel);
     if (ctx.sessionId) args.push('--resume', ctx.sessionId);
     const fullPrompt = memoryPreamble(prompt, ctx.memoryLongTerm, {
@@ -198,8 +256,8 @@ export const createHermesAdapter = ({
     const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0
       ? Math.min(requestedTimeout, DEFAULT_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS;
     return runHermes({
-      args, prompt: fullPrompt, cwd: ctx.cwd, env, timeoutMs,
-      spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args, { modelFlag: '--model', valueFlags: ['--query-file', '--format', '--provider', '--source', '--resume'] }),
+      args, prompt: fullPrompt, cwd, env, timeoutMs,
+      spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args, { modelFlag: '--model', valueFlags: ['--query-file', '--format', '--provider', '--source', '--in', '--resume'] }),
       credentials: spawnCredentials(ctx, ['OPENROUTER_API_KEY']),
     });
   },

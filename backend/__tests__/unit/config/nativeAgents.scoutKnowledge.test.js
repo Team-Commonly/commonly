@@ -96,7 +96,7 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/OpenCode or dsh through their guides, and Hermes from the command line/);
     expect(prompt).toMatch(/Do not claim any other tool connects\./);
     expect(prompt).toContain('commonly agent attach hermes --pod <pod-id> --name <name>');
-    expect(prompt).toMatch(/It needs Hermes 0\.22\.2 exactly/);
+    expect(prompt).toMatch(/It needs Hermes 0\.22\.5 or newer below 0\.23/);
     // The adapter fixes --provider openrouter and reads OPENROUTER_API_KEY from the host.
     expect(prompt).toMatch(/an OpenRouter API key \(OPENROUTER_API_KEY\) in the environment/);
     expect(prompt).toMatch(/do not say OpenRouter, or any model provider, was the one it was walked on/);
