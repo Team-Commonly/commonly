@@ -34,9 +34,22 @@ describe('recording the reported CLI', () => {
       _id: { $in: ['i1', 'i2'] },
       'config.runtime.host': 'byo',
       'config.runtime.adapter': null,
+      'config.runtime.runtimeType': { $in: expect.arrayContaining(['webhook', 'wrapper']) },
       'config.runtime.reportedCli': { $ne: 'claude' },
     });
     expect(update).toEqual({ $set: { 'config.runtime.reportedCli': 'claude' } });
+  });
+
+  test('the runtimeType filter admits exactly the rows the binding reads as unbound', () => {
+    recordReportedCli(['i1'], 'claude');
+    const admitted = mockUpdateMany.mock.calls[0][0]['config.runtime.runtimeType'].$in;
+    admitted.forEach((runtimeType) => {
+      expect(adapterForRuntimeBinding({ runtimeType, host: 'byo' })).toBeNull();
+    });
+    [...REPORTED_CLI_VALUES].forEach((runtimeType) => {
+      expect(admitted).not.toContain(runtimeType);
+      expect(adapterForRuntimeBinding({ runtimeType, host: 'byo' })).toBe(runtimeType);
+    });
   });
 
   test('only the CLI adapter names are accepted', () => {

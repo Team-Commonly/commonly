@@ -15,11 +15,13 @@
  * refuses or routes reads `runtime.adapter` / `runtimeType`, never this.
  *
  * Written only on a BYO seat (`runtime.host: 'byo'`, which install stamps on
- * every self-serve polling seat) and only while `runtime.adapter` is unset: a
- * declared adapter already names the CLI, and the report must not sit beside it
- * disagreeing. Hosted and native seats never carry it.
+ * every self-serve polling seat) and only while no adapter is bound: neither
+ * `runtime.adapter` nor an adapter-shaped `runtimeType`, the legacy binding
+ * `adapterForRuntimeBinding` reads. A declared adapter already names the CLI,
+ * and the report must not sit beside it disagreeing. Hosted and native seats never carry it.
  */
 import { AgentInstallation } from '../models/AgentRegistry';
+import { RUNTIME_KINDS } from './grantBrokerConfinement';
 
 /** The CLI's adapter names (`cli/src/lib/adapters/*.js`). */
 export const REPORTED_CLI_VALUES: ReadonlySet<string> = new Set([
@@ -62,6 +64,9 @@ export function recordReportedCli(installationIds: unknown[], value: unknown): v
         'config.runtime.host': 'byo',
         // Matches a missing adapter and an explicit null, both meaning unset.
         'config.runtime.adapter': null,
+        // An adapter-shaped runtimeType is a declared binding too
+        // (adapterForRuntimeBinding), so only a runtime kind leaves it unset.
+        'config.runtime.runtimeType': { $in: [...RUNTIME_KINDS] },
         'config.runtime.reportedCli': { $ne: cli },
       },
       { $set: { 'config.runtime.reportedCli': cli } },
