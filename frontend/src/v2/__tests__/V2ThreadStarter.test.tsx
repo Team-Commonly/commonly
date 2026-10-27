@@ -530,10 +530,18 @@ describe('second-person prompt placements', () => {
   const rerenderChat = (view, detail) => view.rerender(<AuthContext.Provider value={authValue}><MemoryRouter>
     <V2Thread detail={detail} />
   </MemoryRouter></AuthContext.Provider>);
+  const scrollListTo = (scrollTop) => {
+    const list = document.querySelector('.v2-chat__messages');
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, value: 2000 });
+    Object.defineProperty(list, 'clientHeight', { configurable: true, value: 400 });
+    list.scrollTop = scrollTop;
+    fireEvent.scroll(list);
+  };
   test('when the invite card mounts with the reader at the end, the thread follows it into view', async () => {
     const settled = withReply();
     const view = renderChat({ ...settled, hasMore: true });
     expect(document.querySelector('.v2-teammate')).toBeNull();
+    scrollListTo(1600);
     Element.prototype.scrollIntoView.mockClear();
     rerenderChat(view, settled);
     expect(await screen.findByRole('button', { name: 'Copy invite link' })).toBeInTheDocument();
@@ -542,11 +550,7 @@ describe('second-person prompt placements', () => {
   test('a reader scrolled up stays put when the invite card mounts', async () => {
     const settled = withReply();
     const view = renderChat({ ...settled, hasMore: true });
-    const list = document.querySelector('.v2-chat__messages');
-    Object.defineProperty(list, 'scrollHeight', { configurable: true, value: 2000 });
-    Object.defineProperty(list, 'clientHeight', { configurable: true, value: 400 });
-    list.scrollTop = 100;
-    fireEvent.scroll(list);
+    scrollListTo(100);
     Element.prototype.scrollIntoView.mockClear();
     rerenderChat(view, settled);
     expect(await screen.findByRole('button', { name: 'Copy invite link' })).toBeInTheDocument();
