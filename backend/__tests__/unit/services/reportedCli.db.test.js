@@ -57,6 +57,13 @@ describe('recordReportedCli on the real schema', () => {
     expect(runtime).toEqual({ runtimeType: 'webhook', host: 'byo', reportedCli: 'codex' });
   });
 
+  test('a BYO seat with no runtimeType at all is unbound and gets the label', async () => {
+    const row = await install({ host: 'byo' });
+    recordReportedCli([row._id], 'goose');
+    await until(async () => (await runtimeOf(row._id)).reportedCli === 'goose');
+    expect(await runtimeOf(row._id)).toEqual({ host: 'byo', reportedCli: 'goose' });
+  });
+
   test('an explicit null adapter counts as unset', async () => {
     const row = await install({ runtimeType: 'webhook', host: 'byo', adapter: null });
     recordReportedCli([row._id], 'claude');

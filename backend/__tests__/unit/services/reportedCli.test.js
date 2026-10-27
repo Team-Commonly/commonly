@@ -43,9 +43,11 @@ describe('recording the reported CLI', () => {
   test('the runtimeType filter admits exactly the rows the binding reads as unbound', () => {
     recordReportedCli(['i1'], 'claude');
     const admitted = mockUpdateMany.mock.calls[0][0]['config.runtime.runtimeType'].$in;
+    expect(admitted).toContain(null);
     admitted.forEach((runtimeType) => {
       expect(adapterForRuntimeBinding({ runtimeType, host: 'byo' })).toBeNull();
     });
+    expect(adapterForRuntimeBinding({ host: 'byo' })).toBeNull();
     [...REPORTED_CLI_VALUES].forEach((runtimeType) => {
       expect(admitted).not.toContain(runtimeType);
       expect(adapterForRuntimeBinding({ runtimeType, host: 'byo' })).toBe(runtimeType);

@@ -65,8 +65,9 @@ export function recordReportedCli(installationIds: unknown[], value: unknown): v
         // Matches a missing adapter and an explicit null, both meaning unset.
         'config.runtime.adapter': null,
         // An adapter-shaped runtimeType is a declared binding too
-        // (adapterForRuntimeBinding), so only a runtime kind leaves it unset.
-        'config.runtime.runtimeType': { $in: [...RUNTIME_KINDS] },
+        // (adapterForRuntimeBinding), so only a runtime kind, or none at all
+        // (null also matches missing), leaves it unset.
+        'config.runtime.runtimeType': { $in: [...RUNTIME_KINDS, null] },
         'config.runtime.reportedCli': { $ne: cli },
       },
       { $set: { 'config.runtime.reportedCli': cli } },
