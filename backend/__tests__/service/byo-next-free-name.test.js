@@ -7,6 +7,8 @@ const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const catalogRoutes = require('../../routes/registry/catalog');
+const { proposeAction } = require('../../services/approvalActionService');
+const ApprovalAction = require('../../models/ApprovalAction');
 
 const JWT_SECRET = 'test-jwt-secret-byo-next-name';
 
@@ -58,6 +60,49 @@ describe('BYO next-free-name lookup', () => {
       .set('Authorization', `Bearer ${token}`);
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ name: 'sam-claude-3' });
+  });
+
+  it('the connect card proposes the same free name the connect page would land on (TASK-329)', async () => {
+    const here = await pod('here', [owner._id]);
+    const elsewhere = await pod('elsewhere', [owner._id]);
+    await Promise.all([
+      install(elsewhere, 'sam-claude'),
+      install(elsewhere, 'sam-claude-2'),
+    ]);
+
+    const result = await proposeAction({
+      podId: String(here._id),
+      agentName: 'scout',
+      instanceId: 'default',
+      displayName: 'Scout',
+      actionType: 'connect_local_agent',
+      params: { name: 'sam-claude', adapter: 'claude' },
+      summary: "Connect your own agent as 'sam-claude'",
+      ownerUserId: owner._id,
+    });
+    expect(result.ok).toBe(true);
+    const row = await ApprovalAction.findById(result.approvalId).lean();
+    expect(row.params).toEqual({ name: 'sam-claude-3', adapter: 'claude' });
+    expect(row.summary).toBe("Connect your own agent as 'sam-claude-3'");
+  });
+
+  it('a seat the owner already holds in this pod keeps its name on reconnect', async () => {
+    const here = await pod('reconnect', [owner._id]);
+    await install(here, 'sam-codex');
+
+    const result = await proposeAction({
+      podId: String(here._id),
+      agentName: 'scout',
+      instanceId: 'default',
+      displayName: 'Scout',
+      actionType: 'connect_local_agent',
+      params: { name: 'sam-codex', adapter: 'codex' },
+      summary: "Reconnect 'sam-codex'",
+      ownerUserId: owner._id,
+    });
+    expect(result.ok).toBe(true);
+    const row = await ApprovalAction.findById(result.approvalId).lean();
+    expect(row.params.name).toBe('sam-codex');
   });
 
   it('requires authentication and a valid base', async () => {
