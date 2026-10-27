@@ -131,7 +131,7 @@ test('D139 marks: showing the card pings invite-card-shown; dismissing pings inv
   const view = render(<V2BringTeammate {...props} enabled={false} />);
   expect(mockRecordOnce).not.toHaveBeenCalled();
   view.rerender(<V2BringTeammate {...props} enabled />);
-  expect(mockRecordOnce).toHaveBeenCalledWith(mockApi, 'invite-card-shown');
+  expect(mockRecordOnce).toHaveBeenCalledWith(mockApi, 'invite-card-shown', 'person');
   expect(mockRecord).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'teammate.dismiss' }));
   expect(mockRecord).toHaveBeenCalledWith(mockApi, 'invite-card-dismissed');

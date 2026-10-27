@@ -10,12 +10,15 @@ export const recordByoStep = (api: V2ApiClient, step: ByoStep): void => {
 };
 
 // Surface steps fire on every mount; the server mark is write-once, so one
-// ping per page load is enough.
-const sentThisLoad = new Set<ByoStep>();
-export const recordByoStepOnce = (api: V2ApiClient, step: ByoStep): void => {
-  if (sentThisLoad.has(step)) return;
-  sentThisLoad.add(step);
-  recordByoStep(api, step);
+// ping per signed-in person per page load is enough. A step stays suppressed
+// while its request is in flight and is forgotten if the request fails, so a
+// later mount can retry.
+const sentThisLoad = new Set<string>();
+export const recordByoStepOnce = (api: V2ApiClient, step: ByoStep, viewerId: string): void => {
+  const key = `${viewerId}:${step}`;
+  if (sentThisLoad.has(key)) return;
+  sentThisLoad.add(key);
+  void api.post('/api/stats/byo-step', { step }).catch(() => { sentThisLoad.delete(key); });
 };
 /** Test seam: forget which steps this page load has sent. */
 export const resetByoStepsForTest = (): void => { sentThisLoad.clear(); };

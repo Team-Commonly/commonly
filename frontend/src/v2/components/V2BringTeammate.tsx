@@ -140,7 +140,8 @@ const BringTeammateContent: React.FC<Props> = ({
   useEffect(() => {
     if (!shown) return;
     onShownRef.current?.();
-    recordByoStepOnce(apiRef.current, 'invite-card-shown');
+    recordByoStepOnce(apiRef.current, 'invite-card-shown', userId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shown]);
   const card = shown ? (
     <section className={`v2-teammate${source === 'solo-pod' ? ' v2-teammate--empty' : ' v2-teammate--message'}`} aria-label={t('teammate.title', { podName })}>

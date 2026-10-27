@@ -458,12 +458,16 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     }
     return byMessage;
   }, [messages, viewerId, onOpenInvite, viewerHoldsHostedAgent, viewerOwnsPod, addedFirstTaskMessages, pod?._id, t]);
-  const byoOfferShown = useMemo(() => [...startsByMessageId.values()]
-    .some((starts) => starts.some((start) => start.id === 'open-byo')), [startsByMessageId]);
+  // Only rows that render with their starts count: a flat message or a thread
+  // root. A reply folded into a thread card renders without starts.
+  const byoOfferShown = useMemo(() => threadView.some((item) => {
+    const id = item.kind === 'message' ? String(item.message.id) : item.rootId;
+    return (startsByMessageId.get(id) || []).some((start) => start.id === 'open-byo');
+  }), [threadView, startsByMessageId]);
   useEffect(() => {
     // D139: write-once onboarding mark (User.onboarding.byoOfferShownAt).
-    if (byoOfferShown) recordByoStepOnce(api, 'byo-offer-shown');
-  }, [byoOfferShown, api]);
+    if (byoOfferShown && viewerId) recordByoStepOnce(api, 'byo-offer-shown', viewerId);
+  }, [byoOfferShown, api, viewerId]);
 
   const [decisions, setDecisions] = useState<ThreadDecision[]>([]);
   const [settledDecisionByMessageId, setSettledDecisionByMessageId] = useState<Map<string, V2DecisionRuling>>(new Map());
