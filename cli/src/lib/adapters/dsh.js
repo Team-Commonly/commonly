@@ -296,6 +296,9 @@ export default {
   requiresModel: true,
   name: 'dsh', runtimeType: 'dsh', supportsProvider: true,
 
+  // The attach gate defers to this for dsh's one confined shape (D106).
+  confinesOwnSandbox: (environment) => isConfinedDsh(environment),
+
   async validateEnvironment(environment, workspacePath) {
     const validation = validateEnvironmentSpec(environment);
     if (!validation.ok) throw new Error(validation.errors.join('; '));

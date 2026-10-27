@@ -939,8 +939,16 @@ export const updateAgentConfiguration = async ({
  * two gates, because those gates compare `trust` directly.
  */
 export const resolveAttachSandbox = ({
-  environment, adapterName, platform = process.platform,
+  environment, adapterName, adapter = null, platform = process.platform,
 } = {}) => {
+  // An adapter that enforces one confined shape of its own (dsh: Seatbelt with a
+  // restricted network and NO trust) says so here, and its check is the one that
+  // decides: the trust-keyed gates below cannot express that shape, so before
+  // this they refused the only environment dsh accepts (D106). The adapter's
+  // check throws on every other shape, so this admits nothing it would refuse.
+  if (typeof adapter?.confinesOwnSandbox === 'function' && adapter.confinesOwnSandbox(environment)) {
+    return { mode: environment.sandbox.mode, trust: environment.sandbox.trust };
+  }
   const sandbox = normalizeSandboxTrust(environment?.sandbox);
   const trust = sandbox?.trust;
   // `workspace` is claude-only for now (TASK-294). Refused here with the words
@@ -1022,7 +1030,7 @@ export const performAttach = async ({
     }
     log(`workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
 
-    const { mode: sandboxMode } = resolveAttachSandbox({ environment, adapterName });
+    const { mode: sandboxMode } = resolveAttachSandbox({ environment, adapterName, adapter });
     if (sandboxMode === 'bwrap') {
       const bwrap = detectBwrap();
       if (!bwrap.available) {
@@ -1056,10 +1064,10 @@ export const performAttach = async ({
         }
         const adapterLabel = ({ opencode: 'OpenCode', qwen: 'Qwen', claude: 'Claude' })[adapterName]
           || adapterName;
-        log(
-          `sandbox: public ${sandboxMode} via macOS Seatbelt `
-          + `(deny-by-default host filesystem; ${adapterLabel}/MCP network retained)`,
-        );
+        log(adapterName === 'dsh'
+          ? `sandbox: confined dsh ${sandboxMode} via macOS Seatbelt (restricted network)`
+          : `sandbox: public ${sandboxMode} via macOS Seatbelt `
+            + `(deny-by-default host filesystem; ${adapterLabel}/MCP network retained)`);
       }
     } else if (sandboxMode !== 'none' && sandboxMode !== undefined) {
       throw new Error(

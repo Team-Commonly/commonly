@@ -111,6 +111,45 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
   });
 });
 
+const { default: dsh } = await import('../src/lib/adapters/dsh.js');
+
+describe("resolveAttachSandbox — dsh's confined shape (D106)", () => {
+  const confined = { sandbox: { mode: 'workspace', network: { policy: 'restricted' } } };
+
+  test('attach dsh admits the one shape the dsh adapter enforces, with no trust', () => {
+    // Before this, the trust-keyed gate refused mode:'workspace' without public
+    // trust, while dsh throws on public or workspace trust: no env passed both.
+    expect(resolveAttachSandbox({ environment: confined, adapterName: 'dsh', adapter: dsh }))
+      .toEqual({ mode: 'workspace', trust: undefined });
+  });
+
+  test('dsh still refuses every other sandbox shape at attach', () => {
+    for (const sandbox of [
+      { mode: 'workspace' },
+      { mode: 'workspace', network: { policy: 'open' } },
+      { mode: 'workspace', network: { policy: 'restricted' }, extra: 1 },
+      { mode: 'read-only', network: { policy: 'restricted' } },
+      { mode: 'workspace', network: { policy: 'restricted' }, trust: 'public' },
+      { mode: 'workspace', network: { policy: 'restricted' }, trust: 'workspace' },
+    ]) {
+      expect(() => resolveAttachSandbox({ environment: { sandbox }, adapterName: 'dsh', adapter: dsh }))
+        .toThrow(/dsh adapter/);
+    }
+  });
+
+  test('the same env is still refused for adapters without their own confined shape', () => {
+    for (const adapterName of ['claude', 'codex', 'opencode', 'qwen', 'pi']) {
+      expect(() => resolveAttachSandbox({ environment: confined, adapterName, adapter: { name: adapterName } }))
+        .toThrow(/requires public trust and an adapter with sandbox enforcement/);
+    }
+  });
+
+  test('without the adapter object, the old refusal still holds for dsh', () => {
+    expect(() => resolveAttachSandbox({ environment: confined, adapterName: 'dsh' }))
+      .toThrow(/requires public trust and an adapter with sandbox enforcement/);
+  });
+});
+
 describe('setWakeOnMessage', () => {
   const record = {
     agentName: 'juno', podId: 'pod-9', instanceId: 'default', runtimeToken: 'cm_agent_j',
