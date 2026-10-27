@@ -267,6 +267,9 @@ spec:
         - name: litellm-config
           mountPath: /app/deepseek_tool_shim_core.py
           subPath: deepseek_tool_shim_core.py
+        - name: litellm-config
+          mountPath: /app/model_fallback_signal.py
+          subPath: model_fallback_signal.py
         - name: chatgpt-auth
           mountPath: /chatgpt-auth
         resources:
