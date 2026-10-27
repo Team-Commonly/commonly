@@ -134,11 +134,20 @@ Then re-verify as in section 3, against the old tag.
 New from v3.0.0. Earlier releases were v1.0.0 (04-07), v1.1.0, v2.0.0 (07-06)
 and v2.1.0 (07-23).
 
-**Pre-release first, final when proven.** A major version ships first as
-`vX.Y.Z-beta.N`, published as a GitHub pre-release. The final `vX.Y.Z` is
-tagged only after the release's own exit list is done; for v3 that list is the
-multiplayer walk, the grants walk, the repo sweep, a clean bug burn-down and a
-staging soak. When in doubt, ship another beta.
+**Final only when the gate is green; otherwise a beta.** A major version is
+tagged final (`vX.Y.Z`) only when every item on its release gate is green at
+the freeze. If any item is red, the same SHA ships as `vX.Y.Z-beta.N`, published
+as a GitHub pre-release, and the final waits for the gate. For v3.0.0 the gate
+is:
+
+1. the multiplayer walk passed on prod;
+2. no open P0 or P1 bug on prod;
+3. the repo sweep merged and the root clean;
+4. staging soak green from the day's deploy through the freeze;
+5. every release-note line walked, or cut;
+6. first-touch docs clean.
+
+When in doubt, ship the beta.
 
 1. **Tag the deployed SHA.** After section 3 passes, the operator tags and
    pushes:
