@@ -25,7 +25,7 @@ const {
   AGENT_IDENTITY_CONFLICT_CODE?: string;
 };
 const AgentMessageService = require('../../services/agentMessageService');
-const { deriveAgentState } = require('../../services/agentStateService');
+const { deriveAgentState, runInstructionFor } = require('../../services/agentStateService');
 const FirstContactService = require('../../services/firstContactService');
 const HostedRuntime = require('../../services/hostedRuntimeService');
 const HostedEngine = require('../../services/hostedEngine');
@@ -977,7 +977,13 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         // been announced as dead. Same identity match the pod roster uses
         // (routes/pods.ts:437).
         let state = 'unknown';
-        let fixCommand = `commonly agent run ${safeAgentName}`;
+        // The default is what the seat's own runtime needs. It used to be the
+        // BYO command for every seat, so a webhook agent's intro told its
+        // owner to run a command that starts the wrong program.
+        let fixCommand: string | null = runInstructionFor({
+          agentName: safeAgentName,
+          config: normalizeConfigMap(installation.config) || {},
+        });
         try {
           const botRow = await User.findOne({
             isBot: true,
