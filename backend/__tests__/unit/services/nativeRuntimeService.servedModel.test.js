@@ -127,9 +127,10 @@ test('a normal turn records the two equal, with no hops', async () => {
   expect(turn).toEqual({ model: DEEPSEEK, servedModel: DEEPSEEK, fallbacks: undefined });
 });
 
-test('without the group header the body model is used, and without either the request', async () => {
+test('without the group header the body model is used, and without either nothing is recorded', async () => {
   expect(await turnOf(NEMOTRON, { model: DEEPSEEK, headers: {} }))
     .toEqual({ model: NEMOTRON, servedModel: DEEPSEEK, fallbacks: undefined });
-  expect(await turnOf(DEEPSEEK, { headers: { 'x-litellm-attempted-fallbacks': 'not-a-number' } }))
-    .toEqual({ model: DEEPSEEK, servedModel: DEEPSEEK, fallbacks: undefined });
+  // An unmeasured turn is not recorded as served by the requested model.
+  expect(await turnOf(NEMOTRON, { headers: { 'x-litellm-attempted-fallbacks': 'not-a-number' } }))
+    .toEqual({ model: NEMOTRON, servedModel: undefined, fallbacks: undefined });
 });

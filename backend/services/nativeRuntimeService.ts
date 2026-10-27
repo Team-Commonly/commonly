@@ -1418,19 +1418,23 @@ function extractCallId(data: LiteLLMResponse, headers: Record<string, unknown>):
 // x-litellm-model-group on every response, and x-litellm-attempted-fallbacks
 // says a fallback happened (v1.106.2; it is the outermost hop's depth, so 1 on a
 // two-hop chain). The proxy restamps the body's `model` to the requested group
-// unless a fallback happened, so the body comes second. Native calls send
-// disable_fallbacks (D81), so the two differ only if something overrode it,
-// such as a key whose metadata sets disable_fallbacks.
+// unless a fallback happened, so the body comes second. When neither names a
+// model, nothing was measured and the field stays unset; every reader falls
+// back to the requested model. Native calls send disable_fallbacks (D81), so
+// the two differ only if something overrode it, such as a key whose metadata
+// sets disable_fallbacks.
 function servedModelOf(
   data: LiteLLMResponse,
   headers: Record<string, unknown>,
-  requested: string,
-): { servedModel: string; fallbacks?: number } {
+): { servedModel?: string; fallbacks?: number } {
   const group = headers?.['x-litellm-model-group'];
   const hops = Number(headers?.['x-litellm-attempted-fallbacks']);
   const servedModel = (typeof group === 'string' && group)
-    || (typeof data?.model === 'string' && data.model) || requested;
-  return { servedModel, ...(Number.isInteger(hops) && hops > 0 ? { fallbacks: hops } : {}) };
+    || (typeof data?.model === 'string' && data.model) || undefined;
+  return {
+    ...(servedModel ? { servedModel } : {}),
+    ...(Number.isInteger(hops) && hops > 0 ? { fallbacks: hops } : {}),
+  };
 }
 
 function mapTriggerType(raw: string): NativeRunTrigger['type'] {
@@ -2162,7 +2166,7 @@ export async function runAgent(
         llmResponseText: (msg.content as string | null) || undefined,
         elapsedMs: 0,
         liteLLMCallId: extractCallId(llmResponse, responseHeaders),
-        ...servedModelOf(llmResponse, responseHeaders, model),
+        ...servedModelOf(llmResponse, responseHeaders),
       };
 
       const toolCalls = msg.tool_calls || [];
