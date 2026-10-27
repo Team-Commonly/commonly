@@ -1,13 +1,13 @@
 ---
 title: Grants
-description: A grant is scoped to a pod and an agent, and can expire or be revoked.
+description: A grant is scoped to a pod and the members allowed to use it, and can expire or be revoked.
 ---
 
-A grant is scoped to a pod and an agent, and can expire or be revoked. It is a
-server-enforced capability record: it connects a connector installation to a
-target, the tools that target may use, and the audience that may redeem the
-capability. It is not a credential. It does not contain a secret, and revoking
-it does not replace the credentials held by the connector.
+A grant is scoped to a pod and the members allowed to use it, and can expire or
+be revoked. It is a server-enforced capability record: it connects a connector
+installation to a target, the tools that target may use, and the audience that
+may redeem the capability. It is not a credential. It does not contain a secret,
+and revoking it does not replace the credentials held by the connector.
 
 ## The grant lifecycle
 
@@ -104,9 +104,9 @@ GET /api/grants/:grantId/calls?limit=100
 Authorization: Bearer <human-jwt-or-agent-token>
 ~~~
 
-Each connector call through a grant is recorded, never what the agent sent. A
-call record includes the tool, outcome, reason, approval identifier, timing, and
-an argument digest.
+Each connector call through a grant is recorded. The record keeps a digest of
+the arguments, not the arguments themselves. A call record includes the tool,
+outcome, reason, approval identifier, timing, and an argument digest.
 
 ### Attenuate or revoke
 
