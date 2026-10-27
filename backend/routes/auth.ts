@@ -2,7 +2,7 @@
 const express = require('express');
 // eslint-disable-next-line global-require
 const rateLimit = require('express-rate-limit');
-const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
+const { cloudflareIpRateLimitKeyGenerator, loginEmailRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 const { platformIpRateLimit } = require('../middleware/platformRateLimit');
 const { refuseDollarKeys } = require('../middleware/refuseDollarKeys');
 const { loginEmailOf } = require('../utils/loginEmail');
@@ -105,15 +105,14 @@ const loginLimiter = rateLimit({
 // password sign-in for up to 15 minutes. OAuth sign-in and reset still work.
 // The address comes from the helper login uses, so a body this skips is one
 // login refuses.
-const loginAccountKey = (req: { body?: { email?: unknown } }) => loginEmailOf(req.body);
 const loginAccountLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true,
-  skip: (req: { body?: { email?: unknown } }) => process.env.NODE_ENV === 'test' || !loginAccountKey(req),
-  keyGenerator: (req: { body?: { email?: unknown } }) => `login-account:${loginAccountKey(req)}`,
+  skip: (req: { body?: { email?: unknown } }) => process.env.NODE_ENV === 'test' || !loginEmailOf(req.body),
+  keyGenerator: loginEmailRateLimitKeyGenerator,
   handler: rateLimitHandler('rate limit exceeded: 10 failed sign-ins for this address per 15 minutes'),
 });
 
