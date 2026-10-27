@@ -65,6 +65,8 @@ describe('isConnectIntent', () => {
     'attach a photo from my laptop',
     'link: https://claude.ai/chat/abc',
     'connect to claude.ai for research',
+    'connect to the Claude API',
+    'link to the Claude docs',
   ])('does not match: %s', (text) => {
     expect(isConnectIntent(text)).toBe(false);
   });
