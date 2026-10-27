@@ -101,7 +101,7 @@ describe('Administrator role concurrency', () => {
     const Lock = require('../../models/AdminUserMutationLock');
     if (kind === 'ban') await User.updateOne({ _id: bob._id }, { $set: { role: 'user' } });
     const write = (kind === 'role' ? jest.spyOn(User, 'findOneAndUpdate')
-      : jest.spyOn(User.prototype, kind === 'delete' ? 'deleteOne' : 'save'))
+      : kind === 'delete' ? jest.spyOn(User, 'findOneAndDelete') : jest.spyOn(User.prototype, 'save'))
       .mockRejectedValueOnce(new Error('write outcome unknown'));
     try {
       const pending = kind === 'delete' ? request(app).delete(`/api/admin/users/${bob._id}`)

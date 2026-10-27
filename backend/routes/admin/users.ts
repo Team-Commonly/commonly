@@ -386,8 +386,19 @@ router.delete('/:userId', adminWriteLimiter, auth, adminAuth, async (req: any, r
         });
       }
 
+      // Self-deletion claims do not take the admin lock. Coordinate on the
+      // target document itself so a claim appearing after the reads above
+      // cannot lose its recoverable owner during billing preflight or cleanup.
       beginWrite();
-      await target.deleteOne();
+      const deleted = await User.findOneAndDelete({
+        _id: target._id, accountDeletionRequestedAt: { $exists: false },
+      });
+      if (!deleted) {
+        return mutationResponse(409, {
+          error: 'Account changed or self-deletion is pending. Refresh before trying again.',
+          code: 'ACCOUNT_CHANGED',
+        });
+      }
       return mutationResponse(200, { message: 'User deleted successfully' });
     });
     return res.status(result.status).json(result.body);
