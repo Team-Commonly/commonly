@@ -87,6 +87,39 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
     expect(File.findByFileName).toHaveBeenCalledWith('new.png');
   });
 
+  // TASK-315: the served type comes from the allowlisted extension, never the
+  // type the uploading client declared, and the browser may not sniff past it.
+  describe('served headers', () => {
+    const fromDriver = (mime) => mockStore.get.mockResolvedValue({
+      stream: Readable.from(Buffer.from('x')), mime, size: 1,
+    });
+
+    it.each([
+      ['photo.png', 'image/png', 'inline'],
+      ['notes.TXT', 'text/plain; charset=utf-8', 'inline'],
+      ['diagram.svg', 'image/svg+xml', 'attachment'],
+      ['deck.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'attachment'],
+      ['bundle.zip', 'application/zip', 'attachment'],
+      ['page.html', 'application/octet-stream', 'attachment'],
+      ['noextension', 'application/octet-stream', 'attachment'],
+    ])('%s stored as text/html is served as %s, %s, nosniff', async (name, type, disposition) => {
+      fromDriver('text/html');
+      const res = await request(app).get(`/api/uploads/${name}`).expect(200);
+      expect(res.headers['content-type']).toBe(type);
+      expect(res.headers['content-disposition']).toBe(disposition);
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+    });
+
+    it('a legacy inline record is served by its extension, not its stored type', async () => {
+      mockStore.get.mockResolvedValue(null);
+      File.findByFileName.mockResolvedValue({ data: Buffer.from('<p>x</p>'), contentType: 'text/html' });
+      const res = await request(app).get('/api/uploads/old.txt').expect(200);
+      expect(res.headers['content-type']).toBe('text/plain; charset=utf-8');
+      expect(res.headers['content-disposition']).toBe('inline');
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+    });
+  });
+
   // TASK-133 (d): the Bearer branch of authorizePodFile verified the signature and
   // the ACL and never read the row, so a bot user's session read pod-scoped
   // attachments as if it were the person the row was converted from.
