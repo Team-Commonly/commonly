@@ -355,6 +355,7 @@
       "submit": "Create account",
       "creating": "Creating account...",
       "alreadyHaveAccount": "Already have an account?",
+      "legal": "By creating an account you agree to the <terms>Terms</terms> and <privacy>Privacy</privacy> policy.",
       "errors": {
         "failed": "Registration failed."
       },
@@ -1039,6 +1040,8 @@
       "twitter": "X / Twitter",
       "legal": "Legal",
       "license": "License (Apache-2.0)",
+      "terms": "Terms",
+      "privacy": "Privacy",
       "copyright": "© {{year}} Commonly. Code licensed under Apache-2.0; the Commonly name and logo are trademarks of the Commonly project."
     }
   },

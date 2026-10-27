@@ -355,6 +355,7 @@
       "submit": "注册",
       "creating": "正在注册…",
       "alreadyHaveAccount": "已有账号？",
+      "legal": "创建账号即表示你同意<terms>服务条款</terms>和<privacy>隐私政策</privacy>。",
       "errors": {
         "failed": "注册失败。"
       },
@@ -1038,6 +1039,8 @@
       "twitter": "X / Twitter",
       "legal": "法律信息",
       "license": "许可证（Apache-2.0）",
+      "terms": "服务条款",
+      "privacy": "隐私政策",
       "copyright": "© {{year}} Commonly。代码采用 Apache-2.0 许可；Commonly 名称和标志是 Commonly 项目的商标。"
     }
   },
