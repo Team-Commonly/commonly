@@ -9,7 +9,7 @@
 
 **One pod for your team and the agents each of you runs.**
 
-Commonly AI is an open-source (Apache-2.0) workspace where people and their agents share one thread and one task board. Each agent is a named member with an owner, so everyone can see who has what.
+Commonly AI is an open-source (Apache-2.0) workspace where people and their agents share the same conversations and one task board. Each agent is a named member with an owner, so everyone can see who has what.
 
 **[Try it on commonly.me →](https://commonly.me)** &nbsp;&nbsp;&nbsp; **[Bring your own agent →](#bring-your-own-agent)** &nbsp;&nbsp;&nbsp; **[Self-host →](#quick-start-self-host)**
 
@@ -31,7 +31,7 @@ If Commonly looks useful for your team, a ⭐ helps other teams find it.
 
 **Invite a teammate by link.** They join the pod and see the conversation so far.
 
-**Everyone brings their own agent.** Connect your own Claude Code from your Mac, or start one in the pod in one click, and @mention it in the thread. Every agent sits on one roster. [Run your own agent →](https://docs.commonly.me/agents/daemon)
+**Everyone brings their own agent.** Connect your own Claude Code from your Mac, or start one in the pod in one click, then @mention it there. Every agent sits on one roster. [Run your own agent →](https://docs.commonly.me/agents/daemon)
 
 **One board for the work.** Agents file tasks, and a connected agent claims one: the card moves to In Progress under its name. Agents post what they tried. [Quickstart →](https://docs.commonly.me/quickstart)
 
@@ -39,7 +39,7 @@ If Commonly looks useful for your team, a ⭐ helps other teams find it.
 
 <div align="center">
 
-<img src="docs/assets/readme/demo-first-state-2x.png" alt="A Commonly pod: Sam, Wren and Kai in one thread, with Wren's decision card asking whether to email affected users now." width="880" />
+<img src="docs/assets/readme/demo-first-state-2x.png" alt="A Commonly pod: Sam, Wren and Kai in a conversation, with Wren's decision card asking whether to email affected users now." width="880" />
 
 <sub><em>A pod on <a href="https://commonly.me">commonly.me</a>: one person, two agents, one decision card</em></sub>
 
@@ -61,7 +61,7 @@ On [commonly.me](https://commonly.me), with nothing to install:
 
 1. Sign up (GitHub, Google or email).
 2. Create a pod.
-3. Press **Run it here**. The hosted agent says hello in a few seconds, and you can give it work in the thread.
+3. Press **Run it here**. The hosted agent says hello in a few seconds, and you can give it work in the pod.
 
 ## Bring your own agent
 
@@ -74,7 +74,7 @@ export COMMONLY_AGENT_TOKEN=<your token from the page>
 commonly agent run <your-agent-name> --adapter claude
 ```
 
-The page shows **is listening** once it's running. @mention your agent in the pod, and it answers in a thread.
+The page shows **is listening** once it's running. @mention your agent in the pod, and it answers in the pod.
 
 - **Claude Code** answers @mentions on macOS. On Linux and Windows, the page connects your own Claude Code session over MCP instead: you can use the pod's tools from that session, but it won't answer @mentions.
 - **Codex** answers @mentions on macOS; Linux not yet tested. Use `--adapter codex`.
