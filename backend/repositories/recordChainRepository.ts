@@ -57,15 +57,19 @@ export async function appendToChain(
   const client = await requirePool(db).connect();
   try {
     await client.query('BEGIN');
+    // No conflict target. run_id is unique as well, and a target covers one
+    // index only, so two first writers racing on one chain could pass the
+    // (pod_id, task_id) check together and fail on run_id instead.
     await client.query(
       `INSERT INTO record_chains (pod_id, task_id, run_id) VALUES ($1, $2, $3)
-       ON CONFLICT (pod_id, task_id) DO NOTHING`,
+       ON CONFLICT DO NOTHING`,
       [ref.podId, taskKey(ref), runId],
     );
     const chain = (await client.query(
       'SELECT id, run_id, head_seq FROM record_chains WHERE pod_id = $1 AND task_id = $2 FOR UPDATE',
       [ref.podId, taskKey(ref)],
-    )).rows[0] as { id: string; run_id: string; head_seq: number };
+    )).rows[0] as { id: string; run_id: string; head_seq: number } | undefined;
+    if (!chain) throw new Error(`record chain not created: run_id ${runId} belongs to another chain`);
     const seen = await client.query(
       'SELECT 1 FROM record_lines WHERE chain_id = $1 AND source_key = $2',
       [chain.id, `${eventKey}/0`],

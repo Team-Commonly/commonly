@@ -10,6 +10,7 @@ const path = require('path');
 const { runPgMigrations } = require('../../config/run-pg-migrations');
 const { createRealPgSchema } = require('../utils/realPgSchema');
 const { appendRecord, readRecordExport, BOARD_ACTOR } = require('../../services/recordService');
+const { appendToChain } = require('../../repositories/recordChainRepository');
 const { verifyRecord } = require('../../vendor/seats/src/record/format');
 
 const real = process.env.INTEGRATION_TEST === 'true' ? describe : describe.skip;
@@ -68,6 +69,32 @@ real('record chains on real PostgreSQL', () => {
       expect(kinds(out.jsonl).map((entry) => entry.seq)).toEqual(Array.from({ length: 30 }, (_, i) => i + 1));
       const chain = (await pool.query('SELECT head_seq, head_hash FROM record_chains')).rows;
       expect(chain).toEqual([{ head_seq: 30, head_hash: verified.head }]);
+    });
+
+    it('creates a new chain once when its first writers race', async () => {
+      // Both racers can pass the chain-row insert's conflict check before
+      // either commits; one round rarely shows it, forty almost always do.
+      const results = [];
+      for (let round = 0; round < 40; round += 1) {
+        const ref = { podId: POD, taskId: `TASK-race-${round}` };
+        // eslint-disable-next-line no-await-in-loop -- each round is its own race
+        results.push(...await Promise.allSettled(Array.from({ length: 12 }, (_, index) => appendRecord(ref, `e-${index}`, [
+          { kind: 'task.claimed', actor: AGENT },
+        ], pool))));
+      }
+      const failures = results.filter((result) => result.status === 'rejected');
+      expect(failures.map((result) => result.reason.message)).toEqual([]);
+      const chains = (await pool.query('SELECT head_seq FROM record_chains')).rows;
+      expect(chains).toHaveLength(40);
+      expect(chains.every((row) => row.head_seq === 12)).toBe(true);
+    });
+
+    it('refuses a run id that already names another chain, and writes nothing', async () => {
+      const build = () => ({ lines: ['{}'], headHash: '0'.repeat(64) });
+      await appendToChain({ podId: POD, taskId: 'TASK-a' }, 'srv-shared', 'e-1', build, pool);
+      await expect(appendToChain({ podId: POD, taskId: 'TASK-b' }, 'srv-shared', 'e-1', build, pool))
+        .rejects.toThrow('run_id srv-shared belongs to another chain');
+      expect((await pool.query('SELECT task_id FROM record_chains')).rows).toEqual([{ task_id: 'TASK-a' }]);
     });
 
     it('keeps two chains apart when their writes interleave', async () => {
