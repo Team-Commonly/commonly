@@ -456,10 +456,12 @@ describe('V2AgentBYO — detected OS on the availability request', () => {
     .map(([url]) => url)
     .find((url) => url.startsWith('/api/hosted/availability'));
 
-  const withPlatform = async (platform, userAgent) => {
+  const withPlatform = async (platform, userAgent, touchPoints = 0) => {
     const uaData = Object.getOwnPropertyDescriptor(window.navigator, 'userAgentData');
     const ua = jest.spyOn(window.navigator, 'userAgent', 'get');
     if (userAgent) ua.mockReturnValue(userAgent);
+    const touch = Object.getOwnPropertyDescriptor(window.navigator, 'maxTouchPoints');
+    Object.defineProperty(window.navigator, 'maxTouchPoints', { value: touchPoints, configurable: true });
     Object.defineProperty(window.navigator, 'userAgentData', {
       value: platform === undefined ? undefined : { platform }, configurable: true,
     });
@@ -470,6 +472,8 @@ describe('V2AgentBYO — detected OS on the availability request', () => {
       return availabilityUrl();
     } finally {
       ua.mockRestore();
+      if (touch) Object.defineProperty(window.navigator, 'maxTouchPoints', touch);
+      else delete window.navigator.maxTouchPoints;
       if (uaData) Object.defineProperty(window.navigator, 'userAgentData', uaData);
       else delete window.navigator.userAgentData;
     }
@@ -485,5 +489,10 @@ describe('V2AgentBYO — detected OS on the availability request', () => {
     [undefined, 'Mozilla/5.0 (linux) AppleWebKit/537.36 (KHTML, like Gecko) jsdom/20.0.3', 'other'],
   ])('platform %p / UA %p reports os=%s', async (platform, userAgent, os) => {
     expect(await withPlatform(platform, userAgent)).toBe(`/api/hosted/availability?os=${os}`);
+  });
+
+  test('an iPad in desktop mode (Mac UA, touch) reports os=other', async () => {
+    expect(await withPlatform(undefined, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 5))
+      .toBe('/api/hosted/availability?os=other');
   });
 });

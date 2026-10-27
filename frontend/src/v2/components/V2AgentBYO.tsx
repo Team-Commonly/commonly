@@ -98,7 +98,8 @@ const openedOs = (): OpenedOs => {
   const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
   const platform = nav.userAgentData?.platform || nav.userAgent || '';
   if (/iPhone|iPad|Android/.test(platform)) return 'other';
-  if (/Mac|macOS/.test(platform)) return 'mac';
+  // iPadOS Safari in desktop mode reports a Mac user agent; touch gives it away.
+  if (/Mac|macOS/.test(platform)) return (nav.maxTouchPoints || 0) > 1 ? 'other' : 'mac';
   const os = browserOs();
   return os === 'mac' ? 'other' : os;
 };
