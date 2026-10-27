@@ -523,6 +523,36 @@ describe('second-person prompt placements', () => {
     expect(axios.post).toHaveBeenCalledTimes(1);
   });
 
+  // TASK-583: on a reload the card mounts after history settles, below where
+  // the arrival effect already followed. These count follows of the end marker.
+  const endFollows = () => Element.prototype.scrollIntoView.mock.contexts
+    .filter((el) => el.parentElement?.classList.contains('v2-chat__messages') && el.attributes.length === 0).length;
+  const rerenderChat = (view, detail) => view.rerender(<AuthContext.Provider value={authValue}><MemoryRouter>
+    <V2Thread detail={detail} />
+  </MemoryRouter></AuthContext.Provider>);
+  test('when the invite card mounts with the reader at the end, the thread follows it into view', async () => {
+    const settled = withReply();
+    const view = renderChat({ ...settled, hasMore: true });
+    expect(document.querySelector('.v2-teammate')).toBeNull();
+    Element.prototype.scrollIntoView.mockClear();
+    rerenderChat(view, settled);
+    expect(await screen.findByRole('button', { name: 'Copy invite link' })).toBeInTheDocument();
+    expect(endFollows()).toBe(1);
+  });
+  test('a reader scrolled up stays put when the invite card mounts', async () => {
+    const settled = withReply();
+    const view = renderChat({ ...settled, hasMore: true });
+    const list = document.querySelector('.v2-chat__messages');
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, value: 2000 });
+    Object.defineProperty(list, 'clientHeight', { configurable: true, value: 400 });
+    list.scrollTop = 100;
+    fireEvent.scroll(list);
+    Element.prototype.scrollIntoView.mockClear();
+    rerenderChat(view, settled);
+    expect(await screen.findByRole('button', { name: 'Copy invite link' })).toBeInTheDocument();
+    expect(endFollows()).toBe(0);
+  });
+
   test('dismissing the state-owned invite leaves the transcript and composer mounted', async () => {
     renderChat(withReply());
     fireEvent.click(await screen.findByRole('button', { name: 'Dismiss' }));

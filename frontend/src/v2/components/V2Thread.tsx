@@ -843,6 +843,12 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     setJumpCount(0);
     setScrolledUp(false);
   }, []);
+  // The invite card can mount after the arrival effect has already followed
+  // (on a reload, once history settles), landing a card-height below the fold.
+  // Follow it only when the reader was at the end; never move someone reading up.
+  const followCardIfAtBottom = useCallback(() => {
+    if (atBottomRef.current) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
   useEffect(() => {
     const el = messagesContainerRef.current;
     if (!el) return undefined;
@@ -1792,7 +1798,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           <V2BringTeammate podId={pod._id} podName={pod.name} userId={currentUserId || ''}
             source={teammateSource}
             agentName={teammateMoment ? agentDisplayNames.get(teammateMoment.username.toLowerCase()) || teammateMoment.username : undefined}
-            enabled={Boolean(teammateMoment)}>
+            enabled={Boolean(teammateMoment)}
+            onShown={followCardIfAtBottom}>
             {(teammateCard) => <V2ThreadMessages
             messages={messages}
             threadView={threadView}
