@@ -40,11 +40,11 @@ Helm chart layout:
 **Primary path: GitHub Actions `Deploy Dev` workflow** (`.github/workflows/deploy-dev.yml`, ADR-009 Phase 3).
 
 ```bash
-gh workflow run deploy-dev.yml --ref main --repo Team-Commonly/commonly
+gh workflow run deploy-dev.yml --ref main -f ref=<full 40-char SHA> --repo Team-Commonly/commonly
 gh run list --workflow=deploy-dev.yml -L 1 --repo Team-Commonly/commonly   # most-recent run
 ```
 
-Builds backend + frontend + clawdbot-gateway + commonly-bot in parallel from the dispatched ref, pushes to AR, helm-upgrades the dev cluster (~8–12 min). All four images get the same tag (short SHA of `HEAD`). **Whatever's on the dispatched ref is what ends up live** — see `feedback-deploy-dev-builds-only-main` memory; if a feature branch isn't merged yet, dispatching from `main` will strip it from the deployed images.
+`--ref main` selects the workflow file's revision; the `ref` input selects the commit to build, as a full SHA, and defaults to main HEAD when omitted. That commit needs a green staging-smoke. Builds backend + frontend + clawdbot-gateway + commonly-bot in parallel from that commit, pushes to AR, helm-upgrades the dev cluster (~8–12 min). All four images get the same tag (short SHA of `HEAD`). **Whatever commit the `ref` input names (main HEAD by default) is what ends up live** — see `feedback-deploy-dev-builds-only-main` memory; if a feature branch isn't merged yet, dispatching from `main` will strip it from the deployed images.
 
 **Escape hatch — local docker build** (only when CI is broken or for a hotfix the user explicitly wants by hand):
 
