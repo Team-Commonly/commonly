@@ -454,6 +454,9 @@ describe('V2Composer send button', () => {
       clientHeight: { configurable: true, value: 400 },
       scrollTop: { configurable: true, writable: true, value: 0 },
     });
+    // The reader's own input: without it, a scroll inside a follow's
+    // animation window is the follow, not the reader.
+    fireEvent.wheel(scroller);
     fireEvent.scroll(scroller);
     return scroller;
   };
@@ -670,6 +673,7 @@ describe('V2Composer send button', () => {
     const scroller = scrollUp(view);
     scrollIntoView.mockClear();
     scroller.scrollTop = 0;
+    fireEvent.wheel(scroller);
     fireEvent.scroll(scroller);
     view.rerender(
       <AuthContext.Provider value={authValue}>

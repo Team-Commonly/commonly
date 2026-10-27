@@ -537,10 +537,13 @@ describe('second-person prompt placements', () => {
   const rerenderChat = (view, detail) => view.rerender(<AuthContext.Provider value={authValue}><MemoryRouter>
     <V2Thread detail={detail} />
   </MemoryRouter></AuthContext.Provider>);
-  const scrollListTo = (scrollTop) => {
+  // `byReader` fires the reader's own input first. Without it, the scroll is
+  // treated as part of the app's smooth follow, as in a real browser.
+  const scrollListTo = (scrollTop, { byReader = true } = {}) => {
     const list = document.querySelector('.v2-chat__messages');
     Object.defineProperty(list, 'scrollHeight', { configurable: true, value: 2000 });
     Object.defineProperty(list, 'clientHeight', { configurable: true, value: 400 });
+    if (byReader) fireEvent.wheel(list);
     list.scrollTop = scrollTop;
     fireEvent.scroll(list);
   };
@@ -555,6 +558,30 @@ describe('second-person prompt placements', () => {
     expect(endFollows()).toBe(1);
     expect(Element.prototype.scrollTo.mock.calls.at(-1)[0]).toEqual({ top: 2000, behavior: 'smooth' });
     expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+  });
+  // UX Lead on e0fd1523: the open-time follow is a smooth scroll whose own
+  // mid-animation scroll events read as the reader scrolling up, so a card
+  // mounting after the first of them was skipped and the list stopped one card
+  // short. 6 of 18 opens at 1440.
+  test('a card that mounts while a follow is still animating is still followed', async () => {
+    const settled = withReply();
+    const arrived = { ...settled, messages: [...settled.messages, {
+      id: '12', pod_id: 'p1', user_id: 'bot', content: 'And a second step', message_type: 'text',
+      created_at: '2026-10-25T10:02:00Z', user: { username: 'scout', isBot: true },
+    }] };
+    const view = renderChat({ ...settled, hasMore: true });
+    scrollListTo(1600);
+    clearScrolls();
+    // An arrival at the end starts a smooth follow...
+    rerenderChat(view, { ...arrived, hasMore: true });
+    expect(endFollows()).toBe(1);
+    clearScrolls();
+    // ...whose first animation frame is still far from the end. That is the
+    // app scrolling, not the reader (no wheel/touch/key/pointer input).
+    scrollListTo(800, { byReader: false });
+    rerenderChat(view, arrived);
+    expect(await screen.findByRole('button', { name: 'Copy invite link' })).toBeInTheDocument();
+    expect(endFollows()).toBe(1);
   });
   test('a reader scrolled up stays put when the invite card mounts', async () => {
     const settled = withReply();

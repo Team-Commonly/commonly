@@ -43,6 +43,8 @@ import {
 // The connect start's label, as SCOUT_STARTS[0] sends it
 // (backend/config/native-agents/scout.ts). A click posts exactly this text.
 const CONNECT_START_LABEL = 'Connect an agent I already use';
+// How long a smooth follow may run before its scroll events count as the reader's.
+const FOLLOW_SETTLE_MS = 1500;
 
 const AGENT_DELIVERY_HINT_KEY = 'v2.agentDeliveryHint';
 // Same slot, different fact, so a pod can show both over a session: the hint
@@ -842,9 +844,17 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // hidden: when the list is already at its end the browser moves the pane
   // instead, taking the header and thread off screen with no way back
   // (UX Lead on #2870; the composer-send jump in TASK-584).
+  //
+  // A smooth follow fires its own scroll events on the way down. Those must
+  // not read as the reader scrolling up, or a card that mounts mid-animation
+  // is skipped and the list stops one card short (UX Lead on e0fd1523). So
+  // until the follow lands, only real input (wheel, touch, key, pointer)
+  // can take the reader off the bottom; a time limit backs that up.
+  const followingUntilRef = useRef(0);
   const scrollListToEnd = useCallback(() => {
     const el = messagesContainerRef.current;
     if (!el) return;
+    followingUntilRef.current = Date.now() + FOLLOW_SETTLE_MS;
     if (typeof el.scrollTo === 'function') el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
     else el.scrollTop = el.scrollHeight;
   }, []);
@@ -866,13 +876,21 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     const onScroll = () => {
       const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
       const near = distance < 80;
+      if (near) followingUntilRef.current = 0;
+      else if (Date.now() < followingUntilRef.current) return;
       atBottomRef.current = near;
       setScrolledUp(distance > el.clientHeight);
       if (near) setJumpCount(0);
     };
+    const onReaderInput = () => { followingUntilRef.current = 0; };
+    const inputs = ['wheel', 'touchstart', 'keydown', 'pointerdown'] as const;
     onScroll();
     el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
+    inputs.forEach((name) => el.addEventListener(name, onReaderInput, { passive: true }));
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      inputs.forEach((name) => el.removeEventListener(name, onReaderInput));
+    };
   }, [pod?._id]);
   useEffect(() => {
     if (!newestMessageId) return;
