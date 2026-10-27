@@ -13,7 +13,9 @@ jest.mock('../../../services/approvalActionService', () => ({
 const User = require('../../../models/User');
 const ApprovalAction = require('../../../models/ApprovalAction');
 const { proposeAction, suggestLocalAgentName } = require('../../../services/approvalActionService');
-const { isConnectIntent, connectIntentFloor, connectRequestAnswered } = require('../../../services/nativeRuntimeService');
+const {
+  isConnectIntent, connectIntentFloor, connectRequestAnswered, toolsForConfig,
+} = require('../../../services/nativeRuntimeService');
 
 const humanSender = (isBot = false) => User.findById.mockImplementation(() => ({
   select: () => ({ lean: async () => ({ isBot }) }),
@@ -142,5 +144,29 @@ describe('connectRequestAnswered', () => {
 
   it('is open only when the turn posted nothing', () => {
     expect(connectRequestAnswered(false, undefined)).toBe(false);
+  });
+});
+
+describe('the floor takes the offer the model got', () => {
+  // The floor runs the same proposal the model could make, so it is gated on
+  // the same offer: declaration, outsider grant and web taint.
+  const declaresPropose = { tools: ['commonly_propose_action'] };
+  const offers = (cfg, opts = {}) => toolsForConfig(cfg, opts.inPodOnly, opts)
+    .some((tool) => tool.function.name === 'commonly_propose_action');
+
+  it('is offered when the install declares propose and nothing narrows it', () => {
+    expect(offers(declaresPropose)).toBe(true);
+  });
+
+  it('is not offered when the install does not declare it', () => {
+    expect(offers({ tools: ['commonly_post_message'] })).toBe(false);
+  });
+
+  it('is not offered in an outsider-granted pod', () => {
+    expect(offers(declaresPropose, { inPodOnly: true })).toBe(false);
+  });
+
+  it('is not offered after a web result taints the turn', () => {
+    expect(offers(declaresPropose, { webTainted: true })).toBe(false);
   });
 });

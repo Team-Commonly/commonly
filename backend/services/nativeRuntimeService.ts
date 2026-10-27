@@ -2516,7 +2516,17 @@ export async function runAgent(
   // handled the request, so the floor stays out of it.
   if (run.status === 'succeeded' && !connectRequestAnswered(postedViaTool, finalMessage)) {
     try {
-      await connectIntentFloor({
+      // The floor is a proposal, so it takes the same offer the model got: the
+      // install must declare the tool, an outsider grant narrows to in-pod
+      // tools, and a web-tainted or set-aside turn offers no proposal at all.
+      const inPodOnly = await inPodOnlyNow();
+      const podBridged = mayLookUp ? await podBridgedNow() : false;
+      const proposeOffered = !webSetAside && toolsForConfig(cfg, inPodOnly, {
+        webTainted: Boolean(dispatchCtx.webTainted),
+        computerReadSeen: Boolean(dispatchCtx.computerReadSeen),
+        podBridged,
+      }).some((tool) => tool.function.name === 'commonly_propose_action');
+      if (proposeOffered && await connectIntentFloor({
         trigger,
         podId,
         agentName,
@@ -2525,7 +2535,11 @@ export async function runAgent(
         runId,
         installationConfig: cfg,
         noOutboundRelay: Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen),
-      });
+      })) {
+        // A card posted here is the turn's reply, so the claim is completed,
+        // not released as declined.
+        postedViaTool = true;
+      }
     } catch (floorErr) {
       console.warn('[native-runtime] connect-intent floor not posted:', (floorErr as Error).message);
     }
