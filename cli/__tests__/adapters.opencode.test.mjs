@@ -1394,6 +1394,142 @@ describe('opencode adapter — spawn()', () => {
     });
   });
 
+  test('a saved session OpenCode does not know starts one fresh turn, and other failures do not retry', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const xdgData = join(root, 'operator-data');
+      const appData = join(xdgData, 'opencode');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(appData, { recursive: true });
+      await writeFile(join(appData, 'auth.json'), JSON.stringify({ provider: 'dummy-auth' }));
+      const notFound = `${JSON.stringify({
+        type: 'error', sessionID: 'claude-uuid', error: { data: { message: 'Session not found' } },
+      })}\n`;
+      const calls = [];
+      const impl = (cmd, args) => {
+        calls.push(args);
+        const failing = args.includes('-s') && calls.length === 1;
+        return fakeChild(failing
+          ? { chunks: [notFound], code: 1 }
+          : { chunks: sampleEvents('ses-fresh') });
+      };
+      const baseContext = {
+        sessionId: 'claude-uuid',
+        cwd: workspace,
+        env: { ...process.env, XDG_DATA_HOME: xdgData },
+        environment: { model: 'anthropic/claude-sonnet-4-5' },
+        agentName: 'kai-seat',
+        metadata: { event: { podId: 'pod-1' } },
+        _binaryPath: '/usr/local/bin/opencode',
+        _spawnImpl: impl,
+      };
+      await expect(opencode.spawn('resumed turn', baseContext)).resolves.toMatchObject({
+        text: 'Hello from OpenCode.', newSessionId: 'ses-fresh',
+      });
+      expect(calls).toHaveLength(2);
+      expect(calls[0]).toEqual(expect.arrayContaining(['-s', 'claude-uuid']));
+      expect(calls[1]).not.toContain('-s');
+
+      calls.length = 0;
+      const failingImpl = (cmd, args) => {
+        calls.push(args);
+        return fakeChild({ stderr: 'provider rejected the request', code: 1 });
+      };
+      await expect(opencode.spawn('resumed turn', { ...baseContext, _spawnImpl: failingImpl }))
+        .rejects.toThrow(/provider rejected/);
+      expect(calls).toHaveLength(1);
+    });
+  });
+
+  test('a session-not-found phrase after the model acted is not retried, so the turn cannot post twice', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const xdgData = join(root, 'operator-data');
+      const appData = join(xdgData, 'opencode');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(appData, { recursive: true });
+      await writeFile(join(appData, 'auth.json'), JSON.stringify({ provider: 'dummy-auth' }));
+      const acted = [
+        event('step_start', 'ses-resumed', { type: 'step-start' }),
+        event('tool_use', 'ses-resumed', { tool: 'commonly_post_message', state: { status: 'completed' } }),
+      ].join('');
+      const calls = [];
+      const impl = (cmd, args) => {
+        calls.push(args);
+        return fakeChild({ chunks: [acted], stderr: 'Session not found', code: 1 });
+      };
+      await expect(opencode.spawn('resumed turn', {
+        sessionId: 'ses-resumed',
+        cwd: workspace,
+        env: { ...process.env, XDG_DATA_HOME: xdgData },
+        environment: { model: 'anthropic/claude-sonnet-4-5' },
+        agentName: 'kai-seat',
+        metadata: { event: { podId: 'pod-1' } },
+        _binaryPath: '/usr/local/bin/opencode',
+        _spawnImpl: impl,
+      })).rejects.toThrow(/Session not found/);
+      expect(calls).toHaveLength(1);
+    });
+  });
+
+  test('a session-not-found failure with no saved session is not retried', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const xdgData = join(root, 'operator-data');
+      const appData = join(xdgData, 'opencode');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(appData, { recursive: true });
+      await writeFile(join(appData, 'auth.json'), JSON.stringify({ provider: 'dummy-auth' }));
+      const notFound = `${JSON.stringify({
+        type: 'error', sessionID: 'ses-fresh', error: { data: { message: 'Session not found' } },
+      })}\n`;
+      const calls = [];
+      const impl = (cmd, args) => {
+        calls.push(args);
+        return fakeChild({ chunks: [notFound], code: 1 });
+      };
+      await expect(opencode.spawn('fresh turn', {
+        sessionId: null,
+        cwd: workspace,
+        env: { ...process.env, XDG_DATA_HOME: xdgData },
+        environment: { model: 'anthropic/claude-sonnet-4-5' },
+        agentName: 'kai-seat',
+        metadata: { event: { podId: 'pod-1' } },
+        _binaryPath: '/usr/local/bin/opencode',
+        _spawnImpl: impl,
+      })).rejects.toThrow(/Session not found/);
+      expect(calls).toHaveLength(1);
+    });
+  });
+
+  test('a session-not-found failure after only a step event is not retried', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const xdgData = join(root, 'operator-data');
+      const appData = join(xdgData, 'opencode');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(appData, { recursive: true });
+      await writeFile(join(appData, 'auth.json'), JSON.stringify({ provider: 'dummy-auth' }));
+      const stepOnly = event('step_start', 'ses-resumed', { type: 'step-start' });
+      const calls = [];
+      const impl = (cmd, args) => {
+        calls.push(args);
+        return fakeChild({ chunks: [stepOnly], stderr: 'Session not found', code: 1 });
+      };
+      await expect(opencode.spawn('resumed turn', {
+        sessionId: 'ses-resumed',
+        cwd: workspace,
+        env: { ...process.env, XDG_DATA_HOME: xdgData },
+        environment: { model: 'anthropic/claude-sonnet-4-5' },
+        agentName: 'kai-seat',
+        metadata: { event: { podId: 'pod-1' } },
+        _binaryPath: '/usr/local/bin/opencode',
+        _spawnImpl: impl,
+      })).rejects.toThrow(/Session not found/);
+      expect(calls).toHaveLength(1);
+    });
+  });
+
   test('a public spawn wraps the CLI in the host sandbox and denies prompt-only tools', async () => {
     await withTemp(async (root) => {
       const workspace = join(root, 'workspace');
