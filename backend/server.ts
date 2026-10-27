@@ -22,6 +22,7 @@ const attributionRoutes = require('./routes/attribution');
 const messageRoutes = require('./routes/messages');
 const uploadsRoutes = require('./routes/uploads');
 const { socketAuthMiddleware, installSocketSessionGuard } = require('./middleware/socketAuth');
+const { installSocketEventBudget } = require('./middleware/socketRateLimit');
 const { sessionSocketRoom } = require('./services/sessionSocketService');
 const docsRoutes = require('./routes/docs');
 const summariesRoutes = require('./routes/summaries');
@@ -537,6 +538,8 @@ const authorizeSocketPodAccess = async (socket: any, podId: any, action: any) =>
 
 // Socket.io event handlers
 io.on('connection', (socket: any) => {
+  // Budget first, so a flood is dropped before each packet's session re-check.
+  installSocketEventBudget(socket);
   installSocketSessionGuard(socket);
   socket.join(sessionSocketRoom(socket.userId));
   console.log(
