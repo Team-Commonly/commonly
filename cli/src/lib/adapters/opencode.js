@@ -302,7 +302,9 @@ const validateProviderEnvironment = async (environment, workspacePath) => {
 };
 
 const STALE_SESSION_PATTERN = /session not found/i;
-const isStaleSessionError = (err) => STALE_SESSION_PATTERN.test(String(err?.message || ''));
+// Set by runOpenCode only when the rejected run produced no turn output, so a
+// phrase that shows up after the model acted cannot replay the turn.
+const isStaleSessionError = (err) => err?.staleSession === true;
 
 const makeEventParser = () => {
   let buffer = '';
@@ -310,6 +312,8 @@ const makeEventParser = () => {
   let text = '';
   let usage = null;
   let errorMessage = null;
+  // Any text, tool call or step result means the model acted this run.
+  let turnOutput = false;
   // Every tool call that came back as an error, for the public-seat check in
   // spawn (publicToolFailure).
   const toolErrors = [];
@@ -319,10 +323,15 @@ const makeEventParser = () => {
       const event = JSON.parse(line);
       if (event.sessionID) sessionId = event.sessionID;
       if (event.type === 'text' && typeof event.part?.text === 'string') {
+        turnOutput = true;
         text += event.part.text;
       } else if (event.type === 'step_finish' && event.part?.tokens) {
+        turnOutput = true;
         usage = event.part.tokens;
-      } else if (event.type === 'tool_use' && event.part?.state?.status === 'error') {
+      } else if (event.type === 'tool_use') {
+        turnOutput = true;
+      }
+      if (event.type === 'tool_use' && event.part?.state?.status === 'error') {
         const { error } = event.part.state;
         toolErrors.push({
           tool: String(event.part.tool || ''),
@@ -337,6 +346,7 @@ const makeEventParser = () => {
     }
   };
   return {
+    get turnOutput() { return turnOutput; },
     consume(chunk) {
       buffer += chunk.toString();
       let newline;
@@ -431,14 +441,18 @@ const runOpenCode = ({ cmd, args, cwd, env, timeoutMs, credentials, spawnImpl = 
     events.flush();
     if (timedOut) return reject(new Error(`opencode timed out after ${timeoutMs}ms`));
     if (events.errorMessage) {
-      return reject(adapterFailure('opencode turn failed', events.errorMessage, {
+      const err = adapterFailure('opencode turn failed', events.errorMessage, {
         credentials, limit: 2000,
-      }));
+      });
+      err.staleSession = !events.turnOutput && STALE_SESSION_PATTERN.test(events.errorMessage);
+      return reject(err);
     }
     if (code !== 0) {
-      return reject(adapterFailure('opencode', stderr.trim(), {
+      const err = adapterFailure('opencode', stderr.trim(), {
         credentials, exitCode: code, limit: 500,
-      }));
+      });
+      err.staleSession = !events.turnOutput && STALE_SESSION_PATTERN.test(stderr);
+      return reject(err);
     }
     resolve({
       sessionId: events.sessionId, text: events.text, usage: events.usage, toolErrors: events.toolErrors,

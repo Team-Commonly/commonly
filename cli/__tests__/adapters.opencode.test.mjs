@@ -1441,6 +1441,37 @@ describe('opencode adapter — spawn()', () => {
     });
   });
 
+  test('a session-not-found phrase after the model acted is not retried, so the turn cannot post twice', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const xdgData = join(root, 'operator-data');
+      const appData = join(xdgData, 'opencode');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(appData, { recursive: true });
+      await writeFile(join(appData, 'auth.json'), JSON.stringify({ provider: 'dummy-auth' }));
+      const acted = [
+        event('step_start', 'ses-resumed', { type: 'step-start' }),
+        event('tool_use', 'ses-resumed', { tool: 'commonly_post_message', state: { status: 'completed' } }),
+      ].join('');
+      const calls = [];
+      const impl = (cmd, args) => {
+        calls.push(args);
+        return fakeChild({ chunks: [acted], stderr: 'Session not found', code: 1 });
+      };
+      await expect(opencode.spawn('resumed turn', {
+        sessionId: 'ses-resumed',
+        cwd: workspace,
+        env: { ...process.env, XDG_DATA_HOME: xdgData },
+        environment: { model: 'anthropic/claude-sonnet-4-5' },
+        agentName: 'kai-seat',
+        metadata: { event: { podId: 'pod-1' } },
+        _binaryPath: '/usr/local/bin/opencode',
+        _spawnImpl: impl,
+      })).rejects.toThrow(/Session not found/);
+      expect(calls).toHaveLength(1);
+    });
+  });
+
   test('a public spawn wraps the CLI in the host sandbox and denies prompt-only tools', async () => {
     await withTemp(async (root) => {
       const workspace = join(root, 'workspace');
