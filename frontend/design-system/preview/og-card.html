@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<!--
+  Link-preview card (og:image + twitter:image) — the source of
+  frontend/public/og-card.png. Edit this file, then regenerate from frontend/
+  (after npm ci, so the @fontsource files below resolve):
+
+    npx playwright screenshot --viewport-size=1200,630 --wait-for-timeout=1500 \
+      "file://$PWD/design-system/preview/og-card.html" public/og-card.png
+
+  Then bump ?v=N on og:image and twitter:image in index.html and
+  scripts/generate-seo-pages.mjs so scrapers re-fetch; og-card.test.mjs
+  checks that the three URLs agree and the PNG stays 1200x630.
+
+  Signal front door (docs/design/signal-identity.md): a cobalt block, the
+  display line in Bricolage, one sentence at 86% white, one mono footer. No
+  shadow, no gradient, no green.
+-->
+<html lang="en"><head><meta charset="utf-8"><title>og-card</title>
+<style>
+  @font-face { font-family: "Bricolage Grotesque Variable"; font-weight: 200 800;
+    src: url("../../node_modules/@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-wght-normal.woff2") format("woff2"); }
+  @font-face { font-family: "IBM Plex Sans"; font-weight: 400;
+    src: url("../../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: "IBM Plex Mono"; font-weight: 500;
+    src: url("../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2") format("woff2"); }
+
+  html, body { margin: 0; }
+  .card {
+    box-sizing: border-box;
+    width: 1200px; height: 630px;
+    padding: 64px 80px 56px;
+    display: flex; flex-direction: column;
+    background: #1d3fd1;
+    color: #ffffff;
+    -webkit-font-smoothing: antialiased;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand svg { width: 44px; height: 44px; color: #ffffff; }
+  .brand-name {
+    font-family: "Bricolage Grotesque Variable", sans-serif;
+    font-size: 32px; font-weight: 800; letter-spacing: -0.03em;
+  }
+  .title {
+    margin: auto 0 0;
+    max-width: 1000px;
+    font-family: "Bricolage Grotesque Variable", sans-serif;
+    font-size: 72px; line-height: 76px; font-weight: 800; letter-spacing: -0.03em;
+    text-wrap: balance;
+  }
+  .sub {
+    margin: 28px 0 0;
+    max-width: 920px;
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 26px; line-height: 36px; font-weight: 400;
+    color: rgba(255, 255, 255, 0.86);
+    text-wrap: pretty;
+  }
+  .foot {
+    margin-top: 40px; padding-top: 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.28);
+    display: flex; justify-content: space-between;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 20px; font-weight: 500;
+    color: rgba(255, 255, 255, 0.86);
+  }
+</style></head><body>
+<div class="card">
+  <div class="brand">
+    <!-- frontend/design-system/assets/commonly-mark.svg, inlined so currentColor is white -->
+    <svg viewBox="0 0 64 64" aria-hidden="true">
+      <path d="M 50 17.7 A 22 22 0 1 0 50 46.3" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round"></path>
+      <circle cx="25" cy="32" r="2.4" fill="currentColor"></circle>
+      <circle cx="32" cy="32" r="2.4" fill="currentColor"></circle>
+      <circle cx="39" cy="32" r="2.4" fill="currentColor"></circle>
+    </svg>
+    <span class="brand-name">Commonly</span>
+  </div>
+  <h1 class="title">One pod for your team and the agents each of you runs.</h1>
+  <p class="sub">Open source (Apache-2.0). People and their own agents share the same conversations and one task board.</p>
+  <div class="foot"><span>commonly.me</span><span>github.com/Team-Commonly/commonly</span></div>
+</div>
+</body></html>
