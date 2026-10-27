@@ -753,7 +753,7 @@ describe('OAuth Controller', () => {
   });
 
   describe('login guard for OAuth-only accounts', () => {
-    it('tells a passwordless user to use their provider instead of throwing', async () => {
+    it('answers a passwordless account like a wrong password, without throwing', async () => {
       await User.create({
         username: 'octo-dev',
         email: 'octo@example.com',
@@ -764,10 +764,9 @@ describe('OAuth Controller', () => {
       const res = mockRes();
       await authController.login({ body: { email: 'octo@example.com', password: 'whatever' } }, res);
 
+      // The reply does not say the address has an account, or name its provider.
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        code: 'OAUTH_ONLY_ACCOUNT',
-      }));
+      expect(res.json).toHaveBeenCalledWith({ error: 'Invalid credentials' });
     });
   });
 });

@@ -22,8 +22,10 @@
  *     Mongo and unit mode runs without it.
  * Existing policies receive no params, auth header or user id, so their IP
  * branch remains the CF probe. Explicit new policies receive a presented
- * credential or authenticated user id. Every limiter still runs
- * a counted A,A,B sequence; no instance is exempted and no database is needed.
+ * credential, an authenticated user id, or a submitted sign-in address. The
+ * address policy counts only failed sign-ins, so its stub answers 401. Every
+ * limiter still runs a counted A,A,B sequence; no instance is exempted and no
+ * database is needed.
  *
  * The A,A,B sequence is deliberate: two requests cannot separate "different
  * buckets" from "not counting at all", so A2 is the instrument's own control.
@@ -57,7 +59,10 @@ const request = require('supertest');
 const rateLimit = require('express-rate-limit');
 const { ipKeyGenerator } = require('express-rate-limit');
 const {
-  cloudflareIpRateLimitKeyGenerator, presentedCredentialRateLimitKeyGenerator, authenticatedUserRateLimitKeyGenerator,
+  cloudflareIpRateLimitKeyGenerator,
+  presentedCredentialRateLimitKeyGenerator,
+  authenticatedUserRateLimitKeyGenerator,
+  loginEmailRateLimitKeyGenerator,
 } = require('../../../middleware/ipRateLimit');
 
 // Captured at MODULE LOAD, before any test can flip it. A baseline re-read inside
@@ -84,6 +89,14 @@ jest.mock('../../../config/init-pg-db', () => jest.fn().mockResolvedValue(true))
 jest.setTimeout(300000);
 
 const { app } = require('../../../server');
+
+// Each explicit policy is measured on the identity it declares; every other
+// limiter is measured on the CF-derived IP.
+const DIMENSION_OF = new Map([
+  [authenticatedUserRateLimitKeyGenerator, 'user'],
+  [presentedCredentialRateLimitKeyGenerator, 'credential'],
+  [loginEmailRateLimitKeyGenerator, 'login-email'],
+]);
 
 const isLimiter = (fn) => fn && typeof fn === 'function'
   && Object.prototype.hasOwnProperty.call(fn, 'resetKey')
@@ -137,12 +150,14 @@ const single = (instance, dimension = 'cf') => {
   stub.all('/', (req, _res, next) => {
     if (dimension === 'user') req.userId = req.get('x-probe-identity');
     if (dimension === 'credential') req.headers.authorization = `Bearer ${req.get('x-probe-identity')}`;
+    if (dimension === 'login-email') req.body = { email: req.get('x-probe-identity') };
     next();
   }, instance, (req, res) => {
     if (typeof req.rateLimit?.remaining === 'number') {
       res.set('x-probe-remaining', String(req.rateLimit.remaining));
     }
-    res.status(204).end();
+    // A failed sign-in is what the address policy counts; a 2xx is handed back.
+    res.status(dimension === 'login-email' ? 401 : 204).end();
   });
   return stub;
 };
@@ -205,12 +220,15 @@ describe('TASK-126 ip key separation', () => {
     expect(distinct.size).toBe(walked.length);
   });
 
-  it('pins the explicit credential/user policies without exempting them from counting', () => {
+  it('pins the explicit credential, user and address policies without exempting them from counting', () => {
     for (const key of [presentedCredentialRateLimitKeyGenerator, authenticatedUserRateLimitKeyGenerator]) {
       expect(walked.filter((w) => mockLimiterKeys.get(w.instance.getKey) === key)
         .map((w) => `${w.method.toUpperCase()} ${w.path}`).sort())
         .toEqual(['DELETE /api/users/me', 'POST /api/uploads/']);
     }
+    expect(walked.filter((w) => mockLimiterKeys.get(w.instance.getKey) === loginEmailRateLimitKeyGenerator)
+      .map((w) => `${w.method.toUpperCase()} ${w.path}`))
+      .toEqual(['POST /api/auth/login']);
   });
 
   it('negative control: the instrument catches a limiter keyed the way the swapped sites were', async () => {
@@ -278,8 +296,7 @@ describe('TASK-126 ip key separation', () => {
        next reads it, which is the property under test. */
     for (const [i, w] of walked.entries()) {
       const key = mockLimiterKeys.get(w.instance.getKey);
-      const dimension = key === authenticatedUserRateLimitKeyGenerator ? 'user'
-        : key === presentedCredentialRateLimitKeyGenerator ? 'credential' : 'cf';
+      const dimension = DIMENSION_OF.get(key) || 'cf';
       results[i] = { path: w.path, method: w.method, dimension, ...(await observe(w.instance, i + 1, dimension)) };
     }
     /* eslint-enable no-await-in-loop, no-restricted-syntax */
