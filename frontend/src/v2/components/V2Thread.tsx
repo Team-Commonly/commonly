@@ -40,6 +40,10 @@ import {
   slugifyAgentHandle,
 } from '../utils/threadAgentIdentity';
 
+// The connect start's label, as SCOUT_STARTS[0] sends it
+// (backend/config/native-agents/scout.ts). A click posts exactly this text.
+const CONNECT_START_LABEL = 'Connect an agent I already use';
+
 const AGENT_DELIVERY_HINT_KEY = 'v2.agentDeliveryHint';
 // Same slot, different fact, so a pod can show both over a session: the hint
 // above needs an agent to name, and this row exists precisely because there is
@@ -433,8 +437,24 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
         && !sentSince.has(start.label));
       if (open.length > 0) byMessage.set(String(message.id), open);
     });
+    // D139: under the creator's own "Connect an agent I already use", a fixed
+    // link to Bring your own, from the moment it is sent. Scout still answers,
+    // but a prompt cannot guarantee its reply links there, and one new person
+    // left after three replies that never did.
+    if (viewerOwnsPod && pod?._id) {
+      const openByo: V2Start = {
+        id: 'open-byo',
+        label: t('podChat.starts.openByo'),
+        href: `/v2/agents/byo?pod=${encodeURIComponent(pod._id)}`,
+      };
+      messages.forEach((message) => {
+        if (message.user_id !== viewerId || (message.content || '').trim() !== CONNECT_START_LABEL) return;
+        const id = String(message.id);
+        byMessage.set(id, [...(byMessage.get(id) || []), openByo]);
+      });
+    }
     return byMessage;
-  }, [messages, viewerId, onOpenInvite, viewerHoldsHostedAgent, viewerOwnsPod, addedFirstTaskMessages]);
+  }, [messages, viewerId, onOpenInvite, viewerHoldsHostedAgent, viewerOwnsPod, addedFirstTaskMessages, pod?._id, t]);
 
   const [decisions, setDecisions] = useState<ThreadDecision[]>([]);
   const [settledDecisionByMessageId, setSettledDecisionByMessageId] = useState<Map<string, V2DecisionRuling>>(new Map());
