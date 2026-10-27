@@ -46,12 +46,12 @@ ANSWERED_MAX = 1024
 
 
 def _metadata(kwargs):
-    # The router stamps the hop under whichever name the endpoint uses.
-    for name in ('metadata', 'litellm_metadata'):
-        value = kwargs.get(name)
-        if isinstance(value, dict) and ('original_model_group' in value or 'model_group' in value):
-            return value
-    return {}
+    # The bucket the router stamps the hop into, chosen the way LiteLLM chooses
+    # it: litellm_metadata whenever the request has one, else metadata
+    # (get_metadata_variable_name_from_kwargs). Then `metadata` is the caller's
+    # own, so picking a bucket by its contents would log a caller's text.
+    value = kwargs.get('litellm_metadata' if 'litellm_metadata' in kwargs else 'metadata')
+    return value if isinstance(value, dict) else {}
 
 
 def _reason(error):

@@ -125,6 +125,13 @@ class FallbackLine(unittest.TestCase):
         line = signal.fallback_line('served', NEMOTRON, hop_kwargs('litellm_metadata'), None)
         self.assertEqual((line['attempt'], line['requested'], line['reason']), (1, NEMOTRON, None))
 
+    def test_a_callers_own_metadata_never_stands_in_for_the_routers(self):
+        kwargs = hop_kwargs('litellm_metadata', requested=GPT)
+        kwargs['metadata'] = {'original_model_group': 'caller text', 'model_group': 'caller text', 'attempted_fallbacks': 9}
+        line = signal.fallback_line('served', NEMOTRON, kwargs, None)
+        self.assertEqual((line['requested'], line['attempt']), (GPT, 1))
+        self.assertNotIn('caller text', json.dumps(line))
+
     def test_no_request_content_key_or_alias_is_logged(self):
         out = json.dumps(signal.fallback_line('served', NEMOTRON, hop_kwargs(), NotFoundError('x')))
         for secret in ('private prompt text', 'hash-should-not-appear', 'community-agent-key'):
