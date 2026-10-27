@@ -1326,9 +1326,10 @@ export const triggerTextIsHumanWritten = async (trigger: NativeRunTrigger): Prom
 // TASK-417 / ADR-020 (ruled 2026-10-27): a connect-intent message from a person
 // gets the connect_local_agent card even when Scout's model proposes nothing
 // that turn. The floor only asks: the owner still approves the card.
-// The machine-side tool names only. A bare "claude" is left out: it matches the
-// Claude API and the Claude docs, which are ordinary prose, not a local seat.
-const CONNECT_INTENT = /\b(connect|link|hook up|set up)\b[^.!?\n]{0,40}?\b(claude code|codex|local agent)\b/i;
+// The tool name must follow a determiner (my, a, an), which marks a seat the
+// person is setting up. "the Codex API" and "the codex repo" are prose, and a
+// bare "claude" matches the Claude API and the Claude docs.
+const CONNECT_INTENT = /\b(connect|link|hook up|set up)\b[^.!?\n]{0,40}?\b(my|a|an)\s+(claude code|codex|local agent)\b/i;
 
 export const isConnectIntent = (text: string): boolean => CONNECT_INTENT.test(text);
 

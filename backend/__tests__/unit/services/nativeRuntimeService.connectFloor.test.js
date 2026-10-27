@@ -54,6 +54,7 @@ describe('isConnectIntent', () => {
     'connect my Claude Code to Commonly',
     'can you link my laptop so my codex runs here?',
     'set up a local agent for me',
+    'connect a codex to this pod',
   ])('matches a connect request: %s', (text) => {
     expect(isConnectIntent(text)).toBe(true);
   });
@@ -67,6 +68,8 @@ describe('isConnectIntent', () => {
     'connect to claude.ai for research',
     'connect to the Claude API',
     'link to the Claude docs',
+    'connect to the Codex API',
+    'link to the codex repo',
   ])('does not match: %s', (text) => {
     expect(isConnectIntent(text)).toBe(false);
   });
