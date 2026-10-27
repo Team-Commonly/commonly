@@ -143,6 +143,7 @@ The connectors page is a first-touch page. A row marked `first-touch` in the Pag
 | grants | Pod grants default to the pod's current members | TRUE | `backend/routes/grants.ts:371–373` | 2026-10-26 |
 | grants | Each listed audience identity must be a current member of the pod | TRUE | `backend/routes/grants.ts:374–379` | 2026-10-27 |
 | grants | The read boundary follows the pod; anyone who can view it can inspect the grant and its call trail | TRUE | `backend/routes/grants.ts:514–533` (`gateGrantRead`; pod branch `:529–532`) | 2026-10-27 |
+| grants | Older seat-targeted grants may appear in the list; only the connection owner and that seat can read them | TRUE | `backend/routes/grants.ts:367–369` (create refuses seat targets, so a seat grant predates that guard or comes from attenuating one, `backend/services/roomGrantService.ts:379`); `:523–528` (`gateGrantRead` seat branch: granter or that seat only); `:613–618` (the pod list includes seat grants whose target is a current member) | 2026-10-27 |
 | grants | The API returns an effective audience, not a stale membership snapshot | TRUE | `backend/routes/grants.ts:100`; `backend/routes/grants.ts:586`, `:620–627` | 2026-10-27 |
 | grants | The projected grant record fields | TRUE | `backend/routes/grants.ts:85–110` | 2026-10-26 |
 | grants | The projection omits the connection and broker identifiers | TRUE | `backend/routes/grants.ts:94–107` (projected fields); `:578–579` (comment); `:588` (projection call) | 2026-10-27 |

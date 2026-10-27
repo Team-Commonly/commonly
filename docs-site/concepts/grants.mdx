@@ -37,8 +37,9 @@ smaller audience, but every listed identity must still be a current member of
 the pod.
 
 The read boundary follows the pod. Anyone who can view the pod can inspect a
-grant and its call trail. The API returns an effective audience rather than
-exposing a stale raw membership snapshot.
+grant and its call trail. Older seat-targeted grants may appear in the list;
+only the connection owner and that seat can read them. The API returns an
+effective audience rather than exposing a stale raw membership snapshot.
 
 ## Grant records
 
