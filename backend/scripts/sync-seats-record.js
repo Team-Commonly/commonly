@@ -13,6 +13,7 @@ const TARGET = path.join(__dirname, '../vendor/seats');
 // format.js and otel.js plus everything they import, relative to the package.
 const FILES = [
   'src/failures.js',
+  'src/harness-plan.js',
   'src/upstream-refusal.js',
   'src/record/format.js',
   'src/record/otel.js',
