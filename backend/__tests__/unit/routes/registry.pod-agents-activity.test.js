@@ -232,8 +232,9 @@ describe('pod agents lastActiveAt derivation (#915)', () => {
     User.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
       _id: 'bot-1', username: 'local-default', botMetadata: { machineId: 'machine-1' }, agentRuntimeTokens: [],
     }]) }) });
+    // The runtime key is aged past the 5-minute window, so only the live machine can make this seat connected.
     AgentCredential.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([
-      { kind: 'runtime', agentUserId: 'bot-1', status: 'active', lastUsedAt: new Date() },
+      { kind: 'runtime', agentUserId: 'bot-1', status: 'active', lastUsedAt: new Date(Date.now() - 10 * 60 * 1000) },
       { kind: 'daemon', machineId: 'machine-1', status: 'active' },
     ]) }) });
     Machine.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
