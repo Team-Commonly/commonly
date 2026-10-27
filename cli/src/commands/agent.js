@@ -996,6 +996,7 @@ export const performAttach = async ({
   memoryInstance = 'default',
   log = () => {},
   adapterRegistry = { getAdapter, listAdapterNames },
+  seatbelt: probeSeatbelt = detectSeatbelt,
 }) => {
   const adapter = adapterRegistry.getAdapter(adapterName);
   if (!adapter) {
@@ -1055,7 +1056,7 @@ export const performAttach = async ({
           + '(deny-by-default filesystem + network)',
         );
       } else {
-        const seatbelt = detectSeatbelt();
+        const seatbelt = probeSeatbelt();
         if (!seatbelt.available) {
           throw new Error(
             `public Claude sandbox.mode=${sandboxMode} requires macOS Seatbelt: `

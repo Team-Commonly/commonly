@@ -111,7 +111,7 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
   });
 });
 
-const { default: dsh } = await import('../src/lib/adapters/dsh.js');
+const { default: dsh, TESTED_DSH_VERSIONS } = await import('../src/lib/adapters/dsh.js');
 
 describe("resolveAttachSandbox — dsh's confined shape (D106)", () => {
   const confined = { sandbox: { mode: 'workspace', network: { policy: 'restricted' } } };
@@ -456,10 +456,10 @@ describe('performAttach', () => {
   });
 
   // D106: performAttach must hand the adapter to resolveAttachSandbox, or the
-  // confined dsh shape meets the trust-keyed refusal. Past that gate it reaches
-  // the Seatbelt step, which logs on macOS and refuses on Linux; either proves
-  // the shape was admitted.
-  test('attach --env admits confined dsh through to the Seatbelt step (D106)', async () => {
+  // confined dsh shape meets the trust-keyed refusal. dsh's real validator runs
+  // (only detection is stubbed), and the Seatbelt probe is injected so both of
+  // its outcomes are pinned on every host.
+  const attachConfinedDsh = async (seatbelt) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-dsh-attach-'));
     try {
       const keyFile = path.join(root, 'provider-key');
@@ -474,29 +474,29 @@ describe('performAttach', () => {
       }));
       const client = makeClient({ runtimeToken: 'cm_agent_dsh' });
       client.get = jest.fn(async () => ({ publicRead: false, communityListed: false }));
+      const adapter = { ...dsh, detect: async () => ({ path: '/usr/local/bin/dsh', version: TESTED_DSH_VERSIONS[0] }) };
       const logs = [];
-      const outcome = await performAttach({
+      const error = await performAttach({
         client, adapterName: 'dsh', agentName: 'dsh-seat', podId: 'pod-private', envPath,
         log: (line) => logs.push(line),
-        adapterRegistry: {
-          getAdapter: () => ({
-            name: 'dsh', supportsProvider: true,
-            detect: async () => ({ path: '/usr/local/bin/dsh', version: '0.2.1-rc.2' }),
-            validateEnvironment: async () => {},
-            confinesOwnSandbox: dsh.confinesOwnSandbox,
-          }),
-          listAdapterNames: () => ['dsh'],
-        },
-      }).then(() => null, (error) => error);
-      if (outcome) {
-        expect(outcome.message).not.toMatch(/requires public trust/);
-        expect(outcome.message).toMatch(/requires macOS Seatbelt/);
-      } else {
-        expect(logs).toContain('sandbox: confined dsh workspace via macOS Seatbelt (restricted network)');
-      }
+        seatbelt: () => seatbelt,
+        adapterRegistry: { getAdapter: () => adapter, listAdapterNames: () => ['dsh'] },
+      }).then(() => null, (e) => e);
+      return { error, logs };
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  };
+
+  test('attach --env admits confined dsh and logs its Seatbelt confinement (D106)', async () => {
+    const { error, logs } = await attachConfinedDsh({ available: true });
+    expect(error).toBeNull();
+    expect(logs).toContain('sandbox: confined dsh workspace via macOS Seatbelt (restricted network)');
+  });
+
+  test('attach --env carries confined dsh to the Seatbelt check, not the trust refusal (D106)', async () => {
+    const { error } = await attachConfinedDsh({ available: false, error: 'sandbox-exec not found' });
+    expect(error.message).toMatch(/requires macOS Seatbelt: sandbox-exec not found/);
   });
 
   test('attach --env gives provider-backed Qwen the same Commonly MCP baseline as the daemon', async () => {
