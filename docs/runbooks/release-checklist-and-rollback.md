@@ -39,7 +39,7 @@ Every production deploy, however small.
 3. Record the rollback target before anything changes:
 
    ```bash
-   helm history <release> -n <ns> --max 5
+   helm history <release> -n <ns>
    ```
 
    Note the newest revision with status `deployed` and its image tag. Do not
@@ -49,8 +49,14 @@ Every production deploy, however small.
 
 ```bash
 gh workflow run deploy-dev.yml --ref main --repo Team-Commonly/commonly -f ref=<SHA>
-gh run list --workflow=deploy-dev.yml -L 1 --repo Team-Commonly/commonly
+gh run list --workflow=deploy-dev.yml --event workflow_dispatch -L 5 \
+  --repo Team-Commonly/commonly --json databaseId,createdAt,status
+gh run watch <run-id> --exit-status --repo Team-Commonly/commonly
 ```
+
+`gh workflow run` does not print the run it started. Take the run whose
+`createdAt` matches your dispatch, and confirm its first job names `<SHA>`
+before you watch it, so you never verify someone else's run.
 
 The run is always dispatched on main; `ref` picks the commit it builds. Its
 first job refuses a `ref` that is not a full SHA in the repo, and any SHA
@@ -110,12 +116,20 @@ holds every PR inside the window, so a merge then is a deliberate press.
 
 ## 5. Rollback
 
-Always name the revision; never run a bare `helm rollback`:
+Always name the revision; never run a bare `helm rollback`. Pick ONE of
+these, never both:
 
 ```bash
+# Either: the whole release, to the Helm revision recorded at the cut
 helm rollback <release> <revision> -n <ns>
+
+# Or: one Deployment, to a ReplicaSet revision from its own history
+kubectl rollout history deploy/<name> -n <ns>
 kubectl rollout undo deploy/<name> -n <ns> --to-revision=<N>
 ```
+
+The two use different histories: a Helm revision number is not a
+`kubectl rollout` revision number.
 
 - `helm rollback` to the revision recorded at the cut restores the whole
   release. Without a revision it goes to the previous one, which can be a
@@ -149,12 +163,13 @@ is:
 
 When in doubt, ship the beta.
 
-1. **Tag the deployed SHA.** After section 3 passes, the operator tags and
-   pushes:
+1. **Tag the deployed SHA.** Use `vX.Y.Z` only when every gate item above is
+   green; otherwise tag the same SHA `vX.Y.Z-beta.N`. Section 3 passing is
+   necessary but not enough. The operator tags and pushes:
 
    ```bash
-   git tag -a vX.Y.Z <deploy-SHA> -m "vX.Y.Z — <title>"
-   git push origin vX.Y.Z
+   git tag -a <tag> <deploy-SHA> -m "<tag> — <title>"
+   git push origin <tag>
    ```
 
 2. **GitHub Release**, titled `vX.Y.Z — <title>` like the earlier ones:
