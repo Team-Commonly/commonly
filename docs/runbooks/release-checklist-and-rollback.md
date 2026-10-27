@@ -134,6 +134,12 @@ Then re-verify as in section 3, against the old tag.
 New from v3.0.0. Earlier releases were v1.0.0 (04-07), v1.1.0, v2.0.0 (07-06)
 and v2.1.0 (07-23).
 
+**Pre-release first, final when proven.** A major version ships first as
+`vX.Y.Z-beta.N`, published as a GitHub pre-release. The final `vX.Y.Z` is
+tagged only after the release's own exit list is done; for v3 that list is the
+multiplayer walk, the grants walk, the repo sweep, a clean bug burn-down and a
+staging soak. When in doubt, ship another beta.
+
 1. **Tag the deployed SHA.** After section 3 passes, the operator tags and
    pushes:
 
@@ -149,14 +155,18 @@ and v2.1.0 (07-23).
      --title "vX.Y.Z — <title>" --notes-file <notes.md> --verify-tag
    ```
 
+   For a beta, add `--prerelease` so it is not marked Latest, e.g.
+   `gh release create v3.0.0-beta.1 … --prerelease`.
+
    The notes list only features that are merged, deployed in that SHA and
    walked on prod. Anything behind a flag or not yet walked waits for the
    next release. Group them under short headings with PR numbers, as v2.1.0
    does.
 
 3. **CHANGELOG.md entry.** There is no `CHANGELOG.md` yet; earlier notes live
-   only on GitHub Releases. v3.0.0 creates it at the repo root, newest first,
-   each entry repeating the release notes:
+   only on GitHub Releases. v3.0.0-beta.1 creates it at the repo root, newest
+   first, each entry repeating the release notes. A beta's heading carries its
+   full pre-release version (`## v3.0.0-beta.1 — <title> (YYYY-MM-DD)`):
 
    ```markdown
    ## vX.Y.Z — <title> (YYYY-MM-DD)
