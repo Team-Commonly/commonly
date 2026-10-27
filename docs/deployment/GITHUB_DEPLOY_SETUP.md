@@ -214,8 +214,12 @@ jobs:
 > token's `ref` does not match the binding's attribute condition. (OIDC *federation* succeeds; the
 > denial is specifically at service-account **impersonation** — `getAccessToken` — which the binding
 > gates.) **So you cannot deploy an arbitrary non-`main` SHA by pushing it to a side branch and
-> dispatching `--ref <that-branch>`.** To deploy a specific commit, get it onto `main` and dispatch
-> `--ref main` (it builds `HEAD`). Earned 2026-10-23: a pinned **staging** run (`deploy-staging` on a
+> dispatching `--ref <that-branch>`.** To deploy a specific commit, dispatch on main and pass the
+> commit as an input: `deploy-staging.yml -f ref=<sha>` first (it posts `staging-smoke` on that SHA),
+> then `deploy-dev.yml -f ref=<full 40-char sha>`. The commit must be pushed to the repo (a
+> `deploy/<name>` branch holding main's commits up to a point plus a cherry-picked fix, for
+> example); Deploy Dev accepts only a full SHA and refuses it without a green staging-smoke on it.
+> With no `ref`, both build main `HEAD`. Earned 2026-10-23: a pinned **staging** run (`deploy-staging` on a
 > side branch, run 39955031436) failed auth this way; `deploy-dev` (prod) is bound to `main` + the
 > `prod` environment the same way (step 4), so a pinned prod deploy would fail identically — not
 > separately attempted.

@@ -5,6 +5,7 @@
  * (via the same _fetchImpl seam in client.js) and assert the wire shape.
  */
 
+import { readFileSync } from 'node:fs';
 import { jest } from '@jest/globals';
 import { buildTools } from '../src/tools.js';
 import { HttpError } from '../src/client.js';
@@ -31,7 +32,8 @@ describe('tool registry shape', () => {
     //   from outside has a model of the place before it acts.
     // + 2 attention-claim tools (ADR-018: claim-or-renew, release).
     // + 1 agent-originated decision request (TASK-095 rev 2).
-    expect(tools).toHaveLength(29);
+    // + 1 self-follow task digest subscription (TASK-443).
+    expect(tools).toHaveLength(31);
   });
 
   it('exposes no GitHub PR tool — that surface is `gh`, not the kernel', () => {
@@ -73,6 +75,19 @@ const okResponse = (body) => ({
 afterEach(() => { delete global.fetch; });
 
 describe('commonly_post_message', () => {
+  it('forwards UI card payload and explicit type alongside the text fallback', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ id: 'card1' }));
+    const payload = { catalogId: 'commonly.ui', catalogRev: 1, catalogHash: 'sha256:bb8b4de07f90c06ee48f254d86478b5bd347c738b3e86cf65e2f32e26534db57', kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hello")' };
+    await byName.commonly_post_message.call({ podId: 'p', content: 'fallback', messageType: 'card', payload });
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toEqual({ content: 'fallback', messageType: 'card', payload });
+    expect(byName.commonly_post_message.inputSchema.properties.messageType.enum).toContain('card');
+    expect(byName.commonly_post_message.inputSchema.properties.payload.type).toBe('object');
+    const description = byName.commonly_post_message.inputSchema.properties.payload.description;
+    expect(description).toContain(`catalogId:"${payload.catalogId}"`);
+    expect(description).toContain(`catalogRev:${payload.catalogRev}`);
+    expect(description).toContain(payload.catalogHash);
+  });
+
   it('POSTs to the right path with body', async () => {
     const fetchSpy = installFetch(async () => okResponse({ id: 'm1' }));
     const result = await byName.commonly_post_message.call({
@@ -128,6 +143,31 @@ describe('commonly_post_message', () => {
     const payload = JSON.parse(result.content[0].text);
     expect(payload.status).toBe(400);
     expect(payload.message).toBe('bad request');
+  });
+});
+
+describe('required arguments', () => {
+  it('refuses a call that omits a required argument, by name, without a request', async () => {
+    const fetchSpy = installFetch(async () => okResponse({}));
+    for (const [name, args] of [
+      ['commonly_claim_task', { taskId: 'TASK-436' }],
+      ['commonly_get_tasks', {}],
+      ['commonly_update_task', { taskId: 'TASK-436', text: 'renewal' }],
+    ]) {
+      const result = await byName[name].call(args);
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text).message).toBe(`${name}: missing required argument podId`);
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('names every missing argument, and passes a complete call through', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ task: {} }));
+    const missing = await byName.commonly_claim_task.call({ podId: '' });
+    expect(JSON.parse(missing.content[0].text).message).toBe('commonly_claim_task: missing required arguments podId, taskId');
+    const done = await byName.commonly_claim_task.call({ podId: 'POD', taskId: 'TASK-1' });
+    expect(done.isError).toBeUndefined();
+    expect(fetchSpy.mock.calls[0][0]).toContain('/api/v1/tasks/POD/TASK-1/claim');
   });
 });
 
@@ -305,6 +345,17 @@ describe('commonly_get_tasks / create / claim / complete / update', () => {
     });
   });
 
+  it('passes priority and self-follow fields to the task API', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ ok: true }));
+    await byName.commonly_create_task.call({ podId: 'POD', title: 'Urgent', priority: 'P0' });
+    await byName.commonly_update_task.call({ podId: 'POD', taskId: 'TASK-1', text: 'Reprioritize', priority: 'P1' });
+    await byName.commonly_watch_task.call({ podId: 'POD', taskId: 'TASK-1', following: true });
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).priority).toBe('P0');
+    expect(JSON.parse(fetchSpy.mock.calls[1][1].body).priority).toBe('P1');
+    expect(fetchSpy.mock.calls[2][0]).toBe('https://x.example/api/v1/tasks/POD/TASK-1/watch');
+    expect(JSON.parse(fetchSpy.mock.calls[2][1].body)).toEqual({ following: true });
+  });
+
   it('claim_task hits /:podId/:taskId/claim', async () => {
     const fetchSpy = installFetch(async () => okResponse({ ok: true }));
     await byName.commonly_claim_task.call({ podId: 'POD', taskId: 'TASK-001' });
@@ -344,6 +395,66 @@ describe('commonly_get_tasks / create / claim / complete / update', () => {
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe('https://x.example/api/v1/tasks/POD/TASK-001/updates');
     expect(JSON.parse(init.body)).toEqual({ text: 'still working' });
+  });
+
+  it('update_task saves a normalized PR URL before appending the note', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ ok: true }));
+    await byName.commonly_update_task.call({
+      podId: 'POD', taskId: 'TASK-001', text: 'PR opened',
+      prUrl: 'https://github.com/Team-Commonly/commonly/pull/2399?tab=files#diff',
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const [[patchUrl, patchInit], [noteUrl, noteInit]] = fetchSpy.mock.calls;
+    expect(patchUrl).toBe('https://x.example/api/v1/tasks/POD/TASK-001');
+    expect(patchInit.method).toBe('PATCH');
+    expect(JSON.parse(patchInit.body)).toEqual({
+      prUrl: 'https://github.com/Team-Commonly/commonly/pull/2399',
+    });
+    expect(noteUrl).toBe('https://x.example/api/v1/tasks/POD/TASK-001/updates');
+    expect(noteInit.method).toBe('POST');
+    expect(JSON.parse(noteInit.body)).toEqual({ text: 'PR opened' });
+  });
+
+  it.each([
+    'https://example.com/Team-Commonly/commonly/pull/2399',
+    'https://github.com/Team-Commonly/commonly/issues/2399',
+    'https://github.com/Team-Commonly/commonly/pull/2399/extra',
+    'https://github.com/../commonly/pull/2399',
+    'https://github.com/Team-Commonly/commonly/pull/0',
+    'https://github.com/Team-Commonly/commonly/pull/2399/',
+    123,
+  ])('update_task refuses a non-PR URL before any request: %s', async (prUrl) => {
+    const fetchSpy = installFetch(async () => okResponse({ ok: true }));
+    const result = await byName.commonly_update_task.call({
+      podId: 'POD', taskId: 'TASK-001', text: 'PR opened', prUrl,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('prUrl must be https://github.com/');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('preserves priority and the freshness override when saving a PR URL and a note', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ ok: true }));
+    await byName.commonly_update_task.call({
+      podId: 'POD', taskId: 'TASK-001', text: 'PR opened', priority: 'P1', continueAnyway: true,
+      prUrl: 'https://github.com/Team-Commonly/commonly/pull/2399',
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetchSpy.mock.calls[1][1].body)).toEqual({ text: 'PR opened', priority: 'P1', continueAnyway: true });
+  });
+
+  it('does not append a note when the PR URL PATCH is refused', async () => {
+    const fetchSpy = installFetch(async () => ({
+      ok: false, status: 409, text: async () => JSON.stringify({ error: 'Task is leased by another agent' }),
+    }));
+    const result = await byName.commonly_update_task.call({
+      podId: 'POD', taskId: 'TASK-001', text: 'PR opened',
+      prUrl: 'https://github.com/Team-Commonly/commonly/pull/2399',
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('409');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][1].method).toBe('PATCH');
   });
 });
 
@@ -583,4 +694,32 @@ describe('attention claims (ADR-018)', () => {
     expect(byName.commonly_release_claim.inputSchema.properties.outcome)
       .toEqual({ type: 'string', enum: ['declined', 'completed'] });
   });
+});
+
+
+describe('per-event inbox checkpoint', () => {
+  afterEach(() => jest.restoreAllMocks());
+  test('requires both event ID and delivery nonce before sending anything', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ success: true }));
+    for (const args of [{}, { eventId: 'event' }, { eventId: 'event', deliveryId: '' }, { eventId: {}, deliveryId: 'nonce' }]) {
+      const result = await byName.commonly_checkpoint_event.call(args);
+      expect(result.isError).toBe(true);
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+  test('a stale nonce refusal stays an error and is never retried', async () => {
+    const fetchSpy = installFetch(async () => ({ ok: false, status: 409,
+      text: async () => JSON.stringify({ code: 'stale_delivery', message: 'This delivery was superseded' }) }));
+    const result = await byName.commonly_checkpoint_event.call({ eventId: 'event', deliveryId: 'stale-nonce' });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result)).toContain('stale_delivery');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+test('post schema publishes the current catalogue tuple without a private manifest lookup', () => {
+  const revision = JSON.parse(readFileSync(new URL('../../backend/config/uiCardCatalogueRevision.json', import.meta.url), 'utf8'));
+  const description = byName.commonly_post_message.inputSchema.properties.payload.description;
+  for (const value of Object.values(revision)) expect(description).toContain(String(value));
+  expect(description).not.toContain('published catalogue revision manifest');
 });

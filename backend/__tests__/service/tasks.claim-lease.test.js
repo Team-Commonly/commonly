@@ -22,10 +22,14 @@ jest.mock('../../services/taskEventService', () => {
   const actual = jest.requireActual('../../services/taskEventService');
   return { ...actual, notifyPodAgents: jest.fn().mockResolvedValue(undefined) };
 });
+jest.mock('../../services/systemActionLineService', () => ({
+  emitSystemActionLine: jest.fn().mockResolvedValue(undefined),
+}));
 
 const express = require('express');
 const request = require('supertest');
 const { notifyPodAgents } = require('../../services/taskEventService');
+const { emitSystemActionLine } = require('../../services/systemActionLineService');
 const Pod = require('../../models/Pod');
 const Task = require('../../models/Task');
 const User = require('../../models/User');
@@ -62,6 +66,7 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
 
   beforeEach(async () => {
     await clearMongoDb();
+    emitSystemActionLine.mockClear();
     owner = await User.create({
       username: `lease-owner-${Date.now()}`,
       email: `lease-owner-${Date.now()}@test.com`,
@@ -81,7 +86,7 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
       verified: true,
       isBot: true,
       botType: 'agent',
-      botMetadata: { agentName: 'claim-audit-agent', instanceId: 'default' },
+      botMetadata: { agentName: 'claim-audit-agent', instanceId: 'default', displayName: 'Audit Agent' },
       agentRuntimeTokens: [{
         tokenHash: hash(AGENT_TOKEN),
         label: 'task-claim-audit',
@@ -134,6 +139,11 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
         authorId: agent._id.toString(),
       }),
     ]));
+    expect(emitSystemActionLine).toHaveBeenCalledWith(expect.objectContaining({
+      actorName: 'Audit Agent',
+      actorUsername: 'claim-audit-agent',
+      actorIsBot: true,
+    }));
   });
 
   test('a fresh claim stamps a lease ~30 minutes out', async () => {
@@ -145,6 +155,16 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     const expires = new Date(res.body.task.claimExpiresAt).getTime();
     expect(expires).toBeGreaterThanOrEqual(before + LEASE_MS - 5000);
     expect(expires).toBeLessThanOrEqual(Date.now() + LEASE_MS + 5000);
+    expect(emitSystemActionLine).toHaveBeenCalledWith({
+      podId: pod._id.toString(),
+      actorUserId: owner._id.toString(),
+      actorName: owner.username,
+      actorUsername: owner.username,
+      actorAvatarUrl: null,
+      actorIsBot: false,
+      action: 'task-claimed',
+      taskId: 'T-1',
+    });
   });
 
   test('a live lease refuses a rival, naming the holder and when the lease frees', async () => {
@@ -164,6 +184,7 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     const renewed = await claim(ownerToken);
     expect(renewed.status).toBe(200);
     expect(new Date(renewed.body.task.claimExpiresAt).getTime()).toBeGreaterThan(firstExpiry);
+    expect(emitSystemActionLine).toHaveBeenCalledTimes(1);
   });
 
   test('a lapsed lease is claimable by a peer — dead claimants never hold work forever', async () => {
@@ -176,6 +197,7 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     const res = await claim(rivalToken);
     expect(res.status).toBe(200);
     expect(res.body.task.claimedBy).toBe(rival._id.toString());
+    expect(emitSystemActionLine).toHaveBeenCalledTimes(1);
   });
 
   test('a RECENT legacy claim (no lease field) is still protected', async () => {
@@ -478,7 +500,12 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     }
   });
 
-  test('PATCH unassignment offers the exact stored revision before the work sweep', async () => {
+  test('PATCH unassignment leaves the stored revision due for the work sweep', async () => {
+    await AgentInstallation.updateOne(
+      { agentName: 'claim-audit-agent', podId: pod._id },
+      { $set: { 'config.boardWake.enabled': true,
+        'config.workDiscovery': { enabled: true, role: 'implementer' } } },
+    );
     await seedTask({ assignee: 'claim-audit-agent' });
     // Force the same monotonic retry the PATCH takes when a competing writer
     // has committed after this request chose its timestamp.
@@ -501,10 +528,16 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     const realNotifyPodAgents = jest.requireActual('../../services/taskEventService').notifyPodAgents;
     await realNotifyPodAgents(pod._id, wake[1], wake[2], wake[3], wake[4]);
     const offered = await Task.findById(stored._id);
-    expect(offered.offeredAt?.getTime()).toBe(offered.updatedAt.getTime());
+    expect(offered.offeredAt).toBeUndefined();
 
-    const sweep = await require('../../services/kernelWorkSweepService').wakeForFoundWork(new Date());
-    expect(sweep.scannedPods).toBe(0);
+    // The prior-owner notice does not offer work to idle implementers.
+    // Only the opted-in discovery sweep offers the unassigned row. Use a clock past the forced monotonic revision above.
+    const sweep = await require('../../services/kernelWorkSweepService')
+      .wakeForFoundWork(new Date(stored.updatedAt.getTime() + 1000));
+    expect(sweep.scannedPods).toBe(1);
+    expect(sweep.woken).toBe(1);
+    const swept = await Task.findById(stored._id);
+    expect(swept.offeredAt?.getTime()).toBe(swept.updatedAt.getTime());
 
     const note = await request(app)
       .post(`/api/v1/tasks/${pod._id}/T-1/updates`)
@@ -512,8 +545,9 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
       .send({ text: 'Still available for pickup' });
     expect(note.status).toBe(200);
     const afterNote = await Task.findById(stored._id);
-    expect(afterNote.updatedAt.getTime()).toBeGreaterThan(offered.offeredAt.getTime());
-    const dueSweep = await require('../../services/kernelWorkSweepService').wakeForFoundWork(new Date());
+    expect(afterNote.updatedAt.getTime()).toBeGreaterThan(swept.offeredAt.getTime());
+    const dueSweep = await require('../../services/kernelWorkSweepService')
+      .wakeForFoundWork(new Date(afterNote.updatedAt.getTime() + 1000));
     expect(dueSweep.scannedPods).toBe(1);
 
     const title = await request(app)
@@ -536,4 +570,29 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     expect(new Date(completed.body.task.updatedAt).getTime())
       .toBeGreaterThan(new Date(claimed.body.task.updatedAt).getTime());
   });
+  test('priority edits through note append respect another seat live lease', async () => {
+    await seedTask({ status: 'claimed', claimedBy: String(rival._id), claimedAt: new Date(), claimExpiresAt: new Date(Date.now() + LEASE_MS), priority: 'P1' });
+    const response = await request(app)
+      .post(`/api/v1/tasks/${pod._id}/T-1/updates`)
+      .set('Authorization', `Bearer ${AGENT_TOKEN}`)
+      .send({ text: 'Change priority', priority: 'P3', continueAnyway: true });
+    expect(response.status).toBe(409);
+    expect((await Task.findOne({ podId: pod._id, taskId: 'T-1' })).priority).toBe('P1');
+  });
+
+  // A seat that omits podId reaches these routes with the literal "undefined"
+  // in the path (the MCP interpolates it). That used to throw a Pod CastError
+  // and answer 500, which seats read as the board being down.
+  test.each([
+    ['list', (path) => request(app).get(path)],
+    ['claim', (path) => request(app).post(`${path}/T-1/claim`).send({})],
+    ['note', (path) => request(app).post(`${path}/T-1/updates`).send({ text: 'renewal' })],
+  ])('an agent %s with podId "undefined" is a 400 naming podId, not a 500', async (_label, send) => {
+    await seedTask();
+    const res = await send('/api/v1/tasks/undefined').set('Authorization', `Bearer ${AGENT_TOKEN}`);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('podId must be a pod id');
+    expect((await Task.findOne({ podId: pod._id, taskId: 'T-1' })).status).toBe('pending');
+  });
+
 });

@@ -1,3 +1,4 @@
+import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
 /**
  * OpenCode adapter — wraps `opencode run --format json` as a Commonly seat.
  *
@@ -9,8 +10,8 @@
  * stay in the host adapter and reach the configured provider through a
  * per-spawn loopback proxy; OpenCode receives only that proxy's bearer.
  * This protects the key, not provider spend: the model can use its seat's key
- * budget, and bwrap's existing shared networking is not a per-port egress
- * fence.
+ * budget. On Linux the process has its own network namespace, with loopback
+ * bridges to the fixed provider and Commonly instance origins.
  * Config is generated per spawn. OpenCode merges config sources, therefore the
  * global config directory is isolated and project config is explicitly off;
  * the environment spec is the sole source of MCP servers for this run.
@@ -19,6 +20,7 @@
  * `text.part.text`, and token counts in `step_finish.part.tokens`.
  */
 
+import { requireSeatModel, seatModelRequired } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { realpathSync } from 'fs';
@@ -34,6 +36,7 @@ import {
   writeFile,
 } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
+import { fileURLToPath } from 'url';
 import {
   dirname, join, resolve as pathResolve,
 } from 'path';
@@ -44,6 +47,7 @@ import { buildMemoryPreamble } from '../memory-bridge.js';
 import {
   isLegacySandboxTrust,
   normalizeSandboxTrust,
+  refuseWorkspaceTrust,
   validateEnvironmentSpec,
 } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
@@ -53,9 +57,12 @@ import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
 import { isAnswerableToolError } from '../public-tool-error.js';
-import { createSignatureStore, isGeminiOpenAIUpstream } from '../gemini-signatures.js';
+import { startInstanceProxy } from '../instance-proxy.js';
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
+const ISOLATED_PROXY_PORT = 8765;
+const ISOLATED_INSTANCE_PORT = 8766;
+const LOOPBACK_BRIDGE = fileURLToPath(new URL('../sandbox/opencode-loopback.mjs', import.meta.url));
 const TERMINATION_GRACE_MS = 5000;
 // Bump only with a passing real sandbox-exec smoke against the new version.
 const TESTED_OPENCODE_VERSIONS = Object.freeze(['1.18.35', '1.19.0']);
@@ -294,12 +301,19 @@ const validateProviderEnvironment = async (environment, workspacePath) => {
   return resolveProviderKeyFile(environment.provider, workspacePath);
 };
 
+const STALE_SESSION_PATTERN = /session not found/i;
+// Set by runOpenCode only when the rejected run produced no turn output, so a
+// phrase that shows up after the model acted cannot replay the turn.
+const isStaleSessionError = (err) => err?.staleSession === true;
+
 const makeEventParser = () => {
   let buffer = '';
   let sessionId = null;
   let text = '';
   let usage = null;
   let errorMessage = null;
+  // Any text, tool call or step result means the model acted this run.
+  let turnOutput = false;
   // Every tool call that came back as an error, for the public-seat check in
   // spawn (publicToolFailure).
   const toolErrors = [];
@@ -308,11 +322,15 @@ const makeEventParser = () => {
     try {
       const event = JSON.parse(line);
       if (event.sessionID) sessionId = event.sessionID;
+      // Any step event means the run started a turn, so it is not safe to replay.
+      if (String(event.type || '').startsWith('step_') || event.type === 'tool_use') turnOutput = true;
       if (event.type === 'text' && typeof event.part?.text === 'string') {
+        turnOutput = true;
         text += event.part.text;
       } else if (event.type === 'step_finish' && event.part?.tokens) {
         usage = event.part.tokens;
-      } else if (event.type === 'tool_use' && event.part?.state?.status === 'error') {
+      }
+      if (event.type === 'tool_use' && event.part?.state?.status === 'error') {
         const { error } = event.part.state;
         toolErrors.push({
           tool: String(event.part.tool || ''),
@@ -327,6 +345,7 @@ const makeEventParser = () => {
     }
   };
   return {
+    get turnOutput() { return turnOutput; },
     consume(chunk) {
       buffer += chunk.toString();
       let newline;
@@ -388,7 +407,7 @@ const publicToolFailedError = ({ tool, error }) => {
   return failure;
 };
 
-const runOpenCode = ({ cmd, args, cwd, env, timeoutMs, credentials, spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
+const runOpenCode = ({ cmd, args, cwd, env, timeoutMs, credentials, spawnImpl = childSpawn, onSpawn, controls = {} }) => new Promise((resolve, reject) => {
   let proc;
   try {
     proc = spawnImpl(cmd, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -396,6 +415,7 @@ const runOpenCode = ({ cmd, args, cwd, env, timeoutMs, credentials, spawnImpl = 
     reject(err);
     return;
   }
+  observeSpawn(proc, onSpawn, controls);
   let stderr = '';
   let timedOut = false;
   let killTimer = null;
@@ -420,14 +440,18 @@ const runOpenCode = ({ cmd, args, cwd, env, timeoutMs, credentials, spawnImpl = 
     events.flush();
     if (timedOut) return reject(new Error(`opencode timed out after ${timeoutMs}ms`));
     if (events.errorMessage) {
-      return reject(adapterFailure('opencode turn failed', events.errorMessage, {
+      const err = adapterFailure('opencode turn failed', events.errorMessage, {
         credentials, limit: 2000,
-      }));
+      });
+      err.staleSession = !events.turnOutput && STALE_SESSION_PATTERN.test(events.errorMessage);
+      return reject(err);
     }
     if (code !== 0) {
-      return reject(adapterFailure('opencode', stderr.trim(), {
+      const err = adapterFailure('opencode', stderr.trim(), {
         credentials, exitCode: code, limit: 500,
-      }));
+      });
+      err.staleSession = !events.turnOutput && STALE_SESSION_PATTERN.test(stderr);
+      return reject(err);
     }
     resolve({
       sessionId: events.sessionId, text: events.text, usage: events.usage, toolErrors: events.toolErrors,
@@ -585,6 +609,8 @@ const readOpenCodeVersion = (binary, env) => {
   }
 };
 
+const isOpenCodePrerelease = (version) => version.split('+', 1)[0].includes('-');
+
 const compareOpenCodeVersions = (left, right) => {
   const leftParts = left.split(/[+-]/, 1)[0].split('.').map(Number);
   const rightParts = right.split(/[+-]/, 1)[0].split('.').map(Number);
@@ -593,6 +619,11 @@ const compareOpenCodeVersions = (left, right) => {
       return leftParts[index] > rightParts[index] ? 1 : -1;
     }
   }
+  // The smoke-tested boundaries are stable releases. A matching prerelease
+  // must not inherit their native signature-replay guarantee.
+  const leftPrerelease = isOpenCodePrerelease(left);
+  const rightPrerelease = isOpenCodePrerelease(right);
+  if (leftPrerelease !== rightPrerelease) return leftPrerelease ? -1 : 1;
   return 0;
 };
 
@@ -611,6 +642,7 @@ const describeOpenCodeVersionMismatch = (installedVersion) => {
 };
 
 export default {
+  get requiresModel() { return seatModelRequired(); },
   name: 'opencode',
   runtimeType: 'opencode',
   supportsProvider: true,
@@ -621,7 +653,7 @@ export default {
 
   async detect() {
     try {
-      const res = spawnSync('opencode', ['--version'], { encoding: 'utf8' });
+      const res = spawnSync('opencode', ['--version'], { encoding: 'utf8', timeout: VERSION_CHECK_TIMEOUT_MS });
       if (res.error || res.status !== 0) return null;
       const stdout = (res.stdout || '').trim();
       const version = parseOpenCodeVersion(stdout) || stdout || 'unknown';
@@ -634,7 +666,21 @@ export default {
   },
 
   async spawn(prompt, rawCtx = {}) {
+    try {
+      return await this.spawnTurn(prompt, rawCtx);
+    } catch (err) {
+      if (!rawCtx.sessionId || !isStaleSessionError(err)) throw err;
+      // The saved id is one OpenCode does not know: a seat switched from another
+      // adapter carries a Claude id, and a pruned session fails the same way. Nothing
+      // ran, so one fresh turn is safe (pi #1726 does the same fallback).
+      return this.spawnTurn(prompt, { ...rawCtx, sessionId: null });
+    }
+  },
+
+  async spawnTurn(prompt, rawCtx = {}) {
+    const seatModel = requireSeatModel(rawCtx.environment, 'opencode');
     const sandbox = normalizeSandboxTrust(rawCtx.environment?.sandbox);
+    refuseWorkspaceTrust(sandbox, 'opencode');
     const ctx = rawCtx.environment
       ? { ...rawCtx, environment: { ...rawCtx.environment, sandbox } }
       : rawCtx;
@@ -652,11 +698,10 @@ export default {
     if (isPublic && !provider) {
       throw new Error('public OpenCode seats require environment.provider; the implicit public tier and operator auth.json are unsupported for public trust');
     }
-    if (isPublic && sandboxMode === 'bwrap' && provider
-      && sandbox?.network?.policy === 'restricted') {
-      throw new Error('public OpenCode provider proxy requires shared bwrap networking; sandbox.network.policy=restricted cannot reach the loopback proxy');
+    if (ctx.providerKey && (!isPublic || !['workspace', 'read-only', 'bwrap'].includes(sandboxMode))) {
+      throw new Error('Own provider keys require a confined OpenCode runtime');
     }
-    const providerKeyFile = await validateProviderEnvironment(ctx.environment, ctx.cwd);
+    const providerKeyFile = ctx.providerKey ? null : await validateProviderEnvironment(ctx.environment, ctx.cwd);
 
     const sourceEnv = ctx.env || process.env;
     const childSourceEnv = Object.fromEntries(Object.entries(sourceEnv)
@@ -666,6 +711,16 @@ export default {
       : childSourceEnv;
     const binary = ctx._binaryPath || spawnBinaryPath(runtimeEnv);
     const installedVersion = readOpenCodeVersion(binary, runtimeEnv);
+    // Trusted seats otherwise allow old binaries. Gemini requires a stable
+    // release with native signature replay now that the proxy shim is gone.
+    if (provider && new URL(provider.baseURL).hostname.toLowerCase() === 'generativelanguage.googleapis.com'
+      && (!installedVersion || isOpenCodePrerelease(installedVersion)
+        || compareOpenCodeVersions(installedVersion, TESTED_OPENCODE_VERSIONS[0]) < 0)) {
+      throw new Error(
+        `Gemini requires stable OpenCode ${TESTED_OPENCODE_VERSIONS[0]} or later for native thought-signature replay; `
+        + `installed version is ${installedVersion || 'unknown'}`,
+      );
+    }
     if (!TESTED_OPENCODE_VERSIONS.includes(installedVersion)) {
       const mismatch = describeOpenCodeVersionMismatch(installedVersion);
       const allowOverride = process.env[ALLOW_UNTESTED_OPENCODE_VERSION_ENV] === '1';
@@ -711,28 +766,26 @@ export default {
     });
     let openCodeHome = null;
     let providerProxy = null;
+    let instanceProxy = null;
     try {
       openCodeHome = await prepareOpenCodeDataHome(ctx, { publicSeat: isPublic });
-      // Gemini 3 needs its thought signatures back on the next request, and
-      // OpenCode's provider drops them (gemini-signatures.js), so a Gemini seat
-      // goes through the proxy whatever its trust. The signatures are kept per
-      // seat under ~/.commonly, outside the workspace and OpenCode's own home.
-      const geminiUpstream = Boolean(provider) && isGeminiOpenAIUpstream(provider.baseURL);
-      if ((isPublic || geminiUpstream) && provider) {
-        let signatureStore = null;
-        if (geminiUpstream) {
-          const seat = createHash('sha256').update(seatIdentity(ctx)).digest('hex').slice(0, 24);
-          signatureStore = createSignatureStore(ctx._geminiSignatureDir
-            || join(homedir(), '.commonly', 'gemini-signatures', seat));
-          await signatureStore.prune();
-        }
+      if (isPublic && provider) {
         // OpenCode can spend the configured model budget through this proxy;
         // the bearer only prevents unrelated local processes from using it.
         providerProxy = await startProviderProxy({
           provider,
-          keyFile: providerKeyFile,
+          keyFile: providerKeyFile, keyMaterial: ctx.providerKey,
           tokenFile: join(tempDir, 'provider-proxy-token'),
-          signatureStore,
+          ...(sandboxMode === 'bwrap' ? {
+            socketPath: join(tempDir, 'provider-proxy.sock'),
+            isolatedPort: ISOLATED_PROXY_PORT,
+          } : {}),
+        });
+      }
+      if (isPublic && sandboxMode === 'bwrap' && ctx.instanceUrl) {
+        instanceProxy = await startInstanceProxy({
+          instanceUrl: ctx.instanceUrl,
+          socketPath: join(tempDir, 'instance-proxy.sock'),
         });
       }
       const stateHome = isPublic ? join(openCodeHome.root, 'state') : null;
@@ -747,7 +800,8 @@ export default {
       const mcpReadDirectories = [];
       const mcp = buildMcpConfig(ctx.environment?.mcp, {
         runtimeToken: ctx.runtimeToken,
-        instanceUrl: ctx.instanceUrl,
+        instanceUrl: instanceProxy
+          ? `http://127.0.0.1:${ISOLATED_INSTANCE_PORT}` : ctx.instanceUrl,
         credentialFile: credential?.path || null,
         publicSeat: isPublic,
         unavailableMcp,
@@ -789,7 +843,7 @@ export default {
         prompt: fullPrompt,
         sessionId: ctx.sessionId,
         cwd: ctx.cwd,
-        model: qualifiedProviderModel(provider, ctx.environment?.model),
+        model: qualifiedProviderModel(provider, seatModel),
         effort: ctx.environment?.effort,
         title: ctx.agentName,
       });
@@ -802,10 +856,15 @@ export default {
         }
         const bwrap = (ctx._detectBwrap || detectBwrap)();
         if (!bwrap.available) throw new Error(`public OpenCode agents require bwrap: ${bwrap.error}`);
-        const wrapped = (ctx._wrapArgvWithBwrap || wrapArgvWithBwrap)([binary, ...args], {
+        const wrapped = (ctx._wrapArgvWithBwrap || wrapArgvWithBwrap)([
+          process.execPath, LOOPBACK_BRIDGE,
+          providerProxy.socketPath, String(ISOLATED_PROXY_PORT),
+          instanceProxy?.socketPath || '-', String(ISOLATED_INSTANCE_PORT), binary, ...args,
+        ], {
           ...ctx.environment,
           sandbox: {
             ...sandbox,
+            network: { ...sandbox?.network, policy: 'restricted' },
             filesystem: {
               ...(sandbox?.filesystem || {}),
               'write-outside': [
@@ -821,8 +880,11 @@ export default {
             tempDir,
             binary,
             process.execPath,
+            LOOPBACK_BRIDGE,
             ...mcpReadDirectories,
           ],
+          optionalReadOnlyPaths: ['/usr/sbin', '/sbin'],
+          enableLoopback: true,
         });
         [cmd, ...spawnArgs] = wrapped;
       } else if (isPublic) {
@@ -841,7 +903,7 @@ export default {
         });
         [cmd, ...spawnArgs] = wrapped;
       }
-      const credentials = spawnCredentials(ctx, sourceAuthEnvNames(sourceEnv));
+      const credentials = [...spawnCredentials(ctx, sourceAuthEnvNames(sourceEnv)), ctx.providerKey].filter(Boolean);
       const result = await runOpenCode({
         cmd,
         args: spawnArgs,
@@ -849,7 +911,7 @@ export default {
         env: childEnv,
         timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
         credentials,
-        spawnImpl: ctx._spawnImpl,
+        spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(0, -1), { modelFlag: '-m', effortFlag: '--variant', valueFlags: ['-s', '--dir', '--title', '--format'] }),
       });
       if (isPublic) {
         const failure = publicToolFailure(result.toolErrors, ctx.environment?.mcp);
@@ -861,6 +923,7 @@ export default {
         ...(result.usage ? { usage: result.usage } : {}),
       };
     } finally {
+      try { await instanceProxy?.close(); } catch { /* ignore */ }
       try { await providerProxy?.close(); } catch { /* ignore */ }
       try { await rm(tempDir, { recursive: true, force: true }); } catch { /* ignore */ }
     }

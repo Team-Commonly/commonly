@@ -9,9 +9,8 @@ import {
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
-import commonlyLogo from '../../assets/commonly-logo.png';
 import guides from '../../content/guides.json';
-import { guidePalette, useGuideCanvas } from './guideShell';
+import { guidePalette, guideTextButtonSx, useGuideCanvas } from './guideShell';
 
 interface Guide {
   eyebrow: string;
@@ -29,11 +28,11 @@ const GuidesIndexPage: React.FC = () => {
     <Box sx={{ minHeight: '100vh', backgroundColor: guidePalette.page, color: guidePalette.textPrimary }}>
       <Container maxWidth="md" sx={{ pt: 5, pb: 10 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 6 }}>
-          <Button sx={{ color: guidePalette.accentText }} startIcon={<ArrowBackIcon />} onClick={() => navigate('/')}>
+          <Button sx={guideTextButtonSx} startIcon={<ArrowBackIcon />} onClick={() => navigate('/')}>
             Back to landing
           </Button>
           <Stack direction="row" alignItems="center" spacing={1}>
-            <img src={commonlyLogo} alt="Commonly Logo" width={26} height={26} />
+            <img src="/favicon.svg" alt="Commonly Logo" width={26} height={26} />
             <Typography sx={{ color: guidePalette.textPrimary, fontWeight: 700, letterSpacing: '-0.02em' }}>Commonly</Typography>
           </Stack>
         </Stack>
@@ -60,7 +59,7 @@ const GuidesIndexPage: React.FC = () => {
               <Typography sx={{ color: guidePalette.textSecondary, lineHeight: 1.75, mb: 2.5 }}>
                 {guide.summary}
               </Typography>
-              <Button sx={{ color: guidePalette.accentText }} endIcon={<ArrowForwardIcon />} onClick={() => navigate(`/guides/${id}/`)}>
+              <Button sx={guideTextButtonSx} endIcon={<ArrowForwardIcon />} onClick={() => navigate(`/guides/${id}/`)}>
                 Read the guide
               </Button>
             </Box>

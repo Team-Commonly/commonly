@@ -1,4 +1,6 @@
 // @ts-nocheck
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // The listener snippet is what a stranger pastes to make the agent answer
 // @mentions. Every line of it has to execute: the CLI-install line was a shell
 // comment until 2026-10-09, so a whole-snippet paste on a machine without the
@@ -64,6 +66,58 @@ const issueToken = async () => {
 };
 
 describe('BYO listener snippet', () => {
+  test('connect commands use the configured staging API instead of production', async () => {
+    const previousApiUrl = process.env.REACT_APP_API_URL;
+    process.env.REACT_APP_API_URL = 'https://api-staging.commonly.me/';
+    try {
+      await issueToken();
+      const commands = Array.from(document.querySelectorAll('.v2-byo__pre'))
+        .map((el) => el.textContent || '')
+        .filter((text) => text.includes('COMMONLY_API_URL='));
+      expect(commands).toHaveLength(2);
+      commands.forEach((command) => {
+        expect(command).toContain('COMMONLY_API_URL=https://api-staging.commonly.me');
+        expect(command).not.toContain('api.commonly.me');
+      });
+      const cursorConfig = Array.from(document.querySelectorAll('.v2-byo__pre'))
+        .map((el) => el.textContent || '')
+        .find((text) => text.includes('mcpServers'));
+      expect(JSON.parse(cursorConfig || '').mcpServers.commonly.env.COMMONLY_API_URL)
+        .toBe('https://api-staging.commonly.me');
+    } finally {
+      if (previousApiUrl === undefined) delete process.env.REACT_APP_API_URL;
+      else process.env.REACT_APP_API_URL = previousApiUrl;
+    }
+  });
+
+  test('the Cursor install link uses this instance without putting the issued key in its URL', async () => {
+    const previousApiUrl = process.env.REACT_APP_API_URL;
+    process.env.REACT_APP_API_URL = 'https://api.example.test/';
+    try {
+      await issueToken();
+      const href = screen.getByRole('link', { name: 'Add to Cursor', hidden: true }).getAttribute('href') || '';
+      const config = JSON.parse(atob(decodeURIComponent(href.split('config=')[1])));
+      expect(config.env).toEqual({
+        COMMONLY_API_URL: 'https://api.example.test',
+        COMMONLY_AGENT_TOKEN: 'PASTE_AGENT_TOKEN_HERE',
+      });
+      expect(href).not.toContain('cm_agent_test_token');
+      expect(href).not.toContain('api.commonly.me');
+    } finally {
+      if (previousApiUrl === undefined) delete process.env.REACT_APP_API_URL;
+      else process.env.REACT_APP_API_URL = previousApiUrl;
+    }
+  });
+
+  test('the Cursor link leads its guidance, while the JSON still names its destination', async () => {
+    await issueToken();
+    const link = screen.getByRole('link', { name: 'Add to Cursor', hidden: true });
+    const hint = link.nextElementSibling;
+    expect(hint).toHaveClass('v2-byo__hint');
+    expect(hint).toHaveTextContent('The link adds Commonly with a placeholder key.');
+    expect(link.closest('.v2-byo__snippet')).toHaveTextContent('~/.cursor/mcp.json');
+  });
+
   // QA BYO walk 1 (2026-10-16): four equal Copy boxes, and the one titled
   // "Claude Code" was the MCP line, which does not make the agent answer. The
   // command that does is THE box: first, and the only one not marked optional
@@ -99,6 +153,18 @@ describe('BYO listener snippet', () => {
     fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
     expect((listenCommand().textContent || '').split('\n')[3]).toMatch(/ --adapter codex$/);
     expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI signed in/);
+  });
+
+  test('a Claude Code listener says what it can reach and how --allow widens it; Codex says nothing of folders', async () => {
+    await issueToken();
+    const reach = screen.getByTestId('byo-listen-reach');
+    expect(reach).toHaveTextContent(/By default, on macOS, when every pod it's in is private, invite-only and not listed in Community, .+ reads only the folder you run this from\. Otherwise, or when you run it from your home folder, it works in its own scratch folder\./);
+    // The folder bound is the default only: write's commands read past it.
+    expect(reach).toHaveTextContent(/add --allow write to the last line\. Those commands can read beyond the folder\./);
+    expect(reach).toHaveTextContent(/To let it fetch web pages, add --allow web\./);
+    expect(reach).toHaveTextContent(/send what it reads off this computer/);
+    fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
+    expect(screen.queryByTestId('byo-listen-reach')).toBeNull();
   });
 
   test('the Claude Code MCP line shows for Claude Code only', async () => {
@@ -192,6 +258,7 @@ describe('BYO listener snippet', () => {
       await issueToken();
       expect(screen.getByTestId('byo-setup-os-linux')).toHaveAttribute('aria-pressed', 'true');
       expect(listener()).toBeUndefined();
+      expect(screen.queryByTestId('byo-listen-reach')).toBeNull();
       expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/from Linux yet/);
       expect(mcpBox()).toMatch(/-- npx -y @commonlyai\/mcp$/);
       expect(screen.getByTestId('byo-mcp-claude')).not.toHaveTextContent(/command above|Optional/);

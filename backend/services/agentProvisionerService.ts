@@ -1,4 +1,5 @@
 export {};
+import { filterRuntimeAccountLogs } from '../utils/runtimeLogFilter';
 
 const fs = require('fs');
 const path = require('path');
@@ -1550,16 +1551,14 @@ const readOpenClawIdentityFile = async (accountId: any, options = {}) => {
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
     return k8sProvisioner.readOpenClawIdentityFile(accountId, options);
   }
-  // Local: read from filesystem
+  const workspacePath = resolveOpenClawWorkspacePath(accountId);
   try {
-    const workspacePath = process.env.OPENCLAW_WORKSPACE_PATH || '/workspace';
-    const filePath = `${workspacePath}/${accountId}/IDENTITY.md`;
-    // eslint-disable-next-line global-require
-    const fs = require('fs');
-    if (!fs.existsSync(filePath)) return '';
-    return fs.readFileSync(filePath, 'utf8');
-  } catch {
-    return '';
+    return fs.readFileSync(path.join(workspacePath, 'IDENTITY.md'), 'utf8');
+  } catch (error: any) {
+    // Only absence is empty content. Read/modify/write callers must not
+    // report success or replace an unreadable identity with a blank one.
+    if (error.code === 'ENOENT') return '';
+    throw error;
   }
 };
 
@@ -1662,7 +1661,8 @@ const getAgentRuntimeLogs = async (runtimeType: any, instanceId: any, lines = 20
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
     return k8sProvisioner.getAgentRuntimeLogs(runtimeType, instanceId, lines, options);
   }
-  return getDockerRuntimeLogs(runtimeType, lines);
+  const result = await getDockerRuntimeLogs(runtimeType, lines);
+  return { ...result, logs: filterRuntimeAccountLogs(result.logs, (options as any).filterTokens || []) };
 };
 
 const getAgentSessionSizes = async (options = {}) => {

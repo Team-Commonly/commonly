@@ -178,19 +178,21 @@ describe("V2Thread — Scout's starts", () => {
   test('a start this person already sent stays gone after a reload', () => {
     renderThread([welcome, message('sent', 'u1', 'maya', CONNECT, 4)]);
 
-    const group = startsGroup();
+    // The welcome's group comes first; the sent connect start carries its own.
+    const [group] = screen.getAllByRole('group', { name: 'Ways to start' });
     expect(within(group).queryByRole('button', { name: CONNECT })).not.toBeInTheDocument();
     expect(within(group).getByRole('button', { name: POD_START })).toBeInTheDocument();
   });
 
-  test('both starts sent: no group is left behind', () => {
+  test('both starts sent: only the Bring your own link is left', () => {
     renderThread([
       welcome,
       message('sent-1', 'u1', 'maya', CONNECT, 4),
       message('sent-2', 'u1', 'maya', POD_START, 5),
     ]);
 
-    expect(startsGroup()).not.toBeInTheDocument();
+    expect(within(startsGroup()).getAllByRole('button').map((button) => button.textContent))
+      .toEqual([OPEN_BYO]);
   });
 
   test('a message without starts shows no buttons, including an older welcome', () => {
@@ -199,6 +201,50 @@ describe("V2Thread — Scout's starts", () => {
     ]);
 
     expect(startsGroup()).not.toBeInTheDocument();
+  });
+});
+
+// D139: Scout's reply to the connect start is a prompt and cannot be relied on
+// to link Bring your own, so the thread links it under the person's own
+// message, from the moment it is sent.
+const OPEN_BYO = 'Open Bring your own';
+
+describe('V2Thread — the connect start links Bring your own', () => {
+  test("clicking the connect start shows the link under the person's message at once", async () => {
+    const send = renderThread([welcome]);
+    fireEvent.click(within(startsGroup()).getByRole('button', { name: CONNECT }));
+    expect(send).toHaveBeenCalledWith(CONNECT, 'text', undefined, undefined);
+
+    const link = await screen.findByRole('button', { name: OPEN_BYO });
+    fireEvent.click(link);
+    await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/v2/agents/byo?pod=pod-1'));
+  });
+
+  test('the link shows only under that exact label', () => {
+    renderThread([
+      welcome,
+      message('close', 'u1', 'maya', 'Connect an agent I already use, please', 4),
+      message('lower', 'u1', 'maya', 'connect an agent i already use', 5),
+      message('pod', 'u1', 'maya', POD_START, 6),
+    ]);
+    expect(screen.queryByRole('button', { name: OPEN_BYO })).not.toBeInTheDocument();
+  });
+
+  test("another member's connect message gets no link", () => {
+    renderThread([welcome, message('theirs', 'u2', 'lee', CONNECT, 4)]);
+    expect(screen.queryByRole('button', { name: OPEN_BYO })).not.toBeInTheDocument();
+  });
+
+  test("in a pod the viewer didn't create, their own connect message gets no link", () => {
+    renderThread([welcome, message('mine', 'u1', 'maya', CONNECT, 4)], jest.fn(), {
+      pod: { ...OWN_POD, createdBy: 'someone-else' },
+    });
+    expect(screen.queryByRole('button', { name: OPEN_BYO })).not.toBeInTheDocument();
+  });
+
+  test('a message from Scout with that text gets no link', () => {
+    renderThread([message('echo', 'scout-1', 'scout', CONNECT, 4, { user: { username: 'scout', isBot: true } })]);
+    expect(screen.queryByRole('button', { name: OPEN_BYO })).not.toBeInTheDocument();
   });
 });
 
@@ -411,6 +457,24 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
     expect(button).not.toHaveAccessibleDescription();
     expect(button).not.toHaveAttribute('aria-describedby');
     expect(screen.queryByText('Beta: 1 hosted agent per account, 30 turns a day.')).not.toBeInTheDocument();
+  });
+
+  test('a held agent answers the click with its running line, even when the start carries no limits', async () => {
+    answer({
+      '/api/hosted/welcome-start': [HELD],
+      '/api/hosted/provision': [{ ready: true }],
+    });
+    const noCaps = {
+      ...welcome,
+      payload: {
+        kind: 'starts',
+        starts: [{ id: 'run-hosted', label: HOSTED, href: HREF, action: 'run-hosted' }, ...welcome.payload.starts],
+      },
+    };
+    renderThread([noCaps]);
+    fireEvent.click(screen.getByRole('button', { name: HOSTED }));
+    expect(await screen.findByText('maya-agent is listening.')).toHaveAttribute('role', 'status');
+    expect(calls('/api/registry/install')).toHaveLength(0);
   });
 
   test('one click installs and starts the agent in this pod, sends nothing, and the start goes away', async () => {

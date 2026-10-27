@@ -612,6 +612,23 @@ class MessageClaimService {
     return res.rows.map((r: { message_id: unknown }) => String(r.message_id));
   }
 
+  /** Current claimants on any message in this thread, scoped to this pod. */
+  static async liveClaimantsInThread(podId: string, threadRootId: number): Promise<Set<string>> {
+    if (!podId || !Number.isSafeInteger(threadRootId) || threadRootId <= 0) return new Set();
+    await ensureTable();
+    const res = await pool.query(
+      `SELECT DISTINCT LOWER(c.claimed_by) AS agent_name, c.instance_id
+         FROM message_claims c
+         JOIN messages m ON m.id::text = c.message_id AND m.pod_id = c.pod_id
+        WHERE c.pod_id = $1 AND COALESCE(m.thread_root_id, m.id) = $2
+          AND c.state = 'claimed' AND c.expires_at >= NOW()`,
+      [String(podId), threadRootId],
+    );
+    return new Set(res.rows.map((row: { agent_name: string; instance_id: string }) => (
+      `${row.agent_name}:${row.instance_id || 'default'}`
+    )));
+  }
+
   static async holder(messageId: string): Promise<ClaimResult> {
     await ensureTable();
     const res = await pool.query(

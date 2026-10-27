@@ -277,7 +277,7 @@ Two consequences worth stating, because they shrink a parked deliverable. **The 
 
 ## Out of scope
 
-- `parentPod` / pods-as-graph — parked (register P2) pending competitor-source evidence; separate ADR if activated.
+- `parentPod` / pods-as-graph — parked (register P2) pending competitor-source evidence; separate ADR if activated. Proposed for activation in [ADR-032](ADR-032-sub-pods.md) (2026-10-25), which adds the parent/child relation and leaves this ADR's tiers unchanged.
 - Renaming the storage columns; retiring `type` values.
 - The consumer-vs-developer positioning question (unchanged from stub).
 - Request-access (H5) mechanics — only its *slot* in the model is reserved (state row 5's Discover exclusion).

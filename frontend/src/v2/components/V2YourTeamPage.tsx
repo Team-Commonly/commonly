@@ -107,6 +107,14 @@ const agentKey = (a: { name: string; instanceId?: string }) => `${a.name}:${a.in
 // chip and the status line carry the name before the subtitle.
 const shortPodName = (name: string): string => name.split(' — ')[0].split(' - ')[0].trim();
 
+const isTemplateDescription = (description: string, displayName: string): boolean => {
+  const value = description.trim().toLowerCase();
+  const nameTemplate = `${displayName.trim().toLowerCase()} agent`;
+  return value === '<name> agent'
+    || value === nameTemplate
+    || value.startsWith('your friendly ai assistant powered by claude');
+};
+
 // A seat can be installed in several pods; the listing is per pod. Fold to
 // one card per identity and keep every pod's name for the chips.
 const dedupeAgents = (rows: Array<AgentInstallationSummary & { podName?: string }>): AgentInstallationSummary[] => {
@@ -326,6 +334,7 @@ const V2YourTeamPage: React.FC = () => {
 
   const renderCard = ({ a, state }: { a: AgentInstallationSummary; state: CardState }) => {
     const display = a.displayName || a.name;
+    const description = a.description?.trim();
     const key = agentKey(a);
     const ask = a.userId ? asksByActor.get(a.userId)?.[0] : undefined;
     const task = claimedTaskFor(a);
@@ -363,12 +372,17 @@ const V2YourTeamPage: React.FC = () => {
             </div>
           </div>
         </div>
-        {a.description && <p className="v2-team-card__desc">{a.description}</p>}
+        {description && !isTemplateDescription(description, display) && <p className="v2-team-card__desc">{description}</p>}
         {(a.podNames?.length || 0) > 0 && (
           <div className="v2-team-card__pods" aria-label={t('yourTeam.card.podsAria')}>
-            {(a.podNames || []).slice(0, 4).map((name) => (
+            {(a.podNames || []).slice(0, 2).map((name) => (
               <span key={name} className="v2-team-card__pod">{shortPodName(name).toLowerCase()}</span>
             ))}
+            {(a.podNames || []).length > 2 && (
+              <span className="v2-team-card__pod v2-team-card__pod--more" aria-label={t('yourTeam.card.morePodsAria', { count: (a.podNames || []).length - 2 })}>
+                +{(a.podNames || []).length - 2}
+              </span>
+            )}
           </div>
         )}
         <div className="v2-team-card__actions">

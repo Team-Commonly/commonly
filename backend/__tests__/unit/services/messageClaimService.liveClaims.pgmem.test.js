@@ -36,6 +36,9 @@ const lease = (messageId, {
 );
 
 beforeAll(async () => {
+  await realPool.query(`CREATE TABLE messages (
+    id INTEGER PRIMARY KEY, pod_id TEXT NOT NULL, thread_root_id INTEGER
+  )`);
   await realPool.query(`CREATE TABLE message_claims (
     message_id TEXT PRIMARY KEY,
     pod_id TEXT NOT NULL,
@@ -49,6 +52,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await realPool.query('DELETE FROM message_claims');
+  await realPool.query('DELETE FROM messages');
 });
 
 const held = () => MessageClaimService.liveClaimsHeldBy({ podId: POD, agentName: 'Scout', instanceId: 'u1' });
@@ -81,5 +85,16 @@ describe('liveClaimsHeldBy', () => {
     await lease('901', { instanceId: 'u2' });
     await lease('902', { podId: OTHER_POD });
     await expect(held()).resolves.toEqual([]);
+  });
+});
+
+describe('liveClaimantsInThread', () => {
+  test('finds only active claims on this thread in this pod', async () => {
+    await realPool.query('INSERT INTO messages (id, pod_id, thread_root_id) VALUES (900, $1, NULL), (901, $1, 900), (902, $1, 900), (903, $2, 900)', [POD, OTHER_POD]);
+    await lease('901', { claimedBy: 'Scout' });
+    await lease('902', { claimedBy: 'flint', state: 'completed' });
+    await lease('903', { claimedBy: 'other', podId: OTHER_POD });
+    await expect(MessageClaimService.liveClaimantsInThread(POD, 900))
+      .resolves.toEqual(new Set(['scout:u1']));
   });
 });

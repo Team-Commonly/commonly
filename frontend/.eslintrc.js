@@ -50,6 +50,7 @@ module.exports = {
         'src/v2/components/V2ResetPassword.tsx',
         'src/v2/components/V2OAuthButtons.tsx',
         'src/v2/components/V2OAuthComplete.tsx',
+        'src/v2/components/V2DeleteAccount.tsx',
         'src/v2/components/V2InviteRedeem.tsx',
         'src/components/RegistrationInviteRequired.tsx',
         'src/components/VerifyEmail.tsx',

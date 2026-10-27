@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { Types } from 'mongoose';
 import Task from '../models/Task';
+import { foldExpiredDigests, readFoldedDigest, settleFoldedDigest } from './agentDigestFoldService';
 import { postToPublicAddress } from './outboundUrlGuard';
 import { hostedRunsNative, IN_PROCESS_RUNTIME_FILTER } from './hostedEngine';
 
@@ -50,6 +51,61 @@ const TASK_UPDATE_CUE_MAX_CURSOR_AGE_MS = 24 * 60 * 60 * 1000;
 const mintDeliveryNonce = (): string => crypto.randomBytes(16).toString('hex');
 
 const OBJECT_ID_HEX = /^[a-f\d]{24}$/i;
+
+// A wake advertises unread conversations, not message text. The seat can
+// choose which threads to pull with commonly_get_messages after it wakes.
+const digestConversationFrame = (
+  rows: Array<{ payload?: Record<string, unknown> }>,
+  olderCount = 0,
+  olderConversations: Array<{ label: string; count: number }> = [],
+): string => {
+  const counts = new Map<string, number>();
+  let knownOlder = 0;
+  for (const conversation of olderConversations) {
+    if (!conversation.label || !Number.isInteger(conversation.count) || conversation.count < 1) continue;
+    counts.set(conversation.label, (counts.get(conversation.label) || 0) + conversation.count);
+    knownOlder += conversation.count;
+  }
+  if (olderCount > knownOlder) counts.set('older pod activity', olderCount - knownOlder);
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const payload = row.payload || {};
+    const sourceId = payload.messageId != null ? `message:${payload.messageId}`
+      : (typeof payload.taskId === 'string'
+        ? `task:${payload.taskId}:${String(payload.taskKind || '')}:${String(payload.content || '')}` : null);
+    if (sourceId && seen.has(sourceId)) continue;
+    if (sourceId) seen.add(sourceId);
+    const thread = payload.threadRootId;
+    const task = payload.taskId;
+    const label = typeof thread === 'number' && Number.isInteger(thread) && thread > 0
+      ? `thread ${thread}`
+      : (typeof task === 'string' && /^TASK-\d+$/.test(task) ? task : 'pod conversation');
+    counts.set(label, (counts.get(label) || 0) + 1);
+  }
+  const lines = [...counts].slice(0, 8).map(([label, count]) => `- ${label}: ${count} unread`);
+  const omitted = Math.max(0, counts.size - 8);
+  if (omitted) lines.push(`- ${omitted} more conversations omitted`);
+  const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
+  return `[Since you last looked: ${total} ambient update${total === 1 ? '' : 's'} in ${counts.size} conversation${counts.size === 1 ? '' : 's'}; context only, no reply needed.]\n`
+    + `${lines.join('\n')}\nPull relevant messages with commonly_get_messages. On resume, read oldest unread first; at most 8 conversations, 5 messages each, 20 messages total.`;
+};
+
+// How many unread ambient rows a wake quotes; the rest are counted, not shown.
+const DIGEST_FRAME_ROWS = 8;
+
+// Whether a wake's outcome means its seat read the digest it carried: a post,
+// an ack, a plain decline, or a reply the server reduced to silence.
+// `silent_or_empty` is what agentMessageService returns for an intentional
+// NO_REPLY (a suppressed runtime failure is `runtime_*_suppressed` instead), so
+// it is the seat's decision, not a refusal. Treating it as unread left a
+// silent seat's digest pending, and the hourly unread-digest wake re-woke it to
+// be silent again (rhea, 2026-10-25). A turn that printed nothing acks as
+// `empty-output`, which is not a read: that is what a silently failing seat
+// sends every turn, and reading on it would drain a backlog nobody saw
+// (sable, #2753).
+const digestConsumedBy = (outcome?: string, reason?: string): boolean => outcome === 'posted'
+  || outcome === 'acknowledged'
+  || (outcome === 'no_action' && (!reason || reason === 'silent_or_empty'));
 
 // TASK-264: how many stuck in-process events one sweep re-runs, and how long a
 // 'queued'/'running' AgentRun may sit before it counts as abandoned.
@@ -122,11 +178,17 @@ interface EventDoc {
   createdAt?: Date;
   payload?: Record<string, unknown>;
   status?: string;
+  deliveryMode?: 'wake' | 'digest';
   attempts?: number;
   delivery?: DeliveryMeta;
   memoryRevisionAtDelivery?: number | null;
   deliveryNonce?: string | null;
+  digestRollupRevision?: number | null;
+  digestEventIds?: unknown[];
+  digestSnapshotAt?: Date | null;
 }
+
+type DigestScope = { agentName: string; instanceId: string; podId: unknown };
 
 interface InstallationDoc {
   _id?: unknown;
@@ -145,6 +207,7 @@ interface GatewayDoc {
 }
 
 interface DeliveryMeta {
+  reasonRecorded?: boolean;
   outcome?: string;
   reason?: string;
   messageId?: string;
@@ -164,6 +227,7 @@ interface GarbageCollectResult {
   deletedDelivered: number;
   deletedFailed: number;
   totalDeleted: number;
+  foldedDigest?: number;
   deliveredRetentionHours: number;
   failedRetentionHours: number;
   requeuedDelivered?: number;
@@ -219,6 +283,7 @@ interface EnqueueOptions {
   type: string;
   payload?: Record<string, unknown>;
   instanceId?: string;
+  deliveryMode?: 'wake' | 'digest';
 }
 
 interface ListOptions {
@@ -255,6 +320,12 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
   const { webhookUrl, webhookSecret } = runtimeConfig as { webhookUrl?: string; webhookSecret?: string };
   if (!webhookUrl) return;
 
+  // Webhook drivers never poll the inbox. Carry ambient context on their next
+  // waking POST, then settle it only after the endpoint accepts that POST.
+  await AgentEventService.attachLegacyDigest(event).catch((err: Error) => {
+    console.warn('[webhook] digest attachment failed:', err.message);
+  });
+
   const payload = JSON.stringify({
     _id: event._id,
     type: event.type,
@@ -284,14 +355,16 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
     });
 
     if (!res.ok) {
-      console.warn(`[webhook] ${event.agentName} ${webhookUrl} → HTTP ${res.status}`);
+      console.warn(`[webhook] ${event.agentName} HTTP ${res.status}`);
       return;
     }
 
     let response: Record<string, unknown> = {};
     try { response = JSON.parse(res.text) as Record<string, unknown>; } catch (_) { /* no body is fine */ }
 
-    const { outcome = 'acknowledged', content } = response as { outcome?: string; content?: string };
+    const { outcome = 'acknowledged', content, reason } = response as {
+      outcome?: string; content?: string; reason?: string;
+    };
 
     if (outcome === 'posted' && content) {
       try {
@@ -321,14 +394,20 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
     await AgentEvent.findByIdAndUpdate(event._id, {
       status: 'acked',
       deliveredAt: new Date(),
-      'delivery.outcome': outcome,
-      'delivery.updatedAt': new Date(),
+      delivery: AgentEventService.normalizeDeliveryMeta({ outcome, reason }),
     });
+    if (digestConsumedBy(outcome, reason)) {
+      await AgentEventService.settleLegacyDigest(event).catch((err: Error) => {
+        console.warn('[webhook] digest settle failed:', err.message);
+      });
+    }
   } catch (err) {
-    if ((err as Error).name === 'AbortError') {
-      console.warn(`[webhook] ${event.agentName} ${webhookUrl} timed out after 10s`);
+    // URLs and transport error text can contain installer credentials, including
+    // redirect destinations. Keep diagnostics independent of those values.
+    if ((err as Error)?.name === 'AbortError') {
+      console.warn(`[webhook] ${event.agentName} timed out after 10s`);
     } else {
-      console.warn(`[webhook] ${event.agentName} ${webhookUrl} error:`, (err as Error).message);
+      console.warn(`[webhook] ${event.agentName} delivery failed`);
     }
   }
 };
@@ -433,6 +512,70 @@ const signalAgentTyping = async (event: EventDoc): Promise<void> => {
 };
 
 class AgentEventService {
+  private static inProcessDraining = false;
+  private static inProcessWork = new Set<Promise<unknown>>();
+  private static inProcessRequeued = 0;
+  private static inProcessRunning = new Map<string, EventDoc>();
+  private static inProcessDrain: Promise<{ timedOut: boolean; requeued: number }> | undefined;
+
+  static isInProcessDraining(): boolean { return this.inProcessDraining; }
+
+  // Track admission DB work as well as turns: SIGTERM can race a claim whose
+  // database reply has not arrived yet. Dispatch will requeue that late claim.
+  private static trackInProcessWork<T>(work: () => Promise<T>): Promise<T> {
+    const pending = Promise.resolve().then(work);
+    this.inProcessWork.add(pending);
+    void pending.finally(() => this.inProcessWork.delete(pending)).catch(() => undefined);
+    return pending;
+  }
+
+  private static async requeueInProcess(event: EventDoc): Promise<number> {
+    const result = await AgentEvent.updateOne(
+      { _id: event._id, status: 'delivered', deliveryNonce: event.deliveryNonce ?? null },
+      { $set: { status: 'pending', deliveredAt: null, deliveryNonce: null } },
+    ) as { modifiedCount?: number };
+    if (result.modifiedCount) {
+      this.inProcessRequeued += result.modifiedCount;
+      event.status = 'pending';
+      event.deliveryNonce = null;
+    }
+    return result.modifiedCount || 0;
+  }
+
+  /** Close native admission synchronously, then wait through terminal event writes.
+   * The caller exits after this returns. Deadline recovery is at-least-once;
+   * provider effects already performed by an unfinished turn cannot be undone.
+   */
+  static drainInProcess(timeoutMs = 150_000): Promise<{ timedOut: boolean; requeued: number }> {
+    this.inProcessDraining = true;
+    if (this.inProcessDrain) return this.inProcessDrain;
+    this.inProcessDrain = (async () => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const settled = async () => {
+        while (this.inProcessWork.size) {
+          await Promise.allSettled([...this.inProcessWork]);
+        }
+        return false;
+      };
+      const timedOut = await Promise.race([
+        settled(),
+        new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(true), timeoutMs); }),
+      ]);
+      if (timer) clearTimeout(timer);
+      if (!timedOut) return { timedOut: false, requeued: this.inProcessRequeued };
+      // Requeue only this process's unfinished deliveries, never a pod-wide
+      // query that could steal a sibling replica's turn. The nonce fences late
+      // success/failure settlement from a replacement's claim.
+      const requeues = await Promise.allSettled(
+        [...this.inProcessRunning.values()].map((event) => this.requeueInProcess(event)),
+      );
+      const failed = requeues.find((result) => result.status === 'rejected');
+      if (failed?.status === 'rejected') throw failed.reason;
+      return { timedOut: true, requeued: this.inProcessRequeued };
+    })();
+    return this.inProcessDrain;
+  }
+
   static getContextOverflowRetryLimit(): number {
     const parsed = Number.parseInt(process.env.AGENT_CONTEXT_OVERFLOW_RETRY_LIMIT || '', 10);
     if (!Number.isFinite(parsed) || parsed < 0) return 1;
@@ -678,6 +821,8 @@ class AgentEventService {
     return {
       outcome,
       reason: reason || undefined,
+      // Server-authored provenance: even an absent reason was preserved.
+      reasonRecorded: true,
       messageId: messageId || undefined,
       details,
       updatedAt: new Date(),
@@ -714,6 +859,7 @@ class AgentEventService {
       `id=${details.eventId || 'n/a'}`,
     ];
     if (details.trigger) parts.push(`trigger=${details.trigger}`);
+    if (details.deliveryMode) parts.push(`deliveryMode=${details.deliveryMode}`);
     if (details.status) parts.push(`status=${details.status}`);
     if (typeof details.attempts === 'number') parts.push(`attempts=${details.attempts}`);
     if (details.error) parts.push(`error="${details.error}"`);
@@ -858,7 +1004,15 @@ class AgentEventService {
     // and 'acked' is the new terminal state. Both age out on the same retention
     // schedule — once an event is past the `delivered` threshold it's stale
     // whether the agent ever explicitly acked or not.
-    const [pendingResult, deliveredResult, failedResult] = await Promise.all([
+    let foldedDigest = 0;
+    try {
+      foldedDigest = await foldExpiredDigests(deliveredThreshold);
+    } catch (err) {
+      // The fold is fail-closed: its `folding` rows remain retryable and the
+      // pending delete below excludes digest. Other event retention can run.
+      console.warn('[agent-event] digest fold failed:', (err as Error).message);
+    }
+    const [pendingResult, ackedResult, deliveredResult, failedResult] = await Promise.all([
       // #993: this used to run on a 30-minute `stalePendingThreshold`, which put
       // it AHEAD of the retry lifecycle rather than after it. The requeue pass
       // above sets `status` but not `createdAt`, so an event it had just rescued
@@ -880,20 +1034,32 @@ class AgentEventService {
       // (routes/admin/agentEvents.ts), where "pending for over 30 minutes" is a
       // useful thing to look at — and is now actionable, because seeing it no
       // longer means the row is about to be destroyed.
-      AgentEvent.deleteMany({ status: 'pending', createdAt: { $lt: deliveredThreshold } }),
-      AgentEvent.deleteMany({ status: { $in: ['delivered', 'acked'] }, createdAt: { $lt: deliveredThreshold } }),
-      AgentEvent.deleteMany({ status: 'failed', createdAt: { $lt: failedThreshold } }),
+      // Digest rows are unread state. Retiring them without folding into a
+      // durable per-seat summary would silently erase the notification.
+      AgentEvent.deleteMany({
+        status: 'pending', deliveryMode: { $ne: 'digest' }, createdAt: { $lt: deliveredThreshold },
+      }),
+      AgentEvent.deleteMany({
+        status: 'acked', createdAt: { $lt: deliveredThreshold },
+      }),
+      AgentEvent.deleteMany({
+        status: 'delivered', deliveryMode: { $ne: 'digest' }, createdAt: { $lt: deliveredThreshold },
+      }),
+      AgentEvent.deleteMany({
+        status: 'failed', deliveryMode: { $ne: 'digest' }, createdAt: { $lt: failedThreshold },
+      }),
     ]) as Array<{ deletedCount?: number }>;
 
     const deletedPending = pendingResult?.deletedCount || 0;
-    const deletedDelivered = deliveredResult?.deletedCount || 0;
+    const deletedDelivered = (ackedResult?.deletedCount || 0) + (deliveredResult?.deletedCount || 0);
     const deletedFailed = failedResult?.deletedCount || 0;
 
     return {
       deletedPending,
       deletedDelivered,
       deletedFailed,
-      totalDeleted: deletedPending + deletedDelivered + deletedFailed,
+      totalDeleted: deletedPending + deletedDelivered + deletedFailed + foldedDigest,
+      foldedDigest,
       deliveredRetentionHours: Math.max(deliveredRetentionHours, 1),
       failedRetentionHours: Math.max(failedRetentionHours, 1),
       requeuedDelivered,
@@ -916,7 +1082,12 @@ class AgentEventService {
    * acked, not answered twice. Either way the dead turn's AgentRun, if it was
    * left 'queued' or 'running', is marked 'interrupted'.
    */
-  static async redispatchStuckInProcess(
+  static redispatchStuckInProcess(threshold: Date, attemptCap: number): Promise<{ redispatched: number; acked: number }> {
+    if (this.inProcessDraining) return Promise.resolve({ redispatched: 0, acked: 0 });
+    return this.trackInProcessWork(() => this.redispatchStuckInProcessWhileServing(threshold, attemptCap));
+  }
+
+  private static async redispatchStuckInProcessWhileServing(
     threshold: Date,
     attemptCap: number,
   ): Promise<{ redispatched: number; acked: number }> {
@@ -924,6 +1095,7 @@ class AgentEventService {
     const AgentRun = require('../models/AgentRun');
     const stuck = await AgentEvent.find({
       status: 'delivered',
+      deliveryMode: { $ne: 'digest' },
       deliveredAt: { $lt: threshold },
       $or: [{ attempts: { $lt: attemptCap } }, { attempts: { $exists: false } }],
     }).sort({ deliveredAt: 1 }).limit(STUCK_REDISPATCH_BATCH).lean() as EventDoc[];
@@ -940,6 +1112,7 @@ class AgentEventService {
       const runKey = { podId: stale.podId, agentName, instanceId, triggerEventId: stale._id };
       // eslint-disable-next-line no-await-in-loop
       const finished = await AgentRun.exists({ ...runKey, status: 'succeeded' });
+      if (this.inProcessDraining) break;
       const deliveryNonce = mintDeliveryNonce();
       // eslint-disable-next-line no-await-in-loop
       const claimed = await AgentEvent.findOneAndUpdate(
@@ -1020,7 +1193,12 @@ class AgentEventService {
    * attempt cap bounds a poison event. Only targets that would run are
    * selected, and each is re-checked by enqueue's own routing before it runs.
    */
-  static async rescueStrandedPendingInProcess(
+  static rescueStrandedPendingInProcess(now: Date, attemptCap: number): Promise<{ rescued: number; closed: number }> {
+    if (this.inProcessDraining) return Promise.resolve({ rescued: 0, closed: 0 });
+    return this.trackInProcessWork(() => this.rescueStrandedPendingInProcessWhileServing(now, attemptCap));
+  }
+
+  private static async rescueStrandedPendingInProcessWhileServing(
     now: Date,
     attemptCap: number,
   ): Promise<{ rescued: number; closed: number }> {
@@ -1029,7 +1207,7 @@ class AgentEventService {
     const targetFilter = { $or: targets };
     const ceiling = new Date(now.getTime() - STRANDED_PENDING_MAX_AGE_MS);
     const closedResult = await AgentEvent.updateMany(
-      { status: 'pending', createdAt: { $lt: ceiling }, ...targetFilter },
+      { status: 'pending', deliveryMode: { $ne: 'digest' }, createdAt: { $lt: ceiling }, ...targetFilter },
       {
         $set: {
           status: 'failed',
@@ -1040,6 +1218,7 @@ class AgentEventService {
     ) as { modifiedCount?: number };
     const stranded = await AgentEvent.find({
       status: 'pending',
+      deliveryMode: { $ne: 'digest' },
       createdAt: {
         $lt: new Date(now.getTime() - STRANDED_PENDING_MIN_AGE_MS),
         $gte: ceiling,
@@ -1058,6 +1237,7 @@ class AgentEventService {
         .catch(() => null);
       // Changed since the targets were read (a deprovision, an install removed).
       if (!installation) continue;
+      if (this.inProcessDraining) break;
       const deliveryNonce = mintDeliveryNonce();
       // eslint-disable-next-line no-await-in-loop
       const claimed = await AgentEvent.findOneAndUpdate(
@@ -1325,11 +1505,133 @@ class AgentEventService {
     return installationRuntimeType === 'native' || hostedRunsNative(installationDoc) ? installationDoc : null;
   }
 
-  /**
-   * Run a claimed in-process event and settle it on the outcome: success acks,
-   * failure records. Fire-and-forget, so neither enqueue nor the restart sweep
-   * (TASK-264) ever blocks on a turn.
-   */
+  /** Persist the folded digest snapshot carried by this waking delivery. */
+  static async attachFoldedDigest(event: EventDoc): Promise<{
+    unreadCount: number; lastEventIds: string[];
+    conversations: Array<{ label: string; count: number }>;
+  } | null> {
+    const scope = {
+      agentName: String(event.agentName || '').toLowerCase(),
+      instanceId: String(event.instanceId || 'default'),
+      podId: event.podId,
+    };
+    if (!scope.agentName || !scope.podId || !event._id) return null;
+    const state = await readFoldedDigest(scope);
+    if (!state) return null;
+    // A retry may show the same rollup. Only the winning ack with this exact
+    // state snapshot clears it; a newer fold must remain unread.
+    const updated = await AgentEvent.updateOne(
+      { _id: event._id, status: 'delivered', deliveryMode: { $ne: 'digest' },
+        ...(event.deliveryNonce ? { deliveryNonce: event.deliveryNonce } : {}) },
+      { $set: { digestRollupRevision: state.revision } },
+    );
+    if (!updated.modifiedCount) return null;
+    return { unreadCount: state.unreadCount, lastEventIds: state.lastEventIds,
+      conversations: state.conversations };
+  }
+
+  // The newest page of a pod's unread ambient rows, and how many older ones sit
+  // behind it. Reading oldest-first fed a backlogged seat day-old context while
+  // every newer row waited (22,568 pending on 2026-10-25, the oldest 31h old).
+  static async readDigestPage(scope: DigestScope): Promise<{
+    rows: EventDoc[]; olderCount: number; snapshotAt: Date;
+  }> {
+    const snapshotAt = new Date();
+    const filter = { ...scope, status: 'pending', deliveryMode: 'digest', createdAt: { $lte: snapshotAt } };
+    const [newest, total] = await Promise.all([
+      AgentEvent.find(filter).sort({ createdAt: -1 }).limit(DIGEST_FRAME_ROWS).lean() as Promise<EventDoc[]>,
+      AgentEvent.countDocuments(filter),
+    ]);
+    return { rows: newest.reverse(), olderCount: Math.max(0, total - newest.length), snapshotAt };
+  }
+
+  // A digest row is ambient context, not a task. Once a wake that showed the
+  // unread count is consumed, every row it covered is read, not only the page it
+  // quoted; a row created after the snapshot stays pending for the next wake.
+  // `delivered` covers the companions claimed beside the wake: a CLI older than
+  // the silent_or_empty rule never acks them, and the requeue would bring them
+  // back as unread.
+  static async settleDigestBacklog(scope: DigestScope, snapshotAt: Date): Promise<void> {
+    await AgentEvent.updateMany(
+      {
+        ...scope,
+        status: { $in: ['pending', 'delivered'] },
+        deliveryMode: 'digest',
+        createdAt: { $lte: snapshotAt },
+      },
+      { $set: { status: 'acked', deliveredAt: new Date(), deliveryNonce: null } },
+    );
+  }
+
+  /** Add one bounded ambient frame to a wake consumed by an older poller or webhook. */
+  static async attachLegacyDigest(event: EventDoc): Promise<void> {
+    if (!event._id || !event.podId || !event.agentName || event.deliveryMode === 'digest') return;
+    const scope = {
+      agentName: String(event.agentName).toLowerCase(),
+      instanceId: String(event.instanceId || 'default'),
+      podId: event.podId,
+    };
+    const [page, rollup] = await Promise.all([
+      this.readDigestPage(scope),
+      readFoldedDigest(scope),
+    ]);
+    const { rows: raw, olderCount } = page;
+    if (!raw.length && !rollup?.unreadCount) return;
+    const ids = raw.map((row) => row._id);
+    const snapshotAt = raw.length ? page.snapshotAt : null;
+    const saved = await AgentEvent.updateOne(
+      {
+        _id: event._id,
+        status: { $in: ['pending', 'delivered'] },
+        deliveryMode: { $ne: 'digest' },
+        ...(event.deliveryNonce ? { deliveryNonce: event.deliveryNonce } : {}),
+      },
+      { $set: {
+        digestEventIds: ids,
+        digestRollupRevision: rollup?.revision ?? null,
+        digestSnapshotAt: snapshotAt,
+      } },
+    );
+    if (!saved.matchedCount) return;
+    event.digestEventIds = ids;
+    event.digestRollupRevision = rollup?.revision ?? null;
+    event.digestSnapshotAt = snapshotAt;
+    const summary = digestConversationFrame(
+      raw, (rollup?.unreadCount || 0) + olderCount, rollup?.conversations,
+    );
+    const baseContent = [event.payload?.content, event.payload?.prompt, event.payload?.text]
+      .find((value): value is string => typeof value === 'string' && value.length > 0) || '';
+    event.payload = {
+      ...(event.payload || {}),
+      // Existing drivers consume content; the additive field also lets a new
+      // driver render the frame separately without parsing the wake text.
+      content: baseContent ? `${baseContent}\n\n${summary}` : summary,
+      ...(typeof event.payload?.prompt === 'string'
+        ? { prompt: `${event.payload.prompt}\n\n${summary}` } : {}),
+      digestSummary: summary,
+    };
+  }
+
+  static async settleLegacyDigest(event: EventDoc): Promise<void> {
+    if (!event.agentName || !event.podId) return;
+    const scope = {
+      agentName: String(event.agentName).toLowerCase(),
+      instanceId: String(event.instanceId || 'default'),
+      podId: event.podId,
+    };
+    if (event.digestSnapshotAt) {
+      await this.settleDigestBacklog(scope, new Date(event.digestSnapshotAt));
+    } else if (event.digestEventIds?.length) {
+      // A wake framed before digestSnapshotAt existed settles what it quoted.
+      await AgentEvent.updateMany(
+        { ...scope, _id: { $in: event.digestEventIds }, status: 'pending', deliveryMode: 'digest' },
+        { $set: { status: 'acked', deliveredAt: new Date() } },
+      );
+    }
+    if (event.digestRollupRevision) await settleFoldedDigest(scope, event.digestRollupRevision);
+  }
+
+  /** Run a claimed native event and settle it without blocking enqueue. */
   static dispatchInProcess(
     event: EventDoc,
     nativeInstallation: InstallationDoc,
@@ -1337,6 +1639,24 @@ class AgentEventService {
     instanceId: string,
     type: string,
   ): void {
+    void this.trackInProcessWork(async () => {
+      if (this.inProcessDraining) { await this.requeueInProcess(event); return; }
+      const deliveryKey = `${String(event._id)}:${event.deliveryNonce || ''}`;
+      this.inProcessRunning.set(deliveryKey, event);
+      try {
+        await this.runInProcess(event, nativeInstallation, agentName, instanceId, type, () => {
+          this.inProcessRunning.delete(deliveryKey);
+        });
+      } finally {
+        this.inProcessRunning.delete(deliveryKey);
+      }
+    }).catch((error: Error) => console.warn('[native-runtime] dispatch error:', error.message));
+  }
+
+  private static async runInProcess(
+    event: EventDoc, nativeInstallation: InstallationDoc, agentName: string,
+    instanceId: string, type: string, turnFinished: () => void,
+  ): Promise<void> {
     try {
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const { runAgent } = require('./nativeRuntimeService');
@@ -1355,28 +1675,88 @@ class AgentEventService {
       // stayed 'delivered' forever and was structurally unackable. Doing it
       // here rather than inside runAgent keeps the terminal transition next
       // to the non-terminal state that created it.
-      Promise.resolve(runAgent(nativeInstallation, {
-        type,
-        eventId: eventIdStr,
-        payload: event.payload,
+      const runWithDigest = async () => {
+        const folded = await this.attachFoldedDigest(event).catch((digestErr: Error) => {
+          console.warn('[native-runtime] folded digest lookup failed:', digestErr.message);
+          return null;
+        });
+        const digestScope = { agentName: agentName.toLowerCase(), instanceId, podId: event.podId };
+        let digest: EventDoc[] = [];
+        let olderDigest = 0;
+        let digestSnapshotAt: Date | null = null;
+        try {
+          const page = await this.readDigestPage(digestScope);
+          digest = page.rows;
+          olderDigest = page.olderCount;
+          digestSnapshotAt = page.snapshotAt;
+        } catch (digestErr) {
+          console.warn('[native-runtime] digest lookup failed:', (digestErr as Error).message);
+        }
+        const baseContent = String(event.payload?.content || event.payload?.prompt || event.payload?.text || '');
+        const summary = digest.length || folded?.unreadCount
+          ? digestConversationFrame(digest, (folded?.unreadCount || 0) + olderDigest, folded?.conversations)
+          : null;
+        const payload = summary ? {
+          ...event.payload,
+          content: `${baseContent}\n\n${summary}`,
+        } : event.payload;
+        if (this.inProcessDraining) {
+          await this.requeueInProcess(event);
+          return { status: 'drained' };
+        }
+        const result = await runAgent(nativeInstallation, { type, eventId: eventIdStr, payload });
+        // The model is done even if a digest/ack write stalls. Leave that
+        // delivery for succeeded-run recovery instead of replaying its output.
+        turnFinished();
+        // Leave digest unread when the native turn fails. A successful turn was
+        // shown the unread count, so it reads everything up to its snapshot.
+        const modelTurnRan = result?.status === 'succeeded'
+          && Boolean(result.runId) && Number(result.totalTurns) > 0;
+        if (modelTurnRan && digest.length && digestSnapshotAt) {
+          await this.settleDigestBacklog(digestScope, digestSnapshotAt).catch((digestErr: Error) => {
+            console.warn('[native-runtime] digest settle failed:', digestErr.message);
+          });
+        }
+        return result;
+      };
+      await Promise.resolve(runWithDigest()).then(
       // Two-argument .then, deliberately, NOT .then().catch(): a chained
       // .catch would also catch a rejection thrown by the success handler,
       // so a failing acknowledge() would fall through and mark a run that
       // actually succeeded as 'failed'. The rejection handler here is scoped
       // to runAgent alone. Both terminal calls swallow their own errors so
       // this stays fire-and-forget for the caller.
-      })).then(
-        () => this.acknowledge(
+        (runResult: {
+          status?: string; error?: string; runId?: string; totalTurns?: number; noActionReason?: string;
+        }) => {
+          turnFinished();
+          if (runResult?.status === 'drained') return undefined;
+          return (runResult?.status === 'failed'
+          ? this.recordFailure(
+            eventIdStr,
+            agentName,
+            instanceId,
+            `native runtime failed: ${runResult.error || 'turn failed'}`,
+            nativeDeliveryId,
+          ).catch(() => undefined)
+          : this.acknowledge(
           eventIdStr,
           agentName,
           instanceId,
-          { outcome: 'acknowledged', reason: 'native-runtime-completed' },
+          // eslint-disable-next-line no-nested-ternary
+          runResult?.noActionReason
+            ? { outcome: 'no_action', reason: runResult.noActionReason }
+            : runResult?.runId && Number(runResult.totalTurns) > 0
+              ? { outcome: 'acknowledged', reason: 'native-runtime-completed' }
+              : { outcome: 'no_action', reason: 'native-no-turn' },
           nativeDeliveryId,
           'native',
         ).catch((ackErr: Error) => {
           console.warn('[native-runtime] ack after successful run failed:', ackErr?.message || ackErr);
-        }),
+        }));
+        },
         (err: Error) => {
+          turnFinished();
           console.error('[native-runtime] runAgent failed:', err?.message || err);
           // Terminal on failure too — a native event that errored must not
           // be left for the requeue to hand to an external poller that
@@ -1398,8 +1778,12 @@ class AgentEventService {
     }
   }
 
-  static async enqueue({
-    agentName, podId, type, payload = {}, instanceId = 'default',
+  static enqueue(options: EnqueueOptions): Promise<EventDoc> {
+    return this.trackInProcessWork(() => this.enqueueEvent(options));
+  }
+
+  private static async enqueueEvent({
+    agentName, podId, type, payload = {}, instanceId = 'default', deliveryMode = 'wake',
   }: EnqueueOptions): Promise<EventDoc> {
     if (!agentName || !podId || !type) {
       throw new Error('agentName, podId, and type are required');
@@ -1437,7 +1821,9 @@ class AgentEventService {
         (lookupErr as Error).message,
       );
     }
-    const routedToNative = Boolean(nativeInstallation);
+    // A digest is data for a later turn, not a turn on its own. Native
+    // installations must leave it pending just like external installations.
+    const routedToNative = Boolean(nativeInstallation) && deliveryMode === 'wake' && !this.inProcessDraining;
 
     const event = await AgentEvent.create({
       agentName: agentName.toLowerCase(),
@@ -1445,6 +1831,7 @@ class AgentEventService {
       podId,
       type,
       payload: eventPayload,
+      ...(deliveryMode === 'digest' ? { deliveryMode } : {}),
       // Native runs resolve in-process, so the event is claimed at creation
       // rather than polled. `attempts: 1` because this IS its one delivery —
       // the claim in list() never runs for native events, and a native event
@@ -1477,13 +1864,14 @@ class AgentEventService {
       instanceId: event.instanceId || '',
       podId: String((event.podId as { toString?: () => string })?.toString?.() || ''),
       type: event.type || '',
+      deliveryMode: event.deliveryMode || 'wake',
       trigger: event.payload?.trigger,
       status: event.status,
       attempts: event.attempts,
     });
 
     const wsService = getWebSocketService();
-    if (wsService) {
+    if (wsService && deliveryMode === 'wake') {
       wsService.pushEvent({
         _id: event._id,
         agentName: event.agentName,
@@ -1509,10 +1897,13 @@ class AgentEventService {
     // if the gateway is dead." Typing_stop is still emitted when
     // AgentMessageService.postMessage runs.)
 
-    AgentInstallation.find({
-      agentName: event.agentName,
-      instanceId,
-      podId,
+    // Query from the persisted event and coerce the identifier to a scalar
+    // before it reaches Mongo. Callers of enqueue may supply a runtime payload.
+    const webhookPodId = String(event.podId || '');
+    if (deliveryMode === 'wake' && Types.ObjectId.isValid(webhookPodId)) AgentInstallation.find({
+      agentName: String(event.agentName || ''),
+      instanceId: String(event.instanceId || 'default'),
+      podId: new Types.ObjectId(webhookPodId),
       status: 'active',
     }).lean().then((installations: InstallationDoc[]) => {
       for (const inst of installations) {
@@ -1544,7 +1935,18 @@ class AgentEventService {
     // Legacy consumers intentionally replay across every pod in their access
     // scope. The one-pod partition is opt-in through listInboxPage(), for any
     // HTTP poller whose batch becomes one pod-contextual model turn.
-    return (await this.claimPage(options)).events;
+    const events = (await this.claimPage(options)).events;
+    const seenPods = new Set<string>();
+    for (const event of events) {
+      const podKey = String(event.podId || '');
+      if (!podKey || seenPods.has(podKey)) continue;
+      seenPods.add(podKey);
+      // eslint-disable-next-line no-await-in-loop -- attach once per distinct pod
+      await this.attachLegacyDigest(event).catch((err: Error) => {
+        console.warn('[agent-event] legacy digest attachment failed:', err.message);
+      });
+    }
+    return events;
   }
 
   // The HTTP poller needs the true pending count for its inbox header even
@@ -1564,6 +1966,12 @@ class AgentEventService {
     // sanitizer; the String() casts are that sanitizer.
     const safeAgentName = String(agentName || '').toLowerCase();
     const safeInstanceId = String(instanceId || 'default');
+    // An explicit empty access set means the caller has no currently visible
+    // pods. It must not fall through to an identity-wide inbox query after an
+    // installation or pod membership was removed between enqueue and drain.
+    if (Array.isArray(podIds) && podIds.length === 0 && !podId) {
+      return { events: [], inboxCount: 0 };
+    }
     const query: Record<string, unknown> = {
       agentName: safeAgentName,
       instanceId: safeInstanceId,
@@ -1594,7 +2002,7 @@ class AgentEventService {
       // behind a row no poller can process. Keep the caller's scope inside
       // the same `$and` so this exclusion only narrows access.
       const headQuery = {
-        $and: [query, { podId: { $exists: true, $ne: null } }],
+        $and: [query, { podId: { $exists: true, $ne: null } }, { deliveryMode: { $ne: 'digest' } }],
       };
       const [head] = await AgentEvent.find(headQuery)
         .sort({ createdAt: 1 })
@@ -1614,11 +2022,32 @@ class AgentEventService {
       inboxCount = await AgentEvent.countDocuments(batchQuery);
     }
 
-    const candidates = await AgentEvent.find(batchQuery)
+    const wakeQuery = { ...batchQuery, deliveryMode: { $ne: 'digest' } };
+    const wakeCandidates = await AgentEvent.find(wakeQuery)
       .sort({ createdAt: 1 })
       .limit(limit)
       .select({ _id: 1 })
       .lean() as Array<{ _id: unknown }>;
+    // Digest rows are only claimed alongside a wake in the same pod.
+    // A full wake page still needs to tell the driver about unread ambient
+    // context. Probe one digest on full pages and reserve its slot only when
+    // one exists; otherwise keep the entire wake page.
+    // At limit=1 the digest is a companion to the single wake, not another
+    // runnable item. Return the pair so even that page exposes unread context.
+    // Newest first, so a backlogged seat sees current context; the wake that
+    // carries them settles everything up to this snapshot when it is consumed.
+    const digestSlots = limit - wakeCandidates.length || 1;
+    const digestSnapshotAt = new Date();
+    const digestCandidates = onePod && wakeCandidates.length > 0 && digestSlots > 0
+      ? await AgentEvent.find({ ...batchQuery, deliveryMode: 'digest', createdAt: { $lte: digestSnapshotAt } })
+        .sort({ createdAt: -1 })
+        .limit(digestSlots)
+        .select({ _id: 1 })
+        .lean() as Array<{ _id: unknown }>
+      : [];
+    if (limit > 1 && wakeCandidates.length === limit && digestCandidates.length > 0) wakeCandidates.pop();
+    digestCandidates.reverse(); // the newest page, served in the order it happened
+    const candidates = [...wakeCandidates, ...digestCandidates];
 
     // A sibling poller can claim every candidate after our pre-claim count.
     // The page is empty, but the count still describes what this reader saw
@@ -1642,7 +2071,10 @@ class AgentEventService {
     const digestBundle = buildMemoryDigestBundle(memoryDoc || {}, lastSeenRevision);
 
     const claimed: EventDoc[] = [];
-    for (const candidate of candidates) {
+    for (const [index, candidate] of candidates.entries()) {
+      // Another poller may win every wake after our read. In that race the
+      // digest must remain pending instead of being claimed on its own.
+      if (onePod && index >= wakeCandidates.length && claimed.length === 0) break;
       // Coerce candidate _id to string before it lands in the query — Mongo
       // accepts both string and ObjectId, and `unknown`-typed values are the
       // CodeQL trip wire. The find() above scopes by agentName + instanceId
@@ -1672,13 +2104,33 @@ class AgentEventService {
             // this delivery belongs to is the only one whose ack can land.
             deliveryNonce: mintDeliveryNonce(),
           },
-          $inc: { attempts: 1 },
+          // Digest is context for another turn. A refused wake can attach the
+          // same digest repeatedly without consuming it, so charging those
+          // attachments against the poison-event attempt cap would lose it.
+          ...(index < wakeCandidates.length ? { $inc: { attempts: 1 } } : {}),
         },
         { new: true },
       ).lean() as EventDoc | null;
       if (updated) claimed.push(updated);
     }
 
+    const firstWake = claimed.find((event) => event.deliveryMode !== 'digest');
+    if (firstWake && claimed.some((event) => event.deliveryMode === 'digest')) {
+      const marked = await AgentEvent.updateOne(
+        { _id: firstWake._id, status: 'delivered', deliveryNonce: firstWake.deliveryNonce ?? null },
+        { $set: { digestSnapshotAt } },
+      ).catch((err: Error) => {
+        console.warn('[agent-event] digest snapshot mark failed:', err.message);
+        return null;
+      });
+      if (marked?.modifiedCount) firstWake.digestSnapshotAt = digestSnapshotAt;
+    }
+    const foldedRollup = onePod && firstWake
+      ? await this.attachFoldedDigest(firstWake).catch((err: Error) => {
+        console.warn('[agent-event] folded digest attachment failed:', err.message);
+        return null;
+      })
+      : null;
     const events = claimed.map((event) => {
       const messageId = event?.payload?.messageId;
       const basePayload = event?.payload || {};
@@ -1688,6 +2140,7 @@ class AgentEventService {
       const enrichedPayload: Record<string, unknown> = {
         ...basePayload,
         ...digestBundle,
+        ...(foldedRollup && event._id === firstWake?._id ? { digestRollup: foldedRollup } : {}),
         // ADR-026 D6: the driver echoes this back on ack. Additive — a driver
         // that ignores it still acks successfully during the migration window
         // described on acknowledge().
@@ -1699,6 +2152,23 @@ class AgentEventService {
       return { ...event, payload: enrichedPayload };
     });
     return { events, inboxCount: includeInboxCount ? inboxCount : events.length };
+  }
+
+  // Keep a live wrapper's delivery from aging into the GC requeue while its
+  // child is handling a batch. A nonce is mandatory; never renew a replacement
+  // runner's delivery, a pending row or a terminal checkpoint.
+  static async renewDelivery(
+    eventId: string, agentName: string, instanceId: string, deliveryId: string,
+  ): Promise<boolean> {
+    if (!eventId || !deliveryId) return false;
+    const result = await AgentEvent.updateOne({
+      _id: eventId,
+      agentName: String(agentName).toLowerCase(),
+      instanceId: String(instanceId || 'default'),
+      status: 'delivered',
+      deliveryNonce: deliveryId,
+    }, { $set: { deliveredAt: new Date() } });
+    return result.modifiedCount === 1;
   }
 
   // ADR-012 §3: acknowledge is status-gated. Lifecycle:
@@ -1777,13 +2247,31 @@ class AgentEventService {
       { new: true },
     ) as EventDoc | null;
 
+    const consumedDigest = !normalizedDelivery
+      || digestConsumedBy(normalizedDelivery.outcome, normalizedDelivery.reason);
+    if (result && consumedDigest) {
+      if (result.digestSnapshotAt || result.digestEventIds?.length) {
+        await this.settleLegacyDigest(result).catch((err: Error) => {
+          console.warn('[agent-event] legacy digest settle failed:', err.message);
+        });
+      } else if (result.digestRollupRevision) {
+        await settleFoldedDigest(
+          { agentName: safeAgentName, instanceId: safeInstanceId, podId: result.podId },
+          result.digestRollupRevision,
+        ).catch((err: Error) => {
+          console.warn('[agent-event] folded digest settle failed:', err.message);
+        });
+      }
+    }
+
     // ADR-012 §3: bump lastSeenRevision exactly once per event via $max.
     // First-ack only: the status-gate above ensures result is non-null only
     // on the winning ack. memoryRevisionAtDelivery was captured at fetch
     // time (`list()`); this update brings the agent's read-checkpoint up
     // to that revision. $max makes it monotone — out-of-order acks across
     // events still converge correctly.
-    if (result && typeof result.memoryRevisionAtDelivery === 'number' && result.memoryRevisionAtDelivery > 0) {
+    if (result && consumedDigest
+      && typeof result.memoryRevisionAtDelivery === 'number' && result.memoryRevisionAtDelivery > 0) {
       try {
         await AgentMemory.updateOne(
           { agentName: safeAgentName, instanceId: safeInstanceId },
@@ -1805,6 +2293,7 @@ class AgentEventService {
       instanceId,
       podId: String((result?.podId as { toString?: () => string })?.toString?.() || ''),
       type: result?.type || '',
+      deliveryMode: result?.deliveryMode || 'wake',
       trigger: result?.payload?.trigger,
       status: result?.status || 'acked',
       attempts: result?.attempts,

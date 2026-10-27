@@ -4,21 +4,39 @@
 *.log
 .DS_Store
 npm-debug.log
+commonly-mcp/*.mcpb
 
 # no trailing slash: the dir-only form let node_modules SYMLINKS get committed (#818, #867)
 node_modules
 
 .env
 
-.vscode/
-.idea/
+.vscode
+.idea
+
+# Empty files once committed at the root. No trailing slash, so a FILE of
+# the name is ignored too.
+/.bashrc
+/.bash_profile
+/.zshrc
+/.zprofile
+/.profile
+/.gitconfig
+/.ripgreprc
+/config
+/hooks
+/objects
+/refs
 
 build/
 dist/
 
 *.pem
 
-.cursor/
+/.cursor/*
+!/.cursor/rules/
+/.cursor/rules/*
+!/.cursor/rules/commonly.mdc
 
 # Playwright
 /test-results/

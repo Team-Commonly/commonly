@@ -120,6 +120,23 @@ describe('wrapArgvWithBwrap', () => {
     expect(argv).not.toContain('--share-net');
   });
 
+  itLinux('allows loopback setup only inside an isolated network namespace', () => {
+    const argv = wrapArgvWithBwrap(
+      ['node', 'bridge.mjs'],
+      { sandbox: { network: { policy: 'restricted' } } },
+      { workspacePath: '/tmp/ws', enableLoopback: true },
+    );
+    expect(argv).toContain('--unshare-net');
+    expect(argv).not.toContain('--share-net');
+    expect(argv.slice(argv.indexOf('--uid'), argv.indexOf('--uid') + 4))
+      .toEqual(['--uid', '0', '--gid', '0']);
+    expect(argv.slice(argv.indexOf('--cap-add'), argv.indexOf('--cap-add') + 4))
+      .toEqual(['--cap-add', 'CAP_NET_ADMIN', '--cap-add', 'CAP_SETPCAP']);
+    expect(() => wrapArgvWithBwrap(
+      ['node', 'bridge.mjs'], {}, { workspacePath: '/tmp/ws', enableLoopback: true },
+    )).toThrow(/requires an isolated network namespace/);
+  });
+
   itLinux('appends user read-outside paths as --ro-bind-try', () => {
     const argv = wrapArgvWithBwrap(
       ['claude'],
@@ -162,6 +179,43 @@ describe('wrapArgvWithBwrap', () => {
     expect(argv[idx - 1]).toBe('--ro-bind');
     expect(argv[idx + 1]).toBe(keyFile);
     expect(argv).not.toContain('/home/operator/.config/commonly');
+  });
+
+  itLinux('binds an adapter-owned HOME writable, separate from a read-only workspace', () => {
+    const argv = wrapArgvWithBwrap(['claude'], {}, {
+      workspacePath: '/tmp/ws',
+      workspaceReadOnly: true,
+      homePath: '/home/u/.commonly/claude-homes/abc',
+      writablePaths: ['/home/u/.commonly/claude-homes/abc'],
+      readOnlyWorkspaceEntries: ['.git'],
+    });
+    const at = (flag, p) => argv.findIndex((arg, i) => arg === flag && argv[i + 1] === p && argv[i + 2] === p);
+    expect(at('--bind', '/home/u/.commonly/claude-homes/abc')).toBeGreaterThan(-1);
+    expect(at('--ro-bind', '/tmp/ws')).toBeGreaterThan(-1);
+    expect(at('--bind', '/tmp/ws')).toBe(-1);
+    expect(at('--ro-bind-try', '/tmp/ws/.git')).toBeGreaterThan(at('--ro-bind', '/tmp/ws'));
+    const homeIndex = argv.indexOf('HOME');
+    expect(argv[homeIndex + 1]).toBe('/home/u/.commonly/claude-homes/abc');
+  });
+
+  itLinux('in a writable workspace a read-only entry is bound strictly, so a missing one stops bwrap', () => {
+    const argv = wrapArgvWithBwrap(['claude'], {}, {
+      workspacePath: '/tmp/ws', readOnlyWorkspaceEntries: ['.git'],
+    });
+    const at = (flag, p) => argv.findIndex((arg, i) => arg === flag && argv[i + 1] === p && argv[i + 2] === p);
+    expect(at('--ro-bind', '/tmp/ws/.git')).toBeGreaterThan(at('--bind', '/tmp/ws'));
+    expect(at('--ro-bind-try', '/tmp/ws/.git')).toBe(-1);
+  });
+
+  itLinux('rejects a relative writable path and a workspace entry that leaves the workspace', () => {
+    expect(() => wrapArgvWithBwrap(['claude'], {}, {
+      workspacePath: '/tmp/ws', writablePaths: ['state'],
+    })).toThrow(/writablePaths entries must be absolute/);
+    for (const entry of ['../outside', '/etc', 'a/../../b']) {
+      expect(() => wrapArgvWithBwrap(['claude'], {}, {
+        workspacePath: '/tmp/ws', readOnlyWorkspaceEntries: [entry],
+      })).toThrow(/relative names inside the workspace/);
+    }
   });
 
   itLinux('rejects relative adapter-owned transient paths', () => {

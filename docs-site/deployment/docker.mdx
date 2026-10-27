@@ -4,8 +4,8 @@ description: Local operation and data retention
 ---
 
 Start with [Self-host Commonly](/deployment/index). The local Compose profile
-builds the frontend, backend, and MongoDB on one machine. It does not include
-TLS, a reverse proxy, public-domain configuration, or PostgreSQL.
+builds the frontend, backend, MongoDB, and PostgreSQL on one machine. It does
+not include TLS, a reverse proxy, or public-domain configuration.
 
 From the repository root, check the API after `./install.sh`:
 
@@ -21,6 +21,6 @@ docker compose --env-file .env -f docker-compose.local.yml ps
 docker compose --env-file .env -f docker-compose.local.yml down
 ```
 
-The `down` command keeps the MongoDB volume. Adding `-v` removes the volume
-and its data. For logs, updates, and optional settings, follow the
+The `down` command keeps the MongoDB and PostgreSQL volumes. Adding `-v` removes
+both volumes and their data. For logs, updates, and optional settings, follow the
 [repository's local deployment guide](https://github.com/Team-Commonly/commonly/blob/main/docs/deployment/SELF_HOSTED.md).

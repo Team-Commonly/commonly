@@ -6,6 +6,7 @@ import axios from '../../utils/axiosConfig';
 import { AuthContext } from '../../context/AuthContext';
 import V2ConnectPage from '../components/V2ConnectPage';
 import V2AccountMenu from '../components/V2AccountMenu';
+import { CURSOR_PROJECT_RULE, CURSOR_PROJECT_RULE_PATH } from '../utils/cursorProjectRule';
 
 jest.mock('../../utils/axiosConfig', () => {
   const mock = {
@@ -40,6 +41,47 @@ const CurrentPath = () => <div data-testid="current-path">{useLocation().pathnam
 afterEach(() => jest.clearAllMocks());
 
 describe('V2ConnectPage', () => {
+  test('the CLI and MCP commands target this instance API', async () => {
+    const previousApiUrl = process.env.REACT_APP_API_URL;
+    process.env.REACT_APP_API_URL = 'https://api.example.test/';
+    try {
+      const clipboard = { writeText: jest.fn().mockResolvedValue(undefined) };
+      Object.assign(navigator, { clipboard });
+      renderConnect();
+      const cliSnippet = screen.getByText(/commonly login --instance/).textContent || '';
+      const mcpSnippet = screen.getByText(/COMMONLY_AGENT_TOKEN=cm_agent_…/).textContent || '';
+      expect(cliSnippet).toContain('commonly login --instance https://api.example.test');
+      expect(mcpSnippet).toContain('COMMONLY_API_URL=https://api.example.test');
+      expect(cliSnippet).not.toContain('api.commonly.me');
+      expect(mcpSnippet).not.toContain('api.commonly.me');
+      const cursorHref = screen.getByRole('link', { name: 'Add Commonly to Cursor' }).getAttribute('href') || '';
+      expect(cursorHref).toMatch(/^cursor:\/\/anysphere\.cursor-deeplink\/mcp\/install\?name=commonly&config=/);
+      const cursorConfig = JSON.parse(atob(decodeURIComponent(cursorHref.split('config=')[1])));
+      expect(cursorConfig.env).toEqual({
+        COMMONLY_API_URL: 'https://api.example.test',
+        COMMONLY_AGENT_TOKEN: 'PASTE_AGENT_TOKEN_HERE',
+      });
+      expect(cursorHref).not.toContain('api.commonly.me');
+      fireEvent.click(screen.getAllByRole('button', { name: 'Copy' })[0]);
+      await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith(cliSnippet));
+    } finally {
+      if (previousApiUrl === undefined) delete process.env.REACT_APP_API_URL;
+      else process.env.REACT_APP_API_URL = previousApiUrl;
+    }
+  });
+
+  test('offers the Cursor project rule with its path and copies it verbatim', async () => {
+    const clipboard = { writeText: jest.fn().mockResolvedValue(undefined) };
+    Object.assign(navigator, { clipboard });
+    const { container } = renderConnect();
+    const card = container.querySelector('.v2-connect__rule');
+    expect(card).not.toBeNull();
+    expect(card.textContent).toContain(CURSOR_PROJECT_RULE_PATH);
+    expect(card.querySelector('pre').textContent).toBe(CURSOR_PROJECT_RULE);
+    fireEvent.click(card.querySelector('button.v2-connect__copy'));
+    await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith(CURSOR_PROJECT_RULE));
+  });
+
   test('gives every member a copyable CLI/MCP start and does not tease instance keys', async () => {
     const clipboard = { writeText: jest.fn().mockResolvedValue(undefined) };
     Object.assign(navigator, { clipboard });
@@ -55,7 +97,7 @@ describe('V2ConnectPage', () => {
     expect(screen.queryByRole('link', { name: 'Open global integrations' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Copy' })[0]);
-    await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith('npm install -g @commonlyai/cli\ncommonly login'));
+    await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith(expect.stringMatching(/^npm install -g @commonlyai\/cli\ncommonly login --instance https?:\/\//)));
   });
 
   test('shows the existing gateway action and global integrations only to admins', async () => {

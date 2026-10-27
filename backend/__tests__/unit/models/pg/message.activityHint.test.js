@@ -85,3 +85,22 @@ describe('Message.findActivityHint', () => {
     expect(quiet).not.toEqual(broken);
   });
 });
+
+describe('Message.findAuthorIdsSince', () => {
+  beforeEach(() => pool.query.mockReset());
+
+  it('reads every author after the cutoff, with no row limit', async () => {
+    pool.query.mockResolvedValue({ rows: [{ user_id: 'a' }, { user_id: 'b' }] });
+    expect(await Message.findAuthorIdsSince(POD, SINCE)).toEqual(['a', 'b']);
+    const [sql, params] = pool.query.mock.calls[0];
+    expect(sql).toMatch(/DISTINCT user_id/);
+    expect(sql).toMatch(/created_at > \$2/);
+    expect(sql).not.toMatch(/LIMIT/);
+    expect(params).toEqual([POD, SINCE]);
+  });
+
+  it('throws when the store cannot be read, so the caller can tell nobody from unknown', async () => {
+    pool.query.mockRejectedValue(new Error('pg down'));
+    await expect(Message.findAuthorIdsSince(POD, SINCE)).rejects.toThrow('pg down');
+  });
+});

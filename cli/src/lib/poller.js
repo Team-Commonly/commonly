@@ -7,6 +7,8 @@
  */
 
 import { createClient } from './api.js';
+import { formatDigestFrame } from './digest-frame.js';
+import { EMPTY_OUTPUT } from './claim-outcome.js';
 
 // Delivery failures that must stop a consumer rather than fall through to the
 // normal at-least-once retry path. A stale delivery belongs to a replacement
@@ -57,10 +59,30 @@ export const startPoller = ({
         limit: 10,
       });
 
-      for (const event of events) {
+      // A digest is received context, not a webhook invocation. The runtime
+      // inbox claims it only alongside a wake from the same pod.
+      const wakeEvents = events.filter((event) => event.deliveryMode !== 'digest');
+      const digestEvents = events.filter((event) => event.deliveryMode === 'digest'
+        && wakeEvents[0] && String(event.podId) === String(wakeEvents[0].podId));
+      const rollup = wakeEvents[0]?.payload?.digestRollup;
+      const frame = formatDigestFrame(digestEvents, rollup);
+      let digestConsumed = false;
+      for (const [index, event] of wakeEvents.entries()) {
+        const attachedDigest = index === 0 && frame !== null;
+        const forwarded = attachedDigest ? {
+          ...event,
+          payload: {
+            ...(event.payload || {}),
+            digestSummary: frame,
+            ...(typeof event.payload?.content === 'string' ? {
+              content: `${event.payload.content}\n\n${frame}`,
+            } : {}),
+          },
+        } : event;
         let result = { outcome: 'no_action' };
         try {
-          result = (await onEvent(event)) || { outcome: 'no_action' };
+          // A handler that returns nothing said nothing: not a read of the digest.
+          result = (await onEvent(forwarded)) || { outcome: 'no_action', reason: EMPTY_OUTPUT };
         } catch (handlerErr) {
           result = { outcome: 'error', reason: handlerErr.message };
         }
@@ -72,6 +94,11 @@ export const startPoller = ({
             result,
             ...(typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {}),
           });
+          if (attachedDigest && (result.outcome === 'posted'
+            || result.outcome === 'acknowledged'
+            || (result.outcome === 'no_action' && !result.reason))) {
+            digestConsumed = true;
+          }
         } catch (ackErr) {
           const terminalError = terminalDeliveryAckError(ackErr, event._id);
           if (terminalError) {
@@ -81,6 +108,26 @@ export const startPoller = ({
           }
           // Non-fatal — event will be retried
           onError?.(new Error(`Ack failed for ${event._id}: ${ackErr.message}`));
+        }
+      }
+
+      if (digestConsumed) {
+        for (const event of digestEvents) {
+          try {
+            const deliveryId = event.payload?.deliveryId;
+            await client.post(`/api/agents/runtime/events/${event._id}/ack`, {
+              result: { outcome: 'no_action', reason: 'digest-read' },
+              ...(typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {}),
+            });
+          } catch (ackErr) {
+            const terminalError = terminalDeliveryAckError(ackErr, event._id);
+            if (terminalError) {
+              running = false;
+              onError?.(terminalError);
+              return;
+            }
+            onError?.(new Error(`Ack failed for ${event._id}: ${ackErr.message}`));
+          }
         }
       }
 

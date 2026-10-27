@@ -22,6 +22,11 @@ regexes = [
   # signature. generic-api-key matched it, and main's Secret Scan was red on
   # every push from 2026-10-16. The exact literal only, so a real token still fails.
   '''eyJhbGciOiJSUzI1NiJ9\.jwt''',
+  # A fake OpenRouter key in packages/seats/test/supervisor.test.js (#2701): the
+  # scrub test needs a value shaped like a real key so it can prove the key never
+  # reaches the record. generic-api-key matched it in a commit the scan reads, so
+  # an inline allow on today's line would not clear it. The exact literal only.
+  '''sk-or-v1-abcdefabcdefabcdef''',
   # The namespaced cloudflared ExternalSecret has `- secretKey: credentials.json`
   # (#2439) — a Secret KEY NAME (what the tunnel credentials.json is stored under), not
   # a value. gitleaks' kubernetes-secret-yaml rule captures `secretKey: credentials` (it

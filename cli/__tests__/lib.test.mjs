@@ -343,7 +343,7 @@ describe('session-store.js handled-event ring', () => {
 
 // ── webhook-server.js tests ───────────────────────────────────────────────────
 
-const { startWebhookServer, forwardToLocalWebhook } = await import('../src/lib/webhook-server.js');
+const { startWebhookServer, forwardToLocalWebhook, logOnlyHandler } = await import('../src/lib/webhook-server.js');
 
 describe('webhook-server.js', () => {
   test('startWebhookServer starts and resolves with { server, url, close }', async () => {
@@ -456,6 +456,56 @@ describe('webhook-server.js', () => {
 
     await new Promise((r) => server.close(r));
   });
+
+  // A body without a stated outcome must not read the pod digest (#2753).
+  test.each([
+    ['an empty body', 204, ''],
+    ['a non-JSON body', 200, 'ok'],
+    ['JSON null', 200, 'null'],
+    ['a JSON array', 200, '[]'],
+    ['an object without an outcome', 200, '{"content":"hi"}'],
+    ['a non-string outcome', 200, '{"outcome":5}'],
+  ])('forwardToLocalWebhook reads %s as empty output', async (_label, status, body) => {
+    const server = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => { res.writeHead(status); res.end(body); });
+    });
+    await new Promise((r) => server.listen(0, r));
+    const url = `http://localhost:${server.address().port}/cap`;
+    try {
+      expect(await forwardToLocalWebhook({ _id: 'evt-1', type: 'chat.mention' }, url, null))
+        .toEqual({ outcome: 'no_action', reason: 'empty-output' });
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+
+  test('startWebhookServer answers empty output for a handler that returns nothing', async () => {
+    const { server, url } = await startOnFreePort({ onEvent: async () => undefined });
+    try {
+      expect(await forwardToLocalWebhook({ _id: 'evt-1', type: 'chat.mention' }, url, null))
+        .toEqual({ outcome: 'no_action', reason: 'empty-output' });
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+
+  test.each([
+    ['{"outcome":"acknowledged"}', { outcome: 'acknowledged' }],
+    ['{"outcome":"no_action"}', { outcome: 'no_action' }],
+  ])('forwardToLocalWebhook keeps a stated outcome: %s', async (body, expected) => {
+    const server = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(body); });
+    });
+    await new Promise((r) => server.listen(0, r));
+    const url = `http://localhost:${server.address().port}/cap`;
+    try {
+      expect(await forwardToLocalWebhook({ _id: 'evt-1', type: 'chat.mention' }, url, null)).toEqual(expected);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
 });
 
 // ── poller.js tests ───────────────────────────────────────────────────────────
@@ -536,6 +586,191 @@ describe('poller.js', () => {
         deliveryId: 'delivery-abc',
       }),
     );
+  });
+
+  test('keeps a digest-only page quiet and attaches its frame to the next wake', async () => {
+    const digest = {
+      ...makeEvent('digest-1'), deliveryMode: 'digest',
+      type: 'message.posted', payload: {
+        content: 'private ambient body', username: 'Ava', messageId: '42', threadRootId: '21',
+        deliveryId: 'digest-nonce',
+      },
+    };
+    const wake = {
+      ...makeEvent('wake-1'), deliveryMode: 'wake',
+      type: 'chat.mention', payload: {
+        content: '@my-agent please help', deliveryId: 'wake-nonce',
+        digestRollup: { unreadCount: 2, conversations: [{ label: 'TASK-7', count: 2 }] },
+      },
+    };
+    const mockGet = jest.fn()
+      .mockResolvedValueOnce({ events: [digest] })
+      .mockResolvedValueOnce({ events: [wake, digest] })
+      .mockResolvedValue({ events: [] });
+    const mockPost = jest.fn().mockResolvedValue({});
+    const onEvent = jest.fn().mockResolvedValue({ outcome: 'acknowledged' });
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const { stop } = startPoller({
+      instanceUrl: 'http://localhost:5000', token: 'cm_test', agentName: 'my-agent',
+      intervalMs: 20, onEvent,
+    });
+    await new Promise((r) => setTimeout(r, 75));
+    stop();
+
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      _id: 'wake-1',
+      payload: expect.objectContaining({
+        content: expect.stringContaining('thread 21: 1 unread'),
+        digestSummary: expect.stringContaining('thread 21: 1 unread'),
+      }),
+    }));
+    expect(onEvent.mock.calls[0][0].payload.digestSummary).toContain('TASK-7: 2 unread');
+    expect(onEvent.mock.calls[0][0].payload.digestSummary).toContain('3 ambient updates in 2 conversations');
+    expect(JSON.stringify(onEvent.mock.calls)).not.toContain('private ambient body');
+    expect(JSON.stringify(onEvent.mock.calls)).not.toContain('Ava');
+    expect(mockPost.mock.calls.map(([url]) => url)).toEqual([
+      '/api/agents/runtime/events/wake-1/ack',
+      '/api/agents/runtime/events/digest-1/ack',
+    ]);
+    expect(mockPost).toHaveBeenCalledWith('/api/agents/runtime/events/digest-1/ack', {
+      result: { outcome: 'no_action', reason: 'digest-read' }, deliveryId: 'digest-nonce',
+    });
+  });
+
+  test('shows folded-only unread counts to agent connect before acknowledging the wake', async () => {
+    const wake = {
+      ...makeEvent('wake-folded'), deliveryMode: 'wake',
+      payload: {
+        content: '@my-agent please help', deliveryId: 'wake-nonce',
+        digestRollup: {
+          unreadCount: 3,
+          conversations: [{ label: 'thread 21', count: 2 }],
+        },
+      },
+    };
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({
+      get: jest.fn().mockResolvedValue({ events: [wake] }), post: mockPost,
+    });
+    const onEvent = jest.fn(async (event) => {
+      expect(mockPost).not.toHaveBeenCalled();
+      expect(event.payload.content).toContain('thread 21: 2 unread');
+      expect(event.payload.digestSummary).toContain('older pod activity: 1 unread');
+      expect(event.payload.digestSummary).toContain('3 ambient updates in 2 conversations');
+      return { outcome: 'acknowledged' };
+    });
+    const { stop } = startPoller({
+      instanceUrl: 'http://localhost:5000', token: 'cm_test', agentName: 'my-agent',
+      intervalMs: 100_000, onEvent,
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    stop();
+
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    expect(mockPost.mock.calls.map(([url]) => url)).toEqual([
+      '/api/agents/runtime/events/wake-folded/ack',
+    ]);
+  });
+
+  test.each([
+    { outcome: 'error', reason: 'webhook failed' },
+    { outcome: 'no_action', reason: 'upstream-refused' },
+  ])('leaves digest unread when the waking handler returns $outcome with a reason', async (result) => {
+    const events = [
+      { ...makeEvent('wake-1'), deliveryMode: 'wake' },
+      { ...makeEvent('digest-1'), deliveryMode: 'digest', payload: { content: 'ambient' } },
+    ];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    const onEvent = jest.fn().mockResolvedValue(result);
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    const { stop } = startPoller({
+      instanceUrl: 'http://localhost:5000', token: 'cm_test', agentName: 'my-agent',
+      intervalMs: 100_000, onEvent,
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    stop();
+
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    expect(mockPost.mock.calls.map(([url]) => url)).toEqual([
+      '/api/agents/runtime/events/wake-1/ack',
+    ]);
+  });
+
+  test('a handler that returns nothing acks the wake as empty output and leaves the digest unread', async () => {
+    const events = [
+      { ...makeEvent('wake-1'), deliveryMode: 'wake' },
+      { ...makeEvent('digest-1'), deliveryMode: 'digest', payload: { content: 'ambient' } },
+    ];
+    const mockPost = jest.fn().mockResolvedValue({});
+    const onEvent = jest.fn().mockResolvedValue(undefined);
+    createClient.mockReturnValue({ get: jest.fn().mockResolvedValue({ events }), post: mockPost });
+    const { stop } = startPoller({
+      instanceUrl: 'http://localhost:5000', token: 'cm_test', agentName: 'my-agent',
+      intervalMs: 100_000, onEvent,
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    stop();
+
+    expect(mockPost.mock.calls).toEqual([
+      ['/api/agents/runtime/events/wake-1/ack', { result: { outcome: 'no_action', reason: 'empty-output' } }],
+    ]);
+  });
+
+  // `agent connect` forwards to its own log-only server; nothing read the digest.
+  test('a wake forwarded through the agent connect server leaves the digest unread', async () => {
+    const port = await new Promise((resolve) => {
+      const probe = http.createServer();
+      probe.listen(0, () => { const p = probe.address().port; probe.close(() => resolve(p)); });
+    });
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const { server, url } = await startWebhookServer({ port, onEvent: logOnlyHandler });
+    const events = [
+      { ...makeEvent('wake-1'), deliveryMode: 'wake' },
+      { ...makeEvent('digest-1'), deliveryMode: 'digest', payload: { content: 'ambient' } },
+    ];
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: jest.fn().mockResolvedValue({ events }), post: mockPost });
+    try {
+      const { stop } = startPoller({
+        instanceUrl: 'http://localhost:5000', token: 'cm_test', agentName: 'my-agent',
+        intervalMs: 100_000, onEvent: (event) => forwardToLocalWebhook(event, url, null),
+      });
+      await new Promise((r) => setTimeout(r, 150));
+      stop();
+    } finally {
+      log.mockRestore();
+      await new Promise((r) => server.close(r));
+    }
+
+    expect(mockPost.mock.calls).toEqual([
+      ['/api/agents/runtime/events/wake-1/ack', { result: { outcome: 'no_action', reason: 'empty-output' } }],
+    ]);
+  });
+
+  test('does not forward or acknowledge another pod\'s digest with a wake', async () => {
+    const events = [
+      { ...makeEvent('wake-1'), deliveryMode: 'wake', payload: { content: 'pod A' } },
+      { ...makeEvent('digest-2'), podId: 'pod-other', deliveryMode: 'digest', payload: { content: 'private pod B' } },
+    ];
+    const mockPost = jest.fn().mockResolvedValue({});
+    const onEvent = jest.fn().mockResolvedValue({ outcome: 'acknowledged' });
+    createClient.mockReturnValue({ get: jest.fn().mockResolvedValue({ events }), post: mockPost });
+    const { stop } = startPoller({
+      instanceUrl: 'http://localhost:5000', token: 'cm_test', agentName: 'my-agent',
+      intervalMs: 100_000, onEvent,
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    stop();
+
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      payload: { content: 'pod A' },
+    }));
+    expect(mockPost.mock.calls.map(([url]) => url)).toEqual([
+      '/api/agents/runtime/events/wake-1/ack',
+    ]);
   });
 
   test('stops after stale_delivery instead of polling against the replacement', async () => {

@@ -1,4 +1,6 @@
 // @ts-nocheck
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // Retention plan Phase C: the optional "bring its memory" step on the BYO
 // page. Pins the wire contract: the import uses the freshly issued
 // cm_agent_* runtime token (NOT the user JWT), patch mode, sourceRuntime
@@ -8,8 +10,13 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
-// This suite owns the BYO request sequence, not the rail's attention query.
+// This suite owns the BYO request sequence, not the attention queries the chrome
+// makes. Each one would otherwise consume a queued pod-list response.
 jest.mock('../components/V2NavRail', () => () => null);
+jest.mock('../hooks/useV2PodAttention', () => ({
+  ...jest.requireActual('../hooks/useV2PodAttention'),
+  useV2PodAttention: () => ({ items: [], count: null, countByPod: {}, refresh: async () => {} }),
+}));
 
 jest.mock('axios', () => {
   const mock = {

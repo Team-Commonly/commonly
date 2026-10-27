@@ -19,6 +19,7 @@ jest.mock('../../../models/AgentRegistry', () => ({
 const mockNotifyFoundWork = jest.fn();
 const mockNotifyLeaseWarning = jest.fn();
 jest.mock('../../../services/taskEventService', () => ({
+  retryTaskWatcherDigests: jest.fn().mockResolvedValue(undefined),
   notifyFoundWork: (...args) => mockNotifyFoundWork(...args),
   notifyLeaseWarning: (...args) => mockNotifyLeaseWarning(...args),
 }));
@@ -338,14 +339,14 @@ describe('sweep', () => {
     expect(result.woken).toBe(1);
   });
 
-  it('matches due revisions within the 10-minute scan bound', async () => {
+  it('matches unoffered revisions regardless of age so the hourly batch can retry', async () => {
     Task.aggregate.mockResolvedValue([]);
 
     await KernelWorkSweepService.sweep(NOW);
 
     const [pipeline] = Task.aggregate.mock.calls[0];
     const match = pipeline[0].$match;
-    expect(match.updatedAt.$gte).toEqual(new Date(NOW.getTime() - 10 * 60 * 1000));
+    expect(match).not.toHaveProperty('updatedAt');
     expect(match.status).toBe('pending');
     expect(match.$expr).toEqual({ $lt: ['$offeredAt', '$updatedAt'] });
     expect(match.$or).toEqual([
@@ -353,7 +354,7 @@ describe('sweep', () => {
       { assignee: '' },
       { assignee: { $exists: false } },
     ]);
-    const group = pipeline[1].$group;
+    const group = pipeline.find((stage) => stage.$group).$group;
     expect(group.tasks.$push).toMatchObject({
       _id: '$_id',
       updatedAt: '$updatedAt',
@@ -416,4 +417,26 @@ describe('lapsed contract — the sweep and the claim CAS agree on what lapsed m
 
     expect(sweep).toEqual(cas.slice(-2));
   });
+});
+
+
+test('watcher receipts retry even when work discovery is disabled', async () => {
+  process.env.AGENT_WORK_SWEEP_DISABLED = 'true';
+  const receipts = require('../../../services/taskEventService').retryTaskWatcherDigests;
+  await KernelWorkSweepService.sweep(NOW);
+  expect(receipts).toHaveBeenCalledTimes(1);
+  expect(mockNotifyFoundWork).not.toHaveBeenCalled();
+});
+
+
+test('a watcher retry failure does not block rescue or work discovery', async () => {
+  const receipts = require('../../../services/taskEventService').retryTaskWatcherDigests;
+  receipts.mockRejectedValueOnce(new Error('lookup failed'));
+  const rescue = jest.spyOn(KernelWorkSweepService, 'rescueLapsed');
+  const discovery = jest.spyOn(KernelWorkSweepService, 'wakeForFoundWork');
+  try {
+    await KernelWorkSweepService.sweep(NOW);
+    expect(rescue).toHaveBeenCalledTimes(1);
+    expect(discovery).toHaveBeenCalledTimes(1);
+  } finally { rescue.mockRestore(); discovery.mockRestore(); }
 });

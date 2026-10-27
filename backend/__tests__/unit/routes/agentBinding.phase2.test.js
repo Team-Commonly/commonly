@@ -411,6 +411,21 @@ describe('daemon work list', () => {
     expect(seenByB.body.agents).toEqual([]);
   });
 
+  // TASK-474: a seat placed on a machine before it turned native or hosted keeps
+  // the machineId, so the work list must filter on the runtime, not the binding.
+  it.each([
+    ['native', { runtime: { runtimeType: 'native' } }],
+    ['hosted on the Durable Object engine', { runtime: { runtimeType: 'hosted' } }],
+  ])('stops listing a %s seat to the machine it was placed on before the switch', async (_label, config) => {
+    await requestPlacement('machine-a');
+    expect((await assigned(DAEMON_A)).body.agents).toHaveLength(1);
+
+    await AgentInstallation.updateOne({ agentName: 'wren-test', instanceId: 'default' }, { $set: { config } });
+    const res = await assigned(DAEMON_A);
+    expect(res.status).toBe(200);
+    expect(res.body.agents).toEqual([]);
+  });
+
   it('projects live broker grants into the audience seat environment', async () => {
     const seatId = String(bot._id);
     await RoomGrant.create({

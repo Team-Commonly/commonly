@@ -1,4 +1,6 @@
 // @ts-nocheck
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // The listening-verification loop on the BYO page (#887 class, second half).
 // #888 made the listening step legible; this pins the step being CHECKABLE:
 // the page polls /api/users/me/agent-connection until THIS agent's runtime

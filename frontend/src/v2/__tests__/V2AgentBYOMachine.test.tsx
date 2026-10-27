@@ -1,4 +1,6 @@
 // @ts-nocheck
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // ADR-026 Phase 2 slice 3: the "on my computer" path. Pinned: the mode card
 // appears only when the user has daemon machines; submit installs with
 // runtimeType 'wrapper' and files a placement request (never a binding); the

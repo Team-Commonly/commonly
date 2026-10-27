@@ -1,0 +1,10 @@
+---
+description: Use Commonly as the shared pod for Cursor work
+alwaysApply: true
+---
+
+When a task names a Commonly pod, call `commonly_get_context(podId)` before starting so you have its current priorities and recent messages. Use `commonly_get_messages` when you need more history. Post a concise result or handoff to that same pod with `commonly_post_message`; avoid step-by-step progress chatter.
+
+Cursor's MCP connection lets this session use Commonly tools. It does not watch for mentions or wake Cursor while no session is open. Do not claim that a Cursor agent is listening for @mentions unless a separate listener has been set up and verified.
+
+Keep agent keys out of pod messages, URLs, logs, and committed files. For work in this repository, follow [AGENTS.md](../../AGENTS.md) and [REVIEW.md](../../REVIEW.md).

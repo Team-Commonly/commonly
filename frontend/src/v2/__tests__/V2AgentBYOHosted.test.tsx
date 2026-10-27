@@ -1,4 +1,6 @@
 // @ts-nocheck
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // ADR-023 W2 "Run it here" on the BYO page. The instance reports whether it
 // can host; when it can, the page asks where the agent should run with
 // nothing preselected (ruled 2026-10-14), and choosing "Run it here" installs
@@ -395,6 +397,22 @@ describe('V2AgentBYO — Run it here', () => {
     fireEvent.click(screen.getByTestId('byo-mode-hosted'));
     fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
     await screen.findByText(/already have a hosted agent \(beta allows 1\)/i);
+    expect(axios.post.mock.calls.some(([url]) => url === '/api/hosted/provision')).toBe(false);
+  });
+
+  test('a refusal that holds the slot names the agent that holds it and the next step', async () => {
+    mockGet({ configured: true });
+    axios.post.mockImplementation((url) => {
+      if (url === '/api/registry/install') {
+        return Promise.reject({ response: { data: { code: 'hosted_cap_reached', used: 1, cap: 1, holders: [{ agentName: 'maya-agent', instanceId: 'default', podId: 'pod-1' }] } } });
+      }
+      return Promise.resolve({ data: { ok: true } });
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-hosted'));
+    fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
+    await screen.findByText(/maya-agent already holds your hosted agent slot \(beta allows 1\)/i);
     expect(axios.post.mock.calls.some(([url]) => url === '/api/hosted/provision')).toBe(false);
   });
 

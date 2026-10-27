@@ -119,6 +119,34 @@ describe('performRun', () => {
     expect(createClient).not.toHaveBeenCalled();
   });
 
+  test.each([429, 503, 404])('own-key mint fallback HTTP %i refuses the real turn before model spawn', async (status) => {
+    const { createOwnKeyResolver } = await import('../src/lib/own-key-launch.js');
+    const { openSpawnCredential } = await import('../src/lib/spawn-credential.js');
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: jest.fn().mockResolvedValue({ events: [makeEvent()] }), post: mockPost });
+    const launchPost = jest.fn(async () => ({ set: true }));
+    const resolveOwnProviderKey = createOwnKeyResolver({ instanceUrl: 'http://localhost:5000', machineId: 'machine', agentName: 'my-stub',
+      loadRecord: () => ({ machineId: 'machine', instanceUrl: 'http://localhost:5000', daemonToken: 'cm_daemon_parent' }),
+      clientFactory: () => ({ post: launchPost }) });
+    const spawn = jest.fn();
+    const close = jest.fn();
+    const { stop } = performRun({ instanceUrl: 'http://localhost:5000', token: 'cm_agent_fallback',
+      agentName: 'my-stub', instanceId: 'default', reportRuntime: true, resolveOwnProviderKey,
+      adapter: { name: 'opencode', supportsProvider: true, detect: stubAdapter.detect, spawn },
+      environment: { model: 'm', provider: { id: 'p', baseURL: 'https://provider.invalid/v1' } },
+      spawnCredentialLeaseFactory: () => ({ open: () => openSpawnCredential({ client: { post: async () => {
+        throw Object.assign(new Error('mint unavailable'), { status });
+      } }, seatToken: 'cm_agent_fallback', spawnId: 'test' }), close }), setTimeoutImpl: noopTimeout });
+    await drainMicrotasks(); stop();
+    expect(launchPost).toHaveBeenCalledWith('/api/agents/runtime/provider-key/launch', expect.objectContaining({ metadataOnly: true }));
+    expect(spawn).not.toHaveBeenCalled();
+    expect(replyPosts(mockPost)).toHaveLength(0);
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(ackPosts(mockPost)).toEqual(expect.arrayContaining([[expect.any(String), expect.objectContaining({
+      result: expect.objectContaining({ reason: 'own-key-requires-scoped-spawn', outcome: 'no_action' }),
+    })]]));
+  });
+
   test('event with content → adapter.spawn receives sandboxed attribution → reply posted → acked', async () => {
     // Make the full attribution env differ from sandboxEnv at the adapter seam.
     process.env.GIT_CONFIG_COUNT = '1';
@@ -152,6 +180,8 @@ describe('performRun', () => {
     // so the whole page reaches one composite turn instead of aging untouched
     // behind a prior single-event turn.
     expect(mockGet.mock.calls[0][1].limit).toBe(10);
+    // TASK-317: the poll names the CLI for the chat chip (display only).
+    expect(mockGet.mock.calls[0][1].reportedCli).toBe('codex');
     expect(spawn).toHaveBeenCalledTimes(1);
     const spawnedEnv = spawn.mock.calls[0][1].env;
     const configIndex = Number(process.env.GIT_CONFIG_COUNT || 0);
@@ -254,7 +284,7 @@ describe('performRun', () => {
     expect(lines.some((line) => line.includes('upstream refused'))).toBe(false);
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-1/ack',
-      { result: { outcome: 'no_action' } },
+      { result: { outcome: 'no_action', reason: 'empty-output' } },
     );
   });
 
@@ -270,6 +300,7 @@ describe('performRun', () => {
     const del = jest.fn(async () => ({ released: true }));
     const get = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) return { messages: [] };
       return { events, inboxCount: 7 };
     });
@@ -302,6 +333,223 @@ describe('performRun', () => {
     );
   });
 
+  test('a wake carries compact digest context without claiming ambient messages', async () => {
+    const events = [
+      makeEvent({ _id: 'evt-wake', type: 'chat.mention', payload: {
+        content: 'please review', digestRollup: { unreadCount: 3, lastEventIds: ['old-1', 'old-2'],
+          conversations: [{ label: 'thread 40', count: 3 }] },
+      } }),
+      makeEvent({ _id: 'evt-digest', type: 'message.posted', deliveryMode: 'digest',
+        payload: { content: 'daily update', username: 'alice', messageId: '42', threadRootId: '40' } }),
+    ];
+    const get = jest.fn(async (route) => {
+      if (route.endsWith('/messages')) return { messages: [] };
+      if (route.endsWith('/memory')) return { sections: {} };
+      return { events, inboxCount: 2 };
+    });
+    const post = jest.fn(async () => ({}));
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'reviewed' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][0]).toContain('[Since you last looked: 4 ambient updates');
+    expect(spawn.mock.calls[0][0]).toContain('4 ambient updates in 1 conversation');
+    expect(spawn.mock.calls[0][0]).toContain('thread 40: 4 unread');
+    expect(spawn.mock.calls[0][0]).toContain('8 conversations, 5 messages each, 20 messages total');
+    expect(spawn.mock.calls[0][0]).not.toContain('daily update');
+    expect(spawn.mock.calls[0][0]).not.toContain('Event 2/2: message.posted');
+    expect(post.mock.calls.filter(([route]) => route.endsWith('/claim'))).toHaveLength(0);
+    expect(ackPosts(post)).toHaveLength(2);
+  });
+
+  test('digest notices group unread threads, dedupe one source, and batch the next read for three seconds', async () => {
+    const events = [
+      makeEvent({ _id: 'wake', type: 'chat.mention', payload: { content: 'review this' } }),
+      makeEvent({ _id: 'ambient-a', type: 'message.posted', deliveryMode: 'digest',
+        payload: { messageId: '41', threadRootId: 40, content: 'secret first body' } }),
+      makeEvent({ _id: 'ambient-a-copy', type: 'message.posted', deliveryMode: 'digest',
+        payload: { messageId: '41', threadRootId: 40, content: 'secret first body' } }),
+      makeEvent({ _id: 'ambient-b', type: 'message.posted', deliveryMode: 'digest',
+        payload: { messageId: '42', threadRootId: 40, content: 'secret second body' } }),
+    ];
+    const get = jest.fn(async (route) => {
+      if (route.endsWith('/messages')) return { messages: [] };
+      if (route.endsWith('/memory')) return { sections: {} };
+      return { events, inboxCount: events.length };
+    });
+    const post = jest.fn(async () => ({}));
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'handled' }));
+    const schedule = jest.fn();
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', intervalMs: 100, setTimeoutImpl: schedule,
+    });
+    await drainMicrotasks();
+    stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const prompt = spawn.mock.calls[0][0];
+    expect(prompt).toContain('2 ambient updates in 1 conversation');
+    expect(prompt).toContain('thread 40: 2 unread');
+    expect(prompt).not.toContain('secret first body');
+    expect(prompt).not.toContain('secret second body');
+    expect(schedule).toHaveBeenCalledWith(expect.any(Function), 3000);
+  });
+
+  test('a digest-only page never starts a turn or acknowledges the ambient event', async () => {
+    const event = makeEvent({ deliveryMode: 'digest', type: 'message.posted',
+      payload: { content: 'ambient', messageId: '42' } });
+    const get = jest.fn(async () => ({ events: [event], inboxCount: 1 }));
+    const post = jest.fn(async () => ({}));
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'should not run' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ackPosts(post)).toHaveLength(0);
+  });
+
+  test('a digest companion stays unread when the sole wake loses its binding claim', async () => {
+    const events = [
+      makeEvent({ _id: 'evt-held', type: 'message.posted',
+        payload: { content: 'peer owns this', messageId: 'msg-held' } }),
+      makeEvent({ _id: 'evt-ambient', type: 'message.posted', deliveryMode: 'digest',
+        payload: { content: 'background', messageId: 'msg-ambient' } }),
+    ];
+    const get = jest.fn(async (route) => {
+      if (route.endsWith('/messages')) return { messages: [] };
+      if (route.endsWith('/memory')) return { sections: {} };
+      return { events, inboxCount: 2 };
+    });
+    const post = jest.fn(async (route) => (
+      route.endsWith('/claim') ? { claimed: false, claimedBy: 'nova' } : {}
+    ));
+    createClient.mockReturnValue({ get, post, del: jest.fn() });
+    const spawn = jest.fn(async () => ({ text: 'must not run' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ackPosts(post)).toEqual([[
+      '/api/agents/runtime/events/evt-held/ack',
+      { result: { outcome: 'no_action', reason: 'claim-held' } },
+    ]]);
+  });
+
+  test('a provider refusal leaves digest unread even though the wake is acknowledged', async () => {
+    const events = [
+      makeEvent({ _id: 'evt-refused', payload: { content: 'question' } }),
+      makeEvent({ _id: 'evt-ambient', type: 'message.posted', deliveryMode: 'digest',
+        payload: { content: 'background' } }),
+    ];
+    const get = jest.fn(async (route) => (
+      route.endsWith('/messages') ? { messages: [] } : { events, inboxCount: 2 }
+    ));
+    const post = jest.fn(async () => ({}));
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: '', upstream: { status: 429, detail: 'budget' } }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(ackPosts(post).map(([route]) => route)).toEqual(['/api/agents/runtime/events/evt-refused/ack']);
+  });
+
+  // The server answers an intentional NO_REPLY with `silent_or_empty`. That
+  // seat read the batch and chose silence, so its digest is read; any other
+  // skip leaves the digest for the next turn (rhea, 2026-10-25).
+  test.each([
+    ['silent_or_empty', true],
+    ['duplicate_recent', false],
+  ])('a server skip as %s marks the digest read: %s', async (reason, read) => {
+    const events = [
+      makeEvent({ _id: 'evt-wake', payload: { content: 'question' } }),
+      makeEvent({ _id: 'evt-ambient', type: 'message.posted', deliveryMode: 'digest',
+        payload: { content: 'background' } }),
+    ];
+    const get = jest.fn(async (route) => (
+      route.endsWith('/messages') ? { messages: [] } : { events, inboxCount: 2 }
+    ));
+    const post = jest.fn(async (route) => (
+      route === '/api/agents/runtime/pods/pod-abc/messages'
+        ? { success: true, skipped: true, reason }
+        : {}
+    ));
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'Nothing to add.' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const acked = ackPosts(post).map(([route]) => route);
+    expect(acked).toContain('/api/agents/runtime/events/evt-wake/ack');
+    expect(acked.includes('/api/agents/runtime/events/evt-ambient/ack')).toBe(read);
+    if (read) {
+      expect(post).toHaveBeenCalledWith('/api/agents/runtime/events/evt-ambient/ack', {
+        result: { outcome: 'no_action', reason: 'digest-read' },
+      });
+    }
+  });
+
+  // Only the sentinel is a choice. A seat that prints nothing every turn (a
+  // crash, a timeout, a lost route that says nothing) must not drain the
+  // digest it never saw (sable, #2753).
+  test.each([
+    ['NO_REPLY', { outcome: 'no_action' }, true],
+    ['', { outcome: 'no_action', reason: 'empty-output' }, false],
+  ])('a reply of %j acks the wake as %j and reads the digest: %s', async (text, wakeResult, read) => {
+    const events = [
+      makeEvent({ _id: 'evt-wake', payload: { content: 'question' } }),
+      makeEvent({ _id: 'evt-ambient', type: 'message.posted', deliveryMode: 'digest',
+        payload: { content: 'background' } }),
+    ];
+    const get = jest.fn(async (route) => (
+      route.endsWith('/messages') ? { messages: [] } : { events, inboxCount: 2 }
+    ));
+    const post = jest.fn(async () => ({}));
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith('/api/agents/runtime/events/evt-wake/ack', { result: wakeResult });
+    const acked = ackPosts(post).map(([route]) => route);
+    expect(acked.includes('/api/agents/runtime/events/evt-ambient/ack')).toBe(read);
+  });
+
   test('a lost binding item stays read-only context while another batch item may run', async () => {
     const events = [
       makeEvent({
@@ -316,6 +564,7 @@ describe('performRun', () => {
     });
     const get = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) return { messages: [] };
       return { events };
     });
@@ -595,6 +844,7 @@ describe('performRun', () => {
     let messagesCall = 0;
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) {
         messagesCall += 1;
         return messagesCall === 1
@@ -640,6 +890,7 @@ describe('performRun', () => {
     let messagesCall = 0;
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) {
         messagesCall += 1;
         return messagesCall === 1
@@ -680,6 +931,7 @@ describe('performRun', () => {
     let messagesCall = 0;
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) {
         messagesCall += 1;
         return messagesCall === 1
@@ -721,6 +973,7 @@ describe('performRun', () => {
     let messagesCall = 0;
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) {
         messagesCall += 1;
         return messagesCall === 1
@@ -765,6 +1018,7 @@ describe('performRun', () => {
     let messagesCall = 0;
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) {
         messagesCall += 1;
         return messagesCall === 1
@@ -1096,6 +1350,60 @@ describe('performRun', () => {
     );
   });
 
+  // TASK-293: the wrapper posts any final text that is not exactly NO_REPLY, so
+  // every prompt whose final text reaches the pod says so. Pinned as a literal
+  // rather than imported, so rewording the line is a deliberate test change.
+  const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
+    + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary.';
+
+  const firstPromptFor = async (events) => {
+    createClient.mockReturnValue({
+      get: jest.fn().mockResolvedValue({ events }),
+      post: jest.fn().mockResolvedValue({}),
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    return spawn.mock.calls[0][0];
+  };
+
+  test.each([
+    ['a heartbeat wake', { _id: 'evt-hb-posted-line', type: 'heartbeat', payload: { content: 'Run your heartbeat checklist.' } }],
+    ['a mention', { _id: 'evt-mention-posted-line' }],
+  ])('the inbox-batch prompt for %s says its final text is posted unless it is exactly NO_REPLY', async (_label, overrides) => {
+    const prompt = await firstPromptFor([makeEvent(overrides)]);
+    expect(prompt).toContain('[Inbox batch: 1 new event in this pod.');
+    expect(prompt).toContain(FINAL_TEXT_IS_POSTED);
+  });
+
+  test('the agent.ask.response prompt says its final text is posted unless it is exactly NO_REPLY', async () => {
+    const prompt = await firstPromptFor([makeEvent({
+      _id: 'evt-ask-response-posted-line',
+      type: 'agent.ask.response',
+      payload: { requestId: 'ask-456', fromAgent: 'reviewer', response: 'Ship it.' },
+    })]);
+    expect(prompt).toContain('[Private agent consultation response]');
+    expect(prompt).toContain(FINAL_TEXT_IS_POSTED);
+  });
+
+  test('the agent.ask prompt does not say its final text is posted: that text goes to the requester', async () => {
+    const prompt = await firstPromptFor([makeEvent({
+      _id: 'evt-ask-posted-line',
+      type: 'agent.ask',
+      payload: { requestId: 'ask-789', fromAgent: 'planner', question: 'Ready?' },
+    })]);
+    expect(prompt).toContain('@planner asks:');
+    expect(prompt).not.toContain(FINAL_TEXT_IS_POSTED);
+  });
+
   test('decision.ruled spawns a turn with the durable pick, rather than dropping it as an unknown event', async () => {
     const events = [makeEvent({
       _id: 'evt-decision-ruled',
@@ -1223,6 +1531,82 @@ describe('performRun', () => {
     expect(ackPosts(mockPost)).toHaveLength(1);
   });
 
+  test.each(['claude', 'codex'])('%s BYO missing model reaches spawn and acknowledges its reply', async (name) => {
+    const prior = process.env.COMMONLY_REQUIRE_SEAT_MODEL;
+    delete process.env.COMMONLY_REQUIRE_SEAT_MODEL;
+    let stop;
+    try {
+      const realAdapter = (await import(`../src/lib/adapters/${name}.js`)).default;
+      const event = makeEvent({ _id: `evt-byo-model-${name}` });
+      const get = jest.fn(async (route) => route.endsWith('/messages')
+        ? { messages: [] } : { events: [event] });
+      const post = jest.fn().mockResolvedValue({});
+      createClient.mockReturnValue({ get, post });
+      const spawn = jest.fn().mockResolvedValue({ text: 'BYO reply', newSessionId: null });
+      ({ stop } = performRun({
+        instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+        agentName: 'my-stub', environment: {}, adapter: { ...realAdapter, spawn },
+        setTimeoutImpl: () => 0,
+      }));
+      await drainMicrotasks();
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(replyPosts(post)).toEqual([[
+        '/api/agents/runtime/pods/pod-abc/messages', { content: 'BYO reply' },
+      ]]);
+      expect(ackPosts(post)).toHaveLength(1);
+      expect(wasEventHandled('my-stub', event._id)).toBe(true);
+    } finally {
+      stop?.();
+      if (prior === undefined) delete process.env.COMMONLY_REQUIRE_SEAT_MODEL;
+      else process.env.COMMONLY_REQUIRE_SEAT_MODEL = prior;
+    }
+  });
+
+  test.each([['claude', '1'], ['codex', '1'], ['qwen', undefined], ['dsh', undefined]])('%s missing model posts one notice and retains the event even if credential minting would refuse', async (name, requirement) => {
+    const priorModelRequirement = process.env.COMMONLY_REQUIRE_SEAT_MODEL;
+    if (requirement === undefined) delete process.env.COMMONLY_REQUIRE_SEAT_MODEL;
+    else process.env.COMMONLY_REQUIRE_SEAT_MODEL = requirement;
+    const realAdapter = (await import(`../src/lib/adapters/${name}.js`)).default;
+    const event = makeEvent({ _id: `evt-model-${name}` });
+    const get = jest.fn(async (route) => route.endsWith('/messages')
+      ? { messages: [] } : { events: [event] });
+    const post = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get, post });
+    const scheduled = [];
+    const errors = [];
+    const open = jest.fn(async () => {
+      throw Object.assign(new Error('mint refused'), { spawnCredentialRefused: true, status: 403 });
+    });
+    const leaseFactory = jest.fn(() => ({ open, close: jest.fn() }));
+    const spawn = jest.fn((...args) => realAdapter.spawn(...args));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      agentName: 'my-stub', environment: {},
+      adapter: { ...realAdapter, spawn },
+      setTimeoutImpl: (callback) => { scheduled.push(callback); return 0; },
+      onError: (error) => errors.push(error),
+      spawnCredentialLeaseFactory: leaseFactory,
+    });
+    await drainMicrotasks();
+    expect(scheduled).toHaveLength(1);
+    await scheduled.shift()();
+    await drainMicrotasks();
+    stop();
+    expect(spawn).not.toHaveBeenCalled();
+    expect(leaseFactory).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+    expect(replyPosts(post)).toEqual([[
+      '/api/agents/runtime/pods/pod-abc/messages',
+      { content: 'This agent has no model set; add environment.model to its configuration.' },
+    ]]);
+    expect(ackPosts(post)).toHaveLength(0);
+    expect(wasEventHandled('my-stub', event._id)).toBe(false);
+    expect(errors).toHaveLength(2);
+    expect(errors[0].code).toBe('agent_spawn_retry_scheduled');
+    if (priorModelRequirement === undefined) delete process.env.COMMONLY_REQUIRE_SEAT_MODEL;
+    else process.env.COMMONLY_REQUIRE_SEAT_MODEL = priorModelRequirement;
+  });
+
   test('adapter.spawn throws → no post, no ack (re-delivery path)', async () => {
     const events = [makeEvent({ _id: 'evt-boom' })];
     const mockGet = jest.fn().mockResolvedValue({ events });
@@ -1330,6 +1714,7 @@ describe('performRun', () => {
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/events') return { events: [event] };
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) return { messages: [] };
       return {};
     });
@@ -1371,7 +1756,9 @@ describe('performRun', () => {
       circuitOpen: true,
       eventId: event._id,
     });
-    expect(errors[2].message).toMatch(/circuit open, next probe in 1m/);
+    // The third consecutive failure of the same event releases it to the
+    // server's requeue rather than carrying it again (HELD_RETRY_MAX_FAILURES).
+    expect(errors[2].message).toMatch(/circuit open; releasing 1 event after 3 failed attempts .*; next poll in 1m/);
   });
 
   test('recognized quota failure opens the long circuit on the first attempt', async () => {
@@ -1402,6 +1789,168 @@ describe('performRun', () => {
     expect(errors[0]).toMatchObject({ failureClass: 'quota', circuitOpen: true });
   });
 
+  test('a never-resolving child cannot renew inbox deliveries beyond the turn deadline', async () => {
+    const post = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: jest.fn(async (route) => {
+      if (route.endsWith('/events')) return { events: [makeEvent({ payload: { content: 'hang', deliveryId: 'nonce' } })] };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return {};
+    }), post });
+    const intervals = [];
+    const deadlines = [];
+    const clearIntervalImpl = jest.fn();
+    const spawn = jest.fn(() => new Promise(() => {}));
+    const handle = performRun({ instanceUrl: 'https://example.test', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn }, agentName: 'my-stub',
+      turnTimeoutMs: 1000, setTimeoutImpl: noopTimeout,
+      setIntervalImpl: (callback, delay) => { const timer = { callback, delay }; intervals.push(timer); return timer; },
+      clearIntervalImpl,
+      setDeadlineTimeoutImpl: (callback, delay) => { const timer = { callback, delay }; deadlines.push(timer); return timer; },
+      clearDeadlineTimeoutImpl: jest.fn() });
+    await drainMicrotasks();
+    try {
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(spawn.mock.calls[0][1].timeoutMs).toBe(1000);
+      const renewal = intervals.find((timer) => timer.delay === 60_000);
+      await renewal.callback();
+      expect(callsTo(post, '/events/renew')).toHaveLength(1);
+      expect(deadlines).toHaveLength(1);
+      expect(deadlines[0].delay).toBe(1000);
+      deadlines[0].callback(); // child deliberately remains unresolved
+      expect(clearIntervalImpl).toHaveBeenCalledWith(renewal);
+      await renewal.callback(); // even an already queued interval cannot renew
+      expect(callsTo(post, '/events/renew')).toHaveLength(1);
+      expect(ackPosts(post)).toHaveLength(0);
+    } finally { handle.stop(); }
+  });
+
+  test.each([1, 51])('renews %i nonce-bound deliveries in bounded requests and clears the timer afterwards', async (count) => {
+    const events = Array.from({ length: count }, (_, i) => makeEvent({
+      _id: `evt-${i + 1}`, payload: { content: 'long work', deliveryId: `nonce-${i + 1}` },
+    }));
+    const post = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: jest.fn(async (route) => {
+      if (route.endsWith('/events')) return { events };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return {};
+    }), post });
+    const timers = [];
+    const clearIntervalImpl = jest.fn();
+    let finish;
+    const spawn = jest.fn(() => new Promise((resolve) => { finish = resolve; }));
+    const handle = performRun({ instanceUrl: 'https://example.test', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn }, agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      setIntervalImpl: (callback, delay) => { const timer = { callback, delay }; timers.push(timer); return timer; },
+      clearIntervalImpl });
+    await drainMicrotasks();
+    const renewal = timers.find((timer) => timer.delay === 60_000);
+    expect(renewal).toBeDefined();
+    await renewal.callback();
+    const renewals = callsTo(post, '/events/renew');
+    expect(renewals).toHaveLength(Math.ceil(count / 50));
+    expect(renewals.every(([, body]) => body.events.length <= 50)).toBe(true);
+    expect(renewals.flatMap(([, body]) => body.events)).toEqual(events.map((event) => ({
+      eventId: event._id, deliveryId: event.payload.deliveryId,
+    })));
+    expect(ackPosts(post)).toHaveLength(0);
+    finish({ text: 'NO_REPLY' });
+    await drainMicrotasks();
+    handle.stop();
+    expect(clearIntervalImpl).toHaveBeenCalledWith(renewal);
+    expect(ackPosts(post)).toHaveLength(count);
+  });
+
+  test('an item without a delivery nonce gets no per-item checkpoint instruction', async () => {
+    createClient.mockReturnValue({ get: jest.fn(async (route) => {
+      if (route.endsWith('/events')) return { events: [makeEvent()] };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return {};
+    }), post: jest.fn().mockResolvedValue({}) });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const handle = performRun({ instanceUrl: 'https://example.test', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn }, agentName: 'my-stub', setTimeoutImpl: noopTimeout });
+    await drainMicrotasks();
+    handle.stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][0]).not.toContain('call commonly_checkpoint_event(');
+  });
+
+  test('three explicit event checkpoints survive a five-event turn timeout', async () => {
+    const { buildTools } = await import('../../commonly-mcp/src/tools.js');
+    const originalFetch = global.fetch;
+    const events = Array.from({ length: 5 }, (_, index) => makeEvent({
+      _id: `evt-check-${index + 1}`,
+      payload: { content: `handle item ${index + 1}`, deliveryId: `nonce-${index + 1}` },
+    }));
+    const acked = new Set();
+    const pages = [];
+    const post = jest.fn(async (route, body) => {
+      const match = route.match(/events\/(evt-check-\d)\/ack$/);
+      if (match) acked.add(match[1]);
+      // renewDelivery renews only a row still delivered under that nonce: a
+      // checkpointed item is acked, so it is not renewed — which is how the
+      // failed turn's carry learns not to re-run it.
+      if (route.endsWith('/events/renew')) {
+        return { renewed: body.events.map((entry) => entry.eventId).filter((id) => !acked.has(id)) };
+      }
+      return {};
+    });
+    const get = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/events') {
+        const remaining = events.filter((event) => !acked.has(event._id));
+        pages.push(remaining.map((event) => event._id));
+        return { events: remaining };
+      }
+      if (route.endsWith('/messages')) return { messages: [] };
+      if (route.endsWith('/memory')) return { sections: {} };
+      return {};
+    });
+    createClient.mockReturnValue({ get, post });
+    global.fetch = jest.fn(async (url, init) => {
+      const id = String(url).match(/events\/(evt-check-\d)\/ack$/)?.[1];
+      expect(id).toBeDefined();
+      const event = events.find((entry) => entry._id === id);
+      expect(JSON.parse(init.body)).toEqual({ deliveryId: event.payload.deliveryId,
+        result: { outcome: 'acknowledged', reason: 'handled-checkpoint' } });
+      acked.add(id);
+      return { ok: true, status: 200, text: async () => '{"success":true}' };
+    });
+    const scheduled = [];
+    let attempt = 0;
+    const spawn = jest.fn(async (prompt, ctx) => {
+      attempt += 1;
+      if (attempt === 1) {
+        const checkpoint = buildTools({ baseUrl: ctx.instanceUrl, token: ctx.runtimeToken })
+          .find((tool) => tool.name === 'commonly_checkpoint_event');
+        expect(checkpoint).toBeDefined();
+        for (const event of events.slice(0, 3)) {
+          expect(prompt).toContain(`After completed tool-side work or intentional NO_REPLY for only this item, call commonly_checkpoint_event(${JSON.stringify({ eventId: event._id, deliveryId: event.payload.deliveryId })})`);
+          expect(prompt).toContain('Do not checkpoint a reply you are holding for final CLI output');
+          const result = await checkpoint.call({ eventId: event._id, deliveryId: event.payload.deliveryId });
+          expect(result.isError).not.toBe(true);
+        }
+        throw Object.assign(new Error('turn timed out'), { code: 'ETIMEDOUT' });
+      }
+      expect(prompt).not.toContain('evt-check-1');
+      expect(prompt).toContain('evt-check-4');
+      expect(prompt).toContain('evt-check-5');
+      return { text: 'NO_REPLY' };
+    });
+    const handle = performRun({ instanceUrl: 'https://example.test', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn }, agentName: 'my-stub',
+      retryJitterRatio: 0, setTimeoutImpl: (callback, delayMs) => { scheduled.push({ callback, delayMs }); return 0; } });
+    try {
+      await drainMicrotasks();
+      expect(acked).toEqual(new Set(events.slice(0, 3).map((event) => event._id)));
+      scheduled.shift().callback();
+      await drainMicrotasks();
+      expect(pages.slice(0, 2)).toEqual([events.map((event) => event._id), ['evt-check-4', 'evt-check-5']]);
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(acked.size).toBe(5);
+    } finally { handle.stop(); global.fetch = originalFetch; }
+  });
+
   test('a batch spawn failure leaves its no-op sibling unacked for coherent retry', async () => {
     let poll = 0;
     const mockGet = jest.fn(async (route) => {
@@ -1416,6 +1965,7 @@ describe('performRun', () => {
         };
       }
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) return { messages: [] };
       return {};
     });
@@ -1461,6 +2011,7 @@ describe('performRun', () => {
         return { events: [makeEvent({ _id: `evt-reset-${poll}` })] };
       }
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) return { messages: [] };
       return {};
     });
@@ -1493,7 +2044,7 @@ describe('performRun', () => {
     };
     await runNext(5000); // first failure → second probe
     await runNext(10000); // second failure → recovery probe
-    await runNext(0); // success → look again at once (TASK-343), not after the interval
+    await runNext(3000); // success → mid-turn notice batch window
 
     handle.stop();
     expect(spawn).toHaveBeenCalledTimes(4);
@@ -1621,6 +2172,167 @@ describe('performRun', () => {
     expect(errors[0].message).toMatch(/Ack failed.*ack transport offline/);
   });
 
+  // TASK-535: a long turn ends with the pod having moved on. The backend holds
+  // the reply with 409 `unseen_messages`; before the fix every rung hit the
+  // same hold, the reply was lost and the events re-ran (rhea, 10:01Z).
+  const unseenHold = (unseenCount) => Object.assign(
+    new Error(`There are ${unseenCount} unseen messages. Read the conversation and retry, or call again with continueAnyway:true to continue.`),
+    { status: 409, body: { code: 'unseen_messages', unseenCount, messages: [] } },
+  );
+
+  test('a turn that ends with 12 unseen messages still posts exactly once — and a redelivery does not post again', async () => {
+    const event = makeEvent({ _id: 'evt-long-turn-unseen' });
+    const get = jest.fn(async (route) => (route.endsWith('/messages') ? { messages: [] } : { events: [event] }));
+    let held = false;
+    let ackAttempts = 0;
+    const post = jest.fn(async (route, body) => {
+      if (route.endsWith('/messages') && !body?.continueAnyway) {
+        held = true;
+        throw unseenHold(12);
+      }
+      if (route.endsWith('/ack')) {
+        ackAttempts += 1;
+        // The success is recorded locally before this ack; losing the ack is
+        // what makes the kernel redeliver the event.
+        if (ackAttempts === 1) throw new Error('ack transport offline');
+      }
+      return {};
+    });
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'Summary of 43 minutes of work.' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+    const logs = [];
+
+    const first = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test', adapter, agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout, log: (line) => logs.push(line), onError: () => {},
+    });
+    await drainMicrotasks();
+    first.stop();
+
+    expect(held).toBe(true);
+    expect(replyPosts(post)).toEqual([
+      ['/api/agents/runtime/pods/pod-abc/messages', { content: 'Summary of 43 minutes of work.' }],
+      ['/api/agents/runtime/pods/pod-abc/messages', { content: 'Summary of 43 minutes of work.', continueAnyway: true }],
+    ]);
+    expect(logs.some((l) => /posted .* as 1 message \(single\)/.test(l))).toBe(true);
+    expect(wasEventHandled('my-stub', event._id)).toBe(true);
+
+    // The kernel redelivers the event whose ack was lost. The reply already
+    // reached the pod, so it must not post a second time.
+    const second = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test', adapter, agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout, onError: () => {},
+    });
+    await drainMicrotasks();
+    second.stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(replyPosts(post).filter(([, body]) => body.continueAnyway === true)).toHaveLength(1);
+    expect(replyPosts(post)).toHaveLength(2);
+    expect(ackPosts(post)[1][1]).toEqual({ result: { outcome: 'no_action', reason: 'duplicate-delivery' } });
+  });
+
+  test('a reply that no rung can deliver leaves the events unacked and writes one error line naming pod, count and reason', async () => {
+    const events = [
+      makeEvent({ _id: 'evt-lost-1' }),
+      makeEvent({ _id: 'evt-lost-2', payload: { content: 'and another thing' } }),
+    ];
+    const get = jest.fn(async (route) => (route.endsWith('/messages') ? { messages: [] } : { events }));
+    const post = jest.fn(async (route) => {
+      if (route.endsWith('/messages')) throw unseenHold(12);
+      return {};
+    });
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'A summary nobody will see.' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+    const logs = [];
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test', adapter, agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout, log: (line) => logs.push(line), onError: () => {},
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    // One held post, one override post, then stop: never a loop.
+    expect(replyPosts(post)).toHaveLength(2);
+    expect(ackPosts(post)).toHaveLength(0);
+    for (const event of events) expect(wasEventHandled('my-stub', event._id)).toBe(false);
+    const errorLines = logs.filter((l) => /reply NOT delivered/.test(l));
+    expect(errorLines).toHaveLength(1);
+    expect(errorLines[0]).toContain('pod pod-abc');
+    expect(errorLines[0]).toContain('2 events left unacked');
+    expect(errorLines[0]).toContain('12 unseen messages');
+  });
+
+  test.each([false, true])('backlog catch-up reaches the model before one reply and ack (skills: %s)', async (skills) => {
+    const event = makeEvent({ _id: 'backlog-event' });
+    let caughtUp = false;
+    const get = jest.fn(async (route) => {
+      if (route.endsWith('/events')) return { events: [event] };
+      if (route.endsWith('/skills')) return { items: skills ? [{ name: 'fixture', content: 'fixture skill instructions' }] : [] };
+      if (route.endsWith('/send-freshness') && !caughtUp) {
+        throw Object.assign(new Error('unread'), { status: 409, body: { code: 'unseen_messages', unseenCount: 14373 } });
+      }
+      return {};
+    });
+    const post = jest.fn(async (route) => {
+      if (route.endsWith('/catch-up')) {
+        caughtUp = true;
+        return { catchUp: { skippedCount: 14353 }, messages: [{ content: 'fresh tail from server' }] };
+      }
+      return {};
+    });
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async (prompt) => {
+      expect(caughtUp).toBe(true);
+      if (skills) expect(prompt).toContain('fixture skill instructions');
+      expect(prompt).toContain('fresh tail from server');
+      expect(prompt).toContain('Skipped 14353 unread historical messages');
+      return { text: 'reply after catch-up' };
+    });
+    const options = { instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn }, agentName: 'my-stub', setTimeoutImpl: noopTimeout };
+    const first = performRun(options);
+    await drainMicrotasks();
+    first.stop();
+    expect(replyPosts(post)).toHaveLength(1);
+    expect(ackPosts(post)).toHaveLength(1);
+    const second = performRun(options);
+    await drainMicrotasks();
+    second.stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(ackPosts(post)).toHaveLength(2);
+    expect(replyPosts(post)[0][1].continueAnyway).toBeUndefined();
+  });
+
+  test.each([404, 405])('an older backend without catch-up (%s) still reaches generation and ack', async (status) => {
+    const event = makeEvent({ _id: `old-server-${status}` });
+    const get = jest.fn(async (route) => {
+      if (route.endsWith('/events')) return { events: [event] };
+      if (route.endsWith('/send-freshness')) throw Object.assign(new Error('unread'), {
+        status: 409, body: { code: 'unseen_messages', unseenCount: 14373 },
+      });
+      return {};
+    });
+    const post = jest.fn(async (route) => {
+      if (route.endsWith('/catch-up')) throw Object.assign(new Error('unsupported'), { status });
+      return {};
+    });
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'reply with existing behavior' }));
+    const runner = performRun({ instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn }, agentName: 'my-stub', setTimeoutImpl: noopTimeout });
+    await drainMicrotasks();
+    runner.stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(replyPosts(post)).toHaveLength(1);
+    expect(replyPosts(post)[0][1].continueAnyway).toBeUndefined();
+    expect(ackPosts(post)).toHaveLength(1);
+  });
+
   test('newSessionId from spawn is persisted and reused on the next turn', async () => {
     // Route-aware mock: /events yields a fresh event each call, /memory
     // returns an empty envelope. `mockResolvedValueOnce` chaining broke once
@@ -1629,6 +2341,7 @@ describe('performRun', () => {
     const eventIds = ['turn-1', 'turn-2'];
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       // Self-post detection snapshots pod messages before/after the spawn;
       // answer that route explicitly so it doesn't consume the event queue.
       if (route.endsWith('/messages')) return { messages: [] };
@@ -1680,6 +2393,7 @@ describe('performRun', () => {
     let eventNumber = 0;
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) return { messages: [] };
       if (route.endsWith('/context')) return { podId: 'pod-abc', revision: 0, focus: null };
       eventNumber += 1;
@@ -1765,6 +2479,7 @@ describe('performRun', () => {
     const events = [makeEvent({ _id: 'sum-1' })];
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       return { events };
     });
     const mockPost = jest.fn().mockResolvedValue({});
@@ -1805,6 +2520,7 @@ describe('performRun', () => {
     const events = [makeEvent({ _id: 'no-sum' })];
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       return { events };
     });
     const mockPost = jest.fn().mockResolvedValue({});
@@ -1833,6 +2549,7 @@ describe('performRun', () => {
     const events = [makeEvent({ _id: 'sync-fail' })];
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       return { events };
     });
     const mockPost = jest.fn(async (route) => {
@@ -2231,6 +2948,7 @@ describe('performRun — ADR-018 enforcement', () => {
     const del = jest.fn(delImpl);
     const get = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) return { messages };
       return { events };
     });
@@ -3007,21 +3725,30 @@ describe('performRun — ADR-018 enforcement', () => {
       }
     };
 
+    // A failed turn's events are carried to its retry. Here the server
+    // reports each one as no longer this runner's (renewed: []), so the carry
+    // drops it and the stand-down tick runs alone — which is the sequence
+    // this invariant is about.
+    const failing = (id) => makeEvent({
+      _id: id, payload: { content: 'hello from tester', deliveryId: `nonce-${id}` },
+    });
     const batches = [
-      [makeEvent({ _id: 'evt-fail-1' })],
+      [failing('evt-fail-1')],
       // Broadcast wake, post-fairness: addressed claim-losses now spawn
       // peer-aware, so the stand-down under test must ride message.posted.
       [makeClaimEvent({ _id: 'evt-held', type: 'message.posted' })],
-      [makeEvent({ _id: 'evt-fail-2' })],
+      [failing('evt-fail-2')],
       [],
     ];
     let batch = 0;
     const post = jest.fn(async (route) => {
       if (route.endsWith('/claim')) return { claimed: false, claimedBy: 'nova' };
+      if (route.endsWith('/events/renew')) return { renewed: [] };
       return {};
     });
     const get = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) return { messages: [{ _id: 'msg-1', isBot: false, self: false }] };
       const events = batches[Math.min(batch, batches.length - 1)];
       batch += 1;

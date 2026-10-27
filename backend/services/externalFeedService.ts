@@ -14,6 +14,8 @@ const registry = require('../integrations');
 const { normalizeBufferMessage } = require('../integrations/normalizeBufferMessage');
 // eslint-disable-next-line global-require
 const AgentEventService = require('./agentEventService');
+// eslint-disable-next-line global-require
+const { storeFeedTokens } = require('./feedCredentials');
 
 const FEED_TYPES = ['x', 'instagram'];
 const DEFAULT_CATEGORY = 'Social';
@@ -44,8 +46,6 @@ interface IntegrationDoc {
     lastExternalId?: string;
     lastExternalTimestamp?: Date;
     maxBufferSize?: number;
-    accessToken?: string;
-    refreshToken?: string;
   };
 }
 
@@ -184,7 +184,7 @@ async function persistExternalPosts({
           url: message.metadata?.url,
           author: message.authorName,
           authorUrl: message.metadata?.authorUrl,
-          channel: message.metadata?.username || integration.config?.accessToken || null,
+          channel: message.metadata?.username || null,
         },
       });
     });
@@ -396,11 +396,14 @@ async function syncExternalFeeds(): Promise<FeedSyncResult[]> {
           }, {});
           updateSet['config.lastExternalIdsByUser'] = pruned;
         }
-        if (syncResult.meta?.tokenRefreshed && syncResult.meta?.refreshedAccessToken) {
-          updateSet['config.accessToken'] = syncResult.meta.refreshedAccessToken;
-        }
-        if (syncResult.meta?.tokenRefreshed && syncResult.meta?.refreshedRefreshToken) {
-          updateSet['config.refreshToken'] = syncResult.meta.refreshedRefreshToken;
+        if (syncResult.meta?.tokenRefreshed) {
+          // The refreshed pair goes back through the connector-secret store; the
+          // row keeps only the refs (`services/feedCredentials`).
+          const refs = await storeFeedTokens(String(integration._id), integration.type, {
+            accessToken: syncResult.meta.refreshedAccessToken,
+            refreshToken: syncResult.meta.refreshedRefreshToken,
+          });
+          Object.entries(refs).forEach(([key, ref]) => { updateSet[`config.${key}`] = ref; });
         }
         if (syncResult.meta?.tokenRefreshed && syncResult.meta?.refreshedTokenType) {
           updateSet['config.tokenType'] = syncResult.meta.refreshedTokenType;

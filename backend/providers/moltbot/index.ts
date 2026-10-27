@@ -13,10 +13,31 @@ export {};
 /* eslint-disable max-classes-per-file, no-plusplus, no-restricted-syntax, global-require, import/no-extraneous-dependencies */
 const WebSocket = require('ws');
 const { EventEmitter } = require('events');
+const { allowedFromEnv, selectAllowedBaseUrl } = require('../../utils/allowedBaseUrl');
 
 const DEFAULT_GATEWAY_URL = process.env.MOLTBOT_GATEWAY_URL
   || process.env.CLAWDBOT_GATEWAY_URL
   || 'ws://127.0.0.1:18789';
+const DEFAULT_COMMONLY_API_URL = 'http://localhost:5000';
+
+// The gateway URL and the Commonly API URL are ones the operator configured:
+// the default plus MOLTBOT_GATEWAY_ALLOWED_URLS, and the default plus
+// COMMONLY_API_URL. An option naming any other URL is refused
+// (utils/allowedBaseUrl.ts).
+const pickConfiguredUrl = (requested: unknown, fallback: string, allowed: string[], what: string): string => {
+  if (requested === undefined || requested === null || requested === '') return fallback;
+  const picked = selectAllowedBaseUrl(requested, allowed);
+  if (!picked) throw new Error(`${what} is not an allowed URL for this instance`);
+  return picked;
+};
+
+// Pod ids become a path segment of the API URL, so only a 24-hex ObjectId is
+// accepted.
+const POD_ID = /^[a-f0-9]{24}$/i;
+const podPathSegment = (podId: unknown): string => {
+  if (typeof podId !== 'string' || !POD_ID.test(podId)) throw new Error('podId must be a 24-character hex id');
+  return podId;
+};
 
 /**
  * Moltbot Provider Configuration
@@ -45,7 +66,12 @@ const ProviderManifest = {
 class MoltbotConnection extends EventEmitter {
   constructor(options: any = {}) {
     super();
-    this.gatewayUrl = options.gatewayUrl || DEFAULT_GATEWAY_URL;
+    this.gatewayUrl = pickConfiguredUrl(
+      options.gatewayUrl,
+      DEFAULT_GATEWAY_URL,
+      [DEFAULT_GATEWAY_URL, ...allowedFromEnv('MOLTBOT_GATEWAY_ALLOWED_URLS')],
+      'gatewayUrl',
+    );
     this.ws = null;
     this.connected = false;
     this.reconnectAttempts = 0;
@@ -222,7 +248,12 @@ class MoltbotProvider extends EventEmitter {
   constructor(options: any = {}) {
     super();
     this.connection = new MoltbotConnection(options);
-    this.commonlyApiUrl = options.commonlyApiUrl || 'http://localhost:5000';
+    this.commonlyApiUrl = pickConfiguredUrl(
+      options.commonlyApiUrl,
+      DEFAULT_COMMONLY_API_URL,
+      [DEFAULT_COMMONLY_API_URL, process.env.COMMONLY_API_URL || ''],
+      'commonlyApiUrl',
+    );
     this.apiToken = options.apiToken;
     this.defaultPodId = options.defaultPodId;
     this.contextCache = new Map();
@@ -404,7 +435,7 @@ class MoltbotProvider extends EventEmitter {
     if (options.limit) params.set('limit', options.limit);
     if (options.types) params.set('types', options.types.join(','));
 
-    const response = await axios.get(`${this.commonlyApiUrl}/api/v1/search/${podId}?${params}`, {
+    const response = await axios.get(`${this.commonlyApiUrl}/api/v1/search/${podPathSegment(podId)}?${params}`, {
       headers: {
         Authorization: `Bearer ${this.apiToken}`,
       },
@@ -430,7 +461,7 @@ class MoltbotProvider extends EventEmitter {
     if (options.includeSkills !== undefined) params.set('includeSkills', options.includeSkills);
     if (options.includeMemory !== undefined) params.set('includeMemory', options.includeMemory);
 
-    const response = await axios.get(`${this.commonlyApiUrl}/api/v1/context/${podId}?${params}`, {
+    const response = await axios.get(`${this.commonlyApiUrl}/api/v1/context/${podPathSegment(podId)}?${params}`, {
       headers: {
         Authorization: `Bearer ${this.apiToken}`,
       },
@@ -451,7 +482,7 @@ class MoltbotProvider extends EventEmitter {
   async write(podId: any, options: any) {
     const axios = require('axios');
     const response = await axios.post(
-      `${this.commonlyApiUrl}/api/v1/memory/${podId}`,
+      `${this.commonlyApiUrl}/api/v1/memory/${podPathSegment(podId)}`,
       {
         target: options.target,
         content: options.content,

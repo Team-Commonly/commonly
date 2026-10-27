@@ -20,6 +20,8 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
 // eslint-disable-next-line global-require
+const AgentDigestState = require('../models/AgentDigestState');
+// eslint-disable-next-line global-require
 const SchedulerHeartbeatLease = require('../models/SchedulerHeartbeatLease');
 // eslint-disable-next-line global-require
 const AgentEnsembleService = require('./agentEnsembleService');
@@ -65,6 +67,9 @@ interface InstallationDoc {
     };
     autonomy?: {
       enabled?: boolean;
+    };
+    digestWake?: {
+      afterMinutes?: number;
     };
   };
 }
@@ -124,6 +129,7 @@ interface CodexRefreshResult {
 }
 
 const HEARTBEAT_DISPATCH_LEASE_ID = 'agent-heartbeat-dispatch';
+const DIGEST_WAKE_DEFAULT_MINUTES = 60;
 // A rollout briefly runs the old and new schedulers together (~40 seconds).
 // Keep the lease long enough to cover that overlap, but shorter than the
 // one-minute cron cadence so an otherwise healthy tick is never skipped.
@@ -470,6 +476,23 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // TASK-469: completion timestamps provide the five-minute due time. The
+    // per-identity Mongo CAS in the service bounds overlap between replicas.
+    const assignedTaskWakeJob: CronJob = cron.schedule(
+      '* * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { dispatchAssignedTaskWakes } = require('./assignedTaskWakeService');
+          const result = await dispatchAssignedTaskWakes();
+          if (result.eligible) console.log('[assigned-task-wake]', result);
+        } catch (error) {
+          console.error('[assigned-task-wake] dispatch failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     // Installable cleanup is deliberately lease-free. A rollout can run this
     // on two replicas, but every sweep mutation is a status+claimId CAS and
     // revoke/delete is idempotent. A duplicate pass is wasted work, never a
@@ -527,6 +550,40 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // A late upload can outlive the deletion request and fail its own cleanup.
+    // Durable intents contain only opaque user ids; this sweep can retry after
+    // the User row is gone. Deletes are idempotent across backend replicas.
+    const accountDeletionUploadJob: CronJob = cron.schedule(
+      '* * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { sweepAccountDeletions } = require('./accountDeletionService');
+          await sweepAccountDeletions();
+        } catch (error) {
+          const errorName = error instanceof AggregateError ? error.message
+            : error instanceof Error ? error.name : 'Unknown error';
+          console.error('[account-deletion] sweep failed:', errorName);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
+    const spawnCredentialReapJob: CronJob = cron.schedule(
+      '*/5 * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { reapSpawnCredentials } = require('./spawnCredentialReaper');
+          const removed = await reapSpawnCredentials();
+          if (removed) console.log(`[spawn-credentials] reaped=${removed}`);
+        } catch (error) {
+          console.error('[spawn-credentials] reap failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     // TASK-260: remove the stranger journey's throwaway accounts (they cannot
     // delete themselves). Half an hour after each 02:17/14:17 journey run;
     // only accounts older than two hours, so a run in flight is never touched.
@@ -562,6 +619,14 @@ class SchedulerService {
         } catch (error) {
           console.error('[spend-alarm] check failed:', error);
         }
+        // TASK-555: warn at 80% of any LiteLLM key budget (litellmBudgetAlarmService).
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { checkLiteLLMBudgets } = require('./litellmBudgetAlarmService');
+          await checkLiteLLMBudgets();
+        } catch (error) {
+          console.error('[budget-alarm] check failed:', (error as Error).message);
+        }
       },
       { scheduled: false, timezone: 'UTC' },
     );
@@ -584,9 +649,12 @@ class SchedulerService {
       stalledConnectJob,
       missedAgentMentionJob,
       kernelWorkSweepJob,
+      assignedTaskWakeJob,
       installableReconcileJob,
       decisionCardReconcileJob,
       approvalToolCallSweepJob,
+      spawnCredentialReapJob,
+      accountDeletionUploadJob,
       spendAlarmJob,
       ...(process.env.SYNTHETIC_ACCOUNT_PURGE === 'true' ? [syntheticAccountPurgeJob] : []),
     ];
@@ -1104,7 +1172,90 @@ class SchedulerService {
     }
 
     const result = await SchedulerService.dispatchAgentHeartbeats({ ...options, now });
-    return { ...result, skippedByLease: false };
+    const unreadWakes = await SchedulerService.dispatchUnreadDigestHeartbeats(now);
+    return { ...result, enqueued: result.enqueued + unreadWakes, skippedByLease: false };
+  }
+
+  /**
+   * How long digest may sit unread before it wakes the seat:
+   * `config.digestWake.afterMinutes`, 60 by default, clamped to 60..1440.
+   * A seat whose digest wakes rarely produce anything can be given a longer
+   * wait; its digest stays unread and rides its next wake of any kind.
+   */
+  static resolveDigestWakeAfterMinutes(installation?: InstallationDoc | null): number {
+    const raw = Number(installation?.config?.digestWake?.afterMinutes);
+    if (!Number.isFinite(raw)) return DIGEST_WAKE_DEFAULT_MINUTES;
+    return Math.max(DIGEST_WAKE_DEFAULT_MINUTES, Math.min(1440, Math.trunc(raw)));
+  }
+
+  /** One slow wake for a pod with unread digest, never for an empty inbox. */
+  static async dispatchUnreadDigestHeartbeats(now: Date = new Date()): Promise<number> {
+    // The default is also the shortest wait, so this query finds every candidate.
+    const threshold = new Date(now.getTime() - DIGEST_WAKE_DEFAULT_MINUTES * 60 * 1000);
+    const rawGroups = await AgentEvent.aggregate([
+      { $match: { status: 'pending', deliveryMode: 'digest', createdAt: { $lte: threshold } } },
+      { $group: {
+        _id: { agentName: '$agentName', instanceId: '$instanceId', podId: '$podId' },
+        oldestAt: { $min: '$createdAt' },
+      } },
+    ]) as Array<{ _id: { agentName: string; instanceId: string; podId: unknown }; oldestAt: Date }>;
+    const foldedGroups = await AgentDigestState.find({ unreadCount: { $gt: 0 }, unreadSince: { $lte: threshold } })
+      .select('agentName instanceId podId unreadSince').lean() as Array<{
+        agentName: string; instanceId: string; podId: unknown; unreadSince: Date;
+      }>;
+    const groups = new Map<string, { scope: { agentName: string; instanceId: string; podId: unknown }; oldestAt: Date }>();
+    const addGroup = (scope: { agentName: string; instanceId: string; podId: unknown }, at: Date) => {
+      const key = `${scope.agentName}:${scope.instanceId}:${scope.podId}`;
+      const existing = groups.get(key);
+      if (!existing || at < existing.oldestAt) groups.set(key, { scope, oldestAt: at });
+    };
+    rawGroups.forEach((row) => addGroup(row._id, new Date(row.oldestAt)));
+    foldedGroups.forEach(({ agentName, instanceId, podId, unreadSince }) => (
+      addGroup({ agentName, instanceId, podId }, new Date(unreadSince))));
+    let enqueued = 0;
+    for (const { scope: rowScope, oldestAt } of groups.values()) {
+      const scope = {
+        agentName: rowScope.agentName,
+        instanceId: rowScope.instanceId || 'default',
+        podId: rowScope.podId,
+      };
+      // A retired projection has no listener. Its old digest remains for GC,
+      // but must not create a new wake every hour.
+      // eslint-disable-next-line no-await-in-loop
+      const active: InstallationDoc | null = await AgentInstallation.findOne({
+        ...scope, status: 'active', 'config.autonomy.enabled': { $ne: false },
+      }).select('config.digestWake').lean();
+      if (!active) continue;
+      const waitMs = SchedulerService.resolveDigestWakeAfterMinutes(active) * 60 * 1000;
+      if (now.getTime() - oldestAt.getTime() < waitMs) continue;
+      const windowStart = new Date(now.getTime() - waitMs);
+      // An existing wake will carry the digest. A recent completed wake says
+      // the seat has already had a turn inside this install's wait.
+      // eslint-disable-next-line no-await-in-loop
+      const [pendingWake, recentWake] = await Promise.all([
+        AgentEvent.exists({ ...scope, status: 'pending', deliveryMode: { $ne: 'digest' } }),
+        AgentEvent.exists({ ...scope, deliveryMode: { $ne: 'digest' }, $or: [
+          { status: { $in: ['delivered', 'acked'] }, deliveredAt: { $gte: windowStart } },
+          // AgentEvent timestamps update on every failed transition, including
+          // failures before delivery and failures after an older delivery.
+          { status: 'failed', updatedAt: { $gte: windowStart } },
+        ] }),
+      ]);
+      if (pendingWake || recentWake) continue;
+      // eslint-disable-next-line no-await-in-loop
+      await AgentEventService.enqueue({
+        ...scope,
+        type: 'heartbeat',
+        payload: {
+          trigger: 'unread-digest',
+          podId: String(scope.podId),
+          generatedAt: now.toISOString(),
+          content: '[Unread pod activity is waiting. Read the digest in this inbox batch; respond only if useful.]',
+        },
+      });
+      enqueued += 1;
+    }
+    return enqueued;
   }
 
   static async dispatchAgentHeartbeats(

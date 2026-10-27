@@ -31,9 +31,11 @@ const asPersona = (value: unknown): PersonaFields => {
 const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
   const { t } = useTranslation();
   const profile = installation.profile;
+  const supportsPersona = installation.name.toLowerCase() === 'openclaw';
   const [displayName, setDisplayName] = useState(installation.displayName || '');
-  const [instructions, setInstructions] = useState(profile?.instructions || '');
   const [persona, setPersona] = useState<PersonaFields>(() => asPersona(profile?.persona));
+  const personaChanged = supportsPersona && Object.entries(asPersona(profile?.persona))
+    .some(([key, value]) => persona[key as keyof PersonaFields] !== value);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -68,7 +70,6 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
 
   useEffect(() => {
     setDisplayName(installation.displayName || '');
-    setInstructions(profile?.instructions || '');
     setPersona(asPersona(profile?.persona));
     setError(null);
     setSaved(false);
@@ -87,13 +88,12 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
     try {
       await update({
         ...(name !== installation.displayName ? { displayName: name } : {}),
-        instructions,
-        persona: {
+        ...(personaChanged ? { persona: {
           tone: persona.tone,
           specialties: commaList(persona.specialties),
           boundaries: commaList(persona.boundaries),
           customInstructions: persona.customInstructions,
-        },
+        } } : {}),
       });
       setSaved(true);
     } catch (requestError) {
@@ -122,10 +122,7 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
       <label><span>{t('agentSettings.displayName')}</span>
         <input value={displayName} maxLength={80} required onChange={(event) => setDisplayName(event.target.value)} />
       </label>
-      <label><span>{t('agentSettings.instructions')}</span>
-        <textarea value={instructions} rows={5} onChange={(event) => setInstructions(event.target.value)} />
-      </label>
-      <fieldset><legend>{t('agentSettings.persona')}</legend>
+      {supportsPersona && <fieldset><legend>{t('agentSettings.persona')}</legend>
         <label><span>{t('agentSettings.tone')}</span>
           <select value={persona.tone} onChange={(event) => setPersona({ ...persona, tone: event.target.value })}>
             {['friendly', 'professional', 'casual', 'formal', 'technical'].map((tone) => (
@@ -142,9 +139,9 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
         <label><span>{t('agentSettings.personaNotes')}</span>
           <textarea value={persona.customInstructions} rows={3} onChange={(event) => setPersona({ ...persona, customInstructions: event.target.value })} />
         </label>
-      </fieldset>
+      </fieldset>}
       <div className="v2-agent-settings__actions">
-        <button type="submit" disabled={busy}>{busy ? t('agentSettings.saving') : t('agentSettings.saveIdentity')}</button>
+        <button type="submit" disabled={busy || (!personaChanged && displayName.trim() === installation.displayName)}>{busy ? t('agentSettings.saving') : t('agentSettings.saveIdentity')}</button>
         {saved && <span role="status">{t('agentSettings.identitySaved')}</span>}
       </div>
       {error && <p role="alert" className="v2-agent-settings__error">{error}</p>}

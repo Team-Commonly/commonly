@@ -1,3 +1,5 @@
+import { requirePodMember } from '../services/podMembershipService';
+import { compareTaskPriority, isTaskPriority } from '../utils/taskPriority';
 import { createHash } from 'crypto';
 import type { Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
@@ -7,9 +9,8 @@ const express = require('express');
 // eslint-disable-next-line global-require
 const mongoose = require('mongoose');
 // eslint-disable-next-line global-require
-const regularAuth = require('../middleware/auth');
-// eslint-disable-next-line global-require
-const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
+const auth = require('../middleware/dualAuth');
+const { resolveDualAuthCredential } = auth;
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
@@ -21,7 +22,13 @@ const AgentSendFreshness = require('../services/agentSendFreshness');
 // eslint-disable-next-line global-require
 const { emitTaskUpdated, notifyPodAgents } = require('../services/taskEventService');
 // eslint-disable-next-line global-require
+const { emitSystemActionLine } = require('../services/systemActionLineService');
+// eslint-disable-next-line global-require
+const { resolveAgentDisplayLabel } = require('../services/agentIdentityService');
+// eslint-disable-next-line global-require
 const { recordTaskAttention, resolveTaskAttention } = require('../services/attentionItemService');
+// eslint-disable-next-line global-require
+const { parseAssignee, toSingleLineTitle } = require('../utils/taskFieldNormalization');
 
 /**
  * Who made this board change, for the agent fan-out.
@@ -75,11 +82,11 @@ interface AuthReq {
   // `username` is here because the sweep can write it into `lapsedFrom`
   // (provenance falls back through holder.label = assignee || username ||
   // claimedBy), so the restore path must be able to match on it.
-  user?: { id?: string; _id?: unknown; isBot?: boolean; username?: string; botMetadata?: { instanceId?: string; agentName?: string } };
+  user?: { id?: string; _id?: unknown; isBot?: boolean; username?: string; profilePicture?: string; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } };
   // Same reason as `user.username` above: `agentRuntimeAuth` puts the bot's
   // User row here, and its username is what the sweep writes into
   // `lapsedFrom` for an agent holder.
-  agentUser?: { _id?: unknown; username?: string };
+  agentUser?: { _id?: unknown; username?: string; profilePicture?: string; isBot?: boolean; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } };
   params?: Record<string, string>;
   query?: Record<string, string>;
   body?: Record<string, unknown>;
@@ -88,12 +95,6 @@ interface AuthReq {
 interface Res {
   status: (n: number) => Res;
   json: (d: unknown) => void;
-}
-
-function auth(req: AuthReq, res: Res, next: () => void) {
-  const token = ((req.header?.('Authorization') || '').replace('Bearer ', ''));
-  if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
-  return regularAuth(req, res, next);
 }
 
 const router: ReturnType<typeof express.Router> = express.Router();
@@ -145,7 +146,7 @@ const updateTaskWithRevision = async (
 ) => (await updateTaskWithRevisionSnapshot(filter, update))?.task || null;
 
 const taskWriteRateLimitKey = (req: Request): string => {
-  const authHeader = req.get('Authorization') || req.get('x-auth-token');
+  const authHeader = resolveDualAuthCredential(req).token;
   if (authHeader) {
     return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
   }
@@ -192,29 +193,6 @@ function resolveAgentInstanceId(req: AuthReq): string | null {
   return req.user.botMetadata?.instanceId || req.user.botMetadata?.agentName || null;
 }
 
-async function requirePodMember(podId: string, userId: unknown, { write = false } = {}): Promise<{ error?: string; status?: number; pod?: unknown }> {
-  const pod = await Pod.findById(podId).lean() as { type?: string; members?: Array<{ userId?: { toString: () => string }; toString: () => string; role?: string }> } | null;
-  if (!pod) return { error: 'Pod not found', status: 404 };
-  const membership = pod.members?.find((m) => {
-    if (!m) return false;
-    const id = m.userId ? m.userId.toString() : m.toString();
-    return id === (userId as { toString: () => string }).toString();
-  });
-  // Read access on agent-dm pods follows §3.7 (shared-pod readers
-  // allowed). Write access stays member-only — non-members can observe
-  // but not post tasks into someone else's bot-bot DM. The viewer-role
-  // gate below applies to writes regardless.
-  if (!membership) {
-    if (write) return { error: 'Write access denied', status: 403 };
-    // eslint-disable-next-line global-require
-    const DMService = require('../services/dmService');
-    const canView = await DMService.canViewPod(userId, pod);
-    if (!canView) return { error: 'Access denied', status: 403 };
-    return { pod };
-  }
-  if (write && (membership as { role?: string }).role === 'viewer') return { error: 'Write access denied', status: 403 };
-  return { pod };
-}
 
 async function nextTaskId(podId: string): Promise<{ taskId: string; taskNum: number }> {
   const last = await Task.findOne({ podId, taskId: { $exists: true } }).sort({ taskId: -1 }).select('taskId').lean() as { taskId?: string } | null;
@@ -255,7 +233,8 @@ router.get('/:podId', taskReadIpRateLimit, auth, async (req: AuthReq, res: Res) 
     // tick boundary could otherwise report lease states that never coexisted.
     const now = new Date();
     return res.json({
-      tasks: tasks.map((task: Record<string, unknown>) => ({ ...task, leaseState: deriveLeaseState(task, now) })),
+      permissions: { canWrite: access.canWrite === true },
+      tasks: tasks.sort(compareTaskPriority).map((task: Record<string, unknown>) => ({ ...task, leaseState: deriveLeaseState(task, now) })),
     });
   } catch (err) {
     console.error('GET /tasks error:', err);
@@ -276,6 +255,7 @@ router.post('/:podId', rateLimit({
     const userId = req.userId || req.user?._id || req.agentUser?._id;
     const {
       title: titleInput,
+      priority: priorityInput,
       assignee: assigneeInput,
       dep: depInput,
       depMockOk: depMockOkInput,
@@ -283,6 +263,9 @@ router.post('/:podId', rateLimit({
       source: sourceInput,
       sourceRef: sourceRefInput,
     } = req.body || {};
+    if (priorityInput !== undefined && !isTaskPriority(priorityInput)) {
+      return res.status(400).json({ error: 'priority must be P0, P1, P2 or P3' });
+    }
     const stringInputs: Record<string, unknown> = {
       title: titleInput,
       assignee: assigneeInput,
@@ -301,8 +284,10 @@ router.post('/:podId', rateLimit({
     }
     // Materialize primitives after runtime validation so Mongo never receives
     // user-supplied query objects (for example, operator-shaped values).
-    const title = titleInput === undefined ? undefined : String(titleInput);
-    const assignee = assigneeInput === undefined ? undefined : String(assigneeInput);
+    const title = titleInput === undefined ? undefined : toSingleLineTitle(String(titleInput));
+    const assigneeParsed = assigneeInput === undefined ? undefined : parseAssignee(String(assigneeInput));
+    if (assigneeParsed?.error) return res.status(400).json({ error: assigneeParsed.error });
+    const assignee = assigneeParsed?.value ?? undefined;
     const dep = depInput === undefined ? undefined : String(depInput);
     const parentTask = parentTaskInput === undefined ? undefined : String(parentTaskInput);
     const source = sourceInput === undefined ? undefined : String(sourceInput);
@@ -316,7 +301,16 @@ router.post('/:podId', rateLimit({
       // the ask came from, the title says which ask it is. Keying on the ref
       // alone made a second ask from one source adopt the first ask's row and
       // discard the caller's title (TASK-063). Same pair = idempotent retry.
-      const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), sourceRef, title }) as { _id: unknown; title?: string; status?: string; assignee?: string; claimedAt?: Date | null; claimExpiresAt?: Date | null; notes?: string; updatedAt: Date; toObject: () => unknown } | null;
+      // Rows written before titles were collapsed hold the raw text (`Fix\nboard`);
+      // a replay of that input must still find them, or the pair index admits a twin.
+      // The exact raw title is tried first so a `Fix board` row cannot shadow it.
+      const titleCandidates = [titleInput === undefined ? undefined : String(titleInput), title].filter((t, i, all) => t !== undefined && all.indexOf(t) === i);
+      let existing = null as { _id: unknown; title?: string; status?: string; assignee?: string; claimedAt?: Date | null; claimExpiresAt?: Date | null; notes?: string; updatedAt: Date; toObject: () => unknown } | null;
+      for (const candidate of titleCandidates) {
+        // eslint-disable-next-line no-await-in-loop
+        existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), sourceRef, title: candidate }) as typeof existing;
+        if (existing) break;
+      }
       if (existing) {
         if (existing.status === 'done') {
           // `sourceRef` + `title` are an idempotency key (a unique partial
@@ -384,7 +378,7 @@ router.post('/:podId', rateLimit({
       : source || 'human';
     let task;
     try {
-      task = await Task.create({ podId, taskNum, taskId, title, assignee: assignee || null, dep: dep || null, depMockOk: !!depMockOk, parentTask: parentTask || null, source: taskSource, sourceRef, updates: [initUpdate] });
+      task = await Task.create({ podId, taskNum, taskId, title, priority: priorityInput || 'P2', assignee: assignee || null, dep: dep || null, depMockOk: !!depMockOk, parentTask: parentTask || null, source: taskSource, sourceRef, updates: [initUpdate] });
     } catch (createErr) {
       const duplicate = createErr as {
         code?: number;
@@ -671,6 +665,22 @@ router.post('/:podId/:taskId/claim', rateLimit({
       && (preClaim.claimedBy === claimedBy || preClaim.lapsedFrom === claimedBy);
     if (!isSameHolderContinuation) {
       notifyAgents(req, podId, task, 'updated', preClaim);
+      const actorUser = req.agentUser || req.user;
+      const actorName = actorUser?.isBot
+        ? resolveAgentDisplayLabel(actorUser, author)
+        : actorUser?.username || author;
+      // The claim CAS has committed. This quiet timeline projection is
+      // best-effort and never changes the claim's HTTP result.
+      void emitSystemActionLine({
+        podId: String(podId),
+        actorUserId: String(userId),
+        actorName,
+        actorUsername: actorUser?.username || author,
+        actorAvatarUrl: actorUser?.profilePicture || null,
+        actorIsBot: !!actorUser?.isBot,
+        action: 'task-claimed',
+        taskId: String(task.taskId || taskId),
+      }).catch((error: Error) => console.warn('[tasks] system action line failed:', error.message));
     }
     return res.json({ task });
   } catch (err) {
@@ -749,11 +759,39 @@ router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req
   }
 });
 
+// Following is a self-service digest subscription, never task ownership.
+router.post('/:podId/:taskId/watch', taskWriteRateLimit(60), auth, async (req: AuthReq, res: Res) => {
+  try {
+    const { podId, taskId } = req.params || {};
+    const userId = req.userId || req.user?._id || req.agentUser?._id;
+    const { following } = req.body || {};
+    if (typeof following !== 'boolean') return res.status(400).json({ error: 'following must be a boolean' });
+    const access = await requirePodMember(podId || '', userId, { memberOnly: true });
+    if (access.error) return res.status(access.status || 500).json({ error: access.error });
+    const task = await Task.findOneAndUpdate(
+      { podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId },
+      following ? { $addToSet: { watchers: userId } } : { $pull: { watchers: userId } },
+      { new: true, timestamps: false },
+    ).lean();
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    // Socket readers see the new follower count. No AgentEvent, attention item,
+    // task revision or ownership wake is produced by a subscription change.
+    emitTaskUpdated(podId, task, 'updated');
+    return res.json({ task });
+  } catch (error) {
+    console.error('POST /tasks/watch error:', error);
+    return res.status(500).json({ error: 'Failed to update task subscription' });
+  }
+});
+
 router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId, taskId } = req.params || {};
     const userId = req.userId || req.user?._id || req.agentUser?._id;
-    const { text } = (req.body || {}) as { text?: string };
+    const { text, priority } = (req.body || {}) as { text?: string; priority?: unknown };
+    if (priority !== undefined && !isTaskPriority(priority)) {
+      return res.status(400).json({ error: 'priority must be P0, P1, P2 or P3' });
+    }
     if (!text?.trim()) return res.status(400).json({ error: 'text is required' });
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
@@ -761,6 +799,11 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
       const hold = await AgentSendFreshness.unseenMessages(userId, podId);
       if (hold) return res.status(409).json(hold);
     }
+    if (priority !== undefined) {
+      const refusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
+      if (refusal) return res.status(409).json(refusal);
+    }
+    const priorityUpdate = priority === undefined ? {} : { priority };
     const author = await resolveAuthor(req);
     const now = new Date();
     const note = { updates: { text: text.trim(), author, authorId: userId?.toString() || null, createdAt: now } };
@@ -796,7 +839,7 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
         // is the opposite of silence. Observed live on TASK-025: note at
         // 04:35:54 moved claimExpiresAt to 05:05:54 with rescueDeferrals stuck
         // at 1.
-        { $set: { claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS), rescueDeferrals: 0 }, $push: note },
+        { $set: { ...priorityUpdate, claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS), rescueDeferrals: 0 }, $push: note },
       )
       : null;
     let leaseRenewed = Boolean(task);
@@ -886,6 +929,7 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
         { podId: podFilter, taskId, status: 'pending', lapsedFrom: { $in: identities } },
         {
           $set: {
+            ...priorityUpdate,
             status: 'claimed',
             claimedBy: claimKey,
             claimedAt: now,
@@ -900,7 +944,8 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
     }
 
     if (!task) {
-      task = await updateTaskWithRevision({ podId: podFilter, taskId }, { $push: note });
+      task = await updateTaskWithRevision({ podId: podFilter, taskId, ...(priority === undefined ? {} : writableLeaseCondition(req, userId, now)) },
+        { $set: priorityUpdate, $push: note });
     }
     if (!task) {
       const existing = await Task.findOne({ podId: podFilter, taskId }).select('_id').lean();
@@ -944,10 +989,13 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
   try {
     const { podId, taskId } = req.params || {};
     const userId = req.userId || req.user?._id || req.agentUser?._id;
-    const allowed = ['title', 'assignee', 'dep', 'depMockOk', 'parentTask', 'status', 'notes', 'prUrl'];
+    const allowed = ['title', 'priority', 'assignee', 'dep', 'depMockOk', 'parentTask', 'status', 'notes', 'prUrl'];
     const fieldUpdates: Record<string, unknown> = {};
     const body = (req.body || {}) as Record<string, unknown>;
     allowed.forEach((k) => { if (body[k] !== undefined) fieldUpdates[k] = body[k]; });
+    if (fieldUpdates.priority !== undefined && !isTaskPriority(fieldUpdates.priority)) {
+      return res.status(400).json({ error: 'priority must be P0, P1, P2 or P3' });
+    }
     // Unassign has two spellings and only one of them was reaching the DB. The
     // openclaw tool types `assignee` as a plain string and documents "empty string
     // to unassign", so a moltbot literally cannot send null; an MCP or HTTP caller
@@ -958,6 +1006,16 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     // happens to accept.
     if (typeof fieldUpdates.assignee === 'string' && fieldUpdates.assignee.trim() === '') {
       fieldUpdates.assignee = null;
+    }
+    if (fieldUpdates.title !== undefined) {
+      if (typeof fieldUpdates.title !== 'string') return res.status(400).json({ error: 'title must be a string' });
+      fieldUpdates.title = toSingleLineTitle(fieldUpdates.title);
+      if (!fieldUpdates.title) return res.status(400).json({ error: 'title is required' });
+    }
+    if (typeof fieldUpdates.assignee === 'string') {
+      const parsed = parseAssignee(fieldUpdates.assignee);
+      if (parsed.error) return res.status(400).json({ error: parsed.error });
+      fieldUpdates.assignee = parsed.value;
     }
     if (Object.keys(fieldUpdates).length === 0) return res.status(400).json({ error: 'No updatable fields provided' });
     if (fieldUpdates.status !== undefined) {
@@ -989,6 +1047,7 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     if (fieldUpdates.parentTask !== undefined) changeParts.push(`parent → ${fieldUpdates.parentTask || 'none'}`);
     if (fieldUpdates.prUrl !== undefined) changeParts.push(`PR: ${fieldUpdates.prUrl}`);
     if (fieldUpdates.notes !== undefined) changeParts.push('notes updated');
+    if (fieldUpdates.priority !== undefined) changeParts.push(`priority → ${fieldUpdates.priority}`);
     if (fieldUpdates.title !== undefined) changeParts.push('title updated');
     let writeTime = needsPriorOwner ? new Date() : null;
     const update: Record<string, unknown> = {

@@ -1,4 +1,6 @@
 // @ts-nocheck
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // The default agent name follows where it runs (C14 rehearsal, 2026-10-20).
 // "Run it here" takes `<user>-agent`. When "Use my own agent" defaulted to the
 // same name, a person who had just started a hosted agent was refused at the
@@ -79,6 +81,22 @@ afterEach(() => {
 });
 
 describe('BYO default agent name follows where it runs', () => {
+  test('pressing the connect action keeps the name field focused until click', async () => {
+    mockGet();
+    renderAt();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-byo')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-byo'));
+    const action = screen.getByRole('button', { name: /get my connect command/i });
+    await waitFor(() => expect(action).toBeEnabled());
+    nameInput().focus();
+    expect(nameInput()).toHaveFocus();
+    expect(fireEvent.mouseDown(action, { cancelable: true })).toBe(false);
+    expect(nameInput()).toHaveFocus();
+    const moreWays = screen.getByTestId('byo-more-ways').querySelector('summary');
+    expect(fireEvent.mouseDown(moreWays, { cancelable: true })).toBe(false);
+    expect(nameInput()).toHaveFocus();
+  });
+
   test('reconnect deep link keeps the name and rotates a revoked key with one action', async () => {
     mockGet([{ name: 'local', installedBy: 'u1', runtime: { runtimeType: 'webhook' },
       connection: { state: 'revoked', lastSeenAt: null } }]);

@@ -69,6 +69,10 @@
 .v2-agent-settings__error { color: var(--v2-danger); }
 .v2-agent-settings__empty { margin-top: 24px; color: var(--v2-text-secondary); }
 .v2-agent-settings__keys { list-style: none; padding: 0; margin: 20px 0 0; }
+.v2-agent-settings__revoked-keys { margin-top: 20px; border-top: 1px solid var(--v2-border-soft); padding-top: 14px; }
+.v2-agent-settings__revoked-keys summary { width: fit-content; cursor: pointer; color: var(--v2-text-secondary); font-family: var(--v2-font-mono); font-size: 12px; }
+.v2-agent-settings__revoked-keys summary:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
+.v2-agent-settings__revoked-keys .v2-agent-settings__keys { margin-top: 8px; }
 .v2-agent-settings__key { position: relative; padding: 14px 0; border-top: 1px solid var(--v2-border-soft); }
 .v2-agent-settings__key-main { display: flex; gap: 12px; align-items: baseline; font-size: 14px; }
 .v2-agent-settings__key-main span { color: var(--v2-text-tertiary); font-size: 12px; }
@@ -85,7 +89,11 @@
 .v2-agent-settings__identity label { display: grid; gap: 7px; font-size: 13px; font-weight: 600; }
 .v2-agent-settings__identity fieldset { display: grid; gap: 16px; margin: 0; padding: 18px; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius); }
 .v2-agent-settings__identity legend { padding: 0 6px; font-weight: 700; }
-.v2-root .v2-agent-settings .v2-agent-settings__identity input,
+.v2-root .v2-agent-settings .v2-agent-settings__identity input {
+  width: 100%; padding: 9px 10px; border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius); background: var(--v2-surface); color: var(--v2-text-primary);
+  font: inherit; font-weight: 400;
+}
 .v2-root .v2-agent-settings .v2-agent-settings__identity textarea,
 .v2-root .v2-agent-settings .v2-agent-settings__identity select {
   width: 100%; padding: 9px 10px; border: 1px solid var(--v2-border);
@@ -102,5 +110,6 @@
 
 @media (max-width: 760px) {
   .v2-agent-settings { padding: 16px; }
+  .v2-agent-settings__section-head { flex-direction: column; align-items: flex-start; }
   .v2-agent-settings__key-meta { display: grid; gap: 4px; }
 }

@@ -15,6 +15,8 @@ jest.mock('../../models/AgentRegistry', () => ({
   AgentInstallation: {
     find: jest.fn(),
     findOne: jest.fn(),
+    findOneAndUpdate: jest.fn(),
+    updateOne: jest.fn(),
   },
 }));
 
@@ -41,14 +43,16 @@ const KernelWorkSweepService = require('../../services/kernelWorkSweepService');
 
 const POD_ID = new mongoose.Types.ObjectId();
 const NOW = new Date('2026-08-20T20:00:00.000Z');
-const SINCE = new Date(NOW.getTime() - 10 * 60 * 1000);
 
 const install = (agentName = 'scout') => ({
   agentName,
   instanceId: 'default',
   podId: POD_ID.toString(),
   status: 'active',
-  config: { runtime: { runtimeType: 'wrapper' }, boardWake: { enabled: true } },
+  config: {
+    runtime: { runtimeType: 'wrapper' }, boardWake: { enabled: true },
+    workDiscovery: { enabled: true, role: 'implementer' },
+  },
 });
 
 const setInstalls = (installs) => {
@@ -62,6 +66,7 @@ async function createTask({
   podId = POD_ID,
   taskId,
   title = taskId,
+  priority = 'P2',
   updatedAt,
   offeredAt,
   assignee = null,
@@ -75,6 +80,7 @@ async function createTask({
     taskNum,
     taskId,
     title,
+    priority,
     status,
     assignee,
     claimedBy,
@@ -97,6 +103,8 @@ beforeEach(async () => {
   taskNum = 0;
   setInstalls([install()]);
   AgentEvent.findOneAndUpdate.mockResolvedValue(null);
+  AgentInstallation.findOneAndUpdate.mockResolvedValue({});
+  AgentInstallation.updateOne.mockResolvedValue({ matchedCount: 1 });
   AgentEvent.updateOne.mockResolvedValue({});
   AgentEventService.enqueue.mockResolvedValue({});
   mockBoardWakeEnabled.mockReturnValue(true);
@@ -113,6 +121,44 @@ afterAll(async () => {
 });
 
 describe('kernel sweep offeredAt filter', () => {
+  it('names a late P0 before lower priorities when the discovery wake is truncated', async () => {
+    for (let i = 0; i < 6; i += 1) {
+      await createTask({ taskId: `TASK-PRIORITY-${i}`, priority: i === 5 ? 'P0' : 'P2', updatedAt: new Date(NOW.getTime() - 30000) });
+    }
+    await KernelWorkSweepService.wakeForFoundWork(NOW);
+    const content = AgentEventService.enqueue.mock.calls[0][0].payload.content;
+    expect(content.indexOf('TASK-PRIORITY-5')).toBeLessThan(content.indexOf('TASK-PRIORITY-0'));
+    expect(content).not.toContain('TASK-PRIORITY-4');
+    expect(content).toContain('[P0]');
+  });
+
+  it('still nudges unassigned work after its board change reached only digest', async () => {
+    const row = await createTask({ taskId: 'TASK-UNASSIGNED', updatedAt: new Date(NOW.getTime() - 30000) });
+
+    await notifyPodAgents(POD_ID, row, 'created', { isAgent: false });
+
+    expect(AgentEventService.enqueue.mock.calls[0][0].deliveryMode).toBe('digest');
+    expect((await Task.findById(row._id).lean()).offeredAt).toBeUndefined();
+    const sweep = await KernelWorkSweepService.wakeForFoundWork(NOW);
+    expect(sweep.woken).toBe(1);
+    expect(AgentEventService.enqueue.mock.calls[1][0].payload.foundWorkAt).toEqual(NOW);
+    const after = await Task.findById(row._id).lean();
+    expect(after.offeredAt).toEqual(after.updatedAt);
+  });
+
+  it('still offers a revision deferred past the ten-minute scan window by the hourly cap', async () => {
+    const old = await createTask({
+      taskId: 'TASK-DEFERRED', updatedAt: new Date(NOW.getTime() - 45 * 60 * 1000),
+    });
+
+    const sweep = await KernelWorkSweepService.wakeForFoundWork(NOW);
+
+    expect(sweep.woken).toBe(1);
+    expect(AgentEventService.enqueue.mock.calls[0][0].payload.content).toContain('TASK-DEFERRED');
+    const after = await Task.findById(old._id).lean();
+    expect(after.offeredAt).toEqual(after.updatedAt);
+  });
+
   it('keeps starter rows due until a Guide installation can receive them', async () => {
     const starter = await createTask({
       taskId: 'TASK-STARTER',
@@ -135,7 +181,7 @@ describe('kernel sweep offeredAt filter', () => {
     expect(afterOffer.offeredAt).toEqual(afterOffer.updatedAt);
   });
 
-  it('retries a swallowed enqueue while the unchanged revision remains in the scan window', async () => {
+  it('retries a swallowed enqueue while the unchanged revision remains due', async () => {
     const task = await createTask({
       taskId: 'TASK-RETRY',
       updatedAt: new Date(NOW.getTime() - 30000),
@@ -158,7 +204,7 @@ describe('kernel sweep offeredAt filter', () => {
     expect(afterRetry.offeredAt).toEqual(afterRetry.updatedAt);
   });
 
-  it('offers missing/rewritten revisions, skips offered/out-of-window rows, and offers each once', async () => {
+  it('offers missing, rewritten and old due revisions, but skips offered and assigned rows', async () => {
     const missing = await createTask({
       taskId: 'TASK-MISSING',
       updatedAt: new Date(NOW.getTime() - 30000),
@@ -173,9 +219,9 @@ describe('kernel sweep offeredAt filter', () => {
       updatedAt: new Date(NOW.getTime() - 20000),
       offeredAt: new Date(NOW.getTime() - 40000),
     });
-    const outsideWindow = await createTask({
+    const olderDue = await createTask({
       taskId: 'TASK-OLD',
-      updatedAt: new Date(SINCE.getTime() - 1),
+      updatedAt: new Date(NOW.getTime() - 11 * 60 * 1000),
     });
     const assigned = await createTask({
       taskId: 'TASK-ASSIGNED',
@@ -191,7 +237,7 @@ describe('kernel sweep offeredAt filter', () => {
     expect(content).toContain('TASK-MISSING');
     expect(content).toContain('TASK-REWRITTEN');
     expect(content).not.toContain('TASK-OFFERED');
-    expect(content).not.toContain('TASK-OLD');
+    expect(content).toContain('TASK-OLD');
     expect(content).not.toContain('TASK-ASSIGNED');
 
     const offeredMissing = await Task.findById(missing._id).lean();
@@ -200,7 +246,7 @@ describe('kernel sweep offeredAt filter', () => {
     expect(offeredRewritten.offeredAt).toEqual(offeredRewritten.updatedAt);
     expect((await Task.findById(alreadyOffered._id).lean()).offeredAt)
       .toEqual(alreadyOffered.offeredAt);
-    expect((await Task.findById(outsideWindow._id).lean()).offeredAt).toBeUndefined();
+    expect((await Task.findById(olderDue._id).lean()).offeredAt).toEqual(olderDue.updatedAt);
     expect((await Task.findById(assigned._id).lean()).offeredAt).toBeUndefined();
 
     const second = await KernelWorkSweepService.wakeForFoundWork(NOW);
@@ -265,17 +311,19 @@ describe('board wake assigned work', () => {
     const wakes = AgentEventService.enqueue.mock.calls.map(([event]) => event);
     const scout = wakes.find((event) => event.agentName === 'scout');
     const peer = wakes.find((event) => event.agentName === 'sprint-impl');
-    expect(scout.payload.content).toContain('[Your assigned rows (pending/claimed; newest first):]');
-    expect(scout.payload.content).toContain('TASK-ASSIGN — TASK-ASSIGN [pending] — Lily updated: reassigned to scout');
+    expect(scout.payload.content).toContain('[Your assigned rows (pending/claimed; highest priority first):]');
+    expect(scout.payload.content).toContain('TASK-ASSIGN — [P2] TASK-ASSIGN [pending] — Lily updated: reassigned to scout');
     expect(scout.payload.content).not.toContain('TASK-FOREIGN');
-    expect(peer).toBeUndefined();
+    expect(peer.deliveryMode).toBe('digest');
+    expect(peer.payload.content).toBe('TASK-ASSIGN updated: TASK-ASSIGN');
   });
 
-  it('keeps the assigned list to five rows, newest first, after a folded change', async () => {
+  it('applies priority before the five assigned-row limit after a folded change', async () => {
     const rows = [];
     for (let i = 0; i < 6; i += 1) {
       rows.push(await createTask({
         taskId: `TASK-OWN-${i}`,
+        priority: i === 5 ? 'P0' : 'P2',
         updatedAt: new Date(NOW.getTime() + i * 1000),
         assignee: 'scout',
       }));
@@ -284,8 +332,7 @@ describe('board wake assigned work', () => {
       _id: 'pending-wake', payload: { boardChanges: 1 },
     });
 
-    // The oldest insertion receives the newest edit. Sorting by _id alone
-    // would put it last and fail to name the change that prompted this wake.
+    // A new edit must not displace the P0 or reshuffle equal-priority rows.
     const newestAt = new Date(NOW.getTime() + 10000);
     await Task.updateOne(
       { _id: rows[0]._id }, { $set: { updatedAt: newestAt } }, { timestamps: false },
@@ -295,8 +342,8 @@ describe('board wake assigned work', () => {
 
     const content = AgentEvent.updateOne.mock.calls[0][1].$set['payload.content'];
     expect(content).toContain('2 changes');
-    expect(content).not.toContain('TASK-OWN-1');
-    const positions = [0, 5, 4, 3, 2].map((i) => content.indexOf(`TASK-OWN-${i} —`));
+    expect(content).not.toContain('TASK-OWN-4');
+    const positions = [5, 0, 1, 2, 3].map((i) => content.indexOf(`TASK-OWN-${i} —`));
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
   });
@@ -316,15 +363,17 @@ describe('board wake assigned work', () => {
     const wakes = AgentEventService.enqueue.mock.calls.map(([event]) => event);
     const anvil = wakes.find((event) => event.agentName === 'anvil');
     const scout = wakes.find((event) => event.agentName === 'scout');
-    expect(anvil.payload.content).toContain('TASK-INSTANCE — Instance Do it now [pending]');
+    expect(anvil.payload.content).toContain('TASK-INSTANCE — [P2] Instance Do it now [pending]');
     expect(anvil.payload.content).not.toContain('Instance\nDo it now');
     expect(anvil.payload.content).not.toContain('TASK-SCOUT');
-    expect(scout).toBeUndefined();
+    expect(scout.deliveryMode).toBe('digest');
+    expect(scout.payload.content).toBe('TASK-INSTANCE updated: Instance Do it now');
   });
 });
 
 describe('own-row board wake routing', () => {
-  const wakeNames = () => AgentEventService.enqueue.mock.calls.map(([event]) => event.agentName);
+  const wakeNames = () => AgentEventService.enqueue.mock.calls
+    .filter(([event]) => event.deliveryMode !== 'digest').map(([event]) => event.agentName);
 
   beforeEach(() => setInstalls([install('scout'), install('sprint-impl')]));
 
@@ -344,12 +393,13 @@ describe('own-row board wake routing', () => {
     expect(wakeNames()).toEqual(['scout']);
   });
 
-  it('wakes the previous assignee when a row is unassigned', async () => {
+  it('sends the previous assignee a digest when a human unassigns the row', async () => {
     const changed = await createTask({ taskId: 'TASK-UNASSIGN-OWNER', updatedAt: NOW });
 
     await notifyPodAgents(POD_ID, changed, 'updated', { isAgent: false }, { assignee: 'scout' });
 
-    expect(wakeNames()).toEqual(['scout']);
+    expect(wakeNames()).toEqual([]);
+    expect(AgentEventService.enqueue.mock.calls.every(([event]) => event.deliveryMode === 'digest')).toBe(true);
   });
 
   it('wakes the row owner for a comment', async () => {
@@ -362,7 +412,8 @@ describe('own-row board wake routing', () => {
     await notifyPodAgents(POD_ID, commented, 'updated', { isAgent: false });
 
     expect(wakeNames()).toEqual(['scout']);
-    expect(AgentEventService.enqueue.mock.calls[0][0].payload.content).toContain('Peer commented');
+    expect(AgentEventService.enqueue.mock.calls
+      .find(([event]) => event.deliveryMode !== 'digest')[0].payload.content).toContain('Peer commented');
   });
 
   it.each(['native', 'durable-object'])('sends a hosted %s owner a type its engine runs', async (engine) => {
@@ -375,7 +426,8 @@ describe('own-row board wake routing', () => {
     await notifyPodAgents(POD_ID, changed, 'updated', { isAgent: false });
 
     expect(wakeNames()).toEqual(['maya-agent']);
-    expect(AgentEventService.enqueue.mock.calls[0][0].type).toBe('chat.mention');
+    expect(AgentEventService.enqueue.mock.calls
+      .find(([event]) => event.deliveryMode !== 'digest')[0].type).toBe('chat.mention');
   });
 
   it('inherits hosted runtime for a mention-created pod projection', async () => {
@@ -481,7 +533,6 @@ describe('offeredAt race probe', () => {
       {
         $match: {
           _id: { $in: [casTask._id, nowTask._id] },
-          updatedAt: { $gte: SINCE },
           $expr: { $lt: ['$offeredAt', '$updatedAt'] },
         },
       },

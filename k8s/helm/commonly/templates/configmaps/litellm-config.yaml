@@ -23,11 +23,6 @@ data:
       #                natural, one question, no feature dump, no invented identity
       #   tool call -> clean structured tool_calls, arguments {"name":"biomed-qa"}
       #
-      # Compare cloudflare/llama-3.1-8b below, which answered "who are you" with
-      # "我是指南者，一个疫情期间的AI聊天机器人" — it invented a pandemic-era
-      # chatbot identity on turn one. Fine as a fallback, not as a first
-      # impression.
-      #
       # NOTE: responses carry `reasoning_content` alongside `content`. Content is
       # clean on its own — but anything reading the raw message must take
       # `content` and never concatenate the two, or the guide's first message to
@@ -36,39 +31,42 @@ data:
         litellm_params:
           model: deepseek/deepseek-v4-flash
           api_key: os.environ/DEEPSEEK_API_KEY
+          # $60 per month across every caller of this group (TASK-555). Over
+          # it, LiteLLM answers 429 "crossed budget". Like deepseek-flash-1017
+          # below, the month-to-date figure is in the router cache and a
+          # LiteLLM restart resets it: this is a backstop. The durable caps
+          # are the per-service keys (backend $40, commonly-bot $20, in
+          # LiteLLM's Postgres), and the budget alarm watches those.
+          max_budget: 60
+          budget_duration: 1mo
 
-      # --- Cloudflare Workers AI (fallback; own-account, unrevokable) ---
-      # Added 2026-08-08 to unblock the guide agent, which had no working model:
-      # every other provider in this file was returning 401 (OpenRouter's account
-      # was gone, OpenAI/Anthropic keys are literal "placeholder" strings). This
-      # runs on our OWN Cloudflare account, so nobody else can revoke it — which
-      # is exactly how the OpenRouter route died.
+      # DeepSeek V4.1 Flash, 1017 build. DeepSeek publishes no dated snapshot
+      # id: per api-docs.deepseek.com/updates, 2026-10-17, `deepseek-flash` is
+      # "the latest model" and was upgraded to DeepSeek-V4.1-Flash-1017 that
+      # day, while `deepseek-v4-flash` above is only "temporarily routed" to
+      # V4.1 for compatibility. The group name carries the build so a key
+      # scoped to it says what it buys; re-check the changelog before trusting
+      # the name after DeepSeek's next Flash update. Used by the dsh writer
+      # seats (D50), through their own budget-capped virtual key.
       #
-      # Verified with a live inference call before landing: both models below
-      # returned 200.
-      #
-      # WHY THIS MODEL, chosen by testing rather than spec sheet. Every cheap
-      # alternative on Workers AI is a REASONING model — qwen3-30b, gpt-oss-20b
-      # and gemma-4 all return OpenAI-shaped output with `content: null` and the
-      # answer buried in a `reasoning` field, and on a short budget they hit the
-      # token limit before producing any content at all. The deepseek r1 distill
-      # is the same shape via <think> tags, and at $4.881/M output costs 17x this
-      # one. A first greeting must be short, clean and cheap; a reasoning model
-      # is the wrong tool and leaks chain-of-thought into a stranger's first
-      # impression of the product.
-      #
-      # Verified live: this returned a correct, natural Chinese greeting that
-      # asked exactly one question, with no reasoning leakage. Both users who
-      # asked "what is this for" wrote Chinese, so that was the test that
-      # mattered.
-      #
-      # Do NOT swap this for a reasoning model without adding content-extraction
-      # and reasoning-stripping first.
-      - model_name: cloudflare/llama-3.1-8b
+      # Budget (Sam, D50: the DeepSeek writers are budget-capped). Two caps:
+      #   1. This deployment: $200 per month across EVERY caller of the group.
+      #      Over it, LiteLLM answers 429 "crossed budget" and does not reroute
+      #      (there is no fallback for this group). Spend for this cap is
+      #      tracked in the router's cache; with one replica and no Redis, a
+      #      LiteLLM restart can reset the month-to-date figure, so it is a
+      #      ceiling, not the ledger.
+      #   2. The writers' virtual key: models=[deepseek-flash-1017],
+      #      max_budget 200, budget_duration 30d. Stored in LiteLLM's Postgres,
+      #      so it survives restarts and is the auditable record
+      #      (/key/info). Minted after this ships; the file lives 0600 on the
+      #      fleet host, never in the repo.
+      - model_name: deepseek-flash-1017
         litellm_params:
-          model: cloudflare/@cf/meta/llama-3.1-8b-instruct-fp8
-          api_key: os.environ/CLOUDFLARE_API_KEY
-          account_id: os.environ/CLOUDFLARE_ACCOUNT_ID
+          model: deepseek/deepseek-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
+          max_budget: 200
+          budget_duration: 1mo
 
       # --- Gemini (direct google provider) ---
       - model_name: google/gemini-2.5-flash
@@ -97,21 +95,10 @@ data:
       # - openrouter/* used when gateway calls via openai-codex/gpt-5.4 fallback path
       # - nvidia/* / arcee-ai/* used when gateway uses openrouter:default profile
       #   (OpenClaw strips the "openrouter/" prefix before sending to the provider)
-      # Two deployments per model_name with different api_keys so router_settings
-      # routing_strategy: least-busy spreads load across both OR accounts and
-      # num_retries: 1 falls through to the other on 429/auth error. OPENROUTER_API_KEY_2
-      # is a secondary OpenRouter account for free-tier capacity doubling.
+      # One OpenRouter key. A second key (OPENROUTER_API_KEY_2) once doubled
+      # free-tier capacity; it expired unnoticed and was removed 2026-10-25.
+      # Both keys had expired, so every call here failed over silently.
       - model_name: openrouter/nvidia/nemotron-3-super-120b-a12b:free
-        litellm_params:
-          model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
-          api_key: os.environ/OPENROUTER_API_KEY
-
-      - model_name: openrouter/nvidia/nemotron-3-super-120b-a12b:free
-        litellm_params:
-          model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
-          api_key: os.environ/OPENROUTER_API_KEY_2
-
-      - model_name: nvidia/nemotron-3-super-120b-a12b:free
         litellm_params:
           model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
           api_key: os.environ/OPENROUTER_API_KEY
@@ -119,111 +106,65 @@ data:
       - model_name: nvidia/nemotron-3-super-120b-a12b:free
         litellm_params:
           model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
-          api_key: os.environ/OPENROUTER_API_KEY_2
+          api_key: os.environ/OPENROUTER_API_KEY
 
       # NOTE: arcee-ai/trinity-large-preview:free was deregistered at OpenRouter
       # (404 No endpoints found) on 2026-05-03. Removed from model_list and from
       # all fallback chains below. If the model is reinstated, restore it as a
       # paired entry alongside nemotron above.
 
-      # --- Codex (chatgpt/ provider) ---
-      # The `responses/` in `chatgpt/responses/gpt-5.4*` is LOAD-BEARING. Plain
-      # `chatgpt/gpt-5.4*` routes to /backend-api/codex/chat/completions, which Cloudflare
-      # serves a JS bot-challenge for (HTML, not JSON) -> the call fails and silently falls
-      # back to OpenRouter Nemotron. The /responses endpoint is NOT challenged. OAuth tokens
-      # are valid; this is a LiteLLM endpoint-routing bug, not an auth/IP/OpenAI block.
-      # See BerriAI/litellm#27175 (workaround) + openclaw#68033 (2026-06).
-      # Equally LOAD-BEARING: do NOT add `model_info: mode: responses` here. With the
-      # responses/ prefix, mode:responses routes through LiteLLM's responses-transformation
-      # handler, which strips `chatgpt/` and sends the invalid model `responses/gpt-5.4-mini`
-      # (400 "model not supported"). No mode -> the proxy uses the completion handler, which
-      # parses the responses/ prefix correctly. Verified 3/3 via proxy /chat/completions.
-      # NOTE: LiteLLM's chatgpt/ provider reads tokens from auth.json (written by the
-      # codex-auth-seed init + codex-auth-rotator sidecar). The Authenticator ignores
-      # api_key in litellm_params, so duplicate deployments per account are useless.
-      # Multi-account rotation happens via the sidecar swapping auth.json every 10 min.
-      # Each user on the ChatGPT Team has their own quota pool, so rotation gives real
-      # multi-account benefit.
-      #
-      # timeout: 120s per call; fallback to OpenRouter on 429/timeout (router_settings).
-      # Pricing sourced from pricepertoken.com 2026-04-04:
-      #   gpt-5.4:      $2.50 input / $15.00 output per 1M tokens
-      #   gpt-5.4-mini: $0.75 input / $4.50  output per 1M tokens
-      #   gpt-5.4-nano: $0.20 input / $1.25  output per 1M tokens
+      # --- D111 (2026-10-27): GPT/Codex access revoked. Every chatgpt/* alias below is
+      # repointed to the deepseek/deepseek-v4-flash backend so callers keep their
+      # model_name but get DeepSeek. The ChatGPT OAuth path (chatgpt/responses/*, the
+      # codex-auth-rotator sidecar, auth.json) is dormant until GPT access returns;
+      # revert this block to restore it. deepseek-v4-flash's own entry above is the
+      # canonical backend and carries the group budget; these are thin aliases to it,
+      # so they inherit DeepSeek pricing from LiteLLM's model db. The durable caps are
+      # the service virtual keys (backend $40, commonly-bot $20). ---
       - model_name: gpt-5.4
         litellm_params:
-          model: chatgpt/responses/gpt-5.4
-          timeout: 120
-          input_cost_per_token: 0.0000025
-          output_cost_per_token: 0.000015
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
 
       - model_name: openai-codex/gpt-5.4
         litellm_params:
-          model: chatgpt/responses/gpt-5.4
-          timeout: 120
-          input_cost_per_token: 0.0000025
-          output_cost_per_token: 0.000015
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
 
-      # --- gpt-5.4-mini (used for dev agent heartbeat orchestration) ---
       - model_name: gpt-5.4-mini
         litellm_params:
-          model: chatgpt/responses/gpt-5.4-mini
-          timeout: 120
-          input_cost_per_token: 0.00000075
-          output_cost_per_token: 0.0000045
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
 
       - model_name: openai-codex/gpt-5.4-mini
         litellm_params:
-          model: chatgpt/responses/gpt-5.4-mini
-          timeout: 120
-          input_cost_per_token: 0.00000075
-          output_cost_per_token: 0.0000045
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
 
-      # --- gpt-5.4-nano (community agents — cheapest Codex model) ---
       - model_name: gpt-5.4-nano
         litellm_params:
-          model: chatgpt/responses/gpt-5.4-nano
-          timeout: 120
-          input_cost_per_token: 0.0000002
-          output_cost_per_token: 0.00000125
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
 
       - model_name: openai-codex/gpt-5.4-nano
         litellm_params:
-          model: chatgpt/responses/gpt-5.4-nano
-          timeout: 120
-          input_cost_per_token: 0.0000002
-          output_cost_per_token: 0.00000125
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
 
-      # Aliases for Codex CLI default model names in openai mode
-      # When acpx_run spawns with auth_mode=openai, the CLI may send these model names
       - model_name: codex-mini-latest
         litellm_params:
-          model: chatgpt/responses/gpt-5.4-mini
-          input_cost_per_token: 0.00000075
-          output_cost_per_token: 0.0000045
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
 
       - model_name: o4-mini
         litellm_params:
-          model: chatgpt/responses/gpt-5.4-mini
-          input_cost_per_token: 0.00000075
-          output_cost_per_token: 0.0000045
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
 
-      # --- Codex CLI native /responses path (cloud-codex / Cody, wire_api="responses") ---
-      # Unlike the chat-path aliases above, the codex CLI hits LiteLLM's /v1/responses
-      # endpoint directly. There the chatgpt provider's get_complete_url already targets
-      # /responses, so the `responses/` prefix is redundant AND breaks: it gets sent
-      # literally to OpenAI as `responses/gpt-5.4` -> 400 "model not supported". These
-      # aliases map to plain `chatgpt/gpt-5.4*` (NO prefix) so /v1/responses sends the
-      # bare model name. Verified end-to-end via litellm.aresponses: real codex (served=
-      # gpt-5.4 / gpt-5.4-mini-2026-03-17). Do NOT point chat-path (/chat/completions)
-      # callers here — plain chatgpt/gpt-5.4* on the chat path hits the Cloudflare-
-      # challenged /backend-api/codex/chat/completions (see the chat-path note above).
       - model_name: codex-cli/gpt-5.4
         litellm_params:
-          model: chatgpt/gpt-5.4
-          timeout: 120
-          input_cost_per_token: 0.0000025
-          output_cost_per_token: 0.000015
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
 
       # --- OpenAI (optional, for embeddings) ---
       - model_name: text-embedding-3-large
@@ -253,57 +194,8 @@ data:
           model: openai/gpt-image-1
           api_key: os.environ/OPENAI_API_KEY
 
-      # --- Anthropic (cluster ANTHROPIC_API_KEY, standard BYOK pattern) ---
-      # Consumers will point at these entries:
-      #   1. cluster-side `cloud-claude-code` runtime pods (Deployment
-      #      templated parallel to cloud-codex) — set
-      #      ANTHROPIC_BASE_URL=http://litellm:4000 and
-      #      ANTHROPIC_API_KEY=<per-pod virtual key>
-      #   2. openclaw moltbots that need Claude models (dev-only, gated
-      #      the same way as openai-codex/* — see applyOpenClawModelDefaults)
-      #
-      # Auth model matches every other LiteLLM caller in the cluster
-      # (codex CLI, backend services, dev moltbots): caller sends its
-      # LiteLLM virtual key as Authorization; LiteLLM validates it
-      # against LiteLLM_VerificationTokenTable; on hit, LiteLLM calls
-      # api.anthropic.com using the cluster's own ANTHROPIC_API_KEY
-      # (which holds Anthropic's $200/mo prepaid credit, provisioned
-      # into anthropic-api-key in api-keys secret on 2026-06-15).
-      #
-      # Until the real key replaces `placeholder` in the api-keys secret
-      # (target: 2026-06-15), any call to a claude-* model will 401
-      # upstream with `invalid x-api-key`. No current consumers, so this
-      # is a harmless dormant path until provisioning day.
-      #
-      # OAuth pass-through (PR #432, x-litellm-api-key + ANTHROPIC_
-      # CUSTOM_HEADERS) was considered and rejected: TOS risk on Max
-      # subscription multiplexing, refresh sidecar complexity matching
-      # codex-auth-rotator (incident-prone), quota concentration on a
-      # single account. Predictable per-token billing against $200/mo
-      # API credit is the right trade.
-      #
-      # Per-key scoping (models[], rpm/tpm/spend limits, key_alias) is
-      # set at `/key/generate` time — see docs/runbooks/litellm-claude-code.md.
-      - model_name: claude-opus-4-7
-        litellm_params:
-          model: anthropic/claude-opus-4-7
-          api_key: os.environ/ANTHROPIC_API_KEY
-
-      - model_name: claude-sonnet-4-6
-        litellm_params:
-          model: anthropic/claude-sonnet-4-6
-          api_key: os.environ/ANTHROPIC_API_KEY
-
-      - model_name: claude-haiku-4-5
-        litellm_params:
-          model: anthropic/claude-haiku-4-5-20251001
-          api_key: os.environ/ANTHROPIC_API_KEY
-
-      # Versioned alias — Claude Code sometimes sends date-suffixed IDs
-      - model_name: claude-haiku-4-5-20251001
-        litellm_params:
-          model: anthropic/claude-haiku-4-5-20251001
-          api_key: os.environ/ANTHROPIC_API_KEY
+      # Direct Anthropic routes removed under D76. Claude on hosted runtimes
+      # awaits OpenRouter routing; BYO Claude Code remains independent.
 
     router_settings:
       # The codex-auth-rotator sidecar rotates Codex accounts every 10 min on
@@ -311,29 +203,30 @@ data:
       # (writes /chatgpt-auth/rotate-now → sidecar polls and swaps auth.json).
       routing_strategy: least-busy
       enable_pre_call_checks: true
-      # Fallback chain. The Codex entries below predate the 2026-10-15 probe and
-      # point at nemotron, which is itself dead now (the gateway they served is
-      # parked). Read the dead-route note at the end of the list.
+      # Fallback chain. Under D111 (2026-10-27) the gpt-5.4*/openai-codex/* Codex
+      # entries that used to fall through to nemotron here were removed — those
+      # aliases now point straight at deepseek-v4-flash, and nemotron is dead (the
+      # gateway it served is parked; OpenRouter keys expired 2026-10-25). The only
+      # fallback entries below are inbound gemini/nemotron alias names that callers
+      # still request; they fall through to deepseek-v4-flash.
+      # Earlier removals from this chain:
       #   - Gemini removed 2026-05-03: GEMINI_API_KEY belongs to a project that
       #     doesn't have generativelanguage.googleapis.com enabled (403). Until
       #     a working key is provisioned in a project where the API is enabled,
       #     gemini fallbacks are net-negative — they add 60-120s of retries per
       #     failed request and surface confusing "Vertex AI" errors to callers.
       #   - Trinity removed 2026-05-03: 404 No endpoints found at OpenRouter.
-      # If nemotron is also unavailable (rate limit / OR key exhausted), the
-      # request fails fast — caller (gateway/agent) sees the failure, the next
-      # request lands on the freshly-rotated Codex account.
+      # If deepseek-v4-flash itself is unavailable the request fails fast — the
+      # caller (gateway/agent) sees the failure and the "LiteLLM is failing its
+      # callers" alert fires (docs/runbooks/alerting.md#litellm-failing). There is
+      # no nemotron or Codex tier behind it any more.
       fallbacks:
-        - {"gpt-5.4":                 ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
-        - {"openai-codex/gpt-5.4":    ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
-        - {"gpt-5.4-mini":            ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
-        - {"openai-codex/gpt-5.4-mini": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
-        - {"gpt-5.4-nano":            ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
-        - {"openai-codex/gpt-5.4-nano": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
-        - {"codex-cli/gpt-5.4":        ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
+        # D111 (2026-10-27): gpt-5.4*/openai-codex/*/codex-cli gpt->nemotron fallbacks
+        # removed — those aliases now point straight at deepseek-v4-flash (primary), and
+        # nemotron itself is dead (OpenRouter keys expired 2026-10-25).
         # Dead routes fall back to deepseek-v4-flash (2026-10-15). Probing every
         # chat route from the backend pod found exactly two answering:
-        # deepseek-v4-flash and cloudflare/llama-3.1-8b. Every Gemini name 401s
+        # deepseek-v4-flash and the since-removed Workers AI route. Every Gemini name 401s
         # (Google: ACCESS_TOKEN_TYPE_UNSUPPORTED for GEMINI_API_KEY) and both
         # nemotron names 401 at OpenRouter. Callers still ask for those names:
         # the commonly-bot client defaults to gemini-2.5-flash; pod-welcomer,
@@ -348,11 +241,11 @@ data:
         - {"google/gemini-2.0-flash": ["deepseek-v4-flash"]}
         - {"openrouter/nvidia/nemotron-3-super-120b-a12b:free": ["deepseek-v4-flash"]}
         - {"nvidia/nemotron-3-super-120b-a12b:free": ["deepseek-v4-flash"]}
-      # One retry on rate-limit, with a deliberate 1s delay so the 429 callback
-      # has time to rotate auth.json before the retry reads it. This means a
-      # 429 on account-N triggers (a) signal-driven rotation to account-N+1,
-      # (b) a 1s wait, (c) one retry that reads the new auth.json. If the
-      # retry also 429s, falls to nemotron fallback.
+      # One retry on rate-limit with a deliberate 1s delay. This retry is a global
+      # router setting and still applies to every deployment. The Codex auth.json
+      # rotation it was originally written for is dormant post-D111 (no chatgpt/*
+      # route consumes the rotator now); for the repointed aliases a 429 simply
+      # retries the same deepseek-v4-flash deployment after 1s, then fails fast.
       #
       # Why not num_retries=0: a single 429 used to drop the request entirely,
       # falling to the (then-broken, now-narrow) fallback chain. Same-prompt
@@ -390,7 +283,13 @@ data:
       # accounts immediately (instead of waiting for its next scheduled tick).
       # The callback module is installed at /tmp/callbacks/rate_limit_signal.py by
       # the container startup script; PYTHONPATH is set accordingly.
-      callbacks: rate_limit_signal.proxy_handler_instance
+      # deepseek_tool_shim flattens codex's namespace tools into plain function
+      # tools for the deepseek-flash-1017 group only, which DeepSeek requires;
+      # source in files/litellm/deepseek_tool_shim.py, mounted from this ConfigMap.
+      # model_fallback_signal prints one {"alarm":"model_fallback"} line per
+      # fallback in router_settings.fallbacks, naming requested and fallback
+      # groups (TASK-003); the `model_fallback` log metric counts them.
+      callbacks: ["rate_limit_signal.proxy_handler_instance", "deepseek_tool_shim.proxy_handler_instance", "model_fallback_signal.proxy_handler_instance"]
 
     guardrails:
       # Anti-pattern content guardrails for the public-launch exposure. Both are
@@ -449,8 +348,17 @@ data:
       ui_access_mode: "all"
       # Spend log retention — without these, LiteLLM_SpendLogs grows unbounded
       # (prod dev observed 5+ GB on the 8 GiB Cloud SQL tier before this cap).
-      # STORE_PROMPTS_IN_SPEND_LOGS=true is set in the deployment env, so each
-      # row is large; a 7-day window is plenty for dev debugging.
+      # STORE_PROMPTS_IN_SPEND_LOGS=false keeps raw prompt and response text
+      # out of each row; a 7-day window is plenty for dev debugging.
       maximum_spend_logs_retention_period: "7d"
       maximum_spend_logs_retention_interval: "6h"
+  # Mounted at /app/, next to config.yaml (see the callbacks list above).
+  # deepseek_tool_shim.py is the callback and loads the core inside a try, so a
+  # broken core refuses only the deepseek group instead of stopping the proxy.
+  deepseek_tool_shim.py: |
+    {{- .Files.Get "files/litellm/deepseek_tool_shim.py" | nindent 4 }}
+  deepseek_tool_shim_core.py: |
+    {{- .Files.Get "files/litellm/deepseek_tool_shim_core.py" | nindent 4 }}
+  model_fallback_signal.py: |
+    {{- .Files.Get "files/litellm/model_fallback_signal.py" | nindent 4 }}
 {{- end }}

@@ -298,6 +298,15 @@ const sweepOrphanedConnectorSecrets = async (now: Date): Promise<number> => {
       continue;
     }
     const ref = String(secret._id);
+    if (spec.owner === 'agent-provider-key') {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const AgentProviderKey = require('../../models/AgentProviderKey');
+      const owner = await AgentProviderKey.findOne({ secretRef: ref }).select('secretRef').lean();
+      if (owner && rowReferencesSecret(owner, spec, ref)) continue;
+      await connectorSecrets.revoke(ref);
+      revoked += 1;
+      continue;
+    }
     if (!ownedByIntegration(spec)) {
       // A hosted-MCP client registration's secret (TASK-248). It is kept while
       // its registration exists, has not been refused, and still names it:

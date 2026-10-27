@@ -3,6 +3,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import V2AgentRuntimeGrants, { describeRuntime } from '../components/V2AgentRuntimeGrants';
 import { AuthContext } from '../../context/AuthContext';
+import { daemonSetupCommand } from '../utils/daemonSetupCommand';
 
 jest.mock('axios', () => {
   const mock = {
@@ -29,7 +30,7 @@ const response = {
 
 const renderSection = (runtime = { runtimeType: 'wrapper', adapter: 'claude', model: 'sonnet' }) => render(
   <AuthContext.Provider value={authValue}>
-    <V2AgentRuntimeGrants name="nib" instanceId="default" runtime={runtime} onSaveRuntime={saveRuntime} />
+    <V2AgentRuntimeGrants name="nib" instanceId="default" runtime={{ managed: true, inventory: ['claude', 'codex'].map((harness) => ({ harness, installed: true, version: '1', models: null, efforts: ['low', 'medium', 'high', 'xhigh'] })), ...runtime }} onSaveRuntime={saveRuntime} />
   </AuthContext.Provider>,
 );
 
@@ -44,10 +45,19 @@ beforeEach(() => {
 
 test('runtime labels only recognize walked adapters and distinguish daemon from a single CLI', () => {
   expect(describeRuntime({ runtimeType: 'wrapper', adapter: 'claude' })).toEqual({ mode: 'daemon', adapter: 'Claude Code' });
+  expect(describeRuntime({ runtimeType: 'wrapper', adapter: 'claude', managed: false }))
+    .toEqual({ mode: 'cli', adapter: 'Claude Code' });
   expect(describeRuntime({ runtimeType: 'webhook', host: 'byo', adapter: 'dsh' })).toEqual({ mode: 'cli', adapter: 'DeepSeek Harness' });
   expect(describeRuntime({ runtimeType: 'wrapper', adapter: 'unwalked' })).toEqual({ mode: 'daemon', adapter: null });
   expect(describeRuntime({ runtimeType: 'hosted' })).toEqual({ mode: 'hosted', adapter: null });
+  expect(describeRuntime({ runtimeType: 'native', host: 'cloud' })).toEqual({ mode: 'native', adapter: null });
   expect(describeRuntime({ runtimeType: 'webhook', host: 'byo' })).toEqual({ mode: 'unknown', adapter: null });
+});
+
+test('shows the native engine for a native agent', async () => {
+  renderSection({ runtimeType: 'native' });
+  expect(await screen.findByText('read only · runs on commonly')).toBeInTheDocument();
+  expect(screen.queryByText('Hosted')).not.toBeInTheDocument();
 });
 
 test('revoked Runtime row offers an active computer and moves in one request', async () => {
@@ -66,7 +76,7 @@ test('revoked Runtime row offers an active computer and moves in one request', a
 test('without an active computer, the setup hint includes daemon installation', async () => {
   renderSection();
   expect(await screen.findByText(/Register another computer to move this agent/)).toBeInTheDocument();
-  expect(screen.getByText('npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install')).toBeInTheDocument();
+  expect(screen.getByText(daemonSetupCommand())).toBeInTheDocument();
 });
 
 test('a changed installer refuses the move before release and explains the blocking installation', async () => {
@@ -100,8 +110,8 @@ test('a revoked target after preflight keeps the old placement visible and shows
 
 test('shows this agent grant and requires a second click to revoke through the existing route', async () => {
   renderSection();
-  expect(await screen.findByText('On a computer, via the daemon')).toBeInTheDocument();
-  expect(screen.getByText('Claude Code')).toBeInTheDocument();
+  expect(await screen.findByText('changes apply on the next spawn')).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Claude Code 1' })).toBeInTheDocument();
   expect(await screen.findByText(/Work · Granted by Owner/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
   expect(axios.post).not.toHaveBeenCalled();
@@ -111,39 +121,39 @@ test('shows this agent grant and requires a second click to revoke through the e
 
 test('model changes delegate to the shared settings hook; a single CLI has no edit control', async () => {
   const { rerender } = renderSection();
-  const input = await screen.findByLabelText('Model');
+  const input = await screen.findByLabelText('model');
   fireEvent.change(input, { target: { value: 'opus' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
-  await waitFor(() => expect(saveRuntime).toHaveBeenCalledWith({ model: 'opus' }));
+  await waitFor(() => expect(saveRuntime).toHaveBeenCalledWith({ adapter: 'claude', model: 'opus' }));
   expect(axios.post).not.toHaveBeenCalled();
 
   rerender(<AuthContext.Provider value={authValue}><V2AgentRuntimeGrants name="other" instanceId="default" runtime={{ runtimeType: 'webhook', host: 'byo', adapter: 'hermes' }} onSaveRuntime={saveRuntime} /></AuthContext.Provider>);
-  expect(await screen.findByText('Single CLI')).toBeInTheDocument();
-  expect(screen.queryByLabelText('Model')).toBeNull();
+  expect(await screen.findByText('read only · this seat runs from the cli')).toBeInTheDocument();
+  expect(screen.getByLabelText('model')).toBeDisabled();
 });
 
 test('daemon effort changes are passed to the shared settings callback', async () => {
   renderSection({ runtimeType: 'wrapper', adapter: 'codex', model: 'gpt-6-sol', effort: 'medium' });
-  const input = screen.getByLabelText('Effort');
+  const input = screen.getByLabelText('effort');
   fireEvent.change(input, { target: { value: 'high' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
-  await waitFor(() => expect(saveRuntime).toHaveBeenCalledWith({ effort: 'high' }));
+  await waitFor(() => expect(saveRuntime).toHaveBeenCalledWith({ adapter: 'codex', effort: 'high' }));
 });
 
 test('the unset effort option clears a saved effort', async () => {
   renderSection({ runtimeType: 'wrapper', adapter: 'codex', model: 'gpt-6-sol', effort: 'medium' });
-  fireEvent.change(screen.getByLabelText('Effort'), { target: { value: '' } });
+  fireEvent.change(screen.getByLabelText('effort'), { target: { value: '' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
-  await waitFor(() => expect(saveRuntime).toHaveBeenCalledWith({ effort: '' }));
+  await waitFor(() => expect(saveRuntime).toHaveBeenCalledWith({ adapter: 'codex', effort: '' }));
 });
 
 test('a failed runtime save reports next to the editor', async () => {
   saveRuntime.mockRejectedValue(new Error('unavailable'));
   renderSection();
-  fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'opus' } });
+  fireEvent.change(screen.getByLabelText('model'), { target: { value: 'opus' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
-  const runtimeSection = screen.getByRole('heading', { name: 'Runtime' }).closest('section');
-  expect(await within(runtimeSection).findByRole('alert')).toHaveTextContent('Could not save the model.');
+  const runtimeSection = screen.getByRole('heading', { name: 'How it runs' }).closest('section');
+  expect(await within(runtimeSection).findByRole('alert')).toHaveTextContent('Could not save runtime settings.');
 });
 
 test('a successful revoke stays ended if the grant reload fails', async () => {

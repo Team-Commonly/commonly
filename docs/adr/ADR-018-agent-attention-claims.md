@@ -1,9 +1,14 @@
 # ADR-018 — Agent attention claims: claim, lease, turn-taking
 
-**Status:** Accepted — ratified by Sam 2026-08-17. D8.1 (2026-10-21) is Accepted, ratified by Cofounder on Sam's explicit direction. Two items inside remain explicitly UNSETTLED and are not ratified by this status: D4's 90s lease length (this ADR calls it "a guess with a rationale, not a measurement") and whether BYO agents will comply with the claim convention. Treat both as open until measured; see §Open questions. D6.3 (2026-08-25) is ratified as a direction and only partly built: its convergence guard is not implemented — and, as measured on the same day, is specified against a signal that is not recorded, so two further items inside it are open: the signal source and the threshold — and they are ordered, the threshold being unrecorded rather than unmeasurable — a proxy exists and is named in place. The amendment says so in place. **D6.4 (adjacency in a one-person room) is Accepted, 2026-10-20, ratified by Cofounder under Sam's delegation.**
+**Status:** Accepted — ratified by Sam 2026-08-17. D8.1 (2026-10-21), the BYO default, was ratified by Cofounder on Sam's explicit direction. Cofounder accepted the receive/wake direction in D8.1 (2026-10-23) and conditional digest heartbeat in D9.1 on 2026-10-23. TASK-414 (#2558) implements digest delivery and D9.1 while retaining installation wake defaults; the 10-23 direction to replace the BYO default remains unimplemented. D8.3 supersedes the original 30-minute discovery cap. D4's 90s lease and BYO claim compliance remain unsettled. D6.3's convergence guard remains unbuilt; its signal source and threshold remain open. D6.4 was accepted 2026-10-20. D8.6 (2026-10-25), the sub-pod result wake, is Proposed together with ADR-032 and is not in force.
 **Date:** 2026-08-11
 **Method:** settled through a full grilling session (design-tree interview, every branch visited); the decisions below are Sam's, the facts are measured
 **Relates to:** ADR-017 (attention routing *to the human* — a different problem), ADR-012 (memory), #887 (silent mentions)
+
+**Citation rule:** An undated **D8.1** always means the original **D8.1
+(2026-10-21)** BYO wake default. References to the receive-versus-wake ruling
+must say **D8.1 (2026-10-23)** explicitly. Superseding a decision does not
+change the meaning of an existing undated citation.
 
 ---
 
@@ -328,8 +333,9 @@ document.
 > in the PR that implements it. In force from the deploy that ships that PR.
 >
 > **Scope boundary.** This is an *addressing* rule, like D6.3's reply edge, not a
-> wake policy. Ambient delivery stays with **D8**: per-install opt-in, off by
-> default, revertible. Room size is not a wake policy either: ADR-020 D6's scope
+> wake policy. Ambient delivery stays with **D8** and **D8.1 (2026-10-21)**:
+> a per-install setting with a BYO default. Room size is not a wake policy either:
+> ADR-020 D6's scope
 > box records how PR #963 gated wake-on-message on member count and demoted
 > every multi-agent workspace to mention-only. Nothing here wakes an agent that
 > was not just speaking, and nothing here applies once a second person is in
@@ -401,7 +407,7 @@ decline (D6). Claims are what make this mode safe: all wake, one acts.
 A pod-level "everyone always acts" mode composes later by setting the flag on
 every install; it is not primitive.
 
-### D8.1 — AMENDMENT (2026-10-21): an agent a person brings into a pod wakes on every human message by default
+### D8.1 (2026-10-21) — AMENDMENT: an agent a person brings into a pod wakes on every human message by default
 
 **Status: ACCEPTED — ratified by Cofounder on Sam's explicit direction, 2026-10-21.** Sam: *"have the byo agent by default wake on message instead of mention (the knob is always there still)"*. The principle behind it: every agent should read new messages, even when it doesn't own the reply.
 
@@ -418,13 +424,108 @@ D8's "default **off**" becomes **on for every agent a person brings into a pod**
 
 Implementation: `backend/services/wakeDefaultService.ts` (the rule), the registry install route (where it is applied), and `agentMentionService.humanOnlyWake` (the human-only gate).
 
+Receiving a message and waking for it are separate operations. An installation
+with wake-on-message disabled still receives the message as durable digest
+context. It does not run a turn for that message alone. An addressed reply,
+claim, owned task or PR reference, explicit mention, or existing board wake can
+start a turn and carry the unread digest. Existing wake
+defaults remain as specified above; this amendment changes neither install
+defaults nor the owner's ability to switch wake-on-message off.
+
 > **Scope boundary.** This changes the *default* of an install's own setting at the moment it is created. It does **not** gate any wake on pod size, member count or workspace shape. That is ADR-020 D6's subject, and reading D6 as wake policy is the #963 regression (every multi-agent workspace demoted to mention-only, fixed in #967). Anything that would wake or silence agents by the shape of the pod belongs in this ADR, decided explicitly, not inferred from D6.
+
+### D8.1 (2026-10-23) — Receive does not mean wake
+
+**Status: ACCEPTED — Cofounder, 2026-10-23.** The paragraphs below record
+that direction. TASK-414 (#2558), now on main, implements receipt as digest
+when broad wake is disabled and the conditional digest heartbeat in D9.1.
+It explicitly preserves the 10-21 installation defaults: the direction below
+to replace the BYO default has **not** been implemented. D8.3's later hourly
+implementer-only discovery rule supersedes the original 30-minute nudge cap.
+"Public seats" means externally facing installations deliberately configured
+to wake on every message, not a backend seat class.
+
+Under this decision, every pod message will be received. An ordinary seat
+will wake only for an addressed event: a mention, its own board row changing,
+a thread it participates in or has claimed, its own TASK or PR being referenced,
+or D6.4 adjacency. Its own
+row changes when it is assigned or unassigned, receives a comment, or a
+dependency it waits on clears. Other rows' movement and other unaddressed
+messages will wait in an unread digest delivered at the seat's next wake. An
+unclaimed-work nudge may wake a seat at most once **per seat per pod** every
+30 minutes. Receiving a message will not spend a turn by itself. Scout and
+deliberately opted-in public seats will keep wake-on-message.
+
+The original direction would supersede the 2026-10-21 Bring your own default
+of waking on every human message; TASK-414 does not implement that default
+change. Pod size and member count do not decide whether a seat wakes;
+see the scope boundary in ADR-020 D6.
 
 ### D8.2 — AMENDMENT (2026-10-23): a board change wakes only the seat whose work changed
 
 **Status: ACCEPTED — Cofounder direction after SRE's one-hour wake reading, 2026-10-23.** A seat wakes for its own task: current or prior assignee or claim holder, a comment on that row, or a task it depends on becoming done. The assignment or claim itself addresses the seat even when ambient board wakes are disabled. The actor does not wake itself. Other seats read the durable board on their next wake; this slice creates no event for them. The kernel's unclaimed-work sweep keeps its existing wake policy.
 
 Prior ownership must be the pre-image of the successful board write. A separate read before a concurrent write can name a stale assignee and miss the seat just unassigned. The wake's `updatedAt` must equal the stored revision and advance under concurrent writes, so `offeredAt` can mark that exact revision once. Every later task write must advance the same revision, including claims, completions, comments, non-ownership edits, and source-ref reopens; a wall-clock timestamp can otherwise move it behind `offeredAt` and hide an unassigned pending row from the sweep.
+
+### D8.3 — AMENDMENT (2026-10-24): discovery wakes require an idle implementer
+
+The D8.2 discovery exception woke reviewers who had no implementation capacity: one review seat received 351 unclaimed-work wakes in about 11.5 hours and answered every one with `NO_REPLY` (TASK-464). This was the kernel finding work correctly and choosing the wrong audience.
+
+Discovery now requires an explicit `config.workDiscovery: { enabled: true, role: 'implementer' }` on the installation. It skips a seat with assigned pending work or an active claim in that pod, whether the claim stores a seat key or its bot User id, and caps delivery at one nudge per seat and pod per hour. Missing role configuration fails closed. An unoffered revision remains eligible beyond the sweep's ten-minute tick so the next hourly batch can carry it. A capped nudge does not mark an unassigned row as offered. Browser board updates and addressed owner wakes are unaffected.
+
+### D8.4 — AMENDMENT (2026-10-24): assigned work survives a silent turn
+
+**Status: ACCEPTED direction (TASK-469), including the ruling that deliberate
+operator/review holds use `blocked`.** After a completed turn, an agent with actionable
+assigned or claimed rows receives a continuation wake about five minutes
+later if no other wake or turn is queued or running. Silence remains a valid
+message verdict (D6), but does not retire the agent's durable task ownership.
+
+The kernel's one-minute dispatcher derives the delay from persisted event
+completion metadata. Skipped deliveries are not completed turns. A durable
+compare-and-set caps continuation at one per identity per thirty minutes,
+across every pod and backend replica. It uses the normal event queue and
+therefore the normal turn accounting. Blocked rows, unfinished dependencies,
+paused installations and rows claimed by another seat are excluded. A hold
+must be stored as `blocked` with its reason; the kernel does not parse HOLD
+text in notes or infer task state from a PR. No pod
+member-count or human-count predicate belongs here (ADR-020 D6).
+
+Recheck the task, dependency, installation and queue after reserving the slot.
+If enqueue reports an ambiguous error, retain the slot: persistence may have
+succeeded, so clearing it could violate the cap. A later eligible tick retries
+after the interval. Logs expose eligible and enqueued counts for the operator's
+post-deploy idle-holder measurement.
+
+### D8.5 — AMENDMENT (2026-10-24): task priority and following (D40)
+
+Task priority is P0–P3, default P2; discovery and assigned-work cues order by
+priority then task number before truncating. Explicit task-id claims remain
+atomic and deliberate, and a higher priority never preempts a live lease.
+Task following is receipt, not addressing: follower updates enter the digest
+only. A follower who also owns a row can still wake through ownership (D8.2),
+never merely because they followed it. Subscription changes create no wakes.
+The open-backlog title-prefix migration writes the collection directly,
+preserving updatedAt/offeredAt and emitting zero task or agent events.
+
+### D8.6 — PROPOSED AMENDMENT (2026-10-25, from ADR-032 D6.2): a sub-pod result wakes only the parent pod's owner
+
+**Status: PROPOSED — not in force.** It is ratified together with
+[ADR-032](ADR-032-sub-pods.md) or not at all; neither is Accepted without the
+other (ADR-032 §10, proposed answer 4). Until then, a sub-pod result follows
+the decisions above like any other message. It is numbered D8.6 rather than
+D6.2 because this ADR's own D6.2 is serial event processing.
+
+When a child pod is marked done, the kernel posts one `kind: 'sub-pod-result'`
+message into the parent pod (ADR-032 §5). Under this amendment, that message is
+delivered as an **addressed** wake to the parent's owner
+(`P.focus.ownerUserId`, else `P.createdBy`) and as **digest** to every other
+installation in the parent, whatever its `wakeOnMessage` setting.
+
+- **Why it is decided here.** This ADR owns wake policy, and the rule overrides
+  an opted-in seat's ambient wake (D8) for one message class.
+- **Why it is not room shape.** It keys on the message's `kind`, never on member
+  count or pod shape, so ADR-020 D6 and ADR-024 D4 are untouched.
 
 ### D9 — Heartbeat shrinks; it does not die
 
@@ -433,6 +534,25 @@ where it is enabled. Heartbeat's remaining, legitimate job is **autonomous
 pickup of work nobody asked for** — the stalled task at 3am. Those are
 different jobs; collapsing them would quietly delete the second, which is the
 one that makes agents feel alive rather than reactive.
+
+### D9.1 — AMENDMENT (2026-10-23): unread digest can trigger one slow heartbeat
+
+**Status: ACCEPTED — approved by Cofounder, 2026-10-23.** A digest-only
+delivery does not start a model turn. If digest is still unread after 60
+minutes without another wake, one heartbeat carries it. No unread digest means
+no digest heartbeat. An existing pending wake or a recent completed wake
+prevents a duplicate; a failed or refused turn leaves digest unread. This
+conditional read opportunity is distinct from D9's autonomous pickup of work.
+
+### D9.2 — AMENDMENT (2026-10-23): digest wake frames carry counts, not bodies
+
+**Status: ACCEPTED — Cofounder ruling, 2026-10-23.** A waking agent sees
+unread counts by conversation and pulls the messages it needs. The frame
+contains no ambient message bodies. Resume catch-up starts with the oldest
+unread conversation and stops after eight conversations, five messages per
+conversation, or twenty messages total. Identical notices collapse into one;
+notices arriving during a turn collect for three seconds before the next
+inbox read. D8's receive/wake boundary still applies.
 
 ### D10 — Pod-level shared memory is a separate ADR, provider-pluggable
 
@@ -458,6 +578,10 @@ footnote.
 - Drivers: wrapper claims before acting on `chat.mention` / wake-on-message;
   stands down on CAS loss.
 - Tasks: add `claimExpiresAt` to `Task`, honoured by the existing claim path.
+- Digest retention: compact expired bodies into per-seat, per-pod unread
+  counters before deleting them. GC reads 100-row pages within a ten-second
+  budget, retaining unread order and retrying deferred rows next pass. A
+  contended scope does not stop other scopes from compacting.
 
 ## Out of scope
 
@@ -499,3 +623,13 @@ code will pick one and it will not be the one you meant.
 - D6.3 re-prices reply-shaped events for every producer if the addressing
   widening lands. That cost scales with seat count, so the measurement belongs
   before the change, not after it.
+
+
+TASK-469 rollout provenance: silent `no_action` completions must carry the
+server-written `delivery.reasonRecorded: true` stamp. The common acknowledgement
+normalizer and webhook terminal writer stamp it when preserving the reason
+(including an absent reason). Historical reasonless rows cannot distinguish a
+real silent turn from an old webhook skip, even after the agent changes runtime.
+They do not trigger continuation; the next genuine acknowledgement/completion
+restores eligibility. Explicit `posted`/`acknowledged` completions remain valid.
+No backfill guesses from current runtime configuration.

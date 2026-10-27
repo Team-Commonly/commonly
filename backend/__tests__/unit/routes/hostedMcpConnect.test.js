@@ -40,9 +40,11 @@ jest.mock('../../../middleware/auth', () => (req, _res, next) => {
 jest.mock('../../../middleware/integrationRateLimit', () => ({
   writeIntegrationsRateLimit: (_req, _res, next) => next(),
   listIntegrationsRateLimit: (_req, _res, next) => next(),
+  ingestIngressRateLimit: (_req, _res, next) => next(),
+  ingestIntegrationsRateLimit: (_req, _res, next) => next(),
 }));
 
-jest.mock('../../../models/Integration', () => ({ findOneAndUpdate: jest.fn() }));
+jest.mock('../../../models/Integration', () => ({ findOne: jest.fn(), findOneAndUpdate: jest.fn() }));
 jest.mock('../../../services/hostedMcpDcrRegistry', () => ({
   ensureDcrClient: jest.fn(),
   dcrClientForRow: jest.fn(),
@@ -76,6 +78,9 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockAuthedUser = { id: 'user-1' };
   intake.discoverAuthorizationServer.mockResolvedValue(AS_METADATA);
+  Integration.findOne.mockReturnValue({
+    select: () => ({ lean: async () => null }),
+  });
   Integration.findOneAndUpdate.mockResolvedValue({ _id: 'integration-1' });
   FIXTURE_ENTRY.client = 'cimd';
 });
@@ -159,6 +164,39 @@ describe('hosted-mcp connect: start', () => {
       else process.env.HOSTED_MCP_HIDDEN_ENTRIES = prior;
     }
   });
+  it('uses only the authenticated walk user for hidden-entry starts', async () => {
+    const hiddenBefore = process.env.HOSTED_MCP_HIDDEN_ENTRIES;
+    const allowBefore = process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST;
+    const walkUser = '64b64c48c4f37a6b2f34c111';
+    process.env.HOSTED_MCP_HIDDEN_ENTRIES = '["linear"]';
+    process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST = JSON.stringify({ linear: [walkUser] });
+    try {
+      mockAuthedUser = { id: walkUser };
+      expect((await start()).status).toBe(200);
+      intake.discoverAuthorizationServer.mockClear();
+      Integration.findOneAndUpdate.mockClear();
+      mockAuthedUser = { id: '64b64c48c4f37a6b2f34c222' };
+      const denied = await request(app).post('/connect/hosted-mcp/linear/start')
+        .query({ userId: walkUser }).send({ userId: walkUser });
+      expect(denied.status).toBe(404);
+      expect(denied.body).toEqual({ error: 'unknown_entry' });
+      mockAuthedUser = {};
+      expect((await start()).status).toBe(401);
+      expect(intake.discoverAuthorizationServer).not.toHaveBeenCalled();
+      expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+      mockAuthedUser = { id: walkUser };
+      for (const bad of [{ linear: [walkUser], typo: [walkUser] }, { linear: [walkUser], sentry: 'bad' }]) {
+        process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST = JSON.stringify(bad);
+        expect((await start()).status).toBe(404);
+      }
+    } finally {
+      if (hiddenBefore === undefined) delete process.env.HOSTED_MCP_HIDDEN_ENTRIES;
+      else process.env.HOSTED_MCP_HIDDEN_ENTRIES = hiddenBefore;
+      if (allowBefore === undefined) delete process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST;
+      else process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST = allowBefore;
+    }
+  });
+
   it('uses and snapshots the one registered DCR client for authorization', async () => {
     FIXTURE_ENTRY.client = 'dcr';
     dcr.ensureDcrClient.mockResolvedValue({ clientId: 'registered-public-client' });

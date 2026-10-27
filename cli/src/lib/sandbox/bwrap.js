@@ -86,10 +86,9 @@ export const detectBwrap = ({ spawn = spawnSync, platform = process.platform } =
  *
  * Network policy honesty (ADR-008 §invariant #4 informs this):
  *   - unrestricted → --share-net (host networking inside the namespace)
- *   - restricted   → --unshare-net (NO network at all). Host-allowlist
- *     filtering needs an outbound proxy or per-host TLS interception, neither
- *     of which is in Phase 1 scope. Attach-time emits a loud warning so the
- *     user sees the gap before they think they're protected.
+ *   - restricted   → --unshare-net (no external network). OpenCode may opt
+ *     into a private loopback bridge to its per-spawn Unix-socket proxy.
+ *     Host-allowlist filtering is not supplied by bwrap itself.
  *
  * The expansion order matches `bwrap`'s left-to-right argument application:
  * isolation flags first, then binds (later binds win on collision), then the
@@ -112,10 +111,17 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
   const networkFlags = policy === 'restricted'
     ? ['--unshare-net']
     : ['--share-net'];
+  if (opts.enableLoopback && policy !== 'restricted') {
+    throw new Error('bwrap loopback bridge requires an isolated network namespace');
+  }
 
   const flags = [
     '--unshare-all',
     ...networkFlags,
+    ...(opts.enableLoopback ? [
+      '--uid', '0', '--gid', '0',
+      '--cap-add', 'CAP_NET_ADMIN', '--cap-add', 'CAP_SETPCAP',
+    ] : []),
     '--die-with-parent',
     '--new-session',
     '--proc', '/proc',
@@ -148,8 +154,36 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
     }
     flags.push('--ro-bind', p, p);
   }
+  for (const p of opts.optionalReadOnlyPaths || []) {
+    if (!p || !isAbsolute(p)) {
+      throw new Error('wrapArgvWithBwrap opts.optionalReadOnlyPaths entries must be absolute paths');
+    }
+    flags.push('--ro-bind-try', p, p);
+  }
 
-  flags.push('--bind', opts.workspacePath, opts.workspacePath);
+  // A HOME the adapter keeps outside the workspace (a workspace seat's state)
+  // is bound writable on its own, so the child's transcripts and login stay
+  // out of the person's project.
+  for (const p of opts.writablePaths || []) {
+    if (!p || !isAbsolute(p)) {
+      throw new Error('wrapArgvWithBwrap opts.writablePaths entries must be absolute paths');
+    }
+    flags.push('--bind', p, p);
+  }
+
+  flags.push(opts.workspaceReadOnly ? '--ro-bind' : '--bind', opts.workspacePath, opts.workspacePath);
+  // Entries held read-only inside a writable workspace (its .git). Bound after
+  // the workspace so they land on top of it. In a writable workspace a missing
+  // entry cannot be protected — the child could create it, and a planted
+  // .git/hooks runs on the person's next git command — so the bind is strict
+  // there and bwrap fails rather than starts.
+  for (const entry of opts.readOnlyWorkspaceEntries || []) {
+    if (!entry || isAbsolute(entry) || entry.split(/[\\/]/).includes('..')) {
+      throw new Error('wrapArgvWithBwrap opts.readOnlyWorkspaceEntries entries must be relative names inside the workspace');
+    }
+    const p = join(opts.workspacePath, entry);
+    flags.push(opts.workspaceReadOnly ? '--ro-bind-try' : '--ro-bind', p, p);
+  }
   flags.push('--chdir', opts.workspacePath);
   flags.push('--setenv', 'HOME', opts.homePath || opts.workspacePath);
 

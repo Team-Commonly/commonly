@@ -2,6 +2,10 @@
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
 import { hostedCapsForOwner, userRunCeilingForOwner } from '../../services/hostedRuntimeService';
+import { projectSeatEnvironments, seatEnvironmentKey } from '../../services/seatEnvironmentProjection';
+const { ownKeyCapability } = require('../../services/agentProviderKey');
+const Machine = require('../../models/Machine');
+const AgentRuntimeObservation = require('../../models/AgentRuntimeObservation');
 const express = require('express');
 const auth = require('../../middleware/auth');
 const { AgentInstallation } = require('../../models/AgentRegistry');
@@ -51,20 +55,79 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       agentName: String(req.params.name).toLowerCase(),
       instanceId: normalizeInstanceId(req.query.instanceId),
       status: { $ne: 'uninstalled' },
-    }).lean();
+    }).sort({ createdAt: 1, _id: 1 }).lean();
     const manageable = installations.filter((entry: any) => canManage(entry, userId, isAdmin));
     const pods = await Pod.find({ _id: { $in: manageable.map((entry: any) => entry.podId) } })
       .select('name').lean();
     const names = new Map<string, string>(pods.map((pod: any) => [String(pod._id), String(pod.name)]));
     const visible = manageable.filter((entry: any) => names.has(String(entry.podId)));
-    const writable = visible.find((entry: any) => entry.status === 'active') || visible[0];
-    const quotaOwner = writable?.installedBy || userId;
+    const fallback = visible.find((entry: any) => entry.status === 'active') || visible[0];
+    const quotaOwner = fallback?.installedBy || userId;
+    // The daemon runs the oldest active declaration, not whichever pod this
+    // page happened to load first. Use its projection for both the displayed
+    // controls and the installation selected for edits.
+    const seat = (await projectSeatEnvironments({ installedBy: quotaOwner,
+      agentName: req.params.name }))
+      .get(seatEnvironmentKey(req.params.name, req.query.instanceId));
+    const source = visible.find((entry: any) => String(entry.podId) === seat?.sourcePodId);
+    const writable = fallback;
+    const runtime = seat?.runtime && typeof seat.runtime === 'object' ? seat.runtime as Record<string, unknown> : {};
+    const environment = seat?.environment || {};
+    const runtimeControls = Object.fromEntries(['model', 'effort']
+      .map((key) => [key, environment[key] ?? runtime[key]])
+      .filter(([, value]) => typeof value === 'string'));
+    for (const key of ['runtimeType', 'adapter']) {
+      if (typeof runtime[key] === 'string') runtimeControls[key] = runtime[key];
+    }
+    const declaredProvider = environment.provider as { id?: string } | undefined;
+    if (typeof declaredProvider?.id === 'string') runtimeControls.providerId = declaredProvider.id;
+    if (runtime.host === 'cloud' || runtime.host === 'byo') runtimeControls.host = runtime.host;
+    // The identity binding, rather than this pod's runtime declaration, tells
+    // us whether the daemon owns the next spawn. A Settings write can make an
+    // older pod the projection source even when it has no runtimeType field.
+    const binding = await User.findOne({
+      isBot: true,
+      'botMetadata.agentName': String(req.params.name).toLowerCase(),
+      'botMetadata.instanceId': normalizeInstanceId(req.query.instanceId),
+    }).select('botMetadata.machineId').lean();
+    const machine = binding?.botMetadata?.machineId ? await Machine.findOne({
+      machineId: binding.botMetadata.machineId, ownerUserId: quotaOwner,
+    }).select('runtimeInventory inventoryAt lastSeenAt agentStates').lean() : null;
+    const observation = binding && machine ? await AgentRuntimeObservation.findOne({
+      agentUserId: binding._id, machineId: binding.botMetadata.machineId,
+    }).select('connectedAt lastSeenAt lastSpawn lastSpawnOutcome turnRunning lastTurnAt -_id').lean() : null;
+    const runtimeManaged = Boolean(binding?.botMetadata?.machineId);
+    if (runtimeManaged && !runtimeControls.runtimeType) runtimeControls.runtimeType = 'wrapper';
+    const runtimeSavedControls = { ...runtimeControls };
+    // A standalone `agent run` reads its local token record. Hosted/native
+    // turns read their own run config (installation.config.model or the service
+    // default), not the daemon projection. Neither path can be attested by an
+    // installation runtime preference, so display only daemon-managed values.
+    if (!runtimeManaged) {
+      runtimeControls.model = '';
+      runtimeControls.effort = '';
+    }
     const [{ turnsPerDay }, userRunCeiling] = await Promise.all([
       hostedCapsForOwner(quotaOwner), userRunCeilingForOwner(quotaOwner),
     ]);
     return res.json({ turnCap: turnsPerDay, userRunCeiling, podCount: installations.length,
       activePodCount: installations.filter((entry: any) => entry.status === 'active').length,
       writablePodId: writable ? String(writable.podId) : null,
+      runtimeSourcePodId: !runtimeManaged ? null
+        : source ? String(source.podId)
+          : (!seat?.sourcePodId && writable ? String(writable.podId) : null),
+      runtimeControls,
+      runtimeSavedControls,
+      ownKeyCapability: runtimeManaged ? ownKeyCapability(runtime, environment) : { available: false, provider: null },
+      runtimeObservation: observation ? { ...observation, confirmed: null } : null,
+      processConnected: machine ? Boolean(machine.lastSeenAt && Date.now() - new Date(machine.lastSeenAt).getTime() < 90_000
+        && machine.agentStates?.some((entry: any) => entry.agentName === String(req.params.name).toLowerCase()
+          && entry.instanceId === normalizeInstanceId(req.query.instanceId) && entry.state === 'running')) : null,
+      runtimeInventory: machine?.runtimeInventory || [],
+      runtimeInventoryAt: machine?.inventoryAt || null,
+      machineLastSeenAt: machine?.lastSeenAt || null,
+      runtimeManaged,
+      runtimeEditable: runtimeManaged && (!seat?.sourcePodId || Boolean(source)),
       installations: visible
       .map((entry: any) => settings(entry, names.get(String(entry.podId)) || 'Pod')) });
   } catch (error) {

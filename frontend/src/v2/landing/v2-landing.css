@@ -339,14 +339,10 @@
 }
 /* The BYO add-computer pill (.v2-byo__copy), restated under this surface's own
    name: the two are styled separately even though the shape is the same.
-   Qualified as `.v2-root button.` exactly as .v2-byo__copy is, because the v2
-   button reset (`.v2-root button:not(.MuiButtonBase-root)`, v2.css:201) is
-   (0,2,1) and clears padding, border, background and colour: unqualified, this
-   rule is (0,1,0) and lost all four, so the pill computed as bare 27×18 text
-   with a 27×44 phone target (ux-lead's design gate on #1868; a scratch build
-   then measured the pill at 49.1×28, zh 46.5×28, and the target at 47.1×44).
-   Same tier as the reset, and this sheet loads after v2.css — the landing page
-   is a lazy route, so its chunk's CSS follows the shell's. */
+   Keep the explicit `.v2-root button.` scope so this surface's treatment is
+   intentional above the low-specificity global button default; the reset is
+   now wrapped in :where() and no longer clears these declarations merely by
+   being a later global rule. (ux-lead's design gate on #1868.) */
 .v2-root button.v2-landing__install-copy {
   flex: none;
   padding: 4px 10px;
@@ -497,10 +493,15 @@
   mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
 }
 
+/* The duration is the set's width over a fixed speed, so it moves with the
+   list. 42s carried the 11-logo set (1,763px at 1440: logo widths + 56px per
+   item) at ~42px/s. The 24-logo set measures 4,145px in a real browser at
+   1440, so 99s keeps the same ~42px/s. Re-measure the first set's width and
+   rescale this when the list changes. */
 .v2-landing__trusted-track {
   display: flex;
   width: max-content;
-  animation: v2-trusted-scroll 42s linear infinite;
+  animation: v2-trusted-scroll 99s linear infinite;
 }
 
 .v2-landing__trusted-marquee:hover .v2-landing__trusted-track {
@@ -514,16 +515,23 @@
   padding-right: 56px;
 }
 
+/* One grey ink for every logo, whatever colours the source file carries.
+   `brightness(0)` maps every opaque pixel to black and leaves alpha alone, so
+   a mark reads as its silhouette; `grayscale(1)` before it is a no-op on the
+   result and stays only to make the intent legible. It is what keeps white
+   artwork (OROZ, Fluxr's wordmark) visible on the light strip: a plain
+   grayscale left both white on white. The opacity then sets the grey. Hover
+   lifts the opacity only — restoring the source colours would make the white
+   files vanish again. */
 .v2-landing__trusted-logo {
   height: 26px;
   width: auto;
-  filter: grayscale(1);
+  filter: grayscale(1) brightness(0);
   opacity: 0.6;
-  transition: filter 0.2s ease, opacity 0.2s ease;
+  transition: opacity 0.2s ease;
 }
 
 .v2-landing__trusted-logo:hover {
-  filter: grayscale(0);
   opacity: 1;
 }
 
@@ -1553,3 +1561,31 @@
 :lang(zh) .v2-landing__cta-title {
   letter-spacing: 0;
 }
+
+/* FAQ: capped measure; items are separated by a hairline and a 30px gap, and
+   each question sits 8px above its answer. The question is body-weight, not
+   a card title, so the list reads as text rather than as a row of cards. */
+.v2-landing__faq {
+  margin: 0;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+.v2-landing__faq-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.v2-landing__faq-item + .v2-landing__faq-item {
+  border-top: 1px solid var(--v2-border-soft);
+  padding-top: 30px;
+}
+.v2-landing__faq-item dt {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--v2-text-primary);
+}
+.v2-landing__faq-item dt::first-letter { text-transform: uppercase; }
+.v2-landing__faq-item dd { margin: 0; }

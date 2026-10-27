@@ -3,7 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#2f6feb" />
+    <script src="/signup-source.js"></script>
+    <meta name="theme-color" content="#1d3fd1" />
     <!-- Every page load 404ed on /favicon.ico until 2026-08-05 — no icon link
          existed at all. SVG serves Chrome/Firefox/Edge; Safari ignores SVG
          favicons and will still probe /favicon.ico (harmless 404) until a
@@ -20,14 +21,14 @@
     <meta property="og:url" content="https://commonly.me/" />
     <meta property="og:title" content="Commonly — chat with your agents, ship real work" />
     <meta property="og:description" content="The open-source workspace where agents and teammates share one project memory — so nothing gets re-explained. Any runtime, your infra, no per-agent fees." />
-    <meta property="og:image" content="https://commonly.me/og-card.png?v=2" />
+    <meta property="og:image" content="https://commonly.me/og-card.png?v=3" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@sam_commonly" />
     <meta name="twitter:title" content="Commonly — chat with your agents, ship real work" />
     <meta name="twitter:description" content="The open-source workspace where you and your agents share one project memory — so nothing gets re-explained. Any runtime, your infra, no per-agent fees." />
-    <meta name="twitter:image" content="https://commonly.me/og-card.png?v=2" />
+    <meta name="twitter:image" content="https://commonly.me/og-card.png?v=3" />
     <!-- SEO_METADATA_END -->
     <!-- Progressive-enhancement gate for the prerendered SEO page below.
          The #seo-page markup ships inside #root on EVERY route, so
@@ -48,10 +49,10 @@
     <!-- SEO_GATE_END -->
     <style>
       #seo-page { display: none; }
-      #seo-page { box-sizing: border-box; min-height: 100vh; color: #111827; background: #f8f8fb; font: 16px/1.6 Inter, ui-sans-serif, system-ui, sans-serif; }
+      #seo-page { container-type: inline-size; box-sizing: border-box; min-height: 100vh; color: #111827; background: #f8f8fb; font: 16px/1.6 Inter, ui-sans-serif, system-ui, sans-serif; }
       #seo-page *, #seo-page *::before, #seo-page *::after { box-sizing: inherit; }
-      #seo-page a { color: #2456c8; text-decoration-thickness: 1px; text-underline-offset: 3px; }
-      #seo-page a:hover { color: #14306f; }
+      #seo-page a { color: #1d3fd1; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+      #seo-page a:hover { color: #0f2378; }
       #seo-page .seo-header, #seo-page main, #seo-page .seo-footer { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
       #seo-page .seo-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 72px; }
       #seo-page .seo-header nav { display: flex; flex-wrap: wrap; gap: 16px; }
@@ -65,13 +66,14 @@
       #seo-page .seo-hero { padding-top: 100px; padding-bottom: 100px; }
       #seo-page .seo-lede { color: #4b5563; font-size: 1.15rem; }
       #seo-page .seo-byline { color: #7b8494; font-size: .875rem; line-height: 1.7; }
-      #seo-page .seo-kicker { margin-bottom: 10px; color: #2456c8; font-size: .78rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+      #seo-page .seo-kicker { margin-bottom: 10px; color: #1d3fd1; font-size: .78rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
       #seo-page .seo-actions { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-top: 28px; }
-      #seo-page .seo-primary { display: inline-block; border-radius: 999px; padding: 10px 18px; color: #fff; background: #2f6feb; font-weight: 800; text-decoration: none; }
-      #seo-page .seo-primary:hover { color: #fff; background: #1f55c9; }
+      #seo-page .seo-primary { display: inline-block; border-radius: 999px; padding: 10px 18px; color: #fff; background: #1d3fd1; font-weight: 800; text-decoration: none; }
+      #seo-page .seo-primary:hover { color: #fff; background: #1633a8; }
       #seo-page .seo-install { color: #4b5563; }
       #seo-page .seo-install code { display: inline-block; overflow-wrap: anywhere; padding: 10px 12px; border: 1px solid #eef0f6; border-radius: 8px; color: #111827; background: #f4f3f8; }
-      #seo-page .seo-band { width: 100%; max-width: none; margin-left: calc((100vw - min(1120px, calc(100vw - 40px))) / -2); padding-right: max(20px, calc((100vw - 1120px) / 2)); padding-left: max(20px, calc((100vw - 1120px) / 2)); color: #14306f; background: #e8efff; }
+      /* Use the shell's content width, excluding any vertical scrollbar. */
+      #seo-page .seo-band { width: 100cqw; max-width: none; margin-left: calc((100cqw - min(1120px, calc(100cqw - 40px))) / -2); padding-right: max(20px, calc((100cqw - 1120px) / 2)); padding-left: max(20px, calc((100cqw - 1120px) / 2)); color: #0f2378; background: #e9edfb; }
       #seo-page .seo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
       #seo-page .seo-card { padding: 24px; border: 1px solid #eef0f6; border-radius: 12px; background: #fff; }
       #seo-page .seo-card p:last-child, #seo-page .seo-card ul:last-child { margin-bottom: 0; }

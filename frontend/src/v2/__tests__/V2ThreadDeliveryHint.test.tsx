@@ -197,6 +197,9 @@ describe('V2Thread agent delivery hint', () => {
     ['a wake-on-message agent was woken (#914)', {
       enqueued: 0, implicit: [], agentsInPod: 1, woken: 1,
     }],
+    ['a plain reply reached an agent through the reply edge (TASK-383)', {
+      enqueued: 0, implicit: ['guide'], agentsInPod: 1,
+    }],
     ['the backend omits delivery metadata', undefined],
   ])('stays hidden when %s', async (_label, agentDelivery) => {
     const response = makeMessage('ordinary send', agentDelivery);

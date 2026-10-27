@@ -58,6 +58,14 @@ const reqWith = (props, requiredKeys) => ({ ...required(props), required: requir
 
 const STRING = { type: 'string' };
 const INT = { type: 'integer' };
+const normalizePullRequestUrl = (value) => {
+  const url = typeof value === 'string' ? value.split(/[?#]/, 1)[0] : '';
+  const match = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9]\d*$/.exec(url);
+  if (!match || match[0] !== url || new URL(url).href !== url) {
+    throw new Error('prUrl must be https://github.com/<owner>/<repo>/pull/<n>');
+  }
+  return url;
+};
 const CLAIM_OUTCOME = { type: 'string', enum: ['declined', 'completed'] };
 const DECISION_CLASS = { type: 'string', enum: ['strategy', 'implementation', 'prioritization'] };
 const DECISION_OPTION = {
@@ -176,11 +184,13 @@ export const buildTools = (config) => {
         threadRootId: STRING,
         continueAnyway: { type: 'boolean' },
         metadata: { type: 'object', additionalProperties: true },
+        messageType: { type: 'string', enum: ['text', 'card'] },
+        payload: { type: 'object', description: 'UI card only: {kind:"ui",v:1,lang:"openui@1",catalogId,catalogRev,catalogHash,source}. Use catalogId:"commonly.ui", catalogRev:1, catalogHash:"sha256:bb8b4de07f90c06ee48f254d86478b5bd347c738b3e86cf65e2f32e26534db57". Requires messageType card and content text fallback; unknown catalogue revisions return 400.', additionalProperties: true },
       }, ['podId', 'content']),
-      call: wrap(async ({ podId, content, replyToMessageId, threadRootId, metadata, continueAnyway }) => request(config, {
+      call: wrap(async ({ podId, content, replyToMessageId, threadRootId, metadata, continueAnyway, messageType, payload }) => request(config, {
         method: 'POST',
         path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/messages`,
-        body: { content, replyToMessageId, threadRootId, metadata, continueAnyway },
+        body: { content, replyToMessageId, threadRootId, metadata, continueAnyway, messageType, payload },
       })),
     },
     {
@@ -206,6 +216,22 @@ export const buildTools = (config) => {
         path: `/api/agents/runtime/messages/${encodeURIComponent(messageId)}/claim`,
         body: outcome === undefined ? undefined : { outcome },
       })),
+    },
+    {
+      name: 'commonly_checkpoint_event',
+      description: 'Checkpoint ONE inbox event only after tool-side work is committed (including a reply posted through a tool), or a deliberate NO_REPLY. Never checkpoint an answer held for final CLI output: the wrapper must post that reply before acknowledging the item. This durably acknowledges that event now, so a later turn timeout does not replay it. Use only the eventId and deliveryId supplied together in the current inbox item. Never checkpoint unseen or unfinished work. Release any message claim with its correct completed/declined outcome first. A failed call is not a checkpoint; leave the item pending. This posts no chat message and does not complete a task.',
+      inputSchema: reqWith({ eventId: { type: 'string', minLength: 1 }, deliveryId: { type: 'string', minLength: 1 } }, ['eventId', 'deliveryId']),
+      call: wrap(async ({ eventId, deliveryId }) => {
+        if (typeof eventId !== 'string' || !eventId.trim()
+          || typeof deliveryId !== 'string' || !deliveryId.trim()) {
+          throw new Error('eventId and deliveryId from the current inbox item are required');
+        }
+        return request(config, {
+          method: 'POST',
+          path: `/api/agents/runtime/events/${encodeURIComponent(eventId)}/ack`,
+          body: { deliveryId, result: { outcome: 'acknowledged', reason: 'handled-checkpoint' } },
+        });
+      }),
     },
     {
       name: 'commonly_get_messages',
@@ -341,7 +367,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_get_tasks',
-      description: 'List tasks in a pod. Filter by `assignee` (e.g. "nova") and/or `status` (e.g. "pending,claimed,blocked" — comma-separated).',
+      description: 'List tasks in a pod, ordered by priority (P0 highest through P3), then task number. Filter by `assignee` (e.g. "nova") and/or `status` (e.g. "pending,claimed,blocked" — comma-separated).',
       inputSchema: reqWith({
         podId: STRING,
         assignee: STRING,
@@ -362,6 +388,7 @@ export const buildTools = (config) => {
         assignee: STRING,
         dep: STRING,
         parentTask: STRING,
+        priority: { type: 'string', enum: ['P0', 'P1', 'P2', 'P3'], description: 'P0 is highest; defaults to P2.' },
         source: STRING,
         sourceRef: STRING,
       }, ['podId', 'title']),
@@ -373,12 +400,22 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_claim_task',
-      description: 'Claim a pending or blocked task — atomic: exactly one claimant wins. Claiming a blocked task resumes it into active work. The claim is a ~30-minute renewable LEASE, not a tenure (ADR-018 D4): call again to renew while genuinely working; a lapsed lease makes the task claimable by peers, so a dead claimant never holds work forever. A 409 names the live holder and when their lease frees. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to claim despite them.',
+      description: 'Choose the highest-priority eligible row from commonly_get_tasks unless explicitly directed to another task. Claim a pending or blocked task — atomic: exactly one claimant wins. Claiming a blocked task resumes it into active work. The claim is a ~30-minute renewable LEASE, not a tenure (ADR-018 D4): call again to renew while genuinely working; a lapsed lease makes the task claimable by peers, so a dead claimant never holds work forever. A 409 names the live holder and when their lease frees. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to claim despite them.',
       inputSchema: reqWith({ podId: STRING, taskId: STRING, continueAnyway: { type: 'boolean' } }, ['podId', 'taskId']),
       call: wrap(async ({ podId, taskId, continueAnyway }) => request(config, {
         method: 'POST',
         path: `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}/claim`,
         body: { continueAnyway },
+      })),
+    },
+    {
+      name: 'commonly_watch_task',
+      description: 'Follow or unfollow a task as yourself. Updates appear in your digest; following never wakes an agent or claims work.',
+      inputSchema: reqWith({ podId: STRING, taskId: STRING, following: { type: 'boolean' } }, ['podId', 'taskId', 'following']),
+      call: wrap(async ({ podId, taskId, following }) => request(config, {
+        method: 'POST',
+        path: `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}/watch`,
+        body: { following },
       })),
     },
     {
@@ -398,18 +435,27 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_update_task',
-      description: 'Append an update note to a task without changing status — visible in the task drawer history. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to update despite them.',
+      description: 'Append an update note and optionally set priority (P0 highest through P3), without changing status — visible in the task drawer history. Optionally set prUrl to a GitHub pull request URL before appending the note. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to update despite them.',
       inputSchema: reqWith({
         podId: STRING,
         taskId: STRING,
         text: STRING,
+        priority: { type: 'string', enum: ['P0', 'P1', 'P2', 'P3'] },
+        prUrl: STRING,
         continueAnyway: { type: 'boolean' },
       }, ['podId', 'taskId', 'text']),
-      call: wrap(async ({ podId, taskId, text, continueAnyway }) => request(config, {
-        method: 'POST',
-        path: `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}/updates`,
-        body: { text, continueAnyway },
-      })),
+      call: wrap(async ({ podId, taskId, text, priority, prUrl, continueAnyway }) => {
+        const taskPath = `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}`;
+        if (prUrl !== undefined) {
+          const normalized = normalizePullRequestUrl(prUrl);
+          await request(config, { method: 'PATCH', path: taskPath, body: { prUrl: normalized } });
+        }
+        return request(config, {
+          method: 'POST',
+          path: `${taskPath}/updates`,
+          body: { text, priority, continueAnyway },
+        });
+      }),
     },
     {
       name: 'commonly_create_pod',
@@ -607,5 +653,22 @@ export const buildTools = (config) => {
     // as the machine's OWN GitHub identity rather than ours, and it supports
     // line-level review comments, which these tools never did.
   ];
-  return tools;
+  // A model can call a tool without an argument its schema requires; MCP
+  // clients do not enforce `required`. Interpolated into a path, a missing
+  // podId becomes the literal "undefined" and the backend answers 500, which
+  // tells the caller nothing. Refuse the call here and name the argument.
+  return tools.map((tool) => {
+    const keys = tool.inputSchema?.required || [];
+    if (keys.length === 0) return tool;
+    return {
+      ...tool,
+      call: async (args = {}, ...rest) => {
+        const missing = keys.filter((key) => args?.[key] === undefined || args?.[key] === null || args?.[key] === '');
+        if (missing.length > 0) {
+          return err(new Error(`${tool.name}: missing required argument${missing.length > 1 ? 's' : ''} ${missing.join(', ')}`));
+        }
+        return tool.call(args, ...rest);
+      },
+    };
+  });
 };

@@ -1,5 +1,6 @@
 // Agent install route — extracted from registry.js (GH#112)
 // Handles: POST /install
+const { copyInstallHandoffMemory } = require('../../services/installHandoffMemory');
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
@@ -24,7 +25,7 @@ const {
   AGENT_IDENTITY_CONFLICT_CODE?: string;
 };
 const AgentMessageService = require('../../services/agentMessageService');
-const { deriveAgentState } = require('../../services/agentStateService');
+const { deriveAgentState, runInstructionFor } = require('../../services/agentStateService');
 const FirstContactService = require('../../services/firstContactService');
 const HostedRuntime = require('../../services/hostedRuntimeService');
 const HostedEngine = require('../../services/hostedEngine');
@@ -152,7 +153,15 @@ const findExistingAgentInstance = async (agentName: any, instanceId: any) => {
  * POST /api/registry/install
  * Install an agent to a pod
  */
+// Clients must discover this before posting to an older server, which would
+// otherwise ignore memoryFrom and install before reporting an unsupported copy.
+installRouter.get('/install/memory-handoff', installRateLimit, auth, (_req: any, res: any) => {
+  res.json({ installTimeMemoryHandoff: true });
+});
+
 installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), installRateLimit, auth, async (req: any, res: any) => {
+  let handoffRegistryClaim: { id: unknown; agentName: string; userId: unknown; version: number } | null = null;
+  let handoffFinished = false;
   try {
     const {
       agentName, podId, version, config = {}, scopes = [], instanceId, displayName, gatewayId, description,
@@ -347,7 +356,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         context: { required: [], optional: [] },
         runtime: { type: 'standalone', connection: 'rest' },
       };
-      agent = await AgentRegistry.create({
+      const registryData = {
         agentName: synthManifest.name,
         displayName: String(displayName || agentName),
         description: synthManifest.description,
@@ -357,7 +366,13 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         registry: 'private',
         publisher: { userId, name: resolveUsername(req) },
         ephemeral: true,
-      });
+      };
+      // The unique registry row claims ownership BEFORE private memory is
+      // written under this name. An unsaved document is not a claim.
+      agent = await AgentRegistry.create(registryData);
+      if (req.body.memoryFrom !== undefined) {
+        handoffRegistryClaim = { id: agent._id, agentName: agent.agentName, userId, version: agent.__v };
+      }
       console.log('[cap self-serve-install]', {
         user: String(userId),
         pod: String(podId),
@@ -373,7 +388,43 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       status: 'active',
     });
 
+    const copyMemory = async () => {
+      if (req.body.memoryFrom !== undefined) {
+        // Fence cleanup against another in-flight handoff. A stale reader must
+        // touch the persisted claim before writing memory, or refuse if the
+        // claim was released. The creator only releases its own untouched revision.
+        const claimed = await AgentRegistry.findOneAndUpdate({
+          _id: agent._id,
+          ...(handoffRegistryClaim ? { __v: handoffRegistryClaim.version } : {}),
+        }, { $inc: { __v: 1 } }, { new: true }).select('__v').lean();
+        if (!claimed) throw Object.assign(new Error('Agent name claim changed; retry attach'), { status: 409 });
+        if (handoffRegistryClaim) handoffRegistryClaim.version = claimed.__v;
+      }
+      return copyInstallHandoffMemory({
+        source: req.body.memoryFrom, agentName: safeAgentName, instanceId: normalizedInstanceId,
+        userId, registryOwner: agent.publisher?.userId, runtime: normalizeConfigMap(config)?.runtime,
+      });
+    };
+
     if (existingInPod) {
+      if (req.body.resumeExisting === true) {
+        const storedRuntime = normalizeConfigMap(existingInPod.config)?.runtime;
+        const requestedRuntime = normalizeConfigMap(config)?.runtime;
+        // Retry a partially completed local handoff, without changing an
+        // installation's owner, runtime binding, configuration or scopes.
+        if (String(existingInPod.installedBy) !== String(userId)
+          || storedRuntime?.host !== 'byo' || requestedRuntime?.host !== 'byo'
+          || !storedRuntime?.adapter || storedRuntime.adapter !== requestedRuntime?.adapter
+          || storedRuntime.runtimeType !== requestedRuntime?.runtimeType) {
+          return res.status(409).json({ error: 'Existing installation does not match this local handoff' });
+        }
+        const memoryCopy = await copyMemory();
+        return res.json({ resumed: true, memoryCopy, installation: {
+          _id: existingInPod._id, agentName: existingInPod.agentName,
+          instanceId: existingInPod.instanceId, podId: existingInPod.podId,
+          displayName: existingInPod.displayName,
+        } });
+      }
       return res.status(400).json({ error: 'Agent already installed in this pod' });
     }
 
@@ -662,6 +713,9 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       effectiveDisplayName = agent.displayName;
     }
 
+    const memoryCopy = await copyMemory();
+    handoffFinished = true;
+
     // Identity before the installation row (TASK-133 b): a refused identity must
     // not leave an AgentInstallation behind, and that refusal is the one error in
     // this block that is not best-effort. Probed first, a 409 writes nothing.
@@ -740,7 +794,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       }
     }
 
-    // ADR-018 D8.1: an agent a person brings into a pod wakes on every human
+    // ADR-018 D8.1 (2026-10-21): an agent a person brings into a pod wakes on every human
     // message by default (services/wakeDefaultService.ts).
     const wakeDefault = personAgentWakeDefault(installConfig);
     if (wakeDefault) Object.assign(installConfig, wakeDefault);
@@ -923,7 +977,13 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         // been announced as dead. Same identity match the pod roster uses
         // (routes/pods.ts:437).
         let state = 'unknown';
-        let fixCommand = `commonly agent run ${safeAgentName}`;
+        // The default is what the seat's own runtime needs. It used to be the
+        // BYO command for every seat, so a webhook agent's intro told its
+        // owner to run a command that starts the wrong program.
+        let fixCommand: string | null = runInstructionFor({
+          agentName: safeAgentName,
+          config: normalizeConfigMap(installation.config) || {},
+        });
         try {
           const botRow = await User.findOne({
             isBot: true,
@@ -1012,13 +1072,36 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         scopes: installation.scopes,
         runtime: sanitizeRuntimeConfig(installConfig.runtime) || null,
       },
+      memoryCopy,
       sharedIdentity: isReusingExistingAgent,
       otherPods: otherPodIds,
       hasExistingRuntimeToken: globalAgent.agentUser?.agentRuntimeTokens?.length > 0,
     });
   } catch (error) {
+    if (handoffRegistryClaim && !handoffFinished) {
+      try {
+        // Only roll back the claim made by THIS request. Existing/published
+        // rows and any name with a retained installation must survive.
+        const inUse = await AgentInstallation.countDocuments({ agentName: handoffRegistryClaim.agentName });
+        if (!inUse) {
+          await AgentRegistry.deleteOne({
+            _id: handoffRegistryClaim.id,
+            __v: handoffRegistryClaim.version,
+            'publisher.userId': handoffRegistryClaim.userId,
+            ephemeral: true,
+          });
+        }
+      } catch (cleanupError) {
+        console.error('[install] handoff claim cleanup failed:', (cleanupError as Error).message);
+        return res.status(503).json({
+          error: 'Memory handoff failed and its name claim could not be released; retry attach',
+        });
+      }
+    }
     console.error('Error installing agent:', error);
-    res.status(500).json({ error: (error as any).message || 'Failed to install agent' });
+    const status = (error as { status?: number }).status;
+    res.status(status === 400 || status === 403 || status === 409 ? status : 500)
+      .json({ error: (error as Error).message || 'Failed to install agent' });
   }
 });
 

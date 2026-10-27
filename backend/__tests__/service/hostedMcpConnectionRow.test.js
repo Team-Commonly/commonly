@@ -51,6 +51,8 @@ const RECORD_KEYS = {
   'config.credentialRef': 'secret-access-1',
   'config.refreshTokenRef': 'secret-refresh-1',
   'config.refreshGeneration': 3,
+  'config.authGeneration': 2,
+  'config.credentialAuthGeneration': 1,
   'config.credentialHint': 'a…1',
   // The two keys the removal step writes. They were absent from this list when
   // they shipped, and absent from the schema's declaration too — which is how a

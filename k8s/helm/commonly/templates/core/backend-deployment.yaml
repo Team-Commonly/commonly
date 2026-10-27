@@ -1,13 +1,18 @@
-{{- if .Values.backend.enabled }}
+{{- define "commonly.backend.deployment" -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: backend
+  name: {{ if .worker }}backend-worker{{ else }}backend{{ end }}
   namespace: {{ include "commonly.namespace" . }}
   labels:
-    {{- include "commonly.backend.labels" . | nindent 4 }}
+    {{- if .worker }}{{ include "commonly.backendWorker.labels" . | nindent 4 }}{{ else }}{{ include "commonly.backend.labels" . | nindent 4 }}{{ end }}
 spec:
-  replicas: {{ .Values.backend.replicaCount }}
+  replicas: {{ if .worker }}{{ if .Values.backend.worker.startPaused }}0{{ else }}1{{ end }}{{ else }}{{ .Values.backend.replicaCount }}{{ end }}
+  {{- if .worker }}
+  # A rolling surge would briefly run two schedulers and two Discord gateways.
+  strategy:
+    type: Recreate
+  {{- else }}
   # Overlap is safe: the catalog is ephemeral, ObjectStore defaults to Mongo,
   # and request/session state is externalized to Mongo, PostgreSQL, and Redis.
   minReadySeconds: 10
@@ -16,16 +21,17 @@ spec:
     rollingUpdate:
       maxUnavailable: 0
       maxSurge: 1
+  {{- end }}
   selector:
     matchLabels:
-      {{- include "commonly.backend.selectorLabels" . | nindent 6 }}
+      {{- if .worker }}{{ include "commonly.backendWorker.selectorLabels" . | nindent 6 }}{{ else }}{{ include "commonly.backend.selectorLabels" . | nindent 6 }}{{ end }}
   template:
     metadata:
       labels:
-        {{- include "commonly.backend.selectorLabels" . | nindent 8 }}
+        {{- if .worker }}{{ include "commonly.backendWorker.selectorLabels" . | nindent 8 }}{{ else }}{{ include "commonly.backend.selectorLabels" . | nindent 8 }}{{ end }}
     spec:
       serviceAccountName: {{ .Values.rbac.serviceAccount.name }}
-      terminationGracePeriodSeconds: 30
+      terminationGracePeriodSeconds: 180
       {{- if and .Values.skillsCatalogStorage.enabled .Values.skillsCatalogStorage.bootstrapFromImage }}
       initContainers:
       - name: skills-catalog-bootstrap
@@ -64,10 +70,19 @@ spec:
         # Node Environment
         - name: NODE_ENV
           value: {{ .Values.backend.env.nodeEnv }}
+        {{- if .worker }}
+        - name: RUN_WORKER
+          value: "1"
+        {{- else if .Values.backend.worker.enabled }}
+        - name: RUN_WORKER
+          value: "0"
+        {{- end }}
         - name: PORT
           value: {{ .Values.backend.service.port | quote }}
         - name: HOSTED_MCP_HIDDEN_ENTRIES
           value: {{ .Values.hostedMcp.hiddenEntries | toJson | quote }}
+        - name: HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST
+          value: {{ .Values.hostedMcp.hiddenEntryUserAllowlist | default dict | toJson | quote }}
         {{- if .Values.errorTracking.enabled }}
         - name: SENTRY_DSN
           valueFrom:
@@ -275,12 +290,6 @@ spec:
               name: api-keys
               key: openai-api-key
               optional: true
-        - name: ANTHROPIC_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: anthropic-api-key
-              optional: true
 
         {{- if .Values.discord.enabled }}
 
@@ -350,12 +359,6 @@ spec:
         - name: OAUTH_CALLBACK_BASE_URL
           value: {{ .Values.backend.env.oauthCallbackBaseUrl | quote }}
         {{- end }}
-        - name: GITHUB_PAT
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: GITHUB_PAT
-              optional: true
         - name: GITHUB_APP_ID
           valueFrom:
             secretKeyRef:
@@ -549,6 +552,15 @@ spec:
               name: api-keys
               key: litellm-master-key
               optional: true
+        {{- if .Values.litellm.serviceKeys.fromSecret }}
+        # Model calls use this budgeted key (TASK-555); the master key stays
+        # for key administration (agent key issuance, the budget alarm).
+        - name: LITELLM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: litellm-backend-key
+        {{- end }}
         - name: LITELLM_BASE_URL
           value: "http://litellm:4000"
         # injection-guard only (Sam, 2026-09-01): openai-moderation-enforce
@@ -697,11 +709,17 @@ spec:
           periodSeconds: {{ .Values.backend.readinessProbe.periodSeconds }}
         {{- end }}
 
-      {{- if and .Values.backend.nodeSelector (gt (len .Values.backend.nodeSelector) 0) }}
+      {{- if and .worker .Values.backend.worker.nodeSelector (gt (len .Values.backend.worker.nodeSelector) 0) }}
+      nodeSelector:
+        {{- toYaml .Values.backend.worker.nodeSelector | nindent 8 }}
+      {{- else if and (not .worker) .Values.backend.nodeSelector (gt (len .Values.backend.nodeSelector) 0) }}
       nodeSelector:
         {{- toYaml .Values.backend.nodeSelector | nindent 8 }}
       {{- end }}
-      {{- if and .Values.backend.tolerations (gt (len .Values.backend.tolerations) 0) }}
+      {{- if and .worker .Values.backend.worker.tolerations (gt (len .Values.backend.worker.tolerations) 0) }}
+      tolerations:
+        {{- toYaml .Values.backend.worker.tolerations | nindent 8 }}
+      {{- else if and (not .worker) .Values.backend.tolerations (gt (len .Values.backend.tolerations) 0) }}
       tolerations:
         {{- toYaml .Values.backend.tolerations | nindent 8 }}
       {{- end }}
@@ -729,4 +747,7 @@ spec:
         configMap:
           name: skills-catalog
       {{- end }}
+{{- end -}}
+{{- if .Values.backend.enabled }}
+{{ include "commonly.backend.deployment" (merge (dict "worker" false) .) }}
 {{- end }}

@@ -89,6 +89,15 @@ export const getSession = (agentName, podId, { binding = null } = {}) => {
   return entry?.sessionId || null;
 };
 
+// The whole per-pod entry (sessionId, lastTurn, contextTokens), for the
+// at-wake recycle decision. getSession stays the resume-only reader.
+export const getSessionEntry = (agentName, podId, { binding = null } = {}) => {
+  if (!agentName || !podId) return null;
+  const entry = readAgent(agentName)[podId];
+  if (!entry || (binding !== null && entry.binding !== binding)) return null;
+  return entry;
+};
+
 // Read-only diagnostic projection used by the daemon operator surface. A
 // wrapper may serve several pods, so return the newest completed turn.
 export const getLastTurn = (agentName) => {
@@ -101,13 +110,14 @@ export const getLastTurn = (agentName) => {
     .at(-1) || null;
 };
 
-export const setSession = (agentName, podId, sessionId, { binding = null } = {}) => {
+export const setSession = (agentName, podId, sessionId, { binding = null, contextTokens = null } = {}) => {
   if (!agentName || !podId) return;
   const state = readAgent(agentName);
   state[podId] = {
     sessionId,
     lastTurn: new Date().toISOString(),
     ...(binding !== null ? { binding } : {}),
+    ...(Number.isFinite(contextTokens) ? { contextTokens } : {}),
   };
   writeAgent(agentName, state);
 };

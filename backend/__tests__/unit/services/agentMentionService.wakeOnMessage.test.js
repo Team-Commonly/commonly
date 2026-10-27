@@ -3,7 +3,7 @@
  * exercised through enqueueMentions, the module boundary).
  *
  * The contract under test:
- *  - opt-in only: `config.wakeOnMessage.enabled === true`, default OFF
+ *  - opt-in wakes; default-off installations receive a pending digest
  *  - unrouted messages wake opt-ins as `message.posted` with the inline frame
  *  - mention-enqueued targets are NOT double-delivered
  *  - an agent never wakes on its own post
@@ -69,6 +69,7 @@ const AgentProfile = require('../../../models/AgentProfile');
 const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const AgentEvent = require('../../../models/AgentEvent');
+const messageDeliveryModeService = require('../../../services/messageDeliveryModeService');
 
 const install = (agentName, { optIn = false, instanceId = 'default' } = {}) => ({
   agentName,
@@ -174,10 +175,12 @@ describe('wake-on-message (ADR-018 D8)', () => {
     });
 
     expect(res.woken).toEqual(['seat-a', 'seat-b']);
-    expect(wakeCalls().map((call) => call.agentName)).toEqual(['seat-a', 'seat-b']);
+    expect(wakeCalls().filter((call) => call.deliveryMode === 'wake').map((call) => call.agentName))
+      .toEqual(['seat-a', 'seat-b']);
+    expect(wakeCalls().find((call) => call.agentName === 'seat-c').deliveryMode).toBe('digest');
   });
 
-  test('default is OFF: installs without the flag are never woken', async () => {
+  test('default is OFF: installs without the flag get digest delivery without a wake', async () => {
     mockInstallations([install('seat-a'), install('seat-b')]);
 
     const res = await AgentMentionService.enqueueMentions({
@@ -188,11 +191,29 @@ describe('wake-on-message (ADR-018 D8)', () => {
     });
 
     expect(res.woken).toEqual([]);
-    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
-    // No pod-shape lookup: with no opt-in there is no wake fan-out, and D6.4
-    // adjacency looks at the pod only when the previous message is a recent
-    // agent post (here there is none).
-    expect(Pod.findById).not.toHaveBeenCalled();
+    expect(wakeCalls().map((call) => [call.agentName, call.deliveryMode]))
+      .toEqual([['seat-a', 'digest'], ['seat-b', 'digest']]);
+    expect(wakeCalls()[0].payload.content).toBe('nobody asked anyone anything');
+  });
+
+  test('an addressed lookup outage keeps ambient receipt without waking default-off seats', async () => {
+    mockInstallations([install('seat-a'), install('seat-b', { optIn: true })]);
+    const lookup = jest.spyOn(messageDeliveryModeService, 'addressedMessageTargets')
+      .mockRejectedValue(new Error('lookup unavailable'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const res = await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'TASK-414 update', id: 'msg-outage' },
+        userId: 'user-1', username: 'alice',
+      });
+      expect(res.woken).toEqual(['seat-b']);
+      expect(wakeCalls().map((call) => [call.agentName, call.deliveryMode]))
+        .toEqual([['seat-a', 'digest'], ['seat-b', 'wake']]);
+    } finally {
+      lookup.mockRestore();
+      warn.mockRestore();
+    }
   });
 
   test('a mention-enqueued target is not double-delivered; other opt-ins still wake', async () => {
@@ -246,10 +267,10 @@ describe('wake-on-message (ADR-018 D8)', () => {
     });
 
     expect(res.woken).toEqual([]);
-    expect(wakeCalls()).toHaveLength(0);
+    expect(wakeCalls()).toEqual([expect.objectContaining({ agentName: 'seat-b', deliveryMode: 'digest' })]);
     // The dampener counted the WAKE event type, not mentions.
     expect(AgentEvent.countDocuments).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'message.posted', agentName: 'seat-b' }),
+      expect.objectContaining({ type: 'message.posted', agentName: 'seat-b', deliveryMode: { $ne: 'digest' } }),
     );
   });
 
@@ -291,6 +312,7 @@ describe('wake-on-message (ADR-018 D8)', () => {
         podId: 'pod-1', message: { content: 'Scout says welcome', id: 'msg-h2' }, userId: 'bot-1', username: 'scout',
       });
       expect(res.woken).toEqual(['seat-b']);
+      expect(wakeCalls().find((call) => call.agentName === 'sam-claude').deliveryMode).toBe('digest');
     });
 
     test('an unknown sender is not a known human, so it doesn\'t wake either', async () => {
@@ -300,6 +322,7 @@ describe('wake-on-message (ADR-018 D8)', () => {
         podId: 'pod-1', message: { content: 'who am I', id: 'msg-h3' }, userId: 'ghost', username: 'ghost',
       });
       expect(res.woken).toEqual([]);
+      expect(wakeCalls().find((call) => call.agentName === 'sam-claude').deliveryMode).toBe('digest');
     });
   });
 

@@ -1,11 +1,12 @@
 /** Goose 1.54.0 wrapper. Public seats wait for TASK-236's deny-by-default proof. */
+import { requireSeatModel } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { buildMemoryPreamble } from '../memory-bridge.js';
-import { effectiveSandboxTrust, validateEnvironmentSpec } from '../environment.js';
+import { effectiveSandboxTrust, refuseWorkspaceTrust, validateEnvironmentSpec } from '../environment.js';
 import { writeCredentialFile } from '../credential-file.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn } from '../mcp-home.js';
@@ -16,7 +17,6 @@ import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 export const TESTED_GOOSE_VERSIONS = Object.freeze(['1.54.0']);
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const TERMINATION_GRACE_MS = 5000;
-const DEFAULT_MODEL = 'deepseek-v4-flash';
 const DEFAULT_PROVIDER_HOST = 'https://litellm.commonly.me';
 const DEFAULT_PROVIDER_KEY = 'COMMONLY_LITELLM_KEY';
 const PLACEHOLDER_RE = /\$\{(COMMONLY_[A-Z_]+)\}/g;
@@ -24,6 +24,7 @@ const SAFE_ENV = /^(?:PATH|LANG|LC_[A-Z_]+|TERM|USER|LOGNAME|NO_COLOR|CI|SSL_CER
 
 export const assertNoSandboxDeclared = (environment = {}) => {
   const sandbox = environment?.sandbox || {};
+  refuseWorkspaceTrust(sandbox, 'goose');
   if (effectiveSandboxTrust(sandbox.trust) === 'public') {
     throw new Error('goose adapter: public-trust seats are not supported until the deny-by-default attack test passes');
   }
@@ -174,6 +175,7 @@ const runGoose = ({ binary, args, cwd, env, timeoutMs, credentials, spawnImpl = 
 });
 
 export default {
+  requiresModel: true,
   name: 'goose',
   providerKeyEnv: DEFAULT_PROVIDER_KEY,
   supportsProvider: true,
@@ -193,6 +195,7 @@ export default {
   },
 
   async spawn(prompt, ctx = {}) {
+    const seatModel = requireSeatModel(ctx.environment, 'goose', true);
     const keyFile = await this.validateEnvironment(ctx.environment, ctx.cwd);
     const sourceEnv = ctx.env || process.env;
     const configured = ctx.environment?.provider;
@@ -203,7 +206,7 @@ export default {
     if (!/^https?:$/.test(baseUrl.protocol) || baseUrl.username || baseUrl.password || baseUrl.search || baseUrl.hash) {
       throw new Error('goose adapter: provider.baseURL must be a plain HTTP(S) URL');
     }
-    const model = ctx.environment?.model || DEFAULT_MODEL;
+    const model = seatModel;
     const binary = ctx._binaryPath || 'goose';
     const version = ctx._version || versionOf(spawnSync(binary, ['--version'], { encoding: 'utf8', timeout: 5000 }).stdout);
     if (!TESTED_GOOSE_VERSIONS.includes(version)) {

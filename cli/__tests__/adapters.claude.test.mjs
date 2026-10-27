@@ -87,7 +87,7 @@ describe('claude adapter — detect()', () => {
 describe('claude adapter — spawn()', () => {
   test('first turn (no persisted id): mints UUID + passes --session-id to CREATE the session', async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: 'ok' });
-    const res = await claude.spawn('hi', { sessionId: null, _spawnImpl: impl });
+    const res = await claude.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl });
 
     // UUID v4 shape: 8-4-4-4-12 hex groups.
     expect(res.newSessionId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
@@ -101,7 +101,7 @@ describe('claude adapter — spawn()', () => {
     // error with "Session ID ... is already in use". We must use `--resume`
     // on subsequent turns so the conversation continues instead.
     const { impl, calls } = makeSpawnImpl({ stdout: 'hello\n' });
-    const res = await claude.spawn('hello world', {
+    const res = await claude.spawn('hello world', { environment: { model: 'test-model' },
       sessionId: 'sid-123',
       cwd: '/tmp/commonly-agents/my-claude',
       env: {},
@@ -120,7 +120,7 @@ describe('claude adapter — spawn()', () => {
     expect(calls[0].args[0]).toBe('-p');
     expect(calls[0].args[1]).toContain('hello world');
     expect(calls[0].args.slice(2)).toEqual(
-      ['--output-format', 'text', '--resume', 'sid-123'],
+      ['--output-format', 'text', '--resume', 'sid-123', '--model', 'test-model'],
     );
     // Explicit: must NOT use --session-id on resume path — the whole point.
     expect(calls[0].args).not.toContain('--session-id');
@@ -128,7 +128,7 @@ describe('claude adapter — spawn()', () => {
 
   test('adds ~/.local/bin to the child PATH for launchd environments', async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: 'ok' });
-    await claude.spawn('hello', {
+    await claude.spawn('hello', { environment: { model: 'test-model' },
       sessionId: 'sid-123',
       env: { PATH: '/opt/homebrew/bin:/usr/bin' },
       _spawnImpl: impl,
@@ -155,7 +155,7 @@ describe('claude adapter — spawn()', () => {
       return fakeChild({ stdout: 'recovered\n' });
     };
 
-    const res = await claude.spawn('hello', {
+    const res = await claude.spawn('hello', { environment: { model: 'test-model' },
       sessionId: 'abc-123',
       _spawnImpl: impl,
     });
@@ -170,6 +170,7 @@ describe('claude adapter — spawn()', () => {
     // Recovery creates an underlying session, so it must receive the same
     // fresh-session memory cues as an initial spawn.
     expect(calls[1].args[1]).toContain('=== Fresh session ===');
+    expect(calls[1].args[1]).toContain('=== Working a row ===');
     // newSessionId returned is the fresh one so the wrapper persists it next turn
     expect(res.newSessionId).not.toBe('abc-123');
     expect(res.newSessionId).toMatch(/^[0-9a-f]{8}-/);
@@ -179,7 +180,7 @@ describe('claude adapter — spawn()', () => {
   test('does NOT self-heal on generic spawn errors — only session-ID poison-pills', async () => {
     const { impl, calls } = makeSpawnImpl({ stderr: 'some other error', code: 1 });
     await expect(
-      claude.spawn('x', { sessionId: 'sid-1', _spawnImpl: impl }),
+      claude.spawn('x', { environment: { model: 'test-model' }, sessionId: 'sid-1', _spawnImpl: impl }),
     ).rejects.toThrow(/some other error/);
     // Should be exactly 1 call — no retry for non-session errors.
     expect(calls).toHaveLength(1);
@@ -187,7 +188,7 @@ describe('claude adapter — spawn()', () => {
 
   test('prepends the memory preamble when ctx.memoryLongTerm is non-empty', async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: 'ok' });
-    await claude.spawn('current message', {
+    await claude.spawn('current message', { environment: { model: 'test-model' },
       sessionId: 'sid-1',
       memoryLongTerm: 'I remember the user prefers dark mode.',
       _spawnImpl: impl,
@@ -203,7 +204,7 @@ describe('claude adapter — spawn()', () => {
 
   test('a fresh Claude session receives read-first and durable-state cues', async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: 'ok' });
-    await claude.spawn('current message', {
+    await claude.spawn('current message', { environment: { model: 'test-model' },
       memoryLongTerm: 'open gate: #123',
       _spawnImpl: impl,
     });
@@ -215,13 +216,42 @@ describe('claude adapter — spawn()', () => {
     expect(promptArg).toContain("section: 'long_term'");
   });
 
+  // D48 (TASK-545) is done when a live seat's spawn argv shows these habits, so
+  // they are pinned on the argv here, not only on the shared helper.
+  test('a fresh private Claude seat is taught parallel reads and row slicing', async () => {
+    const { impl, calls } = makeSpawnImpl({ stdout: 'ok' });
+    await claude.spawn('current message', { environment: { model: 'test-model' },
+      memoryLongTerm: 'open gate: #123',
+      _spawnImpl: impl,
+    });
+
+    const promptArg = calls[0].args[1];
+    expect(promptArg).toContain('=== Working a row ===');
+    expect(promptArg).toContain('use the Agent tool');
+    expect(promptArg).toContain('commonly_create_task with parentTask');
+    expect(promptArg.indexOf('=== Working a row ===')).toBeLessThan(promptArg.indexOf('=== Current turn ==='));
+  });
+
+  test('a resumed Claude seat is not re-taught the habits its transcript holds', async () => {
+    const { impl, calls } = makeSpawnImpl({ stdout: 'ok' });
+    await claude.spawn('current message', { environment: { model: 'test-model' },
+      sessionId: 'sid-1',
+      memoryLongTerm: 'open gate: #123',
+      _spawnImpl: impl,
+    });
+
+    const promptArg = calls[0].args[1];
+    expect(promptArg).not.toContain('=== Working a row ===');
+    expect(promptArg).not.toContain('Agent tool');
+  });
+
   // Replaces an assertion that empty memory passed the prompt verbatim. That
   // made two different states byte-identical from inside the session — an agent
   // that has never saved anything, and a runtime with no memory bridge at all —
   // so a seat could not adopt a habit whose surface it had no evidence existed.
   test('empty memoryLongTerm still emits a cue naming the one readable section', async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: 'ok' });
-    await claude.spawn('just this', { sessionId: 'sid-1', memoryLongTerm: '', _spawnImpl: impl });
+    await claude.spawn('just this', { environment: { model: 'test-model' }, sessionId: 'sid-1', memoryLongTerm: '', _spawnImpl: impl });
     const promptArg = calls[0].args[1];
     expect(promptArg).not.toBe('just this');
     expect(promptArg).toContain('just this');
@@ -238,7 +268,7 @@ describe('claude adapter — spawn()', () => {
   // the argv the adapter actually spawns.
   test('null memoryLongTerm reaches the adapter as UNREADABLE, not as empty', async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: 'ok' });
-    await claude.spawn('just this', { sessionId: 'sid-1', memoryLongTerm: null, _spawnImpl: impl });
+    await claude.spawn('just this', { environment: { model: 'test-model' }, sessionId: 'sid-1', memoryLongTerm: null, _spawnImpl: impl });
     const promptArg = calls[0].args[1];
     expect(promptArg).toContain('unreadable');
     expect(promptArg).toContain('just this');
@@ -250,7 +280,7 @@ describe('claude adapter — spawn()', () => {
   test('rejects when claude exits non-zero, surfacing stderr', async () => {
     const { impl } = makeSpawnImpl({ stdout: '', stderr: 'auth error', code: 1 });
     await expect(
-      claude.spawn('x', { sessionId: 'sid-1', _spawnImpl: impl }),
+      claude.spawn('x', { environment: { model: 'test-model' }, sessionId: 'sid-1', _spawnImpl: impl }),
     ).rejects.toThrow(/claude exited with code 1.*auth error/);
   });
 
@@ -262,7 +292,7 @@ describe('claude adapter — spawn()', () => {
     proc.kill = jest.fn(() => queueMicrotask(() => proc.emit('close', null)));
     const impl = () => proc;
 
-    const p = claude.spawn('x', { sessionId: 'sid-1', timeoutMs: 20, _spawnImpl: impl });
+    const p = claude.spawn('x', { environment: { model: 'test-model' }, sessionId: 'sid-1', timeoutMs: 20, _spawnImpl: impl });
     await expect(p).rejects.toThrow(/timed out after 20ms/);
     expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
   });
@@ -288,28 +318,28 @@ describe('claude adapter — failure reporting', () => {
       code: 1,
     });
 
-    await expect(claude.spawn('hi', { sessionId: null, _spawnImpl: impl }))
+    await expect(claude.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl }))
       .rejects.toThrow(/usage limit reached/i);
   });
 
   test('still prefers stderr, and includes both when both are present', async () => {
     const { impl } = makeSpawnImpl({ stdout: 'partial output', stderr: 'boom', code: 1 });
 
-    await expect(claude.spawn('hi', { sessionId: null, _spawnImpl: impl }))
+    await expect(claude.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl }))
       .rejects.toThrow(/boom \| partial output/);
   });
 
   test('bounds the reported detail so a huge stdout cannot flood the log', async () => {
     const { impl } = makeSpawnImpl({ stdout: 'x'.repeat(50_000), stderr: '', code: 1 });
 
-    const err = await claude.spawn('hi', { sessionId: null, _spawnImpl: impl }).catch((e) => e);
+    const err = await claude.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl }).catch((e) => e);
     expect(err.message.length).toBeLessThan(2_100);
   });
 
   test('a successful spawn is unaffected — stdout is still the return value', async () => {
     const { impl } = makeSpawnImpl({ stdout: 'the answer', code: 0 });
 
-    const res = await claude.spawn('hi', { sessionId: null, _spawnImpl: impl });
+    const res = await claude.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl });
     expect(res.text).toBe('the answer');
   });
 });

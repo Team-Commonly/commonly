@@ -58,6 +58,7 @@ import {
 } from './hostedMcpIntakeService';
 import * as connectorSecrets from './connectorSecrets';
 import { HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_REFRESH_TOKEN } from './connectorSecretKinds';
+import { secretWriteGeneration } from './hostedMcpSecretGeneration';
 import { upstreamFetch } from './upstreamFetch';
 import { hostedVendorFetch } from './hostedVendorFetch';
 import { dcrClientForRow, refuseDcrClient } from './hostedMcpDcrRegistry';
@@ -100,6 +101,8 @@ export interface HostedMcpRow {
     credentialRef?: string;
     refreshTokenRef?: string;
     refreshGeneration?: number;
+    authGeneration?: number;
+    credentialAuthGeneration?: number;
     expiresAt?: Date | null;
   };
 }
@@ -139,14 +142,32 @@ interface CredentialDeps {
       id: unknown,
       from: number,
       now: Date,
+      authority: number | undefined,
+      publishedAuthority: number | undefined,
     ) => Promise<HostedMcpRow | null>;
-    /** Commit the winner's pair. Guarded on the generation it now holds. */
-    commit: (id: unknown, generation: number, fields: Record<string, unknown>) => Promise<void>;
+    /**
+     * Commit the winner's pair, guarded on its authorization and refresh generation. Resolves
+     * false when the guard matched nothing: the caller lost its fence, and its pair
+     * must not be served as the Connection's.
+     */
+    commit: (
+      id: unknown, generation: number, fields: Record<string, unknown>,
+      authority: number | undefined, publishedAuthority: number | undefined,
+    ) => Promise<boolean>;
     /** The winner's error mark. Guarded the same way, so only the generation holder can set it. */
-    markError: (id: unknown, generation: number, message: string) => Promise<void>;
+    markError: (
+      id: unknown, generation: number, message: string,
+      authority: number | undefined, publishedAuthority: number | undefined,
+    ) => Promise<void>;
   };
   sleep: (ms: number) => Promise<void>;
 }
+
+const refreshAuthorityFilter = (authority: number | undefined, publishedAuthority: number | undefined) => ({
+  'config.authGeneration': authority === undefined ? { $exists: false } : authority,
+  'config.credentialAuthGeneration': publishedAuthority === undefined
+    ? { $exists: false } : publishedAuthority,
+});
 
 /**
  * The row deps, as a factory so that a test can wrap ONE of them and leave the
@@ -159,10 +180,17 @@ interface CredentialDeps {
  */
 export const defaultRowDeps = (): CredentialDeps['row'] => ({
   findById: (id) => Integration.findById(id).lean() as unknown as Promise<HostedMcpRow | null>,
-  bumpGeneration: (id, from, now) => Integration.findOneAndUpdate(
+  bumpGeneration: (id, from, now, authority, publishedAuthority) => Integration.findOneAndUpdate(
     {
       _id: id,
+      status: 'connected',
       'config.refreshGeneration': from,
+      // /start advances authGeneration before the new callback has published
+      // credentials. Admit a refresh only for the authorization that published
+      // the pair the caller read; a pending or newer callback cannot lend its
+      // higher secret-write generation to the old refresh token.
+      ...refreshAuthorityFilter(authority, publishedAuthority),
+      'config.pendingAuth': { $exists: false },
       // The lease in its takeable states: never taken, already released (a
       // clear is a VALUE, so the field is present and null), and expired. The
       // first two are one condition in MongoDB — `$eq: null` matches a missing
@@ -184,16 +212,17 @@ export const defaultRowDeps = (): CredentialDeps['row'] => ({
     },
     { new: false },
   ).lean() as unknown as Promise<HostedMcpRow | null>,
-  commit: async (id, generation, fields) => {
-    await Integration.findOneAndUpdate(
-      { _id: id, 'config.refreshGeneration': generation },
+  commit: async (id, generation, fields, authority, publishedAuthority) => {
+    const updated = await Integration.findOneAndUpdate(
+      { _id: id, 'config.refreshGeneration': generation, ...refreshAuthorityFilter(authority, publishedAuthority) },
       { $set: fields },
       { new: true },
     );
+    return updated !== null;
   },
-  markError: async (id, generation, message) => {
+  markError: async (id, generation, message, authority, publishedAuthority) => {
     await Integration.findOneAndUpdate(
-      { _id: id, 'config.refreshGeneration': generation },
+      { _id: id, 'config.refreshGeneration': generation, ...refreshAuthorityFilter(authority, publishedAuthority) },
       {
         $set: {
           status: 'error',
@@ -415,8 +444,18 @@ export const credentialFor = async (
     return { token: await deps.secrets.get(liveRef), expiresAt: isoOrEmpty(row.config?.expiresAt) };
   }
 
+  // /start has reserved a newer authorization, but the stored pair still
+  // belongs to the one before it. No refresh of that pair may borrow the new
+  // authorization's write priority while its callback is in flight.
+  if (row.config?.credentialAuthGeneration !== undefined
+    && row.config.credentialAuthGeneration !== row.config.authGeneration) {
+    return loseTheRace({ deps, id });
+  }
+
   const generation = generationOf(row);
-  const won = await deps.row.bumpGeneration(id, generation, now);
+  const won = await deps.row.bumpGeneration(
+    id, generation, now, row.config?.authGeneration, row.config?.credentialAuthGeneration,
+  );
 
   if (!won) {
     return loseTheRace({ deps, id });
@@ -425,6 +464,11 @@ export const credentialFor = async (
   // We hold the fence from here on, so this is the value every write below — and
   // every mark — is guarded on.
   const nextGeneration = generation + 1;
+  // Reconnect resets refreshGeneration. Keep the winning admission's complete
+  // authorization identity through completion so a later authorization reusing
+  // this counter cannot accept this refresh's commit or error mark.
+  const authority = won.config?.authGeneration;
+  const publishedAuthority = won.config?.credentialAuthGeneration;
 
   const refreshTokenRef = row.config?.refreshTokenRef;
   if (!refreshTokenRef) {
@@ -440,7 +484,7 @@ export const credentialFor = async (
     // refresh token keeps the ref the row already holds (the commit below), so
     // this is only ever a grant that can no longer continue.
     const message = 'connection holds no refresh token and its access token has expired — reconnect to continue';
-    await deps.row.markError(id, nextGeneration, message);
+    await deps.row.markError(id, nextGeneration, message, authority, publishedAuthority);
     throw new HostedMcpCredentialError('credential_missing', message);
   }
 
@@ -458,7 +502,7 @@ export const credentialFor = async (
     if (failure.code === 'connection_error' || failure.code === 'reconnect_required') {
       // Only the generation holder may say a Connection is over, and it says so
       // only on the vendor's own refusal.
-      await deps.row.markError(id, nextGeneration, failure.message);
+      await deps.row.markError(id, nextGeneration, failure.message, authority, publishedAuthority);
     }
     // A RETRYABLE failure deliberately LEAVES the lease held. The three things
     // that release it are the commit below, the mark above, and its own expiry —
@@ -474,19 +518,36 @@ export const credentialFor = async (
     throw failure;
   }
 
-  const credentialRef = await deps.secrets.put(String(id), HOSTED_MCP_ACCESS_TOKEN, refreshed.accessToken);
-  let nextRefreshRef = refreshTokenRef;
-  if (refreshed.refreshToken) {
-    // A vendor that rotates hands back a new refresh token; a vendor that does
-    // not (or omits it in this response) keeps the one that still works.
-    nextRefreshRef = await deps.secrets.put(String(id), HOSTED_MCP_REFRESH_TOKEN, refreshed.refreshToken);
-  }
+  // Refresh shares the callback's stable secret refs. The write generation orders
+  // this refresh against a newer callback AND against a newer refresh inside the
+  // same authorization; the authorization alone cannot, which is how a superseded
+  // refresh overwrote a newer pair (TASK-405). A stale writer is refused by the
+  // store, so its vendor tokens are never published behind the newer ones.
+  const writeGeneration = secretWriteGeneration(
+    won.config?.credentialAuthGeneration ?? won.config?.authGeneration ?? 0,
+    nextGeneration,
+  );
+  const credentialRef = await deps.secrets.put(
+    String(id), HOSTED_MCP_ACCESS_TOKEN, refreshed.accessToken, writeGeneration,
+  );
+  // The refresh secret advances to this refresh's write generation on EVERY
+  // refresh, not only a rotating one. A vendor that does not rotate hands back no
+  // refresh token; the one already held is re-written at this generation. Without
+  // that, a superseded refresh could still write its own refresh token after this
+  // one committed, the access secret and the refresh secret left at different
+  // authorities (TASK-405, sable's non-rotating interleaving).
+  // The token the vendor call was made with, read before the call. A reread here
+  // would seal whatever a superseded refresh wrote in the meantime (sable, #2534).
+  const refreshMaterial = refreshed.refreshToken ?? refreshToken;
+  const nextRefreshRef = await deps.secrets.put(
+    String(id), HOSTED_MCP_REFRESH_TOKEN, refreshMaterial, writeGeneration,
+  );
 
   const expiresAt = refreshed.expiresIn ? new Date(now.getTime() + refreshed.expiresIn * 1000) : null;
   // One write, and it has to stay one: a loser serves the first re-read that
   // passes `servableRef`, so a reference written ahead of its expiry would be
   // served under the old lifetime whenever that one still reads fresh.
-  await deps.row.commit(id, nextGeneration, {
+  const committed = await deps.row.commit(id, nextGeneration, {
     'config.credentialRef': credentialRef,
     'config.refreshTokenRef': nextRefreshRef,
     'config.expiresAt': expiresAt,
@@ -496,7 +557,11 @@ export const credentialFor = async (
     // Top-level, not `config.*`: the row's error text lives outside the strict
     // subdocument, and clearing it inside one would be dropped in silence.
     errorMessage: null,
-  });
+  }, authority, publishedAuthority);
+
+  // A lost guard means a newer authorization or refresh already owns the row. This
+  // caller's pair must not be served: the winner's live pair is the Connection's.
+  if (!committed) return loseTheRace({ deps, id });
 
   // Old references are revoked LAST: until the row points at the new ones, the
   // old secret is what a concurrent loser is reading.

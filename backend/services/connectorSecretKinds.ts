@@ -46,7 +46,7 @@ export interface ConnectorSecretKindSpec {
    * hosted-MCP client registration is not an Integration, so its secret is
    * owned by the registration and the sweeps look it up there.
    */
-  owner?: 'integration' | 'hosted-mcp-dcr-registration';
+  owner?: 'integration' | 'hosted-mcp-dcr-registration' | 'agent-provider-key';
 }
 
 /** The Slack bot token: the ref lives on the row the OAuth bind writes. */
@@ -108,12 +108,49 @@ export const HOSTED_MCP_DCR_CLIENT_SECRET: ConnectorSecretKindSpec = {
   owner: 'hosted-mcp-dcr-registration',
 };
 
+export const AGENT_PROVIDER_KEY: ConnectorSecretKindSpec = {
+  kind: 'agent-provider-key', provider: 'agent-provider', refPaths: ['secretRef'],
+  unavailableReason: 'Agent provider key is unavailable', owner: 'agent-provider-key',
+};
+
+/**
+ * The X and Instagram feed credentials. The admin OAuth connect, the admin save
+ * forms and the generic connector routes write them here, and the feed sync
+ * writes a refreshed X pair back through the same kinds, so the row keeps only
+ * the refs (`services/feedCredentials`). X issues a refresh token and Instagram
+ * does not, which is why the refresh half is a kind of its own.
+ */
+export const X_FEED_ACCESS_TOKEN: ConnectorSecretKindSpec = {
+  kind: 'x-feed-access-token',
+  provider: 'x',
+  refPaths: ['config.feedAccessTokenRef'],
+  unavailableReason: 'X feed credential is unavailable',
+};
+
+export const X_FEED_REFRESH_TOKEN: ConnectorSecretKindSpec = {
+  kind: 'x-feed-refresh-token',
+  provider: 'x',
+  refPaths: ['config.feedRefreshTokenRef'],
+  unavailableReason: 'X feed refresh token is unavailable',
+};
+
+export const INSTAGRAM_FEED_ACCESS_TOKEN: ConnectorSecretKindSpec = {
+  kind: 'instagram-feed-access-token',
+  provider: 'instagram',
+  refPaths: ['config.feedAccessTokenRef'],
+  unavailableReason: 'Instagram feed credential is unavailable',
+};
+
 export const CONNECTOR_SECRET_KINDS: readonly ConnectorSecretKindSpec[] = [
+  AGENT_PROVIDER_KEY,
   SLACK_BOT_TOKEN,
   DISCORD_WEBHOOK_URL,
   HOSTED_MCP_ACCESS_TOKEN,
   HOSTED_MCP_REFRESH_TOKEN,
   HOSTED_MCP_DCR_CLIENT_SECRET,
+  X_FEED_ACCESS_TOKEN,
+  X_FEED_REFRESH_TOKEN,
+  INSTAGRAM_FEED_ACCESS_TOKEN,
 ];
 
 /** Whether a kind's ref lives on an Integration row (the default owner). */

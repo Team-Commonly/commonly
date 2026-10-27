@@ -34,10 +34,13 @@ const agents = {
 
 const renderPage = (over = {}) => {
   const queue = over.queue ?? [{ id: 'd-1', kind: 'decision', title: 'Slack defaults', podId: 'p2', messageId: '900', actorUserId: 'wren-user' }];
+  const podList = over.pods ?? [{ _id: 'p1', name: 'Sharpen — pod model, attention routing, hardening' }, { _id: 'p2', name: 'Connectors v2 — channel routing' }];
+  const agentRows = over.agents ?? agents;
   axios.get.mockImplementation((url) => {
-    if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Sharpen — pod model, attention routing, hardening' }, { _id: 'p2', name: 'Connectors v2 — channel routing' }] });
-    if (url.startsWith('/api/registry/pods/p1/agents')) return Promise.resolve({ data: { agents: over.p1Agents || agents.p1 } });
-    if (url.startsWith('/api/registry/pods/p2/agents')) return Promise.resolve({ data: { agents: agents.p2 } });
+    if (url === '/api/pods') return Promise.resolve({ data: podList });
+    if (url.startsWith('/api/registry/pods/p1/agents')) return Promise.resolve({ data: { agents: over.p1Agents || agentRows.p1 } });
+    if (url.startsWith('/api/registry/pods/p2/agents')) return Promise.resolve({ data: { agents: agentRows.p2 } });
+    if (url.startsWith('/api/registry/pods/p3/agents')) return Promise.resolve({ data: { agents: agentRows.p3 || [] } });
     // `claimedBy` is the claimer's User id (never a name); `assignee` is a name
     // written by PATCH and is not a claim.
     if (url.startsWith('/api/v1/tasks/p1')) return Promise.resolve({ data: { tasks: [{ taskId: 'TASK-131', status: 'claimed', claimedBy: 'kai-user' }, { taskId: 'TASK-140', status: 'claimed', claimedBy: null, assignee: 'sage' }] } });
@@ -138,6 +141,31 @@ describe('Your Team (direction C)', () => {
     expect(card.querySelector('.v2-team-card__status')).toHaveTextContent('● working · TASK-131');
     expect(within(card).queryByRole('button', { name: 'Answer' })).toBeNull();
     expect(card.querySelector('.v2-team-card__desc')).toHaveTextContent('Fixes. Small PRs with a test each.');
+  });
+
+  test('hides template descriptions and folds extra pods into a +N chip', async () => {
+    renderPage({
+      pods: [
+        { _id: 'p1', name: 'Sharpen — pod model, attention routing, hardening' },
+        { _id: 'p2', name: 'Connectors v2 — channel routing' },
+        { _id: 'p3', name: 'Growth — signup traces' },
+      ],
+      agents: {
+        ...agents,
+        p1: [...agents.p1, {
+          name: 'template-agent', instanceId: 'default', displayName: 'Template', userId: 'template-user',
+          lastActiveAt: minutesAgo(4), description: 'Your friendly AI assistant powered by Claude…',
+        }],
+        p3: [{ name: 'wren', instanceId: 'default', displayName: 'Wren', userId: 'wren-user', lastActiveAt: minutesAgo(30) }],
+      },
+    });
+    await waitFor(() => expect(screen.getByText('Template')).toBeInTheDocument());
+
+    expect(cardOf('Template').querySelector('.v2-team-card__desc')).toBeNull();
+    const wren = cardOf('Wren');
+    expect(wren.querySelectorAll('.v2-team-card__pod')).toHaveLength(3);
+    expect(wren.querySelector('.v2-team-card__pod--more')).toHaveTextContent('+1');
+    expect(wren.querySelector('.v2-team-card__pod--more')).toHaveAttribute('aria-label', '1 more pods');
   });
 
   test('idle: divider mark, muted `idle · 41m`, and NO description line when the listing has none — never a quote', async () => {

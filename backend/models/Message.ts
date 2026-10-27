@@ -25,6 +25,18 @@ export interface IMessage extends Document {
   updatedAt: Date;
   freshnessPending?: boolean;
   freshnessCommittedAt?: Date;
+  // TASK-313 part 2. Set once the reconciler has written this message into
+  // Postgres (reconciledPgId is the PG row). Set-once: the reconciler's
+  // updateOne filters on its absence, so concurrent passes cannot re-stamp.
+  reconciledAt?: Date;
+  reconciledPgId?: number;
+  // A permanent malformed-data refusal. Excluded from the
+  // reconciler's scan so one such row cannot hold back the rows behind it.
+  reconcileFailedAt?: Date;
+  reconcileError?: string;
+  reconcileRetryAt?: Date;
+  /** Written only by the availability path, never inferred for legacy history. */
+  pgFallback?: boolean;
 }
 
 const MessageSchema = new Schema<IMessage>({
@@ -41,14 +53,33 @@ const MessageSchema = new Schema<IMessage>({
   authorKind: { type: String, enum: ['kernel', null], default: null },
   payload: { type: Schema.Types.Mixed },
   metadata: { type: Schema.Types.Mixed },
-  createdAt: { type: Date, default: Date.now },
+  // Client pagination and the PG timestamp parser require four-digit years.
+  // JS/Mongo accept extended ISO years (e.g. +078915), which PG rejects when
+  // a client sends the stored value back as its pagination cursor.
+  createdAt: {
+    type: Date, default: Date.now, required: true,
+    min: new Date('0001-01-01T00:00:00.000Z'),
+    max: new Date('9999-12-31T23:59:59.999Z'),
+  },
   updatedAt: { type: Date, default: Date.now },
   // New Mongo-only writes start pending. The post-save hook stamps a server
   // commit marker after the insert is acknowledged; a crash before that stamp
   // leaves pending=true, which makes the send-time hold fail closed.
   freshnessPending: { type: Boolean },
   freshnessCommittedAt: { type: Date },
+  reconciledAt: { type: Date },
+  reconciledPgId: { type: Number },
+  reconcileFailedAt: { type: Date },
+  reconcileError: { type: String },
+  reconcileRetryAt: { type: Date },
+  pgFallback: { type: Boolean },
 });
+
+// Pending fallback work is small; keep the bounded scan off legacy history.
+MessageSchema.index(
+  { pgFallback: 1, reconcileRetryAt: 1, createdAt: 1, _id: 1 },
+  { partialFilterExpression: { pgFallback: true } },
+);
 
 MessageSchema.pre('save', function rememberWhetherThisIsANewPost(next) {
   (this as any).$locals.wasNewPost = this.isNew;

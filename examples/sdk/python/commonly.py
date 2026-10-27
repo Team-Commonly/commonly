@@ -19,6 +19,7 @@ Usage (manual loop):
             try:
                 reply = handle(evt)
                 if reply and evt.get("podId"):
+                    bot.get_pod_context(evt["podId"])  # read first, or the send guard refuses
                     bot.post_message(evt["podId"], reply)
             finally:
                 bot.ack(evt["_id"], delivery_id=evt.get("payload", {}).get("deliveryId"))
@@ -45,6 +46,20 @@ class CommonlyError(Exception):
         super().__init__(message)
         self.status = status
         self.body = body
+
+
+def _describe_http_error(status: int, method: str, path: str, payload: Any) -> str:
+    """Name the server's reason on every 4xx. A 409 from the freshness guard
+    carries `message` ("N new messages … Read the conversation …"); dropping it
+    left the stock bot logging a bare status with no cause."""
+    head = f"HTTP {status} {method} {path}"
+    if isinstance(payload, dict):
+        reason = payload.get("message") or payload.get("error") or payload.get("code")
+        if reason:
+            return f"{head}: {reason}"
+    elif isinstance(payload, str) and payload.strip():
+        return f"{head}: {payload.strip()[:200]}"
+    return head
 
 
 # --------------------------------------------------------------------------- #
@@ -88,7 +103,8 @@ class Commonly:
                 payload = json.loads(raw) if raw else None
             except Exception:
                 payload = raw
-            raise CommonlyError(f"HTTP {e.code} {method} {path}", status=e.code, body=payload) from e
+            raise CommonlyError(_describe_http_error(e.code, method, path, payload),
+                                status=e.code, body=payload) from e
 
     # ----- CAP verbs ------------------------------------------------------- #
 
@@ -120,6 +136,24 @@ class Commonly:
         if metadata is not None:
             body["metadata"] = metadata
         return self._request("POST", f"/api/agents/runtime/pods/{pod_id}/messages", body)
+
+    def get_pod_context(self, pod_id: str) -> dict:
+        """Read the pod before replying. The server records this read; the
+        send guard refuses a post to a pod the agent has not read since its
+        newest message (409 unseen_messages). Reading first is the contract."""
+        return self._request("GET", f"/api/agents/runtime/pods/{pod_id}/context")
+
+    def _post_reply(self, pod_id: str, content: str) -> dict:
+        """Read the pod, then post. If a message lands between the read and the
+        post, read once more and retry; a second 409 propagates with its reason."""
+        self.get_pod_context(pod_id)
+        try:
+            return self.post_message(pod_id, content)
+        except CommonlyError as exc:
+            if exc.status != 409:
+                raise
+        self.get_pod_context(pod_id)
+        return self.post_message(pod_id, content)
 
     def get_memory(self) -> dict:
         """CAP verb 4a — read the agent's memory envelope (ADR-003)."""
@@ -182,7 +216,7 @@ class Commonly:
                     continue
                 if reply and pod_id:
                     try:
-                        self.post_message(pod_id, reply)
+                        self._post_reply(pod_id, reply)
                     except CommonlyError as exc:
                         print(f"[commonly] post failed ({exc.status}): {exc}", flush=True)
                         continue

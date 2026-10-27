@@ -8,6 +8,7 @@ const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUt
 const User = require('../../../models/User');
 const Pod = require('../../../models/Pod');
 const Task = require('../../../models/Task');
+const Message = require('../../../models/Message');
 const AgentRun = require('../../../models/AgentRun');
 const ApprovalAction = require('../../../models/ApprovalAction');
 const AttentionItem = require('../../../models/AttentionItem');
@@ -58,6 +59,7 @@ const syntheticAccount = async (username = 'eng-smoke-journey-1015124709', { sea
   await AgentMemory.collection.insertOne({ agentName: seat, instanceId: 'default' });
   await AgentRegistry.collection.insertOne({ agentName: seat, ephemeral: true, publisher: { userId: human._id } });
   await AgentInstallation.collection.insertOne({ agentName: seat, podId: pod._id, installedBy: human._id });
+  await Message.collection.insertOne({ podId: pod._id, userId: scout._id, content: 'Scout fallback opener', createdAt: OLD });
   return { human, scout, seatBot, pod, seat };
 };
 
@@ -73,6 +75,55 @@ describe('syntheticAccountPurgeService', () => {
     expect(isSyntheticAccount({ username: 'eng-smoke-journey-1015124709', email: 'a@ops.commonly.invalid', isBot: true })).toBe(false);
   });
 
+  it('preserves a synthetic account promoted to administrator, including its data', async () => {
+    const { human, pod, scout } = await syntheticAccount();
+    await User.updateOne({ _id: human._id }, { $set: { role: 'admin' } });
+    const pool = fakePool();
+    const report = await purgeSyntheticAccounts({ apply: true, now: NOW, pool });
+    expect(report.accounts).toHaveLength(0);
+    expect(await User.findById(human._id)).not.toBeNull();
+    expect(await User.findById(scout._id)).not.toBeNull();
+    expect(await Pod.findById(pod._id)).not.toBeNull();
+    expect(pool.statements).toHaveLength(0);
+  });
+
+  it('uses the administrator mutation lock before an applying purge', async () => {
+    const { human } = await syntheticAccount();
+    const { withAdminUserMutationLock } = require('../../../services/adminUserMutationService');
+    await withAdminUserMutationLock(async () => {
+      await expect(purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() }))
+        .rejects.toMatchObject({ code: 'ADMIN_MUTATION_BUSY' });
+    });
+    expect(await User.findById(human._id)).not.toBeNull();
+  });
+
+  it('releases the applying lock if candidate selection fails before writes', async () => {
+    const Lock = require('../../../models/AdminUserMutationLock');
+    const read = jest.spyOn(User, 'find').mockReturnValueOnce({
+      select: () => ({ lean: async () => { throw new Error('selection unavailable'); } }),
+    });
+    try {
+      await expect(purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() }))
+        .rejects.toThrow('selection unavailable');
+    } finally { read.mockRestore(); }
+    expect(await Lock.countDocuments()).toBe(0);
+    await expect(purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() }))
+      .resolves.toMatchObject({ examined: 0 });
+  });
+
+  it('retains the applying lock after its first cleanup write rejects', async () => {
+    await syntheticAccount();
+    const Lock = require('../../../models/AdminUserMutationLock');
+    const write = jest.spyOn(Task, 'deleteMany').mockRejectedValueOnce(new Error('cleanup outcome unknown'));
+    try {
+      await expect(purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() }))
+        .rejects.toThrow('cleanup outcome unknown');
+    } finally { write.mockRestore(); }
+    expect(await Lock.countDocuments()).toBe(1);
+    await expect(purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() }))
+      .rejects.toMatchObject({ code: 'ADMIN_MUTATION_BUSY' });
+  });
+
   it('a dry run counts the footprint and deletes nothing', async () => {
     const { human, pod } = await syntheticAccount();
     const report = await purgeSyntheticAccounts({ now: NOW, pool: fakePool() });
@@ -81,6 +132,7 @@ describe('syntheticAccountPurgeService', () => {
     expect(report.counts).toMatchObject({ users: 3, tasks: 1, agentruns: 1, agentregistries: 1, pods: 1 });
     expect(await User.countDocuments({ _id: human._id })).toBe(1);
     expect(await Pod.countDocuments({ _id: pod._id })).toBe(1);
+    expect(await Message.countDocuments({ podId: pod._id })).toBe(1);
   });
 
   it('apply removes the account, its bots, pod, seat and linked rows, and leaves everyone else alone', async () => {
@@ -93,6 +145,7 @@ describe('syntheticAccountPurgeService', () => {
     });
     const community = { _id: id(), name: 'Community', createdBy: real._id, members: [real._id, human._id] };
     await Pod.collection.insertOne(community);
+    await Message.collection.insertOne({ podId: community._id, userId: real._id, content: 'Keep this conversation', createdAt: OLD });
     const pool = fakePool();
 
     const report = await purgeSyntheticAccounts({ apply: true, now: NOW, pool });
@@ -100,6 +153,8 @@ describe('syntheticAccountPurgeService', () => {
     expect(report.accounts.map((a) => a.username)).toEqual(['eng-smoke-journey-1015124709']);
     for (const gone of [human, scout, seatBot]) expect(await User.countDocuments({ _id: gone._id })).toBe(0);
     expect(await Pod.countDocuments({ _id: pod._id })).toBe(0);
+    expect(await Message.countDocuments({ podId: pod._id })).toBe(0);
+    expect(await Message.countDocuments({ podId: community._id })).toBe(1);
     expect(await Task.countDocuments({ podId: pod._id })).toBe(0);
     expect(await AgentRun.countDocuments({ podId: pod._id })).toBe(0);
     expect(await ApprovalAction.countDocuments({ ownerUserId: human._id })).toBe(0);
@@ -131,6 +186,7 @@ describe('syntheticAccountPurgeService', () => {
     expect(report.accounts[0].refused).toMatch(/another human member/);
     expect(await User.countDocuments({ _id: human._id })).toBe(1);
     expect(await Pod.countDocuments({ _id: pod._id })).toBe(1);
+    expect(await Message.countDocuments({ podId: pod._id })).toBe(1);
   });
 
   it('skips a seat name another user also holds, keeping their install and memory', async () => {

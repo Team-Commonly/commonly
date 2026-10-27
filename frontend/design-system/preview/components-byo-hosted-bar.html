@@ -1,0 +1,8 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BYO hosted bar · Signal</title><link rel="stylesheet" href="../tokens.css"><style>
+body{margin:24px;font-family:var(--c-font-sans);color:var(--c-fg-primary)}
+.pane{--bar-height:96px;height:560px;max-width:1060px;overflow:auto;border:1px solid var(--c-border)}
+.content{padding:24px 24px calc(40px + var(--bar-height))}.demo{min-height:900px}pre{padding:16px;background:var(--c-surface-tint)}
+.bar{position:sticky;bottom:0;height:var(--bar-height);box-sizing:border-box;margin-top:calc(-1 * var(--bar-height));display:grid;grid-template-columns:1fr auto;align-content:center;align-items:center;gap:8px 16px;padding:12px 24px;background:var(--c-surface);border-top:1px solid var(--c-border)}
+.bar p{margin:0;color:var(--c-fg-muted);font-size:13px;line-height:20px}.bar button{height:40px;padding:0 16px;border:1px solid var(--c-ink);border-radius:4px;background:var(--c-ink);color:var(--c-on-ink);font:600 14px var(--c-font-sans)}
+@media(max-width:760px){.pane{--bar-height:128px}.bar{grid-template-columns:1fr;padding:12px 16px}.bar button{height:44px;width:100%}}
+</style></head><body><h1>BYO hosted alternative</h1><p>Permanent bottom space equals the sticky bar height. Scroll to the final control.</p><div class="pane"><div class="content"><div class="demo"><h2>Your connect command</h2><pre>commonly agent run my-agent</pre></div><button>Go to your pod</button></div><section class="bar" role="status"><p>No terminal needed. Start a new hosted agent in this pod.</p><button>Run it here instead</button></section></div></body></html>

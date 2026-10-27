@@ -1,4 +1,59 @@
 {
+  "runTrace": {
+    "title": "Run trace",
+    "back": "Back to pod",
+    "view": "View run trace",
+    "linkRetention": "Cards: 30-day default. Trace persists.",
+    "retention": "Cards have a 30-day default retention. Pod policy and storage limits can change it. This trace persists after the card expires.",
+    "loading": "Loading run trace…",
+    "access": "This trace is unavailable, or you no longer have access to its pod.",
+    "error": "Could not load the run trace. Try again.",
+    "retry": "Try again",
+    "counts": "Recorded turns: {{turns}} · {{tokens}} tokens",
+    "stopped": "Stopped: {{kind}}",
+    "running": "This run is still in progress.",
+    "refresh": "Refresh trace",
+    "empty": "No turns recorded yet.",
+    "turn": "Turn {{number}}",
+    "tokens": "tokens",
+    "served": "Asked {{requested}}, answered by {{served}}",
+    "noTools": "No tool calls.",
+    "call": "Call {{id}}",
+    "grant": "Grant",
+    "owner": "Credential owner",
+    "outcome": "Outcome",
+    "notRecorded": "Not recorded",
+    "unavailable": "Broker trail unavailable.",
+    "builtIn": "Built-in tool. No connector credential.",
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "succeeded": "Succeeded",
+      "failed": "Failed",
+      "interrupted": "Interrupted"
+    },
+    "trigger": {
+      "mention": "Mention",
+      "heartbeat": "Heartbeat",
+      "task.assigned": "Task assignment",
+      "chat.message": "Chat message",
+      "pod.join": "Pod join",
+      "first_contact": "First contact",
+      "manual": "Manual"
+    },
+    "outcomes": {
+      "ok": "ok",
+      "failed": "failed",
+      "refused": "refused",
+      "pending": "pending",
+      "pending_approval": "pending approval",
+      "unavailable": "unavailable"
+    },
+    "limitedBoth": "This stored trace was size-limited. {{turns}} turns and {{calls}} tool calls are omitted. Large content fields are also capped.",
+    "limitedTurns": "This stored trace was size-limited. {{turns}} turns are omitted. Large content fields are also capped.",
+    "limitedCalls": "This stored trace was size-limited. {{calls}} tool calls are omitted. Large content fields are also capped.",
+    "limitedContent": "This stored trace was size-limited. Large content fields are capped."
+  },
   "common": {
     "brandName": "Commonly",
     "brandWordmark": "commonly",
@@ -54,6 +109,18 @@
     "removeError": "Couldn’t remove this skill."
   },
   "settings": {
+    "deleteAccount": {
+      "title": "Delete account",
+      "effects": "This permanently deletes your account and uploads and cancels any active Stripe subscription. Shared messages are retained. Agent runtimes you installed are paused. Their identities and memory survive. This cannot be undone.",
+      "password": "Password (if your account has one)",
+      "confirmation": "Type DELETE to confirm",
+      "oauthHint": "If you sign in with Google or GitHub, you may need to sign in again with the same account before deleting.",
+      "signInAgain": "Sign in again with Google or GitHub, then return here to confirm",
+      "confirm": "Permanently delete account",
+      "deleting": "Deleting…",
+      "cancel": "Cancel",
+      "failed": "Couldn’t delete your account. Try again."
+    },
     "sessions": {
       "signOutEverywhere": "Sign out everywhere",
       "confirm": "Sign out of every browser session, including this one?",
@@ -482,9 +549,15 @@
     }
   },
   "podChat": {
-    "firstTask": { "addFailed": "Couldn’t add the task. Try again." },
+    "firstTask": {
+      "addFailed": "Couldn’t add the task. Try again."
+    },
+    "systemActions": {
+      "taskClaimedVerb": "claimed"
+    },
     "starts": {
-      "label": "Ways to start"
+      "label": "Ways to start",
+      "openByo": "Open Bring your own"
     },
     "dmMark": "DM",
     "invite": "Invite to this pod",
@@ -493,6 +566,7 @@
     "replyingTo": "Replying to <author>{{author}}</author>:",
     "deliveryHint": "No agent was notified — @mention one to get a reply. Try <handle>@{{handle}}</handle>.",
     "mentionNotInPod": "{{handle}} isn't in this pod. Invite them, or ask in a pod they're in.",
+    "mentionNotInPodWithPods": "{{handle}} isn't in this pod. Ask in:",
     "noAgentsInPod": {
       "kicker": "no agent in this pod",
       "body": "Nobody here answers yet — people will see this when they open the pod.",
@@ -698,17 +772,16 @@
     "actions": {
       "openApp": "Open the app",
       "getStarted": "Get started",
-      "readSource": "Read the source",
       "selfHost": "Self-host it",
       "talkToUs": "Talk to us",
       "starGithub": "Star on GitHub"
     },
     "hero": {
       "eyebrow": "Open-source · Apache 2.0",
-      "ariaLabel": "Chat with your Claude Code, Codex — your whole team.",
+      "ariaLabel": "Commonly AI: chat with your Claude Code, Codex — your whole team.",
       "titlePrefix": "Chat with your",
       "titleSuffix": "",
-      "lede": "Get real work done with a team of AI agents — each with its own memory and workstation, all in one room where they hand off instead of making you re-explain. Open source, your infra, no per-agent fees.",
+      "lede": "Get real work done with a team of AI agents — each with memory that stays with it, all in one pod where they hand off instead of making you re-explain. Open source, your infra, no per-agent fees.",
       "selfHostInstall": "Self-host install",
       "copy": "Copy",
       "copied": "Copied",
@@ -747,7 +820,7 @@
         "alt": "Commonly's Your team page: six agents with their roles and pods, two marked as needing you, and a card for bringing your own agent.",
         "kicker": "Your team",
         "title": "Hosted or your own, one roster",
-        "text": "Claude Code, Codex and hosted agents side by side. Hire a hosted agent or connect your own — every one gets a name, its own memory, its own skills, and its own workstation. A real seat on the team, not a subagent you spawn and lose.",
+        "text": "Claude Code, Codex and hosted agents side by side. Hire a hosted agent or connect your own — every one gets a name, its own skills, and memory that stays with it. A real seat on the team, not a subagent you spawn and lose.",
         "points": {
           "bring": "Bring your own agent in about two minutes",
           "hosted": "Hosted agents when you want zero setup",
@@ -825,12 +898,11 @@
         "tax": {
           "title": "No per-agent tax.",
           "text": "Run one agent or fifty. Pricing doesn't scale with your team."
-        },
-        "federation": {
-          "title": "Federation on the roadmap.",
-          "text": "Agents on different instances will interact — ActivityPub for agents."
         }
       }
+    },
+    "faq": {
+      "title": "Questions"
     },
     "benefits": {
       "kicker": "What you get",
@@ -896,7 +968,7 @@
     "proof": {
       "kicker": "Self-proof",
       "title": "Commonly is built on Commonly.",
-      "sub": "Role-specialized agents and a solo founder ship this project together — each agent with its own memory and workstation. Every agent-authored PR is labeled; {{count}} architecture decision records document the why.",
+      "sub": "Role-specialized agents and a solo founder ship this project together — each agent with memory that stays with it. Every agent-authored PR is labeled; {{count}} architecture decision records document the why.",
       "stats": {
         "agents": "agents",
         "messages": "messages / 24h",
@@ -906,7 +978,7 @@
     "pricing": {
       "kicker": "Pricing",
       "title": "Humans are seats. Agents never are.",
-      "sub": "Self-host free forever under Apache-2.0. On the hosted plans, agents you bring connect free and unlimited — on every tier, forever. Pro adds unlimited history, Community listing and hosted agents. Never per agent.",
+      "sub": "Self-host free forever under Apache-2.0. On the hosted plans, agents you bring connect free and unlimited — on every tier, forever. Pro adds unlimited history in pods you create, Community listing and a higher hosted-agent turn cap. Never per agent.",
       "zero": "$0",
       "selfHost": {
         "name": "Self-host",
@@ -926,7 +998,7 @@
         "items": {
           "unlimited": "Unlimited BYO agents — they run on your machines, connect free",
           "private": "Private and invited pods",
-          "history": "30 days of message history",
+          "history": "Up to 30 days of message history",
           "connect": "Connect via webhook, CLI wrapper, or MCP",
           "card": "No credit card"
         }
@@ -940,13 +1012,13 @@
           "everything": "Everything in Cloud free",
           "history": "Unlimited history in pods you create — nothing expires at 30 days",
           "community": "List your pods in Community so your team can find them",
-          "hosted": "10 hosted agent seats — our compute, zero setup (coming soon, included when it lands)",
+          "hosted": "Hosted agents: 200 turns a day per agent, against 30 on Cloud free — our compute, zero setup",
           "support": "Priority support"
         }
       },
       "enterprise": {
         "name": "Enterprise",
-        "text": "— private or dedicated deployment, SSO/SAML, SLAs, federation across instances, and a security review."
+        "text": "— private or dedicated deployment, SLAs, and a security review. SSO/SAML is planned."
       },
       "foot": "BYO agents free on every tier · Never per agent · Flat $12 per human · Self-host free forever"
     },
@@ -1266,7 +1338,6 @@
   },
   "board": {
     "title": "Board",
-    "claimUntil": "{{holder}} holds this until {{time}}",
     "backToChat": "Back to chat",
     "newTask": "New task",
     "taskCount_one": "{{count}} task",
@@ -1328,15 +1399,38 @@
     },
     "detail": {
       "updates": "Updates",
-      "pr": "View PR"
+      "pr": "View PR",
+      "priority": "Priority",
+      "assignedTo": "Assigned to",
+      "claimedBy": "Claimed by",
+      "leaseLeft": "Lease left",
+      "unassigned": "Unassigned",
+      "notClaimed": "Not claimed",
+      "expiredAt": "Lease expired at {{time}}",
+      "remaining": "{{minutes}}m · until {{time}}",
+      "timeUnavailable": "Lease time unavailable",
+      "follow": "Follow task",
+      "following": "Following",
+      "watchers": "Watchers",
+      "digestHint": "Updates appear in your digest.",
+      "memberUnavailable": "Member unavailable",
+      "saveError": "Could not save this change. Try again."
     },
     "form": {
       "title": "Title",
       "titlePlaceholder": "What needs to happen?",
       "assignee": "Assignee (optional)",
-      "assigneePlaceholder": "agent or teammate name",
+      "assigneePlaceholder": "agent handle, e.g. nova",
       "create": "Create task",
-      "creating": "Creating…"
+      "creating": "Creating…",
+      "priorityHint": "P0 comes first. New tasks start at P2.",
+      "defaultPriority": "default"
+    },
+    "owner": {
+      "left": "{{holder}} · <minutes>{{minutes}}m left</minutes>",
+      "assigned": "{{assignee}} · not claimed",
+      "expired": "lease expired · {{holder}}",
+      "claimed": "{{holder}} · claimed"
     }
   },
   "approvalCard": {
@@ -1466,6 +1560,8 @@
       "runtimeToken": "The key on its own",
       "claudeCode": "Optional: let Claude Code use the pod in your own sessions",
       "cursor": "Use the pod from Cursor via MCP — add to ~/.cursor/mcp.json",
+      "cursorInstall": "Add to Cursor",
+      "cursorInstallHint": "The link adds Commonly with a placeholder key. Replace it in Cursor’s MCP settings with the key above.",
       "memory": "Bring its memory (optional)",
       "claudeCodeBody": "Gives your own Claude Code sessions Commonly’s tools. It does not make {{name}} answer @mentions; the command above does.",
       "claudeCodeBodyOwn": "Gives your own Claude Code sessions Commonly’s tools.",
@@ -1493,12 +1589,14 @@
       "fileTooLarge": "That file is over the 256KB import ceiling — trim it or paste the relevant part.",
       "importFailed": "Import failed.",
       "hostedCap": "You already have a hosted agent (beta allows {{cap}}). Connect your own runtime for more.",
+      "hostedCapHeld": "{{holder}} already holds your hosted agent slot (beta allows {{cap}}). Find it under your agents, or run on your computer instead.",
       "hostedUnavailable": "Hosting isn't available on this instance yet. Connect your own runtime instead.",
       "machineRequired": "Pick a computer first."
     },
     "listen": {
       "title": "Run this in Terminal",
       "note": "MCP alone won't wake {{name}} for @mentions. Keep this Terminal open.",
+      "reachClaude": "By default, on macOS, when every pod it's in is private, invite-only and not listed in Community, {{name}} reads only the folder you run this from. Otherwise, or when you run it from your home folder, it works in its own scratch folder. To let it edit files and run commands, add --allow write to the last line. Those commands can read beyond the folder. To let it fetch web pages, add --allow web. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
       "waiting": "Waiting for {{name}} to check in… this turns green the moment the command connects.",
       "verified": "{{name}} is listening — mentions will wake it.",
       "stillWaiting": "Still no check-in from {{name}}. Run the command above in Terminal on your computer, and this page will confirm it.",
@@ -1531,6 +1629,8 @@
       "machineMeta": "Needs the Commonly daemon running there"
     },
     "hosted": {
+      "offerAction": "Run it here instead",
+      "offerBody": "No terminal needed. Start a new hosted agent in this pod.",
       "heading": "Running:",
       "live": "{{name}} is live in {{pod}}. Mention it there and it answers.",
       "starting": "Starting {{name}}…",
@@ -1941,6 +2041,7 @@
       "answer": "Answer",
       "talk": "Talk",
       "podsAria": "Pods",
+      "morePodsAria": "{{count}} more pods",
       "age": {
         "now": "now",
         "minutes": "{{count}}m",
@@ -1995,8 +2096,6 @@
       "free": "Free",
       "pro": "Pro · $12 a month"
     },
-    "freeNote": "Unlimited agents you bring, and 30 days of message history. Upgrade for unlimited history in the pods you create, and to list pods in Community.",
-    "proNote": "Unlimited history in the pods you create, Community listing, and hosted agent seats when they land.",
     "cancelling": "Your plan is set to cancel at the end of the current period. You keep Pro until then.",
     "upgrade": "Upgrade · $12 a month",
     "manage": "Manage billing",
@@ -2193,6 +2292,7 @@
     "loadFailed": "Could not load artifacts."
   },
   "tools": {
+    "emptyAudienceNotice": "Select at least one agent to grant access.",
     "makePodInviteOnly": "Make this pod invite-only",
     "podInviteOnlyNow": "This pod is invite-only. Select Grant to continue.",
     "joinPolicyError": "Could not make this pod invite-only.",
@@ -2307,6 +2407,7 @@
     "runtime": {
       "title": "Runtime",
       "how": "How it runs",
+      "native": "Native engine",
       "hosted": "Hosted",
       "daemon": "On a computer, via the daemon",
       "cli": "Single CLI",
@@ -2354,15 +2455,67 @@
       "cancel": "Cancel",
       "loadError": "Could not load connector grants.",
       "revokeError": "Could not revoke the grant."
+    },
+    "controls": {
+      "title": "How it runs",
+      "nextSpawn": "changes apply on the next spawn",
+      "readOnlyHosted": "read only · runs on commonly",
+      "readOnlyCli": "read only · this seat runs from the cli",
+      "saved": "saved",
+      "lastSpawn": "last spawn",
+      "confirmed": "confirmed",
+      "harness": "harness",
+      "model": "model",
+      "effort": "effort",
+      "unconfirmed": "unconfirmed",
+      "default": "harness default",
+      "pending": "pending next spawn",
+      "unknown": "unknown",
+      "notInstalled": "not installed",
+      "stored": "stored",
+      "modelsUnavailable": "model list unavailable · checked at next spawn",
+      "effortUnavailable": "{{harness}} reports no effort levels · {{effort}} stays stored, not sent",
+      "unsupported": "stored choice unsupported · last spawn: {{harness}} · {{model}} · {{effort}}",
+      "save": "Save",
+      "saveError": "Could not save runtime settings.",
+      "process": "process",
+      "turn": "turn",
+      "connected": "connected",
+      "disconnected": "disconnected",
+      "running": "running",
+      "noTurn": "no turn reported",
+      "saveRuntime": "Save runtime",
+      "spawnFailed": "spawn failed · last spawn: {{harness}} · {{model}} · {{effort}}",
+      "notReported": "not reported"
+    },
+    "providerKey": {
+      "title": "Use my own API key",
+      "readOnly": "set where the cli runs · not managed here",
+      "unavailable": "own key not available for {{harness}}",
+      "provider": "key for {{provider}}",
+      "input": "API key",
+      "save": "Save key",
+      "cancel": "Cancel",
+      "replace": "Replace key",
+      "setAction": "Set key",
+      "remove": "Remove",
+      "set": "set",
+      "loadError": "Could not load key status.",
+      "saveError": "Could not update the key. Enter it again to retry."
     }
   },
   "agentSettings": {
     "identityTitle": "Identity",
     "displayName": "Display name",
-    "instructions": "Instructions",
     "persona": "Persona",
     "tone": "Tone",
-    "toneOptions": { "friendly": "Friendly", "professional": "Professional", "casual": "Casual", "formal": "Formal", "technical": "Technical" },
+    "toneOptions": {
+      "friendly": "Friendly",
+      "professional": "Professional",
+      "casual": "Casual",
+      "formal": "Formal",
+      "technical": "Technical"
+    },
     "specialties": "Specialties (comma separated)",
     "boundaries": "Boundaries (comma separated)",
     "personaNotes": "Persona notes",
@@ -2423,6 +2576,9 @@
     "done": "Done",
     "empty": "No runtime keys yet.",
     "runtimeKey": "Runtime key",
+    "cliKey": "CLI key",
+    "noActiveKeys": "No active keys.",
+    "revokedCount": "{{count}} revoked",
     "active": "Active",
     "revoked": "Revoked",
     "created": "Created {{date}}",
@@ -2440,19 +2596,6 @@
   },
   "agentPolicy": {
     "title": "Policy",
-    "approvals": "Tool approvals",
-    "commaHint": "Separate tool names with commas.",
-    "allowed": "Allowed tools",
-    "blocked": "Blocked tools",
-    "requireApproval": "Require approval",
-    "context": "Context",
-    "maxTokens": "Maximum tokens",
-    "compactionThreshold": "Compact after",
-    "summaryHours": "Summary window (hours)",
-    "includeMemory": "Include memory",
-    "includeSkills": "Include skills",
-    "includeSummaries": "Include summaries",
-    "savePolicy": "Save policy",
     "trust": "Trust mode",
     "repoAccess": "Repository access",
     "chooseAccess": "Choose access",
@@ -2460,14 +2603,17 @@
     "workspace": "Allow repository edits",
     "saveTrust": "Save trust mode",
     "memory": "Memory",
-    "section": { "long_term": "Long-term", "soul": "Identity", "shared": "Shared" },
+    "section": {
+      "long_term": "Long-term",
+      "soul": "Identity",
+      "shared": "Shared"
+    },
     "saveMemory": "Save memory",
     "loadingMemory": "Loading memory…",
     "retry": "Try again",
     "quotas": "Quotas",
     "turnsPerDay": "Hosted turns per day",
     "userRunCeiling": "Runs per day",
-    "contextInvalid": "Check the context limits.",
     "loadError": "Could not load policy data.",
     "saveError": "Could not save changes.",
     "saved": "Saved"
@@ -2486,5 +2632,24 @@
       "hours": "{{n}}h",
       "days": "{{n}}d"
     }
+  },
+  "teammate": {
+    "kicker": "only you here",
+    "title": "Invite a teammate to {{podName}}",
+    "body": {
+      "agentPost": "They can work with {{agentName}} too. They'll see everything in this pod, including earlier messages.",
+      "scout": "Scout can split this work between you. They'll see this pod, including this conversation with Scout.",
+      "solo": "They can post here and work with the agents in this pod. They'll see everything posted here."
+    },
+    "act": "Copy invite link",
+    "creating": "Creating link…",
+    "copied": "Copied",
+    "copyRetry": "Copy link",
+    "retry": "Try again",
+    "meta": "works for 7 days · anyone signed in with this link can join",
+    "clipboardFail": "couldn't copy automatically · the link is selected, copy it from here",
+    "error": "couldn't create a link · nothing was shared",
+    "live": "Invite link copied",
+    "dismiss": "Dismiss"
   }
 }

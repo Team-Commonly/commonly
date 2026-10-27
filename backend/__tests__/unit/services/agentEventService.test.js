@@ -2,7 +2,14 @@ jest.mock('../../../models/AgentEvent', () => ({
   create: jest.fn(),
   countDocuments: jest.fn(),
   findOneAndUpdate: jest.fn(),
+  updateOne: jest.fn(),
   find: jest.fn(),
+}));
+
+jest.mock('../../../services/agentDigestFoldService', () => ({
+  foldExpiredDigests: jest.fn().mockResolvedValue(0),
+  readFoldedDigest: jest.fn().mockResolvedValue(null),
+  settleFoldedDigest: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../../../models/AgentMemory', () => ({
@@ -319,7 +326,8 @@ describe('AgentEventService', () => {
     // covers pod-b too.
     AgentEvent.find
       .mockReturnValueOnce(query([{ _id: 'head', podId: 'pod-a' }]))
-      .mockReturnValueOnce(query([{ _id: 'head' }, { _id: 'same-pod' }]));
+      .mockReturnValueOnce(query([{ _id: 'head' }, { _id: 'same-pod' }]))
+      .mockReturnValueOnce(query([]));
     AgentEvent.countDocuments.mockResolvedValue(2);
     AgentMemory.findOne.mockReturnValue({
       select: () => ({ lean: jest.fn().mockResolvedValue({ revision: 1, lastSeenRevision: 0 }) }),
@@ -346,6 +354,7 @@ describe('AgentEventService', () => {
       $and: expect.arrayContaining([
         expect.objectContaining({ podId: { $in: ['pod-a', 'pod-b'] } }),
         { podId: { $exists: true, $ne: null } },
+        { deliveryMode: { $ne: 'digest' } },
       ]),
     }));
     expect(AgentEvent.find).toHaveBeenNthCalledWith(2, expect.objectContaining({ podId: 'pod-a' }));
@@ -378,10 +387,80 @@ describe('AgentEventService', () => {
           podId: { $in: ['pod-a', 'pod-b'] },
         },
         { podId: { $exists: true, $ne: null } },
+        { deliveryMode: { $ne: 'digest' } },
       ],
     });
     expect(AgentEvent.countDocuments).not.toHaveBeenCalled();
     expect(AgentEvent.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('digest-only inbox stays pending; a later wake claims it in the same pod', async () => {
+    const AgentMemory = require('../../../models/AgentMemory');
+    const { readFoldedDigest } = require('../../../services/agentDigestFoldService');
+    const query = (rows) => ({
+      sort: () => ({ limit: () => ({ select: () => ({ lean: jest.fn().mockResolvedValue(rows) }) }) }),
+    });
+    AgentEvent.find.mockReturnValueOnce(query([]));
+    expect(await AgentEventService.listInboxPage({ agentName: 'inbox', podId: 'pod-a' }))
+      .toEqual({ events: [], inboxCount: 0 });
+    expect(AgentEvent.findOneAndUpdate).not.toHaveBeenCalled();
+
+    AgentEvent.find
+      .mockReturnValueOnce(query([{ _id: 'wake', podId: 'pod-a' }]))
+      .mockReturnValueOnce(query([{ _id: 'wake' }]))
+      .mockReturnValueOnce(query([{ _id: 'digest' }]));
+    AgentEvent.countDocuments.mockResolvedValue(2);
+    AgentMemory.findOne.mockReturnValue({
+      select: () => ({ lean: jest.fn().mockResolvedValue({ revision: 1, lastSeenRevision: 0 }) }),
+    });
+    AgentEvent.findOneAndUpdate
+      .mockReturnValueOnce({ lean: jest.fn().mockResolvedValue({
+        _id: 'wake', agentName: 'inbox', instanceId: 'default', podId: 'pod-a',
+        type: 'chat.mention', status: 'delivered', payload: {},
+      }) })
+      .mockReturnValueOnce({ lean: jest.fn().mockResolvedValue({
+        _id: 'digest', podId: 'pod-a', type: 'message.posted', deliveryMode: 'digest',
+        status: 'delivered', payload: { messageId: '42' },
+      }) });
+    readFoldedDigest.mockResolvedValueOnce({ unreadCount: 3, lastEventIds: ['older-1'], revision: 4 });
+    AgentEvent.updateOne
+      .mockResolvedValueOnce({ modifiedCount: 1 }) // the wake's digest snapshot
+      .mockResolvedValueOnce({ modifiedCount: 1 }); // the folded rollup it carries
+    const page = await AgentEventService.listInboxPage({ agentName: 'inbox', podId: 'pod-a' });
+    expect(page.events.map((event) => event._id)).toEqual(['wake', 'digest']);
+    expect(page.inboxCount).toBe(2);
+    // A wake that carried digest records when it read it, so its ack settles
+    // the pod's backlog up to that moment.
+    expect(AgentEvent.updateOne).toHaveBeenNthCalledWith(1,
+      expect.objectContaining({ _id: 'wake', status: 'delivered' }),
+      { $set: { digestSnapshotAt: expect.any(Date) } });
+    expect(page.events[0].digestSnapshotAt).toEqual(expect.any(Date));
+    expect(page.events[0].payload.digestRollup).toEqual({ unreadCount: 3, lastEventIds: ['older-1'] });
+    expect(page.events[1].payload.digestRollup).toBeUndefined();
+    expect(AgentEvent.find).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      podId: 'pod-a', deliveryMode: { $ne: 'digest' },
+    }));
+    expect(AgentEvent.find).toHaveBeenNthCalledWith(4, expect.objectContaining({
+      podId: 'pod-a', deliveryMode: 'digest',
+    }));
+  });
+
+  test('a sibling winning the wake leaves its digest companion unclaimed', async () => {
+    const AgentMemory = require('../../../models/AgentMemory');
+    const query = (rows) => ({
+      sort: () => ({ limit: () => ({ select: () => ({ lean: jest.fn().mockResolvedValue(rows) }) }) }),
+    });
+    AgentEvent.find
+      .mockReturnValueOnce(query([{ _id: 'wake', podId: 'pod-a' }]))
+      .mockReturnValueOnce(query([{ _id: 'wake' }]))
+      .mockReturnValueOnce(query([{ _id: 'digest' }]));
+    AgentMemory.findOne.mockReturnValue({
+      select: () => ({ lean: jest.fn().mockResolvedValue({ revision: 1, lastSeenRevision: 0 }) }),
+    });
+    AgentEvent.findOneAndUpdate.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+    const page = await AgentEventService.listInboxPage({ agentName: 'inbox', podId: 'pod-a' });
+    expect(page.events).toEqual([]);
+    expect(AgentEvent.findOneAndUpdate).toHaveBeenCalledTimes(1);
   });
 
   test('listInboxPage preserves its pre-claim count when a sibling wins every candidate', async () => {
@@ -436,9 +515,15 @@ describe('AgentEventService', () => {
       agentName: 'inbox', instanceId: 'default', podIds: ['pod-a', 'pod-b'], limit: 10,
     });
 
-    expect(AgentEvent.find).toHaveBeenCalledTimes(1);
-    expect(AgentEvent.find).toHaveBeenCalledWith(expect.objectContaining({
+    expect(AgentEvent.find).toHaveBeenCalledTimes(3);
+    expect(AgentEvent.find).toHaveBeenNthCalledWith(1, expect.objectContaining({
       podId: { $in: ['pod-a', 'pod-b'] },
+    }));
+    expect(AgentEvent.find).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      podId: 'pod-a', deliveryMode: 'digest',
+    }));
+    expect(AgentEvent.find).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      podId: 'pod-b', deliveryMode: 'digest',
     }));
     expect(events.map((event) => event.podId)).toEqual(['pod-a', 'pod-b']);
   });
@@ -511,6 +596,7 @@ describe('AgentEventService', () => {
 
   test('acknowledge: status-gated delivered → acked + bumps lastSeenRevision via $max', async () => {
     const AgentMemory = require('../../../models/AgentMemory');
+    const { settleFoldedDigest } = require('../../../services/agentDigestFoldService');
     AgentIdentityService.getAgentTypeConfig.mockReturnValue({ runtime: 'moltbot' });
     AgentEvent.findOneAndUpdate.mockResolvedValue({
       _id: 'evt-1',
@@ -522,9 +608,10 @@ describe('AgentEventService', () => {
       status: 'acked',
       attempts: 1,
       memoryRevisionAtDelivery: 7,
+      digestRollupRevision: 4,
     });
 
-    await AgentEventService.acknowledge('evt-1', 'pixel', 'default', { outcome: 'no_action', reason: 'nothing-to-do' });
+    await AgentEventService.acknowledge('evt-1', 'pixel', 'default', { outcome: 'no_action' });
 
     expect(AgentEvent.findOneAndUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -542,6 +629,9 @@ describe('AgentEventService', () => {
     expect(AgentMemory.updateOne).toHaveBeenCalledWith(
       { agentName: 'pixel', instanceId: 'default' },
       { $max: { lastSeenRevision: 7 } },
+    );
+    expect(settleFoldedDigest).toHaveBeenCalledWith(
+      { agentName: 'pixel', instanceId: 'default', podId: 'pod-1' }, 4,
     );
   });
 

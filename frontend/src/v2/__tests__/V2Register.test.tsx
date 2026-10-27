@@ -131,13 +131,14 @@ describe('V2Register', () => {
 
   it('sends the first-touch ref with the signup', async () => {
     localStorage.setItem('commonly.firstTouchRef', JSON.stringify({ ref: 'x' }));
+    localStorage.setItem('commonly.signupSource.v1', JSON.stringify({ landingPath: '/guides/start', ref: 'x' }));
     renderRegister();
 
     await createAccount();
 
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
       '/api/auth/register',
-      expect.objectContaining({ signupRef: 'x' }),
+      expect.objectContaining({ signupRef: 'x', signupSource: expect.objectContaining({ landingPath: '/guides/start', ref: 'x' }) }),
     ));
     localStorage.clear();
   });

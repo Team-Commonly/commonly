@@ -11,7 +11,7 @@
 const mongoose = require('mongoose');
 
 jest.mock('../../../models/AgentRegistry', () => ({
-  AgentInstallation: { find: jest.fn(), findOne: jest.fn() },
+  AgentInstallation: { find: jest.fn(), findOne: jest.fn(), findOneAndUpdate: jest.fn(), updateOne: jest.fn() },
 }));
 
 jest.mock('../../../services/agentEventService', () => ({
@@ -25,12 +25,15 @@ jest.mock('../../../models/AgentEvent', () => ({
 
 jest.mock('../../../models/User', () => ({
   findById: jest.fn(),
+  find: jest.fn(),
 }));
 
 const mockTaskUpdateOne = jest.fn();
 jest.mock('../../../models/Task', () => ({
   updateOne: (...args) => mockTaskUpdateOne(...args),
+  aggregate: jest.fn().mockResolvedValue([]),
   find: jest.fn(),
+  exists: jest.fn(),
 }));
 
 const { AgentInstallation } = require('../../../models/AgentRegistry');
@@ -38,7 +41,7 @@ const AgentEventService = require('../../../services/agentEventService');
 const AgentEvent = require('../../../models/AgentEvent');
 const Task = require('../../../models/Task');
 const User = require('../../../models/User');
-const { notifyPodAgents, notifyFoundWork } = require('../../../services/taskEventService');
+const { notifyPodAgents, notifyFoundWork, notifyLeaseWarning } = require('../../../services/taskEventService');
 
 const POD_ID = new mongoose.Types.ObjectId().toString();
 const HUMAN_ID = new mongoose.Types.ObjectId().toString();
@@ -54,7 +57,10 @@ const install = (agentName, installedBy) => ({
   podId: POD_ID,
   status: 'active',
   installedBy,
-  config: { runtime: { runtimeType: 'wrapper' }, wakeOnMessage: { enabled: true } },
+  config: {
+    runtime: { runtimeType: 'wrapper' }, wakeOnMessage: { enabled: true },
+    workDiscovery: { enabled: true, role: 'implementer' },
+  },
 });
 
 const task = (overrides = {}) => ({
@@ -77,12 +83,16 @@ beforeEach(() => {
   // unless it explicitly seeds a pending wake.
   AgentEvent.findOneAndUpdate.mockResolvedValue(null);
   AgentInstallation.findOne.mockReturnValue({ sort: () => ({ lean: async () => null }) });
+  AgentInstallation.findOneAndUpdate.mockResolvedValue({});
+  AgentInstallation.updateOne.mockResolvedValue({ matchedCount: 1 });
   User.findById.mockReturnValue({ select: () => ({ lean: async () => null }) });
+  User.find.mockReturnValue({ select: () => ({ lean: async () => [] }) });
   AgentEvent.updateOne.mockResolvedValue({});
   mockTaskUpdateOne.mockResolvedValue({ matchedCount: 1 });
   Task.find.mockReturnValue({
     sort: () => ({ limit: () => ({ lean: async () => [] }) }),
   });
+  Task.exists.mockResolvedValue(null);
 });
 
 describe('notifyPodAgents', () => {
@@ -150,6 +160,19 @@ describe('notifyPodAgents', () => {
     expect(mockTaskUpdateOne).not.toHaveBeenCalled();
   });
 
+  it('keeps a pending unassigned revision due even with a stale claim id', async () => {
+    mockInstalls([install('scout', HUMAN_ID)]);
+
+    await notifyPodAgents(POD_ID, task({
+      _id: 'task-1', status: 'pending', assignee: null, claimedBy: 'default',
+      updatedAt: new Date('2026-08-20T20:00:00.000Z'),
+    }), 'updated', { userId: HUMAN_ID, isAgent: false });
+
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+    expect(AgentEventService.enqueue).toHaveBeenCalledWith(expect.objectContaining({ deliveryMode: 'digest' }));
+    expect(mockTaskUpdateOne).not.toHaveBeenCalled();
+  });
+
   it('rides message.posted, because a bespoke task.* type reaches neither runtime', async () => {
     mockInstalls([install('scout', HUMAN_ID)]);
 
@@ -207,7 +230,7 @@ describe('notifyPodAgents', () => {
     mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
 
     await notifyPodAgents(POD_ID, task({ assignee: 'sprint-impl' }), 'updated',
-      { userId: HUMAN_ID, isAgent: false }, { assignee: 'scout' });
+      { userId: AGENT_ID, isAgent: true }, { assignee: 'scout' });
 
     // A messageId would re-engage the wrapper's claim gate and put us back to
     // one-looker-per-change — dedupe at the wrong layer. Contention belongs on
@@ -237,7 +260,7 @@ describe('notifyPodAgents', () => {
     await notifyPodAgents(POD_ID, task(), 'updated', { userId: AGENT_ID, isAgent: true });
 
     const [, update] = AgentEvent.findOneAndUpdate.mock.calls[0];
-    expect(update.$set).toBeUndefined();
+    expect(update.$set).toEqual({ 'payload.wakeReason': 'assignee' });
   });
 
   it('never wakes the actor about their own edit', async () => {
@@ -290,7 +313,8 @@ describe('notifyPodAgents', () => {
       userId: AGENT_ID, isAgent: true, agentName: 'scout', instanceId: 'u0da521ab41',
     });
 
-    const woken = AgentEventService.enqueue.mock.calls.map((c) => c[0].instanceId);
+    const woken = AgentEventService.enqueue.mock.calls
+      .filter(([event]) => event.deliveryMode !== 'digest').map(([event]) => event.instanceId);
     expect(woken).toEqual(['ucc4035c51b']);
   });
 
@@ -303,7 +327,8 @@ describe('notifyPodAgents', () => {
     await notifyPodAgents(POD_ID, task({ assignee: 'openclaw' }), 'updated',
       { userId: HUMAN_ID, isAgent: false });
 
-    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(AgentEventService.enqueue.mock.calls).toHaveLength(2);
+    expect(AgentEventService.enqueue.mock.calls.every(([event]) => event.deliveryMode === 'digest')).toBe(true);
   });
 
   it('still wakes an agent when the HUMAN who installed it edits the board', async () => {
@@ -356,8 +381,10 @@ describe('notifyPodAgents', () => {
 
     await notifyPodAgents(POD_ID, task({ assignee: 'commonly-bot' }), 'created', { userId: HUMAN_ID, isAgent: false });
 
-    const woken = AgentEventService.enqueue.mock.calls.map((c) => c[0].agentName);
+    const woken = AgentEventService.enqueue.mock.calls
+      .filter(([event]) => event.deliveryMode !== 'digest').map(([event]) => event.agentName);
     expect(woken).toEqual(['commonly-bot']);
+    expect(AgentEventService.enqueue.mock.calls.filter(([event]) => event.deliveryMode === 'digest')).toHaveLength(2);
   });
 
   it('resolves a claimed row through the bot principal, not its installer', async () => {
@@ -369,7 +396,9 @@ describe('notifyPodAgents', () => {
     await notifyPodAgents(POD_ID, task({ assignee: null, claimedBy: AGENT_ID }), 'updated',
       { userId: HUMAN_ID, isAgent: false });
 
-    expect(AgentEventService.enqueue.mock.calls.map(([event]) => event.agentName)).toEqual(['sprint-impl']);
+    expect(AgentEventService.enqueue.mock.calls
+      .filter(([event]) => event.deliveryMode !== 'digest').map(([event]) => event.agentName))
+      .toEqual(['sprint-impl']);
   });
 
   it('does not treat an ambiguous default claim key as every default seat', async () => {
@@ -378,7 +407,7 @@ describe('notifyPodAgents', () => {
     await notifyPodAgents(POD_ID, task({ assignee: null, claimedBy: 'default' }), 'updated',
       { userId: HUMAN_ID, isAgent: false });
 
-    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(AgentEventService.enqueue.mock.calls.every(([event]) => event.deliveryMode === 'digest')).toBe(true);
   });
 
   it('does not treat an ambiguous default assignee as every default seat', async () => {
@@ -387,7 +416,7 @@ describe('notifyPodAgents', () => {
     await notifyPodAgents(POD_ID, task({ assignee: 'default' }), 'updated',
       { userId: HUMAN_ID, isAgent: false });
 
-    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(AgentEventService.enqueue.mock.calls.every(([event]) => event.deliveryMode === 'digest')).toBe(true);
   });
 
   it('wakes a claimed dependent row when its exact dependency clears', async () => {
@@ -398,7 +427,34 @@ describe('notifyPodAgents', () => {
       { userId: HUMAN_ID, isAgent: false }, { status: 'claimed' });
 
     expect(Task.find.mock.calls[0][0]).toMatchObject({ podId: POD_ID, dep: 'TASK-042' });
-    expect(AgentEventService.enqueue.mock.calls.map(([event]) => event.agentName)).toEqual(['sprint-impl']);
+    expect(AgentEventService.enqueue.mock.calls
+      .filter(([event]) => event.deliveryMode !== 'digest').map(([event]) => event.agentName))
+      .toEqual(['sprint-impl']);
+  });
+
+  it('wakes a claimed dependent row through the bot principal', async () => {
+    mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
+    Task.find.mockReturnValueOnce({ lean: async () => [{ assignee: null, claimedBy: AGENT_ID }] });
+    User.findById.mockReturnValue({ select: () => ({ lean: async () => ({
+      isBot: true, botMetadata: { agentName: 'sprint-impl', instanceId: 'default' },
+    }) }) });
+
+    await notifyPodAgents(POD_ID, task({ assignee: null, status: 'done' }), 'updated',
+      { userId: HUMAN_ID, isAgent: false }, { status: 'claimed' });
+
+    const bySeat = Object.fromEntries(AgentEventService.enqueue.mock.calls.map(([arg]) => [arg.agentName, arg]));
+    expect(bySeat['sprint-impl'].deliveryMode).toBeUndefined();
+    expect(bySeat.scout.deliveryMode).toBe('digest');
+  });
+
+  it('does not repeat dependency wakes for a later note on an already done row', async () => {
+    mockInstalls([install('sprint-impl', HUMAN_ID)]);
+
+    await notifyPodAgents(POD_ID, task({ assignee: null, status: 'done' }), 'updated',
+      { userId: HUMAN_ID, isAgent: false });
+
+    expect(Task.find).not.toHaveBeenCalled();
+    expect(AgentEventService.enqueue.mock.calls[0][0].deliveryMode).toBe('digest');
   });
 
   it('stays quiet on delete, where the wake would spend a turn finding nothing', async () => {
@@ -443,6 +499,98 @@ describe('notifyFoundWork', () => {
     updatedAt: new Date(`2026-08-20T20:00:${String(index).padStart(2, '0')}.000Z`),
   }));
 
+  it('caps unclaimed-work nudges per seat and pod for one hour without losing due work', async () => {
+    mockInstalls([install('scout', HUMAN_ID)]);
+    const now = new Date('2026-08-20T20:00:00.000Z');
+    AgentInstallation.findOneAndUpdate.mockResolvedValue(null);
+
+    await notifyFoundWork(POD_ID, offerRows(1), 1, now);
+
+    expect(AgentInstallation.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        agentName: 'scout', instanceId: 'default', podId: POD_ID, status: 'active',
+        $or: [
+          { lastFoundWorkAt: { $lte: new Date(now.getTime() - 60 * 60 * 1000) } },
+          { lastFoundWorkAt: null },
+        ],
+      },
+      { $set: { lastFoundWorkAt: now } },
+      { new: true, timestamps: false },
+    );
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(mockTaskUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('never nudges a reviewer or a seat without explicit implementer opt-in', async () => {
+    mockInstalls([
+      { ...install('sprint-review', HUMAN_ID), config: {
+        wakeOnMessage: { enabled: true }, workDiscovery: { enabled: true, role: 'reviewer' },
+      } },
+      { ...install('legacy', HUMAN_ID), config: { wakeOnMessage: { enabled: true } } },
+      install('sprint-impl', HUMAN_ID),
+    ]);
+
+    await notifyFoundWork(POD_ID, offerRows(1), 1);
+
+    expect(AgentEventService.enqueue.mock.calls.map(([arg]) => arg.agentName)).toEqual(['sprint-impl']);
+    expect(Task.exists).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips an implementer with assigned or claimed open work', async () => {
+    mockInstalls([install('sprint-impl', HUMAN_ID)]);
+    Task.exists.mockResolvedValue({ _id: 'busy-task' });
+
+    await notifyFoundWork(POD_ID, offerRows(1), 1);
+
+    expect(Task.exists).toHaveBeenCalledWith({
+      podId: POD_ID,
+      status: { $in: ['pending', 'claimed'] },
+      $or: [
+        { assignee: /^sprint-impl$/i },
+        { status: 'claimed', claimedBy: /^sprint-impl$/i },
+      ],
+    });
+    expect(AgentInstallation.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(mockTaskUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('skips a seat whose claim is stored as its bot User id', async () => {
+    mockInstalls([install('sprint-impl', HUMAN_ID)]);
+    const principalId = new mongoose.Types.ObjectId();
+    User.find.mockReturnValue({ select: () => ({ lean: async () => [{ _id: principalId }] }) });
+    Task.exists.mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'busy-task' });
+
+    await notifyFoundWork(POD_ID, offerRows(1), 1);
+
+    expect(User.find).toHaveBeenCalledWith({
+      isBot: true,
+      'botMetadata.agentName': /^sprint-impl$/i,
+      'botMetadata.instanceId': { $in: [/^default$/i, /^sprint-impl$/i, null] },
+    });
+    expect(Task.exists).toHaveBeenLastCalledWith({
+      podId: POD_ID,
+      status: 'claimed',
+      claimedBy: { $in: [String(principalId)] },
+    });
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('releases a reserved slot when the nudge enqueue fails', async () => {
+    mockInstalls([install('scout', HUMAN_ID)]);
+    const now = new Date('2026-08-20T20:00:00.000Z');
+    AgentEventService.enqueue.mockRejectedValueOnce(new Error('store down'));
+
+    await notifyFoundWork(POD_ID, offerRows(1), 1, now);
+
+    expect(AgentInstallation.updateOne).toHaveBeenCalledWith(
+      { agentName: 'scout', instanceId: 'default', podId: POD_ID, lastFoundWorkAt: now },
+      { $unset: { lastFoundWorkAt: 1 } },
+      { timestamps: false },
+    );
+    expect(mockTaskUpdateOne).not.toHaveBeenCalled();
+  });
+
   it('names five rows but stamps every aggregate row, including rows 6+', async () => {
     mockInstalls([install('scout', HUMAN_ID)]);
     const rows = offerRows(9);
@@ -485,5 +633,41 @@ describe('notifyFoundWork', () => {
 
     expect(AgentEventService.enqueue).not.toHaveBeenCalled();
     expect(mockTaskUpdateOne).not.toHaveBeenCalled();
+  });
+});
+
+// TASK-581: a wake carries other 24-hex ids (owner, event, delivery). Fresh
+// seat sessions called commonly_*_task without podId until the board's pod was
+// stated on a line of its own, naming that id and no other.
+describe('board wakes name their pod', () => {
+  const offerRows = (count) => Array.from({ length: count }, (_, index) => ({
+    _id: `row-${index + 1}`,
+    taskId: `TASK-${index + 1}`,
+    title: `Task ${index + 1}`,
+    updatedAt: new Date(`2026-08-20T20:00:${String(index).padStart(2, '0')}.000Z`),
+  }));
+  const boardLine = (content) => content.split('\n').filter((line) => line.startsWith('Board pod: '));
+  const expectBoardLine = (content) => {
+    expect(boardLine(content)).toEqual([`Board pod: ${POD_ID}; pass it as podId to every commonly_*_task call.`]);
+    for (const other of [HUMAN_ID, AGENT_ID]) expect(boardLine(content)[0]).not.toContain(other);
+  };
+
+  it('in the board-moved wake', async () => {
+    mockInstalls([install('scout', HUMAN_ID)]);
+    await notifyPodAgents(POD_ID, task(), 'created', { userId: HUMAN_ID, isAgent: false });
+    expectBoardLine(AgentEventService.enqueue.mock.calls[0][0].payload.content);
+  });
+
+  it('in the found-work wake', async () => {
+    mockInstalls([install('scout', HUMAN_ID)]);
+    const rows = offerRows(2);
+    await notifyFoundWork(POD_ID, rows, rows.length, new Date('2026-08-20T20:00:00.000Z'));
+    expectBoardLine(AgentEventService.enqueue.mock.calls[0][0].payload.content);
+  });
+
+  it('in the lapsed-lease warning', async () => {
+    AgentEvent.findOneAndUpdate.mockResolvedValueOnce(null);
+    await notifyLeaseWarning(POD_ID, { agentName: 'scout', instanceId: 'default', label: 'scout' }, { taskId: 'TASK-042', title: 't' }, 0, 2);
+    expectBoardLine(AgentEventService.enqueue.mock.calls[0][0].payload.content);
   });
 });

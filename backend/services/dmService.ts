@@ -1,3 +1,4 @@
+import { resolveAgentDisplayLabel } from '../utils/agentDisplayLabel';
 import Pod from '../models/Pod';
 import User from '../models/User';
 import { AgentInstallation } from '../models/AgentRegistry';
@@ -60,26 +61,6 @@ interface AgentDmUpsertResult {
   };
 }
 
-// Mirror of agentIdentityService.resolveAgentDisplayLabel — duplicated here
-// to avoid a service-to-service import cycle (dmService is required by
-// agentMessageService, which is required by agentIdentityService callers).
-// Stays in sync with the same fallback chain: botMetadata.displayName →
-// instanceId (when not 'default') → username → fallback. Never falls back
-// to botMetadata.agentName (runtime-leaning, "openclaw" for OpenClaw-driven
-// agents). Producing pod names like "openclaw (aria)" is the bug this
-// avoids — the agent's heartbeat surfaces those names back into chat.
-const resolveAgentDisplayLabel = (
-  user: { username?: string; botMetadata?: { displayName?: string; instanceId?: string } } | null | undefined,
-  fallback: string,
-): string => {
-  if (!user) return fallback;
-  const meta = user.botMetadata || {};
-  const display = meta.displayName?.trim();
-  if (display) return display;
-  const instanceId = meta.instanceId?.trim();
-  if (instanceId && instanceId !== 'default') return instanceId;
-  return user.username || fallback;
-};
 
 class DMService {
   static agentDmPairKey(a: unknown, b: unknown): string {
@@ -121,25 +102,6 @@ class DMService {
     return dmPod;
   }
 
-  static async isCompatibleStalePod(dmPod: InstanceType<typeof Pod>, ownerId: unknown, agentId: unknown): Promise<boolean> {
-    const ownerIdStr = String(ownerId);
-    const agentIdStr = String(agentId);
-    const otherMemberIds = (dmPod.members || [])
-      .map((member: unknown) => String((member as unknown as Record<string, unknown>)?._id || member))
-      .filter((id: string) => id !== ownerIdStr);
-
-    if (!otherMemberIds.length) return true;
-
-    const botMembers = await User.find({
-      _id: { $in: otherMemberIds },
-      isBot: true,
-    }).select('_id').lean();
-
-    if (!botMembers.length) return true;
-
-    return botMembers.some((member) => String((member as unknown as Record<string, unknown>)._id) === agentIdStr);
-  }
-
   /**
    * Find or create a private agent-admin pod between an agent user and its
    * installer (the owner who installed the agent into a pod). Agent-admin is
@@ -149,57 +111,46 @@ class DMService {
     const agentId = String(agentUserId);
     const ownerId = String(ownerUserId);
 
-    // Look for an existing agent-admin pod where both users are members and
-    // the agent name matches (prevents cross-agent DM collisions).
-    const existing = await Pod.findOne({
-      type: 'agent-admin',
-      members: { $all: [agentId, ownerId] },
-      description: { $regex: `\\b${agentName}\\b`, $options: 'i' },
-    });
-    if (existing) return DMService.ensureDmMembers(existing, ownerId, agentId);
-
-    // Fallback: broader search without description regex in case the
-    // description was edited or stored differently.
-    const fallback = await Pod.findOne({
-      type: 'agent-admin',
-      members: { $all: [agentId, ownerId] },
-      name: { $regex: agentName, $options: 'i' },
-    });
-    if (fallback) return DMService.ensureDmMembers(fallback, ownerId, agentId);
-
-    // Repair stale pods that match this agent hint but are missing one of the
-    // expected members (for example older records with owner-only membership).
-    const safeAgentName = DMService.escapeRegex(agentName || 'agent');
-    const staleCandidates = await Pod.find({
-      type: 'agent-admin',
-      members: ownerId,
-      $or: [
-        { description: { $regex: `\\b${safeAgentName}\\b`, $options: 'i' } },
-        { name: { $regex: safeAgentName, $options: 'i' } },
-      ],
-    })
-      .sort({ updatedAt: -1 })
-      .limit(5);
-    const staleChecks = await Promise.all(
-      staleCandidates.map(async (candidate) => ({
-        candidate,
-        compatible: await DMService.isCompatibleStalePod(candidate, ownerId, agentId),
-      })),
-    );
-    const stale = staleChecks.find((row) => row.compatible)?.candidate || null;
-    if (stale) {
-      return DMService.ensureDmMembers(stale, ownerId, agentId);
-    }
-
-    // Create a new DM pod. Use the agent's curated displayName (from
-    // botMetadata) instead of the runtime-leaning agentName, so the pod
-    // name reads "DM: Aria" not "DM: openclaw (aria)" — the latter
-    // surfaces back into agent chat via heartbeat pod-list rendering.
     const agentUser = await User.findById(agentId)
       .select('username botMetadata')
       .lean<{ username?: string; botMetadata?: { displayName?: string; instanceId?: string } } | null>();
     const labelFallback = (agentName && agentName !== 'agent') ? agentName : 'agent';
     const label = resolveAgentDisplayLabel(agentUser, labelFallback);
+    // Include the stored label to find rooms created before runtime-label cleanup.
+    const searchLabels = [...new Set(
+      [agentName, label, agentUser?.botMetadata?.displayName?.trim()]
+        .filter((value): value is string => Boolean(value)),
+    )];
+    const searchPattern = searchLabels.map((value) => DMService.escapeRegex(value)).join('|');
+    const descriptionPattern = `^Debug channel for (?:${searchPattern})$`;
+    const namePattern = `^DM:\\s*(?:${searchPattern})$`;
+
+    // Look for an existing agent-admin pod where both users are members and
+    // the complete stored identity matches (prevents cross-agent DM collisions).
+    const existing = await Pod.findOne({
+      type: 'agent-admin',
+      members: { $all: [agentId, ownerId] },
+      description: { $regex: descriptionPattern, $options: 'i' },
+    });
+    if (existing) return DMService.ensureDmMembers(existing, ownerId, agentId);
+
+    // Fallback: exact DM name match without description in case the
+    // description was edited or stored differently.
+    const fallback = await Pod.findOne({
+      type: 'agent-admin',
+      members: { $all: [agentId, ownerId] },
+      name: { $regex: namePattern, $options: 'i' },
+    });
+    if (fallback) return DMService.ensureDmMembers(fallback, ownerId, agentId);
+
+    // Display names, including an exact legacy label, are not stable identity.
+    // An owner-only pod may belong to another agent with the same name. Leave
+    // ambiguous private pods untouched and create a new room for this pair.
+
+    // Create a new DM pod. Use the agent's curated displayName (from
+    // botMetadata) instead of the runtime-leaning agentName, so the pod
+    // name reads "DM: Aria" not "DM: openclaw (aria)" — the latter
+    // surfaces back into agent chat via heartbeat pod-list rendering.
     const dmPod = new Pod({
       name: `DM: ${label}`,
       description: `Debug channel for ${label}`,

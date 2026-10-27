@@ -13,6 +13,8 @@ const Pod = require('../models/Pod');
 const AppService = require('../services/appService');
 // eslint-disable-next-line global-require
 const { hash, randomSecret } = require('../utils/secret');
+// eslint-disable-next-line global-require
+const { platformIpRateLimit } = require('../middleware/platformRateLimit');
 
 interface AuthReq {
   user?: { id: string; role?: string };
@@ -51,7 +53,16 @@ const ensurePodAccess = async (podId: string, userId: unknown) => {
   return pod;
 };
 
-router.get('/marketplace', async (req: AuthReq, res: Res) => {
+// Anonymous marketplace reads do a database query per hit, so they get the
+// IP tier (middleware/platformRateLimit.ts). A threat-model budget, not one
+// fitted to traffic: the ingress log shows almost none on these routes.
+const marketplaceReadLimit = platformIpRateLimit({
+  windowMs: 60 * 1000,
+  limit: 300,
+  label: '300 marketplace reads per minute per IP',
+});
+
+router.get('/marketplace', marketplaceReadLimit, async (req: AuthReq, res: Res) => {
   try {
     const { category, type, search, sort, limit, skip } = req.query || {};
     const apps = await AppService.getMarketplaceApps({ category, type, search, sort, limit: parseInt(limit || '50', 10) || 50, skip: parseInt(skip || '0', 10) || 0 });
@@ -62,7 +73,7 @@ router.get('/marketplace', async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/marketplace/featured', async (req: AuthReq, res: Res) => {
+router.get('/marketplace/featured', marketplaceReadLimit, async (req: AuthReq, res: Res) => {
   try {
     const limit = parseInt(req.query?.limit || '6', 10) || 6;
     const apps = await AppService.getFeaturedApps(limit);
@@ -73,7 +84,7 @@ router.get('/marketplace/featured', async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/marketplace/:id', async (req: AuthReq, res: Res) => {
+router.get('/marketplace/:id', marketplaceReadLimit, async (req: AuthReq, res: Res) => {
   try {
     const app = await App.findOne({ _id: req.params?.id, 'marketplace.published': true, status: 'active' }).select('-clientSecretHash -webhookSecretHash');
     if (!app) return res.status(404).json({ error: 'App not found' });

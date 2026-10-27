@@ -73,6 +73,9 @@ hostedMcp:
   # Entry IDs omitted from Tools offerings. Existing connections remain listed
   # for removal; grants and revocation continue to use the pinned entry.
   hiddenEntries: []
+  # Entry ID -> exact authenticated Mongo User IDs permitted to walk hidden entries.
+  # Empty by default; operator-local values select named walk users.
+  hiddenEntryUserAllowlist: {}
   googleCalendar:
     enabled: false
 
@@ -85,6 +88,14 @@ agentProvisioning:
 backend:
   enabled: true
   replicaCount: 1
+  worker:
+    # Opt in only when a dedicated worker can replace web's background jobs.
+    enabled: false
+    # Enabling the worker first disables web jobs but keeps worker replicas at
+    # zero. After old web pods terminate, set this false to start the worker.
+    startPaused: true
+    nodeSelector: {}
+    tolerations: []
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend
     tag: latest
@@ -444,11 +455,11 @@ discord:
 email:
   enabled: true
 
-# Shared GitHub PAT for agent git operations (api-keys -> GITHUB_PAT). On (default)
-# for prod/dev. Off (staging) omits the ref entirely, so the reckless,
-# auto-deploy-every-merge lane holds no credential with write power over prod
-# repos. The backend reads GITHUB_PAT lazily and degrades (GitHub routes report
-# not-configured) rather than crashing when it is absent.
+# Shared GitHub PAT (api-keys -> GITHUB_PAT), now consumed only by the clawdbot
+# gateway (retires with ADR-021). The backend, ops-runner and cloud-codex no longer
+# read it: backend GitHub calls use GitHub App installation tokens. On (default)
+# for prod/dev. Off (staging) omits the ref entirely, so the auto-deploy-every-merge
+# lane holds no credential with write power over prod repos.
 githubPat:
   enabled: true
 
@@ -550,6 +561,14 @@ cloudflared:
 # LiteLLM proxy (model gateway + request logging)
 litellm:
   enabled: false
+  # Per-service LiteLLM virtual keys (TASK-555). When true, backend and
+  # commonly-bot call LiteLLM with their own budgeted keys
+  # (<keyPrefix>litellm-backend-key, <keyPrefix>litellm-commonly-bot-key) as
+  # LITELLM_API_KEY instead of the master key. A key's budget lives in
+  # LiteLLM's Postgres, so it survives a LiteLLM restart; mint both keys in
+  # Secret Manager before enabling, or ExternalSecrets rejects the bundle.
+  serviceKeys:
+    fromSecret: false
   # When true, bypass LiteLLM for Codex calls. moltbot.json's openai-codex
   # provider points at chatgpt.com directly via OpenClaw's native
   # openai-codex-responses handler. Workaround for BerriAI/litellm#25429
@@ -579,7 +598,8 @@ litellm:
       # storageClass defaults to the cluster's default StorageClass.
   image:
     repository: ghcr.io/berriai/litellm
-    tag: v1.82.3-stable
+    # The shared boot script targets this image's ChatGPT Responses transform.
+    tag: v1.106.2
   port: 4000
   resources:
     requests:

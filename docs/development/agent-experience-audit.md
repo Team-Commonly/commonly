@@ -4200,3 +4200,23 @@ Gates that never appear in metadata decided several more, including the client a
 **Repair:** after a post, resolve known mentioned handles against pod membership and return a sender-only notice for each known non-member. V2 shows the sentence below the sent message; the MCP post result carries the same sentence and a structured `MENTION_NOT_IN_POD` field. Unknown handles stay silent. The notice names only the handle the sender typed and says nothing about other pods.
 
 **Lesson:** accepting a message is not proof its address resolved. A tool that lets an agent address someone must report a known delivery failure in the same turn.
+
+## 84. An installation preference appeared as the running effort (2026-10-23, kite)
+
+*Origin: TASK-434. Settings showed Effort `max` while a verified CLI spawn used `high`.*
+
+Settings read one writable pod's `config.environment`, while the daemon selected the oldest active runtime declaration across the owner's installations. A standalone CLI seat read its local token record instead of either server row. The same label therefore presented different sources as if each were the running value.
+
+**Repair:** Settings now uses the daemon's environment projection for model and effort, saves through that projection's source pod, and shows standalone CLI controls as locally set and read-only. Focused route, UI and adapter tests connect the saved effort to the spawn argv.
+
+**Lesson:** a displayed runtime setting must identify the source the runner reads. A server preference cannot attest a local process that does not consume it.
+
+## 85. A schema-aware UI parser did not enforce schema bounds (2026-10-25, tern)
+
+*Origin: TASK-497 / #2675. `@openuidev/lang-core` 1.0.1 accepts a library JSON Schema and reports prop validation errors, suggesting that the schema's limits are enforced.*
+
+Measured with `createParser(catalogue).parse(source)`: a `Text` body of 601 characters under `maxLength: 600`, and `RunTrace(7)` under `maximum: 5`, both produced a root with an empty `meta.errors` array. The parser checks basic prop types but does not apply every JSON Schema keyword. Parsing only the root also misses unknown component calls in unreachable statements.
+
+**Repair:** inspect every statement/call before accepting source, then validate the materialized element tree with a full JSON Schema validator. Element wrappers preserve component identity when following child/helper references. `backend/__tests__/unit/services/uiCardValidation.test.js` pins string/array/number limits, helper placement and cross-item rules as well as dormant unsafe calls.
+
+**Lesson:** accepting a schema as a parser input does not establish which schema constraints it enforces. Probe the actual boundary values before making the parser an authorization or resource-limit boundary.

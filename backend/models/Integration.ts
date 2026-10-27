@@ -94,6 +94,8 @@ export interface IIntegration extends Document {
     chatType?: string;
     accessToken?: string;
     refreshToken?: string;
+    feedAccessTokenRef?: string;
+    feedRefreshTokenRef?: string;
     tokenType?: string;
     tokenExpiresAt?: Date;
     oauthScopes?: string[];
@@ -180,6 +182,8 @@ export interface IIntegration extends Document {
     credentialRef?: string;
     refreshTokenRef?: string;
     refreshGeneration?: number;
+    authGeneration?: number;
+    credentialAuthGeneration?: number;
     refreshingUntil?: Date;
     credentialHint?: string;
     pendingAuth?: { state?: string; codeVerifier?: string; expiresAt?: Date; clientId?: string };
@@ -262,6 +266,11 @@ const IntegrationSchema = new Schema<IIntegration>(
       chatType: String,
       accessToken: String,
       refreshToken: String,
+      // ConnectorSecret refs for the X / Instagram feed pair (`services/feedCredentials`).
+      // Declared for the same reason as `webhookUrlRef` above: a strict subdocument
+      // drops an undeclared `$set` in silence.
+      feedAccessTokenRef: String,
+      feedRefreshTokenRef: String,
       tokenType: String,
       tokenExpiresAt: Date,
       oauthScopes: [String],
@@ -373,6 +382,8 @@ const IntegrationSchema = new Schema<IIntegration>(
       credentialRef: String, // ConnectorSecret ref: the access token
       refreshTokenRef: String, // ConnectorSecret ref: the refresh token
       refreshGeneration: Number, // the §10.3 fence's generation at the last refresh
+      authGeneration: Number, // monotonically fences concurrent OAuth callbacks for this row
+      credentialAuthGeneration: Number, // authorization that published the currently stored pair
       // The §10.3 fence's LEASE: taken by whoever won the bump, released by its
       // commit or its error mark, and treated as takeable once it is in the
       // past. Without it a caller that reads the row mid-round-trip sees a

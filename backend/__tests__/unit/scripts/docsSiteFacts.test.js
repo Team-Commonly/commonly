@@ -11,6 +11,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { daemonSetupCommandTemplate } = require('../../utils/daemonSetupCommandTemplate');
 
 const ROOT = path.resolve(__dirname, '../../../..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -42,14 +43,18 @@ describe('docs.commonly.me says what the product does', () => {
 
   test('the quickstart is the hosted path and the deeper connect page keeps the CLI commands', () => {
     const install = constantFromPage('CLI_INSTALL_COMMAND');
-    const daemon = constantFromPage('DAEMON_SETUP_COMMAND');
+    // The docs site describes commonly.me, so its command names that instance.
+    const daemon = daemonSetupCommandTemplate('https://api.commonly.me');
     expect(quickstart).toContain('Run it here');
     expect(quickstart).not.toContain('npm i -g');
     expect(connect).toContain(install);
     expect(connect).toContain(daemon);
-    expect(connect).toContain('export COMMONLY_API_URL=https://api.commonly.me');
-    expect(connect).toContain('export COMMONLY_AGENT_TOKEN=');
-    expect(connect).toContain('commonly agent run <agent-name>');
+    expect(connect).toContain('agent init --language python --name echo-bot --pod <podId>');
+    expect(connect).toContain('COMMONLY_BASE_URL=https://api.commonly.me python3 bot.py');
+    // Both connect forms: the terminal card form first, the headless export second.
+    expect(connect).toContain('commonly agent attach claude --pod <podId> --name my-claude');
+    expect(connect).toContain('export COMMONLY_AGENT_TOKEN=cm_agent_<token>');
+    expect(connect).toContain('commonly agent run my-claude --adapter claude');
   });
 
   test('the quickstart links live hosted limits instead of freezing plan numbers', () => {
@@ -71,17 +76,20 @@ describe('docs.commonly.me says what the product does', () => {
     expect(offenders).toEqual([]);
   });
 
-  test('the listener comes before the MCP server on the connect page', () => {
-    expect(connect.indexOf('## The listener')).toBeGreaterThan(-1);
-    expect(connect.indexOf('## The listener')).toBeLessThan(connect.indexOf('## The MCP server'));
+  test('the terminal form leads, then headless, then the webhook program, before the MCP server', () => {
+    const at = (heading) => connect.indexOf(heading);
+    expect(at('## Run it on your terminal')).toBeGreaterThan(-1);
+    expect(at('## Run it on your terminal')).toBeLessThan(at('## Run it headless'));
+    expect(at('## Run it headless')).toBeLessThan(at('## Your own program'));
+    expect(at('## Your own program')).toBeLessThan(at('## The MCP server'));
   });
 
   test('the Bring your own navigation lists walked runtimes only', () => {
     const groups = navigation.navigation.tabs[0].groups;
     const guides = groups.find((group) => group.group === 'Bring Your Own Agent').pages;
-    ['claude-code', 'codex', 'opencode', 'hermes', 'deepseek-harness', 'work-in-your-repo']
+    ['claude-code', 'codex', 'opencode', 'deepseek-harness', 'work-in-your-repo']
       .forEach((guide) => expect(guides).toContain(`bring-your-own/${guide}`));
-    ['qwen', 'pi', 'gemini', 'goose']
+    ['qwen', 'pi', 'gemini', 'goose', 'hermes']
       .forEach((guide) => expect(guides).not.toContain(`bring-your-own/${guide}`));
     expect(connect).not.toMatch(/--adapter (qwen|opencode|pi)\b/);
   });

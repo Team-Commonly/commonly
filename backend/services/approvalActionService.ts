@@ -51,6 +51,8 @@ const LOCAL_AGENT_SCOPES = [
 ];
 
 export interface CardPayload {
+  runId?: string;
+  runPodId?: string;
   kind: typeof CARD_KIND;
   approvalId: string;
   actionType: ApprovalActionType;
@@ -86,6 +88,8 @@ const legacyToolCallOutcome = (row: IApprovalAction): Partial<CardPayload> => {
 
 export const buildCardPayload = (row: IApprovalAction): CardPayload => ({
   kind: CARD_KIND,
+  ...(row.runId ? { runId: String(row.runId),
+    ...(row.runPodId ? { runPodId: String(row.runPodId) } : {}) } : {}),
   approvalId: String(row._id),
   actionType: row.actionType,
   summary: row.summary,
@@ -127,6 +131,9 @@ export const buildOwnerCardPayload = (
 };
 
 interface ProposeOptions {
+  /** Internal runtime identity, never copied from the agent HTTP body. */
+  runId?: string;
+  runPodId?: string;
   podId: string;
   agentName: string;
   instanceId: string;
@@ -471,6 +478,8 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
   }
 
   const row = await ApprovalAction.create({
+    ...(options.runId ? { runId: options.runId,
+      ...(options.runPodId ? { runPodId: options.runPodId } : {}) } : {}),
     podId,
     ownerUserId,
     agentName: String(agentName).toLowerCase(),
@@ -496,6 +505,8 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     podId: String(podId),
     messageType: 'card',
     payload: buildCardPayload(row),
+    runId: options.runId,
+    runPodId: options.runPodId,
     content: `[approval needed] ${trimmedSummary}`,
     metadata: { source: 'approval-card', approvalId: String(row._id) },
     installationConfig,
@@ -622,8 +633,8 @@ const recordToolCallDecision = async (
 };
 
 /**
- * What happened, in one line the proposing agent can act on. States facts the
- * executor produced; what to say about them is the agent's own knowledge.
+ * What happened, in one line the proposing agent can act on. The create_pod
+ * success cue includes the exact reply so Scout cannot paraphrase the next step.
  */
 const describeApprovedOutcome = (row: IApprovalAction): string => {
   if (row.executionError) {
@@ -639,14 +650,18 @@ const describeApprovedOutcome = (row: IApprovalAction): string => {
       + 'That page issues its token and shows the commands that connect their agent to it.';
   }
   if (row.actionType === 'create_pod') {
+    const params = (row.params || {}) as { locale?: string };
+    const locale = params.locale === 'zh-CN' || /\p{Script=Han}/u.test(row.summary || '') ? 'zh-CN' : 'en';
+    const podName = String(result.podName || '');
     const joinNote = result.agentJoinError
       ? ` You could not be added to it: ${String(result.agentJoinError).slice(0, 200)}.`
       : '';
     const stepsNote = result.nextStepsPosted
-      ? ' Scout has asked for a repo link or weekly workflow there and will propose one first task.'
-        + ' Point them to the new pod in one short line; do not repeat the prompt.'
+      ? ` Reply with exactly this one line: ${locale === 'zh-CN'
+        ? `${podName} 已建好。打开它，回答一个问题，就能拿到第一个任务。`
+        : `${podName} is ready. Open it and answer one question to get your first task.`}`
       : '';
-    const pod = `The pod "${String(result.podName || '')}" now exists (${String(result.podId || '')}).`;
+    const pod = `The pod "${podName}" now exists (${String(result.podId || '')}).`;
     return `${pod}${joinNote}${stepsNote}`;
   }
   return 'The action ran.';
@@ -678,13 +693,18 @@ const enqueueApprovalResolvedEvent = async (
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const AgentEventService = require('./agentEventService');
     const summary = String(row.summary || row.actionType).trim().slice(0, 200);
+    const exactPodReply = row.actionType === 'create_pod'
+      && !row.executionError
+      && Boolean((row.executionResult as { nextStepsPosted?: boolean } | undefined)?.nextStepsPosted);
     const content = [
       '[Your proposal was approved]',
       `${approvedBy.username} approved your proposal: ${summary}`,
       describeApprovedOutcome(row),
       '',
-      'Reply to them with the one next step, in a sentence or two. Do not repeat the card. '
-        + 'Return NO_REPLY only if nothing is left for them to do.',
+      exactPodReply
+        ? 'Use only the exact line above. Do not add another question or repeat the card.'
+        : 'Reply to them with the one next step, in a sentence or two. Do not repeat the card. '
+          + 'Return NO_REPLY only if nothing is left for them to do.',
     ].join('\n');
     await AgentEventService.enqueue({
       agentName: String(row.agentName),
@@ -785,7 +805,10 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
   if (!row) return { status: 404, body: { error: 'Approval not found' } };
 
   if (String(row.ownerUserId) !== String(callerUserId)) {
-    return { status: 403, body: { error: 'Only the workspace owner can decide this' } };
+    // A parked call's owner is the connection owner (ADR-033 D5), not the
+    // workspace owner that legacy action cards ask.
+    const owner = row.actionType === 'tool_call' ? 'credential owner' : 'workspace owner';
+    return { status: 403, body: { error: `Only the ${owner} can decide this` } };
   }
   // ADR-017 §Decision-authorization: no agent may decide, even one holding
   // the owner's pod. Route-level auth already excludes agent tokens; this is
@@ -828,6 +851,7 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
       {
         $set: {
           status: 'expired', resolvedAt: new Date(),
+          decidedBy: 'policy', decidedByRole: 'policy',
           toolCallEnding: 'expired', toolCallCode: 'approval_expired',
         },
         $unset: { 'toolCall.canonicalArgs': 1 },
@@ -871,6 +895,8 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
         decision,
         resolvedBy: callerUserId,
         resolvedAt: new Date(),
+        // The owner check above makes the caller the connection owner.
+        ...(parkedCall ? { decidedBy: String(callerUserId), decidedByRole: 'credential-owner' } : {}),
         ...(parkedCall && decision === 'declined'
           ? { toolCallEnding: 'declined', toolCallCode: 'approval_declined' } : {}),
         ...(decidedAfterExpiry ? { decidedAfterExpiry: true } : {}),
@@ -993,6 +1019,7 @@ export const sweepExpiredToolCallApprovals = async (now = new Date()): Promise<n
       {
         $set: {
           status: 'expired', resolvedAt: now,
+          decidedBy: 'policy', decidedByRole: 'policy',
           toolCallEnding: 'expired', toolCallCode: 'approval_expired',
         },
         $unset: { 'toolCall.canonicalArgs': 1 },

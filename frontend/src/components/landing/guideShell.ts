@@ -9,11 +9,17 @@ export const guidePalette = {
   textPrimary: '#111827',
   textSecondary: '#4b5563',
   textTertiary: '#7b8494',
-  accent: '#2f6feb',
-  accentStrong: '#1f55c9',
-  accentSoft: '#e8efff',
-  accentText: '#2456c8',
-  accentDeep: '#14306f',
+  accent: '#1d3fd1',
+  accentStrong: '#1633a8',
+  accentSoft: '#e9edfb',
+  accentText: '#1d3fd1',
+  accentDeep: '#0f2378',
+} as const;
+
+// Text-button state colors must not fall back to the legacy root MUI theme.
+export const guideTextButtonSx = {
+  color: guidePalette.accentText,
+  '&:hover': { backgroundColor: guidePalette.accentSoft },
 } as const;
 
 // Guides render outside V2's component tree, so keep their page canvas light

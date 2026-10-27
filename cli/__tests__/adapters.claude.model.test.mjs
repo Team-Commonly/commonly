@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 /**
  * The claude adapter must pin the model when ctx.environment.model is set.
  *
@@ -54,6 +55,27 @@ describe('claude adapter — model pinning', () => {
     fs.rmSync(cwd, { recursive: true, force: true });
   });
 
+  test('BYO without fleet opt-in retains the CLI default on fresh and resumed turns', async () => {
+    const prior = process.env.COMMONLY_REQUIRE_SEAT_MODEL;
+    delete process.env.COMMONLY_REQUIRE_SEAT_MODEL;
+    try {
+      expect(claude.requiresModel).toBe(false);
+      for (const sessionId of [null, 'resume-id']) {
+        const { impl, calls } = makeSpawnImpl();
+        await claude.spawn('hi', {
+          sessionId, environment: { effort: 'high' },
+          cwd,
+          _spawnImpl: impl,
+        });
+        expect(calls).toHaveLength(1);
+        expect(calls[0].args).not.toContain('--model');
+      }
+    } finally {
+      if (prior === undefined) delete process.env.COMMONLY_REQUIRE_SEAT_MODEL;
+      else process.env.COMMONLY_REQUIRE_SEAT_MODEL = prior;
+    }
+  });
+
   test('passes --model when the environment specifies one', async () => {
     const { impl, calls } = makeSpawnImpl();
 
@@ -66,28 +88,6 @@ describe('claude adapter — model pinning', () => {
 
     expect(calls).toHaveLength(1);
     expect(flagValue(calls[0].args, '--model')).toBe('claude-opus-5');
-  });
-
-  test('passes no --model when the environment omits it, so the CLI default stands', async () => {
-    const { impl, calls } = makeSpawnImpl();
-
-    await claude.spawn('hi', {
-      sessionId: null,
-      cwd,
-      environment: {},
-      _spawnImpl: impl,
-    });
-
-    expect(calls).toHaveLength(1);
-    expect(calls[0].args).not.toContain('--model');
-  });
-
-  test('is absent-safe when ctx carries no environment at all', async () => {
-    const { impl, calls } = makeSpawnImpl();
-
-    await claude.spawn('hi', { sessionId: null, cwd, _spawnImpl: impl });
-
-    expect(calls[0].args).not.toContain('--model');
   });
 
   // THE one that matters: a session-recovery retry must not switch engines.
@@ -106,4 +106,34 @@ describe('claude adapter — model pinning', () => {
     expect(retry.args).toContain('--session-id');
     expect(flagValue(retry.args, '--model')).toBe('claude-opus-5');
   });
+});
+
+test('the last-spawn callback witnesses actual fresh and recovery arguments', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-receipt-'));
+  const calls = [];
+  const reports = [];
+  let n = 0;
+  try {
+    await claude.spawn('literal --model is prompt content', {
+      cwd, sessionId: 'old', environment: { model: 'receipt-model', effort: 'high' },
+      onSpawn: (receipt) => reports.push(receipt),
+      _spawnImpl: (cmd, args) => {
+        calls.push({ cmd, args });
+        const proc = new EventEmitter();
+        proc.stdout = new EventEmitter(); proc.stderr = new EventEmitter(); proc.kill = () => {};
+        const index = n++;
+        setImmediate(() => {
+          proc.emit('spawn');
+          if (index === 0) proc.stderr.emit('data', 'session id already in use');
+          else proc.stdout.emit('data', 'done');
+          proc.emit('close', index === 0 ? 1 : 0);
+        });
+        return proc;
+      },
+    });
+    expect(calls).toHaveLength(2); expect(reports).toHaveLength(2);
+    calls.forEach(({ args }, index) => expect(reports[index]).toMatchObject({
+      model: args[args.indexOf('--model') + 1], effort: args[args.indexOf('--effort') + 1],
+    }));
+  } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
 });

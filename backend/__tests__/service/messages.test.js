@@ -69,7 +69,7 @@ describe('Message Routes Integration Tests', () => {
     expect(PGMessage.findByPodId).toHaveBeenCalledWith(
       pod._id.toString(),
       50,
-      undefined,
+      null,
     );
   });
 

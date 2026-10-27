@@ -156,7 +156,7 @@ const renderGuideProvenance = (guide) => {
   return `<p class="seo-byline">By ${escapeHtml(provenance.author)} · Reviewed by ${escapeHtml(provenance.reviewer)}<br>${dates}</p>`;
 };
 
-const renderLanding = (landing, useCases, guides) => {
+const renderLanding = (landing, useCases, guides, faq = []) => {
   const featureCards = [
     landing.features.needs,
     landing.features.team,
@@ -195,6 +195,13 @@ const renderLanding = (landing, useCases, guides) => {
       <p>${escapeHtml(guide.summary)}</p>
     </article>`).join('');
 
+  // The same questions and answers the en landing shows and its FAQPage JSON-LD carries.
+  const faqSection = faq.length ? `
+        <section id="faq">
+          <h2>${escapeHtml(landing.faq.title)}</h2>
+          <dl>${faq.map((item) => `<dt>${escapeHtml(item.question)}</dt><dd>${escapeHtml(item.answer)}</dd>`).join('')}</dl>
+        </section>` : '';
+
   return `
     <div id="seo-page">
       <header class="seo-header">
@@ -203,7 +210,6 @@ const renderLanding = (landing, useCases, guides) => {
           <a href="#features">Features</a>
           <a href="#use-cases">Use cases</a>
           <a href="#guides">Guides</a>
-          <a href="/compare/">Compare</a>
           <a href="https://github.com/Team-Commonly/commonly">GitHub</a>
         </nav>
       </header>
@@ -245,7 +251,7 @@ const renderLanding = (landing, useCases, guides) => {
           <h2>${escapeHtml(landing.openSource.title)}</h2>
           <p>${escapeHtml(landing.openSource.lede)}</p>
           <p><a href="https://github.com/Team-Commonly/commonly">${escapeHtml(landing.actions.readSource)}</a></p>
-        </section>
+        </section>${faqSection}
       </main>
       <footer class="seo-footer">Commonly is open source under Apache-2.0.</footer>
     </div>`;
@@ -295,7 +301,7 @@ const renderCompare = (compare) => {
 
 const renderUseCase = (useCase) => `
   <div id="seo-page">
-    <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a><a href="/compare/">Compare</a></nav></header>
+    <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a></nav></header>
     <main>
       <section class="seo-hero">
         <p class="seo-kicker">${escapeHtml(useCase.eyebrow)}</p>
@@ -338,7 +344,7 @@ const renderGuide = (guide) => {
 
   return `
   <div id="seo-page">
-    <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a><a href="/guides/">Guides</a><a href="/use-cases/agent-collab/">Agent collaboration</a><a href="/compare/">Compare</a></nav></header>
+    <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a><a href="/guides/">Guides</a><a href="/use-cases/agent-collab/">Agent collaboration</a></nav></header>
     <main>
       <section class="seo-hero">
         <p class="seo-kicker">${escapeHtml(guide.eyebrow)}</p>
@@ -367,7 +373,7 @@ const renderGuidesIndex = (guides) => {
 
   return `
     <div id="seo-page">
-      <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a><a href="/use-cases/agent-collab/">Agent collaboration</a><a href="/compare/">Compare</a></nav></header>
+      <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a><a href="/use-cases/agent-collab/">Agent collaboration</a></nav></header>
       <main>
         <section class="seo-hero">
           <p class="seo-kicker">Guides</p>
@@ -382,23 +388,38 @@ const renderGuidesIndex = (guides) => {
     </div>`;
 };
 
-const metadata = ({ title, description, path, schema, ogType = 'website', datePublished, dateModified }) => {
+const jsonLd = (value) => JSON.stringify(value).replaceAll('<', '\\u003c');
+
+// Must equal FAQ_JSONLD_ID in src/v2/landing/landingFaq.ts: the landing effect reuses this tag.
+const faqJsonLdId = 'landing-faq-jsonld';
+
+const faqPageJsonLd = (faq) => ({
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: faq.map((item) => ({
+    '@type': 'Question',
+    name: item.question,
+    acceptedAnswer: { '@type': 'Answer', text: item.answer },
+  })),
+});
+
+const metadata = ({ title, description, path, schema, faqSchema, ogType = 'website', datePublished, dateModified, noindex = false }) => {
   const url = pageUrl(path);
-  const structuredData = JSON.stringify(schema).replaceAll('<', '\\u003c');
+  const structuredData = jsonLd(schema);
   const articleDates = ogType === 'article' && datePublished && dateModified
     ? `\n    <meta property="article:published_time" content="${escapeHtml(datePublished)}" />\n    <meta property="article:modified_time" content="${escapeHtml(dateModified)}" />`
     : '';
   return `
     <title>${escapeHtml(title)}</title>
     <meta name="description" content="${escapeHtml(description)}" />
-    <meta name="robots" content="index,follow" />
+    <meta name="robots" content="${noindex ? 'noindex' : 'index,follow'}" />
     <link rel="canonical" href="${url}" />
     <meta property="og:type" content="${escapeHtml(ogType)}" />
     <meta property="og:site_name" content="Commonly" />
     <meta property="og:url" content="${url}" />
     <meta property="og:title" content="${escapeHtml(title)}" />
     <meta property="og:description" content="${escapeHtml(description)}" />
-    <meta property="og:image" content="${siteUrl}/og-card.png?v=2" />
+    <meta property="og:image" content="${siteUrl}/og-card.png?v=3" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     ${articleDates}
@@ -406,18 +427,19 @@ const metadata = ({ title, description, path, schema, ogType = 'website', datePu
     <meta name="twitter:site" content="@sam_commonly" />
     <meta name="twitter:title" content="${escapeHtml(title)}" />
     <meta name="twitter:description" content="${escapeHtml(description)}" />
-    <meta name="twitter:image" content="${siteUrl}/og-card.png?v=2" />
-    <script type="application/ld+json">${structuredData}</script>`;
+    <meta name="twitter:image" content="${siteUrl}/og-card.png?v=3" />
+    <script type="application/ld+json">${structuredData}</script>${faqSchema ? `
+    <script type="application/ld+json" id="${faqJsonLdId}">${jsonLd(faqSchema)}</script>` : ''}`;
 };
 
-export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }) => {
+export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, landingFaq = [] }) => {
   const organizationId = `${siteUrl}/#organization`;
   const websiteId = `${siteUrl}/#website`;
   const organization = {
     '@type': 'Organization',
     '@id': organizationId,
-    name: 'Commonly',
-    alternateName: ['Commonly.me', 'commonly.me', 'Commonly AI'],
+    name: 'Commonly AI',
+    alternateName: ['Commonly', 'commonly.me'],
     url: `${siteUrl}/`,
     logo: `${siteUrl}/favicon.svg`,
     description: 'Commonly (commonly.me) is a shared workspace platform where humans and AI agents from any origin work together in pods with shared memory, tasks, and messaging.',
@@ -437,8 +459,8 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
   };
   const softwareApplication = {
     '@type': 'SoftwareApplication',
-    name: 'Commonly',
-    alternateName: ['Commonly.me', 'commonly.me', 'Commonly AI'],
+    name: 'Commonly AI',
+    alternateName: ['Commonly', 'commonly.me'],
     url: `${siteUrl}/`,
     applicationCategory: 'BusinessApplication',
     operatingSystem: 'Web',
@@ -462,10 +484,11 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
   const landingPage = {
     path: '/',
     outputPath: 'index.html',
-    title: 'Commonly — chat with your agents, ship real work',
-    description: 'The open-source workspace where agents and teammates share one project memory — any runtime, your infra, no per-agent fees.',
-    content: renderLanding(landing, useCases, guides),
+    title: 'Commonly AI — chat with your agents, ship real work',
+    description: 'Commonly AI is the open-source workspace where agents and teammates share one project memory — any runtime, your infra, no per-agent fees.',
+    content: renderLanding(landing, useCases, guides, landingFaq),
   };
+  if (landingFaq.length) landingPage.faqSchema = faqPageJsonLd(landingFaq);
   landingPage.schema = {
     '@context': 'https://schema.org',
     '@graph': [organization, website, softwareApplication, webPageNode(landingPage.title, landingPage.description, landingPage.path)],
@@ -474,17 +497,19 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
   const pages = [landingPage, {
     path: '/compare/',
     outputPath: 'compare/index.html',
-    title: 'Commonly vs the alternatives | Commonly',
+    title: 'Commonly vs the alternatives | Commonly AI',
     description: compare.lede,
     content: renderCompare(compare),
     schema: webPage(compare.title, compare.lede, '/compare/'),
+    // Unlisted: noindex, kept out of the sitemap, linked from nothing.
+    noindex: true,
   }];
 
   const guidesIndexPath = '/guides/';
   const guidesIndexPage = {
     path: guidesIndexPath,
     outputPath: 'guides/index.html',
-    title: 'Guides for teams working with AI agents | Commonly',
+    title: 'Guides for teams working with AI agents | Commonly AI',
     description: 'Practical guides for teams that work with AI agents: shared context, task ownership, human review, and durable handoffs.',
     content: renderGuidesIndex(guides),
     staticOnly: true,
@@ -496,7 +521,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
     return {
       path,
       outputPath: `use-cases/${id}/index.html`,
-      title: `${useCase.title} | Commonly`,
+      title: `${useCase.title} | Commonly AI`,
       description: useCase.summary,
       content: renderUseCase(useCase),
       schema: webPage(useCase.title, useCase.summary, path),
@@ -556,16 +581,19 @@ export const renderStaticPage = (template, page) => {
 };
 
 export const generateSeoPages = async ({ outputDir = buildDir } = {}) => {
-  const [template, translationText, useCaseText, guideText] = await Promise.all([
+  const [template, translationText, useCaseText, guideText, faqText] = await Promise.all([
     readFile(resolve(outputDir, 'index.html'), 'utf8'),
     readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
     readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
     readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/landing-faq.json'), 'utf8'),
   ]);
   const translations = JSON.parse(translationText);
   const useCases = JSON.parse(useCaseText);
   const guides = JSON.parse(guideText);
-  const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
+  const pages = buildPageDefinitions({
+    landing: translations.landing, compare: translations.compare, useCases, guides, landingFaq: JSON.parse(faqText),
+  });
 
   await Promise.all(pages.map(async (page) => {
     const outputPath = resolve(outputDir, page.outputPath);
@@ -573,7 +601,7 @@ export const generateSeoPages = async ({ outputDir = buildDir } = {}) => {
     await writeFile(outputPath, renderStaticPage(template, page));
   }));
 
-  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.map((page) => `  <url><loc>${pageUrl(page.path)}</loc></url>`).join('\n')}\n</urlset>\n`;
+  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.filter((page) => !page.noindex).map((page) => `  <url><loc>${pageUrl(page.path)}</loc></url>`).join('\n')}\n</urlset>\n`;
   await writeFile(resolve(outputDir, 'sitemap.xml'), sitemap);
   return pages;
 };

@@ -1,6 +1,6 @@
 // A pod-wide read watermark, recorded only after a successful current-tail read.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const Cursor = require('../models/AgentPodReadCursor');
+const Cursor = require('../repositories/agentPodReadCursorRepository');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const MongoMessage = require('../models/Message');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -28,58 +28,53 @@ async function readStart(podId: unknown): Promise<ReadStart> {
   if (!(hello.localTime instanceof Date)) throw new Error('MongoDB did not return a freshness clock');
   return { at: hello.localTime };
 }
-const cursorId = (agentUserId: unknown, podId: unknown): string => `${String(agentUserId)}:${String(podId)}`;
 
 async function recordRead(
   agentUserId: unknown, podId: unknown, start: ReadStart, observedIds: string[],
 ): Promise<void> {
   if (!Array.isArray(observedIds)) throw new Error('Read acknowledgement needs returned message IDs');
-  const previous = await Cursor.findOne({ _id: cursorId(agentUserId, podId) })
-    .select('readAt readRevision').lean();
+  const previous = await Cursor.getReadWatermark(agentUserId, podId);
   // The first read also needs evidence: a truncated tail cannot acknowledge
   // older history just because no cursor existed yet.
-  if (await hasUnshownMessages(
+  if (await omittedMessages(
     agentUserId, podId, previous || { readAt: new Date(0), readRevision: -1 }, start, observedIds,
   )) return;
-  // A slow earlier read must not roll a newer read's watermark backwards.
-  const filter = { _id: cursorId(agentUserId, podId) };
-  const maximum = {
-    readAt: start.at,
-    ...(start.revision === undefined ? {} : { readRevision: start.revision }),
-  };
-  try {
-    await Cursor.updateOne(filter, { $max: maximum, $setOnInsert: { agentUserId, podId } }, { upsert: true });
-  } catch (error) {
-    if ((error as { code?: number }).code !== 11000) throw error;
-    // Two first reads can race on the deterministic _id; the loser still
-    // advances the winner's cursor without ever replacing a later timestamp.
-    await Cursor.updateOne(filter, { $max: maximum });
-  }
+  await advanceCursor(agentUserId, podId, start);
 }
 
-async function hasUnshownMessages(
+async function advanceCursor(agentUserId: unknown, podId: unknown, start: ReadStart): Promise<void> {
+  await Cursor.advanceReadWatermark(agentUserId, podId, {
+    readAt: start.at,
+    ...(start.revision === undefined ? {} : { readRevision: start.revision }),
+  });
+}
+
+async function omittedMessages(
   agentUserId: unknown,
   podId: unknown,
   previous: { readAt?: Date; readRevision?: number },
   start: ReadStart,
   observedIds: string[],
-): Promise<boolean> {
+  count = false,
+): Promise<number> {
   const ownId = String(agentUserId);
   if (pool && process.env.PG_HOST) {
     if (start.revision === undefined) throw new Error('PostgreSQL read revision missing');
     const ids = observedIds.filter((id) => /^\d+$/.test(id)).map(Number);
     const result = await pool.query(`
-      SELECT 1 FROM messages m
+      SELECT ${count ? 'COUNT(*)::integer AS skipped_count' : '1'} FROM messages m
       WHERE m.pod_id = $1 AND m.freshness_revision > $2 AND m.freshness_revision <= $3
         AND (m.user_id IS DISTINCT FROM $4 OR m.author_kind = 'kernel')
+        AND NOT (m.message_type = 'system' AND COALESCE(m.payload->>'kind', '') = 'system-action')
         AND NOT (m.id = ANY($5::int[]))
-      LIMIT 1
+      ${count ? '' : 'LIMIT 1'}
     `, [String(podId), previous.readRevision ?? -1, start.revision, ownId, ids]);
-    return result.rows.length > 0;
+    return count ? Number(result.rows[0]?.skipped_count || 0) : result.rows.length;
   }
   const observed = observedIds.filter((id) => /^[a-f\d]{24}$/i.test(id));
   const query = {
     podId,
+    $nor: [{ messageType: 'system', 'payload.kind': 'system-action' }],
     _id: { $nin: observed },
     $and: [
       { $or: [{ userId: { $ne: ownId } }, { authorKind: 'kernel' }] },
@@ -93,11 +88,24 @@ async function hasUnshownMessages(
       ] },
     ],
   };
-  return Boolean(await MongoMessage.exists(query));
+  return count ? MongoMessage.countDocuments(query) : Number(Boolean(await MongoMessage.exists(query)));
+}
+
+// Only the explicit catch-up endpoint may acknowledge omitted history. Its
+// snapshot precedes the tail fetch, so later commits remain send-time holds.
+async function recordCatchUp(
+  agentUserId: unknown, podId: unknown, start: ReadStart, observedIds: string[],
+): Promise<{ skippedCount: number }> {
+  const previous = await Cursor.getReadWatermark(agentUserId, podId);
+  const skippedCount = await omittedMessages(
+    agentUserId, podId, previous || { readAt: new Date(0), readRevision: -1 }, start, observedIds, true,
+  );
+  await advanceCursor(agentUserId, podId, start);
+  return { skippedCount };
 }
 
 async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hold> {
-  const cursor = await Cursor.findOne({ _id: cursorId(agentUserId, podId) }).select('readAt readRevision').lean();
+  const cursor = await Cursor.getReadWatermark(agentUserId, podId);
   const after = cursor?.readAt || new Date(0);
   const afterRevision = cursor?.readRevision ?? -1;
   const ownId = String(agentUserId);
@@ -111,6 +119,7 @@ async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hol
         FROM messages m LEFT JOIN users u ON u._id = m.user_id
         WHERE m.pod_id = $1 AND m.freshness_revision > $2
           AND (m.user_id IS DISTINCT FROM $3 OR m.author_kind = 'kernel')
+          AND NOT (m.message_type = 'system' AND COALESCE(m.payload->>'kind', '') = 'system-action')
         ORDER BY m.freshness_revision DESC, m.id DESC LIMIT 3
       `, [String(podId), afterRevision, ownId]);
     unseenCount = Number(result.rows[0]?.unseen_count || 0);
@@ -139,6 +148,7 @@ async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hol
 async function unseenFromMongo(podId: unknown, ownId: string, after: Date): Promise<{ unseenCount: number; messages: Preview[] }> {
   const query = {
     podId,
+    $nor: [{ messageType: 'system', 'payload.kind': 'system-action' }],
     $and: [
       { $or: [{ userId: { $ne: ownId } }, { authorKind: 'kernel' }] },
       { $or: [
@@ -167,5 +177,5 @@ async function unseenFromMongo(podId: unknown, ownId: string, after: Date): Prom
   };
 }
 
-module.exports = { readStart, recordRead, unseenMessages };
+module.exports = { readStart, recordRead, recordCatchUp, unseenMessages };
 export {};

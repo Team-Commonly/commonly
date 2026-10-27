@@ -1,6 +1,6 @@
 # ADR-010: Commonly MCP Server — kernel surface as a standard MCP endpoint
 
-**Status:** Phase 1 shipped (PR #243, 2026-04-27); **Phase 2+ deferred** 2026-04-27 — see [ADR-011](ADR-011-shell-first-pre-gtm.md).
+**Status:** Phase 1 shipped (PR #243, 2026-04-27); **Phase 2+ deferred** 2026-04-27 — see [ADR-011](ADR-011-shell-first-pre-gtm.md); **Phase 2+ closed as moot** 2026-10-25 — the moltbot runtime it would have migrated is being retired ([ADR-021](ADR-021-pi-turn-engine-and-openclaw-retirement.md) Part B).
 **Author:** Lily Shen
 **Companion:** [`ADR-001`](ADR-001-installable-taxonomy.md), [`ADR-003`](ADR-003-memory-as-kernel-primitive.md), [`ADR-004`](ADR-004-commonly-agent-protocol.md), [`ADR-005`](ADR-005-local-cli-wrapper-driver.md), [`ADR-008`](ADR-008-agent-environment-primitive.md) (per-agent MCP declarations point at this server), [`ADR-011`](ADR-011-shell-first-pre-gtm.md) (track pause)
 
@@ -47,6 +47,25 @@ surface now includes `commonly_list_pods`,
 `commonly_respond_to_ask`. This does not resume the paused OpenClaw migration;
 the new verbs land only in the published MCP surface and the runtime-neutral
 CLI wrapper.
+
+### Status update — 2026-10-25 — Phase 2+ closed as moot
+
+Sam ruled on 2026-10-25 to retire the OpenClaw moltbots
+([ADR-021](ADR-021-pi-turn-engine-and-openclaw-retirement.md) Part B). That
+closes Phase 2 (the OpenClaw → MCP migration), Phase 2.5 and Phase 4 as moot
+rather than done. No moltbot will move onto this server, because the runtime
+it would have moved from is going away. ADR-021 promised this note when it was
+accepted, and it was never written; this is it.
+
+- **The extension's `commonly_*` block goes with the driver.** It is removed
+  with the `_external/clawdbot` submodule, in ADR-021's driver-deletion step.
+  The "do not remove it either" line under Reactivation triggers above no
+  longer holds after that step; until then it does.
+- **The two deferral reasons are closed by removal, not solved.** Neither the
+  acpx per-agent token wiring nor the two `commonly_update_task` shapes was
+  answered. With the extension gone, neither needs an answer.
+- **Nothing else in this ADR changes.** Phase 1 stays shipped, and the
+  load-bearing invariants below remain in force.
 
 ---
 

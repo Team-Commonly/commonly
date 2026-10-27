@@ -40,17 +40,19 @@ beforeEach(() => {
   axios.patch.mockResolvedValue({ data: { section: 'long_term', content: 'Changed' } });
 });
 
-it('writes approval and context policy through the shared settings hook', async () => {
+it('hides stored approval and context settings that no runtime enforces', async () => {
   renderPolicy();
   await screen.findByDisplayValue('Original');
-  fireEvent.change(screen.getByLabelText('Allowed tools'), { target: { value: 'commonly, Read, Read' } });
-  fireEvent.click(screen.getByLabelText('Include summaries'));
-  fireEvent.click(screen.getByRole('button', { name: 'Save policy' }));
-  await waitFor(() => expect(update).toHaveBeenCalledWith({
-    toolPolicy: { allowed: ['commonly', 'Read'], blocked: [], requireApproval: ['Bash'] },
-    contextPolicy: { maxTokens: 8000, compactionThreshold: 6000, summaryHours: 24,
-      includeMemory: true, includeSkills: true, includeSummaries: false },
-  }));
+  expect(screen.queryByText('Tool approvals')).not.toBeInTheDocument();
+  expect(screen.queryByText('Context')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Maximum tokens')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Compact after')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Summary window (hours)')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Include memory')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Include skills')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Include summaries')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Save policy' })).not.toBeInTheDocument();
+  expect(update).not.toHaveBeenCalled();
 });
 
 it('writes only the chosen trust mode and edits memory with its revision', async () => {

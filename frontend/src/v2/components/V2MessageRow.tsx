@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import V2Lightbox, { type V2LightboxImage } from './V2Lightbox';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import V2Avatar from './V2Avatar';
@@ -8,6 +8,7 @@ import V2GithubPrCard, { parseGithubPrUrls } from './V2GithubPrCard';
 import V2ApprovalCard from './V2ApprovalCard';
 import V2BYOHandoffCard from './V2BYOHandoffCard';
 import V2GigCard from './V2GigCard';
+import V2RunTraceLink from './V2RunTraceLink';
 import V2DecisionCard, { type V2DecisionCardData, type V2DecisionRuling } from './V2DecisionCard';
 import V2MessageActions, { type V2RenderedReaction } from './V2MessageActions';
 import { V2Message } from '../hooks/useV2PodDetail';
@@ -16,6 +17,10 @@ import { useAuth } from '../../context/AuthContext';
 import { useV2Api } from '../hooks/useV2Api';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 import { messageImageUrl } from '../utils/messageImageUrl';
+
+import CardRenderBoundary from '../cards/CardRenderBoundary';
+
+const V2UICard = lazy(() => import('../cards/V2UICard'));
 
 // Minimal v2-scoped markdown renderer. Plain HTML elements (no MUI), so
 // styling stays in v2.css under `.v2-msg__content`. The body comes pre-stripped
@@ -463,6 +468,33 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   const handleAuthorClick = isClickable ? () => onAuthorClick?.(rawUsername) : undefined;
   const time = formatRelativeTime(message.created_at);
 
+  // Kernel system actions have a structured payload and no message actions,
+  // avatar, reply affordance or mention semantics. Legacy system messages
+  // continue through the existing renderer below.
+  if ((message.message_type === 'system' || message.messageType === 'system')
+      && message.payload?.kind === 'system-action'
+      && message.payload.action === 'task-claimed') {
+    const actorLabel = overriddenDisplay || message.payload.actorName || author;
+    return (
+      <div id={`message-${message.id}`} className="v2-system-action-line">
+        <V2Avatar
+          name={actorLabel}
+          src={message.user?.profile_picture || undefined}
+          size="sm"
+          tone="flat"
+          kind={message.user?.isBot === false ? 'human' : 'agent'}
+          seed={message.user_id || undefined}
+        />
+        <span className="v2-system-action-line__name">{actorLabel}</span>
+        <span className="v2-system-action-line__action">
+          <span className="v2-system-action-line__verb">{t('podChat.systemActions.taskClaimedVerb')}</span>
+          <span className="v2-system-action-line__object" title={message.payload.taskId || ''}>{message.payload.taskId || ''}</span>
+        </span>
+        {time && <time dateTime={message.created_at}>{time}</time>}
+      </div>
+    );
+  }
+
   if (decision) {
     return (
       <div id={`message-${message.id}`} data-source-message-id={sourceMessageId != null ? String(sourceMessageId) : undefined} tabIndex={-1} className="v2-message-row v2-message-row--decision">
@@ -478,13 +510,16 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   // content regex — the first message class where `payload` is the truth
   // and `content` is only the plain-text fallback for legacy surfaces.
   if (message.payload?.kind === 'approval-card') {
-    return <V2ApprovalCard message={message} authorLabel={author} time={time} />;
+    return <><V2ApprovalCard message={message} authorLabel={author} time={time} /><V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} /></>;
   }
   if (message.payload?.kind === 'byo-handoff') {
-    return <V2BYOHandoffCard message={message} authorLabel={author} time={time} />;
+    return <><V2BYOHandoffCard message={message} authorLabel={author} time={time} /><V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} /></>;
+  }
+  if (message.payload?.kind === 'ui') {
+    return <CardRenderBoundary key={message.id} fallback={<div id={`message-${message.id}`} tabIndex={-1} className="v2-msg__content">{message.content}</div>}><Suspense fallback={<div id={`message-${message.id}`} tabIndex={-1} className="v2-msg__content">{message.content}</div>}><V2UICard message={message} authorLabel={author} time={time} /></Suspense></CardRenderBoundary>;
   }
   if (message.payload?.kind === 'gig-card') {
-    return <V2GigCard message={message} time={time} />;
+    return <><V2GigCard message={message} time={time} /><V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} /></>;
   }
 
   // §3.8 system event card. Detected by content shape (commonly-bot only
@@ -746,7 +781,12 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
         )}
         {message.mentionNotices?.map((notice) => (
           <div className="v2-msg__sender-notice" role="status" key={notice.handle}>
-            {t('podChat.mentionNotInPod', { handle: notice.handle })}
+            {notice.pods?.length ? <>
+              {t('podChat.mentionNotInPodWithPods', { handle: notice.handle })}{' '}
+              {notice.pods.map((pod, index) => <React.Fragment key={pod.id}>
+                {index > 0 ? ', ' : ''}<Link to={`/v2/pods/chat/${encodeURIComponent(pod.id)}`}>{pod.name}</Link>
+              </React.Fragment>)}
+            </> : t('podChat.mentionNotInPod', { handle: notice.handle })}
           </div>
         ))}
         {galleryImages.length > 0 && (
@@ -783,6 +823,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
             number={pr.number}
           />
         ))}
+        <V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} />
         {(() => {
           // Sprint B5: real reactions come from message.reactions (server-
           // aggregated `[{emoji, count, mine}]`); legacy fixtures use the

@@ -22,6 +22,7 @@ const attributionRoutes = require('./routes/attribution');
 const messageRoutes = require('./routes/messages');
 const uploadsRoutes = require('./routes/uploads');
 const { socketAuthMiddleware, installSocketSessionGuard } = require('./middleware/socketAuth');
+const { installSocketEventBudget } = require('./middleware/socketRateLimit');
 const { sessionSocketRoom } = require('./services/sessionSocketService');
 const docsRoutes = require('./routes/docs');
 const summariesRoutes = require('./routes/summaries');
@@ -44,6 +45,7 @@ const moltbotProviderRoutes = require('./routes/providers/moltbot');
 const activityRoutes = require('./routes/activity');
 const marketplaceRoutes = require('./routes/marketplace');
 const marketplaceApiRoutes = require('./routes/marketplace-api');
+const { refuseDollarKeys } = require('./middleware/refuseDollarKeys');
 const gatewayRoutes = require('./routes/gateways');
 const skillsRoutes = require('./routes/skills');
 const devRoutes = require('./routes/dev');
@@ -119,19 +121,9 @@ const app = express();
 // `req.protocol`, so a URL built as `${req.protocol}://...` is https behind the
 // TLS edge instead of http (Mixed Content on every page load).
 app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
-const buildAllowedOrigins = () => {
-  const raw = process.env.FRONTEND_URL;
-  if (raw && raw.trim()) {
-    return raw
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean);
-  }
-  return ['http://localhost:3000', 'https://commonly.me'];
-};
+const { buildAllowedOrigins, corsOptions } = require('./middleware/corsPolicy');
 
 const allowedOrigins = buildAllowedOrigins();
-const isAllowedOrigin = (origin: any) => !origin || allowedOrigins.includes(origin);
 
 const server = http.createServer(app);
 const io = socketIo(server, {
@@ -165,25 +157,8 @@ const { bindSocketIO: bindTaskEventSocketIO } = require('./services/taskEventSer
 
 const PORT = process.env.PORT || 5000;
 
-// Middleware
-app.use(
-  cors({
-    origin: (origin: any, callback: any) => {
-      if (isAllowedOrigin(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
-    // Slack OAuth starts in the authenticated shell and returns through an
-    // unauthenticated callback. The browser-bound nonce is HttpOnly on the
-    // API origin, so the authorize-url request must be allowed to persist it
-    // when the shell is served from commonly.me.
-    credentials: true,
-  }),
-);
+// Middleware. A disallowed origin is refused with 403 (middleware/corsPolicy).
+app.use(cors(corsOptions(allowedOrigins)));
 
 // Raw body middleware for Discord signature verification
 app.use('/api/discord/interactions', express.raw({ type: 'application/json' }));
@@ -235,6 +210,10 @@ app.use('/api/webhooks/github', githubGigWebhookRoutes.githubGigRawError);
 // JSON parsing for all other routes
 app.use(express.json());
 
+// Refuse `$`-prefixed keys in every query string and body, after every
+// parser above and before any route (middleware/refuseDollarKeys.ts).
+app.use(refuseDollarKeys);
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/posts', postRoutes);
@@ -248,6 +227,7 @@ app.use('/api', podInvitesRoutes);
 app.use('/api', attributionRoutes);
 // Before podRoutes: its `/:type/:id` catch-all would answer `/:podId/grants` as type=<podId>, id='grants' (Wren 67721).
 app.use('/api/pods', require('./routes/grants').podGrantsRouter); // tools plan §6: GET /api/pods/:podId/grants, the page's list
+app.use('/api/pods', require('./routes/runTraces'));
 app.use('/api/pods', podRoutes);
 app.use('/api/billing', require('./routes/billing'));
 app.use('/api/messages', messageRoutes);
@@ -383,15 +363,11 @@ mongoose.connection.once('open', () => {
 // Start the summarizer scheduler
 const schedulerService = require('./services/schedulerService');
 const discordGatewayService = require('./services/discordGatewayService');
-
-if (process.env.NODE_ENV !== 'test') {
-  console.log('Starting summarizer scheduler...');
-  schedulerService.start();
-
-  if (process.env.DISCORD_BOT_TOKEN) {
-    discordGatewayService.start();
-  }
-}
+const { startBackgroundServices, shouldRunBackgroundServices } = require('./services/backgroundWorkerStart');
+startBackgroundServices(process.env, {
+  scheduler: schedulerService,
+  discordGateway: discordGatewayService,
+});
 
 // PostgreSQL status is mounted unconditionally, and NOT as a placeholder:
 // checkStatus reads the pool and the schema itself, so it answers
@@ -441,7 +417,7 @@ if (process.env.PG_HOST) {
       // Kick off the daily 30-day message retention cron. Kept out
       // of schedulerService.ts on purpose so other tracks can edit
       // that file without stomping on this cron.
-      if (process.env.NODE_ENV !== 'test') {
+      if (shouldRunBackgroundServices(process.env)) {
         try {
           const { initPgRetention } = require('./services/pgRetentionService');
           initPgRetention();
@@ -451,6 +427,8 @@ if (process.env.PG_HOST) {
             retentionErr?.message || retentionErr,
           );
         }
+        // TASK-313 part 2: moves Mongo fallback messages into PG once it is back.
+        require('./services/pgMessageReconcileService').initPgMessageReconcile();
         try {
           require('./services/agentInstallationCleanupService').initInstallationCleanup();
         } catch (cleanupErr: any) {
@@ -560,6 +538,8 @@ const authorizeSocketPodAccess = async (socket: any, podId: any, action: any) =>
 
 // Socket.io event handlers
 io.on('connection', (socket: any) => {
+  // Budget first, so a flood is dropped before each packet's session re-check.
+  installSocketEventBudget(socket);
   installSocketSessionGuard(socket);
   socket.join(sessionSocketRoom(socket.userId));
   console.log(
@@ -832,6 +812,7 @@ io.on('connection', (socket: any) => {
 
 // Start the server only when executed directly
 if (require.main === module) {
+  require('./services/hostedShutdownService').installHostedShutdown(server);
   server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 }
 

@@ -93,8 +93,48 @@ beforeEach(async () => {
 });
 
 describe('POST /api/grants', () => {
+  test('an explicit empty pod audience is refused without saving a grant', async () => {
+    const res = await mint({ audience: [] });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'invalid_audience', message: 'name at least one agent, or omit audience for all current members' });
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+
+  test('omitting pod audience keeps the current member snapshot', async () => {
+    const res = await mint({});
+    expect(res.status).toBe(201);
+    expect(res.body.audience).toEqual([OWNER, SEAT]);
+  });
+
+  // TASK-019: create mints pod grants only. A seat target used to pass the
+  // target check and reach 201 here only because the outsider gate is mocked
+  // to null; the real gate refuses every non-pod target.
+  test.each([{ audience: undefined }, { audience: [SEAT] }, { audience: [OWNER, SEAT] }])('a seat target is refused at the target check: %p', async ({ audience }) => {
+    const res = await mint({ target: { kind: 'seat', id: SEAT }, ...(audience === undefined ? {} : { audience }) });
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_target', message: 'target.kind must be pod' });
+    expect(outsiderGrantPodRefusal).not.toHaveBeenCalled();
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+
+  test('the real outsider gate refuses a seat target, so the check above loses nothing', async () => {
+    const real = jest.requireActual('../../../services/outsiderGrantPodEligibility');
+    await expect(real.outsiderGrantPodRefusal({ kind: 'seat', id: SEAT })).resolves.toBe('pod_required');
+  });
+
+  test('an agent User ID used as a pod target returns not-found before join-policy checks', async () => {
+    outsiderGrantPodRefusal.mockResolvedValue('pod_joinable');
+    const res = await mint({ target: { kind: 'pod', id: SEAT } });
+    expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({ error: 'target_not_found', message: 'target pod not found' });
+    expect(outsiderGrantPodRefusal).not.toHaveBeenCalled();
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+
   test.each([
-    ['pod_required', { kind: 'seat', id: SEAT }],
+    // A seat now stops at the target check (above); the gate's pod_required
+    // still maps to its 403 for a pod it cannot resolve.
+    ['pod_required', { kind: 'pod', id: POD }],
     ['pod_not_private', { kind: 'pod', id: POD }],
     ['pod_bridged', { kind: 'pod', id: POD }],
     ['non_native_agent', { kind: 'pod', id: POD }],
@@ -105,6 +145,7 @@ describe('POST /api/grants', () => {
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: `outsider_grant_${reason}` });
     expect(res.body.message).toMatch(/separate pod/);
+    expect(outsiderGrantPodRefusal).toHaveBeenCalledWith(target, 'read');
     expect(await RoomGrant.countDocuments({})).toBe(0);
   });
 
@@ -239,6 +280,59 @@ const withCatalog = async (entries, run) => {
 };
 
 describe('POST /api/grants on a hosted-mcp connection', () => {
+  describe('hidden-entry mint policy', () => {
+    let previousHidden;
+    let previousAllowlist;
+    beforeEach(() => {
+      previousHidden = process.env.HOSTED_MCP_HIDDEN_ENTRIES;
+      previousAllowlist = process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST;
+      process.env.HOSTED_MCP_HIDDEN_ENTRIES = JSON.stringify(['linear']);
+      delete process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST;
+      Integration.findById.mockResolvedValue(hostedRow());
+    });
+    afterEach(() => {
+      if (previousHidden === undefined) delete process.env.HOSTED_MCP_HIDDEN_ENTRIES;
+      else process.env.HOSTED_MCP_HIDDEN_ENTRIES = previousHidden;
+      if (previousAllowlist === undefined) delete process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST;
+      else process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST = previousAllowlist;
+    });
+
+    test.each([
+      ['no exception', undefined],
+      ['another user', JSON.stringify({ linear: [SEAT] })],
+      ['invalid JSON', '{broken'],
+      ['invalid user in map', JSON.stringify({ linear: [OWNER, 'invalid'] })],
+      ['unknown key in map', JSON.stringify({ linear: [OWNER], typo: [OWNER] })],
+    ])('a previously connected hidden row refuses mint with %s', async (_, allowlist) => {
+      if (allowlist !== undefined) process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST = allowlist;
+      const res = await withCatalog([ENTRY], () => hostedMint({ userId: SEAT, ownerId: SEAT }));
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({ error: 'unknown_entry' });
+      expect(await RoomGrant.countDocuments({})).toBe(0);
+    });
+
+    test.each([undefined, '', '   '])('a hosted row without an entry ID refuses before mint: %p', async (entryId) => {
+      Integration.findById.mockResolvedValue(hostedRow({ entryId }));
+      const res = await withCatalog([ENTRY], () => hostedMint());
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({ error: 'unknown_entry' });
+      expect(await RoomGrant.countDocuments({})).toBe(0);
+    });
+
+    test('the exact authenticated allowlisted owner may mint', async () => {
+      process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST = JSON.stringify({ linear: [OWNER] });
+      const res = await withCatalog([ENTRY], () => hostedMint());
+      expect(res.status).toBe(201);
+      expect(await RoomGrant.countDocuments({ grantId: res.body.grantId })).toBe(1);
+    });
+
+    test('hiding another entry leaves this connected row grantable', async () => {
+      process.env.HOSTED_MCP_HIDDEN_ENTRIES = JSON.stringify(['acme']);
+      const res = await withCatalog([ENTRY], () => hostedMint());
+      expect(res.status).toBe(201);
+    });
+  });
+
   test('a connected hosted row is admitted; what stops the mint is the catalogue, not its type', async () => {
     Integration.findById.mockResolvedValue(hostedRow());
     // The catalogue is emptied for this arm on purpose: since step 7 the shipped

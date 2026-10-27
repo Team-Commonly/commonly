@@ -39,9 +39,9 @@ interface AgentDelivery {
 
 type DeliveredMessage<T> = T | (T & { mentionNotices?: unknown[]; agentDelivery?: AgentDelivery });
 
-const senderNotices = async (podId: string, message: { content?: string }): Promise<unknown[]> => {
+const senderNotices = async (podId: string, message: { content?: string }, userId?: string): Promise<unknown[]> => {
   try {
-    return await findNonMemberMentionNotices(podId, message.content || '');
+    return await findNonMemberMentionNotices(podId, message.content || '', userId);
   } catch (error) {
     // The message is already stored. Advisory feedback cannot turn a send
     // into an apparent failure and tempt the caller to post it again.
@@ -80,7 +80,7 @@ export const deliverMessageToAgents = async <T extends MessageForAgentDelivery>(
   onlyExplicitMentions = false,
 }: DeliveryOptions<T>): Promise<DeliveredMessage<T>> => {
   const username = authorUsername(message, requestUser);
-  const mentionNotices = await senderNotices(podId, message);
+  const mentionNotices = await senderNotices(podId, message, userId ? String(userId) : undefined);
 
   if (AgentMentionService.isAutoRoutedDmPod(podType)) {
     if (suppressImplicitReply) return mentionNotices.length ? { ...message, mentionNotices } : message;

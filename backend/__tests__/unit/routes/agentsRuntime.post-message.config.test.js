@@ -1,3 +1,4 @@
+const catalogueRevision = require('../../../config/uiCardCatalogueRevision.json');
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => next());
 jest.mock('../../../middleware/auth', () => (req, res, next) => next());
 jest.mock('../../../middleware/apiTokenScopes', () => ({
@@ -20,6 +21,7 @@ jest.mock('../../../services/agentMessageService', () => ({
 jest.mock('../../../services/agentSendFreshness', () => ({
   readStart: jest.fn(async () => ({ at: new Date('2026-10-24T00:00:00Z') })),
   recordRead: jest.fn(),
+  recordCatchUp: jest.fn(),
   unseenMessages: jest.fn().mockResolvedValue(null),
 }));
 jest.mock('../../../services/mentionNonMemberNoticeService', () => ({
@@ -38,7 +40,8 @@ jest.mock('../../../routes/uploads', () => ({
 }));
 jest.mock('../../../integrations', () => ({ get: jest.fn() }));
 jest.mock('../../../models/Activity', () => ({}));
-jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
+jest.mock('../../../models/User', () => ({ findById: jest.fn(), findOne: jest.fn() }));
+jest.mock('../../../models/AgentCredential', () => ({ findOne: jest.fn() }));
 jest.mock('../../../models/Post', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/File', () => ({ findOne: jest.fn(), deleteOne: jest.fn() }));
 jest.mock('../../../services/objectStore', () => ({ getObjectStore: jest.fn() }));
@@ -46,12 +49,13 @@ jest.mock('../../../models/Pod', () => ({
   find: jest.fn(),
   findById: jest.fn(() => ({ select: () => ({ lean: async () => ({ type: 'chat' }) }) })),
 }));
-jest.mock('../../../services/dmService', () => ({ getOrCreateAgentDM: jest.fn() }));
+jest.mock('../../../services/dmService', () => ({ getOrCreateAgentDM: jest.fn(), canViewPod: jest.fn() }));
 jest.mock('../../../models/Integration', () => ({ find: jest.fn(), findOne: jest.fn() }));
 jest.mock('../../../models/AgentRegistry', () => ({
-  AgentInstallation: { findOne: jest.fn(), find: jest.fn() },
+  AgentInstallation: { findOne: jest.fn(), find: jest.fn(), updateOne: jest.fn() },
 }));
 
+const DMService = require('../../../services/dmService');
 const AgentMessageService = require('../../../services/agentMessageService');
 const AgentSendFreshness = require('../../../services/agentSendFreshness');
 const PodContextService = require('../../../services/podContextService');
@@ -127,13 +131,14 @@ describe('agentsRuntime post message installation config forwarding', () => {
     const installation = { podId: 'pod-1', agentName: 'openclaw', instanceId: 'tarik', config: {} };
     const req = {
       params: { podId: 'pod-1' }, body: { content: 'Please review @rhea' },
+      agentUser: { _id: 'bot-1' },
       agentInstallation: installation, agentInstallations: [installation],
     };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
 
     await handler(req, res);
 
-    expect(findNonMemberMentionNotices).toHaveBeenCalledWith('pod-1', 'Please review @rhea');
+    expect(findNonMemberMentionNotices).toHaveBeenCalledWith('pod-1', 'Please review @rhea', 'bot-1');
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
       mentionNotices: [{ code: 'MENTION_NOT_IN_POD', handle: 'rhea', message: "rhea isn't in this pod. Invite them, or ask in a pod they're in." }],
       notice: "rhea isn't in this pod. Invite them, or ask in a pod they're in.",
@@ -214,12 +219,73 @@ describe('agentsRuntime post message installation config forwarding', () => {
   });
 });
 
+describe('agent card route boundary', () => {
+  const installation = { podId: 'pod-1', agentName: 'openclaw', instanceId: 'default', config: {} };
+  const payload = { ...catalogueRevision, kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hello")' };
+  const handler = getRouteHandler('/pods/:podId/messages', 'post');
+  const req = (body) => ({ params: { podId: 'pod-1' }, body: { continueAnyway: true, ...body },
+    agentInstallation: installation, agentInstallations: [installation] });
+  const response = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
+  beforeEach(() => { jest.clearAllMocks(); findNonMemberMentionNotices.mockResolvedValue([]); });
+  it('returns a visible 400 reason for an unknown catalogue revision before writing', async () => {
+    const res = response();
+    await handler(req({ messageType: 'card', payload: { ...payload, catalogRev: 999 }, content: 'fallback' }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'invalid_ui_card', message: expect.stringContaining('catalogRev'),
+    }));
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+  });
+  it('forwards a validated UI payload unchanged to the durable message writer', async () => {
+    AgentMessageService.postMessage.mockResolvedValue({ success: true });
+    const res = response();
+    await handler(req({ messageType: 'card', payload, content: 'fallback' }), res);
+    expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      messageType: 'card', payload, content: 'fallback',
+    }));
+    expect(res.status).not.toHaveBeenCalled();
+  });
+  it('refuses system messages without a payload before persistence', async () => {
+    const res = response();
+    await handler(req({ messageType: 'system', content: 'hello' }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+    expect(findNonMemberMentionNotices).not.toHaveBeenCalled();
+  });
+  it.each([
+    { ...payload, kind: 'approval' },
+    { ...payload, source: 'root = Text("hello")\nq = Query("secret", {})' },
+    { ...payload, source: 'root = Unknown("hello")' },
+  ])('refuses unsafe cards before persistence or mention fan-out %#', async (badPayload) => {
+    const res = response();
+    await handler(req({ messageType: 'card', payload: badPayload, content: 'fallback' }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+    expect(findNonMemberMentionNotices).not.toHaveBeenCalled();
+  });
+  it('refuses a fallback that the existing sanitizer suppresses', async () => {
+    AgentMessageService.sanitizeAgentContent.mockReturnValueOnce('');
+    const res = response();
+    await handler(req({ messageType: 'card', payload, content: 'NO_REPLY' }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+  });
+  it('keeps the pod authorization check ahead of parsing', async () => {
+    const res = response();
+    await handler({ ...req({ payload }), params: { podId: 'other' } }, res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+  });
+});
+
 describe('bot-token send-time freshness', () => {
   const user = {
     _id: 'bot-1', username: 'openclaw', isBot: true,
     botMetadata: { agentName: 'openclaw', instanceId: 'default' },
   };
-  const req = { params: { podId: 'pod-1' }, userId: 'bot-1', query: {}, body: { content: 'hello' } };
+  // The /bot/* routes take a pod id only as an ObjectId.
+  const botPodId = '6a0000000000000000000001';
+  const req = { params: { podId: botPodId }, userId: 'bot-1', query: {}, body: { content: 'hello' } };
   const response = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
 
   beforeEach(() => {
@@ -230,15 +296,42 @@ describe('bot-token send-time freshness', () => {
     });
   });
 
+  it.each(['ui', 'approval'])('validates bot-token card kind %s before writing', async (kind) => {
+    const payload = { ...catalogueRevision, kind, v: 1, lang: 'openui@1', source: 'root = Text("hello")' };
+    AgentMessageService.postMessage.mockResolvedValue({ success: true });
+    const res = response();
+    await getRouteHandler('/bot/pods/:podId/messages', 'post')({ ...req,
+      body: { content: 'fallback', messageType: 'card', payload, continueAnyway: true } }, res);
+    if (kind === 'ui') {
+      expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+        content: 'fallback', messageType: 'card', payload,
+      }));
+      expect(res.status).not.toHaveBeenCalled();
+    } else {
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+      expect(findNonMemberMentionNotices).not.toHaveBeenCalled();
+    }
+  });
+  it('refuses system messages without a payload on the bot-token route', async () => {
+    const res = response();
+    await getRouteHandler('/bot/pods/:podId/messages', 'post')({ ...req,
+      body: { content: 'hello', messageType: 'system', continueAnyway: true } }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+    expect(findNonMemberMentionNotices).not.toHaveBeenCalled();
+  });
+
   it('stamps only a successful bot-token message read and holds a stale post', async () => {
     const messages = [{ id: 'm1', content: 'new message' }];
+    Object.defineProperty(messages, 'readSource', { value: 'postgres' });
     AgentMessageService.getRecentMessages.mockResolvedValue(messages);
     const get = getRouteHandler('/bot/pods/:podId/messages', 'get');
     const getRes = response();
     await get(req, getRes);
     expect(getRes.json).toHaveBeenCalledWith({ messages });
     expect(AgentSendFreshness.recordRead).toHaveBeenCalledWith(
-      'bot-1', 'pod-1', expect.objectContaining({ at: expect.any(Date) }), ['m1'],
+      'bot-1', botPodId, expect.objectContaining({ at: expect.any(Date) }), ['m1'],
     );
 
     AgentSendFreshness.unseenMessages.mockResolvedValueOnce({ code: 'unseen_messages', unseenCount: 1 });
@@ -303,5 +396,120 @@ describe('attachment freshness', () => {
     expect(() => getRouteHandler('/pods/:podId/uploads/:fileName', 'delete')).toThrow('Route not found');
     expect(File.deleteOne).not.toHaveBeenCalled();
     expect(getObjectStore).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('explicit catch-up', () => {
+  const handler = getRouteHandler('/pods/:podId/catch-up', 'post');
+  const installation = { podId: 'pod-1', agentName: 'openclaw' };
+  const req = { params: { podId: 'pod-1' }, body: { confirmSkipHistory: true },
+    agentUser: { _id: 'bot-1' }, agentInstallation: installation };
+  const response = () => ({ status: jest.fn().mockReturnThis(), set: jest.fn(), json: jest.fn() });
+  beforeEach(() => {
+    jest.clearAllMocks();
+    DMService.canViewPod.mockResolvedValue(true);
+    AgentMessageService.getRecentMessages.mockResolvedValue([{ id: '1', content: 'tail' }]);
+    AgentSendFreshness.recordCatchUp.mockResolvedValue({ skippedCount: 14000 });
+  });
+  it('requires explicit confirmation and pod authorization before any reads or cursor writes', async () => {
+    const noConfirm = response();
+    await handler({ ...req, body: {} }, noConfirm);
+    expect(noConfirm.status).toHaveBeenCalledWith(400);
+    const wrongPod = response();
+    await handler({ ...req, params: { podId: 'other' } }, wrongPod);
+    expect(wrongPod.status).toHaveBeenCalledWith(403);
+    expect(AgentSendFreshness.readStart).not.toHaveBeenCalled();
+    expect(AgentSendFreshness.recordCatchUp).not.toHaveBeenCalled();
+  });
+  it('captures the fence before fetching a bounded tail and reports skipped history', async () => {
+    const res = response();
+    const original = process.env.PG_HOST;
+    delete process.env.PG_HOST;
+    try { await handler(req, res); } finally {
+      if (original === undefined) delete process.env.PG_HOST;
+      else process.env.PG_HOST = original;
+    }
+    expect(AgentSendFreshness.readStart.mock.invocationCallOrder[0])
+      .toBeLessThan(AgentMessageService.getRecentMessages.mock.invocationCallOrder[0]);
+    expect(AgentMessageService.getRecentMessages).toHaveBeenCalledWith('pod-1', 20, 'bot-1');
+    expect(AgentSendFreshness.recordCatchUp).toHaveBeenCalledWith('bot-1', 'pod-1', expect.any(Object), ['1']);
+    expect(res.json).toHaveBeenCalledWith({ messages: [{ id: '1', content: 'tail' }],
+      catchUp: { skippedCount: 14000, through: expect.any(Object) } });
+  });
+  it('does not acknowledge a Mongo fallback while PostgreSQL is configured', async () => {
+    const original = process.env.PG_HOST;
+    process.env.PG_HOST = 'configured';
+    const res = response();
+    try { await handler(req, res); } finally {
+      if (original === undefined) delete process.env.PG_HOST;
+      else process.env.PG_HOST = original;
+    }
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(AgentSendFreshness.recordCatchUp).not.toHaveBeenCalled();
+  });
+  it('returns a retryable failure instead of a receipt when the cursor write fails', async () => {
+    const original = process.env.PG_HOST;
+    delete process.env.PG_HOST;
+    AgentSendFreshness.recordCatchUp.mockRejectedValueOnce(new Error('cursor unavailable'));
+    const res = response();
+    try { await handler(req, res); } finally {
+      if (original === undefined) delete process.env.PG_HOST;
+      else process.env.PG_HOST = original;
+    }
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).not.toHaveBeenCalledWith(expect.objectContaining({ catchUp: expect.anything() }));
+  });
+
+  it('refuses a scoped token whose canonical agent cannot view the pod, before reading or advancing', async () => {
+    DMService.canViewPod.mockResolvedValueOnce(false);
+    const res = response();
+    await handler(req, res);
+    expect(DMService.canViewPod).toHaveBeenCalledWith('bot-1', { type: 'chat' });
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(AgentSendFreshness.readStart).not.toHaveBeenCalled();
+    expect(AgentMessageService.getRecentMessages).not.toHaveBeenCalled();
+    expect(AgentSendFreshness.recordCatchUp).not.toHaveBeenCalled();
+  });
+
+});
+
+
+describe('send freshness through real legacy-token HTTP authentication', () => {
+  const express = require('express');
+  const request = require('supertest');
+  const realAuth = jest.requireActual('../../../middleware/agentRuntimeAuth');
+  const User = require('../../../models/User');
+  const Credential = require('../../../models/AgentCredential');
+  const { AgentInstallation } = require('../../../models/AgentRegistry');
+  const Identity = require('../../../services/agentIdentityService');
+  const { hash } = require('../../../utils/secret');
+  const token = 'cm_agent_legacy_fixture';
+  const app = express();
+  app.get('/api/agents/runtime/pods/:podId/send-freshness', realAuth,
+    getRouteHandler('/pods/:podId/send-freshness', 'get'));
+  beforeEach(() => {
+    jest.clearAllMocks();
+    Credential.findOne.mockResolvedValue(null);
+    User.findOne.mockResolvedValue(null);
+    const installation = { _id: 'legacy-install', podId: 'pod-1', agentName: 'openclaw', instanceId: 'legacy',
+      runtimeTokens: [{ tokenHash: hash(token), lastUsedAt: new Date() }] };
+    AgentInstallation.findOne.mockResolvedValue(installation);
+    AgentInstallation.find.mockResolvedValue([installation]);
+    AgentSendFreshness.unseenMessages.mockResolvedValue(null);
+  });
+  it('resolves a canonical identity when legacy auth has no bot User and returns freshness', async () => {
+    await request(app).get('/api/agents/runtime/pods/pod-1/send-freshness')
+      .set('Authorization', `Bearer ${token}`).expect(200, { ok: true });
+    expect(Identity.getOrCreateAgentUser).toHaveBeenCalledWith('openclaw', {
+      instanceId: 'legacy', displayName: undefined,
+    });
+    expect(AgentSendFreshness.unseenMessages).toHaveBeenCalledWith('bot-1', 'pod-1');
+  });
+  it('still refuses another pod before canonical identity resolution or freshness lookup', async () => {
+    await request(app).get('/api/agents/runtime/pods/other/send-freshness')
+      .set('Authorization', `Bearer ${token}`).expect(403);
+    expect(Identity.getOrCreateAgentUser).not.toHaveBeenCalled();
+    expect(AgentSendFreshness.unseenMessages).not.toHaveBeenCalled();
   });
 });

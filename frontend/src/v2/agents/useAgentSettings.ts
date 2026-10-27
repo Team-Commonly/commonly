@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { RuntimeObservation, HarnessInventory, RuntimeUpdate } from '../components/V2RuntimeControls';
 import axios from '../../utils/axiosConfig';
 
 export interface AgentSettingsInstallation {
@@ -23,11 +24,8 @@ export interface AgentSettingsInstallation {
 export interface AgentSettingsPatch {
   config?: Record<string, unknown>;
   displayName?: string;
-  instructions?: string;
   persona?: { tone?: string; specialties?: string[]; boundaries?: string[]; customInstructions?: string };
   modelPreferences?: unknown;
-  toolPolicy?: unknown;
-  contextPolicy?: unknown;
   [field: string]: unknown;
 }
 
@@ -46,6 +44,15 @@ interface AgentAccess {
 
 interface ManageSettingsResponse {
   writablePodId: string | null;
+  runtimeSourcePodId?: string | null;
+  runtimeControls?: { providerId?: string; runtimeType?: string; host?: 'cloud' | 'byo'; adapter?: string; model?: string; effort?: string };
+  runtimeSavedControls?: ManageSettingsResponse['runtimeControls'];
+  ownKeyCapability?: { available: boolean; provider: string | null };
+  runtimeObservation?: RuntimeObservation | null;
+  runtimeInventory?: HarnessInventory[];
+  processConnected?: boolean | null;
+  runtimeEditable?: boolean;
+  runtimeManaged?: boolean;
   installations: Array<{ podId: string; podName: string; status: string }>;
 }
 
@@ -54,6 +61,14 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
   const [access, setAccess] = useState<AgentAccess | null>(null);
   const [installation, setInstallation] = useState<AgentSettingsInstallation | null>(null);
   const [podId, setPodId] = useState<string | null>(null);
+  const [runtimeSourcePodId, setRuntimeSourcePodId] = useState<string | null>(null);
+  const [runtimeControls, setRuntimeControls] = useState<ManageSettingsResponse['runtimeControls']>({});
+  const [ownKeyCapability, setOwnKeyCapability] = useState<ManageSettingsResponse['ownKeyCapability']>();
+  const [runtimeObservation, setRuntimeObservation] = useState<RuntimeObservation | null>(null);
+  const [runtimeInventory, setRuntimeInventory] = useState<HarnessInventory[]>([]);
+  const [processConnected, setProcessConnected] = useState<boolean | null>(null);
+  const [runtimeEditable, setRuntimeEditable] = useState(true);
+  const [runtimeManaged, setRuntimeManaged] = useState<boolean | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const requestId = useRef(0);
@@ -85,6 +100,15 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
             pods: rows.map((row) => ({ id: row.podId, name: row.podName })) });
           setInstallation(response.data.agent);
           setPodId(pod.podId);
+          setRuntimeSourcePodId(settingsResponse.data.runtimeSourcePodId === undefined
+            ? settingsResponse.data.writablePodId : settingsResponse.data.runtimeSourcePodId);
+          setRuntimeControls(settingsResponse.data.runtimeSavedControls || settingsResponse.data.runtimeControls || {});
+          setOwnKeyCapability(settingsResponse.data.ownKeyCapability);
+          setRuntimeObservation(settingsResponse.data.runtimeObservation || null);
+          setRuntimeInventory(settingsResponse.data.runtimeInventory || []);
+          setProcessConnected(typeof settingsResponse.data.processConnected === 'boolean' ? settingsResponse.data.processConnected : null);
+          setRuntimeEditable(settingsResponse.data.runtimeEditable !== false);
+          setRuntimeManaged(settingsResponse.data.runtimeManaged);
           setError(null);
         }
         return response.data.agent;
@@ -103,6 +127,14 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
     setAccess(null);
     setInstallation(null);
     setPodId(null);
+    setRuntimeSourcePodId(null);
+    setRuntimeControls({});
+    setOwnKeyCapability(undefined);
+    setRuntimeObservation(null);
+    setRuntimeInventory([]);
+    setProcessConnected(null);
+    setRuntimeEditable(true);
+    setRuntimeManaged(undefined);
     void refresh().catch((requestError) => {
       if (active) setError(requestError);
     }).finally(() => {
@@ -110,6 +142,30 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
     });
     return () => { active = false; requestId.current += 1; };
   }, [refresh]);
+
+  // Refresh runner facts without reloading form drafts or asserting that a
+  // process remains connected after the observation endpoint becomes unknown.
+  useEffect(() => {
+    if (!podId) return undefined;
+    let active = true;
+    let pending = false;
+    const timer = setInterval(async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        const response = await axios.get<ManageSettingsResponse>(
+          `/api/registry/agents/${encodeURIComponent(agentName)}/manage-settings`, { params: { instanceId } },
+        );
+        if (active) {
+          setRuntimeObservation(response.data.runtimeObservation || null);
+          setRuntimeInventory(response.data.runtimeInventory || []);
+          setProcessConnected(typeof response.data.processConnected === 'boolean' ? response.data.processConnected : null);
+        }
+      } catch { if (active) setProcessConnected(null); }
+      finally { pending = false; }
+    }, 30_000);
+    return () => { active = false; clearInterval(timer); };
+  }, [agentName, instanceId, podId]);
 
   const update = useCallback(async (patch: AgentSettingsPatch) => {
     if (!podId) throw new Error('No accessible installation');
@@ -127,5 +183,16 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
     return response.data;
   }, [agentName, instanceId]);
 
-  return { access, installation, podId, loading, error, refresh, update, updatePod };
+  const updateRuntime = useCallback(async (changes: RuntimeUpdate) => {
+    if (!runtimeSourcePodId) throw new Error('No writable runtime source');
+    await axios.patch(installationUrl(runtimeSourcePodId), {
+      config: { environment: { ...(changes.model !== undefined ? { model: changes.model } : {}),
+        ...(changes.effort !== undefined ? { effort: changes.effort } : {}) },
+        ...(changes.adapter ? { runtime: { adapter: changes.adapter } } : {}) }, instanceId,
+    });
+    await refresh();
+  }, [instanceId, installationUrl, refresh, runtimeSourcePodId]);
+
+  return { access, installation, podId, ownKeyCapability, runtimeControls, runtimeObservation, runtimeInventory, processConnected, runtimeEditable, runtimeManaged, loading,
+    error, refresh, update, updatePod, updateRuntime };
 };

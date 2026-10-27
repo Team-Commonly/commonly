@@ -12,6 +12,8 @@ import { type V2DecisionCardData, type V2DecisionRuling } from './V2DecisionCard
 import V2ThreadMessages, { V2ThreadHistoryStatus } from './V2ThreadMessages';
 import { landOnMessage } from './V2MessageRow';
 import V2ThreadStarter from './V2ThreadStarter';
+import V2BringTeammate from './V2BringTeammate';
+import { isSoloHumanPod, teammateInviteMoment } from '../utils/teammateInviteMoment';
 import {
   HistorySearchState,
   UseV2PodDetailResult,
@@ -30,12 +32,19 @@ import { useV2ThreadMentions } from '../hooks/useV2ThreadMentions';
 import { useWelcomeHostedStart, WELCOME_HOSTED_ACTION } from '../hooks/useWelcomeHostedStart';
 import { buildThreadView, freezeOrphanReplyIds } from '../utils/threadView';
 import { agentKeyFor } from '../utils/agentKey';
+import { runtimeChipLabel } from '../utils/runtimeChip';
 import {
   buildAgentUsername,
   isOpaqueInstanceToken,
   normalizeAgentSegment,
   slugifyAgentHandle,
 } from '../utils/threadAgentIdentity';
+
+// The connect start's label, as SCOUT_STARTS[0] sends it
+// (backend/config/native-agents/scout.ts). A click posts exactly this text.
+const CONNECT_START_LABEL = 'Connect an agent I already use';
+// How long a smooth follow may run before its scroll events count as the reader's.
+const FOLLOW_SETTLE_MS = 1500;
 
 const AGENT_DELIVERY_HINT_KEY = 'v2.agentDeliveryHint';
 // Same slot, different fact, so a pod can show both over a session: the hint
@@ -45,6 +54,7 @@ const NO_AGENTS_HINT_KEY = 'v2.noAgentsHint';
 const JUST_CREATED_POD_KEY = 'v2.justCreated';
 const AGENT_INVITE_TAB: V2InviteTab = 'agent';
 const PEOPLE_INVITE_TAB: V2InviteTab = 'people';
+const SOLO_INVITE_SOURCE = 'solo-pod';
 // A sent direct message is durable in the room, but it is not a reply. Give
 // the person a clear, bounded wait state instead of leaving the composer to
 // imply that the agent is working. Two minutes is long enough for a normal
@@ -275,7 +285,6 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const mentionDropdownRef = useRef<HTMLDivElement | null>(null);
-  const starterInviteRequestedPodRef = useRef<string | null>(null);
   const starterInviteActivePodRef = useRef<string | null>(null);
 
   // Agent typing indicator state. Backend already emits agent_typing_start/
@@ -430,8 +439,24 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
         && !sentSince.has(start.label));
       if (open.length > 0) byMessage.set(String(message.id), open);
     });
+    // D139: under the creator's own "Connect an agent I already use", a fixed
+    // link to Bring your own, from the moment it is sent. Scout still answers,
+    // but a prompt cannot guarantee its reply links there, and one new person
+    // left after three replies that never did.
+    if (viewerOwnsPod && pod?._id) {
+      const openByo: V2Start = {
+        id: 'open-byo',
+        label: t('podChat.starts.openByo'),
+        href: `/v2/agents/byo?pod=${encodeURIComponent(pod._id)}`,
+      };
+      messages.forEach((message) => {
+        if (message.user_id !== viewerId || (message.content || '').trim() !== CONNECT_START_LABEL) return;
+        const id = String(message.id);
+        byMessage.set(id, [...(byMessage.get(id) || []), openByo]);
+      });
+    }
     return byMessage;
-  }, [messages, viewerId, onOpenInvite, viewerHoldsHostedAgent, viewerOwnsPod, addedFirstTaskMessages]);
+  }, [messages, viewerId, onOpenInvite, viewerHoldsHostedAgent, viewerOwnsPod, addedFirstTaskMessages, pod?._id, t]);
 
   const [decisions, setDecisions] = useState<ThreadDecision[]>([]);
   const [settledDecisionByMessageId, setSettledDecisionByMessageId] = useState<Map<string, V2DecisionRuling>>(new Map());
@@ -647,7 +672,6 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   useEffect(() => {
     const podId = pod?._id || null;
     starterInviteActivePodRef.current = podId;
-    starterInviteRequestedPodRef.current = null;
     setStarterInviteUrl('');
     setStarterInviteError(null);
     setStarterInviteLoading(false);
@@ -683,19 +707,20 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   }, [clearJustCreatedPod, justCreatedPodId, messages.length, pod?._id]);
 
   const generateStarterInvite = useCallback(async (podId: string) => {
-    starterInviteRequestedPodRef.current = podId;
     setStarterInviteLoading(true);
     setStarterInviteError(null);
     setStarterInviteCopied(false);
     try {
       const data = await api.post<{ token?: string }>(`/api/pods/${podId}/invites`, {});
       if (!data?.token) throw new Error('missing invite token');
-      if (starterInviteActivePodRef.current !== podId) return;
-      setStarterInviteUrl(`${window.location.origin}/v2/invite/${data.token}`);
+      if (starterInviteActivePodRef.current !== podId) return null;
+      const url = `${window.location.origin}/v2/invite/${data.token}`;
+      setStarterInviteUrl(url);
+      return url;
     } catch {
-      if (starterInviteActivePodRef.current !== podId) return;
-      starterInviteRequestedPodRef.current = null;
+      if (starterInviteActivePodRef.current !== podId) return null;
       setStarterInviteError(t('podChat.newPod.inviteError'));
+      return null;
     } finally {
       if (starterInviteActivePodRef.current === podId) setStarterInviteLoading(false);
     }
@@ -787,21 +812,17 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     }
   }, [api, currentUser?.username, detail, pod, starterHostedAvailable, starterHostedState, t]);
 
-  useEffect(() => {
-    if (!starterPanelVisible || !pod?._id || starterInviteUrl) return;
-    if (starterInviteRequestedPodRef.current === pod._id) return;
-    void generateStarterInvite(pod._id);
-  }, [generateStarterInvite, pod?._id, starterInviteUrl, starterPanelVisible]);
-
   const handleStarterInviteCopy = useCallback(async () => {
-    if (!starterInviteUrl) return;
+    if (starterInviteLoading) return;
+    const url = starterInviteUrl || (pod?._id ? await generateStarterInvite(pod._id) : null);
+    if (!url) return;
     try {
-      await navigator.clipboard.writeText(starterInviteUrl);
+      await navigator.clipboard.writeText(url);
       setStarterInviteCopied(true);
     } catch {
       // The read-only field remains selectable for manual copy.
     }
-  }, [starterInviteUrl]);
+  }, [generateStarterInvite, pod?._id, starterInviteLoading, starterInviteUrl]);
 
   // Auto-scroll belongs to NEW messages only. Keyed on `messages.length` this
   // also fired when a page of history was prepended, yanking the reader from
@@ -818,30 +839,63 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // The pill mounts once the reader is a viewport up; `· N` only with arrivals.
   const [scrolledUp, setScrolledUp] = useState(false);
   const edgeRef = useRef<HTMLDivElement | null>(null);
+  // Scroll the message list itself, never via scrollIntoView. scrollIntoView
+  // also scrolls every scrollable ancestor, and main.v2-pane is overflow
+  // hidden: when the list is already at its end the browser moves the pane
+  // instead, taking the header and thread off screen with no way back
+  // (UX Lead on #2870; the composer-send jump in TASK-584).
+  //
+  // A smooth follow fires its own scroll events on the way down. Those must
+  // not read as the reader scrolling up, or a card that mounts mid-animation
+  // is skipped and the list stops one card short (UX Lead on e0fd1523). So
+  // until the follow lands, only real input (wheel, touch, key, pointer)
+  // can take the reader off the bottom; a time limit backs that up.
+  const followingUntilRef = useRef(0);
+  const scrollListToEnd = useCallback(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    followingUntilRef.current = Date.now() + FOLLOW_SETTLE_MS;
+    if (typeof el.scrollTo === 'function') el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    else el.scrollTop = el.scrollHeight;
+  }, []);
   const jumpToLatest = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollListToEnd();
     atBottomRef.current = true;
     setJumpCount(0);
     setScrolledUp(false);
-  }, []);
+  }, [scrollListToEnd]);
+  // The invite card can mount after the arrival effect has already followed
+  // (on a reload, once history settles), landing a card-height below the fold.
+  // Follow it only when the reader was at the end; never move someone reading up.
+  const followCardIfAtBottom = useCallback(() => {
+    if (atBottomRef.current) scrollListToEnd();
+  }, [scrollListToEnd]);
   useEffect(() => {
     const el = messagesContainerRef.current;
     if (!el) return undefined;
     const onScroll = () => {
       const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
       const near = distance < 80;
+      if (near) followingUntilRef.current = 0;
+      else if (Date.now() < followingUntilRef.current) return;
       atBottomRef.current = near;
       setScrolledUp(distance > el.clientHeight);
       if (near) setJumpCount(0);
     };
+    const onReaderInput = () => { followingUntilRef.current = 0; };
+    const inputs = ['wheel', 'touchstart', 'keydown', 'pointerdown'] as const;
     onScroll();
     el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
+    inputs.forEach((name) => el.addEventListener(name, onReaderInput, { passive: true }));
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      inputs.forEach((name) => el.removeEventListener(name, onReaderInput));
+    };
   }, [pod?._id]);
   useEffect(() => {
     if (!newestMessageId) return;
     if (atBottomRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      scrollListToEnd();
       setJumpCount(0);
     } else {
       setJumpCount((count) => count + 1);
@@ -856,8 +910,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   useEffect(() => {
     if (!sendFollowVersion || !sentMessageIdRef.current) return;
     atBottomRef.current = true;
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollListToEnd();
     setJumpCount(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sendFollowVersion]);
 
   const rememberSentMessage = useCallback((sendPodId: string, created: import('../hooks/useV2PodDetail').V2Message) => {
@@ -1256,19 +1311,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // Runtime short name per agent author key (direction C, walk-3 miss 51):
   // the mono tag after the time. Unknown runtime = no tag.
   const agentTags = React.useMemo(() => {
-    const shortName = (runtimeType?: string): string | null => {
-      switch ((runtimeType || '').toLowerCase()) {
-        case 'codex': return 'codex';
-        case 'claude-code': return 'claude';
-        case 'openclaw': case 'moltbot': return 'openclaw';
-        case 'internal': return 'hosted';
-        case 'webhook': return 'webhook';
-        default: return null;
-      }
-    };
     const map = new Map<string, string>();
     (agents || []).forEach((agent) => {
-      const tag = shortName(agent.runtime?.runtimeType || agent.runtime?.wrappedCli);
+      const tag = runtimeChipLabel(agent.runtime);
       if (!tag) return;
       const label = agent.profile?.displayName || agent.displayName || agent.agentName;
       const username = buildAgentUsername(agent.agentName, agent.instanceId || 'default');
@@ -1443,6 +1488,18 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // agent joins, without waiting for a second send to re-measure.
   const noAgentsInPodLive = !(agents || []).some((agent) => agent.status === 'active');
 
+  const soloHuman = isSoloHumanPod(pod, members || [], currentUserId || '');
+  // Do not offer the automatic first-reply invite in the private Scout workspace
+  // (the placement-B privacy ruling). Group replies and empty pods qualify separately.
+  const scoutWorkspace = viewerOwnsPod && pod.name === 'My Workspace';
+  const scoutKeys = new Set((agents || []).filter((agent) => agent.agentName === 'scout')
+    .map((agent) => buildAgentUsername(agent.agentName, agent.instanceId || 'default').toLowerCase()));
+  const teammateMoment = soloHuman && !scoutWorkspace && detail.initialMessagesLoaded === true
+    && !hasMore && !loading && !firstRunVisible
+    ? teammateInviteMoment(messages, currentUserId || '', agentAuthorKeys, scoutKeys, scoutWorkspace) : null;
+
+  const teammateSource = teammateMoment?.source || (scoutWorkspace ? 'scout-first-session' : 'first-agent-post');
+
   // Bot-bot agent-dm — used to choose the "X and Y haven't talked yet" empty
   // state and to phrase the read-only banner appropriately.
   const botMembers = (members || []).filter((m) => m?.isBot);
@@ -1535,6 +1592,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           // notified — "No agent was notified" would be false on screen while
           // it's already typing (#914).
           && (delivery.woken ?? 0) === 0
+          // A plain reply to an agent's message reaches it through the
+          // reply-edge (implicit) path, not a mention. That agent WILL answer,
+          // so "No agent was notified" would be false on screen.
+          && (delivery.implicit?.length ?? 0) === 0
           && delivery.agentsInPod > 0
           && mentionHandle
         ) {
@@ -1764,7 +1825,12 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
 
         {firstTaskError && <div className="v2-chat__error" role="alert">{firstTaskError}</div>}
         <div className="v2-thread__transcript">
-          <V2ThreadMessages
+          <V2BringTeammate podId={pod._id} podName={pod.name} userId={currentUserId || ''}
+            source={teammateSource}
+            agentName={teammateMoment ? agentDisplayNames.get(teammateMoment.username.toLowerCase()) || teammateMoment.username : undefined}
+            enabled={Boolean(teammateMoment)}
+            onShown={followCardIfAtBottom}>
+            {(teammateCard) => <V2ThreadMessages
             messages={messages}
             threadView={threadView}
             threadState={threadState}
@@ -1775,6 +1841,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             agentDisplayNames={agentDisplayNames}
             agentTags={agentTags}
             agentAuthorKeys={agentAuthorKeys}
+            afterMessage={teammateMoment ? { messageId: teammateMoment.messageId, content: teammateCard } : undefined}
             onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
             onOpenFile={onOpenFile}
             onReply={isReadOnly ? undefined : aimAtMessage}
@@ -1830,7 +1897,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
               onRunHosted={() => { void startHostedInPod(); }}
               onBringOwn={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(pod._id)}`)}
               onCopyInvite={() => { void handleStarterInviteCopy(); }}
-              onRetryInvite={() => { void generateStarterInvite(pod._id); }}
+              onRetryInvite={() => { void handleStarterInviteCopy(); }}
             />
             ) : undefined}
             emptyState={!starterPanelVisible && !firstRunVisible && !loading && messages.length === 0 ? (
@@ -1861,8 +1928,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                       <div className="v2-empty__text">{t('podChat.empty.agentDmText')}</div>
                     </>
                   ) : (
-                    // Direction C: an empty pod is one mono line and a focused composer.
-                    <span className="v2-thread__empty-line">{t('podChat.empty.noMessages')}</span>
+                    <>
+                      <span className="v2-thread__empty-line">{t('podChat.empty.noMessages')}</span>
+                      {soloHuman && detail.initialMessagesLoaded && <V2BringTeammate key={`${pod._id}.${currentUserId}.${SOLO_INVITE_SOURCE}`}
+                        podId={pod._id} podName={pod.name} userId={currentUserId || ''} source={SOLO_INVITE_SOURCE} />}
+                    </>
                   )}
                 </div>
             ) : undefined}
@@ -1871,7 +1941,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             onAddAgent={onOpenInvite ? () => onOpenInvite(AGENT_INVITE_TAB) : undefined}
             messagesContainerRef={messagesContainerRef}
             messagesEndRef={messagesEndRef}
-          />
+          />}
+          </V2BringTeammate>
           <V2ThreadHistoryStatus
             historySearch={historySearch}
             onRetryHistorySearch={() => { void retryHistorySearch(); }}

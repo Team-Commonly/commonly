@@ -109,7 +109,7 @@ interface Props {
 }
 
 interface DraftGrant {
-  installableId: string;
+  entry: ToolCatalogEntry;
   podId: string;
   connectionId: string;
   writeMode: GrantWriteMode;
@@ -425,12 +425,13 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   const openDraft = (entry: ToolCatalogEntry, from?: ToolGrant) => {
     const podId = from ? (grantPodId(from) || podIds[0] || '') : (podIds[0] || '');
     const modes = entryGrantModes(entry);
+    const agentIds = (seats[podId] || []).map((seat) => seat.userId).filter((id): id is string => Boolean(id));
     setDraft({
-      installableId: entry.installableId,
+      entry,
       podId,
       connectionId: entry.connections[0]?.connectionId || '',
       writeMode: from && modes.includes(from.writeMode) ? from.writeMode : modes[0] || 'read',
-      audience: from ? from.effectiveAudience : (seats[podId] || []).map((seat) => seat.userId).filter((id): id is string => Boolean(id)),
+      audience: from ? agentIds.filter((id) => from.effectiveAudience.includes(id)) : agentIds,
       expiryDays: 7,
       replaces: from && !isDead(from) ? from.grantId : null,
     });
@@ -447,12 +448,21 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     setConfirmRevoke(null);
     setError(null);
   };
-  const draftEntry = draft ? catalog.find((entry) => entry.installableId === draft.installableId) || null : null;
+  // A background catalogue read can fail or stop offering this connection.
+  // Keep the open draft (and any server refusal) visible in either case. The
+  // mint still checks ownership, connection state, tools, audience and pod policy.
+  const draftEntry = draft
+    ? catalog.find((entry) => entry.installableId === draft.entry.installableId) || draft.entry
+    : null;
   const draftTools = (entry: ToolCatalogEntry | null, mode: GrantWriteMode): string[] => (entry?.tools || [])
     .filter((tool) => MODE_RANK[tool.requiredWriteMode] <= MODE_RANK[mode]).map((tool) => tool.name);
 
+  const selectedAgentIds = (draft ? seats[draft.podId] || [] : [])
+    .map((seat) => seat.userId)
+    .filter((id): id is string => typeof id === 'string' && Boolean(id) && draft?.audience.includes(id) === true);
+
   const submitDraft = async () => {
-    if (!draft || !draftEntry) return;
+    if (!draft || !draftEntry || selectedAgentIds.length === 0) return;
     setBusy(true);
     setError(null);
     setJoinPolicyFixPodId(null);
@@ -466,9 +476,15 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
         target: { kind: 'pod', id: draft.podId },
         tools: draftTools(draftEntry, draft.writeMode),
         writeMode: draft.writeMode,
-        audience: draft.audience,
+        audience: selectedAgentIds,
         expiresAt,
       });
+      // A resolved request alone is not a mint receipt (for example, an HTML
+      // fallback or empty response). Keep the form and the old grant intact.
+      if (typeof minted?.grantId !== 'string' || !minted.grantId.trim()) {
+        setError(t('tools.grantError', { defaultValue: 'Could not grant it.' }));
+        return;
+      }
       // Change access: a change is a new grant and a revoke of the old one, because `tools` is never
       // widened in place. The mint is kept whatever happens next; a failed revoke is retried alone
       // (Vera on 0368992e), never by minting a third grant.
@@ -926,6 +942,11 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
                 </label>
               ))}
             </fieldset>
+            {selectedAgentIds.length === 0 && (
+              <p className="v2-connector-aside__note" role="status">{t('tools.emptyAudienceNotice', {
+                defaultValue: 'Select at least one agent to grant access.',
+              })}</p>
+            )}
             <label className="v2-tools__field">
               <span>{t('tools.ends', { defaultValue: 'ends' })}</span>
               <select className="v2-connectors__select" value={draft.expiryDays} onChange={(event) => setDraft({ ...draft, expiryDays: Number(event.target.value) as 7 | 30 | 90 })}>
@@ -936,7 +957,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
             </label>
           </div>
           <div className="v2-connector-aside__actions">
-            <button type="button" className="v2-connector-aside__primary" disabled={busy || !draft.connectionId || !draft.podId || tools.length === 0} onClick={() => { void submitDraft(); }}>
+            <button type="button" className="v2-connector-aside__primary" disabled={busy || !draft.connectionId || !draft.podId || selectedAgentIds.length === 0 || tools.length === 0} onClick={() => { void submitDraft(); }}>
               {busy ? t('tools.granting', { defaultValue: 'Granting…' }) : t('tools.grantAct', { defaultValue: 'Grant' })}
             </button>
             <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => setDraft(null)}>
@@ -1063,7 +1084,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   if (grants === null) {
     return <div className="v2-connectors__loading">{t('tools.loading', { defaultValue: 'Loading tools…' })}</div>;
   }
-  if (grants.length === 0 && catalog.length === 0 && hiddenConnections.length === 0 && !removedHiddenNotice) return null;
+  if (grants.length === 0 && catalog.length === 0 && hiddenConnections.length === 0 && !removedHiddenNotice && !draft) return null;
 
   return (
     <div className="v2-connectors__content v2-tools">

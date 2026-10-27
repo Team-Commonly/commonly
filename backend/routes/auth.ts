@@ -2,8 +2,10 @@
 const express = require('express');
 // eslint-disable-next-line global-require
 const rateLimit = require('express-rate-limit');
-const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
+const { cloudflareIpRateLimitKeyGenerator, loginEmailRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 const { platformIpRateLimit } = require('../middleware/platformRateLimit');
+const { refuseDollarKeys } = require('../middleware/refuseDollarKeys');
+const { loginEmailOf } = require('../utils/loginEmail');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
@@ -94,6 +96,24 @@ const loginLimiter = rateLimit({
   skip: () => process.env.NODE_ENV === 'test',
   keyGenerator: cloudflareIpRateLimitKeyGenerator,
   handler: rateLimitHandler('rate limit exceeded: 20 login attempts per 15 minutes'),
+});
+
+// The IP limit alone lets guesses at one account scale with the number of IPs
+// a caller holds, so failed sign-ins are also counted per submitted address,
+// whether or not it has an account. Only failures count, so signing in never
+// spends the budget. The cost: someone who knows an address can pause its
+// password sign-in for up to 15 minutes. OAuth sign-in and reset still work.
+// The address comes from the helper login uses, so a body this skips is one
+// login refuses.
+const loginAccountLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  skip: (req: { body?: { email?: unknown } }) => process.env.NODE_ENV === 'test' || !loginEmailOf(req.body),
+  keyGenerator: loginEmailRateLimitKeyGenerator,
+  handler: rateLimitHandler('rate limit exceeded: 10 failed sign-ins for this address per 15 minutes'),
 });
 
 // Device start mints a server-side authorization request; poll needs room for
@@ -228,12 +248,14 @@ router.get('/oauth/providers', getOAuthProviders);
 router.get('/oauth/:provider/start', oauthLimiter, startOAuth);
 // The same start as a form POST, so an invite code rides in the body, not the URL
 // (the register page uses it whenever it holds a code; TASK-404).
-router.post('/oauth/:provider/start', oauthLimiter, express.urlencoded({ extended: false, limit: '4kb' }), startOAuth);
+// This parser runs after the global $-key guard, so the guard runs again on its body.
+// Two bounded 2 KiB paths in signupSource expand under form URL-encoding.
+router.post('/oauth/:provider/start', oauthLimiter, express.urlencoded({ extended: false, limit: '16kb' }), refuseDollarKeys, startOAuth);
 router.get('/oauth/:provider/callback', oauthLimiter, oauthCallback);
 router.post('/oauth/exchange', oauthLimiter, exchangeOAuthCode);
 router.get('/registration-policy', registrationPolicyLimit, getRegistrationPolicy);
 router.post('/waitlist', waitlistLimiter, requestWaitlist);
-router.post('/login', loginLimiter, login);
+router.post('/login', loginLimiter, loginAccountLimiter, login);
 router.post('/device/start', deviceStartLimiter, async (req: any, res: Res) => {
   try {
     const { deviceCode, userCode } = await createDeviceAuthorization(req.body || {});

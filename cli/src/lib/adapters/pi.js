@@ -32,6 +32,7 @@
  * Contract (see stub.js): detect() and spawn(prompt, ctx) → { text, newSessionId }.
  */
 
+import { requireSeatModel } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { mkdir, readdir, writeFile } from 'fs/promises';
@@ -43,7 +44,7 @@ import {
   spawnCredentials,
 } from '../upstream-refusal.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
-import { effectiveSandboxTrust } from '../environment.js';
+import { effectiveSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
 import { GRANT_BROKER_REFUSAL, isGrantBrokerUrl } from './pi-mcp-client.mjs';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn } from '../mcp-home.js';
@@ -65,13 +66,13 @@ export const DEFAULT_PROVIDER = Object.freeze({
   api: 'openai-completions',
   apiKeyEnv: 'COMMONLY_LITELLM_KEY',
 });
-export const DEFAULT_MODEL = 'deepseek-v4-flash';
 
 // ADR-008 `effort` → pi `--thinking`. pi's ladder is off/minimal/low/medium/high/xhigh/max.
 const THINKING = { none: 'off', off: 'off', minimal: 'minimal', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' };
 export const thinkingFor = (effort) => (effort ? THINKING[String(effort).toLowerCase()] || null : null);
 
 const BRIDGE_PATH = join(dirname(fileURLToPath(import.meta.url)), 'pi-commonly-mcp.mjs');
+const SHELL_ENV_PATH = join(dirname(fileURLToPath(import.meta.url)), 'pi-shell-env.mjs');
 
 // Same substitution contract as claude.js / codex.js: ${COMMONLY_*}
 // placeholders in the declared MCP env are the wrapper's per-(agent, pod)
@@ -305,6 +306,7 @@ export const sessionExists = async (sessionDir, sessionId) => {
  */
 export const assertNoSandboxDeclared = (environment = {}) => {
   const sandbox = environment?.sandbox || {};
+  refuseWorkspaceTrust(sandbox, 'pi');
   if (effectiveSandboxTrust(sandbox.trust) === 'public') {
     throw new Error('pi adapter: public-trust seats are not supported — pi has no enforced sandbox; do not attach a pi seat to a stranger-readable pod');
   }
@@ -389,6 +391,7 @@ const runPi = ({ args, cwd, env, payload, timeoutMs, credentials = [], spawnImpl
 });
 
 export default {
+  requiresModel: true,
   name: 'pi',
 
   // TASK-049: the variable this adapter needs from the environment of whatever
@@ -408,12 +411,13 @@ export default {
   },
 
   async spawn(prompt, ctx = {}) {
+    const seatModel = requireSeatModel(ctx.environment, 'pi', true);
     // pi has no enforced sandbox. claude.js and codex.js refuse a public-trust
     // seat they cannot confine; so does this adapter, and it refuses any declared
     // sandbox mode rather than run unconfined under a spec that promised one.
     assertNoSandboxDeclared(ctx.environment);
     const provider = resolveProvider(ctx.environment);
-    const model = ctx.environment?.model || DEFAULT_MODEL;
+    const model = seatModel;
     const thinking = thinkingFor(ctx.environment?.effort);
     const baseEnv = ctx.env || process.env;
     if (!baseEnv[provider.apiKeyEnv]) {
@@ -457,6 +461,9 @@ export default {
         ...baseEnv,
         PI_CODING_AGENT_DIR: agentDir,
         PI_SKIP_VERSION_CHECK: '1',
+        // A variable NAME, never its value. The always-loaded extension uses
+        // this to scrub custom provider keys as well as the default LiteLLM key.
+        COMMONLY_PI_PROVIDER_KEY_ENV: provider.apiKeyEnv,
       };
       // `baseEnv` is normally the process environment, which carries the
       // bootstrap export. Nothing below this process needs the value: the bridge
@@ -472,6 +479,8 @@ export default {
         prompt: fullPrompt, provider: provider.name, model, thinking, sessionId, isResume, sessionDir,
         bridge: servers.length ? (ctx._bridgePath || BRIDGE_PATH) : null,
       });
+      // Shell isolation must not depend on whether this turn declares MCP.
+      args.splice(args.length - 1, 0, '-e', SHELL_ENV_PATH);
 
       const reply = await runPi({
         args,

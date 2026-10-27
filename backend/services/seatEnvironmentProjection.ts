@@ -84,6 +84,8 @@ const projectEnvironment = (raw: unknown): Record<string, unknown> | null => {
   for (const key of ['version', 'model', 'effort']) {
     if (source[key] !== undefined) projected[key] = source[key];
   }
+  const provider = pick(source.provider, ['id', 'baseURL']);
+  if (provider) projected.provider = provider;
   const workspace = pick(source.workspace, ['path', 'seed']);
   if (workspace) projected.workspace = workspace;
   const sandbox = pick(source.sandbox, ['mode', 'trust']);
@@ -122,6 +124,7 @@ export type SeatEnvironmentEntry = {
   agentName: string;
   instanceId: string;
   podIds: string[];
+  sourcePodId: string | null;
   runtime: unknown;
   environment: Record<string, unknown> | null;
 };
@@ -135,6 +138,7 @@ export type SeatEnvironmentQuery = {
    * Mongo happened to order first, which is a guess dressed as a verdict.
    */
   installedBy?: unknown;
+  agentName?: string;
 };
 
 /**
@@ -164,6 +168,7 @@ export const projectSeatEnvironments = async (
 ): Promise<Map<string, SeatEnvironmentEntry>> => {
   const filter: Record<string, unknown> = { status: 'active' };
   if (query.installedBy) filter.installedBy = query.installedBy;
+  if (query.agentName) filter.agentName = normalizeIdentityPart(query.agentName);
   const installs = await AgentInstallation.find(filter)
     .select('agentName instanceId podId config')
     .sort({ _id: 1 })
@@ -175,7 +180,7 @@ export const projectSeatEnvironments = async (
     const instanceId = normalizeIdentityPart(install.instanceId) || 'default';
     const key = seatEnvironmentKey(agentName, instanceId);
     const entry = byIdentity.get(key) || {
-      agentName, instanceId, podIds: [], runtime: null, environment: null,
+      agentName, instanceId, podIds: [], sourcePodId: null, runtime: null, environment: null,
     };
     if (install.podId) entry.podIds.push(String(install.podId));
     // AgentInstallation.config is a Mongoose Map; lean() yields a plain
@@ -189,6 +194,7 @@ export const projectSeatEnvironments = async (
     // empty row shadow a newer row's real pair (Vera, on 268370c1).
     const environment = config.environment ? projectEnvironment(config.environment) : null;
     if (!sourced.has(key) && (runtime || environment)) {
+      entry.sourcePodId = install.podId ? String(install.podId) : null;
       entry.runtime = runtime;
       entry.environment = environment;
       sourced.add(key);

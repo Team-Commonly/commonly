@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const axios = require('axios');
 const jwt = require('jsonwebtoken');
 const User = require('../../../models/User');
@@ -7,6 +8,7 @@ const InvitationCode = require('../../../models/InvitationCode');
 jest.mock('../../../services/communityPodService', () => ({
   ensureUserInCommunityPod: jest.fn().mockResolvedValue(undefined),
 }));
+jest.mock('../../../services/emailService', () => ({ sendEmail: jest.fn().mockResolvedValue(undefined) }));
 const { ensureUserInCommunityPod } = require('../../../services/communityPodService');
 const oauthController = require('../../../controllers/oauthController');
 const authController = require('../../../controllers/authController');
@@ -27,10 +29,16 @@ jest.mock('jsonwebtoken', () => ({
 }));
 
 const mockRes = () => ({
+  cookie: jest.fn(),
+  clearCookie: jest.fn(),
   status: jest.fn().mockReturnThis(),
   json: jest.fn(),
   redirect: jest.fn(),
 });
+
+const browserNonce = 'a'.repeat(64);
+const browserNonceHash = crypto.createHash('sha256').update(browserNonce).digest('hex');
+const browserHeaders = (state) => ({ cookie: `__Host-cm-oauth-${state}=${browserNonce}` });
 
 const startReq = (provider, query = {}) => ({
   params: { provider },
@@ -79,6 +87,71 @@ describe('OAuth Controller', () => {
     delete process.env.GITHUB_OAUTH_CLIENT_SECRET;
     delete process.env.AUTH_ALLOWED_EMAILS;
     delete process.env.AUTH_ALLOWED_DOMAINS;
+  });
+
+  describe('signup source round trips', () => {
+    it.each(['password', 'github', 'google'].flatMap((method) => [[method, false], [method, true]]))(
+      'persists sanitized %s first touch once, never from callback parameters (invite path: %s)', async (method, invitePath) => {
+      const touch = {
+        ref: 'HN', referrer: invitePath ? 'https://search.example/v2/invite/SECRETinviteTOKEN123' : 'https://search.example/results?email=private#token',
+        landingPath: invitePath ? '/v2/invite/SECRETinviteTOKEN123' : '/guides/start?invite=private#token', firstSeenAt: '2026-01-01T00:00:00.000Z',
+        authMethod: 'forged', recordedAt: '1900-01-01',
+      };
+      if (method === 'password') {
+        const res = mockRes();
+        await authController.register({ body: {
+          username: 'source-user', email: 'source@example.com', password: 'Password123!', signupSource: touch,
+        } }, res);
+        expect(res.status).toHaveBeenCalledWith(201);
+      } else {
+        if (method === 'google') {
+          process.env.GOOGLE_OAUTH_CLIENT_ID = 'google-client';
+          process.env.GOOGLE_OAUTH_CLIENT_SECRET = 'google-secret';
+        }
+        const signIn = async (source) => {
+          const startRes = mockRes();
+          await oauthController.startOAuth({ ...startReq(method), method: 'POST',
+            body: { signupSource: JSON.stringify(source) } }, startRes);
+          const location = startRes.redirect.mock.calls[0][0];
+          expect(location).not.toMatch(/search\.example|landingPath|signupSource|private|firstSeenAt/);
+          const state = new URL(location).searchParams.get('state');
+          const storedState = await OAuthLoginState.findOne({ state });
+          expect(JSON.stringify(storedState.signupSource)).not.toContain('private');
+          expect(JSON.stringify(storedState.signupSource)).not.toContain('SECRETinviteTOKEN123');
+          if (method === 'github') mockGithubProfile({ email: 'source@example.com' });
+          else {
+            axios.post.mockResolvedValueOnce({ data: { access_token: 'google-access-token' } });
+            axios.get.mockResolvedValue({ data: { sub: 'google-source', email: 'source@example.com',
+              email_verified: true, name: 'source-user' } });
+          }
+          const callbackRes = mockRes();
+          await oauthController.oauthCallback({ ...startReq(method),
+            headers: { cookie: startRes.cookie.mock.calls.map(([name, value]) => `${name}=${value}`).join('; ') },
+            query: { code: 'provider-code', state, signupSource: JSON.stringify({ ref: 'forged' }), ref: 'forged' } }, callbackRes);
+          expect(callbackRes.redirect).toHaveBeenCalledWith(expect.stringContaining('/v2/oauth/complete?'));
+          expect(callbackRes.redirect.mock.calls[0][0]).not.toMatch(/signupSource|firstSeenAt|search\.example|private/);
+          return { state, callbackRes };
+        };
+        const first = await signIn(touch);
+        // A replay cannot create an account or overwrite its attribution.
+        const replay = mockRes();
+        await oauthController.oauthCallback({ ...startReq(method), query: { state: first.state, code: 'replay' } }, replay);
+        expect(replay.redirect).toHaveBeenCalledWith(expect.stringContaining('oauthError=state_invalid'));
+        await signIn({ ref: 'later', landingPath: '/later' });
+      }
+      const user = await User.findOne({ email: 'source@example.com' }).select('+signupSource');
+      expect(user.signupSource.toObject()).toEqual({
+        ref: 'hn', referrer: 'https://search.example', ...(invitePath ? {} : { landingPath: '/guides/start' }),
+        firstSeenAt: new Date('2026-01-01T00:00:00.000Z'), authMethod: method, recordedAt: expect.any(Date),
+      });
+      expect(user.onboarding.signupRef).toBe('hn');
+      expect((await User.findById(user._id).lean()).signupSource).toBeUndefined();
+      // Neither a later save nor a dotted update may rewrite a created source.
+      user.signupSource.ref = 'changed';
+      await user.save();
+      await User.updateOne({ _id: user._id }, { $set: { 'signupSource.ref': 'also-changed' } });
+      expect((await User.findById(user._id).select('+signupSource')).signupSource.ref).toBe('hn');
+    });
   });
 
   describe('getOAuthProviders', () => {
@@ -205,14 +278,18 @@ describe('OAuth Controller', () => {
   describe('oauthCallback', () => {
     const seedState = (overrides = {}) => OAuthLoginState.create({
       provider: 'github',
-      state: 'state-1',
+      browserNonceHash,
+      pkceVerifier: 'v'.repeat(43),
+      state: '111111111111111111111111111111111111111111111111',
       expiresAt: new Date(Date.now() + 60000),
       ...overrides,
     });
 
     const callbackReq = (query = {}) => ({
       params: { provider: 'github' },
-      query: { code: 'gh-code', state: 'state-1', ...query },
+      protocol: 'https',
+      headers: browserHeaders('111111111111111111111111111111111111111111111111'),
+      query: { code: 'gh-code', state: '111111111111111111111111111111111111111111111111', ...query },
       protocol: 'https',
       get: () => 'api.test.local',
     });
@@ -269,7 +346,7 @@ describe('OAuth Controller', () => {
       await oauthController.oauthCallback(callbackReq(), res);
       expect(res.redirect).toHaveBeenCalledWith('https://app.test.local/v2/login?oauthError=team_only');
       expect(await User.countDocuments({ email: 'octo@example.com' })).toBe(0);
-      expect((await OAuthLoginState.findOne({ state: 'state-1' })).exchangeCode).toBeUndefined();
+      expect((await OAuthLoginState.findOne({ state: '111111111111111111111111111111111111111111111111' })).exchangeCode).toBeUndefined();
     });
 
     it('refuses an existing linked account whose current address is outside the allowlist', async () => {
@@ -290,7 +367,7 @@ describe('OAuth Controller', () => {
       const res = mockRes();
       await oauthController.oauthCallback(callbackReq(), res);
       expect(res.redirect).toHaveBeenCalledWith('https://app.test.local/v2/login?oauthError=email_unverified');
-      expect((await OAuthLoginState.findOne({ state: 'state-1' })).exchangeCode).toBeUndefined();
+      expect((await OAuthLoginState.findOne({ state: '111111111111111111111111111111111111111111111111' })).exchangeCode).toBeUndefined();
     });
 
     it.each([
@@ -324,6 +401,47 @@ describe('OAuth Controller', () => {
       }
     });
 
+    it.each(['github', 'google'].flatMap((provider) => [[provider, false], [provider, true]]))(
+      'resolves the %s linked identity as one record (existing link: %s)', async (provider, linked) => {
+        process.env.GOOGLE_OAUTH_CLIENT_ID = 'google-client';
+        process.env.GOOGLE_OAUTH_CLIENT_SECRET = 'google-secret';
+        const otherProvider = provider === 'github' ? 'google' : 'github';
+        const unrelated = await User.create({
+          username: 'unrelated-person', email: 'unrelated@example.com', verified: true,
+          authProviders: [
+            { provider: otherProvider, providerId: '12345' },
+            { provider, providerId: 'other-id' },
+          ],
+        });
+        const intended = await User.create({
+          username: 'intended-person', email: 'intended@example.com', verified: true, password: 'test-password',
+          authProviders: linked ? [{ provider, providerId: '12345' }] : [],
+        });
+        const before = (await User.findById(unrelated._id)).toObject();
+        await seedState({ provider });
+        // An existing provider link must work even when its asserted email changes.
+        const email = linked ? 'changed@example.com' : intended.email;
+        if (provider === 'github') mockGithubProfile({ id: 12345, email });
+        else {
+          axios.post.mockResolvedValueOnce({ data: { access_token: 'google-token' } });
+          axios.get.mockResolvedValueOnce({ data: {
+            sub: '12345', email, email_verified: true, name: 'Intended Person',
+          } });
+        }
+        const res = mockRes();
+        await oauthController.oauthCallback({ ...callbackReq(), params: { provider } }, res);
+        expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('/v2/oauth/complete?'));
+        const state = await OAuthLoginState.findOne({ state: '111111111111111111111111111111111111111111111111' });
+        expect(String(state.userId)).toBe(String(intended._id));
+        expect(state.exchangeCode).toEqual(expect.any(String));
+        expect(await User.countDocuments({ isBot: { $ne: true } })).toBe(2);
+        expect((await User.findById(unrelated._id)).toObject()).toEqual(before);
+        expect((await User.findById(intended._id)).authProviders.map((entry) => ({
+          provider: entry.provider, providerId: entry.providerId,
+        }))).toEqual([{ provider, providerId: '12345' }]);
+      },
+    );
+
     it('creates a new verified passwordless user and redirects with an exchange code', async () => {
       await seedState();
       mockGithubProfile();
@@ -346,7 +464,7 @@ describe('OAuth Controller', () => {
       expect(redirectUrl.searchParams.get('code')).toBeTruthy();
       expect(redirectUrl.searchParams.get('inviteSignup')).toBeNull();
 
-      const state = await OAuthLoginState.findOne({ state: 'state-1' });
+      const state = await OAuthLoginState.findOne({ state: '111111111111111111111111111111111111111111111111' });
       expect(String(state.userId)).toBe(String(user._id));
       expect(state.usedAt).toBeTruthy();
     });
@@ -573,7 +691,8 @@ describe('OAuth Controller', () => {
       });
       await OAuthLoginState.create({
         provider: 'github',
-        state: 'state-2',
+        state: '222222222222222222222222222222222222222222222222',
+        browserNonceHash,
         userId: user._id,
         exchangeCode: 'one-time-code',
         exchangeExpiresAt: new Date(Date.now() + 60000),
@@ -582,14 +701,14 @@ describe('OAuth Controller', () => {
       });
 
       const res1 = mockRes();
-      await oauthController.exchangeOAuthCode({ body: { code: 'one-time-code' } }, res1);
+      await oauthController.exchangeOAuthCode({ protocol: 'https', headers: browserHeaders('222222222222222222222222222222222222222222222222'), body: { code: 'one-time-code' } }, res1);
       expect(res1.json).toHaveBeenCalledWith(expect.objectContaining({
         token: 'test-jwt-token',
         user: expect.objectContaining({ username: 'octo-dev' }),
       }));
 
       const res2 = mockRes();
-      await oauthController.exchangeOAuthCode({ body: { code: 'one-time-code' } }, res2);
+      await oauthController.exchangeOAuthCode({ protocol: 'https', headers: browserHeaders('222222222222222222222222222222222222222222222222'), body: { code: 'one-time-code' } }, res2);
       expect(res2.status).toHaveBeenCalledWith(400);
     });
 
@@ -606,7 +725,8 @@ describe('OAuth Controller', () => {
       });
       await OAuthLoginState.create({
         provider: 'github',
-        state: 'state-bot',
+        state: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        browserNonceHash,
         userId: bot._id,
         exchangeCode: 'bot-code',
         exchangeExpiresAt: new Date(Date.now() + 60000),
@@ -614,7 +734,7 @@ describe('OAuth Controller', () => {
       });
 
       const res = mockRes();
-      await oauthController.exchangeOAuthCode({ body: { code: 'bot-code' } }, res);
+      await oauthController.exchangeOAuthCode({ protocol: 'https', headers: browserHeaders('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'), body: { code: 'bot-code' } }, res);
 
       expect(res.status).toHaveBeenCalledWith(403);
       expect(res.json).toHaveBeenCalledWith({
@@ -633,7 +753,8 @@ describe('OAuth Controller', () => {
       });
       await OAuthLoginState.create({
         provider: 'github',
-        state: 'state-3',
+        state: '333333333333333333333333333333333333333333333333',
+        browserNonceHash,
         userId: user._id,
         exchangeCode: 'stale-code',
         exchangeExpiresAt: new Date(Date.now() - 1000),
@@ -641,13 +762,13 @@ describe('OAuth Controller', () => {
       });
 
       const res = mockRes();
-      await oauthController.exchangeOAuthCode({ body: { code: 'stale-code' } }, res);
+      await oauthController.exchangeOAuthCode({ protocol: 'https', headers: browserHeaders('333333333333333333333333333333333333333333333333'), body: { code: 'stale-code' } }, res);
       expect(res.status).toHaveBeenCalledWith(400);
     });
   });
 
   describe('login guard for OAuth-only accounts', () => {
-    it('tells a passwordless user to use their provider instead of throwing', async () => {
+    it('answers a passwordless account like a wrong password, without throwing', async () => {
       await User.create({
         username: 'octo-dev',
         email: 'octo@example.com',
@@ -658,10 +779,9 @@ describe('OAuth Controller', () => {
       const res = mockRes();
       await authController.login({ body: { email: 'octo@example.com', password: 'whatever' } }, res);
 
+      // The reply does not say the address has an account, or name its provider.
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        code: 'OAUTH_ONLY_ACCOUNT',
-      }));
+      expect(res.json).toHaveBeenCalledWith({ error: 'Invalid credentials' });
     });
   });
 });

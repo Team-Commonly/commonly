@@ -4,7 +4,8 @@
  * Two thin CAP shims the run loop calls around every spawn cycle:
  *
  *   readLongTerm(client)            — GET  /api/agents/runtime/memory,
- *                                      returns sections.long_term.content or ''
+ *                                      returns sections.long_term.content,
+ *                                      falling back to legacy content
  *   syncBack(client, { summary })   — POST /api/agents/runtime/memory/sync
  *                                      with mode:'patch', sourceRuntime:'local-cli'.
  *                                      No-op when summary is falsy.
@@ -22,6 +23,18 @@
 export const SOURCE_RUNTIME = 'local-cli';
 
 /**
+ * Row slicing, the runtime-agnostic half of D48 (TASK-545). A row too large
+ * for one turn drifts when one seat carries it whole, so the seat splits it on
+ * the board before any code. It names the exact call and field for the reason
+ * the memory cue below names `long_term`: a seat adopts a habit through a
+ * surface it can see. Each adapter decides whether to pass it.
+ */
+export const ROW_SLICING_CUE = 'Slicing: when a row is too large for one turn, split it before '
+  + 'writing any code. Post each slice as a child row (commonly_create_task with parentTask set '
+  + "to the row's taskId) with one assignee, a written file or area boundary, and its own "
+  + 'acceptance line.';
+
+/**
  * The turn preamble, shared by every adapter so the two cannot drift.
  *
  * Non-empty memory is prepended verbatim — that path is load-bearing and is
@@ -33,20 +46,36 @@ export const SOURCE_RUNTIME = 'local-cli';
  * cannot adopt a habit whose surface it has no evidence exists, so the empty
  * case now says so.
  *
- * It names `long_term` specifically because that is the ONLY section read back
- * (`readLongTerm` returns `sections.long_term.content`). A write to `daily` —
+ * It names `long_term` specifically because that is the only v2 section read
+ * back. Legacy `content` is a fallback for records without that section. A write to `daily` —
  * the section whose name most invites exactly this use — succeeds, returns 200,
  * and is never seen again; the write and the silence are indistinguishable from
  * a correct round trip. Naming the section is the whole point of the cue.
+ *
+ * `workCues` are working habits an adapter teaches on a fresh session, beside
+ * the memory cues and under the same once-per-session rule. An adapter passes
+ * only the habits its CLI can act on; passing none leaves the preamble as it
+ * was.
  */
-export const buildMemoryPreamble = (prompt, memoryLongTerm, { freshSession = false } = {}) => {
+export const buildMemoryPreamble = (
+  prompt,
+  memoryLongTerm,
+  { freshSession = false, workCues = [], memoryWithheld = false } = {},
+) => {
   // `null` is the UNREADABLE signal, and it is deliberately not the same value
   // as `''`. Telling a seat whose token was revoked that "nothing has ever been
   // saved here" is a false claim about its own history, and it is the same
   // defect this cue exists to fix — one state over. When we could not read, say
   // that, and say nothing about what is stored.
   let context;
-  if (memoryLongTerm === null) {
+  if (memoryWithheld) {
+    // A workspace seat's turn that runs public: not unreadable and not empty,
+    // so neither of those cues is true. Its memory tools are off as well.
+    context = `=== Context (your persistent memory) ===\n`
+      + `(withheld this turn — this turn runs as a public seat because not every `
+      + `pod you answer in is confirmed private, so your memory stays out of it and `
+      + `the memory tools are off. This says nothing about what you have saved.)`;
+  } else if (memoryLongTerm === null) {
     context = `=== Context (your persistent memory) ===\n`
       + `(unreadable this turn — the memory read failed, so this says NOTHING `
       + `about what you have saved. Do not treat it as empty and do not re-save `
@@ -74,7 +103,9 @@ export const buildMemoryPreamble = (prompt, memoryLongTerm, { freshSession = fal
     + 'This is a fresh session. Read the persistent memory context above before acting; '
     + 'it carries durable state from prior sessions.\n';
   let sessionEndCue = '=== Before this session ends ===\n';
-  if (memoryLongTerm === null) {
+  if (memoryWithheld) {
+    sessionEndCue += 'Memory is withheld this turn, so there is nothing to save.';
+  } else if (memoryLongTerm === null) {
     sessionEndCue += 'Memory was unreadable on this fresh session. Do not treat it as empty or '
       + 'write a replacement based on this cue.';
   } else if (memoryLongTerm) {
@@ -86,13 +117,16 @@ export const buildMemoryPreamble = (prompt, memoryLongTerm, { freshSession = fal
       + 'gates held, decisions pending, and task context, not a transcript — using '
       + 'the long_term write above.';
   }
-  return `${context}\n${freshReadCue}\n=== Current turn ===\n${prompt}\n${sessionEndCue}`;
+  const workCue = workCues.length
+    ? `\n=== Working a row ===\n${workCues.map((cue) => `- ${cue}`).join('\n')}\n`
+    : '';
+  return `${context}\n${freshReadCue}${workCue}\n=== Current turn ===\n${prompt}\n${sessionEndCue}`;
 };
 
 export const readLongTerm = async (client, { onError } = {}) => {
   try {
     const body = await client.get('/api/agents/runtime/memory');
-    return body?.sections?.long_term?.content || '';
+    return body?.sections?.long_term?.content ?? body?.content ?? '';
   } catch (err) {
     // A 404 is the ONLY error that means what '' means: a fresh agent with no
     // memory row yet. The kernel upserts on first write, so this is genuine

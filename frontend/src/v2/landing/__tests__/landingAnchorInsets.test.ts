@@ -47,10 +47,13 @@ const declaration = (body: string, property: string): number => {
  * TASK-221: these two reads used to run at module scope through a private,
  * throwing brace walker. A renamed marker then failed the suite at IMPORT —
  * jest counted the suite but not its 3 assertions, so the total went DOWN
- * instead of red (measured 981 -> 978 on #2038's mutant). Each read now happens
- * inside the test that needs it, through the shared bounded reader, which
- * returns '' rather than throwing: a missing marker is a failed assertion and
- * stays in the total. The block is identified by the selector it must carry,
+ * instead of red (measured 981 -> 978 on #2038's mutant). The cause was a throw
+ * during module collection, before these tests were registered. Deferring the
+ * read into a test or making the reader return '' instead of throwing each
+ * independently prevents that loss. The current code uses both: each read runs
+ * inside its test through the non-throwing shared bounded reader, so a missing
+ * marker fails an assertion and stays in the total.
+ * The block is identified by the selector it must carry,
  * so a marker that moves cannot match a neighbouring block.
  */
 const phoneBlock = (): string =>

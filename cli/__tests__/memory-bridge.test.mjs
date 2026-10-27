@@ -7,7 +7,9 @@
  */
 
 import { jest } from '@jest/globals';
-import { readLongTerm, syncBack, SOURCE_RUNTIME, buildMemoryPreamble } from '../src/lib/memory-bridge.js';
+import {
+  readLongTerm, syncBack, SOURCE_RUNTIME, buildMemoryPreamble, ROW_SLICING_CUE,
+} from '../src/lib/memory-bridge.js';
 
 const makeClient = ({ memoryPayload = null, getThrows = false, postThrows = false } = {}) => {
   const get = jest.fn(async () => {
@@ -43,6 +45,18 @@ describe('readLongTerm', () => {
   test('returns empty string when the envelope has no long_term section', async () => {
     const client = makeClient({
       memoryPayload: { sections: { soul: { content: 'persona' } } },
+    });
+    expect(await readLongTerm(client)).toBe('');
+  });
+
+  test('reads legacy content when the long_term section is missing', async () => {
+    const client = makeClient({ memoryPayload: { content: '[2026-10-24] Hosted memory' } });
+    expect(await readLongTerm(client)).toBe('[2026-10-24] Hosted memory');
+  });
+
+  test('an explicit empty long_term section takes precedence over legacy content', async () => {
+    const client = makeClient({
+      memoryPayload: { content: 'stale legacy memory', sections: { long_term: { content: '' } } },
     });
     expect(await readLongTerm(client)).toBe('');
   });
@@ -151,6 +165,18 @@ describe('syncBack', () => {
 
 
 describe('buildMemoryPreamble', () => {
+  test('withheld memory is neither shown nor called empty or unreadable, and asks for no save', () => {
+    const out = buildMemoryPreamble('do the thing', 'notes from the project', {
+      freshSession: true, memoryWithheld: true,
+    });
+    expect(out).toContain('withheld this turn');
+    expect(out).not.toContain('notes from the project');
+    expect(out).not.toContain('(empty');
+    expect(out).not.toContain('unreadable');
+    expect(out).not.toContain('commonly_save_my_memory');
+    expect(out).toContain('=== Current turn ===\ndo the thing');
+  });
+
   // The non-empty path is load-bearing for every seat that has content, and
   // this change must not touch it. Asserted byte-for-byte, not by substring.
   it('prepends existing memory verbatim, unchanged', () => {
@@ -225,5 +251,35 @@ describe('buildMemoryPreamble', () => {
     expect(fresh).toContain('=== Fresh session ===');
     expect(fresh).toMatch(/Do not treat it as empty or write a replacement/i);
     expect(fresh).not.toContain('commonly_save_my_memory');
+  });
+
+  // D48 (TASK-545). Working habits ride the memory cues' once-per-session rule,
+  // and only the habits an adapter passes are rendered.
+  it('renders work cues on a fresh session, after the read cue and before the turn', () => {
+    const fresh = buildMemoryPreamble('turn', 'mem', {
+      freshSession: true,
+      workCues: ['first habit', 'second habit'],
+    });
+    expect(fresh).toContain('=== Working a row ===\n- first habit\n- second habit\n');
+    expect(fresh.indexOf('=== Fresh session ===')).toBeLessThan(fresh.indexOf('=== Working a row ==='));
+    expect(fresh.indexOf('=== Working a row ===')).toBeLessThan(fresh.indexOf('=== Current turn ==='));
+  });
+
+  it('does not render work cues on a resumed turn, even when an adapter passes them', () => {
+    const resumed = buildMemoryPreamble('turn', 'mem', { workCues: ['first habit'] });
+    expect(resumed).not.toContain('=== Working a row ===');
+    expect(resumed).not.toContain('first habit');
+  });
+
+  it('leaves the fresh preamble as it was when no cues are passed', () => {
+    const none = buildMemoryPreamble('turn', 'mem', { freshSession: true, workCues: [] });
+    expect(none).toBe(buildMemoryPreamble('turn', 'mem', { freshSession: true }));
+    expect(none).not.toContain('=== Working a row ===');
+    expect(none).toContain('prior sessions.\n\n=== Current turn ===\nturn');
+  });
+
+  it('names the exact call and field a seat slices a row with', () => {
+    expect(ROW_SLICING_CUE).toContain('commonly_create_task');
+    expect(ROW_SLICING_CUE).toContain('parentTask');
   });
 });

@@ -20,6 +20,7 @@
  */
 /* eslint-disable @typescript-eslint/no-require-imports, global-require */
 const ThreadUserState = require('../models/pg/ThreadUserState');
+const PGMessage = require('../models/pg/Message');
 const { getCallerId, callerHasPodWriteAccess } = require('../services/podWriteAccessService');
 const { pool } = require('../config/db-pg');
 const { THREADING_BACKFILL_MIGRATION: MIGRATION_NAME } = require('../constants/migrations');
@@ -102,9 +103,11 @@ async function authorize(req: Req, res: Res): Promise<{ rootId: number; podId: s
     res.status(401).json({ msg: 'auth required' });
     return null;
   }
-  const messageId = Number(req.params.messageId);
+  // A reconciled message answers to its Mongo id (TASK-313 part 2).
+  const pgId = await PGMessage.resolveId(String(req.params.messageId ?? ''));
+  const messageId = pgId == null ? 0 : Number(pgId);
   if (!Number.isInteger(messageId) || messageId <= 0) {
-    res.status(400).json({ msg: 'messageId must be a positive integer' });
+    res.status(404).json({ msg: 'message not found' });
     return null;
   }
   const resolved = await resolveRoot(messageId);

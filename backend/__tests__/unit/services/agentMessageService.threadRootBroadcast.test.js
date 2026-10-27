@@ -1,3 +1,4 @@
+const catalogueRevision = require('../../../config/uiCardCatalogueRevision.json');
 /**
  * The agent broadcast must carry `thread_root_id` (#1169's land-alongside
  * dependency, found in review).
@@ -200,9 +201,44 @@ describe('agent broadcast carries author identity', () => {
     });
 
     const msg = emitted.find((e) => e.event === 'newMessage');
+    expect(Message).toHaveBeenCalledWith(expect.objectContaining({ pgFallback: true }));
     expect(msg.payload.userId).toEqual(expect.objectContaining({
       _id: 'agent-user-1',
       isBot: true,
     }));
+  });
+});
+
+
+describe('agent UI card payload persistence and live delivery', () => {
+  const payload = { ...catalogueRevision, kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hello")' };
+  it('passes the envelope to PostgreSQL and preserves it in result and socket', async () => {
+    PGMessage.create.mockResolvedValue(pgRow({ payload, content: 'UI text fallback', message_type: 'card', thread_root_id: null }));
+    const result = await AgentMessageService.postMessage({
+      agentName: 'sprint-review', podId: POD, content: 'UI text fallback', messageType: 'card', payload,
+    });
+    expect(PGMessage.create).toHaveBeenCalledWith(
+      POD, 'agent-user-1', 'UI text fallback', 'card', null, payload, null, undefined,
+    );
+    expect(Message).not.toHaveBeenCalled();
+    expect(result.message.payload).toEqual(payload);
+    expect(emitted.find((e) => e.event === 'newMessage').payload).toEqual(expect.objectContaining({
+      messageType: 'card', payload, content: 'UI text fallback',
+    }));
+  });
+  it('preserves the same envelope in Mongo fallback and live delivery', async () => {
+    delete process.env.PG_HOST;
+    const save = jest.fn().mockResolvedValue(undefined);
+    Message.mockImplementation((data) => ({
+      ...data, _id: 'mongo-card-1', createdAt: new Date(), save,
+      populate: jest.fn().mockResolvedValue(undefined),
+    }));
+    const result = await AgentMessageService.postMessage({
+      agentName: 'sprint-review', podId: POD, content: 'UI text fallback', messageType: 'card', payload,
+    });
+    expect(Message).toHaveBeenCalledWith(expect.objectContaining({ messageType: 'card', payload }));
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(result.message.payload).toEqual(payload);
+    expect(emitted.find((e) => e.event === 'newMessage').payload.payload).toEqual(payload);
   });
 });

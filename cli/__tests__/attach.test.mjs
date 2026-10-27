@@ -33,6 +33,8 @@ const {
   loadAgentToken,
   buildDefaultEnvironment,
   bootstrapAgentRecordFromEnv,
+  parseAllowGrants,
+  checkRunAllowRequest,
   NO_AGENT_CLI_CODE,
   savedSeatLacksDefaultSandbox,
   BOOTSTRAP_ADAPTER_DETECT_ORDER,
@@ -145,8 +147,26 @@ describe('updateAgentConfiguration', () => {
     agentName: 'juno', podId: 'pod-9', instanceId: 'writer', runtimeToken: 'cm_agent_j',
   };
 
+  test('page key edits only model controls and preserves the local environment', async () => {
+    const client = { get: jest.fn(), patch: jest.fn(async () => ({ podId: 'owned-pod' })) };
+    const environment = { workspace: { path: './own' }, sandbox: { trust: 'public', mode: 'workspace' }, model: 'old' };
+    const result = await updateAgentConfiguration({ client, record: { ...record, environment }, runtimeKey: true, model: 'new', effort: 'high' });
+    expect(client.get).not.toHaveBeenCalled();
+    expect(client.patch).toHaveBeenCalledWith('/api/agents/runtime/configuration', {
+      agentName: 'juno', instanceId: 'writer', model: 'new', effort: 'high',
+    });
+    expect(result.environment).toEqual({ ...environment, model: 'new', effort: 'high' });
+    expect(result.podId).toBe('owned-pod');
+  });
+
+  test.each([{ adapter: 'claude' }, { envPath: '/tmp/env.json' }])('page key cannot edit broader runtime declarations: %j', async (options) => {
+    const client = { patch: jest.fn() };
+    await expect(updateAgentConfiguration({ client, record, runtimeKey: true, model: 'new', ...options })).rejects.toThrow('owner login');
+    expect(client.patch).not.toHaveBeenCalled();
+  });
+
   test('reuses the registry PATCH route for runtime controls and full env specs', async () => {
-    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn(async () => ({ success: true })) };
     const environment = {
       version: 1,
       workspace: { path: './workspace' },
@@ -179,7 +199,7 @@ describe('updateAgentConfiguration', () => {
   });
 
   test('keeps the complete provider block local while PATCHing environment fields', async () => {
-    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn(async () => ({ success: true })) };
     const environment = {
       model: 'gpt-5.4',
       provider: {
@@ -199,7 +219,7 @@ describe('updateAgentConfiguration', () => {
   });
 
   test('refuses provider configuration when the local token record is not OpenCode-bound', async () => {
-    const client = { patch: jest.fn() };
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn() };
     await expect(updateAgentConfiguration({
       client,
       record,
@@ -215,7 +235,7 @@ describe('updateAgentConfiguration', () => {
   });
 
   test('agent config writes the adapter binding explicitly', async () => {
-    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn(async () => ({ success: true })) };
     const adapterRegistry = {
       listAdapterNames: () => ['opencode'],
       getAdapter: () => ({ detect: async () => ({ path: '/bin/opencode', version: '1.18.35' }) }),
@@ -228,17 +248,17 @@ describe('updateAgentConfiguration', () => {
   });
 
   test('rejects an empty edit and an incomplete token record before making a request', async () => {
-    const client = { patch: jest.fn() };
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn() };
     await expect(updateAgentConfiguration({ client, record })).rejects.toThrow(/at least one/);
     await expect(updateAgentConfiguration({ client, record, effort: 'turbo' }))
       .rejects.toThrow(/effort must be one of/);
-    await expect(updateAgentConfiguration({ client, record: { agentName: 'juno' }, model: 'opus' }))
-      .rejects.toThrow(/podId/);
+    await expect(updateAgentConfiguration({ client, record: { podId: 'pod-9' }, model: 'opus' }))
+      .rejects.toThrow(/agentName/);
     expect(client.patch).not.toHaveBeenCalled();
   });
 
   test('updates an existing declared environment when only model/effort flags change', async () => {
-    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn(async () => ({ success: true })) };
     const localRecord = {
       ...record,
       environment: {
@@ -255,7 +275,7 @@ describe('updateAgentConfiguration', () => {
   });
 
   test('materializes runtime edits into the declared environment when none exists', async () => {
-    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn(async () => ({ success: true })) };
     const result = await updateAgentConfiguration({ client, record, model: 'new-model', effort: 'high' });
     expect(result.environment).toEqual({ model: 'new-model', effort: 'high' });
     expect(client.patch.mock.calls[0][1].config).toEqual({
@@ -265,7 +285,7 @@ describe('updateAgentConfiguration', () => {
   });
 
   test('validates and persists a detected adapter without leaking it into ADR-008 environment', async () => {
-    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn(async () => ({ success: true })) };
     const adapter = { detect: jest.fn(async () => ({ path: '/usr/local/bin/claude' })) };
     const result = await updateAgentConfiguration({
       client,
@@ -288,7 +308,7 @@ describe('updateAgentConfiguration', () => {
   });
 
   test('rejects an unknown or unavailable adapter before PATCH', async () => {
-    const client = { patch: jest.fn() };
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn() };
     const adapter = { detect: jest.fn(async () => null) };
     const adapterRegistry = {
       getAdapter: jest.fn((name) => (name === 'claude' ? adapter : null)),
@@ -300,6 +320,43 @@ describe('updateAgentConfiguration', () => {
       .rejects.toThrow(/not found on PATH/);
     expect(client.patch).not.toHaveBeenCalled();
   });
+  test('resolves a managed seat from the server source instead of its attention pod', async () => {
+    const client = {
+      get: jest.fn(async () => ({ runtimeManaged: true, runtimeSourcePodId: 'source-pod', writablePodId: 'other-pod' })),
+      patch: jest.fn(async () => ({})),
+    };
+    const result = await updateAgentConfiguration({ client, record, model: 'new-model' });
+    expect(client.get).toHaveBeenCalledWith('/api/registry/agents/juno/manage-settings?instanceId=writer');
+    expect(client.patch.mock.calls[0][0]).toBe('/api/registry/pods/source-pod/agents/juno');
+    expect(result.podId).toBe('source-pod');
+  });
+
+  test('a stale or absent local pod is not used when the server has a writable installation', async () => {
+    const client = {
+      get: jest.fn(async () => ({ writablePodId: 'real-pod' })),
+      patch: jest.fn(async () => ({})),
+    };
+    await updateAgentConfiguration({ client, record: { ...record, podId: undefined }, model: 'new-model' });
+    expect(client.patch.mock.calls[0][0]).toBe('/api/registry/pods/real-pod/agents/juno');
+  });
+
+  test.each([
+    {},
+    { writablePodId: null },
+    { runtimeManaged: true, runtimeSourcePodId: null, writablePodId: 'other-pod' },
+  ])('refuses a missing server target without PATCHing the token pod: %j', async (settings) => {
+    const client = { get: jest.fn(async () => settings), patch: jest.fn() };
+    await expect(updateAgentConfiguration({ client, record, model: 'new-model' }))
+      .rejects.toThrow(/No writable runtime installation/);
+    expect(client.patch).not.toHaveBeenCalled();
+  });
+
+  test('a failed installation lookup never falls back to the token pod', async () => {
+    const client = { get: jest.fn(async () => { throw new Error('Forbidden'); }), patch: jest.fn() };
+    await expect(updateAgentConfiguration({ client, record, model: 'new-model' })).rejects.toThrow('Forbidden');
+    expect(client.patch).not.toHaveBeenCalled();
+  });
+
 });
 
 const makeClient = ({ publishOk = true, runtimeToken = null } = {}) => {
@@ -323,7 +380,8 @@ const makeClient = ({ publishOk = true, runtimeToken = null } = {}) => {
     }
     throw new Error(`unexpected POST to ${route}`);
   });
-  return { post, get: jest.fn() };
+  return { post, get: jest.fn(async (route) => (route === '/api/registry/install/memory-handoff'
+    ? { installTimeMemoryHandoff: true } : undefined)) };
 };
 
 describe('performAttach', () => {
@@ -437,6 +495,52 @@ describe('performAttach', () => {
         }),
       }),
     );
+  });
+
+  test('attach sends the handoff in the install request and consumes its result', async () => {
+    const client = makeClient({ runtimeToken: 'cm_agent_local' });
+    const post = client.post;
+    client.post = jest.fn(async (route, body) => {
+      const result = await post(route, body);
+      return route === '/api/registry/install' ? { ...result, memoryCopy: { copied: true } } : result;
+    });
+    const result = await performAttach({ client, adapterName: 'stub', agentName: 'local', podId: 'pod-1',
+      memoryFrom: 'hosted', memoryInstance: 'source-1' });
+    expect(result.runtimeToken).toBe('cm_agent_local');
+    expect(client.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
+      resumeExisting: true, memoryFrom: { agentName: 'hosted', instanceId: 'source-1' },
+    }));
+    expect(client.get.mock.calls.some(([route]) => route.startsWith('/api/agent-memory'))).toBe(false);
+  });
+
+  test.each([undefined, {}, { installTimeMemoryHandoff: false }])('an older server refuses before publish or install: %j', async (capability) => {
+    const client = makeClient();
+    client.get.mockResolvedValue(capability);
+    await expect(performAttach({ client, adapterName: 'stub', agentName: 'local', podId: 'pod-1', memoryFrom: 'hosted' }))
+      .rejects.toThrow(/upgrade the server/);
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
+  test('a missing capability endpoint refuses before publish or install', async () => {
+    const client = makeClient();
+    client.get.mockRejectedValue(new Error('Not found'));
+    await expect(performAttach({ client, adapterName: 'stub', agentName: 'local', podId: 'pod-1', memoryFrom: 'hosted' }))
+      .rejects.toThrow('Not found');
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
+  test('a refused install-time copy preserves the saved token and never mints another', async () => {
+    saveAgentToken('local', { agentName: 'local', runtimeToken: 'cm_agent_old' });
+    const client = makeClient();
+    const post = client.post;
+    client.post = jest.fn(async (route, body) => {
+      if (route === '/api/registry/install') throw new Error('Local agent already has different memory');
+      return post(route, body);
+    });
+    await expect(performAttach({ client, adapterName: 'stub', agentName: 'local', podId: 'pod-1', memoryFrom: 'hosted' }))
+      .rejects.toThrow(/different memory/);
+    expect(loadAgentToken('local').runtimeToken).toBe('cm_agent_old');
+    expect(client.post.mock.calls.some(([route]) => route.endsWith('/runtime-tokens'))).toBe(false);
   });
 
   test('omits config.wakeOnMessage by default (ADR-018 ambient wake is opt-in)', async () => {
@@ -736,6 +840,182 @@ describe('bootstrapAgentRecordFromEnv', () => {
     expect(record.environment.sandbox).toEqual({ trust: 'public' });
   });
 
+  // TASK-294: a claude seat whose every pod is confirmed private reads the
+  // directory it was started from; anything less keeps the public default.
+  describe('first-run workspace trust', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'commonly-bootstrap-ws-'));
+    const home = path.join(root, 'home');
+    const repo = path.join(home, 'code', 'repo');
+    fs.mkdirSync(repo, { recursive: true });
+    afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+
+    const withVisibility = (publicRead) => ({
+      ...identityResponse,
+      installations: identityResponse.installations.map((row) => ({
+        ...row, publicRead, communityListed: false, joinPolicy: 'invite-only',
+      })),
+    });
+    const run = async ({
+      response, startDir = repo, registry = makeRegistry(), allow, platform = 'darwin',
+    } = {}) => {
+      const lines = [];
+      const record = await bootstrapAgentRecordFromEnv({
+        name: 'smoke-agent',
+        env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+        clientFactory: makeFactory(response),
+        adapterRegistry: registry,
+        log: (line) => lines.push(line),
+        startDir,
+        home,
+        platform,
+        ...(allow ? { allow } : {}),
+      });
+      return { record, lines };
+    };
+
+    test('every pod private and a project start dir: the seat reads that project', async () => {
+      const { record, lines } = await run({ response: withVisibility(false) });
+      expect(record.adapter).toBe('claude');
+      expect(record.environment.sandbox).toEqual({ trust: 'workspace' });
+      expect(record.workspacePath).toBe(fs.realpathSync(repo));
+      expect(record.environment.mcp[0].name).toBe('commonly');
+      expect(lines.some((line) => line.includes(fs.realpathSync(repo)))).toBe(true);
+    });
+
+    test('one publicly readable pod keeps the public default and says why', async () => {
+      const response = withVisibility(false);
+      response.installations[1] = { ...response.installations[1], publicRead: true };
+      const { record, lines } = await run({ response });
+      expect(record.environment.sandbox).toEqual({ trust: 'public' });
+      expect(record.workspacePath).toBeNull();
+      expect(lines.some((line) => /scratch folder.*publicly readable/.test(line))).toBe(true);
+    });
+
+    test('a server that reports no visibility keeps the public default', async () => {
+      const { record } = await run({ response: identityResponse });
+      expect(record.environment.sandbox).toEqual({ trust: 'public' });
+      expect(record.workspacePath).toBeNull();
+    });
+
+    test('started from $HOME keeps the public default and says where to start instead', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), startDir: home });
+      expect(record.environment.sandbox).toEqual({ trust: 'public' });
+      expect(record.workspacePath).toBeNull();
+      expect(lines.some((line) => /your home directory\. To let it read a project/.test(line))).toBe(true);
+    });
+
+    // #2784 runs a workspace seat under bwrap on Linux; agent run checks that
+    // the host can start the jail before the token file is written.
+    test('on Linux, every pod private: the seat reads that project, and takes its grants', async () => {
+      const { record } = await run({ response: withVisibility(false), platform: 'linux' });
+      expect(record.environment.sandbox).toEqual({ trust: 'workspace' });
+      expect(record.workspacePath).toBe(fs.realpathSync(repo));
+      const granted = await run({ response: withVisibility(false), platform: 'linux', allow: ['write'] });
+      expect(granted.record.environment.sandbox).toEqual({ trust: 'workspace', allow: ['write'] });
+    });
+
+    test('on Linux a public pod keeps the public default, which agent run then refuses for Claude', async () => {
+      const { record, lines } = await run({ response: withVisibility(true), platform: 'linux' });
+      expect(record.environment.sandbox).toEqual({ trust: 'public' });
+      expect(record.workspacePath).toBeNull();
+      expect(lines.some((line) => /scratch folder, because a pod it answers in is publicly readable/
+        .test(line))).toBe(true);
+    });
+
+    test('on native Windows the seat keeps the public default and says why', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), platform: 'win32' });
+      expect(record.environment.sandbox).toEqual({ trust: 'public' });
+      expect(record.workspacePath).toBeNull();
+      expect(lines.some((line) => /scratch folder, because an agent works in its folder only on macOS and Linux/
+        .test(line))).toBe(true);
+      await expect(run({ response: withVisibility(false), platform: 'win32', allow: ['write'] }))
+        .rejects.toThrow(/--allow write applies only .* only on macOS and Linux for now/);
+    });
+
+    test('a codex seat keeps its baseline and hears nothing about workspaces', async () => {
+      const { record, lines } = await run({
+        response: withVisibility(false), registry: makeRegistry({ claudeFound: false }),
+      });
+      expect(record.adapter).toBe('codex');
+      expect(record.workspacePath).toBeNull();
+      expect(record.environment.sandbox?.trust).not.toBe('workspace');
+      expect(lines.some((line) => /scratch folder|can read/.test(line))).toBe(false);
+    });
+
+    test('a write grant lands on the record, and the line says its commands reach the network', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), allow: ['write'] });
+      expect(record.environment.sandbox).toEqual({ trust: 'workspace', allow: ['write'] });
+      const said = lines.find((line) => line.includes(fs.realpathSync(repo)));
+      expect(said).toMatch(/can read and edit files in .* and run commands there\./);
+      expect(said).toMatch(/commands can reach the network/);
+      expect(said).toMatch(/\.git stays read-only, so it cannot commit/);
+    });
+
+    test('a web grant alone reads, runs read-only git and fetches pages, and still cannot edit', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), allow: ['web'] });
+      expect(record.environment.sandbox).toEqual({ trust: 'workspace', allow: ['web'] });
+      expect(lines.some((line) => /run read-only git there, and fetch web pages; it cannot edit files\./
+        .test(line))).toBe(true);
+    });
+
+    test('both grants are named in one line', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), allow: ['write', 'web'] });
+      expect(record.environment.sandbox).toEqual({ trust: 'workspace', allow: ['write', 'web'] });
+      expect(lines.some((line) => /run commands there, and fetch web pages\. Its commands can reach the network/
+        .test(line))).toBe(true);
+    });
+
+    test('grants on a seat that will not work in its folder are refused with the reason', async () => {
+      const response = withVisibility(false);
+      response.installations[1] = { ...response.installations[1], publicRead: true };
+      await expect(run({ response, allow: ['write'] }))
+        .rejects.toThrow(/--allow write applies only to an agent that works in the folder it starts in.*scratch folder, because .*publicly readable/);
+    });
+
+    test('grants on a codex seat are refused rather than dropped', async () => {
+      await expect(run({
+        response: withVisibility(false), registry: makeRegistry({ claudeFound: false }), allow: ['web'],
+      })).rejects.toThrow(/--allow web applies only to an agent that works in the folder it starts in/);
+    });
+  });
+
+  // TASK-294: `run --allow`, read once when the token file is written.
+  describe('run --allow', () => {
+    test('takes write and web, comma-separated, in a fixed order, once each', () => {
+      expect(parseAllowGrants(undefined)).toEqual([]);
+      expect(parseAllowGrants('web,write')).toEqual(['write', 'web']);
+      expect(parseAllowGrants(' write , write,')).toEqual(['write']);
+    });
+
+    test.each(['', ',', 'bash', 'write,net', 'Write'])('refuses %j rather than dropping it', (value) => {
+      expect(() => parseAllowGrants(value)).toThrow(/--allow takes write and\/or web, comma-separated/);
+    });
+
+    const saved = (allow) => ({
+      agentName: 'smoke-agent',
+      environment: { sandbox: { trust: 'workspace', ...(allow ? { allow } : {}) } },
+    });
+
+    test('a run without --allow keeps whatever the token file holds', () => {
+      expect(checkRunAllowRequest({ record: saved(['write']), requested: [] })).toEqual({ ok: true });
+    });
+
+    test('a run that asks for the grants the token file holds goes ahead', () => {
+      expect(checkRunAllowRequest({ record: saved(['write', 'web']), requested: ['write', 'web'] }))
+        .toEqual({ ok: true });
+    });
+
+    test('a run that asks for other grants is refused with the way to change them', () => {
+      const none = checkRunAllowRequest({ record: saved(), requested: ['write'] });
+      expect(none.ok).toBe(false);
+      expect(none.message).toMatch(/'smoke-agent' was set up with no --allow; --allow write was not applied\./);
+      expect(none.message).toMatch(/commonly agent detach smoke-agent --force, then re-run .* --allow write/);
+      const fewer = checkRunAllowRequest({ record: saved(['write', 'web']), requested: ['write'] });
+      expect(fewer.ok).toBe(false);
+      expect(fewer.message).toMatch(/was set up with --allow write,web; --allow write was not applied/);
+    });
+  });
+
   test('a pi seat bootstrapped from env gets the kernel server but no sandbox block, which pi refuses', async () => {
     const record = await bootstrapAgentRecordFromEnv({
       name: 'smoke-agent',
@@ -850,6 +1130,20 @@ describe('bootstrapAgentRecordFromEnv', () => {
       adapterRegistry: makeRegistry({ opencodeFound: true }),
       adapterOverride: 'opencode',
     })).rejects.toThrow(/sign in with commonly login, then run commonly agent attach opencode --pod pod-main --name smoke-agent \[--env <environment\.yaml>\]/);
+  });
+
+  test('TASK-317: a reported CLI on the installation never counts as a declared adapter', () => {
+    const refusal = serverAdapterBindingRefusal({
+      adapterName: 'pi',
+      agentName: 'smoke-agent',
+      installations: [{
+        podId: 'pod-main', podType: 'chat', instanceId: 'default', status: 'active',
+        type: 'installation', runtimeAdapter: null, reportedCli: 'pi', runtime: { reportedCli: 'pi' },
+      }],
+      podId: 'pod-main',
+      instanceId: 'default',
+    });
+    expect(refusal).toMatch(/Adapter 'pi' is not declared for this Commonly installation/);
   });
 
   test('an older server without runtimeAdapter projection says to upgrade instead of re-attaching', async () => {
@@ -1150,5 +1444,30 @@ describe('bootstrapAgentRecordFromEnv', () => {
     // otherwise be silent: a seat booting against a pod whose installation is
     // not live.
     expect(record.podId).toBe('pod-stale');
+  });
+});
+
+describe('resolveAttachSandbox — workspace trust (TASK-294)', () => {
+  test('a claude seat resolves the same host mode a public one does', () => {
+    expect(resolveAttachSandbox({
+      environment: { sandbox: { trust: 'workspace' } }, adapterName: 'claude', platform: 'darwin',
+    })).toEqual({ mode: 'workspace', trust: 'workspace' });
+    expect(resolveAttachSandbox({
+      environment: { sandbox: { trust: 'workspace' } }, adapterName: 'claude', platform: 'linux',
+    })).toEqual({ mode: 'bwrap', trust: 'workspace' });
+  });
+
+  test('every other adapter is refused before anything is published', () => {
+    for (const adapterName of ['codex', 'opencode', 'qwen', 'pi', 'goose', 'dsh']) {
+      expect(() => resolveAttachSandbox({
+        environment: { sandbox: { trust: 'workspace' } }, adapterName, platform: 'darwin',
+      })).toThrow(new RegExp(`^${adapterName} adapter: sandbox\\.trust=workspace is claude-only for now`));
+    }
+  });
+
+  test('beside mode none it is refused, never run unsandboxed', () => {
+    expect(() => resolveAttachSandbox({
+      environment: { sandbox: { trust: 'workspace', mode: 'none' } }, adapterName: 'claude',
+    })).toThrow(/sandbox\.trust=workspace requires an enforced sandbox mode/);
   });
 });

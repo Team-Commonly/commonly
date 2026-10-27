@@ -5,6 +5,7 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import V2LangSwitch from '../components/V2LangSwitch';
 import DemoWorkspace from './DemoWorkspace';
+import { FAQ_JSONLD_ID, LANDING_FAQ, buildFaqPageJsonLd } from './landingFaq';
 import '../v2.css';
 import './v2-landing.css';
 import './demo-workspace.css';
@@ -33,7 +34,7 @@ const X_HANDLE = 'https://x.com/sam_commonly';
 // before install.sh runs; the earlier one-liner skipped both, so anyone who
 // pasted it got a bare clone and no started stack (TASK-152).
 const SELF_HOST_COMMAND = 'git clone https://github.com/Team-Commonly/commonly.git && cd commonly && ./install.sh';
-const ADR_COUNT = 30;
+const ADR_COUNT = 32;
 // A count on a marketing page drifts silently: nothing on the page notices a
 // new ADR, and docs/ is outside this image's build context so the page cannot
 // count at build time. The TASK-167 row D test counts docs/adr/ADR-*.md and
@@ -59,23 +60,43 @@ const UseCaseArrow = () => (
     <path d="M3 8h9M8.5 4.5L12 8l-3.5 3.5" />
   </svg>
 );
-// Issue #708 records the provenance for every affiliation AND the source +
-// license of every logo file (Wikimedia PD-textlogo / official brand assets).
-// Keep this ordered list config-shaped so additions require an explicit,
-// reviewable data change. Logos live in public/logos/ and render grayscale
-// at 26px on the rolling bar.
+// Every entry's affiliation basis, and every logo file's source, licence,
+// modifications and the org's brand policy, is recorded in
+// docs/design/landing-trusted-banner-provenance.md — one row per org. Issue
+// #708 holds the affiliation basis for the original eleven only; it has no
+// logo records. Keep this ordered list config-shaped so an addition is an
+// explicit, reviewable data change with a row in that doc. Columbia's file is
+// CC BY-SA 4.0; its attribution line is in that doc.
+//
+// Logo files live in public/logos/ and render as one grey ink at 26px (see
+// `.v2-landing__trusted-logo`). Widths are intrinsic aspect ratio × 26,
+// reserving lazy-image space before load; CSS scales both axes on phones.
+// trustedLogoDimensions.test.ts re-derives each width from its file.
 const TRUSTED_AFFILIATIONS = [
-  { name: 'Arista', logo: '/logos/arista.svg' },
-  { name: 'UCLA', logo: '/logos/ucla.svg' },
-  { name: 'Rice University', logo: '/logos/rice.svg' },
-  { name: 'Peking University', logo: '/logos/pku.png' },
-  { name: 'University of Pennsylvania', logo: '/logos/upenn.svg' },
-  { name: 'Yale University', logo: '/logos/yale.svg' },
-  { name: 'Columbia University', logo: '/logos/columbia.svg' },
-  { name: 'McMaster University', logo: '/logos/mcmaster.svg' },
-  { name: 'ByteDance', logo: '/logos/bytedance.svg' },
-  { name: 'Microsoft', logo: '/logos/microsoft.svg' },
-  { name: 'Ajaib', logo: '/logos/ajaib.svg' },
+  { name: 'Arista', logo: '/logos/arista.svg', width: 165.65714285714284 },
+  { name: 'UCLA', logo: '/logos/ucla.svg', width: 79.41206047089129 },
+  { name: 'Rice University', logo: '/logos/rice.svg', width: 178.75 },
+  { name: 'Peking University', logo: '/logos/pku.png', width: 92.38413361169103 },
+  { name: 'University of Pennsylvania', logo: '/logos/upenn.svg', width: 55.437100213219615 },
+  { name: 'Yale University', logo: '/logos/yale.svg', width: 60.41194168016663 },
+  { name: 'Columbia University', logo: '/logos/columbia.svg', width: 170.8440052505544 },
+  { name: 'McMaster University', logo: '/logos/mcmaster.svg', width: 49.22560975609757 },
+  { name: 'University of Illinois', logo: '/logos/illinois.svg', width: 151.50767918088738 },
+  { name: 'ByteDance', logo: '/logos/bytedance.svg', width: 150.70508289126707 },
+  { name: 'Microsoft', logo: '/logos/microsoft.svg', width: 121.91111111111111 },
+  { name: 'Ajaib', logo: '/logos/ajaib.svg', width: 89.14285714285714 },
+  { name: 'OROZ', logo: '/logos/oroz.png', width: 91 },
+  { name: 'CLCK', logo: '/logos/clck.svg', width: 81.2860310421286 },
+  { name: 'Ollow', logo: '/logos/ollow.svg', width: 106.86 },
+  { name: 'Verifran', logo: '/logos/verifran.png', width: 75 },
+  { name: 'AIMS', logo: '/logos/aims.svg', width: 178.6359649122807 },
+  { name: 'Fluxr', logo: '/logos/fluxr.svg', width: 117.75693303679564 },
+  { name: 'Cyber Solutions', logo: '/logos/cybsolutions.png', width: 169 },
+  { name: 'Altur', logo: '/logos/altur.svg', width: 94.81246138910952 },
+  { name: 'ILOapps', logo: '/logos/iloapps.png', width: 180.5 },
+  { name: 'Rivne Tech', logo: '/logos/rivnetech.png', width: 189.5 },
+  { name: 'NewTech Kuwait', logo: '/logos/newtechkw.png', width: 58.5 },
+  { name: 'Ada', logo: '/logos/ada.svg', width: 92.3 },
 ] as const;
 
 interface Stats {
@@ -279,6 +300,23 @@ const V2LandingPage: React.FC = () => {
   const appHref = isAuthenticated ? '/v2' : '/v2/register';
   const primaryLabel = isAuthenticated ? t('landing.actions.openApp') : t('landing.actions.getStarted');
   const locale = i18n.resolvedLanguage || i18n.language;
+  const isEnglish = locale.startsWith('en');
+  // FAQPage JSON-LD follows the visible FAQ: present on en, removed otherwise.
+  // On a direct load of `/` the static HTML already carries the tag (same id).
+  useEffect(() => {
+    const id = FAQ_JSONLD_ID;
+    const existing = document.getElementById(id) as HTMLScriptElement | null;
+    if (!isEnglish) {
+      existing?.remove();
+      return undefined;
+    }
+    const script = existing ?? document.createElement('script');
+    script.id = id;
+    script.type = 'application/ld+json';
+    script.textContent = JSON.stringify(buildFaqPageJsonLd());
+    if (!existing) document.head.appendChild(script);
+    return () => { document.getElementById(id)?.remove(); };
+  }, [isEnglish]);
   const rotatingTerms = [
     t('landing.hero.terms.claudeCode'),
     t('landing.hero.terms.codex'),
@@ -297,6 +335,18 @@ const V2LandingPage: React.FC = () => {
     if (typeof IntersectionObserver === 'undefined') return;
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
     setMotion(true);
+  }, []);
+
+  // A fresh load of `/#pricing` (the /pricing redirect) makes the browser try
+  // the fragment scroll before React has rendered the sections, so it finds
+  // nothing and the page stays at the hero. Scroll once after mount. The
+  // scroller's scroll-padding-top keeps the target clear of the sticky bar.
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (!id) return;
+    // Instant: the landing scroller is smooth, and an animated jump ends short
+    // of the target on a 390 viewport, which parks the label under the bar.
+    document.getElementById(id)?.scrollIntoView({ behavior: 'instant' });
   }, []);
 
   // `stats` is a dependency on purpose: when /api/stats/public resolves, the
@@ -366,7 +416,9 @@ const V2LandingPage: React.FC = () => {
           <a className="v2-landing__navlink" href="#features">{t('landing.nav.features')}</a>
           <a className="v2-landing__navlink" href="#use-cases">{t('landing.nav.useCases')}</a>
           <a className="v2-landing__navlink" href="#pricing">{t('landing.nav.pricing')}</a>
-          <a className="v2-landing__navlink" href={REPO} target="_blank" rel="noreferrer">{t('landing.nav.github')}</a>
+          {/* The star ask sits in the nav and the open-source section, not only the
+              final CTA: most repo visitors leave without starring (D139). */}
+          <a className="v2-landing__navlink" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.starGithub')}</a>
           {!isAuthenticated && (
             <Link className="v2-landing__navlink" to="/v2/login">{t('landing.nav.signIn')}</Link>
           )}
@@ -422,7 +474,7 @@ const V2LandingPage: React.FC = () => {
                 </a>
               </div>
 
-              <div className="v2-landing__install" aria-label={t('landing.hero.selfHostInstall')}>
+              <div className="v2-landing__install" role="group" aria-label={t('landing.hero.selfHostInstall')}>
                 {/* The scroll region is this wrapper, not the box, so the Copy
                     control beside it is visible at every width and scroll
                     position (TASK-154). */}
@@ -475,9 +527,9 @@ const V2LandingPage: React.FC = () => {
           </figure>
         </div>
 
-        {/* Individual affiliations, not organizational endorsements. The
-            provenance for every entry — and the source/license of every logo
-            file — is recorded in issue #708. */}
+        {/* Individual affiliations, not organizational endorsements. Each
+            entry's affiliation basis and each logo's source and licence are
+            recorded in docs/design/landing-trusted-banner-provenance.md. */}
         <section
           className="v2-landing__trusted"
           data-reveal
@@ -486,11 +538,11 @@ const V2LandingPage: React.FC = () => {
           })}
         >
           <span className="v2-landing__trusted-label">{t('landing.trusted.label')}</span>
-          {/* Rolling logo bar: the track holds two identical sets and the
-              keyframe slides -50% for a seamless loop. The second set is
-              purely decorative — aria-hidden with empty alts so screen
-              readers hear each name exactly once. Org names are proper nouns
-              and stay untranslated in alts. */}
+          {/* Rolling bar: the track holds two identical sets and the keyframe
+              slides -50% for a seamless loop. The second set is purely
+              decorative — aria-hidden, with empty alts — so screen readers
+              hear each name exactly once. Org names are proper nouns and stay
+              untranslated in alts. */}
           <div className="v2-landing__trusted-marquee">
             <div className="v2-landing__trusted-track">
               {[0, 1].map((set) => (
@@ -506,6 +558,7 @@ const V2LandingPage: React.FC = () => {
                       src={affiliation.logo}
                       alt={set === 0 ? affiliation.name : ''}
                       loading="lazy"
+                      width={affiliation.width}
                       height={26}
                     />
                   ))}
@@ -659,14 +712,13 @@ const V2LandingPage: React.FC = () => {
               <h2 className="v2-landing__h2">{t('landing.openSource.title')}</h2>
               <p className="v2-landing__open-lede">{t('landing.openSource.lede')}</p>
               <div className="v2-landing__cta-row">
-                <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.readSource')}</a>
+                <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.starGithub')}</a>
               </div>
             </div>
             <ul className="v2-landing__open-list">
               <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.source.title')}</strong> {t('landing.openSource.items.source.text')}</li>
               <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.data.title')}</strong> {t('landing.openSource.items.data.text')}</li>
               <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.tax.title')}</strong> {t('landing.openSource.items.tax.text')}</li>
-              <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.federation.title')}</strong> {t('landing.openSource.items.federation.text')}</li>
             </ul>
           </div>
         </section>
@@ -843,6 +895,23 @@ const V2LandingPage: React.FC = () => {
             {t('landing.pricing.foot')}
           </p>
         </section>
+
+        {/* ---- FAQ (en only: the JSON-LD must describe text the page shows) ---- */}
+        {isEnglish && (
+          <section className="v2-landing__section" id="faq">
+            <div className="v2-landing__section-head" data-reveal>
+              <h2 className="v2-landing__h2">{t('landing.faq.title')}</h2>
+            </div>
+            <dl className="v2-landing__faq">
+              {LANDING_FAQ.map((item) => (
+                <div className="v2-landing__faq-item" key={item.question}>
+                  <dt>{item.question}</dt>
+                  <dd className="v2-landing__card-text">{item.answer}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        )}
 
         {/* ---- Final CTA ---- */}
         <section className="v2-landing__cta">

@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 import V2NavRail from './V2NavRail';
 import V2PodsSidebar from './V2PodsSidebar';
 import { V2EmbeddedProvider } from '../hooks/useV2Embedded';
+import { useV2PodAttention } from '../hooks/useV2PodAttention';
+import V2MobileTabs from './V2MobileTabs';
 import V2PageHead from './V2PageHead';
 
 interface V2FeaturePageProps {
@@ -33,9 +35,9 @@ const V2_COLORS = {
   textPrimary: '#111827',
   textSecondary: '#4b5563',
   textMuted: '#6b7280',
-  accent: '#2f6feb',
-  accentStrong: '#1f55c9',
-  accentSoft: '#e8efff',
+  accent: '#1d3fd1',
+  accentStrong: '#1633a8',
+  accentSoft: '#e9edfb',
   success: '#10b981',
   warning: '#f4a23a',
   danger: '#ef4444',
@@ -50,12 +52,12 @@ const v2FeatureTheme = createTheme({
     mode: 'light',
     primary: {
       main: V2_COLORS.accent,
-      light: '#5b8dff',
+      light: '#e9edfb',
       dark: V2_COLORS.accentStrong,
       contrastText: V2_COLORS.surface,
     },
     secondary: {
-      main: '#14306f',
+      main: '#0f2378',
       contrastText: V2_COLORS.surface,
     },
     success: { main: V2_COLORS.success },
@@ -298,6 +300,7 @@ const V2FeaturePage: React.FC<V2FeaturePageProps> = ({
 }) => {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const attention = useV2PodAttention();
 
   useEffect(() => {
     try {
@@ -325,7 +328,7 @@ const V2FeaturePage: React.FC<V2FeaturePageProps> = ({
 
   return (
     <div className={`v2-shell${showPodsSidebar ? ' v2-shell--feature' : ' v2-shell--feature-wide'}`}>
-      <V2NavRail />
+      <V2NavRail needsYouCount={attention.count} />
       {showPodsSidebar && <V2PodsSidebar selectedPodId={null} />}
       <main className={`v2-pane v2-pane--main v2-feature${className ? ` ${className}` : ''}`} onClickCapture={handleClickCapture} aria-label={title}>
         {showHeader && <V2PageHead className="v2-feature__header" titleClassName="v2-feature__title" title={title} hint={hint} hintLabel={t('common.aboutPage', { title })} />}
@@ -339,6 +342,7 @@ const V2FeaturePage: React.FC<V2FeaturePageProps> = ({
           </ThemeProvider>
         </section>
       </main>
+      <V2MobileTabs needsYouCount={attention.count ?? 0} />
     </div>
   );
 };

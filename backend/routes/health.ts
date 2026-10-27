@@ -3,6 +3,8 @@ const express = require('express');
 // eslint-disable-next-line global-require
 const mongoose = require('mongoose');
 // eslint-disable-next-line global-require
+const { platformIpRateLimit } = require('../middleware/platformRateLimit');
+// eslint-disable-next-line global-require
 const { pool: pgPool } = require('../config/db-pg');
 // The mount probe, not the boot block's flag — see pgBootService.routerIsMounted
 // for why those are two different facts (TASK-168).
@@ -166,6 +168,11 @@ router.get('/db', (_req: unknown, res: Res) => {
 });
 
 router.get('/ready', async (_req: unknown, res: Res) => {
+  // Draining is not a liveness failure; only readiness stops new traffic.
+  const AgentEventService = require('../services/agentEventService');
+  if (AgentEventService.isInProcessDraining()) {
+    return res.status(503).json({ status: 'not_ready', reason: 'hosted runtime draining' });
+  }
   try {
     if (mongoose.connection.readyState !== 1) {
       return res.status(503).json({ status: 'not_ready', reason: 'MongoDB not connected' });
@@ -213,7 +220,15 @@ router.get('/ready', async (_req: unknown, res: Res) => {
   }
 });
 
-router.get('/clawdbot', async (_req: unknown, res: Res) => {
+// Anonymous, and each hit makes a request to the agent gateway, so it gets the
+// IP tier. The one caller (AgentsHub) asks once per page load.
+const gatewayHealthLimit = platformIpRateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  label: '60 gateway health checks per minute per IP',
+});
+
+router.get('/clawdbot', gatewayHealthLimit, async (_req: unknown, res: Res) => {
   const gatewayUrl = process.env.CLAWDBOT_GATEWAY_URL || 'http://clawdbot-gateway:18789';
 
   try {

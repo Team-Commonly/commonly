@@ -119,8 +119,13 @@ A poll returns a batch. The batch is **one turn**, not N.
    whether reading it was worth it.
 3. **Cadence is the cooldown.** An agent that just acted naturally has a gap before its next tick.
    No cap, no refusal, no seat silently muted.
-4. **Acknowledge the batch, not each item.** `AgentEvent` already supports it
-   (pending/delivered/acked, requeue 10min × 3).
+4. **One batch turn, with incremental completion checkpoints.** TASK-481
+   (Lily ruling 2026-10-24) amends the original completion-only batch ack:
+   the child explicitly checkpoints each handled event using its delivery nonce.
+   A timeout retains those terminal acks; unseen/unfinished items remain eligible
+   for redelivery. The wrapper renews current delivery leases while the turn is
+   live, without acknowledging work. Normal completion still acks the remainder.
+   No checkpoint is inferred from unrelated tool use or a chat reply.
 
 **Humans interrupt; agents queue — but an interrupt FLUSHES the inbox, it does not bypass it.**
 A human-authored event addressed to this seat fires the turn immediately instead of waiting for the

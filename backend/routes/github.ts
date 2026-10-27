@@ -3,7 +3,7 @@ const express = require('express');
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 // eslint-disable-next-line global-require
-const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
+const dualAuth = require('../middleware/dualAuth');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
@@ -124,12 +124,6 @@ function mapGitHubUpstreamError(
   return { status: 500, body: { error: labels.fallback, code: 'github_proxy_error', retryable: false, detail } };
 }
 
-function anyAuth(req: AuthReq, res: Res, next: () => void) {
-  const token = ((req.header?.('Authorization') || '').replace('Bearer ', ''));
-  if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
-  return auth(req, res, next);
-}
-
 const router: ReturnType<typeof express.Router> = express.Router();
 
 // REMOVED — `POST /token`, which handed our GitHub credential to callers.
@@ -153,8 +147,10 @@ router.get('/status', auth, async (req: AuthReq, res: Res) => {
   // mapper count; do not add the marker to a networked route.
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
-    if (GitHubAppService.isPatConfigured()) return res.json({ mode: 'pat', configured: true });
-    if (!GitHubAppService.isConfigured()) return res.json({ mode: 'none', configured: false, message: 'Set GITHUB_PAT or GitHub App env vars' });
+    if (!GitHubAppService.isConfigured()) {
+      if (GitHubAppService.isPatConfigured()) return res.json({ mode: 'pat', configured: true });
+      return res.json({ mode: 'none', configured: false, message: 'Set GitHub App env vars' });
+    }
     const appJWT = GitHubAppService.generateAppJWT();
     return res.json({ mode: 'app', configured: true, appId: process.env.GITHUB_APP_ID, installationId: process.env.GITHUB_APP_INSTALLATION_ID_COMMONLY, jwtGenerated: !!appJWT });
   } catch (err) {
@@ -163,7 +159,7 @@ router.get('/status', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/issues', githubIpRateLimit, anyAuth, async (req: AuthReq, res: Res) => {
+router.get('/issues', githubIpRateLimit, dualAuth, async (req: AuthReq, res: Res) => {
   try {
     if (!GitHubAppService.isPatConfigured() && !GitHubAppService.isConfigured()) {
       return res.status(503).json({ error: 'No GitHub credentials configured' });
@@ -178,7 +174,7 @@ router.get('/issues', githubIpRateLimit, anyAuth, async (req: AuthReq, res: Res)
   }
 });
 
-router.post('/issues', githubIpRateLimit, anyAuth, async (req: AuthReq, res: Res) => {
+router.post('/issues', githubIpRateLimit, dualAuth, async (req: AuthReq, res: Res) => {
   try {
     if (!GitHubAppService.isPatConfigured() && !GitHubAppService.isConfigured()) {
       return res.status(503).json({ error: 'No GitHub credentials configured' });
@@ -194,7 +190,7 @@ router.post('/issues', githubIpRateLimit, anyAuth, async (req: AuthReq, res: Res
   }
 });
 
-router.post('/issues/:number/comment', githubIpRateLimit, anyAuth, async (req: AuthReq, res: Res) => {
+router.post('/issues/:number/comment', githubIpRateLimit, dualAuth, async (req: AuthReq, res: Res) => {
   try {
     const issueNumber = Number(req.params?.number);
     const { body } = (req.body || {}) as { body?: string };
@@ -208,7 +204,7 @@ router.post('/issues/:number/comment', githubIpRateLimit, anyAuth, async (req: A
   }
 });
 
-router.post('/issues/:number/close', githubIpRateLimit, anyAuth, async (req: AuthReq, res: Res) => {
+router.post('/issues/:number/close', githubIpRateLimit, dualAuth, async (req: AuthReq, res: Res) => {
   try {
     const issueNumber = Number(req.params?.number);
     const { comment } = (req.body || {}) as { comment?: string };

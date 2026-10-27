@@ -1,4 +1,5 @@
 /** Qwen Code 0.25.1 wrapper. Public turns have fresh HOME, config and keys. */
+import { requireSeatModel } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { lstatSync, realpathSync } from 'fs';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
@@ -8,7 +9,7 @@ import { buildMemoryPreamble } from '../memory-bridge.js';
 import { deliverSeatCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
 import { writeCredentialFile } from '../credential-file.js';
-import { normalizeSandboxTrust, validateEnvironmentSpec } from '../environment.js';
+import { normalizeSandboxTrust, refuseWorkspaceTrust, validateEnvironmentSpec } from '../environment.js';
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
@@ -208,6 +209,7 @@ const runQwen = ({ cmd, args, cwd, env, timeoutMs, spawnImpl, credentials }) => 
 });
 
 export default {
+  requiresModel: true,
   name: 'qwen',
   runtimeType: 'qwen',
   supportsProvider: true,
@@ -230,7 +232,9 @@ export default {
   },
 
   async spawn(prompt, ctx = {}) {
+    const seatModel = requireSeatModel(ctx.environment, 'qwen', true);
     const sandbox = normalizeSandboxTrust(ctx.environment?.sandbox);
+    refuseWorkspaceTrust(sandbox, 'qwen');
     const isPublic = sandbox?.trust === 'public';
     const mode = isPublic ? resolvePublicSandboxMode(sandbox) : null;
     if (isPublic && !['workspace', 'read-only', 'bwrap'].includes(mode)) {
@@ -304,7 +308,7 @@ export default {
         freshSession: true,
       });
       const args = [
-        '--bare', '--safe-mode', '--auth-type', 'openai', '-m', ctx.environment.model,
+        '--bare', '--safe-mode', '--auth-type', 'openai', '-m', seatModel,
         '--mcp-config', mcpPath, '--exclude-tools', [
           ...EXCLUDED_TOOLS, ...(isPublic ? PUBLIC_READ_TOOLS : []),
         ].join(','),

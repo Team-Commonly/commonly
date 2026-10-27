@@ -16,6 +16,8 @@ import './v2-agent-settings.css';
 interface RuntimeKey {
   _id: string;
   label: string;
+  machineId?: string | null;
+  machineName?: string;
   createdAt?: string;
   lastUsedAt?: string | null;
   revokedAt?: string | null;
@@ -37,7 +39,8 @@ const errorLabel = (error: unknown, fallback: string): string => (
 const V2AgentSettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const { agentName = '', instanceId = '' } = useParams<{ agentName: string; instanceId: string }>();
-  const { access, installation, podId, loading, error: loadError, refresh, update, updatePod } = useAgentSettings(agentName, instanceId);
+  const { access, installation, podId, ownKeyCapability, runtimeControls, runtimeObservation, runtimeInventory, processConnected, runtimeEditable, runtimeManaged, loading,
+    error: loadError, refresh, update, updatePod, updateRuntime } = useAgentSettings(agentName, instanceId);
   const [removedLast, setRemovedLast] = useState(false);
   const [keys, setKeys] = useState<RuntimeKey[]>([]);
   const [keysReadyFor, setKeysReadyFor] = useState<string | null>(null);
@@ -180,7 +183,45 @@ const V2AgentSettingsPage: React.FC = () => {
     ...(typeof controls.adapter === 'string' ? { adapter: controls.adapter } : {}),
     ...(typeof controls.model === 'string' ? { model: controls.model } : {}),
     ...(typeof controls.effort === 'string' ? { effort: controls.effort } : {}),
+    ...runtimeControls,
+    observation: runtimeObservation, inventory: runtimeInventory, processConnected, ownKeyCapability,
+    ...(runtimeManaged !== undefined ? { managed: runtimeManaged } : {}),
   };
+  const activeKeys = keys.filter((key) => key.status === 'active');
+  const revokedKeys = keys.filter((key) => key.status === 'revoked');
+  const keyLabel = (key: RuntimeKey): string => {
+    const defaultLabel = !key.label || key.label === 'Runtime token' || key.label === 'Agent Settings replacement';
+    const kind = runtime.runtimeType === 'wrapper' ? t('agentSettings.cliKey') : t('agentSettings.runtimeKey');
+    const detail = key.machineId ? key.machineName : (defaultLabel ? null : key.label);
+    return detail ? `${kind} · ${detail}` : kind;
+  };
+  const renderKey = (key: RuntimeKey) => (
+    <li key={key._id} className="v2-agent-settings__key">
+      <div className="v2-agent-settings__key-main">
+        <strong>{keyLabel(key)}</strong>
+        <span>{key.status === 'revoked' ? t('agentSettings.revoked') : t('agentSettings.active')}</span>
+      </div>
+      <div className="v2-agent-settings__key-meta">
+        <span>{t('agentSettings.created', { date: dateLabel(key.createdAt, t) })}</span>
+        <span>{t('agentSettings.lastUsed', { date: dateLabel(key.lastUsedAt, t) })}</span>
+        {key.status === 'revoked' && <span>{t('agentSettings.revokedAt', { date: dateLabel(key.revokedAt, t) })}</span>}
+      </div>
+      {key.status === 'active' && pendingAction === key._id && (
+        <div className="v2-agent-settings__confirm">
+          <p>{t('agentSettings.revokeWarning')}</p>
+          <div className="v2-agent-settings__actions">
+            <button type="button" disabled={busy} onClick={() => revokeKey(key._id)}>{t('agentSettings.revokeKey')}</button>
+            <button type="button" disabled={busy} onClick={() => setPendingAction(null)}>{t('agentSettings.keepKey')}</button>
+          </div>
+        </div>
+      )}
+      {key.status === 'active' && pendingAction !== key._id && (
+        <button type="button" className="v2-agent-settings__quiet" disabled={busy} onClick={() => setPendingAction(key._id)}>
+          {t('agentSettings.revoke')}
+        </button>
+      )}
+    </li>
+  );
 
   return (
     <main className="v2-agent-settings">
@@ -219,37 +260,15 @@ const V2AgentSettingsPage: React.FC = () => {
             <button type="button" onClick={() => setOneTimeKey(null)}>{t('agentSettings.done')}</button>
           </div>
         )}
-        {keysForbidden ? <p className="v2-agent-settings__empty">{t('agentSettings.keyUnavailable')}</p>
-          : keys.length === 0 ? <p className="v2-agent-settings__empty">{t('agentSettings.empty')}</p> : (
-          <ul className="v2-agent-settings__keys">
-            {keys.map((key) => (
-              <li key={key._id} className="v2-agent-settings__key">
-                <div className="v2-agent-settings__key-main">
-                  <strong>{key.label || t('agentSettings.runtimeKey')}</strong>
-                  <span>{key.status === 'revoked' ? t('agentSettings.revoked') : t('agentSettings.active')}</span>
-                </div>
-                <div className="v2-agent-settings__key-meta">
-                  <span>{t('agentSettings.created', { date: dateLabel(key.createdAt, t) })}</span>
-                  <span>{t('agentSettings.lastUsed', { date: dateLabel(key.lastUsedAt, t) })}</span>
-                  {key.status === 'revoked' && <span>{t('agentSettings.revokedAt', { date: dateLabel(key.revokedAt, t) })}</span>}
-                </div>
-                {key.status === 'active' && pendingAction === key._id && (
-                  <div className="v2-agent-settings__confirm">
-                    <p>{t('agentSettings.revokeWarning')}</p>
-                    <div className="v2-agent-settings__actions">
-                      <button type="button" disabled={busy} onClick={() => revokeKey(key._id)}>{t('agentSettings.revokeKey')}</button>
-                      <button type="button" disabled={busy} onClick={() => setPendingAction(null)}>{t('agentSettings.keepKey')}</button>
-                    </div>
-                  </div>
-                )}
-                {key.status === 'active' && pendingAction !== key._id && (
-                  <button type="button" className="v2-agent-settings__quiet" disabled={busy} onClick={() => setPendingAction(key._id)}>
-                    {t('agentSettings.revoke')}
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
+        {keysForbidden ? <p className="v2-agent-settings__empty">{t('agentSettings.keyUnavailable')}</p> : (
+          <>
+            {activeKeys.length ? <ul className="v2-agent-settings__keys">{activeKeys.map(renderKey)}</ul>
+              : <p className="v2-agent-settings__empty">{t('agentSettings.noActiveKeys')}</p>}
+            {revokedKeys.length > 0 && <details className="v2-agent-settings__revoked-keys">
+              <summary>{t('agentSettings.revokedCount', { count: revokedKeys.length })}</summary>
+              <ul className="v2-agent-settings__keys">{revokedKeys.map(renderKey)}</ul>
+            </details>}
+          </>
         )}
       </section>
       {installation && <V2AgentIdentitySection key={`${agentName}:${instanceId}`} installation={installation} update={update} />}
@@ -259,9 +278,9 @@ const V2AgentSettingsPage: React.FC = () => {
         name={agentName}
         instanceId={instanceId}
         runtime={runtime}
-        onSaveRuntime={async (changes) => {
-          await update({ config: { environment: changes } });
-        }}
+        onSaveRuntime={runtimeEditable ? async (changes) => {
+          await updateRuntime(changes);
+        } : undefined}
       />
       <V2AgentPolicy key={`policy:${agentName}:${instanceId}`} agentName={agentName} instanceId={instanceId}
         installation={installation} update={update} />

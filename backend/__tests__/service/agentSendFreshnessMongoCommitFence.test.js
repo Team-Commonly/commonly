@@ -1,6 +1,7 @@
 /* eslint-disable import/extensions, import/no-unresolved -- backend TypeScript modules expose CJS exports. */
 const mongoose = require('mongoose');
 const Message = require('../../models/Message');
+require('../../models/User');
 const Cursor = require('../../models/AgentPodReadCursor');
 const Freshness = require('../../services/agentSendFreshness');
 const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
@@ -25,6 +26,19 @@ describe('agent freshness: delayed Mongo-only write', () => {
   beforeEach(async () => {
     await Message.deleteMany({});
     await Cursor.deleteMany({});
+  });
+
+  it('ignores claim lines for sends and cursor advancement but still holds ordinary peer chat', async () => {
+    await Message.collection.insertOne({ podId, userId: peerId, content: 'peer claimed TASK-406',
+      messageType: 'system', payload: { kind: 'system-action' }, createdAt: new Date(), freshnessCommittedAt: new Date(), freshnessPending: false });
+    expect(await Freshness.unseenMessages(agentId, podId)).toBeNull();
+    const start = await Freshness.readStart(podId);
+    await Freshness.recordRead(agentId, podId, start, []);
+    expect(await Cursor.findById(`${agentId}:${podId}`).lean()).not.toBeNull();
+    await Message.collection.insertOne({ podId, userId: peerId, content: 'ordinary peer chat',
+      messageType: 'text', createdAt: new Date(), freshnessPending: true });
+    const hold = await Freshness.unseenMessages(agentId, podId);
+    expect(hold).toMatchObject({ unseenCount: 1, messages: [{ content: 'ordinary peer chat' }] });
   });
 
   it('holds an insert whose createdAt predates a successful read but whose save finishes later', async () => {
@@ -119,4 +133,32 @@ describe('agent freshness: delayed Mongo-only write', () => {
     expect(hold.unseenCount).toBe(22);
     expect(hold.messages[0].content).toBe('delayed older timestamp');
   });
+  it.each([false, true])('explicitly catches up thousands of rows (existing cursor: %s), preserving later commits', async (existing) => {
+    const old = new Date(Date.now() - 60000);
+    if (existing) await Cursor.create({
+      _id: `${agentId}:${podId}`, agentUserId: agentId, podId, readAt: new Date(0),
+    });
+    await Message.collection.insertMany(Array.from({ length: 2400 }, (_, i) => ({
+      podId, userId: peerId, content: `history ${i}`, messageType: 'text',
+      createdAt: new Date(old.getTime() + i),
+    })));
+    const start = await Freshness.readStart(podId);
+    const tail = await Message.find({ podId }).sort({ createdAt: -1 }).limit(20).lean();
+    const ids = tail.map((row) => String(row._id));
+    await Freshness.recordRead(agentId, podId, start, ids);
+    expect((await Freshness.unseenMessages(agentId, podId)).unseenCount).toBe(2400);
+    await Message.collection.insertOne({
+      podId, userId: peerId, content: 'late commit with old timestamp', messageType: 'text',
+      createdAt: old, freshnessPending: false,
+      freshnessCommittedAt: new Date(start.at.getTime() + 1),
+    });
+    expect(await Freshness.recordCatchUp(agentId, podId, start, ids)).toEqual({ skippedCount: 2380 });
+    const hold = await Freshness.unseenMessages(agentId, podId);
+    expect(hold).toMatchObject({ unseenCount: 1 });
+    expect(hold.messages[0].content).toBe('late commit with old timestamp');
+    // Replaying an older receipt never rolls the cursor back.
+    await Freshness.recordCatchUp(agentId, podId, { at: old }, []);
+    expect((await Cursor.findById(`${agentId}:${podId}`)).readAt).toEqual(start.at);
+  });
+
 });

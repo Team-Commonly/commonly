@@ -39,6 +39,8 @@ jest.mock('../../services/starterTaskService', () => ({ completeConnectAgentStar
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentCredential = require('../../models/AgentCredential');
+const Machine = require('../../models/Machine');
+const { reapSpawnCredentials, SPAWN_CREDENTIAL_RETENTION_MS } = require('../../services/spawnCredentialReaper');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const { issueRuntimeTokenForAgent } = require('../../routes/registry/tokens');
@@ -92,6 +94,49 @@ describe('revoking a runtime token kills it in every store', () => {
     jest.spyOn(console, 'warn').mockImplementation(() => {});
   });
   afterEach(() => jest.restoreAllMocks());
+
+  test('Settings lists long-lived keys with machine names, without spawn children', async () => {
+    await seed();
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser(AGENT, { instanceId: 'default' });
+    const machineId = 'machine-settings-key';
+    await Machine.create({ ownerUserId: mockOwner.id, machineId, name: "Sam's MacBook" });
+    await AgentCredential.create([
+      { tokenHash: 'long-lived-key', kind: 'runtime', ownerUserId: mockOwner.id,
+        agentUserId: agentUser._id, machineId, label: 'Runtime token' },
+      { tokenHash: 'spawn-child-key', kind: 'runtime', ownerUserId: mockOwner.id,
+        agentUserId: agentUser._id, machineId, label: 'spawn:batch-1', scopes: ['spawn'],
+        expiresAt: new Date(Date.now() + 60_000) },
+    ]);
+    const response = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([expect.objectContaining({
+      label: 'Runtime token', machineName: "Sam's MacBook", status: 'active',
+    })]);
+    expect(JSON.stringify(response.body)).not.toContain('spawn:');
+    await AgentCredential.deleteOne({ tokenHash: 'long-lived-key' });
+    const spawnOnly = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
+    expect(spawnOnly.status).toBe(200);
+    expect(spawnOnly.body).toEqual([]);
+  });
+
+  test('reaper removes old spawn children only, including revoked children', async () => {
+    const now = new Date('2026-10-24T08:00:00Z');
+    const cutoff = new Date(now.getTime() - SPAWN_CREDENTIAL_RETENTION_MS);
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser(AGENT, { instanceId: 'default' });
+    const common = { kind: 'runtime', ownerUserId: mockOwner.id, agentUserId: agentUser._id };
+    await AgentCredential.create([
+      { ...common, tokenHash: 'expired-spawn', scopes: ['spawn'],
+        expiresAt: new Date(cutoff.getTime() - 1000) },
+      { ...common, tokenHash: 'revoked-spawn', scopes: ['spawn'], status: 'revoked',
+        revokedAt: new Date(cutoff.getTime() - 1000), expiresAt: new Date(cutoff.getTime() - 1000) },
+      { ...common, tokenHash: 'recent-spawn', scopes: ['spawn'],
+        expiresAt: new Date(cutoff.getTime() + 1000) },
+      { ...common, tokenHash: 'old-runtime', expiresAt: new Date(cutoff.getTime() - 1000) },
+    ]);
+    expect(await reapSpawnCredentials(now)).toBe(2);
+    expect((await AgentCredential.find({}).select('tokenHash').lean()).map((row) => row.tokenHash).sort())
+      .toEqual(['old-runtime', 'recent-spawn']);
+  });
 
   test('the owner revoking it from the token list: the next runtime call is a 401', async () => {
     const { workspace } = await seed();

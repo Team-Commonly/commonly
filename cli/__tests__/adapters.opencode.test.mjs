@@ -442,15 +442,22 @@ describe('opencode external provider config', () => {
       await writeFile(keyFile, 'upstream-secret');
       await chmod(keyFile, 0o600);
       let observed = null;
+      let observedBody = null;
+      const requestBytes = Buffer.from('{ "model": "fake", "messages": [{ "role": "assistant", "thought_signature": "σ雪" }] }');
+      const responseBytes = Buffer.from('{ "ok": true, "thought_signature": "σ雪" }\n');
       const upstream = createServer((req, res) => {
         observed = {
           authorization: req.headers.authorization,
           host: req.headers.host,
           url: req.url,
         };
-        req.resume();
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end('{"ok":true}');
+        const chunks = [];
+        req.on('data', (chunk) => chunks.push(chunk));
+        req.on('end', () => {
+          observedBody = Buffer.concat(chunks);
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(responseBytes);
+        });
       });
       await new Promise((resolve) => upstream.listen(0, '127.0.0.1', resolve));
       const upstreamPort = upstream.address().port;
@@ -475,10 +482,11 @@ describe('opencode external provider config', () => {
         const response = await fetch(`${proxy.baseURL}/chat/completions`, {
           method: 'POST',
           headers: { authorization: `Bearer ${proxyToken}`, 'content-type': 'application/json' },
-          body: '{"model":"fake"}',
+          body: requestBytes,
         });
         expect(response.status).toBe(200);
-        expect(await response.text()).toBe('{"ok":true}');
+        expect(observedBody).toEqual(requestBytes);
+        expect(Buffer.from(await response.arrayBuffer())).toEqual(responseBytes);
         expect(observed).toEqual({
           authorization: 'Bearer upstream-secret',
           host: `127.0.0.1:${upstreamPort}`,
@@ -737,11 +745,9 @@ describe('opencode external provider config', () => {
     });
   });
 
-  // TASK-251: Gemini 3 needs its thought signatures back on the next request
-  // and OpenCode's provider drops them, so a Gemini seat goes through the
-  // signing proxy even when private. The test above is the control: any other
-  // private provider still goes direct.
-  test('a private Gemini seat goes through the loopback proxy, never direct', async () => {
+  // OpenCode 1.18.35 and 1.19.0 replay Gemini thought signatures natively.
+  // Private seats can use the same direct provider path as other private seats.
+  test('a private Gemini seat uses its provider directly', async () => {
     await withTemp(async (root) => {
       const workspace = join(root, 'workspace');
       const keyFile = join(root, 'secrets', 'gemini-key');
@@ -753,8 +759,8 @@ describe('opencode external provider config', () => {
         onCall: (_cmd, _args, options) => {
           const config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
           const { baseURL, apiKey } = config.provider.google.options;
-          expect(baseURL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1beta\/openai$/);
-          expect(apiKey).not.toBe(`{file:${realpathSync(keyFile)}}`);
+          expect(baseURL).toBe('https://generativelanguage.googleapis.com/v1beta/openai');
+          expect(apiKey).toBe(`{file:${realpathSync(keyFile)}}`);
         },
       });
       await opencode.spawn('gemini turn', {
@@ -766,11 +772,42 @@ describe('opencode external provider config', () => {
             id: 'google', baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai', keyFile,
           },
         },
-        _geminiSignatureDir: join(root, 'signatures'),
         _binaryPath: '/usr/local/bin/opencode',
         _spawnImpl: spawn.impl,
       });
       expect(spawn.calls).toHaveLength(1);
+    });
+  });
+
+  test.each([
+    ['older', { status: 0, stdout: 'OpenCode 1.18.0\n' }, '1.18.0'],
+    ['boundary prerelease', { status: 0, stdout: 'OpenCode 1.18.35-rc.1\n' }, '1.18.35-rc.1'],
+    ['later patch prerelease', { status: 0, stdout: 'OpenCode 1.18.36-rc.1\n' }, '1.18.36-rc.1'],
+    ['later minor prerelease', { status: 0, stdout: 'OpenCode 1.19.0-rc.1\n' }, '1.19.0-rc.1'],
+    ['unknown', { status: 1, stdout: '' }, 'unknown'],
+  ])('a private Gemini seat refuses %s OpenCode before spawning', async (_label, result, version) => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const keyFile = join(root, 'secrets', 'gemini-key');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(join(root, 'secrets'), { recursive: true });
+      await writeFile(keyFile, 'gemini-test-key');
+      await chmod(keyFile, 0o600);
+      spawnSyncMock.mockReturnValue(result);
+      const spawn = makeSpawnImpl();
+      await expect(opencode.spawn('gemini turn', {
+        cwd: workspace,
+        env: { PATH: process.env.PATH },
+        environment: {
+          model: 'gemini-3-flash-preview',
+          provider: {
+            id: 'google', baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai', keyFile,
+          },
+        },
+        _binaryPath: '/usr/local/bin/opencode',
+        _spawnImpl: spawn.impl,
+      })).rejects.toThrow(`Gemini requires stable OpenCode 1.18.35 or later for native thought-signature replay; installed version is ${version}`);
+      expect(spawn.calls).toHaveLength(0);
     });
   });
 
@@ -920,12 +957,19 @@ describe('opencode external provider config', () => {
         _platform: 'linux',
         _detectBwrap: () => ({ available: true, path: '/usr/bin/bwrap' }),
         _spawnImpl: spawn.impl,
-        _wrapArgvWithBwrap: (argv, _environment, opts) => {
+        _wrapArgvWithBwrap: (argv, wrappedEnvironment, opts) => {
+          expect(wrappedEnvironment.sandbox.network.policy).toBe('restricted');
           expect(opts.readOnlyPaths).toEqual([
             expect.stringMatching(/commonly-opencode-/),
             '/usr/local/bin/opencode',
             process.execPath,
+            expect.stringMatching(/opencode-loopback\.mjs$/),
           ]);
+          expect(opts.optionalReadOnlyPaths).toEqual(['/usr/sbin', '/sbin']);
+          expect(opts.enableLoopback).toBe(true);
+          expect(argv.slice(0, 2)).toEqual([process.execPath, expect.stringMatching(/opencode-loopback\.mjs$/)]);
+          expect(argv[2]).toMatch(/provider-proxy\.sock$/);
+          expect(argv[4]).toBe('-');
           expect(opts.readOnlyPaths).not.toContain(realKey);
           expect(opts.readOnlyPaths).not.toContain(realAuthPath);
           return ['/usr/bin/bwrap', '--test', ...argv];
@@ -934,17 +978,19 @@ describe('opencode external provider config', () => {
     });
   });
 
-  test('refuses a public bwrap provider when restricted networking cannot reach the loopback proxy', async () => {
+  test('public bwrap uses its isolated proxy even when restricted networking is requested', async () => {
     await withTemp(async (root) => {
       const workspace = join(root, 'workspace');
+      const keyFile = join(root, 'provider-key');
       await mkdir(workspace, { recursive: true });
+      await writeFile(keyFile, 'provider-key', { mode: 0o600 });
       const spawn = makeSpawnImpl();
-      await expect(opencode.spawn('public provider turn', {
+      await opencode.spawn('public provider turn', {
         cwd: workspace,
         env: { PATH: process.env.PATH },
         environment: {
           model: 'gpt-5.4',
-          provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: '/unused/provider-key' },
+          provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile },
           sandbox: {
             trust: 'public', mode: 'bwrap', network: { policy: 'restricted' },
           },
@@ -954,8 +1000,14 @@ describe('opencode external provider config', () => {
         _platform: 'linux',
         _detectBwrap: () => ({ available: true, path: '/usr/bin/bwrap' }),
         _spawnImpl: spawn.impl,
-      })).rejects.toThrow(/restricted cannot reach the loopback proxy/);
-      expect(spawn.calls).toHaveLength(0);
+        _wrapArgvWithBwrap: (argv, environment, opts) => {
+          expect(environment.sandbox.network.policy).toBe('restricted');
+          expect(opts.enableLoopback).toBe(true);
+          expect(argv[2]).toMatch(/provider-proxy\.sock$/);
+          return ['/usr/bin/bwrap', '--test', ...argv];
+        },
+      });
+      expect(spawn.calls).toHaveLength(1);
     });
   });
 
@@ -967,7 +1019,7 @@ describe('opencode external provider config', () => {
       await expect(opencode.spawn('public unconfigured turn', {
         cwd: workspace,
         env: { PATH: process.env.PATH, XDG_DATA_HOME: join(root, 'empty-operator-data') },
-        environment: { sandbox: { trust: 'public', mode: 'workspace' }, mcp: [] },
+        environment: { model: 'test-model', sandbox: { trust: 'public', mode: 'workspace' }, mcp: [] },
         agentName: 'public-unconfigured-seat',
         _binaryPath: '/usr/local/bin/opencode',
         _platform: 'darwin',
@@ -1000,7 +1052,7 @@ describe('opencode adapter — spawn()', () => {
         await opencode.spawn('trusted turn', {
           cwd: workspace,
           env: { PATH: process.env.PATH },
-          environment: { mcp: [] },
+          environment: { model: 'test-model', mcp: [] },
           agentName: 'trusted-agent',
           _binaryPath: '/usr/local/bin/opencode',
           _platform: 'darwin',
@@ -1079,7 +1131,7 @@ describe('opencode adapter — spawn()', () => {
           await opencode.spawn('trusted turn', {
             cwd: workspace,
             env: { PATH: process.env.PATH, [ALLOW_UNTESTED_OPENCODE_VERSION_ENV]: '1' },
-            environment: { mcp: [] },
+            environment: { model: 'test-model', mcp: [] },
             _binaryPath: '/usr/local/bin/opencode',
             _spawnImpl: spawn.impl,
           });
@@ -1336,9 +1388,145 @@ describe('opencode adapter — spawn()', () => {
           expect(options.env.XDG_DATA_HOME).toBe(xdgData);
         },
       });
-      await expect(opencode.spawn('second turn', {
+      await expect(opencode.spawn('second turn', { environment: { model: 'test-model' },
         ...baseContext, sessionId: 'ses-created', _spawnImpl: resumed.impl,
       })).resolves.toMatchObject({ newSessionId: 'ses-created' });
+    });
+  });
+
+  test('a saved session OpenCode does not know starts one fresh turn, and other failures do not retry', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const xdgData = join(root, 'operator-data');
+      const appData = join(xdgData, 'opencode');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(appData, { recursive: true });
+      await writeFile(join(appData, 'auth.json'), JSON.stringify({ provider: 'dummy-auth' }));
+      const notFound = `${JSON.stringify({
+        type: 'error', sessionID: 'claude-uuid', error: { data: { message: 'Session not found' } },
+      })}\n`;
+      const calls = [];
+      const impl = (cmd, args) => {
+        calls.push(args);
+        const failing = args.includes('-s') && calls.length === 1;
+        return fakeChild(failing
+          ? { chunks: [notFound], code: 1 }
+          : { chunks: sampleEvents('ses-fresh') });
+      };
+      const baseContext = {
+        sessionId: 'claude-uuid',
+        cwd: workspace,
+        env: { ...process.env, XDG_DATA_HOME: xdgData },
+        environment: { model: 'anthropic/claude-sonnet-4-5' },
+        agentName: 'kai-seat',
+        metadata: { event: { podId: 'pod-1' } },
+        _binaryPath: '/usr/local/bin/opencode',
+        _spawnImpl: impl,
+      };
+      await expect(opencode.spawn('resumed turn', baseContext)).resolves.toMatchObject({
+        text: 'Hello from OpenCode.', newSessionId: 'ses-fresh',
+      });
+      expect(calls).toHaveLength(2);
+      expect(calls[0]).toEqual(expect.arrayContaining(['-s', 'claude-uuid']));
+      expect(calls[1]).not.toContain('-s');
+
+      calls.length = 0;
+      const failingImpl = (cmd, args) => {
+        calls.push(args);
+        return fakeChild({ stderr: 'provider rejected the request', code: 1 });
+      };
+      await expect(opencode.spawn('resumed turn', { ...baseContext, _spawnImpl: failingImpl }))
+        .rejects.toThrow(/provider rejected/);
+      expect(calls).toHaveLength(1);
+    });
+  });
+
+  test('a session-not-found phrase after the model acted is not retried, so the turn cannot post twice', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const xdgData = join(root, 'operator-data');
+      const appData = join(xdgData, 'opencode');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(appData, { recursive: true });
+      await writeFile(join(appData, 'auth.json'), JSON.stringify({ provider: 'dummy-auth' }));
+      const acted = [
+        event('step_start', 'ses-resumed', { type: 'step-start' }),
+        event('tool_use', 'ses-resumed', { tool: 'commonly_post_message', state: { status: 'completed' } }),
+      ].join('');
+      const calls = [];
+      const impl = (cmd, args) => {
+        calls.push(args);
+        return fakeChild({ chunks: [acted], stderr: 'Session not found', code: 1 });
+      };
+      await expect(opencode.spawn('resumed turn', {
+        sessionId: 'ses-resumed',
+        cwd: workspace,
+        env: { ...process.env, XDG_DATA_HOME: xdgData },
+        environment: { model: 'anthropic/claude-sonnet-4-5' },
+        agentName: 'kai-seat',
+        metadata: { event: { podId: 'pod-1' } },
+        _binaryPath: '/usr/local/bin/opencode',
+        _spawnImpl: impl,
+      })).rejects.toThrow(/Session not found/);
+      expect(calls).toHaveLength(1);
+    });
+  });
+
+  test('a session-not-found failure with no saved session is not retried', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const xdgData = join(root, 'operator-data');
+      const appData = join(xdgData, 'opencode');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(appData, { recursive: true });
+      await writeFile(join(appData, 'auth.json'), JSON.stringify({ provider: 'dummy-auth' }));
+      const notFound = `${JSON.stringify({
+        type: 'error', sessionID: 'ses-fresh', error: { data: { message: 'Session not found' } },
+      })}\n`;
+      const calls = [];
+      const impl = (cmd, args) => {
+        calls.push(args);
+        return fakeChild({ chunks: [notFound], code: 1 });
+      };
+      await expect(opencode.spawn('fresh turn', {
+        sessionId: null,
+        cwd: workspace,
+        env: { ...process.env, XDG_DATA_HOME: xdgData },
+        environment: { model: 'anthropic/claude-sonnet-4-5' },
+        agentName: 'kai-seat',
+        metadata: { event: { podId: 'pod-1' } },
+        _binaryPath: '/usr/local/bin/opencode',
+        _spawnImpl: impl,
+      })).rejects.toThrow(/Session not found/);
+      expect(calls).toHaveLength(1);
+    });
+  });
+
+  test('a session-not-found failure after only a step event is not retried', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const xdgData = join(root, 'operator-data');
+      const appData = join(xdgData, 'opencode');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(appData, { recursive: true });
+      await writeFile(join(appData, 'auth.json'), JSON.stringify({ provider: 'dummy-auth' }));
+      const stepOnly = event('step_start', 'ses-resumed', { type: 'step-start' });
+      const calls = [];
+      const impl = (cmd, args) => {
+        calls.push(args);
+        return fakeChild({ chunks: [stepOnly], stderr: 'Session not found', code: 1 });
+      };
+      await expect(opencode.spawn('resumed turn', {
+        sessionId: 'ses-resumed',
+        cwd: workspace,
+        env: { ...process.env, XDG_DATA_HOME: xdgData },
+        environment: { model: 'anthropic/claude-sonnet-4-5' },
+        agentName: 'kai-seat',
+        metadata: { event: { podId: 'pod-1' } },
+        _binaryPath: '/usr/local/bin/opencode',
+        _spawnImpl: impl,
+      })).rejects.toThrow(/Session not found/);
+      expect(calls).toHaveLength(1);
     });
   });
 
@@ -1361,7 +1549,7 @@ describe('opencode adapter — spawn()', () => {
           OPENAI_API_KEY: 'operator-provider-key',
           AWS_SECRET_ACCESS_KEY: 'operator-cloud-key',
         },
-        environment: { sandbox: { trust: 'public', mode: 'workspace' }, mcp: [] },
+        environment: { model: 'test-model', sandbox: { trust: 'public', mode: 'workspace' }, mcp: [] },
         agentName: 'public-agent',
         _opencodeHomeRoot: seatRoot,
         _binaryPath: '/usr/local/bin/opencode',
@@ -1517,7 +1705,9 @@ describe('opencode adapter — spawn()', () => {
           expect(opts.workspacePath).toBe(workspace);
           expect(opts.readOnlyPaths).toEqual([
             expect.any(String), '/usr/local/bin/opencode', process.execPath,
+            expect.stringMatching(/opencode-loopback\.mjs$/),
           ]);
+          expect(opts.optionalReadOnlyPaths).toEqual(['/usr/sbin', '/sbin']);
           expect(opts.readOnlyPaths).not.toContain(keyFile);
           expect(opts.readOnlyPaths).not.toContain(join(xdgData, 'opencode', 'auth.json'));
           expect(opts).not.toHaveProperty('loopbackNetworkPorts');
@@ -1528,5 +1718,36 @@ describe('opencode adapter — spawn()', () => {
         _spawnImpl: spawn.impl,
       });
     });
+  });
+});
+
+test('an own key stays in the confined parent proxy, never argv, config, tool env or failure output', async () => {
+  await withTemp(async (root) => {
+    const workspace = join(root, 'workspace'); await mkdir(workspace);
+    const vendorKey = 'sk-OWN-KEY-parent-only';
+    let config;
+    const spawn = makeSpawnImpl({ onCall: (_cmd, args, options) => {
+      expect(JSON.stringify({ args, env: options.env })).not.toContain(vendorKey);
+      config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
+      expect(JSON.stringify(config)).not.toContain(vendorKey);
+      expect(JSON.stringify(config)).not.toContain('/missing/vendor-key');
+    } });
+    await opencode.spawn('test', { cwd: workspace, env: { PATH: process.env.PATH },
+      environment: { model: 'test-model', provider: { id: 'test-provider', baseURL: 'https://api.example.com/v1', keyFile: '/missing/vendor-key' },
+        sandbox: { trust: 'public', mode: 'workspace' }, mcp: [] },
+      providerKey: vendorKey, _platform: 'darwin', _binaryPath: '/usr/local/bin/opencode',
+      _wrapArgvWithSeatbelt: (argv, options) => {
+        const profile = buildSeatbeltProfile(options);
+        expect(profile).not.toContain(vendorKey);
+        return ['/usr/bin/sandbox-exec', '-p', profile, ...argv];
+      },
+      _spawnImpl: spawn.impl });
+    expect(spawn.calls).toHaveLength(1);
+    expect(config.provider['test-provider']).toBeDefined();
+    await expect(opencode.spawn('test', { cwd: workspace, environment: { model: 'm',
+      provider: { id: 'p', baseURL: 'https://api.example.com/v1', keyFile: '/unused' },
+      sandbox: { trust: 'private', mode: 'none' } }, providerKey: vendorKey, _spawnImpl: spawn.impl }))
+      .rejects.toThrow('Own provider keys require a confined OpenCode runtime');
+    expect(spawn.calls).toHaveLength(1);
   });
 });

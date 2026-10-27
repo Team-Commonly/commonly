@@ -93,8 +93,7 @@ export const useV2ThreadMentions = ({
         subtitle,
         // The member is the agent's User row, which also supplies the thread's
         // profile_picture and user_id. Keep those two surfaces on one identity.
-        avatar: member ? (member.profilePicture || null)
-          : (agent.profile?.avatarUrl || agent.profile?.iconUrl || agent.iconUrl || null),
+        avatar: member ? (member.profilePicture || null) : (agent.profilePicture || null),
         kind: 'agent',
         seed: member?._id || agent.userId || `${name}:${agent.instanceId || 'default'}`,
         isAgent: true,

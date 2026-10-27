@@ -56,7 +56,7 @@ export const taskClerkApp = {
     + '- Keep all replies under 2 lines. You are a clerk, not a conversationalist.',
   // See pod-welcomer.ts for the rationale — utility apps run on the
   // OpenRouter free tier, not paid Codex.
-  model: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
+  model: 'deepseek-v4-flash',
   triggers: ['mention'],
   tools: [
     'commonly_read_context',

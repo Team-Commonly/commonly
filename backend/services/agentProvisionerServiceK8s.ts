@@ -1,3 +1,4 @@
+import { filterRuntimeAccountLogs } from '../utils/runtimeLogFilter';
 /**
  * Kubernetes-native Agent Provisioner Service
  * Replaces Docker socket mounting with K8s API for agent runtime provisioning
@@ -362,18 +363,20 @@ const readOpenClawHeartbeatFile = async (accountId: any, { gateway } : any = {})
 };
 
 const readOpenClawIdentityFile = async (accountId: any, { gateway } : any = {}) => {
-  try {
-    const podName = await resolveGatewayPodNameWithRetry(gateway);
-    const identityPath = `/workspace/${accountId}/IDENTITY.md`;
-    const result = await execInPod({
-      podName,
-      containerName: 'clawdbot-gateway',
-      command: ['sh', '-lc', `[ -f "${identityPath}" ] && cat "${identityPath}" || echo ""`],
-    });
-    return result.stdout || '';
-  } catch {
-    return '';
-  }
+  const podName = await resolveGatewayPodNameWithRetry(gateway);
+  const identityPath = `/workspace/${accountId}/IDENTITY.md`;
+  const result = await execInPod({
+    podName,
+    containerName: 'clawdbot-gateway',
+    // stat/test -e cannot distinguish an inaccessible parent from absence.
+    // Use the gateway's Node runtime to preserve every error except ENOENT.
+    command: ['node', '-e', `try {
+      process.stdout.write(require('fs').readFileSync(process.argv[1], 'utf8'));
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }`, identityPath],
+  });
+  return result.stdout || '';
 };
 
 // Cross-cutting behavioral invariants appended to every SOUL.md the
@@ -3165,19 +3168,7 @@ const getDeploymentLogs = async ({ deploymentName, lines, filterTokens = [] }: a
       undefined,
       lines,
     );
-    let logs = logsResponse.body || '';
-    const tokens = (filterTokens || []).map((t: any) => String(t || '').trim()).filter(Boolean);
-    if (tokens.length) {
-      logs = logs
-        .split('\n')
-        .filter((line: any) => {
-          if (!line) return false;
-          if (tokens.some((token: any) => line.includes(`[commonly] [${token}]`))) return true;
-          if (tokens.some((token: any) => line.includes(token))) return true;
-          return false;
-        })
-        .join('\n');
-    }
+    const logs = filterRuntimeAccountLogs(logsResponse.body || '', filterTokens);
     return { logs, pod: pod.metadata.name, deployment: deploymentName };
   } catch (error: any) {
     console.error(`[k8s-provisioner] Failed to get logs for ${deploymentName}:`, (error as Error).message);
