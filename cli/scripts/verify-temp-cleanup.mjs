@@ -7,6 +7,7 @@
  */
 import { spawn } from 'node:child_process';
 import { lstat, mkdtemp, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const target = process.argv[2] || '__tests__/adapters.claude.environment.test.mjs';
@@ -52,10 +53,11 @@ const run = (probeRoot) => new Promise((resolve, reject) => {
   });
 });
 
-// Short root on purpose: the provider-proxy tests bind Unix sockets under the
-// probe TMPDIR, and macOS caps a socket path at ~104 bytes, so a deep
-// $TMPDIR makes them fail with EINVAL. CI runs on Linux where /tmp is the default.
-const probeRoot = await mkdtemp(join('/tmp', 'commonly-cli-temp-guard-'));
+// Short root on macOS on purpose: the provider-proxy tests bind Unix sockets
+// under the probe TMPDIR, and macOS caps a socket path at ~104 bytes, so the
+// deep $TMPDIR there makes them fail with EINVAL. Elsewhere the default is fine.
+const probeBase = process.platform === 'darwin' ? '/tmp' : tmpdir();
+const probeRoot = await mkdtemp(join(probeBase, 'commonly-cli-temp-guard-'));
 try {
   for (let pass = 1; pass <= 2; pass += 1) {
     const before = await snapshot(probeRoot);
