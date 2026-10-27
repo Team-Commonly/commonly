@@ -15,8 +15,24 @@ describe('runtimeChipLabel (TASK-471)', () => {
     expect(runtimeChipLabel({ wrappedCli: 'codex' })).toBe('codex');
   });
 
-  it('shows webhook only for a real webhook agent with no adapter', () => {
-    expect(runtimeChipLabel({ runtimeType: 'webhook', host: 'byo' })).toBe('webhook');
+  it('shows webhook only for a real push webhook agent with no adapter', () => {
+    // Install stamps host: 'byo' on every webhook-typed seat without a URL,
+    // so a push webhook carries no host (registry/install.ts).
+    expect(runtimeChipLabel({ runtimeType: 'webhook' })).toBe('webhook');
+  });
+
+  it('TASK-317: a BYO seat names the CLI it reported, after any declared adapter', () => {
+    expect(runtimeChipLabel({ runtimeType: 'webhook', host: 'byo', reportedCli: 'claude' })).toBe('claude');
+    expect(runtimeChipLabel({ runtimeType: 'webhook', host: 'byo', reportedCli: 'pi' })).toBe('pi');
+    expect(runtimeChipLabel({ runtimeType: 'webhook', host: 'byo', adapter: 'codex', reportedCli: 'claude' })).toBe('codex');
+    expect(runtimeChipLabel({ runtimeType: 'local-cli', wrappedCli: 'codex', reportedCli: 'claude' })).toBe('codex');
+    expect(runtimeChipLabel({ runtimeType: 'hosted', reportedCli: 'claude' })).toBe('hosted');
+  });
+
+  it('TASK-317: a BYO seat on an older CLI that reports nothing reads CLI, never webhook', () => {
+    expect(runtimeChipLabel({ runtimeType: 'webhook', host: 'byo' })).toBe('CLI');
+    expect(runtimeChipLabel({ runtimeType: 'webhook', host: ' BYO ' })).toBe('CLI');
+    expect(runtimeChipLabel({ runtimeType: 'webhook', host: 'cloud' })).toBe('webhook');
   });
 
   it('maps hosted and internal runtimes to hosted', () => {
