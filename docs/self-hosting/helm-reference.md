@@ -10,10 +10,9 @@ must override that value to `false`; the current hosted dev values do so.
 
 ## One-command local install
 
-`./install.sh` uses `docker-compose.local.yml`, which currently runs without
-Postgres. Chat uses the MongoDB fallback. The tool broker, Postgres-backed
-decisions and reactions are unavailable. The full `docker-compose.yml` includes
-Postgres; adding it to the local profile is tracked in TASK-503.
+`./install.sh` uses `docker-compose.local.yml`, which runs MongoDB and a
+pinned PostgreSQL 16 alongside the app, so chat, the tool broker, decisions
+and reactions behave as they do under Helm.
 See the [local installation guide](../deployment/SELF_HOSTED.md) for profile
 selection. The Helm configuration below supports a PostgreSQL service or an
 external PostgreSQL database.

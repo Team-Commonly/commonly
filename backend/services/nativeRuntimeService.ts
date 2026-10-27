@@ -1395,6 +1395,7 @@ interface LiteLLMChoice {
 }
 
 interface LiteLLMResponse {
+  model?: string;
   choices?: LiteLLMChoice[];
   usage?: {
     prompt_tokens?: number;
@@ -1411,6 +1412,29 @@ function extractCallId(data: LiteLLMResponse, headers: Record<string, unknown>):
     | string
     | undefined;
   return headerId ? String(headerId) : undefined;
+}
+
+// Which model group answered the call (TASK-028). LiteLLM's router names it in
+// x-litellm-model-group on every response, and x-litellm-attempted-fallbacks
+// says a fallback happened (v1.106.2; it is the outermost hop's depth, so 1 on a
+// two-hop chain). The proxy restamps the body's `model` to the requested group
+// unless a fallback happened, so the body comes second. When neither names a
+// model, nothing was measured and the field stays unset; every reader falls
+// back to the requested model. Native calls send disable_fallbacks (D81), so
+// the two differ only if something overrode it, such as a key whose metadata
+// sets disable_fallbacks.
+function servedModelOf(
+  data: LiteLLMResponse,
+  headers: Record<string, unknown>,
+): { servedModel?: string; fallbacks?: number } {
+  const group = headers?.['x-litellm-model-group'];
+  const hops = Number(headers?.['x-litellm-attempted-fallbacks']);
+  const servedModel = (typeof group === 'string' && group)
+    || (typeof data?.model === 'string' && data.model) || undefined;
+  return {
+    ...(servedModel ? { servedModel } : {}),
+    ...(Number.isInteger(hops) && hops > 0 ? { fallbacks: hops } : {}),
+  };
 }
 
 function mapTriggerType(raw: string): NativeRunTrigger['type'] {
@@ -1502,34 +1526,15 @@ export async function fetchRecentPodMessages(
   id: string; author: string; authorId: string | null; authorIsBot: boolean | null; content: string; createdAt: unknown;
 }>> {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-  const Message = require('../models/pg/Message');
-  let rows: Array<Record<string, unknown>> = [];
-  try {
-    rows = (await Message.findByPodId(String(podId), limit)) as Array<Record<string, unknown>>;
-  } catch (pgError) {
-    console.warn(
-      '[native-runtime] recent pod messages: PG fetch failed, falling back to Mongo:',
-      (pgError as Error).message,
-    );
-    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-    const MongoMessage = require('../models/Message');
-    const docs = await MongoMessage.find({ podId })
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .populate('userId', 'username isBot')
-      .lean();
-    rows = (docs as Array<Record<string, unknown>>).reverse();
-  }
+  const { listPodMessages } = require('../repositories/messageRepository');
+  const rows = await listPodMessages(String(podId), { limit }) as Array<Record<string, unknown>>;
   return rows.map((row) => {
     const user = (row.userId as Record<string, unknown> | undefined) || {};
     const authorId = user._id || row.user_id || row.user_db_id;
-    // A PG row (it has `user_id`) carries the users mirror's `is_bot` as
-    // stored; its mapper's `isBot` reads null or missing as false, so only the
-    // raw column is trusted, and a PG row without it is unknown. A Mongo row
-    // carries the populated `isBot`. Unknown is null, which gives no address.
-    let authorIsBot: boolean | null = null;
-    if ('user_id' in row) authorIsBot = typeof row.is_bot === 'boolean' ? row.is_bot : null;
-    else if (typeof user.isBot === 'boolean') authorIsBot = user.isBot;
+    // Only the raw `is_bot` is trusted: the PG mapper's `userId.isBot` reads
+    // null or missing as false. The repository carries a Mongo row's populated
+    // `isBot` into `is_bot` the same way. Unknown is null, which gives no address.
+    const authorIsBot = typeof row.is_bot === 'boolean' ? row.is_bot : null;
     return {
       id: String(row.id || row._id || ''),
       author: (user.username as string) || (row.username as string) || 'unknown',
@@ -2142,6 +2147,7 @@ export async function runAgent(
         llmResponseText: (msg.content as string | null) || undefined,
         elapsedMs: 0,
         liteLLMCallId: extractCallId(llmResponse, responseHeaders),
+        ...servedModelOf(llmResponse, responseHeaders),
       };
 
       const toolCalls = msg.tool_calls || [];

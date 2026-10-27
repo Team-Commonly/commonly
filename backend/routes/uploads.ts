@@ -48,6 +48,7 @@ const { refuseDollarKeys } = require('../middleware/refuseDollarKeys');
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 import { getObjectStore } from '../services/objectStore';
 import { loadSessionAccount, sessionRefusal } from '../services/sessionAccountService';
+import { requirePodMember } from '../services/podMembershipService';
 
 interface AuthReq {
   userId?: string;
@@ -97,6 +98,43 @@ const kindFromName = (originalName: string): string => {
     if (exts.includes(ext)) return kind;
   }
   return 'other';
+};
+
+// What a stored file is served as. The type comes from the file's extension,
+// which the upload allowlist has already checked, never from the type the
+// uploading client declared. Only types a browser renders without running
+// anything are served inline; everything else, SVG included, downloads.
+const SERVED_TYPES: Record<string, { type: string; inline: boolean }> = {
+  jpg: { type: 'image/jpeg', inline: true },
+  jpeg: { type: 'image/jpeg', inline: true },
+  png: { type: 'image/png', inline: true },
+  gif: { type: 'image/gif', inline: true },
+  webp: { type: 'image/webp', inline: true },
+  svg: { type: 'image/svg+xml', inline: false },
+  pdf: { type: 'application/pdf', inline: true },
+  md: { type: 'text/plain; charset=utf-8', inline: true },
+  txt: { type: 'text/plain; charset=utf-8', inline: true },
+  csv: { type: 'text/csv; charset=utf-8', inline: true },
+  json: { type: 'application/json; charset=utf-8', inline: true },
+  doc: { type: 'application/msword', inline: false },
+  docx: { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', inline: false },
+  xls: { type: 'application/vnd.ms-excel', inline: false },
+  xlsx: { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', inline: false },
+  ppt: { type: 'application/vnd.ms-powerpoint', inline: false },
+  pptx: { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', inline: false },
+  odt: { type: 'application/vnd.oasis.opendocument.text', inline: false },
+  ods: { type: 'application/vnd.oasis.opendocument.spreadsheet', inline: false },
+  odp: { type: 'application/vnd.oasis.opendocument.presentation', inline: false },
+  zip: { type: 'application/zip', inline: false },
+};
+const OPAQUE = { type: 'application/octet-stream', inline: false };
+
+const setServedHeaders = (res: Res, fileName: string): void => {
+  const ext = path.extname(fileName).slice(1).toLowerCase();
+  const served = Object.prototype.hasOwnProperty.call(SERVED_TYPES, ext) ? SERVED_TYPES[ext] : OPAQUE;
+  res.set('Content-Type', served.type);
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Content-Disposition', served.inline ? 'inline' : 'attachment');
 };
 
 // Size cap is driven by the driver's declared max. multer returns 413 itself
@@ -294,9 +332,28 @@ const uploadRateLimit = rateLimit({
   keyGenerator: authenticatedUserRateLimitKeyGenerator,
 });
 
+// A podId binds the file to that pod's Files and its agents' context, so the
+// uploader must hold write membership there, the same check task writes use.
+// Every refusal (unknown pod, malformed id, non-member, viewer) answers the
+// same 403, so the route does not reveal which pods exist. The agent route
+// pins podId to a pod its token is authorized for and does not come here.
+const podWriteRefused = async (podId: string, userId: string): Promise<boolean> => {
+  if (!/^[0-9a-f]{24}$/i.test(podId)) return true;
+  try {
+    return Boolean((await requirePodMember(podId, userId, { write: true })).error);
+  } catch {
+    return true;
+  }
+};
+
 router.post('/', uploadCredentialRateLimit, auth, uploadRateLimit, uploadSingle('image'), async (req: AuthReq, res: Res) => {
   if (!req.userId) {
     res.status(401).json({ msg: 'auth required' });
+    return;
+  }
+  const podId = req.body?.podId?.toString().trim();
+  if (podId && await podWriteRefused(podId, req.userId)) {
+    res.status(403).json({ msg: 'You cannot add files to this pod' });
     return;
   }
   await handleUpload(req, res, req.userId);
@@ -393,7 +450,7 @@ router.get('/:fileName', artifactReadRateLimit, maybeAgentRuntimeAuth, async (re
     const store = getObjectStore();
     const obj = await store.get(fileName);
     if (obj) {
-      res.set('Content-Type', obj.mime);
+      setServedHeaders(res, fileName);
       (obj.stream as unknown as { pipe: (dst: unknown) => void }).pipe(res);
       return;
     }
@@ -402,7 +459,7 @@ router.get('/:fileName', artifactReadRateLimit, maybeAgentRuntimeAuth, async (re
     // Phase 2 backfills these into the driver and removes this fallback.
     const legacy = await File.findByFileName(fileName);
     if (legacy && legacy.data && legacy.data.length > 0) {
-      res.set('Content-Type', legacy.contentType);
+      setServedHeaders(res, fileName);
       return res.send(legacy.data);
     }
 
@@ -526,6 +583,7 @@ router.get('/:fileName/preview-pptx-html', artifactReadRateLimit, maybeAgentRunt
       return res.status(500).json({ msg: 'Could not render preview', detail: result.error });
     }
     res.set('Content-Type', 'text/html; charset=utf-8');
+    res.set('X-Content-Type-Options', 'nosniff');
     res.set('Cache-Control', 'private, max-age=300');
     return res.send(result.html);
   } catch (err) {

@@ -172,9 +172,22 @@ See [the lock runbook](../runbooks/admin-user-mutation-lock.md) for uncertain-wr
 recovery and the mixed-version rollout constraint. Synthetic purge DM cleanup
 remains a separate TASK-005 follow-up.
 
-The pre-existing administrative hard-delete endpoint remains separate from this
-lifecycle. Its `target.deleteOne()` does not condition on the self-deletion marker,
-so the global admin lock alone does not coordinate it with an in-flight
-self-deletion claim. TASK-006 tracks a controlled reproduction and atomic
-coordination/recoverable cleanup; this PR does not fix that accepted nonblocking
-finding. It is distinct from TASK-005's synthetic-purge DM cleanup.
+Administrative hard delete remains a separate lifecycle: it does not become the
+self-serve cleanup flow. TASK-006 makes its final `findOneAndDelete` conditional
+on `accountDeletionRequestedAt` being absent. The admin lock still serializes
+administrator writers, rechecks the actor and counts administrators; the target
+predicate additionally coordinates with self-deletion, which does not take that
+lock. If a claim wins before the hard delete, the admin returns 409 `ACCOUNT_CHANGED`
+and retains the owner through billing preflight or retryable cleanup. This also
+covers a marker written after the admin read its target. A stale marker still
+refuses until the self-deletion recovery path resolves it.
+
+If admin hard delete wins first, the self-deletion claim matches no user and
+returns 409 before Stripe or receipt creation. The pre-existing administrative
+hard-delete behavior still removes only the human row and does not clean uploads
+or credentials; this change does not claim to fix that broader lifecycle. A
+billing-preflight failure after a refused admin delete leaves the human and their
+uploads/credentials intact, releases only its own claim and allows a fresh
+reauthenticated retry. Hosted-connection refusal and unknown-write lock retention
+remain. The real-handler service cases exercise these orders and retry recovery.
+This is distinct from TASK-005's synthetic-purge DM cleanup.

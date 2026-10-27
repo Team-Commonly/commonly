@@ -28,7 +28,7 @@ describe('classifyAddress', () => {
     // the edges of each refused IPv4 block
     '9.255.255.255', '11.0.0.0', '100.63.255.255', '100.128.0.0', '126.255.255.255', '128.0.0.0',
     '169.253.255.255', '169.255.0.0', '172.15.255.255', '172.32.0.0', '192.167.255.255', '192.169.0.0',
-    '223.255.255.255', 'fbff::1',
+    '223.255.255.255', '2000::1',
   ])('%s is public', (address) => {
     expect(classifyAddress(address)).toBe('public');
   });
@@ -49,6 +49,8 @@ describe('classifyAddress', () => {
     '::ffff:169.254.169.254', '::ffff:a9fe:a9fe', '::ffff:0.0.0.0', '::ffff:255.255.255.255',
     // the deprecated IPv4-compatible block, and anything that is not an address
     '::7f00:1', '::a9fe:a9fe', 'not-an-ip', '',
+    // the edge just below unique-local, which is outside global unicast
+    'fbff::1',
   ])('%p is reserved', (address) => {
     expect(classifyAddress(address)).toBe('reserved');
   });

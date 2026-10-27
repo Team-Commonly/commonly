@@ -115,10 +115,24 @@ describe('first-run workspace', () => {
     });
   });
 
-  test('off macOS a claude seat keeps the public default, which its adapter can run', () => {
+  test('on Linux a claude seat whose pods are all private reads its project too (bwrap, #2784)', () => {
     expect(firstRunWorkspace({
       adapterName: 'claude', installations: [priv], startDir: repo, home, platform: 'linux',
-    })).toEqual({ workspacePath: null, reason: 'an agent works in its folder only on macOS for now' });
+    })).toEqual({ workspacePath: realpathSync(repo), reason: null });
+  });
+
+  test('on Linux a pod whose visibility is unreported keeps the public default', () => {
+    const result = firstRunWorkspace({
+      adapterName: 'claude', installations: [priv, { joinPolicy: 'invite-only' }], startDir: repo, home, platform: 'linux',
+    });
+    expect(result.workspacePath).toBeNull();
+    expect(result.reason).toMatch(/did not report whether it is/);
+  });
+
+  test('on native Windows a claude seat keeps the public default', () => {
+    expect(firstRunWorkspace({
+      adapterName: 'claude', installations: [priv], startDir: repo, home, platform: 'win32',
+    })).toEqual({ workspacePath: null, reason: 'an agent works in its folder only on macOS and Linux for now' });
   });
 
   test('every other adapter has nothing to decide, since workspace is claude-only', () => {

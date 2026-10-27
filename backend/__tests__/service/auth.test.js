@@ -365,7 +365,7 @@ describe('Auth Routes Integration Tests', () => {
         .send(loginData)
         .expect(400);
 
-      expect(response.body.error).toContain('User not found');
+      expect(response.body.error).toBe('Invalid credentials');
     });
   });
 

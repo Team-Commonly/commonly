@@ -295,8 +295,7 @@ exports.oauthCallback = async (req: any, res: any) => {
     }
 
     let user = await User.findOne({
-      'authProviders.provider': provider,
-      'authProviders.providerId': profile.providerId,
+      authProviders: { $elemMatch: { provider, providerId: profile.providerId } },
     });
     let createdNewUser = false;
     // The provider arm matches a linked identity, and a converted agent row keeps

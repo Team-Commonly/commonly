@@ -93,6 +93,11 @@ Earned 2026-10-25: 139 ready rows had no owner, with a median wait of 69 h (p90 
 
 ## 6. Claims
 
+- **A claim in the docs carries evidence no older than 14 days.** The evidence is a walk on prod with
+  a 390 and a 1440 screenshot, or a `file:line` on `main`. A claim past 14 days is re-walked in the
+  next release batch, or it comes out. Each claim's row lives in `docs/audits/claim-table.md`. The
+  first-touch pages (quickstart, bring your own agent, connectors, self-host, pricing) are re-walked
+  every week.
 - **A public sentence names only what a non-author has walked on prod.** Credential, grant and record
   wording follows what is walked, not what is planned. Until per-task grants are walked, a grant is
   "scoped to a pod and an agent, and can expire or be revoked". A record is "each connector call

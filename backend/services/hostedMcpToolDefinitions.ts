@@ -172,9 +172,35 @@ export const capHostedToolResult = (result: unknown): unknown => {
   };
 };
 
-const sanitizeVendorError = (value: string, token: string): string | undefined => value
-  .split(/[\r\n]/, 1)[0]
-  .split(token).join('[redacted]')
+/**
+ * The credential this call presented, removed wherever the vendor's reply
+ * repeats it. Both ways a vendor's words leave this module go through it: a
+ * tool result (every string in it, at any depth, keys included) and the
+ * one-line diagnostic on a refusal.
+ *
+ * It removes the exact value only. The token-shaped patterns stay on the
+ * refusal path, in sanitizeVendorError: on a result they would also remove
+ * the ordinary long ids a model needs to act on.
+ */
+const withoutCredential = <T>(value: T, token: string): T => {
+  // `split('')` would put a marker between every character of the reply.
+  if (!token) return value;
+  const text = (item: string): string => item.split(token).join('[redacted]');
+  const walk = (node: unknown): unknown => {
+    if (typeof node === 'string') return text(node);
+    if (Array.isArray(node)) return node.map(walk);
+    if (node && typeof node === 'object') {
+      return Object.fromEntries(Object.entries(node).map(([key, item]) => [text(key), walk(item)]));
+    }
+    return node;
+  };
+  return walk(value) as T;
+};
+
+const sanitizeVendorError = (value: string, token: string): string | undefined => withoutCredential(
+  value.split(/[\r\n]/, 1)[0],
+  token,
+)
   .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
   .replace(/(["']?)(access_token|refresh_token|client_secret|api_key)\1\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,}]+)/gi,
     '$2=[redacted]')
@@ -552,8 +578,9 @@ const callHostedTool = async (
     const result = await session.request('tools/call', { name: tool.upstreamName, arguments: args });
     // MCP reports a tool that ran and failed as a result with `isError`, which is
     // the model's to read: throwing here would hide the vendor's own explanation
-    // from the turn that asked for it.
-    return capHostedToolResult(result);
+    // from the turn that asked for it. The credential comes out before the cap,
+    // so a cut can never leave part of it behind.
+    return capHostedToolResult(withoutCredential(result, token));
   } catch (error) {
     // The deadline covers the body too: a vendor that sends headers and then
     // trickles the reply would otherwise hold the turn open past it (TASK-254).
