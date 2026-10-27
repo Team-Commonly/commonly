@@ -556,7 +556,8 @@
       "taskClaimedVerb": "claimed"
     },
     "starts": {
-      "label": "Ways to start"
+      "label": "Ways to start",
+      "openByo": "Open Bring your own"
     },
     "dmMark": "DM",
     "invite": "Invite to this pod",

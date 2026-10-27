@@ -40,6 +40,12 @@ import {
   slugifyAgentHandle,
 } from '../utils/threadAgentIdentity';
 
+// The connect start's label, as SCOUT_STARTS[0] sends it
+// (backend/config/native-agents/scout.ts). A click posts exactly this text.
+const CONNECT_START_LABEL = 'Connect an agent I already use';
+// How long a smooth follow may run before its scroll events count as the reader's.
+const FOLLOW_SETTLE_MS = 1500;
+
 const AGENT_DELIVERY_HINT_KEY = 'v2.agentDeliveryHint';
 // Same slot, different fact, so a pod can show both over a session: the hint
 // above needs an agent to name, and this row exists precisely because there is
@@ -433,8 +439,24 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
         && !sentSince.has(start.label));
       if (open.length > 0) byMessage.set(String(message.id), open);
     });
+    // D139: under the creator's own "Connect an agent I already use", a fixed
+    // link to Bring your own, from the moment it is sent. Scout still answers,
+    // but a prompt cannot guarantee its reply links there, and one new person
+    // left after three replies that never did.
+    if (viewerOwnsPod && pod?._id) {
+      const openByo: V2Start = {
+        id: 'open-byo',
+        label: t('podChat.starts.openByo'),
+        href: `/v2/agents/byo?pod=${encodeURIComponent(pod._id)}`,
+      };
+      messages.forEach((message) => {
+        if (message.user_id !== viewerId || (message.content || '').trim() !== CONNECT_START_LABEL) return;
+        const id = String(message.id);
+        byMessage.set(id, [...(byMessage.get(id) || []), openByo]);
+      });
+    }
     return byMessage;
-  }, [messages, viewerId, onOpenInvite, viewerHoldsHostedAgent, viewerOwnsPod, addedFirstTaskMessages]);
+  }, [messages, viewerId, onOpenInvite, viewerHoldsHostedAgent, viewerOwnsPod, addedFirstTaskMessages, pod?._id, t]);
 
   const [decisions, setDecisions] = useState<ThreadDecision[]>([]);
   const [settledDecisionByMessageId, setSettledDecisionByMessageId] = useState<Map<string, V2DecisionRuling>>(new Map());
@@ -817,30 +839,63 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // The pill mounts once the reader is a viewport up; `· N` only with arrivals.
   const [scrolledUp, setScrolledUp] = useState(false);
   const edgeRef = useRef<HTMLDivElement | null>(null);
+  // Scroll the message list itself, never via scrollIntoView. scrollIntoView
+  // also scrolls every scrollable ancestor, and main.v2-pane is overflow
+  // hidden: when the list is already at its end the browser moves the pane
+  // instead, taking the header and thread off screen with no way back
+  // (UX Lead on #2870; the composer-send jump in TASK-584).
+  //
+  // A smooth follow fires its own scroll events on the way down. Those must
+  // not read as the reader scrolling up, or a card that mounts mid-animation
+  // is skipped and the list stops one card short (UX Lead on e0fd1523). So
+  // until the follow lands, only real input (wheel, touch, key, pointer)
+  // can take the reader off the bottom; a time limit backs that up.
+  const followingUntilRef = useRef(0);
+  const scrollListToEnd = useCallback(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    followingUntilRef.current = Date.now() + FOLLOW_SETTLE_MS;
+    if (typeof el.scrollTo === 'function') el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    else el.scrollTop = el.scrollHeight;
+  }, []);
   const jumpToLatest = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollListToEnd();
     atBottomRef.current = true;
     setJumpCount(0);
     setScrolledUp(false);
-  }, []);
+  }, [scrollListToEnd]);
+  // The invite card can mount after the arrival effect has already followed
+  // (on a reload, once history settles), landing a card-height below the fold.
+  // Follow it only when the reader was at the end; never move someone reading up.
+  const followCardIfAtBottom = useCallback(() => {
+    if (atBottomRef.current) scrollListToEnd();
+  }, [scrollListToEnd]);
   useEffect(() => {
     const el = messagesContainerRef.current;
     if (!el) return undefined;
     const onScroll = () => {
       const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
       const near = distance < 80;
+      if (near) followingUntilRef.current = 0;
+      else if (Date.now() < followingUntilRef.current) return;
       atBottomRef.current = near;
       setScrolledUp(distance > el.clientHeight);
       if (near) setJumpCount(0);
     };
+    const onReaderInput = () => { followingUntilRef.current = 0; };
+    const inputs = ['wheel', 'touchstart', 'keydown', 'pointerdown'] as const;
     onScroll();
     el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
+    inputs.forEach((name) => el.addEventListener(name, onReaderInput, { passive: true }));
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      inputs.forEach((name) => el.removeEventListener(name, onReaderInput));
+    };
   }, [pod?._id]);
   useEffect(() => {
     if (!newestMessageId) return;
     if (atBottomRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      scrollListToEnd();
       setJumpCount(0);
     } else {
       setJumpCount((count) => count + 1);
@@ -855,8 +910,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   useEffect(() => {
     if (!sendFollowVersion || !sentMessageIdRef.current) return;
     atBottomRef.current = true;
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollListToEnd();
     setJumpCount(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sendFollowVersion]);
 
   const rememberSentMessage = useCallback((sendPodId: string, created: import('../hooks/useV2PodDetail').V2Message) => {
@@ -1772,7 +1828,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           <V2BringTeammate podId={pod._id} podName={pod.name} userId={currentUserId || ''}
             source={teammateSource}
             agentName={teammateMoment ? agentDisplayNames.get(teammateMoment.username.toLowerCase()) || teammateMoment.username : undefined}
-            enabled={Boolean(teammateMoment)}>
+            enabled={Boolean(teammateMoment)}
+            onShown={followCardIfAtBottom}>
             {(teammateCard) => <V2ThreadMessages
             messages={messages}
             threadView={threadView}
