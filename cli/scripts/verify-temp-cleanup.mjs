@@ -1,16 +1,25 @@
 #!/usr/bin/env node
 
 /**
- * Run one affected CLI Jest file twice in an isolated TMPDIR and fail if any
- * test-created temp directory survives either run. The full CLI suite runs in
- * CI separately; this is a cheap regression guard for the teardown contract.
+ * Run the CLI Jest files that create temp homes twice in an isolated TMPDIR and
+ * fail if any test-created temp directory survives either run. The full CLI
+ * suite runs in CI separately; this is a cheap regression guard for the
+ * teardown contract. The default list is the files that leaked ~40 GB
+ * (TASK-436); pass file paths to check others.
  */
 import { spawn } from 'node:child_process';
 import { lstat, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const target = process.argv[2] || '__tests__/adapters.claude.environment.test.mjs';
+const targets = process.argv.length > 2
+  ? process.argv.slice(2)
+  : [
+    '__tests__/adapters.opencode.test.mjs',
+    '__tests__/adapters.claude.environment.test.mjs',
+    '__tests__/adapters.codex.test.mjs',
+    '__tests__/adapters.pi.test.mjs',
+  ];
 const prefixes = [
   'opencode-adapter-test-',
   'cli-mcp-home-',
@@ -39,7 +48,7 @@ const run = (probeRoot) => new Promise((resolve, reject) => {
   const child = spawn(process.execPath, [
     '--experimental-vm-modules',
     'node_modules/.bin/jest',
-    target,
+    ...targets,
     '--runInBand',
   ], {
     cwd: process.cwd(),
