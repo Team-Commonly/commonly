@@ -191,10 +191,11 @@ const relayWorkerError = (res: express.Response, error: any) => {
  *
  * Only the Bring your own page calls this, on load, so it also records the
  * person's first visit to that page (write-once, fire-and-forget;
- * services/onboardingMarks.ts).
+ * services/onboardingMarks.ts). `?os=` is the OS the page detected; the mark
+ * keeps only mac, linux, windows or other and records no OS for anything else.
  */
 router.get('/availability', hostedRateLimit, auth, async (req: any, res: any) => {
-  markByoOpened(getUserId(req));
+  markByoOpened(getUserId(req), req.query?.os);
   const engine = engineForNewHostedInstall();
   // The caller's own plan line (TASK-268), so the page states the limit they get.
   const caps = await hostedRuntime.hostedCapsForOwner(getUserId(req));

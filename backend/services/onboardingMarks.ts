@@ -25,6 +25,11 @@
  * read from the page's own load request (GET /api/hosted/availability, which
  * nothing else calls). It tells "never looked at setup" apart from "looked and
  * left".
+ *
+ * byoOpenedOs is written with it, in the same write-once update: the OS the
+ * page detected from the browser, one of BYO_OPENED_OS. The listener only runs
+ * on a Mac today, so this splits "left" by whether setup could have worked at
+ * all. An unknown or missing value records the visit without an OS.
  */
 import User from '../models/User';
 import { SCOUT_STARTS } from '../config/native-agents/scout';
@@ -92,15 +97,30 @@ function recordFirstStart(id: string, startId: string): void {
   }
 }
 
-export function markByoOpened(userId: unknown): void {
+export const BYO_OPENED_OS = ['mac', 'linux', 'windows', 'other'] as const;
+export type ByoOpenedOs = typeof BYO_OPENED_OS[number];
+
+export const parseByoOpenedOs = (value: unknown): ByoOpenedOs | undefined => (
+  typeof value === 'string' && (BYO_OPENED_OS as readonly string[]).includes(value)
+    ? value as ByoOpenedOs
+    : undefined
+);
+
+export function markByoOpened(userId: unknown, os?: unknown): void {
   const id = String(userId || '');
   if (!id) return;
   if (byoOpenedMarked.has(id)) return;
   byoOpenedMarked.add(id);
+  const detectedOs = parseByoOpenedOs(os);
   try {
     User.updateOne(
       { _id: id, isBot: { $ne: true }, 'onboarding.byoOpenedAt': { $exists: false } },
-      { $set: { 'onboarding.byoOpenedAt': new Date() } },
+      {
+        $set: {
+          'onboarding.byoOpenedAt': new Date(),
+          ...(detectedOs ? { 'onboarding.byoOpenedOs': detectedOs } : {}),
+        },
+      },
     ).catch(() => {
       byoOpenedMarked.delete(id);
     });
