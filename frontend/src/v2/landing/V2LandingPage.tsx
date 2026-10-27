@@ -416,7 +416,9 @@ const V2LandingPage: React.FC = () => {
           <a className="v2-landing__navlink" href="#features">{t('landing.nav.features')}</a>
           <a className="v2-landing__navlink" href="#use-cases">{t('landing.nav.useCases')}</a>
           <a className="v2-landing__navlink" href="#pricing">{t('landing.nav.pricing')}</a>
-          <a className="v2-landing__navlink" href={REPO} target="_blank" rel="noreferrer">{t('landing.nav.github')}</a>
+          {/* The star ask sits in the nav and the open-source section, not only the
+              final CTA: most repo visitors leave without starring (D139). */}
+          <a className="v2-landing__navlink" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.starGithub')}</a>
           {!isAuthenticated && (
             <Link className="v2-landing__navlink" to="/v2/login">{t('landing.nav.signIn')}</Link>
           )}
@@ -710,7 +712,7 @@ const V2LandingPage: React.FC = () => {
               <h2 className="v2-landing__h2">{t('landing.openSource.title')}</h2>
               <p className="v2-landing__open-lede">{t('landing.openSource.lede')}</p>
               <div className="v2-landing__cta-row">
-                <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.readSource')}</a>
+                <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.starGithub')}</a>
               </div>
             </div>
             <ul className="v2-landing__open-list">

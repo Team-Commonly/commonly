@@ -771,7 +771,6 @@
     "actions": {
       "openApp": "Open the app",
       "getStarted": "Get started",
-      "readSource": "Read the source",
       "selfHost": "Self-host it",
       "talkToUs": "Talk to us",
       "starGithub": "Star on GitHub"
