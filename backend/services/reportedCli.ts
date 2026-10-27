@@ -15,7 +15,7 @@
  * refuses or routes reads `runtime.adapter` / `runtimeType`, never this.
  *
  * Written only on a BYO seat (`runtime.host: 'byo'`, which install stamps on
- * every self-serve polling seat) and only while `runtime.adapter` is absent: a
+ * every self-serve polling seat) and only while `runtime.adapter` is unset: a
  * declared adapter already names the CLI, and the report must not sit beside it
  * disagreeing. Hosted and native seats never carry it.
  */
@@ -26,7 +26,10 @@ export const REPORTED_CLI_VALUES: ReadonlySet<string> = new Set([
   'claude', 'codex', 'dsh', 'goose', 'opencode', 'pi', 'qwen',
 ]);
 
-const recorded = new Set<string>();
+// (installation, value) -> when this process last wrote it. Entries expire so
+// a row whose config was replaced (losing the label) regains it on a later poll.
+const RECORD_TTL_MS = 10 * 60 * 1000;
+const recorded = new Map<string, number>();
 
 export const normalizeReportedCli = (value: unknown): string | null => {
   const cli = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -35,23 +38,25 @@ export const normalizeReportedCli = (value: unknown): string | null => {
 
 /**
  * Record the CLI a runtime reported for the installations its token covers.
- * Fire-and-forget: a poll must never wait on or fail for this label. One
- * write per (installation, value) per process.
+ * Fire-and-forget: a poll must never wait on or fail for this label. At most
+ * one write per (installation, value) per process every ten minutes.
  */
 export function recordReportedCli(installationIds: unknown[], value: unknown): void {
   const cli = normalizeReportedCli(value);
   if (!cli) return;
+  const now = Date.now();
   const ids = installationIds.map((id) => String(id || '')).filter(Boolean)
-    .filter((id) => !recorded.has(`${id}:${cli}`));
+    .filter((id) => now - (recorded.get(`${id}:${cli}`) ?? -Infinity) >= RECORD_TTL_MS);
   if (ids.length === 0) return;
-  ids.forEach((id) => recorded.add(`${id}:${cli}`));
+  ids.forEach((id) => recorded.set(`${id}:${cli}`, now));
   const forget = () => ids.forEach((id) => recorded.delete(`${id}:${cli}`));
   try {
     AgentInstallation.updateMany(
       {
         _id: { $in: ids },
         'config.runtime.host': 'byo',
-        'config.runtime.adapter': { $exists: false },
+        // Matches a missing adapter and an explicit null, both meaning unset.
+        'config.runtime.adapter': null,
         'config.runtime.reportedCli': { $ne: cli },
       },
       { $set: { 'config.runtime.reportedCli': cli } },

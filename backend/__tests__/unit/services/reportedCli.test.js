@@ -32,7 +32,7 @@ describe('recording the reported CLI', () => {
     expect(filter).toEqual({
       _id: { $in: ['i1', 'i2'] },
       'config.runtime.host': 'byo',
-      'config.runtime.adapter': { $exists: false },
+      'config.runtime.adapter': null,
       'config.runtime.reportedCli': { $ne: 'claude' },
     });
     expect(update).toEqual({ $set: { 'config.runtime.reportedCli': 'claude' } });
@@ -49,7 +49,7 @@ describe('recording the reported CLI', () => {
     expect(mockUpdateMany).not.toHaveBeenCalled();
   });
 
-  test('no installations, no write; one write per installation and value per process', () => {
+  test('no installations, no write; one write per installation and value per ten minutes', () => {
     recordReportedCli([], 'codex');
     recordReportedCli([undefined, null], 'codex');
     expect(mockUpdateMany).not.toHaveBeenCalled();
@@ -57,6 +57,21 @@ describe('recording the reported CLI', () => {
     recordReportedCli(['i1'], 'codex');
     recordReportedCli(['i1', 'i2'], 'codex');
     expect(mockUpdateMany.mock.calls.map(([filter]) => filter._id.$in)).toEqual([['i1'], ['i2']]);
+  });
+
+  test('the record expires, so a row whose config was replaced regains the label', () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    try {
+      recordReportedCli(['i1'], 'codex');
+      now.mockReturnValue(1_000_000 + 9 * 60 * 1000);
+      recordReportedCli(['i1'], 'codex');
+      expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+      now.mockReturnValue(1_000_000 + 10 * 60 * 1000);
+      recordReportedCli(['i1'], 'codex');
+      expect(mockUpdateMany).toHaveBeenCalledTimes(2);
+    } finally {
+      now.mockRestore();
+    }
   });
 
   test('a failed write is retried on the next poll and never throws into it', async () => {
