@@ -94,9 +94,13 @@ describe('the middleware reads the full User row', () => {
     // 53's exact shape; the press that landed the stale side is the one
     // writing this comment. Each certified projection is enumerated below,
     // so the NEXT `.select(` still trips this consciously.
-    expect(selectCallCount()).toBe(2);
+    // Re-certified 2026-10-26: 2 -> 1. The credential-ledger checks, the
+    // parent-status projection with them, moved to
+    // services/runtimeCredentialGate.ts so the agent WebSocket applies the
+    // same copy. It was a projection on a credential record, not a User row,
+    // and it no longer lives in this file.
+    expect(selectCallCount()).toBe(1);
     expect(codeOnly()).toMatch(/Pod\.find\([\s\S]{0,200}?\.select\('_id'\)/);
-    expect(codeOnly()).toMatch(/AgentCredential\.findById\([\s\S]{0,120}?\.select\('status'\)/);
   });
 
   it('projects neither User.findOne', () => {
