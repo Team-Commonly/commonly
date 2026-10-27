@@ -432,6 +432,242 @@ const metadata = ({ title, description, path, schema, faqSchema, ogType = 'websi
     <script type="application/ld+json" id="${faqJsonLdId}">${jsonLd(faqSchema)}</script>` : ''}`;
 };
 
+// Compare pages (GEO, D104). The markdown below is GTM's copy, pasted verbatim
+// from the drafts; the renderer only turns it into HTML. A page with an open
+// [HOLD: ...] marker refuses to build, so a held claim cannot ship as text.
+const comparePageSources = {
+  openagents: {
+    path: '/compare/openagents/',
+    title: "Commonly vs OpenAgents (openagents.org): what each ships, side by side",
+    description: "OpenAgents and Commonly are both Apache-2.0 workspaces where people and coding agents work together. Commonly is one pod for a team where each person brings their own agent. A factual comparison of agents, self-hosting, how people take part and outside tools.",
+    markdown: `# Commonly vs OpenAgents
+
+**Short answer.** OpenAgents (openagents.org) and Commonly are both open-source, Apache-2.0 workspaces where people and coding agents work together. Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. OpenAgents lists more agent CLIs, adds a shared browser and filesystem, and ships desktop and mobile apps.
+
+*This page compares OpenAgents at openagents.org (GitHub: openagents-org/openagents). It is not about openagents.com, which is a separate product.*
+
+## What each ships today
+
+| | OpenAgents (openagents.org) | Commonly |
+|---|---|---|
+| **What it is, in its own words** | "The collaboration OS for AI agents": shared conversations, files and a live browser where people and agents work together. [1] | One pod for your team and the agents each of you runs. [9] |
+| **License** | Apache 2.0. [1][5] | Apache-2.0. [9] |
+| **Self-host** | Yes. "Run the full platform on your own infrastructure", with Docker or Kubernetes. [3][5] | Yes, on one machine with Docker and Compose v2 (\`./install.sh\`). [9] [HOLD: self-host install not in the 10-24/25 walk set; re-walk \`install.sh\` on a clean machine before publish] |
+| **Agents named** | Homepage: Claude Code, Codex, Cursor, OpenClaw, Gemini CLI, GitHub Copilot, OpenCode, Kimi, CodeBuddy, Hermes, DeepSeek and Pi. Its Workspace FAQ says "Currently: OpenClaw, Claude Code, Codex CLI, Cursor, and OpenCode" and marks others coming soon. [1][5] | Your own Claude Code from your Mac, plus a hosted agent you start from the pod with one click. [HOLD: name Codex and OpenCode as your own agents only after D111's re-walk lands; until then Claude Code only] |
+| **How agents connect** | A desktop Launcher, a CLI (\`agn\`), a pairing code for a whole machine, or a cloud agent with an API key. Agents connect "over open protocols (including MCP)". [2][4][6] | A command from the pod's Connect page starts a listener for your own Claude Code on a Mac; it answers @mentions in the pod. Claude Code can also join over MCP. [HOLD: keep "on a Mac". @mention answers walked for Claude Code on a Mac (10-25 03:36Z, about 24 s); on Linux and Windows it connects over MCP and doesn't answer @mentions] |
+| **Where agent code runs** | "Code execution happens on your machine — never on OpenAgents servers." [3] | Your own agent runs on your machine. The hosted agent runs on Commonly. |
+| **How people take part** | Threads with @mentions, a shared browser you can take over, a Kanban board, an inbox. Roles: Owner, Admin, Member, Viewer. Collaborators join by an invitation link they accept. [2][3] | Teammates join a pod by invite link, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions. Your own connected agent claims tasks on the pod's board (the claim holds a lease), posts what it tried, and asks a person on a decision card when a call is theirs. |
+| **Access to outside tools** | Workspaces have "roles, membership, and access control", and you choose which threads each participant can join. For local agents, model keys go "directly between your machine and the model provider". [3] | The owner of a Sentry, Slack, Telegram or Linear connection grants one agent read access. The agent then sees those read tools and no write tools. Calls made through a grant are logged. [HOLD: connector claims are walked on prod after the 10-27 deploy (TASK-014). If they are CUT at the freeze (#2891), drop this row and every connector bullet on the page] |
+| **Apps** | Web, desktop (macOS and Windows on the homepage; the README adds a Linux AppImage), iOS and Android. [1][8] | Web. |
+| **Pricing, as stated** | Hosted: "Free to start". FAQ: "Workspaces are open source and available at no cost." Enterprise: a "Talk to us" button that links to Discord. openagents.org/pricing returned 404 on 10-25. [1][4][5] | Not listed on this page. |
+
+## When to pick OpenAgents
+
+- You want a long list of agent CLIs supported today, including Cursor, Gemini CLI and GitHub Copilot.
+- You want a shared browser and filesystem that agents and people use together.
+- You want desktop and mobile apps, or a Launcher that installs and runs agents on each machine.
+- You want the vendor's own statement that agent code never runs on its servers.
+
+## When to pick Commonly
+
+- Several people on your team each run their own agent, and you want those agents in one pod with the people who own them.
+- You want everyone, people and agents, to see who has what: each agent is a named member with an owner.
+- You want your own agents to claim work on a shared board so two of them don't take the same task.
+- You want an agent to stop and ask a person on a decision card when a call is theirs.
+- You want a hosted agent you can start from the pod, next to your own.
+- You want to give one agent read access to Sentry, Slack, Telegram or Linear and have it see those read tools and nothing more. [HOLD: connectors, TASK-014]
+
+## FAQ
+
+**Is OpenAgents the same as openagents.com?**
+No. This page covers openagents.org and the openagents-org/openagents repository. openagents.com describes itself as "an open network of agents you work with through one conversation", and its homepage doesn't mention openagents.org. [7]
+
+**Are both open source?**
+Yes. Both are Apache-2.0. [1][9]
+
+**Can I run either one on my own servers?**
+Both document self-hosting. OpenAgents with Docker or Kubernetes, Commonly with Docker Compose. [5][9]
+
+**Which agents work with Commonly?**
+Your own Claude Code, connected from a Mac, plus a hosted agent you start in the pod. [HOLD: name Codex and OpenCode as your own agents only after D111's re-walk lands; until then Claude Code only]
+
+## Sources
+
+Competitor facts, all fetched 2026-10-25 between about 09:50 and 10:05 UTC:
+
+1. OpenAgents homepage: https://openagents.org/ (headline, agent list, apps, "Free to start", Apache 2.0)
+2. OpenAgents Workspace: https://openagents.org/workspace (threads, files, browser, task board, roles)
+3. OpenAgents Security: https://openagents.org/security (execution on your machine, invitation links, keys)
+4. OpenAgents Enterprise: https://openagents.org/enterprise ("Free to start", "Talk to us" to Discord)
+5. OpenAgents FAQ: https://openagents.org/faq (no-cost workspaces, Docker/Kubernetes, the five "currently" supported agents)
+6. OpenAgents docs overview: https://openagents.org/docs/en/getting-started/overview (Launcher, pairing code, cloud agent, MCP)
+7. openagents.com homepage: https://openagents.com/ (different product; read to tell the two apart, not cited for any fact above)
+8. OpenAgents GitHub: https://github.com/openagents-org/openagents (Apache-2.0; \`gh api\`, 4,256 stars and last push 2026-10-25 06:43Z; latest release launcher-v1.1.7, 2026-10-24)
+9. Commonly README: https://github.com/Team-Commonly/commonly (Apache-2.0, \`install.sh\`)
+
+Commonly claims in the table are walked unless marked [HOLD]. Walk evidence: second account joins an invite-only pod by link (G1, pod 93487); hosted agent and own Claude Code on a Mac (rehearsal-1024.md, 10-25 03:07–03:38Z); task claim over MCP in 19 s (same file); decision card (ep1 clip take, 10-24); Sentry read grant, 11 read tools and no write tools (CTO, 10-25 04:15Z); Linear read grant (CTO, 10-22 02:00–02:25Z); Slack and Telegram grants (CTO, 10-25, per v3-launch-pressure-test-1025.md).
+`,
+  },
+  githubAgentHq: {
+    path: '/compare/github-agent-hq/',
+    title: "Commonly vs GitHub Agent HQ: where each one fits",
+    description: "GitHub Agent HQ runs Copilot, Claude and Codex agents inside GitHub. Commonly is one pod where each teammate brings their own agent and the team shares the same conversations and one task board. A factual comparison with preview and GA status.",
+    markdown: `# Commonly vs GitHub Agent HQ
+
+**Short answer.** If your team lives in GitHub and pays for Copilot, GitHub Agent HQ is the natural choice: you assign issues to Copilot, Claude or Codex agents and review their pull requests in GitHub, under your organization's policies and audit log. Commonly fits a different setup: a team where each person brings their own agent. Teammates join one pod by invite link, and people and agents share the same conversations and one task board, so everyone can see who has what. Claude and Codex on Agent HQ are in public preview as of 2026-10-25.
+
+## What each ships today
+
+| | GitHub Agent HQ (with Copilot) | Commonly |
+|---|---|---|
+| **What it is, in its own words** | One place to assign, steer and track agents across GitHub, VS Code, mobile and the CLI ("mission control"). Announced 2025-10-28. [1] | One pod for your team and the agents each of you runs. [11] |
+| **Agents** | Copilot cloud agent. Third-party: Anthropic Claude (Claude Agent SDK) and OpenAI Codex (Codex SDK), **public preview**. [2][3] | Your own Claude Code from your Mac, plus a hosted agent. [HOLD: name Codex and OpenCode as your own agents only after D111's re-walk lands; until then Claude Code only] |
+| **Where agents run** | Copilot cloud agent works "in an ephemeral cloud development environment". Third-party sessions use GitHub Actions minutes and AI credits. [2][4] | Your own agent runs on your own machine; the hosted agent runs on Commonly. [HOLD: keep "on a Mac". @mention answers walked for Claude Code on a Mac (10-25 03:36Z); on Linux and Windows it connects over MCP and doesn't answer @mentions] |
+| **How work is assigned** | Assign an issue or a prompt from the Agents tab, an issue, a PR comment, GitHub Mobile or VS Code. The agent opens a PR and requests review. One repository, one branch, one PR per task. [2][4] | @mention an agent in the pod, or put a task on the pod's board. Your own connected agent claims tasks over MCP (the claim holds a lease), post what they tried, and ask a person on a decision card when a call is theirs. |
+| **Steering a running agent** | Available for Copilot. "Steering is not available for third-party coding agents." [5] | Reply to it in the pod. |
+| **Session limits** | Copilot cloud agent: 59 minutes per session, "cannot be extended or bypassed". [4] | Not applicable to your own agent's local session. [HOLD: no measured limit published for the hosted agent; leave out unless CTO states one] |
+| **Who sees the work** | Teammates with repository access can follow shared sessions and PRs. [4] | Everyone in the pod, people and agents, sees the conversations, the board and decision cards. Teammates join by invite link, and each agent is a named member with an owner. |
+| **Access controls** | Org and enterprise policies decide which agents are allowed; enabling Claude or Codex installs a GitHub App for it. The GitHub MCP server is scoped to the task's repository by default. Enterprise AI Controls and the agent control plane are **GA since 2026-02-26**; enterprise-wide MCP allowlists **remain in preview**. [2][4][6] | The owner of a Sentry, Slack, Telegram or Linear connection grants one agent read access, and the agent then sees those read tools and no write tools. Calls made through a grant are logged. [HOLD: connector claims are walked on prod after the 10-27 deploy (TASK-014). If they are CUT at the freeze (#2891), drop this row and every connector bullet on the page] |
+| **Audit** | Actions by the agent GitHub Apps appear in the audit log. Entries carry \`actor_is_agent\` with the \`user\` the agent acts for; an \`agent_session.task\` event records start, finish and failure (GA 2026-02-26). [2][6] | Granted connector calls are logged. [HOLD: a single pod view of who granted which agent what is not shipped (TASK-513); do not call it "one record"] |
+| **Tools outside GitHub** | Delegate to Copilot from Slack and Microsoft Teams. [4] Linear's changelog (2026-07-30): "GitHub Copilot users can assign issues directly to Copilot's cloud agent from Linear." [10] | Read grants for Sentry, Slack, Telegram and Linear. [HOLD: connectors, TASK-014] |
+| **License / self-host** | Hosted GitHub service. | Apache-2.0; self-host with Docker Compose. [11] [HOLD: re-walk \`install.sh\` before publish] |
+| **Pricing, as stated** | Pro $10/mo, Pro+ $39/mo, Max $100/mo; Business $19 and Enterprise $39 per granted seat per month. Third-party agents are marked "(Preview)". The plans page lists them for Pro+ and Max and "Not included" for Pro, while the docs plan page lists Pro, Pro+ and Max. [7][8] | Not listed on this page. |
+
+**Preview vs GA, as of 2026-10-25:**
+- Third-party Claude and Codex agents: public preview. [2][3]
+- Enterprise AI Controls and agent control plane: GA (2026-02-26). Enterprise-wide MCP allowlists: preview. [6]
+- VS Code Automations and agent merge: preview. HydraFusion: research preview. [9]
+- Copilot cloud agent: the docs page carries no preview label. [4]
+
+## When to pick GitHub Agent HQ
+
+- Your code, issues and reviews already live on GitHub, and your team pays for Copilot.
+- You want the issue → agent → pull request loop inside GitHub, with CodeQL and secret scanning on the agent's code. [2]
+- You need enterprise policy and an audit log that marks agent actions and the human they act for. [6]
+- Your work fits one repository, one branch and one PR per task. [4]
+
+## When to pick Commonly
+
+- Teammates each run their own agent, and you want those agents in one pod with the people who own them, where everyone sees who has what.
+- You want work claimed on a shared board so two agents don't take the same task.
+- You want an agent to ask a person on a decision card when the call is theirs.
+- Your agents need to read Sentry, Slack, Telegram or Linear, and you want to grant that per agent, read-only. [HOLD: connectors, TASK-014]
+- You use both: Commonly can sit next to GitHub, where your agents still open PRs.
+
+## FAQ
+
+**Is Claude on GitHub Agent HQ generally available?**
+Not as of 2026-10-25. GitHub's docs say third-party coding agents "are currently in public preview." [2]
+
+**Can I steer Claude or Codex mid-task on Agent HQ?**
+GitHub's docs say steering is not available for third-party coding agents. [5]
+
+**Does Commonly replace GitHub?**
+No. Agents in a Commonly pod can still branch, push and open pull requests on GitHub.
+
+## Sources
+
+Competitor facts, all fetched 2026-10-25 between about 09:55 and 10:05 UTC:
+
+1. GitHub blog, "Welcome home, agents" (2025-10-28): https://github.blog/news-insights/company-news/welcome-home-agents/
+2. GitHub Docs, About third-party agents: https://docs.github.com/en/copilot/concepts/agents/about-third-party-agents
+3. GitHub blog, "Pick your agent: Use Claude and Codex on Agent HQ" (2026-02-04): https://github.blog/news-insights/company-news/pick-your-agent-use-claude-and-codex-on-agent-hq/
+4. GitHub Docs, About Copilot cloud agent: https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent
+5. GitHub Docs, Manage agents: https://docs.github.com/en/copilot/how-tos/use-copilot-agents/manage-agents
+6. GitHub changelog, Enterprise AI Controls and agent control plane GA (2026-02-26): https://github.blog/changelog/2026-02-26-enterprise-ai-controls-agent-control-plane-now-generally-available/
+7. GitHub Copilot plans: https://github.com/features/copilot/plans
+8. GitHub Docs, Copilot plans: https://docs.github.com/en/copilot/get-started/plans (Business $19, Enterprise $39 per granted seat per month)
+9. GitHub changelog, Copilot in VS Code September 2026 releases (2026-10-01): https://github.blog/changelog/2026-10-01-github-copilot-in-vs-code-september-2026-releases
+10. Linear changelog, "GitHub Copilot for Linear" (2026-07-30 entry; it links a GitHub post whose URL says "generally available", the entry text does not): https://linear.app/changelog
+11. Commonly README: https://github.com/Team-Commonly/commonly
+
+Commonly claims are walked unless marked [HOLD]. Same walk evidence as /compare/openagents (rehearsal-1024.md; CTO grant walks 10-22 and 10-25; ep1 clip take 10-24).
+`,
+  },
+};
+
+export const assertNoOpenHolds = (key, markdown) => {
+  const open = markdown.match(/\[HOLD\b/g);
+  if (open) throw new Error(`${key} has ${open.length} open [HOLD] marker(s); GTM must clear them before this page can build`);
+};
+
+const inlinePattern = /`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|(https?:\/\/[^\s<)\]]*[^\s<)\].,;:])|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
+
+const renderInline = (text) => {
+  let html = '';
+  let last = 0;
+  for (const match of text.matchAll(inlinePattern)) {
+    const [whole, code, label, labelHref, bareHref, bold, italic] = match;
+    html += escapeHtml(text.slice(last, match.index));
+    if (code !== undefined) html += `<code>${escapeHtml(code)}</code>`;
+    else if (label !== undefined) html += `<a href="${escapeHtml(labelHref)}" rel="noreferrer">${escapeHtml(label)}</a>`;
+    else if (bareHref !== undefined) html += `<a href="${escapeHtml(bareHref)}" rel="noreferrer">${escapeHtml(bareHref)}</a>`;
+    else if (bold !== undefined) html += `<strong>${renderInline(bold)}</strong>`;
+    else html += `<em>${renderInline(italic)}</em>`;
+    last = match.index + whole.length;
+  }
+  return html + escapeHtml(text.slice(last));
+};
+
+const splitTableRow = (line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
+
+const renderMarkdownTable = (lines) => {
+  const [headerLine, separator, ...bodyLines] = lines;
+  if (!/^\|?[\s:|-]+\|?$/.test(separator)) throw new Error(`table has no separator row under: ${headerLine}`);
+  const head = splitTableRow(headerLine);
+  const rows = bodyLines.map(splitTableRow);
+  for (const row of rows) {
+    if (row.length !== head.length) throw new Error(`table row has ${row.length} cells, header has ${head.length}: ${row[0]}`);
+  }
+  return `<div class="seo-table-wrap"><table class="seo-table">
+    <thead><tr>${head.map((cell) => `<th scope="col">${renderInline(cell)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map((row) => `<tr>${row.map((cell, index) => (index === 0 ? `<th scope="row">${renderInline(cell)}</th>` : `<td>${renderInline(cell)}</td>`)).join('')}</tr>`).join('')}</tbody>
+  </table></div>`;
+};
+
+// The subset of markdown the compare drafts use: headings, paragraphs, bullet
+// and numbered lists, pipe tables, and inline code, bold, italic and links.
+export const renderMarkdown = (markdown) => {
+  const lines = markdown.replace(/<!--[\s\S]*?-->/g, '').split('\n');
+  const html = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    if (!line) {
+      i += 1;
+    } else if (line.startsWith('|')) {
+      const block = [];
+      while (i < lines.length && lines[i].trim().startsWith('|')) {
+        block.push(lines[i].trim());
+        i += 1;
+      }
+      html.push(renderMarkdownTable(block));
+    } else if (/^#{1,3} /.test(line)) {
+      const [, hashes, text] = line.match(/^(#{1,3}) (.*)$/);
+      html.push(`<h${hashes.length}>${renderInline(text)}</h${hashes.length}>`);
+      i += 1;
+    } else if (/^(- |\d+\. )/.test(line)) {
+      const ordered = /^\d+\. /.test(line);
+      const item = ordered ? /^\d+\. (.*)$/ : /^- (.*)$/;
+      const items = [];
+      while (i < lines.length && item.test(lines[i].trim())) {
+        items.push(lines[i].trim().match(item)[1]);
+        i += 1;
+      }
+      const tag = ordered ? 'ol' : 'ul';
+      html.push(`<${tag}>${items.map((text) => `<li>${renderInline(text)}</li>`).join('')}</${tag}>`);
+    } else {
+      const paragraph = [];
+      while (i < lines.length && lines[i].trim() && !/^(#{1,3} |\||- |\d+\. )/.test(lines[i].trim())) {
+        paragraph.push(lines[i].trim());
+        i += 1;
+      }
+      html.push(`<p>${renderInline(paragraph.join(' '))}</p>`);
+    }
+  }
+  return html.join('\n');
+};
+
 export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, landingFaq = [] }) => {
   const organizationId = `${siteUrl}/#organization`;
   const websiteId = `${siteUrl}/#website`;
@@ -493,6 +729,25 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     '@context': 'https://schema.org',
     '@graph': [organization, website, softwareApplication, webPageNode(landingPage.title, landingPage.description, landingPage.path)],
   };
+
+  const comparePages = Object.values(comparePageSources).map((source) => {
+    assertNoOpenHolds(source.path, source.markdown);
+    return {
+      path: source.path,
+      outputPath: `${source.path.slice(1)}index.html`,
+      title: source.title,
+      description: source.description,
+      content: `
+    <div id="seo-page">
+      <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a><a href="/guides/">Guides</a></nav></header>
+      <main class="seo-article">
+        ${renderMarkdown(source.markdown)}
+      </main>
+      <footer class="seo-footer"><a href="/">Back to Commonly</a></footer>
+    </div>`,
+      schema: webPage(source.title, source.description, source.path),
+    };
+  });
 
   const pages = [landingPage, {
     path: '/compare/',
@@ -568,7 +823,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     };
   });
 
-  return pages.concat(useCasePages, [guidesIndexPage], guidePages);
+  return pages.concat(comparePages, useCasePages, [guidesIndexPage], guidePages);
 };
 
 export const renderStaticPage = (template, page) => {

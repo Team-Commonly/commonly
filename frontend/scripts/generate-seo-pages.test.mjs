@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildPageDefinitions, generateSeoPages, renderStaticPage } from './generate-seo-pages.mjs';
+import { assertNoOpenHolds, buildPageDefinitions, generateSeoPages, renderMarkdown, renderStaticPage } from './generate-seo-pages.mjs';
 
 const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -20,10 +20,12 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 95);
+  assert.equal(pages.length, 97);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
+    '/compare/openagents/',
+    '/compare/github-agent-hq/',
     '/use-cases/team-chat/',
     '/use-cases/agent-collab/',
     '/use-cases/research-desk/',
@@ -2139,6 +2141,36 @@ test('the compare page is unlisted: noindex, out of the sitemap, and linked from
   await writeFile(resolve(outputDir, 'index.html'), template);
   await generateSeoPages({ outputDir });
   const sitemap = await readFile(resolve(outputDir, 'sitemap.xml'), 'utf8');
-  assert.doesNotMatch(sitemap, /\/compare\//);
+  assert.doesNotMatch(sitemap, /<loc>https:\/\/commonly\.me\/compare\/<\/loc>/);
+  assert.match(sitemap, /<loc>https:\/\/commonly\.me\/compare\/openagents\/<\/loc>/);
   assert.match(sitemap, /<loc>https:\/\/commonly\.me\/use-cases\/team-chat\/<\/loc>/);
+});
+
+test('a compare page renders GTM markdown and refuses to build while a HOLD is open', () => {
+  const html = renderMarkdown([
+    '# Title',
+    '',
+    'A **bold** claim with `code` and [a link](https://example.com/x) and https://example.org/y.',
+    '',
+    '| | Left | Right |',
+    '|---|---|---|',
+    '| **Row** | one [1] | two |',
+    '',
+    '- first',
+    '- second',
+    '',
+    '1. step one',
+    '',
+    '<!-- internal note, never rendered -->',
+  ].join('\n'));
+
+  assert.match(html, /<h1>Title<\/h1>/);
+  assert.match(html, /<p>A <strong>bold<\/strong> claim with <code>code<\/code> and <a href="https:\/\/example\.com\/x" rel="noreferrer">a link<\/a> and <a href="https:\/\/example\.org\/y" rel="noreferrer">https:\/\/example\.org\/y<\/a>\.<\/p>/);
+  assert.match(html, /<th scope="row"><strong>Row<\/strong><\/th><td>one \[1\]<\/td><td>two<\/td>/);
+  assert.match(html, /<ul><li>first<\/li><li>second<\/li><\/ul>/);
+  assert.match(html, /<ol><li>step one<\/li><\/ol>/);
+  assert.doesNotMatch(html, /internal note/);
+
+  assert.doesNotThrow(() => assertNoOpenHolds('/compare/example/', 'Walked claims only.'));
+  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Claim. [HOLD: walk pending]'), /1 open \[HOLD\] marker/);
 });
