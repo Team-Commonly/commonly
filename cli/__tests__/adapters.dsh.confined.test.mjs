@@ -66,7 +66,7 @@ const connect = (target) => new Promise((resolve) => {
   fs.writeFileSync('.stub-report.json', JSON.stringify({
     status: response.status, relay, egress, mcp,
     sandboxPolicy: rows.find((row) => row.id === 'sandbox-policy').config,
-    env: { HTTPS_PROXY: process.env.HTTPS_PROXY, NO_PROXY: process.env.NO_PROXY, TMPDIR: process.env.TMPDIR, DEVELOPER_DIR: process.env.DEVELOPER_DIR },
+    env: { HTTPS_PROXY: process.env.HTTPS_PROXY, NO_PROXY: process.env.NO_PROXY, TMPDIR: process.env.TMPDIR, DEVELOPER_DIR: process.env.DEVELOPER_DIR, PATH: process.env.PATH },
   }));
   emit({ type: 'session', sessionId: 'session-11111111-1111-1111-1111-111111111111' });
   if (!response.ok) { emit({ type: 'error', message: 'provider said ' + response.status }); process.exit(1); }
