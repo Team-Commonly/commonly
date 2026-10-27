@@ -44,7 +44,19 @@ export type StalledConnectCopyEvidence = {
   commandType?: 'mcp' | 'cli' | null;
   /** Token issue time for the current stalled episode. */
   tokenIssuedAt?: Date | string | null;
+  /** OS the Bring your own page detected on the first open (byoOpenedOs). */
+  openedOs?: 'mac' | 'linux' | 'windows' | 'other' | null;
 };
+
+/**
+ * The listener answers @mentions only on a Mac for now: Commonly runs Claude
+ * Code and Codex in a sandbox, and neither sandbox runs them on Linux or
+ * Windows (V2AgentBYO's listenerRunsOn). The page says so with
+ * agentByo.listen.unavailableClaude / unavailableCodex; this is the same
+ * sentence after the fact. The server never learns which adapter the copied
+ * command named, so the copy names the listener, not the CLI.
+ */
+const LISTENER_UNAVAILABLE_OS: Record<string, string> = { linux: 'Linux', windows: 'Windows' };
 
 const copiedAtOffsetSeconds = (evidence: StalledConnectCopyEvidence): number | null => {
   if (!evidence.commandCopiedAt || !evidence.tokenIssuedAt) return null;
@@ -82,9 +94,20 @@ export const composeStalledConnectNudge = ({
     const copiedThing = evidence.commandType === 'mcp'
       ? 'MCP command'
       : evidence.commandType === 'cli' ? 'listener command' : 'command';
+    const unavailableOs = evidence.commandType === 'cli' && evidence.openedOs
+      ? LISTENER_UNAVAILABLE_OS[evidence.openedOs]
+      : undefined;
+    if (unavailableOs) {
+      return `@${installerName} — you copied the listener command `
+        + `${copiedAtDescription(offsetSeconds)}; no connection arrived. `
+        + `The listener can't answer @mentions from ${unavailableOs} yet: Commonly runs it in a sandbox, `
+        + `and on ${unavailableOs} that sandbox can't run it. `
+        + `Choose “Run it here” on the Bring your own page for a hosted agent, or run \`${fixCommand}\` on a Mac. `
+        + `I'll post here the moment I connect.`;
+    }
     return `@${installerName} — you copied the ${copiedThing} `
       + `${copiedAtDescription(offsetSeconds)}; `
-      + `no connection arrived — here is the one thing to check for your OS: `
+      + `no connection arrived — here is the one thing to check: `
       + `run \`${fixCommand}\` on the machine where I should live.`
       + (evidence.commandType === 'mcp'
         ? ' MCP-only clients can call Commonly, but they do not answer @mentions.'

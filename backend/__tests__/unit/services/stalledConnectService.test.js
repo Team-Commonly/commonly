@@ -144,7 +144,55 @@ describe('stalledConnectService.scan', () => {
       'copied the listener command a few minutes after you created the seat',
     );
     expect(posted.content).toContain('no connection arrived');
-    expect(posted.content).toContain('one thing to check for your OS');
+    // Nothing here knows the OS, so the copy doesn't claim to.
+    expect(posted.content).toContain('here is the one thing to check: run `commonly agent run ai1-agent`');
+    expect(posted.content).not.toContain('for your OS');
+  });
+
+  const copiedListenerOn = (byoOpenedOs, byoCommandType = 'cli') => mockUserFindById.mockReturnValue({
+    select: () => ({
+      lean: () => Promise.resolve({
+        username: 'alice',
+        onboarding: {
+          byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
+          byoCommandType,
+          ...(byoOpenedOs ? { byoOpenedOs } : {}),
+        },
+      }),
+    }),
+  });
+
+  it.each([['linux', 'Linux'], ['windows', 'Windows']])(
+    'on %s, says the listener answers @mentions only on a Mac and offers Run it here',
+    async (os, label) => {
+      setup();
+      copiedListenerOn(os);
+      await scan({ now: NOW });
+      const { content } = mockPost.mock.calls[0][0];
+      expect(content).toContain(`The listener can't answer @mentions from ${label} yet`);
+      expect(content).toContain('Choose “Run it here” on the Bring your own page for a hosted agent');
+      expect(content).toContain('or run `commonly agent run ai1-agent` on a Mac');
+      expect(content).toContain("I'll post here the moment I connect");
+      expect(content).not.toContain('one thing to check');
+    },
+  );
+
+  it.each(['mac', 'other', undefined])('with os=%p keeps the neutral check', async (os) => {
+    setup();
+    copiedListenerOn(os);
+    await scan({ now: NOW });
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).toContain('here is the one thing to check: run');
+    expect(content).not.toContain("can't answer @mentions");
+  });
+
+  it('an MCP copy on Linux is not told about the listener', async () => {
+    setup();
+    copiedListenerOn('linux', 'mcp');
+    await scan({ now: NOW });
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).not.toContain("listener can't answer");
+    expect(content).toContain('MCP-only clients can call Commonly');
   });
 
   it('explains that an MCP-only client cannot answer mentions', async () => {

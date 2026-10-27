@@ -239,6 +239,7 @@ const nudgeOnce = async ({
       onboarding?: {
         byoCommandCopiedAt?: Date;
         byoCommandType?: 'mcp' | 'cli';
+        byoOpenedOs?: 'mac' | 'linux' | 'windows' | 'other';
       };
     } | null;
   if (!installer?.username) return; // Nobody to address; a nameless nudge is noise.
@@ -284,6 +285,7 @@ const nudgeOnce = async ({
     evidence: {
       commandCopiedAt: installer.onboarding?.byoCommandCopiedAt,
       commandType: installer.onboarding?.byoCommandType,
+      openedOs: installer.onboarding?.byoOpenedOs,
       tokenIssuedAt: issuedAt,
     },
   });
