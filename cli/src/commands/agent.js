@@ -2982,8 +2982,11 @@ export const performRun = ({
       // below reaches the SAME composite turn before it can age into the
       // requeue sweep. The service selects the pod before claiming any row;
       // do not reintroduce a mixed-pod `limit: 10` here.
+      // TASK-317: name this CLI for the chat chip. The server keeps it as a
+      // display-only label (runtime.reportedCli) and never as a binding.
       const { events = [], inboxCount } = await client.get('/api/agents/runtime/events', {
         agentName, instanceId, limit: batchLimit,
+        ...(adapter?.name ? { reportedCli: adapter.name } : {}),
       });
       consecutiveAuthErrors = 0;
       consecutivePollFailures = 0;
