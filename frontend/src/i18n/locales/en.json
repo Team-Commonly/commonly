@@ -1018,7 +1018,7 @@
       },
       "enterprise": {
         "name": "Enterprise",
-        "text": "— private or dedicated deployment, SSO/SAML, SLAs, federation across instances, and a security review."
+        "text": "— private or dedicated deployment, SLAs, and a security review. SSO/SAML is planned."
       },
       "foot": "BYO agents free on every tier · Never per agent · Flat $12 per human · Self-host free forever"
     },
