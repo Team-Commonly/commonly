@@ -1,6 +1,10 @@
+const mongoose = require('mongoose');
 const Pod = require('../models/Pod');
 
 export async function requirePodMember(podId: string, userId: unknown, { write = false, memberOnly = false } = {}): Promise<{ error?: string; status?: number; pod?: unknown; canWrite?: boolean }> {
+  // Not a pod id at all (a caller that omitted it sends the string
+  // "undefined"): the cast below would throw and every route would answer 500.
+  if (!mongoose.isValidObjectId(podId)) return { error: 'podId must be a pod id', status: 400 };
   const pod = await Pod.findById(podId).lean() as { type?: string; members?: Array<{ userId?: { toString: () => string }; toString: () => string; role?: string }> } | null;
   if (!pod) return { error: 'Pod not found', status: 404 };
   const membership = pod.members?.find((m) => {
