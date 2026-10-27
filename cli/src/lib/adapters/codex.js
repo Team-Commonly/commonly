@@ -336,7 +336,7 @@ const realpathOfNearest = async (path) => {
   }
 };
 
-const preparePublicCodexHome = async (ctx) => {
+const preparePublicCodexHome = async (ctx, childEnv) => {
   const operatorHome = ctx.env?.CODEX_HOME
     || process.env.CODEX_HOME
     || join(homedir(), '.codex');
@@ -425,7 +425,8 @@ const preparePublicCodexHome = async (ctx) => {
     const helperDirectory = join(publicHome, 'tmp', 'arg0-linux');
     await mkdir(helperDirectory, { recursive: true, mode: 0o700 });
     helperReadPaths.push(helperDirectory);
-    const binary = (ctx._codexNativeBinary || codexNativeBinary)(ctx.env || process.env);
+    // Looked up on the PATH the child gets, so the grant names the binary it runs.
+    const binary = (ctx._codexNativeBinary || codexNativeBinary)(childEnv);
     if (binary) helperReadPaths.push(binary);
   }
   return { home: publicHome, helperReadPaths };
@@ -858,7 +859,10 @@ export default {
       const publicSandboxMode = sandbox?.trust === 'public'
         ? sandbox?.mode ?? 'workspace'
         : null;
-      const publicCodexHome = publicSandboxMode !== null ? await preparePublicCodexHome(ctx) : null;
+      const childEnv = { ...(ctx.env || process.env), ...mcp.forwardedEnv };
+      const publicCodexHome = publicSandboxMode !== null
+        ? await preparePublicCodexHome(ctx, childEnv)
+        : null;
       const args = buildArgs({
         sessionId: ctx.sessionId || null,
         prompt: fullPrompt,
@@ -871,8 +875,7 @@ export default {
         commitAttributionEnv: ctx.commitAttributionEnv,
         codexHelperReadPaths: publicCodexHome?.helperReadPaths || [],
       });
-      const childEnv = { ...(ctx.env || process.env), ...mcp.forwardedEnv };
-      // Derived from the process environment, so the bootstrap export has to be
+      // childEnv is derived from the process environment, so the bootstrap export has to be
       // taken back out: the declaration above moved our server onto the file,
       // and a value left here is a value codex's own children inherit. Kept only
       // when the substitution genuinely needed it (`forwardedEnv` names that

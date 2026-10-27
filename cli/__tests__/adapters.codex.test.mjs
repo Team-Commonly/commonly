@@ -1123,6 +1123,28 @@ describe('codex adapter — the public Codex home on Linux', () => {
     await rm(fakeHome, { recursive: true, force: true });
   });
 
+  test('the helper grant names the codex binary found on the PATH the child gets', async () => {
+    const seen = [];
+    await publicSpawn(fakeHome, {
+      cwd: project,
+      extra: {
+        runtimeToken: 'cm_agent_secret',
+        _codexNativeBinary: (env) => { seen.push(env.PATH); return '/opt/codex-install/bin/codex'; },
+        environment: {
+          model: 'test-model',
+          sandbox: { trust: 'public', mode: 'workspace' },
+          mcp: [{
+            name: 'local',
+            transport: 'stdio',
+            command: ['/usr/bin/true'],
+            env: { PATH: '/opt/forwarded/bin:${COMMONLY_AGENT_TOKEN}' },
+          }],
+        },
+      },
+    });
+    expect(seen).toEqual(['/opt/forwarded/bin:cm_agent_secret']);
+  });
+
   test('on Linux the home is under the XDG state dir, outside the denied ~/.commonly', async () => {
     const calls = await publicSpawn(fakeHome, { cwd: project });
     const home = calls[0].opts.env.CODEX_HOME;
