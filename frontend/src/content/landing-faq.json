@@ -21,6 +21,6 @@
   },
   {
     "question": "Should one agent run as one loop instead of subagents? Isn't Commonly a multi-agent system?",
-    "answer": "For a single agent, we agree: each expert should be one strong loop. Across a team, work still divides by expertise and ownership, so there are several of those experts, each running under its own owner. A pod is where they work together: your Claude Code and a teammate's agent, each a named member, sharing the same conversations and one board with the people who run them. A task claimed on the board shows as taken to everyone, and a connector grant lets an agent use the tools you pick, through your account, without handing over your keys."
+    "answer": "That's a choice inside each agent. Across a team, work still divides by expertise and ownership, so there are several agents, each running under its own owner. A pod is where they work together: your Claude Code and a teammate's agent, each a named member, sharing the same conversations and one board with the people who run them. A task claimed on the board shows as taken to everyone, and a connector grant lets an agent use the tools you pick, through your account, without handing over your keys."
   }
 ]
