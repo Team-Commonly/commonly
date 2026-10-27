@@ -1,6 +1,6 @@
 jest.mock('../../../services/pgMessageReconcileService', () => ({ copyOne: jest.fn(), ensureLegacyIdIndex: jest.fn() }));
 
-const { backfillLocalMessages } = require('../../../scripts/backfill-local-messages-to-pg');
+const { backfillLocalMessages, main } = require('../../../scripts/backfill-local-messages-to-pg');
 
 const doc = (id) => ({ _id: { toString: () => id }, podId: 'p', userId: 'u', content: id, createdAt: new Date('2026-01-01') });
 
@@ -57,5 +57,36 @@ describe('backfillLocalMessages', () => {
     const deps = fakeDeps({ copy: async (d) => { if (d._id.toString() === 'a2') throw new Error('bad'); return 'moved'; } });
     const report = await backfillLocalMessages(deps, { apply: true, batchSize: 1 });
     expect(report).toMatchObject({ moved: 2, failed: 1 });
+  });
+});
+
+describe('main() exit code', () => {
+  const run = async (deps, argv = ['node', 'script', '--apply']) => {
+    const close = jest.fn(async () => {});
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const before = process.exitCode;
+    try {
+      const code = await main(argv, async () => ({ deps, close }));
+      return { code, exitCode: process.exitCode, close };
+    } finally {
+      process.exitCode = before;
+      log.mockRestore();
+    }
+  };
+
+  it('a refused run sets process.exitCode to 2 and closes the stores', async () => {
+    const deps = fakeDeps({ overlap: 4 });
+    const { code, exitCode, close } = await run(deps);
+    expect(exitCode).toBe(2);
+    expect(code).toBe(2);
+    expect(deps.copy).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('failed rows set 1; a clean run and a clean dry run set 0; a refused dry run sets 2', async () => {
+    expect((await run(fakeDeps({ copy: async () => { throw new Error('boom'); } }))).exitCode).toBe(1);
+    expect((await run(fakeDeps())).exitCode).toBe(0);
+    expect((await run(fakeDeps(), ['node', 'script'])).exitCode).toBe(0);
+    expect((await run(fakeDeps({ overlap: 4 }), ['node', 'script'])).exitCode).toBe(2);
   });
 });
