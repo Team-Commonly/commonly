@@ -455,6 +455,50 @@ describe('performAttach', () => {
       .resolves.toBeUndefined();
   });
 
+  // D106: performAttach must hand the adapter to resolveAttachSandbox, or the
+  // confined dsh shape meets the trust-keyed refusal. Past that gate it reaches
+  // the Seatbelt step, which logs on macOS and refuses on Linux; either proves
+  // the shape was admitted.
+  test('attach --env admits confined dsh through to the Seatbelt step (D106)', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-dsh-attach-'));
+    try {
+      const keyFile = path.join(root, 'provider-key');
+      const envPath = path.join(root, 'environment.json');
+      fs.writeFileSync(keyFile, 'provider-key', { mode: 0o600 });
+      fs.writeFileSync(envPath, JSON.stringify({
+        version: 1,
+        workspace: { path: path.join(root, 'workspace') },
+        model: 'deepseek-chat',
+        provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile },
+        sandbox: { mode: 'workspace', network: { policy: 'restricted' } },
+      }));
+      const client = makeClient({ runtimeToken: 'cm_agent_dsh' });
+      client.get = jest.fn(async () => ({ publicRead: false, communityListed: false }));
+      const logs = [];
+      const outcome = await performAttach({
+        client, adapterName: 'dsh', agentName: 'dsh-seat', podId: 'pod-private', envPath,
+        log: (line) => logs.push(line),
+        adapterRegistry: {
+          getAdapter: () => ({
+            name: 'dsh', supportsProvider: true,
+            detect: async () => ({ path: '/usr/local/bin/dsh', version: '0.2.1-rc.2' }),
+            validateEnvironment: async () => {},
+            confinesOwnSandbox: dsh.confinesOwnSandbox,
+          }),
+          listAdapterNames: () => ['dsh'],
+        },
+      }).then(() => null, (error) => error);
+      if (outcome) {
+        expect(outcome.message).not.toMatch(/requires public trust/);
+        expect(outcome.message).toMatch(/requires macOS Seatbelt/);
+      } else {
+        expect(logs).toContain('sandbox: confined dsh workspace via macOS Seatbelt (restricted network)');
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('attach --env gives provider-backed Qwen the same Commonly MCP baseline as the daemon', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-qwen-attach-'));
     try {
