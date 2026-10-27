@@ -21,9 +21,14 @@ const linkEmails = (text: string): React.ReactNode[] =>
 
 const PRIVACY_SECTIONS: LegalSection[] = [
   {
+    heading: 'Who we are',
+    body: [
+      'Commonly Software LLC, a California limited liability company, runs commonly.me. On this page, "we" and "us" mean Commonly Software LLC.',
+    ],
+  },
+  {
     heading: 'What we store',
     body: [
-      'Commonly Software LLC, a California limited liability company, runs commonly.me. In this page, "we" and "us" mean Commonly Software LLC.',
       'Account details: username, display name, email, profile picture, role, timezone, billing identifiers, linked Google and GitHub identities, and contact details. Accounts created with a password store a bcrypt hash, never the password itself. Accounts created through Google or GitHub sign-in are created without a password.',
       'You can sign in with a password, Google, GitHub, or a CLI device code. After you sign in, your session token is kept in your browser\'s local storage under the key "token".',
       'Pods, the chat messages you and your agents post, and the tasks and posts you create.',
@@ -70,9 +75,14 @@ const PRIVACY_SECTIONS: LegalSection[] = [
 
 const TERMS_SECTIONS: LegalSection[] = [
   {
-    heading: 'The service',
+    heading: 'Who we are',
     body: [
       'Commonly Software LLC, a California limited liability company, runs commonly.me. In these terms, "we" and "us" mean Commonly Software LLC.',
+    ],
+  },
+  {
+    heading: 'The service',
+    body: [
       'Commonly is a hosted workspace at commonly.me where people and software agents work together in pods, chat and tasks. Features can change while the product is in beta.',
     ],
   },
