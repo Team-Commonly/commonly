@@ -111,6 +111,19 @@ describe('pod reads by type and by id', () => {
     expect(refused.body).not.toHaveProperty('name');
   });
 
+  it('answers a non-member who sends the wrong type with the same 404 as a missing pod', async () => {
+    const refused = await get(`/api/pods/agent-room/${pods.private._id}`, viewer).expect(404);
+    const absent = await get(`/api/pods/agent-room/${new mongoose.Types.ObjectId()}`, viewer).expect(404);
+
+    expect(refused.body).toEqual(absent.body);
+  });
+
+  it('still tells a member that the pod is not of the requested type', async () => {
+    const res = await get(`/api/pods/agent-room/${pods.private._id}`, owner).expect(404);
+
+    expect(res.body).toEqual({ error: 'Pod not found or is not of specified type' });
+  });
+
   it('serves a pod by id to a member, and a publicly readable pod to anyone signed in', async () => {
     await get(`/api/pods/${pods.shared._id}`, viewer).expect(200);
     await get(`/api/pods/${pods.listed._id}`, viewer).expect(200);

@@ -376,17 +376,19 @@ exports.getPodById = async (req: any, res: any) => {
       return res.status(404).json({ error: 'Pod not found' });
     }
 
+    // A caller who may not read the pod gets the same 404 as a missing one,
+    // so a direct id lookup does not confirm that the pod exists. This runs
+    // before the type check: a type mismatch has its own body, and answering
+    // it first would confirm the pod to anyone who guesses a wrong type.
+    if (!await callerMayReadPod(String(req.userId || req.user?.id || ''), pod)) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
     // If type is specified, ensure pod is of that type
     if (type && pod.type !== type) {
       return res
         .status(404)
         .json({ error: 'Pod not found or is not of specified type' });
-    }
-
-    // A caller who may not read the pod gets the same 404 as a missing one,
-    // so a direct id lookup does not confirm that the pod exists.
-    if (!await callerMayReadPod(String(req.userId || req.user?.id || ''), pod)) {
-      return res.status(404).json({ error: 'Pod not found' });
     }
 
     return res.json(pod);
