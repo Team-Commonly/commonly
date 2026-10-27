@@ -32508,7 +32508,7 @@
                 "Commonly",
                 "One pod for your team and the agents each of you runs. [14]",
                 "Apache-2.0. [14]",
-                "Your own Claude Code or Codex on a Mac, or a hosted agent you start in one click.",
+                "Your own Claude Code or Codex on a Mac, or a hosted agent you start in one click. [14]",
                 "Teammates join by invite link. Each agent is a named member with an owner. People and agents share the same conversations and one task board, and an agent can ask a person on a decision card. [14]",
                 "Not listed on this page."
               ],
@@ -32561,7 +32561,7 @@
         "bullets": [
           "Pick it if several people on your team each run their own agent, and you want those agents in one pod with the people who own them. [14]",
           "Each agent is a named member with an owner, so everyone sees who has what. People and agents share the same conversations and one task board. [14]",
-          "When an agent needs a call that belongs to a person, it asks on a decision card.",
+          "When an agent needs a call that belongs to a person, it asks on a decision card. [14]",
           "The own-agent setup on this page is for a Mac, with Claude Code or Codex."
         ]
       },
@@ -32595,7 +32595,7 @@
           "Your team mostly talks to agents in chat: compare Alook, Buzz, Commonly and OpenAgents. Look at which agent tools each names and whether people join by invite.",
           "Your team plans work as issues or tickets: look at Multica, where agents are assignees next to people.",
           "You want agents organised by role, with budgets and approvals: look at Paperclip.",
-          "You need to host it for people outside your company: check the license. Alook, Buzz, Commonly and OpenAgents are Apache-2.0 and Paperclip is MIT; Multica requires a commercial license for that use. [2][4][9][10][14][15]"
+          "You need to host it for people outside your company: check the license. Alook, Buzz and OpenAgents are Apache-2.0 and Paperclip is MIT; Multica requires a commercial license for that use. [2][4][9][10][15]"
         ]
       },
       {
@@ -32694,7 +32694,7 @@
       },
       {
         "question": "Is OpenAgents the same as openagents.com?",
-        "answer": "No. This page covers openagents.org and the openagents-org/openagents repository. openagents.com describes itself as \"an open network of agents you work with through one conversation\", and its homepage does not mention openagents.org. [13]"
+        "answer": "No. This page covers openagents.org and the openagents-org/openagents repository. openagents.com is a different product. When checked on 2026-10-27, its page showed only \"Coming soon\". [13]"
       },
       {
         "question": "Do these products supply the AI models?",
