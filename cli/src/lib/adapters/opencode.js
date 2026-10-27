@@ -301,6 +301,9 @@ const validateProviderEnvironment = async (environment, workspacePath) => {
   return resolveProviderKeyFile(environment.provider, workspacePath);
 };
 
+const STALE_SESSION_PATTERN = /session not found/i;
+const isStaleSessionError = (err) => STALE_SESSION_PATTERN.test(String(err?.message || ''));
+
 const makeEventParser = () => {
   let buffer = '';
   let sessionId = null;
@@ -650,6 +653,18 @@ export default {
   },
 
   async spawn(prompt, rawCtx = {}) {
+    try {
+      return await this.spawnTurn(prompt, rawCtx);
+    } catch (err) {
+      if (!rawCtx.sessionId || !isStaleSessionError(err)) throw err;
+      // The saved id is one OpenCode does not know: a seat switched from another
+      // adapter carries a Claude id, and a pruned session fails the same way. Nothing
+      // ran, so one fresh turn is safe (pi #1726 does the same fallback).
+      return this.spawnTurn(prompt, { ...rawCtx, sessionId: null });
+    }
+  },
+
+  async spawnTurn(prompt, rawCtx = {}) {
     const seatModel = requireSeatModel(rawCtx.environment, 'opencode');
     const sandbox = normalizeSandboxTrust(rawCtx.environment?.sandbox);
     refuseWorkspaceTrust(sandbox, 'opencode');
