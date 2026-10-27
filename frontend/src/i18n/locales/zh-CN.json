@@ -770,7 +770,6 @@
     "actions": {
       "openApp": "打开应用",
       "getStarted": "开始使用",
-      "readSource": "查看源代码",
       "selfHost": "自托管",
       "talkToUs": "联系我们",
       "starGithub": "去 GitHub 点 Star"
