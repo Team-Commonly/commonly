@@ -78,7 +78,7 @@ const readVersion = (env, spawnSyncImpl = spawnSync) => {
     if (probe.error || probe.status !== 0) continue;
     const version = String(probe.stdout || '').match(/Hermes Agent v([^\s]+)/i)?.[1];
     if (!supportsHermesVersion(version)) {
-      throw new Error(`Hermes ${version || 'unknown'} is unsupported; this adapter supports ${SUPPORTED_HERMES_VERSION_RANGE}. Run hermes update to install a supported release`);
+      throw new Error(`Hermes ${version || 'unknown'} is unsupported; this adapter supports ${SUPPORTED_HERMES_VERSION_RANGE}. Run hermes update if yours is older than 0.22.5; releases 0.23 and later are not supported yet`);
     }
     return version;
   }

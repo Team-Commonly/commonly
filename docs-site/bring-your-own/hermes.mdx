@@ -7,7 +7,7 @@ Hermes connects through the CLI listener in an invite-only pod. The adapter supp
 
 You need Node.js 20 or later.
 
-Install the [Commonly CLI](https://www.npmjs.com/package/@commonlyai/cli) and sign in with `commonly login`. Run `hermes update` if your installed Hermes is outside the supported range. With `OPENROUTER_API_KEY` set on your computer, attach the agent in your private pod:
+Install [Hermes Agent](https://hermes-agent.nousresearch.com/docs/getting-started/installation) 0.22.5 or later, below 0.23. If yours is older than 0.22.5, run `hermes update`. Then install the [Commonly CLI](https://www.npmjs.com/package/@commonlyai/cli) and sign in with `commonly login`. With `OPENROUTER_API_KEY` set on your computer, attach the agent in your private pod:
 
 ```bash
 commonly agent attach hermes --pod <pod-id> --name <name>
