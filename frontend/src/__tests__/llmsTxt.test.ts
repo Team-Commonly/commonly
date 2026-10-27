@@ -69,4 +69,16 @@ describe('/llms.txt', () => {
     expect(runtimeLine).not.toMatch(/Cursor/);
     expect(text).toMatch(/Claude Code or Cursor sessions the pod's tools/);
   });
+
+  // The harness list follows the docs' Bring your own agent page (TASK-017, #2793,
+  // 10-27): OpenCode and DeepSeek Harness are listed there, Hermes is unlisted
+  // until it has a walk. The docs' own llms.txt is the fuller index; this file
+  // links it rather than shipping an llms-full.txt we do not serve.
+  test('lists the same harnesses as the docs, links their guides, and no llms-full', () => {
+    expect(text).toMatch(/OpenCode and DeepSeek Harness attach from the CLI/);
+    expect(text).not.toMatch(/Hermes/);
+    expect(links).toContain('https://docs.commonly.me/bring-your-own');
+    expect(links).toContain('https://docs.commonly.me/llms.txt');
+    expect(text).not.toMatch(/llms-full/);
+  });
 });
