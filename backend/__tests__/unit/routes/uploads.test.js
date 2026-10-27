@@ -38,6 +38,14 @@ jest.mock('../../../middleware/agentRuntimeAuth', () => (...args) => mockAgentRu
 
 jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 
+// The PPTX preview shells out to officecli; a stand-in writes the HTML file
+// officecli would and prints its path, so the success path is reachable.
+const mockSpawn = jest.fn();
+jest.mock('child_process', () => ({
+  ...jest.requireActual('child_process'),
+  spawn: (...args) => mockSpawn(...args),
+}));
+
 const File = require('../../../models/File');
 const User = require('../../../models/User');
 const jwt = require('jsonwebtoken');
@@ -85,6 +93,45 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
     // file is pod-scoped (requires auth) or public (un-scoped — served as here,
     // since the mock returns no record → no podId → public).
     expect(File.findByFileName).toHaveBeenCalledWith('new.png');
+  });
+
+  // TASK-315: the served type comes from the allowlisted extension, never the
+  // type the uploading client declared, and the browser may not sniff past it.
+  describe('served headers', () => {
+    const fromDriver = (mime) => mockStore.get.mockResolvedValue({
+      // '{}' parses as JSON, which supertest does for the json row.
+      stream: Readable.from(Buffer.from('{}')), mime, size: 2,
+    });
+
+    it.each([
+      ['photo.png', 'image/png', 'inline'],
+      ['notes.TXT', 'text/plain; charset=utf-8', 'inline'],
+      ['readme.md', 'text/plain; charset=utf-8', 'inline'],
+      ['rows.csv', 'text/csv; charset=utf-8', 'inline'],
+      ['data.json', 'application/json; charset=utf-8', 'inline'],
+      ['paper.pdf', 'application/pdf', 'inline'],
+      ['shot.webp', 'image/webp', 'inline'],
+      ['diagram.svg', 'image/svg+xml', 'attachment'],
+      ['deck.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'attachment'],
+      ['bundle.zip', 'application/zip', 'attachment'],
+      ['page.html', 'application/octet-stream', 'attachment'],
+      ['noextension', 'application/octet-stream', 'attachment'],
+    ])('%s stored as text/html is served as %s, %s, nosniff', async (name, type, disposition) => {
+      fromDriver('text/html');
+      const res = await request(app).get(`/api/uploads/${name}`).expect(200);
+      expect(res.headers['content-type']).toBe(type);
+      expect(res.headers['content-disposition']).toBe(disposition);
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+    });
+
+    it('a legacy inline record is served by its extension, not its stored type', async () => {
+      mockStore.get.mockResolvedValue(null);
+      File.findByFileName.mockResolvedValue({ data: Buffer.from('<p>x</p>'), contentType: 'text/html' });
+      const res = await request(app).get('/api/uploads/old.txt').expect(200);
+      expect(res.headers['content-type']).toBe('text/plain; charset=utf-8');
+      expect(res.headers['content-disposition']).toBe('inline');
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+    });
   });
 
   // TASK-133 (d): the Bearer branch of authorizePodFile verified the signature and
@@ -215,5 +262,29 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
 
     expect(mockAgentRuntimeAuth).toHaveBeenCalledTimes(1);
     expect(mockCanReadAttachment).toHaveBeenCalledWith('private.pptx', 'agent-user');
+  });
+
+  it('serves a rendered PPTX preview as html with nosniff', async () => {
+    const { EventEmitter } = require('events');
+    const fs = require('fs');
+    const path = require('path');
+    mockSpawn.mockImplementation((_cmd, _args, { cwd }) => {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      setImmediate(() => {
+        const out = path.join(cwd, 'deck.html');
+        fs.writeFileSync(out, '<html>deck</html>');
+        child.stdout.emit('data', Buffer.from(`${out}\n`));
+        child.emit('close', 0);
+      });
+      return child;
+    });
+    mockStore.get.mockResolvedValue({ stream: Readable.from(Buffer.from('pptx')), mime: 'x', size: 4 });
+
+    const res = await request(app).get('/api/uploads/deck.pptx/preview-pptx-html').expect(200);
+    expect(res.text).toBe('<html>deck</html>');
+    expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
   });
 });
