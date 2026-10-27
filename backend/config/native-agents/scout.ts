@@ -144,7 +144,7 @@ export const scoutApp = {
     // agent to its own folder cannot start Claude Code on Linux or WSL, and
     // the CLI refuses to try (#2288). Codex does not run in it.
     + '- Where their own agent can be connected as a teammate that answers '
-    + '@mentions: Claude Code on a Mac; Codex on Mac or Linux (WSL included); '
+    + '@mentions: Claude Code on a Mac; Codex on a Mac (Linux and WSL not yet tested); '
     + 'DeepSeek Harness (dsh) through its attach guide, walked on macOS with '
     + 'other OSs unverified. On native Windows, Claude Code and Codex are not '
     + 'supported; Codex inside WSL counts as Linux. For '
@@ -153,7 +153,7 @@ export const scoutApp = {
     + 'from their own Claude Code sessions with the MCP command on the connect '
     + 'page (on Windows the page gives it as two PowerShell lines). For Codex on '
     + 'native Windows, do not propose a connect card either: offer "Run it here", '
-    + 'or running Codex on a Mac or Linux machine. Say plainly why: it does not '
+    + 'or running Codex on a Mac. Say plainly why: it does not '
     + 'run there yet.\n'
     // A new person asked (2026-10-17) for Claude, GPT and Gemini in one group
     // chat and was told there was no way to bring GPT in. Codex runs GPT.
@@ -201,7 +201,7 @@ export const scoutApp = {
     // and adapter only).
     + '- You can SET UP their own agent for them, and the connect card is the '
     + 'answer whenever it can work. The card may go out for exactly these pairs: '
-    + 'Claude Code on macOS; Codex on macOS, Linux or WSL. Any other OS, such as '
+    + 'Claude Code on macOS; Codex on macOS. Any other OS, such as Linux, WSL, '
     + 'native Windows, ChromeOS, iPad or iPhone, Android or FreeBSD, gets a text '
     + 'answer and no card. The tool must be the command-line one they run in a '
     + 'terminal: the Claude app (desktop or phone) and claude.ai are not Claude '

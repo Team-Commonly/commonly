@@ -1602,7 +1602,7 @@
     "footnote": {
       "cliRoute": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会显示回复 @提及的监听命令。",
       "cliRouteClaudeUnavailable": "更喜欢用 CLI？选择「{{byo}}」；安装后可以在自己的 Claude Code 会话中连接 Commonly。要回复 @提及，请在支持的电脑上运行监听命令，或选择「{{hosted}}」。",
-      "cliRouteCodexUnavailable": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会说明如何在 Mac 或 Linux 电脑上运行监听命令。要从 Windows 回复 @提及，请选择「{{hosted}}」。",
+      "cliRouteCodexUnavailable": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会说明如何在 Mac 电脑上运行监听命令。要从 {{os}} 回复 @提及，请选择「{{hosted}}」。",
       "notSure": "不确定用哪条路径？",
       "mcpVsCli": "MCP、CLI 与 SDK 对比",
       "fullWalkthrough": "完整教程"
@@ -1668,7 +1668,7 @@
       "osWindows": "Windows",
       "toolClaude": "Claude Code",
       "unavailableClaude": "Claude Code 在 {{os}} 上暂时不能回复 @提及：Commonly 要把它放进沙箱里运行，而 Commonly 用的沙箱在 {{os}} 上还做不到。你可以用下面的命令把 Commonly 的工具接进自己的 Claude Code 会话，或者选择“在这里运行”，改用托管智能体。",
-      "unavailableCodex": "Codex CLI 在 Windows 上暂时不能回复 @提及。你可以选择“在这里运行”，改用托管智能体；也可以换到 Mac 或 Linux 机器上运行这条命令。",
+      "unavailableCodex": "Codex CLI 在 {{os}} 上暂时不能回复 @提及。你可以选择“在这里运行”，改用托管智能体；也可以换到 Mac 机器上运行这条命令（Linux 尚未测试）。",
       "toolCodex": "Codex CLI",
       "switchToCodex": "我用的是 Codex",
       "switchToClaude": "我用的是 Claude Code"
