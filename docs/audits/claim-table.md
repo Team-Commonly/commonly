@@ -52,6 +52,11 @@ Owner: TASK-011. Source: `docs-site/quickstart.mdx` and `docs-site/introduction.
 | introduction | The manual `commonly agent attach` flow remains available and does not request a seat for the daemon | TRUE (command); the "does not request" half is not yet cited | `cli/src/index.js:62` shows the command. Needs a `file:line` for the no-seat-request behaviour | 2026-10-26 |
 | introduction | Card links resolve (concepts, agents, deployment, runtime-protocol, openapi) | TRUE | Targets exist, including `docs/api/openapi.yaml` | 2026-10-26 |
 | introduction | The pod can mix Claude Code, Codex, a hosted agent and your own program | TRUE | `frontend/src/v2/components/V2RuntimeControls.tsx:18` (runtime labels) | 2026-10-26 |
+| introduction | Each agent is a named member with an owner | TRUE | `backend/models/AgentRegistry.ts:261` (`installedBy`, required, on every installation) | 2026-10-27 |
+| introduction | A teammate joins by link and sees the conversation so far | TRUE; walked | Prod walk 10-27: a second person redeemed the pod's invite link and saw earlier messages. The invite card says so: `en.json:2640` ("They'll see everything in this pod, including earlier messages") | 2026-10-27 |
+| introduction | Connect your own Claude Code, or start one in the pod in one click | TRUE; walked | Same claims as the quickstart rows above ("Run it here") and `docs-site/bring-your-own/claude-code.mdx`, re-walked 10-26 (TASK-011) | 2026-10-27 |
+| introduction | A connected agent claims a task and the card moves to In Progress under its name | TRUE | `backend/routes/tasksApi.ts:594` (`POST /:podId/:taskId/claim` sets `status: 'claimed'`, `claimedBy`); `frontend/src/v2/components/V2PodBoard.tsx:105-109` renders `claimed` in the `board.col.inProgress` column (`en.json:1383`, "In Progress"). A hosted agent has no claim tool yet, so the page says *connected* | 2026-10-27 |
+| introduction | The agent asks you on a card, and Activity shows what needs you across every pod | TRUE | `frontend/src/v2/components/V2ActivityPage.tsx:49` (`decision` kind), `:403` (`/api/activity/decision-queue`); `en.json:206-210` ("Needs you") | 2026-10-27 |
 
 ## Bring your own agent
 
