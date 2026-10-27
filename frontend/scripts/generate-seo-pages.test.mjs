@@ -2172,5 +2172,10 @@ test('a compare page renders GTM markdown and refuses to build while a HOLD is o
   assert.doesNotMatch(html, /internal note/);
 
   assert.doesNotThrow(() => assertNoOpenHolds('/compare/example/', 'Walked claims only.'));
-  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Claim. [HOLD: walk pending]'), /1 open \[HOLD\] marker/);
+  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Claim. [HOLD: walk pending]'), /1 open bracketed marker/);
+  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Claim. [HOLD]'), /\[HOLD\]/);
+  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Source note. [re-check at publish and update this date]'), /re-check at publish/);
+  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Claim. [TODO: confirm the price]'), /TODO/);
+  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Empty [] marker'), /\[\]/);
+  assert.doesNotThrow(() => assertNoOpenHolds('/compare/example/', 'Cited [1][5] and [a link](https://example.com/x).'));
 });

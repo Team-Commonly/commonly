@@ -590,9 +590,13 @@ Commonly claims are walked unless marked [HOLD]. Same walk evidence as /compare/
   },
 };
 
+// Any bracketed text is an open marker (a HOLD, a re-check note, or anything
+// else GTM bracketed) except a numeric citation like [1] or a markdown link.
 export const assertNoOpenHolds = (key, markdown) => {
-  const open = markdown.match(/\[HOLD\b/g);
-  if (open) throw new Error(`${key} has ${open.length} open [HOLD] marker(s); GTM must clear them before this page can build`);
+  const markers = [...markdown.matchAll(/\[([^\]\n]*)\](?!\()/g)]
+    .filter(([, inner]) => !/^\d+$/.test(inner))
+    .map(([marker]) => marker);
+  if (markers.length) throw new Error(`${key} has ${markers.length} open bracketed marker(s), first ${markers[0]}; GTM must clear them before this page can build`);
 };
 
 const inlinePattern = /`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|(https?:\/\/[^\s<)\]]*[^\s<)\].,;:])|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
