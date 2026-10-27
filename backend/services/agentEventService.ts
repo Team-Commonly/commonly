@@ -336,7 +336,11 @@ const postInlineReply = async (
     instanceId: event.instanceId || 'default',
     displayName: installation.displayName,
   });
-  const hold = await AgentSendFreshness.unseenMessages(agentUser._id, event.podId);
+  // The event's own message is the one being answered, so only messages that
+  // landed after it hold the reply (see unseenMessages).
+  const hold = await AgentSendFreshness.unseenMessages(agentUser._id, event.podId, {
+    seenThroughMessageId: event.payload?.messageId,
+  });
   if (hold) return { outcome: 'skipped', reason: 'unseen_messages' };
 
   const result = await AgentMessageService.postMessage({
