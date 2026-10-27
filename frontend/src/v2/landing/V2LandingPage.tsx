@@ -965,6 +965,8 @@ const V2LandingPage: React.FC = () => {
           <div className="v2-landing__footer-col">
             <div className="v2-landing__footer-title">{t('landing.footer.legal')}</div>
             <a className="v2-landing__footer-link" href={`${REPO}/blob/main/LICENSE`} target="_blank" rel="noreferrer">{t('landing.footer.license')}</a>
+            <Link className="v2-landing__footer-link" to="/terms">{t('landing.footer.terms')}</Link>
+            <Link className="v2-landing__footer-link" to="/privacy">{t('landing.footer.privacy')}</Link>
           </div>
         </div>
         {/* Copyright is retained under Apache-2.0 — the license grants
