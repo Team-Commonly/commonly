@@ -811,6 +811,23 @@ describe('Auth Controller Tests', () => {
         expect(out.json).toHaveBeenCalledWith({ error: 'Invalid credentials' });
       });
 
+      // The per-address limiter skips a body with no string email, so login
+      // must not sign one in either.
+      it.each([
+        [['test@example.com']],
+        [{ $ne: null }],
+      ])('refuses a non-string address %j without a lookup', async (email) => {
+        User.findOne = jest.fn().mockResolvedValue({ email: 'test@example.com', password: 'hash' });
+        bcrypt.compare.mockResolvedValue(true);
+        const out = res();
+
+        await authController.login({ body: { email, password: 'Password123!' } }, out);
+
+        expect(User.findOne).not.toHaveBeenCalled();
+        expect(out.status).toHaveBeenCalledWith(400);
+        expect(out.json).toHaveBeenCalledWith({ error: 'Invalid credentials' });
+      });
+
       it('compares a non-string password as empty rather than failing', async () => {
         User.findOne = jest.fn().mockResolvedValueOnce({ email: 'test@example.com', password: 'hash' });
         bcrypt.compare.mockResolvedValueOnce(false);

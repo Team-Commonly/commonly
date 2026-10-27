@@ -10,6 +10,7 @@ const { sendEmail } = require('../services/emailService');
 const { ensureUserInCommunityPod } = require('../services/communityPodService');
 const { normalizeAvatarUrl } = require('../services/avatarService');
 const { signupSourceFields } = require('../utils/signupSource');
+const { loginEmailOf } = require('../utils/loginEmail');
 const { deriveUsernameFromEmail, ACCOUNT_LABEL_COLLATION } = require('../services/derivedUsername');
 const { issueSessionToken } = require('../services/sessionTokenService');
 const {
@@ -838,11 +839,11 @@ const compareOnMiss = async (candidate: string): Promise<boolean> => {
 // 📌 Login User
 exports.login = async (req: any, res: any) => {
   const candidate = typeof req.body?.password === 'string' ? req.body.password : '';
-  // Coerce email to a string BEFORE it reaches Mongo. Without this a body like
-  // {"email":{"$ne":null}} is interpreted as a query operator and matches an
-  // arbitrary user (NoSQL injection → account enumeration). register/
-  // forgotPassword already normalize; login was the gap.
-  const email = normalizeEmail(req.body?.email);
+  // Only a string email is looked up. An operator object such as
+  // {"$ne":null} would otherwise reach Mongo as a query, and an array would
+  // sign in without counting against the per-address limiter, which reads the
+  // address through the same helper.
+  const email = loginEmailOf(req.body);
   try {
     // `isBot` matches the two recovery paths beside it (forgotPassword,
     // resendVerification). An agent row is a User and can carry a password hash,

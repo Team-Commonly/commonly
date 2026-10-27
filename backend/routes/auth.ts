@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 const { platformIpRateLimit } = require('../middleware/platformRateLimit');
 const { refuseDollarKeys } = require('../middleware/refuseDollarKeys');
+const { loginEmailOf } = require('../utils/loginEmail');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
@@ -102,9 +103,9 @@ const loginLimiter = rateLimit({
 // whether or not it has an account. Only failures count, so signing in never
 // spends the budget. The cost: someone who knows an address can pause its
 // password sign-in for up to 15 minutes. OAuth sign-in and reset still work.
-const loginAccountKey = (req: { body?: { email?: unknown } }) => (
-  typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : ''
-);
+// The address comes from the helper login uses, so a body this skips is one
+// login refuses.
+const loginAccountKey = (req: { body?: { email?: unknown } }) => loginEmailOf(req.body);
 const loginAccountLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
