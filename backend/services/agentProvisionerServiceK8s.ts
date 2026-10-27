@@ -3547,8 +3547,9 @@ const refreshCodexOAuthTokenIfNeeded = async ({ thresholdDays = 3 } = {}) => {
 
 module.exports = {
   buildPvcVirtualKeyReadScript,
-  // Test seam: the dev issuer, so a test can assert what it sends to LiteLLM.
+  // Test seams: the dev and community issuers, so a test can assert what each sends to LiteLLM.
   issueLiteLLMVirtualKey,
+  issueLiteLLMOpenRouterKey,
   getAgentSessionSizes,
   provisionAgentRuntime,
   startAgentRuntime,

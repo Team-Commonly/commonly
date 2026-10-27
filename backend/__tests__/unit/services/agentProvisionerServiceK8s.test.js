@@ -98,7 +98,7 @@ const mock = {
 
 const k8s = require('@kubernetes/client-node');
 const {
-  restartAgentRuntime, provisionAgentRuntime, buildPvcVirtualKeyReadScript, issueLiteLLMVirtualKey,
+  restartAgentRuntime, provisionAgentRuntime, buildPvcVirtualKeyReadScript, issueLiteLLMVirtualKey, issueLiteLLMOpenRouterKey,
   readOpenClawIdentityFile, getAgentRuntimeLogs,
 } = require('../../../services/agentProvisionerServiceK8s');
 const { CYCLES_DIRECTIVE_MARKER } = require('../../../routes/registry/presets');
@@ -570,6 +570,18 @@ describe('issueLiteLLMVirtualKey never sends the master key to LiteLLM', () => {
 
     const [url, body] = axios.post.mock.calls.find(([u]) => u.endsWith('/key/generate'));
     expect(url).toBe('http://litellm:4000/key/generate');
+    expect(body.max_budget).toBe(30);
+    expect(body.budget_duration).toBe('30d');
+  });
+
+  it('mints a fresh community key with the same monthly spend budget', async () => {
+    k8s.__mock.execStdout = '';
+
+    await issueLiteLLMOpenRouterKey('community-agent');
+
+    const [url, body] = axios.post.mock.calls.find(([u]) => u.endsWith('/key/generate'));
+    expect(url).toBe('http://litellm:4000/key/generate');
+    expect(body.user_id).toBe('community-agent');
     expect(body.max_budget).toBe(30);
     expect(body.budget_duration).toBe('30d');
   });
