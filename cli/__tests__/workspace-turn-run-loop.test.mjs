@@ -36,7 +36,9 @@ const drain = async () => {
 };
 
 let eventCount = 0;
-const runOneTurn = async ({ environment, installations, newSessionId }) => {
+const runOneTurn = async ({
+  environment, installations, newSessionId, adapterName = 'stub', spawns = 1,
+}) => {
   eventCount += 1;
   const eventId = `ws-event-${eventCount}`;
   const get = jest.fn(async (route) => {
@@ -57,13 +59,14 @@ const runOneTurn = async ({ environment, installations, newSessionId }) => {
     if (route.endsWith('/context')) return { focus: { podId: 'pod-ws', revision: 0, focus: null } };
     return {};
   });
-  createClient.mockReturnValue({ get, post: jest.fn().mockResolvedValue({}) });
+  const post = jest.fn().mockResolvedValue({});
+  createClient.mockReturnValue({ get, post });
   const spawn = jest.fn().mockResolvedValue({ text: 'done', newSessionId });
   const logs = [];
   const { stop } = performRun({
     instanceUrl: 'http://localhost:5000',
     token: 'cm_agent_workspace',
-    adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+    adapter: { name: adapterName, detect: stubAdapter.detect, spawn },
     agentName: 'workspace-stub',
     environment,
     workspacePath: workspaceDir,
@@ -72,8 +75,8 @@ const runOneTurn = async ({ environment, installations, newSessionId }) => {
   });
   await drain();
   stop();
-  expect(spawn).toHaveBeenCalledTimes(1);
-  return { ctx: spawn.mock.calls[0][1], get, logs };
+  expect(spawn).toHaveBeenCalledTimes(spawns);
+  return { ctx: spawn.mock.calls[0]?.[1], get, post, logs };
 };
 
 describe('performRun workspace turn placement', () => {
@@ -157,5 +160,58 @@ describe('performRun workspace turn placement', () => {
       installations: [{ podId: 'pod-ws', publicRead: true, communityListed: true }],
     });
     expect(degraded.ctx.sessionId).toBeFalsy();
+  });
+});
+
+// TASK-027: Claude Code on Linux has only the workspace jail, so a workspace
+// turn placed public is refused before anything is read or spawned, never
+// run in the public jail that cannot carry Claude's install or login.
+describe('performRun workspace turn placement for Claude Code on Linux', () => {
+  const originalPlatform = process.platform;
+  beforeEach(() => {
+    jest.clearAllMocks();
+    fs.rmSync(path.join(sessionsTmpDir, '.commonly'), { recursive: true, force: true });
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+  });
+  afterEach(() => Object.defineProperty(process, 'platform', { value: originalPlatform }));
+
+  const posted = (post) => post.mock.calls.filter(([route]) => /\/messages$/.test(route));
+
+  test('a private turn spawns in the workspace', async () => {
+    const { ctx } = await runOneTurn({
+      environment: { sandbox: { trust: 'workspace' } }, installations: [privatePod], adapterName: 'claude',
+    });
+    expect(ctx.cwd).toBe(workspaceDir);
+    expect(ctx.environment.sandbox.trust).toBe('workspace');
+  });
+
+  test.each([
+    ['its pod turned public', [privatePod, { podId: 'pod-open', publicRead: true, communityListed: false }],
+      /because a pod it answers in is publicly readable/],
+    ['a pod reports no visibility', [privatePod, { podId: 'pod-unknown', joinPolicy: 'invite-only' }],
+      /did not report whether it is/],
+  ])('a turn is refused when %s, with nothing read, spawned or posted', async (_label, installations, why) => {
+    const { get, post, logs } = await runOneTurn({
+      environment: { sandbox: { trust: 'workspace' } }, installations, adapterName: 'claude', spawns: 0,
+    });
+    expect(logs.some((line) => /^turn refused, because /.test(line) && why.test(line)
+      && /pods are all invite-only/.test(line))).toBe(true);
+    expect(get.mock.calls.some(([route]) => route === '/api/agents/runtime/memory')).toBe(false);
+    expect(posted(post)).toHaveLength(0);
+  });
+
+  test('a failed read of its pods defers the turn for a retry instead of refusing it', async () => {
+    const { get, post, logs } = await runOneTurn({
+      environment: { sandbox: { trust: 'workspace' } },
+      installations: Object.assign(new Error('boom'), { status: 503 }),
+      adapterName: 'claude',
+      spawns: 0,
+    });
+    expect(logs.some((line) => /turn deferred, because its pods could not be read: boom/.test(line)
+      && /retrying 1 held event/.test(line))).toBe(true);
+    expect(logs.some((line) => /^turn refused, because /.test(line))).toBe(false);
+    expect(post.mock.calls.some(([route]) => /\/ack$/.test(route))).toBe(false);
+    expect(get.mock.calls.some(([route]) => route === '/api/agents/runtime/memory')).toBe(false);
+    expect(posted(post)).toHaveLength(0);
   });
 });
