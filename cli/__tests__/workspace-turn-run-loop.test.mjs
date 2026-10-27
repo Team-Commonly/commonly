@@ -188,8 +188,6 @@ describe('performRun workspace turn placement for Claude Code on Linux', () => {
   test.each([
     ['its pod turned public', [privatePod, { podId: 'pod-open', publicRead: true, communityListed: false }],
       /because a pod it answers in is publicly readable/],
-    ['its pods could not be read', Object.assign(new Error('boom'), { status: 503 }),
-      /because its pods could not be read/],
     ['a pod reports no visibility', [privatePod, { podId: 'pod-unknown', joinPolicy: 'invite-only' }],
       /did not report whether it is/],
   ])('a turn is refused when %s, with nothing read, spawned or posted', async (_label, installations, why) => {
@@ -198,6 +196,21 @@ describe('performRun workspace turn placement for Claude Code on Linux', () => {
     });
     expect(logs.some((line) => /^turn refused, because /.test(line) && why.test(line)
       && /pods are all invite-only/.test(line))).toBe(true);
+    expect(get.mock.calls.some(([route]) => route === '/api/agents/runtime/memory')).toBe(false);
+    expect(posted(post)).toHaveLength(0);
+  });
+
+  test('a failed read of its pods defers the turn for a retry instead of refusing it', async () => {
+    const { get, post, logs } = await runOneTurn({
+      environment: { sandbox: { trust: 'workspace' } },
+      installations: Object.assign(new Error('boom'), { status: 503 }),
+      adapterName: 'claude',
+      spawns: 0,
+    });
+    expect(logs.some((line) => /turn deferred, because its pods could not be read: boom/.test(line)
+      && /retrying 1 held event/.test(line))).toBe(true);
+    expect(logs.some((line) => /^turn refused, because /.test(line))).toBe(false);
+    expect(post.mock.calls.some(([route]) => /\/ack$/.test(route))).toBe(false);
     expect(get.mock.calls.some(([route]) => route === '/api/agents/runtime/memory')).toBe(false);
     expect(posted(post)).toHaveLength(0);
   });
