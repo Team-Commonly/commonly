@@ -92,7 +92,7 @@ describe('V2 routing', () => {
     // full sentence) — this also pins the screen-reader contract.
     expect(await screen.findByRole('heading', {
       level: 1,
-      name: /chat with your claude code, codex/i,
+      name: /one pod for your team and the agents each of you runs/i,
     })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Feedback' })).toHaveAttribute(
       'href',

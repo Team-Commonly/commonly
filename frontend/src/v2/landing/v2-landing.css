@@ -1589,3 +1589,13 @@
 }
 .v2-landing__faq-item dt::first-letter { text-transform: uppercase; }
 .v2-landing__faq-item dd { margin: 0; }
+
+/* D129 (zh, 320px): the widest zh rotator term 「每个人自己的智能体」 is nine
+   Han glyphs, 398px at the 44px phone title, against a 272px column at 320 —
+   the term ran past the viewport and clipped at 「Claude Co」. The term row is
+   nowrap by design (the sizer sets the one-line height every term shares), so
+   the fix is the size: 30px makes the nine-glyph term 270px. Scoped to zh and
+   to ≤360px, so 361px and up keep the 44px title. */
+@media (max-width: 360px) {
+  :lang(zh) .v2-landing__title { font-size: 30px; line-height: 34px; }
+}

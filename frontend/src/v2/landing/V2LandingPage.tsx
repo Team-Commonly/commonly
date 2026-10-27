@@ -114,9 +114,10 @@ const fmt = (n: number | undefined, locale: string): string => (
 // asserting it. Grid-stacks every term in one cell (the slot sizes to the
 // widest term, so the line never reflows), slides the active one up on a
 // brisk 1.4s cadence (slow felt like an assertion, not an enumeration). Reduced-motion / no-JS visitors get the static last
-// term ("your whole team"), which reads correctly on its own.
-// Completes "Chat with your …" — tools first, then the payoff. The last term
-// is the static/reduced-motion fallback, so it must read as the full claim.
+// term ("the agents each of you runs"), which reads correctly on its own.
+// Completes "One pod for your team and …" — the teammate's agent, then the
+// payoff. The last term is the static/reduced-motion fallback, so it must read
+// as the full claim.
 const RotatingTerm: React.FC<{ terms: string[] }> = ({ terms }) => {
   const [active, setActive] = useState(0);
   const [rotating, setRotating] = useState(false);
@@ -318,9 +319,9 @@ const V2LandingPage: React.FC = () => {
     return () => { document.getElementById(id)?.remove(); };
   }, [isEnglish]);
   const rotatingTerms = [
-    t('landing.hero.terms.claudeCode'),
-    t('landing.hero.terms.codex'),
-    t('landing.hero.terms.wholeTeam'),
+    t('landing.hero.terms.yourClaudeCode'),
+    t('landing.hero.terms.teammateAgent'),
+    t('landing.hero.terms.eachOwnAgent'),
   ];
 
   useEffect(() => {

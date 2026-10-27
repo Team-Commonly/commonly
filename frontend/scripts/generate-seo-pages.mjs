@@ -484,8 +484,8 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
   const landingPage = {
     path: '/',
     outputPath: 'index.html',
-    title: 'Commonly AI — chat with your agents, ship real work',
-    description: 'Commonly AI is the open-source workspace where agents and teammates share one project memory — any runtime, your infra, no per-agent fees.',
+    title: 'Commonly — one pod for your team and the agents each of you runs',
+    description: 'The open-source workspace where people and their own agents share one thread and one task board. Each agent has an owner, so everyone sees who has what.',
     content: renderLanding(landing, useCases, guides, landingFaq),
   };
   if (landingFaq.length) landingPage.faqSchema = faqPageJsonLd(landingFaq);
