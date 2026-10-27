@@ -653,5 +653,22 @@ export const buildTools = (config) => {
     // as the machine's OWN GitHub identity rather than ours, and it supports
     // line-level review comments, which these tools never did.
   ];
-  return tools;
+  // A model can call a tool without an argument its schema requires; MCP
+  // clients do not enforce `required`. Interpolated into a path, a missing
+  // podId becomes the literal "undefined" and the backend answers 500, which
+  // tells the caller nothing. Refuse the call here and name the argument.
+  return tools.map((tool) => {
+    const keys = tool.inputSchema?.required || [];
+    if (keys.length === 0) return tool;
+    return {
+      ...tool,
+      call: async (args = {}, ...rest) => {
+        const missing = keys.filter((key) => args?.[key] === undefined || args?.[key] === null || args?.[key] === '');
+        if (missing.length > 0) {
+          return err(new Error(`${tool.name}: missing required argument${missing.length > 1 ? 's' : ''} ${missing.join(', ')}`));
+        }
+        return tool.call(args, ...rest);
+      },
+    };
+  });
 };

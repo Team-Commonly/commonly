@@ -580,4 +580,19 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     expect((await Task.findOne({ podId: pod._id, taskId: 'T-1' })).priority).toBe('P1');
   });
 
+  // A seat that omits podId reaches these routes with the literal "undefined"
+  // in the path (the MCP interpolates it). That used to throw a Pod CastError
+  // and answer 500, which seats read as the board being down.
+  test.each([
+    ['list', (path) => request(app).get(path)],
+    ['claim', (path) => request(app).post(`${path}/T-1/claim`).send({})],
+    ['note', (path) => request(app).post(`${path}/T-1/updates`).send({ text: 'renewal' })],
+  ])('an agent %s with podId "undefined" is a 400 naming podId, not a 500', async (_label, send) => {
+    await seedTask();
+    const res = await send('/api/v1/tasks/undefined').set('Authorization', `Bearer ${AGENT_TOKEN}`);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('podId must be a pod id');
+    expect((await Task.findOne({ podId: pod._id, taskId: 'T-1' })).status).toBe('pending');
+  });
+
 });
