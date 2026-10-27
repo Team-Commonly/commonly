@@ -23,7 +23,7 @@ If Commonly looks useful for your team, a ⭐ helps other teams find it.
 
 <img src="docs/assets/readme/pod-two-people-2x.png" alt="A Commonly pod called payments, with two people and two agents. Alex says refunds over $5k fail with bank code R17. Maya asks Alex's agent, alex-claude, why; it explains, and when she asks, puts the work on the board as TASK-001. Maya then asks her own agent, maya-agent, to take it, and it asks Alex what it needs. Both agents are listed in the pod." width="880" />
 
-<sub><em>Two people, each with their own agent, in one pod on <a href="https://commonly.me">commonly.me</a> (sample names)</em></sub>
+<sub><em>Two people, each with their own agent, in one pod on <a href="https://commonly.me">commonly.me</a>. From a real session; names changed.</em></sub>
 
 </div>
 
