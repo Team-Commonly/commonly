@@ -61,12 +61,25 @@ export const assertPrivateDsh = (environment = {}) => { isConfinedDsh(environmen
  * forwards to, so `git` fails with "No developer tools were found" and a writer
  * cannot commit (D106). Returns null when no tools are installed; the seat then
  * runs without git rather than failing.
+ *
+ * DEVELOPER_DIR and xcode-select are both settable by whoever starts the seat,
+ * so the resolved path is granted only when it is one of the two places Apple
+ * installs developer tools. Anything else (/, a home directory) returns null
+ * rather than widening what the sandbox can read.
  */
-export const developerToolsDir = ({ env = process.env, run = spawnSync } = {}) => {
+const DEVELOPER_DIR_SHAPES = [
+  /^\/Library\/Developer\/CommandLineTools$/,
+  /^\/Applications\/[^/]+\.app\/Contents\/Developer$/,
+];
+
+export const developerToolsDir = ({
+  env = process.env, run = spawnSync, exists = existsSync, realpath = realpathSync,
+} = {}) => {
   const declared = env?.DEVELOPER_DIR;
   const dir = declared || String(run('/usr/bin/xcode-select', ['-p'], { encoding: 'utf8' })?.stdout || '').trim();
-  if (!dir || !isAbsolute(dir) || !existsSync(dir)) return null;
-  return realpathSync(dir);
+  if (!dir || !isAbsolute(dir) || !exists(dir)) return null;
+  const resolved = realpath(dir);
+  return DEVELOPER_DIR_SHAPES.some((shape) => shape.test(resolved)) ? resolved : null;
 };
 
 const onPath = (name, env) => {

@@ -11,7 +11,7 @@ import { spawn as spawnReal } from 'child_process';
 import { createServer } from 'http';
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'fs';
 import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'fs/promises';
-import { tmpdir } from 'os';
+import { homedir, tmpdir } from 'os';
 import { join } from 'path';
 
 import dsh, { developerToolsDir, isConfinedDsh, TESTED_DSH_VERSIONS } from '../src/lib/adapters/dsh.js';
@@ -146,13 +146,33 @@ test('a confined writer gets the developer tools read-only, so git works inside 
   });
 });
 
-test('developerToolsDir: the declared or selected dir when it exists, null otherwise', () => {
-  const real = realpathSync(tmpdir());
-  expect(developerToolsDir({ env: { DEVELOPER_DIR: tmpdir() }, run: () => { throw new Error('not called'); } })).toBe(real);
-  expect(developerToolsDir({ env: {}, run: () => ({ stdout: `${tmpdir()}\n` }) })).toBe(real);
-  expect(developerToolsDir({ env: {}, run: () => ({ stdout: '' }) })).toBeNull();
-  expect(developerToolsDir({ env: {}, run: () => ({ stdout: 'relative/dir\n' }) })).toBeNull();
-  expect(developerToolsDir({ env: { DEVELOPER_DIR: '/nonexistent/dev-tools' } })).toBeNull();
+test('developerToolsDir: the declared or selected dir when it is an Apple tools location', () => {
+  const at = (paths) => ({ exists: (dir) => dir in paths, realpath: (dir) => paths[dir] });
+  const CLT = '/Library/Developer/CommandLineTools';
+  const XCODE = '/Applications/Xcode.app/Contents/Developer';
+  const fs = at({ [CLT]: CLT, [XCODE]: XCODE, '/Applications/Xcode-beta.app': '/Applications/Xcode-beta.app' });
+  expect(developerToolsDir({ env: { DEVELOPER_DIR: CLT }, run: () => { throw new Error('not called'); }, ...fs })).toBe(CLT);
+  expect(developerToolsDir({ env: {}, run: () => ({ stdout: `${XCODE}\n` }), ...fs })).toBe(XCODE);
+  expect(developerToolsDir({ env: {}, run: () => ({ stdout: '' }), ...fs })).toBeNull();
+  expect(developerToolsDir({ env: {}, run: () => ({ stdout: 'relative/dir\n' }), ...fs })).toBeNull();
+  expect(developerToolsDir({ env: { DEVELOPER_DIR: '/nonexistent/dev-tools' }, ...fs })).toBeNull();
+  // A link into an Apple location is judged by where it lands.
+  expect(developerToolsDir({ env: { DEVELOPER_DIR: '/opt/tools' }, ...at({ '/opt/tools': CLT }) })).toBe(CLT);
+});
+
+test('developerToolsDir refuses any other directory, so DEVELOPER_DIR cannot widen the sandbox', () => {
+  const real = (dir) => developerToolsDir({ env: { DEVELOPER_DIR: dir }, run: () => { throw new Error('not called'); } });
+  expect(real('/')).toBeNull();
+  expect(real(homedir())).toBeNull();
+  expect(real(tmpdir())).toBeNull();
+  const linked = (target) => developerToolsDir({
+    env: { DEVELOPER_DIR: '/Library/Developer/CommandLineTools' }, exists: () => true, realpath: () => target,
+  });
+  expect(linked('/')).toBeNull();
+  expect(linked('/Library/Developer/CommandLineTools/..')).toBeNull();
+  expect(linked('/Applications/Xcode.app')).toBeNull();
+  expect(linked('/Applications/Xcode.app/Contents/Developer/usr')).toBeNull();
+  expect(linked('/Users/x/Applications/Xcode.app/Contents/Developer')).toBeNull();
 });
 
 test('a confined turn runs through the pinned proxy, the relay and the egress fence', async () => {
