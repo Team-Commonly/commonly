@@ -9,6 +9,11 @@ jest.mock('../../../models/Pod', () => ({
 jest.mock('../../../models/AgentRun', () => ({ create: jest.fn(), countDocuments: jest.fn() }));
 jest.mock('../../../models/User', () => ({
   findOne: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve(null) }) })),
+  findById: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve({ username: 'ada' }) }) })),
+}));
+jest.mock('../../../services/hostedRuntimeService', () => ({
+  ...jest.requireActual('../../../services/hostedRuntimeService'),
+  listHostedInstallationsForUser: jest.fn().mockResolvedValue([]),
 }));
 jest.mock('../../../services/agentTypingService', () => ({ emitAgentTypingStart: jest.fn(), emitAgentTypingStop: jest.fn() }));
 jest.mock('../../../services/agentMessageService', () => ({ postMessage: jest.fn().mockResolvedValue({ success: true }) }));
@@ -124,5 +129,54 @@ describe('runAgent carries the trigger thread root to its post calls (TASK-026)'
     const fallback = AgentMessageService.postMessage.mock.calls.find(([arg]) => arg.metadata?.fallback);
     expect(fallback).toBeDefined();
     expect(fallback[0].threadRootId).toBe(4);
+  });
+});
+
+describe('runAgent carries the trigger thread root to the cards and the failed-run notice (TASK-026)', () => {
+  const hostedSeat = { ...seat, config: { ...seat.config, tools: ['commonly_post_message', 'commonly_offer_hosted_agent'] } };
+  const localSeat = { ...seat, config: { ...seat.config, tools: ['commonly_post_message', 'commonly_offer_local_agent'] } };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.LITELLM_BASE_URL = 'http://litellm.test';
+    process.env.LITELLM_MASTER_KEY = 'test-key';
+    process.env.HOSTED_ENGINE = 'native';
+    AgentRun.countDocuments.mockResolvedValue(0);
+    AgentRun.create.mockImplementation(async (doc) => ({ _id: 'run-1', ...doc, save: jest.fn().mockResolvedValue(undefined) }));
+  });
+
+  // Each test fails if its single threadRootId argument is reverted to null.
+  test('the hosted-offer starts card in a thread passes the thread root', async () => {
+    axios.post
+      .mockResolvedValueOnce(callsTool('commonly_offer_hosted_agent', { content: 'Scout can run hosted.' }))
+      .mockResolvedValueOnce(says('Offered.'));
+
+    await runAgent(hostedSeat, threaded);
+
+    const card = AgentMessageService.postMessage.mock.calls.find(([arg]) => arg.payload?.kind === 'starts');
+    expect(card).toBeDefined();
+    expect(card[0].threadRootId).toBe(4);
+  });
+
+  test('the BYO approval card in a thread passes the thread root', async () => {
+    axios.post
+      .mockResolvedValueOnce(callsTool('commonly_offer_local_agent', { adapter: 'claude', os: 'mac' }))
+      .mockResolvedValueOnce(says('Offered.'));
+
+    await runAgent(localSeat, threaded);
+
+    const card = AgentMessageService.postMessage.mock.calls.find(([arg]) => arg.metadata?.handoff === 'byo');
+    expect(card).toBeDefined();
+    expect(card[0].threadRootId).toBe(4);
+  });
+
+  test('the failed-run notice for a directly addressed thread mention passes the thread root', async () => {
+    axios.post.mockRejectedValueOnce(Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }));
+
+    await runAgent(seat, threaded);
+
+    const notice = AgentMessageService.postMessage.mock.calls.find(([arg]) => arg.metadata?.runFailed);
+    expect(notice).toBeDefined();
+    expect(notice[0].threadRootId).toBe(4);
   });
 });
