@@ -9,12 +9,12 @@
 import { jest } from '@jest/globals';
 import { spawn as spawnReal } from 'child_process';
 import { createServer } from 'http';
-import { existsSync, readFileSync, realpathSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync } from 'fs';
 import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import dsh, { isConfinedDsh, TESTED_DSH_VERSIONS } from '../src/lib/adapters/dsh.js';
+import dsh, { developerToolsDir, isConfinedDsh, TESTED_DSH_VERSIONS } from '../src/lib/adapters/dsh.js';
 import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
 import { OWN_PROCESS_GROUP } from '@commonlyai/seats/process-group';
 import { superviseRun } from '@commonlyai/seats/supervisor';
@@ -66,7 +66,7 @@ const connect = (target) => new Promise((resolve) => {
   fs.writeFileSync('.stub-report.json', JSON.stringify({
     status: response.status, relay, egress, mcp,
     sandboxPolicy: rows.find((row) => row.id === 'sandbox-policy').config,
-    env: { HTTPS_PROXY: process.env.HTTPS_PROXY, NO_PROXY: process.env.NO_PROXY, TMPDIR: process.env.TMPDIR },
+    env: { HTTPS_PROXY: process.env.HTTPS_PROXY, NO_PROXY: process.env.NO_PROXY, TMPDIR: process.env.TMPDIR, DEVELOPER_DIR: process.env.DEVELOPER_DIR },
   }));
   emit({ type: 'session', sessionId: 'session-11111111-1111-1111-1111-111111111111' });
   if (!response.ok) { emit({ type: 'error', message: 'provider said ' + response.status }); process.exit(1); }
@@ -114,6 +114,7 @@ const withSeat = async (fn, { provider: providerOptions = {} } = {}) => {
       return ['node', join(mcpPkg, 'src', 'index.js')];
     },
     _selectedMcpVersionDir: () => mcpDir,
+    _developerToolsDir: () => null,
   };
   try {
     await fn({
@@ -131,6 +132,28 @@ const withSeat = async (fn, { provider: providerOptions = {} } = {}) => {
 let warn;
 beforeEach(() => { warn = jest.spyOn(console, 'warn').mockImplementation(() => {}); });
 afterEach(() => { warn.mockRestore(); });
+
+test('a confined writer gets the developer tools read-only, so git works inside the sandbox (D106)', async () => {
+  await withSeat(async ({ ctx, wraps, pkg, mcpDir, root, report }) => {
+    const tools = join(root, 'CommandLineTools');
+    mkdirSync(tools);
+    await dsh.spawn('[[reply:git-ok]]', { ...ctx, _developerToolsDir: () => tools });
+    const { options } = wraps.find((entry) => entry.inner);
+    expect(options.readOnlyDirectories).toEqual([realpathSync(join(pkg, '..', '..')), mcpDir, tools]);
+    // Read-only: the grant never widens what the seat can write.
+    expect(buildSeatbeltProfile(options).split('\n').filter((line) => line.includes(tools) && line.includes('file-write'))).toEqual([]);
+    expect(report().env.DEVELOPER_DIR).toBe(tools);
+  });
+});
+
+test('developerToolsDir: the declared or selected dir when it exists, null otherwise', () => {
+  const real = realpathSync(tmpdir());
+  expect(developerToolsDir({ env: { DEVELOPER_DIR: tmpdir() }, run: () => { throw new Error('not called'); } })).toBe(real);
+  expect(developerToolsDir({ env: {}, run: () => ({ stdout: `${tmpdir()}\n` }) })).toBe(real);
+  expect(developerToolsDir({ env: {}, run: () => ({ stdout: '' }) })).toBeNull();
+  expect(developerToolsDir({ env: {}, run: () => ({ stdout: 'relative/dir\n' }) })).toBeNull();
+  expect(developerToolsDir({ env: { DEVELOPER_DIR: '/nonexistent/dev-tools' } })).toBeNull();
+});
 
 test('a confined turn runs through the pinned proxy, the relay and the egress fence', async () => {
   await withSeat(async ({ ctx, wraps, provider, instanceSeen, pkg, mcpDir, home, report }) => {

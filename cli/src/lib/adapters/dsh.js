@@ -55,6 +55,20 @@ export const isConfinedDsh = (environment = {}) => {
 
 export const assertPrivateDsh = (environment = {}) => { isConfinedDsh(environment); };
 
+/**
+ * The macOS developer tools a confined writer needs for git, granted read-only.
+ * /usr/bin/git is an xcrun shim: inside the sandbox it cannot read the tools it
+ * forwards to, so `git` fails with "No developer tools were found" and a writer
+ * cannot commit (D106). Returns null when no tools are installed; the seat then
+ * runs without git rather than failing.
+ */
+export const developerToolsDir = ({ env = process.env, run = spawnSync } = {}) => {
+  const declared = env?.DEVELOPER_DIR;
+  const dir = declared || String(run('/usr/bin/xcode-select', ['-p'], { encoding: 'utf8' })?.stdout || '').trim();
+  if (!dir || !isAbsolute(dir) || !existsSync(dir)) return null;
+  return realpathSync(dir);
+};
+
 const onPath = (name, env) => {
   if (isAbsolute(name)) return existsSync(name) ? name : null;
   for (const dir of String(env?.PATH || '').split(delimiter)) {
@@ -411,6 +425,8 @@ export default {
         for (const name of ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy']) env[name] = egress.url;
         env.NO_PROXY = '127.0.0.1,localhost';
         env.no_proxy = env.NO_PROXY;
+        const developerDir = (ctx._developerToolsDir || developerToolsDir)({ env: sourceEnv });
+        if (developerDir) env.DEVELOPER_DIR = developerDir;
         [command, ...commandArgs] = (ctx._wrapArgvWithSeatbelt || wrapArgvWithSeatbelt)([process.execPath, entry, ...args], {
           workspacePath: ctx.cwd,
           workspaceAccess: 'write',
@@ -419,7 +435,7 @@ export default {
           mcpConfigDir: tempDir,
           network: 'loopback',
           loopbackNetworkPorts: [proxy.port, relay.port, egress.port],
-          readOnlyDirectories: [packages, ...mcpDirectories],
+          readOnlyDirectories: [packages, ...mcpDirectories, ...(developerDir ? [developerDir] : [])],
         });
       }
       const credentials = [...spawnCredentials(ctx, []), bearer];
