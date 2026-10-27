@@ -14,7 +14,7 @@ import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
 import { join } from 'path';
 
-import dsh, { developerToolsDir, isConfinedDsh, TESTED_DSH_VERSIONS } from '../src/lib/adapters/dsh.js';
+import dsh, { developerToolsDir, isConfinedDsh, systemToolsFirst, TESTED_DSH_VERSIONS } from '../src/lib/adapters/dsh.js';
 import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
 import { OWN_PROCESS_GROUP } from '@commonlyai/seats/process-group';
 import { superviseRun } from '@commonlyai/seats/supervisor';
@@ -143,7 +143,16 @@ test('a confined writer gets the developer tools read-only, so git works inside 
     // Read-only: the grant never widens what the seat can write.
     expect(buildSeatbeltProfile(options).split('\n').filter((line) => line.includes(tools) && line.includes('file-write'))).toEqual([]);
     expect(report().env.DEVELOPER_DIR).toBe(tools);
+    // Bare `git` must be the shim the grant serves, not a Homebrew git ahead of it.
+    expect(report().env.PATH).toBe(systemToolsFirst(process.env.PATH));
   });
+});
+
+test('systemToolsFirst puts /usr/bin ahead of Homebrew and keeps the rest in order', () => {
+  expect(systemToolsFirst('/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin')).toBe('/usr/bin:/opt/homebrew/bin:/usr/local/bin:/bin');
+  expect(systemToolsFirst('/opt/homebrew/bin:/bin')).toBe('/usr/bin:/opt/homebrew/bin:/bin');
+  expect(systemToolsFirst('')).toBe('/usr/bin');
+  expect(systemToolsFirst(undefined)).toBe('/usr/bin');
 });
 
 test('developerToolsDir: the declared or selected dir when it is an Apple tools location', () => {

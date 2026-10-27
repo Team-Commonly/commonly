@@ -1056,15 +1056,16 @@ export const performAttach = async ({
           + '(deny-by-default filesystem + network)',
         );
       } else {
-        const seatbelt = probeSeatbelt();
-        if (!seatbelt.available) {
-          throw new Error(
-            `public Claude sandbox.mode=${sandboxMode} requires macOS Seatbelt: `
-            + `${seatbelt.error}. On Linux use sandbox.mode=bwrap.`,
-          );
-        }
         const adapterLabel = ({ opencode: 'OpenCode', qwen: 'Qwen', claude: 'Claude' })[adapterName]
           || adapterName;
+        const seatbelt = probeSeatbelt();
+        if (!seatbelt.available) {
+          // dsh refuses bwrap, so it gets no Linux hint that leads to a second refusal.
+          throw new Error(adapterName === 'dsh'
+            ? `confined dsh sandbox.mode=${sandboxMode} requires macOS Seatbelt: ${seatbelt.error}.`
+            : `public ${adapterLabel} sandbox.mode=${sandboxMode} requires macOS Seatbelt: `
+              + `${seatbelt.error}. On Linux use sandbox.mode=bwrap.`);
+        }
         log(adapterName === 'dsh'
           ? `sandbox: confined dsh ${sandboxMode} via macOS Seatbelt (restricted network)`
           : `sandbox: public ${sandboxMode} via macOS Seatbelt `

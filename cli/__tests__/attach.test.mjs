@@ -496,7 +496,7 @@ describe('performAttach', () => {
 
   test('attach --env carries confined dsh to the Seatbelt check, not the trust refusal (D106)', async () => {
     const { error } = await attachConfinedDsh({ available: false, error: 'sandbox-exec not found' });
-    expect(error.message).toMatch(/requires macOS Seatbelt: sandbox-exec not found/);
+    expect(error.message).toBe('confined dsh sandbox.mode=workspace requires macOS Seatbelt: sandbox-exec not found.');
   });
 
   test('attach --env gives provider-backed Qwen the same Commonly MCP baseline as the daemon', async () => {

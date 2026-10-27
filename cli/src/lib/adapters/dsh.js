@@ -82,6 +82,16 @@ export const developerToolsDir = ({
   return DEVELOPER_DIR_SHAPES.some((shape) => shape.test(resolved)) ? resolved : null;
 };
 
+/**
+ * The confined child's PATH with /usr/bin first, so bare `git` is the xcrun
+ * shim the developer-tools grant serves. Seat runners put /opt/homebrew/bin
+ * ahead of it, and Homebrew git fails inside the sandbox reading its own
+ * /opt/homebrew/etc/gitconfig. Other entries keep their order, so tools
+ * /usr/bin lacks (node, npm) still resolve as before.
+ */
+export const systemToolsFirst = (pathValue) => ['/usr/bin', ...String(pathValue || '').split(delimiter)
+  .filter((dir) => dir && dir !== '/usr/bin')].join(delimiter);
+
 const onPath = (name, env) => {
   if (isAbsolute(name)) return existsSync(name) ? name : null;
   for (const dir of String(env?.PATH || '').split(delimiter)) {
@@ -439,7 +449,10 @@ export default {
         env.NO_PROXY = '127.0.0.1,localhost';
         env.no_proxy = env.NO_PROXY;
         const developerDir = (ctx._developerToolsDir || developerToolsDir)({ env: sourceEnv });
-        if (developerDir) env.DEVELOPER_DIR = developerDir;
+        if (developerDir) {
+          env.DEVELOPER_DIR = developerDir;
+          env.PATH = systemToolsFirst(env.PATH);
+        }
         [command, ...commandArgs] = (ctx._wrapArgvWithSeatbelt || wrapArgvWithSeatbelt)([process.execPath, entry, ...args], {
           workspacePath: ctx.cwd,
           workspaceAccess: 'write',
