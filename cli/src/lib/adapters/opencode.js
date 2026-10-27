@@ -322,14 +322,13 @@ const makeEventParser = () => {
     try {
       const event = JSON.parse(line);
       if (event.sessionID) sessionId = event.sessionID;
+      // Any step event means the run started a turn, so it is not safe to replay.
+      if (String(event.type || '').startsWith('step_') || event.type === 'tool_use') turnOutput = true;
       if (event.type === 'text' && typeof event.part?.text === 'string') {
         turnOutput = true;
         text += event.part.text;
       } else if (event.type === 'step_finish' && event.part?.tokens) {
-        turnOutput = true;
         usage = event.part.tokens;
-      } else if (event.type === 'tool_use') {
-        turnOutput = true;
       }
       if (event.type === 'tool_use' && event.part?.state?.status === 'error') {
         const { error } = event.part.state;
