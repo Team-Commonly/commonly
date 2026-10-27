@@ -30,6 +30,7 @@ export const REPORTED_CLI_VALUES: ReadonlySet<string> = new Set([
 // a row whose config was replaced (losing the label) regains it on a later poll.
 const RECORD_TTL_MS = 10 * 60 * 1000;
 const recorded = new Map<string, number>();
+const RECORD_PRUNE_AT = 1000;
 
 export const normalizeReportedCli = (value: unknown): string | null => {
   const cli = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -45,6 +46,10 @@ export function recordReportedCli(installationIds: unknown[], value: unknown): v
   const cli = normalizeReportedCli(value);
   if (!cli) return;
   const now = Date.now();
+  // Installations come and go; drop expired entries so churn can't grow the map.
+  if (recorded.size > RECORD_PRUNE_AT) {
+    recorded.forEach((at, key) => { if (now - at >= RECORD_TTL_MS) recorded.delete(key); });
+  }
   const ids = installationIds.map((id) => String(id || '')).filter(Boolean)
     .filter((id) => now - (recorded.get(`${id}:${cli}`) ?? -Infinity) >= RECORD_TTL_MS);
   if (ids.length === 0) return;
@@ -69,4 +74,9 @@ export function recordReportedCli(installationIds: unknown[], value: unknown): v
 /** Test seam: forget what this process has recorded. */
 export function resetReportedCliForTest(): void {
   recorded.clear();
+}
+
+/** Test seam: how many (installation, value) entries this process holds. */
+export function reportedCliRecordSizeForTest(): number {
+  return recorded.size;
 }

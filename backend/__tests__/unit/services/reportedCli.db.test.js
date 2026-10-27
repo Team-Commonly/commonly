@@ -47,7 +47,6 @@ const until = async (check) => {
     await new Promise((r) => setTimeout(r, 20));
   }
 };
-const settle = () => new Promise((r) => setTimeout(r, 100));
 
 describe('recordReportedCli on the real schema', () => {
   test('a BYO seat with no adapter reads the label back through the model', async () => {
@@ -68,8 +67,20 @@ describe('recordReportedCli on the real schema', () => {
   test('a declared adapter or a non-BYO host is left alone', async () => {
     const declared = await install({ runtimeType: 'webhook', host: 'byo', adapter: 'pi' });
     const hosted = await install({ runtimeType: 'webhook', host: 'hosted' });
-    recordReportedCli([declared._id, hosted._id], 'claude');
-    await settle();
+    // Await the very write the service issued, then assert on the rows.
+    const original = AgentInstallation.updateMany.bind(AgentInstallation);
+    let issued;
+    const write = jest.spyOn(AgentInstallation, 'updateMany').mockImplementation((...args) => {
+      issued = original(...args).exec();
+      return issued;
+    });
+    try {
+      recordReportedCli([declared._id, hosted._id], 'claude');
+      expect(write).toHaveBeenCalledTimes(1);
+      expect((await issued).matchedCount).toBe(0);
+    } finally {
+      write.mockRestore();
+    }
     expect((await runtimeOf(declared._id)).reportedCli).toBeUndefined();
     expect((await runtimeOf(declared._id)).adapter).toBe('pi');
     expect((await runtimeOf(hosted._id)).reportedCli).toBeUndefined();

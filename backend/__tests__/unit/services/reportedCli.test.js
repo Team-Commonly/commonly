@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const {
   REPORTED_CLI_VALUES, normalizeReportedCli, recordReportedCli, resetReportedCliForTest,
+  reportedCliRecordSizeForTest,
 } = require('../../../services/reportedCli');
 const { grantBrokerRefusal, adapterForRuntimeBinding } = require('../../../services/grantBrokerConfinement');
 const { configWriteRefusal } = require('../../../services/configWriteGuard');
@@ -69,6 +70,19 @@ describe('recording the reported CLI', () => {
       now.mockReturnValue(1_000_000 + 10 * 60 * 1000);
       recordReportedCli(['i1'], 'codex');
       expect(mockUpdateMany).toHaveBeenCalledTimes(2);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  test('expired entries are pruned once the record grows, so churn cannot grow it without bound', () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    try {
+      for (let i = 0; i < 1001; i += 1) recordReportedCli([`old-${i}`], 'codex');
+      expect(reportedCliRecordSizeForTest()).toBe(1001);
+      now.mockReturnValue(1_000_000 + 10 * 60 * 1000);
+      recordReportedCli(['fresh'], 'codex');
+      expect(reportedCliRecordSizeForTest()).toBe(1);
     } finally {
       now.mockRestore();
     }
