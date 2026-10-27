@@ -65,7 +65,7 @@ const ISOLATED_INSTANCE_PORT = 8766;
 const LOOPBACK_BRIDGE = fileURLToPath(new URL('../sandbox/opencode-loopback.mjs', import.meta.url));
 const TERMINATION_GRACE_MS = 5000;
 // Bump only with a passing real sandbox-exec smoke against the new version.
-const TESTED_OPENCODE_VERSIONS = Object.freeze(['1.18.35', '1.19.0']);
+const TESTED_OPENCODE_VERSIONS = Object.freeze(['1.18.35', '1.19.0', '1.19.4']);
 const ALLOW_UNTESTED_OPENCODE_VERSION_ENV = 'COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION';
 const VERSION_CHECK_TIMEOUT_MS = 5000;
 const OPENCODE_CONFIG_GITIGNORE = [
