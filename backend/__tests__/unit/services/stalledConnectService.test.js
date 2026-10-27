@@ -163,15 +163,17 @@ describe('stalledConnectService.scan', () => {
   });
 
   it.each([['linux', 'Linux'], ['windows', 'Windows']])(
-    'on %s, says the listener answers @mentions only on a Mac and offers Run it here',
+    'from a %s browser, says the listener answers @mentions only on a Mac, if it ran there',
     async (os, label) => {
       setup();
       copiedListenerOn(os);
       await scan({ now: NOW });
       const { content } = mockPost.mock.calls[0][0];
-      expect(content).toContain(`The listener can't answer @mentions from ${label} yet`);
-      expect(content).toContain('Choose “Run it here” on the Bring your own page for a hosted agent');
-      expect(content).toContain('or run `commonly agent run ai1-agent` on a Mac');
+      // Conditional: the page shows this command only on its Mac tab, so the
+      // browser's OS is not proof of where it ran.
+      expect(content).toContain(`If you ran it on ${label}, that's why: the listener can't answer @mentions from ${label} yet`);
+      expect(content).toContain('Run `commonly agent run ai1-agent` on a Mac');
+      expect(content).toContain('or choose “Run it here” on the Bring your own page for a hosted agent');
       expect(content).toContain("I'll post here the moment I connect");
       expect(content).not.toContain('one thing to check');
     },

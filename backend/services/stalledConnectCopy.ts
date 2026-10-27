@@ -55,6 +55,12 @@ export type StalledConnectCopyEvidence = {
  * agentByo.listen.unavailableClaude / unavailableCodex; this is the same
  * sentence after the fact. The server never learns which adapter the copied
  * command named, so the copy names the listener, not the CLI.
+ *
+ * It hedges, unlike the rest of this file. The page shows the listener command
+ * only on its Mac tab, so a copy from a Linux or Windows browser means the
+ * person picked Mac there: they may have run it on a Mac, or on the machine
+ * they were browsing from. byoOpenedOs is the browser's OS, not where the
+ * command ran, so the sentence is conditional on it.
  */
 const LISTENER_UNAVAILABLE_OS: Record<string, string> = { linux: 'Linux', windows: 'Windows' };
 
@@ -100,9 +106,9 @@ export const composeStalledConnectNudge = ({
     if (unavailableOs) {
       return `@${installerName} — you copied the listener command `
         + `${copiedAtDescription(offsetSeconds)}; no connection arrived. `
-        + `The listener can't answer @mentions from ${unavailableOs} yet: Commonly runs it in a sandbox, `
-        + `and on ${unavailableOs} that sandbox can't run it. `
-        + `Choose “Run it here” on the Bring your own page for a hosted agent, or run \`${fixCommand}\` on a Mac. `
+        + `If you ran it on ${unavailableOs}, that's why: the listener can't answer @mentions from `
+        + `${unavailableOs} yet, because Commonly runs it in a sandbox that can't run there. `
+        + `Run \`${fixCommand}\` on a Mac, or choose “Run it here” on the Bring your own page for a hosted agent. `
         + `I'll post here the moment I connect.`;
     }
     return `@${installerName} — you copied the ${copiedThing} `
