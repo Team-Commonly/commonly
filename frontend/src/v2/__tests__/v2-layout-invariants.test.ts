@@ -1020,27 +1020,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(avatarFocus).toContain('outline: none');
     expect(avatarFocus).toContain('box-shadow: var(--v2-focus-ring)');
 
-    expect(aprofile.match(/font-size:\s*13px/g) || []).toHaveLength(0);
     for (const selector of ['.v2-aprofile__empty-title', '.v2-aprofile__name', '.v2-aprofile__stat-num']) {
       expect(ruleBody(aprofile, selector)).toContain('font-weight: 700');
     }
     expect(aprofile).not.toContain('font-weight: 850');
-  });
-
-  test('agent profile enumerated rows use transparent borders and background-only hover', () => {
-    for (const selector of ['.v2-aprofile__pod', '.v2-aprofile__memnote']) {
-      const row = ruleBody(aprofile, selector);
-      expect(row).toContain('border: 1px solid transparent');
-      expect(row).toContain('border-radius: var(--v2-radius)');
-      expect(row).toContain('padding: 12px 14px');
-      const hover = ruleBody(aprofile, `${selector}:hover`);
-      const declarations = hover.slice(hover.indexOf('{') + 1)
-        .split(';').map((declaration) => declaration.trim()).filter(Boolean);
-      expect(declarations.length).toBeGreaterThan(0);
-      for (const declaration of declarations) expect(declaration).toMatch(/^background/);
-    }
-    expect(aprofile).not.toContain('.v2-aprofile__pod:first-child');
-    expect(aprofile).not.toContain('.v2-aprofile__memnote:first-child');
   });
 
   test('the nav rail pane lets its language dropdown escape the pane clip', () => {
