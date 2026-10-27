@@ -145,6 +145,7 @@ describe('POST /api/grants', () => {
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: `outsider_grant_${reason}` });
     expect(res.body.message).toMatch(/separate pod/);
+    expect(outsiderGrantPodRefusal).toHaveBeenCalledWith(target, 'read');
     expect(await RoomGrant.countDocuments({})).toBe(0);
   });
 
