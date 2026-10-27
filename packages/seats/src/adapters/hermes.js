@@ -9,11 +9,11 @@ import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
 import { requireSeatModel } from '../seat-model.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
-export const SUPPORTED_HERMES_VERSION_RANGE = '>=0.22.2 <0.23.0';
+export const SUPPORTED_HERMES_VERSION_RANGE = '>=0.22.5 <0.23.0';
 const supportsHermesVersion = (version) => {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version || '');
   if (!match) return false;
-  return Number(match[1]) === 0 && Number(match[2]) === 22 && Number(match[3]) >= 2;
+  return Number(match[1]) === 0 && Number(match[2]) === 22 && Number(match[3]) >= 5;
 };
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const VERSION_TIMEOUT_MS = 15000;
@@ -78,7 +78,7 @@ const readVersion = (env, spawnSyncImpl = spawnSync) => {
     if (probe.error || probe.status !== 0) continue;
     const version = String(probe.stdout || '').match(/Hermes Agent v([^\s]+)/i)?.[1];
     if (!supportsHermesVersion(version)) {
-      throw new Error(`Hermes ${version || 'unknown'} is unsupported; this adapter supports ${SUPPORTED_HERMES_VERSION_RANGE}. Run hermes update to install a supported release`);
+      throw new Error(`Hermes ${version || 'unknown'} is unsupported; this adapter supports ${SUPPORTED_HERMES_VERSION_RANGE}. Run hermes update if yours is older than 0.22.5; releases 0.23 and later are not supported yet`);
     }
     return version;
   }
@@ -243,7 +243,8 @@ export const createHermesAdapter = ({
     await syncProfileEnv(home, env);
     const cwd = ctx.cwd || process.cwd();
     // 0.22.5's gateway rejects --no-restore-cwd; --in pins the workspace on
-    // both fresh and resumed turns and is also supported by 0.22.2.
+    // both fresh and resumed turns. 0.22.2-0.22.4 are refused above, so no
+    // version-keyed flag is needed.
     const args = ['chat', '--oneshot', '--query-file', '-', '--format', 'stream-json',
       '--provider', 'openrouter', '--source', 'tool', '--in', cwd];
     if (seatModel) args.push('--model', seatModel);
