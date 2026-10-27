@@ -138,8 +138,7 @@ Limits to know:
   A request to a download host can still carry data in its URL.
 - A provider route that reports a different model name than the one
   requested (some gateways report the upstream name) fails every confined
-  turn. Check one turn before relying on it.
-- `node cli/scripts/probe-seatbelt-confinement.mjs` checks the profile's
+  turn.- `node cli/scripts/probe-seatbelt-confinement.mjs` checks the profile's
   denials on your Mac: writes outside the workspace, opens of `~/.commonly`,
   `gh`'s `hosts.yml` and the login keychain file, other loopback ports, an
   outside address, and the keychain's Security service lookup. It never
