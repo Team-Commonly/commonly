@@ -225,6 +225,40 @@ describe('pod agents lastActiveAt derivation (#915)', () => {
     expect(res.body.agents[0].connection.lastSeenAt).toEqual(expect.any(String));
   });
 
+  it('projects a daemon-bound seat as a wrapper even when its install label is not wrapper', async () => {
+    AgentInstallation.getInstalledAgents.mockResolvedValue([baseInstallation({
+      agentName: 'local', config: new Map([['runtime', { runtimeType: 'claude-code' }]]),
+    })]);
+    User.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
+      _id: 'bot-1', username: 'local-default', botMetadata: { machineId: 'machine-1' }, agentRuntimeTokens: [],
+    }]) }) });
+    AgentCredential.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([
+      { kind: 'runtime', agentUserId: 'bot-1', status: 'active', lastUsedAt: new Date() },
+      { kind: 'daemon', machineId: 'machine-1', status: 'active' },
+    ]) }) });
+    Machine.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
+      machineId: 'machine-1', lastSeenAt: new Date(),
+    }]) }) });
+    const res = await request(app).get(`/api/registry/pods/${POD_ID}/agents`);
+    expect(res.status).toBe(200);
+    expect(res.body.agents[0].connection.state).toBe('connected');
+    expect(res.body.agents[0].connection.lastSeenAt).toEqual(expect.any(String));
+  });
+
+  it('reports a daemon-bound seat with no live signal as never connected, not missing', async () => {
+    AgentInstallation.getInstalledAgents.mockResolvedValue([baseInstallation({
+      agentName: 'local', config: new Map([['runtime', { runtimeType: 'claude-code' }]]),
+    })]);
+    User.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
+      _id: 'bot-1', username: 'local-default', botMetadata: { machineId: 'machine-1' }, agentRuntimeTokens: [],
+    }]) }) });
+    AgentCredential.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) });
+    Machine.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) });
+    const res = await request(app).get(`/api/registry/pods/${POD_ID}/agents`);
+    expect(res.status).toBe(200);
+    expect(res.body.agents[0].connection).toEqual({ state: 'never', lastSeenAt: null });
+  });
+
   it('surfaces AgentRun activity for native agents with no heartbeats and no tokens', async () => {
     AgentInstallation.getInstalledAgents.mockResolvedValue([baseInstallation()]);
     AgentRun.aggregate.mockResolvedValue([
