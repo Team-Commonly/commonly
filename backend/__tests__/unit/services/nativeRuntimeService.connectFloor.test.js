@@ -13,7 +13,7 @@ jest.mock('../../../services/approvalActionService', () => ({
 const User = require('../../../models/User');
 const ApprovalAction = require('../../../models/ApprovalAction');
 const { proposeAction, suggestLocalAgentName } = require('../../../services/approvalActionService');
-const { isConnectIntent, connectIntentFloor } = require('../../../services/nativeRuntimeService');
+const { isConnectIntent, connectIntentFloor, connectRequestAnswered } = require('../../../services/nativeRuntimeService');
 
 const humanSender = (isBot = false) => User.findById.mockImplementation(() => ({
   select: () => ({ lean: async () => ({ isBot }) }),
@@ -116,5 +116,23 @@ describe('connectIntentFloor', () => {
     proposeAction.mockResolvedValue({ ok: false, error: 'no owner' });
 
     expect(await connectIntentFloor(floorInput('connect my Claude Code'))).toBe(false);
+  });
+});
+
+describe('connectRequestAnswered', () => {
+  it('is answered when Scout posted a reply without proposing a card', () => {
+    expect(connectRequestAnswered(true, 'Here is how to connect your Claude Code.')).toBe(true);
+  });
+
+  it('is answered by a proposed card alone', () => {
+    expect(connectRequestAnswered(true, undefined)).toBe(true);
+  });
+
+  it('is answered by the text fallback alone', () => {
+    expect(connectRequestAnswered(false, 'Sure, open the connect page.')).toBe(true);
+  });
+
+  it('is open only when the turn posted nothing', () => {
+    expect(connectRequestAnswered(false, undefined)).toBe(false);
   });
 });

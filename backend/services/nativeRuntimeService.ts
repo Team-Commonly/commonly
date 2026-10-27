@@ -1330,6 +1330,11 @@ const CONNECT_INTENT = /\b(connect|link|hook up|attach|set up)\b[^.!?\n]{0,40}\b
 
 export const isConnectIntent = (text: string): boolean => CONNECT_INTENT.test(text);
 
+// Any reply this run, not just a card, answers the connect request.
+export const connectRequestAnswered = (postedViaTool: boolean, finalMessage: string | undefined): boolean => (
+  postedViaTool || finalMessage !== undefined
+);
+
 export const connectIntentFloor = async (input: {
   trigger: NativeRunTrigger;
   podId: string;
@@ -2027,7 +2032,6 @@ export async function runAgent(
   let finalMessage: string | undefined;
   let turnIndex = 0;
   let postedViaTool = false;
-  let proposedCard = false;
   let modelFailureReason: string | undefined;
 
   // Row B (TASK-132): the seat's grant broker, assembled ONCE PER RUN at turn
@@ -2330,7 +2334,6 @@ export async function runAgent(
           // special case exists for).
           if (toolName === 'commonly_propose_action' && !result.error) {
             postedViaTool = true;
-            proposedCard = true;
           }
           // The hosted offer posts the model's own reply with its button, so
           // the same holds: the fallback must not post the narration twice.
@@ -2505,9 +2508,10 @@ export async function runAgent(
     run.webFetches = dispatchCtx.webFetches;
   }
 
-  // TASK-417: the deterministic floor runs after the model turn, so a turn that
-  // proposed nothing still gets the card on a connect-intent message.
-  if (run.status === 'succeeded' && !proposedCard) {
+  // TASK-417: the deterministic floor runs after the model turn. A turn that
+  // already replied (a post, a proposal, an offer, or the text fallback) has
+  // handled the request, so the floor stays out of it.
+  if (run.status === 'succeeded' && !connectRequestAnswered(postedViaTool, finalMessage)) {
     try {
       await connectIntentFloor({
         trigger,
