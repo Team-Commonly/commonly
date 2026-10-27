@@ -563,6 +563,7 @@ router.get('/:fileName/preview-pptx-html', artifactReadRateLimit, maybeAgentRunt
       return res.status(500).json({ msg: 'Could not render preview', detail: result.error });
     }
     res.set('Content-Type', 'text/html; charset=utf-8');
+    res.set('X-Content-Type-Options', 'nosniff');
     res.set('Cache-Control', 'private, max-age=300');
     return res.send(result.html);
   } catch (err) {

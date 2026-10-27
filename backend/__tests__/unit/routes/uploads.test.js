@@ -38,6 +38,14 @@ jest.mock('../../../middleware/agentRuntimeAuth', () => (...args) => mockAgentRu
 
 jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 
+// The PPTX preview shells out to officecli; a stand-in writes the HTML file
+// officecli would and prints its path, so the success path is reachable.
+const mockSpawn = jest.fn();
+jest.mock('child_process', () => ({
+  ...jest.requireActual('child_process'),
+  spawn: (...args) => mockSpawn(...args),
+}));
+
 const File = require('../../../models/File');
 const User = require('../../../models/User');
 const jwt = require('jsonwebtoken');
@@ -97,6 +105,11 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
     it.each([
       ['photo.png', 'image/png', 'inline'],
       ['notes.TXT', 'text/plain; charset=utf-8', 'inline'],
+      ['readme.md', 'text/plain; charset=utf-8', 'inline'],
+      ['rows.csv', 'text/csv; charset=utf-8', 'inline'],
+      ['data.json', 'application/json; charset=utf-8', 'inline'],
+      ['paper.pdf', 'application/pdf', 'inline'],
+      ['shot.webp', 'image/webp', 'inline'],
       ['diagram.svg', 'image/svg+xml', 'attachment'],
       ['deck.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'attachment'],
       ['bundle.zip', 'application/zip', 'attachment'],
@@ -248,5 +261,29 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
 
     expect(mockAgentRuntimeAuth).toHaveBeenCalledTimes(1);
     expect(mockCanReadAttachment).toHaveBeenCalledWith('private.pptx', 'agent-user');
+  });
+
+  it('serves a rendered PPTX preview as html with nosniff', async () => {
+    const { EventEmitter } = require('events');
+    const fs = require('fs');
+    const path = require('path');
+    mockSpawn.mockImplementation((_cmd, _args, { cwd }) => {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      setImmediate(() => {
+        const out = path.join(cwd, 'deck.html');
+        fs.writeFileSync(out, '<html>deck</html>');
+        child.stdout.emit('data', Buffer.from(`${out}\n`));
+        child.emit('close', 0);
+      });
+      return child;
+    });
+    mockStore.get.mockResolvedValue({ stream: Readable.from(Buffer.from('pptx')), mime: 'x', size: 4 });
+
+    const res = await request(app).get('/api/uploads/deck.pptx/preview-pptx-html').expect(200);
+    expect(res.text).toBe('<html>deck</html>');
+    expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
   });
 });
