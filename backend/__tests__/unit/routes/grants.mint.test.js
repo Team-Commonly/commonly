@@ -132,7 +132,9 @@ describe('POST /api/grants', () => {
   });
 
   test.each([
-    ['pod_required', { kind: 'seat', id: SEAT }],
+    // A seat now stops at the target check (above); the gate's pod_required
+    // still maps to its 403 for a pod it cannot resolve.
+    ['pod_required', { kind: 'pod', id: POD }],
     ['pod_not_private', { kind: 'pod', id: POD }],
     ['pod_bridged', { kind: 'pod', id: POD }],
     ['non_native_agent', { kind: 'pod', id: POD }],
