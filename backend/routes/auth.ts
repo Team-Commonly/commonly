@@ -97,6 +97,25 @@ const loginLimiter = rateLimit({
   handler: rateLimitHandler('rate limit exceeded: 20 login attempts per 15 minutes'),
 });
 
+// The IP limit alone lets guesses at one account scale with the number of IPs
+// a caller holds, so failed sign-ins are also counted per submitted address,
+// whether or not it has an account. Only failures count, so signing in never
+// spends the budget. The cost: someone who knows an address can pause its
+// password sign-in for up to 15 minutes. OAuth sign-in and reset still work.
+const loginAccountKey = (req: { body?: { email?: unknown } }) => (
+  typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : ''
+);
+const loginAccountLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  skip: (req: { body?: { email?: unknown } }) => process.env.NODE_ENV === 'test' || !loginAccountKey(req),
+  keyGenerator: (req: { body?: { email?: unknown } }) => `login-account:${loginAccountKey(req)}`,
+  handler: rateLimitHandler('rate limit exceeded: 10 failed sign-ins for this address per 15 minutes'),
+});
+
 // Device start mints a server-side authorization request; poll needs room for
 // the documented 5s cadence over a ten-minute lifetime. These are separate
 // buckets so an interrupted CLI cannot starve a fresh login attempt.
@@ -236,7 +255,7 @@ router.get('/oauth/:provider/callback', oauthLimiter, oauthCallback);
 router.post('/oauth/exchange', oauthLimiter, exchangeOAuthCode);
 router.get('/registration-policy', registrationPolicyLimit, getRegistrationPolicy);
 router.post('/waitlist', waitlistLimiter, requestWaitlist);
-router.post('/login', loginLimiter, login);
+router.post('/login', loginLimiter, loginAccountLimiter, login);
 router.post('/device/start', deviceStartLimiter, async (req: any, res: Res) => {
   try {
     const { deviceCode, userCode } = await createDeviceAuthorization(req.body || {});

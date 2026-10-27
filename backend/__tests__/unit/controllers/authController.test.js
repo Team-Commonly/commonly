@@ -758,7 +758,7 @@ describe('Auth Controller Tests', () => {
         isBot: { $ne: true },
       });
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({ error: 'User not found' });
+      expect(res.json).toHaveBeenCalledWith({ error: 'Invalid credentials' });
     });
 
     it('should not login a non-existent user', async () => {
@@ -777,11 +777,67 @@ describe('Auth Controller Tests', () => {
       await authController.login(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          error: expect.stringContaining('User not found'),
-        }),
-      );
+      expect(res.json).toHaveBeenCalledWith({ error: 'Invalid credentials' });
+    });
+
+    // Every failed sign-in reads the same and runs one bcrypt compare, so
+    // neither the reply nor its timing says whether the address has an account.
+    describe('one reply for every failed sign-in', () => {
+      const res = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
+      beforeEach(() => { bcrypt.compare.mockClear(); });
+
+      it.each([
+        ['no account', null],
+        ['an account with no password', { email: 'oauth@example.com', authProviders: [{ provider: 'github' }] }],
+      ])('answers %s like a wrong password, after one compare', async (_label, user) => {
+        User.findOne = jest.fn().mockResolvedValueOnce(user);
+        const out = res();
+
+        await authController.login({ body: { email: 'oauth@example.com', password: 'Password123!' } }, out);
+
+        expect(bcrypt.compare).toHaveBeenCalledTimes(1);
+        expect(out.status).toHaveBeenCalledWith(400);
+        expect(out.json).toHaveBeenCalledWith({ error: 'Invalid credentials' });
+      });
+
+      it('answers a missing address the same, without a lookup', async () => {
+        User.findOne = jest.fn();
+        const out = res();
+
+        await authController.login({ body: { password: 'Password123!' } }, out);
+
+        expect(User.findOne).not.toHaveBeenCalled();
+        expect(bcrypt.compare).toHaveBeenCalledTimes(1);
+        expect(out.json).toHaveBeenCalledWith({ error: 'Invalid credentials' });
+      });
+
+      it('compares a non-string password as empty rather than failing', async () => {
+        User.findOne = jest.fn().mockResolvedValueOnce({ email: 'test@example.com', password: 'hash' });
+        bcrypt.compare.mockResolvedValueOnce(false);
+        const out = res();
+
+        await authController.login({ body: { email: 'test@example.com', password: { $ne: null } } }, out);
+
+        expect(bcrypt.compare).toHaveBeenCalledWith('', 'hash');
+        expect(out.status).toHaveBeenCalledWith(400);
+      });
+
+      it('says a suspended account is suspended only after its password matches', async () => {
+        const banned = { email: 'banned@example.com', password: 'hash', banned: true, verified: true };
+        User.findOne = jest.fn().mockResolvedValueOnce(banned);
+        bcrypt.compare.mockResolvedValueOnce(false);
+        const wrong = res();
+        await authController.login({ body: { email: 'banned@example.com', password: 'nope' } }, wrong);
+        expect(wrong.status).toHaveBeenCalledWith(400);
+        expect(wrong.json).toHaveBeenCalledWith({ error: 'Invalid credentials' });
+
+        User.findOne = jest.fn().mockResolvedValueOnce(banned);
+        bcrypt.compare.mockResolvedValueOnce(true);
+        const right = res();
+        await authController.login({ body: { email: 'banned@example.com', password: 'Password123!' } }, right);
+        expect(right.status).toHaveBeenCalledWith(403);
+        expect(right.json).toHaveBeenCalledWith({ error: 'This account has been suspended.' });
+      });
     });
   });
 

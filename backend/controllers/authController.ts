@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
@@ -824,44 +825,41 @@ exports.verifyEmail = async (req: any, res: any) => {
   }
 };
 
+// A failed sign-in gets one reply whatever the reason: no account, a wrong
+// password, or an account that has no password (OAuth-only). Each of those
+// also runs one bcrypt compare, so the response time does not tell them apart.
+const INVALID_LOGIN = 'Invalid credentials';
+let missHash: Promise<string> | null = null;
+const compareOnMiss = async (candidate: string): Promise<boolean> => {
+  missHash ??= bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10);
+  return bcrypt.compare(candidate, await missHash);
+};
+
 // 📌 Login User
 exports.login = async (req: any, res: any) => {
-  const { password } = req.body;
+  const candidate = typeof req.body?.password === 'string' ? req.body.password : '';
   // Coerce email to a string BEFORE it reaches Mongo. Without this a body like
   // {"email":{"$ne":null}} is interpreted as a query operator and matches an
   // arbitrary user (NoSQL injection → account enumeration). register/
   // forgotPassword already normalize; login was the gap.
   const email = normalizeEmail(req.body?.email);
   try {
-    if (!email) return res.status(400).json({ error: 'User not found' });
     // `isBot` matches the two recovery paths beside it (forgotPassword,
     // resendVerification). An agent row is a User and can carry a password hash,
     // and this route is the one that MINTS a password session — which every user
     // session verifier then accepted, because a bot is neither banned nor
     // otherwise marked (TASK-133). A bot row still has its runtime token.
-    const user = await User.findOne({ email, isBot: { $ne: true } });
-    if (!user) return res.status(400).json({ error: 'User not found' });
+    const user = email ? await User.findOne({ email, isBot: { $ne: true } }) : null;
+    const isMatch = user?.password
+      ? await bcrypt.compare(candidate, user.password)
+      : await compareOnMiss(candidate);
+    if (!user?.password || !isMatch) return res.status(400).json({ error: INVALID_LOGIN });
 
-    // Admin moderation: banned accounts cannot start a session.
+    // Moderation and the team gate apply only after a valid password, so
+    // neither refusal discloses whether a guessed address has an account.
     if (user.banned) {
       return res.status(403).json({ error: 'This account has been suspended.' });
     }
-
-    // OAuth-only accounts have no password hash — send them to their provider
-    // instead of letting bcrypt throw on an undefined hash.
-    if (!user.password) {
-      const providers = (user.authProviders || []).map((p: any) => p.provider).join(' or ');
-      return res.status(400).json({
-        error: `This account signs in with ${providers || 'a linked provider'}. Use the social sign-in button.`,
-        code: 'OAUTH_ONLY_ACCOUNT',
-      });
-    }
-
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ error: 'Invalid credentials' });
-
-    // Apply the team gate only after a valid password, so the refusal does not
-    // disclose whether a guessed address belongs to an unverified account.
     if (!isInstanceEmailAllowed(user.email) || (isInstanceAccessRestricted() && !user.verified)) {
       return res.status(403).json({ error: INSTANCE_ACCESS_ERROR, code: 'INSTANCE_ACCESS_RESTRICTED' });
     }
