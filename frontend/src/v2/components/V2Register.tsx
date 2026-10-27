@@ -244,6 +244,11 @@ const V2Register: React.FC = () => {
           {' '}
           <Link to="/v2/login" className="v2-login__link">{t('auth.login.submit')}</Link>
         </div>
+        <div className="v2-login__hint">
+          <Link to="/terms" className="v2-login__link">{t('auth.register.terms')}</Link>
+          {' · '}
+          <Link to="/privacy" className="v2-login__link">{t('auth.register.privacy')}</Link>
+        </div>
       </form>
     </div>
   );

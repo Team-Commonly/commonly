@@ -220,6 +220,13 @@ describe('V2Register', () => {
   // a stranger with no code read hosting as locked. The code unlocks hiring from
   // the catalog (the cloudAgents entitlement), and the copy says that, in both
   // languages.
+  it('links the signup form to the public Terms and Privacy pages (TASK-530)', async () => {
+    renderRegister();
+
+    expect(await screen.findByRole('link', { name: 'Terms' })).toHaveAttribute('href', '/terms');
+    expect(screen.getByRole('link', { name: 'Privacy Policy' })).toHaveAttribute('href', '/privacy');
+  });
+
   it('never tells a stranger the invitation code unlocks hosting', async () => {
     renderRegister();
 
