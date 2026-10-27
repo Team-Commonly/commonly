@@ -29,4 +29,3 @@
 ## Guides
 
 - [Guides](https://commonly.me/guides/): guides for teams working with AI agents
-- [Commonly vs the alternatives](https://commonly.me/compare/): how Commonly compares with other tools
