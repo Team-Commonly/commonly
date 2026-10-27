@@ -119,10 +119,24 @@ Owner: TASK-013. Source: `docs-site/deployment/index.mdx`, `docker.mdx`, `kubern
 Owner: TASK-015. The docs site has no pricing page. `commonly.me/pricing` redirects to the landing
 page's pricing section (`frontend/nginx.conf:36`), which renders at
 `frontend/src/v2/landing/V2LandingPage.tsx:827` with its copy under `landing.pricing` in
-`frontend/src/i18n/locales/en.json:981`.
+`frontend/src/i18n/locales/en.json:978`.
+
+Evidence below is `main` at `75d80918e`. Rows marked "Removed here" or "Now" are fixed in the PR that
+adds them. Rows that name another PR were already fixed on main.
 
 | Page | Claim | Verdict | Evidence | Date |
 |---|---|---|---|---|
+| Landing pricing | "10 hosted agent seats" | FALSE | `backend/services/hostedRuntimeService.ts:36` `DEFAULT_AGENTS_PER_USER = 1`, the same on every plan (`:58`). Removed here. | 2026-10-26 |
+| Landing pricing | "coming soon, included when it lands" (hosted) | FALSE | Hosted agents run now; per-plan caps are wired in `backend/services/hostedRuntimeService.ts:58-61`. Removed here. | 2026-10-26 |
+| Landing pricing | "SSO/SAML" | FALSE | No code: `git grep -i saml origin/main -- backend frontend/src` matches only the copy (`en.json:1021`, `zh-CN.json:1020`). Main already reads "SSO/SAML is planned" (#2856, `bafad4060`). This PR keeps that wording, and the guard allows that phrase and no other SSO/SAML copy. | 2026-10-26 |
+| Landing pricing | "federation across instances" | FALSE | Federation is cross-pod inside one instance: `backend/server.ts:271`, `backend/services/federationService.ts:1-5`. `federationProtocol` is only declared in the schema (`backend/models/Installable.ts:242`, `:482`). Removed on main by #2856 (`bafad4060`). | 2026-10-26 |
+| Landing pricing | "30 days of message history" (as a flat promise) | FALSE | `backend/services/pgRetentionService.ts:47` (30-day default), `:51` (1-day floor), `:267-296` (steps down under disk pressure). Now "Up to 30 days". | 2026-10-26 |
+| Landing pricing | "Pro adds hosted agents" | FALSE | Cloud free gets hosted agents too: the agent cap ignores plan (`backend/services/hostedRuntimeService.ts:58`); the plan only changes turns (`:60-61`). Now "a higher hosted-agent turn cap". | 2026-10-26 |
+| Landing pricing | "Pro adds unlimited history" (unscoped) | FALSE | Only pods the buyer created: `backend/services/pgRetentionService.ts:125-150` (the pod's creator governs), `:166` (Pro flag read on the creator). Now "in pods you create". | 2026-10-26 |
+| Landing pricing | "Up to 30 days of message history" (Cloud free) | TRUE | `backend/services/pgRetentionService.ts:47,51,267-296`. A ceiling: disk pressure can shorten it. | 2026-10-26 |
+| Landing pricing | "Unlimited history in pods you create" (Pro) | TRUE | `backend/services/pgRetentionService.ts:125-150,166`. | 2026-10-26 |
+| Landing pricing | "Hosted agents: 200 turns a day per agent, against 30 on Cloud free" | TRUE | Code defaults `backend/services/hostedRuntimeService.ts:38-39`, plan switch `:60-61`, per agent per UTC day `:11-13`. Live env not read: no `HOSTED_TURNS*` override in repo k8s or docs. | 2026-10-26 |
+| Landing pricing | "Community listing" (Pro) | TRUE | `backend/routes/pods.ts:768-770`: a non-admin pod creator without `entitlements.pro` gets 402 `pro_required`. | 2026-10-26 |
 
 ## Other customer surfaces
 
@@ -133,7 +147,7 @@ the FAQ, and `CONTRIBUTING.md`. The section is complete when every surface in th
 | Page | Claim | Verdict | Evidence | Date |
 |---|---|---|---|---|
 | In-app Plan (`billing.proNote`) | "…and hosted agent seats when they land." | FALSE | Hosted agents have shipped. `backend/services/hostedRuntimeService.ts:36` gives a free account one agent (`DEFAULT_AGENTS_PER_USER = 1`). The key has no call site, so the sentence is removed with it. | 2026-10-26 |
-| In-app Plan (`billing.freeNote`) | "Unlimited agents you bring, and 30 days of message history. …" | CUT | No call site in `frontend/src` or `backend`. The only other match is a fixture label at `frontend/src/i18n/__tests__/zhNumberUnitSpacing.test.ts:254`, which reads no catalog value. The key is removed. | 2026-10-26 |
+| In-app Plan (`billing.freeNote`) | "Unlimited agents you bring, and 30 days of message history. …" | CUT | No call site in `frontend/src` or `backend`. The only other match is a fixture label at `frontend/src/i18n/__tests__/zhNumberUnitSpacing.test.ts:256`, which reads no catalog value. The key is removed. | 2026-10-26 |
 | Landing, open-source list (`landing.openSource.items.federation`) | "Federation on the roadmap. Agents on different instances will interact — ActivityPub for agents." | CUT | `git grep -i activitypub` finds nothing under `backend`, `frontend/src` or `docs-site`. The federation code that exists is cross-pod queries (`backend/services/federationService.ts:1-5`). The bullet is removed; it can return with a shipped track or a walk. | 2026-10-26 |
 | CONTRIBUTING.md | "pick up an open issue labeled `good first issue` on GitHub" (the label-query link on main before this PR) | FALSE | `gh issue list -R Team-Commonly/commonly --label "good first issue" --state open` returned 0 on 2026-10-26, so the link opened an empty list. The earlier task-board link, `app-dev.commonly.me/pods/team`, was already dead (`CLAUDE.md`, Quick Start). This PR replaces the link with the open-issues list, which had 138 open issues on 2026-10-27. | 2026-10-27 |
 | CONTRIBUTING.md | "you can install it into the public Commonly instance" (OpenClaw) | TRUE | The provider route exists: `backend/routes/providers/moltbot.ts:4`. This row checks the code path only, not a contributor install on commonly.me. | 2026-10-26 |
