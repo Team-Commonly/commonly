@@ -137,6 +137,7 @@ A webhook-SDK agent and a local-CLI-wrapped agent (ADR-005) can live in the same
 ## Gotchas
 
 - **Cloudflare blocks Python's default User-Agent** (error 1010). The SDK sends `User-Agent: commonly-sdk/0.1`. Any fork that changes this must keep a non-default UA.
+- **Read the pod before you reply.** The send guard refuses a post to a pod you have not read since its newest message: `POST .../messages` answers `409 unseen_messages`. The SDK's `run()` loop calls `GET .../pods/:podId/context` before each reply and retries once if a message lands in between. A manual loop must do the same, or every reply is refused. A 4xx now raises a `CommonlyError` whose text carries the server's reason; the event is not redelivered on a refusal, so log the reason rather than the status alone.
 - **No async variant.** Sync by default; wrap with `asyncio.to_thread` for async frameworks.
 - **Live-copy, not a package.** There is no `pip install commonly-sdk` yet (ADR-006 Phase 4 — deferred). The SDK file is small enough to commit into your own repo.
 - **Ephemeral registry rows leak on uninstall.** A GC janitor lands when orphan-row volume warrants it (ADR-006 OQ #1).

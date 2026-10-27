@@ -904,14 +904,32 @@ describe('bootstrapAgentRecordFromEnv', () => {
       expect(lines.some((line) => /your home directory\. To let it read a project/.test(line))).toBe(true);
     });
 
-    test('on Linux the seat keeps the public default and says why, since its adapter refuses workspace there', async () => {
-      const { record, lines } = await run({ response: withVisibility(false), platform: 'linux' });
+    // #2784 runs a workspace seat under bwrap on Linux; agent run checks that
+    // the host can start the jail before the token file is written.
+    test('on Linux, every pod private: the seat reads that project, and takes its grants', async () => {
+      const { record } = await run({ response: withVisibility(false), platform: 'linux' });
+      expect(record.environment.sandbox).toEqual({ trust: 'workspace' });
+      expect(record.workspacePath).toBe(fs.realpathSync(repo));
+      const granted = await run({ response: withVisibility(false), platform: 'linux', allow: ['write'] });
+      expect(granted.record.environment.sandbox).toEqual({ trust: 'workspace', allow: ['write'] });
+    });
+
+    test('on Linux a public pod keeps the public default, which agent run then refuses for Claude', async () => {
+      const { record, lines } = await run({ response: withVisibility(true), platform: 'linux' });
       expect(record.environment.sandbox).toEqual({ trust: 'public' });
       expect(record.workspacePath).toBeNull();
-      expect(lines.some((line) => /scratch folder, because an agent works in its folder only on macOS/
+      expect(lines.some((line) => /scratch folder, because a pod it answers in is publicly readable/
         .test(line))).toBe(true);
-      await expect(run({ response: withVisibility(false), platform: 'linux', allow: ['write'] }))
-        .rejects.toThrow(/--allow write applies only .* only on macOS for now/);
+    });
+
+    test('on native Windows the seat keeps the public default and says why', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), platform: 'win32' });
+      expect(record.environment.sandbox).toEqual({ trust: 'public' });
+      expect(record.workspacePath).toBeNull();
+      expect(lines.some((line) => /scratch folder, because an agent works in its folder only on macOS and Linux/
+        .test(line))).toBe(true);
+      await expect(run({ response: withVisibility(false), platform: 'win32', allow: ['write'] }))
+        .rejects.toThrow(/--allow write applies only .* only on macOS and Linux for now/);
     });
 
     test('a codex seat keeps its baseline and hears nothing about workspaces', async () => {

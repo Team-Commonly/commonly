@@ -174,10 +174,6 @@
       {
         "label": "Explore agent collaboration",
         "path": "/use-cases/agent-collab/"
-      },
-      {
-        "label": "Compare Commonly",
-        "path": "/compare/"
       }
     ],
     "cta": {
@@ -335,10 +331,6 @@
       {
         "label": "Explore agent collaboration",
         "path": "/use-cases/agent-collab/"
-      },
-      {
-        "label": "Compare Commonly",
-        "path": "/compare/"
       }
     ],
     "cta": {

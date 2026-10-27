@@ -788,6 +788,25 @@ const resolveClaudePath = (env = process.env) => {
   return 'claude';
 };
 
+// Where the claude this host would run is installed: the folder the Linux
+// workspace jail has to bind, since it binds the system binary folders only.
+// Null when the binary cannot be located (a bare name, a dangling link).
+const resolveClaudeInstall = (env) => {
+  const claudeBin = resolveClaudePath(env);
+  if (!isAbsolute(claudeBin)) return { claudeBin, claudeInstall: null };
+  try {
+    return { claudeBin, claudeInstall: dirname(realpathSync(claudeBin)) };
+  } catch {
+    return { claudeBin, claudeInstall: null };
+  }
+};
+
+// A jail that cannot carry claude would fail inside at every spawn.
+const claudeInstallRefusal = (claudeBin) => new Error(
+  'workspace Claude agents on Linux need Claude Code on PATH, so the sandbox can carry its install; '
+  + `\`${claudeBin}\` could not be resolved`,
+);
+
 const prepareArgv = async (innerArgv, ctx) => {
   const env = ctx.environment;
   const claudeEnv = withClaudePath(ctx.claudeEnv);
@@ -941,12 +960,9 @@ const prepareArgv = async (innerArgv, ctx) => {
           + `repository (run \`git init\` in ${ctx.cwd}), so its .git can be held read-only`);
       }
     }
-    const claudeBin = resolveClaudePath(claudeEnv);
+    const { claudeBin, claudeInstall } = resolveClaudeInstall(claudeEnv);
+    if (!claudeInstall) throw claudeInstallRefusal(claudeBin);
     const { statePath } = ctx.publicClaudeState;
-    let claudeInstall = null;
-    try {
-      claudeInstall = dirname(realpathSync(claudeBin));
-    } catch { /* an unresolvable binary fails at spawn with its own error */ }
     const wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
       workspacePath: ctx.cwd,
       workspaceReadOnly: !grants.includes('write'),
@@ -1125,6 +1141,8 @@ export default {
         // jail never gets a copy of the login.
         const bwrap = (ctx._detectBwrap || detectBwrap)();
         if (!bwrap.available) throw new Error(`workspace Claude agents require bwrap: ${bwrap.error}`);
+        const { claudeBin, claudeInstall } = resolveClaudeInstall(withClaudePath(ctx.env));
+        if (!claudeInstall) throw claudeInstallRefusal(claudeBin);
         publicClaudeState = await prepareWorkspaceBwrapClaudeState(ctx);
       }
       if (publicTrust) {

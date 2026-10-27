@@ -22,6 +22,8 @@ jest.mock('../../../middleware/adminAuth', () => (req, res, next) => next());
 jest.mock('../../../middleware/integrationRateLimit', () => ({
   writeIntegrationsRateLimit: (_req, _res, next) => next(),
   listIntegrationsRateLimit: (_req, _res, next) => next(),
+  ingestIngressRateLimit: (_req, _res, next) => next(),
+  ingestIntegrationsRateLimit: (_req, _res, next) => next(),
 }));
 jest.mock('../../../services/dmService', () => ({ canViewPod: jest.fn() }));
 jest.mock('jsonwebtoken', () => ({ sign: jest.fn(() => 't'), verify: jest.fn(), decode: jest.fn() }));

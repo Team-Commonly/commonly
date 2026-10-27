@@ -52,6 +52,14 @@ Owner: TASK-011. Source: `docs-site/quickstart.mdx` and `docs-site/introduction.
 | introduction | The manual `commonly agent attach` flow remains available and does not request a seat for the daemon | TRUE (command); the "does not request" half is not yet cited | `cli/src/index.js:62` shows the command. Needs a `file:line` for the no-seat-request behaviour | 2026-10-26 |
 | introduction | Card links resolve (concepts, agents, deployment, runtime-protocol, openapi) | TRUE | Targets exist, including `docs/api/openapi.yaml` | 2026-10-26 |
 | introduction | The pod can mix Claude Code, Codex, a hosted agent and your own program | TRUE | `frontend/src/v2/components/V2RuntimeControls.tsx:18` (runtime labels) | 2026-10-26 |
+| introduction | Each agent is a named member with an owner | TRUE | `backend/models/AgentRegistry.ts:261` (`installedBy`, required, on every installation) | 2026-10-27 |
+| introduction | A teammate joins by link and sees the conversation so far | TRUE; walked | Prod walk 10-27: a second person redeemed the pod's invite link and saw earlier messages. The invite card says so: `en.json:2640` ("They'll see everything in this pod, including earlier messages") | 2026-10-27 |
+| introduction | Connect your own Claude Code, or start one in the pod in one click | TRUE; walked | Same claims as the quickstart rows above ("Run it here") and `docs-site/bring-your-own/claude-code.mdx`, re-walked 10-26 (TASK-011) | 2026-10-27 |
+| introduction | Every agent sits on the pod's one roster | TRUE; walked | The roster is the pod's agent list ("agents in {{pod}}", `en.json:1221`, rendered at `frontend/src/v2/components/V2Inspector.tsx:208`), fed by `GET /api/registry/pods/:podId/agents` (`backend/routes/registry/pod-agents.ts:179`, `AgentInstallation.getInstalledAgents(podId)`: every installed agent in the pod, whatever its runtime). Prod walk 10-27: a BYO Claude Code agent and a hosted agent listed together in one pod. Not Your Team, which lists your agents across pods | 2026-10-27 |
+| introduction | Agents file tasks | TRUE; walked | `backend/routes/tasksApi.ts:245` (`POST /:podId`, `dualAuth`; `:255` takes `req.agentUser` as the creator). Prod walk 10-27: an agent filed TASK-001 on a person's ask | 2026-10-27 |
+| introduction | Agents post what they tried | TRUE | `backend/routes/tasksApi.ts:787` (`POST /:podId/:taskId/updates`, `dualAuth`; `:790` takes `req.agentUser`): an agent appends update notes to a task | 2026-10-27 |
+| introduction | A connected agent claims a task and the card moves to In Progress under its name | TRUE | `backend/routes/tasksApi.ts:594` (`POST /:podId/:taskId/claim` sets `status: 'claimed'`, `claimedBy`); `frontend/src/v2/components/V2PodBoard.tsx:105-109` renders `claimed` in the `board.col.inProgress` column (`en.json:1383`, "In Progress"). A hosted agent has no claim tool yet, so the page says *connected* | 2026-10-27 |
+| introduction | The agent asks you on a card, and Activity shows what needs you across every pod | TRUE | `frontend/src/v2/components/V2ActivityPage.tsx:49` (`decision` kind), `:403` (`/api/activity/decision-queue`); `en.json:206-210` ("Needs you") | 2026-10-27 |
 
 ## Bring your own agent
 
@@ -75,16 +83,60 @@ Owner: TASK-013. Source: `docs-site/deployment/index.mdx`, `docker.mdx`, `kubern
 
 | Page | Claim | Verdict | Evidence | Date |
 |---|---|---|---|---|
+| index | Needs Git, Docker Engine with the Compose v2 plugin, OpenSSL, and free ports 3000 and 5000 | TRUE | Compose v2 check `install.sh:15-17`; openssl `install.sh:31-33`, `:43-45`; published ports `docker-compose.local.yml:71`, `:126`. The installer does not check the ports, so "free" is advice | 2026-10-27 |
+| index | Check Docker with `docker compose version` | TRUE | Same command is the Compose v2 check at `install.sh:15` | 2026-10-27 |
+| index | "Run the same three steps shown on the Commonly home page" | TRUE | `frontend/src/v2/landing/V2LandingPage.tsx:36` (`SELF_HOST_COMMAND`: the same clone, `cd`, `./install.sh`, joined with `&&`) | 2026-10-27 |
+| index | The three commands: `git clone https://github.com/Team-Commonly/commonly.git`, `cd commonly`, `./install.sh` | TRUE | `V2LandingPage.tsx:36`; `install.sh` exists at repo root | 2026-10-27 |
+| index | Open http://localhost:3000 after install | TRUE | `install.sh:62` prints `App: http://localhost:3000`; frontend port `docker-compose.local.yml:126` | 2026-10-27 |
+| index | The installer builds and starts the frontend, backend, MongoDB and PostgreSQL | TRUE | `install.sh:57` (`up -d --build`); services `docker-compose.local.yml:24` (postgres), `:43` (mongo), `:58` (backend), `:114` (frontend) | 2026-10-27 |
+| index | With no `.env`, the installer creates an ignored one with a generated `JWT_SECRET` and `PG_PASSWORD` | TRUE | `install.sh:21-37` (JWT), `:42-48` (PG_PASSWORD); `.env` is ignored at `.gitignore:12` | 2026-10-27 |
+| index | Changing the secret signs everyone out | TRUE | Tokens verify against `JWT_SECRET` at `backend/middleware/auth.ts:113`, so a new secret fails existing tokens. Not walked | 2026-10-27 |
+| index | Compose setup is for one machine; no TLS, reverse proxy or public-domain configuration | TRUE | `docker-compose.local.yml` has four services and no proxy or TLS service (`:24`, `:43`, `:58`, `:114`); header states "Local, single-machine setup" (`:2`) | 2026-10-27 |
+| index | Keep its ports off the public internet | TRUE | Backend and frontend publish `5000` and `3000` (`docker-compose.local.yml:71`, `:126`); the database services publish none | 2026-10-27 |
+| index | The frontend calls `http://localhost:5000` (build-time) | TRUE | `docker-compose.local.yml:120` (`REACT_APP_API_URL=http://localhost:5000`) | 2026-10-27 |
+| index | A browser on another device would call its own localhost, so open the app on the machine that runs it | TRUE | Follows from the build-time URL at `docker-compose.local.yml:120`. Not walked from a second device | 2026-10-27 |
+| index | Health checks, updates and data retention are in the local deployment guide | TRUE | Link target `docs/deployment/SELF_HOSTED.md` exists | 2026-10-27 |
+| index | Public deployments: Kubernetes guide and Helm values reference | TRUE | Link targets `docs/deployment/KUBERNETES.md` and `docs/self-hosting/helm-reference.md` exist; `k8s/helm/commonly/values.yaml` exists | 2026-10-27 |
+| docker | The local profile builds frontend, backend, MongoDB and PostgreSQL on one machine, with no TLS, reverse proxy or public-domain configuration | TRUE | `docker-compose.local.yml:24`, `:43`, `:58`, `:114`; no TLS or proxy service | 2026-10-27 |
+| docker | `curl --fail --silent http://localhost:5000/api/health` checks the API | TRUE | `backend/server.ts:283` mounts `/api/health`; `backend/routes/health.ts:21` returns `status: 'healthy'`; backend port `docker-compose.local.yml:71` | 2026-10-27 |
+| docker | `docker compose --env-file .env -f docker-compose.local.yml ps` and `down` | TRUE | Compose file exists at repo root; `install.sh:68-69` prints the same `--env-file … -f docker-compose.local.yml` form for `logs` and `down`. `ps` is not printed by the installer, but is a valid Compose v2 subcommand | 2026-10-27 |
+| docker | `down` keeps the MongoDB and PostgreSQL volumes; `-v` removes both | TRUE | Named volumes `mongo-data` and `postgres-data` at `docker-compose.local.yml:134-136`; `-v` removes named volumes per Compose semantics. Not run | 2026-10-27 |
+| docker | Logs, updates and optional settings are in the repository's local deployment guide | TRUE | Link target `docs/deployment/SELF_HOSTED.md` exists | 2026-10-27 |
+| environment-variables | With no `.env`, the installer creates one with a generated `JWT_SECRET` and `PG_PASSWORD` | TRUE | `install.sh:21-37`, `:42-48` | 2026-10-27 |
+| environment-variables | If `.env` exists without `PG_PASSWORD`, the installer adds one | TRUE | `install.sh:42-48` (appends `PG_PASSWORD` under `umask 077`) | 2026-10-27 |
+| environment-variables | If `.env` exists without a non-default `JWT_SECRET`, `./install.sh` stops and asks you to set one | TRUE | `install.sh:22-28` (exits 1 on a missing or `change-me-in-production-…` value) | 2026-10-27 |
+| environment-variables | Keep the value private and stable so existing sessions continue | TRUE | Tokens verify against `JWT_SECRET` at `backend/middleware/auth.ts:113` | 2026-10-27 |
+| environment-variables | The local profile forwards only the variables listed in `docker-compose.local.yml` | TRUE | Backend `environment:` list `docker-compose.local.yml:72-112`; no `env_file:` in the file (grep count 0). `--env-file` only supplies `${…}` interpolation (`install.sh:57`) | 2026-10-27 |
+| environment-variables | Putting a variable in `.env` does not make the local profile forward it | TRUE | Same evidence as the row above: only listed variables reach the backend container | 2026-10-27 |
+| environment-variables | `.env.example` covers broader development and deployment settings | TRUE | `.env.example:46` (`JWT_SECRET`) and the wider file | 2026-10-27 |
+| environment-variables | Connector setup follows its guide and the self-hosting guide | TRUE | Link target `docs/deployment/SELF_HOSTED.md` exists | 2026-10-27 |
+| kubernetes | The three-step install is a local Compose setup and does not supply TLS, ingress, database, secrets or a backup plan | TRUE | `docker-compose.local.yml` has no TLS, ingress or backup service; the database is a local container (`:24`, `:43`); secrets come from `.env` | 2026-10-27 |
+| kubernetes | Repository deployment guide and Helm values reference are the Kubernetes path | TRUE | `docs/deployment/KUBERNETES.md` and `docs/self-hosting/helm-reference.md` exist; `k8s/helm/commonly/values.yaml` exists | 2026-10-27 |
+| kubernetes | Choose image, database, secrets, ingress and backup settings before running Helm | TRUE | Advice; the chart exposes these as values in `k8s/helm/commonly/values.yaml`. Not walked | 2026-10-27 |
 
 ## Pricing
 
 Owner: TASK-015. The docs site has no pricing page. `commonly.me/pricing` redirects to the landing
 page's pricing section (`frontend/nginx.conf:36`), which renders at
 `frontend/src/v2/landing/V2LandingPage.tsx:827` with its copy under `landing.pricing` in
-`frontend/src/i18n/locales/en.json:981`.
+`frontend/src/i18n/locales/en.json:978`.
+
+Evidence below is `main` at `75d80918e`. Rows marked "Removed here" or "Now" are fixed in the PR that
+adds them. Rows that name another PR were already fixed on main.
 
 | Page | Claim | Verdict | Evidence | Date |
 |---|---|---|---|---|
+| Landing pricing | "10 hosted agent seats" | FALSE | `backend/services/hostedRuntimeService.ts:36` `DEFAULT_AGENTS_PER_USER = 1`, the same on every plan (`:58`). Removed here. | 2026-10-26 |
+| Landing pricing | "coming soon, included when it lands" (hosted) | FALSE | Hosted agents run now; per-plan caps are wired in `backend/services/hostedRuntimeService.ts:58-61`. Removed here. | 2026-10-26 |
+| Landing pricing | "SSO/SAML" | FALSE | No code: `git grep -i saml origin/main -- backend frontend/src` matches only the copy (`en.json:1021`, `zh-CN.json:1020`). Main already reads "SSO/SAML is planned" (#2856, `bafad4060`). This PR keeps that wording, and the guard allows that phrase and no other SSO/SAML copy. | 2026-10-26 |
+| Landing pricing | "federation across instances" | FALSE | Federation is cross-pod inside one instance: `backend/server.ts:271`, `backend/services/federationService.ts:1-5`. `federationProtocol` is only declared in the schema (`backend/models/Installable.ts:242`, `:482`). Removed on main by #2856 (`bafad4060`). | 2026-10-26 |
+| Landing pricing | "30 days of message history" (as a flat promise) | FALSE | `backend/services/pgRetentionService.ts:47` (30-day default), `:51` (1-day floor), `:267-296` (steps down under disk pressure). Now "Up to 30 days". | 2026-10-26 |
+| Landing pricing | "Pro adds hosted agents" | FALSE | Cloud free gets hosted agents too: the agent cap ignores plan (`backend/services/hostedRuntimeService.ts:58`); the plan only changes turns (`:60-61`). Now "a higher hosted-agent turn cap". | 2026-10-26 |
+| Landing pricing | "Pro adds unlimited history" (unscoped) | FALSE | Only pods the buyer created: `backend/services/pgRetentionService.ts:125-150` (the pod's creator governs), `:166` (Pro flag read on the creator). Now "in pods you create". | 2026-10-26 |
+| Landing pricing | "Up to 30 days of message history" (Cloud free) | TRUE | `backend/services/pgRetentionService.ts:47,51,267-296`. A ceiling: disk pressure can shorten it. | 2026-10-26 |
+| Landing pricing | "Unlimited history in pods you create" (Pro) | TRUE | `backend/services/pgRetentionService.ts:125-150,166`. | 2026-10-26 |
+| Landing pricing | "Hosted agents: 200 turns a day per agent, against 30 on Cloud free" | TRUE | Code defaults `backend/services/hostedRuntimeService.ts:38-39`, plan switch `:60-61`, per agent per UTC day `:11-13`. Live env not read: no `HOSTED_TURNS*` override in repo k8s or docs. | 2026-10-26 |
+| Landing pricing | "Community listing" (Pro) | TRUE | `backend/routes/pods.ts:768-770`: a non-admin pod creator without `entitlements.pro` gets 402 `pro_required`. | 2026-10-26 |
 
 ## Other customer surfaces
 
@@ -95,7 +147,12 @@ the FAQ, and `CONTRIBUTING.md`. The section is complete when every surface in th
 | Page | Claim | Verdict | Evidence | Date |
 |---|---|---|---|---|
 | In-app Plan (`billing.proNote`) | "…and hosted agent seats when they land." | FALSE | Hosted agents have shipped. `backend/services/hostedRuntimeService.ts:36` gives a free account one agent (`DEFAULT_AGENTS_PER_USER = 1`). The key has no call site, so the sentence is removed with it. | 2026-10-26 |
-| In-app Plan (`billing.freeNote`) | "Unlimited agents you bring, and 30 days of message history. …" | CUT | No call site in `frontend/src` or `backend`. The only other match is a fixture label at `frontend/src/i18n/__tests__/zhNumberUnitSpacing.test.ts:254`, which reads no catalog value. The key is removed. | 2026-10-26 |
+| In-app Plan (`billing.freeNote`) | "Unlimited agents you bring, and 30 days of message history. …" | CUT | No call site in `frontend/src` or `backend`. The only other match is a fixture label at `frontend/src/i18n/__tests__/zhNumberUnitSpacing.test.ts:256`, which reads no catalog value. The key is removed. | 2026-10-26 |
 | Landing, open-source list (`landing.openSource.items.federation`) | "Federation on the roadmap. Agents on different instances will interact — ActivityPub for agents." | CUT | `git grep -i activitypub` finds nothing under `backend`, `frontend/src` or `docs-site`. The federation code that exists is cross-pod queries (`backend/services/federationService.ts:1-5`). The bullet is removed; it can return with a shipped track or a walk. | 2026-10-26 |
-| CONTRIBUTING.md | "pick up open issues tagged `good first issue` from the task board" (`app-dev.commonly.me/pods/team`) | FALSE | `app-dev.commonly.me` is dead (`CLAUDE.md`, Quick Start). `/pods/team` would resolve as podId `team`: `frontend/src/App.tsx:235` sends `/pods/` into `/v2`, and `frontend/src/v2/V2App.tsx:128` matches `pods/:podId`. `gh issue list -R Team-Commonly/commonly --label "good first issue" --state open` returned 0 on 2026-10-26. The link now points at the GitHub label query. | 2026-10-26 |
+| Landing hero, Your team feature, proof line (`landing.hero.lede`, `landing.features.team.text`, `landing.proof.sub`) | "its own workstation" (en), 工位 (zh-CN) | FALSE | No code backs a per-agent workstation: `git grep -i workstation` over `backend`, `cli` and `frontend/src` (outside locales) finds no code, only an operator-workstation sentence in `frontend/src/content/guides.json`. Removed from all three strings in en and zh-CN. | 2026-10-27 |
+| Landing hero, Your team feature, proof line (same keys) | "memory that stays with it" (was "its own memory") | TRUE | Memory is keyed by the agent's identity, not its install or runtime: unique index on `{ agentName, instanceId }` at `backend/models/AgentMemory.ts:326`; the agent reads it as itself at `backend/routes/agentsRuntime.ts:2781-2785` and writes it at `:2822` (ADR-003). Code path only, not walked. | 2026-10-27 |
+| Landing hero (`landing.hero.lede`) | "no per-agent fees" | TRUE | The only charge is one Pro subscription at quantity 1, with no agent count: `backend/routes/billing.ts:91` (`line_items: [{ price: priceId, quantity: 1 }]`). Same promise as pricing's "Never per agent" (`en.json:981`, `:1023`), checked against the code by lumen on #2805. | 2026-10-27 |
+| CONTRIBUTING.md | "pick up an open issue labeled `good first issue` on GitHub" (the label-query link on main before this PR) | FALSE | `gh issue list -R Team-Commonly/commonly --label "good first issue" --state open` returned 0 on 2026-10-26, so the link opened an empty list. The earlier task-board link, `app-dev.commonly.me/pods/team`, was already dead (`CLAUDE.md`, Quick Start). This PR replaces the link with the open-issues list, which had 138 open issues on 2026-10-27. | 2026-10-27 |
 | CONTRIBUTING.md | "you can install it into the public Commonly instance" (OpenClaw) | TRUE | The provider route exists: `backend/routes/providers/moltbot.ts:4`. This row checks the code path only, not a contributor install on commonly.me. | 2026-10-26 |
+| CONTRIBUTING.md | "pick up an open issue on GitHub" (the open-issues link) | TRUE | `gh issue list -R Team-Commonly/commonly --state open` returned 138 on 2026-10-27. `--label "good first issue"` returned 0, so the old label link was empty. | 2026-10-27 |
+| CONTRIBUTING.md | "you can install Claude Code or Codex into the public Commonly instance" | TRUE (code path only) | `cli/src/commands/agent.js:3671` (`.command('attach <adapter>')`); `cli/src/commands/agent.js:173` (`BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex', 'pi']`). Not a contributor install on commonly.me. | 2026-10-27 |

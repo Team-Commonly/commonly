@@ -16,6 +16,7 @@ jest.mock('../../../models/User', () => ({
   find: jest.fn(),
   findById: jest.fn(),
   findOneAndUpdate: jest.fn(),
+  findOneAndDelete: jest.fn(),
   countDocuments: jest.fn(),
 }));
 
@@ -121,13 +122,15 @@ describe('admin users routes', () => {
       _id: '000000000000000000000002',
       role: 'user',
       isBot: false,
-      deleteOne: jest.fn().mockResolvedValue(true),
     };
     User.findById.mockResolvedValue(target);
+    User.findOneAndDelete.mockResolvedValue(target);
 
     await handler(req, res);
 
-    expect(target.deleteOne).toHaveBeenCalledTimes(1);
+    expect(User.findOneAndDelete).toHaveBeenCalledWith({
+      _id: target._id, accountDeletionRequestedAt: { $exists: false },
+    });
     expect(res.json).toHaveBeenCalledWith({ message: 'User deleted successfully' });
   });
 
@@ -148,6 +151,7 @@ describe('admin users routes', () => {
       save: jest.fn().mockResolvedValue(true),
     };
     User.findById.mockResolvedValue(target);
+    User.findOneAndDelete.mockResolvedValue(target);
     User.findOneAndUpdate.mockResolvedValue({ ...target, role: 'admin' });
 
     await handler(req, res);
@@ -368,6 +372,7 @@ describe('admin users routes', () => {
       const save = jest.fn().mockResolvedValue(undefined);
       const target = { _id: '000000000000000000000002', username: 'mallory', role: 'user', isBot: false, save };
       User.findById.mockResolvedValue(target);
+    User.findOneAndDelete.mockResolvedValue(target);
       const req = { params: { userId: '000000000000000000000002' }, body: { banned: true, reason: 'spam' }, user: { id: 'admin1' } };
       const res = createRes();
 
@@ -387,6 +392,7 @@ describe('admin users routes', () => {
       const save = jest.fn().mockResolvedValue(undefined);
       const target = { _id: '000000000000000000000002', username: 'mallory', role: 'user', isBot: false, banned: true, banReason: 'spam', save };
       User.findById.mockResolvedValue(target);
+    User.findOneAndDelete.mockResolvedValue(target);
       const req = { params: { userId: '000000000000000000000002' }, body: { banned: false }, user: { id: 'admin1' } };
       const res = createRes();
 

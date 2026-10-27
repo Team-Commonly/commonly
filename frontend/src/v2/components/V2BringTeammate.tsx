@@ -19,12 +19,16 @@ interface Props {
   source: TeammateInviteSource;
   agentName?: string;
   enabled?: boolean;
+  /** Called when the card appears, so a thread at its end can keep the card in view. */
+  onShown?: () => void;
   /** Keep request state above transcript slots that move during thread toggles. */
   children?: (card: React.ReactNode) => React.ReactNode;
 }
 
 /** State and pending requests belong to one viewer/pod/placement. */
-const BringTeammateContent: React.FC<Props> = ({ podId, podName, userId, source, agentName, enabled = true, children }) => {
+const BringTeammateContent: React.FC<Props> = ({
+  podId, podName, userId, source, agentName, enabled = true, onShown, children,
+}) => {
   const { t } = useTranslation();
   const api = useV2Api();
   const apiRef = useRef(api);
@@ -129,7 +133,13 @@ const BringTeammateContent: React.FC<Props> = ({ podId, podName, userId, source,
   const body = source === 'first-agent-post' ? 'agentPost' : source === 'scout-first-session' ? 'scout' : 'solo';
   const label = state === 'creating' ? 'creating' : state === 'copied' ? 'copied'
     : state === 'manual' ? 'copyRetry' : state === 'error' ? 'retry' : 'act';
-  const card = enabled && !dismissed ? (
+  const shown = enabled && !dismissed;
+  const onShownRef = useRef(onShown);
+  onShownRef.current = onShown;
+  useEffect(() => {
+    if (shown) onShownRef.current?.();
+  }, [shown]);
+  const card = shown ? (
     <section className={`v2-teammate${source === 'solo-pod' ? ' v2-teammate--empty' : ' v2-teammate--message'}`} aria-label={t('teammate.title', { podName })}>
       <div className="v2-teammate__kicker">{t('teammate.kicker')}</div>
       <h3>{t('teammate.title', { podName })}</h3>

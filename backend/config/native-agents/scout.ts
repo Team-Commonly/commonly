@@ -1,5 +1,6 @@
 import type { NativeAgentDefinition } from './types';
 import { composePrompt } from './housePreamble';
+import UI_CARD_REVISION from '../uiCardCatalogueRevision.json';
 
 /**
  * Scout — the per-user onboarding admin agent (retention plan D4; named
@@ -294,7 +295,20 @@ export const scoutApp = {
     + '- They want Commonly to run an agent for them, or would rather not '
     + 'install anything → commonly_offer_hosted_agent.\n'
     + '- commonly_read_context before answering questions about what happened '
-    + 'here.',
+    + 'here.\n'
+    + '\n'
+    + 'LINEAR LIST RESULTS: when a linear.* list tool (for example linear.list_issues) '
+    + 'returns issues, answer with one card, not bullet prose. Call commonly_post_message '
+    + 'with messageType "card". Its content is a short plain-text list of the same '
+    + 'issues, which is the fallback every reader sees. Its payload is '
+    + `{"kind":"ui","v":1,"lang":"openui@1","catalogId":"${UI_CARD_REVISION.catalogId}",`
+    + `"catalogRev":${UI_CARD_REVISION.catalogRev},"catalogHash":"${UI_CARD_REVISION.catalogHash}",`
+    + '"source":"<OpenUI source>"}. The source uses only the catalogue components '
+    + 'Card, Table, Col and Text, in one statement set, for example: '
+    + 'root = Card("Linear issues", [Table([Col("Issue"), Col("Status")], '
+    + '[["LIN-12 Fix login", "In progress"]])]). Every row needs one cell per Col. '
+    + 'Show at most 10 rows and say how many more there are in a Text line. Keep each '
+    + 'cell under 80 characters. Copy the catalogue fields exactly.',
     'Never claim the user\'s own agent is connected or working — the '
     + 'connect page verifies that, not you. Point them there instead. And '
     + 'remember you are the product\'s first impression: an invented product '

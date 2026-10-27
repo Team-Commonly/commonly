@@ -120,6 +120,16 @@ const podListingRateLimit = rateLimit({
   legacyHeaders: false,
   keyGenerator: podJoinRateLimitKey,
 });
+// Typed listings and by-id reads (`/:param`, `/:type/:id`) run the same
+// populate-heavy queries as the sidebar listing. Their own bucket at the same
+// budget, so opening pods does not spend the sidebar's refresh allowance.
+const podReadRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: podJoinRateLimitKey,
+});
 // Coarse ingress ceiling also counts rotating invalid credentials before they
 // allocate token-store entries or reach authentication. Use the canonical edge
 // IP key, not the reverse proxy address. Clients sharing a public IP share this
@@ -663,7 +673,7 @@ router.get('/:id/children', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/:param', auth, async (req: AuthReq, res: Res) => {
+router.get('/:param', podReadRateLimit, auth, async (req: AuthReq, res: Res) => {
   const { param } = req.params || {};
   const isObjectId = /^[0-9a-fA-F]{24}$/.test(param || '');
   if (isObjectId) { req.params!.id = param || ''; return getPodById(req, res); }
@@ -849,7 +859,7 @@ router.patch('/:id/join-policy', podAdminRateLimit, auth, async (req: AuthReq, r
   }
 });
 
-router.get('/:type/:id', auth, getPodById);
+router.get('/:type/:id', podReadRateLimit, auth, getPodById);
 router.delete('/:id', auth, deletePod);
 
 module.exports = router;

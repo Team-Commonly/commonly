@@ -299,12 +299,13 @@ const EMBEDDED_V4: Array<[number[], number, [number, number]]> = [
 const PUBLIC_IN_IETF_V6: Array<[number[], number]> = [
   [[0x2001, 3], 32], // AMT
   [[0x2001, 4, 0x112], 48], // AS112-v6
-  [[0x2001, 0x30], 28], // drone remote ID entity tags
 ];
 // IANA's IPv6 special-purpose registry, plus the deprecated site-local block
-// and multicast, less the rows in PUBLIC_IN_IETF_V6. 2001:1::1-3 (anycast
-// service addresses) and 2001:20::/28 (ORCHIDv2 identifiers, not locators) are
-// marked globally reachable but are refused on purpose.
+// and multicast, less the rows in PUBLIC_IN_IETF_V6. Three rows are marked
+// globally reachable but are refused on purpose: 2001:1::1-3 (anycast service
+// addresses), 2001:20::/28 (ORCHIDv2, RFC 7343) and 2001:30::/28 (DRIP Entity
+// Tags, RFC 9374). The last two carry the same registry flags and the same
+// construction, a DET being an ORCHIDv2-format identifier, not a locator.
 const RESERVED_V6: Array<[number[], number]> = [
   [[0x64, 0xff9b, 1], 48], // local-use IPv4/IPv6 translation
   [[0x100], 64], // discard-only

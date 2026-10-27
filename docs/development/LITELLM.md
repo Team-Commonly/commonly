@@ -123,6 +123,27 @@ a fake upstream. One quirk to expect: the `response.created` echo of the request
 tools still shows the flat names. To shim another DeepSeek group, add it to
 `SHIM_MODEL_GROUPS`. Tests are in `backend/__tests__/unit/helm/litellmDeepseekToolShim.test.js`.
 
+**Model fallback signal** (`/app/model_fallback_signal.py`, same source dir and
+mount; the third callback). When `router_settings.fallbacks` answers a request
+from another group, the caller still sees the group it asked for, so a
+community agent whose Nemotron route fails looks healthy while DeepSeek does
+the work (TASK-003). The callback prints one JSON line per fallback hop:
+`{"alarm":"model_fallback","outcome","requested","from","fallback","attempt","reason"}`.
+`requested` is the group the caller asked for; `from` is the group that failed
+at this hop. The chart chains two hops (gpt-5.4 → nemotron → deepseek), and the
+router runs the inner hop inside the outer one, so the hop whose fallback
+answered logs first: it is `served`, and the outer hop of the same request is
+`passed`. `failed` means the fallback did not answer. `reason` is the failure's
+class and status only. The error message stays out, because a provider can
+echo the request into it, and so do the key and its alias. The `model_fallback` log
+metric in `k8s/monitoring/log-metrics.json` counts these lines, one per hop.
+Native hosted turns send `disable_fallbacks` (D81), so every count comes from
+another caller: the moltbot gateway, commonly-bot, or platform features
+through `llmService`.
+Verified 2026-10-26 against the real 1.106.2 Router with a local upstream that
+returns OpenRouter's 404 for Nemotron, one hop and two. Tests are in
+`backend/__tests__/unit/helm/litellmModelFallbackSignal.test.js`.
+
 **Why this works:** LiteLLM's `Authenticator.get_access_token()` calls `_read_auth_file()`
 on every request — there's no in-memory token caching. So a `rename` of `auth.json` is
 picked up within ~1 request, no pod restart needed.

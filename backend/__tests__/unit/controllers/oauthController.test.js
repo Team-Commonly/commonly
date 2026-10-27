@@ -389,6 +389,47 @@ describe('OAuth Controller', () => {
       }
     });
 
+    it.each(['github', 'google'].flatMap((provider) => [[provider, false], [provider, true]]))(
+      'resolves the %s linked identity as one record (existing link: %s)', async (provider, linked) => {
+        process.env.GOOGLE_OAUTH_CLIENT_ID = 'google-client';
+        process.env.GOOGLE_OAUTH_CLIENT_SECRET = 'google-secret';
+        const otherProvider = provider === 'github' ? 'google' : 'github';
+        const unrelated = await User.create({
+          username: 'unrelated-person', email: 'unrelated@example.com', verified: true,
+          authProviders: [
+            { provider: otherProvider, providerId: '12345' },
+            { provider, providerId: 'other-id' },
+          ],
+        });
+        const intended = await User.create({
+          username: 'intended-person', email: 'intended@example.com', verified: true, password: 'test-password',
+          authProviders: linked ? [{ provider, providerId: '12345' }] : [],
+        });
+        const before = (await User.findById(unrelated._id)).toObject();
+        await seedState({ provider });
+        // An existing provider link must work even when its asserted email changes.
+        const email = linked ? 'changed@example.com' : intended.email;
+        if (provider === 'github') mockGithubProfile({ id: 12345, email });
+        else {
+          axios.post.mockResolvedValueOnce({ data: { access_token: 'google-token' } });
+          axios.get.mockResolvedValueOnce({ data: {
+            sub: '12345', email, email_verified: true, name: 'Intended Person',
+          } });
+        }
+        const res = mockRes();
+        await oauthController.oauthCallback({ ...callbackReq(), params: { provider } }, res);
+        expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('/v2/oauth/complete?'));
+        const state = await OAuthLoginState.findOne({ state: 'state-1' });
+        expect(String(state.userId)).toBe(String(intended._id));
+        expect(state.exchangeCode).toEqual(expect.any(String));
+        expect(await User.countDocuments({ isBot: { $ne: true } })).toBe(2);
+        expect((await User.findById(unrelated._id)).toObject()).toEqual(before);
+        expect((await User.findById(intended._id)).authProviders.map((entry) => ({
+          provider: entry.provider, providerId: entry.providerId,
+        }))).toEqual([{ provider, providerId: '12345' }]);
+      },
+    );
+
     it('creates a new verified passwordless user and redirects with an exchange code', async () => {
       await seedState();
       mockGithubProfile();
@@ -712,7 +753,7 @@ describe('OAuth Controller', () => {
   });
 
   describe('login guard for OAuth-only accounts', () => {
-    it('tells a passwordless user to use their provider instead of throwing', async () => {
+    it('answers a passwordless account like a wrong password, without throwing', async () => {
       await User.create({
         username: 'octo-dev',
         email: 'octo@example.com',
@@ -723,10 +764,9 @@ describe('OAuth Controller', () => {
       const res = mockRes();
       await authController.login({ body: { email: 'octo@example.com', password: 'whatever' } }, res);
 
+      // The reply does not say the address has an account, or name its provider.
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        code: 'OAUTH_ONLY_ACCOUNT',
-      }));
+      expect(res.json).toHaveBeenCalledWith({ error: 'Invalid credentials' });
     });
   });
 });

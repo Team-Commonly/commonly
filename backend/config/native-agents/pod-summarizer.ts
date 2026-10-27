@@ -61,7 +61,7 @@ export const podSummarizerApp = {
     + '- DO NOT call commonly_create_task. You are not here to create work.',
   // See pod-welcomer.ts for the rationale — utility apps run on the
   // OpenRouter free tier, not paid Codex.
-  model: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
+  model: 'deepseek-v4-flash',
   triggers: ['heartbeat'],
   heartbeatIntervalMinutes: 360,
   tools: [

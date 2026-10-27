@@ -24,6 +24,7 @@ jest.mock('../components/V2MessageRow', () => {
 // jsdom has no scrollIntoView; the component auto-scrolls on mount.
 beforeAll(() => {
   Element.prototype.scrollIntoView = jest.fn();
+  Element.prototype.scrollTo = jest.fn();
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,
     value: { writeText: jest.fn().mockResolvedValue(undefined) },
@@ -521,6 +522,76 @@ describe('second-person prompt placements', () => {
     expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(`${window.location.origin}/v2/invite/${'a'.repeat(32)}`);
     expect(axios.post).toHaveBeenCalledTimes(1);
+  });
+
+  // TASK-583: on a reload the card mounts after history settles, below where
+  // the arrival effect already followed. A follow scrolls the message list
+  // itself; scrollIntoView would also scroll the overflow-hidden main pane and
+  // take the whole thread off screen (UX Lead on #2870), so it must never run.
+  const endFollows = () => Element.prototype.scrollTo.mock.contexts
+    .filter((el) => el.classList.contains('v2-chat__messages')).length;
+  const clearScrolls = () => {
+    Element.prototype.scrollTo.mockClear();
+    Element.prototype.scrollIntoView.mockClear();
+  };
+  const rerenderChat = (view, detail) => view.rerender(<AuthContext.Provider value={authValue}><MemoryRouter>
+    <V2Thread detail={detail} />
+  </MemoryRouter></AuthContext.Provider>);
+  // `byReader` fires the reader's own input first. Without it, the scroll is
+  // treated as part of the app's smooth follow, as in a real browser.
+  const scrollListTo = (scrollTop, { byReader = true } = {}) => {
+    const list = document.querySelector('.v2-chat__messages');
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, value: 2000 });
+    Object.defineProperty(list, 'clientHeight', { configurable: true, value: 400 });
+    if (byReader) fireEvent.wheel(list);
+    list.scrollTop = scrollTop;
+    fireEvent.scroll(list);
+  };
+  test('when the invite card mounts with the reader at the end, the thread follows it into view', async () => {
+    const settled = withReply();
+    const view = renderChat({ ...settled, hasMore: true });
+    expect(document.querySelector('.v2-teammate')).toBeNull();
+    scrollListTo(1600);
+    clearScrolls();
+    rerenderChat(view, settled);
+    expect(await screen.findByRole('button', { name: 'Copy invite link' })).toBeInTheDocument();
+    expect(endFollows()).toBe(1);
+    expect(Element.prototype.scrollTo.mock.calls.at(-1)[0]).toEqual({ top: 2000, behavior: 'smooth' });
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+  });
+  // UX Lead on e0fd1523: the open-time follow is a smooth scroll whose own
+  // mid-animation scroll events read as the reader scrolling up, so a card
+  // mounting after the first of them was skipped and the list stopped one card
+  // short. 6 of 18 opens at 1440.
+  test('a card that mounts while a follow is still animating is still followed', async () => {
+    const settled = withReply();
+    const arrived = { ...settled, messages: [...settled.messages, {
+      id: '12', pod_id: 'p1', user_id: 'bot', content: 'And a second step', message_type: 'text',
+      created_at: '2026-10-25T10:02:00Z', user: { username: 'scout', isBot: true },
+    }] };
+    const view = renderChat({ ...settled, hasMore: true });
+    scrollListTo(1600);
+    clearScrolls();
+    // An arrival at the end starts a smooth follow...
+    rerenderChat(view, { ...arrived, hasMore: true });
+    expect(endFollows()).toBe(1);
+    clearScrolls();
+    // ...whose first animation frame is still far from the end. That is the
+    // app scrolling, not the reader (no wheel/touch/key/pointer input).
+    scrollListTo(800, { byReader: false });
+    rerenderChat(view, arrived);
+    expect(await screen.findByRole('button', { name: 'Copy invite link' })).toBeInTheDocument();
+    expect(endFollows()).toBe(1);
+  });
+  test('a reader scrolled up stays put when the invite card mounts', async () => {
+    const settled = withReply();
+    const view = renderChat({ ...settled, hasMore: true });
+    scrollListTo(100);
+    clearScrolls();
+    rerenderChat(view, settled);
+    expect(await screen.findByRole('button', { name: 'Copy invite link' })).toBeInTheDocument();
+    expect(endFollows()).toBe(0);
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
   });
 
   test('dismissing the state-owned invite leaves the transcript and composer mounted', async () => {

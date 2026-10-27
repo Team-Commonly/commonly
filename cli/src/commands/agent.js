@@ -1563,13 +1563,15 @@ export const performRun = ({
       return { environment: seatEnvironment, cwd: agentCwd, binding: sessionBinding };
     }
     let installations = null;
+    let readError = null;
     try {
       const identity = await client.get('/api/agents/runtime/installations', {}, {
         signal: AbortSignal.timeout(5000),
       });
       installations = Array.isArray(identity?.installations) ? identity.installations : [];
-    } catch {
+    } catch (err) {
       installations = null;
+      readError = err;
     }
     const placement = workspaceTurnPlacement({
       environment: seatEnvironment, workspacePath: agentCwd, installations, scratchDir: scratchCwd,
@@ -1582,7 +1584,7 @@ export const performRun = ({
     }
     if (!existsSync(placement.cwd)) mkdirSync(placement.cwd, { recursive: true });
     const where = `${placement.environment.sandbox.trust}:${placement.cwd}`;
-    return { ...placement, binding: sessionBinding ? `${sessionBinding}:${where}` : where };
+    return { ...placement, readError, binding: sessionBinding ? `${sessionBinding}:${where}` : where };
   };
   const batchLimit = Math.min(50, Math.max(1, Number(inboxBatchLimit) || 10));
 
@@ -1835,6 +1837,33 @@ export const performRun = ({
     event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger,
   }) => {
     const placement = await placeTurn();
+    // A workspace turn placed public (its pod turned public, or its pods could
+    // not be read) is confined as a public seat, which this host may not be
+    // able to do: Claude Code on Linux has only the workspace jail. Refuse it
+    // as the run start would, before anything is read or spawned. The model
+    // never runs and nothing is posted. A public pod is a settled answer, so a
+    // human's message is handed to another listener (claim-outcome.js). A
+    // failed read is not: it throws, so the event stays unacked and comes back
+    // through the spawn-retry backoff instead of being refused for good.
+    if (placement.reason) {
+      const turnRefusal = hostSandboxRefusal({ environment: placement.environment, adapterName: adapter.name });
+      if (turnRefusal && placement.readError) {
+        throw Object.assign(
+          new Error(`turn deferred, because its pods could not be read: ${placement.readError.message}`, {
+            cause: placement.readError,
+          }),
+          { status: placement.readError.status },
+        );
+      }
+      if (turnRefusal) {
+        log(`turn refused, because ${placement.reason}: ${turnRefusal.replace(/\n\s*/g, ' ')}`);
+        return {
+          outcome: 'no_action',
+          refused: { reason: 'delivery-refused' },
+          reason: 'host-cannot-confine-turn',
+        };
+      }
+    }
     // TASK-440: a cold, large session starts fresh at wake instead of being
     // resumed. The restart note leads the prompt; memory still reaches the
     // fresh session through the adapter's preamble.

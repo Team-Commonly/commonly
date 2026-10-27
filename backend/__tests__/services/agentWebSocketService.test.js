@@ -24,6 +24,16 @@ jest.mock('../../models/AgentCredential', () => ({
   findById: jest.fn().mockResolvedValue(null),
 }));
 
+// The ledger checks live in runtimeCredentialGate, shared with agentRuntimeAuth.
+const mockIsAccountDeleting = jest.fn().mockResolvedValue(false);
+jest.mock('../../services/accountDeletionState', () => ({
+  isAccountDeleting: (...args) => mockIsAccountDeleting(...args),
+}));
+const mockMachineHasLiveAuthorization = jest.fn().mockResolvedValue(true);
+jest.mock('../../services/machineService', () => ({
+  machineHasLiveAuthorization: (...args) => mockMachineHasLiveAuthorization(...args),
+}));
+
 const { hash } = require('../../utils/secret');
 let AgentInstallation = require('../../models/AgentRegistry').AgentInstallation;
 let User = require('../../models/User');
@@ -44,6 +54,8 @@ describe('agentWebSocketService', () => {
     AgentCredential.findOne.mockResolvedValue(null);
     AgentCredential.findById.mockResolvedValue(null);
     mockMarkByoConnectionAttempt.mockReset();
+    mockIsAccountDeleting.mockReset().mockResolvedValue(false);
+    mockMachineHasLiveAuthorization.mockReset().mockResolvedValue(true);
   });
 
   describe('validateAgentToken', () => {
@@ -70,6 +82,50 @@ describe('agentWebSocketService', () => {
 
       expect(result).toBeNull();
       expect(User.findOne).not.toHaveBeenCalled();
+    });
+
+    it('rejects a credential whose owner is being deleted', async () => {
+      AgentCredential.findOne.mockResolvedValue({ _id: 'cred-3', kind: 'runtime', status: 'active', ownerUserId: 'owner-1' });
+      mockIsAccountDeleting.mockResolvedValue(true);
+      const result = await agentWebSocketService.validateAgentToken('cm_agent_deletingowner');
+      expect(result).toBeNull();
+      expect(mockIsAccountDeleting).toHaveBeenCalledWith('owner-1');
+      expect(User.findOne).not.toHaveBeenCalled();
+    });
+
+    it('rejects a machine-bound credential once that machine is no longer authorized', async () => {
+      AgentCredential.findOne.mockResolvedValue({
+        _id: 'cred-4', kind: 'runtime', status: 'active', ownerUserId: 'owner-1', machineId: 'machine-1',
+      });
+      mockMachineHasLiveAuthorization.mockResolvedValue(false);
+      const result = await agentWebSocketService.validateAgentToken('cm_agent_machinebound');
+      expect(result).toBeNull();
+      expect(mockMachineHasLiveAuthorization).toHaveBeenCalledWith('machine-1', 'owner-1');
+      expect(User.findOne).not.toHaveBeenCalled();
+    });
+
+    it('rejects an expired token on the agent User row, and accepts one not yet expired', async () => {
+      const token = 'cm_agent_embeddedexpiry';
+      const agentUser = (expiresAt) => ({
+        _id: 'user-1',
+        isBot: true,
+        botMetadata: { agentName: 'openclaw', instanceId: 'cuz' },
+        agentRuntimeTokens: [{ tokenHash: hash(token), expiresAt, lastUsedAt: new Date() }],
+      });
+      User.updateOne.mockResolvedValue({});
+      AgentInstallation.find.mockReturnValue({
+        select: () => ({ lean: async () => [{ podId: 'pod-123' }] }),
+      });
+
+      User.findOne.mockResolvedValue(agentUser(new Date(Date.now() - 60_000)));
+      expect(await agentWebSocketService.validateAgentToken(token)).toBeNull();
+      expect(User.updateOne).not.toHaveBeenCalled();
+      expect(AgentInstallation.findOne).not.toHaveBeenCalled();
+
+      User.findOne.mockResolvedValue(agentUser(new Date(Date.now() + 60_000)));
+      expect(await agentWebSocketService.validateAgentToken(token)).toEqual({
+        agentName: 'openclaw', instanceId: 'cuz', agentUserId: 'user-1',
+      });
     });
 
     it('validates cm_agent tokens using hashed runtime tokens', async () => {

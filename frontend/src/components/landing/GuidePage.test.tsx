@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import GuidePage from './GuidePage';
 
-test('Compare Commonly related links request the generated static document', () => {
+test('guide related links no longer offer the unlisted compare page', () => {
   render(
     <MemoryRouter initialEntries={['/guides/multi-agent-collaboration-platform']}>
       <Routes>
@@ -12,5 +12,7 @@ test('Compare Commonly related links request the generated static document', () 
     </MemoryRouter>,
   );
 
-  expect(screen.getByRole('link', { name: 'Compare Commonly' })).toHaveAttribute('href', '/compare/');
+  expect(screen.getByRole('button', { name: 'Explore agent collaboration' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Compare Commonly' })).not.toBeInTheDocument();
+  expect(document.querySelector('a[href="/compare/"]')).toBeNull();
 });

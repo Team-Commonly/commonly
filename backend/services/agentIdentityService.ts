@@ -381,6 +381,19 @@ interface GetOrCreateOptions {
 const isOpaquePerUserToken = (instanceId: string): boolean =>
   /^u[a-f0-9]{10}([a-f0-9]{14})?$/.test((instanceId || '').toLowerCase());
 
+/**
+ * True when a trimmed name ends in a parenthetical such as "Pixel (Pixel-Demo)":
+ * a '(' then at least one character that is not ')' then a final ')'. This is
+ * the same test as /\([^)]+\)\s*$/ on a trimmed string, done in one pass,
+ * so its time stays linear in the name's length.
+ */
+export const endsWithParenthetical = (trimmed: string): boolean => {
+  if (!trimmed.endsWith(')')) return false;
+  const inner = trimmed.slice(0, -1);
+  const open = inner.indexOf('(', inner.lastIndexOf(')') + 1);
+  return open !== -1 && open < inner.length - 1;
+};
+
 async function resolveCollisionFreeDisplayName(
   desiredName: string,
   instanceId: string,
@@ -399,7 +412,7 @@ async function resolveCollisionFreeDisplayName(
   // If the name already carries a parenthetical suffix, treat as
   // already-disambiguated and pass through. Avoids "Pixel (Pixel-Demo) (Pixel-Demo)"
   // loops when the same install reprovisions.
-  if (/\([^)]+\)\s*$/.test(trimmed)) return trimmed;
+  if (endsWithParenthetical(trimmed)) return trimmed;
 
   const peerQuery: Record<string, unknown> = {
     'botMetadata.displayName': trimmed,

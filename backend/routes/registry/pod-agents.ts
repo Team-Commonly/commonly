@@ -381,16 +381,32 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         // Legacy local-cli installs are normalized to their harness name
         // (codex/claude-code) in the public payload. Host, not that label,
         // identifies a BYO listener whose credential use proves liveness.
+        // A seat bound to a daemon machine is a wrapper whatever its install
+        // label says: manage-settings projects it as `wrapper` for the same
+        // reason. Without this, a running daemon-managed seat carried no
+        // connection and Settings rendered "Connection status unavailable".
+        // The runtime type is projected as `wrapper` too: Settings keys its
+        // machine-key action and Reconnect link on that field, not on connection.
+        const machineId = user?.botMetadata?.machineId;
+        const daemonBound = Boolean(machineId);
+        // The harness label moves to `adapter`, so the chat tag keeps naming it.
+        const seatPayload = daemonBound
+          ? { ...payload, runtime: {
+            ...payload?.runtime,
+            runtimeType: 'wrapper',
+            adapter: payload?.runtime?.adapter || payload?.runtime?.runtimeType,
+          } }
+          : payload;
         const hasRuntimeConnection = payload?.runtime?.host === 'byo'
           || runtimeType === 'wrapper'
+          || daemonBound
           || (runtimeType === 'webhook' && !payload?.runtime?.host);
         if (!connectionAvailable || !user || !hasRuntimeConnection
-          || normalizeConfigMap(i.config)?.runtime?.webhookUrl) return payload;
-        const machineId = user.botMetadata?.machineId;
+          || normalizeConfigMap(i.config)?.runtime?.webhookUrl) return seatPayload;
         return {
-          ...payload,
+          ...seatPayload,
           connection: deriveAgentConnection({
-            runtimeType,
+            runtimeType: daemonBound ? 'wrapper' : runtimeType,
             credentials: credentialByAgent.get(String(user._id)) || [],
             machineCredentials: credentialByMachine.get(String(machineId)) || [],
             embeddedTokens: [...(user.agentRuntimeTokens || []), ...(i.runtimeTokens || [])],
