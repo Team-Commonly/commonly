@@ -100,7 +100,7 @@ test('accepts stable Hermes 0.22 releases from 0.22.5 onward', async () => {
 test('refuses Hermes outside the supported stable range before starting a turn', async () => {
   await withHome(async (home) => {
     const child = jest.fn();
-    for (const version of ['0.22.2', '0.22.3', '0.22.4', '0.22.1', '0.23.0', '1.0.0', '0.22.5+1.gabcdef0', '0.22.6-rc.1']) {
+    for (const version of ['0.22.2', '0.22.3', '0.22.4', '0.22.1', '0.23.0', '0.23.5', '1.0.0', '1.22.5', '0.22.5+1.gabcdef0', '0.22.6-rc.1']) {
       // Development builds and prereleases are outside the tested stable-release contract.
       // eslint-disable-next-line no-await-in-loop
       await expect(hermes.spawn('hello', { environment: { model: 'test-model' },
