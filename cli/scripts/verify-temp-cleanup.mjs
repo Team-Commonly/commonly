@@ -62,7 +62,11 @@ const run = (probeRoot) => new Promise((resolve, reject) => {
   });
 });
 
-const probeRoot = await mkdtemp(join(tmpdir(), 'commonly-cli-temp-guard-'));
+// Short root on macOS on purpose: the provider-proxy tests bind Unix sockets
+// under the probe TMPDIR, and macOS caps a socket path at ~104 bytes, so the
+// deep $TMPDIR there makes them fail with EINVAL. Elsewhere the default is fine.
+const probeBase = process.platform === 'darwin' ? '/tmp' : tmpdir();
+const probeRoot = await mkdtemp(join(probeBase, 'commonly-cli-temp-guard-'));
 try {
   for (let pass = 1; pass <= 2; pass += 1) {
     const before = await snapshot(probeRoot);
