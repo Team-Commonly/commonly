@@ -103,7 +103,7 @@ rather than hides it.
 | **stalled since \<date\>** | The newest evidence is older than the window. The date is that evidence's date. With no evidence at all, the date is `createdAt`. A stalled part is shown inside a moving initiative with its own date. | same |
 | **blocked on X** | A link is a pending DecisionRequest (`models/DecisionRequest.ts:41, :77`). X is its title. | `DecisionRequest.status` |
 | **waiting on you** | A pending decision linked to the initiative, with an open AttentionItem of `kind='decision'` and `recipientUserId = initiative.direction` (`models/AttentionItem.ts:3`; per-member fan-out at `services/attentionItemService.ts:452-457`) | `AttentionItem` |
-| **needs your check** | Every linked Task is `done` and a linked PR has a merge record, with no close record. Shown to the giver under "Needs your check". It is never a stall and never nudges. | merge record, plus Task status |
+| **needs your check** | Every linked Task is `done` and each has its own merge record; a hand close is never evidence. The initiative has no close record. Shown to the giver under "Needs your check". It is never a stall and never nudges. | merge record, plus Task status |
 | **closed** | A close record exists by the giver. **closed by owner** when the owner is the giver. | close record |
 
 **Precedence.** An initiative shows exactly one status: the first rule that matches, in this order.
