@@ -126,7 +126,7 @@ export const scoutApp = {
     // on our LiteLLM. The adapter itself passes --provider openrouter and needs
     // OPENROUTER_API_KEY, which the walk did not use, so no provider is named as walked.
     + '  * Hermes connects from the command line, not from this page. It needs Hermes '
-    + '0.22.2 exactly, and an OpenRouter API key (OPENROUTER_API_KEY) in the environment '
+    + '0.22.5 or newer below 0.23 (run `hermes update` if yours is older), and an OpenRouter API key (OPENROUTER_API_KEY) in the environment '
     + 'of the computer it runs on: the adapter sends its model calls through OpenRouter. '
     + 'Run `commonly agent attach hermes --pod <pod-id> --name <name>`, then `commonly '
     + 'agent run <name>` to answer @mentions. The pod id is the last part of its URL. '

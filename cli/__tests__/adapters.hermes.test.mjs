@@ -17,7 +17,7 @@ import { jest } from '@jest/globals';
 import hermes, { SUPPORTED_HERMES_VERSION_RANGE, readHermesJsonl } from '../src/lib/adapters/hermes.js';
 import { validateEnvironmentSpec } from '../src/lib/environment.js';
 
-const fixture = async (name, version = '0.22.2') => readFile(
+const fixture = async (name, version = '0.22.5') => readFile(
   new URL(`./fixtures/hermes-${version}/${name}.jsonl`, import.meta.url), 'utf8',
 );
 
@@ -47,48 +47,10 @@ const withHome = async (run) => {
   try { return await run(home); } finally { await rm(home, { recursive: true, force: true }); }
 };
 
-test('real 0.22.2 first and resumed JSONL return one final reply and a stable session', async () => {
-  const first = await fixture('first-turn');
-  const resumed = await fixture('resume');
-  const firstEvents = first.trim().split('\n').map(JSON.parse);
-  const resumeEvents = resumed.trim().split('\n').map(JSON.parse);
-  expect(firstEvents.map((event) => event.type)).toEqual(['system', 'text', 'result']);
-  expect(resumeEvents.map((event) => event.type)).toEqual(['system', 'text', 'result']);
-  expect(resumeEvents[0].session_id).toBe(firstEvents[0].session_id);
-
-  await withHome(async (home) => {
-    const calls = [];
-    const context = {
-      cwd: home, agentName: 'pa1-test', env: { PATH: '/bin', OPENROUTER_API_KEY: 'fixture-only' },
-      _hermesHome: join(home, 'profiles', 'pa1'), _spawnSyncImpl: versionProbe('0.22.2'),
-    };
-    const firstResult = await hermes.spawn('Reply PONG', { environment: { model: 'test-model' },
-      ...context, _spawnImpl: recordedSpawn(first, (...call) => calls.push(call)),
-    });
-    expect(firstResult).toEqual({ text: 'PONG', newSessionId: firstEvents[0].session_id });
-
-    const resumeResult = await hermes.spawn('Reply again', { environment: { model: 'test-model' },
-      ...context, sessionId: firstResult.newSessionId,
-      _spawnImpl: recordedSpawn(resumed, (...call) => calls.push(call)),
-    });
-    expect(resumeResult).toEqual({ text: 'PONG', newSessionId: firstResult.newSessionId });
-    expect(calls).toHaveLength(2);
-    for (const [command, args, options] of calls) {
-      expect(command).toBe('hermes');
-      expect(args).toEqual(expect.arrayContaining([
-        'chat', '--oneshot', '--query-file', '-', '--format', 'stream-json',
-        '--provider', 'openrouter', '--source', 'tool',
-      ]));
-      expect(args.join(' ')).not.toContain('fixture-only');
-      expect(args.join(' ')).not.toContain('Reply');
-      expect(args).toEqual(expect.arrayContaining(['--in', home]));
-      expect(args).not.toContain('--no-restore-cwd');
-      expect(options.stdio).toEqual(['pipe', 'pipe', 'pipe']);
-      expect(options.env.HERMES_HOME).toBe(join(home, 'profiles', 'pa1'));
-    }
-    expect(calls[1][1]).toEqual(expect.arrayContaining(['--resume', firstResult.newSessionId]));
-    expect(calls[0][1]).not.toContain('--resume');
-  });
+test('the walked 0.22.2 capture still parses, though the adapter refuses that release', async () => {
+  const events = (await fixture('first-turn', '0.22.2')).trim().split('\n').map(JSON.parse);
+  expect(events.map((event) => event.type)).toEqual(['system', 'text', 'result']);
+  expect(events[2].session_id).toBeTruthy();
 });
 
 test('real 0.22.5 JSONL keeps the resumed session in the terminal result', async () => {
@@ -122,10 +84,10 @@ test('real 0.22.5 JSONL keeps the resumed session in the terminal result', async
   });
 });
 
-test('accepts stable Hermes 0.22 releases from 0.22.2 onward', async () => {
+test('accepts stable Hermes 0.22 releases from 0.22.5 onward', async () => {
   await withHome(async (home) => {
     const recording = await fixture('first-turn');
-    for (const version of ['0.22.2', '0.22.3', '0.22.5']) {
+    for (const version of ['0.22.5', '0.22.9']) {
       // eslint-disable-next-line no-await-in-loop
       await expect(hermes.spawn('hello', { environment: { model: 'test-model' },
         cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
@@ -138,7 +100,7 @@ test('accepts stable Hermes 0.22 releases from 0.22.2 onward', async () => {
 test('refuses Hermes outside the supported stable range before starting a turn', async () => {
   await withHome(async (home) => {
     const child = jest.fn();
-    for (const version of ['0.22.1', '0.23.0', '1.0.0', '0.22.2+1.gabcdef0', '0.22.6-rc.1']) {
+    for (const version of ['0.22.2', '0.22.3', '0.22.4', '0.22.1', '0.23.0', '1.0.0', '0.22.5+1.gabcdef0', '0.22.6-rc.1']) {
       // Development builds and prereleases are outside the tested stable-release contract.
       // eslint-disable-next-line no-await-in-loop
       await expect(hermes.spawn('hello', { environment: { model: 'test-model' },
@@ -167,7 +129,7 @@ test('retries a failed cold-home version probe before the first turn', async () 
   await withHome(async (home) => {
     const probe = jest.fn()
       .mockReturnValueOnce({ status: null, signal: 'SIGTERM', error: { code: 'ETIMEDOUT' } })
-      .mockReturnValueOnce({ status: 0, stdout: 'Hermes Agent v0.22.2 (local build)\n' });
+      .mockReturnValueOnce({ status: 0, stdout: 'Hermes Agent v0.22.5 (local build)\n' });
     const recording = await fixture('first-turn');
     await expect(hermes.spawn('hello', { environment: { model: 'test-model' },
       cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
