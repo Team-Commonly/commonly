@@ -20,7 +20,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 95);
+  assert.equal(pages.length, 96);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -117,6 +117,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-data-boundaries/',
     '/guides/ai-agent-disagreement-resolution/',
     '/guides/ai-agent-task-prioritization/',
+    '/guides/ai-agent-collaboration-platforms/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -154,15 +155,15 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 85);
+  assert.equal(guidePages.length, 86);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
     const webPage = guide.schema['@graph'].find((item) => item['@type'] === 'WebPage');
     assert.equal(article.author['@type'], 'Organization');
     assert.equal(webPage.reviewedBy['@type'], 'Organization');
-    assert.match(article.datePublished, /^2026-(?:08|09)-\d{2}$/);
-    assert.match(article.dateModified, /^2026-(?:08|09)-\d{2}$/);
+    assert.match(article.datePublished, /^2026-(?:08|09|10)-\d{2}$/);
+    assert.match(article.dateModified, /^2026-(?:08|09|10)-\d{2}$/);
     if (refreshedGuidePaths.has(guide.path)) {
       assert.equal(article.dateModified, '2026-08-30');
     }
