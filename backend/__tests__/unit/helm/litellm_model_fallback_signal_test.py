@@ -49,9 +49,24 @@ class Attempts:
 GPT = 'gpt-5.4'
 
 
+def router_function(name):
+    def function():
+        pass
+    function.__name__ = name
+    return function
+
+
+# The v1.106.2 router function behind each bucket: a chat completion stamps
+# `metadata`, and /v1/messages takes the generic path, which stamps
+# `litellm_metadata`.
+CHAT = router_function('_acompletion')
+MESSAGES = router_function('_ageneric_api_call_with_fallbacks_anthropic_messages_attempt')
+
+
 def hop_kwargs(metadata_name='metadata', attempts=None, requested=NEMOTRON, fallback=DEEPSEEK, depth=1):
     return {
         'model': fallback,
+        'original_function': MESSAGES if metadata_name == 'litellm_metadata' else CHAT,
         'messages': [{'role': 'user', 'content': 'private prompt text'}],
         'attempted_targets': attempts if attempts is not None else Attempts(),
         metadata_name: {
@@ -131,6 +146,20 @@ class FallbackLine(unittest.TestCase):
         line = signal.fallback_line('served', NEMOTRON, kwargs, None)
         self.assertEqual((line['requested'], line['attempt']), (GPT, 1))
         self.assertNotIn('caller text', json.dumps(line))
+
+    def test_a_chat_completion_reads_metadata_even_beside_a_litellm_metadata(self):
+        # The router stamps a chat completion's hop into `metadata` and leaves a
+        # litellm_metadata the request carried as it was.
+        kwargs = hop_kwargs(requested=GPT, depth=2)
+        kwargs['litellm_metadata'] = {'model_group': 'unstamped'}
+        line = signal.fallback_line('served', NEMOTRON, kwargs, None)
+        self.assertEqual((line['requested'], line['attempt']), (GPT, 2))
+        self.assertNotIn('unstamped', json.dumps(line))
+
+    def test_without_a_router_function_the_hop_is_read_from_metadata(self):
+        kwargs = hop_kwargs(requested=GPT)
+        del kwargs['original_function']
+        self.assertEqual(signal.fallback_line('served', NEMOTRON, kwargs, None)['requested'], GPT)
 
     def test_no_request_content_key_or_alias_is_logged(self):
         out = json.dumps(signal.fallback_line('served', NEMOTRON, hop_kwargs(), NotFoundError('x')))

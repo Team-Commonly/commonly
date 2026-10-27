@@ -36,6 +36,15 @@ try:
 except Exception:  # LiteLLM itself is broken; stay importable.
     CustomLogger = object
 
+try:
+    from litellm.router_utils.batch_utils import get_router_metadata_variable_name
+except Exception:  # Not importable here; mirror v1.106.2's rule (batch_utils.py:155).
+    def get_router_metadata_variable_name(function_name):
+        markers = ('batch', 'generic_api_call', '_acreate_batch', 'file', '_ageneric_api_call_with_fallbacks')
+        if function_name and any(marker in function_name for marker in markers):
+            return 'litellm_metadata'
+        return 'metadata'
+
 # The router shares one AttemptedFallbackTargets object across every hop of a
 # request (kwargs['attempted_targets']). A request is in here once one of its
 # hops has logged `served`. That object is a slots dataclass, neither hashable
@@ -46,11 +55,14 @@ ANSWERED_MAX = 1024
 
 
 def _metadata(kwargs):
-    # The bucket the router stamps the hop into, chosen the way LiteLLM chooses
-    # it: litellm_metadata whenever the request has one, else metadata
-    # (get_metadata_variable_name_from_kwargs). Then `metadata` is the caller's
-    # own, so picking a bucket by its contents would log a caller's text.
-    value = kwargs.get('litellm_metadata' if 'litellm_metadata' in kwargs else 'metadata')
+    # The bucket the router stamped this hop into. run_async_fallback picks it by
+    # the router function's name, not by which buckets the request carries
+    # (fallback_event_handlers.py:717): litellm_metadata for batch, file and
+    # generic API calls such as /v1/messages, metadata for the rest, chat
+    # completions included. Choosing by contents could read a bucket the router
+    # never stamped, the caller's own among them.
+    function_name = getattr(kwargs.get('original_function'), '__name__', None)
+    value = kwargs.get(get_router_metadata_variable_name(function_name))
     return value if isinstance(value, dict) else {}
 
 
