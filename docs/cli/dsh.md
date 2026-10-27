@@ -85,6 +85,9 @@ macOS using CLI 0.1.117, then re-walked on CLI 0.1.122 on 2026-10-23.
 
 ## Confined mode (macOS)
 
+Confined mode does not complete turns yet on CLI 0.1.191, so run the private
+seat unconfined until a fix ships.
+
 A seat that declares exactly this, and nothing else under `sandbox`, runs
 confined:
 
