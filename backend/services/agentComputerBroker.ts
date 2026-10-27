@@ -3,9 +3,14 @@
  * broker owns its single live session and gives each native installation a
  * separate tab in that profile. Agents never receive a Steel URL or CDP port.
  */
-import { chromium, type Browser, type BrowserContext, type Page, type Route } from 'playwright-core';
+import {
+  chromium, type Browser, type BrowserContext, type Page, type Request as BrowserRequest, type Route,
+} from 'playwright-core';
 import { randomUUID } from 'crypto';
+import dns from 'node:dns';
+import net from 'node:net';
 import { AgentComputerTakeover } from '../models/AgentComputerTakeover';
+import { classifyAddress } from './outboundUrlGuard';
 
 type SteelSession = { id: string; status: string };
 type SteelSessions = { sessions: SteelSession[] };
@@ -15,6 +20,7 @@ type ComputerConfig = {
   allowedHosts: ReadonlySet<string>;
 };
 type Connect = (endpoint: string) => Promise<Browser>;
+type Resolve = (host: string) => Promise<string[]>;
 type TakeoverStore = {
   get: (userId: string, installationId: string) => Promise<boolean>;
   set: (userId: string, installationId: string, active: boolean) => Promise<void>;
@@ -91,6 +97,10 @@ const wakeSteel = async (userId: string): Promise<void> => {
   if (!response.ok) throw new Error(`Computer waker failed (${response.status}).`);
 };
 
+const resolveAddresses: Resolve = async (host) => (
+  await dns.promises.lookup(host, { all: true, verbatim: true })
+).map(({ address }) => address);
+
 const takeoverStore: TakeoverStore = {
   get: async (userId, installationId) => Boolean(await AgentComputerTakeover.exists({
     _id: installationId, ownerId: userId, active: true,
@@ -148,7 +158,55 @@ export class AgentComputerBroker {
     private readonly connect: Connect = (endpoint) => chromium.connectOverCDP(endpoint, { timeout: SESSION_TIMEOUT_MS }),
     private readonly wake: (userId: string) => Promise<void> = wakeSteel,
     private readonly takeoverState: TakeoverStore = takeoverStore,
+    private readonly resolve: Resolve = resolveAddresses,
   ) {} // eslint-disable-line no-empty-function
+
+  // Pages closed because a redirect left the trial, so navigate can name why
+  // its goto failed.
+  private leftTrial = new WeakSet<Page>();
+
+  // Any frame's document is a page the agent reads, so every frame's
+  // navigation is held to the trial's hosts, not only the tab's.
+  private onList(url: URL): boolean {
+    return url.protocol === 'https:' && !url.username && !url.password && !url.port
+      && this.config.allowedHosts.has(url.hostname.toLowerCase());
+  }
+
+  // The browser runs inside the cluster, so a subresource may reach only a
+  // public address. The browser does its own DNS: an answer that changes
+  // between this lookup and the browser's is the egress policy's to stop.
+  private async publicDestination(url: URL): Promise<boolean> {
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
+    const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    if (this.config.allowedHosts.has(host)) return true;
+    const addresses = net.isIP(host) ? [host] : await this.resolve(host).catch(() => [] as string[]);
+    return addresses.length > 0 && addresses.every((address) => classifyAddress(address) === 'public');
+  }
+
+  private async closeTab(state: UserBrowser, installationId: string, page: Page): Promise<void> {
+    this.leftTrial.add(page);
+    if (state.tabs.get(installationId) === page) state.tabs.delete(installationId);
+    state.frames.delete(installationId);
+    await this.abortPendingWrites(state, installationId);
+    await page.close().catch(() => {});
+  }
+
+  // Playwright continues a redirect hop itself and never calls the route
+  // handler for it, so a hop cannot be held. The request event still names
+  // the hop: a tab whose hop leaves the trial is closed before the agent reads
+  // what came back.
+  private async checkRedirect(request: BrowserRequest, state: UserBrowser): Promise<void> {
+    if (!request.redirectedFrom()) return;
+    let page: Page;
+    try { page = request.frame().page(); } catch { return; }
+    const installationId = [...state.tabs].find(([, tab]) => tab === page)?.[0];
+    if (!installationId) return;
+    let target: URL | null = null;
+    try { target = new URL(request.url()); } catch { /* unparseable: closed below */ }
+    const allowed = target !== null && (request.isNavigationRequest()
+      ? this.onList(target) : await this.publicDestination(target));
+    if (!allowed) await this.closeTab(state, installationId, page);
+  }
 
   private async attachPage(page: Page): Promise<void> {
     page.setDefaultTimeout(ACTION_TIMEOUT_MS);
@@ -175,12 +233,10 @@ export class AgentComputerBroker {
     const installationId = [...state.tabs].find(([, tab]) => tab === page)?.[0];
     // A popup is not an installation tab. Its first request must be denied.
     if (!installationId) { await route.abort(); return; }
-    if (request.isNavigationRequest() && !request.frame().parentFrame()) {
-      let target: URL;
-      try { target = new URL(request.url()); } catch { await route.abort(); return; }
-      if (target.protocol !== 'https:' || !this.config.allowedHosts.has(target.hostname.toLowerCase())) {
-        await route.abort(); return;
-      }
+    let target: URL;
+    try { target = new URL(request.url()); } catch { await route.abort(); return; }
+    if (request.isNavigationRequest() ? !this.onList(target) : !(await this.publicDestination(target))) {
+      await route.abort(); return;
     }
     if (['GET', 'HEAD', 'OPTIONS'].includes(request.method())) { await route.fallback(); return; }
     // A takeover request alone grants no write permission. A request after a
@@ -233,6 +289,7 @@ export class AgentComputerBroker {
       epoch: randomUUID(),
     };
     await context.route('**/*', (route) => this.guardRequest(route, state));
+    context.on('request', (request) => this.checkRedirect(request, state).catch(() => {}));
     const bindings = await this.takeoverState.bindings(userId);
     const byTarget = new Map(bindings.filter(({ installationId }) => INSTALLATION_ID.test(installationId))
       .map(({ installationId, targetId }) => [targetId, installationId]));
@@ -306,7 +363,18 @@ export class AgentComputerBroker {
       throw new Error('That address is outside this computer trial.');
     }
     const page = await this.tab(userId, installationId);
-    await page.goto(url.toString(), { waitUntil: 'domcontentloaded', timeout: ACTION_TIMEOUT_MS });
+    try {
+      await page.goto(url.toString(), { waitUntil: 'domcontentloaded', timeout: ACTION_TIMEOUT_MS });
+    } catch (error) {
+      if (this.leftTrial.has(page)) throw new Error('That address is outside this computer trial.');
+      throw error;
+    }
+    let landed: URL | null = null;
+    try { landed = new URL(page.url()); } catch { /* closed below */ }
+    if (!landed || !this.onList(landed)) {
+      await this.closeTab(await this.user(userId), installationId, page);
+      throw new Error('That address is outside this computer trial.');
+    }
     return { url: page.url(), title: await page.title() };
   }
 

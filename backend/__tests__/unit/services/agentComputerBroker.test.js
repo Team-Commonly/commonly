@@ -46,11 +46,11 @@ const fakePage = (events = []) => {
   return page;
 };
 
-const setup = (status = 'absent') => {
+const setup = (status = 'absent', resolve = jest.fn(async () => ['151.101.1.1'])) => {
   const pages = [];
   const cdpCommands = [];
   const events = [];
-  const context = { route: jest.fn(), newPage: jest.fn(async () => {
+  const context = { route: jest.fn(), on: jest.fn(), newPage: jest.fn(async () => {
     const page = fakePage(events);
     pages.push(page);
     return page;
@@ -68,7 +68,7 @@ const setup = (status = 'absent') => {
     ? { sessions: status === 'absent' ? [] : [{ id: 'one', status }] }
     : { id: 'one', status: 'live' }));
   const connect = jest.fn(async (endpoint) => (endpoint.includes(OWNER) ? browser : {
-    contexts: () => [{ route: jest.fn(), newCDPSession: context.newCDPSession, newPage: async () => {
+    contexts: () => [{ route: jest.fn(), on: jest.fn(), newCDPSession: context.newCDPSession, newPage: async () => {
       const page = fakePage(events);
       pages.push(page);
       return page;
@@ -97,7 +97,7 @@ const setup = (status = 'absent') => {
     allowedHosts: new Set(['www.linkedin.com']),
   };
   return {
-    broker: new AgentComputerBroker(config, request, connect, wake, takeoverState),
+    broker: new AgentComputerBroker(config, request, connect, wake, takeoverState, resolve),
     pages, context, request, connect, wake, takeoverState, config, cdpCommands, events,
   };
 };
@@ -254,6 +254,60 @@ describe('agent computer broker (fake Steel and CDP)', () => {
     ]);
     expect(results.map((result) => result.status).sort()).toEqual(['fulfilled', 'rejected']);
     expect(pages[0].mouse.click).toHaveBeenCalledTimes(1);
+  });
+
+  test('every frame and every subresource is held to the trial, not only the tab', async () => {
+    const resolve = jest.fn(async (host) => (host === 'intranet.example' ? ['10.1.2.3'] : ['151.101.1.1']));
+    const { broker, pages, context } = setup('live', resolve);
+    await broker.snapshot(OWNER, FIRST);
+    const intercept = context.route.mock.calls[0][1];
+    const verdict = async (url, { navigation = false, subframe = false } = {}) => {
+      const route = { request: () => ({ method: () => 'GET', url: () => url, isNavigationRequest: () => navigation,
+        frame: () => ({ page: () => pages[0], parentFrame: () => (subframe ? {} : null) }) }),
+      abort: jest.fn(), fallback: jest.fn() };
+      await intercept(route);
+      if (route.fallback.mock.calls.length) return 'allowed';
+      return route.abort.mock.calls.length ? 'refused' : 'held';
+    };
+    expect(await verdict('https://www.linkedin.com/feed/', { navigation: true })).toBe('allowed');
+    expect(await verdict('https://www.linkedin.com/embed', { navigation: true, subframe: true })).toBe('allowed');
+    expect(await verdict('https://elsewhere.example/', { navigation: true, subframe: true })).toBe('refused');
+    expect(await verdict('https://elsewhere.example/', { navigation: true })).toBe('refused');
+    expect(await verdict('https://10.0.0.1/pixel.png')).toBe('refused');
+    expect(await verdict('http://169.254.169.254/computeMetadata/v1/')).toBe('refused');
+    expect(await verdict('http://[::ffff:10.0.0.1]/pixel.png')).toBe('refused');
+    expect(await verdict('https://intranet.example/logo.png')).toBe('refused');
+    expect(await verdict('https://cdn.example/app.js')).toBe('allowed');
+    expect(resolve).toHaveBeenCalledWith('cdn.example');
+  });
+
+  test('a redirect hop that leaves the trial closes the tab', async () => {
+    const resolve = jest.fn(async (host) => (host === 'intranet.example' ? ['10.1.2.3'] : ['151.101.1.1']));
+    const { broker, pages, context } = setup('live', resolve);
+    await broker.snapshot(OWNER, FIRST);
+    const onRequest = context.on.mock.calls.find(([event]) => event === 'request')[1];
+    const hop = (url, navigation, page = pages[0]) => ({ redirectedFrom: () => ({}), url: () => url,
+      isNavigationRequest: () => navigation, frame: () => ({ page: () => page }) });
+    await onRequest(hop('https://www.linkedin.com/login', true));
+    await onRequest(hop('https://cdn.example/app.js', false));
+    expect(pages[0].close).not.toHaveBeenCalled();
+    await onRequest(hop('https://elsewhere.example/', true));
+    expect(pages[0].close).toHaveBeenCalledTimes(1);
+    // The closed tab is gone from the broker; the next action gets a fresh one.
+    await broker.snapshot(OWNER, FIRST);
+    expect(context.newPage).toHaveBeenCalledTimes(2);
+    await onRequest(hop('https://intranet.example/logo.png', false, pages[1]));
+    expect(pages[1].close).toHaveBeenCalledTimes(1);
+  });
+
+  test('a navigation that lands off the trial is refused and its tab closed', async () => {
+    const { broker, pages } = setup('live');
+    await broker.snapshot(OWNER, FIRST);
+    pages[0].goto.mockImplementationOnce(async () => {});
+    pages[0].url = () => 'https://elsewhere.example/landing';
+    await expect(broker.navigate(OWNER, FIRST, 'https://www.linkedin.com/feed/'))
+      .rejects.toThrow('outside this computer trial');
+    expect(pages[0].close).toHaveBeenCalledTimes(1);
   });
 
   test('the first request from an unowned popup is denied at the context boundary', async () => {
