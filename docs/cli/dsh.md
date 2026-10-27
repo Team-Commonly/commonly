@@ -85,6 +85,9 @@ macOS using CLI 0.1.117, then re-walked on CLI 0.1.122 on 2026-10-23.
 
 ## Confined mode (macOS)
 
+Confined mode does not complete turns yet on CLI 0.1.191, so run the private
+seat unconfined until a fix ships.
+
 A seat that declares exactly this, and nothing else under `sandbox`, runs
 confined:
 
@@ -135,7 +138,7 @@ Limits to know:
   A request to a download host can still carry data in its URL.
 - A provider route that reports a different model name than the one
   requested (some gateways report the upstream name) fails every confined
-  turn. Check one turn before relying on it.
+  turn.
 - `node cli/scripts/probe-seatbelt-confinement.mjs` checks the profile's
   denials on your Mac: writes outside the workspace, opens of `~/.commonly`,
   `gh`'s `hosts.yml` and the login keychain file, other loopback ports, an
