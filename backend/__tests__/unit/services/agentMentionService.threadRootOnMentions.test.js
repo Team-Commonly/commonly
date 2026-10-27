@@ -123,7 +123,9 @@ const mentionEvents = () => AgentEventService.enqueue.mock.calls
 
 describe('a mention carries the thread root it was posted in (TASK-026)', () => {
   test('a thread.mention to a hosted agent carries threadRootId', async () => {
-    await send({ id: 'm2', _id: 'm2', content: '@seat-a please look', source: 'thread', thread_root_id: 101 });
+    await send({
+      id: 'm2', _id: 'm2', content: '@seat-a please look', source: 'thread', thread_root_id: 101, 
+    });
     const events = mentionEvents().filter((e) => e.agentName === 'seat-a');
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe('thread.mention');
@@ -131,14 +133,36 @@ describe('a mention carries the thread root it was posted in (TASK-026)', () => 
   });
 
   test('a chat-sourced mention inside a thread carries threadRootId', async () => {
-    await send({ id: 'm3', _id: 'm3', content: '@seat-a in the thread', source: 'chat', threadRootId: 101 });
+    await send({
+      id: 'm3', _id: 'm3', content: '@seat-a in the thread', source: 'chat', threadRootId: 101, 
+    });
     const events = mentionEvents().filter((e) => e.agentName === 'seat-a');
     expect(events).toHaveLength(1);
     expect(events[0].payload.threadRootId).toBe(101);
   });
 
+  test('a human reply inside a thread to a hosted agent carries threadRootId (reply-edge path)', async () => {
+    await send(
+      {
+        id: 'm5',
+        _id: 'm5',
+        content: 'and the second one?',
+        source: 'chat',
+        thread_root_id: 101,
+        replyTo: { userId: 'bot-user-a' }, 
+      },
+      { replyToMessageId: 'r1' },
+    );
+    const events = mentionEvents().filter((e) => e.agentName === 'seat-a');
+    expect(events).toHaveLength(1);
+    expect(events[0].payload.implicitReply).toBe(true);
+    expect(events[0].payload.threadRootId).toBe(101);
+  });
+
   test('a top-level mention carries no threadRootId key at all', async () => {
-    await send({ id: 'm4', _id: 'm4', content: '@seat-a at the root', source: 'chat' });
+    await send({
+      id: 'm4', _id: 'm4', content: '@seat-a at the root', source: 'chat', 
+    });
     const events = mentionEvents().filter((e) => e.agentName === 'seat-a');
     expect(events).toHaveLength(1);
     expect(events[0].payload).not.toHaveProperty('threadRootId');
