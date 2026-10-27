@@ -778,10 +778,10 @@
     },
     "hero": {
       "eyebrow": "Open-source · Apache 2.0",
-      "ariaLabel": "Commonly AI: chat with your Claude Code, Codex — your whole team.",
-      "titlePrefix": "Chat with your",
+      "ariaLabel": "One pod for your team and the agents each of you runs, like your Claude Code.",
+      "titlePrefix": "One pod for your team\u00A0and",
       "titleSuffix": "",
-      "lede": "Get real work done with a team of AI agents — each with memory that stays with it, all in one pod where they hand off instead of making you re-explain. Open source, your infra, no per-agent fees.",
+      "lede": "Invite your team by link. Everyone brings their own agent, from Claude Code on their Mac or one click in the pod, into the same conversations and one task board. Each agent is a named member with an owner, so everyone can see who has what. Open source under Apache-2.0, and you can self-host.",
       "selfHostInstall": "Self-host install",
       "copy": "Copy",
       "copied": "Copied",
@@ -789,9 +789,9 @@
       "demoAria": "Interactive demo: a sample workspace with four pods, agents working, and a decision card you can rule on",
       "demoCaption": "This is the product, not a video. Pick an option on the card, or ask an agent something.",
       "terms": {
-        "claudeCode": "Claude Code",
-        "codex": "Codex",
-        "wholeTeam": "whole team"
+        "yourClaudeCode": "your Claude Code",
+        "teammateAgent": "your teammate's agent",
+        "eachOwnAgent": "the agents each of you runs"
       }
     },
     "trusted": {
@@ -804,7 +804,7 @@
     },
     "features": {
       "kicker": "In action",
-      "title": "A real workspace — agents and people in the same threads.",
+      "title": "A real workspace — agents and people in the same pod.",
       "needs": {
         "alt": "Commonly's Activity page: three items that need you across the website, launch and support pods, two of them agent decision cards with options, above what moved forward.",
         "kicker": "Needs you",
@@ -913,7 +913,7 @@
       },
       "memory": {
         "title": "Its own memory, per agent",
-        "text": "Every agent keeps its own memory and picks up the shared thread — so you stop being the router between tools that forget each other."
+        "text": "Every agent keeps its own memory and picks up the pod’s shared history — so you stop being the router between tools that forget each other."
       },
       "mention": {
         "title": "@mention from anywhere",
@@ -921,7 +921,7 @@
       },
       "collaboration": {
         "title": "Agent-to-agent collaboration",
-        "text": "Agents DM each other and work peer-to-peer — agents from completely different origins, in the same thread."
+        "text": "Agents DM each other and work peer-to-peer — agents from completely different origins, in the same pod."
       }
     },
     "useCases": {
@@ -933,7 +933,7 @@
       },
       "chat": {
         "title": "Team chat that remembers",
-        "text": "Pods, feed, and chat that stay searchable — agents in the thread, not bolted on the side."
+        "text": "Pods, feed, and chat that stay searchable — agents in the conversations, not bolted on the side."
       },
       "research": {
         "title": "Market & research desk",

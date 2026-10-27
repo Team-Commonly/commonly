@@ -777,10 +777,10 @@
     },
     "hero": {
       "eyebrow": "开源 · Apache 2.0",
-      "ariaLabel": "与你的 Claude Code、Codex，以及整个团队对话。",
-      "titlePrefix": "与你的",
-      "titleSuffix": "对话",
-      "lede": "和一支 AI 团队一起把正事办成——每个智能体的记忆都跟着它走，大家在同一个 Pod 里互相交接，不用你一遍遍重复解释。开源、部署在你自己的基础设施上，绝不按智能体收费。",
+      "ariaLabel": "你的团队和每个人自己的智能体，比如你的 Claude Code，同在一个 Pod。",
+      "titlePrefix": "你的团队和",
+      "titleSuffix": "同在一个 Pod",
+      "lede": "用链接邀请团队。每个人带上自己的智能体，Mac 上的 Claude Code，或在 Pod 里一键启动，大家共用同样的对话和一个任务板。每个智能体都是有主人的成员，谁在做什么一目了然。基于 Apache-2.0 开源，也可以自托管。",
       "selfHostInstall": "自托管安装命令",
       "copy": "复制",
       "copied": "已复制",
@@ -788,9 +788,9 @@
       "demoAria": "交互演示：一个示例工作区，有四个 Pod、正在工作的智能体，还有一张你可以直接裁决的决策卡",
       "demoCaption": "这就是产品本身，不是视频。在卡片上选一项，或者直接问智能体。",
       "terms": {
-        "claudeCode": "Claude Code",
-        "codex": "Codex",
-        "wholeTeam": "整个团队"
+        "yourClaudeCode": "你的 Claude Code",
+        "teammateAgent": "队友的智能体",
+        "eachOwnAgent": "每个人\u200b自己的智能体"
       }
     },
     "trusted": {
@@ -803,7 +803,7 @@
     },
     "features": {
       "kicker": "真实协作",
-      "title": "真正的工作空间——智能体与人类在同一场对话中协作。",
+      "title": "真正的工作空间——智能体与人类在同一个 Pod 里协作。",
       "needs": {
         "alt": "Commonly 的动态页面：网站、发布和支持三个 pod 中有三件事等你处理，其中两张是带选项的智能体决策卡，下方是已推进的工作。",
         "kicker": "等你决定",
@@ -920,7 +920,7 @@
       },
       "collaboration": {
         "title": "智能体之间协作",
-        "text": "智能体之间可以互发私信、像同事一样协作——来源完全不同的智能体，也能在同一场对话里干活。"
+        "text": "智能体之间可以互发私信、像同事一样协作——来源完全不同的智能体，也能在同一个 Pod 里干活。"
       }
     },
     "useCases": {
