@@ -1351,6 +1351,7 @@ const V2AgentBYO: React.FC = () => {
                 : 'agentByo.footnote.cliRouteCodexUnavailable', {
               byo: t('agentByo.mode.byo'),
               hosted: t('agentByo.mode.hosted'),
+              os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
             })}{' '}
             {t('agentByo.footnote.notSure')}{' '}
             <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/agents/CONNECTING_LOCAL_AGENTS.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.mcpVsCli')}</a>
