@@ -556,7 +556,8 @@
       "taskClaimedVerb": "认领了"
     },
     "starts": {
-      "label": "开始方式"
+      "label": "开始方式",
+      "openByo": "去接入自己的智能体"
     },
     "dmMark": "私信",
     "invite": "邀请成员加入这个 Pod",
