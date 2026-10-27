@@ -50,7 +50,7 @@ const setup = (status = 'absent', resolve = jest.fn(async () => ['151.101.1.1'])
   const pages = [];
   const cdpCommands = [];
   const events = [];
-  const context = { route: jest.fn(), on: jest.fn(), newPage: jest.fn(async () => {
+  const context = { route: jest.fn(), routeWebSocket: jest.fn(), on: jest.fn(), newPage: jest.fn(async () => {
     const page = fakePage(events);
     pages.push(page);
     return page;
@@ -68,7 +68,7 @@ const setup = (status = 'absent', resolve = jest.fn(async () => ['151.101.1.1'])
     ? { sessions: status === 'absent' ? [] : [{ id: 'one', status }] }
     : { id: 'one', status: 'live' }));
   const connect = jest.fn(async (endpoint) => (endpoint.includes(OWNER) ? browser : {
-    contexts: () => [{ route: jest.fn(), on: jest.fn(), newCDPSession: context.newCDPSession, newPage: async () => {
+    contexts: () => [{ route: jest.fn(), routeWebSocket: jest.fn(), on: jest.fn(), newCDPSession: context.newCDPSession, newPage: async () => {
       const page = fakePage(events);
       pages.push(page);
       return page;
@@ -279,6 +279,32 @@ describe('agent computer broker (fake Steel and CDP)', () => {
     expect(await verdict('https://intranet.example/logo.png')).toBe('refused');
     expect(await verdict('https://cdn.example/app.js')).toBe('allowed');
     expect(resolve).toHaveBeenCalledWith('cdn.example');
+  });
+
+  test('a WebSocket is held to the subresource rule before any tab opens', async () => {
+    const resolve = jest.fn(async (host) => (host === 'intranet.example' ? ['10.1.2.3'] : ['151.101.1.1']));
+    const { broker, context } = setup('live', resolve);
+    await broker.snapshot(OWNER, FIRST);
+    expect(context.routeWebSocket).toHaveBeenCalledTimes(1);
+    // Playwright routes only sockets created after the route is installed.
+    expect(context.routeWebSocket.mock.invocationCallOrder[0])
+      .toBeLessThan(context.newPage.mock.invocationCallOrder[0]);
+    const [matches, guard] = context.routeWebSocket.mock.calls[0];
+    expect(matches(new URL('wss://anything.example/socket'))).toBe(true);
+    const verdict = async (url) => {
+      const ws = { url: () => url, connectToServer: jest.fn(), close: jest.fn(async () => {}) };
+      await guard(ws);
+      if (ws.connectToServer.mock.calls.length) return ws.close.mock.calls.length ? 'both' : 'connected';
+      return ws.close.mock.calls.length ? 'closed' : 'held';
+    };
+    expect(await verdict('wss://www.linkedin.com/realtime')).toBe('connected');
+    expect(await verdict('wss://cdn.example/socket')).toBe('connected');
+    expect(resolve).toHaveBeenCalledWith('cdn.example');
+    expect(await verdict('ws://10.0.0.1:8080/')).toBe('closed');
+    expect(await verdict('ws://169.254.169.254/')).toBe('closed');
+    expect(await verdict('ws://[::ffff:10.0.0.1]/')).toBe('closed');
+    expect(await verdict('wss://intranet.example/socket')).toBe('closed');
+    expect(await verdict('not a url')).toBe('closed');
   });
 
   test('a redirect hop that leaves the trial closes the tab', async () => {

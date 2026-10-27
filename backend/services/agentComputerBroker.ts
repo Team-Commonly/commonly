@@ -5,6 +5,7 @@
  */
 import {
   chromium, type Browser, type BrowserContext, type Page, type Request as BrowserRequest, type Route,
+  type WebSocketRoute,
 } from 'playwright-core';
 import { randomUUID } from 'crypto';
 import dns from 'node:dns';
@@ -183,6 +184,20 @@ export class AgentComputerBroker {
     return addresses.length > 0 && addresses.every((address) => classifyAddress(address) === 'public');
   }
 
+  // context.route never sees a WebSocket handshake, so a socket is held to the
+  // subresource rule: an allowlisted host or a public address. Playwright routes
+  // sockets inside the page, which a worker or service worker never runs, so a
+  // socket opened from one is the egress policy's to stop.
+  private async guardWebSocket(ws: WebSocketRoute): Promise<void> {
+    let target: URL | null = null;
+    try { target = new URL(ws.url()); } catch { /* unparseable: closed below */ }
+    if (target && (target.protocol === 'ws:' || target.protocol === 'wss:')) {
+      target.protocol = target.protocol === 'wss:' ? 'https:' : 'http:';
+      if (await this.publicDestination(target)) { ws.connectToServer(); return; }
+    }
+    await ws.close().catch(() => {});
+  }
+
   private async closeTab(state: UserBrowser, installationId: string, page: Page): Promise<void> {
     this.leftTrial.add(page);
     if (state.tabs.get(installationId) === page) state.tabs.delete(installationId);
@@ -289,6 +304,7 @@ export class AgentComputerBroker {
       epoch: randomUUID(),
     };
     await context.route('**/*', (route) => this.guardRequest(route, state));
+    await context.routeWebSocket(() => true, (ws) => this.guardWebSocket(ws));
     context.on('request', (request) => this.checkRedirect(request, state).catch(() => {}));
     const bindings = await this.takeoverState.bindings(userId);
     const byTarget = new Map(bindings.filter(({ installationId }) => INSTALLATION_ID.test(installationId))
