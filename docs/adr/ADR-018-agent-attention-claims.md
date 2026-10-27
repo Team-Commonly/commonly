@@ -473,6 +473,12 @@ The D8.2 discovery exception woke reviewers who had no implementation capacity: 
 
 Discovery now requires an explicit `config.workDiscovery: { enabled: true, role: 'implementer' }` on the installation. It skips a seat with assigned pending work or an active claim in that pod, whether the claim stores a seat key or its bot User id, and caps delivery at one nudge per seat and pod per hour. Missing role configuration fails closed. An unoffered revision remains eligible beyond the sweep's ten-minute tick so the next hourly batch can carry it. A capped nudge does not mark an unassigned row as offered. Browser board updates and addressed owner wakes are unaffected.
 
+### D8.7 — AMENDMENT (2026-10-27): the kernel sweep no longer sends the found-work nudge (TASK-381)
+
+Lily ruled on TASK-381 (decision `6ae0493258eabb3645e350c3`): narrow the found-work wake to assigned or addressed events. `KernelWorkSweepService.sweep()` no longer calls `wakeForFoundWork`, so the hourly D8.3 nudge is not sent by the sweep. Unclaimed rows reach a seat through the row router (one assignment and one @mention per row). Assigned rows keep the assigned-task wake (D8.4), and addressed owner wakes are unaffected.
+
+What this leaves in place, so the next reader does not assume it is gone: `wakeForFoundWork` and `notifyFoundWork` still exist and are still exercised by direct tests. Nothing in production reaches them from the sweep. The `config.workDiscovery` read in D8.3 is therefore inert until those functions are either deleted or reconnected, and that choice is pending. Until it is made, read D8.3 as describing behaviour the sweep no longer performs.
+
 ### D8.4 — AMENDMENT (2026-10-24): assigned work survives a silent turn
 
 **Status: ACCEPTED direction (TASK-469), including the ruling that deliberate
