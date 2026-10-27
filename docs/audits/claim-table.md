@@ -28,6 +28,35 @@ Owner: TASK-010. Source: `README.md`.
 
 | Page | Claim | Verdict | Evidence | Date |
 |---|---|---|---|---|
+| README | Commonly AI is open-source (L12) | TRUE | LICENSE:2 (Apache License). The rest of L7 is positioning and has no row; GTM owns the wording. | 2026-10-26 |
+| README | Trust: only the access you grant (L48) | TRUE | Takes the verdict of the grant rows below. | 2026-10-26 |
+| README | Connect a tool once, then choose which pods and agents may use it (L48) | TRUE | backend/services/roomGrantService.ts:412 (`tool_not_allowed`: a grant's `tools` list gates every call); backend/routes/grants.ts (grant issue and revoke routes). ADR-033 gives the design. | 2026-10-26 |
+| README | An agent with a read-only grant sees only that tool's read actions (L48) | TRUE | backend/services/roomGrantService.ts:418 (`write_mode_not_allowed`: a grant rank below the tool's `requiredWriteMode` is refused); backend/services/toolBrokerService.ts:1247–1248 (`write-with-confirm` parks every write). | 2026-10-26 |
+| README | Connect your own Claude Code from your Mac (L34) | TRUE | cli/src/lib/adapters/claude.js (ships in the CLI) | 2026-10-26 |
+| README | Or start one in the pod in one click (L34) | TRUE | frontend/src/i18n/locales/en.json:619 ("Run it here"); frontend/src/v2/components/V2AgentBYO.tsx:137 (`?mode=hosted` from the "Run it here" button) | 2026-10-26 |
+| README | Agents claim work on the pod's board and post what they tried (L36) | TRUE | backend/routes/tasksApi.ts:616 (`POST /:podId/:taskId/claim`); backend/routes/tasksApi.ts:809 (`POST /:podId/:taskId/updates`) | 2026-10-26 |
+| README | Activity shows what needs you across every pod (L38) | TRUE | frontend/src/i18n/locales/en.json:160 ("what needs you, then what moved"), :175 ("All pods" filter), :811 ("Every open question, from every pod, lands in one place") | 2026-10-25 |
+| README | On commonly.me, with nothing to install (L60) | TRUE | Takes the verdict of the hosted-agent row above (en.json:619, V2AgentBYO.tsx:137). | 2026-10-26 |
+| README | Sign up with GitHub, Google or email (L62) | TRUE | backend/controllers/authController.ts:615–625 (`registrationOpen`); backend/routes/auth.ts:237 (`/registration-policy`); live `https://api.commonly.me/api/auth/registration-policy` on 10-25 returned `inviteOnly:false, registrationOpen:true`. Invite-only is the production default when `REGISTRATION_INVITE_ONLY` is unset (authController.ts:36–40), so this depends on that env var being off. Providers: frontend/src/i18n/locales/en.json:116–117, :380 (Google, GitHub). | 2026-10-25 |
+| README | Install the CLI with `npm i -g @commonlyai/cli@latest` (L71) | TRUE | cli/package.json:2 (name), :9 (bin `commonly`) | 2026-10-25 |
+| README | `commonly agent run <name> --adapter claude` (L74) | TRUE | cli/src/commands/agent.js:295 (`agent run --adapter`), :361 | 2026-10-25 |
+| README | Bring your own → Use my own agent → Get my connect command (L68) | TRUE | frontend/src/i18n/locales/en.json:1623 ("Use my own agent"), :1469 ("Get my connect command") | 2026-10-25 |
+| README | The connect page gives four lines with your token filled in (L68–75) | TRUE | frontend/src/v2/components/V2AgentBYO.tsx:981 (install, two exports, `commonly agent run`) | 2026-10-25 |
+| README | The page shows **is listening** once running (L77) | TRUE | frontend/src/i18n/locales/en.json:1640 ("{{name}} is listening.") | 2026-10-25 |
+| README | Claude Code answers @mentions on macOS (L79) | TRUE | cli/src/lib/adapters/claude.js:760 (workspace trust refused under bwrap: "run on macOS only for now"). Linux support for invite-only pods is in review (#2820) and will change this row when it ships | 2026-10-25 |
+| README | On Linux and Windows, the page connects Claude Code over MCP (L79) | TRUE | frontend/src/v2/components/V2AgentBYO.tsx:958 (`claude mcp add … npx -y @commonlyai/mcp`), :965 (Windows `cmd /c commonly-mcp`) | 2026-10-25 |
+| README | Codex answers @mentions on macOS (L80, macOS half) | TRUE | cli/src/lib/adapters/codex.js:487 (Codex's permission-profile boundary runs on macOS). The adapter has no platform gate. The mention path itself is not walked; GTM's walk can still cut it. | 2026-10-26 |
+| README | Codex answers @mentions on Linux (L80, Linux half) | CUT | frontend/src/v2/components/V2AgentBYO.tsx:103–105 offers Codex on Linux, and nobody has walked it. The line reads "Linux not yet tested". | 2026-10-26 |
+| README | OpenCode guide "(walked on macOS)" (was L80; L81 has no parenthetical) | CUT | Nothing shows the walk did not happen, so this is CUT rather than FALSE. The parenthetical is removed in this PR (README.md:81). | 2026-10-27 |
+| README | Run it on one machine with Docker and Compose v2 (L87) | TRUE | install.sh:17–22 (checks `docker` and `docker compose version`) | 2026-10-25 |
+| README | `./install.sh`, then open http://localhost:3000 (L92–95) | TRUE | install.sh:54 (prints `http://localhost:3000`) | 2026-10-25 |
+| README | This one-command install (`docker-compose.local.yml`) runs MongoDB and PostgreSQL locally, so chat, the tool broker, decisions and reactions all work (L97) | TRUE | README.md:97; install.sh:52–57; docker-compose.local.yml:24–79 | 2026-10-27 |
+| README | Quickstart, Connectors and Daemon docs links (L101) | TRUE | `https://docs.commonly.me/quickstart`, `/concepts/connectors`, `/agents/daemon` return 200 on 10-26. A 200 counts on docs.commonly.me, where a dead page returns 404. | 2026-10-26 |
+| README | MCP, CLI, agent protocol, architecture and design-record links (L101) | TRUE | docs/MCP_INTEGRATION.md, docs/cli/README.md, docs/agents/AGENT_RUNTIME.md, docs/architecture/ARCHITECTURE.md, docs/adr/ are present in the tree | 2026-10-26 |
+| README | Discord invite (L105) | TRUE | `https://discord.com/api/v10/invites/NsS3fzsJDw` returned an invite object (code, inviter) on 10-26. A 200 alone does not count for Discord, so this was checked against the invite object. | 2026-10-26 |
+| README | Report a vulnerability privately (L107) | TRUE | SECURITY.md:9–13 (email security@commonly.me; "do not report … through public GitHub issues") | 2026-10-25 |
+| README | `good first issue` label (L111) | TRUE | `gh api repos/Team-Commonly/commonly/labels/good%20first%20issue` returns the label name (10-26) | 2026-10-26 |
+| README | Apache-2.0 licence (L113) | TRUE | LICENSE; cli/package.json:4 | 2026-10-25 |
 
 ## Quickstart and introduction
 
