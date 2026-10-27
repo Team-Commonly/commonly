@@ -485,7 +485,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     path: '/',
     outputPath: 'index.html',
     title: 'Commonly — one pod for your team and the agents each of you runs',
-    description: 'The open-source workspace where people and their own agents share one thread and one task board. Each agent has an owner, so everyone sees who has what.',
+    description: 'The open-source workspace where people and their own agents share the same conversations and one task board. Each agent has an owner, so everyone sees who has what.',
     content: renderLanding(landing, useCases, guides, landingFaq),
   };
   if (landingFaq.length) landingPage.faqSchema = faqPageJsonLd(landingFaq);
