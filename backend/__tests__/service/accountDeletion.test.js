@@ -211,12 +211,16 @@ describe('Self-serve account deletion', () => {
     }
     await deletion(app, issueSessionToken(user, now - 1, 0), { confirmation: 'DELETE' }).expect(401);
     // Real one-time OAuth exchange is the positive witness, not a fabricated claim.
-    await OAuthLoginState.create({ provider: 'github', state: 'deletion-state', userId: user._id,
+    const browserNonce = 'b'.repeat(64);
+    await OAuthLoginState.create({ provider: 'github', state: 'a'.repeat(48), userId: user._id,
+      browserNonceHash: createHash('sha256').update(browserNonce).digest('hex'),
       exchangeCode: 'deletion-exchange', exchangeExpiresAt: new Date(Date.now() + 60000),
       expiresAt: new Date(Date.now() + 60000) });
     let session;
-    await oauthController.exchangeOAuthCode({ body: { code: 'deletion-exchange' } }, {
-      json: (body) => { session = body; }, status: () => { throw new Error('Exchange failed'); } });
+    await oauthController.exchangeOAuthCode({ body: { code: 'deletion-exchange' },
+      headers: { cookie: `cm-oauth-${'a'.repeat(48)}=${browserNonce}` } }, {
+      clearCookie: () => {}, json: (body) => { session = body; },
+      status: () => { throw new Error('Exchange failed'); } });
     expect(jwt.verify(session.token, process.env.JWT_SECRET).oauthAuthenticatedAt).toBeGreaterThanOrEqual(now);
     await deletion(app, session.token, { confirmation: 'DELETE' }).expect(204);
   });

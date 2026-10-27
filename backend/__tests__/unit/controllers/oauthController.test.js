@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const axios = require('axios');
 const jwt = require('jsonwebtoken');
 const User = require('../../../models/User');
@@ -28,10 +29,16 @@ jest.mock('jsonwebtoken', () => ({
 }));
 
 const mockRes = () => ({
+  cookie: jest.fn(),
+  clearCookie: jest.fn(),
   status: jest.fn().mockReturnThis(),
   json: jest.fn(),
   redirect: jest.fn(),
 });
+
+const browserNonce = 'a'.repeat(64);
+const browserNonceHash = crypto.createHash('sha256').update(browserNonce).digest('hex');
+const browserHeaders = (state) => ({ cookie: `__Host-cm-oauth-${state}=${browserNonce}` });
 
 const startReq = (provider, query = {}) => ({
   params: { provider },
@@ -119,6 +126,7 @@ describe('OAuth Controller', () => {
           }
           const callbackRes = mockRes();
           await oauthController.oauthCallback({ ...startReq(method),
+            headers: { cookie: startRes.cookie.mock.calls.map(([name, value]) => `${name}=${value}`).join('; ') },
             query: { code: 'provider-code', state, signupSource: JSON.stringify({ ref: 'forged' }), ref: 'forged' } }, callbackRes);
           expect(callbackRes.redirect).toHaveBeenCalledWith(expect.stringContaining('/v2/oauth/complete?'));
           expect(callbackRes.redirect.mock.calls[0][0]).not.toMatch(/signupSource|firstSeenAt|search\.example|private/);
@@ -270,14 +278,18 @@ describe('OAuth Controller', () => {
   describe('oauthCallback', () => {
     const seedState = (overrides = {}) => OAuthLoginState.create({
       provider: 'github',
-      state: 'state-1',
+      browserNonceHash,
+      pkceVerifier: 'v'.repeat(43),
+      state: '111111111111111111111111111111111111111111111111',
       expiresAt: new Date(Date.now() + 60000),
       ...overrides,
     });
 
     const callbackReq = (query = {}) => ({
       params: { provider: 'github' },
-      query: { code: 'gh-code', state: 'state-1', ...query },
+      protocol: 'https',
+      headers: browserHeaders('111111111111111111111111111111111111111111111111'),
+      query: { code: 'gh-code', state: '111111111111111111111111111111111111111111111111', ...query },
       protocol: 'https',
       get: () => 'api.test.local',
     });
@@ -334,7 +346,7 @@ describe('OAuth Controller', () => {
       await oauthController.oauthCallback(callbackReq(), res);
       expect(res.redirect).toHaveBeenCalledWith('https://app.test.local/v2/login?oauthError=team_only');
       expect(await User.countDocuments({ email: 'octo@example.com' })).toBe(0);
-      expect((await OAuthLoginState.findOne({ state: 'state-1' })).exchangeCode).toBeUndefined();
+      expect((await OAuthLoginState.findOne({ state: '111111111111111111111111111111111111111111111111' })).exchangeCode).toBeUndefined();
     });
 
     it('refuses an existing linked account whose current address is outside the allowlist', async () => {
@@ -355,7 +367,7 @@ describe('OAuth Controller', () => {
       const res = mockRes();
       await oauthController.oauthCallback(callbackReq(), res);
       expect(res.redirect).toHaveBeenCalledWith('https://app.test.local/v2/login?oauthError=email_unverified');
-      expect((await OAuthLoginState.findOne({ state: 'state-1' })).exchangeCode).toBeUndefined();
+      expect((await OAuthLoginState.findOne({ state: '111111111111111111111111111111111111111111111111' })).exchangeCode).toBeUndefined();
     });
 
     it.each([
@@ -419,7 +431,7 @@ describe('OAuth Controller', () => {
         const res = mockRes();
         await oauthController.oauthCallback({ ...callbackReq(), params: { provider } }, res);
         expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('/v2/oauth/complete?'));
-        const state = await OAuthLoginState.findOne({ state: 'state-1' });
+        const state = await OAuthLoginState.findOne({ state: '111111111111111111111111111111111111111111111111' });
         expect(String(state.userId)).toBe(String(intended._id));
         expect(state.exchangeCode).toEqual(expect.any(String));
         expect(await User.countDocuments({ isBot: { $ne: true } })).toBe(2);
@@ -452,7 +464,7 @@ describe('OAuth Controller', () => {
       expect(redirectUrl.searchParams.get('code')).toBeTruthy();
       expect(redirectUrl.searchParams.get('inviteSignup')).toBeNull();
 
-      const state = await OAuthLoginState.findOne({ state: 'state-1' });
+      const state = await OAuthLoginState.findOne({ state: '111111111111111111111111111111111111111111111111' });
       expect(String(state.userId)).toBe(String(user._id));
       expect(state.usedAt).toBeTruthy();
     });
@@ -679,7 +691,8 @@ describe('OAuth Controller', () => {
       });
       await OAuthLoginState.create({
         provider: 'github',
-        state: 'state-2',
+        state: '222222222222222222222222222222222222222222222222',
+        browserNonceHash,
         userId: user._id,
         exchangeCode: 'one-time-code',
         exchangeExpiresAt: new Date(Date.now() + 60000),
@@ -688,14 +701,14 @@ describe('OAuth Controller', () => {
       });
 
       const res1 = mockRes();
-      await oauthController.exchangeOAuthCode({ body: { code: 'one-time-code' } }, res1);
+      await oauthController.exchangeOAuthCode({ protocol: 'https', headers: browserHeaders('222222222222222222222222222222222222222222222222'), body: { code: 'one-time-code' } }, res1);
       expect(res1.json).toHaveBeenCalledWith(expect.objectContaining({
         token: 'test-jwt-token',
         user: expect.objectContaining({ username: 'octo-dev' }),
       }));
 
       const res2 = mockRes();
-      await oauthController.exchangeOAuthCode({ body: { code: 'one-time-code' } }, res2);
+      await oauthController.exchangeOAuthCode({ protocol: 'https', headers: browserHeaders('222222222222222222222222222222222222222222222222'), body: { code: 'one-time-code' } }, res2);
       expect(res2.status).toHaveBeenCalledWith(400);
     });
 
@@ -712,7 +725,8 @@ describe('OAuth Controller', () => {
       });
       await OAuthLoginState.create({
         provider: 'github',
-        state: 'state-bot',
+        state: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        browserNonceHash,
         userId: bot._id,
         exchangeCode: 'bot-code',
         exchangeExpiresAt: new Date(Date.now() + 60000),
@@ -720,7 +734,7 @@ describe('OAuth Controller', () => {
       });
 
       const res = mockRes();
-      await oauthController.exchangeOAuthCode({ body: { code: 'bot-code' } }, res);
+      await oauthController.exchangeOAuthCode({ protocol: 'https', headers: browserHeaders('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'), body: { code: 'bot-code' } }, res);
 
       expect(res.status).toHaveBeenCalledWith(403);
       expect(res.json).toHaveBeenCalledWith({
@@ -739,7 +753,8 @@ describe('OAuth Controller', () => {
       });
       await OAuthLoginState.create({
         provider: 'github',
-        state: 'state-3',
+        state: '333333333333333333333333333333333333333333333333',
+        browserNonceHash,
         userId: user._id,
         exchangeCode: 'stale-code',
         exchangeExpiresAt: new Date(Date.now() - 1000),
@@ -747,7 +762,7 @@ describe('OAuth Controller', () => {
       });
 
       const res = mockRes();
-      await oauthController.exchangeOAuthCode({ body: { code: 'stale-code' } }, res);
+      await oauthController.exchangeOAuthCode({ protocol: 'https', headers: browserHeaders('333333333333333333333333333333333333333333333333'), body: { code: 'stale-code' } }, res);
       expect(res.status).toHaveBeenCalledWith(400);
     });
   });
