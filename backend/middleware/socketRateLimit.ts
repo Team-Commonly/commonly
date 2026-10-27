@@ -65,11 +65,16 @@ export const installSocketEventBudget = (socket: any): void => {
   socket.use(([event, payload]: [string, unknown], next: (err?: Error) => void) => {
     const userId = String(socket.userId || '');
     const eventBudget = EVENT_BUDGETS[event];
-    if (eventBudget && !isPodId(podIdOf(event, payload))) {
-      console.warn(`[socket] dropped ${event}: pod id is not an ObjectId string`, { userId });
-      return;
+    // Every packet counts against the ceiling first, a malformed one included,
+    // so a flood of them is bounded like any other.
+    let retryAfterMs = take(ANY_EVENT, userId);
+    if (retryAfterMs === null && eventBudget) {
+      if (!isPodId(podIdOf(event, payload))) {
+        console.warn(`[socket] dropped ${event}: pod id is not an ObjectId string`, { userId });
+        return;
+      }
+      retryAfterMs = take(eventBudget, userId);
     }
-    const retryAfterMs = take(ANY_EVENT, userId) ?? (eventBudget ? take(eventBudget, userId) : null);
     if (retryAfterMs !== null) {
       socket.emit('rateLimited', { event, retryAfterMs });
       return;

@@ -72,7 +72,7 @@ describe('socket event budget', () => {
     expect(client.limited).toHaveLength(1);
     expect(client.limited[0].event).toBe('sendMessage');
     expect(client.limited[0].retryAfterMs).toBeGreaterThan(0);
-    expect(client.limited[0].retryAfterMs).toBeLessThanOrEqual(60_000);
+    expect(client.limited[0].retryAfterMs).toBeLessThanOrEqual(60000);
     expect(client.errors).toEqual([]);
   });
 
@@ -82,7 +82,7 @@ describe('socket event budget', () => {
     for (let i = 0; i < 61; i += 1) client.emit('sendMessage', { podId, content: 'a' });
     await fence(client);
     const now = Date.now();
-    const clock = jest.spyOn(Date, 'now').mockReturnValue(now + 60_001);
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now + 60001);
     try {
       client.emit('sendMessage', { podId, content: 'later' });
       await fence(client);
@@ -161,5 +161,23 @@ describe('socket event budget', () => {
 
     // 599 + the fence fill the budget; neither later packet gets through.
     expect(count(userId, 'other')).toBe(599);
+  });
+
+  it('counts malformed pod events against the 600 ceiling, and stops logging them past it', async () => {
+    const userId = newUserId();
+    const client = await connect(userId);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (let i = 0; i < 599; i += 1) client.emit('joinPod', { $gt: '' });
+      await fence(client);
+      client.emit('joinPod', { $gt: '' });
+      await new Promise((resolve) => { client.once('rateLimited', resolve); });
+
+      // 599 malformed + the fence fill the ceiling, so the next one is refused
+      // as over budget, not logged again.
+      expect(warn).toHaveBeenCalledTimes(599);
+      expect(client.limited.map((l) => l.event)).toEqual(['joinPod']);
+      expect(count(userId, 'joinPod')).toBe(0);
+    } finally { warn.mockRestore(); }
   });
 });
