@@ -5066,3 +5066,41 @@ test('OpenUI cards keep the approved phone controls and table records', () => {
   expect(css).toContain('.v2-root .v2-msg.v2-ui-card { display:flex; flex-direction:column;');
   expect(css).toContain('.ui.gone{border-style:dashed');
 });
+
+describe('v2 board on a phone (TASK-576)', () => {
+  test('the board head wraps so the title keeps a full-width row above the actions', () => {
+    const css = read('../v2.css');
+    const phone = mediaBlockContaining(css, '.v2-board__head');
+    expect(ruleBody(phone, '.v2-board__head')).toContain('flex-wrap: wrap');
+    expect(ruleBody(phone, '.v2-board__title-wrap')).toContain('flex: 1 1 100%');
+    expect(ruleBody(phone, '.v2-board__title-wrap')).toContain('order: 1');
+    expect(ruleBody(phone, '.v2-board__new')).toContain('margin-left: auto');
+  });
+
+  test('the board drops the feature body gutter on a phone', () => {
+    const css = read('../v2.css');
+    const phone = mediaBlockContaining(css, '.v2-feature--board > .v2-feature__body');
+    expect(ruleBody(phone, '.v2-feature--board > .v2-feature__body')).toMatch(/padding:\s*0;/);
+  });
+
+  test('the board route passes the class that opts it into that override', () => {
+    expect(read('../V2App.tsx')).toMatch(
+      /<V2PodBoard \/>,\s*false,\s*\/\*[^*]*\*\/\s*false,\s*'v2-feature--board'/,
+    );
+  });
+
+  test('feature panes reserve the tab bar height so the body stops above the fixed nav', () => {
+    const css = read('../v2.css');
+    const phone = mediaBlockContaining(css, 'padding-bottom: 56px');
+    expect(ruleBody(phone, '.v2-feature')).toContain('padding-bottom: 56px');
+    expect(ruleBody(phone, '.v2-mobile-tabs')).toContain('height: 56px');
+  });
+
+  test('feature pages mount the phone tab bar and share one attention count with the rail', () => {
+    const page = read('../components/V2FeaturePage.tsx');
+    expect(page).toContain("import V2MobileTabs from './V2MobileTabs';");
+    expect(page).toContain('const attention = useV2PodAttention();');
+    expect(page).toContain('<V2NavRail needsYouCount={attention.count} />');
+    expect(page).toContain('<V2MobileTabs needsYouCount={attention.count ?? 0} />');
+  });
+});
