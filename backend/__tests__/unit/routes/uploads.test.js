@@ -99,7 +99,8 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
   // type the uploading client declared, and the browser may not sniff past it.
   describe('served headers', () => {
     const fromDriver = (mime) => mockStore.get.mockResolvedValue({
-      stream: Readable.from(Buffer.from('x')), mime, size: 1,
+      // '{}' parses as JSON, which supertest does for the json row.
+      stream: Readable.from(Buffer.from('{}')), mime, size: 2,
     });
 
     it.each([
