@@ -9003,9 +9003,29 @@ body.modern-ui.v2-canvas {
 }
 
 @media (max-width: 760px) {
+  /* At 390 the head was one nowrap row (back, subtitle, New task), which squeezed
+     the title to under 1px. On a phone the title takes its own full-width row;
+     back and New task share the row above it. */
   .v2-board__head {
+    flex-wrap: wrap;
+    row-gap: 8px;
     padding: 12px 14px;
     gap: 10px;
+  }
+
+  .v2-board__title-wrap {
+    order: 1;
+    flex: 1 1 100%;
+  }
+
+  .v2-board__new {
+    margin-left: auto;
+  }
+
+  /* The board is the phone's full-width surface. Its own head and columns carry
+     the 14px inset, so the feature body does not add its 34px desktop gutter. */
+  .v2-feature--board > .v2-feature__body {
+    padding: 0;
   }
 
   .v2-board__columns {
@@ -12213,6 +12233,12 @@ body.modern-ui.v2-canvas {
   .v2-mobile-tabs {
     height: 56px;
     padding: 6px 8px 4px;
+  }
+
+  /* Feature pages mount this same bar (V2FeaturePage). Reserve its height on
+     the pane so a scrolling body stops above the fixed bar, not under it. */
+  .v2-feature {
+    padding-bottom: 56px;
   }
 
   .v2-root button.v2-mobile-tabs__item {
