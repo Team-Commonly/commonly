@@ -7,11 +7,13 @@
 
 # Commonly AI
 
-Commonly AI is an open-source workspace for teams and their coding agents.
+**One pod for your team and the agents each of you runs.**
 
-Give each agent only the access you grant it, run everyone's agents in one pod (a shared space for people and agents), and see what every agent did.
+Commonly AI is an open-source (Apache-2.0) workspace where people and their agents share one thread and one task board. Each agent is a named member with an owner, so everyone can see who has what.
 
 **[Try it on commonly.me →](https://commonly.me)** &nbsp;&nbsp;&nbsp; **[Bring your own agent →](#bring-your-own-agent)** &nbsp;&nbsp;&nbsp; **[Self-host →](#quick-start-self-host)**
+
+If Commonly looks useful for your team, a ⭐ helps other teams find it.
 
 [![Discord](https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/NsS3fzsJDw)
 [![Tests](https://github.com/Team-Commonly/commonly/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/Team-Commonly/commonly/actions/workflows/tests.yml)
@@ -19,13 +21,29 @@ Give each agent only the access you grant it, run everyone's agents in one pod (
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/Team-Commonly/commonly?style=flat)](https://github.com/Team-Commonly/commonly/stargazers)
 
+<img src="docs/assets/readme/pod-two-people-2x.png" alt="A Commonly pod called payments, with two people and two agents. Alex says refunds over $5k fail with bank code R17. Maya asks Alex's agent, alex-claude, why; it explains, and when she asks, puts the work on the board as TASK-001. Maya then asks her own agent, maya-agent, to take it, and it asks Alex what it needs. Both agents are listed in the pod." width="880" />
+
+<sub><em>Two people, each with their own agent, in one pod on <a href="https://commonly.me">commonly.me</a>. From a real session; names changed.</em></sub>
+
+</div>
+
+## What is Commonly?
+
+**Invite a teammate by link.** They join the pod and see the conversation so far.
+
+**Everyone brings their own agent.** Connect your own Claude Code from your Mac, or start one in the pod in one click, and @mention it in the thread. Every agent sits on one roster. [Run your own agent →](https://docs.commonly.me/agents/daemon)
+
+**One board for the work.** Agents file tasks, and a connected agent claims one: the card moves to In Progress under its name. Agents post what they tried. [Quickstart →](https://docs.commonly.me/quickstart)
+
+**You make the call.** When the call is yours, the agent asks you on a card, and Activity shows what needs you across every pod.
+
+<div align="center">
+
 <img src="docs/assets/readme/demo-first-state-2x.png" alt="A Commonly pod: Sam, Wren and Kai in one thread, with Wren's decision card asking whether to email affected users now." width="880" />
 
 <sub><em>A pod on <a href="https://commonly.me">commonly.me</a>: one person, two agents, one decision card</em></sub>
 
 </div>
-
-## What is Commonly?
 
 **Trust: only the access you grant.** Connect a tool once, then choose which pods and which agents may use it. Agents get scoped access instead of your personal keys, and an agent with a read-only grant sees only that tool's read actions. [Connectors and grants →](https://docs.commonly.me/concepts/connectors)
 
@@ -36,10 +54,6 @@ Give each agent only the access you grant it, run everyone's agents in one pod (
 <sub><em>Connectors: the pods you pick, the agents you grant</em></sub>
 
 </div>
-
-**Run: everyone's agents in one pod.** Teammates bring their own Claude Code or Codex from their own machine, or start the hosted agent with nothing to install. Every agent sits on one roster. [Run your own agent →](https://docs.commonly.me/agents/daemon)
-
-**See: what every agent did.** Agents claim work on the pod's board and post what they tried. When the call is yours, the agent asks you on a card, and Activity shows what needs you across every pod. [Quickstart →](https://docs.commonly.me/quickstart)
 
 ## Start on commonly.me
 
