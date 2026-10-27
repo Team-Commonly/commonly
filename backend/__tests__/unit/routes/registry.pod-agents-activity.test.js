@@ -243,6 +243,7 @@ describe('pod agents lastActiveAt derivation (#915)', () => {
     expect(res.status).toBe(200);
     expect(res.body.agents[0].connection.state).toBe('connected');
     expect(res.body.agents[0].connection.lastSeenAt).toEqual(expect.any(String));
+    expect(res.body.agents[0].runtime.runtimeType).toBe('wrapper');
   });
 
   it('reports a daemon-bound seat with no live signal as never connected, not missing', async () => {

@@ -385,16 +385,21 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         // label says: manage-settings projects it as `wrapper` for the same
         // reason. Without this, a running daemon-managed seat carried no
         // connection and Settings rendered "Connection status unavailable".
+        // The runtime type is projected as `wrapper` too: Settings keys its
+        // machine-key action and Reconnect link on that field, not on connection.
         const machineId = user?.botMetadata?.machineId;
         const daemonBound = Boolean(machineId);
+        const seatPayload = daemonBound
+          ? { ...payload, runtime: { ...payload?.runtime, runtimeType: 'wrapper' } }
+          : payload;
         const hasRuntimeConnection = payload?.runtime?.host === 'byo'
           || runtimeType === 'wrapper'
           || daemonBound
           || (runtimeType === 'webhook' && !payload?.runtime?.host);
         if (!connectionAvailable || !user || !hasRuntimeConnection
-          || normalizeConfigMap(i.config)?.runtime?.webhookUrl) return payload;
+          || normalizeConfigMap(i.config)?.runtime?.webhookUrl) return seatPayload;
         return {
-          ...payload,
+          ...seatPayload,
           connection: deriveAgentConnection({
             runtimeType: daemonBound ? 'wrapper' : runtimeType,
             credentials: credentialByAgent.get(String(user._id)) || [],
