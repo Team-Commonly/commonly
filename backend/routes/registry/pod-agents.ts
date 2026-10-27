@@ -389,8 +389,13 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         // machine-key action and Reconnect link on that field, not on connection.
         const machineId = user?.botMetadata?.machineId;
         const daemonBound = Boolean(machineId);
+        // The harness label moves to `adapter`, so the chat tag keeps naming it.
         const seatPayload = daemonBound
-          ? { ...payload, runtime: { ...payload?.runtime, runtimeType: 'wrapper' } }
+          ? { ...payload, runtime: {
+            ...payload?.runtime,
+            runtimeType: 'wrapper',
+            adapter: payload?.runtime?.adapter || payload?.runtime?.runtimeType,
+          } }
           : payload;
         const hasRuntimeConnection = payload?.runtime?.host === 'byo'
           || runtimeType === 'wrapper'
