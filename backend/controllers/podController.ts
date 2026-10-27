@@ -1,4 +1,5 @@
 import { podMemberPopulate } from '../services/podMemberPopulate';
+import { leaveUnviewablePodRooms } from '../services/sessionSocketService';
 const mongoose = require('mongoose');
 const Pod = require('../models/Pod');
 const Message = require('../models/Message');
@@ -655,6 +656,7 @@ exports.leavePod = async (req: any, res: any) => {
     pod.updatedAt = Date.now();
 
     await pod.save();
+    await leaveUnviewablePodRooms(String(req.userId));
 
     // Populate the user data
     await pod.populate('createdBy', 'username profilePicture');
@@ -724,6 +726,7 @@ exports.removeMember = async (req: any, res: any) => {
         );
       }
     }
+    await leaveUnviewablePodRooms(memberId.toString());
 
     await pod.populate('createdBy', 'username profilePicture');
     await pod.populate(podMemberPopulate('username profilePicture isBot'));
