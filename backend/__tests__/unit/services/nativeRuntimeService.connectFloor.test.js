@@ -62,6 +62,9 @@ describe('isConnectIntent', () => {
     'what can you do?',
     'create a pod for the team',
     'connect with the team on Friday', // no machine/tool named
+    'attach a photo from my laptop',
+    'link: https://claude.ai/chat/abc',
+    'connect to claude.ai for research',
   ])('does not match: %s', (text) => {
     expect(isConnectIntent(text)).toBe(false);
   });
