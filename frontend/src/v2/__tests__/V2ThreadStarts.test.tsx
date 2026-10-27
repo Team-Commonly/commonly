@@ -7,10 +7,13 @@
 // can take the offer away before it is seen.
 import React, { useState } from 'react';
 import {
+  cleanup,
   fireEvent, render, screen, waitFor, within,
 } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
+import axios from 'axios';
 import V2Thread from '../components/V2Thread';
+import { resetByoStepsForTest } from '../utils/byoTelemetry';
 import { AuthContext } from '../../context/AuthContext';
 
 jest.mock('../../context/SocketContext', () => ({
@@ -240,6 +243,19 @@ describe('V2Thread — the connect start links Bring your own', () => {
       pod: { ...OWN_POD, createdBy: 'someone-else' },
     });
     expect(screen.queryByRole('button', { name: OPEN_BYO })).not.toBeInTheDocument();
+  });
+
+  test('the link pings byo-offer-shown once; a thread without it does not', async () => {
+    resetByoStepsForTest();
+    const pings = () => axios.post.mock.calls.filter(([url, body]) => String(url).endsWith('/api/stats/byo-step')
+      && body?.step === 'byo-offer-shown').length;
+    axios.post.mockClear();
+    renderThread([welcome]);
+    expect(pings()).toBe(0);
+    cleanup();
+    renderThread([welcome, message('mine', 'u1', 'maya', CONNECT, 4)]);
+    await screen.findByRole('button', { name: OPEN_BYO });
+    expect(pings()).toBe(1);
   });
 
   test('a message from Scout with that text gets no link', () => {
