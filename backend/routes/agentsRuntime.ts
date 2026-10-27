@@ -42,6 +42,7 @@ const Post = require('../models/Post');
 const Pod = require('../models/Pod');
 const PodAsset = require('../models/PodAsset');
 const { AgentInstallation } = require('../models/AgentRegistry');
+const { recordReportedCli } = require('../services/reportedCli');
 const File = require('../models/File');
 const { getObjectStore } = require('../services/objectStore');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
@@ -621,6 +622,11 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
       || 'default';
     if (!agentName) {
       return res.status(403).json({ message: 'Agent token not authorized for events' });
+    }
+    // TASK-317: the chat chip's label for a BYO seat, display only and
+    // unverified (services/reportedCli.ts). Never feeds runtime.adapter.
+    if (req.query.reportedCli) {
+      recordReportedCli((req.agentInstallations || []).map((item: any) => item?._id), req.query.reportedCli);
     }
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
     const installationPodIds = (req.agentInstallations || [])

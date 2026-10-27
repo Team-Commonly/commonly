@@ -2,11 +2,16 @@
 // `runtime.adapter` and leaves `runtimeType: 'webhook'` on a CLI-wrapped seat,
 // so the adapter names the CLI and `runtimeType` speaks only when no adapter is
 // declared. Reading runtimeType first made every CLI seat read "webhook".
+// `agent run --adapter` never writes runtime.adapter, so the CLI also reports
+// its name (runtime.reportedCli, display only; TASK-317), and a BYO seat on an
+// older CLI that reports nothing reads "CLI" rather than "webhook".
 export interface RuntimeChipSource {
   adapter?: string | null;
   wrappedCli?: string | null;
   runtimeType?: string | null;
   host?: string | null;
+  /** Display only: the CLI an unverified runtime said it runs (TASK-317). */
+  reportedCli?: string | null;
 }
 
 const RUNTIME_TYPE_CHIP: Record<string, string> = {
@@ -36,7 +41,9 @@ export const runtimeChipLabel = (runtime?: RuntimeChipSource | null): string | n
   // the kernel-owned type wins here: a hosted agent never shows a CLI chip.
   const runtimeType = clean(runtime?.runtimeType);
   if (runtimeType === 'hosted' || runtimeType === 'internal') return 'hosted';
-  const adapter = clean(runtime?.adapter) || clean(runtime?.wrappedCli);
+  const adapter = clean(runtime?.adapter) || clean(runtime?.wrappedCli) || clean(runtime?.reportedCli);
   if (adapter) return ADAPTER_CHIP[adapter] || adapter;
+  // A BYO seat on an older CLI reports nothing. It polls; it is not a webhook.
+  if (runtimeType === 'webhook' && clean(runtime?.host) === 'byo') return 'CLI';
   return RUNTIME_TYPE_CHIP[runtimeType] || null;
 };

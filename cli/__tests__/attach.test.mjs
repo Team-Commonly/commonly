@@ -1132,6 +1132,20 @@ describe('bootstrapAgentRecordFromEnv', () => {
     })).rejects.toThrow(/sign in with commonly login, then run commonly agent attach opencode --pod pod-main --name smoke-agent \[--env <environment\.yaml>\]/);
   });
 
+  test('TASK-317: a reported CLI on the installation never counts as a declared adapter', () => {
+    const refusal = serverAdapterBindingRefusal({
+      adapterName: 'pi',
+      agentName: 'smoke-agent',
+      installations: [{
+        podId: 'pod-main', podType: 'chat', instanceId: 'default', status: 'active',
+        type: 'installation', runtimeAdapter: null, reportedCli: 'pi', runtime: { reportedCli: 'pi' },
+      }],
+      podId: 'pod-main',
+      instanceId: 'default',
+    });
+    expect(refusal).toMatch(/Adapter 'pi' is not declared for this Commonly installation/);
+  });
+
   test('an older server without runtimeAdapter projection says to upgrade instead of re-attaching', async () => {
     const refusal = serverAdapterBindingRefusal({
       adapterName: 'opencode',

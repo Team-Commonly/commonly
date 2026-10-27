@@ -1,0 +1,67 @@
+/**
+ * `config.runtime.reportedCli`: display only, an unverified self-report.
+ *
+ * A seat connected with `commonly agent run <name> --adapter claude` never
+ * writes `runtime.adapter` (only `commonly agent config --adapter` does), so
+ * its chat chip fell back to the install's `runtimeType: 'webhook'` (TASK-317).
+ * The CLI now names its adapter on each events poll, and this records it.
+ *
+ * It is NOT `runtime.adapter` and must never be read as one. `runtime.adapter`
+ * is a binding: grant-broker confinement (`grantBrokerConfinement.ts`) judges
+ * it, the config write guard refuses changes to it (TASK-474), and the CLI's
+ * run path trusts the server-declared adapter for pi. This value comes from
+ * whoever holds the runtime token, unverified, so a seat running pi could
+ * report "claude". It may only label the chat chip. Anything that grants,
+ * refuses or routes reads `runtime.adapter` / `runtimeType`, never this.
+ *
+ * Written only on a BYO seat (`runtime.host: 'byo'`, which install stamps on
+ * every self-serve polling seat) and only while `runtime.adapter` is absent: a
+ * declared adapter already names the CLI, and the report must not sit beside it
+ * disagreeing. Hosted and native seats never carry it.
+ */
+import { AgentInstallation } from '../models/AgentRegistry';
+
+/** The CLI's adapter names (`cli/src/lib/adapters/*.js`). */
+export const REPORTED_CLI_VALUES: ReadonlySet<string> = new Set([
+  'claude', 'codex', 'dsh', 'goose', 'opencode', 'pi', 'qwen',
+]);
+
+const recorded = new Set<string>();
+
+export const normalizeReportedCli = (value: unknown): string | null => {
+  const cli = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return REPORTED_CLI_VALUES.has(cli) ? cli : null;
+};
+
+/**
+ * Record the CLI a runtime reported for the installations its token covers.
+ * Fire-and-forget: a poll must never wait on or fail for this label. One
+ * write per (installation, value) per process.
+ */
+export function recordReportedCli(installationIds: unknown[], value: unknown): void {
+  const cli = normalizeReportedCli(value);
+  if (!cli) return;
+  const ids = installationIds.map((id) => String(id || '')).filter(Boolean)
+    .filter((id) => !recorded.has(`${id}:${cli}`));
+  if (ids.length === 0) return;
+  ids.forEach((id) => recorded.add(`${id}:${cli}`));
+  const forget = () => ids.forEach((id) => recorded.delete(`${id}:${cli}`));
+  try {
+    AgentInstallation.updateMany(
+      {
+        _id: { $in: ids },
+        'config.runtime.host': 'byo',
+        'config.runtime.adapter': { $exists: false },
+        'config.runtime.reportedCli': { $ne: cli },
+      },
+      { $set: { 'config.runtime.reportedCli': cli } },
+    ).catch(forget);
+  } catch {
+    forget();
+  }
+}
+
+/** Test seam: forget what this process has recorded. */
+export function resetReportedCliForTest(): void {
+  recorded.clear();
+}
