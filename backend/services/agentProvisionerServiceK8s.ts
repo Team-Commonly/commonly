@@ -54,6 +54,14 @@ const AGENT_TOLERATIONS = (() => {
 // misbehaving agent can't monopolize the single-replica LiteLLM proxy.
 const LITELLM_KEY_MAX_PARALLEL_REQUESTS = 4;
 const LITELLM_KEY_RPM_LIMIT = 120;
+// Monthly spend cap per issued key (D111, 2026-10-27). Unlike the breakers above
+// this IS a usage quota: since the GPT aliases were repointed at DeepSeek, and dead
+// routes fall back to it, calls through these keys are paid, while the
+// deepseek-v4-flash group budget sits on that model name, which alias callers never
+// touch. The whole proxy runs ~$15/mo, so $30 per agent only trips on a runaway.
+// A reused key keeps whatever budget it already carries; this stamps new ones.
+const LITELLM_KEY_MAX_BUDGET_USD = 30;
+const LITELLM_KEY_BUDGET_DURATION = '30d';
 
 /**
  * Resolve OpenClaw account ID from agent name and instance ID
@@ -1650,6 +1658,8 @@ const issueLiteLLMVirtualKey = async (agentId: any) => {
         // trips only on runaway flooding (see constant comment).
         max_parallel_requests: LITELLM_KEY_MAX_PARALLEL_REQUESTS,
         rpm_limit: LITELLM_KEY_RPM_LIMIT,
+        max_budget: LITELLM_KEY_MAX_BUDGET_USD,
+        budget_duration: LITELLM_KEY_BUDGET_DURATION,
         metadata: { agent_id: agentId, provisioned_at: new Date().toISOString() },
       },
       { headers },
@@ -1729,6 +1739,8 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
         // trips only on runaway flooding (see constant comment).
         max_parallel_requests: LITELLM_KEY_MAX_PARALLEL_REQUESTS,
         rpm_limit: LITELLM_KEY_RPM_LIMIT,
+        max_budget: LITELLM_KEY_MAX_BUDGET_USD,
+        budget_duration: LITELLM_KEY_BUDGET_DURATION,
         metadata: { agent_id: agentId, key_type: 'openrouter', provisioned_at: new Date().toISOString() },
       },
       { headers },

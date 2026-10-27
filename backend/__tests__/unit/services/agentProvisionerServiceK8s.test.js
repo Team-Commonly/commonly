@@ -560,6 +560,19 @@ describe('issueLiteLLMVirtualKey never sends the master key to LiteLLM', () => {
     expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/key/info?key=sk-virtual-theo'), expect.anything());
     expect(key).toBe('sk-virtual-theo');
   });
+
+  // D111: these keys now route to a paid model, and the $60 group budget is on
+  // the deepseek-v4-flash model name, which alias callers never touch.
+  it('mints a fresh key with a monthly spend budget', async () => {
+    k8s.__mock.execStdout = '';
+
+    await issueLiteLLMVirtualKey('theo');
+
+    const [url, body] = axios.post.mock.calls.find(([u]) => u.endsWith('/key/generate'));
+    expect(url).toBe('http://litellm:4000/key/generate');
+    expect(body.max_budget).toBe(30);
+    expect(body.budget_duration).toBe('30d');
+  });
 });
 
 
