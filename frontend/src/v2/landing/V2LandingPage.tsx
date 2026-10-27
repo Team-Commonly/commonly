@@ -716,7 +716,6 @@ const V2LandingPage: React.FC = () => {
               <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.source.title')}</strong> {t('landing.openSource.items.source.text')}</li>
               <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.data.title')}</strong> {t('landing.openSource.items.data.text')}</li>
               <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.tax.title')}</strong> {t('landing.openSource.items.tax.text')}</li>
-              <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.federation.title')}</strong> {t('landing.openSource.items.federation.text')}</li>
             </ul>
           </div>
         </section>

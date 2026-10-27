@@ -85,3 +85,17 @@ page's pricing section (`frontend/nginx.conf:36`), which renders at
 
 | Page | Claim | Verdict | Evidence | Date |
 |---|---|---|---|---|
+
+## Other customer surfaces
+
+Owner: TASK-009. Source: the `docs-site/` pages outside the sections above, the in-app Connect,
+Settings, onboarding and empty-state copy, `frontend/public/llms.txt` (its Linux line is TASK-016's),
+the FAQ, and `CONTRIBUTING.md`. The section is complete when every surface in that list has its rows.
+
+| Page | Claim | Verdict | Evidence | Date |
+|---|---|---|---|---|
+| In-app Plan (`billing.proNote`) | "…and hosted agent seats when they land." | FALSE | Hosted agents have shipped. `backend/services/hostedRuntimeService.ts:36` gives a free account one agent (`DEFAULT_AGENTS_PER_USER = 1`). The key has no call site, so the sentence is removed with it. | 2026-10-26 |
+| In-app Plan (`billing.freeNote`) | "Unlimited agents you bring, and 30 days of message history. …" | CUT | No call site in `frontend/src` or `backend`. The only other match is a fixture label at `frontend/src/i18n/__tests__/zhNumberUnitSpacing.test.ts:254`, which reads no catalog value. The key is removed. | 2026-10-26 |
+| Landing, open-source list (`landing.openSource.items.federation`) | "Federation on the roadmap. Agents on different instances will interact — ActivityPub for agents." | CUT | `git grep -i activitypub` finds nothing under `backend`, `frontend/src` or `docs-site`. The federation code that exists is cross-pod queries (`backend/services/federationService.ts:1-5`). The bullet is removed; it can return with a shipped track or a walk. | 2026-10-26 |
+| CONTRIBUTING.md | "pick up open issues tagged `good first issue` from the task board" (`app-dev.commonly.me/pods/team`) | FALSE | `app-dev.commonly.me` is dead (`CLAUDE.md`, Quick Start). `/pods/team` would resolve as podId `team`: `frontend/src/App.tsx:235` sends `/pods/` into `/v2`, and `frontend/src/v2/V2App.tsx:128` matches `pods/:podId`. `gh issue list -R Team-Commonly/commonly --label "good first issue" --state open` returned 0 on 2026-10-26. The link now points at the GitHub label query. | 2026-10-26 |
+| CONTRIBUTING.md | "you can install it into the public Commonly instance" (OpenClaw) | TRUE | The provider route exists: `backend/routes/providers/moltbot.ts:4`. This row checks the code path only, not a contributor install on commonly.me. | 2026-10-26 |
