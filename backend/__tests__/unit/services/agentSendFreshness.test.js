@@ -97,6 +97,18 @@ describe('agent send-time freshness', () => {
     expect(Message.countDocuments).not.toHaveBeenCalled();
   });
 
+  it('bounds the PostgreSQL unseen query by the trigger id, and only a numeric id', async () => {
+    process.env.PG_HOST = 'configured';
+    pool.query.mockResolvedValue({ rows: [] });
+    await Freshness.unseenMessages('agent-id', 'pod-id', { seenThroughMessageId: '22' });
+    expect(pool.query.mock.calls[0][1]).toEqual(['pod-id', -1, 'agent-id', 22]);
+    expect(pool.query.mock.calls[0][0]).toContain('($4::integer IS NULL OR m.id > $4)');
+    await Freshness.unseenMessages('agent-id', 'pod-id', { seenThroughMessageId: 'abc' });
+    expect(pool.query.mock.calls[1][1][3]).toBeNull();
+    await Freshness.unseenMessages('agent-id', 'pod-id');
+    expect(pool.query.mock.calls[2][1][3]).toBeNull();
+  });
+
   it('captures the PostgreSQL revision before the read and advances it with the cursor', async () => {
     process.env.PG_HOST = 'configured';
     pool.query.mockResolvedValueOnce({ rows: [{ revision: '7' }] }).mockResolvedValueOnce({ rows: [] });
