@@ -1323,6 +1323,57 @@ export const triggerTextIsHumanWritten = async (trigger: NativeRunTrigger): Prom
   }
 };
 
+// TASK-417 / ADR-020 (ruled 2026-10-27): a connect-intent message from a person
+// gets the connect_local_agent card even when Scout's model proposes nothing
+// that turn. The floor only asks: the owner still approves the card.
+const CONNECT_INTENT = /\b(connect|link|hook up|attach|set up)\b[^.!?\n]{0,40}\b(claude code|claude|codex|local agent|my laptop|my computer|my machine)\b/i;
+
+export const isConnectIntent = (text: string): boolean => CONNECT_INTENT.test(text);
+
+export const connectIntentFloor = async (input: {
+  trigger: NativeRunTrigger;
+  podId: string;
+  agentName: string;
+  instanceId: string;
+  displayName: string;
+  runId: string;
+  installationConfig: unknown;
+  noOutboundRelay: boolean;
+}): Promise<boolean> => {
+  if (input.agentName !== 'scout') return false;
+  if (!(await triggerTextIsHumanWritten(input.trigger))) return false;
+  const payload = (input.trigger.payload && typeof input.trigger.payload === 'object'
+    ? input.trigger.payload : {}) as Record<string, unknown>;
+  const text = String(payload.content || '').trim();
+  if (!isConnectIntent(text)) return false;
+  // One pending card per pod: a second floor would stack a card on the first.
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const ApprovalAction = require('../models/ApprovalAction');
+  const pending = await ApprovalAction.exists({
+    podId: input.podId, actionType: 'connect_local_agent', status: 'flagged',
+  });
+  if (pending) return false;
+  const adapter = /\bcodex\b/i.test(text) ? 'codex' : 'claude';
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { proposeAction, suggestLocalAgentName } = require('./approvalActionService');
+  const name = await suggestLocalAgentName(adapter, String(payload.userId || ''));
+  if (!name) return false;
+  const result = await proposeAction({
+    runId: input.runId,
+    runPodId: input.podId,
+    podId: input.podId,
+    agentName: input.agentName,
+    instanceId: input.instanceId,
+    displayName: input.displayName,
+    actionType: 'connect_local_agent',
+    params: { name, adapter },
+    summary: `Connect your local ${adapter} agent as ${name}. Approve, then link it from the connect page.`,
+    installationConfig: input.installationConfig,
+    noOutboundRelay: input.noOutboundRelay,
+  });
+  return Boolean(result.ok);
+};
+
 export function buildUserMessage(
   trigger: NativeRunTrigger,
   podName: string,
@@ -1976,6 +2027,7 @@ export async function runAgent(
   let finalMessage: string | undefined;
   let turnIndex = 0;
   let postedViaTool = false;
+  let proposedCard = false;
   let modelFailureReason: string | undefined;
 
   // Row B (TASK-132): the seat's grant broker, assembled ONCE PER RUN at turn
@@ -2278,6 +2330,7 @@ export async function runAgent(
           // special case exists for).
           if (toolName === 'commonly_propose_action' && !result.error) {
             postedViaTool = true;
+            proposedCard = true;
           }
           // The hosted offer posts the model's own reply with its button, so
           // the same holds: the fallback must not post the narration twice.
@@ -2450,6 +2503,25 @@ export async function runAgent(
   // The spend alarm does not read this field.
   if (dispatchCtx.webFetches) {
     run.webFetches = dispatchCtx.webFetches;
+  }
+
+  // TASK-417: the deterministic floor runs after the model turn, so a turn that
+  // proposed nothing still gets the card on a connect-intent message.
+  if (run.status === 'succeeded' && !proposedCard) {
+    try {
+      await connectIntentFloor({
+        trigger,
+        podId,
+        agentName,
+        instanceId,
+        displayName,
+        runId,
+        installationConfig: cfg,
+        noOutboundRelay: Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen),
+      });
+    } catch (floorErr) {
+      console.warn('[native-runtime] connect-intent floor not posted:', (floorErr as Error).message);
+    }
   }
 
   run.completedAt = new Date();
