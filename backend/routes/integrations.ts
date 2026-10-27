@@ -60,6 +60,8 @@ import {
 import {
   writeIntegrationsRateLimit,
   listIntegrationsRateLimit,
+  ingestIngressRateLimit,
+  ingestIntegrationsRateLimit,
 } from '../middleware/integrationRateLimit';
 
 // The list lives in `utils/serverOwnedConfigKeys.ts` so the manifest contract
@@ -226,7 +228,7 @@ const ingestAuth = async (req: AuthReq, res: Res, next: () => void) => {
   return auth(req, res, next);
 };
 
-router.get('/catalog', auth, async (req: AuthReq, res: Res) => {
+router.get('/catalog', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const entries = await buildCatalogEntries({ userId: req.user?.id });
     res.json({ entries });
@@ -317,7 +319,7 @@ router.delete('/github-app/:id/gig-pod', writeIntegrationsRateLimit, auth, admin
   return res.status(204).json({});
 });
 
-router.post('/ingest', ingestAuth, async (req: AuthReq, res: Res) => {
+router.post('/ingest', ingestIngressRateLimit, ingestIntegrationsRateLimit, ingestAuth, async (req: AuthReq, res: Res) => {
   try {
     const { provider, integrationId, event, messages } = (req.body || {}) as { provider?: string; integrationId?: string; event?: unknown; messages?: unknown[] };
     const { integration: tokenIntegration } = req;
@@ -325,6 +327,12 @@ router.post('/ingest', ingestAuth, async (req: AuthReq, res: Res) => {
     if (!integrationId && !integration) return res.status(400).json({ message: 'integrationId is required' });
     if (!integration) integration = await Integration.findById(integrationId).lean();
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
+    // A signed-in session (not a cm_int_ token) may push only where it could
+    // mint an ingest token: the mint route's own gate, so this path grants
+    // nothing the mint does not. The buffer feeds summaries and agent context.
+    if (!req.integrationAuth && !await canDeleteIntegration(integration, req.user?.id || '')) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
     if (integrationId && (integration._id as { toString: () => string }).toString() !== integrationId.toString()) return res.status(400).json({ message: 'integrationId does not match token' });
     const providerName = provider || (integration.type as string);
     if (providerName !== integration.type) return res.status(400).json({ message: 'Provider does not match integration type' });
@@ -350,7 +358,7 @@ router.post('/ingest', ingestAuth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/:id/ingest-tokens', auth, async (req: AuthReq, res: Res) => {
+router.post('/:id/ingest-tokens', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const { label } = (req.body || {}) as { label?: string };
@@ -370,7 +378,7 @@ router.post('/:id/ingest-tokens', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/:id/ingest-tokens', auth, async (req: AuthReq, res: Res) => {
+router.get('/:id/ingest-tokens', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const integration = await Integration.findById(id) as { createdBy?: { toString: () => string }; podId?: unknown; ingestTokens?: Array<{ _id: { toString: () => string }; label?: string; createdAt?: Date; lastUsedAt?: Date; createdBy?: unknown }> } | null;
@@ -385,7 +393,7 @@ router.get('/:id/ingest-tokens', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.delete('/:id/ingest-tokens/:tokenId', auth, async (req: AuthReq, res: Res) => {
+router.delete('/:id/ingest-tokens/:tokenId', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id, tokenId } = req.params || {};
     const integration = await Integration.findById(id) as { createdBy?: { toString: () => string }; podId?: unknown; ingestTokens?: Array<{ _id: { toString: () => string } }>; save: () => Promise<void> } | null;
@@ -591,7 +599,7 @@ router.post('/:id/disconnect', writeIntegrationsRateLimit, auth, async (req: Aut
   }
 });
 
-router.get('/:id/stats', auth, async (req: AuthReq, res: Res) => {
+router.get('/:id/stats', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;
@@ -610,7 +618,7 @@ router.get('/:id/stats', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/:id/messages', auth, async (req: AuthReq, res: Res) => {
+router.get('/:id/messages', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const { limit, before } = req.query || {};
@@ -632,7 +640,7 @@ router.get('/:id/messages', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/:id/send', auth, async (req: AuthReq, res: Res) => {
+router.post('/:id/send', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const { message } = (req.body || {}) as { message?: string };
@@ -654,7 +662,7 @@ router.post('/:id/send', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/admin/all', auth, adminAuth, async (_req: AuthReq, res: Res) => {
+router.get('/admin/all', listIntegrationsRateLimit, auth, adminAuth, async (_req: AuthReq, res: Res) => {
   try {
     const integrations = await Integration.find({ isActive: true }).populate('podId', 'name type createdBy').populate('createdBy', 'username email').populate('platformIntegration').sort({ createdAt: -1 });
     // The connect code is a member's one-time enable code; the admin list has no reader for it.
