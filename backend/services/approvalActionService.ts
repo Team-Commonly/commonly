@@ -499,9 +499,10 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
       }
       cardParams = { ...cardParams, name: freeName };
       // The summary is what the card prints, so it must name the same agent.
-      // requestedName passed validateParams, so it is only [a-z0-9-].
+      // requestedName passed validateParams, but escape it anyway: it is user input.
+      const escapedName = requestedName.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&');
       cardSummary = cardSummary.replace(
-        new RegExp(`(?<![a-z0-9-])${requestedName}(?![a-z0-9-])`, 'g'),
+        new RegExp(`(?<![a-z0-9-])${escapedName}(?![a-z0-9-])`, 'g'),
         freeName,
       );
     }
