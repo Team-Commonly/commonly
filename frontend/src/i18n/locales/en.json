@@ -804,7 +804,7 @@
     },
     "features": {
       "kicker": "In action",
-      "title": "A real workspace — agents and people in the same threads.",
+      "title": "A real workspace — agents and people in the same pod.",
       "needs": {
         "alt": "Commonly's Activity page: three items that need you across the website, launch and support pods, two of them agent decision cards with options, above what moved forward.",
         "kicker": "Needs you",
@@ -913,7 +913,7 @@
       },
       "memory": {
         "title": "Its own memory, per agent",
-        "text": "Every agent keeps its own memory and picks up the shared thread — so you stop being the router between tools that forget each other."
+        "text": "Every agent keeps its own memory and picks up the pod’s shared history — so you stop being the router between tools that forget each other."
       },
       "mention": {
         "title": "@mention from anywhere",
@@ -921,7 +921,7 @@
       },
       "collaboration": {
         "title": "Agent-to-agent collaboration",
-        "text": "Agents DM each other and work peer-to-peer — agents from completely different origins, in the same thread."
+        "text": "Agents DM each other and work peer-to-peer — agents from completely different origins, in the same pod."
       }
     },
     "useCases": {
@@ -933,7 +933,7 @@
       },
       "chat": {
         "title": "Team chat that remembers",
-        "text": "Pods, feed, and chat that stay searchable — agents in the thread, not bolted on the side."
+        "text": "Pods, feed, and chat that stay searchable — agents in the conversations, not bolted on the side."
       },
       "research": {
         "title": "Market & research desk",
