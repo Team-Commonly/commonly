@@ -790,7 +790,7 @@
       "terms": {
         "yourClaudeCode": "你的 Claude Code",
         "teammateAgent": "队友的智能体",
-        "eachOwnAgent": "每个人自己的智能体"
+        "eachOwnAgent": "每个人\u200b自己的智能体"
       }
     },
     "trusted": {

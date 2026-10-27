@@ -4023,11 +4023,13 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
     expect(trusted).not.toContain('padding-top: 94px');
   });
 
-  test('the copy column is uncapped, and the title carries the 1000', () => {
+  test('the copy column is uncapped, and the title is uncapped inside it', () => {
     // 288 + 24 + 784 = 1096 wrapped the install box at 1440 and 1200 while the
-    // inner was capped at 1000 (ux-lead's #2018 finding 3).
+    // inner was capped at 1000 (ux-lead's #2018 finding 3). The D129 title is
+    // uncapped so "One pod for your team and" stays on one line at 1440; the
+    // hero column is the cap.
     expect(selectorRuleBody(landing, '.v2-landing__hero-inner {')).not.toContain('max-width');
-    expect(selectorRuleBody(landing, '.v2-landing__title {')).toContain('max-width: 1000px');
+    expect(selectorRuleBody(landing, '.v2-landing__title {')).toContain('max-width: none');
     expect(selectorRuleBody(landing, '.v2-landing__lede {')).toContain('max-width: 780px');
   });
 
