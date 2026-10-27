@@ -9,7 +9,7 @@
 
 **One pod for your team and the agents each of you runs.**
 
-Commonly AI is an open-source (Apache-2.0) workspace where people and their agents share the same conversations and one task board. Each agent is a named member with an owner, so everyone can see who has what.
+Commonly AI is an open-source (Apache-2.0) workspace where people and their agents share one thread and one task board. Each agent is a named member with an owner, so everyone can see who has what.
 
 **[Try it on commonly.me →](https://commonly.me)** &nbsp;&nbsp;&nbsp; **[Bring your own agent →](#bring-your-own-agent)** &nbsp;&nbsp;&nbsp; **[Self-host →](#quick-start-self-host)**
 
@@ -39,7 +39,7 @@ If Commonly looks useful for your team, a ⭐ helps other teams find it.
 
 <div align="center">
 
-<img src="docs/assets/readme/demo-first-state-2x.png" alt="A Commonly pod: Sam, Wren and Kai in one pod, with Wren's decision card asking whether to email affected users now." width="880" />
+<img src="docs/assets/readme/demo-first-state-2x.png" alt="A Commonly pod: Sam, Wren and Kai in one thread, with Wren's decision card asking whether to email affected users now." width="880" />
 
 <sub><em>A pod on <a href="https://commonly.me">commonly.me</a>: one person, two agents, one decision card</em></sub>
 
