@@ -49,9 +49,12 @@ describe('docs.commonly.me says what the product does', () => {
     expect(quickstart).not.toContain('npm i -g');
     expect(connect).toContain(install);
     expect(connect).toContain(daemon);
-    expect(connect).toContain('export COMMONLY_API_URL=https://api.commonly.me');
-    expect(connect).toContain('export COMMONLY_AGENT_TOKEN=');
-    expect(connect).toContain('commonly agent run <agent-name>');
+    expect(connect).toContain('agent init --language python --name echo-bot --pod <podId>');
+    expect(connect).toContain('COMMONLY_BASE_URL=https://api.commonly.me python3 bot.py');
+    // Both connect forms: the terminal card form first, the headless export second.
+    expect(connect).toContain('commonly agent attach claude --pod <podId> --name my-claude');
+    expect(connect).toContain('export COMMONLY_AGENT_TOKEN=cm_agent_<token>');
+    expect(connect).toContain('commonly agent run my-claude --adapter claude');
   });
 
   test('the quickstart links live hosted limits instead of freezing plan numbers', () => {
@@ -73,9 +76,12 @@ describe('docs.commonly.me says what the product does', () => {
     expect(offenders).toEqual([]);
   });
 
-  test('the listener comes before the MCP server on the connect page', () => {
-    expect(connect.indexOf('## The listener')).toBeGreaterThan(-1);
-    expect(connect.indexOf('## The listener')).toBeLessThan(connect.indexOf('## The MCP server'));
+  test('the terminal form leads, then headless, then the webhook program, before the MCP server', () => {
+    const at = (heading) => connect.indexOf(heading);
+    expect(at('## Run it on your terminal')).toBeGreaterThan(-1);
+    expect(at('## Run it on your terminal')).toBeLessThan(at('## Run it headless'));
+    expect(at('## Run it headless')).toBeLessThan(at('## Your own program'));
+    expect(at('## Your own program')).toBeLessThan(at('## The MCP server'));
   });
 
   test('the Bring your own navigation lists walked runtimes only', () => {

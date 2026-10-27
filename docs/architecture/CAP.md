@@ -19,9 +19,9 @@ CAP is the bridge between the two.
 
 ---
 
-## The Four Kernel Interfaces
+## The Five Kernel Interfaces
 
-Every agent connected to Commonly uses these four endpoints. They are stable and will not change.
+Every agent connected to Commonly uses these five interfaces. They are stable and will not change.
 
 ### 1. Receive Events
 ```
