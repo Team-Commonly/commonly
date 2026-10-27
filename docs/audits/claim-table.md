@@ -106,23 +106,23 @@ The connectors page is a first-touch page. A row marked `first-touch` in the Pag
 
 | Page | Claim | Verdict | Evidence | Date |
 |---|---|---|---|---|
-| connectors (first-touch) | Open Connectors in Commonly | TRUE | `frontend/src/v2/components/V2NavRail.tsx:38` | 2026-10-26 |
-| connectors (first-touch) | Channels carry messages between a pod and an outside chat | TRUE | `backend/services/slackApi.ts:69, :82`; `backend/routes/webhooks/telegram.ts:173–177` | 2026-10-26 |
-| connectors (first-touch) | Tools let an agent read or act in another service after the connection owner grants access | TRUE | `backend/routes/grants.ts:320, :430` | 2026-10-27 |
-| connectors (first-touch) | Slack and Telegram are channels; GitHub and Linear are tools | TRUE | `frontend/src/v2/components/V2ConnectorsPage.tsx:175` | 2026-10-26 |
-| connectors (first-touch) | Telegram: bind a private chat and choose which pods reach it | TRUE | `backend/routes/webhooks/telegram.ts:173–177`; `frontend/src/v2/components/V2ConnectorsPage.tsx:616–641` | 2026-10-26 |
-| connectors (first-touch) | Slack: authorize a workspace | TRUE | `backend/services/slackOAuthService.ts:53, :66` | 2026-10-26 |
+| connectors | Open Connectors in Commonly | CUT | Not walked by the v3.0.0 freeze. This PR removes the sentence. | 2026-10-26 |
+| connectors | Channels carry messages between a pod and an outside chat | CUT | Not walked by the v3.0.0 freeze. This PR removes the sentence. | 2026-10-26 |
+| connectors | Tools let an agent read or act in another service after the connection owner grants access | CUT | Not walked by the v3.0.0 freeze. This PR removes the sentence. | 2026-10-27 |
+| connectors | Slack and Telegram are channels; GitHub and Linear are tools | CUT | Not walked by the v3.0.0 freeze. This PR removes the sentence. | 2026-10-26 |
+| connectors | Telegram: bind a private chat and choose which pods reach it | CUT | Not walked by the v3.0.0 freeze. This PR removes the sentence. | 2026-10-26 |
+| connectors | Slack: authorize a workspace | CUT | Not walked by the v3.0.0 freeze. This PR removes the sentence. | 2026-10-26 |
 | connectors | Slack: "then confirm the connection" | CUT | Not walked in time. This PR removes the sentence. | 2026-10-26 |
-| connectors (first-touch) | GitHub App: an instance administrator installs the app | TRUE | `backend/routes/integrations.ts:239–262` | 2026-10-26 |
-| connectors (first-touch) | GitHub App: the connection owner grants tools | TRUE | `backend/routes/grants.ts:320, :346` | 2026-10-26 |
+| connectors | GitHub App: an instance administrator installs the app | CUT | Not walked by the v3.0.0 freeze. This PR removes the sentence. | 2026-10-26 |
+| connectors | GitHub App: the connection owner grants tools | CUT | Not walked by the v3.0.0 freeze. This PR removes the sentence. | 2026-10-26 |
 | connectors | GitHub App on commonly.me: "limited to the instance's own repository" | CUT | Not walked in time. This PR removes the sentence. | 2026-10-26 |
-| connectors (first-touch) | Linear: connect your account | TRUE | `backend/routes/hostedMcpConnect.ts:351, :697` | 2026-10-26 |
-| connectors (first-touch) | Linear: grant read access to an eligible pod | TRUE | `backend/integrations/hostedMcp/linear.ts:28–31, :64, :92–93`; `backend/services/outsiderGrantPodEligibility.ts:46–54` | 2026-10-26 |
+| connectors | Linear: connect your account | CUT | Not walked by the v3.0.0 freeze. This PR removes the sentence. | 2026-10-26 |
+| connectors | Linear: grant read access to an eligible pod | CUT | Not walked by the v3.0.0 freeze. This PR removes the sentence. | 2026-10-26 |
 | connectors | Live page shows a free account before any connection or tool grant | CUT | Not walked in time. This PR removes the sentence. | 2026-10-26 |
 | connectors | "Other tools visible in the list" | CUT | Not walked in time. This PR removes the sentence. | 2026-10-26 |
 | connectors | Two screenshots and captions | CUT | Not walked in time. The images stay in `docs-site/images` and are no longer referenced. | 2026-10-26 |
 | connectors | The page lists unavailable connectors; a listed row is not a working connection | CUT | Not walked in time. This PR removes the paragraph. | 2026-10-26 |
-| connectors (first-touch) | The grants guide explains how a connection owner limits tool access and revokes it | TRUE | `backend/services/roomGrantService.ts:324–373`; `backend/routes/grants.ts:480–501` | 2026-10-27 |
+| connectors | The grants guide explains how a connection owner limits tool access and revokes it | CUT | Not walked by the v3.0.0 freeze. This PR removes the sentence. | 2026-10-27 |
 | grants | A grant is scoped to a pod and the members allowed to use it, and can expire or be revoked | TRUE | `backend/models/RoomGrant.ts:28, :32–34` (target, audience snapshot, expiry); `backend/routes/grants.ts:371–379` (audience defaults to current members; each listed id must be one of them); `backend/services/roomGrantService.ts:233–239` (effective audience is the snapshot ∩ current members), `:242–243, :255–257` (expiry required and future), `:431` (expiry enforced on use); revoke `backend/routes/grants.ts:480–501`, `backend/services/roomGrantService.ts:390–396`, `backend/models/RoomGrant.ts:106–136` | 2026-10-27 |
 | grants | A grant is a server-enforced capability record | TRUE | `backend/models/RoomGrant.ts:11–36` | 2026-10-26 |
 | grants | It is not a credential, and revoking it does not replace the connector's credentials | TRUE | `backend/models/RoomGrant.ts:24–45` (no credential field); `:128–134` (revoke writes only `revokedAt` and `revokedBy`); `backend/models/AgentCredential.ts:41–58` | 2026-10-27 |
