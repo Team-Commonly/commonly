@@ -1010,10 +1010,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(primary).not.toContain('var(--v2-accent)');
     expect(ruleBody(aprofile, '.v2-root button.v2-aprofile__btn--primary:hover')).toContain('var(--v2-ink-hover)');
     expect(ruleBody(aprofile, '.v2-root .v2-aprofile__btn--primary')).toContain('color: var(--v2-on-ink)');
+    // The footer CTA sits on the accent-deep band, so it keeps main's white fill.
+    // An ink fill there reads as a dark hole (review 5673841827).
     const footerPrimary = ruleBody(aprofile, '.v2-root .v2-aprofile__footer-cta .v2-aprofile__btn--primary');
-    expect(footerPrimary).toContain('var(--v2-ink)');
-    expect(footerPrimary).not.toContain('var(--v2-accent)');
-    expect(ruleBody(aprofile, '.v2-root .v2-aprofile__footer-cta .v2-aprofile__btn--primary:hover')).toContain('var(--v2-ink-hover)');
+    expect(footerPrimary).toContain('background: #fff');
+    expect(footerPrimary).toContain('color: var(--v2-accent)');
 
     const avatarFocus = ruleBody(aprofile, '.v2-root button.v2-aprofile__avatar-button:focus-visible');
     expect(avatarFocus).toContain('outline: none');
