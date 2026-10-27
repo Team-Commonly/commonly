@@ -329,7 +329,7 @@ describe('sweep', () => {
       { _id: POD_A, tasks: [{ taskId: 'TASK-007', title: 'stalled work' }], count: 1 },
     ]);
 
-    const result = await KernelWorkSweepService.sweep(NOW);
+    const result = await KernelWorkSweepService.wakeForFoundWork(NOW);
 
     expect(mockNotifyFoundWork).toHaveBeenCalledTimes(1);
     const [podId, items, count] = mockNotifyFoundWork.mock.calls[0];
@@ -342,7 +342,7 @@ describe('sweep', () => {
   it('matches unoffered revisions regardless of age so the hourly batch can retry', async () => {
     Task.aggregate.mockResolvedValue([]);
 
-    await KernelWorkSweepService.sweep(NOW);
+    await KernelWorkSweepService.wakeForFoundWork(NOW);
 
     const [pipeline] = Task.aggregate.mock.calls[0];
     const match = pipeline[0].$match;
@@ -370,7 +370,7 @@ describe('sweep', () => {
     }));
     Task.aggregate.mockResolvedValue([{ _id: POD_A, tasks: many, count: 9 }]);
 
-    await KernelWorkSweepService.sweep(NOW);
+    await KernelWorkSweepService.wakeForFoundWork(NOW);
 
     const [, items, count] = mockNotifyFoundWork.mock.calls[0];
     expect(items).toHaveLength(9);
@@ -429,14 +429,25 @@ test('watcher receipts retry even when work discovery is disabled', async () => 
 });
 
 
-test('a watcher retry failure does not block rescue or work discovery', async () => {
+test('a watcher retry failure does not block rescue', async () => {
   const receipts = require('../../../services/taskEventService').retryTaskWatcherDigests;
   receipts.mockRejectedValueOnce(new Error('lookup failed'));
   const rescue = jest.spyOn(KernelWorkSweepService, 'rescueLapsed');
-  const discovery = jest.spyOn(KernelWorkSweepService, 'wakeForFoundWork');
   try {
     await KernelWorkSweepService.sweep(NOW);
     expect(rescue).toHaveBeenCalledTimes(1);
-    expect(discovery).toHaveBeenCalledTimes(1);
-  } finally { rescue.mockRestore(); discovery.mockRestore(); }
+  } finally { rescue.mockRestore(); }
+});
+
+test('TASK-381: the sweep sends no found-work nudge, even with unclaimed rows due', async () => {
+  Task.aggregate.mockResolvedValue([
+    { _id: POD_A, tasks: [{ taskId: 'TASK-015', title: 'decouple' }], count: 1 },
+  ]);
+  const discovery = jest.spyOn(KernelWorkSweepService, 'wakeForFoundWork');
+  try {
+    const result = await KernelWorkSweepService.sweep(NOW);
+    expect(discovery).not.toHaveBeenCalled();
+    expect(mockNotifyFoundWork).not.toHaveBeenCalled();
+    expect(result.woken).toBe(0);
+  } finally { discovery.mockRestore(); }
 });

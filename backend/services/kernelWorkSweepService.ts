@@ -365,13 +365,17 @@ class KernelWorkSweepService {
         scannedPods: 0, rescued: 0, deferred: 0, woken: 0, skippedNoWork: 0,
       };
     }
+    // TASK-381 (ruling 2026-10-27): the hourly found-work nudge is retired. It
+    // woke every implementer seat for unclaimed rows, and most of those wakes
+    // ended NO_REPLY. Unclaimed rows reach a seat through the row router (one
+    // PATCH + one @mention per row); assigned rows through the assigned-task
+    // wake. So the sweep no longer calls wakeForFoundWork.
     const { rescued, deferred } = await KernelWorkSweepService.rescueLapsed(now);
-    const { woken, skippedNoWork, scannedPods } = await KernelWorkSweepService.wakeForFoundWork(now);
-    if (rescued.length || deferred.length || woken) {
-      console.log(`[kernel-sweep] rescued=${rescued.length} deferred=${deferred.length} woken=${woken} pods=${scannedPods}`);
+    if (rescued.length || deferred.length) {
+      console.log(`[kernel-sweep] rescued=${rescued.length} deferred=${deferred.length}`);
     }
     return {
-      scannedPods, rescued: rescued.length, deferred: deferred.length, woken, skippedNoWork,
+      scannedPods: 0, rescued: rescued.length, deferred: deferred.length, woken: 0, skippedNoWork: 0,
     };
   }
 }
