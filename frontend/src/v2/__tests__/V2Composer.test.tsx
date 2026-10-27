@@ -22,9 +22,11 @@ jest.mock('../components/V2Avatar', () => {
 });
 jest.mock('../utils/avatars', () => ({ initialsFor: (name: string) => name.slice(0, 2) }));
 
-// jsdom has no scrollIntoView; the component auto-scrolls on mount.
+// jsdom has neither scrollIntoView nor Element.scrollTo. The thread follows by
+// scrolling its message list (scrollTo), so `scrollTo` is the follow signal.
 beforeAll(() => {
   Element.prototype.scrollIntoView = jest.fn();
+  Element.prototype.scrollTo = jest.fn();
 });
 
 // Same mock surface as V2Login.test.tsx — axiosConfig assigns
@@ -457,14 +459,14 @@ describe('V2Composer send button', () => {
   };
 
   beforeEach(() => {
-    (Element.prototype.scrollIntoView as jest.Mock).mockClear();
+    (Element.prototype.scrollTo as jest.Mock).mockClear();
   });
 
   test('background arrivals stay put even when another tab uses the same user', async () => {
     const detail = makeDetail({ messages: [transcriptMessage('start')] });
     const view = renderChat(detail);
     const scroller = scrollUp(view);
-    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    const scrollIntoView = Element.prototype.scrollTo as jest.Mock;
     scrollIntoView.mockClear();
 
     view.rerender(
@@ -522,7 +524,7 @@ describe('V2Composer send button', () => {
     });
     const view = renderChat(detail);
     scrollUp(view);
-    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    const scrollIntoView = Element.prototype.scrollTo as jest.Mock;
     scrollIntoView.mockClear();
 
     fireEvent.change(composerInput(), { target: { value: 'sent from this tab' } });
@@ -556,7 +558,7 @@ describe('V2Composer send button', () => {
     });
     const view = renderChat(detail);
     scrollUp(view);
-    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    const scrollIntoView = Element.prototype.scrollTo as jest.Mock;
     scrollIntoView.mockClear();
 
     fireEvent.change(composerInput(), { target: { value: 'post first' } });
@@ -585,7 +587,7 @@ describe('V2Composer send button', () => {
     });
     const view = renderChat(detail);
     const scroller = scrollUp(view);
-    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    const scrollIntoView = Element.prototype.scrollTo as jest.Mock;
     scrollIntoView.mockClear();
 
     fireEvent.change(composerInput(), { target: { value: 'will fail' } });
@@ -617,7 +619,7 @@ describe('V2Composer send button', () => {
     });
     const view = renderChat(detail);
     scrollUp(view);
-    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    const scrollIntoView = Element.prototype.scrollTo as jest.Mock;
     scrollIntoView.mockClear();
 
     upload(view.container);
@@ -646,7 +648,7 @@ describe('V2Composer send button', () => {
     fireEvent.change(composerInput(), { target: { value: 'old own' } });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
     await waitFor(() => expect(oldDetail.sendMessage).toHaveBeenCalledTimes(1));
-    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    const scrollIntoView = Element.prototype.scrollTo as jest.Mock;
     scrollIntoView.mockClear();
 
     const newDetail = {

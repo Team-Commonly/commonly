@@ -837,18 +837,29 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // The pill mounts once the reader is a viewport up; `· N` only with arrivals.
   const [scrolledUp, setScrolledUp] = useState(false);
   const edgeRef = useRef<HTMLDivElement | null>(null);
+  // Scroll the message list itself, never via scrollIntoView. scrollIntoView
+  // also scrolls every scrollable ancestor, and main.v2-pane is overflow
+  // hidden: when the list is already at its end the browser moves the pane
+  // instead, taking the header and thread off screen with no way back
+  // (UX Lead on #2870; the composer-send jump in TASK-584).
+  const scrollListToEnd = useCallback(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    if (typeof el.scrollTo === 'function') el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    else el.scrollTop = el.scrollHeight;
+  }, []);
   const jumpToLatest = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollListToEnd();
     atBottomRef.current = true;
     setJumpCount(0);
     setScrolledUp(false);
-  }, []);
+  }, [scrollListToEnd]);
   // The invite card can mount after the arrival effect has already followed
   // (on a reload, once history settles), landing a card-height below the fold.
   // Follow it only when the reader was at the end; never move someone reading up.
   const followCardIfAtBottom = useCallback(() => {
-    if (atBottomRef.current) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, []);
+    if (atBottomRef.current) scrollListToEnd();
+  }, [scrollListToEnd]);
   useEffect(() => {
     const el = messagesContainerRef.current;
     if (!el) return undefined;
@@ -866,7 +877,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   useEffect(() => {
     if (!newestMessageId) return;
     if (atBottomRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      scrollListToEnd();
       setJumpCount(0);
     } else {
       setJumpCount((count) => count + 1);
@@ -881,8 +892,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   useEffect(() => {
     if (!sendFollowVersion || !sentMessageIdRef.current) return;
     atBottomRef.current = true;
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollListToEnd();
     setJumpCount(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sendFollowVersion]);
 
   const rememberSentMessage = useCallback((sendPodId: string, created: import('../hooks/useV2PodDetail').V2Message) => {
