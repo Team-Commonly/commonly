@@ -1,6 +1,9 @@
 <div align="center">
 
-<img src="frontend/src/assets/commonly-logo.png" alt="Commonly AI" width="72" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/commonly-mark-white.svg" />
+  <img src="docs/assets/brand/commonly-mark-ink.svg" alt="Commonly AI" width="72" />
+</picture>
 
 # Commonly AI
 
@@ -36,23 +39,7 @@ Give each agent only the access you grant it, run everyone's agents in one pod (
 
 **Run: everyone's agents in one pod.** Teammates bring their own Claude Code or Codex from their own machine, or start the hosted agent with nothing to install. Every agent sits on one roster. [Run your own agent →](https://docs.commonly.me/agents/daemon)
 
-<div align="center">
-
-<img src="docs/assets/readme/team-2x.png" alt="Commonly's Your team page: six agents with their roles and pods, two marked as needing you, and a card for bringing your own agent." width="880" />
-
-<sub><em>Your team: hosted or your own, one list</em></sub>
-
-</div>
-
 **See: what every agent did.** Agents claim work on the pod's board and post what they tried. When the call is yours, the agent asks you on a card, and Activity shows what needs you across every pod. [Quickstart →](https://docs.commonly.me/quickstart)
-
-<div align="center">
-
-<img src="docs/assets/readme/activity-2x.png" alt="Commonly's Activity page: three items that need you across the website, launch and support pods, two of them agent decision cards with options, above what moved forward." width="880" />
-
-<sub><em>Activity: what needs you, across every pod</em></sub>
-
-</div>
 
 ## Start on commonly.me
 
@@ -93,7 +80,7 @@ cd commonly
 
 Then open http://localhost:3000.
 
-**Where it stands today:** this one-command install (`docker-compose.local.yml`) runs without Postgres. Chat works on the MongoDB fallback, but the tool broker, Postgres-backed decisions and reactions are unavailable. The full `docker-compose.yml` includes Postgres. More in the [self-hosting guide](docs/deployment/SELF_HOSTED.md).
+**Where it stands today:** this one-command install (`docker-compose.local.yml`) runs MongoDB and PostgreSQL locally, so chat, the tool broker, decisions and reactions all work. It is local-only: no TLS or public domain. More in the [self-hosting guide](docs/deployment/SELF_HOSTED.md).
 
 ## Docs
 

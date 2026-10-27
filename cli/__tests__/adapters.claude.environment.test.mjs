@@ -1386,11 +1386,12 @@ describe('claude adapter — a workspace seat', () => {
     }
   });
 
-  test('under bwrap it refuses to spawn', async () => {
+  test('under bwrap on a Mac it refuses before preparing any state', async () => {
     const { impl, calls } = makeSpawnImpl();
     await expect(workspaceSpawn(impl, { mode: 'bwrap', trust: 'workspace' }))
-      .rejects.toThrow(/workspace Claude agents run on macOS only for now/);
+      .rejects.toThrow(/workspace Claude agents require bwrap: bwrap is Linux-only/);
     expect(calls).toHaveLength(0);
+    expect(fs.readdirSync(publicState)).toEqual([]);
   });
 
   test('with an unenforced mode it refuses rather than falls through to a bare spawn', async () => {
@@ -1398,6 +1399,247 @@ describe('claude adapter — a workspace seat', () => {
     await expect(workspaceSpawn(impl, { mode: 'none', trust: 'workspace' }))
       .rejects.toThrow(/workspace Claude agents require an enforced sandbox mode/);
     expect(calls).toHaveLength(0);
+  });
+});
+
+// A workspace seat on Linux runs under bwrap. bwrap used to make the project
+// its HOME, so its transcripts landed in the person's project and it had no
+// login, and the adapter refused the combination. The seat now gets the same
+// per-seat state folder macOS uses, outside the project, with a copy of the
+// person's Claude login in it.
+describe('claude adapter — a workspace seat on Linux', () => {
+  const originalPlatform = process.platform;
+  let cwd;
+  let state;
+  let operatorClaude;
+  const login = '{"claudeAiOauth":{"accessToken":"test-only"}}\n';
+
+  let claudeInstall;
+  // `which claude` answers with a real file, as on a host with Claude Code
+  // installed; the jail binds its folder.
+  const whichFinds = (bin) => spawnSync.mockImplementation((cmd) => (cmd === 'which'
+    ? { status: 0, stdout: `${bin}\n` } : undefined));
+
+  beforeEach(() => {
+    cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-linux-ws-'));
+    state = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-linux-state-'));
+    operatorClaude = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-linux-login-'));
+    claudeInstall = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-linux-install-'));
+    fs.writeFileSync(path.join(claudeInstall, 'claude'), '#!/bin/sh\n', { mode: 0o755 });
+    fs.writeFileSync(path.join(operatorClaude, '.credentials.json'), login, { mode: 0o600 });
+    whichFinds(path.join(claudeInstall, 'claude'));
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+  });
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+    spawnSync.mockReset();
+    for (const dir of [cwd, state, operatorClaude, claudeInstall]) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  // TASK-027: a jail that cannot carry claude fails closed before the login
+  // is copied, never spawning a namespace claude cannot start in.
+  test.each([
+    ['not on PATH', () => spawnSync.mockImplementation(() => undefined), /`claude` could not be resolved/],
+    ['a dangling link', () => whichFinds(path.join(os.tmpdir(), 'cli-claude-missing', 'claude')), /cli-claude-missing\/claude` could not be resolved/],
+  ])('refuses when claude is %s, before the login is copied', async (_label, arrange, message) => {
+    arrange();
+    const { impl, calls } = childImpl();
+    await expect(linuxSpawn(impl)).rejects.toThrow(message);
+    expect(calls).toHaveLength(0);
+    expect(fs.existsSync(path.join(state, '.claude', '.credentials.json'))).toBe(false);
+  });
+
+  test('binds the folder claude is installed in, read-only', async () => {
+    const { impl, calls } = childImpl();
+    await linuxSpawn(impl);
+    expect(calls).toHaveLength(1);
+    const outer = calls[0].args.slice(0, calls[0].args.indexOf('--'));
+    const binds = outer.flatMap((arg, i) => (/^--ro-bind/.test(arg) ? [outer[i + 1]] : []));
+    expect(binds).toContain(fs.realpathSync(claudeInstall));
+  });
+
+  // Plays the child: it looks for its login under the HOME it was given and
+  // writes its transcript there, as claude does.
+  const childImpl = () => {
+    const calls = [];
+    const impl = (cmd, args, opts) => {
+      // bwrap sets the child's HOME with --setenv; that is the one it sees.
+      const home = args[args.indexOf('HOME') + 1];
+      const loginPath = path.join(home, '.claude', '.credentials.json');
+      const foundLogin = fs.existsSync(loginPath) ? fs.readFileSync(loginPath, 'utf8') : null;
+      const sid = args[args.indexOf('--session-id') + 1];
+      const dir = path.join(home, '.claude', 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, `${sid}.jsonl`), `${JSON.stringify({
+        type: 'assistant',
+        message: { usage: { input_tokens: 1, cache_creation_input_tokens: 2, cache_read_input_tokens: 40 } },
+      })}\n`);
+      calls.push({ cmd, args, opts, foundLogin });
+      return fakeChild({ stdout: 'ok' });
+    };
+    return { impl, calls };
+  };
+
+  const linuxSpawn = (impl, sandbox = { trust: 'workspace' }, env = {}) => claude.spawn('hi', {
+    agentName: 'linux-workspace-test',
+    sessionId: null,
+    cwd,
+    env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: operatorClaude, ...env },
+    environment: { model: 'test-model', sandbox },
+    memoryLongTerm: '',
+    _publicClaudeState: state,
+    _detectBwrap: () => ({ available: true, path: 'bwrap' }),
+    _spawnImpl: impl,
+  });
+
+  const flagTriples = (args, flag) => args.flatMap((arg, i) => (
+    arg === flag ? [[args[i + 1], args[i + 2]]] : []
+  ));
+
+  test('runs in bwrap with a HOME outside the project, finds its login, and writes nothing into the project', async () => {
+    const { impl, calls } = childImpl();
+    const res = await linuxSpawn(impl);
+
+    expect(calls).toHaveLength(1);
+    const { cmd, args, opts, foundLogin } = calls[0];
+    expect(cmd).toBe('bwrap');
+    const outer = args.slice(0, args.indexOf('--'));
+    expect(outer.slice(outer.indexOf('HOME') - 1, outer.indexOf('HOME') + 2))
+      .toEqual(['--setenv', 'HOME', state]);
+    expect(opts.env.HOME).toBe(state);
+    expect(opts.env.CLAUDE_CONFIG_DIR).toBeUndefined();
+    // The state folder is the only writable bind; with no write grant the
+    // project is read-only.
+    expect(flagTriples(outer, '--bind')).toEqual([[state, state]]);
+    expect(flagTriples(outer, '--ro-bind')).toContainEqual([cwd, cwd]);
+
+    expect(foundLogin).toBe(login);
+    const copy = path.join(state, '.claude', '.credentials.json');
+    expect(fs.lstatSync(copy).isFile()).toBe(true);
+    expect(fs.statSync(copy).mode & 0o777).toBe(0o600);
+    expect(fs.statSync(path.join(state, '.claude')).mode & 0o777).toBe(0o700);
+    expect(fs.readdirSync(cwd)).toEqual([]);
+    // TASK-440 reads the transcript from the HOME the child wrote under.
+    expect(res.contextTokens).toBe(43);
+
+    // The seat runs the workspace tier's policy, not the public seat's.
+    const inner = args.slice(args.indexOf('--') + 1);
+    expect(inner).toEqual(expect.arrayContaining(['--permission-mode', 'dontAsk']));
+    expect(inner.join(' ')).toContain('Read(./.env)');
+  });
+
+  test('a write grant makes the project writable and keeps its .git read-only', async () => {
+    const gitDir = path.join(cwd, '.git');
+    fs.mkdirSync(gitDir);
+    const { impl, calls } = childImpl();
+    await linuxSpawn(impl, { trust: 'workspace', allow: ['write'] });
+
+    const outer = calls[0].args.slice(0, calls[0].args.indexOf('--'));
+    expect(flagTriples(outer, '--bind')).toEqual([[state, state], [cwd, cwd]]);
+    // Strict, not -try: a .git that vanished must stop bwrap, not go unbound.
+    expect(flagTriples(outer, '--ro-bind')).toContainEqual([gitDir, gitDir]);
+    // .git is bound after the project, so it lands on top of it.
+    const bindAt = (flag, p) => outer.findIndex((arg, i) => arg === flag && outer[i + 1] === p);
+    expect(bindAt('--ro-bind', gitDir)).toBeGreaterThan(bindAt('--bind', cwd));
+  });
+
+  test('a write grant on a project with no .git refuses, and creates nothing in it', async () => {
+    const { impl, calls } = childImpl();
+    await expect(linuxSpawn(impl, { trust: 'workspace', allow: ['write'] }))
+      .rejects.toThrow(/need the project to be a git repository/);
+    expect(calls).toHaveLength(0);
+    expect(fs.readdirSync(cwd)).toEqual([]);
+  });
+
+  test('a write grant refuses a .git that is a symlink', async () => {
+    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-linux-git-'));
+    try {
+      fs.symlinkSync(elsewhere, path.join(cwd, '.git'));
+      const { impl, calls } = childImpl();
+      await expect(linuxSpawn(impl, { trust: 'workspace', allow: ['write'] }))
+        .rejects.toThrow(/need the project to be a git repository/);
+      expect(calls).toHaveLength(0);
+    } finally {
+      fs.rmSync(elsewhere, { recursive: true, force: true });
+    }
+  });
+
+  test('without a write grant a project with no .git still runs, read-only', async () => {
+    const { impl, calls } = childImpl();
+    await linuxSpawn(impl);
+    const outer = calls[0].args.slice(0, calls[0].args.indexOf('--'));
+    expect(flagTriples(outer, '--ro-bind')).toContainEqual([cwd, cwd]);
+    expect(fs.readdirSync(cwd)).toEqual([]);
+  });
+
+  test('refuses a login that is a symlink, and spawns nothing', async () => {
+    const real = path.join(operatorClaude, 'elsewhere.json');
+    fs.renameSync(path.join(operatorClaude, '.credentials.json'), real);
+    fs.symlinkSync(real, path.join(operatorClaude, '.credentials.json'));
+    const { impl, calls } = childImpl();
+
+    await expect(linuxSpawn(impl)).rejects.toThrow(/refusing a Claude login that is not a regular file/);
+    expect(calls).toHaveLength(0);
+    expect(fs.existsSync(path.join(state, '.claude', '.credentials.json'))).toBe(false);
+  });
+
+  test('refuses a login that is not a regular file, checked on the opened file', async () => {
+    const login = path.join(operatorClaude, '.credentials.json');
+    fs.rmSync(login);
+    fs.mkdirSync(login);
+    const { impl, calls } = childImpl();
+    await expect(linuxSpawn(impl)).rejects.toThrow(/refusing a Claude login that is not a regular file/);
+    expect(calls).toHaveLength(0);
+  });
+
+  test('replaces a symlink the jail left at the copy, rather than writing through it', async () => {
+    const victim = path.join(operatorClaude, 'victim.txt');
+    fs.writeFileSync(victim, 'untouched');
+    fs.mkdirSync(path.join(state, '.claude'), { mode: 0o700 });
+    fs.symlinkSync(victim, path.join(state, '.claude', '.credentials.json'));
+    const { impl, calls } = childImpl();
+
+    await linuxSpawn(impl);
+    expect(calls[0].foundLogin).toBe(login);
+    expect(fs.lstatSync(path.join(state, '.claude', '.credentials.json')).isSymbolicLink()).toBe(false);
+    expect(fs.readFileSync(victim, 'utf8')).toBe('untouched');
+  });
+
+  test('a person who logged out is not still signed in here', async () => {
+    fs.rmSync(path.join(operatorClaude, '.credentials.json'));
+    fs.mkdirSync(path.join(state, '.claude'), { mode: 0o700 });
+    fs.writeFileSync(path.join(state, '.claude', '.credentials.json'), login, { mode: 0o600 });
+    const { impl, calls } = childImpl();
+
+    await linuxSpawn(impl);
+    expect(calls[0].foundLogin).toBeNull();
+  });
+
+  test('a host with no usable bwrap refuses before preparing any state', async () => {
+    const { impl, calls } = childImpl();
+    await expect(claude.spawn('hi', {
+      agentName: 'linux-workspace-test',
+      sessionId: null,
+      cwd,
+      env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: operatorClaude },
+      environment: { model: 'test-model', sandbox: { trust: 'workspace' } },
+      _publicClaudeState: state,
+      _detectBwrap: () => ({ available: false, error: 'bwrap not found on PATH.' }),
+      _spawnImpl: impl,
+    })).rejects.toThrow(/workspace Claude agents require bwrap: bwrap not found/);
+    expect(calls).toHaveLength(0);
+    expect(fs.readdirSync(state)).toEqual([]);
+  });
+
+  test('a public Linux seat keeps its old jail: the project is its HOME and nothing else is writable', async () => {
+    const { impl, calls } = childImpl();
+    await linuxSpawn(impl, { trust: 'public' });
+
+    const outer = calls[0].args.slice(0, calls[0].args.indexOf('--'));
+    expect(outer.slice(outer.indexOf('HOME') - 1, outer.indexOf('HOME') + 2))
+      .toEqual(['--setenv', 'HOME', cwd]);
+    expect(flagTriples(outer, '--bind')).toEqual([[cwd, cwd]]);
+    expect(fs.readdirSync(state)).toEqual([]);
   });
 });
 

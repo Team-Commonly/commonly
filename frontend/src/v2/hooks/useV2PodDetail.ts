@@ -92,6 +92,12 @@ export interface V2Message {
     actorName?: string;
     taskId?: string;
     elements?: unknown[];
+    v?: number;
+    lang?: string;
+    source?: string;
+    catalogId?: string;
+    catalogRev?: number;
+    catalogHash?: string;
     // kind 'starts': offers rendered as buttons under the message (first
     // session, direction B). A plain start sends its label as the person's own
     // message; `href` navigates in-app, and supported actions act in place.

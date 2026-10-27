@@ -80,15 +80,21 @@ export const buildGithubGigCard = (eventType: string, payload: any, location: No
 
 export const completeTaskForMergedPull = async (podId: string, href: string): Promise<void> => {
   const at = new Date();
-  const task = await Task.findOneAndUpdate(
-    { podId: new Types.ObjectId(podId), prUrl: href, status: { $in: ['pending', 'claimed'] } },
-    { $set: { status: 'done', completedAt: at }, $push: { updates: {
-      // Initiative status reads this exact update as merge evidence (initiativeStatus.ts).
-      text: MERGE_EVIDENCE_TEXT, author: 'system', authorId: null, createdAt: at,
-    } } },
-    { new: true },
-  );
-  if (task) emitTaskUpdated(podId, task, 'updated');
+  // Every open task linked to the PR gets its own merge record: initiative
+  // status requires one per done task (initiativeStatus.ts). One atomic update
+  // per task, so each emits its own board event and a retry finishes the rest.
+  for (;;) {
+    // eslint-disable-next-line no-await-in-loop
+    const task = await Task.findOneAndUpdate(
+      { podId: new Types.ObjectId(podId), prUrl: href, status: { $in: ['pending', 'claimed'] } },
+      { $set: { status: 'done', completedAt: at }, $push: { updates: {
+        text: MERGE_EVIDENCE_TEXT, author: 'system', authorId: null, createdAt: at,
+      } } },
+      { new: true },
+    );
+    if (!task) return;
+    emitTaskUpdated(podId, task, 'updated');
+  }
 };
 
 export const handleGithubGig = async ({ eventType, payload, podId, location }: {

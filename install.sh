@@ -37,11 +37,19 @@ else
   echo "  ✓ Created $ENV_FILE with a generated JWT secret"
 fi
 
+# Chat messages live in Postgres (TASK-503). An .env from before it has no
+# PG_PASSWORD, so add one rather than refusing to start.
+if ! grep -Eq '^PG_PASSWORD=.+$' "$ENV_FILE"; then
+  if ! command -v openssl &>/dev/null; then
+    echo "  ✗ openssl is required to generate a local PG_PASSWORD"
+    exit 1
+  fi
+  ( umask 077; printf 'PG_PASSWORD=%s\n' "$(openssl rand -hex 24)" >> "$ENV_FILE" )
+  echo "  ✓ Added a generated Postgres password to $ENV_FILE"
+fi
+
 echo ""
-echo "  Local profile: docker-compose.local.yml (without Postgres)."
-echo "  Chat uses the MongoDB fallback. The tool broker, Postgres-backed"
-echo "  decisions and reactions are unavailable."
-echo "  docker-compose.yml includes Postgres; TASK-503 tracks adding it locally."
+echo "  Local profile: docker-compose.local.yml (MongoDB + PostgreSQL)."
 echo ""
 echo "  Starting Commonly..."
 echo ""
@@ -59,4 +67,7 @@ echo "    http://localhost:5000/api/agents/runtime"
 echo ""
 echo "  Logs:  $COMPOSE --env-file $ENV_FILE -f docker-compose.local.yml logs -f"
 echo "  Stop:  $COMPOSE --env-file $ENV_FILE -f docker-compose.local.yml down"
+echo ""
+echo "  Upgrading from a MongoDB-only install? Copy old chat history into PostgreSQL:"
+echo "    $COMPOSE --env-file $ENV_FILE -f docker-compose.local.yml exec backend npm run backfill:local-messages -- --apply"
 echo ""

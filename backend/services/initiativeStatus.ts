@@ -12,10 +12,17 @@
  *   `ruling.at`;
  * - the close record, written by the direction-giver with one evidence URL.
  *
- * Owner-written Task `updates[]`, `claimedAt`, lease renewals and a `done` set
- * through `/complete` or PATCH are deliberately NOT inputs: seats renew leases
- * with update notes, so counting them would make a stalled initiative read as
- * moving. A `blocked` Task is reported as a note on its part, never as status.
+ * Owner-written Task `updates[]`, `claimedAt` and lease renewals are
+ * deliberately NOT evidence: seats renew leases with update notes, so counting
+ * them would make a stalled initiative read as moving. Task `status` is read in
+ * one place only: `needs your check` requires every linked Task to be `done`
+ * AND to carry its own merge record, so a Task closed by hand through
+ * `/complete` or PATCH never counts, even beside a merged one. A merge is
+ * found through a `task` link or a `pr` link alike, since the record lives on
+ * the Task either way. A `blocked` Task is a note on its part, never a status.
+ *
+ * A `pr` link matches `records.tasks` by `prUrl`, so the caller must scope
+ * those tasks to the initiative's pods.
  *
  * Pure: callers resolve the linked records and pass them in, so this module
  * reads no collection and owns no schema.
@@ -143,6 +150,10 @@ export const mergeEvidenceDates = (task: TaskRecord): Date[] => (task.updates ||
   .map((u) => toDate(u.createdAt))
   .filter((d): d is Date => d !== null);
 
+/** Every task is `done` and carries its own merge record; a hand-closed task never counts. */
+const allDoneAndMerged = (tasks: TaskRecord[]): boolean => tasks.length > 0
+  && tasks.every((t) => t.status === 'done' && mergeEvidenceDates(t).length > 0);
+
 const rulingDate = (decision: DecisionRecord): Date | null => (decision.status === 'ruled'
   ? toDate(decision.ruling?.at) : null);
 
@@ -162,7 +173,6 @@ export const deriveInitiativeStatus = (
   const evidence: Evidence[] = [];
   const parts: InitiativePart[] = [];
   const linkedTasks = new Map<string, TaskRecord>();
-  let anyMerge = false;
 
   const activePart = (link: InitiativeLink, last: Date | null): InitiativePart => {
     if (last && last >= windowStart) return { kind: link.kind, ref: link.ref, state: 'moving', since: last };
@@ -177,10 +187,8 @@ export const deriveInitiativeStatus = (
       tasks.forEach((t) => linkedTasks.set(idOf(t._id), t));
       const merges = tasks.flatMap(mergeEvidenceDates);
       merges.forEach((at) => evidence.push({ kind: 'merge', linkKind: link.kind, ref: link.ref, at }));
-      if (merges.length) anyMerge = true;
       const last = newest(merges);
-      const allDone = tasks.length > 0 && tasks.every((t) => t.status === 'done');
-      const part = allDone && last
+      const part = allDoneAndMerged(tasks) && last
         ? { kind: link.kind, ref: link.ref, state: 'merged' as PartState, since: last }
         : activePart(link, last);
       if (tasks.some((t) => t.status === 'blocked')) part.ownerFlaggedBlocked = true;
@@ -220,7 +228,7 @@ export const deriveInitiativeStatus = (
   const blockedOn = pending.map((d) => ({ decisionId: idOf(d._id), title: d.title }));
 
   const tasks = [...linkedTasks.values()];
-  const needsCheck = tasks.length > 0 && tasks.every((t) => t.status === 'done') && anyMerge;
+  const needsCheck = allDoneAndMerged(tasks);
 
   // A close counts only when the giver wrote it; the close route enforces that,
   // and the derivation does not trust a row that says otherwise.

@@ -23,6 +23,7 @@ const {
   resolveInstallation,
   buildAgentProfileId,
   buildAgentInstallationPayload,
+  resolveSeatRuntimeIdentities,
 } = require('./helpers');
 
 const podAgentsRouter = express.Router();
@@ -330,6 +331,15 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       console.warn('[pod-agents] caller-spoke lookup failed:', (spokeErr as Error).message);
     }
 
+    // A seat's runtime identity comes from its newest install in any pod
+    // (TASK-569). Advisory: on a failed read each install shows its own.
+    let seatRuntimeIdentities = new Map<string, Record<string, unknown>>();
+    try {
+      seatRuntimeIdentities = await resolveSeatRuntimeIdentities(installations);
+    } catch (identityErr) {
+      console.warn('[pod-agents] runtime identity lookup failed:', (identityErr as Error).message);
+    }
+
     // A push webhook's URL can carry a credential in its query string, so only
     // its installer and instance admins see it (Cofounder's hardening ruling,
     // 2026-10-21). The admin lookup runs only when the roster holds a URL the
@@ -360,6 +370,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           user,
           lastMessage: (user && lastMessageByUserId.get(String(user._id))) || null,
           revealWebhookUrl: viewerIsAdmin || installedByViewer(i),
+          runtimeIdentity: seatRuntimeIdentities.get(instanceKey) || null,
         });
         const runtimeType = payload?.runtime?.runtimeType;
         // A provisioned in-process seat needs no external connection. Its
@@ -453,9 +464,18 @@ podAgentsRouter.get('/pods/:podId/agents/:name', auth, async (req: any, res: any
       || templateCandidates[0]
     )?.iconUrl || '';
 
+    let runtimeIdentity = null;
+    try {
+      const identities = await resolveSeatRuntimeIdentities([installation]);
+      runtimeIdentity = identities.values().next().value || null;
+    } catch (identityErr) {
+      console.warn('[pod-agents] runtime identity lookup failed:', (identityErr as Error).message);
+    }
+
     return res.json({
       agent: buildAgentInstallationPayload(installation, {
         profile,
+        runtimeIdentity,
         iconUrl: templateIcon || registryEntry?.iconUrl || '',
         revealWebhookUrl: installedBy === String(userId)
           || (Boolean(normalizeConfigMap(installation.config)?.runtime?.webhookUrl)

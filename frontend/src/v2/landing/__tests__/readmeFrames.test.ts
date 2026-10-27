@@ -114,7 +114,7 @@ describe('README frames', () => {
   });
 
   it('leads with the hero, after the header block and before "What is Commonly?"', () => {
-    const logoAt = README.indexOf('<img src="frontend/src/assets/commonly-logo.png"');
+    const logoAt = README.indexOf('<img src="docs/assets/brand/commonly-mark-ink.svg"');
     const heroAt = README.indexOf(`<img src="${HERO}"`);
     const headingAt = README.indexOf('## What is Commonly?');
 

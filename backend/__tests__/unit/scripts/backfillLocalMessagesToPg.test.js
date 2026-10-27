@@ -1,0 +1,92 @@
+jest.mock('../../../services/pgMessageReconcileService', () => ({ copyOne: jest.fn(), ensureLegacyIdIndex: jest.fn() }));
+
+const { backfillLocalMessages, main } = require('../../../scripts/backfill-local-messages-to-pg');
+
+const doc = (id) => ({ _id: { toString: () => id }, podId: 'p', userId: 'u', content: id, createdAt: new Date('2026-01-01') });
+
+const fakeDeps = ({ pending = ['a1', 'a2', 'a3'], overlap = 0, copy } = {}) => {
+  const copied = [];
+  return {
+    copied,
+    countPending: jest.fn(async () => pending.length),
+    newestPendingAt: jest.fn(async () => new Date('2026-01-01')),
+    countOverlap: jest.fn(async () => overlap),
+    nextBatch: jest.fn(async (afterId, limit) => {
+      const start = afterId ? pending.indexOf(afterId) + 1 : 0;
+      return pending.slice(start, start + limit).map(doc);
+    }),
+    copy: jest.fn(copy || (async (d) => { copied.push(d._id.toString()); return 'moved'; })),
+  };
+};
+
+describe('backfillLocalMessages', () => {
+  it('a dry run reports the pending count and writes nothing', async () => {
+    const deps = fakeDeps();
+    const report = await backfillLocalMessages(deps);
+    expect(report).toMatchObject({ dryRun: true, pending: 3, refused: false, moved: 0 });
+    expect(deps.copy).not.toHaveBeenCalled();
+  });
+
+  it('--apply copies every pending message across batches', async () => {
+    const deps = fakeDeps({ pending: ['a1', 'a2', 'a3', 'a4', 'a5'] });
+    const report = await backfillLocalMessages(deps, { apply: true, batchSize: 2 });
+    expect(deps.copied).toEqual(['a1', 'a2', 'a3', 'a4', 'a5']);
+    expect(report).toMatchObject({ moved: 5, alreadyPresent: 0, failed: 0 });
+  });
+
+  it('counts rows PostgreSQL already had, so a rerun inserts nothing new', async () => {
+    const deps = fakeDeps({ copy: async () => 'present' });
+    const report = await backfillLocalMessages(deps, { apply: true });
+    expect(report).toMatchObject({ moved: 0, alreadyPresent: 3 });
+  });
+
+  it('refuses when PostgreSQL holds older messages that did not come from this MongoDB', async () => {
+    const deps = fakeDeps({ overlap: 12 });
+    const report = await backfillLocalMessages(deps, { apply: true });
+    expect(report).toMatchObject({ refused: true, overlap: 12, moved: 0 });
+    expect(deps.copy).not.toHaveBeenCalled();
+  });
+
+  it('--force copies despite the overlap', async () => {
+    const deps = fakeDeps({ overlap: 12 });
+    const report = await backfillLocalMessages(deps, { apply: true, force: true });
+    expect(report).toMatchObject({ refused: false, moved: 3 });
+  });
+
+  it('a failed row is counted and the run moves past it', async () => {
+    const deps = fakeDeps({ copy: async (d) => { if (d._id.toString() === 'a2') throw new Error('bad'); return 'moved'; } });
+    const report = await backfillLocalMessages(deps, { apply: true, batchSize: 1 });
+    expect(report).toMatchObject({ moved: 2, failed: 1 });
+  });
+});
+
+describe('main() exit code', () => {
+  const run = async (deps, argv = ['node', 'script', '--apply']) => {
+    const close = jest.fn(async () => {});
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const before = process.exitCode;
+    try {
+      const code = await main(argv, async () => ({ deps, close }));
+      return { code, exitCode: process.exitCode, close };
+    } finally {
+      process.exitCode = before;
+      log.mockRestore();
+    }
+  };
+
+  it('a refused run sets process.exitCode to 2 and closes the stores', async () => {
+    const deps = fakeDeps({ overlap: 4 });
+    const { code, exitCode, close } = await run(deps);
+    expect(exitCode).toBe(2);
+    expect(code).toBe(2);
+    expect(deps.copy).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('failed rows set 1; a clean run and a clean dry run set 0; a refused dry run sets 2', async () => {
+    expect((await run(fakeDeps({ copy: async () => { throw new Error('boom'); } }))).exitCode).toBe(1);
+    expect((await run(fakeDeps())).exitCode).toBe(0);
+    expect((await run(fakeDeps(), ['node', 'script'])).exitCode).toBe(0);
+    expect((await run(fakeDeps({ overlap: 4 }), ['node', 'script'])).exitCode).toBe(2);
+  });
+});

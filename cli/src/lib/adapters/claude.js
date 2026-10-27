@@ -55,8 +55,10 @@ import {
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   readlink,
+  rename,
   rm,
   symlink,
   unlink,
@@ -208,6 +210,29 @@ const statOrNull = async (path) => {
   }
 };
 
+// The non-secret account metadata Claude needs from ~/.claude.json to find its
+// login, and nothing else from that file.
+const claudeAuthMetadata = async () => {
+  const operatorConfigPath = join(homedir(), '.claude.json');
+  const sourceStat = await statOrNull(operatorConfigPath);
+  let source = {};
+  if (sourceStat) {
+    if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
+      throw new Error(`refusing non-regular operator Claude config: ${operatorConfigPath}`);
+    }
+    try {
+      source = JSON.parse(await readFile(operatorConfigPath, 'utf8'));
+    } catch (err) {
+      throw new Error(`failed to read operator Claude auth metadata: ${err.message}`);
+    }
+  }
+  const sanitized = { hasCompletedOnboarding: true };
+  for (const key of ['installMethod', 'userID', 'machineID', 'oauthAccount']) {
+    if (source[key] !== undefined) sanitized[key] = source[key];
+  }
+  return sanitized;
+};
+
 // Claude's macOS OAuth credential lives in Keychain, but Claude also needs a
 // small amount of non-secret account metadata from ~/.claude.json to locate
 // it. Never bind or copy the operator's full file: it contains project paths,
@@ -248,33 +273,100 @@ const preparePublicClaudeState = async (ctx) => {
     await symlink(operatorKeychains, stateKeychains);
   }
 
-  const operatorConfigPath = join(homedir(), '.claude.json');
-  const sourceStat = await statOrNull(operatorConfigPath);
-  let source = {};
-  if (sourceStat) {
-    if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
-      throw new Error(`refusing non-regular operator Claude config: ${operatorConfigPath}`);
-    }
-    try {
-      source = JSON.parse(await readFile(operatorConfigPath, 'utf8'));
-    } catch (err) {
-      throw new Error(`failed to read operator Claude auth metadata: ${err.message}`);
-    }
-  }
-
-  const sanitized = {
-    hasCompletedOnboarding: true,
-  };
-  for (const key of ['installMethod', 'userID', 'machineID', 'oauthAccount']) {
-    if (source[key] !== undefined) sanitized[key] = source[key];
-  }
   await writeFile(
     configPath,
-    `${JSON.stringify(sanitized, null, 2)}\n`,
+    `${JSON.stringify(await claudeAuthMetadata(), null, 2)}\n`,
     { encoding: 'utf8', mode: 0o600 },
   );
   await chmod(configPath, 0o600);
   return { statePath, tmpPath, configPath };
+};
+
+// Writes a 0600 file into a directory the confined child can also write. The
+// directory must still be a real directory, and the file is written beside the
+// target and renamed over it, so a symlink the child left at either name is
+// replaced, never followed into another of the person's files.
+const replacePrivateFile = async (dir, name, content) => {
+  const dirStat = await statOrNull(dir);
+  if (!dirStat || dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
+    throw new Error(`refusing to write Claude state into a non-directory: ${dir}`);
+  }
+  const target = join(dir, name);
+  const staged = join(dir, `.${name}.${randomUUID()}.tmp`);
+  await writeFile(staged, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+  try {
+    await chmod(staged, 0o600);
+    await rename(staged, target);
+  } catch (err) {
+    await rm(staged, { force: true });
+    throw err;
+  }
+  return target;
+};
+
+// A workspace seat on Linux runs under bwrap, which has no keychain. Claude
+// Code on Linux keeps its login in <config dir>/.credentials.json, so the
+// seat's own state dir gets a copy of the person's, taken fresh each spawn:
+// their own credential on their own machine, the exposure the macOS keychain
+// arm already has. Only the copy is inside the jail. Nothing is written back:
+// the jail can write its copy, and a write-back would let it replace the
+// person's login with one of its choosing. A missing login removes the copy,
+// so a person who logged out is not still signed in here.
+const claudeLoginSource = (env) => join(
+  env?.CLAUDE_CONFIG_DIR || process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'),
+  '.credentials.json',
+);
+
+// Opened once, without following a symlink, and checked on the open handle,
+// so the file read is the file checked (a FIFO cannot hold the open either).
+const carryClaudeLogin = async (env, configDir) => {
+  const source = claudeLoginSource(env);
+  const refuse = () => new Error(`refusing a Claude login that is not a regular file: ${source}`);
+  let handle;
+  try {
+    handle = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      await rm(join(configDir, '.credentials.json'), { force: true });
+      return null;
+    }
+    if (err?.code === 'ELOOP') throw refuse();
+    throw err;
+  }
+  try {
+    if (!(await handle.stat()).isFile()) throw refuse();
+    return replacePrivateFile(configDir, '.credentials.json', await handle.readFile('utf8'));
+  } finally {
+    await handle.close();
+  }
+};
+
+// State for a workspace seat under bwrap: the same per-seat folder the macOS
+// path uses, outside the person's project, with the auth metadata whitelist
+// and the login copy. The jail binds this folder writable and makes it HOME,
+// so transcripts land here rather than in the project.
+const prepareWorkspaceBwrapClaudeState = async (ctx) => {
+  const identity = ctx.agentName || ctx.cwd || 'anonymous';
+  const identityHash = createHash('sha256').update(identity).digest('hex').slice(0, 20);
+  const statePath = ctx._publicClaudeState || publicClaudeStateRoot(identityHash);
+  const tmpPath = join(statePath, 'tmp');
+  const configDir = join(statePath, '.claude');
+  await mkdir(statePath, { recursive: true, mode: 0o700 });
+  await chmod(statePath, 0o700);
+  for (const dir of [tmpPath, configDir]) {
+    const existing = await statOrNull(dir);
+    if (existing && (existing.isSymbolicLink() || !existing.isDirectory())) {
+      throw new Error(`refusing Claude state path that is not a directory: ${dir}`);
+    }
+    if (!existing) await mkdir(dir, { mode: 0o700 });
+    await chmod(dir, 0o700);
+  }
+
+  const configPath = await replacePrivateFile(
+    statePath, '.claude.json', `${JSON.stringify(await claudeAuthMetadata(), null, 2)}\n`,
+  );
+  const loginPath = await carryClaudeLogin(ctx.env, configDir);
+  return { statePath, tmpPath, configPath, loginPath };
 };
 
 const buildClaudeEnv = (input, state, expansionEnv = {}, credentialFile = null, publicSeat = false) => {
@@ -696,6 +788,25 @@ const resolveClaudePath = (env = process.env) => {
   return 'claude';
 };
 
+// Where the claude this host would run is installed: the folder the Linux
+// workspace jail has to bind, since it binds the system binary folders only.
+// Null when the binary cannot be located (a bare name, a dangling link).
+const resolveClaudeInstall = (env) => {
+  const claudeBin = resolveClaudePath(env);
+  if (!isAbsolute(claudeBin)) return { claudeBin, claudeInstall: null };
+  try {
+    return { claudeBin, claudeInstall: dirname(realpathSync(claudeBin)) };
+  } catch {
+    return { claudeBin, claudeInstall: null };
+  }
+};
+
+// A jail that cannot carry claude would fail inside at every spawn.
+const claudeInstallRefusal = (claudeBin) => new Error(
+  'workspace Claude agents on Linux need Claude Code on PATH, so the sandbox can carry its install; '
+  + `\`${claudeBin}\` could not be resolved`,
+);
+
 const prepareArgv = async (innerArgv, ctx) => {
   const env = ctx.environment;
   const claudeEnv = withClaudePath(ctx.claudeEnv);
@@ -732,6 +843,9 @@ const prepareArgv = async (innerArgv, ctx) => {
   // get the jail only — a derived Linux seat kept Bash/Write/WebFetch and ran on
   // the operator's own Claude settings inside the namespace (Vera 69578).
   const publicBwrapSandbox = sandboxTrust === 'public' && sandboxMode === 'bwrap';
+  // A workspace seat on Linux: the same jail, with the workspace tier's policy
+  // and a HOME of its own outside the project.
+  const workspaceBwrapSandbox = sandboxTrust === 'workspace' && sandboxMode === 'bwrap';
   const commitHooksPath = ctx.commitAttributionEnv?.COMMONLY_AGENT_HOOKS_PATH || null;
   const originalHooksPath = ctx.commitAttributionEnv?.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH || null;
   const commitHookExecutables = commitHooksPath
@@ -754,12 +868,6 @@ const prepareArgv = async (innerArgv, ctx) => {
   // non-string) used to fall through to the bare `claude` spawn below — an
   // unconfined seat with a public record, which is how a record can claim
   // confinement it never applies (Vera 69548).
-  // bwrap points the child's HOME at its folder (childHome below), so a
-  // workspace seat's transcripts would be written into the person's project.
-  if (sandboxTrust === 'workspace' && sandboxMode === 'bwrap') {
-    throw new Error('workspace Claude agents run on macOS only for now: under bwrap '
-      + 'their transcripts would be written into the project folder');
-  }
   if (isConfinedTrust(sandboxTrust) && !publicNativeSandbox && sandboxMode !== 'bwrap') {
     throw new Error(
       `${sandboxTrust} Claude agents require an enforced sandbox mode `
@@ -818,22 +926,67 @@ const prepareArgv = async (innerArgv, ctx) => {
     };
   }
 
-  if (publicBwrapSandbox) {
+  if (publicBwrapSandbox || workspaceBwrapSandbox) {
     // The mode is chosen here, so the mechanism is verified here: a missing
     // bwrap must fail the seat's derivation with an actionable message, not
     // every one of its spawns with a bare ENOENT (Wren 69586). On a non-Linux
     // host this reports the macOS-only message, same as the wrapper would.
     const bwrap = (ctx._detectBwrap || detectBwrap)();
     if (!bwrap.available) {
-      throw new Error(`public Claude agents require bwrap: ${bwrap.error}`);
+      throw new Error(`${sandboxTrust} Claude agents require bwrap: ${bwrap.error}`);
+    }
+    if (workspaceBwrapSandbox && !ctx.publicClaudeState) {
+      throw new Error('workspace Claude state was not prepared before argv construction');
     }
     innerArgv = [
       ...innerArgv,
-      ...buildPublicClaudePolicyArgs(allowedPatterns, { memoryWithheld: ctx.memoryWithheld === true }),
+      ...buildPublicClaudePolicyArgs(allowedPatterns, workspaceBwrapSandbox
+        ? { trust: sandboxTrust, allow: grants, memoryWithheld: ctx.memoryWithheld === true }
+        : { memoryWithheld: ctx.memoryWithheld === true }),
       ...(ctx.publicSkillArgs || []),
     ];
   } else if (allowedPatterns.length > 0) {
     innerArgv = [...innerArgv, '--allowedTools', ...allowedPatterns];
+  }
+  if (workspaceBwrapSandbox) {
+    // Seatbelt denies writes under .git by path, present or not. A bwrap mount
+    // needs the path to exist, so a writable project without a .git could get
+    // one from the child, hooks included, that the person's next git command
+    // runs. Refuse that rather than create anything in their project.
+    if (grants.includes('write')) {
+      const gitEntry = await statOrNull(join(ctx.cwd, '.git'));
+      if (!gitEntry || gitEntry.isSymbolicLink()) {
+        throw new Error('workspace Claude agents with write on Linux need the project to be a git '
+          + `repository (run \`git init\` in ${ctx.cwd}), so its .git can be held read-only`);
+      }
+    }
+    const { claudeBin, claudeInstall } = resolveClaudeInstall(claudeEnv);
+    if (!claudeInstall) throw claudeInstallRefusal(claudeBin);
+    const { statePath } = ctx.publicClaudeState;
+    const wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
+      workspacePath: ctx.cwd,
+      workspaceReadOnly: !grants.includes('write'),
+      readOnlyWorkspaceEntries: ['.git'],
+      homePath: statePath,
+      writablePaths: [statePath],
+      readOnlyPaths: [
+        ctx.mcpConfigDir, commitHooksPath, originalHooksPath,
+        ...(ctx.mcpReadDirectories || []),
+        ...(ctx.workspaceGit?.readDirectories || []),
+        ...(ctx.workspaceGit?.readPaths || []),
+      ].filter(Boolean),
+      // The binaries the jail runs: claude (a user-local install is outside
+      // the default binds, and its link points into a versions folder), the
+      // node that runs the stdio MCP servers, and the git the history tool runs.
+      optionalReadOnlyPaths: [...new Set([
+        dirname(claudeBin), claudeInstall, dirname(process.execPath),
+        ctx.workspaceGit ? dirname(ctx.workspaceGit.executable) : null,
+        // A claude not found on PATH is left bare and fails at spawn; its
+        // dirname is '.', which is not a path to bind.
+      ].filter((p) => p && isAbsolute(p)))],
+    });
+    // TASK-440 reads the transcript from the HOME the child wrote under.
+    return { cmd: wrapped[0], args: wrapped.slice(1), env: claudeEnv, childHome: statePath };
   }
   if (sandboxMode === 'bwrap') {
     const claudeBin = resolveClaudePath(claudeEnv);
@@ -974,6 +1127,8 @@ export default {
       && PUBLIC_SANDBOX_MODES.has(resolvePublicSandboxMode(ctx.environment?.sandbox));
     const publicBwrapSandbox = publicTrust
       && resolvePublicSandboxMode(ctx.environment?.sandbox) === 'bwrap';
+    const workspaceBwrapSandbox = ctx.environment?.sandbox?.trust === 'workspace'
+      && resolvePublicSandboxMode(ctx.environment?.sandbox) === 'bwrap';
     try {
       // Trust is normalized at entry (legacy `internal` reads as public). The
       // MCP policy follows trust alone, whatever confines the seat: a public
@@ -981,6 +1136,14 @@ export default {
       // (Rhea on #2247).
       if (publicNativeSandbox) {
         publicClaudeState = await preparePublicClaudeState(ctx);
+      } else if (workspaceBwrapSandbox) {
+        // Checked before the state is prepared, so a host that cannot run the
+        // jail never gets a copy of the login.
+        const bwrap = (ctx._detectBwrap || detectBwrap)();
+        if (!bwrap.available) throw new Error(`workspace Claude agents require bwrap: ${bwrap.error}`);
+        const { claudeBin, claudeInstall } = resolveClaudeInstall(withClaudePath(ctx.env));
+        if (!claudeInstall) throw claudeInstallRefusal(claudeBin);
+        publicClaudeState = await prepareWorkspaceBwrapClaudeState(ctx);
       }
       if (publicTrust) {
         const prompt = await publicSkillPromptArgs(mountedSkills);

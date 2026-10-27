@@ -552,7 +552,7 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
   }
 });
 
-router.post('/:id/connect', auth, async (req: AuthReq, res: Res) => {
+router.post('/:id/connect', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;
@@ -572,7 +572,7 @@ router.post('/:id/connect', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/:id/disconnect', auth, async (req: AuthReq, res: Res) => {
+router.post('/:id/disconnect', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;

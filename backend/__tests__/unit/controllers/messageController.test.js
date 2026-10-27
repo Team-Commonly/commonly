@@ -139,7 +139,7 @@ describe('messageController', () => {
       // The Mongo fallback serves through the same gate.
       PGMessage.findByPodId.mockRejectedValue(new Error('pg down'));
       MongoMessage.find.mockReturnValue({
-        populate: () => ({ sort: () => ({ limit: async () => [] }) }),
+        populate: () => ({ sort: () => ({ limit: () => ({ lean: async () => [] }) }) }),
       });
       gateWelcomeHostedActions.mockResolvedValueOnce(gated);
       const fallback = { status: jest.fn().mockReturnThis(), json: jest.fn() };

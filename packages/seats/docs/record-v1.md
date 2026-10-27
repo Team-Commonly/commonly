@@ -338,8 +338,8 @@ built in Go runs its tests with `-race` in CI.
 
 | kind | data | default actor |
 |---|---|---|
-| `credential.granted` | `{names: [NAME]}` | `system` |
-| `credential.denied` | `{name, reason}`, where `reason` is `not_granted`, `unresolved` or `too_short` (a value under 8 characters) | `system` |
+| `credential.granted` | `{names: [NAME], injected?: [NAME]}`. `injected` names the credentials a loopback provider proxy holds and adds outbound; the run's env has only that proxy's token under those names. The other names are held by the run | `system` |
+| `credential.denied` | `{name, reason}`, where `reason` is `not_granted`, `unresolved`, `too_short` (a value under 8 characters) or `no_upstream` (marked `inject` with no provider named for it) | `system` |
 
 These cover the environment credentials a run is started with. Values never
 appear here: `NAME` is an environment variable name matching

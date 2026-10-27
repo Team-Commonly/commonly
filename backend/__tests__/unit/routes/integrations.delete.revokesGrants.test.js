@@ -61,6 +61,7 @@ jest.mock('../../../models/ToolCall', () => ({
   countsForGrant: jest.fn(),
 }));
 jest.mock('../../../controllers/podController', () => ({
+  updatePodParent: jest.fn(),
   getAllPods: jest.fn(), getPodsByType: jest.fn(), getPodById: jest.fn(), createPod: jest.fn(),
   joinPod: jest.fn(), leavePod: jest.fn(), removeMember: jest.fn(), deletePod: jest.fn(),
 }));

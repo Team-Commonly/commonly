@@ -12,7 +12,7 @@ const auth = require('../middleware/auth');
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 const { refuseDollarKeys } = require('../middleware/refuseDollarKeys');
 // eslint-disable-next-line global-require
-const { getAllPods, getPodsByType, getPodById, createPod, joinPod, leavePod, removeMember, deletePod } = require('../controllers/podController');
+const { getAllPods, getPodsByType, getPodById, createPod, joinPod, leavePod, removeMember, deletePod, updatePodParent } = require('../controllers/podController');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 const User = require('../models/User');
@@ -114,6 +114,16 @@ const upload = multer({
 // the token like the focus readers above, so one client cannot exhaust another
 // client's budget; authorization remains the source of truth behind this.
 const podListingRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: podJoinRateLimitKey,
+});
+// Typed listings and by-id reads (`/:param`, `/:type/:id`) run the same
+// populate-heavy queries as the sidebar listing. Their own bucket at the same
+// budget, so opening pods does not spend the sidebar's refresh allowance.
+const podReadRateLimit = rateLimit({
   windowMs: 60 * 1000,
   limit: 120,
   standardHeaders: 'draft-7',
@@ -441,6 +451,8 @@ const podAdminRateLimit = rateLimit({
   keyGenerator: cloudflareIpRateLimitKeyGenerator,
 });
 
+router.patch('/:id/parent', podAdminRateLimit, auth, updatePodParent);
+
 /**
  * PATCH /api/pods/:id/contacts
  *
@@ -661,7 +673,7 @@ router.get('/:id/children', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/:param', auth, async (req: AuthReq, res: Res) => {
+router.get('/:param', podReadRateLimit, auth, async (req: AuthReq, res: Res) => {
   const { param } = req.params || {};
   const isObjectId = /^[0-9a-fA-F]{24}$/.test(param || '');
   if (isObjectId) { req.params!.id = param || ''; return getPodById(req, res); }
@@ -847,7 +859,7 @@ router.patch('/:id/join-policy', podAdminRateLimit, auth, async (req: AuthReq, r
   }
 });
 
-router.get('/:type/:id', auth, getPodById);
+router.get('/:type/:id', podReadRateLimit, auth, getPodById);
 router.delete('/:id', auth, deletePod);
 
 module.exports = router;

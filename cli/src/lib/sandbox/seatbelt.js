@@ -274,7 +274,12 @@ const PLATFORM_BASELINE = String.raw`
 ; Apple's App Sandbox grants every app this same domain.
 (allow user-preference-read
   (preference-domain "kCFPreferencesAnyApplication"))
+`;
 
+// Open network, the tail of the default baseline. A `network: 'loopback'`
+// profile leaves it out: no outbound except the loopback ports it lists, and
+// none of the Security framework services the keychain is reached through.
+const OPEN_NETWORK = String.raw`
 ; The selected provider and declared MCP transports need outbound network. The model's
 ; WebSearch/WebFetch/Bash tools are denied independently in the adapter argv.
 (allow network-outbound)
@@ -367,6 +372,8 @@ export const buildSeatbeltProfile = ({
   readOnlyDirectories = [],
   loopbackNetworkPorts = [],
   allowClaudeRuntimeAccess = false,
+  // 'open' (the default) or 'loopback': only the listed loopback ports.
+  network = 'open',
   // Names directly inside a writable workspace that stay read-only. A
   // workspace seat granted write keeps its project's .git read-only, so every
   // change it makes is one `git status` shows the person (TASK-294).
@@ -386,6 +393,9 @@ export const buildSeatbeltProfile = ({
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
       throw new Error('Seatbelt loopbackNetworkPorts entries must be valid TCP ports');
     }
+  }
+  if (!['open', 'loopback'].includes(network)) {
+    throw new Error('Seatbelt network must be open or loopback');
   }
   if (!['read', 'write'].includes(workspaceAccess)) {
     throw new Error('Seatbelt workspaceAccess must be read or write');
@@ -456,7 +466,7 @@ export const buildSeatbeltProfile = ({
   })() : [];
 
   return [
-    PLATFORM_BASELINE.trim(),
+    (network === 'open' ? `${PLATFORM_BASELINE}${OPEN_NETWORK}` : PLATFORM_BASELINE).trim(),
     executableRules,
     executableSymlinkRules,
     `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(resolvedWorkspace)}"))`,

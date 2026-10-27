@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildPageDefinitions, renderStaticPage } from './generate-seo-pages.mjs';
+import { buildPageDefinitions, generateSeoPages, renderStaticPage } from './generate-seo-pages.mjs';
 
 const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -2071,4 +2072,40 @@ test('puts route content, canonical metadata, and structured data in the documen
   assert.match(rendered, /application\/ld\+json/);
   assert.match(rendered, /document\.documentElement/);
   assert.match(rendered, /type="module"/);
+});
+
+test('the static / carries the landing FAQ and its FAQPage JSON-LD (TASK-531)', async () => {
+  // The landing adds both from React, which crawlers that run no JS never see. Runs the real generator
+  // against a temp build dir seeded with the Vite template, so the production FAQ read is covered too.
+  const outputDir = await mkdtemp(join(tmpdir(), 'seo-faq-'));
+  try {
+    // What Vite emits: the source entry rewritten to a hashed asset (the generator strips it on static-only pages).
+    const source = await readFile(resolve(frontendDir, 'index.html'), 'utf8');
+    await writeFile(join(outputDir, 'index.html'), source.replace('src="/src/index.tsx"', 'src="/assets/index-test.js"'));
+    const [faqText, faqSource] = await Promise.all([
+      readFile(resolve(frontendDir, 'src/content/landing-faq.json'), 'utf8'),
+      readFile(resolve(frontendDir, 'src/v2/landing/landingFaq.ts'), 'utf8'),
+    ]);
+    const landingFaq = JSON.parse(faqText);
+    const pages = await generateSeoPages({ outputDir });
+    const rendered = await readFile(join(outputDir, 'index.html'), 'utf8');
+
+    assert.equal(landingFaq.length, 6);
+    assert.ok(rendered.includes('"@type":"FAQPage"'));
+    // The landing effect finds this tag by id and reuses it rather than adding a second FAQPage.
+    assert.ok(faqSource.includes("FAQ_JSONLD_ID = 'landing-faq-jsonld'"));
+    assert.equal(rendered.match(/id="landing-faq-jsonld"/g).length, 1);
+    const faqLd = JSON.parse(rendered.match(/id="landing-faq-jsonld">([^<]*)<\/script>/)[1]);
+    assert.deepEqual(faqLd.mainEntity.map((q) => [q.name, q.acceptedAnswer.text]), landingFaq.map((item) => [item.question, item.answer]));
+    const escape = (value) => value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+    for (const item of landingFaq) {
+      assert.ok(rendered.includes(`<dt>${escape(item.question)}</dt>`), item.question);
+      assert.ok(rendered.includes(`<dd>${escape(item.answer)}</dd>`), item.answer);
+    }
+
+    // Every other page stays without it.
+    assert.ok(pages.filter((page) => page.path !== '/').every((page) => !page.faqSchema));
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
 });

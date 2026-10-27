@@ -73,9 +73,10 @@ export const workspaceStartDirRefusal = (dir, { home = homedir() } = {}) => {
 };
 
 const PUBLIC_POD_REASON = 'a pod it answers in is publicly readable or open to join, or did not report whether it is';
-// claude.js refuses a workspace seat under bwrap, so off macOS the default
+// claude.js runs a workspace seat under Seatbelt on macOS and under bwrap on
+// Linux (#2784). Native Windows has no sandbox for it, so there the default
 // would be a seat that fails every turn rather than one that reads a project.
-const NOT_MACOS_REASON = 'an agent works in its folder only on macOS for now';
+const UNSUPPORTED_OS_REASON = 'an agent works in its folder only on macOS and Linux for now';
 
 /**
  * Where a first-run claude seat may read (TASK-294), from three facts the
@@ -90,7 +91,9 @@ export const firstRunWorkspace = ({
   adapterName, installations, startDir, home, platform = process.platform,
 } = {}) => {
   if (adapterName !== 'claude') return null;
-  if (platform !== 'darwin') return { workspacePath: null, reason: NOT_MACOS_REASON };
+  if (platform !== 'darwin' && platform !== 'linux') {
+    return { workspacePath: null, reason: UNSUPPORTED_OS_REASON };
+  }
   if (!allPodsConfirmedPrivate(installations)) {
     return { workspacePath: null, reason: PUBLIC_POD_REASON };
   }
