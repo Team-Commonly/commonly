@@ -2,7 +2,8 @@
 
 Audit of the six landing FAQ items (`frontend/src/content/landing-faq.json`) and the
 claim-bearing `firstRun` keys (`frontend/src/i18n/locales/en.json`, lines 460–489). Audit SHA
-`67dd25b21` (`main`). Every line number below is from that SHA.
+`a6058f39d` (`main`). Every line number below is from that SHA. The only commit since
+`67dd25b21` is #2752 (OAuth), which touches no file cited here.
 
 ## Scope and rules
 
@@ -35,8 +36,8 @@ claim-bearing `firstRun` keys (`frontend/src/i18n/locales/en.json`, lines 460–
 | Landing FAQ 4 | Several agents, such as Claude Code, Codex, OpenCode and a hosted agent, work alongside people in one pod. | TRUE | Judged on the class, several agent runtimes in one pod: `backend/services/agentIdentityService.ts:691`; connect paths `V2AgentBYO.tsx:73`; hosted path `V2AgentBYO.tsx:546`. The named OpenCode example fails in Landing FAQ 1 (`byoHandoffService.ts:115-118`), so the launch copy PR should narrow it. | 2026-10-27 |
 | Landing FAQ 4 | They claim tasks on a shared board, post what they tried, and ask a person on a decision card when the call is theirs. | TRUE | Claim: `backend/routes/tasksApi.ts:594`. Post an update: `backend/routes/tasksApi.ts:787`. Decision card for a genuine fork that needs a human choice: `cli/src/lib/enforcement.js:38-40`. | 2026-10-27 |
 | Landing FAQ 5 | In a Commonly pod, Claude Code, Codex and OpenCode from teammates' machines, plus a hosted agent, share one chat and task board with the people on the team. | FALSE | Failing clauses: OpenCode from a teammate's machine (`V2AgentBYO.tsx:73`; `byoHandoffService.ts:115-118`), and Codex from a Windows machine (`en.json:1612`). The hosted agent is real (`V2AgentBYO.tsx:546`). The shared board resolves each claimer for all pod members (`frontend/src/v2/components/V2PodBoard.tsx:244`). | 2026-10-27 |
-| Landing FAQ 5 | Activity shows what each agent claimed and finished, and what needs a person. | FALSE | Failing clause: "what each agent claimed". Activity lists a board item only when it has a `lastUpdate` (`frontend/src/v2/components/V2ActivityPage.tsx:796-803`) and names no claimer. The claimer lookup exists only on the board (`V2PodBoard.tsx:244`). "Finished" is the status mapping (`backend/services/activityService.ts:254-286`). "Needs a person" is pending decision items (`activityService.ts:1416`). | 2026-10-27 |
-| Landing FAQ 6 (premise) | Anthropic recommends one agent loop over subagents. | FALSE | No source on `main` states or supports this. A TRUE verdict needs a `file:line` on `main`, and the only match for the phrase is the FAQ entry itself (`frontend/src/content/landing-faq.json:23`). The launch copy PR must source the claim or cut it. | 2026-10-27 |
+| Landing FAQ 5 | Activity shows what each agent claimed and finished, and what needs a person. | FALSE | Failing clauses: "what each agent claimed" and "finished". Activity lists a board item only when it has a `lastUpdate` (`frontend/src/v2/components/V2ActivityPage.tsx:796-803`) and names no claimer. The claimer lookup exists only on the board (`V2PodBoard.tsx:244`). "Finished" has no state on Activity: the board `status` is projected (`backend/services/activityService.ts:274`), but the page never reads it (`V2ActivityPage.tsx:796-804` renders the title and last update only), and `activity.board.done` (`frontend/src/i18n/locales/en.json:277`) has no reader in `frontend/src`. "Needs a person" holds: the Needs-you heading (`V2ActivityPage.tsx:1244`) is fed by `/api/activity/decision-queue` (`V2ActivityPage.tsx:623`), then `activityService.ts:389-397`, then `attentionItemService.ts:676` (route `backend/routes/activity.ts:117,186`). | 2026-10-27 |
+| Landing FAQ 6 (premise, in the question) | Anthropic recommends one agent loop over subagents. | FALSE | No source on `main` states or supports this. A TRUE verdict needs a `file:line` on `main`, and the only match for the phrase is the question itself (`frontend/src/content/landing-faq.json:23`). The question is fixed text (`frontend/src/v2/landing/landingFaq.ts:4-8`) and came from GTM's entry (`landingFaq.ts:5`), so the copy PR cannot reword it. The premise needs a GTM decision. Item 6 is the part the copy PR can change. | 2026-10-27 |
 | Landing FAQ 6 | For a single agent, we agree: each expert should be one strong loop, and Commonly doesn't split an agent into subagents. | FALSE | Failing clause: "Commonly doesn't split an agent into subagents". The Claude Code adapter cues parallel read-only subagents for non-public seats (`cli/src/lib/adapters/claude.js:113-116`, applied at `:1077`). The gateway caps subagent concurrency at 4 (`backend/services/agentProvisionerService.ts:929-932`). | 2026-10-27 |
 | Landing FAQ 6 | Across a team, work still divides by expertise and ownership, so there are several of those experts, each running under its own owner. | TRUE | Each agent has a required installer (`backend/models/AgentRegistry.ts:261`). Runtime tokens are issued for an owner (`backend/routes/registry/agent-tokens.ts:224`). "Divides by expertise" is framing that no code asserts. | 2026-10-27 |
 | Landing FAQ 6 | A pod is where they work together: your Claude Code and a teammate's agent, each a named member, sharing one thread and one board with the people who run them. | FALSE → fixed in #2886 ("sharing the same conversations") | Failing clause: "sharing one thread". A pod is one room with many threads. Its messages are scoped by `podId` (`backend/models/pg/Message.ts:271`), a thread is one root plus its replies (`Message.ts:281-284`), and the UI groups messages per root (`frontend/src/v2/components/V2Thread.tsx:339`). The membership clause holds: agents join pods as members (`backend/services/agentIdentityService.ts:691`), and the agent's display name is on its User row (`backend/models/User.ts:135`). The shared board holds (`V2PodBoard.tsx:244`). | 2026-10-27 |
@@ -60,8 +61,8 @@ These are not fixed in this PR. The launch copy PR corrects each failing clause 
    only pre-action gate on `main` is the approval card for connector writes.
 3. **Landing FAQ 3, sentence 2.** Replies come "in a thread": the default is one top-level post.
 4. **Landing FAQ 5, sentence 1.** OpenCode from teammates' machines, and Codex from a Windows machine.
-5. **Landing FAQ 5, sentence 2.** "What each agent claimed": Activity names no claimer.
-6. **Landing FAQ 6, premise.** "Anthropic recommends one agent loop over subagents": no source on `main`.
+5. **Landing FAQ 5, sentence 2.** "What each agent claimed" and "finished": Activity names no claimer and renders no board status.
+6. **Landing FAQ 6, premise (row 39).** The question is fixed text, so the copy PR changes only the answer. Its first sentence opens "we agree" (`landing-faq.json:24`), which agrees with a premise no file on `main` states. The copy PR drops "we agree" in the same edit as item 7. The premise itself needs a GTM decision.
 7. **Landing FAQ 6, sentence 1.** "Commonly doesn't split an agent into subagents": the Claude Code
    adapter cues subagents, and the gateway caps them at 4.
 8. **Landing FAQ 6, sentence 3.** "Sharing one thread": a pod is one room with many threads, one per
@@ -80,8 +81,9 @@ These are not fixed in this PR. The launch copy PR corrects each failing clause 
 
 ## Not scored
 
-- The six FAQ questions are fixed and not scored (`frontend/src/v2/landing/landingFaq.ts:4-8`).
-  "Isn't Commonly a multi-agent system?" is a question, not a claim.
+- The six FAQ questions are fixed text (`frontend/src/v2/landing/landingFaq.ts:4-8`), so the copy
+  PR cannot reword them. A question is scored only for a declarative premise inside it.
+  "Isn't Commonly a multi-agent system?" has none. FAQ 6's question has one, scored in row 39.
 - firstRun labels with no claim are not rows: eyebrow, title, skip, reopen, step titles, and
   button labels. The eyebrow "Your first five minutes" (`en.json:461`) is a time estimate with no
   code behind it. The launch copy PR decides whether to keep it.
