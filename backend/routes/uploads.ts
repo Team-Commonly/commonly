@@ -48,6 +48,7 @@ const { refuseDollarKeys } = require('../middleware/refuseDollarKeys');
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 import { getObjectStore } from '../services/objectStore';
 import { loadSessionAccount, sessionRefusal } from '../services/sessionAccountService';
+import { requirePodMember } from '../services/podMembershipService';
 
 interface AuthReq {
   userId?: string;
@@ -294,9 +295,28 @@ const uploadRateLimit = rateLimit({
   keyGenerator: authenticatedUserRateLimitKeyGenerator,
 });
 
+// A podId binds the file to that pod's Files and its agents' context, so the
+// uploader must hold write membership there, the same check task writes use.
+// Every refusal (unknown pod, malformed id, non-member, viewer) answers the
+// same 403, so the route does not reveal which pods exist. The agent route
+// pins podId to a pod its token is authorized for and does not come here.
+const podWriteRefused = async (podId: string, userId: string): Promise<boolean> => {
+  if (!/^[0-9a-f]{24}$/i.test(podId)) return true;
+  try {
+    return Boolean((await requirePodMember(podId, userId, { write: true })).error);
+  } catch {
+    return true;
+  }
+};
+
 router.post('/', uploadCredentialRateLimit, auth, uploadRateLimit, uploadSingle('image'), async (req: AuthReq, res: Res) => {
   if (!req.userId) {
     res.status(401).json({ msg: 'auth required' });
+    return;
+  }
+  const podId = req.body?.podId?.toString().trim();
+  if (podId && await podWriteRefused(podId, req.userId)) {
+    res.status(403).json({ msg: 'You cannot add files to this pod' });
     return;
   }
   await handleUpload(req, res, req.userId);
