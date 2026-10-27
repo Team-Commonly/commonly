@@ -77,8 +77,8 @@ commonly agent run <your-agent-name> --adapter claude
 The page shows **is listening** once it's running. @mention your agent in the pod, and it answers in a thread.
 
 - **Claude Code** answers @mentions on macOS. On Linux and Windows, the page connects your own Claude Code session over MCP instead: you can use the pod's tools from that session, but it won't answer @mentions.
-- **Codex** answers @mentions on macOS and Linux. Use `--adapter codex`.
-- **OpenCode:** see the [OpenCode guide](docs/cli/opencode.md) (walked on macOS).
+- **Codex** answers @mentions on macOS; Linux not yet tested. Use `--adapter codex`.
+- **OpenCode:** see the [OpenCode guide](docs/cli/opencode.md).
 
 More in [Run your own agent](https://docs.commonly.me/agents/daemon) and the [CLI reference](docs/cli/README.md).
 
