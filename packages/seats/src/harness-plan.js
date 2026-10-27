@@ -13,9 +13,12 @@
  *
  * While a fallback is active, the next turn after the failed entry's cooldown
  * starts from the primary again. That turn is the probe: if the primary
- * answers, the seat is back on it; if it fails for any reason but a refusal,
- * the same turn carries on down the list and the cooldown restarts. A refusal
- * on a probe ends the turn there, for the same reason as above.
+ * answers, the seat is back on it. If it fails with a fallback kind or a
+ * retryable liveness kind (PROBE_CARRY_KINDS), the same turn carries on down
+ * the list. Any other failure, an unnamed one included, ends the turn there:
+ * an adapter's upstream refusal reaches this module as an unnamed error, and
+ * carrying it on would be the same refusal-shopping. Either way the cooldown
+ * restarts, so the next turn stays on the seat's own entry.
  *
  * An entry the host's policy blocks is skipped and never attempted. An entry
  * the host cannot take right now (a per-model concurrency cap, a stop file;
@@ -30,6 +33,14 @@ import { RunFailure, failureKindOf } from './failures.js';
 
 /** The failure kinds that move a turn to the next entry. Nothing else does. */
 export const FALLBACK_KINDS = Object.freeze(['not_authenticated', 'quota', 'provider_unsupported']);
+
+/**
+ * The failure kinds on which a failed probe carries on to the seat's own
+ * entry: the fallback kinds, and the retryable kinds that say the primary
+ * never produced an answer. An allowlist, so a kind added later ends a probe
+ * turn until someone decides otherwise.
+ */
+export const PROBE_CARRY_KINDS = Object.freeze([...FALLBACK_KINDS, 'stuck', 'timeout', 'exited']);
 
 /** How long a failed entry rests before a turn probes it again, per kind. */
 export const PROBE_COOLDOWN_MS = Object.freeze({
@@ -64,7 +75,7 @@ const refuseUnknownKeys = (value, allowed, where) => {
 
 /**
  * One entry, as an object or the short form `harness/model[@effort]`
- * (`codex/gpt-6-luna@xhigh`). The harness is everything before the first '/',
+ * (`claude/claude-sonnet-5-5@high`). The harness is everything before the first '/',
  * so a model may itself contain '/' (`opencode/litellm/deepseek-flash-1017`).
  */
 export const parseEntry = (value, where = 'entry') => {
@@ -89,7 +100,6 @@ export const parseEntry = (value, where = 'entry') => {
 };
 
 export const entryLabel = (entry) => `${entry.harness}/${entry.model}${entry.effort ? `@${entry.effort}` : ''}`;
-const sameEntry = (a, b) => !!a && !!b && entryLabel(a) === entryLabel(b);
 
 /**
  * `{harness, model, effort?, fallback?: [entry, …]}` → `{primary, fallback, chain, key}`.
@@ -167,6 +177,14 @@ export const initialState = (plan) => ({
   v: 1, configKey: plan.key, active: 0, since: null, reason: null, nextProbeAt: null, history: [],
 });
 
+// A persisted probe time as ms. An ISO string (a hand-edited or foreign
+// state file) is read as its time; anything unreadable means the probe is due.
+const probeTimeOf = (value) => {
+  if (Number.isFinite(value)) return value;
+  const parsed = typeof value === 'string' ? Date.parse(value) : NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 // State written by another version starts over. State for another config
 // (the operator switched the seat) starts over on the new primary and keeps
 // its history; the operator command records its own switch.
@@ -176,7 +194,10 @@ const stateFor = (plan, state) => {
     return { ...initialState(plan), history: Array.isArray(state.history) ? state.history.slice(-HISTORY_LIMIT) : [] };
   }
   const active = Number.isInteger(state.active) && state.active >= 0 && state.active < plan.chain.length ? state.active : 0;
-  return { ...initialState(plan), ...state, active, history: Array.isArray(state.history) ? state.history : [] };
+  return {
+    ...initialState(plan), ...state, active, nextProbeAt: probeTimeOf(state.nextProbeAt),
+    history: Array.isArray(state.history) ? state.history : [],
+  };
 };
 
 /**
@@ -275,16 +296,21 @@ export const runTurnWithFallback = async ({
       const kind = classify(error);
       attempts.push({ entry: entryLabel(entry), outcome: 'failed', kind: kind || null });
       const probeFailed = probing && index < current.active;
+      if (probeFailed && probeKind === null) probeKind = kind || 'unnamed';
       // Not a reason to change harness: the turn fails as it would have with
       // no fallback configured, and the seat stays where it was. A probe that
-      // fails any other way (stuck, exited, an unnamed error) still only
-      // failed the probe, so the turn carries on to the seat's own entry; a
-      // refusal never does.
-      if (!FALLBACK_KINDS.includes(kind) && (!probeFailed || kind === 'refusal')) throw failWith(error, current);
+      // failed only for want of an answer (PROBE_CARRY_KINDS) carries on to
+      // the seat's own entry; any other probe failure ends the turn too.
+      const carries = probeFailed ? PROBE_CARRY_KINDS.includes(kind) : FALLBACK_KINDS.includes(kind);
+      if (!carries) {
+        // A probe failed this turn, so the primary rests again whatever ended
+        // the turn; otherwise the next turn would probe it straight away.
+        const next = probeKind ? { ...current, nextProbeAt: now + cooldownOf(probeKind) } : current;
+        throw failWith(error, next);
+      }
       // Only a failure at or below the seat's entry is a reason to move down
       // from it; a probe's failures above it are the probe's own (probeKind).
       if (FALLBACK_KINDS.includes(kind) && index >= current.active) lastKind = kind;
-      if (probeFailed && probeKind === null) probeKind = kind || 'unnamed';
       lastError = error;
     } finally {
       try { slot?.release?.(); } catch { /* releasing never fails a turn */ }
