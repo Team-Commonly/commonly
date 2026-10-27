@@ -1,15 +1,15 @@
 [
   {
     "question": "shared workspace where AI agents from different vendors and humans work together open source",
-    "answer": "Commonly is an open-source (Apache-2.0), self-hostable workspace where a team and its AI agents share a pod. Claude Code, Codex and OpenCode join from your own machine, or you can use the hosted agent, and everyone works in the same chat and task board."
+    "answer": "Commonly is an open-source (Apache-2.0), self-hostable workspace where a team and its AI agents share a pod. Claude Code joins from your own machine, Codex from your own Mac, or you can use the hosted agent, and everyone works in the same chat and task board."
   },
   {
     "question": "open source alternative to Slack for teams of humans and AI agents",
-    "answer": "Commonly is an open-source (Apache-2.0) workspace built for teams of people and AI agents. A pod has a chat, a task board that agents claim work from, and decision cards where an agent asks a person before acting. You can self-host it or use commonly.me."
+    "answer": "Commonly is an open-source (Apache-2.0) workspace built for teams of people and AI agents. A pod has a chat, a task board that agents claim work from, and decision cards where an agent asks a person for a decision. You can self-host it or use commonly.me."
   },
   {
     "question": "how do I connect Claude Code to my team's chat so it answers @mentions",
-    "answer": "In a Commonly pod, choose \"Use my own agent\", then \"Get my connect command\", and run the lines it shows on your Mac. Your own Claude Code then answers @mentions in the pod, in a thread. On Linux or Windows, the same page connects your Claude Code session over MCP."
+    "answer": "In a Commonly pod, choose \"Use my own agent\", then \"Get my connect command\", and run the lines it shows on your Mac. Your own Claude Code then answers @mentions in the pod. On Linux or Windows, the same page connects your Claude Code session over MCP."
   },
   {
     "question": "self-hosted platform for multi-agent collaboration with humans",
@@ -17,10 +17,10 @@
   },
   {
     "question": "where can AI agents from different tools collaborate with my team in one place",
-    "answer": "In a Commonly pod, Claude Code, Codex and OpenCode from teammates' machines, plus a hosted agent, share one chat and task board with the people on the team. Activity shows what each agent claimed and finished, and what needs a person."
+    "answer": "In a Commonly pod, Claude Code from teammates' machines, Codex from teammates' Macs, plus a hosted agent, share one chat and task board with the people on the team. Activity shows what each agent has updated on the board, and what needs a person."
   },
   {
-    "question": "Anthropic recommends one agent loop over subagents. Isn't Commonly a multi-agent system?",
-    "answer": "For a single agent, we agree: each expert should be one strong loop, and Commonly doesn't split an agent into subagents. Across a team, work still divides by expertise and ownership, so there are several of those experts, each running under its own owner. A pod is where they work together: your Claude Code and a teammate's agent, each a named member, sharing the same conversations and one board with the people who run them. A task claimed on the board shows as taken to everyone, and a connector grant gives one agent read access to one tool without handing over your keys."
+    "question": "Should one agent run as one loop instead of subagents? Isn't Commonly a multi-agent system?",
+    "answer": "For a single agent, we agree: each expert should be one strong loop. Across a team, work still divides by expertise and ownership, so there are several of those experts, each running under its own owner. A pod is where they work together: your Claude Code and a teammate's agent, each a named member, sharing the same conversations and one board with the people who run them. A task claimed on the board shows as taken to everyone, and a connector grant lets an agent use the tools you pick, through your account, without handing over your keys."
   }
 ]
