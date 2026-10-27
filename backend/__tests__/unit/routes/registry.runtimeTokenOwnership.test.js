@@ -1,6 +1,6 @@
 /**
  * Only the sole installer of an agent identity (or an admin) may mint, rotate or
- * revoke its runtime tokens.
+ * revoke its runtime tokens, or issue or revoke its user token.
  *
  * A runtime token authorizes its identity in every pod where that identity is
  * actively installed (agentRuntimeAuth), whoever installed it. So the token and
@@ -80,12 +80,13 @@ jest.mock('../../../routes/registry/helpers', () => ({
 const mockRevoke = jest.fn().mockResolvedValue([]);
 const mockRevokeOne = jest.fn().mockResolvedValue(undefined);
 const mockIssue = jest.fn().mockResolvedValue({ token: 'cm_agent_new' });
+const mockIssueUser = jest.fn().mockResolvedValue({ token: 'cm_user_existing', scopes: [], existing: true });
 jest.mock('../../../routes/registry/tokens', () => ({
   normalizeScopes: jest.fn((s) => s || []),
   revokeRuntimeTokensForAgent: (...args) => mockRevoke(...args),
   revokeRuntimeTokenEverywhere: (...args) => mockRevokeOne(...args),
   issueRuntimeTokenForAgent: (...args) => mockIssue(...args),
-  issueUserTokenForInstallation: jest.fn(),
+  issueUserTokenForInstallation: (...args) => mockIssueUser(...args),
 }));
 
 const Pod = require('../../../models/Pod');
@@ -182,5 +183,60 @@ describe('provisioning mints a token, so it needs the same rule', () => {
     expect(AgentIdentityService.getOrCreateAgentUser).not.toHaveBeenCalled();
     expect(mockRevoke).not.toHaveBeenCalled();
     expect(mockIssue).not.toHaveBeenCalled();
+  });
+});
+
+describe('the agent user token takes the same rule', () => {
+  const issueUserToken = () => request(app).post('/api/registry/pods/pod-a/agents/quire/user-token').send({ scopes: [] });
+  const revokeUserToken = () => request(app).delete('/api/registry/pods/pod-a/agents/quire/user-token');
+
+  test('a pod member who did not install the agent is not given its user token', async () => {
+    mockInstalls = [install('user-b', 'pod-a')];
+    const res = await issueUserToken();
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('owner_installation_missing');
+    expect(res.body.token).toBeUndefined();
+    expect(mockIssueUser).not.toHaveBeenCalled();
+  });
+
+  test('installing it yourself is not enough when another user also has it installed', async () => {
+    mockInstalls = [install('user-a', 'pod-a'), install('user-b', 'pod-b')];
+    const res = await issueUserToken();
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('another_installer');
+    expect(mockIssueUser).not.toHaveBeenCalled();
+  });
+
+  test('the sole installer is given it', async () => {
+    mockInstalls = [install('user-a', 'pod-a')];
+    const res = await issueUserToken();
+    expect(res.status).toBe(200);
+    expect(res.body.token).toBe('cm_user_existing');
+    expect(mockIssueUser).toHaveBeenCalledTimes(1);
+  });
+
+  test('an admin is given it for a shared identity', async () => {
+    mockIsAdmin.mockResolvedValue(true);
+    mockInstalls = [install('user-b', 'pod-a'), install('user-c', 'pod-c')];
+    const res = await issueUserToken();
+    expect(res.status).toBe(200);
+    expect(mockIssueUser).toHaveBeenCalledTimes(1);
+  });
+
+  test('a pod member who does not own the identity cannot revoke it', async () => {
+    mockInstalls = [install('user-b', 'pod-a')];
+    const res = await revokeUserToken();
+    expect(res.status).toBe(403);
+    expect(User.findOne).not.toHaveBeenCalled();
+  });
+
+  test('the sole installer can revoke it, and only on the agent row', async () => {
+    mockInstalls = [install('user-a', 'pod-a')];
+    const agentRow = { revokeApiToken: jest.fn(), save: jest.fn().mockResolvedValue(true) };
+    User.findOne.mockResolvedValue(agentRow);
+    const res = await revokeUserToken();
+    expect(res.status).toBe(200);
+    expect(User.findOne).toHaveBeenCalledWith(expect.objectContaining({ isBot: true }));
+    expect(agentRow.revokeApiToken).toHaveBeenCalledTimes(1);
   });
 });
