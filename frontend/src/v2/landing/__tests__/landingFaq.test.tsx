@@ -5,7 +5,7 @@ import axios from 'axios';
 import i18n from '../../../i18n';
 import { useAuth } from '../../../context/AuthContext';
 import V2LandingPage from '../V2LandingPage';
-import { LANDING_FAQ, buildFaqPageJsonLd } from '../landingFaq';
+import { FAQ_JSONLD_ID, LANDING_FAQ, buildFaqPageJsonLd } from '../landingFaq';
 
 /**
  * TASK-531. The FAQ and its FAQPage JSON-LD must describe the same text. The
@@ -78,5 +78,26 @@ describe('V2LandingPage FAQ', () => {
 
     expect(container.querySelector('#faq')).toBeNull();
     expect(jsonLd()).toBeNull();
+  });
+
+  it('reuses the FAQPage script the static / HTML ships, then removes it on zh', async () => {
+    // generate-seo-pages.mjs writes this tag into the static `/`; hydration must not add a second FAQPage.
+    const seeded = document.createElement('script');
+    seeded.id = FAQ_JSONLD_ID;
+    seeded.type = 'application/ld+json';
+    seeded.textContent = '{"@type":"FAQPage","mainEntity":[]}';
+    document.head.appendChild(seeded);
+
+    renderLanding();
+
+    expect(document.querySelectorAll(`#${FAQ_JSONLD_ID}`)).toHaveLength(1);
+    expect(document.getElementById(FAQ_JSONLD_ID)).toBe(seeded);
+    expect(jsonLd()).toEqual(buildFaqPageJsonLd());
+
+    await act(async () => {
+      await i18n.changeLanguage('zh');
+    });
+
+    expect(document.getElementById(FAQ_JSONLD_ID)).toBeNull();
   });
 });

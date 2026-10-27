@@ -5,7 +5,7 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import V2LangSwitch from '../components/V2LangSwitch';
 import DemoWorkspace from './DemoWorkspace';
-import { LANDING_FAQ, buildFaqPageJsonLd } from './landingFaq';
+import { FAQ_JSONLD_ID, LANDING_FAQ, buildFaqPageJsonLd } from './landingFaq';
 import '../v2.css';
 import './v2-landing.css';
 import './demo-workspace.css';
@@ -302,8 +302,9 @@ const V2LandingPage: React.FC = () => {
   const locale = i18n.resolvedLanguage || i18n.language;
   const isEnglish = locale.startsWith('en');
   // FAQPage JSON-LD follows the visible FAQ: present on en, removed otherwise.
+  // On a direct load of `/` the static HTML already carries the tag (same id).
   useEffect(() => {
-    const id = 'landing-faq-jsonld';
+    const id = FAQ_JSONLD_ID;
     const existing = document.getElementById(id) as HTMLScriptElement | null;
     if (!isEnglish) {
       existing?.remove();
