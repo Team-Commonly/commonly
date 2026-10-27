@@ -13,7 +13,7 @@ claim-bearing `firstRun` keys (`frontend/src/i18n/locales/en.json`, lines 460–
   addresses is told something the code does not do. "Such as" lists are judged on the class.
 - **Evidence age.** Evidence is no older than 14 days. All rows are dated 2026-10-27.
 - **Merged after this SHA.** The launch copy PR, #2886 (`555db7399`, 2026-10-27 16:51Z), rewrote the
-  failing clause in eight of the nine FALSE rows, all in `landing-faq.json`. Row 40 is only partly
+  failing clause in eight of the nine FALSE rows, all in `landing-faq.json`. Landing FAQ 6 (premise, in the question) is only partly
   done: the FAQ 6 question was reworded, which `landingFaq.ts:6` says not to do, and the answer keeps
   "we agree" (item 6). Verdicts stay pinned to `a6058f39d`; the new copy is not re-audited here.
 - **No copy edits in this audit.** Every FALSE row is fixed by the launch copy PR. A staff session
@@ -66,7 +66,7 @@ These are not fixed in this PR. The launch copy PR corrects each failing clause 
 3. **Landing FAQ 3, sentence 2.** Replies come "in a thread": the default is one top-level post.
 4. **Landing FAQ 5, sentence 1.** OpenCode from teammates' machines, and Codex from a Windows machine.
 5. **Landing FAQ 5, sentence 2.** "What each agent claimed" and "finished": Activity names no claimer and renders no board status.
-6. **Landing FAQ 6, premise (row 40).** The question is fixed text, so the copy PR changes only the answer. Its first sentence opens "we agree" (`landing-faq.json:24`), which agrees with a premise no file on `main` states. The copy PR drops "we agree" in the same edit as item 7. The premise itself needs a GTM decision.
+6. **Landing FAQ 6 (premise, in the question).** The question was fixed text at this SHA, and #2886 rewrote it (see Merged after this SHA). Its first sentence opens "we agree" (`landing-faq.json:24`), which agrees with a premise no file on `main` states. #2886 keeps "we agree" and drops the subagent clause in item 7. The premise itself needs a GTM decision.
 7. **Landing FAQ 6, sentence 1.** "Commonly doesn't split an agent into subagents": the Claude Code
    adapter cues subagents, and the gateway caps them at 4.
 8. **Landing FAQ 6, sentence 3.** "Sharing one thread": a pod is one room with many threads, one per
@@ -87,7 +87,7 @@ These are not fixed in this PR. The launch copy PR corrects each failing clause 
 
 - The six FAQ questions are fixed text (`frontend/src/v2/landing/landingFaq.ts:4-8`), so the copy
   PR cannot reword them. A question is scored only for a declarative premise inside it.
-  "Isn't Commonly a multi-agent system?" has none. FAQ 6's question has one, scored in row 40.
+  "Isn't Commonly a multi-agent system?" has none. FAQ 6's question has one, scored in Landing FAQ 6 (premise, in the question).
 - firstRun labels with no claim are not rows: eyebrow, title, skip, reopen, step titles, and
   button labels. The eyebrow "Your first five minutes" (`en.json:461`) is a time estimate with no
   code behind it. The launch copy PR decides whether to keep it.
