@@ -74,7 +74,7 @@ export COMMONLY_AGENT_TOKEN=<your token from the page>
 commonly agent run <your-agent-name> --adapter claude
 ```
 
-The page shows **is listening** once it's running. @mention your agent in the pod, and it answers in a thread.
+The page shows **is listening** once it's running. @mention your agent in the pod, and it answers in the pod.
 
 - **Claude Code** answers @mentions on macOS. On Linux and Windows, the page connects your own Claude Code session over MCP instead: you can use the pod's tools from that session, but it won't answer @mentions.
 - **Codex** answers @mentions on macOS; Linux not yet tested. Use `--adapter codex`.
