@@ -75,6 +75,55 @@ describe('syntheticAccountPurgeService', () => {
     expect(isSyntheticAccount({ username: 'eng-smoke-journey-1015124709', email: 'a@ops.commonly.invalid', isBot: true })).toBe(false);
   });
 
+  it('preserves a synthetic account promoted to administrator, including its data', async () => {
+    const { human, pod, scout } = await syntheticAccount();
+    await User.updateOne({ _id: human._id }, { $set: { role: 'admin' } });
+    const pool = fakePool();
+    const report = await purgeSyntheticAccounts({ apply: true, now: NOW, pool });
+    expect(report.accounts).toHaveLength(0);
+    expect(await User.findById(human._id)).not.toBeNull();
+    expect(await User.findById(scout._id)).not.toBeNull();
+    expect(await Pod.findById(pod._id)).not.toBeNull();
+    expect(pool.statements).toHaveLength(0);
+  });
+
+  it('uses the administrator mutation lock before an applying purge', async () => {
+    const { human } = await syntheticAccount();
+    const { withAdminUserMutationLock } = require('../../../services/adminUserMutationService');
+    await withAdminUserMutationLock(async () => {
+      await expect(purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() }))
+        .rejects.toMatchObject({ code: 'ADMIN_MUTATION_BUSY' });
+    });
+    expect(await User.findById(human._id)).not.toBeNull();
+  });
+
+  it('releases the applying lock if candidate selection fails before writes', async () => {
+    const Lock = require('../../../models/AdminUserMutationLock');
+    const read = jest.spyOn(User, 'find').mockReturnValueOnce({
+      select: () => ({ lean: async () => { throw new Error('selection unavailable'); } }),
+    });
+    try {
+      await expect(purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() }))
+        .rejects.toThrow('selection unavailable');
+    } finally { read.mockRestore(); }
+    expect(await Lock.countDocuments()).toBe(0);
+    await expect(purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() }))
+      .resolves.toMatchObject({ examined: 0 });
+  });
+
+  it('retains the applying lock after its first cleanup write rejects', async () => {
+    await syntheticAccount();
+    const Lock = require('../../../models/AdminUserMutationLock');
+    const write = jest.spyOn(Task, 'deleteMany').mockRejectedValueOnce(new Error('cleanup outcome unknown'));
+    try {
+      await expect(purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() }))
+        .rejects.toThrow('cleanup outcome unknown');
+    } finally { write.mockRestore(); }
+    expect(await Lock.countDocuments()).toBe(1);
+    await expect(purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() }))
+      .rejects.toMatchObject({ code: 'ADMIN_MUTATION_BUSY' });
+  });
+
   it('a dry run counts the footprint and deletes nothing', async () => {
     const { human, pod } = await syntheticAccount();
     const report = await purgeSyntheticAccounts({ now: NOW, pool: fakePool() });

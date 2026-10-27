@@ -9,6 +9,7 @@ on:
       - 'cli/src/lib/sandbox/bwrap.js'
       - 'cli/src/lib/sandbox/opencode-loopback.mjs'
       - 'commonly-mcp/**'
+      - 'packages/seats/**'   # opencode.js loads it (cli depends on file:../packages/seats)
       - 'cli/__tests__/opencode.bwrap-egress.test.mjs'
       - 'cli/__tests__/instance-proxy.test.mjs'
       - 'scripts/fixtures/opencode-mcp-probe.mjs'
@@ -32,8 +33,10 @@ jobs:
               set -euo pipefail
               apt-get update -qq
               apt-get install -y -qq bubblewrap iproute2 >/dev/null
-              mkdir -p /work
+              mkdir -p /work/packages
               cp -R /source/cli /source/commonly-mcp /source/scripts /work/
+              # cli links file:../packages/seats, so npm ci needs the link target.
+              cp -R /source/packages/seats /work/packages/
               rm -rf /work/cli/node_modules /work/commonly-mcp/node_modules
               npm ci --prefix /work/cli --silent
               npm ci --prefix /work/commonly-mcp --silent

@@ -8,7 +8,7 @@ const AgentIdentityService = require('../services/agentIdentityService');
 const { sendEmail } = require('../services/emailService');
 const { ensureUserInCommunityPod } = require('../services/communityPodService');
 const { normalizeAvatarUrl } = require('../services/avatarService');
-const { cleanSignupRef } = require('../utils/signupRef');
+const { signupSourceFields } = require('../utils/signupSource');
 const { deriveUsernameFromEmail, ACCOUNT_LABEL_COLLATION } = require('../services/derivedUsername');
 const { issueSessionToken } = require('../services/sessionTokenService');
 const {
@@ -18,13 +18,6 @@ const {
 const { disconnectUserSessionSockets } = require('../services/sessionSocketService');
 const { isInstanceAccessRestricted, isInstanceEmailAllowed,
   INSTANCE_ACCESS_ERROR } = require('../services/instanceAccessPolicy');
-
-// The first-touch ref a signup arrived with (?ref=x), stored once on the new
-// account. Anything that is not a short plain code is dropped, not refused.
-const signupRefField = (raw: unknown) => {
-  const ref = cleanSignupRef(raw);
-  return ref ? { onboarding: { signupRef: ref } } : {};
-};
 
 const joinCommunityPodBestEffort = (userId: any) => {
   void ensureUserInCommunityPod(userId).catch((err: Error) => {
@@ -412,6 +405,7 @@ exports.register = async (req: any, res: any) => {
       password,
       invitationCode,
       signupRef,
+      signupSource,
     } = req.body;
 
     const normalizedEmail = normalizeEmail(email);
@@ -534,7 +528,7 @@ exports.register = async (req: any, res: any) => {
       password: rawPassword,
       verified: shouldAutoVerify,
       entitlements: { cloudAgents: invitationRedeemed },
-      ...signupRefField(signupRef),
+      ...signupSourceFields(signupSource, 'password', signupRef),
     });
 
     // Save user to database
@@ -937,6 +931,10 @@ exports.getCurrentUser = async (req: any, res: any) => {
     const user = await User.findById(req.userId).select('-password -deviceTokens -agentRuntimeTokens');
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
+    }
+    if (user.accountDeletionRequestedAt) {
+      return res.json({ _id: user._id, username: user.username, email: user.email,
+        role: user.role, accountDeletionPending: true });
     }
     res.json(user);
   } catch (err: any) {

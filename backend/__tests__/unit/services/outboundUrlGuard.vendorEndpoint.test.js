@@ -210,7 +210,7 @@ describe('hostedVendorFetch', () => {
   test('answers as fetch does: a Response with the status, media type and body', async () => {
     lookupSpy.mockResolvedValue(PUBLIC);
     jest.spyOn(https, 'request').mockImplementation(fakeHttps(() => ({
-      status: 200, headers: { 'content-type': 'text/event-stream' }, chunks: [Buffer.from('data: {"result":{}}\n')],
+      status: 200, headers: { 'content-type': 'text/event-stream', 'mcp-session-id': 'vendor-session', 'set-cookie': 'private-cookie' }, chunks: [Buffer.from('data: {"result":{}}\n')],
     }), calls));
 
     const response = await hostedVendorFetch('https://mcp.vendor.test/mcp', {
@@ -221,9 +221,46 @@ describe('hostedVendorFetch', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('text/event-stream');
+    expect(response.headers.get('mcp-session-id')).toBe('vendor-session');
+    expect(response.headers.get('set-cookie')).toBeNull();
     await expect(response.text()).resolves.toBe('data: {"result":{}}\n');
     expect(calls[0].options.method).toBe('POST');
     expect(calls[0].options.headers.authorization).toBe('Bearer at-1');
+  });
+
+  test('carries the SDK session from the pinned socket response through the next guarded request', async () => {
+    const { hostedToolDefinitions } = require('../../../services/hostedMcpToolDefinitions');
+    const { LINEAR_ENTRY } = require('../../../integrations/hostedMcp/linear');
+    const fixture = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-14.json');
+    const { createHostedMcpRuntimeDriftCache } = require('../../../services/hostedMcpToolDefinitions');
+    lookupSpy.mockResolvedValue(PUBLIC);
+    jest.spyOn(https, 'request').mockImplementation(fakeHttps((_url, options) => {
+      if (options.method === 'DELETE') return { status: 204 };
+      const body = JSON.parse(calls[calls.length - 1].body);
+      if (body.method === 'initialize') return { status: 200,
+        headers: { 'content-type': 'application/json', 'mcp-session-id': 'socket-session' },
+        chunks: [Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: {
+          protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'Linear fixture', version: '1' },
+        } }))],
+      };
+      if (options.headers['mcp-session-id'] !== 'socket-session'
+        || options.headers['mcp-protocol-version'] !== '2025-06-18') {
+        return { status: 400, headers: { 'content-type': 'text/plain' }, chunks: [Buffer.from('session required')] };
+      }
+      if (body.method === 'notifications/initialized') return { status: 202 };
+      return { status: 200, headers: { 'content-type': 'application/json' }, chunks: [Buffer.from(JSON.stringify({
+        jsonrpc: '2.0', id: body.id,
+        result: body.method === 'tools/list' ? { tools: fixture.tools } : { content: [{ type: 'text', text: 'guarded' }] },
+      }))] };
+    }, calls));
+    const deps = { loadRow: async () => ({ _id: 'row-1', config: { entryId: 'linear' } }),
+      credentialFor: async () => ({ token: 'fixture-token' }), fetcher: hostedVendorFetch };
+    deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [LINEAR_ENTRY]);
+    const definition = hostedToolDefinitions([LINEAR_ENTRY], deps).find((tool) => tool.name === 'linear.list_issues');
+    await expect(definition.call({}, { type: 'hosted-mcp', entryId: 'linear', connectionId: 'row-1' }))
+      .resolves.toEqual({ content: [{ type: 'text', text: 'guarded' }] });
+    expect(calls.filter(({ options }) => options.method === 'DELETE')).toHaveLength(2);
+    expect(calls.every(({ url }) => url === LINEAR_ENTRY.resource)).toBe(true);
   });
 
   test('sends a URLSearchParams body as its form encoding', async () => {

@@ -8,6 +8,7 @@
 
 import { createClient } from './api.js';
 import { formatDigestFrame } from './digest-frame.js';
+import { EMPTY_OUTPUT } from './claim-outcome.js';
 
 // Delivery failures that must stop a consumer rather than fall through to the
 // normal at-least-once retry path. A stale delivery belongs to a replacement
@@ -80,7 +81,8 @@ export const startPoller = ({
         } : event;
         let result = { outcome: 'no_action' };
         try {
-          result = (await onEvent(forwarded)) || { outcome: 'no_action' };
+          // A handler that returns nothing said nothing: not a read of the digest.
+          result = (await onEvent(forwarded)) || { outcome: 'no_action', reason: EMPTY_OUTPUT };
         } catch (handlerErr) {
           result = { outcome: 'error', reason: handlerErr.message };
         }

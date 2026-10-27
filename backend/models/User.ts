@@ -87,6 +87,7 @@ export interface IUser extends Document {
   banned: boolean;
   // Incrementing this invalidates every browser session without rotating JWT_SECRET.
   tokenVersion: number;
+  accountDeletionRequestedAt?: Date;
   bannedAt?: Date;
   banReason?: string;
   profilePicture: string;
@@ -220,6 +221,15 @@ export interface IUser extends Document {
     signupRef?: string;
   };
   createdAt: Date;
+  /** Browser-reported first touch, persisted only for a new human account. */
+  signupSource?: {
+    ref?: string;
+    referrer?: string;
+    landingPath?: string;
+    firstSeenAt?: Date;
+    authMethod: 'password' | 'google' | 'github';
+    recordedAt: Date;
+  };
   // Instance methods
   comparePassword(password: string): Promise<boolean>;
   generateApiToken(): string;
@@ -230,6 +240,20 @@ export interface IUser extends Document {
 export interface IUserModel extends Model<IUser> {}
 
 const userSchema = new Schema<IUser>({
+  // Growth opts in with .select('+signupSource'); incidental profile/populate
+  // reads must not disclose referral paths. Every field is write-once too.
+  signupSource: {
+    type: new Schema({
+      ref: { type: String, immutable: true },
+      referrer: { type: String, immutable: true },
+      landingPath: { type: String, immutable: true },
+      firstSeenAt: { type: Date, immutable: true },
+      authMethod: { type: String, enum: ['password', 'google', 'github'], required: true, immutable: true },
+      recordedAt: { type: Date, required: true, immutable: true },
+    }, { _id: false }),
+    immutable: true,
+    select: false,
+  },
   username: { type: String, required: true, unique: true },
   previousUsernames: { type: [String], default: [] },
   displayName: { type: String, trim: true },
@@ -256,6 +280,7 @@ const userSchema = new Schema<IUser>({
   verified: { type: Boolean, default: false },
   banned: { type: Boolean, default: false },
   tokenVersion: { type: Number, default: 0 },
+  accountDeletionRequestedAt: { type: Date },
   bannedAt: { type: Date },
   banReason: { type: String },
   profilePicture: { type: String, default: 'default' },
@@ -495,6 +520,11 @@ userSchema.methods.getOrCreateDigestUnsubscribeToken = function (): string {
   }
   return this.digestUnsubscribeToken;
 };
+
+// Recovery scans only authorized deletion markers, ordered for bounded retries.
+userSchema.index({ accountDeletionRequestedAt: 1, _id: 1 }, {
+  partialFilterExpression: { accountDeletionRequestedAt: { $exists: true } },
+});
 
 export default mongoose.model<IUser, IUserModel>('User', userSchema);
 // CJS compat: let require() return the default export directly

@@ -1,4 +1,6 @@
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import {
+  mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync,
+} from 'fs';
 import { homedir, tmpdir } from 'os';
 import { join } from 'path';
 
@@ -78,6 +80,74 @@ describe('macOS Seatbelt profile', () => {
     );
   });
 
+  // TASK-294: a workspace seat granted write keeps its project's .git
+  // read-only, so every change it makes shows in `git status`.
+  test('a writable workspace can hold named entries read-only', () => {
+    const profile = buildSeatbeltProfile({
+      workspacePath: workspace,
+      workspaceAccess: 'write',
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      readOnlyWorkspaceEntries: ['.git'],
+    });
+    const resolvedWorkspace = realpathSync(workspace);
+
+    expect(profile).toContain(
+      `(allow file-read* file-test-existence file-write* (subpath "${resolvedWorkspace}"))`,
+    );
+    expect(profile).toContain(`(deny file-write* (subpath "${join(resolvedWorkspace, '.git')}"))`);
+    // The deny must come after the allow it narrows: in SBPL the last match wins.
+    expect(profile.indexOf(`(deny file-write* (subpath "${join(resolvedWorkspace, '.git')}"))`))
+      .toBeGreaterThan(profile.indexOf(`file-write* (subpath "${resolvedWorkspace}"))`));
+  });
+
+  test('a symlinked read-only entry is held at its target too', () => {
+    const target = join(root, 'elsewhere-git');
+    mkdirSync(target);
+    symlinkSync(target, join(workspace, '.git'));
+    const profile = buildSeatbeltProfile({
+      workspacePath: workspace,
+      workspaceAccess: 'write',
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      readOnlyWorkspaceEntries: ['.git'],
+    });
+
+    expect(profile).toContain(`(deny file-write* (subpath "${join(realpathSync(workspace), '.git')}"))`);
+    expect(profile).toContain(`(deny file-write* (subpath "${realpathSync(target)}"))`);
+  });
+
+  test.each(['', '.', '..', 'a/b', '../x', 7])('rejects %p as a read-only workspace entry', (entry) => {
+    expect(() => buildSeatbeltProfile({
+      workspacePath: workspace,
+      workspaceAccess: 'write',
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      readOnlyWorkspaceEntries: [entry],
+    })).toThrow(/readOnlyWorkspaceEntries entries must be names inside the workspace/);
+  });
+
+  test('holds every .env file under the workspace, at any depth, and what a .env directory holds, out of reach', () => {
+    const profile = buildSeatbeltProfile({
+      workspacePath: workspace,
+      executablePath: '/usr/bin/true',
+      statePath: state,
+    });
+    const escaped = realpathSync(workspace).replace(/[\\^$.|?*+()[\]{}]/g, '\\$&');
+
+    expect(profile).toContain(`(deny file-read* file-write* (regex #"^${escaped}/(.*/)?\\.env([./].*)?$"))`);
+  });
+
+  test('refuses a workspace path an SBPL regex cannot hold', () => {
+    const quoted = join(root, 'a"b');
+    mkdirSync(quoted);
+    expect(() => buildSeatbeltProfile({
+      workspacePath: quoted,
+      executablePath: '/usr/bin/true',
+      statePath: state,
+    })).toThrow(/must not contain a quote or a line break/);
+  });
+
   test('OpenCode config roots remain read-only in the generated profile', () => {
     const configRoot = join(root, 'opencode-temp');
     const configDir = join(configRoot, 'config-dir');
@@ -145,6 +215,36 @@ describe('macOS Seatbelt profile', () => {
       statePath: state,
       loopbackNetworkPorts: [0],
     })).toThrow(/valid TCP ports/);
+  });
+
+  test('a loopback profile drops open network and the Security services, and nothing else', () => {
+    const port = 54321;
+    const base = {
+      workspacePath: workspace,
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      mcpConfigDir: mcp,
+      loopbackNetworkPorts: [port],
+    };
+    const open = buildSeatbeltProfile(base);
+    expect(buildSeatbeltProfile({ ...base, network: 'open' })).toBe(open);
+    expect(open).toMatch(/^\(allow network-outbound\)$/m);
+    expect(open).toContain('(global-name "com.apple.SecurityServer")');
+
+    const loopback = buildSeatbeltProfile({ ...base, network: 'loopback' });
+    expect(loopback).not.toMatch(/^\(allow network-outbound\)$/m);
+    expect(loopback).not.toContain('AF_SYSTEM');
+    for (const service of ['SecurityServer', 'securityd', 'ocspd', 'networkd', 'SystemConfiguration']) {
+      expect(loopback).not.toContain(`com.apple.${service}`);
+    }
+    expect(loopback).toContain(`(allow network-outbound (remote tcp "localhost:${port}"))`);
+    // Every line a loopback profile carries, the open one carries too.
+    const openLines = new Set(open.split('\n'));
+    expect(loopback.split('\n').filter((line) => !openLines.has(line))).toEqual([]);
+    const outbound = loopback.split('\n').filter((line) => line.includes('network-outbound'));
+    expect(outbound).toEqual([`(allow network-outbound (remote tcp "localhost:${port}"))`]);
+
+    expect(() => buildSeatbeltProfile({ ...base, network: 'none' })).toThrow(/open or loopback/);
   });
 
   test('Claude gets the login-keychain file on request, and never the shared Claude temp root', () => {

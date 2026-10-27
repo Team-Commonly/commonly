@@ -41,6 +41,10 @@ export const INTEGRATION_SECRET_CONFIG_KEYS = [
   'credentialRef',
   'refreshTokenRef',
   'pendingAuth',
+  // The X / Instagram feed refs (`services/feedCredentials`), withheld like the
+  // Slack and hosted-MCP refs beside them.
+  'feedAccessTokenRef',
+  'feedRefreshTokenRef',
 ] as const;
 
 export const toPublicIntegrationConfig = (

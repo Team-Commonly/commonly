@@ -82,6 +82,7 @@ describe('useV2PodDetail reconnect', () => {
       'before-outage', 'missed-reply', 'socket-and-server',
     ]);
     expect(new Set(result.current.messages.map((item) => item.id)).size).toBe(3);
+    expect(result.current.initialMessagesLoaded).toBe(true);
   });
 
   it('keeps a socket message the catch-up response does not contain', async () => {
@@ -117,6 +118,34 @@ describe('useV2PodDetail reconnect', () => {
     expect(result.current.messages.map((item) => item.id)).toEqual([
       'before-outage', 'missed-reply', 'socket-only',
     ]);
+  });
+
+  it('keeps first-reply eligibility off after a failed initial read and a full reconnect page', async () => {
+    let reads = 0;
+    mockApi.get.mockImplementation((url) => {
+      if (url === '/api/messages/pod-1?limit=50') {
+        reads += 1;
+        return reads === 1 ? Promise.reject(new Error('history unavailable'))
+          : Promise.resolve(Array.from({ length: 50 }, (_, index) => message(`history-${index}`, index)));
+      }
+      if (url.includes('/agents')) return Promise.resolve({ agents: [] });
+      return Promise.resolve({ _id: 'pod-1', name: 'Pod', members: [] });
+    });
+    const { result, rerender } = renderHook(() => useV2PodDetail('pod-1'));
+    await waitFor(() => expect(result.current.initialLoadComplete).toBe(true));
+    expect(result.current.initialMessagesLoaded).toBe(false);
+    const receive = mockSocket.on.mock.calls.filter(([event]) => event === 'newMessage').at(-1)[1];
+    act(() => {
+      receive({ ...message('viewer-live', 51), user_id: 'human-1', user: { username: 'human', isBot: false } });
+      receive({ ...message('bot-live', 52), user: { username: 'scout', isBot: true } });
+    });
+    expect(result.current.messages).toHaveLength(2);
+    act(() => { mockConnected = false; rerender(); });
+    act(() => { mockConnected = true; rerender(); });
+    await waitFor(() => expect(result.current.messages).toHaveLength(52));
+    expect(result.current.initialMessagesLoaded).toBe(false);
+    expect(result.current.messages.map((row) => row.id)).toContain('viewer-live');
+    expect(result.current.messages.map((row) => row.id)).toContain('bot-live');
   });
 
   it('does not fetch twice when the socket connects for the first time', async () => {

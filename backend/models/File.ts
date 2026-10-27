@@ -39,6 +39,7 @@ const fileSchema = new Schema<IFile>({
 });
 
 fileSchema.index({ fileName: 1 });
+fileSchema.index({ uploadedBy: 1 });
 fileSchema.index({ podId: 1, createdAt: -1 });
 
 fileSchema.statics.findByFileName = function (fileName: string) {

@@ -274,7 +274,12 @@ const PLATFORM_BASELINE = String.raw`
 ; Apple's App Sandbox grants every app this same domain.
 (allow user-preference-read
   (preference-domain "kCFPreferencesAnyApplication"))
+`;
 
+// Open network, the tail of the default baseline. A `network: 'loopback'`
+// profile leaves it out: no outbound except the loopback ports it lists, and
+// none of the Security framework services the keychain is reached through.
+const OPEN_NETWORK = String.raw`
 ; The selected provider and declared MCP transports need outbound network. The model's
 ; WebSearch/WebFetch/Bash tools are denied independently in the adapter argv.
 (allow network-outbound)
@@ -300,6 +305,17 @@ const escapeSbplString = (value) => String(value)
 
 const literal = (path) => `(literal "${escapeSbplString(path)}")`;
 const subpath = (path) => `(subpath "${escapeSbplString(path)}")`;
+// Every .env and .env.* file under the workspace, at any depth, and everything
+// inside a directory of that name: a real project keeps one beside each
+// package, not only at its root (TASK-294). An SBPL regex literal takes no
+// escapes, so a path it cannot hold is refused.
+const envFilesUnder = (workspace) => {
+  if (/["\r\n]/.test(workspace)) {
+    throw new Error('Seatbelt workspacePath must not contain a quote or a line break');
+  }
+  const pattern = workspace.replace(/[\\^$.|?*+()[\]{}]/g, '\\$&');
+  return `(regex #"^${pattern}/(.*/)?\\.env([./].*)?$")`;
+};
 
 const assertAbsolutePath = (path, label) => {
   if (!path || !isAbsolute(path)) {
@@ -356,6 +372,12 @@ export const buildSeatbeltProfile = ({
   readOnlyDirectories = [],
   loopbackNetworkPorts = [],
   allowClaudeRuntimeAccess = false,
+  // 'open' (the default) or 'loopback': only the listed loopback ports.
+  network = 'open',
+  // Names directly inside a writable workspace that stay read-only. A
+  // workspace seat granted write keeps its project's .git read-only, so every
+  // change it makes is one `git status` shows the person (TASK-294).
+  readOnlyWorkspaceEntries = [],
 }) => {
   for (const [path, label] of [
     [workspacePath, 'workspacePath'],
@@ -372,8 +394,16 @@ export const buildSeatbeltProfile = ({
       throw new Error('Seatbelt loopbackNetworkPorts entries must be valid TCP ports');
     }
   }
+  if (!['open', 'loopback'].includes(network)) {
+    throw new Error('Seatbelt network must be open or loopback');
+  }
   if (!['read', 'write'].includes(workspaceAccess)) {
     throw new Error('Seatbelt workspaceAccess must be read or write');
+  }
+  for (const entry of readOnlyWorkspaceEntries) {
+    if (typeof entry !== 'string' || !entry || entry.includes('/') || entry === '.' || entry === '..') {
+      throw new Error('Seatbelt readOnlyWorkspaceEntries entries must be names inside the workspace');
+    }
   }
 
   const resolvedWorkspace = realpathOrSelf(workspacePath);
@@ -411,6 +441,12 @@ export const buildSeatbeltProfile = ({
     `(allow file-read* file-test-existence ${subpath(path)})`,
     `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(path)}"))`,
   ].join('\n'))).join('\n');
+  // A symlinked entry is held at both its name and its target, so the write
+  // cannot land through whichever path the link resolves to.
+  const readOnlyWorkspaceRules = [...new Set(readOnlyWorkspaceEntries.flatMap((entry) => {
+    const entryPath = join(resolvedWorkspace, entry);
+    return [entryPath, realpathOrSelf(entryPath)];
+  }))].map((path) => `(deny file-write* ${subpath(path)})`).join('\n');
   const loopbackNetworkRules = [...new Set(loopbackNetworkPorts)].map((port) => (
     `(allow network-outbound (remote tcp "localhost:${port}"))`
   )).join('\n');
@@ -430,7 +466,7 @@ export const buildSeatbeltProfile = ({
   })() : [];
 
   return [
-    PLATFORM_BASELINE.trim(),
+    (network === 'open' ? `${PLATFORM_BASELINE}${OPEN_NETWORK}` : PLATFORM_BASELINE).trim(),
     executableRules,
     executableSymlinkRules,
     `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(resolvedWorkspace)}"))`,
@@ -444,7 +480,8 @@ export const buildSeatbeltProfile = ({
     // paths are not. Explicit deny wins over the broad workspace allow.
     `(deny file-read* file-write* ${subpath(join(resolvedWorkspace, '.commonly'))})`,
     `(deny file-read* file-write* ${subpath(join(resolvedWorkspace, '.codex'))})`,
-    `(deny file-read* file-write* ${literal(join(resolvedWorkspace, '.env'))})`,
+    `(deny file-read* file-write* ${envFilesUnder(resolvedWorkspace)})`,
+    readOnlyWorkspaceRules,
     ...claudeRuntimeRules,
   ].filter(Boolean).join('\n\n');
 };

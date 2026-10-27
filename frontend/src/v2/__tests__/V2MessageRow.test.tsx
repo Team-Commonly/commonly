@@ -1,4 +1,7 @@
+import uiCardRevision from '../cards/uiCardCatalogueRevision.json';
 import React from 'react';
+import { TextEncoder } from 'util';
+Object.assign(global, { TextEncoder });
 import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import i18n from '../../i18n';
@@ -304,4 +307,65 @@ describe('V2MessageRow', () => {
 
     expect(screen.getByText('Pixel and codex started a DM').closest('.v2-syscard')).toHaveClass('v2-syscard--action');
   });
+
+  it('renders a structured task claim as a quiet line without message actions', () => {
+    render(
+      <MemoryRouter>
+        <V2MessageRow message={{
+          id: '45', pod_id: 'pod-1', user_id: 'agent-1',
+          content: 'Forge claimed TASK-406', message_type: 'system',
+          created_at: '2026-10-23T20:00:00.000Z',
+          payload: { kind: 'system-action', action: 'task-claimed', actorName: 'Forge', taskId: 'TASK-406' },
+          user: { username: 'forge-agent', isBot: true },
+        }} />
+      </MemoryRouter>,
+    );
+    const line = screen.getByText('Forge').closest('.v2-system-action-line');
+    expect(line).toBeInTheDocument();
+    expect(line).toHaveTextContent('ForgeclaimedTASK-406');
+    expect(line?.querySelector('.v2-system-action-line__object')).toHaveTextContent('TASK-406');
+    expect(line?.querySelector('.v2-avatar')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
 });
+
+it('server-bound origin pod links a plain message after its content', () => {
+  const runPodId = 'aaaaaaaaaaaaaaaaaaaaaaa1';
+  const runId = 'bbbbbbbbbbbbbbbbbbbbbbb1';
+  render(<MemoryRouter><V2MessageRow message={{ id: 'origin-run', pod_id: 'ccccccccccccccccccccccc1',
+    user_id: 'agent-1', message_type: 'text', content: 'Approval requested.', created_at: '2026-10-25T00:00:00Z',
+    user: { username: 'lark', isBot: true }, payload: { runId, runPodId },
+  }} /></MemoryRouter>);
+  const link = screen.getByRole('link', { name: 'View run trace' });
+  expect(link).toHaveAttribute('href', `/v2/pods/${runPodId}/runs/${runId}`);
+  const content = link.closest('.v2-msg__body').querySelector('.v2-msg__content');
+  expect(content.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it('the approval-card branch links to its server-bound original pod', () => {
+  const runPodId = 'aaaaaaaaaaaaaaaaaaaaaaa1', runId = 'bbbbbbbbbbbbbbbbbbbbbbb1';
+  render(<MemoryRouter><V2MessageRow message={{ id: 'approval-origin-run', pod_id: 'ccccccccccccccccccccccc1',
+    user_id: 'agent-1', message_type: 'card', content: 'Approve the research pod', created_at: '2026-10-25T00:00:00Z',
+    user: { username: 'lark', isBot: true }, payload: { kind: 'approval-card', runId, runPodId,
+      approvalId: 'approval-1', actionType: 'create_pod', params: { name: 'Research' },
+      summary: 'Approve the research pod', status: 'resolved', decision: 'declined', ownerUserId: 'owner-1',
+    },
+  }} /></MemoryRouter>);
+  expect(screen.getByTestId('approval-card')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'View run trace' })).toHaveAttribute('href', `/v2/pods/${runPodId}/runs/${runId}`);
+});
+
+
+// Two lazy boundaries load the real parser/runtime; cold Jest transforms can exceed 1s.
+test('dispatches a kind ui message into the real catalogue renderer', async () => {
+  render(<MemoryRouter future={{v7_startTransition:true,v7_relativeSplatPath:true}}><V2MessageRow message={{
+    id:'ui-dispatch',pod_id:'111111111111111111111111',user_id:'agent',message_type:'card',
+    user:{username:'polish',isBot:true},created_at:new Date().toISOString(),content:'Fallback copy',
+    payload:{...uiCardRevision,kind:'ui',v:1,lang:'openui@1',source:'root = Card("Dispatch proof", [Text("Actual rendered card")])'},
+  }} /></MemoryRouter>);
+  expect(await screen.findByText('Actual rendered card', {}, { timeout: 15000 })).toBeInTheDocument();
+  const card = screen.getByTestId('ui-card');
+  expect(card).toHaveAttribute('id', 'message-ui-dispatch');
+  card.focus();
+  expect(card).toHaveFocus();
+}, 20000);

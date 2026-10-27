@@ -30,6 +30,10 @@ jest.mock('../../../services/agentEventService', () => ({
   enqueue: jest.fn(),
 }));
 
+jest.mock('../../../services/feedCredentials', () => ({
+  storeFeedTokens: jest.fn(),
+}));
+
 const mongoose = require('mongoose');
 const Integration = require('../../../models/Integration');
 const Pod = require('../../../models/Pod');
@@ -38,6 +42,7 @@ const { AgentInstallation } = require('../../../models/AgentRegistry');
 const registry = require('../../../integrations');
 const AgentEventService = require('../../../services/agentEventService');
 const externalFeedService = require('../../../services/externalFeedService');
+const { storeFeedTokens } = require('../../../services/feedCredentials');
 
 describe('externalFeedService', () => {
   // The real shape: the service reads the pod with `.lean()`, so members and a
@@ -235,6 +240,8 @@ describe('externalFeedService', () => {
       }),
     });
 
+    storeFeedTokens.mockResolvedValue({ feedAccessTokenRef: 'ref-access', feedRefreshTokenRef: 'ref-refresh' });
+
     const results = await externalFeedService.syncExternalFeeds();
 
     expect(results[0]).toEqual(expect.objectContaining({
@@ -242,14 +249,23 @@ describe('externalFeedService', () => {
       messageCount: 0,
       content: 'No new posts',
     }));
+    // The refreshed pair goes through the connector-secret store; the row's
+    // update carries only the refs.
+    expect(storeFeedTokens).toHaveBeenCalledWith('int-3', 'x', {
+      accessToken: 'new-access-token',
+      refreshToken: 'new-refresh-token',
+    });
+    const [, { $set }] = Integration.findByIdAndUpdate.mock.calls[0];
+    expect($set).not.toHaveProperty('config.accessToken');
+    expect($set).not.toHaveProperty('config.refreshToken');
     expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith(
       'int-3',
       expect.objectContaining({
         $set: expect.objectContaining({
           status: 'connected',
           errorMessage: null,
-          'config.accessToken': 'new-access-token',
-          'config.refreshToken': 'new-refresh-token',
+          'config.feedAccessTokenRef': 'ref-access',
+          'config.feedRefreshTokenRef': 'ref-refresh',
           'config.tokenType': 'bearer',
           'config.oauthScopes': ['tweet.read', 'users.read', 'offline.access'],
         }),

@@ -1,3 +1,4 @@
+import { isAccountDeleting } from '../../services/accountDeletionState';
 // Token issuance + scope helpers — extracted from registry.js (GH#112)
 const AgentIdentityService = require('../../services/agentIdentityService');
 const { hash, randomSecret } = require('../../utils/secret');
@@ -266,6 +267,26 @@ const runsInProcess = async (agentUser: any, installation: any): Promise<boolean
 };
 
 const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installation: any = null, issuer: any = null) => {
+  const ownerId = issuer?.ownerUserId || installation?.installedBy;
+  const refuseDeletingOwner = async (tokenHash?: string, mintedHere = false) => {
+    if (!ownerId || !await isAccountDeleting(ownerId)) return;
+    if (tokenHash) {
+      // A shared identity can already hold another owner's token. A refusal
+      // must only revoke the credential this deleting owner actually owns.
+      // A new hash belongs to this request even on legacy reprovision paths
+      // that do not create an issuer-backed ledger row.
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const AgentCredential = require('../../models/AgentCredential');
+      if (mintedHere || await AgentCredential.exists({ tokenHash, ownerUserId: ownerId })) {
+        await revokeRuntimeTokenEverywhere(tokenHash);
+      }
+    }
+    const error = Object.assign(new Error('This account is being deleted; runtime credentials cannot be issued.'), {
+      code: 'account_deleting', status: 409,
+    });
+    throw error;
+  };
+  await refuseDeletingOwner();
   if (await runsInProcess(agentUser, installation)) throw new InProcessAgentTokenRefused();
   // Check if agent already has a runtime token (reuse existing)
   const existingToken = agentUser.agentRuntimeTokens?.[0] || installation?.runtimeTokens?.[0];
@@ -291,6 +312,7 @@ const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installatio
         { upsert: true },
       ).catch((err: Error) => console.warn('Credential backfill failed:', err.message));
     }
+    await refuseDeletingOwner(existingToken.tokenHash);
     return {
       existing: true,
       label: existingToken.label,
@@ -350,6 +372,7 @@ const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installatio
     throw new InProcessAgentTokenRefused();
   }
 
+  await refuseDeletingOwner(tokenRecord.tokenHash, true);
   return {
     token: rawToken,
     label: label || 'Runtime token',

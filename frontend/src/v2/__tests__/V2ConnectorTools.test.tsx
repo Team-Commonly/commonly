@@ -35,14 +35,14 @@ const NOW = Date.now();
 const iso = (ms) => new Date(NOW + ms).toISOString();
 const pods = [
   { _id: 'p1', name: 'Launch pod', members: [{ _id: 'u1', username: 'sam' }, { _id: 'a1', username: 'scout' }] },
-  { _id: 'p2', name: 'Ops', members: [{ _id: 'u1', username: 'sam' }] },
+  { _id: 'p2', name: 'Ops', members: [{ _id: 'u1', username: 'sam' }, { _id: 'a1', username: 'scout' }] },
 ];
 const grantLive = {
   grantId: 'grant_live', installationId: 'inst-1', target: { kind: 'pod', id: 'p1' }, tools: ['github.list_issues', 'github.comment_on_issue'],
   writeMode: 'write-with-confirm', budget: { calls: 50, windowMs: 3600000 }, effectiveAudience: ['a1'], expiresAt: iso(6 * 86400000),
   revokedAt: null, revokedBy: null, parentGrantId: null, rootGrantId: null, createdAt: iso(-3600000), grantedBy: 'u1',
 };
-const grantRevoked = { ...grantLive, grantId: 'grant_gone', target: { kind: 'pod', id: 'p2' }, writeMode: 'read', effectiveAudience: [], revokedAt: iso(-600000), revokedBy: 'u1', createdAt: iso(-86400000) };
+const grantRevoked = { ...grantLive, grantId: 'grant_gone', target: { kind: 'pod', id: 'p2' }, writeMode: 'read', effectiveAudience: ['a1'], revokedAt: iso(-600000), revokedBy: 'u1', createdAt: iso(-86400000) };
 const trail = {
   grantId: 'grant_live',
   calls: [
@@ -94,7 +94,7 @@ const mockTwoEntries = ({ catalog = [githubEntry, linearEntry], grants = { p1: [
     const pod = /^\/api\/pods\/(p\d)\/grants$/.exec(url);
     if (pod) return Promise.resolve({ data: { podId: pod[1], grants: grants[pod[1]] || [] } });
     if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [{ name: 'scout', displayName: 'Scout', userId: 'a1' }] } });
-    if (url === '/api/registry/pods/p2/agents') return Promise.resolve({ data: { agents: [] } });
+    if (url === '/api/registry/pods/p2/agents') return Promise.resolve({ data: { agents: [{ name: 'scout', displayName: 'Scout', userId: 'a1' }] } });
     if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'g', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
     return Promise.reject(new Error(`unmocked ${url}`));
   });
@@ -106,7 +106,7 @@ const mockApi = (catalog = []) => {
     if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { podId: 'p1', grants: [grantLive] } });
     if (url === '/api/pods/p2/grants') return Promise.resolve({ data: { podId: 'p2', grants: [grantRevoked] } });
     if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [{ name: 'scout', displayName: 'Scout', userId: 'a1' }] } });
-    if (url === '/api/registry/pods/p2/agents') return Promise.resolve({ data: { agents: [] } });
+    if (url === '/api/registry/pods/p2/agents') return Promise.resolve({ data: { agents: [{ name: 'scout', displayName: 'Scout', userId: 'a1' }] } });
     if (url === '/api/grants/grant_live/calls') return Promise.resolve({ data: trail });
     if (url === '/api/grants/grant_gone/calls') return Promise.resolve({ data: { grantId: 'grant_gone', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
     return Promise.reject(new Error(`unmocked ${url}`));
@@ -851,5 +851,67 @@ test('hosted grant picker sends the selected pod ID and keeps the agent User ID 
   fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({
     target: { kind: 'pod', id: 'p2' }, audience: ['a2'],
+  }), expect.anything()));
+});
+
+
+test('the dialog cannot submit an empty audience and re-enables grant when an agent is selected', async () => {
+  mockTwoEntries({ catalog: [linearEntry], grants: { p1: [], p2: [] } });
+  renderTools();
+  fireEvent.click(await screen.findByRole('button', { name: 'Add' }));
+  const form = await screen.findByRole('complementary', { name: 'Add Linear' });
+  const submit = within(form).getByRole('button', { name: 'Grant' });
+  expect(submit).toBeEnabled();
+  fireEvent.click(within(form).getByRole('checkbox', { name: 'Scout' }));
+  expect(within(form).getByRole('status')).toHaveTextContent('Select at least one agent to grant access.');
+  expect(submit).toBeDisabled();
+  fireEvent.click(submit);
+  expect(axios.post).not.toHaveBeenCalled();
+  fireEvent.click(within(form).getByRole('checkbox', { name: 'Scout' }));
+  expect(submit).toBeEnabled();
+  fireEvent.click(submit);
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({ audience: ['a1'] }), expect.anything()));
+});
+
+
+test('Grant again on an existing empty-audience row requires an explicit new selection', async () => {
+  mockTwoEntries({ catalog: [linearEntry], grants: { p1: [], p2: [{ ...grantRevoked, tools: ['linear.list_issues'], effectiveAudience: [] }] } });
+  renderTools();
+  fireEvent.click(await screen.findByRole('button', { name: 'Grant again' }));
+  const form = await screen.findByRole('complementary', { name: 'Add Linear' });
+  const agent = within(form).getByRole('checkbox', { name: 'Scout' });
+  expect(agent).not.toBeChecked();
+  const submit = within(form).getByRole('button', { name: 'Grant' });
+  expect(submit).toBeDisabled();
+  fireEvent.click(submit);
+  expect(axios.post).not.toHaveBeenCalled();
+  fireEvent.click(agent);
+  fireEvent.click(submit);
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({ audience: ['a1'], target: { kind: 'pod', id: 'p2' } }), expect.anything()));
+});
+
+
+test.each([
+  { label: 'human-only', audience: ['u1'], selected: false },
+  { label: 'mixed human and agent', audience: ['u1', 'a1'], selected: true },
+])('Grant again restores only current agents from a $label legacy audience', async ({ audience, selected }) => {
+  mockTwoEntries({ catalog: [githubEntry], grants: { p1: [], p2: [{ ...grantRevoked, effectiveAudience: audience }] } });
+  renderTools();
+  fireEvent.click(await screen.findByRole('button', { name: 'Grant again' }));
+  const form = await screen.findByRole('complementary', { name: 'Add GitHub' });
+  const scout = within(form).getByRole('checkbox', { name: 'Scout' });
+  const submit = within(form).getByRole('button', { name: 'Grant' });
+  expect(scout.checked).toBe(selected);
+  if (!selected) {
+    expect(submit).toBeDisabled();
+    expect(within(form).getByText('Select at least one agent to grant access.')).toBeInTheDocument();
+    fireEvent.click(submit);
+    expect(axios.post).not.toHaveBeenCalled();
+    fireEvent.click(scout);
+  }
+  expect(submit).toBeEnabled();
+  fireEvent.click(submit);
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({
+    target: { kind: 'pod', id: 'p2' }, audience: ['a1'],
   }), expect.anything()));
 });

@@ -153,7 +153,8 @@ describe('getFromPublicAddress', () => {
       expect(calls[0].options.method).toBe('GET');
       expect(calls[0].options.headers).toEqual({
         'User-Agent': 'CommonlyAgentFetch/1.0 (+https://commonly.me)',
-        Accept: 'text/html, text/plain;q=0.9, application/json;q=0.9',
+        Accept: 'text/html, text/plain;q=0.9, application/json;q=0.9, '
+          + 'application/rss+xml;q=0.9, application/atom+xml;q=0.9',
       });
       const sent = Object.keys(calls[0].options.headers).map((name) => name.toLowerCase());
       expect(sent).not.toContain('cookie');
@@ -217,7 +218,19 @@ describe('getFromPublicAddress', () => {
     });
 
     test.each([
-      ['image/png'], ['application/octet-stream'], ['application/pdf'], [undefined],
+      ['application/rss+xml', '<?xml version="1.0"?><rss><channel><title>A &amp; B</title></channel></rss>'],
+      ['application/atom+xml', '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><title>A &amp; B</title></feed>'],
+    ])('%s feeds retain their raw XML markup and entities', async (contentType, body) => {
+      lookupSpy.mockResolvedValue(PUBLIC);
+      route = () => ({ status: 200, headers: { 'content-type': `${contentType}; charset=utf-8` }, chunks: [Buffer.from(body)] });
+
+      const result = await getFromPublicAddress('https://feeds.example.test/changelog');
+
+      expect(result).toMatchObject({ ok: true, contentType, text: body, truncated: false });
+    });
+
+    test.each([
+      ['image/png'], ['application/octet-stream'], ['application/pdf'], ['application/xml'], ['text/xml'], [undefined],
     ])('a 2xx with content type %p is refused before any body byte is read', async (contentType) => {
       lookupSpy.mockResolvedValue(PUBLIC);
       route = () => ({ status: 200, headers: contentType ? { 'content-type': contentType } : {}, chunks: [Buffer.from('BINARY')] });
@@ -230,17 +243,19 @@ describe('getFromPublicAddress', () => {
       expect(calls[0].destroyed).toBe(true);
     });
 
-    test('a body over 1 MB is cut off at exactly 1 MB and reported as truncated', async () => {
-      lookupSpy.mockResolvedValue(PUBLIC);
-      const half = Buffer.alloc(512 * 1024, 'a');
-      route = () => ({ status: 200, headers: { 'content-type': 'text/plain' }, chunks: [half, half, half] });
+    test.each(['text/plain', 'application/rss+xml', 'application/atom+xml'])(
+      'a %s body over 1 MB is cut off at exactly 1 MB and reported as truncated', async (contentType) => {
+        lookupSpy.mockResolvedValue(PUBLIC);
+        const half = Buffer.alloc(512 * 1024, 'a');
+        route = () => ({ status: 200, headers: { 'content-type': contentType }, chunks: [half, half, half] });
 
-      const result = await getFromPublicAddress('https://big.example.test/');
+        const result = await getFromPublicAddress('https://big.example.test/');
 
-      expect(result.truncated).toBe(true);
-      expect(Buffer.byteLength(result.text)).toBe(1024 * 1024);
-      expect(calls[0].destroyed).toBe(true);
-    });
+        expect(result.truncated).toBe(true);
+        expect(Buffer.byteLength(result.text)).toBe(1024 * 1024);
+        expect(calls[0].destroyed).toBe(true);
+      },
+    );
 
     test('a non-2xx final response is returned, not thrown, with no body', async () => {
       lookupSpy.mockResolvedValue(PUBLIC);

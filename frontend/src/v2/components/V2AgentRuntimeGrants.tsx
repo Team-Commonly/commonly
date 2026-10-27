@@ -4,6 +4,7 @@ import { useV2Api } from '../hooks/useV2Api';
 import './V2AgentRuntimeGrants.css';
 import V2AgentProviderKey from './V2AgentProviderKey';
 import V2RuntimeControls, { RuntimeSettings, RuntimeUpdate } from './V2RuntimeControls';
+import { daemonSetupCommand } from '../utils/daemonSetupCommand';
 
 export interface Runtime extends RuntimeSettings {}
 
@@ -49,7 +50,6 @@ const WALKED_ADAPTERS: Record<string, string> = {
   hermes: 'Hermes',
   dsh: 'DeepSeek Harness',
 };
-const DAEMON_SETUP_COMMAND = 'npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install';
 
 export const describeRuntime = (runtime: Runtime): { mode: 'native' | 'hosted' | 'daemon' | 'cli' | 'unknown'; adapter: string | null } => {
   const type = String(runtime.runtimeType || '').toLowerCase();
@@ -198,7 +198,7 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
                 <button type="button" disabled={!machineChoice || moving} onClick={() => { void moveAgent(); }}>
                   {moving ? t('agentManage.runtime.moving') : t('agentManage.runtime.move')}
                 </button>
-              </> : <p>{t('agentManage.runtime.noActiveMachine')} <code>{DAEMON_SETUP_COMMAND}</code></p>
+              </> : <p>{t('agentManage.runtime.noActiveMachine')} <code>{daemonSetupCommand()}</code></p>
             )}
           </div>
         )}

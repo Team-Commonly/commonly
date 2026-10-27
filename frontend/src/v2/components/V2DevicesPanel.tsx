@@ -55,7 +55,7 @@ const V2DevicesPanel: React.FC<V2DevicesPanelProps> = ({ showHeading = true }) =
       {!loading && devices.length > 0 && <div className="v2-devices__list">
         {devices.map((device) => <article className="v2-devices__item" key={device.id}>
           <div><strong>{device.label}</strong><span>Created {dateLabel(device.createdAt)} · Last used {dateLabel(device.lastUsedAt)}</span></div>
-          {device.revokedAt ? <span className="v2-devices__revoked">Revoked</span> : <button type="button" onClick={() => void revoke(device)}>Revoke</button>}
+          {device.revokedAt ? <span className="v2-devices__revoked">Revoked {dateLabel(device.revokedAt)}</span> : <button type="button" onClick={() => void revoke(device)}>Revoke</button>}
         </article>)}
       </div>}
     </section>

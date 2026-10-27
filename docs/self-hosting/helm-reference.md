@@ -8,6 +8,15 @@ The base chart's `values.yaml` ships `agents.clawdbot.enabled: true`. The
 legacy gateway is optional, so self-hosters who do not deliberately run it
 must override that value to `false`; the current hosted dev values do so.
 
+## One-command local install
+
+`./install.sh` uses `docker-compose.local.yml`, which runs MongoDB and a
+pinned PostgreSQL 16 alongside the app, so chat, the tool broker, decisions
+and reactions behave as they do under Helm.
+See the [local installation guide](../deployment/SELF_HOSTED.md) for profile
+selection. The Helm configuration below supports a PostgreSQL service or an
+external PostgreSQL database.
+
 ## Quick Start
 
 ```bash

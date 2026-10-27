@@ -1,3 +1,6 @@
+import { podMemberPopulate } from '../services/podMemberPopulate';
+import dualAuth from '../middleware/dualAuth';
+import { validateAgentCardPayload } from '../services/uiCardValidation';
 export {};
 
 // TASK-099: the refusal classes a driver may name on release. The enum is the
@@ -147,25 +150,8 @@ const longPollIpLimit = platformIpRateLimit({
   label: '3000 long-poll reads per 60s per IP',
 });
 
-// Dual-auth dispatcher (mirrors `backend/routes/tasksApi.ts:34-36`). Routes
-// that accept BOTH human JWTs and agent runtime tokens use this — the token
-// prefix distinguishes the two. `cm_agent_*` → `agentRuntimeAuth` (stamps
-// `req.agentUser`), anything else → `auth` (stamps `req.userId`/`req.user`).
-//
-// Both `Authorization: Bearer <token>` and `x-commonly-agent-token: <token>`
-// are checked because `agentRuntimeAuth` accepts either; missing one would
-// silently route the alternate-header caller to the human path and 401.
-//
-// Per ADR-010, MCP tools wrap routes the agent runtime token can already
-// authenticate against; for `/room` (the agent-room endpoint) that means
-// adding the agent path without breaking the existing human path.
-const dualAuth = (req: any, res: any, next: any) => {
-  const bearer = ((req.header?.('Authorization') || '').replace('Bearer ', '')).trim();
-  const altHeader = (req.header?.('x-commonly-agent-token') || '').trim();
-  const token = bearer || altHeader;
-  if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
-  return auth(req, res, next);
-};
+// /room accepts human sessions and runtime credentials through shared dualAuth.
+// Keep the IP limiter before it: both verification paths read the database.
 
 const Integration = require('../models/Integration');
 const AgentMemory = require('../models/AgentMemory');
@@ -554,10 +540,27 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
     const allPodIds = [...podIds.map(String), ...dmPodIds.map(String)];
 
     const pods = allPodIds.length > 0
-      ? await Pod.find({ _id: { $in: allPodIds } }).select('_id name type').lean()
+      ? await Pod.find({ _id: { $in: allPodIds } }).select('_id name type publicRead communityListed joinPolicy').lean()
       : [];
 
     const podMap = Object.fromEntries(pods.map((p: any) => [String(p._id), p]));
+
+    // Whether strangers can read or join each room this seat answers in
+    // (TASK-294). A `workspace`-trust CLI seat reads it before every turn and
+    // runs that turn public unless every pod here is private and invite-only,
+    // so the effective values are reported: an absent stored visibility field
+    // means false, as everywhere else that reads `publicRead || communityListed`,
+    // and an absent joinPolicy means open, as in podListing.ts. Visibility
+    // alone is not enough: POST /pods/:podId/self-install admits any agent to
+    // an open pod an agent created, whether or not it is listed. A pod that no
+    // longer exists gets none of the fields, which the CLI reads as not-private.
+    const podVisibility = (pod: any) => (pod?._id
+      ? {
+        publicRead: pod.publicRead === true,
+        communityListed: pod.communityListed === true,
+        joinPolicy: pod.joinPolicy === 'invite-only' ? 'invite-only' : 'open',
+      }
+      : {});
 
     const installationList = installations.map((inst: any) => {
       const pod = podMap[String(inst?.podId)] || {};
@@ -572,6 +575,7 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
         // Known runtime kinds (such as a connect-page `webhook`) stay null.
         // Expose only this non-secret discriminator, never the full config.
         runtimeAdapter: adapterForRuntimeBinding(inst?.config?.runtime),
+        ...podVisibility(pod),
         type: 'installation',
       };
     });
@@ -584,6 +588,7 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
         podType: pod.type || 'agent-admin',
         instanceId,
         status: 'active',
+        ...podVisibility(pod),
         type: 'dm',
       };
     });
@@ -1572,7 +1577,9 @@ router.post(
         return res.status(403).json({ message: 'Bot not installed in this pod' });
       }
 
-      const { content, metadata, messageType } = req.body || {};
+      const { content, metadata, messageType, payload } = req.body || {};
+      validateAgentCardPayload(messageType, payload, payload !== undefined
+        ? AgentMessageService.sanitizeAgentContent(content) : content);
       const wouldPost = messageType === 'card' || Boolean(AgentMessageService.sanitizeAgentContent(content));
       if (wouldPost && req.body?.continueAnyway !== true) {
         const hold = await AgentSendFreshness.unseenMessages(user._id, podId);
@@ -1586,6 +1593,7 @@ router.post(
         content,
         metadata,
         messageType,
+        ...(payload !== undefined ? { payload } : {}),
         installationConfig: installation.config || null,
       });
 
@@ -2263,6 +2271,9 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
+    validateAgentCardPayload(req.body?.messageType, req.body?.payload, req.body?.payload !== undefined
+      ? AgentMessageService.sanitizeAgentContent(req.body?.content) : req.body?.content);
+
     // A total-match silence or runtime artifact is not a post. Let the
     // service suppress it without making the agent read a conversation first.
     const wouldPost = req.body?.messageType === 'card'
@@ -2277,7 +2288,7 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
     }
 
     const {
-      content, metadata, messageType, replyToMessageId, threadRootId,
+      content, metadata, messageType, replyToMessageId, threadRootId, payload,
     } = req.body || {};
     const result = await AgentMessageService.postMessage({
       agentName: installation.agentName,
@@ -2287,6 +2298,7 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       content,
       metadata,
       messageType,
+      ...(payload !== undefined ? { payload } : {}),
       replyToMessageId: replyToMessageId || null,
       // In-thread post WITHOUT addressing (constraint 5, Sam's independence
       // rule): the thread is ambient membership, the reply edge is a ping.
@@ -3295,7 +3307,7 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
     // Global dedup by name: if a pod with this name already exists anywhere, join it and return it
     const existingPod = await Pod.findOne({ name })
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture');
+      .populate(podMemberPopulate('username profilePicture'));
     if (existingPod) {
       // DM pods are strictly 1:1 (ADR-001 §3.10). VALID_POD_TYPES above gates
       // the type the caller ASKED for, but this dedup branch matches on name
@@ -3336,7 +3348,7 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
           code: 'pod_name_unavailable',
           message: 'That pod name is already taken by a pod you cannot join. Pick a '
             + 'different name. To start a private conversation with a specific agent, '
-            + 'use commonly_open_dm instead of creating a pod by name.',
+            + 'use commonly_open_dm or commonly_dm_agent instead of creating a pod by name.',
         });
       };
 
@@ -3387,7 +3399,7 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
       if (!isMember) {
         existingPod.members.push(agentUser._id);
         await existingPod.save();
-        await existingPod.populate('members', 'username profilePicture');
+        await existingPod.populate(podMemberPopulate('username profilePicture'));
       }
       // Ensure an AgentInstallation exists so the agent appears in the Agents section
       if (sourceInstall) {
@@ -3439,7 +3451,7 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
     const pod = await newPod.save();
 
     await pod.populate('createdBy', 'username profilePicture');
-    await pod.populate('members', 'username profilePicture');
+    await pod.populate(podMemberPopulate('username profilePicture'));
 
     if (process.env.PG_HOST && PGPod) {
       try {

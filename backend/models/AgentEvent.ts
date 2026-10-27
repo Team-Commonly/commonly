@@ -117,6 +117,9 @@ export interface IAgentEvent extends Document {
   // Raw ambient rows presented inside a legacy wake or webhook delivery.
   // They settle only when that wake succeeds.
   digestEventIds?: Types.ObjectId[];
+  // When this wake read its pod's unread digest. A consumed wake settles every
+  // pending digest row created at or before it, not only the rows it quoted.
+  digestSnapshotAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -137,6 +140,7 @@ const AgentEventSchema = new Schema<IAgentEvent>(
     deliveryNonce: { type: String, default: null },
     digestRollupRevision: { type: Number, default: null },
     digestEventIds: [{ type: Schema.Types.ObjectId, ref: 'AgentEvent' }],
+    digestSnapshotAt: { type: Date, default: null },
     delivery: {
       outcome: {
         type: String,

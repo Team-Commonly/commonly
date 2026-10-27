@@ -33,6 +33,7 @@ jest.mock('../../../models/ToolCall', () => ({
 // `/:podId/grants` as type=<podId>, id='grants' if it were mounted first
 // (Wren 67721 / Vera 67727). The controller is stubbed so that shadowing shows.
 jest.mock('../../../controllers/podController', () => ({
+  updatePodParent: jest.fn(),
   getAllPods: jest.fn((req, res) => res.status(500).json({ shadowed: 'getAllPods' })),
   getPodsByType: jest.fn((req, res) => res.status(500).json({ shadowed: 'getPodsByType' })),
   getPodById: jest.fn((req, res) => res.status(500).json({ shadowed: 'getPodById', params: req.params })),
@@ -539,4 +540,24 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
     // assertion above is about the pod target.
     expect((await read(row.grantId)).body.grantBrokerRefusalScope).toBe('seat');
   });
+});
+
+test.each(['human', 'dual', 'agent'])('grant %s routes budget the actual credential despite unrelated header rotation', async (mode) => {
+  const credential = `${mode === 'human' ? 'user' : 'cm_agent'}_budget_${mode}`;
+  const send = (index, token = credential) => {
+    if (mode === 'human') return request(app).post('/api/grants').set('x-test-user', OWNER)
+      .set('x-auth-token', token).set('x-commonly-agent-token', `cm_agent_unrelated_${index}`).send({});
+    const path = mode === 'agent' ? '/api/grants/missing/attenuate' : '/api/grants/missing';
+    const req = mode === 'agent' ? request(app).post(path) : request(app).get(path);
+    return req.set('x-test-agent', SEAT).set('x-commonly-agent-token', token).set('x-auth-token', `unrelated_${index}`);
+  };
+  const expected = 404; // Authenticated handler refuses the deliberately missing connection/grant.
+  for (let index = 0; index < 60; index += 1) expect((await send(index)).status).toBe(expected);
+  expect((await send(60)).status).toBe(429);
+  expect((await send(61, `${credential}_other`)).status).toBe(expected);
+  // A read through the dual dispatcher spends the same budget as the write path.
+  const read = request(app).get('/api/grants/missing');
+  if (mode === 'human') read.set('x-test-user', OWNER).set('x-auth-token', credential);
+  else read.set('x-test-agent', SEAT).set('x-commonly-agent-token', credential);
+  expect((await read).status).toBe(429);
 });

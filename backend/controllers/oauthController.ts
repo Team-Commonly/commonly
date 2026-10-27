@@ -4,6 +4,7 @@ const axios = require('axios');
 const User = require('../models/User');
 const OAuthLoginState = require('../models/OAuthLoginState');
 const { cleanSignupRef } = require('../utils/signupRef');
+const { cleanSignupTouch, signupSourceFields } = require('../utils/signupSource');
 const AgentIdentityService = require('../services/agentIdentityService');
 const {
   isInviteOnlyRegistrationEnabled,
@@ -197,7 +198,7 @@ const generateUsername = async (hint: string, email: string) => {
 };
 
 const issueSession = (user: any) => {
-  const token = issueSessionToken(user);
+  const token = issueSessionToken(user, undefined, undefined, Math.floor(Date.now() / 1000));
   return {
     token,
     verified: user.verified,
@@ -237,6 +238,9 @@ exports.startOAuth = async (req: any, res: any) => {
       invitationCode: String(input.invite || '').trim(),
       next: safeNextPath(input.next),
       signupRef: cleanSignupRef(input.ref) || '',
+      // Attribution arrives in a form body, stays in this server-side state,
+      // and is never copied into a provider or completion URL.
+      ...(req.method === 'POST' ? { signupSource: cleanSignupTouch(input.signupSource, input.ref) } : {}),
       expiresAt: new Date(Date.now() + STATE_TTL_MS),
     });
 
@@ -336,14 +340,13 @@ exports.oauthCallback = async (req: any, res: any) => {
         return loginErrorRedirect(res, 'invitation_required');
       }
 
-      const signupRef = cleanSignupRef(stateRow.signupRef);
       user = new User({
         username: await generateUsername(profile.usernameHint, profile.email),
         email: profile.email,
         verified: true, // provider-asserted
         entitlements: { cloudAgents: invitationRedeemed },
         // Set at creation only: signing in to an existing account never changes it.
-        ...(signupRef ? { onboarding: { signupRef } } : {}),
+        ...signupSourceFields(stateRow.signupSource, provider, stateRow.signupRef),
         authProviders: [{
           provider,
           providerId: profile.providerId,

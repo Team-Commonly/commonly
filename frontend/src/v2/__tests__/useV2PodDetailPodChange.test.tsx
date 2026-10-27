@@ -22,6 +22,19 @@ const deferred = () => {
 describe('useV2PodDetail room changes', () => {
   beforeEach(() => jest.clearAllMocks());
 
+  it.each([200, 404, 500])('only a successful first messages request marks history loaded (HTTP %s)', async (status) => {
+    mockApi.get.mockImplementation((url) => {
+      if (url.startsWith('/api/messages/')) return status === 200
+        ? Promise.resolve([]) : Promise.reject({ response: { status }, message: 'unavailable' });
+      if (url.includes('/agents')) return Promise.resolve({ agents: [] });
+      return Promise.resolve({ _id: 'room', name: 'room', members: [] });
+    });
+    const { result } = renderHook(() => useV2PodDetail('room'));
+    await waitFor(() => expect(result.current.initialLoadComplete).toBe(true));
+    expect(result.current.initialMessagesLoaded).toBe(status === 200);
+    expect(result.current.messages).toEqual([]);
+  });
+
   it('clears immediately and rejects a late response from the previous room', async () => {
     const oldMessages = deferred();
     const newMessages = deferred();
@@ -39,6 +52,7 @@ describe('useV2PodDetail room changes', () => {
 
     act(() => rerender({ podId: 'new-room' }));
     expect(result.current.messages).toEqual([]);
+    expect(result.current.initialMessagesLoaded).toBe(false);
 
     await act(async () => {
       oldMessages.resolve([{

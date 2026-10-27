@@ -33,7 +33,7 @@ describe('trusted logos reserve their boxes (TASK-206)', () => {
     const config = /const TRUSTED_AFFILIATIONS = \[([\s\S]*?)\] as const;/.exec(PAGE);
     expect(config).not.toBeNull();
     const rows = [...config![1].matchAll(/\{([^}]+)\}/g)];
-    expect(rows).toHaveLength(11);
+    expect(rows).toHaveLength(24);
     for (const row of rows) {
       const logo = /logo: '([^']+)'/.exec(row[1]);
       const width = /width: ([\d.]+)/.exec(row[1]);

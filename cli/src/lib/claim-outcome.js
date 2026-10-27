@@ -20,8 +20,9 @@
  *                   finite. On any other wake it is terminal. The routing is
  *                   the kernel's: this module only names the outcome.
  *   - `declined`  — a silent, normally completed human broadcast. The agent
- *                   chose not to answer, so the kernel hands it to exactly one
- *                   remaining original listener.
+ *                   chose not to answer, or printed nothing (`empty-output`),
+ *                   so the kernel hands it to exactly one remaining original
+ *                   listener.
  *   - `completed` — everything else that produced a result: a posted reply, or
  *                   a skip with a reason (`no-prompt`, `claim-held`,
  *                   `duplicate-delivery`) where nothing was refused.
@@ -42,6 +43,13 @@ export const REFUSAL_REASONS = ['upstream-refused', 'cascade-cap', 'delivery-ref
 
 /** What an unclassifiable refusal is recorded as, rather than a fourth class. */
 export const DEFAULT_REFUSAL_REASON = 'delivery-refused';
+
+/**
+ * The reason a turn that printed nothing carries. It releases like a bare
+ * decline, so a human's message still reaches another listener, but it is not
+ * the `NO_REPLY` sentinel and does not mark a digest read.
+ */
+export const EMPTY_OUTPUT = 'empty-output';
 
 /**
  * The range the kernel accepts for a refusal's `status` — its
@@ -93,7 +101,7 @@ export const claimReleaseFor = (event, turnResult) => {
   if (event?.type === 'message.posted'
       && event.payload?.senderIsHuman === true
       && turnResult.outcome === 'no_action'
-      && !turnResult.reason) {
+      && (!turnResult.reason || turnResult.reason === EMPTY_OUTPUT)) {
     return { outcome: 'declined' };
   }
   return { outcome: 'completed' };

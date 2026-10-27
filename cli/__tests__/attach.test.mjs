@@ -33,6 +33,8 @@ const {
   loadAgentToken,
   buildDefaultEnvironment,
   bootstrapAgentRecordFromEnv,
+  parseAllowGrants,
+  checkRunAllowRequest,
   NO_AGENT_CLI_CODE,
   savedSeatLacksDefaultSandbox,
   BOOTSTRAP_ADAPTER_DETECT_ORDER,
@@ -378,7 +380,8 @@ const makeClient = ({ publishOk = true, runtimeToken = null } = {}) => {
     }
     throw new Error(`unexpected POST to ${route}`);
   });
-  return { post, get: jest.fn() };
+  return { post, get: jest.fn(async (route) => (route === '/api/registry/install/memory-handoff'
+    ? { installTimeMemoryHandoff: true } : undefined)) };
 };
 
 describe('performAttach', () => {
@@ -494,45 +497,50 @@ describe('performAttach', () => {
     );
   });
 
-  test('attach copies hosted memory before returning the local runnable token', async () => {
+  test('attach sends the handoff in the install request and consumes its result', async () => {
     const client = makeClient({ runtimeToken: 'cm_agent_local' });
-    const get = client.get;
-    client.get = jest.fn(async (route) => {
-      if (route === '/api/agent-memory/hosted/source-1/editable') return { sections: { long_term: { content: 'remember X' } } };
-      if (route === '/api/agent-memory/local/default/editable') return { sections: { long_term: { content: '', updatedAt: null, visibility: 'private' } } };
-      return get(route);
+    const post = client.post;
+    client.post = jest.fn(async (route, body) => {
+      const result = await post(route, body);
+      return route === '/api/registry/install' ? { ...result, memoryCopy: { copied: true } } : result;
     });
-    client.patch = jest.fn().mockResolvedValue({});
     const result = await performAttach({ client, adapterName: 'stub', agentName: 'local', podId: 'pod-1',
       memoryFrom: 'hosted', memoryInstance: 'source-1' });
     expect(result.runtimeToken).toBe('cm_agent_local');
-    expect(client.post.mock.calls.find(([route]) => route === '/api/registry/install')[1].resumeExisting).toBe(true);
-    expect(client.patch).toHaveBeenCalledWith('/api/agent-memory/local/default/editable/long_term',
-      { copyFrom: { agentName: 'hosted', instanceId: 'source-1' }, expectedUpdatedAt: null });
+    expect(client.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
+      resumeExisting: true, memoryFrom: { agentName: 'hosted', instanceId: 'source-1' },
+    }));
+    expect(client.get.mock.calls.some(([route]) => route.startsWith('/api/agent-memory'))).toBe(false);
   });
 
-  test('a refused memory copy preserves the saved token; a safe retry can rotate and complete', async () => {
-    const existing = { agentName: 'local', instanceId: 'default', podId: 'pod-1', runtimeToken: 'cm_agent_old', adapter: 'stub' };
-    saveAgentToken('local', existing);
+  test.each([undefined, {}, { installTimeMemoryHandoff: false }])('an older server refuses before publish or install: %j', async (capability) => {
     const client = makeClient();
-    const get = client.get;
-    let targetContent = 'independent note';
-    client.get = jest.fn(async (route) => {
-      if (route === '/api/agent-memory/hosted/default/editable') return { sections: { long_term: { content: 'remember X' } } };
-      if (route === '/api/agent-memory/local/default/editable') return { sections: { long_term: { content: targetContent, visibility: 'private', updatedAt: null } } };
-      return get(route);
+    client.get.mockResolvedValue(capability);
+    await expect(performAttach({ client, adapterName: 'stub', agentName: 'local', podId: 'pod-1', memoryFrom: 'hosted' }))
+      .rejects.toThrow(/upgrade the server/);
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
+  test('a missing capability endpoint refuses before publish or install', async () => {
+    const client = makeClient();
+    client.get.mockRejectedValue(new Error('Not found'));
+    await expect(performAttach({ client, adapterName: 'stub', agentName: 'local', podId: 'pod-1', memoryFrom: 'hosted' }))
+      .rejects.toThrow('Not found');
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
+  test('a refused install-time copy preserves the saved token and never mints another', async () => {
+    saveAgentToken('local', { agentName: 'local', runtimeToken: 'cm_agent_old' });
+    const client = makeClient();
+    const post = client.post;
+    client.post = jest.fn(async (route, body) => {
+      if (route === '/api/registry/install') throw new Error('Local agent already has different memory');
+      return post(route, body);
     });
-    client.patch = jest.fn().mockResolvedValue({});
-    const args = { client, adapterName: 'stub', agentName: 'local', podId: 'pod-1', memoryFrom: 'hosted' };
-    await expect(performAttach(args)).rejects.toThrow(/different memory/);
+    await expect(performAttach({ client, adapterName: 'stub', agentName: 'local', podId: 'pod-1', memoryFrom: 'hosted' }))
+      .rejects.toThrow(/different memory/);
     expect(loadAgentToken('local').runtimeToken).toBe('cm_agent_old');
     expect(client.post.mock.calls.some(([route]) => route.endsWith('/runtime-tokens'))).toBe(false);
-    targetContent = '';
-    const result = await performAttach(args);
-    expect(result.runtimeToken).toBe('cm_agent_from_tokens_route');
-    expect(client.patch.mock.invocationCallOrder[0]).toBeLessThan(client.post.mock.invocationCallOrder.at(-1));
-    saveAgentToken('local', { ...existing, runtimeToken: result.runtimeToken });
-    expect(loadAgentToken('local').runtimeToken).toBe('cm_agent_from_tokens_route');
   });
 
   test('omits config.wakeOnMessage by default (ADR-018 ambient wake is opt-in)', async () => {
@@ -830,6 +838,164 @@ describe('bootstrapAgentRecordFromEnv', () => {
     // and carries the daemon's default sandbox: nobody declared one, so the
     // seat is public and its mode resolves per host at spawn.
     expect(record.environment.sandbox).toEqual({ trust: 'public' });
+  });
+
+  // TASK-294: a claude seat whose every pod is confirmed private reads the
+  // directory it was started from; anything less keeps the public default.
+  describe('first-run workspace trust', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'commonly-bootstrap-ws-'));
+    const home = path.join(root, 'home');
+    const repo = path.join(home, 'code', 'repo');
+    fs.mkdirSync(repo, { recursive: true });
+    afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+
+    const withVisibility = (publicRead) => ({
+      ...identityResponse,
+      installations: identityResponse.installations.map((row) => ({
+        ...row, publicRead, communityListed: false, joinPolicy: 'invite-only',
+      })),
+    });
+    const run = async ({
+      response, startDir = repo, registry = makeRegistry(), allow, platform = 'darwin',
+    } = {}) => {
+      const lines = [];
+      const record = await bootstrapAgentRecordFromEnv({
+        name: 'smoke-agent',
+        env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+        clientFactory: makeFactory(response),
+        adapterRegistry: registry,
+        log: (line) => lines.push(line),
+        startDir,
+        home,
+        platform,
+        ...(allow ? { allow } : {}),
+      });
+      return { record, lines };
+    };
+
+    test('every pod private and a project start dir: the seat reads that project', async () => {
+      const { record, lines } = await run({ response: withVisibility(false) });
+      expect(record.adapter).toBe('claude');
+      expect(record.environment.sandbox).toEqual({ trust: 'workspace' });
+      expect(record.workspacePath).toBe(fs.realpathSync(repo));
+      expect(record.environment.mcp[0].name).toBe('commonly');
+      expect(lines.some((line) => line.includes(fs.realpathSync(repo)))).toBe(true);
+    });
+
+    test('one publicly readable pod keeps the public default and says why', async () => {
+      const response = withVisibility(false);
+      response.installations[1] = { ...response.installations[1], publicRead: true };
+      const { record, lines } = await run({ response });
+      expect(record.environment.sandbox).toEqual({ trust: 'public' });
+      expect(record.workspacePath).toBeNull();
+      expect(lines.some((line) => /scratch folder.*publicly readable/.test(line))).toBe(true);
+    });
+
+    test('a server that reports no visibility keeps the public default', async () => {
+      const { record } = await run({ response: identityResponse });
+      expect(record.environment.sandbox).toEqual({ trust: 'public' });
+      expect(record.workspacePath).toBeNull();
+    });
+
+    test('started from $HOME keeps the public default and says where to start instead', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), startDir: home });
+      expect(record.environment.sandbox).toEqual({ trust: 'public' });
+      expect(record.workspacePath).toBeNull();
+      expect(lines.some((line) => /your home directory\. To let it read a project/.test(line))).toBe(true);
+    });
+
+    test('on Linux the seat keeps the public default and says why, since its adapter refuses workspace there', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), platform: 'linux' });
+      expect(record.environment.sandbox).toEqual({ trust: 'public' });
+      expect(record.workspacePath).toBeNull();
+      expect(lines.some((line) => /scratch folder, because an agent works in its folder only on macOS/
+        .test(line))).toBe(true);
+      await expect(run({ response: withVisibility(false), platform: 'linux', allow: ['write'] }))
+        .rejects.toThrow(/--allow write applies only .* only on macOS for now/);
+    });
+
+    test('a codex seat keeps its baseline and hears nothing about workspaces', async () => {
+      const { record, lines } = await run({
+        response: withVisibility(false), registry: makeRegistry({ claudeFound: false }),
+      });
+      expect(record.adapter).toBe('codex');
+      expect(record.workspacePath).toBeNull();
+      expect(record.environment.sandbox?.trust).not.toBe('workspace');
+      expect(lines.some((line) => /scratch folder|can read/.test(line))).toBe(false);
+    });
+
+    test('a write grant lands on the record, and the line says its commands reach the network', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), allow: ['write'] });
+      expect(record.environment.sandbox).toEqual({ trust: 'workspace', allow: ['write'] });
+      const said = lines.find((line) => line.includes(fs.realpathSync(repo)));
+      expect(said).toMatch(/can read and edit files in .* and run commands there\./);
+      expect(said).toMatch(/commands can reach the network/);
+      expect(said).toMatch(/\.git stays read-only, so it cannot commit/);
+    });
+
+    test('a web grant alone reads, runs read-only git and fetches pages, and still cannot edit', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), allow: ['web'] });
+      expect(record.environment.sandbox).toEqual({ trust: 'workspace', allow: ['web'] });
+      expect(lines.some((line) => /run read-only git there, and fetch web pages; it cannot edit files\./
+        .test(line))).toBe(true);
+    });
+
+    test('both grants are named in one line', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), allow: ['write', 'web'] });
+      expect(record.environment.sandbox).toEqual({ trust: 'workspace', allow: ['write', 'web'] });
+      expect(lines.some((line) => /run commands there, and fetch web pages\. Its commands can reach the network/
+        .test(line))).toBe(true);
+    });
+
+    test('grants on a seat that will not work in its folder are refused with the reason', async () => {
+      const response = withVisibility(false);
+      response.installations[1] = { ...response.installations[1], publicRead: true };
+      await expect(run({ response, allow: ['write'] }))
+        .rejects.toThrow(/--allow write applies only to an agent that works in the folder it starts in.*scratch folder, because .*publicly readable/);
+    });
+
+    test('grants on a codex seat are refused rather than dropped', async () => {
+      await expect(run({
+        response: withVisibility(false), registry: makeRegistry({ claudeFound: false }), allow: ['web'],
+      })).rejects.toThrow(/--allow web applies only to an agent that works in the folder it starts in/);
+    });
+  });
+
+  // TASK-294: `run --allow`, read once when the token file is written.
+  describe('run --allow', () => {
+    test('takes write and web, comma-separated, in a fixed order, once each', () => {
+      expect(parseAllowGrants(undefined)).toEqual([]);
+      expect(parseAllowGrants('web,write')).toEqual(['write', 'web']);
+      expect(parseAllowGrants(' write , write,')).toEqual(['write']);
+    });
+
+    test.each(['', ',', 'bash', 'write,net', 'Write'])('refuses %j rather than dropping it', (value) => {
+      expect(() => parseAllowGrants(value)).toThrow(/--allow takes write and\/or web, comma-separated/);
+    });
+
+    const saved = (allow) => ({
+      agentName: 'smoke-agent',
+      environment: { sandbox: { trust: 'workspace', ...(allow ? { allow } : {}) } },
+    });
+
+    test('a run without --allow keeps whatever the token file holds', () => {
+      expect(checkRunAllowRequest({ record: saved(['write']), requested: [] })).toEqual({ ok: true });
+    });
+
+    test('a run that asks for the grants the token file holds goes ahead', () => {
+      expect(checkRunAllowRequest({ record: saved(['write', 'web']), requested: ['write', 'web'] }))
+        .toEqual({ ok: true });
+    });
+
+    test('a run that asks for other grants is refused with the way to change them', () => {
+      const none = checkRunAllowRequest({ record: saved(), requested: ['write'] });
+      expect(none.ok).toBe(false);
+      expect(none.message).toMatch(/'smoke-agent' was set up with no --allow; --allow write was not applied\./);
+      expect(none.message).toMatch(/commonly agent detach smoke-agent --force, then re-run .* --allow write/);
+      const fewer = checkRunAllowRequest({ record: saved(['write', 'web']), requested: ['write'] });
+      expect(fewer.ok).toBe(false);
+      expect(fewer.message).toMatch(/was set up with --allow write,web; --allow write was not applied/);
+    });
   });
 
   test('a pi seat bootstrapped from env gets the kernel server but no sandbox block, which pi refuses', async () => {
@@ -1246,5 +1412,30 @@ describe('bootstrapAgentRecordFromEnv', () => {
     // otherwise be silent: a seat booting against a pod whose installation is
     // not live.
     expect(record.podId).toBe('pod-stale');
+  });
+});
+
+describe('resolveAttachSandbox — workspace trust (TASK-294)', () => {
+  test('a claude seat resolves the same host mode a public one does', () => {
+    expect(resolveAttachSandbox({
+      environment: { sandbox: { trust: 'workspace' } }, adapterName: 'claude', platform: 'darwin',
+    })).toEqual({ mode: 'workspace', trust: 'workspace' });
+    expect(resolveAttachSandbox({
+      environment: { sandbox: { trust: 'workspace' } }, adapterName: 'claude', platform: 'linux',
+    })).toEqual({ mode: 'bwrap', trust: 'workspace' });
+  });
+
+  test('every other adapter is refused before anything is published', () => {
+    for (const adapterName of ['codex', 'opencode', 'qwen', 'pi', 'goose', 'dsh']) {
+      expect(() => resolveAttachSandbox({
+        environment: { sandbox: { trust: 'workspace' } }, adapterName, platform: 'darwin',
+      })).toThrow(new RegExp(`^${adapterName} adapter: sandbox\\.trust=workspace is claude-only for now`));
+    }
+  });
+
+  test('beside mode none it is refused, never run unsandboxed', () => {
+    expect(() => resolveAttachSandbox({
+      environment: { sandbox: { trust: 'workspace', mode: 'none' } }, adapterName: 'claude',
+    })).toThrow(/sandbox\.trust=workspace requires an enforced sandbox mode/);
   });
 });

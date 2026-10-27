@@ -1,0 +1,428 @@
+{
+  "$defs": {
+    "Card": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Card"
+              },
+              {
+                "$ref": "#/$defs/Text"
+              },
+              {
+                "$ref": "#/$defs/List"
+              },
+              {
+                "$ref": "#/$defs/Steps"
+              },
+              {
+                "$ref": "#/$defs/DiffSummary"
+              },
+              {
+                "$ref": "#/$defs/TaskStatus"
+              },
+              {
+                "$ref": "#/$defs/KeyValue"
+              },
+              {
+                "$ref": "#/$defs/Table"
+              },
+              {
+                "$ref": "#/$defs/Badge"
+              },
+              {
+                "$ref": "#/$defs/Link"
+              },
+              {
+                "$ref": "#/$defs/RunTrace"
+              }
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 6
+        },
+        "meta": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "title",
+        "children"
+      ],
+      "additionalProperties": false
+    },
+    "Text": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 600
+            },
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 600
+                  },
+                  {
+                    "$ref": "#/$defs/Link"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "List": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "minItems": 1,
+          "maxItems": 8
+        },
+        "ordered": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "additionalProperties": false
+    },
+    "Steps": {
+      "type": "object",
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "minItems": 2,
+          "maxItems": 8
+        }
+      },
+      "required": [
+        "steps"
+      ],
+      "additionalProperties": false
+    },
+    "Step": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "active",
+            "done",
+            "failed",
+            "skipped"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 120
+        }
+      },
+      "required": [
+        "label",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "DiffSummary": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/File"
+          }
+        }
+      },
+      "required": [
+        "files"
+      ],
+      "additionalProperties": false
+    },
+    "File": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "added": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removed": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "path",
+        "added",
+        "removed"
+      ],
+      "additionalProperties": false
+    },
+    "TaskStatus": {
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "taskId"
+      ],
+      "additionalProperties": false
+    },
+    "KeyValue": {
+      "type": "object",
+      "properties": {
+        "pairs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pair"
+          }
+        }
+      },
+      "required": [
+        "pairs"
+      ],
+      "additionalProperties": false
+    },
+    "Pair": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "Table": {
+      "type": "object",
+      "properties": {
+        "columns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Col"
+          },
+          "minItems": 1
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "required": [
+        "columns",
+        "rows"
+      ],
+      "additionalProperties": false
+    },
+    "Col": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "additionalProperties": false
+    },
+    "Badge": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "maxLength": 24
+        },
+        "tone": {
+          "type": "string",
+          "enum": [
+            "neutral",
+            "ink",
+            "done",
+            "failed",
+            "pending"
+          ]
+        }
+      },
+      "required": [
+        "label",
+        "tone"
+      ],
+      "additionalProperties": false
+    },
+    "Link": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "url": {
+          "type": "string"
+        },
+        "as": {
+          "type": "string",
+          "enum": [
+            "text",
+            "button",
+            "primary"
+          ]
+        }
+      },
+      "required": [
+        "label",
+        "url",
+        "as"
+      ],
+      "additionalProperties": false
+    },
+    "RunTrace": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "default": 3
+        }
+      },
+      "required": [
+        "limit"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "Card": {
+      "$ref": "#/$defs/Card"
+    },
+    "Text": {
+      "$ref": "#/$defs/Text"
+    },
+    "List": {
+      "$ref": "#/$defs/List"
+    },
+    "Steps": {
+      "$ref": "#/$defs/Steps"
+    },
+    "Step": {
+      "$ref": "#/$defs/Step"
+    },
+    "DiffSummary": {
+      "$ref": "#/$defs/DiffSummary"
+    },
+    "File": {
+      "$ref": "#/$defs/File"
+    },
+    "TaskStatus": {
+      "$ref": "#/$defs/TaskStatus"
+    },
+    "KeyValue": {
+      "$ref": "#/$defs/KeyValue"
+    },
+    "Pair": {
+      "$ref": "#/$defs/Pair"
+    },
+    "Table": {
+      "$ref": "#/$defs/Table"
+    },
+    "Col": {
+      "$ref": "#/$defs/Col"
+    },
+    "Badge": {
+      "$ref": "#/$defs/Badge"
+    },
+    "Link": {
+      "$ref": "#/$defs/Link"
+    },
+    "RunTrace": {
+      "$ref": "#/$defs/RunTrace"
+    }
+  }
+}

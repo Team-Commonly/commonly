@@ -47,6 +47,7 @@ import { buildMemoryPreamble } from '../memory-bridge.js';
 import {
   isLegacySandboxTrust,
   normalizeSandboxTrust,
+  refuseWorkspaceTrust,
   validateEnvironmentSpec,
 } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
@@ -651,6 +652,7 @@ export default {
   async spawn(prompt, rawCtx = {}) {
     const seatModel = requireSeatModel(rawCtx.environment, 'opencode');
     const sandbox = normalizeSandboxTrust(rawCtx.environment?.sandbox);
+    refuseWorkspaceTrust(sandbox, 'opencode');
     const ctx = rawCtx.environment
       ? { ...rawCtx, environment: { ...rawCtx.environment, sandbox } }
       : rawCtx;

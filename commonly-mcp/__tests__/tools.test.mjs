@@ -5,6 +5,7 @@
  * (via the same _fetchImpl seam in client.js) and assert the wire shape.
  */
 
+import { readFileSync } from 'node:fs';
 import { jest } from '@jest/globals';
 import { buildTools } from '../src/tools.js';
 import { HttpError } from '../src/client.js';
@@ -74,6 +75,19 @@ const okResponse = (body) => ({
 afterEach(() => { delete global.fetch; });
 
 describe('commonly_post_message', () => {
+  it('forwards UI card payload and explicit type alongside the text fallback', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ id: 'card1' }));
+    const payload = { catalogId: 'commonly.ui', catalogRev: 1, catalogHash: 'sha256:bb8b4de07f90c06ee48f254d86478b5bd347c738b3e86cf65e2f32e26534db57', kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hello")' };
+    await byName.commonly_post_message.call({ podId: 'p', content: 'fallback', messageType: 'card', payload });
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toEqual({ content: 'fallback', messageType: 'card', payload });
+    expect(byName.commonly_post_message.inputSchema.properties.messageType.enum).toContain('card');
+    expect(byName.commonly_post_message.inputSchema.properties.payload.type).toBe('object');
+    const description = byName.commonly_post_message.inputSchema.properties.payload.description;
+    expect(description).toContain(`catalogId:"${payload.catalogId}"`);
+    expect(description).toContain(`catalogRev:${payload.catalogRev}`);
+    expect(description).toContain(payload.catalogHash);
+  });
+
   it('POSTs to the right path with body', async () => {
     const fetchSpy = installFetch(async () => okResponse({ id: 'm1' }));
     const result = await byName.commonly_post_message.call({
@@ -676,4 +690,11 @@ describe('per-event inbox checkpoint', () => {
     expect(JSON.stringify(result)).toContain('stale_delivery');
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
+});
+
+test('post schema publishes the current catalogue tuple without a private manifest lookup', () => {
+  const revision = JSON.parse(readFileSync(new URL('../../backend/config/uiCardCatalogueRevision.json', import.meta.url), 'utf8'));
+  const description = byName.commonly_post_message.inputSchema.properties.payload.description;
+  for (const value of Object.values(revision)) expect(description).toContain(String(value));
+  expect(description).not.toContain('published catalogue revision manifest');
 });

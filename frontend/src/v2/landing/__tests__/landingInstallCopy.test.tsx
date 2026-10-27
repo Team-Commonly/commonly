@@ -104,6 +104,11 @@ describe('landing install line copy control (TASK-154)', () => {
     });
   });
 
+  it('names the install controls with a group role (TASK-217)', () => {
+    renderLanding();
+    expect(screen.getByRole('group', { name: 'Self-host install' })).toContainElement(installButton());
+  });
+
   it('writes the shipped command exactly, with no prompt and no trailing newline', () => {
     renderLanding();
     fireEvent.click(installButton());

@@ -23,6 +23,8 @@ const connectorSecrets = require('../services/connectorSecrets');
 // eslint-disable-next-line global-require
 const { DISCORD_WEBHOOK_URL } = require('../services/connectorSecretKinds');
 // eslint-disable-next-line global-require
+const { isFeedType, takeFeedTokens, storeFeedTokens } = require('../services/feedCredentials');
+// eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
@@ -140,6 +142,10 @@ const router: ReturnType<typeof express.Router> = express.Router();
 router.use('/connect/hosted-mcp', hostedMcpConnectRoutes);
 
 const resolveEffectiveConfig = (type: string, config: Record<string, unknown> = {}) => {
+  // An X / Instagram row holds its token as a ref (`services/feedCredentials`),
+  // so the stored ref satisfies the `accessToken` the manifest names; a request
+  // that supplies a token satisfies it before the token is stored.
+  if (isFeedType(type)) return { ...config, accessToken: config.accessToken || config.feedAccessTokenRef };
   if (type !== 'discord') return config;
   // env-first for every read, including this validation one (TASK-124).
   return { ...config, botToken: resolveDiscordBotToken(config.botToken) };
@@ -495,7 +501,17 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     if (type === 'discord' && missingRequired.length) return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
     if (missingRequired.length && (req.body as { status?: string })?.status === 'connected') return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
     validateManifestIfComplete(type, nextConfig);
-    const integration = new Integration({ podId, type, config: nextConfig, createdBy: req.user?.id, status: 'pending' });
+    let rowConfig = nextConfig;
+    const integrationId = new Types.ObjectId();
+    if (isFeedType(type)) {
+      // The token is stored through connectorSecrets under the row's id; the row
+      // is created holding only its ref.
+      const { rest, tokens } = takeFeedTokens(nextConfig);
+      rowConfig = { ...rest, ...await storeFeedTokens(String(integrationId), type, tokens) };
+    }
+    const integration = new Integration({
+      _id: integrationId, podId, type, config: rowConfig, createdBy: req.user?.id, status: 'pending',
+    });
     await integration.save();
     let platformIntegration = null;
     if (type === 'discord') {
@@ -517,7 +533,7 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
       platformIntegration = new DiscordIntegration({ integrationId: integration._id, serverId: config.serverId, serverName: config.serverName, channelId: config.channelId, channelName: config.channelName, webhookId: webhook.id, permissions: config.permissions || ['read_messages', 'send_messages'] });
       await platformIntegration.save();
     } else if (['slack', 'groupme', 'telegram', 'messenger', 'whatsapp', 'x', 'instagram'].includes(type)) {
-      integration.status = isManifestComplete(type, nextConfig) ? 'connected' : 'pending';
+      integration.status = isManifestComplete(type, rowConfig) ? 'connected' : 'pending';
       await integration.save();
     } else {
       return res.status(400).json({ message: 'Unsupported integration type' });
@@ -536,7 +552,7 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
   }
 });
 
-router.post('/:id/connect', auth, async (req: AuthReq, res: Res) => {
+router.post('/:id/connect', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;
@@ -556,7 +572,7 @@ router.post('/:id/connect', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/:id/disconnect', auth, async (req: AuthReq, res: Res) => {
+router.post('/:id/disconnect', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;
@@ -832,8 +848,16 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
     // Do not replace a snapshot of config: cards/relayMap may have been
     // appended (or closed) since the read above. Only write the requested
     // top-level fields; a gates map still replaces that one field as before.
-    if (incoming) {
-      Object.keys(incoming).forEach((key) => { update[`config.${key}`] = nextConfig[key]; });
+    let written = incoming;
+    if (incoming && isFeedType(integration.type)) {
+      // A supplied token is stored through connectorSecrets; the row takes the ref.
+      const { rest, tokens } = takeFeedTokens(incoming);
+      written = { ...rest, ...await storeFeedTokens(String(integrationId), integration.type || '', tokens) };
+    }
+    if (incoming && written) {
+      Object.keys(written).forEach((key) => {
+        update[`config.${key}`] = key in incoming ? nextConfig[key] : written[key];
+      });
       if (incoming.liveRelay === true) update['config.linkedUserId'] = req.user?.id;
     }
     if (podId !== undefined) update.podId = podId;

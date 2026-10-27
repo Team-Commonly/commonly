@@ -1,3 +1,4 @@
+import dualAuth, { resolveDualAuthCredential } from '../middleware/dualAuth';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
@@ -39,13 +40,23 @@ const router = express.Router();
 // The trail is read by the people in the room and by the seat it was granted
 // to, so the calls route takes either identity — the shape reactions and
 // artifacts use.
-const dualAuth = (req: any, res: any, next: any) => {
-  const bearer = ((req.header?.('Authorization') || '').replace('Bearer ', '')).trim();
-  const altHeader = (req.header?.('x-commonly-agent-token') || '').trim();
-  const token = bearer || altHeader;
-  if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
-  return auth(req, res, next);
+
+// The same budget spans human-only, agent-only and dual-auth operations.
+// Bind the route's actual credential before the limiter; no verifier/DB work runs here.
+const grantLimiterCredential = Symbol('grantLimiterCredential');
+type GrantLimitRequest = express.Request & { [grantLimiterCredential]?: string };
+const bindGrantLimiterCredential = (
+  select: (req: express.Request) => string | undefined,
+): express.RequestHandler => (req, _res, next) => {
+  (req as GrantLimitRequest)[grantLimiterCredential] = select(req) || '';
+  next();
 };
+const dualGrantCredential = bindGrantLimiterCredential((req) => resolveDualAuthCredential(req).token);
+const agentGrantCredential = bindGrantLimiterCredential((req) => {
+  const authorization = req.get('Authorization');
+  return authorization?.startsWith('Bearer ')
+    ? authorization.replace('Bearer ', '').trim() : req.get('x-commonly-agent-token');
+});
 
 const grantRateLimit = rateLimit({
   windowMs: 60_000,
@@ -53,7 +64,8 @@ const grantRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req: express.Request): string => {
-    const authHeader = req.get('Authorization') || req.get('x-auth-token');
+    const authHeader = (req as GrantLimitRequest)[grantLimiterCredential]
+      ?? ((req.get('Authorization') || '').replace('Bearer ', '').trim() || req.get('x-auth-token'));
     if (authHeader) return `grant:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
     return cloudflareIpRateLimitKeyGenerator(req as never);
   },
@@ -376,6 +388,13 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       return res.status(400).json({ error: 'invalid_audience', message: 'audience must be current target members' });
     }
 
+    if (target.kind === 'pod' && Array.isArray(body.audience) && body.audience.length === 0) {
+      return res.status(400).json({
+        error: 'invalid_audience',
+        message: 'name at least one agent, or omit audience for all current members',
+      });
+    }
+
     // The broker is the catalogue's business, never the body's (Vera 67728):
     // a caller who names one is refused, the grant names the proxy the seeded
     // tool Installable points at, and may only allow tools that Installable
@@ -428,6 +447,7 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
 /** Agent-only delegation; all parent capabilities are loaded server-side. */
 router.post(
   '/:grantId/attenuate',
+  agentGrantCredential,
   grantRateLimit,
   agentRuntimeAuth,
   async (req: AuthenticatedRequest, res: express.Response) => {
@@ -527,7 +547,7 @@ const gateGrantRead = async (
  * outcome. A line carries `argsDigest`, never the arguments — the broker never
  * stored them (ToolCall.digestArgs).
  */
-router.get('/:grantId/calls', grantRateLimit, dualAuth, async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/:grantId/calls', dualGrantCredential, grantRateLimit, dualAuth, async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const grant = await RoomGrant.findOne({ grantId: req.params.grantId }).lean();
     if (!grant) return res.status(404).json({ error: 'grant_not_found' });
@@ -567,7 +587,7 @@ router.get('/:grantId/calls', grantRateLimit, dualAuth, async (req: Authenticate
 
 // Read is gated exactly as the trail is, and projected: the explicit field
 // list and nothing else — never connectionId, brokerId or the raw audience.
-router.get('/:grantId', grantRateLimit, dualAuth, async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/:grantId', dualGrantCredential, grantRateLimit, dualAuth, async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const grant = await RoomGrant.findOne({ grantId: req.params.grantId }).lean();
     if (!grant) return res.status(404).json({ error: 'grant_not_found' });

@@ -128,6 +128,9 @@ jobs:
           git merge-base --is-ancestor "$sha" origin/main \
             || { echo "::error::$tag points at $sha, which is not on main"; exit 1; }
           git checkout -q --detach "$sha"
+          # Same install as npm-publish: the cli bundles packages/seats, and its
+          # prepack refuses to pack without node_modules/@commonlyai/seats.
+          ( cd "$PKG" && npm ci --ignore-scripts )
           bash scripts/npm-artifact-diff.sh "$PKG" "$reg_v" \
             || { echo "::error::$name $reg_v does not match the commit its tag names ($tag → $sha)"; exit 1; }
           echo "✓ $name $reg_v = $tag = $sha"
