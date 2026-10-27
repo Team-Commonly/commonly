@@ -1606,3 +1606,10 @@
 /* zh terms break only between words (keep-all); the ZWSP in eachOwnAgent is the
    one permitted break point, so 每个人 / 自己的智能体 at 320. */
 :lang(zh) .v2-landing__rotator { word-break: keep-all; }
+/* UX-GATE HOLD on 18bf0ce9: in zh between 761 and 1339 px the suffix shares line 2
+   with 队友的智能体 and wraps for the other two terms, so the h1 jumped 63–84px on
+   every rotation. The suffix takes its own line in that band, as TASK-213 does on
+   phones. Measured steady from 320 to 1920 with this rule; en has no suffix element. */
+@media (min-width: 761px) and (max-width: 1359px) {
+  .v2-landing__title-suffix { display: block; margin-left: 0; }
+}

@@ -1782,6 +1782,28 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(selectorRuleBody(phone, '.v2-landing__title-suffix')).toContain('margin-left: 0');
   });
 
+  test('the D129 phone hero rotator wraps and balances, and zh terms break only at the ZWSP', () => {
+    // CodeRabbit (Minor) on #2883: presence pins for the ≤760 rotator rules. jsdom
+    // has no line boxes, so these only guard against the declarations being dropped.
+    // The block is placed last in the sheet and wins by order over the ≤680 rules.
+    expect(landing).toContain('.v2-landing__rotator { max-width: 100%; min-height: calc(72px + 0.06em); text-wrap: balance; }');
+    expect(landing).toContain('.v2-landing__rotator-term { white-space: normal; }');
+    expect(landing).toMatch(/:lang\(zh\) \.v2-landing__rotator \{ word-break: keep-all; \}/);
+  });
+
+  test('the zh hero suffix takes its own line from 761 to 1359 px', () => {
+    // UX-GATE HOLD on 18bf0ce9. Between 761 and 1339 px the zh suffix shared line
+    // 2 with 队友的智能体 and wrapped for the other two terms, so the h1 changed
+    // height on every rotation (173↔257 at 1200). The band sits between TASK-213's
+    // phone rule (≤680) and the desktop title, so this is its own block. jsdom has
+    // no line boxes; the pin binds to ux-lead's zh sweep at 761/900/1060/1200/1300/
+    // 1359/1360, and `mediaAt` returns '' if the block is dropped.
+    const band = mediaAt(landing, '@media (min-width: 761px) and (max-width: 1359px) {');
+    expect(band).not.toBe('');
+    expect(selectorRuleBody(band, '.v2-landing__title-suffix')).toContain('display: block');
+    expect(selectorRuleBody(band, '.v2-landing__title-suffix')).toContain('margin-left: 0');
+  });
+
   test('reaction chips baseline-align emoji ink with the count (not box-centering)', () => {
     // align-items: center centers the spans' layout boxes, but Apple Color
     // Emoji ink extends below the baseline while digit ink does not, so the
