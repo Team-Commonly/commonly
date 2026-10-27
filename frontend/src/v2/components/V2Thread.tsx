@@ -1536,6 +1536,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           // notified — "No agent was notified" would be false on screen while
           // it's already typing (#914).
           && (delivery.woken ?? 0) === 0
+          // A plain reply to an agent's message reaches it through the
+          // reply-edge (implicit) path, not a mention. That agent WILL answer,
+          // so "No agent was notified" would be false on screen.
+          && (delivery.implicit?.length ?? 0) === 0
           && delivery.agentsInPod > 0
           && mentionHandle
         ) {
