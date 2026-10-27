@@ -1,6 +1,6 @@
 # Connector result cards — design note (D145)
 
-**Status:** design, 2026-10-27. Docs only; no code changes. **Gate:** Vera.
+**Status:** design, 2026-10-27. Docs only; no code changes. Covers two lanes: connector and source results (lane 1), and agent-authored visuals (lane 2). **Gate:** Vera.
 **Owner of the decision:** CTO (connector lane), per Cofounder D77. This note recommends; it does not rule.
 **Scope:** how a connector tool result (first case: a Linear issue) becomes a card in a pod, and which of two options to build.
 
@@ -65,6 +65,49 @@ The broker composes a typed `tool-card` payload. A small set of React components
 
 1. The CTO rules on the existing agent-authored OpenUI envelope (above) before the first connector card ships, so the two paths are not confused in review.
 2. The server test suite includes an arm asserting that an agent cannot write a `tool-card` kind, mirroring the existing `kind !== 'ui'` refusal.
+
+## Two lanes
+
+The scope covers two lanes. They have different trust models, so they get different rules.
+
+### Lane 1: connector and source results (what an agent cites)
+
+Examples: a Linear issue, a search result, a fetched page, a file. The server composes the card from the broker's result. The four invariants above apply in full. Credentials and raw vendor responses stay server-side. The card carries only the fields its mapper pins.
+
+For sourced information, one addition: a cited source needs a stable reference. The card stores the URL (https only), the fetch time, and a title. It does not store the page body.
+
+### Lane 2: agent-authored visuals (the agent's own content)
+
+Examples: a decision, a comparison, a status summary. Here the agent may emit an OpenUI spec, because the content is the agent's own and not vendor data. This is the path the repo already ships (see the correction above). The requirements are:
+
+- **No scripts.** The shipped catalogue has no script-bearing component. The validator refuses `Query`, `Mutation` and `Run` (`uiCardValidation.ts`, around line 239).
+- **No network.** The only outbound element is `Link` or `Action(OpenUrl)`, both restricted to literal https URLs with no credentials. These navigate when the user clicks. They do not fetch.
+- **Nothing credentialed in reach.** The renderer has no tool binding and no token. Keep it that way: any future catalogue entry that can fetch or call a tool needs its own design note.
+- **Through the payload-card path.** The agent writes `kind: 'ui'` through the validated writer. The server does not stamp or compose these.
+
+Where decision cards would gain: a decision card currently shows its options as plain text. A `Table` of options with a `Badge` for the recommendation and a `Link` to the full context would read faster. That is a catalogue question, not a new primitive. The decision-card design is in [decision-card-in-channel.md](decision-card-in-channel.md). Any change there must keep the decision state server-owned, because only a human resolves a decision.
+
+## Vendor MCP / tool interface: what the public docs say
+
+Checked 2026-10-27 against the public docs. Sources:
+
+- OpenUI repository README (`github.com/thesysdev/openui`): no mention of MCP, of a tool interface for agents, or of how the renderer treats tool calls.
+- OpenUI Lang comparison page (`docs/content/docs/openui-lang/comparison.mdx`): no mention of MCP or tool calls. Its "Security risk" row rates OpenUI as minimal, with no reasoning given.
+- OpenUI Lang queries and mutations page (`docs/content/docs/openui-lang/queries-mutations.mdx`): states that the `Renderer` is a client component and that its functions "run in the browser". It also states that "The runtime calls your tools directly, without the model."
+- openui.com docs (the Thesys C1 docs redirect here): no MCP server or tool interface for agents. The page does not say whether the renderer runs scripts.
+- Web search found only third-party MCP servers that wrap OpenUI (for example "OpenUI MCP Studio", a separate project). None is documented by Thesys.
+
+**Conclusion:** the public docs do not show an OpenUI or Thesys MCP server or any tool interface that agents can call. The only tool model is the browser-side one above, which is the opposite of what invariant 3 needs.
+
+**Exact questions for Sam to ask Thesys directly:**
+
+1. Does Thesys (or OpenUI) publish an MCP server, or plan to, that an agent can call to get a rendered UI?
+2. If an agent sends a payload to our backend, can the OpenUI renderer run with `Query`, `Mutation` and `toolProvider` disabled, so no tool call runs in the browser?
+3. Does the OpenUI renderer execute any script or evaluate any expression from a payload? The `lang-core` docs list a "runtime-evaluation" layer without saying what it does.
+4. Is there a server-side renderer, so that our backend can produce a static, script-free document rather than the browser doing it?
+5. What license and terms apply to the renderer, and to a hosted product (Thesys C1 or "OpenUI Cloud") if we ever use it?
+
+Until those are answered, the note assumes no vendor MCP server exists.
 
 ## Design sketch for (b)
 
