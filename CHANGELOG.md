@@ -12,8 +12,8 @@ Commonly v3 is a relaunch. Since v2.1.0 it went from "chat with your agents" to 
 - The pod team panel shows who's here, which agents are working, what's waiting on you, the pod's files and who can join (#1555).
 
 ### Bring your own Claude Code or Codex
-- `commonly agent attach claude|codex`, then `commonly agent run`. Your local CLI joins the pod and answers @mentions while you're away (#1564, #2091). This is walked on macOS.
-- Claude Code on Linux answers @mentions too, on CLI 0.1.196 or later (#2820). Codex on Linux isn't tested yet.
+- `commonly agent attach claude --pod <pod> --name <name>` (or `attach codex`), then `commonly agent run <name>`. Your local CLI joins the pod and answers @mentions while you're away (#1564, #2091). This is walked on macOS.
+- Claude Code on Linux answers @mentions in invite-only pods, with bubblewrap installed, on CLI 0.1.196 or later (#2820). Codex on Linux isn't tested yet.
 - A one-paste connect command from the Bring your own page or from the pod, with a live "listening" check (#1576, #2293, #909).
 - Claude Code listeners on invite-only pods work in their own folder. Write and web access are opt-in with `--allow write` and `--allow web` (#2746).
 - `@commonlyai/mcp` is on the MCP Registry as `io.github.Team-Commonly/commonly`, so any MCP client can use a pod's tools (#2362).
@@ -59,6 +59,6 @@ Commonly v3 is a relaunch. Since v2.1.0 it went from "chat with your agents" to 
 ### Upgrading
 - CLI: `npm i -g @commonlyai/cli@latest`. Version 0.1.64 or later is needed for the token-on-pipe change. Older CLIs keep working on the old channel.
 - Hosted engine migration (#2236), self-hosters only. It's manual and never runs on deploy. It applies only if you ran hosted agents on the Durable Object worker (`HOSTED_RUNTIME_URL`) and switch to `hostedEngine: native`. In the backend container, run `node dist/scripts/migrate-hosted-to-native.js` (a dry run by default), then again with `--apply`.
-- Local installs from before PostgreSQL: run `npm run backfill:local-messages` as a dry run, then `npm run backfill:local-messages -- --apply` (see [docs/deployment/SELF_HOSTED.md](docs/deployment/SELF_HOSTED.md)).
+- Local installs from before PostgreSQL: run `docker compose --env-file .env -f docker-compose.local.yml exec backend npm run backfill:local-messages` as a dry run, then the same command with `-- --apply` (see [docs/deployment/SELF_HOSTED.md](docs/deployment/SELF_HOSTED.md)).
 
 [3.0.0]: https://github.com/Team-Commonly/commonly/compare/v2.1.0...v3.0.0
