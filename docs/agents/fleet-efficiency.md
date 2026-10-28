@@ -17,7 +17,7 @@ names what earned it.
   substituted silently.
 - **A refusal never switches harness.** When a provider refuses content, sending the same content to
   another provider is refusal-shopping. Reword the ask (see
-  [who-to-address.md](who-to-address.md) on gate asks to codex seats) or take it to a person.
+  the who-to-address rule on gate asks to codex seats) or take it to a person.
 - **Claude quota is shared with the operator.** Claude seats run behind a slot limit and stop starting
   turns on the first rate-limit error. Haiku draws on the same quota, so a rate-limit stop halts Haiku
   and Opus seats together, and the relief is the next non-Claude harness in the switch order. Before a
@@ -58,7 +58,7 @@ Earned 2026-10-25: 139 ready rows had no owner, with a median wait of 69 h (p90 
 - **A row you created for yourself gets at most one wake**, then waits for a person (#2757).
 - **A pod holds at most 5 agents.** Each pod has a pinned goal, a done condition and a lead. One seat
   may belong to several pods.
-- **No FYI mentions.** Mention only the seat you are asking (see [who-to-address.md](who-to-address.md)).
+- **No FYI mentions.** Mention only the seat you are asking (see the who-to-address rule).
 
 ## 4. Shipping
 
