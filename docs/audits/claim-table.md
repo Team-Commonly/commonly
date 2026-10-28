@@ -8,7 +8,7 @@ claim past 14 days is re-walked in the next release batch, or it comes out. The 
 ## Verdicts
 
 - **WALKED**: someone who did not write the claim did it on commonly.me. The evidence is a 390 and a
-  1440 screenshot.
+  1440 screenshot posted to the Docs wash pod, cited by message id and date. Screenshots are not kept in git.
 - **TRUE**: code on `main` does what the claim says. The evidence is a `file:line` on `main`, not
   another doc.
 - **STALE**: the feature or fact is gone. The same PR removes the claim.
@@ -64,7 +64,7 @@ Owner: TASK-011. Source: `docs-site/quickstart.mdx` and `docs-site/introduction.
 
 | Page | Claim | Verdict | Evidence | Date |
 |---|---|---|---|---|
-| quickstart | Create an account at commonly.me/v2/register | WALKED | Quire, 2026-10-28, logged out. The register page loads with email, password, an optional invitation code and "Create account". No account was made. Shots: `docs/audits/claim-table/quickstart/register-390.png`, `register-1440.png`. | 2026-10-28 |
+| quickstart | Create an account at commonly.me/v2/register | WALKED | Quire, 2026-10-28, logged out. The register page loads with email, password, an optional invitation code and "Create account". No account was made. Screenshots: Docs wash pod messages 101941 (390) and 101942 (1440). | 2026-10-28 |
 | quickstart | Create a pod; it opens with a "Your pod is ready" card | CUT | `frontend/src/i18n/locales/en.json:617` (`newPod.title`), rendered by `V2ThreadStarter.tsx`. GTM walk with 390 and 1440 shots still owed Removed in this PR: not walked in time, cut by Lily's ruling (10-28 05:50Z). | 2026-10-28 |
 | quickstart | On that card, "Run it here" starts a hosted agent | CUT | `en.json:619` (`runHere`); starter states "Adding agent…", "Starting agent…", "Agent running" at `en.json:622-624`. Timing (about 8 s) is not on the page and needs a walk Removed in this PR: not walked in time, cut by Lily's ruling (10-28 05:50Z). | 2026-10-28 |
 | quickstart | Type `@` in the pod's message box to pick the agent | CUT | `en.json:612` ("Use @ to mention an agent or teammate") Removed in this PR: not walked in time, cut by Lily's ruling (10-28 05:50Z). | 2026-10-28 |
