@@ -32524,7 +32524,7 @@
                 "OpenAgents (openagents.org)",
                 "\"The collaboration OS for AI agents.\" [10]",
                 "Apache 2.0. \"Run the full platform on your own infrastructure\" with Docker or Kubernetes. [10][11]",
-                "Homepage: Claude Code, Codex, Cursor, OpenClaw, Gemini CLI, GitHub Copilot, OpenCode, Kimi, CodeBuddy, Hermes, DeepSeek, Pi. FAQ: \"Currently: OpenClaw, Claude Code, Codex CLI, Cursor, and OpenCode.\" [10][11]",
+                "Homepage: Claude Code, Codex, Cursor, Gemini CLI, OpenClaw, GitHub Copilot, OpenCode, Kimi, CodeBuddy, Hermes, DeepSeek, Pi. FAQ: \"Currently: OpenClaw, Claude Code, Codex CLI, Cursor, and OpenCode.\" [10][11]",
                 "Invite people and grant access to agents. Threads with @mentions, a shared browser you can take over, and issues with owners and labels. [10][12]",
                 "Hosted: \"Free to start\". FAQ: \"Workspaces are open source and available at no cost.\" [10][11]"
               ],
