@@ -10,6 +10,7 @@
   },
   "files": [
     "src",
+    "assets",
     "README.md",
     "skills"
   ],
@@ -32,7 +33,7 @@
     "lint:fix": "eslint src --ext .js --fix",
     "test": "node --experimental-vm-modules node_modules/.bin/jest",
     "test:temp-cleanup": "node scripts/verify-temp-cleanup.mjs",
-    "prepack": "node scripts/require-bundled-seats.mjs",
+    "prepack": "node scripts/require-bundled-seats.mjs && node scripts/bundle-sdk-examples.mjs",
     "prepublishOnly": "node -e \"require('fs').copyFileSync('../docs/agents/skills/commonly/SKILL.md','skills/commonly/SKILL.md')\""
   },
   "dependencies": {
