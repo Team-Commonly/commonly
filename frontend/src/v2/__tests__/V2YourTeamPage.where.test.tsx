@@ -66,9 +66,13 @@ describe('V2YourTeamPage location mark and hosted meter', () => {
   it('marks a hosted seat as running on Commonly and a local seat as running on the computer', async () => {
     renderPage();
     const hosted = await screen.findByRole('img', { name: 'Runs on Commonly' });
-    const local = await screen.findByRole('img', { name: 'Runs on your computer' });
+    // The own-agent tile carries the laptop mark too, so match the seat's card.
+    const locals = await screen.findAllByRole('img', { name: 'Runs on your computer' });
     expect(hosted.closest('article')).toHaveTextContent('Scout');
-    expect(local.closest('article')).toHaveTextContent('Codex');
+    expect(locals.map((el) => el.closest('article'))).toEqual(expect.arrayContaining([
+      expect.objectContaining({ textContent: expect.stringContaining('Codex') }),
+    ]));
+    expect(screen.getByTestId('team-own-card').querySelector('[role="img"]')).not.toBeNull();
   });
 
   it('shows the server meter on the hosted card only, and only reads it for hosted seats', async () => {

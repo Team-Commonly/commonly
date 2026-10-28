@@ -428,18 +428,6 @@ const V2YourTeamPage: React.FC = () => {
           </span>
         </div>
         {description && !isTemplateDescription(description, display) && <p className="v2-team-card__desc">{description}</p>}
-        {(a.podNames?.length || 0) > 0 && (
-          <div className="v2-team-card__pods" aria-label={t('yourTeam.card.podsAria')}>
-            {(a.podNames || []).slice(0, 2).map((name) => (
-              <span key={name} className="v2-team-card__pod">{shortPodName(name).toLowerCase()}</span>
-            ))}
-            {(a.podNames || []).length > 2 && (
-              <span className="v2-team-card__pod v2-team-card__pod--more" aria-label={t('yourTeam.card.morePodsAria', { count: (a.podNames || []).length - 2 })}>
-                +{(a.podNames || []).length - 2}
-              </span>
-            )}
-          </div>
-        )}
         {isHostedSeat(a) && meters.has(key) && (() => {
           const meter = meters.get(key)!;
           const fill = Math.min(100, (meter.used / Math.max(meter.cap, 1)) * 100);
@@ -452,6 +440,18 @@ const V2YourTeamPage: React.FC = () => {
             </div>
           );
         })()}
+        {(a.podNames?.length || 0) > 0 && (
+          <div className="v2-team-card__pods" aria-label={t('yourTeam.card.podsAria')}>
+            {(a.podNames || []).slice(0, 2).map((name) => (
+              <span key={name} className="v2-team-card__pod">{shortPodName(name).toLowerCase()}</span>
+            ))}
+            {(a.podNames || []).length > 2 && (
+              <span className="v2-team-card__pod v2-team-card__pod--more" aria-label={t('yourTeam.card.morePodsAria', { count: (a.podNames || []).length - 2 })}>
+                +{(a.podNames || []).length - 2}
+              </span>
+            )}
+          </div>
+        )}
         <div className="v2-team-card__actions">
           {needsReconnect && (a.installedBy === String(user?._id) || user?.role === 'admin') ? (
             <button type="button" className="v2-team-card__answer" onClick={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(a.podId || '')}&name=${encodeURIComponent(a.name)}&instanceId=${encodeURIComponent(a.instanceId || 'default')}&reconnect=1${a.runtime?.runtimeType === 'wrapper' ? '&mode=machine' : ''}`)}>
@@ -542,7 +542,14 @@ const V2YourTeamPage: React.FC = () => {
       <div className="v2-team__grid">
         {cards.map(renderCard)}
         <article className="v2-team-card v2-team-card--own" data-testid="team-own-card">
-          <div className="v2-team-card__name">{t('yourTeam.own.title')}</div>
+          <div className="v2-team-card__head">
+            <div className="v2-team-card__title">
+              <div className="v2-team-card__name">{t('yourTeam.own.title')}</div>
+            </div>
+            <span className="v2-team-card__where" role="img" aria-label={t('yourTeam.card.where.local')} title={t('yourTeam.card.where.local')}>
+              <LaptopGlyph />
+            </span>
+          </div>
           <p className="v2-team-card__desc">{t('yourTeam.own.text')}</p>
           <code className="v2-team-card__command">{t('yourTeam.own.command')}</code>
           <div className="v2-team-card__actions">
