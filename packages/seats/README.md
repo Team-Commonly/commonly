@@ -23,4 +23,6 @@ It is private and is not published on its own. `@commonlyai/cli` depends on it a
 
 The extraction plan is D62, extract-in-place.
 
+**Worktrees.** A run given `ctx.workspace = { repo, base? }` runs in its own detached, locked git worktree under `~/.jellymoon/worktrees/<runId>` (`src/workspace.js`). At settle a clean one is removed and anything else is kept locked, with its path in the result; `sweepWorktrees({ root, isRunLive })` releases the worktrees of runs that died without settling. An adapter whose CLI has its own worktree flag declares `nativeWorktree: true` and gets `ctx.workspace` instead.
+
 **Run record.** The trace store writes each run as a versioned, hash-chained JSONL record. It covers who granted which agent what access for which task, who approved each call, what was attempted, and the result. A tool outside this package can read, verify and export it to OTLP. The format is specified in [`docs/record-v1.md`](docs/record-v1.md), and a generated sample is in [`docs/examples/`](docs/examples/).
