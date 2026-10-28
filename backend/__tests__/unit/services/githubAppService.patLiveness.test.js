@@ -36,6 +36,12 @@ describe('GitHubAppService.checkPatLiveness', () => {
     );
   });
 
+  it('bounds the probe with a 5 second timeout so a hung GitHub cannot hold /status', async () => {
+    get.mockResolvedValue({ status: 200, data: {} });
+    await GitHubAppService.checkPatLiveness();
+    expect(get.mock.calls[0][1]).toEqual(expect.objectContaining({ timeout: 5000 }));
+  });
+
   it('reports rejected on a 401, which is the outage signature', async () => {
     get.mockRejectedValue({ message: 'Request failed with status code 401', response: { status: 401 } });
     await expect(GitHubAppService.checkPatLiveness()).resolves.toEqual({

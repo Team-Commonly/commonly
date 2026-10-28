@@ -4,9 +4,11 @@
 
 jest.mock('../../../middleware/agentRuntimeAuth', () => jest.fn((req, res, next) => next()));
 
+// The role is switched per test, so the non-admin path can be exercised.
+let mockRole = 'admin';
 jest.mock('../../../middleware/auth', () => jest.fn((req, res, next) => {
-  req.user = { _id: 'admin-1', role: 'admin' };
-  req.userId = 'admin-1';
+  req.user = { _id: 'user-1', role: mockRole };
+  req.userId = 'user-1';
   next();
 }));
 
@@ -31,6 +33,7 @@ app.use('/api/github', router);
 describe('GET /api/github/status', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRole = 'admin';
     GitHubAppService.isConfigured.mockReturnValue(false);
     GitHubAppService.isPatConfigured.mockReturnValue(true);
   });
@@ -60,6 +63,15 @@ describe('GET /api/github/status', () => {
     expect(res.status).toBe(200);
     expect(res.body.credentialLive).toBeNull();
     expect(res.body.credentialStatus).toBe('unreachable');
+  });
+
+  it('refuses a non-admin before any upstream probe runs', async () => {
+    mockRole = 'user';
+    GitHubAppService.checkPatLiveness.mockResolvedValue({ live: true, status: 'accepted', upstreamStatus: 200 });
+    const res = await request(app).get('/api/github/status');
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ message: 'Admin only' });
+    expect(GitHubAppService.checkPatLiveness).not.toHaveBeenCalled();
   });
 
   it('keeps the mode none answer when nothing is configured, with no probe', async () => {
