@@ -286,3 +286,31 @@ the FAQ, and `CONTRIBUTING.md`. The section is complete when every surface in th
 | CONTRIBUTING.md | "you can install it into the public Commonly instance" (OpenClaw) | TRUE | The provider route exists: `backend/routes/providers/moltbot.ts:4`. This row checks the code path only, not a contributor install on commonly.me. | 2026-10-26 |
 | CONTRIBUTING.md | "pick up an open issue on GitHub" (the open-issues link) | TRUE | `gh issue list -R Team-Commonly/commonly --state open` returned 138 on 2026-10-27. `--label "good first issue"` returned 0, so the old label link was empty. | 2026-10-27 |
 | CONTRIBUTING.md | "you can install Claude Code or Codex into the public Commonly instance" | TRUE (code path only) | `cli/src/commands/agent.js:3671` (`.command('attach <adapter>')`); `cli/src/commands/agent.js:173` (`BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex', 'pi']`). Not a contributor install on commonly.me. | 2026-10-27 |
+
+## GitHub App page
+
+Owner: TASK-014. Source: `docs-site/integrations/github.mdx`.
+
+The grant flow, the repository scope and the desktop view were not walked, so this PR cuts them. Each cut claim keeps a row here and can return with evidence.
+
+| Page | Claim | Verdict | Evidence | Date |
+|---|---|---|---|---|
+| integrations/github | Description: "Scoped access to the connected repository" | CUT | Not walked. This PR replaces the description. | 2026-10-27 |
+| integrations/github | "On commonly.me, the supported GitHub App connection is for the instance's own repository" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "A team cannot connect a different repository through this page" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The task board does not create or close GitHub issues by itself" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "GitHub actions require a separate connector grant" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The instance administrator installs the app on the repository" (the repository scope) | CUT | Not walked. This PR drops "on the repository". | 2026-10-27 |
+| integrations/github | "The instance administrator installs the GitHub App and creates the connection" | TRUE | `backend/routes/integrations.ts:244` (`auth, adminAuth` on `POST /github-app`); `:263` (`new Integration({`, the connection row). Code path only, not walked. | 2026-10-27 |
+| integrations/github | "A non-admin sees the installation requirement in Connectors → Tools, but cannot install the app" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The app installation bounds which repositories its connection can reach" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The connection owner selects Add on the GitHub row, chooses the pod, agents, access mode, and end date, then selects Grant" | CUT | Not walked. The connection-owner grant flow is removed by this PR. | 2026-10-27 |
+| integrations/github | "Open the grant to inspect its calls, access and end date. Revoke it there when the agents no longer need it" | CUT | Not walked. This PR removes the steps. | 2026-10-27 |
+| integrations/github | "The grant requires a private, unbridged pod with agents running in Commonly's narrowed in-process runtime" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "If the pod is joinable, the grant flow can ask its owner to make it invite-only before continuing" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The live desktop view shows the GitHub row before installation or a grant" | CUT | Not walked. This PR removes the paragraph and its screenshot. | 2026-10-27 |
+| integrations/github | "It names the instance's own repository and tells a non-admin that an administrator must install the app first" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The recorded grant named list_issues, create_issue, and close_issue for the instance's repository, with confirmation before writes" | CUT | Not walked on the current build. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The readiness matrix has not recorded an agent completing those actions on the current build" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "A grant limits tools, audience, and end date within the app installation's repository boundary" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "It cannot add a repository the app was not installed on" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
