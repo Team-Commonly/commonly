@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
-  existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync,
+  existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -34,7 +34,8 @@ const setup = () => {
   git(repo, 'config', 'user.name', 'test');
   git(repo, 'config', 'user.email', 'test@example.invalid');
   writeFileSync(join(repo, 'README'), 'one\n');
-  git(repo, 'add', 'README');
+  writeFileSync(join(repo, '.gitignore'), 'dist/\n');
+  git(repo, 'add', 'README', '.gitignore');
   git(repo, 'commit', '-q', '-m', 'one');
   return {
     repo, root: join(dir, 'worktrees'), store: createTraceStore({ root: join(dir, 'trace') }), base: git(repo, 'rev-parse', 'HEAD'),
@@ -90,6 +91,23 @@ test('a dirty worktree is kept, still locked, and its path reported', async () =
   assert.equal(worktreesOf(repo)[path], lockReasonOf('run-dirty-1'));
   assert.deepEqual(store.readRun('run-dirty-1').find((e) => e.type === 'run.settled').data.workspace,
     { base, head: base, removed: false, kept: 'dirty' });
+});
+
+test('output written only to a gitignored dir keeps the worktree, still locked', async () => {
+  // `git worktree remove` deletes ignored files, so a build into dist/ would
+  // vanish with the worktree and the report would call the run clean.
+  const { repo, root, store, base } = setup();
+  const out = await superviseRun({
+    adapter: working((cwd) => {
+      mkdirSync(join(cwd, 'dist'));
+      writeFileSync(join(cwd, 'dist', 'out.js'), 'built\n');
+    }),
+    prompt: 'build', store, runId: 'run-ignored-1', ctx: { workspace: { repo, root } },
+  });
+  const path = join(realpathSync(root), 'run-ignored-1');
+  assert.deepEqual(out.workspace, { path, base, head: base, removed: false, kept: 'dirty' });
+  assert.equal(existsSync(join(path, 'dist', 'out.js')), true);
+  assert.equal(worktreesOf(repo)[path], lockReasonOf('run-ignored-1'));
 });
 
 test('an uncommitted edit to a tracked file keeps the worktree, still locked', async () => {

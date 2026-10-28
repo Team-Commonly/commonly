@@ -64,9 +64,13 @@ const listWorktrees = (repo) => {
   return out;
 };
 
-/** null when the worktree is clean against base, else why it is kept. */
+/**
+ * null when the worktree is clean against base, else why it is kept. Ignored
+ * files count: a build into a gitignored dist/ is still the run's output, and
+ * `git worktree remove` deletes ignored files without asking.
+ */
 const keepReason = (path, base) => {
-  if (git(path, ['status', '--porcelain', '--untracked-files=all'])) return 'dirty';
+  if (git(path, ['status', '--porcelain', '--untracked-files=all', '--ignored'])) return 'dirty';
   if (git(path, ['rev-parse', 'HEAD']) !== base) return 'committed';
   return null;
 };
