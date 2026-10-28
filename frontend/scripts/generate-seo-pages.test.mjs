@@ -20,7 +20,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 99);
+  assert.equal(pages.length, 100);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -117,6 +117,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-data-boundaries/',
     '/guides/ai-agent-disagreement-resolution/',
     '/guides/ai-agent-task-prioritization/',
+    '/guides/ai-agent-stale-context/',
     '/guides/ai-agent-collaboration-platforms/',
     '/guides/control-what-coding-agents-can-access/',
     '/guides/github-agent-hq-alternative/',
@@ -158,7 +159,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 89);
+  assert.equal(guidePages.length, 90);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -806,6 +807,48 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.equal((prioritizationHtml.match(/<h2>Choose the next useful contribution<\/h2>/g) || []).length, 1);
   assert.ok(prioritizationHtml.indexOf('<h2>Frequently asked questions</h2>') < prioritizationHtml.indexOf('<h2>Choose the next useful contribution</h2>'));
   assert.equal(prioritization.cta.secondary.label, 'Explore Commonly’s guides');
+  const staleGuide = guidePages.find((page) => page.path === '/guides/ai-agent-stale-context/');
+  assert.equal(staleGuide.title, 'AI Agent Stale Context: Revalidate Old Notes | Commonly');
+  const stale = guides['ai-agent-stale-context'];
+  assert.deepEqual(stale.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(stale.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(stale.sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(stale.faq.length, 6);
+  assert.equal(stale.intro.length, 4);
+  assert.match(stale.intro[0], /^AI agent stale context is remembered information that no longer answers the current task accurately/);
+  for (const section of stale.sections.filter((section) => section.links)) {
+    assert.equal(section.paragraphs.length, 2);
+  }
+  const staleExampleIndex = stale.sections.findIndex((section) => section.title === 'A worked example of a stale task state');
+  const staleExample = stale.sections[staleExampleIndex];
+  assert.equal(staleExample.paragraphs.length, 6);
+  assert.equal(staleExample.tables, undefined);
+  assert.equal(staleExample.links, undefined);
+  assert.equal(staleExample.orderedItems, undefined);
+  assert.equal(stale.sections.slice(0, staleExampleIndex).filter((section) => section.tables).length, 9);
+  assert.equal(stale.sections[staleExampleIndex - 1].title, 'State the confidence');
+  assert.equal(stale.sections[staleExampleIndex + 1].title, 'Revalidate stale context in seven steps');
+  assert.match(stale.sections.find((section) => section.title === 'Read provenance').paragraphs[1], /^The AI Agent Memory guide explains pod-shared and agent-private scope, provenance, and bounded history\./);
+  const proportional = stale.sections.find((section) => section.title === 'The process should be proportional');
+  assert.equal(proportional.paragraphs.length, 1);
+  assert.equal(proportional.links, undefined);
+  const staleHtml = renderStaticPage(guideTemplate, staleGuide);
+  assert.match(staleHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-stale-context\/"/);
+  assert.match(staleHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(staleHtml, /seo-page-dark/);
+  assert.doesNotMatch(staleHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((staleHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-context-packet/',
+    '/guides/ai-agent-memory/',
+    '/guides/ai-agent-retained-context/',
+    '/guides/ai-agent-source-of-record/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-stale-context\/"/g) || []).length, 1);
+  }
+  assert.equal((staleHtml.match(new RegExp(`<h2>${stale.cta.title}</h2>`, 'g')) || []).length, 1);
+  assert.equal(stale.cta.secondary.label, 'Explore Commonly’s guides');
   const disagreementGuide = guidePages.find((page) => page.path === '/guides/ai-agent-disagreement-resolution/');
   assert.equal(disagreementGuide.title, 'AI Agent Disagreement Resolution Guide | Commonly AI');
   const disagreement = guides['ai-agent-disagreement-resolution'];
