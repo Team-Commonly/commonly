@@ -1,7 +1,8 @@
 # Docs claim table
 
 One row per factual claim on a customer-facing page, each with one verdict and its evidence. Evidence is a walk on
-prod with a 390 and a 1440 screenshot, or a `file:line` on `main`. It is no older than 14 days. A
+prod with a 390 and a 1440 screenshot, or a `file:line` on `main`. A `TRUE; walked` row carries a
+`file:line` and a walk cited by ID and date, with no screenshots. It is no older than 14 days. A
 claim past 14 days is re-walked in the next release batch, or it comes out. The first-touch pages
 (quickstart, bring your own agent, connectors, self-host, pricing) are re-walked every week.
 
@@ -11,6 +12,8 @@ claim past 14 days is re-walked in the next release batch, or it comes out. The 
   1440 screenshot.
 - **TRUE**: code on `main` does what the claim says. The evidence is a `file:line` on `main`, not
   another doc.
+- **TRUE; walked**: the `file:line` on `main` is the evidence, and a walk on commonly.me by someone
+  who did not write the claim is cited by walk ID and date. Screenshots are required only for WALKED.
 - **STALE**: the feature or fact is gone. The same PR removes the claim.
 - **FALSE**: the claim is wrong. The same PR fixes it or removes it.
 - **CUT**: the claim was not walked in time. The same PR removes it, and it can come back with
