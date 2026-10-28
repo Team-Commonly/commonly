@@ -97,8 +97,10 @@ export const conflictToDecisionRequest = (
   const [first] = conflict.hunks;
   const line = first ? `:${first.line}` : '';
   const location = clip(conflict.path, TITLE_MAX - TITLE_PREFIX.length - line.length) + line;
-  const base = clip(sides.base, LABEL_MAX - 'Keep '.length);
-  const branch = clip(sides.branch, LABEL_MAX - 'Keep '.length);
+  // The side words keep the labels distinct when the two names differ only by
+  // case or share a long prefix; normalizeOptions refuses duplicate labels.
+  const base = clip(sides.base, LABEL_MAX - 'Keep base ()'.length);
+  const branch = clip(sides.branch, LABEL_MAX - 'Keep branch ()'.length);
   return {
     title: `${TITLE_PREFIX}${location}`,
     question: clip(`${branch} and ${base} both changed ${location}. Which version should land?`, QUESTION_MAX),
@@ -106,13 +108,13 @@ export const conflictToDecisionRequest = (
     decisionClass: 'implementation',
     options: [
       {
-        label: `Keep ${base}`,
+        label: `Keep base (${base})`,
         // A binary or modify/delete conflict has no lines to show, so the option
         // carries no description. An empty string is refused at the door.
         ...(first ? { description: clip(sideText(first.ours), DESCRIPTION_MAX) } : {}),
       },
       {
-        label: `Keep ${branch}`,
+        label: `Keep branch (${branch})`,
         ...(first ? { description: clip(sideText(first.theirs), DESCRIPTION_MAX) } : {}),
       },
       { label: 'Write the merged text', description: 'Reply with the text to land, and the merge runs again.' },

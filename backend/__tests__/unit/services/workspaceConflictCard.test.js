@@ -34,7 +34,7 @@ describe('conflictToDecisionRequest', () => {
 
   test('offers one option per side and one to write the text, and passes the decision route\'s checks', () => {
     const req = conflictToDecisionRequest(conflict, sides);
-    expect(req.options.map((o) => o.label)).toEqual(['Keep main', 'Keep agent-b', 'Write the merged text']);
+    expect(req.options.map((o) => o.label)).toEqual(['Keep base (main)', 'Keep branch (agent-b)', 'Write the merged text']);
     expect(req.options.length).toBeGreaterThanOrEqual(2);
     expect(req.options.length).toBeLessThanOrEqual(4);
     expect(new Set(req.options.map((o) => o.label)).size).toBe(req.options.length);
@@ -80,6 +80,14 @@ describe('conflictToDecisionRequest', () => {
     expect(req.options[1].description).toBe('return x');
     expect(req.context).toContain('main: ····return x');
     expect(req.context).toContain('agent-b: return x');
+    expect(() => normalizeOptions(req.options)).not.toThrow();
+  });
+
+  test('side names that differ only by case still give options the route accepts', () => {
+    const req = conflictToDecisionRequest({
+      path: '/a.txt', kind: 'content', hunks: [{ line: 1, ours: ['a'], theirs: ['b'] }],
+    }, { base: 'Main', branch: 'main' });
+    expect(new Set(req.options.map((o) => o.label.toLowerCase())).size).toBe(3);
     expect(() => normalizeOptions(req.options)).not.toThrow();
   });
 
