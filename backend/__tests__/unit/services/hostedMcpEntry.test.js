@@ -24,6 +24,7 @@ const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-
 const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-19.json');
 const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
 const SENTRY_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-10-19.json');
+const GITLAB_CAPTURE = require('../../fixtures/hostedMcp/gitlab-tools-list-2026-10-19.json');
 const NOTION_CAPTURE = require('../../fixtures/hostedMcp/notion-tools-list-2026-10-19.json');
 
 const ENTRY_TEXT = 'ENTRY TEXT the pin agreed to.';
@@ -580,7 +581,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
     // The catalogue is the one place that says what an instance offers before
     // any member has connected anything. Its ordering follows the build plan.
     expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual([
-      'linear', 'google-calendar', 'atlassian', 'airtable', 'sentry', 'notion',
+      'linear', 'google-calendar', 'atlassian', 'airtable', 'sentry', 'notion', 'gitlab',
     ]);
     const catalogue = [linear(), linear({ id: 'notion', title: 'Notion' })];
     expect(findHostedMcpEntry(catalogue, 'notion').title).toBe('Notion');
@@ -811,6 +812,47 @@ describe('the shipped catalogue cannot land half-wired', () => {
       expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
       expect(tool.class).toBe(tool.name === 'update_issue' ? 'write' : 'read');
     }
+  });
+
+  test('the GitLab.com pin keeps 21 measured project, work-item, MR and CI operations', () => {
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'gitlab');
+    expect(entry).toMatchObject({
+      resource: GITLAB_CAPTURE.server,
+      issuer: 'https://gitlab.com',
+      client: 'dcr',
+      scopes: ['mcp'],
+      revoke: {
+        page: 'https://gitlab.com/-/user_settings/applications',
+        endpoint: 'https://gitlab.com/oauth/revoke',
+      },
+    });
+    expect(GITLAB_CAPTURE.scopeRequested).toBe('mcp');
+    expect(GITLAB_CAPTURE.toolCount).toBe(36);
+    expect(GITLAB_CAPTURE.tools).toHaveLength(36);
+    expect(entry.tools).toHaveLength(21);
+    const writes = [
+      'accept_merge_request', 'add_branch', 'add_commit',
+      'save_note', 'save_pipeline', 'save_work_item',
+    ];
+    expect(entry.tools.filter((tool) => tool.class === 'write').map((tool) => tool.name).sort())
+      .toEqual(writes.sort());
+    expect(entry.tools.find((tool) => tool.name === 'accept_merge_request').irreversible).toBe(true);
+    expect(entry.tools.find((tool) => tool.name === 'add_commit').irreversible).toBe(true);
+    expect(entry.tools.find((tool) => tool.name === 'save_pipeline').irreversible).toBe(true);
+    const measured = new Map(GITLAB_CAPTURE.tools.map((tool) => [tool.name, tool]));
+    for (const tool of entry.tools) {
+      const found = measured.get(tool.upstreamName);
+      expect(found).toBeDefined();
+      expect(tool.name).toBe(tool.upstreamName);
+      expect(tool.class).toBe(found.annotations.readOnlyHint ? 'read' : 'write');
+      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
+      expect(canonicalJson(tool.annotations)).toBe(canonicalJson(found.annotations));
+    }
+    expect(entry.tools.map((tool) => tool.name)).not.toContain('save_merge_request');
+    expect(entry.tools.find((tool) => tool.name === 'add_commit').description).toMatch(/start.*pipeline/);
+    expect(entry.tools.find((tool) => tool.name === 'save_pipeline').description).toMatch(/Variables.*override/);
+    expect(entry.tools.map((tool) => tool.name)).not.toContain('semantic_search');
+    expect(entry.tools.map((tool) => tool.name)).not.toContain('search');
   });
 
   test('the Linear pin is the measured list minus caller-chosen fetch paths', () => {
