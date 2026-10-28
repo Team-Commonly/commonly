@@ -13,7 +13,7 @@
  */
 import { createHash } from 'crypto';
 import {
-  appendToChain, readChain, RecordStoreUnavailableError, type ChainRef,
+  appendToChain, readChain, RecordStoreUnavailableError, type ChainPage, type ChainRef,
 } from '../repositories/recordChainRepository';
 
 type Store = Parameters<typeof readChain>[1];
@@ -42,7 +42,7 @@ export type RecordLineInput = {
   actor?: RecordActor | null;
   data?: Record<string, unknown>;
 };
-export { RecordStoreUnavailableError, type ChainRef };
+export { RecordStoreUnavailableError, type ChainPage, type ChainRef };
 
 export const BOARD_ACTOR: RecordActor = format.BOARD_ACTOR;
 /**
@@ -190,17 +190,24 @@ export type RecordExport = {
   entries: number;
   head: string | null;
   jsonl: string;
+  /** Pass as `after` for the next page; null once a page reaches the head. */
+  nextAfter: number | null;
 };
 
-/** A chain as stored, in record-v1's file form: one line per entry, each ending in \n. */
-export async function readRecordExport(ref: ChainRef, db?: Store): Promise<RecordExport> {
-  const chain = await readChain(ref, db);
-  if (!chain) return { runId: null, entries: 0, head: null, jsonl: '' };
+/**
+ * One page of a chain as stored, in record-v1's file form: one line per entry,
+ * each ending in \n. `entries` and `head` describe the whole chain, not the
+ * page, so every page names the same head.
+ */
+export async function readRecordExport(ref: ChainRef, db?: Store, page: ChainPage = {}): Promise<RecordExport> {
+  const chain = await readChain(ref, db, page);
+  if (!chain) return { runId: null, entries: 0, head: null, jsonl: '', nextAfter: null };
   return {
     runId: chain.runId,
-    entries: chain.lines.length,
+    entries: chain.headSeq,
     head: chain.headHash,
     jsonl: chain.lines.map((line) => `${line}\n`).join(''),
+    nextAfter: chain.nextAfter,
   };
 }
 

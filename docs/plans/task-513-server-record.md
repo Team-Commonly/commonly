@@ -83,6 +83,20 @@ endpoint. Every writer and the endpoint are off unless the pod is listed in
 - **Reads.** `GET /api/pods/:podId/record` serves the pod's taskless chain
   under the same gate as the task route.
 
+### Decisions taken in slice 3 (TASK-561)
+
+- **Reads are paged by seq.** One read returns at most 1000 lines
+  (`MAX_PAGE_LINES`) after `?after=<seq>`, fewer with `?limit=`. A read with
+  no cursor is the first page, never the whole history. While lines remain,
+  `X-Record-Next-After` names the next cursor. `X-Record-Entries` and
+  `X-Record-Head` describe the whole chain on every page, so a client knows
+  where the chain ends before it reads that far. A page's first line carries
+  `prev`, the hash of line `after`. Pages read in order join into one chain
+  that `verifyRecord` accepts, and a single page on its own does not verify
+  unless it starts at seq 1. A malformed cursor gets a 400 before any record
+  is read. The v2 view (slice 4) calls the API from another origin. It can
+  read these headers only after CORS exposes them.
+
 ## Measured inputs (2026-10-25)
 
 - TASK-504 landed in #2684, merge `ab5132313ad399d8fb990d69bc39db0ccf99e055`.
