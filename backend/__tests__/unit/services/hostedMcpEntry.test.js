@@ -1042,6 +1042,13 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(GITLAB_CAPTURE.toolCount).toBe(36);
     expect(GITLAB_CAPTURE.tools).toHaveLength(36);
     expect(entry.tools).toHaveLength(21);
+    expect(entry.tools.map((tool) => tool.name).sort()).toEqual([
+      'accept_merge_request', 'add_branch', 'add_commit', 'get_commit', 'get_job',
+      'get_merge_request', 'get_pipeline', 'get_project', 'get_repository_file', 'get_user',
+      'get_work_item', 'list_branches', 'list_commits', 'list_merge_requests', 'list_pipelines',
+      'list_projects', 'list_repository_tree', 'list_work_items', 'save_note', 'save_pipeline',
+      'save_work_item',
+    ]);
     const writes = [
       'accept_merge_request', 'add_branch', 'add_commit',
       'save_note', 'save_pipeline', 'save_work_item',
