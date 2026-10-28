@@ -16,7 +16,6 @@ import path from 'path';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..', '..');
 const LANDING_ASSETS = path.join(REPO_ROOT, 'frontend/src/assets/landing');
-const README_FRAMES = path.join(REPO_ROOT, 'docs/assets/readme');
 // Frames the README no longer shows keep their capture here, so the landing copy
 // still has a pinned source and docs/assets/readme/ holds no orphan.
 const LANDING_SOURCES = path.join(REPO_ROOT, 'docs/assets/landing-source');
@@ -25,7 +24,7 @@ const PAGE = fs.readFileSync(path.join(__dirname, '..', 'V2LandingPage.tsx'), 'u
 const FRAMES: Array<[landing: string, source: string, dir: string]> = [
   ['activity.png', 'activity-2x.png', LANDING_SOURCES],
   ['team.png', 'team-2x.png', LANDING_SOURCES],
-  ['connectors.png', 'connectors-2x.png', README_FRAMES],
+  ['connectors.png', 'connectors-2x.png', LANDING_SOURCES],
 ];
 
 // The README dropped its Bring-your-own frame (#2564) because the capture shows

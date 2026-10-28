@@ -145,9 +145,14 @@ class SchedulerService {
 
   jobs: CronJob[];
 
+  // One-shot startup runs (5–30 s after start). stop() clears them, so a
+  // stopped scheduler never fires them later in the same process.
+  startupTimers: NodeJS.Timeout[];
+
   constructor() {
     this.isRunning = false;
     this.jobs = [];
+    this.startupTimers = [];
   }
 
   start(): void {
@@ -697,40 +702,40 @@ class SchedulerService {
     console.log('- Skills catalog refreshes from upstream every 6 hours (stars re-fetched via GitHub API)');
     console.log('- Installable reconciliation runs every 5 minutes (CAS/idempotent; no lease required)');
 
-    setTimeout(() => {
+    this.startupTimers.push(setTimeout(() => {
       SchedulerService.runSummarizer().catch((error) => {
         console.error('Error in initial summarizer run:', error);
       });
-    }, 5000);
+    }, 5000));
 
-    setTimeout(() => {
+    this.startupTimers.push(setTimeout(() => {
       externalFeedService.syncExternalFeeds().catch((error: unknown) => {
         console.error('Error in initial external feed sync:', error);
       });
-    }, 7000);
+    }, 7000));
 
-    setTimeout(() => {
+    this.startupTimers.push(setTimeout(() => {
       AgentEventService.garbageCollect().catch((error: unknown) => {
         console.error('Error in initial agent event GC:', error);
       });
-    }, 8000);
+    }, 8000));
 
-    setTimeout(() => {
+    this.startupTimers.push(setTimeout(() => {
       PodCurationService.runThemedPodAutonomy({ hours: 12, minMatches: 4 }).catch((error: unknown) => {
         console.error('Error in initial themed pod autonomy run:', error);
       });
-    }, 9000);
+    }, 9000));
 
-    setTimeout(() => {
+    this.startupTimers.push(setTimeout(() => {
       SchedulerService.dispatchScheduledAgentHeartbeats({
         trigger: 'startup',
         respectIntervals: true,
       }).catch((error: unknown) => {
         console.error('Error in initial heartbeat dispatch:', error);
       });
-    }, 11000);
+    }, 11000));
 
-    setTimeout(() => {
+    this.startupTimers.push(setTimeout(() => {
       if (!AgentEventService.isSessionResetDue()) return;
       AgentEventService.clearOpenClawSessionsForActiveInstallations({
         source: 'startup-session-reset',
@@ -738,17 +743,17 @@ class SchedulerService {
       }).catch((error: unknown) => {
         console.error('Error in initial OpenClaw session reset:', error);
       });
-    }, 12000);
+    }, 12000));
 
-    setTimeout(() => {
+    this.startupTimers.push(setTimeout(() => {
       AgentAutoJoinService.runAutoJoinAgentOwnedPods({ source: 'startup-autojoin' }).catch((error: unknown) => {
         console.error('Error in initial auto-join run:', error);
       });
-    }, 13000);
+    }, 13000));
 
     // Kick a skill catalog refresh 30s after startup so dev gets fresh data
     // without waiting for the first 6-hourly cron window.
-    setTimeout(() => {
+    this.startupTimers.push(setTimeout(() => {
       refreshSkillsIndex()
         .then((result: { refreshed: number; reposUpdated: number; reposTotal: number; errors: Error[] }) => {
           console.log(
@@ -759,7 +764,7 @@ class SchedulerService {
         .catch((error: unknown) => {
           console.error('[skills-refresh] Startup refresh failed:', error);
         });
-    }, 30000);
+    }, 30000));
   }
 
   stop(): void {
@@ -774,6 +779,8 @@ class SchedulerService {
         job.stop();
       }
     });
+    this.startupTimers.forEach((timer) => clearTimeout(timer));
+    this.startupTimers = [];
     this.jobs = [];
     this.isRunning = false;
     activeScheduler = null;

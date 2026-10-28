@@ -262,12 +262,14 @@ describe('V2LandingPage hero content (TASK-152)', () => {
       expect(node?.closest('h1.v2-landing__title')).not.toBeNull();
       zh.unmount();
 
-      // en ships an empty suffix, so no span is rendered there and the rule is
-      // zh-only by construction — this is the control that keeps the pin from
-      // quietly becoming an English-hero assertion.
+      // en option 1 ships its own suffix now ("into one pod."), so this control
+      // checks that the English element carries the English sentence and not the
+      // zh one. The zh pin above is what keeps the band rule about zh.
+      const enSuffix = (((readLocale('en.json').landing as TranslationTree).hero as TranslationTree)
+        .titleSuffix) as string;
       await act(async () => { await i18n.changeLanguage('en'); });
       const en = renderLanding();
-      expect(en.container.querySelector('.v2-landing__title-suffix')).toBeNull();
+      expect(en.container.querySelector('.v2-landing__title-suffix')?.textContent).toBe(enSuffix);
       en.unmount();
     } finally {
       // TASK-213: the language is the suite's ambient state, so the restore has

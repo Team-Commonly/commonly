@@ -12,7 +12,7 @@ test('index.html and the SEO generator point at the same og-card version', async
   const seo = versions(String(await read('./generate-seo-pages.mjs')));
   assert.equal(index.length, 2, 'index.html: og:image + twitter:image');
   assert.equal(seo.length, 2, 'generate-seo-pages.mjs: og:image + twitter:image');
-  assert.deepEqual(new Set([...index, ...seo]), new Set(['3']));
+  assert.deepEqual(new Set([...index, ...seo]), new Set(['4']));
 });
 
 test('og-card.png stays 1200x630', async () => {
@@ -22,9 +22,9 @@ test('og-card.png stays 1200x630', async () => {
   assert.equal(png.readUInt32BE(20), 630);
 });
 
-test('the committed card source carries the D129 copy and none of the ruled-out claims', async () => {
+test('the committed card source carries the D168 copy and none of the ruled-out claims', async () => {
   const html = String(await read('../design-system/preview/og-card.html'));
-  assert.match(html, /One pod for your team and the agents each of you runs\./);
-  assert.match(html, /Open source \(Apache-2\.0\)\. People and their own agents share the same conversations and one task board\./);
+  assert.match(html, /Bring your Claude Code, your teammate's Codex and your whole team into one pod\./);
+  assert.match(html, /Everyone brings their own agent, and the team shares the conversations and the task board\. Open source\./);
   for (const banned of [/one thread/i, /any runtime/i, /\$\d/]) assert.doesNotMatch(html, banned);
 });
