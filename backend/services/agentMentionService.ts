@@ -495,7 +495,7 @@ const formatPodContextFrame = (podId: string): string =>
   `mid-turn post must use your own runtime token (commonly_post_message / your token file). ` +
   `Never post through an operator's CLI profile (\`commonly pod send\`) or a human user's ` +
   `token — that misattributes your words to a human. ` +
-  // Threading verbs (TASK-052, Sam's constraint 5 + overflow rule). Shipped
+  // Threading verbs (TASK-052, constraint 5 + overflow rule). Shipped
   // only once BOTH halves were real: agents can post in-thread without
   // addressing (threadRootId on the post body) AND peers can see thread
   // structure in their reads (thread_root_id on every message,
@@ -544,7 +544,7 @@ const formatPodContextFrame = (podId: string): string =>
   `Threading does not relocate your message, it un-addresses it. ` +
   `Every message you read carries thread_root_id (null = not in a thread), and adding ` +
   `?threadRootId=<id> to your messages read returns just that thread. ` +
-  // The clauses above describe what each verb DOES. Sam's ask (57672) was
+  // The clauses above describe what each verb DOES. The ask was
   // "teach agents WHEN to use reply, or in thread, or quote" — and a
   // mechanics description does not answer a choice. This sentence is the
   // half that was missing: without it an agent that has read the paragraph
@@ -570,8 +570,8 @@ const formatPodContextFrame = (podId: string): string =>
   `Rule of thumb: if your message answers one person, reply; if it continues ` +
   `a topic, thread; if it starts one, post. A reply inside a thread is allowed ` +
   `and still addresses its author. ` +
-  // Humans are addressed by handle, and ONLY by handle (TASK-070a, Sam
-  // observed 2026-08-25). Every verb above routes attention between agents;
+  // Humans are addressed by handle, and ONLY by handle (TASK-070a).
+  // Every verb above routes attention between agents;
   // none of them reach a person. A human's attention is matched on the
   // literal `@handle` — activityService's `mentions` filter tests
   // `content.includes('@' + username)`, and resolveHumanMentionUserIds
@@ -792,7 +792,7 @@ const isCodeSpecialistAgent = (agentName: string | undefined | null): boolean =>
 //   feedback-agents-collab-execute-not-handoff
 //   feedback-claim-the-orphan-stalled-peer-work
 //
-// During the huddle, Sam (the human) corrected the posture with an
+// During the huddle, a human corrected the posture with an
 // in-pod message that landed in 2 minutes — all 4 agents pivoted. That
 // proved the posture IS in-context-correctable; the missing piece is
 // auto-injecting the same correction so future huddles don't need
@@ -1699,7 +1699,7 @@ const enqueueMentions = async ({
         });
         // welcomeWakeService reports woken agents by agentName alone, so this
         // check is per agentName; two instances of one agent are not told
-        // apart here (sprint-review on #2359, carried).
+        // apart here (carried from #2359).
         if (adjacent && !welcomeWoke.includes(adjacent.target.agentName.toLowerCase())) {
           const { target } = adjacent;
           await AgentEventService.enqueue({

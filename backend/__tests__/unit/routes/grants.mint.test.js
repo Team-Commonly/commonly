@@ -3,7 +3,7 @@
  * Installable and lets a grant allow only tools that Installable enables.
  * RoomGrant runs on memory Mongo; the pod, the connection and the seeded
  * Installable are mocked at their module boundaries, as grants.read does.
- * The follow-up (Vera 67821) adds: the grant's installationId is the
+ * The follow-up adds: the grant's installationId is the
  * connection's, and a body value is refused like brokerId.
  */
 const express = require('express');

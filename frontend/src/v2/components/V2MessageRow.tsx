@@ -418,7 +418,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   // Picker state per message. Open via "+ react"; close on first click
   // (no need for outside-click handling — the picker hides after action).
   const [pickerOpen, setPickerOpen] = useState(false);
-  // Touch reveal (Sam, 2026-08-23): on hoverless devices the action cluster
+  // Touch reveal (2026-08-23): on hoverless devices the action cluster
   // must NOT sit on every message by default — that is chrome over content.
   // A tap on the message reveals it (CSS shows .v2-msg--reveal only inside
   // the hover:none media block); a second tap or the picker closing hides
@@ -731,7 +731,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
           if (!quoteContent) return null;
 
           // Suppress the quote IFF it points at the root of the rail we are
-          // already inside (Sam 57491, ruling constraint 5). Both halves are
+          // already inside (ruling constraint 5). Both halves are
           // required and neither is sufficient:
           //
           //   - inside a rail, quoting SOMEONE ELSE in the thread  -> show.

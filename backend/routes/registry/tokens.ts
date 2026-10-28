@@ -232,7 +232,7 @@ export const revokeRuntimeTokensAfterLastUninstall = async (agentName: string, i
  * events, and take connector results through the grant routes without the
  * in-process narrowing that gates outsider-writable text (TASK-224, §12).
  * Every mint path refuses here rather than each route remembering to
- * (Rhea on #2224; Wren for plain native).
+ * (#2224).
  */
 class InProcessAgentTokenRefused extends Error {
   code = 'in_process_agent_no_token';
@@ -292,7 +292,7 @@ const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installatio
   const existingToken = agentUser.agentRuntimeTokens?.[0] || installation?.runtimeTokens?.[0];
   if (existingToken) {
     // Backfill a credential row for the pre-substrate token so the existing
-    // fleet becomes listable and cascade-revocable (Vera on #1312: without
+    // fleet becomes listable and cascade-revocable (#1312: without
     // this the collection stays near-empty while coverage looks fine).
     // Provenance is unknown, so no parent lineage is claimed.
     if (issuer?.ownerUserId) {
@@ -330,7 +330,7 @@ const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installatio
     createdAt: new Date(),
   };
 
-  // Credential row FIRST, then the embedded record (Vera on #1312:
+  // Credential row FIRST, then the embedded record (#1312:
   // warn-and-continue after issuing would hand out a working token with no
   // row — invisible to listing, unreachable by cascade, lineage-free. If
   // the ledger write fails, the mint fails; no token exists without a row
@@ -363,7 +363,7 @@ const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installatio
 
   // The check above runs before the token exists. A migration can mark the
   // identity in-process while this mint is still saving, and its revoke may
-  // run before the save lands (Rhea on #2236). Re-check now the token is
+  // run before the save lands. Re-check now the token is
   // stored: if the identity went in-process meanwhile, take the token back
   // and refuse. A save that landed before the migration's revoke is caught
   // by that revoke, so no ordering leaves a live token.

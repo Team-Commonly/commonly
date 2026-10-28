@@ -782,7 +782,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
                 // #646's graft, one field over: when the socket copy wins
                 // the race and lacks the thread root (older server), keep
                 // the POST copy's — or the sender's own in-thread reply
-                // renders top-level until refresh (Sam, 2026-08-24).
+                // renders top-level until refresh (2026-08-24).
                 thread_root_id: m.thread_root_id ?? normalized.thread_root_id ?? null,
                 mentionNotices: normalized.mentionNotices ?? m.mentionNotices,
               }

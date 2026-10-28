@@ -207,7 +207,7 @@ describe("V2Thread — Scout's starts", () => {
   });
 });
 
-// D139: Scout's reply to the connect start is a prompt and cannot be relied on
+// Scout's reply to the connect start is a prompt and cannot be relied on
 // to link Bring your own, so the thread links it under the person's own
 // message, from the moment it is sent.
 const OPEN_BYO = 'Open Bring your own';

@@ -440,7 +440,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
         && !sentSince.has(start.label));
       if (open.length > 0) byMessage.set(String(message.id), open);
     });
-    // D139: under the creator's own "Connect an agent I already use", a fixed
+    // Under the creator's own "Connect an agent I already use", a fixed
     // link to Bring your own, from the moment it is sent. Scout still answers,
     // but a prompt cannot guarantee its reply links there, and one new person
     // left after three replies that never did.
@@ -465,7 +465,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     return (startsByMessageId.get(id) || []).some((start) => start.id === 'open-byo');
   }), [threadView, startsByMessageId]);
   useEffect(() => {
-    // D139: write-once onboarding mark (User.onboarding.byoOfferShownAt).
+    // Write-once onboarding mark (User.onboarding.byoOfferShownAt).
     if (byoOfferShown && viewerId) recordByoStepOnce(api, 'byo-offer-shown', viewerId);
   }, [byoOfferShown, api, viewerId]);
 
@@ -1303,7 +1303,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
         : `${name}-${instance}`;
       // Shared composite key (agentKey.ts): instanceId alone collapsed every
       // 'default'-instance fleet seat onto one key, so every author click
-      // opened the same member's profile (Sam, 2026-08-26).
+      // opened the same member's profile (2026-08-26).
       const key = agentKeyFor(agent);
       if (!rawName) continue;
       if (username) map.set(username, key);

@@ -196,7 +196,7 @@ export const scoutApp = {
     // Stranger journey, 2026-10-20..26: 6 of 46 runs got the Terminal steps
     // typed out (or `agent init`) after "macOS" instead of a card, because the
     // question arrived in the person's own words, not from the welcome button.
-    // Rhea on #2765: the OS list and the app-vs-CLI check are spelled out, since
+    // The OS list and the app-vs-CLI check are spelled out, since
     // nothing after the card checks either (approvalActionService checks name
     // and adapter only).
     + '- You can SET UP their own agent for them, and the connect card is the '

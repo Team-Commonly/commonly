@@ -255,7 +255,7 @@ describe('placement request', () => {
     expect(res.status).toBe(403);
   });
 
-  // C14 rehearsal follow-up (sprint-review on #2365): "On my computer" with
+  // C14 rehearsal follow-up: "On my computer" with
   // the name of the person's hosted agent stamped a placement the daemon's
   // runtime-token mint then refused, so the page said "requested" and nothing
   // ran. Refused up front with the mint's own code, and nothing is stamped.
@@ -614,7 +614,7 @@ describe('daemon work list', () => {
   });
 
   // The ordering clause is witnessable at this tier after all, and this is the
-  // shape that does it (Vera, on the fold at 59d99388): in-memory Mongo returns
+  // shape that does it (on the fold at 59d99388): in-memory Mongo returns
   // documents in INSERTION order, so a fixture inserted in `_id` order cannot
   // tell a sorted find from an unsorted one. Creating the ObjectIds explicitly
   // and inserting the NEWER row FIRST makes insertion order and `_id` order
@@ -747,7 +747,7 @@ describe('runtime-token mint', () => {
     }
   });
 
-  // Rhea on #2224, Wren for plain native: a daemon cannot mint a token for an
+  // A daemon cannot mint a token for an
   // agent Commonly runs in-process, whatever the binding says.
   it.each([
     ['native', { runtimeType: 'native' }, {}],

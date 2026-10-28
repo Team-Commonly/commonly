@@ -109,8 +109,8 @@ describe('i18n configuration', () => {
   });
 
   it('keeps the verification copy glossary-clean in Simplified Chinese', () => {
-    // lily-shen's zh-CN gate (2026-09-23, the eng lead's read under the
-    // zh-cn-ui-localization skill, standing in for Sam's pass): "Pod" stays
+    // zh-CN gate (2026-09-23, a read under the
+    // zh-cn-ui-localization skill): "Pod" stays
     // English with half-width spaces, the purpose-clause calque 以…加入 is out,
     // and a Chinese sentence takes ，rather than an em dash. The banner and the
     // screen carry one sentence, so the two move together.

@@ -68,7 +68,7 @@ const poisonEvent = (over = {}) => ({
   payload: {
     content: `[Pod context: this conversation is in pod \`${POD_ID}\`.]\n@rhea security gate: **#2249** at \`${HEAD}\`. ${FLAGGED}`,
     messageId: '78195',
-    username: 'lily-shen',
+    username: 'team-member',
   },
   ...over,
 });
@@ -167,7 +167,7 @@ describe('a provider content refusal', () => {
     expect(run.notices()).toHaveLength(1);
     const [notice] = run.notices();
     expect(notice).toContain(`#2249 at \`${HEAD}\``);
-    expect(notice).toContain('message 78195 from lily-shen');
+    expect(notice).toContain('message 78195 from team-member');
     expect(notice).toMatch(/@vera, please take it\.$/);
   });
 

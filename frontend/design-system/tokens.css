@@ -134,7 +134,7 @@
   --c-fs-base:14px;   /* messages, inputs */
   --c-fs-lg:  15px;   /* section titles */
   --c-fs-xl:  16px;
-  /* Featured-card name step (BEND-1, Sam-approved 2026-08-30) — mirrors --v2-fs-feature. */
+  /* Featured-card name step (BEND-1, 2026-08-30) — mirrors --v2-fs-feature. */
   --c-fs-feature: 17px;   /* sidebar titles */
   --c-fs-2xl: 20px;   /* chat header */
   --c-fs-3xl: 24px;   /* feature page title */

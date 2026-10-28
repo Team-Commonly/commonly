@@ -123,7 +123,7 @@ const upsertEncrypted = async (
   // the retry. Filtered on `integrationId` alone the second kind does not
   // collide — it MATCHES the first kind's row and $sets this ciphertext onto it,
   // so the first ref stays valid and silently starts decrypting to the second
-  // secret (vera 74141). `kind` is read from the caller's spec, and the index in
+  // secret. `kind` is read from the caller's spec, and the index in
   // `models/ConnectorSecret` is on the same pair.
   const filter = writeGeneration === undefined
     ? { integrationId, kind: spec.kind }

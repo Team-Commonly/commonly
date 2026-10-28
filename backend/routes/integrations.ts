@@ -894,7 +894,7 @@ router.delete('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res
     const deletedBy = String(req.user?.id || '').trim();
     // Fail closed on the identity rather than skipping the grants step and
     // deleting anyway, which would reinstate the orphan this route was fixed to
-    // stop creating (Vera 74462). `auth` always sets a non-empty id, so this is
+    // stop creating. `auth` always sets a non-empty id, so this is
     // unreachable today; it is here so it cannot become reachable in silence.
     if (!deletedBy) return res.status(401).json({ message: 'Unauthorized' });
     const integration = await Integration.findById(id) as {

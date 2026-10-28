@@ -237,7 +237,7 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
   // The arms are judged on a REAL User document, not an object literal: the
   // container `botMetadata` is materialised on every row by its sub-path
   // defaults, so `Boolean(botMetadata)` reads true for a person and the refusal
-  // never fires in production (vera 73985). A nested-path guard witnessed only
+  // never fires in production. A nested-path guard witnessed only
   // against literals misses exactly that, so this test builds the document the
   // service actually holds.
   test('on a hydrated User document, a person row is not agent-owned and is refused (TASK-133 a)', async () => {

@@ -471,7 +471,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     }
 
     const installConfig = normalizeConfigMap(config) || {};
-    // WRITE-TIME SHAPE CHECK (TASK-071, Vera's ruling). This route is the OTHER
+    // WRITE-TIME SHAPE CHECK (TASK-071). This route is the OTHER
     // backend writer of `config.environment` — the first is the agent-config
     // PATCH — and it stores the body's config unchecked. Same rule, same
     // refusal, same code, so a caller can branch on one thing.
@@ -560,8 +560,8 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     // Store runtimeType NORMALIZED. Every gate below lowercases its own copy;
     // the stored value was whatever the caller sent, so `runtimeType: "Hosted"`
     // passed the hosted gate, got metered as hosted, and was never counted by
-    // countHostedAgentsForUser (exact 'hosted') — the per-user cap failed open
-    // (Otto on #1355). Query the field the code writes: write it normalized.
+    // countHostedAgentsForUser (exact 'hosted') — the per-user cap failed open.
+    // Query the field the code writes: write it normalized.
     if (runtimeConfig.runtimeType !== undefined && runtimeConfig.runtimeType !== null) {
       runtimeConfig.runtimeType = String(runtimeConfig.runtimeType).trim().toLowerCase();
     }
@@ -765,7 +765,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       });
       await AgentIdentityService.ensureAgentInPod(agentUser, podId, effectiveRuntimeType, newHostedEngine);
     } catch (identityError: unknown) {
-      // A refusal is not a best-effort failure (TASK-133 b, wren 73987/73988):
+      // A refusal is not a best-effort failure (TASK-133 b):
       // swallowing it would answer 2xx and leave an AgentInstallation row with
       // no identity behind it. Every other identity failure stays best-effort.
       const refusal = identityError as { code?: string; message?: string; username?: string };
@@ -971,7 +971,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         // (inferred from staleness), which made a gone-dark agent announce
         // "Nothing is running me yet" — flat-certain and factually wrong,
         // since it demonstrably ran. Asserting an inference in the agent's own
-        // voice is the same defect in a new costume (ux-lead, 2026-08-14).
+        // voice is the same defect in a new costume.
         //
         // The token store is the BOT's, not the installer's (sprint-impl,
         // fleet review 2026-08-14). `deriveAgentState` unions

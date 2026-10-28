@@ -33,13 +33,13 @@
     <!-- Progressive-enhancement gate for the prerendered SEO page below.
          The #seo-page markup ships inside #root on EVERY route, so
          every load painted it for the beat before React replaced it — the
-         "half-second flash" (Sam, 2026-08-24) that survived three CSS
+         "half-second flash" (2026-08-24) that survived three CSS
          fixes because it is content, not a background rule. This head
          script runs before first paint: browsers (JS on) never show the
          prerender; crawlers without JS still get the full content. Not
          cloaking — JS-running crawlers see the real app. -->
     <!-- SEO_GATE_START -->
-    <!-- Rev 2 (Sam re-sighted the flash, 2026-08-26): the script-gate had a
+    <!-- Rev 2 (the flash was re-sighted, 2026-08-26): the script-gate had a
          timing dependency — anything that delays head-script execution
          paints the prerender first. Hidden-by-default has NO timing
          window: JS-capable browsers never paint it, and the <noscript>

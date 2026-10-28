@@ -1,6 +1,6 @@
 // @ts-nocheck
 // Timing claims in the product copy, only where measured ("copy: timing claims
-// only where measured", Cofounder's rulings 2026-10-17). Each one cites its
+// only where measured", 2026-10-17). Each one cites its
 // measurement here, so the next reviewer does not have to rediscover it, and
 // any new seconds claim in the English copy has to come through this file.
 const en = require('../i18n/locales/en.json');
@@ -13,7 +13,7 @@ const leaves = (node, path = []) => Object.entries(node).flatMap(([k, v]) => (
 describe('timing claims in the copy', () => {
   // Click to live: QA hosted walk 5 timed "Run it here" clicked to provisioned
   // at 2.54 s (install 1.83 + provision 0.63); walk 4: 2.47 s.
-  // ~/.commonly/state/notes/qa-hosted-oob-5/report.md, timing table.
+  // QA report qa-hosted-oob-5, timing table.
   test('click to live says "a few seconds", in both languages', () => {
     expect(en.agentByo.mode.hostedMeta).toBe('Live in a few seconds · Beta: {{turns}} turns a day');
     expect(en.agentByo.compact.lead).toBe('Live in a few seconds.');

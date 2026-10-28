@@ -87,8 +87,7 @@ const isSentinelWordCharacter = (character: string | undefined): boolean => (
 );
 
 /**
- * Does this reply OPEN with a bare sentinel (TASK-067, ratified by Sam
- * 2026-08-26)?
+ * Does this reply OPEN with a bare sentinel (TASK-067)?
  *
  * The measured failure mode is AX-43: a seat writes
  * `NO_REPLY.\n\n<private reasoning about why it is staying silent>`,
@@ -1516,7 +1515,7 @@ class AgentMessageService {
 
       // ── Consecutive-run cap ────────────────────────────────────────────
       //
-      // Ruled by @fable-lead, which named this chokepoint over the wrapper for
+      // This chokepoint was chosen over the wrapper for
       // a reason it could demonstrate on itself: "my posts ride MCP and no
       // wrapper ever saw them." Every agent post from every tier — MCP,
       // wrapper, moltbot, native — passes through here. A wrapper-side cap
@@ -1533,7 +1532,7 @@ class AgentMessageService {
       // attachment, so nothing the agent meant to say is lost.
       // NOT in a 1:1. The cap's entire rationale is "do not crowd others out of
       // a shared room", and in a DM there is no room to crowd: the only other
-      // participant is the person who asked. Sam caught this within hours of it
+      // participant is the person who asked. This was caught within hours of it
       // shipping — @ux-lead answered a three-part design question in an
       // agent-room, hit the cap, and attached its reply as a .md. A colleague's
       // considered answer arriving as a file you must open is strictly worse
@@ -1956,7 +1955,7 @@ class AgentMessageService {
         ...(relayCard ? { card: relayCard } : {}),
         // Decided when the turn made the post, carried with the message, and
         // enforced where relays are selected, so a bridge enabled while this
-        // post was being stored still cannot carry it out (Rhea on #2244).
+        // post was being stored still cannot carry it out.
         ...(noOutboundRelay ? { noOutboundRelay: true } : {}),
       });
     } catch (bridgeError) {

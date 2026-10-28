@@ -300,7 +300,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       console.warn('[pod-agents] connection lookup failed:', (connectionErr as Error).message);
     }
 
-    // Last thing each agent said in THIS pod (Wren spec §1.1 line 2).
+    // Last thing each agent said in THIS pod (spec §1.1 line 2).
     // Advisory like the activity map: a PG hiccup must never fail the roster.
     let lastMessageByUserId = new Map<string, { content: string; createdAt: unknown }>();
     try {
@@ -318,7 +318,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       console.warn('[pod-agents] last-message lookup failed:', (snippetErr as Error).message);
     }
 
-    // Day-zero step 2 (#1648, ux-lead 67071 / sprint-impl 67078): "Say something to it" closes
+    // Day-zero step 2 (#1648): "Say something to it" closes
     // on the caller's own message in this pod, reply or not. A seat's install intro, a heartbeat
     // or a teammate's post is not the caller speaking, so no per-agent field can carry this.
     // Advisory like the snippet: a PG hiccup reads as "not yet", never as a failed roster.
@@ -341,7 +341,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
     }
 
     // A push webhook's URL can carry a credential in its query string, so only
-    // its installer and instance admins see it (Cofounder's hardening ruling,
+    // its installer and instance admins see it (hardening ruling,
     // 2026-10-21). The admin lookup runs only when the roster holds a URL the
     // viewer did not install.
     const viewerId = String(userId);

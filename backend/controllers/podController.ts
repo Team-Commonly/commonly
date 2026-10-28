@@ -223,7 +223,7 @@ exports.getAllPods = async (req: any, res: any) => {
     // Admins do NOT bypass membership on the default sidebar listing:
     // their own pod list must be their own pods, otherwise every
     // private DM in the instance leaks into their sidebar (which made
-    // xcjsam see — and try to post into — sam-demo's agent-rooms).
+    // one admin see — and try to post into — another user's agent-rooms).
     const isPersonal = isPersonalPodType(type);
     let membershipFilterToMine = false;
     let memberId: any = null;

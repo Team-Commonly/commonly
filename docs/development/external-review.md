@@ -73,7 +73,7 @@ can't tell us whether it's wrong or whether we are.
   stay in CI, so run focused tests only.
 
   The writer names the tier in the PR body. A reviewer can raise it but
-  never lower it. A seat verdict is a `lilyshen0722` review at the exact head
+  never lower it. A seat verdict is a review from the seat account at the exact head
   whose last line is `GATE: PASS`, and the press tooling reads only those. A
   CodeRabbit review is never a verdict. It only lets a docs-only or test-only
   PR skip the seat gate.

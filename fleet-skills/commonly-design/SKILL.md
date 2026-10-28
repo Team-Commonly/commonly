@@ -52,11 +52,11 @@ This skill is a **thin pointer** — the actual design system lives in the commo
 
 ## Before you draw or build a screen (the process that made Signal land)
 
-1. **Canvas first.** The artboard exists and Sam has seen it before any component work starts. Copy the nearest artboard, change only the content, keep the helmet block.
+1. **Canvas first.** The artboard exists and the owner has seen it before any component work starts. Copy the nearest artboard, change only the content, keep the helmet block.
 2. **Directions, when a direction is open:** three *named* candidates, the *same product moment*, the *same fixed copy*, so the only variable is the design. Then the chosen one gets clickable on the screen people live in.
 3. **One system, two volumes.** A new screen never needs a new colour, radius or face. If it seems to, the screen is wrong.
 4. **Ship with proof.** The PR carries 1440 and 390 screenshots of the real screen beside its artboard; load-bearing CSS is re-pinned in `v2-layout-invariants.test.ts`.
-5. **Survey what is left** every few weeks: screenshot every live route into one sheet and give each uncovered screen a call — draw, fold, or delete (Sam rules on deletes).
+5. **Survey what is left** every few weeks: screenshot every live route into one sheet and give each uncovered screen a call — draw, fold, or delete (the owner rules on deletes).
 
 ## When you ship a change
 

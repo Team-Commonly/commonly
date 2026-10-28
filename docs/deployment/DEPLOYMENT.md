@@ -16,7 +16,7 @@ Before deploying the application, ensure you have the following:
    - Docker Compose 2.0.x or later
 
 2. **Environment Files**:
-   - Production `.env` file with proper secrets (contact Sam for this file)
+   - Production `.env` file with proper secrets (contact the maintainers for this file)
    - SSL certificates for production deployment
 
 3. **Server Requirements**:
@@ -155,7 +155,7 @@ Note: In development, the backend container will install dependencies on first b
 
 ### Step 2: Obtain Production Configuration
 
-1. **Request the production .env file from Sam**, which will include:
+1. **Request the production .env file from the maintainers**, which will include:
    - Secure JWT secret
    - Production database URIs
    - API keys for external services
@@ -642,6 +642,6 @@ docker-compose logs backend | grep -i discord
 For deployment issues or questions:
 
 1. Open an issue on the GitHub repository
-2. Contact Sam for production environment files or credentials
+2. Contact the maintainers for production environment files or credentials
 3. Refer to the documentation in the `docs` directory 
 4. Check Discord integration status and logs 

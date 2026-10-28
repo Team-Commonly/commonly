@@ -733,7 +733,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
 
   test('the Airtable pin is every measured read minus three credential- or payload-bearing ones', () => {
     // Capture taken by connector-ops on 2026-10-09 with the four :read scopes
-    // only. Wren 76761: list_secrets and list_external_accounts are
+    // only. list_secrets and list_external_accounts are
     // credential-adjacent reconnaissance and fetch_automation_input_data carries
     // externally injected payloads, so all three stay out although annotated
     // read-only. Every writer stays out by class.
@@ -1027,7 +1027,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
 });
 
 // The three preconditions a vendor entry has to satisfy before the first one is
-// pinned (TASK-172, the row's notes from Vera). Each guard is measured by its
+// pinned (TASK-172, the row's notes). Each guard is measured by its
 // own refusal beside a control, and the refusals are asserted separately
 // because they are separate messages: one could keep working while another
 // stops, and an arm that accepts any of them would not say which.
@@ -1097,7 +1097,7 @@ describe('a pin cannot contradict the class or the namespace it is filed under',
   });
 });
 
-// Vera's third arm: the two guards above refuse a read pin that CONTRADICTS an
+// Third arm: the two guards above refuse a read pin that CONTRADICTS an
 // annotation. This one refuses a read pin that never made the claim, which is
 // the state an author writes by default.
 describe('a read pin has to claim the class, not just avoid denying it', () => {

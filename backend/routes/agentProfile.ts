@@ -273,7 +273,7 @@ router.get('/:agentName/:instanceId?', async (req: Req, res: Res) => {
 });
 
 
-// ── Owner-editable agent avatar (Sam, 2026-08-20) ───────────────────────────
+// ── Owner-editable agent avatar ───────────────────────────
 //
 // "If created by someone" — the gate is creation-shaped: the caller must be an
 // admin or the installer of an active installation of this agent. Accepts the

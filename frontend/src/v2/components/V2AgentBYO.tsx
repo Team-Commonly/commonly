@@ -145,7 +145,7 @@ const V2AgentBYO: React.FC = () => {
       adapter: ((a): 'claude' | 'codex' | null => (a === 'claude' || a === 'codex' ? a : null))(params.get('adapter')),
     };
   })();
-  // Sam (2026-09-01): persona deep links carry context into this otherwise
+  // 2026-09-01: persona deep links carry context into this otherwise
   // machine-first entry. The page names the agent after the selected persona
   // and records that choice on the installation; no param says so plainly.
   const personaCard = PERSONA_CARDS.find((c) => c.key === prefill.persona) || null;

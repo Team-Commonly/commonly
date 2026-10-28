@@ -3,7 +3,7 @@ import React from 'react';
 /*
  * TASK-530 — public Privacy and Terms pages, linked from Google OAuth consent
  * and signup. Every factual claim cites its source in the PR body. Legal
- * wording is Sam's to approve; Cofounder reads it before the gate.
+ * wording is approved before the gate.
  */
 
 interface LegalSection {

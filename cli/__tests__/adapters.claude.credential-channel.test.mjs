@@ -40,7 +40,7 @@ const TOKEN = 'cm_agent_'.padEnd(73, 'x');
  * It is planted in the spawn environment rather than inherited from the runner:
  * these tests passed in a runner without `COMMONLY_AGENT_TOKEN` and failed in one
  * with it, which means the leak they were written to prevent was decided by the
- * runner (Vera, 70455). An explicit value makes the assertion the same one
+ * runner. An explicit value makes the assertion the same one
  * everywhere, and makes it stronger — the value has to be absent, not merely
  * coincidentally unset.
  */
@@ -49,7 +49,7 @@ const LAUNCHER_TOKEN = 'cm_agent_'.padEnd(73, 'L');
 // a seat process actually carries. Without it these assertions would be decided
 // by whatever the runner happened to export — the no-minted-token case below is
 // the one that failed in a seat-run suite and passed in CI. Planted for the same
-// reason as the token above (Vera, 70455): the assertion has to be the same one
+// reason as the token above: the assertion has to be the same one
 // in every runner, and its stronger form is that the foreign path is REMOVED.
 const FOREIGN_FILE = path.join(os.tmpdir(), 'another-spawn', 'token');
 const spawnEnv = () => ({

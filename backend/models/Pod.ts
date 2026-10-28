@@ -10,7 +10,7 @@ export type PodType =
   | 'agent-dm'
   | 'team';
 
-// Per-pod alias → agent binding (e.g. "codex" → sam-local-codex). Empty by
+// Per-pod alias → agent binding (e.g. "codex" → local-codex). Empty by
 // default; lookups fall through to the agent's own contact list per the
 // agent collaboration plan §3.2.
 export interface PodContactBinding {
@@ -107,7 +107,7 @@ export interface IPod extends Document {
   // grants anonymous/showcase READ access; communityListed additionally puts
   // the pod on the Community discovery surface. Showcase rooms (Eng Milestone
   // etc.) stay publicRead but unlisted. Listing is admin-curated for now; an
-  // owner-side "request listing" flow is the planned phase 2 (Sam 2026-07-22).
+  // owner-side "request listing" flow is the planned phase 2.
   communityListed: boolean;
   // Optional focus record. `focusRevision` is separate so a cleared focus
   // retains its compare-and-swap tombstone on legacy and current pods.

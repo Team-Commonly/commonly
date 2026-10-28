@@ -1,7 +1,6 @@
 # Fleet efficiency: how seats and leads spend turns, models and quota
 
-**House rules, set by Sam on 2026-10-25** ("really need to handle them well, especially the efficiency
-and productivity … don't let it drift"). They hold for every seat and every lead session. Each rule
+**House rules, set 2026-10-25.** They hold for every seat and every lead session. Each rule
 names what earned it.
 
 ## 1. Models: a writer switches, it never parks

@@ -464,7 +464,7 @@ The first six rows are the list given with the task. The rest are the incidents 
 | An error in a hosted-MCP callback exited the only backend process on staging, so every user got a 502 (TASK-405). | A. #2555 now catches that error in every callback; one replica is why a single crash reached every user. |
 | A browser session could not be revoked, and refresh renewed it with no end (TASK-410). | None. #2545 added the missing check in place. See *Don't*, on auth. |
 | After a machine was revoked, its daemon could not register again, and its agents stayed bound to it (TASK-420, TASK-421). | None. The revoke itself worked. What was missing was a way back, which #2562 and #2563 added. Item 5 would not have caught it, because the daemon's local file and the agents' binding are not credential stores. |
-| CLI and backend tests left their temp dirs behind, about 40 GB from the CLI alone, until the fleet host had under 4 GB free (TASK-411, TASK-433, TASK-436). | None. Fixed by #2547, #2572 and #2574. CI now fails a CLI run that leaves a temp dir; the backend's matching check (`npm run test:temp-cleanup`) is not in CI yet. |
+| CLI and backend tests left their temp dirs behind, about 40 GB from the CLI alone, until the host had under 4 GB free (TASK-411, TASK-433, TASK-436). | None. Fixed by #2547, #2572 and #2574. CI now fails a CLI run that leaves a temp dir; the backend's matching check (`npm run test:temp-cleanup`) is not in CI yet. |
 | Each gate review left a full checkout behind, about 190 dirs and 14 GB (TASK-437). | None. The fix belongs in the reviewer skill, outside the product: one reusable checkout per seat. Still open. |
 
 ## By area

@@ -59,7 +59,7 @@ export const assertPrivateDsh = (environment = {}) => { isConfinedDsh(environmen
  * The macOS developer tools a confined writer needs for git, granted read-only.
  * /usr/bin/git is an xcrun shim: inside the sandbox it cannot read the tools it
  * forwards to, so `git` fails with "No developer tools were found" and a writer
- * cannot commit (D106). Returns null when no tools are installed; the seat then
+ * cannot commit. Returns null when no tools are installed; the seat then
  * runs without git rather than failing.
  *
  * DEVELOPER_DIR and xcode-select are both settable by whoever starts the seat,
@@ -333,7 +333,7 @@ export default {
   requiresModel: true,
   name: 'dsh', runtimeType: 'dsh', supportsProvider: true,
 
-  // The attach gate defers to this for dsh's one confined shape (D106).
+  // The attach gate defers to this for dsh's one confined shape.
   confinesOwnSandbox: (environment) => isConfinedDsh(environment),
 
   async validateEnvironment(environment, workspacePath) {

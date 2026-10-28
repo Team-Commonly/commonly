@@ -1,5 +1,5 @@
 // @ts-nocheck
-// TASK-547 (D39): a copy-paste setup command on the BYO, Connect or runtime
+// TASK-547: a copy-paste setup command on the BYO, Connect or runtime
 // pages must target the instance the page is on. A bare `commonly login` falls
 // back to the CLI's built-in production default, so on dev or a self-hosted
 // instance the computer would register against commonly.me.

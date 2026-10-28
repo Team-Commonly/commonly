@@ -203,7 +203,7 @@ describe('attentionItemService', () => {
     expect(rows[0]).toMatchObject({ status: 'resolved', source: { type: 'message', id: '42' } });
   });
 
-  // actorUserId (ux-lead 66164): actorName holds three shapes across the three
+  // actorUserId: actorName holds three shapes across the three
   // writers (author username, runtime agentName, nothing on decisions), so the
   // Your Team ring keys on the principal's id instead. Each writer is pinned.
   it('a mention carries its author id as actorUserId', async () => {
@@ -531,10 +531,10 @@ describe('attentionItemService', () => {
     });
     const recipients = () => mockUpdateOne.mock.calls.map(([selector]) => selector.recipientUserId);
 
-    it("a note reporting a ruling already made opens nothing (the 2026-10-19 \"Sam's ruling\" fan-out)", async () => {
+    it("a note reporting a ruling already made opens nothing", async () => {
       shipRoom();
       // "needs" passes the cheap gate, so this reaches isHandoffRequest itself.
-      await AttentionItemService.recordTaskAttention(update("Sam's ruling, 10-19 (relayed by Cofounder): writes are allowed when the member approves them; the Linear entry needs a re-pin."));
+      await AttentionItemService.recordTaskAttention(update("Sam's ruling, 10-19 (relayed): writes are allowed when the member approves them; the Linear entry needs a re-pin."));
       expect(mockUserFind).toHaveBeenCalled();
       expect(mockUpdateOne).not.toHaveBeenCalled();
     });
@@ -695,7 +695,7 @@ describe('attentionItemService', () => {
   });
 });
 
-// Stickiness Phase 1b (ux-lead, Sharpen 78222-78224): an agent's answer to the
+// Stickiness Phase 1b: an agent's answer to the
 // person who asked opens no needs-you row. QA 10-16: a hosted agent answered 4
 // plain questions and the Agents card read "needs you".
 describe('an agent answering the person who asked', () => {

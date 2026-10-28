@@ -124,7 +124,7 @@ export const classifySpawnFailure = (error) => {
   // and "limit", and its `(?!rate[ -]?limit)` lookahead only guards the word
   // IMMEDIATELY after "your" — so "you've hit your API rate limit" walked past
   // it into the 15-minute circuit, where main correctly gives the 60-second
-  // rate-limit probe (otto, gate on #2491; it was a regression, not a gap).
+  // rate-limit probe (gate on #2491; it was a regression, not a gap).
   // A throttle wording anywhere in the text therefore wins over the shape.
   // QUOTA_RE is still tested first, so an explicit quota word keeps QUOTA even
   // when the same message also mentions rate limits.

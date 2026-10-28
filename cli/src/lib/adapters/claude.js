@@ -105,8 +105,8 @@ const DEFAULT_TIMEOUT_MS = (() => {
 
 const buildPrompt = buildMemoryPreamble;
 
-// The working habits a private claude seat is taught on a fresh session (D48,
-// TASK-545). Parallel reads live here because only this CLI has a subagent
+// The working habits a private claude seat is taught on a fresh session
+// (TASK-545). Parallel reads live here because only this CLI has a subagent
 // tool; codex is passed row slicing alone. A public seat is passed neither: its
 // argv allows Read and the MCP under dontAsk, so it has no subagent to spawn,
 // and it answers strangers rather than working board rows.
@@ -841,7 +841,7 @@ const prepareArgv = async (innerArgv, ctx) => {
   // A public trust is ONE contract on both platforms: the jail bounds the
   // filesystem and the policy bounds the tools. The bwrap branch below used to
   // get the jail only — a derived Linux seat kept Bash/Write/WebFetch and ran on
-  // the operator's own Claude settings inside the namespace (Vera 69578).
+  // the operator's own Claude settings inside the namespace.
   const publicBwrapSandbox = sandboxTrust === 'public' && sandboxMode === 'bwrap';
   // A workspace seat on Linux: the same jail, with the workspace tier's policy
   // and a HOME of its own outside the project.
@@ -867,7 +867,7 @@ const prepareArgv = async (innerArgv, ctx) => {
   // above; anything else that lands here (the literal 'none', a typo, a
   // non-string) used to fall through to the bare `claude` spawn below — an
   // unconfined seat with a public record, which is how a record can claim
-  // confinement it never applies (Vera 69548).
+  // confinement it never applies.
   if (isConfinedTrust(sandboxTrust) && !publicNativeSandbox && sandboxMode !== 'bwrap') {
     throw new Error(
       `${sandboxTrust} Claude agents require an enforced sandbox mode `
@@ -929,7 +929,7 @@ const prepareArgv = async (innerArgv, ctx) => {
   if (publicBwrapSandbox || workspaceBwrapSandbox) {
     // The mode is chosen here, so the mechanism is verified here: a missing
     // bwrap must fail the seat's derivation with an actionable message, not
-    // every one of its spawns with a bare ENOENT (Wren 69586). On a non-Linux
+    // every one of its spawns with a bare ENOENT. On a non-Linux
     // host this reports the macOS-only message, same as the wrapper would.
     const bwrap = (ctx._detectBwrap || detectBwrap)();
     if (!bwrap.available) {
@@ -1043,7 +1043,7 @@ export default {
     const seatModel = requireSeatModel(rawCtx.environment, 'claude');
     // `sandbox.trust: 'internal'` is refused for new declarations and read as
     // `public` for a record that already carries it; such a seat is confined
-    // where it can be and refuses to derive where it cannot (Wren 69585).
+    // where it can be and refuses to derive where it cannot.
     // Resolved ONCE here and threaded to BOTH consumers — the public-state
     // preparation below and the argv builder — because two independent reads of
     // one declaration is exactly how this seat crashed with "public Claude
@@ -1091,9 +1091,9 @@ export default {
     // present in one but not the other means a retry silently runs a different
     // model than the turn it is replacing — the same drifting-copy shape that
     // has bitten this codebase repeatedly.
-    // `effort` rides in the same array for the same reason: Sam's 2026-09-01
-    // order ("flip all fable agents into fable 5.1 with high or above
-    // effort") needs both facts to reach every spawn, including the
+    // `effort` rides in the same array for the same reason: an order
+    // like "flip all fable agents into fable 5.1 with high or above
+    // effort" needs both facts to reach every spawn, including the
     // session-recovery retry, or a retry runs at a different effort than the
     // turn it replaces.
     const modelArgs = [
@@ -1133,7 +1133,7 @@ export default {
       // Trust is normalized at entry (legacy `internal` reads as public). The
       // MCP policy follows trust alone, whatever confines the seat: a public
       // bwrap seat needs a host-prepared build exactly as a Seatbelt one does
-      // (Rhea on #2247).
+      // (#2247).
       if (publicNativeSandbox) {
         publicClaudeState = await preparePublicClaudeState(ctx);
       } else if (workspaceBwrapSandbox) {
@@ -1210,7 +1210,7 @@ export default {
     } catch (err) {
       // A public seat's refusal is not a session-store failure, whatever its
       // message happens to contain: it must reach the run loop, never the
-      // fresh-session retry below (Rhea on #2247).
+      // fresh-session retry below (#2247).
       if (err?.code === PUBLIC_MCP_UNAVAILABLE_CODE) throw err;
       // Self-heal against a corrupted session store. If the persisted id is
       // already in use (or claude has forgotten about it), discard it and

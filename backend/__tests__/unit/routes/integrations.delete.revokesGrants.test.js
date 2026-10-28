@@ -157,7 +157,7 @@ describe('DELETE /api/integrations/:id ends the connection\'s grants first', () 
     await RoomGrant.create([root, second, child, unrelated]);
 
     // The witness is the post-state, not the returned count: `revokeCascade`
-    // counts only rows it moved, so 0 also describes "found none" (Vera 74459).
+    // counts only rows it moved, so 0 also describes "found none".
     const stillLive = () => RoomGrant.countDocuments({
       $or: [
         { connectionId: { $in: [String(connection._id), 'install-live-1'] } },
@@ -222,7 +222,7 @@ describe('DELETE /api/integrations/:id ends the connection\'s grants first', () 
     expect(row.revokedAt).toBeNull();
   });
 
-  it('refuses a caller with no identity instead of deleting past the grants step (Vera 74462)', async () => {
+  it('refuses a caller with no identity instead of deleting past the grants step', async () => {
     const connection = await seedConnection();
     const root = grantFixture({ connectionId: String(connection._id) });
     await RoomGrant.create(root);
@@ -370,7 +370,7 @@ describe('DELETE /api/integrations/:id over a hosted-MCP row', () => {
     // removal whose entry is gone. It seeded `entryId: 'linear'` until #2230
     // and passed only because the row's page and the Linear entry's page were
     // the same string; once the entry's page changed, `revokeAt` came from the
-    // entry (`connectionRemovalService.ts:124`) and the arm went red (Vera).
+    // entry (`connectionRemovalService.ts:124`) and the arm went red.
     const page = 'https://linear.app/settings/security';
     User.findById.mockResolvedValue({ _id: 'admin-1', role: 'admin' });
     const connection = await Integration.create({

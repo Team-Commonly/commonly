@@ -292,7 +292,7 @@ describe('messageController', () => {
       });
     });
 
-    // TASK-278 (Cofounder's security read): a reply's target must be in the
+    // TASK-278: a reply's target must be in the
     // reply's pod, or this pod's preview shows another pod's message.
     it('refuses a reply whose target is in another pod, before anything is written', async () => {
       Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
@@ -597,7 +597,7 @@ describe('messageController', () => {
       expect(emit).toHaveBeenCalledWith('newMessage', expect.objectContaining({ replyTo }));
     });
 
-    // #646's lesson one field over (Sam's live repro 2026-08-24): without
+    // #646's lesson one field over: without
     // thread_root_id on the broadcast, every live viewer rendered an
     // in-thread reply as a TOP-LEVEL message until refresh, and open
     // threads never updated live. The agent path (#1175) carries it; the

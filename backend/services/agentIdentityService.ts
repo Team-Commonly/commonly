@@ -76,7 +76,7 @@ const buildAgentEmail = (agentType: string, instanceId: string): string => {
  * Names an install derives for itself when it has no instance id: the
  * `AGENT_TYPES` keys, normalized the way `buildAgentUsername` normalizes them.
  *
- * Deliberately NOT a shape rule (wren 73988): `openclaw-pixel` is a legitimate
+ * Deliberately NOT a shape rule: `openclaw-pixel` is a legitimate
  * human handle, and its row carries no agent marker, so `getOrCreateAgentUser`
  * refuses it rather than flipping a person (TASK-133 a). Refusing the shape
  * would refuse real people to close a case (a) already closes.
@@ -154,7 +154,7 @@ export class AgentDisplayNameTakenError extends Error {
  * rows written before that flag, so the markers have to be the ones an install
  * itself writes: the derived agent address, `botType`, or `botMetadata.agentName`.
  *
- * The leaf, not the container (vera 73985): `botMetadata`'s sub-paths carry
+ * The leaf, not the container: `botMetadata`'s sub-paths carry
  * defaults (`officialAgent: false`, `machineId: null`, `requestedMachineId:
  * null`), so Mongoose materialises the object on EVERY document —
  * `Boolean(row.botMetadata)` is true for an ordinary person's row and the
@@ -195,9 +195,9 @@ interface AgentTypeConfig {
    *   - 'internal'       — Commonly-bot (in-process)
    *   - 'webhook'        — external HTTP endpoint (no deploy)
    *   - 'claude-code'    — Claude Code (cloud variant has no deploy yet;
-   *                        CLI variant is sam-local-claude et al.)
+   *                        CLI variant is a local wrapper seat)
    *   - 'codex'          — OpenAI Codex (cloud = LiteLLM-proxied; CLI =
-   *                        sam-local-codex et al.). Legacy `openai` value
+   *                        a local wrapper seat). Legacy `openai` value
    *                        still resolves via the normalizer in
    *                        `routes/registry/helpers.ts`.
    *   - 'managed-agents' — Anthropic Claude Managed Agents API (beta,
@@ -291,8 +291,8 @@ const AGENT_TYPES: Record<string, AgentTypeConfig> = {
 // your own agent stays open to all authenticated users.
 //
 // `codex` is deliberately absent: a codex install is cloud-hosted by default
-// (LiteLLM-proxied) but flips to BYO when `host === 'byo'` (sam-local-codex et
-// al.), so it's classified in isCloudRuntime() rather than by set membership.
+// (LiteLLM-proxied) but flips to BYO when `host === 'byo'` (a local
+// wrapper seat), so it's classified in isCloudRuntime() rather than by set membership.
 export const CLOUD_RUNTIME_TYPES = new Set<string>([
   'moltbot',
   'internal',
@@ -560,7 +560,7 @@ class AgentIdentityService {
       if (!isAgentOwnedRow(agentUser, buildAgentEmail(resolvedType, instanceId))) {
         throw new AgentUsernameConflictError(username, String(agentUser._id));
       }
-      // Revoke what the row brought (TASK-133 b, wren 74014). An adopted row can
+      // Revoke what the row brought (TASK-133 b). An adopted row can
       // carry credentials no agent ever issued: a person mints an apiToken from
       // their own session (`routes/auth.ts` POST /api-token/generate) and a CLI
       // device bearer (`deviceAuthorizationService`), and adoption keeps both —
@@ -637,8 +637,7 @@ class AgentIdentityService {
   }
 
   /**
-   * One predicate for every human registration path (TASK-133 b, wren
-   * 73987/73988): the sync name rules first (reserved address, `AGENT_TYPES`
+   * One predicate for every human registration path (TASK-133 b): the sync name rules first (reserved address, `AGENT_TYPES`
    * keys), then the names an `AgentRegistry` row claims. Verified before the
    * row exists beats refusing at install, which is where the same collision
    * would otherwise land as a 409 the operator cannot act on.

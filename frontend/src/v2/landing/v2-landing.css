@@ -1285,7 +1285,7 @@
   .v2-landing__footer { padding-top: 32px; }
   .v2-landing__footer-legal { padding: 16px 0 20px; }
   .v2-landing__title { font-size: 44px; line-height: 46px; }
-  /* TASK-213 (lily-shen's ruling, option 1): on a phone the suffix takes its own
+  /* TASK-213 (option 1): on a phone the suffix takes its own
      line, so the title is 「与你的 / <term> / 对话」 at every width and only the
      term rotates. Without this the h1 is 94.6px under three of the four terms
      and 140.6px under the fourth at 320–414, so the lede, the CTAs and every
@@ -1590,7 +1590,7 @@
 .v2-landing__faq-item dt::first-letter { text-transform: uppercase; }
 .v2-landing__faq-item dd { margin: 0; }
 
-/* D129 phone hero (ux-lead's ruling): at 320 and 390 the rotator's widest terms
+/* Phone hero: at 320 and 390 the rotator's widest terms
    run 362–566px against a 272–342px column at the 44px title, so the term
    clipped in both locales. At ≤760 the title is 32/36 and the rotator may wrap
    onto two lines; min-height reserves those two lines so the h1 holds one

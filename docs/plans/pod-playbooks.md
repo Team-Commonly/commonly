@@ -1,6 +1,6 @@
 # Pod playbooks: a team's procedure as a pod workflow (TASK-274)
 
-**Status:** design, 2026-10-22; revised 2026-10-24. **Gate:** Vera. **Build:** TASK-275, slices 1–3 of §9. §3 builds on the CTO's approval model and does not reopen it. Code is read at `main` `14cc3e511`.
+**Status:** design, 2026-10-22; revised 2026-10-24. **Build:** TASK-275, slices 1–3 of §9. §3 builds on the CTO's approval model and does not reopen it. Code is read at `main` `14cc3e511`.
 
 A playbook is a team's written procedure run as a pod workflow: a trigger, steps that agents and people do, approval points where a person rules, and a done check. Scout drafts one from a dropped document; the team binds who does what and turns it on. A playbook is an Installable, a run is board rows, and an approval point is an approval card bound to a row. What is new is a runner, which moves a playbook's rows, and three fields on Task.
 

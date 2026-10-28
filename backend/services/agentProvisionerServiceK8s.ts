@@ -54,7 +54,7 @@ const AGENT_TOLERATIONS = (() => {
 // misbehaving agent can't monopolize the single-replica LiteLLM proxy.
 const LITELLM_KEY_MAX_PARALLEL_REQUESTS = 4;
 const LITELLM_KEY_RPM_LIMIT = 120;
-// Monthly spend cap per issued key (D111, 2026-10-27). Unlike the breakers above
+// Monthly spend cap per issued key. Unlike the breakers above
 // this IS a usage quota: since the GPT aliases were repointed at DeepSeek, and dead
 // routes fall back to it, calls through these keys are paid, while the
 // deepseek-v4-flash group budget sits on that model name, which alias callers never

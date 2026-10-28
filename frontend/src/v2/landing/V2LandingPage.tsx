@@ -185,7 +185,7 @@ const StaggerWords: React.FC<{ text: string }> = ({ text }) => (
 // A full feature demonstration: framed screenshot on one side, kicker +
 // title + description + highlight checklist on the other. Rows alternate
 // sides via CSS :nth-child. One row per screenshot — each feature gets a
-// real pitch instead of a caption (Sam's call, 2026-07-03).
+// real pitch instead of a caption (2026-07-03).
 // `width` and `height` are the frame's own intrinsic size, and they are required
 // rather than decorative: the frames are lazy, so with no attributes the box is
 // 0 tall until the image arrives, the page grows mid-scroll and a first-click
@@ -418,13 +418,13 @@ const V2LandingPage: React.FC = () => {
           <a className="v2-landing__navlink" href="#use-cases">{t('landing.nav.useCases')}</a>
           <a className="v2-landing__navlink" href="#pricing">{t('landing.nav.pricing')}</a>
           {/* The star ask sits in the nav and the open-source section, not only the
-              final CTA: most repo visitors leave without starring (D139). */}
+              final CTA: most repo visitors leave without starring. */}
           <a className="v2-landing__navlink" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.starGithub')}</a>
           {!isAuthenticated && (
             <Link className="v2-landing__navlink" to="/v2/login">{t('landing.nav.signIn')}</Link>
           )}
           {/* Language menu reads like a nav option; the primary CTA stays the
-              rightmost element (Sam's call 2026-07-22). */}
+              rightmost element (2026-07-22). */}
           <V2LangSwitch />
           <Link className="v2-landing__btn v2-landing__btn--primary v2-landing__btn--sm" to={appHref}>
             {primaryLabel}
@@ -509,7 +509,7 @@ const V2LandingPage: React.FC = () => {
         </section>
 
         <div className="v2-landing__hero-art">
-          {/* The product, not a video (Sam approved 2026-09-23). The demo is
+          {/* The product, not a video (2026-09-23). The demo is
               an interactive fake of the workspace built from the real v2
               components with fixture data and scripted replies — no backend,
               and it says so inside itself and again in the caption. There is

@@ -29,7 +29,7 @@ export const isTimeoutError = (error: unknown): boolean => (
  * A caller's own signal is COMPOSED with the deadline rather than replaced: the
  * two are independent reasons to stop, and `{ ...init, signal: deadline }` reads
  * as though `init` were honoured while silently dropping the one field in it that
- * cancels (Vera, on #2006). No caller passes one today — all three call sites take
+ * cancels (on #2006). No caller passes one today — all three call sites take
  * the default — so this is the difference between a wrapper that is bounded and a
  * wrapper that is bounded *and* cancellable, and the composition costs nothing.
  */

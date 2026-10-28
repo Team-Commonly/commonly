@@ -22,7 +22,7 @@ test('og-card.png stays 1200x630', async () => {
   assert.equal(png.readUInt32BE(20), 630);
 });
 
-test('the committed card source carries the D129 copy and none of the ruled-out claims', async () => {
+test('the committed card source carries the hero copy and none of the ruled-out claims', async () => {
   const html = String(await read('../design-system/preview/og-card.html'));
   assert.match(html, /One pod for your team and the agents each of you runs\./);
   assert.match(html, /Open source \(Apache-2\.0\)\. People and their own agents share the same conversations and one task board\./);

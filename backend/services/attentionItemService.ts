@@ -121,8 +121,8 @@ const resolveAuthorName = async (authorId: unknown): Promise<string> => {
 };
 
 /**
- * The people an agent's message is ANSWERING (stickiness Phase 1b; shape ruled
- * by ux-lead, Sharpen 78222-78224, 2026-10-16). An answer you asked for is not
+ * The people an agent's message is ANSWERING (stickiness Phase 1b).
+ * An answer you asked for is not
  * waiting on you: you see it where you asked. So it opens no needs-you row;
  * the message and its @mention stay. Before this, almost every agent-mention
  * row was bulk-acknowledged or left open, and well under 1% was answered.
@@ -229,7 +229,7 @@ const validDate = (value: unknown): Date | null => {
 };
 
 /**
- * Sam's 2026-09-06 ruling: only a later post in the mention's thread or an
+ * Ruling (2026-09-06): only a later post in the mention's thread or an
  * explicit reply to its message is a reply. An unrelated pod post is not.
  */
 export const resolveMentionAttentionForReply = async ({
@@ -350,7 +350,7 @@ export const sweepResolvedMentionAttention = async ({ apply = false }: { apply?:
 };
 
 /**
- * A thread reply is the only reply (Sam, 2026-09-06), so an agent's mention
+ * A thread reply is the only reply, so an agent's mention
  * nobody answers in its thread stays open for good. Seats post status and gate
  * notes that name a person, and the 2026-10-20 audit found one founder's queue
  * holding 113 of them, the oldest five weeks old. After
@@ -419,8 +419,8 @@ export const recordApproval = async (approval: any, options: RecordOptions = {})
 };
 
 // An agent's action proposal (approvalActionService, the runtime `propose-action`
-// path) is an ask like any other: it rings, counts and badges in the inbox
-// (ux-lead ruling on #1650). It is its own source type because it resolves
+// path) is an ask like any other: it rings, counts and badges in the inbox.
+// It is its own source type because it resolves
 // through /api/approvals/:id/resolve, not the Activity approve/reject verbs —
 // the page branches on `sourceType`, never on a guess about the id.
 export const recordActionApproval = async (row: any, displayName?: string | null, options: RecordOptions = {}): Promise<void> => {
@@ -430,7 +430,7 @@ export const recordActionApproval = async (row: any, displayName?: string | null
     if (!podId || !id) return;
     // Only the owner can decide an action proposal (resolveApproval 403s
     // anyone else), so only the owner is asked — a member whose Approve would
-    // fail must not carry it on their badge (sprint-review on #1652).
+    // fail must not carry it on their badge.
     const owner = row?.ownerUserId ? String(row.ownerUserId) : '';
     const members = await currentHumanMembers(podId);
     const recipients = members.filter((member: any) => String(member?._id ?? member) === owner);
@@ -483,7 +483,7 @@ export const recordDecision = async (decision: any, options: RecordOptions = {})
 // human members, or "human (merge) press". A report of a ruling already made
 // ("X's ruling, 10-19: ...") asks nothing, and no instance's names live here:
 // the previous pattern spelled one person's name, and one report beginning
-// "Sam's ruling" opened 40 rows across a pod's four humans (2026-10-19).
+// with a member's name opened 40 rows across a pod's four humans (2026-10-19).
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const HANDOFF_LEAD = String.raw`(?:awaiting|waiting\s+(?:on|for)|ready\s+for|needs?)`;
 const HUMAN_PRESS_RE = /\bhuman\s+(?:merge\s+)?press\b/i;
