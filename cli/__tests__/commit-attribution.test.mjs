@@ -12,6 +12,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -361,6 +362,27 @@ describe('prepareCommitAttribution', () => {
         return { cwd: worktree, expected: join(repo, '.git', 'hooks') };
       },
     },
+    {
+      name: 'the hooks of a gitdir: pointer relative to the .git file',
+      setup: (repo, root) => {
+        // Submodules write a relative pointer, and git worktree add does not.
+        const store = join(root, 'store');
+        renameSync(join(repo, '.git'), store);
+        writeFileSync(join(repo, '.git'), 'gitdir: ../store\n');
+        mkdirSync(join(store, 'hooks'), { recursive: true });
+        mkdirSync(join(repo, 'src'));
+        return { cwd: join(repo, 'src'), expected: join(store, 'hooks') };
+      },
+    },
+    {
+      name: "a ~/ core.hooksPath under the probe's HOME",
+      setup: (repo, root) => {
+        const home = join(root, 'home');
+        mkdirSync(join(home, 'team-hooks'), { recursive: true });
+        execFileSync('git', ['config', 'core.hooksPath', '~/team-hooks'], { cwd: repo });
+        return { cwd: repo, expected: join(home, 'team-hooks'), env: { HOME: home } };
+      },
+    },
   ])('a git that fails at once still yields $name', ({ setup }) => {
     const root = mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-fallback-'));
     const repo = join(root, 'repo');
@@ -370,14 +392,14 @@ describe('prepareCommitAttribution', () => {
     execFileSync('git', ['init', '--quiet'], { cwd: repo });
     execFileSync('git', ['config', 'user.name', 'Fixture Author'], { cwd: repo });
     execFileSync('git', ['config', 'user.email', 'fixture@example.test'], { cwd: repo });
-    const { cwd, expected } = setup(repo, root);
+    const { cwd, expected, env = {} } = setup(repo, root);
     makeExecutable(join(stubBin, 'git'), FAILING_GIT);
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     let attribution;
     try {
       attribution = prepareCommitAttribution({
         cwd,
-        env: { ...fixtureEnv, PATH: `${stubBin}:${fixtureEnv.PATH}` },
+        env: { ...fixtureEnv, ...env, PATH: `${stubBin}:${fixtureEnv.PATH}` },
         agentName: 'forge',
         adapter: 'claude',
       });

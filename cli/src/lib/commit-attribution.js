@@ -9,7 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -134,8 +134,9 @@ const configuredHooksPath = (configPath) => {
 // The hooks directory a commit in `cwd` would use, read from the repository's
 // own files without running git: core.hooksPath from the repository config,
 // else the hooks folder of the common git directory (a linked worktree shares
-// its main repository's). Global config and includes are not read.
-const hooksPathFromGitFiles = (cwd) => {
+// its main repository's). Global config and includes are not read. `~` expands
+// against the HOME the probe gave git, as git itself would.
+const hooksPathFromGitFiles = (cwd, env) => {
   let top = resolve(cwd);
   let entry = join(top, '.git');
   let entryStat = null;
@@ -169,7 +170,7 @@ const hooksPathFromGitFiles = (cwd) => {
   const configured = configuredHooksPath(join(commonDir, 'config'));
   if (!configured) return directoryOrNull(join(commonDir, 'hooks'));
   if (configured === '~' || configured.startsWith('~/')) {
-    return directoryOrNull(join(homedir(), configured.slice(1)));
+    return env.HOME ? directoryOrNull(join(env.HOME, configured.slice(1))) : null;
   }
   // Git runs hooks from the top of the working tree, so a relative path
   // resolves there.
@@ -199,10 +200,11 @@ const resolveOriginalHooksPath = (cwd, env) => {
     return null;
   }
   if (result.error || result.status !== 0 || !result.stdout?.trim()) {
-    // A confined seat can only run the hooks it is granted, and a hook it is
-    // not granted is skipped without a word. So read the hooks directory from
-    // the repository's files instead.
-    const fallback = hooksPathFromGitFiles(cwd);
+    // A confined seat can only run the hooks it is granted. A hook it is not
+    // granted is skipped without a word, or refuses the commit where the jail
+    // can see the file but not run it. So read the hooks directory from the
+    // repository's files instead.
+    const fallback = hooksPathFromGitFiles(cwd, env);
     if (fallback) {
       const reason = result.error?.code || `exit ${result.status}`;
       // eslint-disable-next-line no-console
@@ -308,7 +310,7 @@ export const prepareCommitAttribution = ({
     COMMONLY_AGENT_HOOKS_PATH: hooksDirectory,
     // The sandbox adapters allow the workspace's existing hook files. The
     // proxy resolves the target repo's path at hook time, and a confined seat
-    // skips, without failing the commit, a hook outside what it was granted.
+    // cannot run a hook outside what it was granted.
     ...(originalHooksPath ? { COMMONLY_AGENT_ORIGINAL_HOOKS_PATH: originalHooksPath } : {}),
     COMMONLY_AGENT_SEAT_NAME: cleanSingleLine(displayName || agentName, 'agent'),
     COMMONLY_AGENT_SEAT_ID: seatAddressId(agentName, instanceId),
