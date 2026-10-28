@@ -83,7 +83,8 @@ describe('GroupMe webhook hardening', () => {
     expect(deliveries.create).not.toHaveBeenCalled();
   });
 
-  test('rejects callbacks to an integration with no configured group', async () => {
+  test('rejects callbacks to an integration with no configured group, flag or not', async () => {
+    process.env.GROUPME_WEBHOOK_ALLOW_UNVERIFIED = 'true';
     Integration.findById.mockResolvedValue({ ...integration, config: { botId: 'bot-1' } });
     const response = await request(app)
       .post('/api/webhooks/groupme/integration-1')
@@ -91,6 +92,7 @@ describe('GroupMe webhook hardening', () => {
 
     expect(response.status).toBe(401);
     expect(deliveries.create).not.toHaveBeenCalled();
+    delete process.env.GROUPME_WEBHOOK_ALLOW_UNVERIFIED;
   });
 
   // The removed bypass flag must not reopen the route if an old env still sets it.
