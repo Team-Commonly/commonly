@@ -521,8 +521,9 @@ describe('prepareCommitAttribution', () => {
     const real = spawnSync('git', ['rev-parse', '--git-path', 'hooks'], {
       cwd, env: { ...fixtureEnv, GIT_CEILING_DIRECTORIES: root }, encoding: 'utf8',
     });
+    // Git versions word the refusal of a bad gitfile differently.
     expect(real.status).not.toBe(0);
-    expect(real.stderr).toContain('not a git repository');
+    expect(real.stderr).toMatch(/not a git repository|gitfile does not point to a valid repository/);
     makeExecutable(join(stubBin, 'git'), FAILING_GIT);
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     let attribution;
