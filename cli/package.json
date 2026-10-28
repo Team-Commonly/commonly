@@ -47,22 +47,6 @@
     "eslint": "^8.56.0",
     "jest": "^29.7.0"
   },
-  "jest": {
-    "testEnvironment": "node",
-    "setupFiles": [
-      "<rootDir>/jest.setup.cjs"
-    ],
-    "setupFilesAfterEnv": [
-      "<rootDir>/jest.teardown.cjs"
-    ],
-    "transform": {},
-    "testMatch": [
-      "**/__tests__/**/*.[jt]s?(x)",
-      "**/__tests__/**/*.mjs",
-      "**/?(*.)+(spec|test).[jt]s?(x)",
-      "**/?(*.)+(spec|test).mjs"
-    ]
-  },
   "engines": {
     "node": ">=20.0.0"
   },
