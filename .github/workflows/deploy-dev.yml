@@ -161,6 +161,15 @@ jobs:
         env:
           DEV_HELM_VALUES_PRIVATE: ${{ secrets.DEV_HELM_VALUES_PRIVATE }}
 
+      - name: Materialize hosted-MCP allowlist overlay (runner-only)
+        # Per-instance hostedMcp.hiddenEntryUserAllowlist, kept out of the repo
+        # like the overlay above. Unset, it writes an empty overlay and the
+        # chart default ({}) applies.
+        run: |
+          printf '%s\n' "${DEV_HELM_HIDDENMCP_ALLOWLIST}" > "$RUNNER_TEMP/allowlist.yaml"
+        env:
+          DEV_HELM_HIDDENMCP_ALLOWLIST: ${{ secrets.DEV_HELM_HIDDENMCP_ALLOWLIST }}
+
       # clawdbot-gateway is parked (agents.clawdbot.enabled: false since #1051),
       # and the chart then renders no gateway Deployment at all. Building it
       # anyway cost 3.3 of the ~6.4 build minutes per deploy and pushed a
@@ -178,6 +187,7 @@ jobs:
               -f k8s/helm/commonly/values.yaml \
               -f k8s/helm/commonly/values-dev.yaml \
               -f "$RUNNER_TEMP/values-private.yaml" \
+              -f "$RUNNER_TEMP/allowlist.yaml" \
               --show-only templates/agents/clawdbot-deployment.yaml 2>&1 >/dev/null); then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           elif printf '%s' "$err" | grep -q 'could not find template'; then
@@ -285,6 +295,7 @@ jobs:
             -f k8s/helm/commonly/values.yaml \
             -f k8s/helm/commonly/values-dev.yaml \
             -f "$RUNNER_TEMP/values-private.yaml" \
+            -f "$RUNNER_TEMP/allowlist.yaml" \
             --set backend.image.tag="$TAG" \
             --set frontend.image.tag="$TAG" \
             "${GATEWAY_TAG[@]}" \
