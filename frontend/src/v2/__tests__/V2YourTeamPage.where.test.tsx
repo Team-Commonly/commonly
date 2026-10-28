@@ -31,8 +31,11 @@ const agent = (overrides) => ({
 });
 
 const agents = [
-  agent({ name: 'scout', displayName: 'Scout', userId: 'user-scout', runtime: { runtimeType: 'hosted' } }),
+  agent({ name: 'scout', displayName: 'Scout', userId: 'user-scout', installedBy: 'me', runtime: { runtimeType: 'hosted' } }),
   agent({ name: 'codex', displayName: 'Codex', userId: 'user-codex', runtime: { runtimeType: 'codex' } }),
+  agent({ name: 'laptop', displayName: 'Laptop', userId: 'user-laptop', runtime: { runtimeType: 'native', host: 'byo' } }),
+  agent({ name: 'hook', displayName: 'Hook', userId: 'user-hook', runtime: { runtimeType: 'webhook' } }),
+  agent({ name: 'mystery', displayName: 'Mystery', userId: 'user-mystery', runtime: { runtimeType: 'something-new' } }),
 ];
 
 const renderPage = () => render(
@@ -63,22 +66,22 @@ describe('V2YourTeamPage location mark and hosted meter', () => {
     localStorage.clear();
   });
 
-  it('marks a hosted seat as running on Commonly and a local seat as running on the computer', async () => {
+  it('marks each seat by where its runtime runs, and gives an unknown runtime no mark', async () => {
     renderPage();
-    const hosted = await screen.findByRole('img', { name: 'Runs on Commonly' });
-    // The own-agent tile carries the laptop mark too, so match the seat's card.
-    const locals = await screen.findAllByRole('img', { name: 'Runs on your computer' });
-    expect(hosted.closest('article')).toHaveTextContent('Scout');
-    expect(locals.map((el) => el.closest('article'))).toEqual(expect.arrayContaining([
-      expect.objectContaining({ textContent: expect.stringContaining('Codex') }),
-    ]));
+    const cardOf = async (name) => (await screen.findByText(name)).closest('article');
+    expect(within(await cardOf('Scout')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
+    expect(within(await cardOf('Codex')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
+    expect(within(await cardOf('Laptop')).getByRole('img', { name: 'Runs on your computer' })).toBeInTheDocument();
+    expect(within(await cardOf('Hook')).getByRole('img', { name: 'Runs on your computer' })).toBeInTheDocument();
+    expect(within(await cardOf('Mystery')).queryByRole('img', { name: /Runs on/ })).toBeNull();
+    // The own-agent tile is the viewer's own machine by definition.
     expect(screen.getByTestId('team-own-card').querySelector('[role="img"]')).not.toBeNull();
   });
 
   it('shows the server meter on the hosted card only, and only reads it for hosted seats', async () => {
     renderPage();
     await waitFor(() => expect(screen.getByTestId('team-card-meter')).toBeInTheDocument());
-    const scoutCard = screen.getByRole('img', { name: 'Runs on Commonly' }).closest('article');
+    const scoutCard = (await screen.findByText('Scout')).closest('article');
     expect(within(scoutCard).getByText('12/30 today')).toBeInTheDocument();
     expect(screen.getAllByTestId('team-card-meter')).toHaveLength(1);
     const statusCalls = axios.get.mock.calls.filter(([url]) => url === '/api/hosted/status');

@@ -42,7 +42,7 @@ interface AgentInstallationSummary {
   installedAt?: string;
   lastHeartbeatAt?: string | null;
   lastActiveAt?: string | null;
-  runtime?: { runtimeType?: string; provider?: string } | null;
+  runtime?: { runtimeType?: string; provider?: string; host?: string | null } | null;
   category?: string | null;
   podId?: string;
   podName?: string;
@@ -103,11 +103,20 @@ const STATE_DOT = '\u25CF';
 
 const agentKey = (a: { name: string; instanceId?: string }) => `${a.name}:${a.instanceId || 'default'}`;
 
-// Where a seat runs: Commonly runs a hosted seat (cloud); every other seat runs
-// on the owner's machine (laptop). Same kernel-owned type runtimeChipLabel reads.
-const isHostedSeat = (a: AgentInstallationSummary): boolean => {
-  const type = (a.runtime?.runtimeType || '').toLowerCase();
-  return type === 'hosted' || type === 'internal';
+// Where a seat runs, mirroring agentIdentityService.isCloudRuntime (host first).
+// 'hosted' is the ADR-023 hosted runtime, which Commonly runs, so it is cloud even
+// though isCloudRuntime excludes it from the operator gate. A seat we can't
+// classify gets no mark rather than a guessed one.
+type RunsOn = 'cloud' | 'laptop' | null;
+const CLOUD_RUNTIME_TYPES = new Set(['hosted', 'moltbot', 'internal', 'native', 'managed-agents', 'codex']);
+const BYO_RUNTIME_TYPES = new Set(['webhook', 'claude-code']);
+const runsOn = (a: AgentInstallationSummary): RunsOn => {
+  const type = (a.runtime?.runtimeType || '').trim().toLowerCase();
+  const host = (a.runtime?.host || '').trim().toLowerCase();
+  if (host === 'byo') return 'laptop';
+  if (CLOUD_RUNTIME_TYPES.has(type)) return 'cloud';
+  if (BYO_RUNTIME_TYPES.has(type)) return 'laptop';
+  return null;
 };
 
 // Outline glyphs for the location mark (artboard 360: cloud = runs on Commonly,
@@ -309,10 +318,13 @@ const V2YourTeamPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agents, asksByActor, tasksByClaimer]);
 
-  // Hosted seats only: the meter is the server's count against the server's cap.
+  // Hosted seats the viewer owns only: /api/hosted/status is owner-scoped, and the
+  // meter is the server's count against the server's cap.
   useEffect(() => {
     let cancelled = false;
-    const hosted = agents.filter((a) => a.internal !== true && isHostedSeat(a));
+    const hosted = agents.filter((a) => a.internal !== true
+      && a.runtime?.runtimeType === 'hosted'
+      && a.installedBy === String(user?._id));
     if (hosted.length === 0) return undefined;
     const headers = localStorage.getItem('token') ? { Authorization: `Bearer ${localStorage.getItem('token')}` } : undefined;
     void Promise.all(hosted.map(async (a) => {
@@ -330,7 +342,7 @@ const V2YourTeamPage: React.FC = () => {
       setMeters(new Map(rows.filter((row): row is readonly [string, { used: number; cap: number }] => row !== null)));
     });
     return () => { cancelled = true; };
-  }, [agents]);
+  }, [agents, user?._id]);
 
   const internal = useMemo(() => agents.filter((a) => a.internal === true), [agents]);
   const counts = useMemo(() => ({
@@ -383,6 +395,7 @@ const V2YourTeamPage: React.FC = () => {
     const display = a.displayName || a.name;
     const description = a.description?.trim();
     const key = agentKey(a);
+    const where = runsOn(a);
     const ask = a.userId ? asksByActor.get(a.userId)?.[0] : undefined;
     const task = claimedTaskFor(a);
     const needsReconnect = a.connection && ['revoked', 'stale'].includes(a.connection.state);
@@ -418,17 +431,19 @@ const V2YourTeamPage: React.FC = () => {
               {statusText}
             </div>
           </div>
-          <span
-            className="v2-team-card__where"
-            role="img"
-            aria-label={isHostedSeat(a) ? t('yourTeam.card.where.hosted') : t('yourTeam.card.where.local')}
-            title={isHostedSeat(a) ? t('yourTeam.card.where.hosted') : t('yourTeam.card.where.local')}
-          >
-            {isHostedSeat(a) ? <CloudGlyph /> : <LaptopGlyph />}
-          </span>
+          {where && (
+            <span
+              className="v2-team-card__where"
+              role="img"
+              aria-label={where === 'cloud' ? t('yourTeam.card.where.hosted') : t('yourTeam.card.where.local')}
+              title={where === 'cloud' ? t('yourTeam.card.where.hosted') : t('yourTeam.card.where.local')}
+            >
+              {where === 'cloud' ? <CloudGlyph /> : <LaptopGlyph />}
+            </span>
+          )}
         </div>
         {description && !isTemplateDescription(description, display) && <p className="v2-team-card__desc">{description}</p>}
-        {isHostedSeat(a) && meters.has(key) && (() => {
+        {a.runtime?.runtimeType === 'hosted' && meters.has(key) && (() => {
           const meter = meters.get(key)!;
           const fill = Math.min(100, (meter.used / Math.max(meter.cap, 1)) * 100);
           return (
