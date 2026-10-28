@@ -1495,15 +1495,18 @@
   vertical-align: bottom;
   color: #ffffff;
   padding-bottom: 0.06em; /* keep descenders (y, p) out of the clip */
-  /* Width tracks the active term (via the sizer) — smooth the resize so the
-     suffix glides rather than jumps when a shorter/longer term rotates in. */
-  transition: width 350ms ease-out;
 }
 
-/* In-flow, invisible: defines the slot's width + height from the active term. */
+/* In-flow, invisible: every term stacked in one grid cell, so the slot's width
+   and height are the widest term's and do not change as the term rotates. */
 .v2-landing__rotator-sizer {
+  display: grid;
   visibility: hidden;
   white-space: nowrap;
+}
+
+.v2-landing__rotator-sizer > span {
+  grid-area: 1 / 1;
 }
 
 /* Animated terms sit on top of the sizer, filling it. */
@@ -1593,13 +1596,13 @@
 /* D129 phone hero (ux-lead's ruling): at 320 and 390 the rotator's widest terms
    run 362–566px against a 272–342px column at the 44px title, so the term
    clipped in both locales. At ≤760 the title is 32/36 and the rotator may wrap
-   onto two lines; min-height reserves those two lines so the h1 holds one
-   height under every term. text-wrap: balance keeps the last line from
-   holding one word ("runs"). Placed last so it wins over the ≤680 title size by
-   order. 1440 and up are untouched. */
+   onto two lines. The sizer stacks every term in one grid cell, so the h1 holds
+   one height under every term without a min-height. text-wrap: balance keeps
+   the last line from holding one word ("runs"). Placed last so it wins over the
+   ≤680 title size by order. 1440 and up are untouched. */
 @media (max-width: 760px) {
   .v2-landing__title { font-size: 32px; line-height: 36px; }
-  .v2-landing__rotator { max-width: 100%; min-height: calc(72px + 0.06em); text-wrap: balance; }
+  .v2-landing__rotator { max-width: 100%; text-wrap: balance; }
   .v2-landing__rotator-sizer,
   .v2-landing__rotator-term { white-space: normal; }
 }

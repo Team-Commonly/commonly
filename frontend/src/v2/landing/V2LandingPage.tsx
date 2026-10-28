@@ -106,67 +106,20 @@ interface Stats {
   agentCount?: number;
 }
 
-// Hero copy. Option 1 is the shipped line. ?heroOption=2 or ?heroOption=3 shows
-// the other two so ux-lead can compare them side by side; the flag is dropped
-// before merge (ux-lead's pick decides which option stays).
-type HeroOption = '1' | '2' | '3';
-const heroOptionFromUrl = (): HeroOption => {
-  const v = new URLSearchParams(window.location.search).get('heroOption');
-  return v === '2' || v === '3' ? v : '1';
-};
-
-const heroCopy = (option: HeroOption, t: (key: string) => string) => {
-  if (option === '2') {
-    return {
-      ariaLabel: t('landing.hero.option2.ariaLabel'),
-      titlePrefix: t('landing.hero.option2.titlePrefix'),
-      lineBreak: true,
-      terms: [
-        t('landing.hero.option2.terms.yourClaudeCode'),
-        t('landing.hero.option2.terms.teammateCodex'),
-        t('landing.hero.option2.terms.hostedAgent'),
-      ],
-      titleSuffix: t('landing.hero.option2.titleSuffix'),
-      suffixOwnLine: false,
-      lede: t('landing.hero.option2.lede'),
-    };
-  }
-  if (option === '3') {
-    return {
-      ariaLabel: t('landing.hero.option3.ariaLabel'),
-      titlePrefix: '',
-      lineBreak: false,
-      terms: [
-        t('landing.hero.option3.terms.yourClaudeCode'),
-        t('landing.hero.option3.terms.teammateCodex'),
-        t('landing.hero.option3.terms.hostedAgent'),
-        t('landing.hero.option3.terms.everyonesAgents'),
-      ],
-      titleSuffix: t('landing.hero.option3.titleSuffix'),
-      suffixOwnLine: false,
-      lede: t('landing.hero.option3.lede'),
-    };
-  }
-  return {
-    ariaLabel: t('landing.hero.ariaLabel'),
-    titlePrefix: t('landing.hero.titlePrefix'),
-    // The prefix gets its own line in both locales. Inline, zh 把 was pushed
-    // off the term's line at 320 and the h1 jumped 36px on "你的 Claude Code".
-    lineBreak: true,
-    terms: [
-      t('landing.hero.terms.yourClaudeCode'),
-      t('landing.hero.terms.teammateCodex'),
-      t('landing.hero.terms.hostedAgent'),
-      t('landing.hero.terms.wholeTeam'),
-    ],
-    titleSuffix: t('landing.hero.titleSuffix'),
-    // The suffix takes its own line at every width. Inline, the widest term
-    // ("your teammate's Codex") pushed it to a third line at 1440 and the h1
-    // jumped ~84px on that term; the zh band rule already does this for zh.
-    suffixOwnLine: true,
-    lede: t('landing.hero.lede'),
-  };
-};
+// The hero copy: the rotating term sits inside one sentence, and the sentence
+// is stated once on the h1's aria-label.
+const heroCopy = (t: (key: string) => string) => ({
+  ariaLabel: t('landing.hero.ariaLabel'),
+  titlePrefix: t('landing.hero.titlePrefix'),
+  terms: [
+    t('landing.hero.terms.yourClaudeCode'),
+    t('landing.hero.terms.teammateCodex'),
+    t('landing.hero.terms.hostedAgent'),
+    t('landing.hero.terms.wholeTeam'),
+  ],
+  titleSuffix: t('landing.hero.titleSuffix'),
+  lede: t('landing.hero.lede'),
+});
 
 const fmt = (n: number | undefined, locale: string): string => (
   typeof n === 'number' ? new Intl.NumberFormat(locale).format(n) : '—'
@@ -197,14 +150,15 @@ const RotatingTerm: React.FC<{ terms: string[] }> = ({ terms }) => {
   const staticIndex = terms.length - 1;
   const shownIndex = rotating ? active : staticIndex;
   return (
-    // The sizer holds ONLY the active term in normal flow, so the slot width
-    // tracks that term instead of the widest one. Critical for suffixed
-    // grammars (zh 「与你的___对话」): a fixed widest-term slot would strand
-    // the suffix far to the right on short terms. English has no suffix, so
-    // this is invisible there. Animated terms are absolutely positioned over
-    // the sizer.
+    // The sizer holds EVERY term, stacked in one grid cell, so the slot is as
+    // wide and as tall as the widest term and the h1 keeps one height on every
+    // rotation. Only the active term shows; the animated terms sit over it.
     <span className="v2-landing__rotator" aria-hidden="true">
-      <span className="v2-landing__rotator-sizer">{terms[shownIndex]}</span>
+      <span className="v2-landing__rotator-sizer">
+        {terms.map((term) => (
+          <span key={term}>{term}</span>
+        ))}
+      </span>
       <span className="v2-landing__rotator-stack">
         {terms.map((term, i) => (
           <span
@@ -380,7 +334,7 @@ const V2LandingPage: React.FC = () => {
     if (!existing) document.head.appendChild(script);
     return () => { document.getElementById(id)?.remove(); };
   }, [isEnglish]);
-  const hero = heroCopy(heroOptionFromUrl(), t);
+  const hero = heroCopy(t);
 
   useEffect(() => {
     let cancelled = false;
@@ -501,16 +455,17 @@ const V2LandingPage: React.FC = () => {
                 translated sentence around the term at one end only. */}
             <h1 className="v2-landing__title" aria-label={hero.ariaLabel}>
               {hero.titlePrefix && <StaggerWords text={hero.titlePrefix} />}
-              {hero.lineBreak && <br />}
+              {/* The prefix gets its own line in both locales: inline, zh 把 was
+                  pushed off the term's line at 320. */}
+              <br />
               <RotatingTerm terms={hero.terms} />
               {hero.titleSuffix && (
                 // TASK-215: the sentence is stated once, on the h1's aria-label,
                 // so this span is decoration like the rotator above it. Without
                 // aria-hidden the tree announced the sentence AND a stray 「对话」.
-                <span
-                  className={`v2-landing__title-suffix${hero.suffixOwnLine ? ' v2-landing__title-suffix--own-line' : ''}`}
-                  aria-hidden="true"
-                >
+                // The suffix always takes its own line: inline, the widest term
+                // pushed it to a third line at 1440 and the h1 jumped ~84px.
+                <span className="v2-landing__title-suffix v2-landing__title-suffix--own-line" aria-hidden="true">
                   {hero.titleSuffix}
                 </span>
               )}

@@ -1808,7 +1808,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // CodeRabbit (Minor) on #2883: presence pins for the ≤760 rotator rules. jsdom
     // has no line boxes, so these only guard against the declarations being dropped.
     // The block is placed last in the sheet and wins by order over the ≤680 rules.
-    expect(landing).toContain('.v2-landing__rotator { max-width: 100%; min-height: calc(72px + 0.06em); text-wrap: balance; }');
+    expect(landing).toContain('.v2-landing__rotator { max-width: 100%; text-wrap: balance; }');
+    // The sizer stacks every term in one grid cell, so the h1 holds one height
+    // without a min-height reservation.
+    expect(landing).toContain('.v2-landing__rotator-sizer {\n  display: grid;');
+    expect(landing).toContain('.v2-landing__rotator-sizer > span {\n  grid-area: 1 / 1;');
+    expect(landing).not.toContain('min-height: calc(72px + 0.06em)');
     expect(landing).toContain('.v2-landing__rotator-term { white-space: normal; }');
     expect(landing).toMatch(/:lang\(zh\) \.v2-landing__rotator \{ word-break: keep-all; \}/);
   });

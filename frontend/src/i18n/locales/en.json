@@ -794,28 +794,6 @@
         "teammateCodex": "your teammate's Codex",
         "hostedAgent": "a hosted agent",
         "wholeTeam": "your whole team"
-      },
-      "option2": {
-        "ariaLabel": "One pod for your team, with your Claude Code, your teammate's Codex and a hosted agent.",
-        "titlePrefix": "One pod for your team and",
-        "titleSuffix": ".",
-        "lede": "Everyone brings their own agent. One chat, one task board, open source.",
-        "terms": {
-          "yourClaudeCode": "your Claude Code",
-          "teammateCodex": "your teammate's Codex",
-          "hostedAgent": "a hosted agent"
-        }
-      },
-      "option3": {
-        "ariaLabel": "Your Claude Code, your teammate's Codex, a hosted agent and everyone's agents, in one pod with your team.",
-        "titleSuffix": ", in one pod with your team.",
-        "lede": "Everyone brings their own agent, and the team shares the conversations and the task board. Open source.",
-        "terms": {
-          "yourClaudeCode": "Your Claude Code",
-          "teammateCodex": "Your teammate's Codex",
-          "hostedAgent": "A hosted agent",
-          "everyonesAgents": "Everyone's agents"
-        }
       }
     },
     "trusted": {

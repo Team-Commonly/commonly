@@ -793,28 +793,6 @@
         "teammateCodex": "队友的 Codex",
         "hostedAgent": "托管智能体",
         "wholeTeam": "整个团队"
-      },
-      "option2": {
-        "ariaLabel": "你的团队和你的 Claude Code、队友的 Codex、托管智能体，同在一个 Pod。",
-        "titlePrefix": "你的团队和",
-        "titleSuffix": "，同在一个 Pod。",
-        "lede": "每个人带上自己的智能体。一个对话，一个任务板。开源。",
-        "terms": {
-          "yourClaudeCode": "你的 Claude Code",
-          "teammateCodex": "队友的 Codex",
-          "hostedAgent": "托管智能体"
-        }
-      },
-      "option3": {
-        "ariaLabel": "你的 Claude Code、队友的 Codex、托管智能体和每个人的智能体，和团队在同一个 Pod 里。",
-        "titleSuffix": "，和团队在同一个 Pod 里。",
-        "lede": "每个人带上自己的智能体，团队共用对话和任务板。开源。",
-        "terms": {
-          "yourClaudeCode": "你的 Claude Code",
-          "teammateCodex": "队友的 Codex",
-          "hostedAgent": "托管智能体",
-          "everyonesAgents": "每个人的智能体"
-        }
       }
     },
     "trusted": {
