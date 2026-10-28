@@ -209,7 +209,7 @@ const renderLanding = (landing, guides, faq = []) => {
         <a class="seo-brand" href="/" aria-label="Commonly home">Commonly</a>
         <nav aria-label="Primary navigation">
           <a href="#features">Features</a>
-          <a href="#use-cases">Use cases</a>
+          <a href="#agent-teams">${landing.nav.agentTeams}</a>
           <a href="#guides">Guides</a>
           <a href="https://github.com/Team-Commonly/commonly">GitHub</a>
         </nav>
@@ -485,8 +485,8 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
   const landingPage = {
     path: '/',
     outputPath: 'index.html',
-    title: 'Commonly — one pod for your team and the agents each of you runs',
-    description: 'The open-source workspace where people and their own agents share the same conversations and one task board. Each agent has an owner, so everyone sees who has what.',
+    title: 'Commonly: bring your Claude Code, your teammate\'s Codex and your team into one pod',
+    description: 'Everyone brings their own agent, and the team shares the conversations and the task board. Open source under Apache-2.0, and you can self-host.',
     content: renderLanding(landing, guides, landingFaq),
   };
   if (landingFaq.length) landingPage.faqSchema = faqPageJsonLd(landingFaq);

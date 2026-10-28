@@ -138,6 +138,21 @@ interface Stats {
   agentCount?: number;
 }
 
+// The hero copy: the rotating term sits inside one sentence, and the sentence
+// is stated once on the h1's aria-label.
+const heroCopy = (t: (key: string) => string) => ({
+  ariaLabel: t('landing.hero.ariaLabel'),
+  titlePrefix: t('landing.hero.titlePrefix'),
+  terms: [
+    t('landing.hero.terms.yourClaudeCode'),
+    t('landing.hero.terms.teammateCodex'),
+    t('landing.hero.terms.hostedAgent'),
+    t('landing.hero.terms.wholeTeam'),
+  ],
+  titleSuffix: t('landing.hero.titleSuffix'),
+  lede: t('landing.hero.lede'),
+});
+
 const fmt = (n: number | undefined, locale: string): string => (
   typeof n === 'number' ? new Intl.NumberFormat(locale).format(n) : '—'
 );
@@ -146,7 +161,7 @@ const fmt = (n: number | undefined, locale: string): string => (
 // asserting it. Grid-stacks every term in one cell (the slot sizes to the
 // widest term, so the line never reflows), slides the active one up on a
 // brisk 1.4s cadence (slow felt like an assertion, not an enumeration). Reduced-motion / no-JS visitors get the static last
-// term ("the agents each of you runs"), which reads correctly on its own.
+// term, which must read as the full claim on its own.
 // Completes "One pod for your team and …" — the teammate's agent, then the
 // payoff. The last term is the static/reduced-motion fallback, so it must read
 // as the full claim.
@@ -167,14 +182,15 @@ const RotatingTerm: React.FC<{ terms: string[] }> = ({ terms }) => {
   const staticIndex = terms.length - 1;
   const shownIndex = rotating ? active : staticIndex;
   return (
-    // The sizer holds ONLY the active term in normal flow, so the slot width
-    // tracks that term instead of the widest one. Critical for suffixed
-    // grammars (zh 「与你的___对话」): a fixed widest-term slot would strand
-    // the suffix far to the right on short terms. English has no suffix, so
-    // this is invisible there. Animated terms are absolutely positioned over
-    // the sizer.
+    // The sizer holds EVERY term, stacked in one grid cell, so the slot is as
+    // wide and as tall as the widest term and the h1 keeps one height on every
+    // rotation. Only the active term shows; the animated terms sit over it.
     <span className="v2-landing__rotator" aria-hidden="true">
-      <span className="v2-landing__rotator-sizer">{terms[shownIndex]}</span>
+      <span className="v2-landing__rotator-sizer">
+        {terms.map((term) => (
+          <span key={term}>{term}</span>
+        ))}
+      </span>
       <span className="v2-landing__rotator-stack">
         {terms.map((term, i) => (
           <span
@@ -352,11 +368,7 @@ const V2LandingPage: React.FC = () => {
     if (!existing) document.head.appendChild(script);
     return () => { document.getElementById(id)?.remove(); };
   }, [isEnglish]);
-  const rotatingTerms = [
-    t('landing.hero.terms.yourClaudeCode'),
-    t('landing.hero.terms.teammateAgent'),
-    t('landing.hero.terms.eachOwnAgent'),
-  ];
+  const hero = heroCopy(t);
 
   useEffect(() => {
     let cancelled = false;
@@ -478,20 +490,24 @@ const V2LandingPage: React.FC = () => {
                 grammars that wrap the object work: en "Chat with your ___"
                 (empty suffix), zh 「与你的___对话」. Never concatenate a
                 translated sentence around the term at one end only. */}
-            <h1 className="v2-landing__title" aria-label={t('landing.hero.ariaLabel')}>
-              <StaggerWords text={t('landing.hero.titlePrefix')} />
+            <h1 className="v2-landing__title" aria-label={hero.ariaLabel}>
+              {hero.titlePrefix && <StaggerWords text={hero.titlePrefix} />}
+              {/* The prefix gets its own line in both locales: inline, zh 把 was
+                  pushed off the term's line at 320. */}
               <br />
-              <RotatingTerm terms={rotatingTerms} />
-              {t('landing.hero.titleSuffix') && (
+              <RotatingTerm terms={hero.terms} />
+              {hero.titleSuffix && (
                 // TASK-215: the sentence is stated once, on the h1's aria-label,
                 // so this span is decoration like the rotator above it. Without
                 // aria-hidden the tree announced the sentence AND a stray 「对话」.
-                <span className="v2-landing__title-suffix" aria-hidden="true">
-                  {t('landing.hero.titleSuffix')}
+                // The suffix always takes its own line: inline, the widest term
+                // pushed it to a third line at 1440 and the h1 jumped ~84px.
+                <span className="v2-landing__title-suffix v2-landing__title-suffix--own-line" aria-hidden="true">
+                  {hero.titleSuffix}
                 </span>
               )}
             </h1>
-            <p className="v2-landing__lede">{t('landing.hero.lede')}</p>
+            <p className="v2-landing__lede">{hero.lede}</p>
 
             <div className="v2-landing__hero-actions">
               <div className="v2-landing__cta-row">
