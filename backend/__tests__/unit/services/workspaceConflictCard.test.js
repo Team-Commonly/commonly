@@ -83,6 +83,19 @@ describe('conflictToDecisionRequest', () => {
     expect(() => normalizeOptions(req.options)).not.toThrow();
   });
 
+  test('trailing spaces and tab indentation are drawn, so each side shows what it changed', () => {
+    const req = conflictToDecisionRequest({
+      path: '/ws.txt',
+      kind: 'content',
+      hunks: [{ line: 4, ours: ['x  '], theirs: ['\tfoo'] }],
+    }, sides);
+    expect(req.options[0].description).toBe('x··');
+    expect(req.options[1].description).toBe('→foo');
+    expect(req.context).toContain('main: x··');
+    expect(req.context).toContain('agent-b: →foo');
+    expect(() => normalizeOptions(req.options)).not.toThrow();
+  });
+
   test('side names that differ only by case still give options the route accepts', () => {
     const req = conflictToDecisionRequest({
       path: '/a.txt', kind: 'content', hunks: [{ line: 1, ours: ['a'], theirs: ['b'] }],
