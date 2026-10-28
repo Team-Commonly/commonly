@@ -1,6 +1,7 @@
 import {
   mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync,
 } from 'fs';
+import { spawnSync } from 'child_process';
 import { homedir, tmpdir } from 'os';
 import { join } from 'path';
 
@@ -234,9 +235,13 @@ describe('macOS Seatbelt profile', () => {
     const loopback = buildSeatbeltProfile({ ...base, network: 'loopback' });
     expect(loopback).not.toMatch(/^\(allow network-outbound\)$/m);
     expect(loopback).not.toContain('AF_SYSTEM');
-    for (const service of ['SecurityServer', 'securityd', 'ocspd', 'networkd', 'SystemConfiguration']) {
+    for (const service of ['SecurityServer', 'securityd', 'ocspd', 'networkd', 'SystemConfiguration.configd']) {
       expect(loopback).not.toContain(`com.apple.${service}`);
     }
+    // The resolver's configuration only: without it the first hostname lookup
+    // blocks the process forever (D106), see the sandboxed test below.
+    const configServices = loopback.match(/com\.apple\.SystemConfiguration\.\w+/g);
+    expect(configServices).toEqual(['com.apple.SystemConfiguration.DNSConfiguration']);
     expect(loopback).toContain(`(allow network-outbound (remote tcp "localhost:${port}"))`);
     // Every line a loopback profile carries, the open one carries too.
     const openLines = new Set(open.split('\n'));
@@ -332,6 +337,41 @@ describe('macOS Seatbelt profile', () => {
       statePath: state,
     })).toThrow(/workspacePath must be an absolute path/);
   });
+
+  test('a loopback-confined process builds a DNS resolver and still reaches no outside host', () => {
+    if (process.platform !== 'darwin') return;
+    // D106: the profile once denied the resolver's configuration, and
+    // constructing a c-ares Resolver could block the process forever, so
+    // confined dsh turns ran to their 900 s timeout before sending a request.
+    // That hang was intermittent, so this run cannot catch its return on its
+    // own; the profile-shape test above pins the rule. This one proves the
+    // admitted service still lets nothing out.
+    const script = [
+      "const dns = require('dns'); const net = require('net');",
+      "new dns.Resolver().resolve4('example.com', (err) => {",
+      "  console.log('resolve4', err ? err.code : 'resolved');",
+      "  dns.lookup('example.com', (e) => {",
+      "    console.log('lookup', e ? e.code : 'resolved');",
+      "    const s = net.connect(443, '1.1.1.1', () => { console.log('tcp connected'); process.exit(0); });",
+      "    s.on('error', (e2) => { console.log('tcp', e2.code); process.exit(0); });",
+      "  });",
+      "});",
+    ].join('\n');
+    const argv = wrapArgvWithSeatbelt([process.execPath, '-e', script], {
+      workspacePath: workspace,
+      executablePath: process.execPath,
+      statePath: state,
+      network: 'loopback',
+      loopbackNetworkPorts: [9],
+    });
+    const run = spawnSync(argv[0], argv.slice(1), {
+      env: { PATH: process.env.PATH, HOME: state }, encoding: 'utf8', timeout: 20000,
+    });
+    expect(run.error).toBeUndefined();
+    expect(run.stdout).toMatch(/resolve4 E(?:CONNREFUSED|TIMEOUT|NOTFOUND)/);
+    expect(run.stdout).toContain('lookup ENOTFOUND');
+    expect(run.stdout).toContain('tcp EPERM');
+  }, 30000);
 
   test('wrapper is fail-closed off macOS and invokes sandbox-exec on macOS', () => {
     if (process.platform !== 'darwin') {
