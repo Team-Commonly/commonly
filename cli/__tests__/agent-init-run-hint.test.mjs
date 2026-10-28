@@ -12,19 +12,20 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 import { performInit } from '../src/commands/agent.js';
 
-const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SDK_FILE = path.join(REPO_ROOT, 'examples', 'sdk', 'python', 'commonly.py');
 
 const TOKEN = 'cm_agent_walk_echo_test';
 
-const makeClient = () => {
+const makeClient = ({ instanceId = 'default' } = {}) => {
   const post = jest.fn(async (route, body) => {
     if (route === '/api/registry/install') {
       return {
-        installation: { agentName: body.agentName, instanceId: 'default', podId: body.podId },
+        installation: { agentName: body.agentName, instanceId, podId: body.podId },
         runtimeToken: TOKEN,
       };
     }
@@ -48,7 +49,10 @@ afterEach(() => {
 });
 
 describe('agent init run hint', () => {
-  test('the printed command starts the bot with the bare token in COMMONLY_TOKEN', async () => {
+  // The hint runs through /bin/sh, which Windows does not have.
+  const posixTest = process.platform === 'win32' ? test.skip : test;
+
+  posixTest('the printed command starts the bot with the bare token in COMMONLY_TOKEN', async () => {
     const targetDir = path.join(tmp, 'agent');
     const result = await performInit({
       client: makeClient(),
@@ -80,6 +84,18 @@ describe('agent init run hint', () => {
 
     expect(result.runHint).toBe('env $(cat .commonly-env) python3 walk-echo-1026.py');
     expect(fs.existsSync(path.join(targetDir, 'walk-echo-1026.py'))).toBe(true);
+  });
+
+  test('the mention handle is the instanceId when the install has one', async () => {
+    const result = await performInit({
+      client: makeClient({ instanceId: 'aria' }),
+      language: 'python',
+      agentName: 'walk-echo-1026',
+      podId: 'pod-1',
+      targetDir: path.join(tmp, 'agent'),
+    });
+
+    expect(result.mentionHandle).toBe('aria');
   });
 
   test('the mention handle falls back to the registry agentName when there is no instanceId', async () => {
