@@ -20,6 +20,8 @@ const emptyConfig = join(sandbox, 'gitconfig');
 writeFileSync(emptyConfig, '');
 process.env.GIT_CONFIG_GLOBAL = emptyConfig;
 process.env.GIT_CONFIG_NOSYSTEM = '1';
+// Run from a git hook, these would point every call at the caller's repo, -C or not.
+for (const name of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_NAMESPACE', 'GIT_PREFIX']) delete process.env[name];
 process.on('exit', () => rmSync(sandbox, { recursive: true, force: true }));
 
 const git = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -88,6 +90,16 @@ test('a dirty worktree is kept, still locked, and its path reported', async () =
   assert.equal(worktreesOf(repo)[path], lockReasonOf('run-dirty-1'));
   assert.deepEqual(store.readRun('run-dirty-1').find((e) => e.type === 'run.settled').data.workspace,
     { base, head: base, removed: false, kept: 'dirty' });
+});
+
+test('an uncommitted edit to a tracked file keeps the worktree, still locked', async () => {
+  const { repo, root, store, base } = setup();
+  const out = await superviseRun({
+    adapter: working((cwd) => writeFileSync(join(cwd, 'README'), 'edited\n')), prompt: 'edit', store, runId: 'run-tracked-1', ctx: { workspace: { repo, root } },
+  });
+  const path = join(realpathSync(root), 'run-tracked-1');
+  assert.deepEqual(out.workspace, { path, base, head: base, removed: false, kept: 'dirty' });
+  assert.equal(worktreesOf(repo)[path], lockReasonOf('run-tracked-1'));
 });
 
 test('a commit on the detached HEAD keeps the worktree, with the new head recorded', async () => {
