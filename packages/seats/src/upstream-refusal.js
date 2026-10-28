@@ -360,3 +360,13 @@ export const spawnCredentials = (ctx = {}, envNames = []) => {
     ...envNames.map((name) => env[name]),
   ].filter((value) => typeof value === 'string' && value.length >= MIN_CREDENTIAL_LENGTH);
 };
+
+/**
+ * Every variable name in `env` shaped like a credential (`*_API_KEY`,
+ * `*_TOKEN`, `*_SECRET`, …). For a child that inherits the whole environment,
+ * this, not the adapter's own provider key, is the list of values it could
+ * echo back: a CLI's auth error prints whichever key it read.
+ */
+export const authEnvNames = (env) => Object.keys(env || {}).filter((name) => (
+  /(?:^|_)(?:API_KEY|ACCESS_TOKEN|ACCESS_KEY|CLIENT_SECRET|PASSWORD|TOKEN|SECRET)$/i.test(name)
+));

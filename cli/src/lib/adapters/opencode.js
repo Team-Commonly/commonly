@@ -50,7 +50,7 @@ import {
   refuseWorkspaceTrust,
   validateEnvironmentSpec,
 } from '../environment.js';
-import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
+import { adapterFailure, authEnvNames, spawnCredentials } from '../upstream-refusal.js';
 import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
@@ -540,10 +540,6 @@ const prepareOpenCodeDataHome = async (ctx, { publicSeat = false } = {}) => {
   return { root, appData, dataHome, authPath };
 };
 
-const sourceAuthEnvNames = (env) => Object.keys(env || {}).filter((name) => (
-  /(?:^|_)(?:API_KEY|ACCESS_TOKEN|ACCESS_KEY|CLIENT_SECRET|PASSWORD|TOKEN|SECRET)$/i.test(name)
-));
-
 const makeChildEnvironment = ({
   source,
   tempDir,
@@ -903,7 +899,7 @@ export default {
         });
         [cmd, ...spawnArgs] = wrapped;
       }
-      const credentials = [...spawnCredentials(ctx, sourceAuthEnvNames(sourceEnv)), ctx.providerKey].filter(Boolean);
+      const credentials = [...spawnCredentials(ctx, authEnvNames(sourceEnv)), ctx.providerKey].filter(Boolean);
       const result = await runOpenCode({
         cmd,
         args: spawnArgs,

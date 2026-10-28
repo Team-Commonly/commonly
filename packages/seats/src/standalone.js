@@ -9,12 +9,12 @@
  * adapter that threw a bare Error is named from its text where the text names
  * a kind (failure-text.js), and is otherwise left unnamed, never guessed.
  */
-import { existsSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { RunFailure, runFailure, failureKindOf } from './failures.js';
 import { kindOfAdapterError, errorText } from './failure-text.js';
-import { spawnCredentials } from './upstream-refusal.js';
+import { authEnvNames, redactKnownCredentials, spawnCredentials } from './upstream-refusal.js';
 import { superviseRun, SUPERVISOR_DEFAULTS } from './supervisor.js';
 import { exitCodeOf, failureLine } from './exit-codes.js';
 
@@ -79,11 +79,49 @@ export const cwdRefusal = (cwd) => {
   }
 };
 
+// The key a `--provider-key-file` names. It reaches the CLI through the
+// adapter's own config, never through `ctx.env`, so the env scan cannot find it.
+const providerKeyFromFile = (ctx) => {
+  const keyFile = ctx.environment?.provider?.keyFile;
+  if (typeof keyFile !== 'string' || !keyFile) return [];
+  try {
+    const key = readFileSync(resolve(ctx.cwd || '.', keyFile), 'utf8').trim();
+    return key ? [key] : [];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Every credential value this spawn could echo back. The CLI inherits the
+ * whole environment, so that is every auth-shaped variable in it (not only the
+ * adapter's declared provider key, which claude and codex do not declare),
+ * plus the runtime token and a provider key file's contents.
+ */
+export const standaloneCredentials = (ctx = {}, adapter = {}) => [...new Set([
+  ...spawnCredentials(ctx, [...new Set([adapter.providerKeyEnv, ...authEnvNames(ctx.env || process.env)].filter(Boolean))]),
+  ...providerKeyFromFile(ctx),
+])];
+
+// The same failure with every known credential replaced. A named failure keeps
+// its kind; an unnamed Error keeps its identity and loses only the values.
+const scrubbed = (error, credentials) => {
+  if (!credentials.length || !error || typeof error !== 'object') return error;
+  if (error instanceof RunFailure) {
+    const clean = new RunFailure(error.kind, redactKnownCredentials(error.detail, credentials));
+    for (const key of ['sessionId', 'newSessionId', 'status']) if (error[key] !== undefined) clean[key] = error[key];
+    return clean;
+  }
+  if (typeof error.message === 'string') error.message = redactKnownCredentials(error.message, credentials);
+  return error;
+};
+
 /**
  * The adapter as a standalone run sees it: `detect()` first, so a missing CLI
  * is a named settle rather than a spawn error, and every bare Error named
- * where its text allows. The detail is scrubbed of the credentials this spawn
- * was handed before it reaches the trace.
+ * where its text allows. Every failure is scrubbed of the credentials this
+ * spawn could see before it reaches the trace, and the trace store is told the
+ * same values, so agent text it records is scrubbed too.
  */
 export const standaloneAdapter = (adapter) => ({
   name: adapter.name,
@@ -93,13 +131,14 @@ export const standaloneAdapter = (adapter) => ({
     if (!found) {
       throw new RunFailure('not_installed', `${adapter.name} was not found on PATH`);
     }
+    const credentials = standaloneCredentials(ctx, adapter);
+    if (credentials.length) ctx.trace?.redact?.(credentials);
     try {
       return await adapter.spawn(prompt, ctx);
     } catch (error) {
-      if (error instanceof RunFailure) throw error;
+      if (error instanceof RunFailure) throw scrubbed(error, credentials);
       const kind = kindOfAdapterError(error);
-      if (!kind) throw error;
-      const credentials = spawnCredentials(ctx, [adapter.providerKeyEnv].filter(Boolean));
+      if (!kind) throw scrubbed(error, credentials);
       const named = runFailure(kind, errorText(error) || String(error), { credentials, limit: 500 });
       if (error?.sessionId || error?.newSessionId) named.sessionId = error.sessionId || error.newSessionId;
       throw named;

@@ -91,6 +91,41 @@ test('a bare Error that names nothing stays unnamed: exit 1, never a guessed kin
   assert.equal(run.failureLine, 'jellymoon: failed: the run failed and its adapter named no failure kind');
 }));
 
+// PR #2854 review: claude and codex declare no providerKeyEnv yet inherit the
+// whole environment, and a --provider-key-file key never sits in env at all.
+test('every failure shape is scrubbed of inherited auth env values and a key file, with no providerKeyEnv declared', () => withDirs(async ({ root, cwd, store }) => {
+  const envKey = ['sk', 'ant', 'inherited', '0123456789abcdef'].join('-');
+  const fileKey = ['sk', 'keyfile', '0123456789abcdef'].join('-');
+  const keyFile = join(root, 'provider.key');
+  writeFileSync(keyFile, `${fileKey}\n`, { mode: 0o600 });
+  const both = `${envKey} and ${fileKey}`;
+  const shapes = {
+    named: () => Object.assign(new Error(`401 Unauthorized: ${both}`), { status: 401 }),
+    unnamed: () => new Error(`claude exited with code 1: ${both}`),
+    runFailure: () => new RunFailure('provider_unavailable', `503 from upstream: ${both}`),
+  };
+  for (const [shape, make] of Object.entries(shapes)) {
+    const run = await runStandaloneTurn({
+      adapter: adapterOf(async (prompt, ctx) => {
+        ctx.trace.emit('agent.message_chunk', { text: `echo ${both}` });
+        throw make();
+      }),
+      prompt: 'x', store, cwd, timeoutMs: 5000, stallMs: 0,
+      ctx: { env: { ANTHROPIC_API_KEY: envKey, PATH: '/usr/bin' }, environment: { provider: { keyFile } } },
+    });
+    assert.equal(run.outcome, 'failed', shape);
+    for (const surface of [
+      JSON.stringify(store.readRun(run.runId)),
+      readFileSync(join(root, 'traces', 'index.jsonl'), 'utf8'),
+      String(run.failure?.message),
+    ]) {
+      assert.doesNotMatch(surface, new RegExp(envKey), shape);
+      assert.doesNotMatch(surface, new RegExp(fileKey), shape);
+    }
+    assert.match(run.settle.failure.detail, /\[redacted\]/, shape);
+  }
+}));
+
 test('a RunFailure passes through with its own kind', () => withDirs(async ({ cwd, store }) => {
   const run = await runStandaloneTurn({
     adapter: adapterOf(async () => { throw new RunFailure('provider_unavailable', '503 from upstream'); }),

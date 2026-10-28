@@ -188,7 +188,13 @@ export const performJellymoonRun = async ({
     if (detail) stderr.write(`${PROG}: detail: ${String(detail).replace(/\s*\n\s*/g, ' ').slice(0, 500)}\n`);
     const hint = SETUP_HINTS[agent];
     if (hint && run.kind === 'not_installed') stderr.write(`${PROG}: hint: install ${agent}: ${hint.install}\n`);
-    if (hint && run.kind === 'not_authenticated') stderr.write(`${PROG}: hint: ${hint.login}\n`);
+    if (run.kind === 'not_authenticated') {
+      // With a key file supplied, the CLI signed in with that key, so its own
+      // login is not the fix; goose's hint already names the flags.
+      const keyFile = agent !== 'goose' ? environment?.provider?.keyFile : null;
+      if (keyFile) stderr.write(`${PROG}: hint: check the key in --provider-key-file ${keyFile}\n`);
+      else if (hint) stderr.write(`${PROG}: hint: ${hint.login}\n`);
+    }
     stderr.write(`${run.failureLine}\n`);
   }
   return run.exitCode;
