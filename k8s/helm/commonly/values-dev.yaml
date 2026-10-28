@@ -452,13 +452,20 @@ hostedMcp:
     - airtable
   # Mongo User _id(s) permitted to walk each hidden hosted-MCP entry (#2649, TASK-485).
   # lily-shen is the designated walk user (keeps the walk off Sam's account, Cofounder 10-24).
-  # Sentry and Atlassian stay hidden for every other account (Atlassian added for its walk, D153).
+  # Every other account still sees these entries hidden. Atlassian, Notion, GitLab
+  # and Supabase were added for their walks (D153).
   hiddenEntryUserAllowlist:
     atlassian:
       - "6a47891ee025ce2e0ca1d30b"
     sentry:
       - "6a47891ee025ce2e0ca1d30b"
     airtable:
+      - "6a47891ee025ce2e0ca1d30b"
+    notion:
+      - "6a47891ee025ce2e0ca1d30b"
+    gitlab:
+      - "6a47891ee025ce2e0ca1d30b"
+    supabase:
       - "6a47891ee025ce2e0ca1d30b"
   googleCalendar:
     enabled: false
