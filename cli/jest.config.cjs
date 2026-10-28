@@ -18,5 +18,8 @@ module.exports = {
     '**/?(*.)+(spec|test).[jt]s?(x)',
     '**/?(*.)+(spec|test).mjs',
   ],
-  maxWorkers: process.env.CI ? undefined : 2,
+  // Spread the key in rather than setting it to `undefined` on CI: jest validates
+  // the config and rejects `maxWorkers: undefined` ("has to be of type string or
+  // number"), so on CI the key must be absent entirely, not present-and-undefined.
+  ...(process.env.CI ? {} : { maxWorkers: 2 }),
 };

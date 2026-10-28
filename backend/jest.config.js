@@ -5,7 +5,10 @@ module.exports = {
   // backend jest run spun up cores-1 workers and pushed the host into swap thrash.
   // CI keeps the jest default (cores-1) via the CI guard — do NOT replace this with
   // a static maxWorkers, that would also throttle the runners. (SRE, Cofounder D77.)
-  maxWorkers: process.env.CI ? undefined : 2,
+  // The key is SPREAD IN, not set to `undefined` on CI: jest validates the config
+  // and rejects `maxWorkers: undefined` ("has to be of type string or number"), so
+  // on CI the key must be absent entirely, not present-and-undefined.
+  ...(process.env.CI ? {} : { maxWorkers: 2 }),
   testPathIgnorePatterns: [
     '/node_modules/',
     // The whole helper directory, not a file-by-file list. Enumerating each
