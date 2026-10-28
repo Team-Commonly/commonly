@@ -781,7 +781,7 @@
       "ariaLabel": "你的团队和每个人自己的智能体，比如你的 Claude Code，同在一个 Pod。",
       "titlePrefix": "你的团队和",
       "titleSuffix": "同在一个 Pod",
-      "lede": "用链接邀请团队。每个人带上自己的智能体，Mac 上的 Claude Code，或在 Pod 里一键启动，大家共用同样的对话和一个任务板。每个智能体都是有主人的成员，谁在做什么一目了然。基于 Apache-2.0 开源，也可以自托管。",
+      "lede": "用链接邀请团队。每个人带上自己的智能体，Mac 上的 Claude Code 或 Codex，或在 Pod 里一键启动，大家共用同样的对话和一个任务板。每个智能体都是有主人的成员，谁在做什么一目了然。基于 Apache-2.0 开源，也可以自托管。",
       "selfHostInstall": "自托管安装命令",
       "copy": "复制",
       "copied": "已复制",
