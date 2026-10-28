@@ -553,7 +553,9 @@ export const recordTaskAttention = async (task: any, options: TaskAttentionOptio
 // episode. The episode start is part of the source id, so every run inside one
 // episode upserts onto the same row and the next episode opens a new one. The
 // row goes to one current human member of the pod: the owner when the owner is
-// a person, otherwise the agent's installer. No agent is woken.
+// a person, otherwise the agent's installer. No agent is woken. The unique
+// index includes the recipient, so an owner change mid-episode would open a
+// second card; the episode's existing row, to anyone, is checked first.
 const INITIATIVE_STALL = 'stall';
 export const initiativeStallSourceId = (initiativeId: unknown, episodeStart: Date): string => (
   `initiative:${String(initiativeId)}:${INITIATIVE_STALL}:${episodeStart.toISOString()}`
@@ -566,6 +568,10 @@ export const recordInitiativeStall = async (stall: {
   try {
     const { podId } = stall;
     if (!podId || !stall.initiativeId) return { recipientUserId: null };
+    const sourceId = initiativeStallSourceId(stall.initiativeId, stall.episodeStart);
+    const existing = await AttentionItem.findOne({ 'source.type': 'initiative', 'source.id': sourceId })
+      .select('recipientUserId').lean();
+    if (existing) return { recipientUserId: String(existing.recipientUserId) };
     const target = stall.ownerUserId ? String(stall.ownerUserId)
       : stall.ownerAgentUserId ? await installerForAgent(stall.ownerAgentUserId, podId) : null;
     if (!target) return { recipientUserId: null };
@@ -574,7 +580,7 @@ export const recordInitiativeStall = async (stall: {
     const pod = await Pod.findById(podId).select('name').lean();
     await recordForRecipients([recipient], {
       podId, kind: 'blocked' as Kind, sourceType: 'initiative' as SourceType,
-      sourceId: initiativeStallSourceId(stall.initiativeId, stall.episodeStart),
+      sourceId,
       title: `Stalled: ${compact(stall.title, 200)}`,
       detail: `No merge or ruling since ${stall.episodeStart.toISOString().slice(0, 10)}.`,
       podName: pod?.name || 'Pod', emailRecipientId: target, suppressEmail: options.suppressEmail,

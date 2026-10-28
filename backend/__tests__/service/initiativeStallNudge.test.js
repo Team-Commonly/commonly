@@ -15,6 +15,7 @@ const { nudgeStalledInitiative, nudgePodId } = require('../../services/initiativ
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils');
 
 jest.mock('../../services/needsYouEmailService', () => ({ sendNeedsYouEmail: jest.fn().mockResolvedValue(undefined) }));
+const { sendNeedsYouEmail } = require('../../services/needsYouEmailService');
 
 const NOW = new Date('2026-10-26T12:00:00Z');
 const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600 * 1000);
@@ -28,6 +29,7 @@ describe('initiative stall nudge', () => {
   beforeAll(setupMongoDb);
   afterAll(closeMongoDb);
   beforeEach(async () => {
+    sendNeedsYouEmail.mockClear();
     await AttentionItem.init();
     [giver, owner, installer] = await User.create([
       { username: 'init-giver', email: 'init-giver@test.com', password: 'password123' },
@@ -93,6 +95,41 @@ describe('initiative stall nudge', () => {
       source: { type: 'initiative', id: `initiative:${initiative._id}:stall:${hoursAgo(50).toISOString()}` },
     });
     expect(String(rows[0].recipientUserId)).toBe(String(owner._id));
+    expect(sendNeedsYouEmail).toHaveBeenCalledTimes(1);
+    expect(String(sendNeedsYouEmail.mock.calls[0][0].recipientUserId)).toBe(String(owner._id));
+  });
+
+  it('an owner change inside one episode does not nudge the new owner too', async () => {
+    const tasks = [taskRow('t1', 'claimed', [merge(hoursAgo(50))])];
+    const before = initiativeFor({ userId: owner._id }, [link('t1')]);
+    const after = { ...before, owner: { userId: giver._id }, ownerId: String(giver._id) };
+
+    await run(before, tasks);
+    const second = await run(after, tasks, new Date(NOW.getTime() + 3600 * 1000));
+
+    expect(second).toMatchObject({ state: 'nudged', recipientUserId: String(owner._id) });
+    const rows = await stallRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('open');
+    expect(String(rows[0].recipientUserId)).toBe(String(owner._id));
+    expect(sendNeedsYouEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed write reports failed, and the next run retries it', async () => {
+    const initiative = initiativeFor({ userId: owner._id }, [link('t1')]);
+    const tasks = [taskRow('t1', 'claimed', [merge(hoursAgo(50))])];
+    const spy = jest.spyOn(AttentionItem, 'updateOne').mockRejectedValueOnce(new Error('mongo down'));
+    try {
+      expect(await run(initiative, tasks)).toMatchObject({ state: 'failed', podId: String(pod._id) });
+      expect(await stallRows()).toHaveLength(0);
+      expect(sendNeedsYouEmail).not.toHaveBeenCalled();
+
+      expect(await run(initiative, tasks)).toMatchObject({ state: 'nudged', recipientUserId: String(owner._id) });
+      expect(await stallRows()).toHaveLength(1);
+      expect(sendNeedsYouEmail).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('an episode already in the audit trail is not written again', async () => {
