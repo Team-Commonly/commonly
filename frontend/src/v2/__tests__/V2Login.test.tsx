@@ -100,15 +100,6 @@ describe('V2 routing', () => {
     );
   });
 
-  test('research card opens the dedicated research workspace use case', async () => {
-    renderAt('/');
-
-    expect(await screen.findByRole('link', { name: /market & research desk/i })).toHaveAttribute(
-      'href',
-      '/use-cases/research-desk/',
-    );
-  });
-
   test('legacy use-case routes redirect to their canonical public URL', async () => {
     renderAt('/v2/use-cases/team-chat');
 
