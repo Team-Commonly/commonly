@@ -1,9 +1,11 @@
+import { jest } from '@jest/globals';
 import {
   execFileSync as execFileSyncWithEnv,
   spawnSync,
 } from 'node:child_process';
 import {
   accessSync,
+  appendFileSync,
   constants,
   existsSync,
   mkdirSync,
@@ -30,6 +32,9 @@ const makeExecutable = (path, content) => {
   writeFileSync(path, content, { encoding: 'utf8', mode: 0o700 });
   accessSync(path, constants.X_OK);
 };
+
+// A git that refuses the repository at once, as on a "dubious ownership" error.
+const FAILING_GIT = '#!/bin/sh\necho "fatal: detected dubious ownership" >&2\nexit 128\n';
 
 describe('prepareCommitAttribution', () => {
   test('adds both trailers, preserves Git identity and delegates the repository hooks', () => {
@@ -290,10 +295,14 @@ describe('prepareCommitAttribution', () => {
     const root = mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-hung-git-'));
     const stubBin = join(root, 'bin');
     mkdirSync(stubBin);
+    // A repository whose hooks a fallback would find, so an absent path below
+    // shows that a timed-out probe reads nothing.
+    execFileSync('git', ['init', '--quiet'], { cwd: root });
     // Stands in for a git whose open() never returns, as on a seat whose
     // gitdir sits under a consent-protected folder. It ignores SIGTERM, so
     // only the SIGKILL the probe sends can end it.
     makeExecutable(join(stubBin, 'git'), '#!/bin/sh\ntrap "" TERM\nexec sleep 60\n');
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     let attribution;
     try {
       const startedAt = Date.now();
@@ -307,11 +316,107 @@ describe('prepareCommitAttribution', () => {
       expect(attribution.env.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH).toBeUndefined();
       expect(attribution.env.GIT_CONFIG_VALUE_0).toBe(attribution.hooksDirectory);
       expect(existsSync(join(attribution.hooksDirectory, 'prepare-commit-msg'))).toBe(true);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain('did not answer in 5s');
     } finally {
+      warn.mockRestore();
       attribution?.cleanup();
       rmSync(root, { recursive: true, force: true });
     }
   }, 30000);
+
+  test.each([
+    {
+      name: 'the default hooks folder',
+      setup: (repo) => {
+        mkdirSync(join(repo, '.git', 'hooks'), { recursive: true });
+        return { cwd: repo, expected: join(repo, '.git', 'hooks') };
+      },
+    },
+    {
+      name: 'a relative core.hooksPath, resolved from the top of the tree',
+      setup: (repo) => {
+        mkdirSync(join(repo, '.husky', '_'), { recursive: true });
+        mkdirSync(join(repo, 'src'));
+        execFileSync('git', ['config', 'core.hooksPath', '.husky/_'], { cwd: repo });
+        return { cwd: join(repo, 'src'), expected: join(repo, '.husky', '_') };
+      },
+    },
+    {
+      name: 'a quoted core.hooksPath with a trailing comment',
+      setup: (repo, root) => {
+        const hooks = join(root, 'shared hooks');
+        mkdirSync(hooks);
+        appendFileSync(join(repo, '.git', 'config'), `[core]\n\thooksPath = "${hooks}" ; set by hand\n`);
+        return { cwd: repo, expected: hooks };
+      },
+    },
+    {
+      name: "a linked worktree's main repository hooks",
+      setup: (repo, root) => {
+        mkdirSync(join(repo, '.git', 'hooks'), { recursive: true });
+        execFileSync('git', ['commit', '--allow-empty', '--quiet', '-m', 'init'], { cwd: repo });
+        const worktree = join(root, 'worktree');
+        execFileSync('git', ['worktree', 'add', '--quiet', '-b', 'side', worktree], { cwd: repo });
+        return { cwd: worktree, expected: join(repo, '.git', 'hooks') };
+      },
+    },
+  ])('a git that fails at once still yields $name', ({ setup }) => {
+    const root = mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-fallback-'));
+    const repo = join(root, 'repo');
+    const stubBin = join(root, 'bin');
+    mkdirSync(repo);
+    mkdirSync(stubBin);
+    execFileSync('git', ['init', '--quiet'], { cwd: repo });
+    execFileSync('git', ['config', 'user.name', 'Fixture Author'], { cwd: repo });
+    execFileSync('git', ['config', 'user.email', 'fixture@example.test'], { cwd: repo });
+    const { cwd, expected } = setup(repo, root);
+    makeExecutable(join(stubBin, 'git'), FAILING_GIT);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    let attribution;
+    try {
+      attribution = prepareCommitAttribution({
+        cwd,
+        env: { ...fixtureEnv, PATH: `${stubBin}:${fixtureEnv.PATH}` },
+        agentName: 'forge',
+        adapter: 'claude',
+      });
+      expect(realpathSync(attribution.env.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH))
+        .toBe(realpathSync(expected));
+      expect(attribution.sandboxEnv.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH)
+        .toBe(attribution.env.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain('(exit 128)');
+      expect(warn.mock.calls[0][0]).toContain('read from the repository');
+    } finally {
+      warn.mockRestore();
+      attribution?.cleanup();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('a git that fails at once outside any repository grants nothing and says nothing', () => {
+    const root = mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-no-repo-'));
+    const stubBin = join(root, 'bin');
+    mkdirSync(stubBin);
+    makeExecutable(join(stubBin, 'git'), FAILING_GIT);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    let attribution;
+    try {
+      attribution = prepareCommitAttribution({
+        cwd: root,
+        env: { ...fixtureEnv, PATH: `${stubBin}:${fixtureEnv.PATH}` },
+        agentName: 'forge',
+        adapter: 'claude',
+      });
+      expect(attribution.env.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH).toBeUndefined();
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+      attribution?.cleanup();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 
   test('keeps long seat IDs inside the email local-part limit with a stable hash', () => {
     const root = mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-long-seat-'));

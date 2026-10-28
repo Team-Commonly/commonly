@@ -4,12 +4,13 @@ import {
   accessSync,
   constants,
   mkdtempSync,
+  readFileSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const GIT_HOOKS = [
@@ -77,6 +78,104 @@ const seatAddressId = (agentName, instanceId) => {
 // resolves the original hooks itself at commit time.
 const GIT_PROBE_TIMEOUT_MS = 5000;
 
+const directoryOrNull = (path) => {
+  try {
+    return statSync(path).isDirectory() ? path : null;
+  } catch {
+    return null;
+  }
+};
+
+// One git config value: quotes group, a backslash escapes the next character,
+// and an unquoted # or ; starts a comment.
+const configValue = (raw) => {
+  let value = '';
+  let quoted = false;
+  for (let index = 0; index < raw.length; index += 1) {
+    const character = raw[index];
+    if (character === '\\' && index + 1 < raw.length) {
+      index += 1;
+      value += raw[index];
+    } else if (character === '"') {
+      quoted = !quoted;
+    } else if (!quoted && (character === '#' || character === ';')) {
+      break;
+    } else {
+      value += character;
+    }
+  }
+  return value.trim();
+};
+
+// The last core.hooksPath in one config file, or null. `include` and
+// conditional includes are not followed.
+const configuredHooksPath = (configPath) => {
+  let text;
+  try {
+    text = readFileSync(configPath, 'utf8');
+  } catch {
+    return null;
+  }
+  let inCore = false;
+  let hooksPath = null;
+  for (const rawLine of text.split(/\r?\n/)) {
+    let line = rawLine.trim();
+    const section = /^\[\s*([A-Za-z0-9.-]+)\s*("[^"]*")?\s*\]/.exec(line);
+    if (section) {
+      inCore = section[1].toLowerCase() === 'core' && !section[2];
+      line = line.slice(section[0].length).trim();
+    }
+    const entry = inCore && /^hookspath\s*=(.*)$/i.exec(line);
+    if (entry) hooksPath = configValue(entry[1]);
+  }
+  return hooksPath || null;
+};
+
+// The hooks directory a commit in `cwd` would use, read from the repository's
+// own files without running git: core.hooksPath from the repository config,
+// else the hooks folder of the common git directory (a linked worktree shares
+// its main repository's). Global config and includes are not read.
+const hooksPathFromGitFiles = (cwd) => {
+  let top = resolve(cwd);
+  let entry = join(top, '.git');
+  let entryStat = null;
+  for (;;) {
+    try {
+      entryStat = statSync(entry);
+      break;
+    } catch {
+      if (dirname(top) === top) return null;
+      top = dirname(top);
+      entry = join(top, '.git');
+    }
+  }
+  let gitDir = entry;
+  if (entryStat.isFile()) {
+    let pointer = null;
+    try {
+      pointer = /^gitdir:\s*(.+?)\s*$/m.exec(readFileSync(entry, 'utf8'));
+    } catch {
+      // Unreadable: the same as no repository.
+    }
+    if (!pointer) return null;
+    gitDir = resolve(top, pointer[1]);
+  }
+  let commonDir = gitDir;
+  try {
+    commonDir = resolve(gitDir, readFileSync(join(gitDir, 'commondir'), 'utf8').trim());
+  } catch {
+    // A main repository has no commondir file.
+  }
+  const configured = configuredHooksPath(join(commonDir, 'config'));
+  if (!configured) return directoryOrNull(join(commonDir, 'hooks'));
+  if (configured === '~' || configured.startsWith('~/')) {
+    return directoryOrNull(join(homedir(), configured.slice(1)));
+  }
+  // Git runs hooks from the top of the working tree, so a relative path
+  // resolves there.
+  return directoryOrNull(resolve(top, configured));
+};
+
 const resolveOriginalHooksPath = (cwd, env) => {
   const result = spawnSync(
     'git',
@@ -90,13 +189,29 @@ const resolveOriginalHooksPath = (cwd, env) => {
       killSignal: 'SIGKILL',
     },
   );
-  if (result.error || result.status !== 0 || !result.stdout?.trim()) return null;
-  const hooksPath = resolve(result.stdout.trim());
-  try {
-    return statSync(hooksPath).isDirectory() ? hooksPath : null;
-  } catch {
+  if (result.error?.code === 'ETIMEDOUT') {
+    // The open() that stalled git would stall this process too, and a
+    // synchronous read cannot be timed out, so nothing is read here. A git
+    // that cannot open the repository cannot commit in it either.
+    // eslint-disable-next-line no-console
+    console.warn(`[commit-attribution] git did not answer in ${GIT_PROBE_TIMEOUT_MS / 1000}s in ${cwd}, `
+      + 'so a confined seat is not granted this repository\'s hooks this turn');
     return null;
   }
+  if (result.error || result.status !== 0 || !result.stdout?.trim()) {
+    // A confined seat can only run the hooks it is granted, and a hook it is
+    // not granted is skipped without a word. So read the hooks directory from
+    // the repository's files instead.
+    const fallback = hooksPathFromGitFiles(cwd);
+    if (fallback) {
+      const reason = result.error?.code || `exit ${result.status}`;
+      // eslint-disable-next-line no-console
+      console.warn(`[commit-attribution] git could not report the hooks directory (${reason}), `
+        + `so ${fallback} was read from the repository's files`);
+    }
+    return fallback;
+  }
+  return directoryOrNull(resolve(result.stdout.trim()));
 };
 
 const resolveGitConfigCount = (env) => {
@@ -192,8 +307,8 @@ export const prepareCommitAttribution = ({
     COMMONLY_AGENT_GIT_CONFIG_BASE_COUNT: String(configIndex),
     COMMONLY_AGENT_HOOKS_PATH: hooksDirectory,
     // The sandbox adapters allow the workspace's existing hook files. The
-    // proxy resolves the target repo's path at hook time; a confined seat may
-    // fail closed if that repo's hook lies outside the workspace allowlist.
+    // proxy resolves the target repo's path at hook time, and a confined seat
+    // skips, without failing the commit, a hook outside what it was granted.
     ...(originalHooksPath ? { COMMONLY_AGENT_ORIGINAL_HOOKS_PATH: originalHooksPath } : {}),
     COMMONLY_AGENT_SEAT_NAME: cleanSingleLine(displayName || agentName, 'agent'),
     COMMONLY_AGENT_SEAT_ID: seatAddressId(agentName, instanceId),
