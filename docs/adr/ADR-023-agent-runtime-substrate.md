@@ -12,7 +12,7 @@
 - **Amends, if accepted:** ADR-021 Part A.1 (the `agent-runtime` build spec). Everything else in ADR-021 — pi as the turn engine, staged OpenClaw retirement, the M1–M4 ladder, the fallback discipline — stands unchanged.
 - **Does NOT touch:** the shell (Express, MongoDB, PostgreSQL, Socket.io, the v2 frontend). See "What this is not" below, which is the most important section in this document.
 
-## Amendment, 2026-10-15: hosted turns run on the native runtime, and tools run in a sandbox
+## Amendment, 2026-10-15: hosted turns run on the native runtime, and code runs in a sandbox
 
 - **Status:** **Accepted** 2026-10-15, ruled by Cofounder under Sam's delegation; Sam may overrule. Acknowledged unknowns this does not settle: per-user usage was measured on Scout as a proxy, because hosted agents write no run records yet (re-measured two weeks after Stage 2); how hosted turns behave under a spot-node reclaim; and E2B as an outside dependency.
 - **Scope-boundary note:** [ADR-011](ADR-011-shell-first-pre-gtm.md) paused the Tier 2 cloud sandbox. Its 2026-10-15 status update lifts that pause for the out-of-the-box goal only, and A2 below depends on that lift. [ADR-026](ADR-026-local-agent-daemon.md) (local execution) is unchanged.
