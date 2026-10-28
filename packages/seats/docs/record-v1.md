@@ -629,7 +629,9 @@ to that commit. `error.type` is Stable.
     `seats.attempt.outcome`, `seats.adapter`, `seats.cli.name`,
     `seats.usage.context_tokens`, `seats.usage.context_size` (the last
     known values in the attempt),
-    `seats.cli.version`, `seats.agent.owner`, `seats.agent.on_behalf_of.id`,
+    `seats.cli.version`, `seats.workspace.base` (attempt span, and the run
+    span with `seats.workspace.head`, `.removed` and `.kept` from
+    `run.settled`), `seats.agent.owner`, `seats.agent.on_behalf_of.id`,
     `seats.agent.on_behalf_of.role`, `seats.tool.kind`,
     `seats.tool.surface` and `seats.tool.args_digest`;
   - on every event, `seats.seq` and `seats.actor.type`, `.id`, `.owner`,

@@ -193,14 +193,82 @@ test('the sweep prunes a marker whose worktree is gone, releasing only its own l
   const report = await sweepWorktrees({ root, isRunLive: () => false });
   assert.deepEqual(report.map(({ runId, action }) => ({ runId, action })), [
     { runId: 'run-gone-ours', action: 'pruned' },
-    { runId: 'run-gone-relocked', action: 'pruned' },
+    { runId: 'run-gone-relocked', action: 'skipped' },
   ]);
   const realRoot = realpathSync(root);
   assert.equal(existsSync(join(realRoot, 'run-gone-ours.json')), false);
-  assert.equal(existsSync(join(realRoot, 'run-gone-relocked.json')), false);
+  assert.equal(existsSync(join(realRoot, 'run-gone-relocked.json')), true, 'a lock that is not ours keeps the marker');
   const after = worktreesOf(repo);
   assert.equal(after[ours.path], null, 'our lock released, so git can prune the record');
   assert.equal(after[relocked.path], 'a person is looking', 'a lock that is not ours stays');
+});
+
+test('a forged marker naming a worktree outside the root is never touched', async () => {
+  const { repo, root, base } = setup();
+  // A clean, unlocked worktree outside the root: everything the sweep would remove.
+  const outside = join(realpathSync(join(repo, '..')), 'outside');
+  git(repo, 'worktree', 'add', '-q', '--detach', outside);
+  mkdirSync(root, { recursive: true });
+  const realRoot = realpathSync(root);
+  writeFileSync(join(realRoot, 'run-forged.json'), `${JSON.stringify({
+    runId: 'run-forged', repo, path: outside, base,
+  })}\n`);
+
+  const report = await sweepWorktrees({ root, isRunLive: () => false });
+  assert.deepEqual(report.filter((r) => r.runId === 'run-forged' || r.path === outside), []);
+  assert.equal(existsSync(outside), true);
+  assert.equal(worktreesOf(repo)[outside], null, 'still registered, still unlocked');
+  assert.equal(existsSync(join(realRoot, 'run-forged.json')), true);
+});
+
+/** Make git refuse to remove a clean worktree, as it does once a submodule is set up in it. */
+const withSubmoduleDir = (path) => mkdirSync(join(git(path, 'rev-parse', '--absolute-git-dir'), 'modules'));
+
+test('a clean worktree git refuses to remove goes back under its lock', async () => {
+  const { repo, root } = setup();
+  const wt = prepareWorktree({ repo, root, runId: 'run-refused' });
+  withSubmoduleDir(wt.path);
+  assert.throws(() => settleWorktree(wt), /submodules/);
+  assert.equal(existsSync(wt.path), true);
+  assert.equal(worktreesOf(repo)[wt.path], lockReasonOf('run-refused'), 'relocked with our reason');
+  assert.equal(existsSync(`${wt.path}.json`), true, 'the marker stays for the sweep');
+});
+
+test('a supervised run whose worktree git refuses to remove reports kept: error and stays locked', async () => {
+  const { repo, root, store } = setup();
+  const out = await superviseRun({
+    adapter: working((cwd) => withSubmoduleDir(cwd)), prompt: 'p', store, runId: 'run-refused-2', ctx: { workspace: { repo, root } },
+  });
+  assert.equal(out.workspace.kept, 'error');
+  assert.equal(worktreesOf(repo)[out.workspace.path], lockReasonOf('run-refused-2'));
+});
+
+test('a sweep entry for a git failure carries git\'s message', async () => {
+  const { repo, root } = setup();
+  const wt = prepareWorktree({ repo, root, runId: 'run-sweep-refused' });
+  withSubmoduleDir(wt.path);
+  const report = await sweepWorktrees({ root, isRunLive: () => false });
+  assert.equal(report.length, 1);
+  assert.equal(report[0].action, 'skipped');
+  assert.match(report[0].error, /submodules cannot be moved or removed/);
+  assert.ok(!report[0].error.includes('\n'));
+  assert.equal(existsSync(wt.path), true);
+  assert.equal(existsSync(`${wt.path}.json`), true);
+});
+
+test('a caller\'s GIT_OBJECT_DIRECTORY and alternates do not reach the worktree calls', () => {
+  const { repo, root, base } = setup();
+  const elsewhere = mkdtempSync(join(sandbox, 'objects-'));
+  process.env.GIT_OBJECT_DIRECTORY = elsewhere;
+  process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = elsewhere;
+  try {
+    const wt = prepareWorktree({ repo, root, runId: 'run-env-objects' });
+    assert.equal(wt.base, base);
+    assert.equal(settleWorktree(wt).removed, true);
+  } finally {
+    delete process.env.GIT_OBJECT_DIRECTORY;
+    delete process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES;
+  }
 });
 
 test('the sweep keeps a dead run\'s worktree that moved off its base, unlocked', async () => {

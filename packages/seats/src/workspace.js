@@ -37,10 +37,15 @@ const RUN_ID = /^[A-Za-z0-9_-]{6,64}$/;
 const MARKER_SUFFIX = '.json';
 
 // A caller's GIT_DIR or GIT_WORK_TREE (a hook, say) would point every call
-// below at the wrong repository.
+// below at the wrong repository; GIT_OBJECT_DIRECTORY and the alternates would
+// read and write objects somewhere else.
+const SCRUBBED_GIT_ENV = [
+  'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR',
+  'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_NAMESPACE', 'GIT_PREFIX',
+];
 const gitEnv = () => {
   const env = { ...process.env };
-  for (const name of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR']) delete env[name];
+  for (const name of SCRUBBED_GIT_ENV) delete env[name];
   return env;
 };
 const git = (dir, args) => execFileSync('git', ['-C', dir, ...args], {
@@ -79,10 +84,28 @@ const keepReason = (path, base) => {
   return null;
 };
 
-/** Unlock and remove; git refuses a worktree with changes, a second check behind keepReason. */
-const removeWorktree = (repo, path) => {
+/**
+ * Unlock and remove; git refuses a worktree with changes, a second check
+ * behind keepReason. git will not remove a locked worktree without a double
+ * --force, which is never used here, so the unlock has to come first; when
+ * the remove then fails (a submodule, say), the lock goes back on with the
+ * same reason, so a kept worktree is never left unlocked.
+ */
+const removeWorktree = (repo, path, reason) => {
   git(repo, ['worktree', 'unlock', path]);
-  git(repo, ['worktree', 'remove', path]);
+  try {
+    git(repo, ['worktree', 'remove', path]);
+  } catch (error) {
+    try { git(repo, ['worktree', 'lock', '--reason', reason, path]); } catch { /* the remove error is the one to report */ }
+    throw error;
+  }
+};
+
+/** git's own complaint, one line and bounded, for a report a person reads. */
+const gitErrorOf = (error) => {
+  const text = String(error?.stderr || error?.message || error || '').trim();
+  const line = text.split('\n').find((l) => l.trim()) || 'unknown error';
+  return line.length > 300 ? `${line.slice(0, 300)}…` : line;
 };
 
 /**
@@ -107,6 +130,8 @@ export const prepareWorktree = ({ repo, base = 'HEAD', runId, root = defaultWork
     git(top, ['worktree', 'add', '--detach', '--lock', '--reason', lockReasonOf(runId), path, baseSha]);
   } catch (error) {
     rmSync(marker, { force: true });
+    // `worktree add --reason` is git 2.36+; say so rather than pass on "unknown option".
+    if (/unknown option.*reason/.test(String(error?.stderr || ''))) throw new Error('a run worktree needs git 2.36 or later (worktree add --reason)');
     throw error;
   }
   return { runId, repo: top, root: realRoot, path, base: baseSha };
@@ -125,7 +150,7 @@ export const settleWorktree = (worktree, { abandoned = false } = {}) => {
   const head = git(path, ['rev-parse', 'HEAD']);
   const kept = abandoned ? 'abandoned' : keepReason(path, base);
   if (kept) return { path, base, head, removed: false, kept };
-  removeWorktree(repo, path);
+  removeWorktree(repo, path, lockReasonOf(runId));
   rmSync(markerPath(root, runId), { force: true });
   return { path, base, head, removed: true };
 };
@@ -144,8 +169,9 @@ const readMarker = (file) => {
  * never read.
  *
  * @param {{ root?: string, isRunLive: (runId: string, marker: object) => boolean | Promise<boolean> }} args
- * @returns {Promise<Array<{ runId, path, action: 'live'|'removed'|'unlocked'|'pruned'|'skipped', kept?: string }>>}
+ * @returns {Promise<Array<{ runId, path, action: 'live'|'removed'|'unlocked'|'pruned'|'skipped', kept?: string, error?: string }>>}
  *   `unlocked`: the lock is released and the worktree kept, with the reason
+ *   `skipped`: left alone, its marker kept; `error` is git's message when a git call failed
  */
 export const sweepWorktrees = async ({ root = defaultWorktreeRoot(), isRunLive } = {}) => {
   if (typeof isRunLive !== 'function') throw new Error('sweepWorktrees needs isRunLive(runId)');
@@ -164,8 +190,10 @@ export const sweepWorktrees = async ({ root = defaultWorktreeRoot(), isRunLive }
       if (!entry || !existsSync(path)) {
         // The directory is gone (or was never made). Unlocking lets git's own
         // pruning drop its record; `git worktree prune` here would reach
-        // every stale worktree of the repository, not only this one.
-        if (entry && entry.locked === lockReasonOf(runId)) git(repo, ['worktree', 'unlock', path]);
+        // every stale worktree of the repository, not only this one. A lock
+        // someone else put on it is theirs to release, so the marker stays.
+        if (entry && entry.locked !== null && entry.locked !== lockReasonOf(runId)) { report.push({ runId, path, action: 'skipped' }); continue; }
+        if (entry && entry.locked !== null) git(repo, ['worktree', 'unlock', path]);
         rmSync(file, { force: true });
         report.push({ runId, path, action: 'pruned' });
         continue;
@@ -177,9 +205,9 @@ export const sweepWorktrees = async ({ root = defaultWorktreeRoot(), isRunLive }
       git(repo, ['worktree', 'remove', path]);
       rmSync(file, { force: true });
       report.push({ runId, path, action: 'removed' });
-    } catch {
-      // A repository moved or deleted since: leave it for a person.
-      report.push({ runId, path, action: 'skipped' });
+    } catch (error) {
+      // A repository moved or deleted since, or git refused: leave it for a person.
+      report.push({ runId, path, action: 'skipped', error: gitErrorOf(error) });
     }
   }
   return report;
