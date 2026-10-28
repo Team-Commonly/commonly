@@ -13372,7 +13372,7 @@ body.modern-ui.v2-canvas {
 }
 .v2-harness-picker__row:hover { background: var(--v2-surface-hover); }
 .v2-harness-picker__row--selected { border-color: var(--v2-accent); }
-.v2-harness-picker__name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 15px; font-weight: 500; }
+.v2-harness-picker__name { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; font-size: 15px; font-weight: 500; }
 .v2-harness-picker__mark {
   display: inline-grid;
   place-items: center;
@@ -13395,7 +13395,7 @@ body.modern-ui.v2-canvas {
 @media (max-width: 760px) {
   .v2-harness-picker { --hp-connects: 54px; --hp-mac: 24px; --hp-linux: 36px; --hp-windows: 48px; }
   .v2-harness-picker__head,
-  .v2-harness-picker__row { gap: 10px; padding-left: 12px; padding-right: 12px; }
+  .v2-harness-picker__row { gap: 6px; padding-left: 12px; padding-right: 12px; }
   .v2-harness-picker__head { font-size: 11px; }
   .v2-harness-picker__name { font-size: 14px; }
 }
