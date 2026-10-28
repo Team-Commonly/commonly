@@ -1112,7 +1112,7 @@ const V2AgentBYO: React.FC = () => {
       })()}
       hint={(() => {
         if (issued) return undefined;
-        if (showCompactHosted) return t('agentByo.compact.lead',{ agents: hosting?.caps.agentsPerUser, turns: hosting?.caps.turnsPerDay });
+        if (showCompactHosted && hosting?.configured) return t('agentByo.compact.lead',{ agents: hosting?.caps.agentsPerUser, turns: hosting?.caps.turnsPerDay });
         if (showCompactByo) return t('agentByo.compactByo.lead');
         return t('agentByo.description');
       })()}

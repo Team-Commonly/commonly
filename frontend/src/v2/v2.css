@@ -6480,6 +6480,7 @@ body.modern-ui.v2-canvas {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  align-self: stretch;
   gap: 5px;
   text-align: left;
   padding: 16px 18px 14px;

@@ -3193,6 +3193,9 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
     // The 1px-per-side compensation is derived from the base shorthand, so it is
     // pinned to it rather than restated as a magic number.
     expect(base.padding).toBe('16px 18px 14px');
+    // With only the title left, a card sizes to its text unless it stretches
+    // across its cell (the chooser collapsed at 1440, 720 and 390 without this).
+    expect(base['align-self']).toBe('stretch');
 
     const pressed = cssDeclarations(
       ruleBody(v2, '.v2-root button.v2-byo__mode[aria-pressed="true"]'),
