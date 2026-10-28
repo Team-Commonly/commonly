@@ -43,7 +43,7 @@ import {
 import { writeCredentialFile } from '../credential-file.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
-import { buildMemoryPreamble } from '../memory-bridge.js';
+import { memoryPreambleFor } from '../memory-bridge.js';
 import {
   isLegacySandboxTrust,
   normalizeSandboxTrust,
@@ -736,7 +736,7 @@ export default {
         : `[opencode] ${mismatch}; trusted seat continues`);
     }
 
-    const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, {
+    const fullPrompt = memoryPreambleFor(ctx)(prompt, ctx.memoryLongTerm, {
       freshSession: !ctx.sessionId,
     });
     const tempDir = await mkdtemp(join(tmpdir(), 'commonly-opencode-'));

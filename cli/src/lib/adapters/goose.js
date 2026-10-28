@@ -5,13 +5,14 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
-import { buildMemoryPreamble } from '../memory-bridge.js';
+import { memoryPreambleFor } from '../memory-bridge.js';
 import { effectiveSandboxTrust, refuseWorkspaceTrust, validateEnvironmentSpec } from '../environment.js';
 import { writeCredentialFile } from '../credential-file.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn } from '../mcp-home.js';
 import { resolveProviderKeyFile } from '../provider-proxy.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
+import { observeSpawn } from '../runtime-observation.js';
 
 // A version enters this list only after a real headless turn with that binary.
 export const TESTED_GOOSE_VERSIONS = Object.freeze(['1.54.0']);
@@ -118,8 +119,11 @@ export const readGooseStream = (stdout) => {
   return { text, error, complete };
 };
 
-const runGoose = ({ binary, args, cwd, env, timeoutMs, credentials, spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
+const runGoose = ({ binary, args, cwd, env, timeoutMs, credentials, spawnImpl = childSpawn, onSpawn, model }) => new Promise((resolve, reject) => {
   const child = spawnImpl(binary, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  // The supervisor reads this child's output as its progress signal and kills
+  // it when the turn is stuck; without it a stalled goose outlived its run.
+  observeSpawn(child, onSpawn, { model });
   let stdout = '';
   const stdoutDecoder = new StringDecoder('utf8');
   let stderr = '';
@@ -225,7 +229,7 @@ export default {
           credentialFile: credential?.path || '', instanceUrl: ctx.instanceUrl || '',
           runtimeToken: ctx.runtimeToken || '',
         }),
-        '-t', buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: true }),
+        '-t', memoryPreambleFor(ctx)(prompt, ctx.memoryLongTerm, { freshSession: true }),
       ];
       const env = {
         ...Object.fromEntries(Object.entries(sourceEnv).filter(([name]) => SAFE_ENV.test(name))),
@@ -247,7 +251,7 @@ export default {
       const text = await runGoose({
         binary, args, cwd: ctx.cwd, env, timeoutMs,
         credentials: [...spawnCredentials(ctx, [DEFAULT_PROVIDER_KEY]), key],
-        spawnImpl: ctx._spawnImpl,
+        spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, model,
       });
       return { text, newSessionId: null };
     } finally {

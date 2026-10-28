@@ -34,6 +34,18 @@ export const DEFAULT_RETRY_ON = Object.freeze(['stuck', 'exited', 'timeout']);
 
 // setTimeout overflows past this and fires immediately.
 const MAX_TIMER_MS = 2_147_483_647;
+
+/**
+ * A turn's wall-clock budget from a caller's request: a positive number of ms,
+ * clamped to what a timer can hold. Anything else (absent, zero, negative,
+ * not a number) is the default budget. The run loop and the standalone runner
+ * both read their budget through this.
+ */
+export const resolveTurnTimeoutMs = (requested) => {
+  const number = Number(requested);
+  return Number.isFinite(number) && number > 0 ? Math.min(number, MAX_TIMER_MS) : SUPERVISOR_DEFAULTS.timeoutMs;
+};
+
 // The supervisor's own events; an adapter writing them would forge the run's outcome.
 const SUPERVISOR_EVENTS = new Set(['run.started', 'run.settled']);
 

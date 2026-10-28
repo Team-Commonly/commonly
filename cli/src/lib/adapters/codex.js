@@ -67,7 +67,7 @@ import { CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
 import { supportedGitHooks } from '../commit-attribution.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
-import { buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
+import { memoryPreambleFor, ROW_SLICING_CUE } from '../memory-bridge.js';
 import { resolveSkillSource, skillsAsText } from '../skill-prompt.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
@@ -96,7 +96,6 @@ const DEFAULT_TIMEOUT_MS = (() => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 })();
 
-const buildPrompt = buildMemoryPreamble;
 
 // ── MCP wiring — codex consumes MCP servers via `-c mcp_servers.*` overrides ─
 //
@@ -657,14 +656,14 @@ export default {
     // Passed through UNCOALESCED. `ctx.memoryLongTerm || ''` was here, and
     // `null || ''` is `''` — which routed the unreadable case straight into
     // the empty-memory branch and made the whole distinction unreachable from
-    // the only two paths that build a real prompt. buildPrompt handles
+    // the only two paths that build a real prompt. the preamble builder handles
     // undefined and '' as absence itself; it does not need a guard, it needs
     // the value.
     //
     // Codex has no subagent tool, so of D48's two habits (TASK-545) it is
     // taught row slicing alone; claude.js adds parallel reads. A public seat
     // answers strangers rather than working board rows, so it is taught neither.
-    const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
+    const fullPrompt = memoryPreambleFor(ctx)(prompt, ctx.memoryLongTerm, {
       freshSession: !ctx.sessionId,
       workCues: sandbox?.trust === 'public' ? [] : [ROW_SLICING_CUE],
     });

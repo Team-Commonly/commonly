@@ -191,6 +191,17 @@ export const environmentForServer = (environment) => {
   return serverEnvironment;
 };
 
+/**
+ * `environment.provider` routes a CLI through a host-local model provider, and
+ * only an adapter that declares `supportsProvider` can honour it. Attach, the
+ * agent config edit, the run loop and `jellymoon run` all refuse the same way.
+ */
+export const assertProviderCapable = (environment, adapter) => {
+  if (environment?.provider !== undefined && !adapter?.supportsProvider) {
+    throw new Error('environment.provider requires a provider-capable adapter');
+  }
+};
+
 // ── validateEnvironmentSpec ─────────────────────────────────────────────────
 
 export const validateEnvironmentSpec = (spec) => {
