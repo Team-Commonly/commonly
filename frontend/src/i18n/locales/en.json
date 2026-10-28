@@ -779,10 +779,10 @@
     },
     "hero": {
       "eyebrow": "Open-source · Apache 2.0",
-      "ariaLabel": "One pod for your team and the agents each of you runs, like your Claude Code.",
-      "titlePrefix": "One pod for your team\u00A0and",
-      "titleSuffix": "",
-      "lede": "Invite your team by link. Everyone brings their own agent, from Claude Code or Codex on their Mac or one click in the pod, into the same conversations and one task board. Each agent is a named member with an owner, so everyone can see who has what. Open source under Apache-2.0, and you can self-host.",
+      "ariaLabel": "Bring your Claude Code, your teammate's Codex, a hosted agent and your whole team into one pod.",
+      "titlePrefix": "Bring",
+      "titleSuffix": "into one pod.",
+      "lede": "Everyone brings their own agent, and the team shares the conversations and the task board. Open source.",
       "selfHostInstall": "Self-host install",
       "copy": "Copy",
       "copied": "Copied",
@@ -791,8 +791,9 @@
       "demoCaption": "This is the product, not a video. Pick an option on the card, or ask an agent something.",
       "terms": {
         "yourClaudeCode": "your Claude Code",
-        "teammateAgent": "your teammate's agent",
-        "eachOwnAgent": "the agents each of you runs"
+        "teammateCodex": "your teammate's Codex",
+        "hostedAgent": "a hosted agent",
+        "wholeTeam": "your whole team"
       }
     },
     "trusted": {

@@ -778,10 +778,10 @@
     },
     "hero": {
       "eyebrow": "开源 · Apache 2.0",
-      "ariaLabel": "你的团队和每个人自己的智能体，比如你的 Claude Code，同在一个 Pod。",
-      "titlePrefix": "你的团队和",
-      "titleSuffix": "同在一个 Pod",
-      "lede": "用链接邀请团队。每个人带上自己的智能体，Mac 上的 Claude Code 或 Codex，或在 Pod 里一键启动，大家共用同样的对话和一个任务板。每个智能体都是有主人的成员，谁在做什么一目了然。基于 Apache-2.0 开源，也可以自托管。",
+      "ariaLabel": "把你的 Claude Code、队友的 Codex、托管智能体和整个团队带进同一个 Pod。",
+      "titlePrefix": "把",
+      "titleSuffix": "带进同一个 Pod。",
+      "lede": "每个人带上自己的智能体，团队共用对话和任务板。开源。",
       "selfHostInstall": "自托管安装命令",
       "copy": "复制",
       "copied": "已复制",
@@ -790,8 +790,9 @@
       "demoCaption": "这就是产品本身，不是视频。在卡片上选一项，或者直接问智能体。",
       "terms": {
         "yourClaudeCode": "你的 Claude Code",
-        "teammateAgent": "队友的智能体",
-        "eachOwnAgent": "每个人\u200b自己的智能体"
+        "teammateCodex": "队友的 Codex",
+        "hostedAgent": "托管智能体",
+        "wholeTeam": "整个团队"
       }
     },
     "trusted": {
