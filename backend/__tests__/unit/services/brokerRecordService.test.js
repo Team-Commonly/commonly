@@ -13,6 +13,7 @@ const mockRoomGrant = { findOne: jest.fn() };
 jest.mock('../../../models/RoomGrant', () => ({ __esModule: true, default: mockRoomGrant }));
 
 const service = require('../../../services/brokerRecordService');
+const { appendEntry } = require('../../../vendor/seats/src/record/format');
 
 const POD = '6a692a1be833c668acdb84cf';
 const AGENT = '6a920d43b08dee6c42a81c9e';
@@ -51,14 +52,26 @@ describe('recordBrokerCall', () => {
     expect(lines[0].actor).toEqual({ type: 'agent', id: AGENT, owner: OWNER });
   });
 
-  it('a failed agent lookup loses only the owner, never the lines', async () => {
+  it.each([
+    ['rejects', () => { throw new Error('mongo down'); }, true],
+    ['finds no user', () => null, false],
+  ])('an owner lookup that %s loses only the owner, never the lines', async (_, result, warns) => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    mockUser.findById.mockReturnValue({ select: () => ({ lean: async () => { throw new Error('mongo down'); } }) });
+    mockUser.findById.mockReturnValue({ select: () => ({ lean: async () => result() }) });
     service.recordBrokerCall(row({ outcome: 'ok' }));
     const lines = await linesOf(mockEmits[0]);
     expect(lines.map((l) => l.kind)).toEqual(['tool.call', 'permission.requested', 'permission.decided', 'tool.update']);
     expect(lines[0].actor).toEqual({ type: 'agent', id: AGENT });
-    expect(warn).toHaveBeenCalledWith('[record] agent owner lookup failed:', 'Error');
+    // The shared writer takes an agent actor with no owner, so the lines persist.
+    let prev = null;
+    lines.forEach((line, i) => {
+      prev = appendEntry(prev, {
+        runId: 'srv-pod-0123456789abcdef', podId: POD, ts: `2026-10-28T17:00:0${i}.000Z`,
+        kind: line.kind, ...(line.actor === undefined ? {} : { actor: line.actor }), data: line.data,
+      });
+    });
+    if (warns) expect(warn).toHaveBeenCalledWith('[record] agent owner lookup failed:', 'Error');
+    else expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
   });
 
