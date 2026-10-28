@@ -24,6 +24,7 @@
 import mongoose from 'mongoose';
 import Task from '../models/Task';
 import { humansAnsweredBy } from './agentAnswerService';
+import { recordTaskTransition } from './taskRecordService';
 
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { ESCALATION_MARKERS } = require('./connectorRelayPolicy');
@@ -53,7 +54,10 @@ const completeStarterTask = async (podId: string, sourceRef: string, text: strin
     },
     { new: true },
   );
-  if (task) emitTaskUpdated(podId, task, 'updated');
+  if (task) {
+    emitTaskUpdated(podId, task, 'updated');
+    recordTaskTransition({ podId, task, from: null, to: 'done', at: task.completedAt || new Date() });
+  }
 };
 
 export const completeConnectAgentStarterTask = async ({
