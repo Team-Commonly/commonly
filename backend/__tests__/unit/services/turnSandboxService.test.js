@@ -134,6 +134,45 @@ describe('TurnSandbox', () => {
     warn.mockRestore();
   });
 
+  test('a create that never answers gets the busy line by our own bound, and a later run retries', async () => {
+    jest.useFakeTimers();
+    try {
+      // The pinned SDK ignores requestTimeoutMs here, so only our own timer can end this.
+      mockCreate.mockImplementationOnce(() => new Promise(() => {}));
+      const sandbox = new TurnSandbox({});
+      const pending = sandbox.run('python', 'print(1)');
+      await jest.advanceTimersByTimeAsync(30_000);
+      expect(await pending).toEqual({ ok: false, stdout: '', stderr: '', error: SANDBOX_BUSY_MESSAGE });
+      expect(await sandbox.close()).toBe(0);
+
+      expect((await sandbox.run('python', 'print(1)')).ok).toBe(true);
+      expect(mockCreate).toHaveBeenCalledTimes(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('a create that answers after our bound is killed on arrival, not left to bill', async () => {
+    jest.useFakeTimers();
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      let resolveLate;
+      mockCreate.mockImplementationOnce(() => new Promise((resolve) => { resolveLate = resolve; }));
+      const sandbox = new TurnSandbox({});
+      const pending = sandbox.run('python', 'print(1)');
+      await jest.advanceTimersByTimeAsync(30_000);
+      expect((await pending).error).toBe(SANDBOX_BUSY_MESSAGE);
+
+      resolveLate({ runCode: mockRunCode, kill: mockKill });
+      await jest.advanceTimersByTimeAsync(0);
+      expect(mockKill).toHaveBeenCalledTimes(1);
+      expect(mockRunCode).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+      warn.mockRestore();
+    }
+  });
+
   test('E2B capacity refusals (ServiceBusyError, 503) get the same busy line, and a later run retries', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockCreate.mockRejectedValueOnce(Object.assign(new Error('Service temporarily unavailable'), { name: 'ServiceBusyError', statusCode: 503 }));

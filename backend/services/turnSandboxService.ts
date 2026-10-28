@@ -65,6 +65,31 @@ const isSandboxRefusal = (error: unknown): boolean => {
     || status === 429 || statusCode === 429 || statusCode === 503;
 };
 
+// The pinned SDK does not honour requestTimeoutMs on Sandbox.create, so the
+// bound is ours: a hung control plane must not hold the turn. A create that
+// answers after the bound is killed on arrival, so it is not billed until its
+// lifetime runs out.
+const boundCreate = (create: Promise<E2BSandbox>, ms: number): Promise<E2BSandbox> => new Promise((resolve, reject) => {
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    const error = new Error(`sandbox create did not answer within ${ms}ms`);
+    error.name = 'TimeoutError';
+    reject(error);
+  }, ms);
+  create.then((sandbox) => {
+    clearTimeout(timer);
+    if (timedOut) {
+      sandbox.kill().catch(() => {});
+      return;
+    }
+    resolve(sandbox);
+  }, (error) => {
+    clearTimeout(timer);
+    reject(error);
+  });
+});
+
 const clip = (text: string, limit: number): string => (
   text.length > limit ? `${text.slice(0, limit)}\n… [${text.length - limit} more characters]` : text
 );
@@ -87,7 +112,7 @@ export class TurnSandbox {
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const { Sandbox } = require('@e2b/code-interpreter');
       this.startedAt = Date.now();
-      this.creating = Sandbox.create(SANDBOX_TEMPLATE, {
+      const create = Sandbox.create(SANDBOX_TEMPLATE, {
         apiKey: process.env.E2B_API_KEY,
         timeoutMs: SANDBOX_LIFETIME_MS,
         requestTimeoutMs: CREATE_TIMEOUT_MS,
@@ -100,6 +125,7 @@ export class TurnSandbox {
         envs: {},
         metadata: this.metadata,
       }) as Promise<E2BSandbox>;
+      this.creating = boundCreate(create, CREATE_TIMEOUT_MS);
     }
     return this.creating;
   }
