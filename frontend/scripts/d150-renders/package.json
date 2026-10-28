@@ -1,8 +1,0 @@
-{
-  "name": "commonly-d150-renders",
-  "private": true,
-  "type": "module",
-  "description": "Route-mocked 390/1440 renders for the D150 helper-text cut (TASK-588). Run against a before and an after dev server.",
-  "scripts": { "render": "node render.mjs" },
-  "dependencies": { "playwright": "1.48.2" }
-}
