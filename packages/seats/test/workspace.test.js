@@ -134,6 +134,43 @@ test('the sweep releases a dead run\'s lock, removes it when clean, and leaves a
   assert.equal(after[stranger], 'not ours');
 });
 
+test('the sweep prunes a marker whose worktree is gone, releasing only its own lock', async () => {
+  const { repo, root } = setup();
+  const ours = prepareWorktree({ repo, root, runId: 'run-gone-ours' });
+  const relocked = prepareWorktree({ repo, root, runId: 'run-gone-relocked' });
+  git(repo, 'worktree', 'unlock', relocked.path);
+  git(repo, 'worktree', 'lock', '--reason', 'a person is looking', relocked.path);
+  rmSync(ours.path, { recursive: true, force: true });
+  rmSync(relocked.path, { recursive: true, force: true });
+
+  const report = await sweepWorktrees({ root, isRunLive: () => false });
+  assert.deepEqual(report.map(({ runId, action }) => ({ runId, action })), [
+    { runId: 'run-gone-ours', action: 'pruned' },
+    { runId: 'run-gone-relocked', action: 'pruned' },
+  ]);
+  const realRoot = realpathSync(root);
+  assert.equal(existsSync(join(realRoot, 'run-gone-ours.json')), false);
+  assert.equal(existsSync(join(realRoot, 'run-gone-relocked.json')), false);
+  const after = worktreesOf(repo);
+  assert.equal(after[ours.path], null, 'our lock released, so git can prune the record');
+  assert.equal(after[relocked.path], 'a person is looking', 'a lock that is not ours stays');
+});
+
+test('the sweep keeps a dead run\'s worktree that moved off its base, unlocked', async () => {
+  const { repo, root, base } = setup();
+  const wt = prepareWorktree({ repo, root, runId: 'run-dead-committed' });
+  writeFileSync(join(wt.path, 'README'), 'two\n');
+  git(wt.path, 'commit', '-q', '-am', 'two');
+  assert.notEqual(git(wt.path, 'rev-parse', 'HEAD'), base);
+
+  const report = await sweepWorktrees({ root, isRunLive: () => false });
+  assert.deepEqual(report.map(({ runId, action, kept }) => ({ runId, action, kept })), [
+    { runId: 'run-dead-committed', action: 'unlocked', kept: 'committed' },
+  ]);
+  assert.equal(existsSync(wt.path), true);
+  assert.equal(worktreesOf(repo)[wt.path], null);
+});
+
 test('a marker whose worktree is locked by someone else is skipped', async () => {
   const { repo, root } = setup();
   const wt = prepareWorktree({ repo, root, runId: 'run-relocked' });
@@ -167,6 +204,27 @@ test('an abandoned run keeps its worktree locked for the sweep', () => {
     path: wt.path, base, head: base, removed: false, kept: 'abandoned',
   });
   assert.equal(worktreesOf(repo)[wt.path], lockReasonOf('run-abandon'));
+});
+
+test('a run whose adapter ignores the cancel keeps its worktree locked as abandoned', async () => {
+  const { repo, root, store } = setup();
+  // Never settles and never looks at its signal: the supervisor gives up after
+  // the grace period, and the process may still be writing in the worktree.
+  const adapter = { name: 'deaf', spawn: () => new Promise(() => {}) };
+  const out = await superviseRun({
+    adapter,
+    prompt: 'p',
+    store,
+    runId: 'run-deaf-1',
+    ctx: { workspace: { repo, root } },
+    policy: { stallMs: 0, timeoutMs: 100, cancelGraceMs: 50 },
+  });
+  assert.equal(out.failure.adapterIgnoredCancel, true);
+  assert.equal(out.workspace.kept, 'abandoned');
+  assert.equal(out.workspace.removed, false);
+  assert.equal(existsSync(out.workspace.path), true);
+  assert.equal(worktreesOf(repo)[out.workspace.path], lockReasonOf('run-deaf-1'));
+  assert.equal(existsSync(join(realpathSync(root), 'run-deaf-1.json')), true, 'the marker stays for the sweep');
 });
 
 test('a workspace that cannot be made settles the run as failed, without spawning', async () => {
