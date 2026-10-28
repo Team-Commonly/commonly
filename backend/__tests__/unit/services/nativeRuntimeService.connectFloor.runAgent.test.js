@@ -34,6 +34,17 @@ jest.mock('../../../services/agentTypingService', () => ({
   emitAgentTypingStop: jest.fn(),
 }));
 
+const mockBridged = jest.fn();
+jest.mock('../../../services/outsiderGrantPodEligibility', () => ({
+  podIsBridged: (...args) => mockBridged(...args),
+}));
+
+const mockSearchWeb = jest.fn();
+jest.mock('../../../services/webSearchService', () => ({
+  isSearchConfigured: () => true,
+  searchWeb: (...args) => mockSearchWeb(...args),
+}));
+
 jest.mock('../../../services/agentMessageService', () => ({
   postMessage: jest.fn().mockResolvedValue({ success: true }),
 }));
@@ -52,6 +63,16 @@ const SCOUT = (tools) => ({
   instanceId: 'default',
   displayName: 'Scout',
   config: { runtime: { runtimeType: 'native' }, ...(tools ? { tools } : {}) },
+});
+
+const call = (id, name, args) => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } });
+const toolCalls = (...calls) => ({
+  status: 200,
+  headers: {},
+  data: {
+    choices: [{ message: { role: 'assistant', content: null, tool_calls: calls } }],
+    usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 },
+  },
 });
 
 const CONNECT_MESSAGE = {
@@ -109,6 +130,19 @@ describe('connect-intent floor through runAgent', () => {
 
     await runAgent(SCOUT(['commonly_post_message']), CONNECT_MESSAGE);
 
+    expect(proposeAction).not.toHaveBeenCalled();
+  });
+
+  test('a guardrail-blocked turn gets no connect card', async () => {
+    mockSearchWeb.mockResolvedValue({ provider: 'exa', results: [{ title: 'x', url: 'https://example.com', text: 'x' }] });
+    mockBridged.mockResolvedValueOnce(false).mockResolvedValueOnce(false).mockResolvedValue(true);
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('s1', 'commonly_web_search', { query: 'connect' })))
+      .mockResolvedValueOnce(modelSays('Open the connect page to link it.'));
+
+    await runAgent(SCOUT(['commonly_propose_action', 'commonly_web_search']), CONNECT_MESSAGE);
+
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
     expect(proposeAction).not.toHaveBeenCalled();
   });
 

@@ -2513,8 +2513,9 @@ export async function runAgent(
 
   // TASK-417: the deterministic floor runs after the model turn. A turn that
   // already replied (a post, a proposal, an offer, or the text fallback) has
-  // handled the request, so the floor stays out of it.
-  if (run.status === 'succeeded' && !connectRequestAnswered(postedViaTool, finalMessage)) {
+  // handled the request, so the floor stays out of it. A guardrail refusal
+  // (run.errorKind) is a block, not a miss, so no card routes around it.
+  if (run.status === 'succeeded' && !run.errorKind && !connectRequestAnswered(postedViaTool, finalMessage)) {
     try {
       // The floor is a proposal, so it takes the same offer the model got: the
       // install must declare the tool, an outsider grant narrows to in-pod
