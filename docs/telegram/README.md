@@ -41,7 +41,6 @@
 
 ## Status
 - ⚠️ Legacy in-platform provider (will move to external service).
-- External service stub lives at `external/commonly-provider-services/telegram-service/`.
 
 ## Next Steps
 - Parse common attachment types (photo/document/audio) for richer summaries.
