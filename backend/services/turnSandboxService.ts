@@ -69,6 +69,14 @@ const isSandboxRefusal = (error: unknown): boolean => {
 // bound is ours: a hung control plane must not hold the turn. A create that
 // answers after the bound is killed on arrival, so it is not billed until its
 // lifetime runs out.
+// A failed kill leaves the sandbox billing until its lifetime, so one retry
+// first. Only a second failure is logged.
+const killLate = (sandbox: E2BSandbox): void => {
+  sandbox.kill().catch(() => sandbox.kill()).catch((error) => {
+    console.warn('[sandbox] late sandbox kill failed; E2B stops it at its lifetime:', (error as Error).message);
+  });
+};
+
 const boundCreate = (create: Promise<E2BSandbox>, ms: number): Promise<E2BSandbox> => new Promise((resolve, reject) => {
   let timedOut = false;
   const timer = setTimeout(() => {
@@ -80,7 +88,7 @@ const boundCreate = (create: Promise<E2BSandbox>, ms: number): Promise<E2BSandbo
   create.then((sandbox) => {
     clearTimeout(timer);
     if (timedOut) {
-      sandbox.kill().catch(() => {});
+      killLate(sandbox);
       return;
     }
     resolve(sandbox);

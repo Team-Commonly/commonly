@@ -140,8 +140,11 @@ describe('TurnSandbox', () => {
       // The pinned SDK ignores requestTimeoutMs here, so only our own timer can end this.
       mockCreate.mockImplementationOnce(() => new Promise(() => {}));
       const sandbox = new TurnSandbox({});
-      const pending = sandbox.run('python', 'print(1)');
-      await jest.advanceTimersByTimeAsync(30_000);
+      let settled = false;
+      const pending = sandbox.run('python', 'print(1)').then((result) => { settled = true; return result; });
+      await jest.advanceTimersByTimeAsync(29_999);
+      expect(settled).toBe(false);
+      await jest.advanceTimersByTimeAsync(1);
       expect(await pending).toEqual({ ok: false, stdout: '', stderr: '', error: SANDBOX_BUSY_MESSAGE });
       expect(await sandbox.close()).toBe(0);
 
@@ -167,6 +170,30 @@ describe('TurnSandbox', () => {
       await jest.advanceTimersByTimeAsync(0);
       expect(mockKill).toHaveBeenCalledTimes(1);
       expect(mockRunCode).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+      warn.mockRestore();
+    }
+  });
+
+  test('a late sandbox whose first kill fails is killed again once, and no warning is logged when the retry works', async () => {
+    jest.useFakeTimers();
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      let resolveLate;
+      mockCreate.mockImplementationOnce(() => new Promise((resolve) => { resolveLate = resolve; }));
+      const sandbox = new TurnSandbox({});
+      const pending = sandbox.run('python', 'print(1)');
+      await jest.advanceTimersByTimeAsync(30_000);
+      expect((await pending).error).toBe(SANDBOX_BUSY_MESSAGE);
+      expect(await sandbox.close()).toBe(0);
+
+      warn.mockClear();
+      mockKill.mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce(true);
+      resolveLate({ runCode: mockRunCode, kill: mockKill });
+      await jest.advanceTimersByTimeAsync(0);
+      expect(mockKill).toHaveBeenCalledTimes(2);
+      expect(warn).not.toHaveBeenCalled();
     } finally {
       jest.useRealTimers();
       warn.mockRestore();
