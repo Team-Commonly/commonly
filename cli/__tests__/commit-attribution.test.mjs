@@ -575,6 +575,49 @@ describe('prepareCommitAttribution', () => {
     }
   });
 
+  // A FIFO where git keeps a file would block a plain read forever, so each
+  // case runs in a child that is killed if it outlives the probe's own bound.
+  // The FIFO has no writer, and the repository is this user's own, so the
+  // ownership check cannot stand between the fallback and the read.
+  test.each([
+    { name: 'HEAD', granted: false },
+    { name: 'config', granted: true },
+  ])('a git that fails at once beside a FIFO $name finishes without reading it', ({ name, granted }) => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-fifo-')));
+    const stubBin = join(root, 'bin');
+    mkdirSync(stubBin);
+    execFileSync('git', ['init', '--quiet'], { cwd: root });
+    mkdirSync(join(root, '.git', 'hooks'), { recursive: true });
+    rmSync(join(root, '.git', name));
+    execFileSync('mkfifo', [join(root, '.git', name)]);
+    makeExecutable(join(stubBin, 'git'), FAILING_GIT);
+    const moduleUrl = new URL('../src/lib/commit-attribution.js', import.meta.url).href;
+    const script = `
+      const { prepareCommitAttribution } = await import(${JSON.stringify(moduleUrl)});
+      console.warn = () => {};
+      const attribution = prepareCommitAttribution({
+        cwd: process.argv[1], env: process.env, agentName: 'forge', adapter: 'claude',
+      });
+      process.stdout.write(JSON.stringify(attribution.env.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH ?? null));
+      attribution.cleanup();
+    `;
+    try {
+      const child = spawnSync(process.execPath, ['--input-type=module', '-e', script, root], {
+        env: { ...fixtureEnv, PATH: `${stubBin}:${fixtureEnv.PATH}` },
+        encoding: 'utf8',
+        timeout: 8000,
+        killSignal: 'SIGKILL',
+      });
+      expect(child.signal).toBeNull();
+      expect(child.status).toBe(0);
+      const hooksPath = JSON.parse(child.stdout);
+      if (granted) expect(realpathSync(hooksPath)).toBe(join(root, '.git', 'hooks'));
+      else expect(hooksPath).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 15000);
+
   test('keeps long seat IDs inside the email local-part limit with a stable hash', () => {
     const root = mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-long-seat-'));
     execFileSync('git', ['init', '--quiet'], { cwd: root });

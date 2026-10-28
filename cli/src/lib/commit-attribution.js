@@ -2,9 +2,12 @@ import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import {
   accessSync,
+  closeSync,
   constants,
+  fstatSync,
   lstatSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   readlinkSync,
   rmSync,
@@ -88,6 +91,20 @@ const directoryOrNull = (path) => {
   }
 };
 
+// A regular file's text, or null. The open does not block, so a FIFO or a
+// device where git keeps a file is refused instead of hanging the caller.
+const readRegularFile = (path) => {
+  let fd = null;
+  try {
+    fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
+    return fstatSync(fd).isFile() ? readFileSync(fd, 'utf8') : null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
+};
+
 // One git config value: quotes group, a backslash escapes the next character,
 // and an unquoted # or ; starts a comment. Whitespace around the value is
 // dropped unless it is quoted.
@@ -116,12 +133,8 @@ const configValue = (raw) => {
 // The last core.hooksPath in one config file, or null. `include` and
 // conditional includes are not followed.
 const configuredHooksPath = (configPath) => {
-  let text;
-  try {
-    text = readFileSync(configPath, 'utf8');
-  } catch {
-    return null;
-  }
+  const text = readRegularFile(configPath);
+  if (text === null) return null;
   let inCore = false;
   let hooksPath = null;
   for (const rawLine of text.split(/\r?\n/)) {
@@ -146,7 +159,7 @@ const isGitDirectory = (gitDir, commonDir) => {
   const head = join(gitDir, 'HEAD');
   try {
     if (lstatSync(head).isSymbolicLink()) return readlinkSync(head).startsWith('refs/');
-    const line = readFileSync(head, 'utf8').split('\n')[0];
+    const line = (readRegularFile(head) ?? '').split('\n')[0];
     return /^ref:\s*refs\//.test(line) || /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(line);
   } catch {
     return false;
@@ -186,26 +199,19 @@ const hooksPathFromGitFiles = (cwd, env) => {
       entry = join(top, '.git');
     }
   }
+  // Ownership is settled before any of the repository's files is read.
+  if (!ownedByThisUser(top) || !ownedByThisUser(entry)) return null;
   let gitDir = entry;
   if (entryStat.isFile()) {
-    let pointer = null;
-    try {
-      pointer = /^gitdir:\s*(.+?)\s*$/m.exec(readFileSync(entry, 'utf8'));
-    } catch {
-      // Unreadable: the same as no repository.
-    }
+    const pointer = /^gitdir:\s*(.+?)\s*$/m.exec(readRegularFile(entry) ?? '');
     if (!pointer) return null;
     gitDir = resolve(top, pointer[1]);
+    if (!ownedByThisUser(gitDir)) return null;
   }
-  let commonDir = gitDir;
-  try {
-    commonDir = resolve(gitDir, readFileSync(join(gitDir, 'commondir'), 'utf8').trim());
-  } catch {
-    // A main repository has no commondir file.
-  }
+  // A main repository has no commondir file.
+  const commonDirFile = readRegularFile(join(gitDir, 'commondir'));
+  const commonDir = commonDirFile === null ? gitDir : resolve(gitDir, commonDirFile.trim());
   if (!isGitDirectory(gitDir, commonDir)) return null;
-  const owned = [top, gitDir, ...(entryStat.isFile() ? [entry] : [])];
-  if (!owned.every(ownedByThisUser)) return null;
   const configured = configuredHooksPath(join(commonDir, 'config'));
   if (!configured) return directoryOrNull(join(commonDir, 'hooks'));
   if (configured === '~' || configured.startsWith('~/')) {
