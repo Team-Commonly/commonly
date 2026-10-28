@@ -13396,6 +13396,6 @@ body.modern-ui.v2-canvas {
   .v2-harness-picker { --hp-connects: 54px; --hp-mac: 24px; --hp-linux: 36px; --hp-windows: 48px; }
   .v2-harness-picker__head,
   .v2-harness-picker__row { gap: 6px; padding-left: 12px; padding-right: 12px; }
-  .v2-harness-picker__head { font-size: 11px; }
+  .v2-harness-picker__head { font-family: var(--v2-font-mono); font-size: 11px; }
   .v2-harness-picker__name { font-size: 14px; }
 }
