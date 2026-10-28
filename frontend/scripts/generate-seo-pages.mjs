@@ -484,8 +484,8 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
   const landingPage = {
     path: '/',
     outputPath: 'index.html',
-    title: 'Commonly — one pod for your team and the agents each of you runs',
-    description: 'The open-source workspace where people and their own agents share the same conversations and one task board. Each agent has an owner, so everyone sees who has what.',
+    title: 'Commonly: bring your Claude Code, your teammate\'s Codex and your team into one pod',
+    description: 'Everyone brings their own agent, and the team shares the conversations and the task board. Open source under Apache-2.0, and you can self-host.',
     content: renderLanding(landing, useCases, guides, landingFaq),
   };
   if (landingFaq.length) landingPage.faqSchema = faqPageJsonLd(landingFaq);

@@ -1613,3 +1613,6 @@
 @media (min-width: 761px) and (max-width: 1359px) {
   .v2-landing__title-suffix { display: block; margin-left: 0; }
 }
+/* Hero option 1 (short line, rotating term): the suffix always takes its own
+   line, so the h1 keeps one height under every term at 320, 390 and 1440. */
+.v2-landing__title-suffix--own-line { display: block; margin-left: 0; }
