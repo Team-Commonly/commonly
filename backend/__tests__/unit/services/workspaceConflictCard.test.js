@@ -7,7 +7,7 @@
  * detail.conflicts[] with per-hunk line numbers and both sides as line arrays.
  */
 const { conflictToDecisionRequest } = require('../../../services/workspaceConflictCard');
-const { normalizeDecisionClass } = require('../../../services/decisionRequestService');
+const { normalizeDecisionClass, normalizeOptions } = require('../../../services/decisionRequestService');
 
 const conflict = {
   path: '/README.md',
@@ -52,9 +52,52 @@ describe('conflictToDecisionRequest', () => {
     expect(req.context.length).toBeLessThan(1000);
   });
 
-  test('a binary conflict with no hunks, such as /.git/index, names the file alone', () => {
+  test('a binary conflict with no hunks, such as /.git/index, is accepted by the decision route', () => {
     const req = conflictToDecisionRequest({ path: '/.git/index', kind: 'binary', hunks: [] }, sides);
     expect(req.title).toBe('Merge conflict in /.git/index');
-    expect(req.options[0].description).toBe('');
+    expect(req.options[0]).not.toHaveProperty('description');
+    expect(req.context).toContain('No line-level hunks');
+    expect(() => normalizeOptions(req.options)).not.toThrow();
+  });
+
+  test('a delete side with no lines still yields a description the route accepts', () => {
+    const req = conflictToDecisionRequest({
+      path: '/a.txt',
+      kind: 'content',
+      hunks: [{ line: 3, ours: [], theirs: ['kept'] }],
+    }, sides);
+    expect(req.options[0].description).toBe('(empty)');
+    expect(() => normalizeOptions(req.options)).not.toThrow();
+  });
+
+  test('five long hunks stay inside the context limit, and the cut is named', () => {
+    const block = 'y'.repeat(400);
+    const hunks = Array.from({ length: 5 }, (_, i) => ({ line: i + 1, ours: [block], theirs: [block] }));
+    const req = conflictToDecisionRequest({ path: '/big.md', kind: 'content', blocks: 5, hunks }, sides);
+    expect(req.context.length).toBeLessThanOrEqual(2000);
+    expect(req.context).toMatch(/\[\d+ more hunks not shown\]$/);
+    expect(req.context).toContain('Conflict blocks: 5');
+  });
+
+  test('blocks and hunksOmitted reach the agent, so an omitted content conflict is not read as binary', () => {
+    const req = conflictToDecisionRequest({
+      path: '/big.md', kind: 'content', blocks: 9, hunksOmitted: true, hunks: [],
+    }, sides);
+    expect(req.context).toContain('Conflict blocks: 9');
+    expect(req.context).toContain('Some hunks were omitted by the merge.');
+    expect(req.context).not.toContain('No line-level hunks');
+  });
+
+  test('a long path and long branch names are clipped to every route limit', () => {
+    const path = `/${'deep/'.repeat(60)}file.md`;
+    const longSides = { base: 'b'.repeat(200), branch: 'c'.repeat(200) };
+    const req = conflictToDecisionRequest({
+      path, kind: 'content', hunks: [{ line: 12, ours: ['o'], theirs: ['t'] }],
+    }, longSides);
+    expect(req.title.length).toBeLessThanOrEqual(160);
+    expect(req.question.length).toBeLessThanOrEqual(1000);
+    expect(req.context.length).toBeLessThanOrEqual(2000);
+    expect(() => normalizeOptions(req.options)).not.toThrow();
+    req.options.forEach((o) => expect(o.label.length).toBeLessThanOrEqual(80));
   });
 });
