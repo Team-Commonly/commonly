@@ -281,8 +281,9 @@ router.get('/:agentName/:instanceId?', async (req: Req, res: Res) => {
 // "If created by someone" — the gate is creation-shaped: the caller must be an
 // admin or the installer of an active installation of this agent. Accepts the
 // deterministic robot scheme ('bottts:<seed>') or an uploaded-image reference;
-// never raw AI generation, which is deprecated. 'default' clears the pick, so
-// every surface falls back to the face seeded on the agent's user id.
+// never raw AI generation, which is deprecated. 'default' clears the pick on
+// the user row, so surfaces that read it fall back to the face seeded on the
+// agent's user id.
 //
 // Writes go through the ONE sanctioned door for the dual-store problem:
 // Mongo User first, then AgentIdentityService.syncUserToPostgreSQL — the July
@@ -351,10 +352,14 @@ router.put('/:agentName/:instanceId?/avatar', authMiddleware, async (req: any, r
     }
 
     // Your-Team cards read AgentRegistry.iconUrl; move it in the same request.
-    try {
-      await AgentRegistry.updateOne({ agentName }, { $set: { iconUrl: reset ? '' : avatar } });
-    } catch (regErr) {
-      console.warn('[agent-avatar] registry iconUrl update failed:', (regErr as Error).message);
+    // The registry row is one per agentName and shared by every instance and
+    // the catalog, so a one-instance reset must not clear it.
+    if (!reset) {
+      try {
+        await AgentRegistry.updateOne({ agentName }, { $set: { iconUrl: avatar } });
+      } catch (regErr) {
+        console.warn('[agent-avatar] registry iconUrl update failed:', (regErr as Error).message);
+      }
     }
 
     res.json({ ok: true, avatar });

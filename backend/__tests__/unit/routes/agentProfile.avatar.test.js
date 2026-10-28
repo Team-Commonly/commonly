@@ -143,16 +143,14 @@ describe('agent avatar editing', () => {
     expect(res.json).toHaveBeenCalledWith({ ok: true, avatar: '/api/uploads/custom-icon.png' });
   });
 
-  it("'default' clears the pick on the user row and the registry card", async () => {
+  it("'default' clears the pick on the user row and leaves the shared registry icon alone", async () => {
     const res = response();
     await putAvatar(reqFor({ id: 'admin-1', role: 'admin' }, 'default'), res);
     expect(User.findOneAndUpdate).toHaveBeenCalledWith(
       expect.anything(), { $set: { profilePicture: 'default' } }, { new: true },
     );
-    // An empty iconUrl lets the Your-Team card draw the same seeded default.
-    expect(AgentRegistry.updateOne).toHaveBeenCalledWith(
-      { agentName: 'theo' }, { $set: { iconUrl: '' } },
-    );
+    // One registry row serves every instance of the agent and the catalog.
+    expect(AgentRegistry.updateOne).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ ok: true, avatar: 'default' });
   });
 
