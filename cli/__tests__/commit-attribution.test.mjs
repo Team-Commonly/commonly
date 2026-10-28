@@ -344,9 +344,9 @@ describe('prepareCommitAttribution', () => {
       },
     },
     {
-      name: 'a quoted core.hooksPath with a trailing comment',
+      name: 'a quoted core.hooksPath that ends in a space, with a trailing comment',
       setup: (repo, root) => {
-        const hooks = join(root, 'shared hooks');
+        const hooks = join(root, 'shared hooks ');
         mkdirSync(hooks);
         appendFileSync(join(repo, '.git', 'config'), `[core]\n\thooksPath = "${hooks}" ; set by hand\n`);
         return { cwd: repo, expected: hooks };
@@ -393,6 +393,17 @@ describe('prepareCommitAttribution', () => {
     execFileSync('git', ['config', 'user.name', 'Fixture Author'], { cwd: repo });
     execFileSync('git', ['config', 'user.email', 'fixture@example.test'], { cwd: repo });
     const { cwd, expected, env = {} } = setup(repo, root);
+    // The fallback stands in for the probe, so real git checks the fixture
+    // and the probe's reading of git's answer.
+    const reported = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-path', 'hooks'], {
+      cwd, env: { ...fixtureEnv, ...env }, encoding: 'utf8',
+    }).replace(/\n$/, '');
+    expect(realpathSync(reported)).toBe(realpathSync(expected));
+    const probed = prepareCommitAttribution({
+      cwd, env: { ...fixtureEnv, ...env }, agentName: 'forge', adapter: 'claude',
+    });
+    probed.cleanup();
+    expect(realpathSync(probed.env.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH)).toBe(realpathSync(expected));
     makeExecutable(join(stubBin, 'git'), FAILING_GIT);
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     let attribution;

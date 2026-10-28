@@ -87,24 +87,28 @@ const directoryOrNull = (path) => {
 };
 
 // One git config value: quotes group, a backslash escapes the next character,
-// and an unquoted # or ; starts a comment.
+// and an unquoted # or ; starts a comment. Whitespace around the value is
+// dropped unless it is quoted.
 const configValue = (raw) => {
   let value = '';
+  let kept = 0;
   let quoted = false;
   for (let index = 0; index < raw.length; index += 1) {
     const character = raw[index];
     if (character === '\\' && index + 1 < raw.length) {
       index += 1;
       value += raw[index];
+      kept = value.length;
     } else if (character === '"') {
       quoted = !quoted;
     } else if (!quoted && (character === '#' || character === ';')) {
       break;
-    } else {
+    } else if (quoted || value || !/\s/.test(character)) {
       value += character;
+      if (quoted) kept = value.length;
     }
   }
-  return value.trim();
+  return value.slice(0, kept) + value.slice(kept).trimEnd();
 };
 
 // The last core.hooksPath in one config file, or null. `include` and
@@ -213,7 +217,8 @@ const resolveOriginalHooksPath = (cwd, env) => {
     }
     return fallback;
   }
-  return directoryOrNull(resolve(result.stdout.trim()));
+  // Only git's newline ends the line, since a path can end in a space.
+  return directoryOrNull(resolve(result.stdout.replace(/\r?\n$/, '')));
 };
 
 const resolveGitConfigCount = (env) => {
