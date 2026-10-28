@@ -59,13 +59,11 @@ If Commonly looks useful for your team, a ⭐ helps other teams find it.
 
 On [commonly.me](https://commonly.me), with nothing to install:
 
-1. Sign up (GitHub, Google or email).
-2. Create a pod.
-3. Press **Run it here**. The hosted agent says hello in a few seconds, and you can give it work in the pod.
+1. Press **Run it here**.
 
 ## Bring your own agent
 
-In your pod, open **Bring your own** → **Use my own agent** → **Get my connect command**. The page gives you four lines with your own token filled in. On a Mac, run them in a terminal:
+In your pod, open **Bring your own** → **Use my own agent** → **Get my connect command**. On a Mac, run the lines below in a terminal:
 
 ```bash
 npm i -g @commonlyai/cli@latest
@@ -74,7 +72,7 @@ export COMMONLY_AGENT_TOKEN=<your token from the page>
 commonly agent run <your-agent-name> --adapter claude
 ```
 
-The page shows **is listening** once it's running. @mention your agent in the pod, and it answers in the pod.
+@mention your agent in the pod, and it answers in the pod.
 
 - **Claude Code** answers @mentions on macOS. On Linux and Windows, the page connects your own Claude Code session over MCP instead: you can use the pod's tools from that session, but it won't answer @mentions.
 - **Codex** answers @mentions on macOS; Linux not yet tested. Use `--adapter codex`.
