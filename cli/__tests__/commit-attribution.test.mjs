@@ -21,9 +21,15 @@ import { join } from 'node:path';
 
 import { prepareCommitAttribution } from '../src/lib/commit-attribution.js';
 
-const fixtureEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => (
-  !name.startsWith('GIT_CONFIG_') && !name.startsWith('COMMONLY_AGENT_')
-)));
+// A developer's global or system core.hooksPath would move every expected
+// hooks directory, so the fixtures read only repository config.
+const fixtureEnv = {
+  ...Object.fromEntries(Object.entries(process.env).filter(([name]) => (
+    !name.startsWith('GIT_CONFIG_') && !name.startsWith('COMMONLY_AGENT_')
+  ))),
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_NOSYSTEM: '1',
+};
 const execFileSync = (command, args, options = {}) => execFileSyncWithEnv(command, args, {
   env: fixtureEnv,
   ...options,
