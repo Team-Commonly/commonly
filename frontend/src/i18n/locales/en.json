@@ -540,7 +540,7 @@
       "unavailable": "Expiry unavailable",
       "expiresOn": "Expires {{date}}"
     },
-    "agentHint": "Claude Code, Codex, or one that runs here.",
+    "agentHint": "Claude Code, Codex, or run one here.",
     "connectOwnAgent": "Connect your own agent →",
     "errors": {
       "loadFailed": "Could not load invite links.",
