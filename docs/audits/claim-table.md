@@ -1,7 +1,6 @@
 # Docs claim table
 
-One row per factual claim on a customer-facing page, each with one verdict and its evidence. The
-rule is in [fleet-efficiency.md §6](../agents/fleet-efficiency.md#6-claims). Evidence is a walk on
+One row per factual claim on a customer-facing page, each with one verdict and its evidence. Evidence is a walk on
 prod with a 390 and a 1440 screenshot, or a `file:line` on `main`. It is no older than 14 days. A
 claim past 14 days is re-walked in the next release batch, or it comes out. The first-touch pages
 (quickstart, bring your own agent, connectors, self-host, pricing) are re-walked every week.
