@@ -1,0 +1,359 @@
+{
+  "_about": "Test vectors for argsDigestOf (src/record/format.js; docs/record-v1.md, Tool activity). Each vector is {name, args, canonical, digest} or {name, args, error: true}. digest is \"sha256:\" + lowercase hex SHA-256 of canonical, the RFC 8785 bytes of args. error: true means the arguments cannot be digested (a non-finite number, undefined arguments, or a lone surrogate in any string or key), and a writer omits argsDigest. JSON cannot hold every input, so args uses two tags, each an object with exactly one key: {\"$undefined\":true} is an undefined value, and {\"$number\":\"<literal>\"} is the number that literal parses to as an IEEE 754 double (e.g. \"1.0\", \"-0\", \"1e21\", \"NaN\", \"Infinity\"). Decode the tags before digesting; no vector holds a real argument of either shape. A writer outside JavaScript must parse every JSON number as an IEEE 754 double before serializing it (as JSON.parse does), then print its shortest round-trip form as ECMAScript does: 9007199254740993 in the input is the double 9007199254740992, and is written that way. Strings are UTF-8 with U+2028 and U+2029 raw, not escaped.",
+  "vectors": [
+    {
+      "name": "flat object, keys reordered",
+      "args": {
+        "b": 2,
+        "a": 1
+      },
+      "canonical": "{\"a\":1,\"b\":2}",
+      "digest": "sha256:43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777"
+    },
+    {
+      "name": "nested objects and arrays sort keys at every depth",
+      "args": {
+        "z": {
+          "y": [
+            {
+              "d": 1,
+              "c": 2
+            }
+          ],
+          "x": null
+        },
+        "a": {
+          "c": true,
+          "b": false
+        }
+      },
+      "canonical": "{\"a\":{\"b\":false,\"c\":true},\"z\":{\"x\":null,\"y\":[{\"c\":2,\"d\":1}]}}",
+      "digest": "sha256:e361ba9cd9b9c2b05358b3a26828db49e7e3799a8ab9bdb2aa257247df0b2aab"
+    },
+    {
+      "name": "keys sort by UTF-16 code units, not code points or UTF-8 bytes",
+      "args": {
+        "Ａ": 1,
+        "😀": 2,
+        "é": 3,
+        "z": 4,
+        "Z": 5
+      },
+      "canonical": "{\"Z\":5,\"z\":4,\"é\":3,\"😀\":2,\"Ａ\":1}",
+      "digest": "sha256:8777efd1f0f6d62748dd03f53d88c1228d506e1efd54aafc6e347ee191d15bc5"
+    },
+    {
+      "name": "empty object",
+      "args": {},
+      "canonical": "{}",
+      "digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    },
+    {
+      "name": "empty array",
+      "args": [],
+      "canonical": "[]",
+      "digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "name": "top-level array keeps order",
+      "args": [
+        3,
+        1,
+        2
+      ],
+      "canonical": "[3,1,2]",
+      "digest": "sha256:51bda7ab4e44726cde71fcb6e4b515357059bb6b6dd5146d1fc50f73f11678c6"
+    },
+    {
+      "name": "deeply nested arrays",
+      "args": [
+        1,
+        [
+          2,
+          [
+            3,
+            []
+          ]
+        ]
+      ],
+      "canonical": "[1,[2,[3,[]]]]",
+      "digest": "sha256:2ae49150ac570d8d71784d5c84619d21a59e217faf3c632b0ef7a5477b61eb4d"
+    },
+    {
+      "name": "top-level string",
+      "args": "git push origin main",
+      "canonical": "\"git push origin main\"",
+      "digest": "sha256:0703afb7169909864706a34e00de8cb86207aa3857e72539f34fe6cfeccd1e91"
+    },
+    {
+      "name": "top-level null",
+      "args": null,
+      "canonical": "null",
+      "digest": "sha256:74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+    },
+    {
+      "name": "booleans and null",
+      "args": {
+        "t": true,
+        "f": false,
+        "n": null
+      },
+      "canonical": "{\"f\":false,\"n\":null,\"t\":true}",
+      "digest": "sha256:22e00dc2f7b01420f940fbdbfbdf34fa0667cc6500186495023ba37722cbd05e"
+    },
+    {
+      "name": "non-ASCII strings are written raw, not escaped",
+      "args": {
+        "s": "héllo wörld 日本 😀"
+      },
+      "canonical": "{\"s\":\"héllo wörld 日本 😀\"}",
+      "digest": "sha256:44832c661e31ea40b67dd594e8b047c2f478fd93007426874dca007289058847"
+    },
+    {
+      "name": "control characters use short escapes, then \\u00XX lowercase",
+      "args": {
+        "s": "\b\f\n\r\t\u0000\u0007\u001f"
+      },
+      "canonical": "{\"s\":\"\\b\\f\\n\\r\\t\\u0000\\u0007\\u001f\"}",
+      "digest": "sha256:668550beedb0365aa4517dfe85faa784af491a2b29e94205e9b4e2da80298ac7"
+    },
+    {
+      "name": "quote and backslash are escaped; / < > & DEL U+2028 are not",
+      "args": {
+        "s": "\"\\/<>&  "
+      },
+      "canonical": "{\"s\":\"\\\"\\\\/<>&  \"}",
+      "digest": "sha256:2cd92a4cd6d75d7908756eddfd66f0b4bd361808bc32ea278fcb7dbde1f0eefa"
+    },
+    {
+      "name": "U+2028 and U+2029 are written raw, never escaped",
+      "args": {
+        "s": "a b c"
+      },
+      "canonical": "{\"s\":\"a b c\"}",
+      "digest": "sha256:5b2dc062ac2d05c4b51a388dd0e99e9b161c6c6f0fefeef39629890a42902b84"
+    },
+    {
+      "name": "a lone high surrogate in a string means no digest",
+      "args": {
+        "s": "\ud800"
+      },
+      "error": true
+    },
+    {
+      "name": "a lone low surrogate nested in an array means no digest",
+      "args": {
+        "a": [
+          "ok",
+          [
+            "x\udc00y"
+          ]
+        ]
+      },
+      "error": true
+    },
+    {
+      "name": "a surrogate pair in the wrong order means no digest",
+      "args": {
+        "s": "\ude00\ud83d"
+      },
+      "error": true
+    },
+    {
+      "name": "a lone surrogate in a key means no digest",
+      "args": {
+        "k\ud800": 1
+      },
+      "error": true
+    },
+    {
+      "name": "1.0 is written as 1",
+      "args": {
+        "n": {
+          "$number": "1.0"
+        }
+      },
+      "canonical": "{\"n\":1}",
+      "digest": "sha256:2bfd14f43d17fc7cea24e0917a8879b4b2f880b8baeec1b9d90fbaad655e71bd"
+    },
+    {
+      "name": "-0 is written as 0",
+      "args": {
+        "n": {
+          "$number": "-0"
+        }
+      },
+      "canonical": "{\"n\":0}",
+      "digest": "sha256:f3013f933b9fb80ab6d995e7ad9da36f683837ba1d81e950c943d40111eac2f0"
+    },
+    {
+      "name": "1e20 is written in full",
+      "args": {
+        "n": {
+          "$number": "1e20"
+        }
+      },
+      "canonical": "{\"n\":100000000000000000000}",
+      "digest": "sha256:58d2d5b8dd4228ab5775ce84f996718fa19ed49872271e9649b70cebaca26a09"
+    },
+    {
+      "name": "1e21 switches to exponent form with a plus sign",
+      "args": {
+        "n": {
+          "$number": "1e21"
+        }
+      },
+      "canonical": "{\"n\":1e+21}",
+      "digest": "sha256:f1ee2b60ee95a3170fdc07a577e5f3514ced26867443d69da265acadead81007"
+    },
+    {
+      "name": "0.000001 stays decimal",
+      "args": {
+        "n": {
+          "$number": "0.000001"
+        }
+      },
+      "canonical": "{\"n\":0.000001}",
+      "digest": "sha256:28343867a0be00aee19f81aa90cfd6c646878b9303fa15410d16bfd3f8894578"
+    },
+    {
+      "name": "1e-7 switches to exponent form",
+      "args": {
+        "n": {
+          "$number": "1e-7"
+        }
+      },
+      "canonical": "{\"n\":1e-7}",
+      "digest": "sha256:747d6d23b64d1b2d579adb832b44de31c91c875bbef7a8e397f5d183a746b54b"
+    },
+    {
+      "name": "0.1 + 0.2 keeps the shortest round-trip digits",
+      "args": {
+        "n": {
+          "$number": "0.30000000000000004"
+        }
+      },
+      "canonical": "{\"n\":0.30000000000000004}",
+      "digest": "sha256:1d8a8e16d9ee625f1fb5ef505413efa212cc020b272ed0f9b3d3d81acf593fde"
+    },
+    {
+      "name": "small and large finite extremes",
+      "args": {
+        "min": {
+          "$number": "5e-324"
+        },
+        "max": {
+          "$number": "1.7976931348623157e308"
+        }
+      },
+      "canonical": "{\"max\":1.7976931348623157e+308,\"min\":5e-324}",
+      "digest": "sha256:a49cfc2a701d0651c438486e57d8c53c451fb88c58de9be9be055a6e5f5dd13d"
+    },
+    {
+      "name": "negative and fractional numbers",
+      "args": {
+        "a": {
+          "$number": "-1.5"
+        },
+        "b": {
+          "$number": "-123"
+        },
+        "c": {
+          "$number": "3.14159"
+        }
+      },
+      "canonical": "{\"a\":-1.5,\"b\":-123,\"c\":3.14159}",
+      "digest": "sha256:fd4545080eaf9490b1e10de2680fc77a1a90886c9c494a05f1144cdb33d38ae0"
+    },
+    {
+      "name": "an integer past 2^53: 9007199254740993 on the wire is the double 9007199254740992",
+      "args": {
+        "n": 9007199254740992
+      },
+      "canonical": "{\"n\":9007199254740992}",
+      "digest": "sha256:66c87d9cb3014e05a11baa97df62282d89d425f22ee15816577c84534e2ef1bb"
+    },
+    {
+      "name": "large integers print their shortest round-trip digits, then zeros: 2^60 is 1152921504606847000",
+      "args": [
+        9007199254740994,
+        1152921504606847000,
+        10000000000000000
+      ],
+      "canonical": "[9007199254740994,1152921504606847000,10000000000000000]",
+      "digest": "sha256:0e2b45d1064af2a28028209676fbd29080eca67ae85a2ad6582eb0efec521429"
+    },
+    {
+      "name": "undefined in an object drops the key",
+      "args": {
+        "a": 1,
+        "b": {
+          "$undefined": true
+        }
+      },
+      "canonical": "{\"a\":1}",
+      "digest": "sha256:015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862"
+    },
+    {
+      "name": "undefined nested in an object drops only that key",
+      "args": {
+        "a": {
+          "b": {
+            "$undefined": true
+          },
+          "c": 2
+        }
+      },
+      "canonical": "{\"a\":{\"c\":2}}",
+      "digest": "sha256:793fe66a2d4239e3e64774ce7ee90c6e1931ff33712ff05a17956a52e577c753"
+    },
+    {
+      "name": "undefined in an array becomes null",
+      "args": [
+        1,
+        {
+          "$undefined": true
+        },
+        3
+      ],
+      "canonical": "[1,null,3]",
+      "digest": "sha256:7db5b36a1553a4e31914df4beb60752bd07320e3056ac1d3790660c4cad6a173"
+    },
+    {
+      "name": "NaN anywhere means no digest",
+      "args": {
+        "a": 1,
+        "b": {
+          "$number": "NaN"
+        }
+      },
+      "error": true
+    },
+    {
+      "name": "Infinity nested in an array means no digest",
+      "args": {
+        "a": [
+          1,
+          {
+            "$number": "Infinity"
+          }
+        ]
+      },
+      "error": true
+    },
+    {
+      "name": "-Infinity means no digest",
+      "args": {
+        "$number": "-Infinity"
+      },
+      "error": true
+    },
+    {
+      "name": "undefined arguments mean no digest",
+      "args": {
+        "$undefined": true
+      },
+      "error": true
+    }
+  ]
+}

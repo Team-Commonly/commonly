@@ -28,14 +28,21 @@
  * NOT used by the codex adapter. Codex's `mode` is read-vs-write access, not a
  * host mechanism — its permission profiles run on both platforms — so its
  * derived default is 'workspace' everywhere.
+ *
+ * A `workspace` trust (TASK-294) resolves the same way: it is confined by the
+ * same host mechanism and differs only in what the policy inside allows. The
+ * grant-broker guard still reads the trust itself, not this mode, so resolving
+ * it here does not make a workspace seat eligible for a room grant.
  */
 import { effectiveSandboxTrust } from '../environment.js';
 
 export const PUBLIC_SANDBOX_MODES = new Set(['workspace', 'read-only']);
 
+const HOST_CONFINED_TRUSTS = new Set(['public', 'workspace']);
+
 export const resolvePublicSandboxMode = (sandbox, platform = process.platform) => {
   const declared = sandbox?.mode;
-  if (effectiveSandboxTrust(sandbox?.trust) !== 'public') return declared;
+  if (!HOST_CONFINED_TRUSTS.has(effectiveSandboxTrust(sandbox?.trust))) return declared;
   if (declared !== undefined && declared !== null) return declared;
   return platform === 'darwin' ? 'workspace' : 'bwrap';
 };

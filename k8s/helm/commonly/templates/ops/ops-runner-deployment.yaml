@@ -257,12 +257,6 @@ spec:
               name: api-keys
               key: openai-api-key
               optional: true
-        - name: ANTHROPIC_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: anthropic-api-key
-              optional: true
 
         {{- if .Values.discord.enabled }}
 
@@ -332,12 +326,6 @@ spec:
         - name: OAUTH_CALLBACK_BASE_URL
           value: {{ .Values.backend.env.oauthCallbackBaseUrl | quote }}
         {{- end }}
-        - name: GITHUB_PAT
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: GITHUB_PAT
-              optional: true
         - name: GITHUB_APP_ID
           valueFrom:
             secretKeyRef:
@@ -531,6 +519,14 @@ spec:
               name: api-keys
               key: litellm-master-key
               optional: true
+        {{- if .Values.litellm.serviceKeys.fromSecret }}
+        # Mirrors backend (TASK-555): model calls bill the backend's budgeted key.
+        - name: LITELLM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: litellm-backend-key
+        {{- end }}
         - name: LITELLM_BASE_URL
           value: "http://litellm:4000"
         # injection-guard only (Sam, 2026-09-01): openai-moderation-enforce

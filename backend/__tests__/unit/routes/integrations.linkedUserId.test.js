@@ -15,6 +15,8 @@ jest.mock('../../../middleware/adminAuth', () => (req, res, next) => next());
 jest.mock('../../../middleware/integrationRateLimit', () => ({
   writeIntegrationsRateLimit: (_req, _res, next) => next(),
   listIntegrationsRateLimit: (_req, _res, next) => next(),
+  ingestIngressRateLimit: (_req, _res, next) => next(),
+  ingestIntegrationsRateLimit: (_req, _res, next) => next(),
 }));
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/User', () => ({ findById: jest.fn() }));

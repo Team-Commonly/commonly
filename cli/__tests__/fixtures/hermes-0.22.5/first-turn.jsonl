@@ -1,0 +1,3 @@
+{"type": "system", "subtype": "init", "model": "test/model", "session_id": ""}
+{"type": "text", "text": "PONG"}
+{"type": "result", "session_id": "local-c7632bb30a7a0c641ab65371a42c6c164424559fc947e3dbcc26d26c42a99757", "exit_code": 0, "text": "PONG", "tokens": {"input": 100, "output": 20, "total": 120, "cache_read": 0, "cache_write": 0}}

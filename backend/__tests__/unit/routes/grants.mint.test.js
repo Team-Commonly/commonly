@@ -93,6 +93,35 @@ beforeEach(async () => {
 });
 
 describe('POST /api/grants', () => {
+  test('an explicit empty pod audience is refused without saving a grant', async () => {
+    const res = await mint({ audience: [] });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'invalid_audience', message: 'name at least one agent, or omit audience for all current members' });
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+
+  test('omitting pod audience keeps the current member snapshot', async () => {
+    const res = await mint({});
+    expect(res.status).toBe(201);
+    expect(res.body.audience).toEqual([OWNER, SEAT]);
+  });
+
+  // TASK-019: create mints pod grants only. A seat target used to pass the
+  // target check and reach 201 here only because the outsider gate is mocked
+  // to null; the real gate refuses every non-pod target.
+  test.each([{ audience: undefined }, { audience: [SEAT] }, { audience: [OWNER, SEAT] }])('a seat target is refused at the target check: %p', async ({ audience }) => {
+    const res = await mint({ target: { kind: 'seat', id: SEAT }, ...(audience === undefined ? {} : { audience }) });
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_target', message: 'target.kind must be pod' });
+    expect(outsiderGrantPodRefusal).not.toHaveBeenCalled();
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+
+  test('the real outsider gate refuses a seat target, so the check above loses nothing', async () => {
+    const real = jest.requireActual('../../../services/outsiderGrantPodEligibility');
+    await expect(real.outsiderGrantPodRefusal({ kind: 'seat', id: SEAT })).resolves.toBe('pod_required');
+  });
+
   test('an agent User ID used as a pod target returns not-found before join-policy checks', async () => {
     outsiderGrantPodRefusal.mockResolvedValue('pod_joinable');
     const res = await mint({ target: { kind: 'pod', id: SEAT } });
@@ -103,7 +132,9 @@ describe('POST /api/grants', () => {
   });
 
   test.each([
-    ['pod_required', { kind: 'seat', id: SEAT }],
+    // A seat now stops at the target check (above); the gate's pod_required
+    // still maps to its 403 for a pod it cannot resolve.
+    ['pod_required', { kind: 'pod', id: POD }],
     ['pod_not_private', { kind: 'pod', id: POD }],
     ['pod_bridged', { kind: 'pod', id: POD }],
     ['non_native_agent', { kind: 'pod', id: POD }],
@@ -114,6 +145,7 @@ describe('POST /api/grants', () => {
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: `outsider_grant_${reason}` });
     expect(res.body.message).toMatch(/separate pod/);
+    expect(outsiderGrantPodRefusal).toHaveBeenCalledWith(target, 'read');
     expect(await RoomGrant.countDocuments({})).toBe(0);
   });
 

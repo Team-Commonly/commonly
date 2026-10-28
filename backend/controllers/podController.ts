@@ -1,3 +1,5 @@
+import { podMemberPopulate } from '../services/podMemberPopulate';
+import { leaveUnviewablePodRooms } from '../services/sessionSocketService';
 const mongoose = require('mongoose');
 const Pod = require('../models/Pod');
 const Message = require('../models/Message');
@@ -14,6 +16,7 @@ const {
   isDirectlyJoinable,
 } = require('../services/podListing');
 const User = require('../models/User');
+const { validatePodParent } = require('../services/podParentService');
 // Add PGPod at the top level if it's available
 let PGPod: any;
 let PGMessage: any;
@@ -248,7 +251,7 @@ exports.getAllPods = async (req: any, res: any) => {
 
     let pods = await Pod.find(listedQuery)
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture isBot')
+      .populate(podMemberPopulate('username profilePicture isBot'))
       .populate('parentPod', 'name _id')
       .sort({ updatedAt: -1 });
 
@@ -273,6 +276,7 @@ exports.getAllPods = async (req: any, res: any) => {
           FROM messages m
           LEFT JOIN users u ON u._id = m.user_id
           WHERE m.pod_id = ANY($1::text[])
+            AND NOT (m.message_type = 'system' AND COALESCE(m.payload->>'kind', '') = 'system-action')
           ORDER BY m.pod_id, m.created_at DESC
         `;
         const result = await pool.query(sql, [podIds]);
@@ -301,6 +305,27 @@ exports.getAllPods = async (req: any, res: any) => {
   }
 };
 
+// Who may read a pod document by id. Members always. Anyone signed in may read
+// a publicly readable pod, since it is readable without signing in at all.
+// Otherwise canViewPod decides: global admins (ops observability), and for
+// `agent-dm` the §3.7 fan-out, so a human who shares a pod with either agent
+// can open their DM from the inspector. Personal types never count as
+// publicly readable, even with the flag forced on. `agent-room` and
+// `agent-admin` stay membership-only, admins included: those are private
+// user↔agent rooms and ops pods, not something to resolve by id (PR #375).
+const callerMayReadPod = async (uid: string, pod: any): Promise<boolean> => {
+  if (!uid) return false;
+  if ((pod.members || []).some((m: any) => String(m?._id || m) === uid)) return true;
+  if (isPersonalPodType(pod.type)) {
+    if (pod.type !== 'agent-dm') return false;
+  } else if (pod.publicRead === true) {
+    return true;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const DMService = require('../services/dmService').default || require('../services/dmService');
+  return DMService.canViewPod(uid, pod);
+};
+
 // Get pods by type
 exports.getPodsByType = async (req: any, res: any) => {
   try {
@@ -310,19 +335,21 @@ exports.getPodsByType = async (req: any, res: any) => {
       return res.status(400).json({ error: 'Invalid pod type' });
     }
 
-    const pods = await Pod.find({ type })
-      .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture isBot')
-      .sort({ updatedAt: -1 });
+    // A typed listing returns the caller's own pods of that type, plus the
+    // pods Community lists publicly; personal types are never listed, so for
+    // those it is membership only. Admins do not bypass membership here, the
+    // same as on the default listing: the instance-wide view is the admin
+    // `?scope=all` listing, not this one.
+    const uid = String(req.userId || req.user?.id || '');
+    const visibleTo: Array<Record<string, unknown>> = [];
+    if (mongoose.Types.ObjectId.isValid(uid)) visibleTo.push({ members: new mongoose.Types.ObjectId(uid) });
+    if (!NON_LISTABLE_POD_TYPES.includes(type)) visibleTo.push({ ...COMMUNITY_LISTING_QUERY });
+    if (visibleTo.length === 0) return res.json([]);
 
-    // Personal pod types (agent-admin, agent-room, agent-dm) are always
-    // filtered to caller membership — admins included. The instance-wide
-    // moderation view is a separate admin tool, not this typed listing.
-    if (isPersonalPodType(type) && req.userId) {
-      const uid = String(req.userId);
-      const memberPods = pods.filter((p: any) => p.members.some((m: any) => String(m._id || m) === uid));
-      return res.json(memberPods);
-    }
+    const pods = await Pod.find({ type, $or: visibleTo })
+      .populate('createdBy', 'username profilePicture')
+      .populate(podMemberPopulate('username profilePicture isBot'))
+      .sort({ updatedAt: -1 });
 
     return res.json(pods);
   } catch (err: any) {
@@ -343,10 +370,18 @@ exports.getPodById = async (req: any, res: any) => {
     // Get the pod with populated data
     const pod = await Pod.findById(id)
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture isBot')
+      .populate(podMemberPopulate('username profilePicture isBot'))
       .populate('parentPod', 'name _id');
 
     if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    // A caller who may not read the pod gets the same 404 as a missing one,
+    // so a direct id lookup does not confirm that the pod exists. This runs
+    // before the type check: a type mismatch has its own body, and answering
+    // it first would confirm the pod to anyone who guesses a wrong type.
+    if (!await callerMayReadPod(String(req.userId || req.user?.id || ''), pod)) {
       return res.status(404).json({ error: 'Pod not found' });
     }
 
@@ -355,37 +390,6 @@ exports.getPodById = async (req: any, res: any) => {
       return res
         .status(404)
         .json({ error: 'Pod not found or is not of specified type' });
-    }
-
-    // Personal pod types are private 1:1/N:1 surfaces. Direct ID lookups
-    // by non-members 404 to avoid leaking existence (the sidebar bug that
-    // surfaced PR #375). Two carve-outs that match canViewPod semantics:
-    //   - `agent-dm` (agent ↔ agent): humans who share a pod with either
-    //     DM participant get read access via the §3.7 fan-out — they can
-    //     observe their team's agent collaborations without being a
-    //     formal DM member. Without this carve-out a user can't navigate
-    //     to an a2a DM from the agent inspector even though messages
-    //     under /api/messages/:podId already serve them (canViewPod).
-    //   - Global admins reading agent-dm — moderation observability.
-    // `agent-room` and `agent-admin` keep strict membership: those are
-    // truly private surfaces (user↔agent rooms; ops admin pods) and we
-    // don't want admins resolving someone else's agent-room by ID either.
-    if (isPersonalPodType(pod.type) && req.userId) {
-      const uid = String(req.userId);
-      const isMember = (pod.members || []).some(
-        (m: any) => String(m?._id || m) === uid,
-      );
-      if (!isMember) {
-        if (pod.type === 'agent-dm') {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-          const DMService = require('../services/dmService').default
-            || require('../services/dmService');
-          const allowed = await DMService.canViewPod(uid, pod);
-          if (!allowed) return res.status(404).json({ error: 'Pod not found' });
-        } else {
-          return res.status(404).json({ error: 'Pod not found' });
-        }
-      }
     }
 
     return res.json(pod);
@@ -434,12 +438,15 @@ exports.createPod = async (req: any, res: any) => {
       });
     }
 
+    const parentError = await validatePodParent(parentPod, req.userId);
+    if (parentError) return res.status(parentError.status).json(parentError);
+
     const newPod = new Pod({
       name,
       description,
       type,
       joinPolicy: joinPolicy === 'invite-only' ? 'invite-only' : 'open',
-      parentPod: parentPod || null,
+      parentPod: parentPod ?? null,
       createdBy: req.userId,
       members: [req.userId],
     });
@@ -448,7 +455,7 @@ exports.createPod = async (req: any, res: any) => {
 
     // Populate the user data
     await pod.populate('createdBy', 'username profilePicture');
-    await pod.populate('members', 'username profilePicture isBot');
+    await pod.populate(podMemberPopulate('username profilePicture isBot'));
 
     // Also create in PostgreSQL if available
     try {
@@ -485,6 +492,33 @@ exports.createPod = async (req: any, res: any) => {
   } catch (err: any) {
     console.error(err.message);
     res.status(500).send('Server Error');
+  }
+};
+
+// Parent changes require child administration and write membership in the parent.
+exports.updatePodParent = async (req: any, res: any) => {
+  try {
+    const childId = req.params.id;
+    if (typeof childId !== 'string' || !/^[a-f\d]{24}$/i.test(childId)) {
+      return res.status(400).json({ code: 'invalid_pod_id', msg: 'Invalid pod ID' });
+    }
+    if (!Object.prototype.hasOwnProperty.call(req.body || {}, 'parentPod')) {
+      return res.status(400).json({ code: 'parent_pod_required', msg: 'parentPod is required; use null to detach' });
+    }
+    const pod = await Pod.findById(childId);
+    if (!pod) return res.status(400).json({ code: 'pod_not_found', msg: 'Pod not found' });
+    const userId = req.userId || req.user?.id || req.user?._id;
+    if (pod.createdBy.toString() !== String(userId) && !isGlobalAdminRequest(req)) {
+      return res.status(403).json({ code: 'pod_admin_required', msg: 'Only pod admins can change its parent' });
+    }
+    const parentError = await validatePodParent(req.body.parentPod, userId, childId);
+    if (parentError) return res.status(parentError.status).json(parentError);
+    pod.parentPod = req.body.parentPod === null ? undefined : req.body.parentPod;
+    await pod.save();
+    return res.json(pod);
+  } catch (err: any) {
+    console.error('Error changing pod parent:', err.message);
+    return res.status(500).json({ code: 'pod_parent_update_failed', msg: 'Server Error' });
   }
 };
 
@@ -572,7 +606,7 @@ exports.joinPod = async (req: any, res: any) => {
 
     const updatedPod = await Pod.findById(id)
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture isBot');
+      .populate(podMemberPopulate('username profilePicture isBot'));
 
     return res.json(updatedPod);
   } catch (err: any) {
@@ -622,10 +656,11 @@ exports.leavePod = async (req: any, res: any) => {
     pod.updatedAt = Date.now();
 
     await pod.save();
+    await leaveUnviewablePodRooms(String(req.userId));
 
     // Populate the user data
     await pod.populate('createdBy', 'username profilePicture');
-    await pod.populate('members', 'username profilePicture isBot');
+    await pod.populate(podMemberPopulate('username profilePicture isBot'));
 
     res.json(pod);
   } catch (err: any) {
@@ -691,9 +726,10 @@ exports.removeMember = async (req: any, res: any) => {
         );
       }
     }
+    await leaveUnviewablePodRooms(memberId.toString());
 
     await pod.populate('createdBy', 'username profilePicture');
-    await pod.populate('members', 'username profilePicture isBot');
+    await pod.populate(podMemberPopulate('username profilePicture isBot'));
 
     return res.json(pod);
   } catch (err: any) {

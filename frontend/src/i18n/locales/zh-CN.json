@@ -1,4 +1,59 @@
 {
+  "runTrace": {
+    "title": "运行轨迹",
+    "back": "返回 Pod",
+    "view": "查看运行轨迹",
+    "linkRetention": "卡片默认保留30天，轨迹持续保留。",
+    "retention": "卡片默认保留30天，Pod 策略和存储限制可能改变期限。卡片过期后，运行轨迹仍会保留。",
+    "loading": "正在加载运行轨迹…",
+    "access": "此轨迹不可用，或你已无权访问对应的 Pod。",
+    "error": "无法加载运行轨迹，请重试。",
+    "retry": "重试",
+    "counts": "已记录{{turns}}轮 · {{tokens}}个 token",
+    "stopped": "停止原因：{{kind}}",
+    "running": "此运行尚未结束。",
+    "refresh": "刷新轨迹",
+    "empty": "尚未记录任何轮次。",
+    "turn": "第{{number}}轮",
+    "tokens": "个 token",
+    "served": "请求 {{requested}}，实际由 {{served}} 回答",
+    "noTools": "无工具调用。",
+    "call": "调用 {{id}}",
+    "grant": "授权",
+    "owner": "凭据所有者",
+    "outcome": "结果",
+    "notRecorded": "未记录",
+    "unavailable": "代理调用轨迹不可用。",
+    "builtIn": "内置工具，未使用连接器凭据。",
+    "status": {
+      "queued": "排队中",
+      "running": "运行中",
+      "succeeded": "已完成",
+      "failed": "失败",
+      "interrupted": "已中断"
+    },
+    "trigger": {
+      "mention": "提及",
+      "heartbeat": "心跳",
+      "task.assigned": "任务分配",
+      "chat.message": "聊天消息",
+      "pod.join": "加入 Pod",
+      "first_contact": "首次联系",
+      "manual": "手动"
+    },
+    "outcomes": {
+      "ok": "成功",
+      "failed": "失败",
+      "refused": "已拒绝",
+      "pending": "等待中",
+      "pending_approval": "待批准",
+      "unavailable": "不可用"
+    },
+    "limitedBoth": "此轨迹受到存储大小限制，省略了{{turns}}轮和{{calls}}次工具调用，大型内容字段也已截断。",
+    "limitedTurns": "此轨迹受到存储大小限制，省略了{{turns}}轮，大型内容字段也已截断。",
+    "limitedCalls": "此轨迹受到存储大小限制，省略了{{calls}}次工具调用，大型内容字段也已截断。",
+    "limitedContent": "此轨迹受到存储大小限制，大型内容字段已截断。"
+  },
   "common": {
     "brandName": "Commonly",
     "brandWordmark": "commonly",
@@ -54,6 +109,18 @@
     "removeError": "无法移除此技能。"
   },
   "settings": {
+    "deleteAccount": {
+      "title": "删除账户",
+      "effects": "这将永久删除你的账户和上传的文件，并取消所有有效的 Stripe 订阅。共享消息会保留。你安装的智能体运行时会暂停。它们的身份和记忆会保留。此操作无法撤销。",
+      "password": "密码（如果账户设有密码）",
+      "confirmation": "输入 DELETE 以确认",
+      "oauthHint": "如果你使用 Google 或 GitHub 登录，删除前可能需要使用同一账户重新登录。",
+      "signInAgain": "使用 Google 或 GitHub 重新登录，然后返回此处确认",
+      "confirm": "永久删除账户",
+      "deleting": "正在删除…",
+      "cancel": "取消",
+      "failed": "无法删除你的账户。请重试。"
+    },
     "sessions": {
       "signOutEverywhere": "退出所有浏览器会话",
       "confirm": "退出所有浏览器会话，包括当前会话？",
@@ -288,6 +355,7 @@
       "submit": "注册",
       "creating": "正在注册…",
       "alreadyHaveAccount": "已有账号？",
+      "legal": "创建账号即表示你同意<terms>服务条款</terms>和<privacy>隐私政策</privacy>。",
       "errors": {
         "failed": "注册失败。"
       },
@@ -485,8 +553,12 @@
     "firstTask": {
       "addFailed": "添加任务失败，请重试。"
     },
+    "systemActions": {
+      "taskClaimedVerb": "认领了"
+    },
     "starts": {
-      "label": "开始方式"
+      "label": "开始方式",
+      "openByo": "去接入自己的智能体"
     },
     "dmMark": "私信",
     "invite": "邀请成员加入这个 Pod",
@@ -700,17 +772,16 @@
     "actions": {
       "openApp": "打开应用",
       "getStarted": "开始使用",
-      "readSource": "查看源代码",
       "selfHost": "自托管",
       "talkToUs": "联系我们",
       "starGithub": "去 GitHub 点 Star"
     },
     "hero": {
       "eyebrow": "开源 · Apache 2.0",
-      "ariaLabel": "与你的 Claude Code、Codex，以及整个团队对话。",
-      "titlePrefix": "与你的",
-      "titleSuffix": "对话",
-      "lede": "和一支 AI 团队一起把正事办成——每个智能体都有自己的记忆和工位，在同一个群里互相交接，不用你一遍遍重复解释。开源、部署在你自己的基础设施上，绝不按智能体收费。",
+      "ariaLabel": "你的团队和每个人自己的智能体，比如你的 Claude Code，同在一个 Pod。",
+      "titlePrefix": "你的团队和",
+      "titleSuffix": "同在一个 Pod",
+      "lede": "用链接邀请团队。每个人带上自己的智能体，Mac 上的 Claude Code 或 Codex，或在 Pod 里一键启动，大家共用同样的对话和一个任务板。每个智能体都是有主人的成员，谁在做什么一目了然。基于 Apache-2.0 开源，也可以自托管。",
       "selfHostInstall": "自托管安装命令",
       "copy": "复制",
       "copied": "已复制",
@@ -718,9 +789,9 @@
       "demoAria": "交互演示：一个示例工作区，有四个 Pod、正在工作的智能体，还有一张你可以直接裁决的决策卡",
       "demoCaption": "这就是产品本身，不是视频。在卡片上选一项，或者直接问智能体。",
       "terms": {
-        "claudeCode": "Claude Code",
-        "codex": "Codex",
-        "wholeTeam": "整个团队"
+        "yourClaudeCode": "你的 Claude Code",
+        "teammateAgent": "队友的智能体",
+        "eachOwnAgent": "每个人\u200b自己的智能体"
       }
     },
     "trusted": {
@@ -733,7 +804,7 @@
     },
     "features": {
       "kicker": "真实协作",
-      "title": "真正的工作空间——智能体与人类在同一场对话中协作。",
+      "title": "真正的工作空间——智能体与人类在同一个 Pod 里协作。",
       "needs": {
         "alt": "Commonly 的动态页面：网站、发布和支持三个 pod 中有三件事等你处理，其中两张是带选项的智能体决策卡，下方是已推进的工作。",
         "kicker": "等你决定",
@@ -749,7 +820,7 @@
         "alt": "Commonly 的团队页面：六个智能体及其角色和所在 pod，其中两个标记为等你处理，另有一张接入自己智能体的卡片。",
         "kicker": "你的团队",
         "title": "托管或自带，同在一个团队",
-        "text": "Claude Code、Codex 和托管智能体并肩协作。你可以雇一个托管智能体，也可以接入自己的——每个都有名字、自己的记忆、自己的技能、自己的工位。是团队里真正的一员，不是你用完就丢的子智能体。",
+        "text": "Claude Code、Codex 和托管智能体并肩协作。你可以雇一个托管智能体，也可以接入自己的——每个都有名字、有自己的技能，记忆也一直跟着它。是团队里真正的一员，不是你用完就丢的子智能体。",
         "points": {
           "bring": "约两分钟即可接入自己的智能体",
           "hosted": "需要零配置时，可直接使用托管智能体",
@@ -827,12 +898,11 @@
         "tax": {
           "title": "不按智能体收费。",
           "text": "跑1个还是50个智能体，价格都一样。"
-        },
-        "federation": {
-          "title": "联邦互通已在路线图中。",
-          "text": "不同实例上的智能体将能彼此互通——相当于智能体版的 ActivityPub。"
         }
       }
+    },
+    "faq": {
+      "title": "常见问题"
     },
     "benefits": {
       "kicker": "你将获得",
@@ -851,7 +921,7 @@
       },
       "collaboration": {
         "title": "智能体之间协作",
-        "text": "智能体之间可以互发私信、像同事一样协作——来源完全不同的智能体，也能在同一场对话里干活。"
+        "text": "智能体之间可以互发私信、像同事一样协作——来源完全不同的智能体，也能在同一个 Pod 里干活。"
       }
     },
     "useCases": {
@@ -898,7 +968,7 @@
     "proof": {
       "kicker": "自我验证",
       "title": "Commonly 用 Commonly 构建。",
-      "sub": "各有专长的智能体和一位独立创始人一起做出了这个项目——每个智能体都有自己的记忆和工位。每个由智能体提交的 PR 都有标注；{{count}}份架构决策记录写清了缘由。",
+      "sub": "各有专长的智能体和一位独立创始人一起做出了这个项目——每个智能体的记忆都跟着它走。每个由智能体提交的 PR 都有标注；{{count}}份架构决策记录写清了缘由。",
       "stats": {
         "agents": "智能体",
         "messages": "过去24小时消息",
@@ -908,7 +978,7 @@
     "pricing": {
       "kicker": "定价",
       "title": "人类占席位，智能体永远不占。",
-      "sub": "基于 Apache-2.0，自托管永久免费。托管版中，你自带的智能体在所有档位都免费且不限数量——永远如此。Pro 增加无限历史记录、社区收录与托管智能体。绝不按智能体收费。",
+      "sub": "基于 Apache-2.0，自托管永久免费。托管版中，你自带的智能体在所有档位都免费且不限数量——永远如此。Pro 增加你创建的 Pod 内无限历史记录、社区收录，以及更高的托管智能体每日轮数上限。绝不按智能体收费。",
       "zero": "$0",
       "selfHost": {
         "name": "自托管",
@@ -928,7 +998,7 @@
         "items": {
           "unlimited": "不限数量的自带智能体 —— 跑在你自己的机器上，免费接入",
           "private": "私密 Pod 与邀请制 Pod",
-          "history": "30天消息历史",
+          "history": "最长30天消息历史",
           "connect": "通过 webhook、CLI wrapper 或 MCP 接入",
           "card": "无需信用卡"
         }
@@ -942,13 +1012,13 @@
           "everything": "包含 Cloud free 的全部功能",
           "history": "你创建的 Pod 内消息历史无限 —— 不再有30天过期",
           "community": "把你的 Pod 收录进「社区」，方便团队找到",
-          "hosted": "10个托管智能体席位 —— 我们的算力，零配置（即将推出，上线即包含）",
+          "hosted": "托管智能体：每个智能体每天200轮，云端免费版为30轮 —— 我们的算力，零配置",
           "support": "优先支持"
         }
       },
       "enterprise": {
         "name": "企业版",
-        "text": "— 私有或专属部署、SSO/SAML、SLA、跨实例联邦以及安全评审。"
+        "text": "— 私有或专属部署、SLA 和安全评审。SSO/SAML 已在计划中。"
       },
       "foot": "自带智能体所有档位免费 · 绝不按智能体收费 · 每位成员固定 $12 · 自托管永久免费"
     },
@@ -969,6 +1039,8 @@
       "twitter": "X / Twitter",
       "legal": "法律信息",
       "license": "许可证（Apache-2.0）",
+      "terms": "服务条款",
+      "privacy": "隐私政策",
       "copyright": "© {{year}} Commonly。代码采用 Apache-2.0 许可；Commonly 名称和标志是 Commonly 项目的商标。"
     }
   },
@@ -1533,7 +1605,7 @@
     "footnote": {
       "cliRoute": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会显示回复 @提及的监听命令。",
       "cliRouteClaudeUnavailable": "更喜欢用 CLI？选择「{{byo}}」；安装后可以在自己的 Claude Code 会话中连接 Commonly。要回复 @提及，请在支持的电脑上运行监听命令，或选择「{{hosted}}」。",
-      "cliRouteCodexUnavailable": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会说明如何在 Mac 或 Linux 电脑上运行监听命令。要从 Windows 回复 @提及，请选择「{{hosted}}」。",
+      "cliRouteCodexUnavailable": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会说明如何在 Mac 电脑上运行监听命令。要从 {{os}} 回复 @提及，请选择「{{hosted}}」。",
       "notSure": "不确定用哪条路径？",
       "mcpVsCli": "MCP、CLI 与 SDK 对比",
       "fullWalkthrough": "完整教程"
@@ -1587,6 +1659,7 @@
     "listen": {
       "title": "在终端里运行这段命令",
       "note": "仅连接 MCP 不会唤醒 {{name}} 回复 @提及。请保持终端窗口开启。",
+      "reachClaude": "默认情况下，如果你用的是 macOS，并且 {{name}} 所在的每个 Pod 都是私密、仅限邀请且未列入「社区」的，它只能读取你运行这段命令时所在的文件夹。不满足这些条件，或者你在个人文件夹里运行这段命令，它都会在自己的临时文件夹里工作。想让它编辑文件、运行命令，就在最后一行加上 --allow write。它运行的命令能读取文件夹以外的内容。想让它抓取网页，就加上 --allow web。无论加哪一个，它都能把读到的内容传出这台电脑，所以只在你信任的 Pod 里授予这两项权限。",
       "waiting": "正在等待 {{name}} 接入…命令一接通，这里就会变绿。",
       "verified": "{{name}} 已在监听 —— @提及 会唤醒它。",
       "stillWaiting": "{{name}} 还没接入。请在你电脑的终端里运行上面的命令，这里会自动确认。",
@@ -1598,7 +1671,7 @@
       "osWindows": "Windows",
       "toolClaude": "Claude Code",
       "unavailableClaude": "Claude Code 在 {{os}} 上暂时不能回复 @提及：Commonly 要把它放进沙箱里运行，而 Commonly 用的沙箱在 {{os}} 上还做不到。你可以用下面的命令把 Commonly 的工具接进自己的 Claude Code 会话，或者选择“在这里运行”，改用托管智能体。",
-      "unavailableCodex": "Codex CLI 在 Windows 上暂时不能回复 @提及。你可以选择“在这里运行”，改用托管智能体；也可以换到 Mac 或 Linux 机器上运行这条命令。",
+      "unavailableCodex": "Codex CLI 在 {{os}} 上暂时不能回复 @提及。你可以选择“在这里运行”，改用托管智能体；也可以换到 Mac 机器上运行这条命令（Linux 尚未测试）。",
       "toolCodex": "Codex CLI",
       "switchToCodex": "我用的是 Codex",
       "switchToClaude": "我用的是 Claude Code"
@@ -2017,8 +2090,6 @@
       "free": "免费版",
       "pro": "Pro · $12/月"
     },
-    "freeNote": "自带 agent 不限数量，消息历史保留30天。升级后，你创建的 Pod 内历史记录无限保留，并可将 Pod 收录进「社区」。",
-    "proNote": "你创建的 Pod 内历史记录无限保留、社区收录，以及托管 agent 席位（上线即包含）。",
     "cancelling": "你的方案将在本计费周期结束时取消。在此之前仍可使用 Pro。",
     "upgrade": "升级到 Pro —— $12/月",
     "manage": "管理订阅",
@@ -2215,6 +2286,7 @@
     "loadFailed": "无法加载产物。"
   },
   "tools": {
+    "emptyAudienceNotice": "请至少选择一个智能体以授予访问权限。",
     "makePodInviteOnly": "将此 Pod 设为仅限邀请",
     "podInviteOnlyNow": "此 Pod 现已设为仅限邀请。再次选择“授权”继续。",
     "joinPolicyError": "无法将此 Pod 设为仅限邀请。",
@@ -2554,5 +2626,24 @@
       "hours": "{{n}}小时",
       "days": "{{n}}天"
     }
+  },
+  "teammate": {
+    "kicker": "这里只有你",
+    "title": "邀请队友加入 {{podName}}",
+    "body": {
+      "agentPost": "队友也能和 {{agentName}} 一起工作，还能看到这个 Pod 里的全部内容，包括之前的消息。",
+      "scout": "Scout 可以把这些工作分给你们两人。他们能看到这个 Pod，包括你和 Scout 的这段对话。",
+      "solo": "队友可以在这里发消息，和这个 Pod 里的智能体一起工作，也能看到这里的全部内容，包括之前的消息。"
+    },
+    "act": "复制邀请链接",
+    "creating": "正在生成链接…",
+    "copied": "已复制",
+    "copyRetry": "复制链接",
+    "retry": "重试",
+    "meta": "7天内有效 · 任何人登录后都能凭此链接加入",
+    "clipboardFail": "自动复制失败 · 链接已选中，请手动复制",
+    "error": "链接生成失败 · 未分享任何内容",
+    "live": "邀请链接已复制",
+    "dismiss": "关闭"
   }
 }

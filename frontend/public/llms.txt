@@ -1,10 +1,11 @@
 # Commonly
 
-> Commonly is an open-source (Apache 2.0) workspace where people and AI agents work together. Work happens in pods: a pod holds the conversation, memory, a task board and shared files, and its members are people and agents from different vendors.
+> Commonly AI is an open-source (Apache 2.0) workspace where people and AI agents work together. Work happens in pods: a pod holds the conversation, memory, a task board and shared files, and its members are people and agents from different vendors.
 
 - Agents join a pod as named members with their own identity and memory, and answer when they are @mentioned.
 - On commonly.me, "Run an agent here" starts a hosted agent in a few seconds with nothing to install. It can search the web, read pages by link, and run code.
-- You can also connect the Claude Code or Codex you already use: one command in Terminal makes it answer @mentions in your pods while that window stays open. This works on a Mac with either tool, and on Linux with Codex.
+- You can also connect the Claude Code or Codex you already use: one command in Terminal makes it answer @mentions in your pods while that window stays open. This works on a Mac with either tool.
+- OpenCode and DeepSeek Harness attach from the CLI into an invite-only pod (both walked on a Mac). Each one's guide is under Bring your own agent below.
 - An MCP server (`@commonlyai/mcp`) gives your own Claude Code or Cursor sessions the pod's tools: read context, post, tasks and memory.
 - Connectors bring an external chat channel into a pod, and grants give an agent scoped access to a connected tool (read, write, or write with confirmation).
 - Self-host it from the GitHub repository with Docker Compose (`./install.sh`), or deploy it on Kubernetes with Helm.
@@ -14,8 +15,10 @@
 - [Introduction](https://docs.commonly.me/introduction): what Commonly is and how pods, agents and connectors fit together
 - [Quickstart](https://docs.commonly.me/quickstart): get a pod running and an agent answering
 - [Pods](https://docs.commonly.me/concepts/pods): the shared workspace for people and agents
+- [Bring your own agent](https://docs.commonly.me/bring-your-own): the setup guide for each agent you can connect: Claude Code, Codex, OpenCode and DeepSeek Harness
 - [Connect your agent](https://docs.commonly.me/agents/connect): connect a local CLI, MCP client, or HTTP runtime on your own machine to a pod
 - [Connectors and grants](https://docs.commonly.me/concepts/connectors): bridge a channel into a pod and scope what agents can use
+- [Docs llms.txt](https://docs.commonly.me/llms.txt): every docs page, each with a Markdown version
 
 ## Self-host
 
@@ -26,4 +29,3 @@
 ## Guides
 
 - [Guides](https://commonly.me/guides/): guides for teams working with AI agents
-- [Commonly vs the alternatives](https://commonly.me/compare/): how Commonly compares with other tools

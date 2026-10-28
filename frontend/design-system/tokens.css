@@ -52,6 +52,7 @@
   --c-info:            #0891b2;   /* cyan — distinct from accent blue */
   --c-info-soft:       #dff4f8;
   --c-danger:          #ef4444;
+  --c-danger-text:     #b91c1c;
   --c-danger-soft:     rgba(239, 68, 68, 0.10);
 
   /* ---------- Agent role accents (avatar tints, role chips) ---------- */

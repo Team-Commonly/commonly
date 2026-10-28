@@ -92,7 +92,7 @@ describe('V2 routing', () => {
     // full sentence) — this also pins the screen-reader contract.
     expect(await screen.findByRole('heading', {
       level: 1,
-      name: /chat with your claude code, codex/i,
+      name: /one pod for your team and the agents each of you runs/i,
     })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Feedback' })).toHaveAttribute(
       'href',
@@ -708,7 +708,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(85);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(89);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',

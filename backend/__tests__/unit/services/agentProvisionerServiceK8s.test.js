@@ -33,6 +33,7 @@ const mock = {
     // HEARTBEAT.md the fleet actually receives is a base64 blob inside one of
     // these, so this is the only place a test can assert on the delivered file
     // rather than on the source that composes it.
+    readNamespacedPodLog: jest.fn(),
     execCommands: [],
     execArgv: [],
     // What the next exec writes to its stdout sink; empty = no output.
@@ -54,6 +55,7 @@ const mock = {
         replaceNamespacedConfigMap: mock.replaceNamespacedConfigMap,
         createNamespacedConfigMap: mock.createNamespacedConfigMap,
         listNamespacedPod: mock.listNamespacedPod,
+        readNamespacedPodLog: mock.readNamespacedPodLog,
       };
     }
   }
@@ -96,8 +98,8 @@ const mock = {
 
 const k8s = require('@kubernetes/client-node');
 const {
-  restartAgentRuntime, provisionAgentRuntime, buildPvcVirtualKeyReadScript, issueLiteLLMVirtualKey,
-  readOpenClawIdentityFile,
+  restartAgentRuntime, provisionAgentRuntime, buildPvcVirtualKeyReadScript, issueLiteLLMVirtualKey, issueLiteLLMOpenRouterKey,
+  readOpenClawIdentityFile, getAgentRuntimeLogs,
 } = require('../../../services/agentProvisionerServiceK8s');
 const { CYCLES_DIRECTIVE_MARKER } = require('../../../routes/registry/presets');
 
@@ -558,5 +560,50 @@ describe('issueLiteLLMVirtualKey never sends the master key to LiteLLM', () => {
     expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/key/info?key=sk-virtual-theo'), expect.anything());
     expect(key).toBe('sk-virtual-theo');
   });
+
+  // D111: these keys now route to a paid model, and the $60 group budget is on
+  // the deepseek-v4-flash model name, which alias callers never touch.
+  it('mints a fresh key with a monthly spend budget', async () => {
+    k8s.__mock.execStdout = '';
+
+    await issueLiteLLMVirtualKey('theo');
+
+    const [url, body] = axios.post.mock.calls.find(([u]) => u.endsWith('/key/generate'));
+    expect(url).toBe('http://litellm:4000/key/generate');
+    expect(body.max_budget).toBe(30);
+    expect(body.budget_duration).toBe('30d');
+  });
+
+  it('mints a fresh community key with the same monthly spend budget', async () => {
+    k8s.__mock.execStdout = '';
+
+    await issueLiteLLMOpenRouterKey('community-agent');
+
+    const [url, body] = axios.post.mock.calls.find(([u]) => u.endsWith('/key/generate'));
+    expect(url).toBe('http://litellm:4000/key/generate');
+    expect(body.user_id).toBe('community-agent');
+    expect(body.max_budget).toBe(30);
+    expect(body.budget_duration).toBe('30d');
+  });
 });
 
+
+
+describe('runtime account log filtering', () => {
+  const { buildRuntimeLogFilters } = require('../../../routes/registry/helpers');
+  it.each([['bob', 'default', 'bob-default'], ['openclaw', 'default', 'default']])(
+    'returns only the exact account tag for %s', async (agentName, instanceId, accountId) => {
+      const own = `[commonly] [${accountId}] own line`;
+      const peerId = accountId === 'default' ? 'bob-default' : 'default';
+      k8s.__mock.readNamespacedPodLog.mockResolvedValue({ body: [
+        own, `[commonly] [${peerId}] peer line`, `[commonly] [${accountId}-other] suffix peer`,
+        `[commonly] [${peerId}] content repeats [commonly] [${accountId}] marker`,
+        `diagnostic mentions ${accountId}`, `[commonly] [elsewhere] text mentions ${accountId}`,
+      ].join('\n') });
+      const filterTokens = buildRuntimeLogFilters({ runtimeType: 'moltbot', agentName, instanceId });
+      expect(filterTokens).toEqual([accountId]);
+      const result = await getAgentRuntimeLogs('moltbot', instanceId, 200, { filterTokens });
+      expect(result.logs).toBe(own);
+    },
+  );
+});

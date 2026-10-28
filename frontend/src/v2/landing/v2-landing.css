@@ -258,7 +258,7 @@
 }
 .v2-landing__title {
   margin: 0;
-  max-width: 1000px;
+  max-width: none; /* the hero column caps it at 1312; the prefix stays on one line at 1440 */
   font-family: var(--v2-font-display, var(--v2-font));
   font-size: clamp(44px, 7vw, 84px);
   line-height: 1;
@@ -493,10 +493,15 @@
   mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
 }
 
+/* The duration is the set's width over a fixed speed, so it moves with the
+   list. 42s carried the 11-logo set (1,763px at 1440: logo widths + 56px per
+   item) at ~42px/s. The 24-logo set measures 4,145px in a real browser at
+   1440, so 99s keeps the same ~42px/s. Re-measure the first set's width and
+   rescale this when the list changes. */
 .v2-landing__trusted-track {
   display: flex;
   width: max-content;
-  animation: v2-trusted-scroll 42s linear infinite;
+  animation: v2-trusted-scroll 99s linear infinite;
 }
 
 .v2-landing__trusted-marquee:hover .v2-landing__trusted-track {
@@ -510,16 +515,23 @@
   padding-right: 56px;
 }
 
+/* One grey ink for every logo, whatever colours the source file carries.
+   `brightness(0)` maps every opaque pixel to black and leaves alpha alone, so
+   a mark reads as its silhouette; `grayscale(1)` before it is a no-op on the
+   result and stays only to make the intent legible. It is what keeps white
+   artwork (OROZ, Fluxr's wordmark) visible on the light strip: a plain
+   grayscale left both white on white. The opacity then sets the grey. Hover
+   lifts the opacity only — restoring the source colours would make the white
+   files vanish again. */
 .v2-landing__trusted-logo {
   height: 26px;
   width: auto;
-  filter: grayscale(1);
+  filter: grayscale(1) brightness(0);
   opacity: 0.6;
-  transition: filter 0.2s ease, opacity 0.2s ease;
+  transition: opacity 0.2s ease;
 }
 
 .v2-landing__trusted-logo:hover {
-  filter: grayscale(0);
   opacity: 1;
 }
 
@@ -1548,4 +1560,56 @@
 :lang(zh) .v2-landing__tier-enterprise strong,
 :lang(zh) .v2-landing__cta-title {
   letter-spacing: 0;
+}
+
+/* FAQ: capped measure; items are separated by a hairline and a 30px gap, and
+   each question sits 8px above its answer. The question is body-weight, not
+   a card title, so the list reads as text rather than as a row of cards. */
+.v2-landing__faq {
+  margin: 0;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+.v2-landing__faq-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.v2-landing__faq-item + .v2-landing__faq-item {
+  border-top: 1px solid var(--v2-border-soft);
+  padding-top: 30px;
+}
+.v2-landing__faq-item dt {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--v2-text-primary);
+}
+.v2-landing__faq-item dt::first-letter { text-transform: uppercase; }
+.v2-landing__faq-item dd { margin: 0; }
+
+/* D129 phone hero (ux-lead's ruling): at 320 and 390 the rotator's widest terms
+   run 362–566px against a 272–342px column at the 44px title, so the term
+   clipped in both locales. At ≤760 the title is 32/36 and the rotator may wrap
+   onto two lines; min-height reserves those two lines so the h1 holds one
+   height under every term. text-wrap: balance keeps the last line from
+   holding one word ("runs"). Placed last so it wins over the ≤680 title size by
+   order. 1440 and up are untouched. */
+@media (max-width: 760px) {
+  .v2-landing__title { font-size: 32px; line-height: 36px; }
+  .v2-landing__rotator { max-width: 100%; min-height: calc(72px + 0.06em); text-wrap: balance; }
+  .v2-landing__rotator-sizer,
+  .v2-landing__rotator-term { white-space: normal; }
+}
+/* zh terms break only between words (keep-all); the ZWSP in eachOwnAgent is the
+   one permitted break point, so 每个人 / 自己的智能体 at 320. */
+:lang(zh) .v2-landing__rotator { word-break: keep-all; }
+/* UX-GATE HOLD on 18bf0ce9: in zh between 761 and 1339 px the suffix shares line 2
+   with 队友的智能体 and wraps for the other two terms, so the h1 jumped 63–84px on
+   every rotation. The suffix takes its own line in that band, as TASK-213 does on
+   phones. Measured steady from 320 to 1920 with this rule; en has no suffix element. */
+@media (min-width: 761px) and (max-width: 1359px) {
+  .v2-landing__title-suffix { display: block; margin-left: 0; }
 }

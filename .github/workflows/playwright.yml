@@ -87,7 +87,7 @@ jobs:
         run: cd backend && npm ci --include=dev
 
       - name: Install frontend dependencies
-        run: cd frontend && npm install --legacy-peer-deps
+        run: cd frontend && OPENUI_TELEMETRY_DISABLED=1 npm install --legacy-peer-deps
 
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps

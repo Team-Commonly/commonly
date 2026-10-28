@@ -55,6 +55,7 @@ Commonly instance (see: commonly login --help).
   pod
     .command('send <podId> <message>')
     .description('Post a message to a pod')
+    .option('--payload <json>', 'UI card JSON envelope; the message remains the required text fallback')
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (podId, message, opts) => {
       const token = getToken(opts.instance);
@@ -63,12 +64,18 @@ Commonly instance (see: commonly login --help).
       const client = createClient({ instance: resolveInstanceUrl(opts.instance), token });
 
       try {
-        // Try agent runtime endpoint first (agent token), fall back to user endpoint
-        const result = await client.post(`/api/agents/runtime/pods/${podId}/messages`, {
-          content: message,
-        }).catch(() => client.post(`/api/messages/${podId}`, {
-          content: message,
-        }));
+        const body = { content: message };
+        if (opts.payload !== undefined) {
+          body.payload = JSON.parse(opts.payload);
+          body.messageType = 'card';
+        }
+        // UI cards use the validated agent endpoint only. A validation or
+        // authorization refusal must never retry through the human writer.
+        const result = await client.post(`/api/agents/runtime/pods/${podId}/messages`, body)
+          .catch((error) => {
+            if (opts.payload !== undefined) throw error;
+            return client.post(`/api/messages/${podId}`, body);
+          });
 
         console.log(`Sent (${result._id || result.id || 'ok'})`);
       } catch (err) {

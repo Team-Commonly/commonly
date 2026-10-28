@@ -90,6 +90,7 @@ body.modern-ui.v2-canvas {
   --v2-info: #0891b2;
   --v2-info-soft: #dff4f8;
   --v2-danger: #ef4444;
+  --v2-danger-text: #b91c1c;
   --v2-danger-soft: rgba(239, 68, 68, 0.10);
 
   /* Agent role colors */
@@ -2473,6 +2474,14 @@ body.modern-ui.v2-canvas {
   font-weight: 700;
 }
 
+.v2-chat__new-pod-action--invite > .v2-chat__new-pod-copy {
+  min-height: 32px;
+  margin-top: auto;
+}
+@media (max-width: 760px) {
+  .v2-chat__new-pod-action--invite > .v2-chat__new-pod-copy { min-height: 44px; }
+}
+
 .v2-root button.v2-chat__new-pod-copy:hover {
   background: var(--v2-surface-hover);
 }
@@ -2719,6 +2728,64 @@ body.modern-ui.v2-canvas {
   font-size: 12.5px;
   line-height: 1.45;
   color: var(--v2-text-secondary);
+}
+
+/* TASK-406: quiet, non-interactive kernel action line in the pod timeline. */
+.v2-system-action-line {
+  box-sizing: border-box;
+  width: calc(100% - 36px);
+  margin-left: 36px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, max-content) auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font: 400 13px/16px var(--v2-font);
+}
+
+.v2-thread .v2-system-action-line .v2-avatar {
+  width: 16px;
+  height: 16px;
+  border-width: 1px;
+  font: 650 11px/1 var(--v2-font-mono);
+  letter-spacing: 0;
+  text-indent: 0;
+}
+
+.v2-system-action-line__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--v2-text-primary);
+  font-weight: 500;
+}
+
+.v2-system-action-line__action {
+  grid-column: 3;
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.v2-system-action-line__verb {
+  color: var(--v2-text-tertiary);
+}
+
+.v2-system-action-line__object {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--v2-text-tertiary);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+.v2-system-action-line time {
+  grid-column: 5;
+  color: var(--v2-text-placeholder);
+  font: 400 11px/16px var(--v2-font-mono);
 }
 
 /* §3.8 system event card — replaces the regular author/avatar bubble for
@@ -6684,8 +6751,7 @@ body.modern-ui.v2-canvas {
   font-weight: 700;
 }
 
-.v2-connect__lane h2,
-.v2-connect__gateway h3 {
+.v2-connect__lane h2 {
   margin: 0;
   color: var(--v2-text-primary);
   font-size: 16px;
@@ -6694,7 +6760,6 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-connect__lane-heading p,
-.v2-connect__gateway p,
 .v2-connect__note {
   margin: 5px 0 0;
   color: var(--v2-text-secondary);
@@ -6790,8 +6855,7 @@ body.modern-ui.v2-canvas {
   margin-top: 12px;
 }
 
-.v2-connect__note code,
-.v2-connect__gateway-token code {
+.v2-connect__note code {
   font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -6818,6 +6882,12 @@ body.modern-ui.v2-canvas {
   font: 400 13px/20px var(--v2-font);
 }
 .v2-root .v2-connect__cursor .v2-connect__link { margin-top: 0; }
+.v2-connect__rule { margin-top: 12px; }
+.v2-connect__rule .v2-connect__code-head span { min-width: 0; }
+.v2-connect__rule .v2-connect__code-head code {
+  font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}
 
 .v2-connect__actions {
   display: flex;
@@ -6826,86 +6896,9 @@ body.modern-ui.v2-canvas {
   margin-top: 16px;
 }
 
-.v2-connect__gateway {
-  display: grid;
-  gap: 12px;
-  margin-top: 18px;
-  padding: 16px;
-  border-top: 1px solid var(--v2-border-soft);
-  background: var(--v2-bg-subtle);
-}
-
-.v2-connect__gateway-form {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
-  align-items: end;
-  gap: 10px;
-}
-
-.v2-connect__gateway-form label {
-  display: grid;
-  gap: 5px;
-  color: var(--v2-text-secondary);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.v2-connect__gateway-form em {
-  color: var(--v2-text-tertiary);
-  font-style: normal;
-  font-weight: 400;
-}
-
-.v2-connect__gateway-form input {
-  min-width: 0;
-  padding: 8px 9px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
-  color: var(--v2-text-primary);
-  font: inherit;
-  outline: none;
-}
-
-.v2-connect__gateway-form input:focus {
-  border-color: var(--v2-accent);
-  box-shadow: var(--v2-focus-ring);
-}
-
-.v2-connect__gateway-token {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--v2-success);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-success-soft);
-}
-
-.v2-connect__gateway-token p {
-  flex-basis: 100%;
-  margin: 0;
-}
-
-.v2-connect__gateway-token code {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--v2-text-primary);
-  font-size: 12px;
-}
-
-.v2-connect__error {
-  margin: 0;
-  color: var(--v2-danger);
-  font-size: 13px;
-}
-
 @media (max-width: 760px) {
   .v2-connect__lane { padding: 16px; }
   .v2-connect__code-grid { grid-template-columns: 1fr; }
-  .v2-connect__gateway-form { grid-template-columns: 1fr; }
-  .v2-connect__gateway-form .v2-connect__cta { justify-self: start; }
 }
 
 /* ---------- Admin · Users (waitlist + invitation codes) ---------- */
@@ -8930,9 +8923,29 @@ body.modern-ui.v2-canvas {
 }
 
 @media (max-width: 760px) {
+  /* At 390 the head was one nowrap row (back, subtitle, New task), which squeezed
+     the title to under 1px. On a phone the title takes its own full-width row;
+     back and New task share the row above it. */
   .v2-board__head {
+    flex-wrap: wrap;
+    row-gap: 8px;
     padding: 12px 14px;
     gap: 10px;
+  }
+
+  .v2-board__title-wrap {
+    order: 1;
+    flex: 1 1 100%;
+  }
+
+  .v2-board__new {
+    margin-left: auto;
+  }
+
+  /* The board is the phone's full-width surface. Its own head and columns carry
+     the 14px inset, so the feature body does not add its 34px desktop gutter. */
+  .v2-feature--board > .v2-feature__body {
+    padding: 0;
   }
 
   .v2-board__columns {
@@ -10615,8 +10628,7 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-byo__mode-title,
 .v2-root:lang(zh) .v2-byo__preview-name,
 .v2-root:lang(zh) .v2-byo__stat-value,
-.v2-root:lang(zh) .v2-connect__lane h2,
-.v2-root:lang(zh) .v2-connect__gateway h3 {
+.v2-root:lang(zh) .v2-connect__lane h2 {
   letter-spacing: 0;
 }
 
@@ -12142,6 +12154,12 @@ body.modern-ui.v2-canvas {
     padding: 6px 8px 4px;
   }
 
+  /* Feature pages mount this same bar (V2FeaturePage). Reserve its height on
+     the pane so a scrolling body stops above the fixed bar, not under it. */
+  .v2-feature {
+    padding-bottom: 56px;
+  }
+
   .v2-root button.v2-mobile-tabs__item {
     display: flex;
     width: auto;
@@ -13316,3 +13334,15 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-board__new:hover, .v2-root button.v2-board__create-submit:not(:disabled):hover { background: var(--v2-text-secondary); border-color: var(--v2-text-secondary); }
 
 .v2-board__owner-time { color: var(--v2-text-muted); }
+
+/* Public Privacy and Terms pages (TASK-530). Outside .v2-root, so no root-scoped selectors. */
+/* .v2-root sets height:100vh and overflow:hidden; the legal pages must scroll, so override both (same as the landing). */
+.v2-root.v2-legal { display: block; height: 100vh; overflow-y: auto; overflow-x: hidden; box-sizing: border-box; padding: 48px 24px; background: var(--v2-bg-subtle); color: var(--v2-text-primary); }
+.v2-legal__doc { max-width: 680px; margin: 0 auto; }
+.v2-legal__home { display: inline-block; margin: 0 0 24px; font-size: 14px; color: var(--v2-text-secondary); text-decoration: none; }
+.v2-legal__home:hover { text-decoration: underline; }
+.v2-legal__section a { color: var(--v2-text-primary); text-decoration: underline; }
+.v2-legal__title { font-size: 32px; font-weight: 600; line-height: 1.2; margin: 0 0 32px; }
+.v2-legal__section { margin-bottom: 28px; }
+.v2-legal__section h2 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
+.v2-legal__section p { font-size: 15px; line-height: 1.6; color: var(--v2-text-secondary); margin: 0 0 8px; }

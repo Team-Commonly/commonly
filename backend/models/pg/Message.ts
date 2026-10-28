@@ -245,6 +245,7 @@ class Message {
     // derivation in create()). This is what makes agent-side thread reads
     // cheaper than paging the whole pod (TASK-052's cue depends on it).
     threadRootId: string | null = null,
+    options: { excludeSystemActions?: boolean } = {},
   ): Promise<FormattedMessage[]> {
     // Defense-in-depth clamp at the data layer: callers should pass a bounded
     // limit, but a stray unbounded value must never turn into a million-row
@@ -270,6 +271,9 @@ class Message {
         WHERE m.pod_id = $1
       `;
       const queryParams: unknown[] = [podId];
+      if (options.excludeSystemActions) {
+        query += " AND NOT (m.message_type = 'system' AND COALESCE(m.payload->>'kind', '') = 'system-action')";
+      }
       if (before) {
         query += ' AND m.created_at < $2';
         queryParams.push(before);
@@ -670,6 +674,18 @@ class Message {
       console.error('Error in findActivityHint:', e.message);
       return { count: 0, lastAt: null, unavailable: true };
     }
+  }
+
+  // Everyone who posted in the pod after `since`, however many messages that
+  // was. Throws, so a caller can tell "nobody" from "could not read".
+  static async findAuthorIdsSince(podId: unknown, since: Date): Promise<string[]> {
+    const result = await (pool as PgPool).query(
+      `SELECT DISTINCT user_id
+         FROM messages
+        WHERE pod_id = $1 AND created_at > $2 AND message_type != 'system'`,
+      [String(podId), since],
+    );
+    return (result.rows as Array<{ user_id: string }>).map((r) => String(r.user_id));
   }
 
   static async findMostRecentPodActivity(

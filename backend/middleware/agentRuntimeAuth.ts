@@ -10,7 +10,7 @@ import Pod from '../models/Pod';
 import AgentCredential from '../models/AgentCredential';
 import { markByoConnectionAttempt } from '../services/onboardingMarks';
 import { isSpawnCredential } from '../services/spawnCredentialService';
-import { machineHasLiveAuthorization } from '../services/machineService';
+import { embeddedRuntimeTokenExpired, runtimeCredentialRefusalReason } from '../services/runtimeCredentialGate';
 
 // eslint-disable-next-line global-require
 const { hash } = require('../utils/secret') as { hash: (value: string) => string };
@@ -70,26 +70,8 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
     // becoming an agent merely because its ledger row was filtered out.
     const credential = await AgentCredential.findOne({ tokenHash });
     if (credential) {
-      if (credential.kind !== 'runtime') {
-        return res.status(401).json({ message: 'Invalid agent credential' });
-      }
-      if (credential.status !== 'active') {
-        return res.status(401).json({ message: 'Token revoked' });
-      }
-      if (credential.expiresAt && credential.expiresAt < new Date()) {
-        return res.status(401).json({ message: 'Session token expired' });
-      }
-      if (credential.parentId) {
-        const parent = await AgentCredential.findById(credential.parentId).select('status').lean();
-        if (!parent || parent.status !== 'active') {
-          return res.status(401).json({ message: 'Issuing credential revoked' });
-        }
-      }
-      if (credential.machineId && !await machineHasLiveAuthorization(
-        credential.machineId, credential.ownerUserId,
-      )) {
-        return res.status(401).json({ message: 'Machine access revoked' });
-      }
+      const refusal = await runtimeCredentialRefusalReason(credential);
+      if (refusal) return res.status(401).json({ message: refusal });
       try {
         // Settings reads this ledger row. A successful authenticated request
         // must be visible to the next credential read, including first use.
@@ -111,10 +93,10 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       || (await resolveSpawnChildAgentUser(credential)) as typeof embeddedAgentUser;
 
     if (agentUser) {
-      const tokenRecord = agentUser.agentRuntimeTokens.find((t) => t.tokenHash === tokenHash);
-      if (tokenRecord?.expiresAt && tokenRecord.expiresAt < new Date()) {
+      if (embeddedRuntimeTokenExpired(agentUser, tokenHash)) {
         return res.status(401).json({ message: 'Session token expired' });
       }
+      const tokenRecord = agentUser.agentRuntimeTokens.find((t) => t.tokenHash === tokenHash);
       // Pre-update value: a token with no lastUsedAt is authenticating for
       // the very first time — the #909 verified-listening moment. Observed
       // once per token; drives the connect-agent starter task below (#916).

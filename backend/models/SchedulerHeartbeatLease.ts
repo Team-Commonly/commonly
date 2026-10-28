@@ -1,7 +1,8 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
 
 /**
- * A short-lived, cluster-wide lease for one agent-heartbeat dispatch. The
+ * A short-lived, cluster-wide lease for scheduled work (heartbeats and
+ * account deletion). The legacy collection name remains stable. The
  * fixed _id is the natural key: MongoDB's primary-key uniqueness makes the
  * acquire compare-and-set atomic without depending on index build timing.
  */

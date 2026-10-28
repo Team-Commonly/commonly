@@ -1,3 +1,4 @@
+import { requirePodMember } from '../services/podMembershipService';
 import { compareTaskPriority, isTaskPriority } from '../utils/taskPriority';
 import { createHash } from 'crypto';
 import type { Request, Response } from 'express';
@@ -8,9 +9,8 @@ const express = require('express');
 // eslint-disable-next-line global-require
 const mongoose = require('mongoose');
 // eslint-disable-next-line global-require
-const regularAuth = require('../middleware/auth');
-// eslint-disable-next-line global-require
-const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
+const auth = require('../middleware/dualAuth');
+const { resolveDualAuthCredential } = auth;
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
@@ -21,6 +21,10 @@ const User = require('../models/User');
 const AgentSendFreshness = require('../services/agentSendFreshness');
 // eslint-disable-next-line global-require
 const { emitTaskUpdated, notifyPodAgents } = require('../services/taskEventService');
+// eslint-disable-next-line global-require
+const { emitSystemActionLine } = require('../services/systemActionLineService');
+// eslint-disable-next-line global-require
+const { resolveAgentDisplayLabel } = require('../services/agentIdentityService');
 // eslint-disable-next-line global-require
 const { recordTaskAttention, resolveTaskAttention } = require('../services/attentionItemService');
 // eslint-disable-next-line global-require
@@ -78,11 +82,11 @@ interface AuthReq {
   // `username` is here because the sweep can write it into `lapsedFrom`
   // (provenance falls back through holder.label = assignee || username ||
   // claimedBy), so the restore path must be able to match on it.
-  user?: { id?: string; _id?: unknown; isBot?: boolean; username?: string; botMetadata?: { instanceId?: string; agentName?: string } };
+  user?: { id?: string; _id?: unknown; isBot?: boolean; username?: string; profilePicture?: string; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } };
   // Same reason as `user.username` above: `agentRuntimeAuth` puts the bot's
   // User row here, and its username is what the sweep writes into
   // `lapsedFrom` for an agent holder.
-  agentUser?: { _id?: unknown; username?: string };
+  agentUser?: { _id?: unknown; username?: string; profilePicture?: string; isBot?: boolean; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } };
   params?: Record<string, string>;
   query?: Record<string, string>;
   body?: Record<string, unknown>;
@@ -91,12 +95,6 @@ interface AuthReq {
 interface Res {
   status: (n: number) => Res;
   json: (d: unknown) => void;
-}
-
-function auth(req: AuthReq, res: Res, next: () => void) {
-  const token = ((req.header?.('Authorization') || '').replace('Bearer ', ''));
-  if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
-  return regularAuth(req, res, next);
 }
 
 const router: ReturnType<typeof express.Router> = express.Router();
@@ -148,7 +146,7 @@ const updateTaskWithRevision = async (
 ) => (await updateTaskWithRevisionSnapshot(filter, update))?.task || null;
 
 const taskWriteRateLimitKey = (req: Request): string => {
-  const authHeader = req.get('Authorization') || req.get('x-auth-token');
+  const authHeader = resolveDualAuthCredential(req).token;
   if (authHeader) {
     return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
   }
@@ -195,29 +193,6 @@ function resolveAgentInstanceId(req: AuthReq): string | null {
   return req.user.botMetadata?.instanceId || req.user.botMetadata?.agentName || null;
 }
 
-async function requirePodMember(podId: string, userId: unknown, { write = false, memberOnly = false } = {}): Promise<{ error?: string; status?: number; pod?: unknown; canWrite?: boolean }> {
-  const pod = await Pod.findById(podId).lean() as { type?: string; members?: Array<{ userId?: { toString: () => string }; toString: () => string; role?: string }> } | null;
-  if (!pod) return { error: 'Pod not found', status: 404 };
-  const membership = pod.members?.find((m) => {
-    if (!m) return false;
-    const id = m.userId ? m.userId.toString() : m.toString();
-    return id === (userId as { toString: () => string }).toString();
-  });
-  // Read access on agent-dm pods follows §3.7 (shared-pod readers
-  // allowed). Write access stays member-only — non-members can observe
-  // but not post tasks into someone else's bot-bot DM. The viewer-role
-  // gate below applies to writes regardless.
-  if (!membership) {
-    if (write || memberOnly) return { error: 'Write access denied', status: 403 };
-    // eslint-disable-next-line global-require
-    const DMService = require('../services/dmService');
-    const canView = await DMService.canViewPod(userId, pod);
-    if (!canView) return { error: 'Access denied', status: 403 };
-    return { pod, canWrite: false };
-  }
-  if (write && (membership as { role?: string }).role === 'viewer') return { error: 'Write access denied', status: 403 };
-  return { pod, canWrite: (membership as { role?: string }).role !== 'viewer' };
-}
 
 async function nextTaskId(podId: string): Promise<{ taskId: string; taskNum: number }> {
   const last = await Task.findOne({ podId, taskId: { $exists: true } }).sort({ taskId: -1 }).select('taskId').lean() as { taskId?: string } | null;
@@ -690,6 +665,22 @@ router.post('/:podId/:taskId/claim', rateLimit({
       && (preClaim.claimedBy === claimedBy || preClaim.lapsedFrom === claimedBy);
     if (!isSameHolderContinuation) {
       notifyAgents(req, podId, task, 'updated', preClaim);
+      const actorUser = req.agentUser || req.user;
+      const actorName = actorUser?.isBot
+        ? resolveAgentDisplayLabel(actorUser, author)
+        : actorUser?.username || author;
+      // The claim CAS has committed. This quiet timeline projection is
+      // best-effort and never changes the claim's HTTP result.
+      void emitSystemActionLine({
+        podId: String(podId),
+        actorUserId: String(userId),
+        actorName,
+        actorUsername: actorUser?.username || author,
+        actorAvatarUrl: actorUser?.profilePicture || null,
+        actorIsBot: !!actorUser?.isBot,
+        action: 'task-claimed',
+        taskId: String(task.taskId || taskId),
+      }).catch((error: Error) => console.warn('[tasks] system action line failed:', error.message));
     }
     return res.json({ task });
   } catch (err) {

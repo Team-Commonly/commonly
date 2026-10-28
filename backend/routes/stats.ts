@@ -78,7 +78,7 @@ router.get('/public', statsPublicLimit, async (_req: unknown, res: { json: (d: u
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
-const { markByoCommandCopied } = require('../services/onboardingMarks');
+const { markByoCommandCopied, markSurface } = require('../services/onboardingMarks');
 // eslint-disable-next-line global-require
 const { rateLimit } = require('express-rate-limit');
 // eslint-disable-next-line global-require
@@ -89,7 +89,14 @@ const mongoose = require('mongoose');
 const BYO_STEPS = new Set([
   'page-viewed', 'seat-created', 'mcp-command-copied', 'cli-command-copied',
   'token-copied', 'listen-confirmed', 'listen-timeout', 'hosted-offer-shown', 'hosted-offer-clicked',
+  'invite-card-shown', 'invite-card-dismissed', 'byo-offer-shown',
 ]);
+// D139 surfaces: each step also sets its write-once onboarding mark.
+const SURFACE_STEPS: Record<string, string> = {
+  'invite-card-shown': 'inviteCardShownAt',
+  'invite-card-dismissed': 'inviteCardDismissedAt',
+  'byo-offer-shown': 'byoOfferShownAt',
+};
 
 router.post('/byo-step', rateLimit({
   windowMs: 60_000,
@@ -107,6 +114,7 @@ router.post('/byo-step', rateLimit({
     // the copied command, which contains a runtime token.
     markByoCommandCopied(req.userId, step === 'mcp-command-copied' ? 'mcp' : 'cli');
   }
+  if (SURFACE_STEPS[step]) markSurface(req.userId, SURFACE_STEPS[step]);
   try {
     await mongoose.connection.db.collection('byo_telemetry').insertOne({
       userId: req.userId,

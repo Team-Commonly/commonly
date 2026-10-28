@@ -39,6 +39,7 @@ const V2AgentBYO = React.lazy(() => import('./components/V2AgentBYO'));
 const V2ConnectPage = React.lazy(() => import('./components/V2ConnectPage'));
 const V2ConnectorsPage = React.lazy(() => import('./components/V2ConnectorsPage'));
 const V2PodBoard = React.lazy(() => import('./components/V2PodBoard'));
+const V2RunTrace = React.lazy(() => import('./components/V2RunTrace'));
 const V2ActivityPage = React.lazy(() => import('./components/V2ActivityPage'));
 const V2ArtifactsPage = React.lazy(() => import('./components/V2ArtifactsPage'));
 const ChatRoom = React.lazy(() => import('../components/ChatRoom'));
@@ -245,6 +246,7 @@ const V2App: React.FC = () => {
                     false,
                     /* V2PodBoard owns its own header (pod name + back). */
                     false,
+                    'v2-feature--board',
                   )}
                 />
                 <Route
@@ -303,6 +305,10 @@ const V2App: React.FC = () => {
                 <Route
                   path="artifacts"
                   element={feature('Artifacts', <V2ArtifactsPage />, false, false, 'v2-feature--artifacts')}
+                />
+                <Route
+                  path="pods/:podId/runs/:runId"
+                  element={feature('Run trace', <V2RunTrace />, false, false)}
                 />
                 <Route
                   path="activity"

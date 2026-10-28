@@ -49,6 +49,7 @@ on:
     branches: [ main ]
     paths:
       - 'cli/**'
+      - 'packages/seats/**'   # bundled into the cli tarball (bundleDependencies)
       - 'commonly-mcp/**'
       - 'docs/agents/skills/commonly/SKILL.md'   # cli prepublishOnly copies it in
   workflow_dispatch:
@@ -111,6 +112,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+
+      # Before the compare, not just before publish: the cli bundles
+      # packages/seats, and `npm pack` on a tree with no node_modules exits 0
+      # with the bundle silently missing. The compare would then see every
+      # tree as different from what npm serves. cli's prepack now refuses
+      # that case, so a missing install fails here, by name.
+      - name: Install
+        run: npm ci --ignore-scripts
 
       - name: Decide whether this tree holds anything unpublished
         id: cmp
@@ -236,10 +245,6 @@ jobs:
             [ -n "$f" ] && [ -f "$f" ] && grep -q '_authToken' "$f" && { echo "::error::$f carries _authToken; npm would skip the OIDC exchange and fail E404"; exit 1; }
           done
           true
-
-      - name: Install
-        if: steps.cmp.outputs.action == 'publish'
-        run: npm ci --ignore-scripts
 
       - name: Publish
         if: steps.cmp.outputs.action == 'publish'

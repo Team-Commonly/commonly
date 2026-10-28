@@ -1,6 +1,8 @@
 // Runtime management routes — extracted from registry.js (GH#112)
 // Handles: runtime-status, runtime-start, runtime-stop, runtime-restart, runtime-clear-sessions, runtime-logs
 export {};
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
 const express = require('express');
 const auth = require('../../middleware/auth');
 const Pod = require('../../models/Pod');
@@ -17,9 +19,8 @@ const {
 } = require('../../services/agentProvisionerService');
 const {
   getUserId,
-  normalizeInstanceId,
   normalizeConfigMap,
-  resolveInstallation,
+  isGlobalAdminUser,
   buildRuntimeLogFilters,
   resolveGatewayForRequest,
   resolveGatewayForInstallation,
@@ -27,43 +28,102 @@ const {
 } = require('./helpers');
 
 const runtimeRouter = express.Router({ mergeParams: true });
+const runtimeRouteLimit = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+});
+
+const getRequestedInstanceId = (req: any): string => {
+  const rawInstanceId = req.method === 'GET' ? req.query.instanceId : req.body?.instanceId;
+  if (rawInstanceId && (typeof rawInstanceId === 'object' || typeof rawInstanceId === 'function')) {
+    const error: any = new Error('Invalid instance ID');
+    error.status = 400;
+    throw error;
+  }
+  return String(rawInstanceId || 'default');
+};
+
+const getAuditInstanceId = (req: any): string => {
+  try {
+    return getRequestedInstanceId(req);
+  } catch {
+    return 'invalid';
+  }
+};
+
+// Emit once after dispatch, using only route/identity metadata.
+const auditRuntimeRoute = (req: any, res: any, next: any) => {
+  res.once('finish', () => {
+    console.info(JSON.stringify({
+      event: 'registry.runtime',
+      route: req.route.path,
+      podId: req.params.podId,
+      agentName: req.params.name,
+      instanceId: getAuditInstanceId(req),
+      callerUserId: getUserId(req) || null,
+      outcome: res.statusCode < 400 ? 'allowed' : res.statusCode,
+    }));
+  });
+  next();
+};
+
+// Runtime routes share one authorization boundary before dispatching any
+// adapter action. Use exact installation identity rather than legacy aliases.
+const resolveAuthorizedRuntimeInstallation = async ({ podId, name, instanceId, userId }: any) => {
+  const pod = await Pod.findById(podId).lean();
+  if (!pod) {
+    const error: any = new Error('Pod not found');
+    error.status = 404;
+    throw error;
+  }
+  const isAdmin = await isGlobalAdminUser(userId);
+  if (!isAdmin && !userHasPodAccess(pod, userId)) {
+    const error: any = new Error('Access denied');
+    error.status = 403;
+    throw error;
+  }
+  const installation = await AgentInstallation.findOne({
+    agentName: String(name).toLowerCase(), podId, instanceId, status: { $ne: 'uninstalled' },
+  });
+  if (!installation) {
+    const error: any = new Error('Agent installation not found');
+    error.status = 404;
+    throw error;
+  }
+  if (!isAdmin && installation.installedBy?.toString() !== userId.toString()) {
+    const error: any = new Error('Access denied');
+    error.status = 403;
+    throw error;
+  }
+  return installation;
+};
 
 /**
  * GET /api/registry/pods/:podId/agents/:name/runtime-status
  * Check local runtime status (docker).
  */
-runtimeRouter.get('/pods/:podId/agents/:name/runtime-status', auth, async (req: any, res: any) => {
+runtimeRouter.get('/pods/:podId/agents/:name/runtime-status',
+  auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    const instanceId = normalizeInstanceId(req.query.instanceId || 'default');
-    const gatewayId = req.query.gatewayId || null;
-
-    const pod = await Pod.findById(podId).lean();
-    if (!pod) {
-      return res.status(404).json({ error: 'Pod not found' });
+    const instanceId = getRequestedInstanceId(req);
+    const rawGatewayId = req.query.gatewayId;
+    if (rawGatewayId != null && typeof rawGatewayId !== 'string') {
+      return res.status(400).json({ error: 'Invalid gateway ID' });
     }
+    const gatewayId = typeof rawGatewayId === 'string' ? rawGatewayId : null;
 
-    const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m: any) => {
-      if (!m) return false;
-      const memberId = m.userId?.toString?.() || m.toString?.();
-      return memberId && memberId === userId.toString();
+    const installation = await resolveAuthorizedRuntimeInstallation({
+      podId, name, instanceId: instanceId, userId,
     });
-
-    if (!membership && !isCreator) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const { installation, instanceId: resolvedInstanceId } = await resolveInstallation({
-      agentName: name,
-      podId,
-      instanceId,
-    });
-    const effectiveInstanceId = resolvedInstanceId || instanceId;
+    const effectiveInstanceId = installation.instanceId;
 
     const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
     const runtimeType = typeConfig?.runtime;
@@ -94,38 +154,25 @@ runtimeRouter.get('/pods/:podId/agents/:name/runtime-status', auth, async (req: 
 /**
  * POST /api/registry/pods/:podId/agents/:name/runtime-start
  */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-start', auth, async (req: any, res: any) => {
+runtimeRouter.post('/pods/:podId/agents/:name/runtime-start',
+  auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const { instanceId, gatewayId } = req.body || {};
+    const { gatewayId: rawGatewayId } = req.body || {};
+    if (rawGatewayId != null && typeof rawGatewayId !== 'string') {
+      return res.status(400).json({ error: 'Invalid gateway ID' });
+    }
+    const gatewayId = typeof rawGatewayId === 'string' ? rawGatewayId : null;
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    const normalizedInstanceId = normalizeInstanceId(instanceId || 'default');
+    const normalizedInstanceId = getRequestedInstanceId(req);
 
-    const pod = await Pod.findById(podId).lean();
-    if (!pod) {
-      return res.status(404).json({ error: 'Pod not found' });
-    }
-
-    const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m: any) => {
-      if (!m) return false;
-      const memberId = m.userId?.toString?.() || m.toString?.();
-      return memberId && memberId === userId.toString();
+    const installation = await resolveAuthorizedRuntimeInstallation({
+      podId, name, instanceId: normalizedInstanceId, userId,
     });
-
-    if (!membership && !isCreator) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const { installation, instanceId: resolvedInstanceId } = await resolveInstallation({
-      agentName: name,
-      podId,
-      instanceId: normalizedInstanceId,
-    });
-    const effectiveInstanceId = resolvedInstanceId || normalizedInstanceId;
+    const effectiveInstanceId = installation.instanceId;
 
     const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
     const runtimeType = typeConfig?.runtime;
@@ -156,38 +203,25 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-start', auth, async (req: 
 /**
  * POST /api/registry/pods/:podId/agents/:name/runtime-stop
  */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop', auth, async (req: any, res: any) => {
+runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop',
+  auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const { instanceId, gatewayId } = req.body || {};
+    const { gatewayId: rawGatewayId } = req.body || {};
+    if (rawGatewayId != null && typeof rawGatewayId !== 'string') {
+      return res.status(400).json({ error: 'Invalid gateway ID' });
+    }
+    const gatewayId = typeof rawGatewayId === 'string' ? rawGatewayId : null;
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    const normalizedInstanceId = normalizeInstanceId(instanceId || 'default');
+    const normalizedInstanceId = getRequestedInstanceId(req);
 
-    const pod = await Pod.findById(podId).lean();
-    if (!pod) {
-      return res.status(404).json({ error: 'Pod not found' });
-    }
-
-    const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m: any) => {
-      if (!m) return false;
-      const memberId = m.userId?.toString?.() || m.toString?.();
-      return memberId && memberId === userId.toString();
+    const installation = await resolveAuthorizedRuntimeInstallation({
+      podId, name, instanceId: normalizedInstanceId, userId,
     });
-
-    if (!membership && !isCreator) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const { installation, instanceId: resolvedInstanceId } = await resolveInstallation({
-      agentName: name,
-      podId,
-      instanceId: normalizedInstanceId,
-    });
-    const effectiveInstanceId = resolvedInstanceId || normalizedInstanceId;
+    const effectiveInstanceId = installation.instanceId;
 
     const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
     const runtimeType = typeConfig?.runtime;
@@ -218,38 +252,25 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop', auth, async (req: a
 /**
  * POST /api/registry/pods/:podId/agents/:name/runtime-restart
  */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart', auth, async (req: any, res: any) => {
+runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart',
+  auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const { instanceId, gatewayId } = req.body || {};
+    const { gatewayId: rawGatewayId } = req.body || {};
+    if (rawGatewayId != null && typeof rawGatewayId !== 'string') {
+      return res.status(400).json({ error: 'Invalid gateway ID' });
+    }
+    const gatewayId = typeof rawGatewayId === 'string' ? rawGatewayId : null;
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    const normalizedInstanceId = normalizeInstanceId(instanceId || 'default');
+    const normalizedInstanceId = getRequestedInstanceId(req);
 
-    const pod = await Pod.findById(podId).lean();
-    if (!pod) {
-      return res.status(404).json({ error: 'Pod not found' });
-    }
-
-    const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m: any) => {
-      if (!m) return false;
-      const memberId = m.userId?.toString?.() || m.toString?.();
-      return memberId && memberId === userId.toString();
+    const installation = await resolveAuthorizedRuntimeInstallation({
+      podId, name, instanceId: normalizedInstanceId, userId,
     });
-
-    if (!membership && !isCreator) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const { installation, instanceId: resolvedInstanceId } = await resolveInstallation({
-      agentName: name,
-      podId,
-      instanceId: normalizedInstanceId,
-    });
-    const effectiveInstanceId = resolvedInstanceId || normalizedInstanceId;
+    const effectiveInstanceId = installation.instanceId;
 
     const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
     const runtimeType = typeConfig?.runtime;
@@ -280,38 +301,25 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart', auth, async (req
 /**
  * POST /api/registry/pods/:podId/agents/:name/runtime-clear-sessions
  */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions', auth, async (req: any, res: any) => {
+runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions',
+  auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const { instanceId, gatewayId, restart = true } = req.body || {};
+    const { gatewayId: rawGatewayId, restart = true } = req.body || {};
+    if (rawGatewayId != null && typeof rawGatewayId !== 'string') {
+      return res.status(400).json({ error: 'Invalid gateway ID' });
+    }
+    const gatewayId = typeof rawGatewayId === 'string' ? rawGatewayId : null;
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    const normalizedInstanceId = normalizeInstanceId(instanceId || 'default');
+    const normalizedInstanceId = getRequestedInstanceId(req);
 
-    const pod = await Pod.findById(podId).lean();
-    if (!pod) {
-      return res.status(404).json({ error: 'Pod not found' });
-    }
-
-    const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m: any) => {
-      if (!m) return false;
-      const memberId = m.userId?.toString?.() || m.toString?.();
-      return memberId && memberId === userId.toString();
+    const installation = await resolveAuthorizedRuntimeInstallation({
+      podId, name, instanceId: normalizedInstanceId, userId,
     });
-
-    if (!membership && !isCreator) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const { installation, instanceId: resolvedInstanceId } = await resolveInstallation({
-      agentName: name,
-      podId,
-      instanceId: normalizedInstanceId,
-    });
-    const effectiveInstanceId = resolvedInstanceId || normalizedInstanceId;
+    const effectiveInstanceId = installation.instanceId;
 
     const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
     const runtimeType = typeConfig?.runtime;
@@ -366,39 +374,28 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions', auth, asy
 /**
  * GET /api/registry/pods/:podId/agents/:name/runtime-logs
  */
-runtimeRouter.get('/pods/:podId/agents/:name/runtime-logs', auth, async (req: any, res: any) => {
+runtimeRouter.get('/pods/:podId/agents/:name/runtime-logs',
+  auditRuntimeRoute, runtimeRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const lines = Number(req.query.lines || 200);
-    const instanceId = normalizeInstanceId(req.query.instanceId || 'default');
-    const gatewayId = req.query.gatewayId || null;
+    const requestedLines = Number(req.query.lines ?? 200);
+    const lines = Number.isFinite(requestedLines)
+      ? Math.min(1000, Math.max(1, Math.trunc(requestedLines))) : 200;
+    const instanceId = getRequestedInstanceId(req);
+    const rawGatewayId = req.query.gatewayId;
+    if (rawGatewayId != null && typeof rawGatewayId !== 'string') {
+      return res.status(400).json({ error: 'Invalid gateway ID' });
+    }
+    const gatewayId = typeof rawGatewayId === 'string' ? rawGatewayId : null;
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const pod = await Pod.findById(podId).lean();
-    if (!pod) {
-      return res.status(404).json({ error: 'Pod not found' });
-    }
-
-    const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m: any) => {
-      if (!m) return false;
-      const memberId = m.userId?.toString?.() || m.toString?.();
-      return memberId && memberId === userId.toString();
+    const installation = await resolveAuthorizedRuntimeInstallation({
+      podId, name, instanceId: instanceId, userId,
     });
-
-    if (!membership && !isCreator) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const { installation, instanceId: resolvedInstanceId } = await resolveInstallation({
-      agentName: name,
-      podId,
-      instanceId,
-    });
-    const effectiveInstanceId = resolvedInstanceId || instanceId;
+    const effectiveInstanceId = installation.instanceId;
 
     const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
     const runtimeType = typeConfig?.runtime;

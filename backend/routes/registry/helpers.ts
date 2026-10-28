@@ -2,6 +2,7 @@
 const User = require('../../models/User');
 const Gateway = require('../../models/Gateway');
 const { AgentInstallation } = require('../../models/AgentRegistry');
+const { RUNTIME_IDENTITY_KEYS, declaredRuntimeIdentity } = require('../../utils/runtimeIdentity');
 const { isK8sMode } = require('../../services/agentProvisionerService');
 const AgentIdentityService = require('../../services/agentIdentityService').default;
 const { resolveAgentDisplayLabel } = require('../../services/agentIdentityService');
@@ -367,6 +368,52 @@ const composeInstallIntro = ({
 // accepted for exactly one release. An explicit `config.internal: true` on
 // the installation wins; the name patterns cover the seats scripts already
 // create without the flag.
+// A seat is one runtime, but attach writes its runtime identity only onto the
+// install where it ran, so the seat's installs in other pods keep an older
+// identity or none (TASK-569: Sprint Review read claude-code in Sharpen and
+// nothing in Core runtime). Every pod therefore reads the seat's identity from
+// its most recently written install that declares one. Most recent, never the
+// first match, so a harness swap made in one pod shows in all of them (D55).
+// The four keys move as a group: an older install's adapter must not outlive
+// a newer install's runtimeType, which would bring back the stale chip.
+const runtimeIdentityKey = (agentName: any, instanceId: any) => `${agentName}:${instanceId || 'default'}`;
+
+const resolveSeatRuntimeIdentities = async (installations: any[]): Promise<Map<string, Record<string, unknown>>> => {
+  const resolved = new Map<string, Record<string, unknown>>();
+  const seats = new Map<string, { agentName: any; instanceId: string }>();
+  for (const i of installations || []) {
+    if (!i?.agentName) continue;
+    seats.set(runtimeIdentityKey(i.agentName, i.instanceId), {
+      agentName: i.agentName, instanceId: i.instanceId || 'default',
+    });
+  }
+  if (seats.size === 0) return resolved;
+  const rows = await AgentInstallation.find({
+    status: 'active',
+    $or: Array.from(seats.values()),
+  })
+    // Newest attach wins (TASK-569). Not updatedAt: the skill-load report and
+    // every settings save move it, which revived a stale harness in other pods.
+    // Rows from before runtimeIdentityAt sort after it, by their creation.
+    .select('agentName instanceId config.runtime runtimeIdentityAt createdAt')
+    .sort({ runtimeIdentityAt: -1, createdAt: -1, _id: -1 })
+    .lean();
+  for (const row of rows as any[]) {
+    const key = runtimeIdentityKey(row.agentName, row.instanceId);
+    if (resolved.has(key)) continue;
+    const identity = declaredRuntimeIdentity(row.config);
+    if (identity) resolved.set(key, identity);
+  }
+  return resolved;
+};
+
+const withSeatRuntimeIdentity = (runtime: any, identity: Record<string, unknown> | null | undefined) => {
+  if (!identity) return runtime;
+  const base = runtime && typeof runtime === 'object' ? { ...runtime } : {};
+  RUNTIME_IDENTITY_KEYS.forEach((key: string) => { delete base[key]; });
+  return { ...base, ...identity };
+};
+
 const INTERNAL_SEAT_EXACT = new Set(['hosted-smoke', 'run-here-smoke', 'commonly-summarizer']);
 const INTERNAL_SEAT_PREFIXES = ['smoke-', 'recorder-', 'adr-', 'demo-'];
 const isInternalSeat = (agentName: any, normalizedConfig: any): boolean => {
@@ -392,6 +439,7 @@ const buildAgentInstallationPayload = (installation: any, {
   user = null,
   lastMessage = null,
   revealWebhookUrl = false,
+  runtimeIdentity = null,
 }: {
   profile?: any; iconUrl?: string; lastHeartbeatAt?: any; lastActiveAt?: any; user?: any;
   lastMessage?: { content?: any; createdAt?: any } | null;
@@ -401,11 +449,13 @@ const buildAgentInstallationPayload = (installation: any, {
    * query string (`?secret=`), so it is withheld unless the caller opts in.
    */
   revealWebhookUrl?: boolean;
+  /** The seat's identity from resolveSeatRuntimeIdentities, over this install's own. */
+  runtimeIdentity?: Record<string, unknown> | null;
 } = {}) => {
   if (!installation) return null;
   const normalizedConfig = normalizeConfigMap(installation.config);
   const sanitizedRuntime = sanitizeRuntimeConfig(
-    normalizedConfig?.runtime || installation.config?.runtime || null,
+    withSeatRuntimeIdentity(normalizedConfig?.runtime || installation.config?.runtime || null, runtimeIdentity),
     installation.agentName,
   );
   const runtimeConfig = (() => {
@@ -545,8 +595,7 @@ const buildRuntimeLogFilters = ({ runtimeType, agentName, instanceId }: { runtim
   const accountId = normalizedAgent === 'openclaw'
     ? normalizedInstance
     : `${normalizedAgent}-${normalizedInstance}`;
-  const tokens = [normalizedInstance, accountId, normalizedAgent].filter(Boolean);
-  return Array.from(new Set(tokens));
+  return [accountId];
 };
 
 const resolveGatewayForRequest = async ({ gatewayId, userId }: { gatewayId: any; userId: any }) => {
@@ -708,6 +757,7 @@ module.exports = {
   sanitizeRuntimeConfig,
   buildOpenClawIntegrationChannels,
   buildAgentInstallationPayload,
+  resolveSeatRuntimeIdentities,
   isInternalSeat,
   toSnippet,
   normalizePluginIdentifier,

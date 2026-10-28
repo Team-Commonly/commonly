@@ -98,7 +98,7 @@ describe('V2AgentBYO footnote', () => {
     const footnote = await screen.findByText(/Prefer the CLI\?/);
     await screen.findByTestId('byo-mode-byo');
     expect(footnote).toHaveTextContent(`Choose “${modeTitle('byo-mode-byo')}”`);
-    expect(footnote).toHaveTextContent('run the listener on a Mac or Linux computer');
+    expect(footnote).toHaveTextContent('run the listener on a Mac computer');
     expect(footnote).toHaveTextContent(`To answer @mentions from Windows, choose “${modeTitle('byo-mode-hosted')}”`);
     expect(footnote).not.toHaveTextContent('the next step shows the listener command');
   });

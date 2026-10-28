@@ -66,6 +66,18 @@ describe('MongoObjectStore (ADR-002 Phase 1)', () => {
     expect(got).toBeNull();
   });
 
+  it('deletes only an exact ownership namespace and refuses an empty prefix', async () => {
+    await store.put('user-abc-one.png', Buffer.from('a'), 'image/png');
+    await store.put('user-abc-two.png', Buffer.from('b'), 'image/png');
+    await store.put('user-abcd-keep.png', Buffer.from('c'), 'image/png');
+    await expect(store.deletePrefix('')).rejects.toThrow('prefix');
+    expect(await store.get('user-abc-one.png')).not.toBeNull();
+    await store.deletePrefix('user-abc-');
+    expect(await store.get('user-abc-one.png')).toBeNull();
+    expect(await store.get('user-abc-two.png')).toBeNull();
+    expect(await store.get('user-abcd-keep.png')).not.toBeNull();
+  });
+
   it('delete is a no-op for a missing key', async () => {
     await expect(store.delete('never-existed')).resolves.toBeUndefined();
   });

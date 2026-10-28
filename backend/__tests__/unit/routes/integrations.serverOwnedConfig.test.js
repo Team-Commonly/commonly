@@ -15,6 +15,8 @@ jest.mock('../../../middleware/adminAuth', () => (req, res, next) => next());
 jest.mock('../../../middleware/integrationRateLimit', () => ({
   writeIntegrationsRateLimit: (_req, _res, next) => next(),
   listIntegrationsRateLimit: (_req, _res, next) => next(),
+  ingestIngressRateLimit: (_req, _res, next) => next(),
+  ingestIntegrationsRateLimit: (_req, _res, next) => next(),
 }));
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
@@ -133,6 +135,23 @@ describe('PATCH /api/integrations/:id — server-owned config keys are not writa
     expect(Object.values(update)).not.toContain('attacker-client');
     expect(Object.values(update)).not.toContain('attacker-secret');
   });
+
+  it.each(['feedAccessTokenRef', 'feedRefreshTokenRef'])(
+    'does not write a supplied %s, while writing the field beside it',
+    async (key) => {
+      const suppliedRef = `another-integration-${key}`;
+      const res = await request(app)
+        .patch(`/api/integrations/${integrationId}`)
+        .send({ config: { [key]: suppliedRef, liveRelay: false } });
+
+      expect(res.status).toBe(200);
+      expect(Integration.findByIdAndUpdate).toHaveBeenCalledTimes(1);
+      const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
+      expect(update['config.liveRelay']).toBe(false);
+      expect(Object.keys(update)).not.toContain(`config.${key}`);
+      expect(Object.values(update)).not.toContain(suppliedRef);
+    },
+  );
 
   it('does not write a supplied apiBase, while writing the field beside it', async () => {
     // The X/Instagram API base is the instance's (the providers read the

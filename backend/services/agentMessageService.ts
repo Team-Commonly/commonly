@@ -157,6 +157,9 @@ interface MetadataDoc {
 }
 
 interface PostMessageOptions {
+  /** Server-owned AgentRun identity. Never forwarded from runtime HTTP input. */
+  runId?: string;
+  runPodId?: string;
   agentName: string;
   podId: unknown;
   content: string;
@@ -840,6 +843,17 @@ class AgentMessageService {
     return run;
   }
 
+  /**
+   * Whether this agent's next post in the pod would be refused by the run cap.
+   * The same pieces postMessage reads: no cap in a 1:1 or an agent-admin pod.
+   */
+  static async holdsFloor(podId: unknown, userId: unknown, podType: unknown): Promise<boolean> {
+    if (podType === 'agent-admin' || AgentMessageService.isOneToOnePod(podType)) return false;
+    const cap = AgentMessageService.resolveConsecutiveRunCap();
+    if (cap <= 0) return false;
+    return (await AgentMessageService.countConsecutiveRun(podId, userId)) >= cap;
+  }
+
   static async findRecentDuplicate(options: {
     podId: unknown;
     userId: unknown;
@@ -1295,7 +1309,7 @@ class AgentMessageService {
       }
       // It's a 1:1 DM and this agent isn't a member.
       const err: Error & { code?: string; statusCode?: number } = new Error(
-        `Agent is not a member of ${podDoc.type} pod ${podId} — DM pods are 1:1 (ADR-001 §3.10). Open a new DM via commonly_open_dm if a private channel with this peer is needed.`,
+        `Agent is not a member of ${podDoc.type} pod ${podId} — DM pods are 1:1 (ADR-001 §3.10). Open a new DM via commonly_open_dm or commonly_dm_agent if a private channel with this peer is needed.`,
       );
       err.code = 'dm_membership_refused';
       err.statusCode = 403;
@@ -1571,6 +1585,16 @@ class AgentMessageService {
       }
     }
 
+    // Provenance is kernel-owned even when the presentation is agent-authored.
+    let messagePayload = payload;
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      messagePayload = { ...payload } as Record<string, unknown>;
+      delete (messagePayload as Record<string, unknown>).runId;
+      delete (messagePayload as Record<string, unknown>).runPodId;
+    }
+    if (options.runId) messagePayload = { ...(messagePayload as object || {}), runId: options.runId,
+      ...(options.runPodId ? { runPodId: options.runPodId } : {}) };
+
     const posted = await AgentMessageService._postToTarget({
       agentName,
       instanceId,
@@ -1578,7 +1602,7 @@ class AgentMessageService {
       content: sanitizedContent,
       messageType,
       metadata,
-      payload,
+      payload: messagePayload,
       relayCard,
       agentUser,
       displayName,
@@ -2187,6 +2211,28 @@ class AgentMessageService {
    * exists without changing this array-shaped service contract for existing
    * internal consumers.
    */
+  static async authorIdsSince(podId: unknown, since: Date): Promise<string[]> {
+    const mongo = Message.distinct('userId', {
+      podId: { $eq: podId }, createdAt: { $gt: since }, messageType: { $ne: 'system' },
+    }) as Promise<unknown[]>;
+    if (!PGMessage || !process.env.PG_HOST) return (await mongo).map(String);
+    // A post that fell back to MongoDB while PostgreSQL was failing is only
+    // there until it is reconciled, so read both. An author either store
+    // returns did post, so one store failing keeps the other's authors; only
+    // both failing leaves nothing to answer with.
+    const [pg, fallback] = await Promise.allSettled([
+      (PGMessage as { findAuthorIdsSince(id: unknown, at: Date): Promise<string[]> }).findAuthorIdsSince(podId, since),
+      mongo,
+    ]);
+    if (pg.status === 'rejected' && fallback.status === 'rejected') throw pg.reason;
+    const ids: string[] = [];
+    for (const [store, read] of [['postgres', pg], ['mongo', fallback]] as const) {
+      if (read.status === 'fulfilled') ids.push(...read.value.map(String));
+      else console.warn(`[agent-message] ${store} author read failed:`, String(podId), (read.reason as Error)?.message);
+    }
+    return [...new Set(ids)];
+  }
+
   static async getRecentMessages(
     podId: unknown,
     limit = 20,

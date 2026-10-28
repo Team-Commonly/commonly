@@ -50,7 +50,7 @@ test('card excludes outsider text and builds a canonical GitHub URL', () => {
 
 test('a merged PR completes only its matching open task and emits a board update', async () => {
   const task = { taskId: 'TASK-11', status: 'done' };
-  mockTaskUpdate.mockResolvedValue(task);
+  mockTaskUpdate.mockResolvedValueOnce(task);
   const href = 'https://github.com/Team-Commonly/commonly/pull/42';
   await completeTaskForMergedPull(podId, href);
   const [filter, update] = mockTaskUpdate.mock.calls[0];
@@ -59,6 +59,18 @@ test('a merged PR completes only its matching open task and emits a board update
   expect(filter.status).toEqual({ $in: ['pending', 'claimed'] });
   expect(update.$set.status).toBe('done');
   expect(mockEmit).toHaveBeenCalledWith(podId, task, 'updated');
+});
+
+test('a merged PR gives every open task sharing its URL its own merge record', async () => {
+  const first = { taskId: 'TASK-11', status: 'done' };
+  const second = { taskId: 'TASK-12', status: 'done' };
+  mockTaskUpdate.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+  await completeTaskForMergedPull(podId, 'https://github.com/Team-Commonly/commonly/pull/42');
+  expect(mockTaskUpdate).toHaveBeenCalledTimes(3);
+  mockTaskUpdate.mock.calls.forEach(([, update]) => {
+    expect(update.$push.updates.text).toBe('Completed automatically — linked pull request merged');
+  });
+  expect(mockEmit.mock.calls.map(([, t]) => t.taskId)).toEqual(['TASK-11', 'TASK-12']);
 });
 
 test('posts a display card while agent-visible content stays fixed', async () => {

@@ -3,7 +3,7 @@
 // leave through neither the model's toJSON nor the lean catalog read.
 
 const Integration = require('../../../models/Integration');
-const { toPublicIntegration, withoutConnectCode } = require('../../../models/integrationPublicConfig');
+const { toPublicIntegration, toPublicIntegrationConfig, withoutConnectCode } = require('../../../models/integrationPublicConfig');
 
 const TOKEN_HASH = 'hash_of_an_ingest_token';
 const INSTALL_CLAIM = 'install_claim_fence';
@@ -159,5 +159,25 @@ describe('the hosted-mcp connection row', () => {
     expect(out.config.entryId).toBe('linear');
     expect(out.config.grantedScope).toBe('read openid');
     expect(out.config.intake).toBe('oauth');
+  });
+});
+
+describe('feed credential public config', () => {
+  it('withholds both feed refs and legacy token fields while keeping public config', () => {
+    const config = {
+      feedAccessTokenRef: 'feed-access-ref-sentinel',
+      feedRefreshTokenRef: 'feed-refresh-ref-sentinel',
+      accessToken: 'feed-access-token-sentinel',
+      refreshToken: 'feed-refresh-token-sentinel',
+      username: 'public-feed-account',
+    };
+
+    const out = toPublicIntegrationConfig({ ...config });
+
+    expect(out).toEqual({ username: 'public-feed-account' });
+    for (const key of ['feedAccessTokenRef', 'feedRefreshTokenRef', 'accessToken', 'refreshToken']) {
+      expect(out).not.toHaveProperty(key);
+      expect(JSON.stringify(out)).not.toContain(config[key]);
+    }
   });
 });

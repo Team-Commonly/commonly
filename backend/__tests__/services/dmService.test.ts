@@ -150,4 +150,61 @@ describe('DMService — agent rooms', () => {
 
     expect(room.name).toBe('tarik');
   });
+  it.each(['nova', 'Nova [reviewer]'])('reuses the agent-admin pod created with resolved label %s', async (label) => {
+    agentUser.botMetadata = { agentName: 'openclaw', instanceId: 'nova', displayName: label === 'nova' ? 'openclaw (nova)' : label };
+    await agentUser.save();
+    const options = { agentName: 'openclaw', instanceId: 'nova' };
+    const first = await DMService.getOrCreateAgentDM(agentUser._id, humanUser._id, options);
+    const second = await DMService.getOrCreateAgentDM(agentUser._id, humanUser._id, options);
+    expect(first.name).toBe(`DM: ${label}`);
+    expect(second._id.toString()).toBe(first._id.toString());
+    expect(await Pod.countDocuments({ type: 'agent-admin' })).toBe(1);
+    expect(second.members.map(String).sort()).toEqual([agentUser._id, humanUser._id].map(String).sort());
+  });
+
+  it.each(['Supernova', 'nova notes'])('never adds an agent to the unrelated owner-only DM %s', async (otherLabel) => {
+    agentUser.botMetadata = { agentName: 'openclaw', instanceId: 'nova', displayName: 'openclaw (nova)' };
+    await agentUser.save();
+    const unrelated = await Pod.create({ name: `DM: ${otherLabel}`, description: `Debug channel for ${otherLabel}`,
+      type: 'agent-admin', createdBy: humanUser._id, members: [humanUser._id], joinPolicy: 'invite-only' });
+    const room = await DMService.getOrCreateAgentDM(agentUser._id, humanUser._id, { agentName: 'openclaw', instanceId: 'nova' });
+    expect(room._id.toString()).not.toBe(unrelated._id.toString());
+    const stored = await Pod.findById(unrelated._id);
+    expect(stored.name).toBe(`DM: ${otherLabel}`);
+    expect(stored.members.map(String)).toEqual([humanUser._id.toString()]);
+  });
+
+  it('reuses a punctuation-ending description after the pod name is edited', async () => {
+    agentUser.botMetadata = { agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova [reviewer]' };
+    await agentUser.save();
+    const first = await DMService.getOrCreateAgentDM(agentUser._id, humanUser._id, { agentName: 'openclaw', instanceId: 'nova' });
+    first.name = 'Private review notes';
+    await first.save();
+    const second = await DMService.getOrCreateAgentDM(agentUser._id, humanUser._id, { agentName: 'openclaw', instanceId: 'nova' });
+    expect(second._id.toString()).toBe(first._id.toString());
+    expect(await Pod.countDocuments({ type: 'agent-admin' })).toBe(1);
+  });
+
+  it.each(['nova', 'openclaw (nova)'])('never repairs an owner-only pod from an ambiguous exact label %s', async (label) => {
+    agentUser.botMetadata = { agentName: 'openclaw', instanceId: 'nova', displayName: 'openclaw (nova)' };
+    await agentUser.save();
+    const unrelated = await Pod.create({ name: `DM: ${label}`, description: `Debug channel for ${label}`,
+      type: 'agent-admin', createdBy: humanUser._id, members: [humanUser._id], joinPolicy: 'invite-only' });
+    const room = await DMService.getOrCreateAgentDM(agentUser._id, humanUser._id, { agentName: 'openclaw', instanceId: 'nova' });
+    expect(room._id.toString()).not.toBe(unrelated._id.toString());
+    expect((await Pod.findById(unrelated._id)).members.map(String)).toEqual([humanUser._id.toString()]);
+    expect(room.members.map(String).sort()).toEqual([agentUser._id, humanUser._id].map(String).sort());
+  });
+
+  it('reuses a legacy composite label only when the requested agent is already a member', async () => {
+    agentUser.botMetadata = { agentName: 'legacy-runtime', instanceId: 'nova', displayName: 'legacy-runtime (nova)' };
+    await agentUser.save();
+    const legacy = await Pod.create({ name: 'Private notes', description: 'Debug channel for legacy-runtime (nova)',
+      type: 'agent-admin', createdBy: humanUser._id, members: [humanUser._id, agentUser._id], joinPolicy: 'invite-only' });
+    const room = await DMService.getOrCreateAgentDM(agentUser._id, humanUser._id, { agentName: 'openclaw', instanceId: 'nova' });
+    expect(room._id.toString()).toBe(legacy._id.toString());
+    expect(room.members.map(String).sort()).toEqual([agentUser._id, humanUser._id].map(String).sort());
+    expect(await Pod.countDocuments({ type: 'agent-admin' })).toBe(1);
+  });
+
 });

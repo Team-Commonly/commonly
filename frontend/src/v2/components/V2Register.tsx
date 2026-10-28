@@ -8,7 +8,7 @@ import V2AuthBrand from './V2AuthBrand';
 import { Trans, useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import { safeNextPath } from '../utils/safeNextPath';
-import { readFirstTouchRef } from '../utils/firstTouch';
+import { readFirstTouchRef, readFirstTouchSource } from '../utils/firstTouch';
 import {
   readInviteFromUrl, searchWithoutInvite, rememberInvite, recallInvite, forgetInvite,
   forgetInviteOAuthStart,
@@ -94,6 +94,7 @@ const V2Register: React.FC = () => {
         invitationCode: invitationCode.trim(),
         // Where this signup came from (?ref=x on the first visit), stored once.
         signupRef: readFirstTouchRef(),
+        signupSource: readFirstTouchSource(),
       });
       const data = res.data as { message?: string };
       const message = data?.message || t('auth.register.success.ready');
@@ -237,6 +238,16 @@ const V2Register: React.FC = () => {
         {error && <div className="v2-login__error">{error}</div>}
 
         <V2OAuthButtons invite={invitationCode || undefined} next={nextPath} />
+
+        <div className="v2-login__hint">
+          <Trans
+            i18nKey="auth.register.legal"
+            components={{
+              terms: <Link to="/terms" className="v2-login__link" />,
+              privacy: <Link to="/privacy" className="v2-login__link" />,
+            }}
+          />
+        </div>
 
         <div className="v2-login__hint">
           {t('auth.register.alreadyHaveAccount')}

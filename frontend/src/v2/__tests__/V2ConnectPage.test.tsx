@@ -2,10 +2,10 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import axios from '../../utils/axiosConfig';
 import { AuthContext } from '../../context/AuthContext';
 import V2ConnectPage from '../components/V2ConnectPage';
 import V2AccountMenu from '../components/V2AccountMenu';
+import { CURSOR_PROJECT_RULE, CURSOR_PROJECT_RULE_PATH } from '../utils/cursorProjectRule';
 
 jest.mock('../../utils/axiosConfig', () => {
   const mock = {
@@ -69,6 +69,18 @@ describe('V2ConnectPage', () => {
     }
   });
 
+  test('offers the Cursor project rule with its path and copies it verbatim', async () => {
+    const clipboard = { writeText: jest.fn().mockResolvedValue(undefined) };
+    Object.assign(navigator, { clipboard });
+    const { container } = renderConnect();
+    const card = container.querySelector('.v2-connect__rule');
+    expect(card).not.toBeNull();
+    expect(card.textContent).toContain(CURSOR_PROJECT_RULE_PATH);
+    expect(card.querySelector('pre').textContent).toBe(CURSOR_PROJECT_RULE);
+    fireEvent.click(card.querySelector('button.v2-connect__copy'));
+    await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith(CURSOR_PROJECT_RULE));
+  });
+
   test('gives every member a copyable CLI/MCP start and does not tease instance keys', async () => {
     const clipboard = { writeText: jest.fn().mockResolvedValue(undefined) };
     Object.assign(navigator, { clipboard });
@@ -87,7 +99,7 @@ describe('V2ConnectPage', () => {
     await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith(expect.stringMatching(/^npm install -g @commonlyai\/cli\ncommonly login --instance https?:\/\//)));
   });
 
-  test('shows the existing gateway action and global integrations only to admins', async () => {
+  test('shows global integrations to admins and no gateway setup to anyone (D135)', async () => {
     renderConnect({
       ...auth,
       currentUser: { ...auth.currentUser, role: 'admin' },
@@ -96,15 +108,8 @@ describe('V2ConnectPage', () => {
 
     expect(screen.getByRole('heading', { name: 'Instance keys' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open global integrations' })).toHaveAttribute('href', '/v2/admin/integrations/global');
-    fireEvent.click(screen.getByRole('button', { name: 'Add a gateway' }));
-    fireEvent.change(screen.getByLabelText('Gateway name'), { target: { value: 'team-runtime' } });
-    axios.post.mockResolvedValue({ data: { gatewayToken: 'gw_one_time_token' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Create gateway' }));
-
-    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/gateways', {
-      name: 'team-runtime', slug: undefined, mode: 'k8s', metadata: {},
-    }));
-    expect(await screen.findByText('gw_one_time_token')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add a gateway' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/gateway/i)).not.toBeInTheDocument();
   });
 });
 

@@ -1,3 +1,4 @@
+import { boundAgentRun } from '../services/agentRunLimits';
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
 /**
@@ -64,6 +65,13 @@ export interface IAgentRunTurn {
   llmResponseText?: string;
   elapsedMs: number;
   liteLLMCallId?: string;
+  // The model group that answered, when it can differ from `model`, the group
+  // requested (TASK-028). Absent on turns recorded before it was kept, and on a
+  // turn whose response named no model.
+  servedModel?: string;
+  // LiteLLM's x-litellm-attempted-fallbacks; absent means none. The proxy reports
+  // the outermost hop's depth, so a two-hop chain records 1: a fallback happened.
+  fallbacks?: number;
 }
 
 export interface IAgentRun extends Document {
@@ -78,6 +86,9 @@ export interface IAgentRun extends Document {
   triggerEventId?: Types.ObjectId;
   status: AgentRunStatus;
   turns: IAgentRunTurn[];
+  traceTruncated?: boolean;
+  omittedTurns?: number;
+  omittedToolCalls?: number;
   totalTokens: number;
   /** Seconds the turn's run-code sandbox ran (TASK-266); absent when no code ran. */
   sandboxSeconds?: number;
@@ -128,6 +139,8 @@ const AgentRunTurnSchema = new Schema<IAgentRunTurn>(
     llmResponseText: { type: String },
     elapsedMs: { type: Number, default: 0 },
     liteLLMCallId: { type: String },
+    servedModel: { type: String },
+    fallbacks: { type: Number },
   },
   { _id: false },
 );
@@ -150,6 +163,9 @@ const AgentRunSchema = new Schema<IAgentRun>(
       default: 'queued',
     },
     turns: { type: [AgentRunTurnSchema], default: [] },
+    traceTruncated: { type: Boolean },
+    omittedTurns: { type: Number },
+    omittedToolCalls: { type: Number },
     totalTokens: { type: Number, default: 0 },
     sandboxSeconds: { type: Number },
     webSearches: { type: Number },
@@ -166,6 +182,12 @@ const AgentRunSchema = new Schema<IAgentRun>(
   },
   { timestamps: true },
 );
+
+// Bound every document save, including writers outside the native loop.
+AgentRunSchema.pre('validate', function capTrace() {
+  const bounded = boundAgentRun(this.toObject());
+  this.set(bounded);
+});
 
 AgentRunSchema.index({ podId: 1, agentName: 1, instanceId: 1, startedAt: -1 });
 // The per-user ceiling's count (D5) — sparse: only stamped rows carry userId.

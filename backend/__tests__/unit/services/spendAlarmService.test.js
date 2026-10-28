@@ -84,6 +84,20 @@ describe('userSpendForDay', () => {
     expect(rows.find((r) => r.userId === String(USER_A)).usd).toBeCloseTo(spend.UNPRICED_MODEL.input, 6);
     expect(rows.find((r) => r.userId === String(USER_B)).usd).toBeCloseTo(1.2, 6);
   });
+
+  test('a turn is priced by the model that answered it, and an older turn by the one it asked for', async () => {
+    await AgentRun.create([
+      // Asked DeepSeek, answered by Sonnet: 1M out at Sonnet's $10, not DeepSeek's $1.20 (TASK-028).
+      run(USER_A, [{ model: 'deepseek-v4-flash', servedModel: 'claude-sonnet-5-5', fallbacks: 1,
+        promptTokens: 0, completionTokens: 1_000_000 }]),
+      // Recorded before servedModel existed: priced by model, as before.
+      run(USER_B, [{ model: 'claude-sonnet-5-5', promptTokens: 0, completionTokens: 1_000_000 }]),
+    ]);
+
+    const rows = await spend.userSpendForDay(NOW);
+    expect(rows.find((r) => r.userId === String(USER_A)).usd).toBeCloseTo(10, 6);
+    expect(rows.find((r) => r.userId === String(USER_B)).usd).toBeCloseTo(10, 6);
+  });
 });
 
 describe('sandbox seconds (TASK-266)', () => {
@@ -293,6 +307,11 @@ describe('paging SRE in a pod', () => {
       spend: { userId: 'u1', usd: 3, runs: 1 }, username: '\n\n@@@', day: '2026-10-15', threshold: 2,
     });
     expect(text.startsWith('[spend alarm] u1 spent $3.00')).toBe(true);
+  });
+
+  test('pageSre throws when SPEND_ALARM_POD_ID is unset, so no caller counts the page as sent', async () => {
+    await expect(spend.pageSre('x')).rejects.toThrow('SPEND_ALARM_POD_ID is not set');
+    expect(AgentMessageService._postToTarget).not.toHaveBeenCalled();
   });
 
   test('with SPEND_ALARM_POD_ID unset there is no post, and the log line stands', async () => {

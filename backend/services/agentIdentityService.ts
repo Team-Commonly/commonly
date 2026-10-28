@@ -43,64 +43,8 @@ try {
 // invariant keeps the rule visible to anyone reading that function.
 export const DM_POD_TYPES_GUARD = new Set<string>(['agent-room', 'agent-dm']);
 
-// Resolve the human-readable label for an agent User row. The fallback
-// chain is intentional and load-bearing for any UI / pod-naming surface
-// that shows agent identity (agent-dm pod names, sidebar member rows):
-//
-//   1. `botMetadata.displayName`  — the curated label the registry/preset
-//      sets ("Pixel", "Strategist (Aria)"). This is what humans actually
-//      recognize.
-//   2. `botMetadata.instanceId`   — when displayName is missing AND the
-//      instanceId carries identity (i.e. != 'default'). For OpenClaw-driven
-//      agents the User row stores `agentName: 'openclaw'` (the RUNTIME) +
-//      `instanceId: 'aria' | 'pixel' | ...` (the identity), so falling back
-//      to instanceId here beats falling back to the runtime label.
-//   3. `username`                 — last-resort identifier; always set.
-//   4. fallback string            — for the non-User case (e.g. resolved-
-//      by-alias before the User row is loaded).
-//
-// Why NOT fall back to `botMetadata.agentName`: that field can be the
-// runtime name ('openclaw') rather than the agent's identity. Falling
-// back to it produces "openclaw ↔ openclaw" pod names where what we want
-// is "Pixel ↔ Strategist (Aria)".
-export function resolveAgentDisplayLabel(
-  user: {
-    username?: string;
-    botMetadata?: { displayName?: string; instanceId?: string; agentName?: string };
-  } | null | undefined,
-  fallback?: string,
-): string {
-  const safeFallback = fallback || 'agent';
-  if (!user) return safeFallback;
-  const meta = user.botMetadata;
-  const display = meta?.displayName?.trim();
-  const agentName = meta?.agentName?.trim() || '';
-  const instanceId = meta?.instanceId?.trim() || '';
-  // Leak-pattern detection. If displayName is literally `<agentName> (<instanceId>)`
-  // (e.g. "openclaw (nova)"), it's the runtime label leaking through — some
-  // historical writer formatted displayName as `${agentName} (${instanceId})`
-  // instead of using the curated label. Treat these as if displayName were
-  // missing and fall through to instanceId. Matches both the
-  // `<runtime> (<instance>)` form and the bare `<runtime>` form
-  // (e.g. displayName === 'openclaw'). Also catches the case where
-  // displayName equals just instanceId — the chain below would render the
-  // same thing, but we drop the redundant pass here.
-  const leakedPattern = (
-    !!display
-    && !!agentName
-    && (
-      display.toLowerCase() === agentName.toLowerCase()
-      || (
-        !!instanceId
-        && display.toLowerCase() === `${agentName.toLowerCase()} (${instanceId.toLowerCase()})`
-      )
-    )
-  );
-  if (display && !leakedPattern) return display;
-  if (instanceId && instanceId !== 'default') return instanceId;
-  if (user.username) return user.username;
-  return safeFallback;
-}
+// Re-export for existing callers; the pure helper is safe for DM naming too.
+export { resolveAgentDisplayLabel } from '../utils/agentDisplayLabel';
 
 const normalizeSegment = (value: unknown): string => (
   (String(value || '')).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40)
@@ -217,6 +161,11 @@ export class AgentDisplayNameTakenError extends Error {
  * refusal below could never fire. `agentName` is the leaf this writer always
  * sets (`getOrCreateAgentUser`, create and upgrade arms alike).
  */
+export const carriesAgentMarkers = (row: {
+  botType?: string | null;
+  botMetadata?: { agentName?: string | null } | null;
+}): boolean => Boolean(row.botType) || Boolean(row.botMetadata?.agentName);
+
 export const isAgentOwnedRow = (
   row: {
     email?: string | null;
@@ -225,8 +174,7 @@ export const isAgentOwnedRow = (
   },
   agentEmail: string,
 ): boolean => String(row.email || '').toLowerCase() === agentEmail.toLowerCase()
-  || Boolean(row.botType)
-  || Boolean(row.botMetadata?.agentName);
+  || carriesAgentMarkers(row);
 
 interface AgentTypeConfig {
   officialDisplayName: string;
@@ -433,6 +381,19 @@ interface GetOrCreateOptions {
 const isOpaquePerUserToken = (instanceId: string): boolean =>
   /^u[a-f0-9]{10}([a-f0-9]{14})?$/.test((instanceId || '').toLowerCase());
 
+/**
+ * True when a trimmed name ends in a parenthetical such as "Pixel (Pixel-Demo)":
+ * a '(' then at least one character that is not ')' then a final ')'. This is
+ * the same test as /\([^)]+\)\s*$/ on a trimmed string, done in one pass,
+ * so its time stays linear in the name's length.
+ */
+export const endsWithParenthetical = (trimmed: string): boolean => {
+  if (!trimmed.endsWith(')')) return false;
+  const inner = trimmed.slice(0, -1);
+  const open = inner.indexOf('(', inner.lastIndexOf(')') + 1);
+  return open !== -1 && open < inner.length - 1;
+};
+
 async function resolveCollisionFreeDisplayName(
   desiredName: string,
   instanceId: string,
@@ -451,7 +412,7 @@ async function resolveCollisionFreeDisplayName(
   // If the name already carries a parenthetical suffix, treat as
   // already-disambiguated and pass through. Avoids "Pixel (Pixel-Demo) (Pixel-Demo)"
   // loops when the same install reprovisions.
-  if (/\([^)]+\)\s*$/.test(trimmed)) return trimmed;
+  if (endsWithParenthetical(trimmed)) return trimmed;
 
   const peerQuery: Record<string, unknown> = {
     'botMetadata.displayName': trimmed,

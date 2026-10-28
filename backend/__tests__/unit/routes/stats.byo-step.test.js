@@ -2,6 +2,7 @@ const request = require('supertest');
 const express = require('express');
 
 const mockMarkByoCommandCopied = jest.fn();
+const mockMarkSurface = jest.fn();
 const mockInsertOne = jest.fn().mockResolvedValue({ acknowledged: true });
 const mockPassThrough = () => (_req, _res, next) => next();
 
@@ -18,6 +19,7 @@ jest.mock('../../../middleware/auth', () => (req, _res, next) => {
 });
 jest.mock('../../../services/onboardingMarks', () => ({
   markByoCommandCopied: (...args) => mockMarkByoCommandCopied(...args),
+  markSurface: (...args) => mockMarkSurface(...args),
 }));
 jest.mock('express-rate-limit', () => ({
   __esModule: true,
@@ -66,6 +68,23 @@ describe('POST /api/stats/byo-step', () => {
     expect(mockInsertOne).toHaveBeenCalledWith({ userId: 'human-1', step, at: expect.any(Date) });
   });
 
+  it.each([
+    ['invite-card-shown', 'inviteCardShownAt'],
+    ['invite-card-dismissed', 'inviteCardDismissedAt'],
+    ['byo-offer-shown', 'byoOfferShownAt'],
+  ])('%s sets the %s mark and logs only the fixed step', async (step, mark) => {
+    const res = await request(app).post('/api/stats/byo-step').send({ step, podId: 'p1' });
+    expect(res.status).toBe(200);
+    expect(mockMarkSurface).toHaveBeenCalledWith('human-1', mark);
+    expect(mockMarkByoCommandCopied).not.toHaveBeenCalled();
+    expect(mockInsertOne).toHaveBeenCalledWith({ userId: 'human-1', step, at: expect.any(Date) });
+  });
+
+  it('other steps set no surface mark', async () => {
+    await request(app).post('/api/stats/byo-step').send({ step: 'page-viewed' });
+    expect(mockMarkSurface).not.toHaveBeenCalled();
+  });
+
   it('rejects unknown steps without writing a mark or telemetry event', async () => {
     const res = await request(app)
       .post('/api/stats/byo-step')
@@ -73,6 +92,7 @@ describe('POST /api/stats/byo-step', () => {
 
     expect(res.status).toBe(400);
     expect(mockMarkByoCommandCopied).not.toHaveBeenCalled();
+    expect(mockMarkSurface).not.toHaveBeenCalled();
     expect(mockInsertOne).not.toHaveBeenCalled();
   });
 });

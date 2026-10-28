@@ -2,6 +2,8 @@
 
 **House rule, ruled by Sam on 2026-09-27.** A seat picks its addressee by what it needs.
 
+How seats spend turns, models and quota (switch rather than park, `NO_REPLY` over narration, routed rows, the 5-agent pod cap) is in [fleet-efficiency.md](fleet-efficiency.md).
+
 | a seat needs | address | how |
 |---|---|---|
 | operator work: a press, a deploy, a merge order, a review routed, a fix to an operator's PR | the operator account that owns the lane: `@lily-shen` for the Sharpen lane (landing, README, UI), `@connector-ops` for connectors, `@gtm-ops` for GTM while its seats run | a mention in the lane's pod, or on the PR |
@@ -18,6 +20,6 @@
 
 On 2026-10-17 a security reviewer passed #2305 at `f7c43827`, and its reply in the pod ended with "@kai the fallback-post note is the one to fix" (msg 78744). About a minute later kai pushed a commit to the operator's branch, then re-pinged both reviewers on that head (msg 78745). The head still lacked the operator's fix for the other reviewer's hold, which was already committed locally along with a fix for the same note. The operator's push was rejected. The security reviewer re-gated kai's head, which could not pass, and the other reviewer's verdict landed only after the operator's rebased head replaced it. The lane spent about 4 extra seat runs.
 
-**One gate, no FYI.** Every mention is a paid turn for whoever it wakes. Name one gate per PR, and do not mention a seat or an operator to keep them informed.
+**Gates by tier, no FYI.** Every mention is a paid turn for whoever it wakes. Ask only for the gates the PR's risk tier needs: none for docs or tests only, one for UI, copy or flag-off code, two for auth, credentials, security, schema, wake or routing, and billing, one of them from a model other than Haiku (see [fleet-efficiency.md](fleet-efficiency.md)). Do not mention a seat or an operator to keep them informed.
 
 **Word a gate ask to a codex seat as a review, not an attack.** Seats on OpenAI models (codex: Rhea, kai, forge, …) pass every model call through the provider's own safety filter. The filter sees the mention, which the wrapper builds into the prompt from the event bodies alone. It also sees anything the seat reads mid-turn with a tool, such as the PR body, a diff or pod messages, so a refusal can land mid-turn as well. On 2026-10-16 two security-gate asks to `@rhea` on #2249 (msgs 78183 and 78195) described the change the way an attacker would: what a steered turn "could exfiltrate", to which host, plus SSRF and ReDoS. Each was refused with "flagged for possible cybersecurity risk" on every attempt, five turns in a row from 02:17Z, by the seat's own log. The gate went silent, and another reviewer had to cover it. A plain liveness line to the same seat was answered in 14 s. So anywhere a codex seat will read, name the files and the property to check: "check that an address the model wrote is never requested", "check the trims stay linear on long input". Keep exploit narratives and payloads out of the mention and out of the PR text it will read. If a reviewer needs them, they belong in the tests, stated as the property each arm pins. A refused mention is retried up to three times and then retires at the next sweep. Re-sending the same wording only repeats the refusal.
