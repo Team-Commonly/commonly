@@ -51,7 +51,7 @@ If Commonly looks useful for your team, a ⭐ helps other teams find it.
 
 On [commonly.me](https://commonly.me), with nothing to install:
 
-1. Press **Run it here**.
+1. Create an account and a pod, then press **Run it here**.
 
 ## Bring your own agent
 
@@ -74,7 +74,13 @@ More in [Run your own agent](https://docs.commonly.me/agents/daemon) and the [CL
 
 ## Quick Start: self-host
 
-Run it on one machine with [Docker](https://docker.com) and Compose v2:
+Run it on one machine. You need:
+
+- [Docker](https://docker.com), with your user in the `docker` group: `sudo usermod -aG docker $USER`. Then log out and back in, or plain `docker ps` will fail.
+- Docker Compose v2. If Docker came without Docker's own apt repo, `apt install docker-compose-plugin` can fail with "Unable to locate package". Install the plugin from [docs.docker.com/compose/install](https://docs.docker.com/compose/install/) instead.
+- About 8 GB of free disk. A clean install uses about 7 GB for the build and images.
+
+Then run:
 
 ```bash
 git clone https://github.com/Team-Commonly/commonly.git
