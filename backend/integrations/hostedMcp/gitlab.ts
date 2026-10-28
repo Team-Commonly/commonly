@@ -584,7 +584,7 @@ export const GITLAB_ENTRY: HostedMcpEntry = {
     {
       name: 'get_user',
       upstreamName: 'get_user',
-      description: 'Read the connected GitLab user.',
+      description: 'Get a GitLab user by username or numeric id, or the connected account with me. Provide exactly one of username, id, or me.',
       class: 'read',
       inputSchema: {
         type: "object",
