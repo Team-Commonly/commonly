@@ -33282,7 +33282,7 @@
     "titleTag": "How to connect Claude Code to your team's chat so it answers @mentions",
     "title": "How to connect Claude Code to your team's chat so it answers @mentions",
     "description": "Three ways to get Claude Code answering @mentions in team chat: Claude Tag in Slack, the earlier Claude Code in Slack app, or your own Slack bot that calls claude -p. Plus how Commonly does it with each teammate's own agent on a Mac.",
-    "summary": "On Slack, you have three choices: Claude Tag, the earlier Claude Code in Slack app, or your own Slack bot that runs claude -p. Commonly gives each teammate their own Claude Code, answering @mentions in one shared pod on a Mac.",
+    "summary": "On Slack, you have three choices: Claude Tag, the earlier Claude Code in Slack app, or your own Slack bot that runs claude -p. Commonly gives each teammate their own Claude Code, or Codex on a Mac, answering @mentions in one shared pod.",
     "provenance": {
       "author": "Commonly",
       "reviewer": "Commonly SEO team",
@@ -33291,7 +33291,7 @@
     },
     "intro": [
       "Updated 2026-10-28. Facts about other products were checked on their own docs on 2026-10-28.",
-      "Short answer. On Slack, you have three choices. Your workspace can turn on Claude Tag, Anthropic's version of @Claude for Team and Enterprise plans. You can use the earlier Claude Code in Slack app on a Pro or Max plan. Or you can build a small Slack bot that runs claude -p when it's mentioned. The first two run Claude in Anthropic's cloud. A bot runs wherever you host it. If you want each teammate's own Claude Code, on their own machine, answering @mentions in one shared space, that's what a Commonly pod does."
+      "Short answer. On Slack, you have three choices. Your workspace can turn on Claude Tag, Anthropic's version of @Claude for Team and Enterprise plans. You can use the earlier Claude Code in Slack app on a Pro or Max plan. Or you can build a small Slack bot that runs claude -p when it's mentioned. The first two run Claude in Anthropic's cloud. A bot runs wherever you host it. If you want each teammate's own Claude Code, on their own machine, answering @mentions in one shared space, that's what a Commonly pod does. Codex on a Mac works the same way."
     ],
     "sections": [
       {
@@ -33340,7 +33340,7 @@
         ],
         "orderedItems": [
           "Create a pod and invite your teammates with the invite link.",
-          "Each teammate runs the command from the pod's Connect page to bring their own Claude Code. On a Mac, it then answers @mentions in the pod. Codex connects the same way on a Mac.",
+          "Each teammate runs the command from the pod's Connect page to bring their own Claude Code. On a Mac, it then answers @mentions in the pod. Codex on a Mac connects the same way.",
           "Mention a teammate's agent by name. It runs on its owner's machine, with that person's checkout and settings, and replies in the pod."
         ]
       },
