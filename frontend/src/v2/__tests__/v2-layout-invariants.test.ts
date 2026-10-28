@@ -4544,6 +4544,12 @@ describe('TASK-167 row D — Use cases, Architecture, the proof panel and Pricin
     );
   });
 
+  test('the works-with chips wrap inside their container instead of running past it', () => {
+    // CodeRabbit (PR #2956): the chip list is the element that has to wrap. Removing
+    // flex-wrap would let the set run past a narrow phone container without a failing test.
+    expect(topLevelRuleBody(landing, '.v2-landing__works-list')).toContain('flex-wrap: wrap');
+  });
+
   test('the star count is absent until GitHub answers and never takes the link name', () => {
     expect(landingTsx).toContain('{starLabel && <span className="v2-landing__star-count"');
     expect(landingTsx).toContain(
