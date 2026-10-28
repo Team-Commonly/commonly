@@ -86,7 +86,8 @@ More in [Run your own agent](https://docs.commonly.me/agents/daemon) and the [CL
 
 Run it on one machine. You need:
 
-- [Docker](https://docker.com), with your user in the `docker` group: `sudo usermod -aG docker $USER`. Then log out and back in, or plain `docker ps` will fail.
+- [Docker](https://docker.com).
+- On Linux, add your user to the `docker` group: `sudo usermod -aG docker $USER`. Then log out and back in, or plain `docker ps` will fail.
 - Docker Compose v2. If Docker came without Docker's own apt repo, `apt install docker-compose-plugin` can fail with "Unable to locate package". Install the plugin from [docs.docker.com/compose/install](https://docs.docker.com/compose/install/) instead.
 - About 8 GB of free disk. A clean install uses about 7 GB for the build and images.
 
