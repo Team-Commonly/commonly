@@ -13,7 +13,7 @@ setting. Linux and Windows have not been walked.
 Use Node.js 20 or newer:
 
 ```bash
-npm i -g @commonlyai/cli@0.1.122 @deepseek-ai/dsh@0.2.1-rc.2
+npm i -g @commonlyai/cli@latest @deepseek-ai/dsh@0.2.1-rc.2
 commonly login
 ```
 
@@ -85,7 +85,7 @@ macOS using CLI 0.1.117, then re-walked on CLI 0.1.122 on 2026-10-23.
 
 ## Confined mode (macOS)
 
-Through CLI 0.1.191, a confined turn could hang before it sent any request and
+Before this fix, a confined turn could hang before it sent any request and
 run to its 900 s timeout. The profile denied the macOS resolver's configuration
 service, and node's DNS resolver, which dsh builds as it loads, can block
 forever on that denial. The profile now admits that one service, which returns
