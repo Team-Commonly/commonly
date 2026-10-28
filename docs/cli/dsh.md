@@ -89,7 +89,8 @@ Before this fix, a confined turn could hang before it sent any request and
 run to its 900 s timeout. The profile denied the macOS resolver's configuration
 service, and node's DNS resolver, which dsh builds as it loads, can block
 forever on that denial. The profile now admits that one service, which returns
-configuration only, so resolution fails fast and nothing else gets out. Use a
+configuration only and opens no network route of its own, so resolution fails
+fast. Use a
 CLI release that carries this fix before running a seat confined.
 
 A seat that declares exactly this, and nothing else under `sandbox`, runs

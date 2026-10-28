@@ -242,6 +242,14 @@ describe('macOS Seatbelt profile', () => {
     // blocks the process forever (D106), see the sandboxed test below.
     const configServices = loopback.match(/com\.apple\.SystemConfiguration\.\w+/g);
     expect(configServices).toEqual(['com.apple.SystemConfiguration.DNSConfiguration']);
+    // The verb, not only the name: a deny here is the D106 hang itself, and a
+    // bare allow would admit every service. Both modes carry the same rule.
+    const resolverRule = '(allow mach-lookup (global-name "com.apple.SystemConfiguration.DNSConfiguration"))';
+    for (const profile of [open, loopback]) {
+      expect(profile.split('\n')).toContain(resolverRule);
+      expect(profile).not.toMatch(/^\(allow mach-lookup\)$/m);
+      expect(profile.split('\n').filter((line) => line.includes('DNSConfiguration'))).toEqual([resolverRule]);
+    }
     expect(loopback).toContain(`(allow network-outbound (remote tcp "localhost:${port}"))`);
     // Every line a loopback profile carries, the open one carries too.
     const openLines = new Set(open.split('\n'));
@@ -338,8 +346,9 @@ describe('macOS Seatbelt profile', () => {
     })).toThrow(/workspacePath must be an absolute path/);
   });
 
-  test('a loopback-confined process builds a DNS resolver and still reaches no outside host', () => {
-    if (process.platform !== 'darwin') return;
+  // Off macOS there is no sandbox-exec to run it under, so it reports as
+  // skipped rather than passing without running.
+  (process.platform === 'darwin' ? test : test.skip)('a loopback-confined process builds a DNS resolver and still reaches no outside host', () => {
     // D106: the profile once denied the resolver's configuration, and
     // constructing a c-ares Resolver could block the process forever, so
     // confined dsh turns ran to their 900 s timeout before sending a request.
@@ -365,7 +374,9 @@ describe('macOS Seatbelt profile', () => {
       loopbackNetworkPorts: [9],
     });
     const run = spawnSync(argv[0], argv.slice(1), {
-      env: { PATH: process.env.PATH, HOME: state }, encoding: 'utf8', timeout: 20000,
+      // SIGKILL: a child blocked on a denied resolver lookup outlived the
+      // default SIGTERM, so a regression hung the run instead of failing.
+      env: { PATH: process.env.PATH, HOME: state }, encoding: 'utf8', timeout: 20000, killSignal: 'SIGKILL',
     });
     expect(run.error).toBeUndefined();
     expect(run.stdout).toMatch(/resolve4 E(?:CONNREFUSED|TIMEOUT|NOTFOUND)/);
