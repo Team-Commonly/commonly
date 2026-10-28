@@ -13349,15 +13349,16 @@ body.modern-ui.v2-canvas {
 
 /* TASK-361 harness picker: one row per walked harness, OS dots from the walk table. */
 .v2-harness-picker { display: flex; flex-direction: column; gap: 8px; }
+/* Columns size to their headings (auto), so "connects", "mac", "linux" and "windows" never overlap. */
 .v2-harness-picker__head,
 .v2-harness-picker__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 24px 14px 14px 14px;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
   align-items: center;
   gap: 16px;
 }
 .v2-harness-picker__head { padding: 0 16px; font-family: var(--v2-font-mono); font-size: 12px; color: var(--v2-text-tertiary); }
-.v2-harness-picker__head > span:nth-child(2) { justify-self: center; }
+.v2-harness-picker__head > span { white-space: nowrap; text-align: center; }
 .v2-harness-picker__row {
   width: 100%;
   padding: 14px 16px;
@@ -13393,9 +13394,6 @@ body.modern-ui.v2-canvas {
 
 @media (max-width: 760px) {
   .v2-harness-picker__head,
-  .v2-harness-picker__row { grid-template-columns: minmax(0, 1fr) 20px 12px 12px 12px; gap: 10px; }
-  .v2-harness-picker__head,
-  .v2-harness-picker__row { padding-left: 12px; padding-right: 12px; }
-  .v2-harness-picker__mark { width: 24px; height: 24px; font-size: 10px; }
+  .v2-harness-picker__row { gap: 10px; padding-left: 12px; padding-right: 12px; }
   .v2-harness-picker__name { font-size: 14px; }
 }
