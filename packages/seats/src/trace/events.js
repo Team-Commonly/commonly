@@ -35,6 +35,7 @@ export const EVENT_TYPES = Object.freeze([
   'attempt.settled', // { attempt, outcome, failure?: {kind, detail} }
   'decision.ruled', // { decisionCardId, value, decidedBy, decidedByRole }  a card ruling not tied to a parked tool call
   'result.reported', // { status: 'done'|'partial'|'blocked'|'failed', refs?: [{type, id}] }
+  'harness.switched', // { from, to, reason }  entry labels harness/model[@effort]; reason in SWITCH_REASONS
 ]);
 
 const KNOWN = new Set(EVENT_TYPES);

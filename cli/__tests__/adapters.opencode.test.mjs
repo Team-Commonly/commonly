@@ -1031,8 +1031,8 @@ describe('opencode external provider config', () => {
 });
 
 describe('opencode adapter — spawn()', () => {
-  test('records both smoke-tested OpenCode versions', () => {
-    expect(TESTED_OPENCODE_VERSIONS).toEqual(['1.18.35', '1.19.0']);
+  test('records every smoke-tested OpenCode version', () => {
+    expect(TESTED_OPENCODE_VERSIONS).toEqual(['1.18.35', '1.19.0', '1.19.4']);
   });
 
   test('a seat with no public sandbox declaration runs as trusted', async () => {
@@ -1077,7 +1077,7 @@ describe('opencode adapter — spawn()', () => {
     });
   });
 
-  test.each(['1.18.35', '1.19.0'])('a public seat accepts smoke-tested OpenCode %s', async (version) => {
+  test.each(['1.18.35', '1.19.0', '1.19.4'])('a public seat accepts smoke-tested OpenCode %s', async (version) => {
     await withProcessEnv(ALLOW_UNTESTED_OPENCODE_VERSION_ENV, undefined, async () => {
       await withTemp(async (root) => {
         const workspace = join(root, 'workspace');
@@ -1137,7 +1137,7 @@ describe('opencode adapter — spawn()', () => {
           });
           expect(spawn.calls).toHaveLength(1);
           expect(warning).toHaveBeenCalledWith(
-            '[opencode] installed OpenCode 1.20.0 is newer than smoke-tested versions 1.18.35, 1.19.0; trusted seat continues',
+            '[opencode] installed OpenCode 1.20.0 is newer than smoke-tested versions 1.18.35, 1.19.0, 1.19.4; trusted seat continues',
           );
         } finally {
           warning.mockRestore();
@@ -1150,22 +1150,27 @@ describe('opencode adapter — spawn()', () => {
     {
       description: 'older',
       result: { status: 0, stdout: 'OpenCode 1.18.0\n' },
-      message: /installed OpenCode 1\.18\.0 is older than smoke-tested versions 1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+      message: /installed OpenCode 1\.18\.0 is older than smoke-tested versions 1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
     },
     {
       description: 'between smoke-tested versions',
       result: { status: 0, stdout: 'OpenCode 1.18.40\n' },
-      message: /installed OpenCode 1\.18\.40 differs from smoke-tested versions 1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+      message: /installed OpenCode 1\.18\.40 differs from smoke-tested versions 1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+    },
+    {
+      description: 'untested next-patch',
+      result: { status: 0, stdout: 'OpenCode 1.19.5\n' },
+      message: /installed OpenCode 1\.19\.5 is newer than smoke-tested versions 1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
     },
     {
       description: 'newer',
       result: { status: 0, stdout: 'OpenCode 1.20.0\n' },
-      message: /installed OpenCode 1\.20\.0 is newer than smoke-tested versions 1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+      message: /installed OpenCode 1\.20\.0 is newer than smoke-tested versions 1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
     },
     {
       description: 'unavailable',
       result: { status: 1, stdout: '', stderr: 'version command failed' },
-      message: /installed OpenCode version is unknown; smoke-tested versions: 1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+      message: /installed OpenCode version is unknown; smoke-tested versions: 1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
     },
     {
       description: 'update announcement containing multiple versions',
@@ -1173,7 +1178,7 @@ describe('opencode adapter — spawn()', () => {
         status: 0,
         stdout: 'A new release is available: 1.18.35 -> 1.19.0\n',
       },
-      message: /installed OpenCode version is unknown; smoke-tested versions: 1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+      message: /installed OpenCode version is unknown; smoke-tested versions: 1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
     },
   ])('a public seat refuses an $description version before creating state or spawning', async ({
     result,
@@ -1241,7 +1246,7 @@ describe('opencode adapter — spawn()', () => {
           _binaryPath: '/usr/local/bin/opencode',
           _platform: 'darwin',
           _spawnImpl: spawn.impl,
-        })).rejects.toThrow(/refuse to run.*1\.20\.0.*1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/);
+        })).rejects.toThrow(/refuse to run.*1\.20\.0.*1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/);
         expect(spawn.calls).toHaveLength(0);
         expect(validateEnvironmentSpec({
           version: 1, [ALLOW_UNTESTED_OPENCODE_VERSION_ENV]: '1',
@@ -1292,11 +1297,11 @@ describe('opencode adapter — spawn()', () => {
             await opencode.spawn('public turn', spawnOptions);
             expect(spawn.calls).toHaveLength(1);
             expect(warning).toHaveBeenCalledWith(
-              '[opencode] installed OpenCode 1.20.0 is newer than smoke-tested versions 1.18.35, 1.19.0; continuing because the host process set COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1',
+              '[opencode] installed OpenCode 1.20.0 is newer than smoke-tested versions 1.18.35, 1.19.0, 1.19.4; continuing because the host process set COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1',
             );
           } else {
             await expect(opencode.spawn('public turn', spawnOptions)).rejects.toThrow(
-              /refuse to run.*1\.20\.0.*1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+              /refuse to run.*1\.20\.0.*1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
             );
             expect(spawn.calls).toHaveLength(0);
             expect(warning).not.toHaveBeenCalled();
@@ -1391,6 +1396,142 @@ describe('opencode adapter — spawn()', () => {
       await expect(opencode.spawn('second turn', { environment: { model: 'test-model' },
         ...baseContext, sessionId: 'ses-created', _spawnImpl: resumed.impl,
       })).resolves.toMatchObject({ newSessionId: 'ses-created' });
+    });
+  });
+
+  test('a saved session OpenCode does not know starts one fresh turn, and other failures do not retry', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const xdgData = join(root, 'operator-data');
+      const appData = join(xdgData, 'opencode');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(appData, { recursive: true });
+      await writeFile(join(appData, 'auth.json'), JSON.stringify({ provider: 'dummy-auth' }));
+      const notFound = `${JSON.stringify({
+        type: 'error', sessionID: 'claude-uuid', error: { data: { message: 'Session not found' } },
+      })}\n`;
+      const calls = [];
+      const impl = (cmd, args) => {
+        calls.push(args);
+        const failing = args.includes('-s') && calls.length === 1;
+        return fakeChild(failing
+          ? { chunks: [notFound], code: 1 }
+          : { chunks: sampleEvents('ses-fresh') });
+      };
+      const baseContext = {
+        sessionId: 'claude-uuid',
+        cwd: workspace,
+        env: { ...process.env, XDG_DATA_HOME: xdgData },
+        environment: { model: 'anthropic/claude-sonnet-4-5' },
+        agentName: 'kai-seat',
+        metadata: { event: { podId: 'pod-1' } },
+        _binaryPath: '/usr/local/bin/opencode',
+        _spawnImpl: impl,
+      };
+      await expect(opencode.spawn('resumed turn', baseContext)).resolves.toMatchObject({
+        text: 'Hello from OpenCode.', newSessionId: 'ses-fresh',
+      });
+      expect(calls).toHaveLength(2);
+      expect(calls[0]).toEqual(expect.arrayContaining(['-s', 'claude-uuid']));
+      expect(calls[1]).not.toContain('-s');
+
+      calls.length = 0;
+      const failingImpl = (cmd, args) => {
+        calls.push(args);
+        return fakeChild({ stderr: 'provider rejected the request', code: 1 });
+      };
+      await expect(opencode.spawn('resumed turn', { ...baseContext, _spawnImpl: failingImpl }))
+        .rejects.toThrow(/provider rejected/);
+      expect(calls).toHaveLength(1);
+    });
+  });
+
+  test('a session-not-found phrase after the model acted is not retried, so the turn cannot post twice', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const xdgData = join(root, 'operator-data');
+      const appData = join(xdgData, 'opencode');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(appData, { recursive: true });
+      await writeFile(join(appData, 'auth.json'), JSON.stringify({ provider: 'dummy-auth' }));
+      const acted = [
+        event('step_start', 'ses-resumed', { type: 'step-start' }),
+        event('tool_use', 'ses-resumed', { tool: 'commonly_post_message', state: { status: 'completed' } }),
+      ].join('');
+      const calls = [];
+      const impl = (cmd, args) => {
+        calls.push(args);
+        return fakeChild({ chunks: [acted], stderr: 'Session not found', code: 1 });
+      };
+      await expect(opencode.spawn('resumed turn', {
+        sessionId: 'ses-resumed',
+        cwd: workspace,
+        env: { ...process.env, XDG_DATA_HOME: xdgData },
+        environment: { model: 'anthropic/claude-sonnet-4-5' },
+        agentName: 'kai-seat',
+        metadata: { event: { podId: 'pod-1' } },
+        _binaryPath: '/usr/local/bin/opencode',
+        _spawnImpl: impl,
+      })).rejects.toThrow(/Session not found/);
+      expect(calls).toHaveLength(1);
+    });
+  });
+
+  test('a session-not-found failure with no saved session is not retried', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const xdgData = join(root, 'operator-data');
+      const appData = join(xdgData, 'opencode');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(appData, { recursive: true });
+      await writeFile(join(appData, 'auth.json'), JSON.stringify({ provider: 'dummy-auth' }));
+      const notFound = `${JSON.stringify({
+        type: 'error', sessionID: 'ses-fresh', error: { data: { message: 'Session not found' } },
+      })}\n`;
+      const calls = [];
+      const impl = (cmd, args) => {
+        calls.push(args);
+        return fakeChild({ chunks: [notFound], code: 1 });
+      };
+      await expect(opencode.spawn('fresh turn', {
+        sessionId: null,
+        cwd: workspace,
+        env: { ...process.env, XDG_DATA_HOME: xdgData },
+        environment: { model: 'anthropic/claude-sonnet-4-5' },
+        agentName: 'kai-seat',
+        metadata: { event: { podId: 'pod-1' } },
+        _binaryPath: '/usr/local/bin/opencode',
+        _spawnImpl: impl,
+      })).rejects.toThrow(/Session not found/);
+      expect(calls).toHaveLength(1);
+    });
+  });
+
+  test('a session-not-found failure after only a step event is not retried', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const xdgData = join(root, 'operator-data');
+      const appData = join(xdgData, 'opencode');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(appData, { recursive: true });
+      await writeFile(join(appData, 'auth.json'), JSON.stringify({ provider: 'dummy-auth' }));
+      const stepOnly = event('step_start', 'ses-resumed', { type: 'step-start' });
+      const calls = [];
+      const impl = (cmd, args) => {
+        calls.push(args);
+        return fakeChild({ chunks: [stepOnly], stderr: 'Session not found', code: 1 });
+      };
+      await expect(opencode.spawn('resumed turn', {
+        sessionId: 'ses-resumed',
+        cwd: workspace,
+        env: { ...process.env, XDG_DATA_HOME: xdgData },
+        environment: { model: 'anthropic/claude-sonnet-4-5' },
+        agentName: 'kai-seat',
+        metadata: { event: { podId: 'pod-1' } },
+        _binaryPath: '/usr/local/bin/opencode',
+        _spawnImpl: impl,
+      })).rejects.toThrow(/Session not found/);
+      expect(calls).toHaveLength(1);
     });
   });
 

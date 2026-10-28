@@ -114,9 +114,10 @@ const fmt = (n: number | undefined, locale: string): string => (
 // asserting it. Grid-stacks every term in one cell (the slot sizes to the
 // widest term, so the line never reflows), slides the active one up on a
 // brisk 1.4s cadence (slow felt like an assertion, not an enumeration). Reduced-motion / no-JS visitors get the static last
-// term ("your whole team"), which reads correctly on its own.
-// Completes "Chat with your …" — tools first, then the payoff. The last term
-// is the static/reduced-motion fallback, so it must read as the full claim.
+// term ("the agents each of you runs"), which reads correctly on its own.
+// Completes "One pod for your team and …" — the teammate's agent, then the
+// payoff. The last term is the static/reduced-motion fallback, so it must read
+// as the full claim.
 const RotatingTerm: React.FC<{ terms: string[] }> = ({ terms }) => {
   const [active, setActive] = useState(0);
   const [rotating, setRotating] = useState(false);
@@ -318,9 +319,9 @@ const V2LandingPage: React.FC = () => {
     return () => { document.getElementById(id)?.remove(); };
   }, [isEnglish]);
   const rotatingTerms = [
-    t('landing.hero.terms.claudeCode'),
-    t('landing.hero.terms.codex'),
-    t('landing.hero.terms.wholeTeam'),
+    t('landing.hero.terms.yourClaudeCode'),
+    t('landing.hero.terms.teammateAgent'),
+    t('landing.hero.terms.eachOwnAgent'),
   ];
 
   useEffect(() => {
@@ -416,7 +417,9 @@ const V2LandingPage: React.FC = () => {
           <a className="v2-landing__navlink" href="#features">{t('landing.nav.features')}</a>
           <a className="v2-landing__navlink" href="#use-cases">{t('landing.nav.useCases')}</a>
           <a className="v2-landing__navlink" href="#pricing">{t('landing.nav.pricing')}</a>
-          <a className="v2-landing__navlink" href={REPO} target="_blank" rel="noreferrer">{t('landing.nav.github')}</a>
+          {/* The star ask sits in the nav and the open-source section, not only the
+              final CTA: most repo visitors leave without starring (D139). */}
+          <a className="v2-landing__navlink" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.starGithub')}</a>
           {!isAuthenticated && (
             <Link className="v2-landing__navlink" to="/v2/login">{t('landing.nav.signIn')}</Link>
           )}
@@ -710,7 +713,7 @@ const V2LandingPage: React.FC = () => {
               <h2 className="v2-landing__h2">{t('landing.openSource.title')}</h2>
               <p className="v2-landing__open-lede">{t('landing.openSource.lede')}</p>
               <div className="v2-landing__cta-row">
-                <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.readSource')}</a>
+                <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.starGithub')}</a>
               </div>
             </div>
             <ul className="v2-landing__open-list">
@@ -962,6 +965,8 @@ const V2LandingPage: React.FC = () => {
           <div className="v2-landing__footer-col">
             <div className="v2-landing__footer-title">{t('landing.footer.legal')}</div>
             <a className="v2-landing__footer-link" href={`${REPO}/blob/main/LICENSE`} target="_blank" rel="noreferrer">{t('landing.footer.license')}</a>
+            <Link className="v2-landing__footer-link" to="/terms">{t('landing.footer.terms')}</Link>
+            <Link className="v2-landing__footer-link" to="/privacy">{t('landing.footer.privacy')}</Link>
           </div>
         </div>
         {/* Copyright is retained under Apache-2.0 — the license grants

@@ -240,6 +240,16 @@ const V2Register: React.FC = () => {
         <V2OAuthButtons invite={invitationCode || undefined} next={nextPath} />
 
         <div className="v2-login__hint">
+          <Trans
+            i18nKey="auth.register.legal"
+            components={{
+              terms: <Link to="/terms" className="v2-login__link" />,
+              privacy: <Link to="/privacy" className="v2-login__link" />,
+            }}
+          />
+        </div>
+
+        <div className="v2-login__hint">
           {t('auth.register.alreadyHaveAccount')}
           {' '}
           <Link to="/v2/login" className="v2-login__link">{t('auth.login.submit')}</Link>

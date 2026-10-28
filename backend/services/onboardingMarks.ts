@@ -25,6 +25,12 @@
  * read from the page's own load request (GET /api/hosted/availability, which
  * nothing else calls). It tells "never looked at setup" apart from "looked and
  * left".
+ *
+ * Three surface marks come from the browser through POST /api/stats/byo-step,
+ * as fixed step names (D139): inviteCardShownAt and inviteCardDismissedAt for
+ * the "invite a teammate" card, and byoOfferShownAt the first time the thread
+ * shows a start that links to Bring your own. "Shown" is the card or start
+ * mounting in the transcript, not proof it was scrolled into view.
  */
 import User from '../models/User';
 import { SCOUT_STARTS } from '../config/native-agents/scout';
@@ -34,6 +40,10 @@ const startPickedMarked = new Set<string>();
 const byoOpenedMarked = new Set<string>();
 const byoCommandCopiedMarked = new Set<string>();
 const byoConnectionAttemptMarked = new Set<string>();
+const surfaceMarked = new Map<SurfaceMark, Set<string>>();
+
+export type SurfaceMark = 'inviteCardShownAt' | 'inviteCardDismissedAt' | 'byoOfferShownAt';
+export const SURFACE_MARKS: readonly SurfaceMark[] = ['inviteCardShownAt', 'inviteCardDismissedAt', 'byoOfferShownAt'];
 
 export function markPodOpened(userId: unknown, pod: { createdBy?: unknown } | null | undefined): void {
   const id = String(userId || '');
@@ -180,6 +190,28 @@ export function markByoConnectionAttempt(
   }
 }
 
+/** Record the first time a person met one of the D139 surfaces. */
+export function markSurface(userId: unknown, mark: SurfaceMark): void {
+  const id = String(userId || '');
+  if (!id || !SURFACE_MARKS.includes(mark)) return;
+  const marked = surfaceMarked.get(mark) || new Set<string>();
+  surfaceMarked.set(mark, marked);
+  if (marked.has(id)) return;
+  marked.add(id);
+  const field = `onboarding.${mark}`;
+  try {
+    User.updateOne(
+      { _id: id, isBot: { $ne: true }, [field]: { $exists: false } },
+      { $set: { [field]: new Date() } },
+    ).catch(() => {
+      marked.delete(id);
+    });
+  } catch {
+    // Telemetry fails open: it must never break the ping that carries it.
+    marked.delete(id);
+  }
+}
+
 /** Test seam: forget which people this process has marked. */
 export function resetOnboardingMarksForTest(): void {
   podOpenedMarked.clear();
@@ -187,4 +219,5 @@ export function resetOnboardingMarksForTest(): void {
   byoOpenedMarked.clear();
   byoCommandCopiedMarked.clear();
   byoConnectionAttemptMarked.clear();
+  surfaceMarked.clear();
 }

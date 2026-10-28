@@ -65,7 +65,7 @@ const ISOLATED_INSTANCE_PORT = 8766;
 const LOOPBACK_BRIDGE = fileURLToPath(new URL('../sandbox/opencode-loopback.mjs', import.meta.url));
 const TERMINATION_GRACE_MS = 5000;
 // Bump only with a passing real sandbox-exec smoke against the new version.
-const TESTED_OPENCODE_VERSIONS = Object.freeze(['1.18.35', '1.19.0']);
+const TESTED_OPENCODE_VERSIONS = Object.freeze(['1.18.35', '1.19.0', '1.19.4']);
 const ALLOW_UNTESTED_OPENCODE_VERSION_ENV = 'COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION';
 const VERSION_CHECK_TIMEOUT_MS = 5000;
 const OPENCODE_CONFIG_GITIGNORE = [
@@ -301,12 +301,19 @@ const validateProviderEnvironment = async (environment, workspacePath) => {
   return resolveProviderKeyFile(environment.provider, workspacePath);
 };
 
+const STALE_SESSION_PATTERN = /session not found/i;
+// Set by runOpenCode only when the rejected run produced no turn output, so a
+// phrase that shows up after the model acted cannot replay the turn.
+const isStaleSessionError = (err) => err?.staleSession === true;
+
 const makeEventParser = () => {
   let buffer = '';
   let sessionId = null;
   let text = '';
   let usage = null;
   let errorMessage = null;
+  // Any text, tool call or step result means the model acted this run.
+  let turnOutput = false;
   // Every tool call that came back as an error, for the public-seat check in
   // spawn (publicToolFailure).
   const toolErrors = [];
@@ -315,11 +322,15 @@ const makeEventParser = () => {
     try {
       const event = JSON.parse(line);
       if (event.sessionID) sessionId = event.sessionID;
+      // Any step event means the run started a turn, so it is not safe to replay.
+      if (String(event.type || '').startsWith('step_') || event.type === 'tool_use') turnOutput = true;
       if (event.type === 'text' && typeof event.part?.text === 'string') {
+        turnOutput = true;
         text += event.part.text;
       } else if (event.type === 'step_finish' && event.part?.tokens) {
         usage = event.part.tokens;
-      } else if (event.type === 'tool_use' && event.part?.state?.status === 'error') {
+      }
+      if (event.type === 'tool_use' && event.part?.state?.status === 'error') {
         const { error } = event.part.state;
         toolErrors.push({
           tool: String(event.part.tool || ''),
@@ -334,6 +345,7 @@ const makeEventParser = () => {
     }
   };
   return {
+    get turnOutput() { return turnOutput; },
     consume(chunk) {
       buffer += chunk.toString();
       let newline;
@@ -428,14 +440,18 @@ const runOpenCode = ({ cmd, args, cwd, env, timeoutMs, credentials, spawnImpl = 
     events.flush();
     if (timedOut) return reject(new Error(`opencode timed out after ${timeoutMs}ms`));
     if (events.errorMessage) {
-      return reject(adapterFailure('opencode turn failed', events.errorMessage, {
+      const err = adapterFailure('opencode turn failed', events.errorMessage, {
         credentials, limit: 2000,
-      }));
+      });
+      err.staleSession = !events.turnOutput && STALE_SESSION_PATTERN.test(events.errorMessage);
+      return reject(err);
     }
     if (code !== 0) {
-      return reject(adapterFailure('opencode', stderr.trim(), {
+      const err = adapterFailure('opencode', stderr.trim(), {
         credentials, exitCode: code, limit: 500,
-      }));
+      });
+      err.staleSession = !events.turnOutput && STALE_SESSION_PATTERN.test(stderr);
+      return reject(err);
     }
     resolve({
       sessionId: events.sessionId, text: events.text, usage: events.usage, toolErrors: events.toolErrors,
@@ -650,6 +666,18 @@ export default {
   },
 
   async spawn(prompt, rawCtx = {}) {
+    try {
+      return await this.spawnTurn(prompt, rawCtx);
+    } catch (err) {
+      if (!rawCtx.sessionId || !isStaleSessionError(err)) throw err;
+      // The saved id is one OpenCode does not know: a seat switched from another
+      // adapter carries a Claude id, and a pruned session fails the same way. Nothing
+      // ran, so one fresh turn is safe (pi #1726 does the same fallback).
+      return this.spawnTurn(prompt, { ...rawCtx, sessionId: null });
+    }
+  },
+
+  async spawnTurn(prompt, rawCtx = {}) {
     const seatModel = requireSeatModel(rawCtx.environment, 'opencode');
     const sandbox = normalizeSandboxTrust(rawCtx.environment?.sandbox);
     refuseWorkspaceTrust(sandbox, 'opencode');

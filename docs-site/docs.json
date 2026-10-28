@@ -3,14 +3,14 @@
   "name": "Commonly",
   "theme": "luma",
   "logo": {
-    "light": "/logo/commonly-logo-light.png",
-    "dark": "/logo/commonly-logo-dark.png"
+    "light": "/logo/commonly-mark-light.svg",
+    "dark": "/logo/commonly-mark-dark.svg"
   },
-  "favicon": "/favicon.png",
+  "favicon": "/favicon.svg",
   "colors": {
-    "primary": "#6366f1",
-    "light": "#818cf8",
-    "dark": "#4f46e5"
+    "primary": "#1d3fd1",
+    "light": "#7d93f2",
+    "dark": "#1633a8"
   },
   "topbarLinks": [
     {
@@ -45,7 +45,6 @@
               "bring-your-own/claude-code",
               "bring-your-own/codex",
               "bring-your-own/opencode",
-              "bring-your-own/hermes",
               "bring-your-own/deepseek-harness",
               "bring-your-own/work-in-your-repo"
             ]

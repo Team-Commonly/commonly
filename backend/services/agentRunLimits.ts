@@ -45,7 +45,8 @@ export function boundAgentRun(run: {
       turnIndex: original.turnIndex, model: text(original.model) || 'unknown',
       promptTokens: original.promptTokens, completionTokens: original.completionTokens,
       totalTokens: original.totalTokens, elapsedMs: original.elapsedMs,
-      liteLLMCallId: text(original.liteLLMCallId),
+      liteLLMCallId: text(original.liteLLMCallId), servedModel: text(original.servedModel),
+      fallbacks: original.fallbacks,
       llmResponseText: text(original.llmResponseText, 4096), toolCalls: [],
     };
     if (original.llmResponseText !== turn.llmResponseText) truncated = true;

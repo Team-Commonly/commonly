@@ -119,7 +119,7 @@ You are **Research Analyst** — a deep-research specialist who turns raw inform
     agentName: 'openclaw',
     description: 'Code-quality-focused collaborator. Reviews diffs, suggests refactors, drafts implementations on request. Reacts to @mentions; no heartbeat.',
     targetUsage: 'Other agents (Pixel/Theo/Ops) DMing for code work; humans wanting a code-quality second opinion.',
-    recommendedModel: 'openai-codex/gpt-5.4-mini',
+    recommendedModel: 'deepseek-v4-flash',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
     ],
@@ -1116,7 +1116,7 @@ You are **Community Hype Host** — an engagement catalyst. You turn notable pos
     description:
       'Project Manager. Breaks user requests into actionable tasks, assigns to the engineering team, and tracks progress.',
     targetUsage: 'Coordinating backend, frontend, and devops work on Commonly.',
-    recommendedModel: 'openai-codex/gpt-5.4',
+    recommendedModel: 'deepseek-v4-flash',
     installHints: {
       scopes: [
         'agent:context:read',
@@ -1224,7 +1224,7 @@ If tasks changed, blockers found, or a PR was reviewed → ONE status message us
     description:
       'Backend engineer. Implements Node.js/Express/MongoDB/PostgreSQL tasks on the Commonly codebase via codex.',
     targetUsage: 'Bug fixes, new API endpoints, database migrations, backend tests.',
-    recommendedModel: 'openai-codex/gpt-5.4',
+    recommendedModel: 'deepseek-v4-flash',
     installHints: {
       scopes: [
         'agent:context:read',
@@ -1316,7 +1316,7 @@ Use the arrays from call #3 (DevPodId) and call #4 (MyPodId) — do NOT re-fetch
     description:
       'Frontend engineer. Implements React/MUI/CSS tasks on the Commonly frontend in-session.',
     targetUsage: 'UI components, styling fixes, React hooks, frontend tests.',
-    recommendedModel: 'openai-codex/gpt-5.4',
+    recommendedModel: 'deepseek-v4-flash',
     installHints: {
       scopes: [
         'agent:context:read',
@@ -1405,7 +1405,7 @@ Use the arrays from calls #3/#4 — do NOT re-fetch. Skip messages where sender 
     description:
       'DevOps engineer. Handles GKE, Docker, CI/CD, Helm, and infrastructure tasks in-session.',
     targetUsage: 'Deployments, node pool fixes, Helm updates, Kubernetes configs, CI/CD pipelines.',
-    recommendedModel: 'openai-codex/gpt-5.4',
+    recommendedModel: 'deepseek-v4-flash',
     installHints: {
       scopes: [
         'agent:context:read',
@@ -2281,7 +2281,7 @@ You are **Creative Director** — the quality gate. Your job is to make sure wha
     agentName: 'openclaw',
     description: 'Ground-truth source for Team-Commonly/commonly. Reads README, docs, recent PRs, open issues, and architecture to answer technical questions from the marketing/strategy team.',
     targetUsage: 'Answer "what is Commonly?", "what features exist today?", "how does X work?", "what just shipped?"',
-    recommendedModel: 'openai-codex/gpt-5.4-nano',
+    recommendedModel: 'deepseek-v4-flash',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
       { id: 'acpx', label: 'Coding agent for repo exploration', type: 'plugin', matchAny: ['acpx'] },
@@ -2375,7 +2375,7 @@ Save summary into \`## RepoSnapshot\`.
     agentName: 'openclaw',
     description: 'Scans GitHub for trending AI orchestration, agent-harness, and multi-agent projects. Surfaces patterns, novel mechanics, and ideas the team could absorb.',
     targetUsage: 'Competitive/ecosystem intelligence across LangChain, LlamaIndex, CrewAI, AutoGen, OpenAgent-style projects. Surface adoption trends and novel architectures.',
-    recommendedModel: 'openai-codex/gpt-5.4-nano',
+    recommendedModel: 'deepseek-v4-flash',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
       { id: 'acpx', label: 'Coding agent for repo exploration', type: 'plugin', matchAny: ['acpx'] },

@@ -25,7 +25,7 @@ const {
   AGENT_IDENTITY_CONFLICT_CODE?: string;
 };
 const AgentMessageService = require('../../services/agentMessageService');
-const { deriveAgentState } = require('../../services/agentStateService');
+const { deriveAgentState, runInstructionFor } = require('../../services/agentStateService');
 const FirstContactService = require('../../services/firstContactService');
 const HostedRuntime = require('../../services/hostedRuntimeService');
 const HostedEngine = require('../../services/hostedEngine');
@@ -908,13 +908,19 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
 
     // Post a short self-introduction so the room learns the new member
     // without having to wait for their first heartbeat. Team pods only —
-    // skip DMs, agent-rooms, and single-member surfaces.
+    // skip DMs, agent-rooms, and single-member surfaces — except the installer's
+    // own solo My Workspace, where they are the only audience (TASK-223).
     try {
-      const podDoc = await Pod.findById(podId).select('type members').lean();
+      // Reuse the pod loaded above: a second findById on the request's podId is
+      // the query CodeQL flags as user-controlled (new high alert on this PR).
+      const podDoc = pod;
+      // The agent is not counted in `members` (routing goes through
+      // AgentInstallation), so a solo workspace reads as one member here.
+      const isOwnWorkspace = podDoc?.name === 'My Workspace';
       const introWorthy = podDoc
         && podDoc.type !== 'dm'
         && podDoc.type !== 'agent-room'
-        && (podDoc.members?.length || 0) >= 2
+        && ((podDoc.members?.length || 0) >= 2 || isOwnWorkspace)
         && !(greetsItself && firstContactFired);
       if (introWorthy) {
         // Task #62 follow-up: the intro post passes `displayName` to
@@ -977,7 +983,13 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         // been announced as dead. Same identity match the pod roster uses
         // (routes/pods.ts:437).
         let state = 'unknown';
-        let fixCommand = `commonly agent run ${safeAgentName}`;
+        // The default is what the seat's own runtime needs. It used to be the
+        // BYO command for every seat, so a webhook agent's intro told its
+        // owner to run a command that starts the wrong program.
+        let fixCommand: string | null = runInstructionFor({
+          agentName: safeAgentName,
+          config: normalizeConfigMap(installation.config) || {},
+        });
         try {
           const botRow = await User.findOne({
             isBot: true,

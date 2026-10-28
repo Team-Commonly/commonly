@@ -246,6 +246,7 @@ const V2App: React.FC = () => {
                     false,
                     /* V2PodBoard owns its own header (pod name + back). */
                     false,
+                    'v2-feature--board',
                   )}
                 />
                 <Route

@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 import V2NavRail from './V2NavRail';
 import V2PodsSidebar from './V2PodsSidebar';
 import { V2EmbeddedProvider } from '../hooks/useV2Embedded';
+import { useV2PodAttention } from '../hooks/useV2PodAttention';
+import V2MobileTabs from './V2MobileTabs';
 import V2PageHead from './V2PageHead';
 
 interface V2FeaturePageProps {
@@ -298,6 +300,7 @@ const V2FeaturePage: React.FC<V2FeaturePageProps> = ({
 }) => {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const attention = useV2PodAttention();
 
   useEffect(() => {
     try {
@@ -325,7 +328,7 @@ const V2FeaturePage: React.FC<V2FeaturePageProps> = ({
 
   return (
     <div className={`v2-shell${showPodsSidebar ? ' v2-shell--feature' : ' v2-shell--feature-wide'}`}>
-      <V2NavRail />
+      <V2NavRail needsYouCount={attention.count} />
       {showPodsSidebar && <V2PodsSidebar selectedPodId={null} />}
       <main className={`v2-pane v2-pane--main v2-feature${className ? ` ${className}` : ''}`} onClickCapture={handleClickCapture} aria-label={title}>
         {showHeader && <V2PageHead className="v2-feature__header" titleClassName="v2-feature__title" title={title} hint={hint} hintLabel={t('common.aboutPage', { title })} />}
@@ -339,6 +342,7 @@ const V2FeaturePage: React.FC<V2FeaturePageProps> = ({
           </ThemeProvider>
         </section>
       </main>
+      <V2MobileTabs needsYouCount={attention.count ?? 0} />
     </div>
   );
 };

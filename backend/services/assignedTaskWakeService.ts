@@ -8,6 +8,7 @@ import User from '../models/User';
 import Pod from '../models/Pod';
 import { AgentInstallation } from '../models/AgentRegistry';
 import { carriesAgentMarkers, isReservedAgentEmail } from './agentIdentityService';
+import { formatBoardPodLine } from './boardPodCue';
 
 const DELAY_MS = 5 * 60 * 1000;
 const INTERVAL_MS = 30 * 60 * 1000;
@@ -396,7 +397,8 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
             + shown.map((row) => `- ${row.taskId}: ${row.title.slice(0, 220)}`).join('\n')
             + '\n\nContinue the next actionable row. Recheck its current state and claim it before starting. '
             + 'If you are waiting on a dependency or operator gate, mark the row blocked with the reason. '
-            + 'Post only an action or a materially useful result.',
+            + 'Post only an action or a materially useful result.\n'
+            + formatBoardPodLine(String(install.podId)),
         },
       });
       woken += 1;

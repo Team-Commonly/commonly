@@ -51,6 +51,23 @@ test.each(['en', 'zh-CN'])('withheld authorization identities have no labels or 
   expect(screen.queryByText(i18n.t('runTrace.notRecorded'))).not.toBeInTheDocument();
   expect(screen.getByText(i18n.t('runTrace.outcome'))).toBeInTheDocument();
 });
+test.each(['en', 'zh-CN'])('a turn another model answered names both; a normal turn names one (%s)', async (language) => {
+  await act(async () => { await i18n.changeLanguage(language); });
+  const nemotron = 'openrouter/nvidia/nemotron-3-super-120b-a12b:free';
+  mockGet.mockResolvedValue({ run: { ...trace, turns: [
+    { ...trace.turns[0], model: nemotron, servedModel: 'deepseek-v4-flash', fallbacks: 1 },
+    { ...trace.turns[0], turnIndex: 1, model: 'deepseek-v4-flash', servedModel: 'deepseek-v4-flash' },
+    { ...trace.turns[0], turnIndex: 2, model: 'older-turn' },
+  ] } });
+  const { container } = setup();
+  await screen.findAllByText('vendor.read');
+  const meta = Array.from(container.querySelectorAll('.v2-run-trace__meta'), (node) => node.textContent);
+  expect(meta[0]).toBe(`${i18n.t('runTrace.served', { requested: nemotron, served: 'deepseek-v4-flash' })} · 12 ms · 123 ${i18n.t('runTrace.tokens')}`);
+  expect(meta[0]).toContain(nemotron);
+  expect(meta[0]).toContain('deepseek-v4-flash');
+  expect(meta[1]).toBe(`deepseek-v4-flash · 12 ms · 123 ${i18n.t('runTrace.tokens')}`);
+  expect(meta[2]).toBe(`older-turn · 12 ms · 123 ${i18n.t('runTrace.tokens')}`);
+});
 test('refusal can retry and never presents an empty successful trace', async () => {
   mockGet.mockRejectedValueOnce({ response: { status: 404 } }).mockResolvedValueOnce({ run: trace });
   setup();

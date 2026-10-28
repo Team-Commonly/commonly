@@ -16,6 +16,8 @@ export type OAuthLoginProvider = 'github' | 'google';
 export interface IOAuthLoginState extends Document {
   provider: OAuthLoginProvider;
   state: string;
+  browserNonceHash?: string;
+  pkceVerifier?: string;
   // Optional invite code captured at /start so an OAuth signup can satisfy
   // the invite-only gate without a form round-trip.
   invitationCode?: string;
@@ -38,6 +40,8 @@ const OAuthLoginStateSchema = new Schema<IOAuthLoginState>(
   {
     provider: { type: String, required: true, enum: ['github', 'google'], index: true },
     state: { type: String, required: true, unique: true, index: true },
+    browserNonceHash: { type: String },
+    pkceVerifier: { type: String, select: false },
     invitationCode: { type: String, default: '' },
     next: { type: String, default: '/v2' },
     signupRef: { type: String, default: '' },

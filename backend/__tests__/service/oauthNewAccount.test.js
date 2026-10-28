@@ -70,12 +70,14 @@ tier1('new-account OAuth — Google and GitHub', () => {
     });
 
     const start = await request(app).get(`/api/auth/oauth/${provider}/start?next=/v2`).expect(302);
+    // The browser cookie set at /start binds the callback and the exchange to this attempt.
+    const browserCookie = start.headers['set-cookie'].map((cookie) => cookie.split(';')[0]).join('; ');
     const upstream = new URL(start.headers.location);
     const state = upstream.searchParams.get('state');
     expect(state).toBeTruthy();
     expect(await OAuthLoginState.findOne({ provider, state })).toBeTruthy();
     const callbackPath = `/api/auth/oauth/${provider}/callback?state=${encodeURIComponent(state)}&code=provider-code`;
-    const callback = await request(app).get(callbackPath).expect(302);
+    const callback = await request(app).get(callbackPath).set('Cookie', browserCookie).expect(302);
     const landing = new URL(callback.headers.location);
     expect({ origin: landing.origin, path: landing.pathname, next: landing.searchParams.get('next') })
       .toEqual({ origin: 'http://localhost:3000', path: '/v2/oauth/complete', next: '/v2' });
@@ -95,7 +97,7 @@ tier1('new-account OAuth — Google and GitHub', () => {
 
     // This is the exact exchange and bearer token used by V2OAuthComplete
     // and AuthContext, not a JWT minted by the test fixture.
-    const session = await request(app).post('/api/auth/oauth/exchange').send({ code }).expect(200);
+    const session = await request(app).post('/api/auth/oauth/exchange').set('Cookie', browserCookie).send({ code }).expect(200);
     expect(session.body.token).toEqual(expect.any(String));
     expect(jwt.verify(session.body.token, process.env.JWT_SECRET).id).toBe(String(created._id));
     const protectedState = (row) => ({
@@ -117,11 +119,11 @@ tier1('new-account OAuth — Google and GitHub', () => {
       return membership.rows.length === 1 && welcome.rows.length > 0 && await Task.countDocuments({ podId: workspace._id, source: 'onboarding' }) === 3;
     }, { timeout: 15000 });
 
-    const replay = await request(app).get(callbackPath).expect(302);
+    const replay = await request(app).get(callbackPath).set('Cookie', browserCookie).expect(302);
     expect(replay.headers.location).toContain('state_invalid');
     expect(protectedState(await OAuthLoginState.findOne({ state }))).toEqual(stateSnapshot);
     expect(tokenPost).toHaveBeenCalledTimes(1);
-    await request(app).post('/api/auth/oauth/exchange').send({ code }).expect(400);
+    await request(app).post('/api/auth/oauth/exchange').set('Cookie', browserCookie).send({ code }).expect(400);
     expect(protectedState(await OAuthLoginState.findOne({ state }))).toEqual(stateSnapshot);
     expect(await User.countDocuments({ email })).toBe(1);
     expect(await Pod.countDocuments({ createdBy: created._id, name: 'My Workspace' })).toBe(1);

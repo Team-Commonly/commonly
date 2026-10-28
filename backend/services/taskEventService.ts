@@ -1,6 +1,7 @@
 import { resolveTokenAgentIdentity } from '../utils/agentTokenIdentity';
 import { Types } from 'mongoose';
 import { compareTaskPriority, TASK_PRIORITY_ORDER } from '../utils/taskPriority';
+import { formatBoardPodLine } from './boardPodCue';
 /**
  * taskEventService
  *
@@ -328,6 +329,7 @@ export async function notifyPodAgents(
       '',
       'Do not narrate the board back to the pod. Post only if you are taking',
       'work, or a human needs a decision from you.',
+      formatBoardPodLine(normalizedPodId),
     ].join('\n');
 
     // Self-skip keyed on IDENTITY, never on `installedBy`.
@@ -608,6 +610,7 @@ export async function notifyFoundWork(
       'do: claim it first (a 409 means a peer got there — move on), then start.',
       'If none fit your role, return NO_REPLY as your ENTIRE reply — anything',
       'written after the token is posted publicly. Do not narrate the list back.',
+      formatBoardPodLine(normalizedPodId),
     ].join('\n');
 
     let woken = 0;
@@ -756,6 +759,7 @@ export async function notifyLeaseWarning(
     'rescue, not the board. To keep it, post a task update or re-claim — either',
     'renews the lease. If you have finished, complete it with the PR link. If it',
     'is no longer yours, do nothing and it returns to the board named as yours.',
+    formatBoardPodLine(normalizedPodId),
   ].join('\n');
 
   try {

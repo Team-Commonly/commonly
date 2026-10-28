@@ -7,10 +7,13 @@
 // can take the offer away before it is seen.
 import React, { useState } from 'react';
 import {
+  cleanup,
   fireEvent, render, screen, waitFor, within,
 } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
+import axios from 'axios';
 import V2Thread from '../components/V2Thread';
+import { resetByoStepsForTest } from '../utils/byoTelemetry';
 import { AuthContext } from '../../context/AuthContext';
 
 jest.mock('../../context/SocketContext', () => ({
@@ -178,19 +181,21 @@ describe("V2Thread — Scout's starts", () => {
   test('a start this person already sent stays gone after a reload', () => {
     renderThread([welcome, message('sent', 'u1', 'maya', CONNECT, 4)]);
 
-    const group = startsGroup();
+    // The welcome's group comes first; the sent connect start carries its own.
+    const [group] = screen.getAllByRole('group', { name: 'Ways to start' });
     expect(within(group).queryByRole('button', { name: CONNECT })).not.toBeInTheDocument();
     expect(within(group).getByRole('button', { name: POD_START })).toBeInTheDocument();
   });
 
-  test('both starts sent: no group is left behind', () => {
+  test('both starts sent: only the Bring your own link is left', () => {
     renderThread([
       welcome,
       message('sent-1', 'u1', 'maya', CONNECT, 4),
       message('sent-2', 'u1', 'maya', POD_START, 5),
     ]);
 
-    expect(startsGroup()).not.toBeInTheDocument();
+    expect(within(startsGroup()).getAllByRole('button').map((button) => button.textContent))
+      .toEqual([OPEN_BYO]);
   });
 
   test('a message without starts shows no buttons, including an older welcome', () => {
@@ -199,6 +204,89 @@ describe("V2Thread — Scout's starts", () => {
     ]);
 
     expect(startsGroup()).not.toBeInTheDocument();
+  });
+});
+
+// D139: Scout's reply to the connect start is a prompt and cannot be relied on
+// to link Bring your own, so the thread links it under the person's own
+// message, from the moment it is sent.
+const OPEN_BYO = 'Open Bring your own';
+
+describe('V2Thread — the connect start links Bring your own', () => {
+  test("clicking the connect start shows the link under the person's message at once", async () => {
+    const send = renderThread([welcome]);
+    fireEvent.click(within(startsGroup()).getByRole('button', { name: CONNECT }));
+    expect(send).toHaveBeenCalledWith(CONNECT, 'text', undefined, undefined);
+
+    const link = await screen.findByRole('button', { name: OPEN_BYO });
+    fireEvent.click(link);
+    await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/v2/agents/byo?pod=pod-1'));
+  });
+
+  test('the link shows only under that exact label', () => {
+    renderThread([
+      welcome,
+      message('close', 'u1', 'maya', 'Connect an agent I already use, please', 4),
+      message('lower', 'u1', 'maya', 'connect an agent i already use', 5),
+      message('pod', 'u1', 'maya', POD_START, 6),
+    ]);
+    expect(screen.queryByRole('button', { name: OPEN_BYO })).not.toBeInTheDocument();
+  });
+
+  test("another member's connect message gets no link", () => {
+    renderThread([welcome, message('theirs', 'u2', 'lee', CONNECT, 4)]);
+    expect(screen.queryByRole('button', { name: OPEN_BYO })).not.toBeInTheDocument();
+  });
+
+  test("in a pod the viewer didn't create, their own connect message gets no link", () => {
+    renderThread([welcome, message('mine', 'u1', 'maya', CONNECT, 4)], jest.fn(), {
+      pod: { ...OWN_POD, createdBy: 'someone-else' },
+    });
+    expect(screen.queryByRole('button', { name: OPEN_BYO })).not.toBeInTheDocument();
+  });
+
+  test('the link pings byo-offer-shown once; a thread without it does not', async () => {
+    resetByoStepsForTest();
+    const pings = () => axios.post.mock.calls.filter(([url, body]) => String(url).endsWith('/api/stats/byo-step')
+      && body?.step === 'byo-offer-shown').length;
+    axios.post.mockClear();
+    renderThread([welcome]);
+    expect(pings()).toBe(0);
+    cleanup();
+    renderThread([welcome, message('mine', 'u1', 'maya', CONNECT, 4)]);
+    await screen.findByRole('button', { name: OPEN_BYO });
+    expect(pings()).toBe(1);
+  });
+
+  test('a matching reply folded into a thread card renders no link and records no offer', () => {
+    resetByoStepsForTest();
+    axios.post.mockClear();
+    renderThread([
+      welcome,
+      message('root', 'u1', 'maya', 'Where do I start?', 4),
+      message('reply', 'u1', 'maya', CONNECT, 5, { thread_root_id: 'root' }),
+    ]);
+    expect(screen.queryByRole('button', { name: OPEN_BYO })).not.toBeInTheDocument();
+    expect(axios.post.mock.calls.filter(([url, body]) => String(url).endsWith('/api/stats/byo-step')
+      && body?.step === 'byo-offer-shown')).toHaveLength(0);
+  });
+
+  test('a matching thread root renders the link and records the offer', async () => {
+    resetByoStepsForTest();
+    axios.post.mockClear();
+    renderThread([
+      welcome,
+      message('root', 'u1', 'maya', CONNECT, 4),
+      message('reply', 'scout-1', 'scout', 'Which one do you use?', 5, { thread_root_id: 'root', user: { username: 'scout', isBot: true } }),
+    ]);
+    await screen.findByRole('button', { name: OPEN_BYO });
+    await waitFor(() => expect(axios.post.mock.calls.filter(([url, body]) => String(url).endsWith('/api/stats/byo-step')
+      && body?.step === 'byo-offer-shown')).toHaveLength(1));
+  });
+
+  test('a message from Scout with that text gets no link', () => {
+    renderThread([message('echo', 'scout-1', 'scout', CONNECT, 4, { user: { username: 'scout', isBot: true } })]);
+    expect(screen.queryByRole('button', { name: OPEN_BYO })).not.toBeInTheDocument();
   });
 });
 

@@ -63,9 +63,12 @@ describe('Self-serve account deletion', () => {
     recovery.get('/profile', probeLimit, auth, (_req, res) => res.sendStatus(204));
     app.use('/api/auth', recovery);
     app.get('/runtime-probe', probeLimit, agentRuntimeAuth, (_req, res) => res.sendStatus(204));
+    // Reuse one listener across the counted loops and nested requests instead
+    // of allocating a fresh ephemeral port for every supertest request.
+    app = app.listen(0);
   });
   afterEach(async () => { await clearMongoDb(); await clearPgDb(); await mockPg.query('DELETE FROM users'); });
-  afterAll(async () => { await closeMongoDb(); await closePgDb(); });
+  afterAll(async () => { await new Promise((resolve) => app.close(resolve)); await closeMongoDb(); await closePgDb(); });
 
   it('deletes own bytes and legacy uploads, revokes credentials, preserves agents and other users', async () => {
     const deviceToken = 'cm_delete-device';
@@ -208,12 +211,16 @@ describe('Self-serve account deletion', () => {
     }
     await deletion(app, issueSessionToken(user, now - 1, 0), { confirmation: 'DELETE' }).expect(401);
     // Real one-time OAuth exchange is the positive witness, not a fabricated claim.
-    await OAuthLoginState.create({ provider: 'github', state: 'deletion-state', userId: user._id,
+    const browserNonce = 'b'.repeat(64);
+    await OAuthLoginState.create({ provider: 'github', state: 'a'.repeat(48), userId: user._id,
+      browserNonceHash: createHash('sha256').update(browserNonce).digest('hex'),
       exchangeCode: 'deletion-exchange', exchangeExpiresAt: new Date(Date.now() + 60000),
       expiresAt: new Date(Date.now() + 60000) });
     let session;
-    await oauthController.exchangeOAuthCode({ body: { code: 'deletion-exchange' } }, {
-      json: (body) => { session = body; }, status: () => { throw new Error('Exchange failed'); } });
+    await oauthController.exchangeOAuthCode({ body: { code: 'deletion-exchange' },
+      headers: { cookie: `cm-oauth-${'a'.repeat(48)}=${browserNonce}` } }, {
+      clearCookie: () => {}, json: (body) => { session = body; },
+      status: () => { throw new Error('Exchange failed'); } });
     expect(jwt.verify(session.token, process.env.JWT_SECRET).oauthAuthenticatedAt).toBeGreaterThanOrEqual(now);
     await deletion(app, session.token, { confirmation: 'DELETE' }).expect(204);
   });
@@ -441,6 +448,85 @@ describe('Self-serve account deletion', () => {
     expect(remaining.accountDeletionRequestedAt).toBeTruthy();
     const Lock = require('../../models/AdminUserMutationLock');
     expect(await Lock.countDocuments()).toBe(0);
+  });
+
+  it('keeps a billing-failed self-deletion recoverable when admin hard delete races its claim', async () => {
+    const admin = await makeUser({ role: 'admin' });
+    const user = await makeUser({ billing: { subscriptionId: 'sub-admin-race', subscriptionStatus: 'active' } });
+    const token = issueSessionToken(user);
+    const file = await addFile(user, 'admin-race-legacy.png', true);
+    const credential = await AgentCredential.create({ tokenHash: 'admin-race-key', kind: 'runtime', ownerUserId: user._id });
+    let adminResult;
+    mockStripe.subscriptions.cancel.mockImplementationOnce(async () => {
+      adminResult = await request(app).delete(`/api/admin/users/${user.id}`)
+        .set('Authorization', `Bearer ${issueSessionToken(admin)}`);
+      throw new Error('Stripe unavailable before receipt');
+    });
+    await deletion(app, token).expect(503);
+    expect({ status: adminResult.status, userRetained: !!(await User.findById(user.id)),
+      files: await File.countDocuments({ uploadedBy: user.id }), receipts: await AccountDeletion.countDocuments() })
+      .toEqual({ status: 409, userRetained: true, files: 1, receipts: 0 });
+    expect(adminResult.body.code).toBe('ACCOUNT_CHANGED');
+    const retained = await User.findById(user.id);
+    expect(retained).not.toBeNull();
+    expect(retained.accountDeletionRequestedAt).toBeUndefined();
+    expect(await AccountDeletion.countDocuments()).toBe(0);
+    expect(await File.findById(file.id)).not.toBeNull();
+    expect((await AgentCredential.findById(credential.id)).status).toBe('active');
+    expect(await require('../../models/AdminUserMutationLock').countDocuments()).toBe(0);
+    await deletion(app, token).expect(204);
+    expect(await User.findById(user.id)).toBeNull();
+    expect(await File.findById(file.id)).toBeNull();
+    expect((await AgentCredential.findById(credential.id)).status).toBe('revoked');
+  });
+
+  it('refuses hard delete when the deletion marker appears after the admin target read', async () => {
+    const admin = await makeUser({ role: 'admin' }); const user = await makeUser();
+    const Integration = require('../../models/Integration');
+    const find = Integration.find.bind(Integration);
+    let nestedStatus; let claimed = false;
+    jest.spyOn(Integration, 'find').mockImplementation((filter) => {
+      const query = find(filter);
+      if (!claimed && String(filter.createdBy) === user.id) {
+        claimed = true;
+        return { select: (fields) => ({ lean: async () => {
+          jest.spyOn(mockPg, 'query').mockRejectedValueOnce(new Error('PG unavailable'));
+          nestedStatus = (await deletion(app, issueSessionToken(user))).status;
+          return query.select(fields).lean();
+        } }) };
+      }
+      return query;
+    });
+    const result = await request(app).delete(`/api/admin/users/${user.id}`)
+      .set('Authorization', `Bearer ${issueSessionToken(admin)}`);
+    expect(nestedStatus).toBe(503);
+    expect(result.status).toBe(409);
+    expect(result.body.code).toBe('ACCOUNT_CHANGED');
+    expect((await User.findById(user.id)).accountDeletionRequestedAt).toBeTruthy();
+    expect(await AccountDeletion.exists({ _id: user.id })).toBeTruthy();
+    expect(await require('../../models/AdminUserMutationLock').countDocuments()).toBe(0);
+  });
+
+  it('refuses a self-deletion claim when admin hard delete wins first', async () => {
+    const admin = await makeUser({ role: 'admin' });
+    const user = await makeUser({ billing: { subscriptionId: 'sub-admin-first', subscriptionStatus: 'active' } });
+    const update = User.updateOne.bind(User);
+    let adminResult; let deleted = false;
+    jest.spyOn(User, 'updateOne').mockImplementation((filter, mutation, ...rest) => {
+      if (!deleted && mutation.$set?.accountDeletionRequestedAt) return (async () => {
+        deleted = true;
+        adminResult = await request(app).delete(`/api/admin/users/${user.id}`)
+          .set('Authorization', `Bearer ${issueSessionToken(admin)}`);
+        return update(filter, mutation, ...rest);
+      })();
+      return update(filter, mutation, ...rest);
+    });
+    mockStripe.subscriptions.cancel.mockClear();
+    await deletion(app, issueSessionToken(user)).expect(409);
+    expect(adminResult.status).toBe(200);
+    expect(await User.findById(user.id)).toBeNull();
+    expect(mockStripe.subscriptions.cancel).not.toHaveBeenCalled();
+    expect(await AccountDeletion.countDocuments()).toBe(0);
   });
 
   it('refuses an admin role change after deletion has marked the account', async () => {

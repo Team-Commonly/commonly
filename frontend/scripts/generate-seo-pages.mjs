@@ -210,7 +210,6 @@ const renderLanding = (landing, useCases, guides, faq = []) => {
           <a href="#features">Features</a>
           <a href="#use-cases">Use cases</a>
           <a href="#guides">Guides</a>
-          <a href="/compare/">Compare</a>
           <a href="https://github.com/Team-Commonly/commonly">GitHub</a>
         </nav>
       </header>
@@ -302,7 +301,7 @@ const renderCompare = (compare) => {
 
 const renderUseCase = (useCase) => `
   <div id="seo-page">
-    <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a><a href="/compare/">Compare</a></nav></header>
+    <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a></nav></header>
     <main>
       <section class="seo-hero">
         <p class="seo-kicker">${escapeHtml(useCase.eyebrow)}</p>
@@ -345,7 +344,7 @@ const renderGuide = (guide) => {
 
   return `
   <div id="seo-page">
-    <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a><a href="/guides/">Guides</a><a href="/use-cases/agent-collab/">Agent collaboration</a><a href="/compare/">Compare</a></nav></header>
+    <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a><a href="/guides/">Guides</a><a href="/use-cases/agent-collab/">Agent collaboration</a></nav></header>
     <main>
       <section class="seo-hero">
         <p class="seo-kicker">${escapeHtml(guide.eyebrow)}</p>
@@ -374,7 +373,7 @@ const renderGuidesIndex = (guides) => {
 
   return `
     <div id="seo-page">
-      <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a><a href="/use-cases/agent-collab/">Agent collaboration</a><a href="/compare/">Compare</a></nav></header>
+      <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a><a href="/use-cases/agent-collab/">Agent collaboration</a></nav></header>
       <main>
         <section class="seo-hero">
           <p class="seo-kicker">Guides</p>
@@ -404,7 +403,7 @@ const faqPageJsonLd = (faq) => ({
   })),
 });
 
-const metadata = ({ title, description, path, schema, faqSchema, ogType = 'website', datePublished, dateModified }) => {
+const metadata = ({ title, description, path, schema, faqSchema, ogType = 'website', datePublished, dateModified, noindex = false }) => {
   const url = pageUrl(path);
   const structuredData = jsonLd(schema);
   const articleDates = ogType === 'article' && datePublished && dateModified
@@ -413,14 +412,14 @@ const metadata = ({ title, description, path, schema, faqSchema, ogType = 'websi
   return `
     <title>${escapeHtml(title)}</title>
     <meta name="description" content="${escapeHtml(description)}" />
-    <meta name="robots" content="index,follow" />
+    <meta name="robots" content="${noindex ? 'noindex' : 'index,follow'}" />
     <link rel="canonical" href="${url}" />
     <meta property="og:type" content="${escapeHtml(ogType)}" />
     <meta property="og:site_name" content="Commonly" />
     <meta property="og:url" content="${url}" />
     <meta property="og:title" content="${escapeHtml(title)}" />
     <meta property="og:description" content="${escapeHtml(description)}" />
-    <meta property="og:image" content="${siteUrl}/og-card.png?v=2" />
+    <meta property="og:image" content="${siteUrl}/og-card.png?v=3" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     ${articleDates}
@@ -428,7 +427,7 @@ const metadata = ({ title, description, path, schema, faqSchema, ogType = 'websi
     <meta name="twitter:site" content="@sam_commonly" />
     <meta name="twitter:title" content="${escapeHtml(title)}" />
     <meta name="twitter:description" content="${escapeHtml(description)}" />
-    <meta name="twitter:image" content="${siteUrl}/og-card.png?v=2" />
+    <meta name="twitter:image" content="${siteUrl}/og-card.png?v=3" />
     <script type="application/ld+json">${structuredData}</script>${faqSchema ? `
     <script type="application/ld+json" id="${faqJsonLdId}">${jsonLd(faqSchema)}</script>` : ''}`;
 };
@@ -485,8 +484,8 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
   const landingPage = {
     path: '/',
     outputPath: 'index.html',
-    title: 'Commonly AI — chat with your agents, ship real work',
-    description: 'Commonly AI is the open-source workspace where agents and teammates share one project memory — any runtime, your infra, no per-agent fees.',
+    title: 'Commonly — one pod for your team and the agents each of you runs',
+    description: 'The open-source workspace where people and their own agents share the same conversations and one task board. Each agent has an owner, so everyone sees who has what.',
     content: renderLanding(landing, useCases, guides, landingFaq),
   };
   if (landingFaq.length) landingPage.faqSchema = faqPageJsonLd(landingFaq);
@@ -502,6 +501,8 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     description: compare.lede,
     content: renderCompare(compare),
     schema: webPage(compare.title, compare.lede, '/compare/'),
+    // Unlisted: noindex, kept out of the sitemap, linked from nothing.
+    noindex: true,
   }];
 
   const guidesIndexPath = '/guides/';
@@ -600,7 +601,7 @@ export const generateSeoPages = async ({ outputDir = buildDir } = {}) => {
     await writeFile(outputPath, renderStaticPage(template, page));
   }));
 
-  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.map((page) => `  <url><loc>${pageUrl(page.path)}</loc></url>`).join('\n')}\n</urlset>\n`;
+  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.filter((page) => !page.noindex).map((page) => `  <url><loc>${pageUrl(page.path)}</loc></url>`).join('\n')}\n</urlset>\n`;
   await writeFile(resolve(outputDir, 'sitemap.xml'), sitemap);
   return pages;
 };

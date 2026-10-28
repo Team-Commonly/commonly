@@ -180,6 +180,8 @@ describe('performRun', () => {
     // so the whole page reaches one composite turn instead of aging untouched
     // behind a prior single-event turn.
     expect(mockGet.mock.calls[0][1].limit).toBe(10);
+    // TASK-317: the poll names the CLI for the chat chip (display only).
+    expect(mockGet.mock.calls[0][1].reportedCli).toBe('codex');
     expect(spawn).toHaveBeenCalledTimes(1);
     const spawnedEnv = spawn.mock.calls[0][1].env;
     const configIndex = Number(process.env.GIT_CONFIG_COUNT || 0);

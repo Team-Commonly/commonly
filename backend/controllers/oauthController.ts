@@ -28,7 +28,8 @@ const joinCommunityPodBestEffort = (userId: any) => {
 // backend/integrations is a separate concern (agent integrations) and is
 // intentionally untouched.
 //
-// Flow (frontend on a different origin than the API, so no cookies):
+// Flow: the API holds a short-lived browser cookie; the frontend exchanges
+// the completion code with credentials, including across same-site origins.
 //   GET  /api/auth/oauth/providers            → which providers are configured
 //   GET  /api/auth/oauth/:provider/start      → 302 to provider (state row minted)
 //   GET  /api/auth/oauth/:provider/callback   → link-or-create user, then 302 to
@@ -39,6 +40,24 @@ const joinCommunityPodBestEffort = (userId: any) => {
 
 const STATE_TTL_MS = 10 * 60 * 1000; // full provider round-trip budget
 const EXCHANGE_TTL_MS = 2 * 60 * 1000; // frontend picks this up immediately
+
+// Per-attempt cookies keep independent login tabs from overwriting each other.
+// __Host- disallows Domain cookies and requires Path=/ on HTTPS deployments.
+const browserCookieOptions = (req: any) => ({
+  httpOnly: true, secure: req.protocol === 'https', sameSite: 'lax' as const, path: '/',
+});
+const browserCookieName = (state: string, req: any) =>
+  `${req.protocol === 'https' ? '__Host-' : ''}cm-oauth-${state}`;
+const nonceHash = (nonce: string) => crypto.createHash('sha256').update(nonce).digest('hex');
+const readBrowserHash = (req: any, state: string): string | null => {
+  if (!/^[a-f0-9]{48}$/.test(state)) return null;
+  const name = browserCookieName(state, req);
+  const matches = String(req.headers?.cookie || '').split(';').map((part) => part.trim())
+    .filter((part) => part.startsWith(`${name}=`));
+  if (matches.length !== 1) return null;
+  const nonce = matches[0].slice(name.length + 1);
+  return /^[a-f0-9]{64}$/.test(nonce) ? nonceHash(nonce) : null;
+};
 
 interface ProviderProfile {
   providerId: string;
@@ -53,7 +72,7 @@ const PROVIDERS: Record<string, {
   clientSecret: () => string | undefined;
   authorizeUrl: string;
   scope: string;
-  fetchProfile: (code: string, redirectUri: string) => Promise<ProviderProfile>;
+  fetchProfile: (code: string, redirectUri: string, codeVerifier: string) => Promise<ProviderProfile>;
 }> = {
   github: {
     label: 'GitHub',
@@ -61,13 +80,14 @@ const PROVIDERS: Record<string, {
     clientSecret: () => process.env.GITHUB_OAUTH_CLIENT_SECRET,
     authorizeUrl: 'https://github.com/login/oauth/authorize',
     scope: 'read:user user:email',
-    async fetchProfile(code: string, redirectUri: string): Promise<ProviderProfile> {
+    async fetchProfile(code: string, redirectUri: string, codeVerifier: string): Promise<ProviderProfile> {
       const tokenRes = await axios.post(
         'https://github.com/login/oauth/access_token',
         {
           client_id: process.env.GITHUB_OAUTH_CLIENT_ID,
           client_secret: process.env.GITHUB_OAUTH_CLIENT_SECRET,
           code,
+          code_verifier: codeVerifier,
           redirect_uri: redirectUri,
         },
         { headers: { Accept: 'application/json' }, timeout: 15000 },
@@ -109,13 +129,14 @@ const PROVIDERS: Record<string, {
     clientSecret: () => process.env.GOOGLE_OAUTH_CLIENT_SECRET,
     authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
     scope: 'openid email profile',
-    async fetchProfile(code: string, redirectUri: string): Promise<ProviderProfile> {
+    async fetchProfile(code: string, redirectUri: string, codeVerifier: string): Promise<ProviderProfile> {
       const tokenRes = await axios.post(
         'https://oauth2.googleapis.com/token',
         new URLSearchParams({
           client_id: process.env.GOOGLE_OAUTH_CLIENT_ID || '',
           client_secret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || '',
           code,
+          code_verifier: codeVerifier,
           grant_type: 'authorization_code',
           redirect_uri: redirectUri,
         }).toString(),
@@ -232,9 +253,13 @@ exports.startOAuth = async (req: any, res: any) => {
     }
 
     const state = crypto.randomBytes(24).toString('hex');
+    const browserNonce = crypto.randomBytes(32).toString('hex');
+    const pkceVerifier = crypto.randomBytes(32).toString('base64url');
     await OAuthLoginState.create({
       provider,
       state,
+      browserNonceHash: nonceHash(browserNonce),
+      pkceVerifier,
       invitationCode: String(input.invite || '').trim(),
       next: safeNextPath(input.next),
       signupRef: cleanSignupRef(input.ref) || '',
@@ -250,6 +275,11 @@ exports.startOAuth = async (req: any, res: any) => {
       redirect_uri: callbackUrl(provider, req),
       scope: p.scope,
       state,
+      code_challenge_method: 'S256',
+      code_challenge: crypto.createHash('sha256').update(pkceVerifier).digest('base64url'),
+    });
+    res.cookie(browserCookieName(state, req), browserNonce, {
+      ...browserCookieOptions(req), maxAge: STATE_TTL_MS,
     });
     if (provider === 'google') params.set('response_type', 'code');
     return res.redirect(`${p.authorizeUrl}?${params.toString()}`);
@@ -266,24 +296,32 @@ exports.oauthCallback = async (req: any, res: any) => {
     if (!isProviderConfigured(provider)) return loginErrorRedirect(res, 'provider_error');
     if (req.query.error) return loginErrorRedirect(res, 'provider_denied');
 
+    const state = typeof req.query.state === 'string' ? req.query.state : '';
+    const browserNonceHash = readBrowserHash(req, state);
+    if (!browserNonceHash) return loginErrorRedirect(res, 'state_invalid');
+
     // One-time state: atomically claim it so a replayed callback URL can't
     // mint a second session.
     const stateRow = await OAuthLoginState.findOneAndUpdate(
       {
         provider,
-        state: String(req.query.state || ''),
+        state,
+        browserNonceHash,
+        pkceVerifier: { $regex: /^[A-Za-z0-9_-]{43}$/ },
         usedAt: null,
         expiresAt: { $gt: new Date() },
       },
       { $set: { usedAt: new Date() } },
       { new: true },
-    );
+    ).select('+pkceVerifier');
     if (!stateRow) return loginErrorRedirect(res, 'state_invalid');
 
     const profile = await PROVIDERS[provider].fetchProfile(
       String(req.query.code || ''),
       callbackUrl(provider, req),
+      stateRow.pkceVerifier,
     );
+    stateRow.pkceVerifier = undefined;
     if (!profile.providerId) return loginErrorRedirect(res, 'provider_error');
     // Linking by email is only safe when the provider vouches for it.
     if (!profile.email || !profile.emailVerified) return loginErrorRedirect(res, 'email_unverified');
@@ -295,8 +333,7 @@ exports.oauthCallback = async (req: any, res: any) => {
     }
 
     let user = await User.findOne({
-      'authProviders.provider': provider,
-      'authProviders.providerId': profile.providerId,
+      authProviders: { $elemMatch: { provider, providerId: profile.providerId } },
     });
     let createdNewUser = false;
     // The provider arm matches a linked identity, and a converted agent row keeps
@@ -386,10 +423,17 @@ exports.exchangeOAuthCode = async (req: any, res: any) => {
     const code = String(req.body?.code || '');
     if (!code) return res.status(400).json({ error: 'Missing exchange code.' });
 
+    const pending = await OAuthLoginState.findOne({ exchangeCode: code });
+    const browserNonceHash = pending && readBrowserHash(req, pending.state);
+    if (!browserNonceHash) {
+      return res.status(400).json({ error: 'Invalid or expired exchange code.', code: 'EXCHANGE_INVALID' });
+    }
+
     // Atomic claim — the code is single-use.
     const stateRow = await OAuthLoginState.findOneAndUpdate(
       {
         exchangeCode: code,
+        browserNonceHash,
         exchangedAt: null,
         exchangeExpiresAt: { $gt: new Date() },
       },
@@ -412,6 +456,7 @@ exports.exchangeOAuthCode = async (req: any, res: any) => {
       });
     }
 
+    res.clearCookie(browserCookieName(stateRow.state, req), browserCookieOptions(req));
     return res.json(issueSession(user));
   } catch (err: any) {
     console.error('OAuth exchange failed:', err.message);

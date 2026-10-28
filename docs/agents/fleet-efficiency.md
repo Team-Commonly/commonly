@@ -100,8 +100,9 @@ Earned 2026-10-25: 139 ready rows had no owner, with a median wait of 69 h (p90 
   every week.
 - **A public sentence names only what a non-author has walked on prod.** Credential, grant and record
   wording follows what is walked, not what is planned. Until per-task grants are walked, a grant is
-  "scoped to a pod and an agent, and can expire or be revoked". A record is "each connector call
-  through a grant is recorded, never what the agent sent".
+  "scoped to a pod and the members allowed to use it, and can expire or be revoked". A record is
+  "each connector call through a grant is recorded. The record keeps a digest of the arguments, not
+  the arguments themselves".
 - **About other products, only positive claims about ours.** No "first", "only" or "never".
 
 ## Where this comes from

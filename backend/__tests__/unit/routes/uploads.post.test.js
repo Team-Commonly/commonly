@@ -34,6 +34,13 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
   next();
 });
 
+jest.mock('../../../services/podMembershipService', () => ({
+  requirePodMember: jest.fn(),
+}));
+const { requirePodMember } = require('../../../services/podMembershipService');
+
+const POD = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+
 const routes = require('../../../routes/uploads');
 
 describe('uploads POST / (ADR-002 Phase 1)', () => {
@@ -46,6 +53,8 @@ describe('uploads POST / (ADR-002 Phase 1)', () => {
     File.__saveMock.mockClear();
     File.mockClear();
     mockStore.put.mockClear();
+    requirePodMember.mockReset();
+    requirePodMember.mockResolvedValue({ pod: { _id: POD }, canWrite: true });
   });
 
   it('writes bytes through the driver and saves metadata-only File', async () => {
@@ -126,21 +135,59 @@ describe('uploads POST / (ADR-002 Phase 1)', () => {
     expect(mockStore.put).toHaveBeenCalled();
   });
 
-  it('persists podId on the File row when supplied', async () => {
+  it('persists podId on the File row when the uploader can write to the pod', async () => {
+    await request(app)
+      .post('/api/uploads')
+      .field('podId', POD)
+      .attach('image', Buffer.from('data'), 'brief.pdf')
+      .expect(200);
+    expect(requirePodMember).toHaveBeenCalledWith(POD, 'user1', { write: true });
+    const fileArgs = File.mock.calls[File.mock.calls.length - 1][0];
+    expect(fileArgs.podId).toBe(POD);
+  });
+
+  it.each([
+    ['a non-member', { error: 'Write access denied', status: 403 }],
+    ['a viewer', { error: 'Write access denied', status: 403 }],
+    ['an unknown pod', { error: 'Pod not found', status: 404 }],
+  ])('refuses %s with 403 and stores nothing', async (_who, refusal) => {
+    requirePodMember.mockResolvedValue(refusal);
+    const res = await request(app)
+      .post('/api/uploads')
+      .field('podId', POD)
+      .attach('image', Buffer.from('data'), 'brief.pdf')
+      .expect(403);
+    expect(res.body.msg).toBe('You cannot add files to this pod');
+    expect(mockStore.put).not.toHaveBeenCalled();
+    expect(File).not.toHaveBeenCalled();
+  });
+
+  it('refuses a malformed podId with the same 403, without a lookup', async () => {
     await request(app)
       .post('/api/uploads')
       .field('podId', 'pod-123')
       .attach('image', Buffer.from('data'), 'brief.pdf')
-      .expect(200);
-    const fileArgs = File.mock.calls[File.mock.calls.length - 1][0];
-    expect(fileArgs.podId).toBe('pod-123');
+      .expect(403);
+    expect(requirePodMember).not.toHaveBeenCalled();
+    expect(mockStore.put).not.toHaveBeenCalled();
   });
 
-  it('leaves podId null when not supplied', async () => {
+  it('refuses with 403 when the membership lookup throws', async () => {
+    requirePodMember.mockRejectedValue(new Error('db down'));
+    await request(app)
+      .post('/api/uploads')
+      .field('podId', POD)
+      .attach('image', Buffer.from('data'), 'brief.pdf')
+      .expect(403);
+    expect(mockStore.put).not.toHaveBeenCalled();
+  });
+
+  it('leaves podId null when not supplied, with no membership check', async () => {
     await request(app)
       .post('/api/uploads')
       .attach('image', Buffer.from('data'), 'photo.png')
       .expect(200);
+    expect(requirePodMember).not.toHaveBeenCalled();
     const fileArgs = File.mock.calls[File.mock.calls.length - 1][0];
     expect(fileArgs.podId).toBeNull();
   });

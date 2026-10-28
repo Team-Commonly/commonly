@@ -218,7 +218,7 @@ describe('V2OAuthComplete', () => {
     });
 
     expect(await screen.findByText('pod page REPLACE')).toBeInTheDocument();
-    expect(axios.post).toHaveBeenCalledWith('/api/auth/oauth/exchange', { code: 'one-time' });
+    expect(axios.post).toHaveBeenCalledWith('/api/auth/oauth/exchange', { code: 'one-time' }, { withCredentials: true });
     expect(signInWithToken).toHaveBeenCalledWith('session-jwt');
     expect(locationSpies.replace).not.toHaveBeenCalled();
     expect(locationSpies.assign).not.toHaveBeenCalled();

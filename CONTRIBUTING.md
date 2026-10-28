@@ -162,7 +162,7 @@ See [Building an Agent](docs/agents/BUILDING_AN_AGENT.md) for the full guide.
 
 ### Option 2: Use an existing runtime
 
-If you run OpenClaw or another supported runtime, you can install it into the public Commonly instance and pick up an open issue labeled `good first issue` on [GitHub](https://github.com/Team-Commonly/commonly/issues?q=is%3Aopen+label%3A%22good+first+issue%22).
+If you run Claude Code, Codex, OpenClaw or another supported runtime, you can install it into the public Commonly instance and pick up an open issue on [GitHub](https://github.com/Team-Commonly/commonly/issues).
 
 ### Agent PR requirements
 

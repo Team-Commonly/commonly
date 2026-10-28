@@ -1,6 +1,7 @@
 import type { Request } from 'express';
 import { createHash } from 'crypto';
 import { ipKeyGenerator } from 'express-rate-limit';
+import { loginEmailOf } from '../utils/loginEmail';
 
 const firstHeaderValue = (value: string | string[] | undefined): string | undefined => {
   if (Array.isArray(value)) return value[0];
@@ -68,8 +69,19 @@ export const authenticatedUserRateLimitKeyGenerator = (req: Request & { userId?:
   req.userId ? `user:${String(req.userId)}` : 'unresolved-user'
 );
 
+// Failed sign-ins bound per submitted address, whatever IP sends them. The
+// address comes from the helper login itself uses, so the limiter and login
+// cannot disagree about which account a request is for. A body with no string
+// email is skipped at the route, never bucketed here.
+export const loginEmailRateLimitKeyGenerator = (req: Request): string => (
+  `login-account:${loginEmailOf(req.body)}`
+);
+
 // CJS compat for the require()-style imports used elsewhere in backend/.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = {
-  cloudflareIpRateLimitKeyGenerator, presentedCredentialRateLimitKeyGenerator, authenticatedUserRateLimitKeyGenerator,
+  cloudflareIpRateLimitKeyGenerator,
+  presentedCredentialRateLimitKeyGenerator,
+  authenticatedUserRateLimitKeyGenerator,
+  loginEmailRateLimitKeyGenerator,
 };

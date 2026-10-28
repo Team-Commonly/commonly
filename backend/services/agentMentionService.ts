@@ -1579,6 +1579,7 @@ const enqueueMentions = async ({
   const rawContent = message?.content || message?.text || '';
   const source = message?.source || 'chat';
   const eventType: (typeof MENTION_EVENT_TYPES)[number] = source === 'thread' ? 'thread.mention' : 'chat.mention';
+  const threadRootId = resolveThreadRootId(message);
   // Author/age frame inputs — identical for every target of this
   // message, so resolved once here rather than at each of the four
   // enqueue sites below. Same values that already go into the envelope
@@ -1723,6 +1724,7 @@ const enqueueMentions = async ({
               messageType: message?.messageType || message?.message_type || 'text',
               createdAt: message?.createdAt || message?.created_at || new Date(),
               thread: message?.thread || null,
+              ...(threadRootId ? { threadRootId } : {}),
               implicitReply: true,
               adjacentReply: true,
             },
@@ -1981,6 +1983,7 @@ const enqueueMentions = async ({
               messageType: message?.messageType || message?.message_type || 'text',
               createdAt: message?.createdAt || message?.created_at || new Date(),
               thread: message?.thread || null,
+              ...(threadRootId ? { threadRootId } : {}),
             },
           });
           recordEnqueued(directMatch);
@@ -2032,6 +2035,7 @@ const enqueueMentions = async ({
                   messageType: message?.messageType || message?.message_type || 'text',
                   createdAt: message?.createdAt || message?.created_at || new Date(),
                   thread: message?.thread || null,
+                  ...(threadRootId ? { threadRootId } : {}),
                   autoJoined: true,
                 },
               });
@@ -2106,6 +2110,7 @@ const enqueueMentions = async ({
                   messageType: message?.messageType || message?.message_type || 'text',
                   createdAt: message?.createdAt || message?.created_at || new Date(),
                   thread: message?.thread || null,
+                  ...(threadRootId ? { threadRootId } : {}),
                 },
               });
               recordEnqueued({ agentName: agentType, instanceId: match.instanceId || 'default' });
@@ -2124,7 +2129,6 @@ const enqueueMentions = async ({
   // One BOT User lookup serves both the delivered agent mention below and the
   // routed message's ambient wake fan-out. An auto-joined target is not in
   // the initial installation list yet, so include the actual delivery set.
-  const threadRootId = resolveThreadRootId(message);
   let resolvedBotUserIds: Map<string, string> | undefined;
   if (threadRootId) {
     const followedUserIds = await resolveHumanMentionUserIds(humanMentionHandles, podMemberIds);
@@ -2181,6 +2185,7 @@ const enqueueMentions = async ({
               messageType: message?.messageType || message?.message_type || 'text',
               createdAt: message?.createdAt || message?.created_at || new Date(),
               thread: message?.thread || null,
+              ...(threadRootId ? { threadRootId } : {}),
               replyToMessageId,
               implicitReply: true,
             },
