@@ -1004,6 +1004,28 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(aprofile).toContain('background: var(--v2-ink-hover)');
   });
 
+  test('agent profile Phase B uses ink actions, the halo, and the type ladder', () => {
+    const primary = ruleBody(aprofile, '.v2-root button.v2-aprofile__btn--primary');
+    expect(primary).toContain('background: var(--v2-ink)');
+    expect(primary).not.toContain('var(--v2-accent)');
+    expect(ruleBody(aprofile, '.v2-root button.v2-aprofile__btn--primary:hover')).toContain('var(--v2-ink-hover)');
+    expect(ruleBody(aprofile, '.v2-root .v2-aprofile__btn--primary')).toContain('color: var(--v2-on-ink)');
+    // The footer CTA sits on the accent-deep band, so it keeps main's white fill.
+    // An ink fill there reads as a dark hole (review 5673841827).
+    const footerPrimary = ruleBody(aprofile, '.v2-root .v2-aprofile__footer-cta .v2-aprofile__btn--primary');
+    expect(footerPrimary).toContain('background: #fff');
+    expect(footerPrimary).toContain('color: var(--v2-accent)');
+
+    const avatarFocus = ruleBody(aprofile, '.v2-root button.v2-aprofile__avatar-button:focus-visible');
+    expect(avatarFocus).toContain('outline: none');
+    expect(avatarFocus).toContain('box-shadow: var(--v2-focus-ring)');
+
+    for (const selector of ['.v2-aprofile__empty-title', '.v2-aprofile__name', '.v2-aprofile__stat-num']) {
+      expect(ruleBody(aprofile, selector)).toContain('font-weight: 700');
+    }
+    expect(aprofile).not.toContain('font-weight: 850');
+  });
+
   test('the nav rail pane lets its language dropdown escape the pane clip', () => {
     // The rail is 56px wide; its language menu is a wider floating popover.
     // Base `.v2-pane { overflow: hidden }` clips it to the rail edge, so the

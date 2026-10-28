@@ -187,9 +187,9 @@ describe('BYO from an approved connect card', () => {
   });
 });
 
-// #2289: the listener runs on a Mac with either tool and on Linux with Codex
-// only. The compact page promises "One command in Terminal", so it opens only
-// where that command will be shown.
+// #2289: the listener runs on a Mac with either tool only (Linux is not tested
+// yet, 10-26). The compact page promises "One command in Terminal", so it opens
+// only where that command will be shown.
 describe('the compact page opens only where the command exists', () => {
   const realUserAgent = window.navigator.userAgent;
   const setUserAgent = (value) => Object.defineProperty(window.navigator, 'userAgent', { value, configurable: true });
@@ -204,10 +204,11 @@ describe('the compact page opens only where the command exists', () => {
     expect(screen.queryByTestId('byo-card-compact')).toBeNull();
   });
 
-  test('a Codex card opened on Linux is compact: the listener runs there', async () => {
+  test('a Codex card opened on Linux gets the full page: Codex on Linux is not tested yet', async () => {
     setUserAgent(LINUX);
     renderAt('/v2/agents/byo?pod=bbb222&name=lee-codex&from=card&adapter=codex');
-    expect(await screen.findByTestId('byo-card-compact')).toBeInTheDocument();
+    expect(await screen.findByTestId('byo-mode-byo')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByTestId('byo-card-compact')).toBeNull();
   });
 
   test('on Windows no card is compact, Codex included', async () => {

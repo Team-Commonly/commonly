@@ -355,6 +355,7 @@
       "submit": "注册",
       "creating": "正在注册…",
       "alreadyHaveAccount": "已有账号？",
+      "legal": "创建账号即表示你同意<terms>服务条款</terms>和<privacy>隐私政策</privacy>。",
       "errors": {
         "failed": "注册失败。"
       },
@@ -780,7 +781,7 @@
       "ariaLabel": "你的团队和每个人自己的智能体，比如你的 Claude Code，同在一个 Pod。",
       "titlePrefix": "你的团队和",
       "titleSuffix": "同在一个 Pod",
-      "lede": "用链接邀请团队。每个人带上自己的智能体，Mac 上的 Claude Code，或在 Pod 里一键启动，大家共用同样的对话和一个任务板。每个智能体都是有主人的成员，谁在做什么一目了然。基于 Apache-2.0 开源，也可以自托管。",
+      "lede": "用链接邀请团队。每个人带上自己的智能体，Mac 上的 Claude Code 或 Codex，或在 Pod 里一键启动，大家共用同样的对话和一个任务板。每个智能体都是有主人的成员，谁在做什么一目了然。基于 Apache-2.0 开源，也可以自托管。",
       "selfHostInstall": "自托管安装命令",
       "copy": "复制",
       "copied": "已复制",
@@ -1038,6 +1039,8 @@
       "twitter": "X / Twitter",
       "legal": "法律信息",
       "license": "许可证（Apache-2.0）",
+      "terms": "服务条款",
+      "privacy": "隐私政策",
       "copyright": "© {{year}} Commonly。代码采用 Apache-2.0 许可；Commonly 名称和标志是 Commonly 项目的商标。"
     }
   },
@@ -1602,7 +1605,7 @@
     "footnote": {
       "cliRoute": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会显示回复 @提及的监听命令。",
       "cliRouteClaudeUnavailable": "更喜欢用 CLI？选择「{{byo}}」；安装后可以在自己的 Claude Code 会话中连接 Commonly。要回复 @提及，请在支持的电脑上运行监听命令，或选择「{{hosted}}」。",
-      "cliRouteCodexUnavailable": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会说明如何在 Mac 或 Linux 电脑上运行监听命令。要从 Windows 回复 @提及，请选择「{{hosted}}」。",
+      "cliRouteCodexUnavailable": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会说明如何在 Mac 电脑上运行监听命令。要从 {{os}} 回复 @提及，请选择「{{hosted}}」。",
       "notSure": "不确定用哪条路径？",
       "mcpVsCli": "MCP、CLI 与 SDK 对比",
       "fullWalkthrough": "完整教程"
@@ -1668,7 +1671,7 @@
       "osWindows": "Windows",
       "toolClaude": "Claude Code",
       "unavailableClaude": "Claude Code 在 {{os}} 上暂时不能回复 @提及：Commonly 要把它放进沙箱里运行，而 Commonly 用的沙箱在 {{os}} 上还做不到。你可以用下面的命令把 Commonly 的工具接进自己的 Claude Code 会话，或者选择“在这里运行”，改用托管智能体。",
-      "unavailableCodex": "Codex CLI 在 Windows 上暂时不能回复 @提及。你可以选择“在这里运行”，改用托管智能体；也可以换到 Mac 或 Linux 机器上运行这条命令。",
+      "unavailableCodex": "Codex CLI 在 {{os}} 上暂时不能回复 @提及。你可以选择“在这里运行”，改用托管智能体；也可以换到 Mac 机器上运行这条命令（Linux 尚未测试）。",
       "toolCodex": "Codex CLI",
       "switchToCodex": "我用的是 Codex",
       "switchToClaude": "我用的是 Claude Code"

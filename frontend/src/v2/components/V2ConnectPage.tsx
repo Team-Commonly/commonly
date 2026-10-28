@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import axios from '../../utils/axiosConfig';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { useAuth } from '../../context/AuthContext';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
 import { CURSOR_PROJECT_RULE, CURSOR_PROJECT_RULE_PATH } from '../utils/cursorProjectRule';
 
-type CopyKey = 'cli' | 'mcp' | 'cursorRule' | 'gateway';
+type CopyKey = 'cli' | 'mcp' | 'cursorRule';
 
 const CopyButton: React.FC<{ value: string; copyKey: CopyKey; copied: CopyKey | null; onCopy: (key: CopyKey, value: string) => void }> = ({
   value, copyKey, copied, onCopy,
@@ -27,13 +26,6 @@ const V2ConnectPage: React.FC = () => {
   const { currentUser } = useAuth();
   const isAdmin = currentUser?.role === 'admin';
   const [copied, setCopied] = useState<CopyKey | null>(null);
-  const [gatewayOpen, setGatewayOpen] = useState(false);
-  const [gatewayName, setGatewayName] = useState('');
-  const [gatewaySlug, setGatewaySlug] = useState('');
-  const [gatewayNamespace, setGatewayNamespace] = useState('');
-  const [gatewayToken, setGatewayToken] = useState('');
-  const [gatewayError, setGatewayError] = useState<string | null>(null);
-  const [gatewayBusy, setGatewayBusy] = useState(false);
 
   const copy = async (key: CopyKey, value: string) => {
     const fallbackCopy = () => {
@@ -62,31 +54,6 @@ const V2ConnectPage: React.FC = () => {
       window.setTimeout(() => setCopied((current) => (current === key ? null : current)), 1500);
     } catch {
       // The code block remains selectable when the clipboard is unavailable.
-    }
-  };
-
-  const createGateway = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!gatewayName.trim() || gatewayBusy) return;
-    setGatewayBusy(true);
-    setGatewayError(null);
-    setGatewayToken('');
-    try {
-      const response = await axios.post<{ gatewayToken?: string }>('/api/gateways', {
-        name: gatewayName.trim(),
-        slug: gatewaySlug.trim() || undefined,
-        mode: 'k8s',
-        metadata: gatewayNamespace.trim() ? { namespace: gatewayNamespace.trim() } : {},
-      });
-      setGatewayToken(response.data.gatewayToken || '');
-      setGatewayName('');
-      setGatewaySlug('');
-      setGatewayNamespace('');
-    } catch (error: unknown) {
-      const message = (error as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setGatewayError(message || 'Couldn’t create the gateway.');
-    } finally {
-      setGatewayBusy(false);
     }
   };
 
@@ -135,41 +102,6 @@ const V2ConnectPage: React.FC = () => {
           <Link className="v2-connect__secondary" to="/v2/agents">Manage installed agents</Link>
         </div>
 
-        {isAdmin && (
-          <div className="v2-connect__gateway">
-            <div>
-              <h3>Connect a managed gateway</h3>
-            </div>
-            <button type="button" className="v2-connect__secondary" onClick={() => setGatewayOpen((open) => !open)}>
-              {gatewayOpen ? 'Close gateway setup' : 'Add a gateway'}
-            </button>
-            {gatewayOpen && (
-              <form className="v2-connect__gateway-form" onSubmit={createGateway}>
-                <label>
-                  <span>Gateway name</span>
-                  <input value={gatewayName} onChange={(event) => setGatewayName(event.target.value)} required />
-                </label>
-                <label>
-                  <span>Slug <em>optional</em></span>
-                  <input value={gatewaySlug} onChange={(event) => setGatewaySlug(event.target.value)} />
-                </label>
-                <label>
-                  <span>Namespace <em>optional</em></span>
-                  <input value={gatewayNamespace} onChange={(event) => setGatewayNamespace(event.target.value)} />
-                </label>
-                <button type="submit" className="v2-connect__cta" disabled={gatewayBusy}>{gatewayBusy ? 'Creating…' : 'Create gateway'}</button>
-              </form>
-            )}
-            {gatewayError && <p className="v2-connect__error" role="alert">{gatewayError}</p>}
-            {gatewayToken && (
-              <div className="v2-connect__gateway-token">
-                <p>Save this gateway token now. It will not be shown again.</p>
-                <code>{gatewayToken}</code>
-                <CopyButton value={gatewayToken} copyKey="gateway" copied={copied} onCopy={copy} />
-              </div>
-            )}
-          </div>
-        )}
       </section>
 
       {isAdmin && (

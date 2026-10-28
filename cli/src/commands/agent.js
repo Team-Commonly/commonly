@@ -939,8 +939,16 @@ export const updateAgentConfiguration = async ({
  * two gates, because those gates compare `trust` directly.
  */
 export const resolveAttachSandbox = ({
-  environment, adapterName, platform = process.platform,
+  environment, adapterName, adapter = null, platform = process.platform,
 } = {}) => {
+  // An adapter that enforces one confined shape of its own (dsh: Seatbelt with a
+  // restricted network and NO trust) says so here, and its check is the one that
+  // decides: the trust-keyed gates below cannot express that shape, so before
+  // this they refused the only environment dsh accepts (D106). The adapter's
+  // check throws on every other shape, so this admits nothing it would refuse.
+  if (typeof adapter?.confinesOwnSandbox === 'function' && adapter.confinesOwnSandbox(environment)) {
+    return { mode: environment.sandbox.mode, trust: environment.sandbox.trust };
+  }
   const sandbox = normalizeSandboxTrust(environment?.sandbox);
   const trust = sandbox?.trust;
   // `workspace` is claude-only for now (TASK-294). Refused here with the words
@@ -988,6 +996,7 @@ export const performAttach = async ({
   memoryInstance = 'default',
   log = () => {},
   adapterRegistry = { getAdapter, listAdapterNames },
+  seatbelt: probeSeatbelt = detectSeatbelt,
 }) => {
   const adapter = adapterRegistry.getAdapter(adapterName);
   if (!adapter) {
@@ -1022,7 +1031,7 @@ export const performAttach = async ({
     }
     log(`workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
 
-    const { mode: sandboxMode } = resolveAttachSandbox({ environment, adapterName });
+    const { mode: sandboxMode } = resolveAttachSandbox({ environment, adapterName, adapter });
     if (sandboxMode === 'bwrap') {
       const bwrap = detectBwrap();
       if (!bwrap.available) {
@@ -1047,19 +1056,20 @@ export const performAttach = async ({
           + '(deny-by-default filesystem + network)',
         );
       } else {
-        const seatbelt = detectSeatbelt();
-        if (!seatbelt.available) {
-          throw new Error(
-            `public Claude sandbox.mode=${sandboxMode} requires macOS Seatbelt: `
-            + `${seatbelt.error}. On Linux use sandbox.mode=bwrap.`,
-          );
-        }
         const adapterLabel = ({ opencode: 'OpenCode', qwen: 'Qwen', claude: 'Claude' })[adapterName]
           || adapterName;
-        log(
-          `sandbox: public ${sandboxMode} via macOS Seatbelt `
-          + `(deny-by-default host filesystem; ${adapterLabel}/MCP network retained)`,
-        );
+        const seatbelt = probeSeatbelt();
+        if (!seatbelt.available) {
+          // dsh refuses bwrap, so it gets no Linux hint that leads to a second refusal.
+          throw new Error(adapterName === 'dsh'
+            ? `confined dsh sandbox.mode=${sandboxMode} requires macOS Seatbelt: ${seatbelt.error}.`
+            : `public ${adapterLabel} sandbox.mode=${sandboxMode} requires macOS Seatbelt: `
+              + `${seatbelt.error}. On Linux use sandbox.mode=bwrap.`);
+        }
+        log(adapterName === 'dsh'
+          ? `sandbox: confined dsh ${sandboxMode} via macOS Seatbelt (restricted network)`
+          : `sandbox: public ${sandboxMode} via macOS Seatbelt `
+            + `(deny-by-default host filesystem; ${adapterLabel}/MCP network retained)`);
       }
     } else if (sandboxMode !== 'none' && sandboxMode !== undefined) {
       throw new Error(
@@ -3330,19 +3340,20 @@ const SUPPORTED_LANGUAGES = ['python'];
 // three levels up. The scaffolder copies the canonical SDK file from the repo
 // into the user's cwd; ADR-006 §SDK lives = "live-copy, not dependency".
 //
-// Removal condition: ADR-006 §Migration path Phase 4 — when the CLI is
-// published as `@commonlyai/cli` on npm, the example files won't sit at a
-// repo-relative path; we'll need to bundle them into the package at build
-// time and resolve via `import.meta.resolve` or a packaged-data lookup.
-// Until that phase, repo-relative is the simplest correct answer.
-const repoFile = (...parts) => pathResolve(
-  dirname(fileURLToPath(import.meta.url)), '..', '..', '..', ...parts,
-);
+// The published package carries these files under cli/assets/webhook-sdk/,
+// bundled from examples/ by scripts/bundle-sdk-examples.mjs at prepack (npm
+// pack and publish run it). A repo clone that has not packed yet falls back to
+// the examples/ tree, which stays the single source of truth.
+const cliRoot = pathResolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const sdkAsset = (bundledRel, repoRel) => {
+  const bundled = pathResolve(cliRoot, 'assets', 'webhook-sdk', bundledRel);
+  return existsSync(bundled) ? bundled : pathResolve(cliRoot, '..', 'examples', repoRel);
+};
 
 const SDK_SOURCES = {
   python: {
-    sdkSrc: () => repoFile('examples', 'sdk', 'python', 'commonly.py'),
-    botSrc: () => repoFile('examples', 'hello-world-python', 'bot.py'),
+    sdkSrc: () => sdkAsset('python/commonly.py', join('sdk', 'python', 'commonly.py')),
+    botSrc: () => sdkAsset('python/bot.py', join('hello-world-python', 'bot.py')),
     sdkOut: 'commonly.py',
     botOut: (name) => `${name}.py`,
     runHint: (name) => `COMMONLY_TOKEN=$(cat .commonly-env) python3 ${name}.py`,

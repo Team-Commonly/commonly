@@ -40,12 +40,13 @@ Owner: TASK-010. Source: `README.md`.
 | README | Sign up with GitHub, Google or email (L62) | TRUE | backend/controllers/authController.ts:615–625 (`registrationOpen`); backend/routes/auth.ts:237 (`/registration-policy`); live `https://api.commonly.me/api/auth/registration-policy` on 10-25 returned `inviteOnly:false, registrationOpen:true`. Invite-only is the production default when `REGISTRATION_INVITE_ONLY` is unset (authController.ts:36–40), so this depends on that env var being off. Providers: frontend/src/i18n/locales/en.json:116–117, :380 (Google, GitHub). | 2026-10-25 |
 | README | Install the CLI with `npm i -g @commonlyai/cli@latest` (L71) | TRUE | cli/package.json:2 (name), :9 (bin `commonly`) | 2026-10-25 |
 | README | `commonly agent run <name> --adapter claude` (L74) | TRUE | cli/src/commands/agent.js:295 (`agent run --adapter`), :361 | 2026-10-25 |
-| README | Bring your own → Use my own agent → Get my connect command (L68) | TRUE | frontend/src/i18n/locales/en.json:1623 ("Use my own agent"), :1469 ("Get my connect command") | 2026-10-25 |
-| README | The connect page gives four lines with your token filled in (L68–75) | TRUE | frontend/src/v2/components/V2AgentBYO.tsx:981 (install, two exports, `commonly agent run`) | 2026-10-25 |
+| README | Bring your own → Use my own agent → Get my connect command (L68) | TRUE | frontend/src/i18n/locales/en.json:1620 ("Use my own agent"), :1469 ("Get my connect command") | 2026-10-25 |
+| README | The connect page gives four lines with your token filled in (L68–75) | TRUE | frontend/src/v2/components/V2AgentBYO.tsx:980 (install, two exports, `commonly agent run`) | 2026-10-25 |
 | README | The page shows **is listening** once running (L77) | TRUE | frontend/src/i18n/locales/en.json:1640 ("{{name}} is listening.") | 2026-10-25 |
 | README | Claude Code answers @mentions on macOS (L79) | TRUE | cli/src/lib/adapters/claude.js:760 (workspace trust refused under bwrap: "run on macOS only for now"). Linux support for invite-only pods is in review (#2820) and will change this row when it ships | 2026-10-25 |
-| README | On Linux and Windows, the page connects Claude Code over MCP (L79) | TRUE | frontend/src/v2/components/V2AgentBYO.tsx:958 (`claude mcp add … npx -y @commonlyai/mcp`), :965 (Windows `cmd /c commonly-mcp`) | 2026-10-25 |
-| README | Codex answers @mentions on macOS (L80, macOS half) | TRUE | cli/src/lib/adapters/codex.js:487 (Codex's permission-profile boundary runs on macOS). The adapter has no platform gate. The mention path itself is not walked; GTM's walk can still cut it. | 2026-10-26 |
+| README | On Linux and Windows, the page connects Claude Code over MCP (L79) | TRUE | frontend/src/v2/components/V2AgentBYO.tsx:957 (`claude mcp add … npx -y @commonlyai/mcp`), :964 (Windows `cmd /c commonly-mcp`) | 2026-10-25 |
+| README | Codex answers @mentions on macOS (L80, macOS half) | TRUE | cli/src/lib/adapters/codex.js:487 (Codex's permission-profile boundary runs on macOS). The adapter has no platform gate. The mention path was walked on prod 10-27 (Codex seat answered an @mention and claimed a task, messages 96834 and 96836). | 2026-10-26 |
+| README | Connect your own Claude Code or Codex from your Mac (L34) | TRUE | cli/src/lib/adapters/codex.js (ships in the CLI, `--adapter codex`). Walked on prod 10-27 22:36Z with CLI 0.1.191: a Codex seat attached from the Bring your own page greeted the pod and answered an @mention by claiming TASK-001 in 21 s (pod messages 96834, 96836). | 2026-10-27 |
 | README | Codex answers @mentions on Linux (L80, Linux half) | CUT | frontend/src/v2/components/V2AgentBYO.tsx:103–105 offers Codex on Linux, and nobody has walked it. The line reads "Linux not yet tested". | 2026-10-26 |
 | README | OpenCode guide "(walked on macOS)" (was L80; L81 has no parenthetical) | CUT | Nothing shows the walk did not happen, so this is CUT rather than FALSE. The parenthetical is removed in this PR (README.md:81). | 2026-10-27 |
 | README | Run it on one machine with Docker and Compose v2 (L87) | TRUE | install.sh:17–22 (checks `docker` and `docker compose version`) | 2026-10-25 |
@@ -97,6 +98,37 @@ Owner: TASK-012. Source: `docs-site/bring-your-own/index.mdx`, `claude-code.mdx`
 
 | Page | Claim | Verdict | Evidence | Date |
 |---|---|---|---|---|
+| bring-your-own/index.mdx:6 | On Connect your agent, choose **Use my own agent** | TRUE | en.json:1620 (`byo`: "Use my own agent") | 2026-10-26 |
+| bring-your-own/index.mdx:14 | Claude Code: "Connect on a Mac through the web setup" | TRUE | V2AgentBYO.tsx:104 offers the listener on mac for Claude only; workspace-trust.js:93 refuses a non-darwin workspace. Lily ruled 10-25 that Claude answers @mentions on macOS only | 2026-10-26 |
+| bring-your-own/index.mdx:17, codex.mdx:7 | Codex: "Connect on a Mac through the web setup" and "The Codex listener runs on macOS" | TRUE | V2AgentBYO.tsx:104 offers the mac listener for Codex; the macOS half only | 2026-10-26 |
+| bring-your-own/index.mdx:17, codex.mdx:7, :12 (pre-fix :3, :6, :11) | Codex listener works on Linux (was offered in the app at V2AgentBYO.tsx:104) | FALSE | Lily 10-26 06:12Z: codex 0.164 fails bootstrap on Linux, 0.144 reaches the model call; not verified end to end. Fixed here: "macOS; Linux not yet tested" on codex.mdx:7 and :12 (were :3, :6, :11) and index.mdx:17; in-app copy en.json:1545, en.json:1612, zh-CN.json:1605, zh-CN.json:1671; guides.json:138, :795, :5726; on-my-computer.mdx:29. The in-app offer is narrowed to mac (V2AgentBYO.tsx:104) | 2026-10-26 |
+| bring-your-own/index.mdx:20 | OpenCode card: "Attach from the CLI in an invite-only pod" | CUT | No code makes an OpenCode seat private: opencode.js:358-391 and :451-489 run public seats. Card narrowed to "Attach from the CLI" | 2026-10-26 |
+| bring-your-own/index.mdx:23, deepseek-harness.mdx:7 | DeepSeek Harness: "Attach from the CLI on a Mac in an invite-only pod"; cannot run as a public seat | TRUE | dsh.js:44-45 refuses public trust; dsh.js:328-329 a confined seat needs darwin (Seatbelt) | 2026-10-26 |
+| bring-your-own/index.mdx:30 | MCP gives an interactive session Commonly tools; a listener answers @mentions while you are away | TRUE | MCP connect block at V2AgentBYO.tsx:957; commonly-mcp/src has no poll loop (tools.js:231 is an ack call); the listener is `commonly agent run` (agent.js:3858) | 2026-10-26 |
+| claude-code.mdx:9, codex.mdx:9, codex.mdx:4 | Needs Node.js 20 or later | TRUE | cli/package.json:65-67 `engines.node >=20.0.0` | 2026-10-26 |
+| claude-code.mdx:9 | Claude Code signed in on that Mac | TRUE | claude.js:236-238 names the macOS Keychain credential that Claude's sign-in uses | 2026-10-26 |
+| claude-code.mdx:12 | Select **Claude Code** and **macOS** on the Connect page | TRUE | V2AgentBYO.tsx:95 lists the OS choices; en.json:1611 names the OS when Claude cannot run | 2026-10-26 |
+| claude-code.mdx:13, codex.mdx:13 | Get my connect command; the token is shown once | TRUE | en.json:1466 (`openConnect`); en.json:1552 (`keyOnce`: "a private key we show only once") | 2026-10-26 |
+| claude-code.mdx:19-22 | Listener command: `npm i -g @commonlyai/cli@latest`, `export COMMONLY_API_URL`, `export COMMONLY_AGENT_TOKEN`, `commonly agent run <name> --adapter claude` | TRUE | V2AgentBYO.tsx:46 (install) and :980 (the copied listener template with `--adapter ${listenAdapter}`) | 2026-10-26 |
+| codex.mdx:16 | Copied command installs `@commonlyai/cli`, sets URL and token, and runs `commonly agent run <name> --adapter codex` | TRUE | V2AgentBYO.tsx:980 with listenAdapter set to codex; codex is registered (cli/src/lib/adapters/index.js:23) | 2026-10-26 |
+| claude-code.mdx:25, codex.mdx:16, work-in-your-repo.mdx:21 | MCP alone does not answer @mentions and does not start the listener | TRUE | commonly-mcp/src has no poll loop (tools.js:231 is an ack call); the listener is `commonly agent run` (agent.js:3858) | 2026-10-26 |
+| opencode.mdx:7 | "OpenCode 1.19.3" is the version the guide covers | STALE | opencode.js:68 `TESTED_OPENCODE_VERSIONS = ['1.18.35', '1.19.0']`. Fixed here to name the tested versions | 2026-10-26 |
+| opencode.mdx:12-13 | `commonly agent attach opencode --pod ... --env ...`, then `commonly agent run <name>` | TRUE | opencode is registered (cli/src/lib/adapters/index.js:25); attach takes `--env <path>` (agent.js:3678) | 2026-10-26 |
+| deepseek-harness.mdx:6 (removed) | "Commonly CLI 0.1.122" is the supported path | CUT | No code pins a CLI version for dsh. The 0.1.122 pin exists only in docs/cli/dsh.md:16. Removed from the page | 2026-10-26 |
+| deepseek-harness.mdx:7 | dsh 0.2.1-rc.2 is the supported version | TRUE | dsh.js:35 `TESTED_DSH_VERSIONS = ['0.2.1-rc.2']`; :344-345 refuses other versions | 2026-10-26 |
+| deepseek-harness.mdx:12-13 | `commonly agent attach dsh ... --env ...`, then `commonly agent run <name>` | TRUE | dsh is registered (cli/src/lib/adapters/index.js:27); attach takes `--env` (agent.js:3678) | 2026-10-26 |
+| work-in-your-repo.mdx:25 | On macOS, if every pod is private, the listener works in the folder you ran it from | TRUE | workspace-trust.js:6-8 (a pod must be confirmed private, not publicly readable, not listed, invite-only); :93 (darwin only); :112-119 (scratch folder otherwise) | 2026-10-26 |
+| work-in-your-repo.mdx:27 | Reads files there and runs read-only git: `status`, `log`, `diff`, `show`, `blame` | TRUE | cli/src/lib/git-readonly.js:65 `READONLY_GIT_SUBCOMMANDS` | 2026-10-26 |
+| work-in-your-repo.mdx:28 | Can't edit files, run commands, or fetch web pages | TRUE | Grants are off unless passed: agent.js:303-309 accepts only write and web, and only from `--allow` | 2026-10-26 |
+| work-in-your-repo.mdx:29 | Can't read `.env` or `.env.*`; read-only git refuses them by name or path | TRUE | git-readonly.js:158-163 (ENV_FILE_SEGMENT and the excludes); :46 (committed .env refused by path or object id) | 2026-10-26 |
+| work-in-your-repo.mdx:31 | Read-only git turns off external diff tools, conversion programs and signature checks, in submodules too | TRUE | git-readonly.js:21-22 and :112-116 (`--no-ext-diff --no-textconv`); :120-126 (the same off-switches reach a submodule's git as `-c` flags); :209-210 (`--submodule=diff` refused) | 2026-10-26 |
+| work-in-your-repo.mdx:32 | Read-only git never contacts a remote | TRUE | git-readonly.js:40 (lazy fetch off, so a partial clone's missing objects stay missing); readonlyGitEnv sets GIT_NO_LAZY_FETCH and GIT_ALLOW_PROTOCOL=none (git-readonly.js:283-300) | 2026-10-26 |
+| work-in-your-repo.mdx:35 | Otherwise reads only its scratch folder, and the start-up lines say why | TRUE | workspace-trust.js:90-107 (refusals with reasons); :112-119 (scratch folder as the cwd) | 2026-10-26 |
+| work-in-your-repo.mdx:42-44 | `--allow write`, `--allow web` and `--allow write,web` are accepted on first run | TRUE | agent.js:3863 (`--allow <grants>`); agent.js:303-309 (WORKSPACE_SANDBOX_ALLOW) | 2026-10-26 |
+| work-in-your-repo.mdx:52 | Grants fixed at first setup; change with `commonly agent detach <name> --force`, then rerun | TRUE | agent.js:315-329 (grants fixed when the token file is written; the message names detach --force) | 2026-10-26 |
+| work-in-your-repo.mdx:54 | Only Claude Code listeners work in a folder for now | TRUE | workspace-trust.js:90-91 returns no workspace unless adapterName is claude | 2026-10-26 |
+| en.json:1611 | "Claude Code can't answer @mentions from {{os}} yet" | TRUE | matches workspace-trust.js:93 and V2AgentBYO.tsx:104 | 2026-10-26 |
+| V2AgentBYO.tsx:104, en.json:1545, en.json:1612, zh-CN.json:1605, zh-CN.json:1671, guides.json:138, :795, :5726, on-my-computer.mdx:29 | Codex works on a Mac or Linux computer (the Linux half) | FALSE | Same evidence as the Codex-on-Linux row. Copy changed to "Linux is not tested yet"; the in-app listener offer narrowed to mac (`listenerRunsOn`), per Lily's "macOS; Linux not yet tested" | 2026-10-26 |
 
 ## Connectors and grants
 
@@ -106,23 +138,25 @@ The connectors page is a first-touch page. A row marked `first-touch` in the Pag
 
 | Page | Claim | Verdict | Evidence | Date |
 |---|---|---|---|---|
-| connectors (first-touch) | Open Connectors in Commonly | TRUE | `frontend/src/v2/components/V2NavRail.tsx:38` | 2026-10-26 |
-| connectors (first-touch) | Channels carry messages between a pod and an outside chat | TRUE | `backend/services/slackApi.ts:69, :82`; `backend/routes/webhooks/telegram.ts:173–177` | 2026-10-26 |
-| connectors (first-touch) | Tools let an agent read or act in another service after the connection owner grants access | TRUE | `backend/routes/grants.ts:320, :430` | 2026-10-27 |
-| connectors (first-touch) | Slack and Telegram are channels; GitHub and Linear are tools | TRUE | `frontend/src/v2/components/V2ConnectorsPage.tsx:175` | 2026-10-26 |
-| connectors (first-touch) | Telegram: bind a private chat and choose which pods reach it | TRUE | `backend/routes/webhooks/telegram.ts:173–177`; `frontend/src/v2/components/V2ConnectorsPage.tsx:616–641` | 2026-10-26 |
-| connectors (first-touch) | Slack: authorize a workspace | TRUE | `backend/services/slackOAuthService.ts:53, :66` | 2026-10-26 |
-| connectors | Slack: "then confirm the connection" | CUT | Not walked in time. This PR removes the sentence. | 2026-10-26 |
-| connectors (first-touch) | GitHub App: an instance administrator installs the app | TRUE | `backend/routes/integrations.ts:239–262` | 2026-10-26 |
-| connectors (first-touch) | GitHub App: the connection owner grants tools | TRUE | `backend/routes/grants.ts:320, :346` | 2026-10-26 |
-| connectors | GitHub App on commonly.me: "limited to the instance's own repository" | CUT | Not walked in time. This PR removes the sentence. | 2026-10-26 |
-| connectors (first-touch) | Linear: connect your account | TRUE | `backend/routes/hostedMcpConnect.ts:351, :697` | 2026-10-26 |
-| connectors (first-touch) | Linear: grant read access to an eligible pod | TRUE | `backend/integrations/hostedMcp/linear.ts:28–31, :64, :92–93`; `backend/services/outsiderGrantPodEligibility.ts:46–54` | 2026-10-26 |
-| connectors | Live page shows a free account before any connection or tool grant | CUT | Not walked in time. This PR removes the sentence. | 2026-10-26 |
-| connectors | "Other tools visible in the list" | CUT | Not walked in time. This PR removes the sentence. | 2026-10-26 |
+| connectors (first-touch) | Open Connectors in Commonly | WALKED | Prod, build 4fd217a, 2026-10-27, non-author, signed-in account. 390 and 1440 screenshots. File:line `frontend/src/v2/components/V2NavRail.tsx:38` | 2026-10-27 |
+| connectors (first-touch) | Channels carry messages between a pod and an outside chat | CUT | Not walked: needs a live Slack or Telegram connection, which is a write. Cut 10-27 (TASK-014); restore on walk. | 2026-10-27 |
+| connectors (first-touch) | Tools let an agent read another service after the connection owner grants access | TRUE | Read walked. Prod, 2026-10-27, non-author: a read-only Linear grant, and the granted agent listed the teams. No write grant was walked. Walked on prod 10-27, no screenshots; WALKED when the 390/1440 land. File:line `backend/routes/grants.ts:320, :430` | 2026-10-27 |
+| connectors (first-touch) | Tools let an agent act in another service after the connection owner grants access | CUT | Not walked: the only grant walked was read-mode (a read-only Linear grant). Cut 10-27 (TASK-014); restore on a write-mode walk. | 2026-10-27 |
+| connectors (first-touch) | Slack and Telegram are channels | TRUE | Prod, build 4fd217a, 2026-10-27, non-author: "Connect a channel" lists Slack and Telegram. Airtable also appears under Tools on prod; no docs page names it. Walked on prod 10-27, no screenshots; WALKED when the 390/1440 land. File:line `frontend/src/v2/components/V2ConnectorsPage.tsx:193–194`, `:1684` | 2026-10-27 |
+| connectors (first-touch) | Linear is a tool you can grant today | TRUE | Prod, 2026-10-27, non-author: a read-mode Linear grant made from the Connectors UI; the granted agent listed the Linear teams. Walked on prod 10-27, no screenshots; WALKED when the 390/1440 land. File:line `backend/routes/hostedMcpConnect.ts:351, :697`; `backend/integrations/hostedMcp/linear.ts:28–31` | 2026-10-27 |
+| connectors (first-touch) | Telegram: bind a private chat and choose which pods reach it | CUT | Partial walk: the channel list and pod picker were seen; the private-chat bind was not run. Cut 10-27 (TASK-014); the table row is removed. Restore on walk. | 2026-10-27 |
+| connectors (first-touch) | Slack: authorize a workspace | CUT | Partial walk: "Add · one click in your workspace" was seen; OAuth was not started. Cut 10-27 (TASK-014); the table row is removed. Restore on walk. | 2026-10-27 |
+| connectors | Slack: "then confirm the connection" | CUT | Removed from main by #2817 (e00b5c887). | 2026-10-26 |
+| connectors (first-touch) | GitHub App: an instance administrator installs the app | TRUE | Prod, build 4fd217a, 2026-10-27, non-author: the page says the app is installed first, once, by an admin. Walked on prod 10-27, no screenshots; WALKED when the 390/1440 land. File:line `backend/routes/integrations.ts:239–262` | 2026-10-27 |
+| connectors (first-touch) | GitHub App: the connection owner grants tools | CUT | Not walked: the GitHub App is not installed for the walk account. Cut 10-27 (TASK-014): the grant sentence is removed from the intro and the GitHub row. The page makes no claim that GitHub grants are unavailable, because the grant path exists at `backend/routes/grants.ts:346`. Restore on walk. | 2026-10-27 |
+| connectors | GitHub App on commonly.me: "limited to the instance's own repository" | CUT | Removed from main by #2817 (e00b5c887). | 2026-10-26 |
+| connectors (first-touch) | Linear: connect your account | TRUE | Prod, 2026-10-27, non-author: a Linear grant made from the Connectors UI on a signed-in account. Walked on prod 10-27, no screenshots; WALKED when the 390/1440 land. File:line `backend/routes/hostedMcpConnect.ts:351, :697` | 2026-10-27 |
+| connectors (first-touch) | Linear: grant read access to an eligible pod | TRUE | Prod, 2026-10-27, non-author: a read-mode grant to an invite-only pod; the granted agent listed the Linear teams. Walked on prod 10-27, no screenshots; WALKED when the 390/1440 land. File:line `backend/integrations/hostedMcp/linear.ts:28–31, :64, :92–93`; `backend/services/outsiderGrantPodEligibility.ts:46–54` | 2026-10-27 |
+| connectors | Live page shows a free account before any connection or tool grant | CUT | Removed from main by #2817 (e00b5c887). | 2026-10-26 |
+| connectors | "Other tools visible in the list" | CUT | Removed from main by #2817 (e00b5c887). | 2026-10-26 |
 | connectors | Two screenshots and captions | CUT | Not walked in time. The images stay in `docs-site/images` and are no longer referenced. | 2026-10-26 |
-| connectors | The page lists unavailable connectors; a listed row is not a working connection | CUT | Not walked in time. This PR removes the paragraph. | 2026-10-26 |
-| connectors (first-touch) | The grants guide explains how a connection owner limits tool access and revokes it | TRUE | `backend/services/roomGrantService.ts:324–373`; `backend/routes/grants.ts:480–501` | 2026-10-27 |
+| connectors | The page lists unavailable connectors; a listed row is not a working connection | CUT | Removed from main by #2817 (e00b5c887). | 2026-10-26 |
+| connectors (first-touch) | The grants guide explains how a connection owner limits tool access and revokes it | TRUE | Prod, build 4fd217a, 2026-10-27, non-author: the guide is live and covers audience, expiry and revoke. Walked on prod 10-27, 1440 screenshot only; WALKED when the 390 lands. File:line `backend/services/roomGrantService.ts:324–373`; `backend/routes/grants.ts:480–501` | 2026-10-27 |
 | grants | A grant is scoped to a pod and the members allowed to use it, and can expire or be revoked | TRUE | `backend/models/RoomGrant.ts:28, :32–34` (target, audience snapshot, expiry); `backend/routes/grants.ts:371–379` (audience defaults to current members; each listed id must be one of them); `backend/services/roomGrantService.ts:233–239` (effective audience is the snapshot ∩ current members), `:242–243, :255–257` (expiry required and future), `:431` (expiry enforced on use); revoke `backend/routes/grants.ts:480–501`, `backend/services/roomGrantService.ts:390–396`, `backend/models/RoomGrant.ts:106–136` | 2026-10-27 |
 | grants | A grant is a server-enforced capability record | TRUE | `backend/models/RoomGrant.ts:11–36` | 2026-10-26 |
 | grants | It is not a credential, and revoking it does not replace the connector's credentials | TRUE | `backend/models/RoomGrant.ts:24–45` (no credential field); `:128–134` (revoke writes only `revokedAt` and `revokedBy`); `backend/models/AgentCredential.ts:41–58` | 2026-10-27 |
@@ -253,3 +287,31 @@ the FAQ, and `CONTRIBUTING.md`. The section is complete when every surface in th
 | CONTRIBUTING.md | "you can install it into the public Commonly instance" (OpenClaw) | TRUE | The provider route exists: `backend/routes/providers/moltbot.ts:4`. This row checks the code path only, not a contributor install on commonly.me. | 2026-10-26 |
 | CONTRIBUTING.md | "pick up an open issue on GitHub" (the open-issues link) | TRUE | `gh issue list -R Team-Commonly/commonly --state open` returned 138 on 2026-10-27. `--label "good first issue"` returned 0, so the old label link was empty. | 2026-10-27 |
 | CONTRIBUTING.md | "you can install Claude Code or Codex into the public Commonly instance" | TRUE (code path only) | `cli/src/commands/agent.js:3671` (`.command('attach <adapter>')`); `cli/src/commands/agent.js:173` (`BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex', 'pi']`). Not a contributor install on commonly.me. | 2026-10-27 |
+
+## GitHub App page
+
+Owner: TASK-014. Source: `docs-site/integrations/github.mdx`.
+
+The grant flow, the repository scope and the desktop view were not walked, so this PR cuts them. Each cut claim keeps a row here and can return with evidence.
+
+| Page | Claim | Verdict | Evidence | Date |
+|---|---|---|---|---|
+| integrations/github | Description: "Scoped access to the connected repository" | CUT | Not walked. This PR replaces the description. | 2026-10-27 |
+| integrations/github | "On commonly.me, the supported GitHub App connection is for the instance's own repository" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "A team cannot connect a different repository through this page" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The task board does not create or close GitHub issues by itself" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "GitHub actions require a separate connector grant" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The instance administrator installs the app on the repository" (the repository scope) | CUT | Not walked. This PR drops "on the repository". | 2026-10-27 |
+| integrations/github | "The instance administrator installs the GitHub App and creates the connection" | TRUE | `backend/routes/integrations.ts:244` (`auth, adminAuth` on `POST /github-app`); `:263` (`new Integration({`, the connection row). Code path only, not walked. | 2026-10-27 |
+| integrations/github | "A non-admin sees the installation requirement in Connectors → Tools, but cannot install the app" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The app installation bounds which repositories its connection can reach" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The connection owner selects Add on the GitHub row, chooses the pod, agents, access mode, and end date, then selects Grant" | CUT | Not walked. The connection-owner grant flow is removed by this PR. | 2026-10-27 |
+| integrations/github | "Open the grant to inspect its calls, access and end date. Revoke it there when the agents no longer need it" | CUT | Not walked. This PR removes the steps. | 2026-10-27 |
+| integrations/github | "The grant requires a private, unbridged pod with agents running in Commonly's narrowed in-process runtime" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "If the pod is joinable, the grant flow can ask its owner to make it invite-only before continuing" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The live desktop view shows the GitHub row before installation or a grant" | CUT | Not walked. This PR removes the paragraph and its screenshot. | 2026-10-27 |
+| integrations/github | "It names the instance's own repository and tells a non-admin that an administrator must install the app first" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The recorded grant named list_issues, create_issue, and close_issue for the instance's repository, with confirmation before writes" | CUT | Not walked on the current build. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The readiness matrix has not recorded an agent completing those actions on the current build" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "A grant limits tools, audience, and end date within the app installation's repository boundary" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "It cannot add a repository the app was not installed on" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |

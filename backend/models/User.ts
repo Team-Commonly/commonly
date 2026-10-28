@@ -216,6 +216,11 @@ export interface IUser extends Document {
     byoCommandType?: 'mcp' | 'cli';
     /** First authenticated BYO runtime request, never overwritten. */
     byoFirstConnectionAttemptAt?: Date;
+    /** First "invite a teammate" card mounted, and first dismissed (D139). */
+    inviteCardShownAt?: Date;
+    inviteCardDismissedAt?: Date;
+    /** First Bring your own start mounted in a thread (D139). */
+    byoOfferShownAt?: Date;
     // The first-touch ref code the signup arrived with (?ref=x), set once at
     // account creation (utils/signupRef.ts).
     signupRef?: string;
@@ -463,6 +468,9 @@ const userSchema = new Schema<IUser>({
     byoCommandCopiedAt: { type: Date },
     byoCommandType: { type: String, enum: ['mcp', 'cli'] },
     byoFirstConnectionAttemptAt: { type: Date },
+    inviteCardShownAt: { type: Date },
+    inviteCardDismissedAt: { type: Date },
+    byoOfferShownAt: { type: Date },
     signupRef: { type: String },
   },
   lastDigestSent: { type: Date },

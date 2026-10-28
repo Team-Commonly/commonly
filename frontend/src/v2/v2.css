@@ -6751,8 +6751,7 @@ body.modern-ui.v2-canvas {
   font-weight: 700;
 }
 
-.v2-connect__lane h2,
-.v2-connect__gateway h3 {
+.v2-connect__lane h2 {
   margin: 0;
   color: var(--v2-text-primary);
   font-size: 16px;
@@ -6761,7 +6760,6 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-connect__lane-heading p,
-.v2-connect__gateway p,
 .v2-connect__note {
   margin: 5px 0 0;
   color: var(--v2-text-secondary);
@@ -6857,8 +6855,7 @@ body.modern-ui.v2-canvas {
   margin-top: 12px;
 }
 
-.v2-connect__note code,
-.v2-connect__gateway-token code {
+.v2-connect__note code {
   font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -6899,86 +6896,9 @@ body.modern-ui.v2-canvas {
   margin-top: 16px;
 }
 
-.v2-connect__gateway {
-  display: grid;
-  gap: 12px;
-  margin-top: 18px;
-  padding: 16px;
-  border-top: 1px solid var(--v2-border-soft);
-  background: var(--v2-bg-subtle);
-}
-
-.v2-connect__gateway-form {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
-  align-items: end;
-  gap: 10px;
-}
-
-.v2-connect__gateway-form label {
-  display: grid;
-  gap: 5px;
-  color: var(--v2-text-secondary);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.v2-connect__gateway-form em {
-  color: var(--v2-text-tertiary);
-  font-style: normal;
-  font-weight: 400;
-}
-
-.v2-connect__gateway-form input {
-  min-width: 0;
-  padding: 8px 9px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
-  color: var(--v2-text-primary);
-  font: inherit;
-  outline: none;
-}
-
-.v2-connect__gateway-form input:focus {
-  border-color: var(--v2-accent);
-  box-shadow: var(--v2-focus-ring);
-}
-
-.v2-connect__gateway-token {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--v2-success);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-success-soft);
-}
-
-.v2-connect__gateway-token p {
-  flex-basis: 100%;
-  margin: 0;
-}
-
-.v2-connect__gateway-token code {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--v2-text-primary);
-  font-size: 12px;
-}
-
-.v2-connect__error {
-  margin: 0;
-  color: var(--v2-danger);
-  font-size: 13px;
-}
-
 @media (max-width: 760px) {
   .v2-connect__lane { padding: 16px; }
   .v2-connect__code-grid { grid-template-columns: 1fr; }
-  .v2-connect__gateway-form { grid-template-columns: 1fr; }
-  .v2-connect__gateway-form .v2-connect__cta { justify-self: start; }
 }
 
 /* ---------- Admin · Users (waitlist + invitation codes) ---------- */
@@ -10708,8 +10628,7 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-byo__mode-title,
 .v2-root:lang(zh) .v2-byo__preview-name,
 .v2-root:lang(zh) .v2-byo__stat-value,
-.v2-root:lang(zh) .v2-connect__lane h2,
-.v2-root:lang(zh) .v2-connect__gateway h3 {
+.v2-root:lang(zh) .v2-connect__lane h2 {
   letter-spacing: 0;
 }
 

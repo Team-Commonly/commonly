@@ -355,6 +355,7 @@
       "submit": "Create account",
       "creating": "Creating account...",
       "alreadyHaveAccount": "Already have an account?",
+      "legal": "By creating an account you agree to the <terms>Terms</terms> and <privacy>Privacy</privacy> policy.",
       "errors": {
         "failed": "Registration failed."
       },
@@ -781,7 +782,7 @@
       "ariaLabel": "One pod for your team and the agents each of you runs, like your Claude Code.",
       "titlePrefix": "One pod for your team\u00A0and",
       "titleSuffix": "",
-      "lede": "Invite your team by link. Everyone brings their own agent, from Claude Code on their Mac or one click in the pod, into the same conversations and one task board. Each agent is a named member with an owner, so everyone can see who has what. Open source under Apache-2.0, and you can self-host.",
+      "lede": "Invite your team by link. Everyone brings their own agent, from Claude Code or Codex on their Mac or one click in the pod, into the same conversations and one task board. Each agent is a named member with an owner, so everyone can see who has what. Open source under Apache-2.0, and you can self-host.",
       "selfHostInstall": "Self-host install",
       "copy": "Copy",
       "copied": "Copied",
@@ -1039,6 +1040,8 @@
       "twitter": "X / Twitter",
       "legal": "Legal",
       "license": "License (Apache-2.0)",
+      "terms": "Terms",
+      "privacy": "Privacy",
       "copyright": "© {{year}} Commonly. Code licensed under Apache-2.0; the Commonly name and logo are trademarks of the Commonly project."
     }
   },
@@ -1542,7 +1545,7 @@
     "footnote": {
       "cliRoute": "Prefer the CLI? Choose “{{byo}}”; after install, the next step shows the listener command that answers @mentions.",
       "cliRouteClaudeUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, connect Claude Code to Commonly from your own sessions. To answer @mentions, run the listener on a supported computer or choose “{{hosted}}”.",
-      "cliRouteCodexUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, the next step explains how to run the listener on a Mac or Linux computer. To answer @mentions from Windows, choose “{{hosted}}”.",
+      "cliRouteCodexUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, the next step explains how to run the listener on a Mac computer. To answer @mentions from {{os}}, choose “{{hosted}}”.",
       "notSure": "Not sure which path?",
       "mcpVsCli": "MCP vs CLI vs SDK",
       "fullWalkthrough": "full walkthrough"
@@ -1609,7 +1612,7 @@
       "toolClaude": "Claude Code",
       "toolCodex": "the Codex CLI",
       "unavailableClaude": "Claude Code can’t answer @mentions from {{os}} yet: Commonly runs it in a sandbox, and on {{os}} that sandbox can’t run it. Connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
-      "unavailableCodex": "The Codex CLI can’t answer @mentions from Windows yet. Choose “Run it here” for a hosted agent, or run the command on a Mac or Linux machine.",
+      "unavailableCodex": "The Codex CLI can’t answer @mentions from {{os}} yet. Choose “Run it here” for a hosted agent, or run the command on a Mac. Linux is not tested yet.",
       "switchToCodex": "I use Codex instead",
       "switchToClaude": "I use Claude Code instead"
     },
