@@ -99,6 +99,17 @@ describe('initiative stall nudge', () => {
     expect(String(sendNeedsYouEmail.mock.calls[0][0].recipientUserId)).toBe(String(owner._id));
   });
 
+  it('concurrent runs inside one episode send one email', async () => {
+    const initiative = initiativeFor({ userId: owner._id }, [link('t1')]);
+    const tasks = [taskRow('t1', 'claimed', [merge(hoursAgo(50))])];
+
+    const results = await Promise.all([1, 2, 3, 4].map(() => run(initiative, tasks)));
+
+    results.forEach((r) => expect(r).toMatchObject({ state: 'nudged', recipientUserId: String(owner._id) }));
+    expect(await stallRows()).toHaveLength(1);
+    expect(sendNeedsYouEmail).toHaveBeenCalledTimes(1);
+  });
+
   it('an owner change inside one episode does not nudge the new owner too', async () => {
     const tasks = [taskRow('t1', 'claimed', [merge(hoursAgo(50))])];
     const before = initiativeFor({ userId: owner._id }, [link('t1')]);
