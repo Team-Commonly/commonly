@@ -1019,7 +1019,7 @@
             },
             "2": {
               "author": "Maya",
-              "text": "Maya picks Wait."
+              "text": "picks Wait."
             }
           },
           "footer": "The agent asks with a card. It waits in Needs you until someone picks, then the answer goes back to the agent."
