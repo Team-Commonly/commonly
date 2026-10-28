@@ -83,6 +83,74 @@ describe('conflictToDecisionRequest', () => {
     expect(() => normalizeOptions(req.options)).not.toThrow();
   });
 
+  test('modify/delete: the branch option says the branch deleted the file, so picking it is not silent', () => {
+    const req = conflictToDecisionRequest({
+      path: '/a.txt', kind: 'modify/delete', hunks: [{ line: 1, ours: ['kept text'], theirs: [] }],
+    }, sides);
+    expect(req.question).toBe('agent-b deleted /a.txt:1, and main changed it. Which should land?');
+    expect(req.options[0].description).toBe('kept text');
+    expect(req.options[1].description).toBe('Delete /a.txt: agent-b deleted it.');
+    expect(() => normalizeOptions(req.options)).not.toThrow();
+  });
+
+  test('delete/modify: the base option says the base deleted the file', () => {
+    const req = conflictToDecisionRequest({
+      path: '/a.txt', kind: 'delete/modify', hunks: [{ line: 1, ours: [], theirs: ['kept'] }],
+    }, sides);
+    expect(req.question).toBe('main deleted /a.txt:1, and agent-b changed it. Which should land?');
+    expect(req.options[0].description).toBe('Delete /a.txt: main deleted it.');
+    expect(req.options[1].description).toBe('kept');
+    expect(() => normalizeOptions(req.options)).not.toThrow();
+  });
+
+  test('a delete with no text to keep still gives the deleting side its description', () => {
+    const req = conflictToDecisionRequest({ path: '/gone.bin', kind: 'modify/delete', hunks: [] }, sides);
+    expect(req.options[0]).not.toHaveProperty('description');
+    expect(req.options[1].description).toBe('Delete /gone.bin: agent-b deleted it.');
+    expect(() => normalizeOptions(req.options)).not.toThrow();
+  });
+
+  test('each option carries its own side, so a swapped pairing cannot pass', () => {
+    const req = conflictToDecisionRequest(conflict, sides);
+    // The fixture's sides end with an empty line, so each description keeps that newline.
+    expect(req.options[0].description).toBe('Install with npm i -g commonly.\n');
+    expect(req.options[1].description).toBe('Install with pnpm add -g commonly.\n');
+  });
+
+  test('sides with several non-empty lines keep every line in the context and the options', () => {
+    const req = conflictToDecisionRequest({
+      path: '/README.md',
+      kind: 'content',
+      hunks: [{
+        line: 115,
+        ours: ['Install with npm i -g commonly.', 'Run commonly from the workspace.'],
+        theirs: ['Install with pnpm add -g commonly.', 'Run commonly from the workspace.'],
+      }],
+    }, sides);
+    expect(req.context).toContain('main: Install with npm i -g commonly.\nRun commonly from the workspace.');
+    expect(req.context).toContain('agent-b: Install with pnpm add -g commonly.\nRun commonly from the workspace.');
+    expect(req.options[0].description).toBe('Install with npm i -g commonly.\nRun commonly from the workspace.');
+    expect(req.options[1].description).toBe('Install with pnpm add -g commonly.\nRun commonly from the workspace.');
+  });
+
+  test('a literal middle dot or arrow is not mistaken for drawn whitespace', () => {
+    const drawn = conflictToDecisionRequest({ path: '/w.txt', kind: 'content', hunks: [{ line: 1, ours: [' return x'], theirs: ['·return x'] }] }, sides);
+    expect(drawn.options[0].description).toBe('·return x');
+    expect(drawn.options[1].description).toBe('\\u00b7return x');
+    expect(drawn.options[0].description).not.toBe(drawn.options[1].description);
+    expect(() => normalizeOptions(drawn.options)).not.toThrow();
+  });
+
+  test('a binary conflict names both full branches, even when long names share a prefix', () => {
+    const shared = 'feature/checkout-redesign-experiment-';
+    const req = conflictToDecisionRequest({ path: '/a.bin', kind: 'binary', hunks: [] }, {
+      base: `${shared}alpha`,
+      branch: `${shared}beta`,
+    });
+    expect(req.context).toContain(`${shared}alpha (ours)`);
+    expect(req.context).toContain(`${shared}beta (theirs)`);
+  });
+
   test('trailing spaces and tab indentation are drawn, so each side shows what it changed', () => {
     const req = conflictToDecisionRequest({
       path: '/ws.txt',

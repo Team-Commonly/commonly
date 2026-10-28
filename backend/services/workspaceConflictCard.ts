@@ -15,8 +15,9 @@ import type { DecisionClass } from './decisionRequestService';
 
 // The Conflict shape LayerFS 582bc786f9 returns. A refused merge carries
 // `detail.conflicts[]`, one entry per file. A content conflict has `hunks`, with
-// the line and both sides as arrays of lines. A binary or modify/delete
-// conflict, such as /.git/index, has no hunks.
+// the line and both sides as arrays of lines. A text modify/delete or
+// delete/modify carries one hunk with the kept side's lines. A binary conflict,
+// such as /.git/index, has no hunks.
 export interface WorkspaceMergeHunk {
   line: number;
   ours: string[];
@@ -53,12 +54,19 @@ const clip = (text: string, limit: number): string => (
   text.length > limit ? `${text.slice(0, limit - 1)}…` : text
 );
 
+// The drawn markers are themselves characters a file can hold, so a literal
+// marker, or a literal backslash, is escaped first. Otherwise ' return' and
+// '·return' would render the same.
+const ESCAPES: Record<string, string> = { '\\': '\\\\', '·': '\\u00b7', '→': '\\u2192' };
+const escapeMarkers = (line: string): string => line.replace(/[\\·→]/g, (ch) => ESCAPES[ch]);
+
 // Leading and trailing whitespace is drawn, not trimmed: two sides that differ
 // only in indentation must look different to the person deciding. Descriptions
 // are trimmed by normalizeOptions, so the drawn dots survive it.
-const showWhitespace = (line: string): string => line
-  .replace(/^[ \t]+/, (run) => run.replace(/ /g, '·').replace(/\t/g, '→'))
-  .replace(/[ \t]+$/, (run) => run.replace(/ /g, '·').replace(/\t/g, '→'));
+const drawSpaces = (run: string): string => run.replace(/ /g, '·').replace(/\t/g, '→');
+const showWhitespace = (line: string): string => escapeMarkers(line)
+  .replace(/^[ \t]+/, drawSpaces)
+  .replace(/[ \t]+$/, drawSpaces);
 
 const sideText = (lines: string[]): string => {
   if (!lines.join('').trim()) return '(empty)';
@@ -70,7 +78,11 @@ const hunkBlock = (hunk: WorkspaceMergeHunk, sides: { base: string; branch: stri
 );
 
 const contextFor = (conflict: WorkspaceMergeConflict, sides: { base: string; branch: string }): string => {
-  const header = [`Conflict kind: ${conflict.kind}`];
+  // The full names, so a clipped label never hides which branch is which.
+  const header = [
+    `Conflict kind: ${conflict.kind}`,
+    `Sides: ${clip(sides.base, 100)} (ours) and ${clip(sides.branch, 100)} (theirs).`,
+  ];
   if (conflict.blocks !== undefined) header.push(`Conflict blocks: ${conflict.blocks}`);
   if (conflict.hunks.length === 0 && !conflict.hunksOmitted) header.push('No line-level hunks: the two sides differ as a whole.');
   if (conflict.hunksOmitted) header.push('Some hunks were omitted by the merge.');
@@ -90,6 +102,17 @@ const contextFor = (conflict: WorkspaceMergeConflict, sides: { base: string; bra
   return clip(parts.join('\n\n'), CONTEXT_MAX);
 };
 
+// Contract: the merge's first argument is ours, so `sides.base` is ours and
+// `sides.branch` is theirs, and hunk.ours / hunk.theirs follow the same order.
+// LayerFS names a kind by who did what: `modify/delete` means ours changed the
+// file and theirs deleted it; `delete/modify` is the reverse. The side that
+// deleted gets a description that says so, because picking it removes the file.
+const deletedBy = (kind: string): 'base' | 'branch' | null => {
+  if (kind === 'modify/delete') return 'branch';
+  if (kind === 'delete/modify') return 'base';
+  return null;
+};
+
 export const conflictToDecisionRequest = (
   conflict: WorkspaceMergeConflict,
   sides: { base: string; branch: string },
@@ -101,22 +124,26 @@ export const conflictToDecisionRequest = (
   // case or share a long prefix; normalizeOptions refuses duplicate labels.
   const base = clip(sides.base, LABEL_MAX - 'Keep base ()'.length);
   const branch = clip(sides.branch, LABEL_MAX - 'Keep branch ()'.length);
+  const deleter = deletedBy(conflict.kind);
+  const question = deleter
+    ? `${deleter === 'base' ? base : branch} deleted ${location}, and ${deleter === 'base' ? branch : base} changed it. Which should land?`
+    : `${branch} and ${base} both changed ${location}. Which version should land?`;
+  // An empty string is refused at the door, so a side with nothing to show gets
+  // no description at all (binary conflicts have no hunks).
+  const describe = (side: 'base' | 'branch', lines: string[] | undefined): { description?: string } => {
+    if (deleter === side) {
+      return { description: clip(`Delete ${conflict.path}: ${sides[side]} deleted it.`, DESCRIPTION_MAX) };
+    }
+    return first && lines ? { description: clip(sideText(lines), DESCRIPTION_MAX) } : {};
+  };
   return {
     title: `${TITLE_PREFIX}${location}`,
-    question: clip(`${branch} and ${base} both changed ${location}. Which version should land?`, QUESTION_MAX),
+    question: clip(question, QUESTION_MAX),
     context: contextFor(conflict, sides),
     decisionClass: 'implementation',
     options: [
-      {
-        label: `Keep base (${base})`,
-        // A binary or modify/delete conflict has no lines to show, so the option
-        // carries no description. An empty string is refused at the door.
-        ...(first ? { description: clip(sideText(first.ours), DESCRIPTION_MAX) } : {}),
-      },
-      {
-        label: `Keep branch (${branch})`,
-        ...(first ? { description: clip(sideText(first.theirs), DESCRIPTION_MAX) } : {}),
-      },
+      { label: `Keep base (${base})`, ...describe('base', first?.ours) },
+      { label: `Keep branch (${branch})`, ...describe('branch', first?.theirs) },
       { label: 'Write the merged text', description: 'Reply with the text to land, and the merge runs again.' },
     ],
   };
