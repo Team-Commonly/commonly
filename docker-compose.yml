@@ -110,7 +110,7 @@ services:
       - ./packages/commonly-marketplace:/app/packages/commonly-marketplace:ro
       - ./external/commonly-agent-services:/app/external/commonly-agent-services:ro
       # Mount skills catalog index
-      - ./docs/skills:/app/docs/skills:ro
+      - ./backend/docs/skills:/app/docs/skills:ro
       # Mount agent runtime config state for provisioning
       - ./external/clawdbot-state/config:/app/external/clawdbot-state/config
       - ./external/commonly-bot-state:/app/external/commonly-bot-state

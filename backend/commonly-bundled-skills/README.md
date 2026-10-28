@@ -3,7 +3,7 @@
 Skills shipped with this repo that aren't (yet) in the upstream
 `VoltAgent/awesome-agent-skills` catalog. The provisioner's preset auto-import
 helper reads `commonly-bundled-skills/<skillId>/SKILL.md` first; if missing,
-falls back to the catalog index at `docs/skills/awesome-agent-skills-index.json`.
+falls back to the catalog index at `backend/docs/skills/awesome-agent-skills-index.json`.
 
 Each skill lives in its own subdirectory:
 
@@ -17,7 +17,7 @@ commonly-bundled-skills/
 
 ## Why bundle locally instead of catalog-only
 
-The upstream catalog (`docs/skills/awesome-agent-skills-index.json`) is synced
+The upstream catalog (`backend/docs/skills/awesome-agent-skills-index.json`) is synced
 periodically via `scripts/sync-awesome-agent-skills.sh`. New upstream skills land
 in the catalog only after a sync. For skills we want to ship before the next
 sync, or skills the upstream maintainer hasn't accepted (or that we maintain
