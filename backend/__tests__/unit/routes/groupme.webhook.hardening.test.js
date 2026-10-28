@@ -95,6 +95,20 @@ describe('GroupMe webhook hardening', () => {
     delete process.env.GROUPME_WEBHOOK_ALLOW_UNVERIFIED;
   });
 
+  // Neither side has a group id, so '' !== '' cannot reject: only the
+  // empty-identity check stands between this callback and a dispatch.
+  test('rejects a callback with no group id to an integration with no configured group, flag or not', async () => {
+    process.env.GROUPME_WEBHOOK_ALLOW_UNVERIFIED = 'true';
+    Integration.findById.mockResolvedValue({ ...integration, config: { botId: 'bot-1' } });
+    const response = await request(app)
+      .post('/api/webhooks/groupme/integration-1')
+      .send(payload({ group_id: undefined }));
+
+    expect(response.status).toBe(401);
+    expect(deliveries.create).not.toHaveBeenCalled();
+    delete process.env.GROUPME_WEBHOOK_ALLOW_UNVERIFIED;
+  });
+
   // The removed bypass flag must not reopen the route if an old env still sets it.
   test('ignores GROUPME_WEBHOOK_ALLOW_UNVERIFIED', async () => {
     process.env.GROUPME_WEBHOOK_ALLOW_UNVERIFIED = 'true';
