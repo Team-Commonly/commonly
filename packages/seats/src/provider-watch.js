@@ -25,6 +25,10 @@ import { RunFailure, runFailure } from './failures.js';
 import { scrubAdapterFailure } from './upstream-refusal.js';
 
 const BODY_SAMPLE_CHARS = 4096;
+// A JSON body is read whole, because a slice of one is no longer JSON and the
+// keep-list would then treat it as prose and keep fields outside the list.
+// Past this size no detail is kept at all.
+const JSON_BODY_MAX_CHARS = 256 * 1024;
 
 /** The failure a provider status names, or null when the answer is fine. */
 export const failureForStatus = (status, body, { credentials = [] } = {}) => {
@@ -35,7 +39,10 @@ export const failureForStatus = (status, body, { credentials = [] } = {}) => {
   // `NNN: {body}` and keeps at most the body's one named message field. The
   // readable prefix is added after the scrub; put first, it hides the status
   // and the whole body sample is kept instead.
-  const text = `${status}: ${String(body ?? '').slice(0, BODY_SAMPLE_CHARS)}`;
+  const raw = String(body ?? '');
+  const json = /^\s*[[{]/.test(raw);
+  if (json && raw.length > JSON_BODY_MAX_CHARS) return new RunFailure(kind, `provider answered ${status}`);
+  const text = `${status}: ${json ? raw : raw.slice(0, BODY_SAMPLE_CHARS)}`;
   const { detail } = scrubAdapterFailure(text, { credentials, limit: 500 });
   return new RunFailure(kind, `provider answered ${status}${detail ? `: ${detail}` : ''}`);
 };

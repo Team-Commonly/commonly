@@ -144,3 +144,14 @@ test('failureForStatus reads its own status prefix: a JSON body keeps only its n
   // A structured body with no named field contributes nothing; the status stays.
   assert.equal(failureForStatus(400, JSON.stringify({ trace: extra })).detail, 'provider answered 400');
 });
+
+test('failureForStatus applies the keep-list to a JSON body longer than the prose sample', () => {
+  // Past 4096 chars a slice would no longer parse as JSON and be kept as prose.
+  const body = JSON.stringify({ internal: 'acct-9f3e private routing note', pad: 'p'.repeat(5000), error: { message: 'quota exceeded' } });
+  const failure = failureForStatus(429, body);
+  assert.equal(failure.detail, 'provider answered 429: quota exceeded');
+  assert.doesNotMatch(failure.detail, /acct-9f3e|routing note|ppp/);
+  // Too large to read whole: no detail rather than a partial one.
+  const huge = JSON.stringify({ internal: 'acct-9f3e', pad: 'p'.repeat(300 * 1024) });
+  assert.equal(failureForStatus(500, huge).detail, 'provider answered 500');
+});
