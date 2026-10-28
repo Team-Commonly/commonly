@@ -598,7 +598,7 @@ describe('issueLiteLLMVirtualKey never sends the master key to LiteLLM', () => {
     await issueLiteLLMVirtualKey('theo');
 
     const [, body] = axios.post.mock.calls.find(([u]) => u.endsWith('/key/generate'));
-    expect(body.key_alias).toMatch(/^agent-theo-\d+$/);
+    expect(body.key_alias).toMatch(/^agent-theo-\d+-[0-9a-f]{12}$/);
   });
 
   it('stamps a unique, attributable key_alias on the community/openrouter key', async () => {
@@ -607,7 +607,7 @@ describe('issueLiteLLMVirtualKey never sends the master key to LiteLLM', () => {
     await issueLiteLLMOpenRouterKey('community-agent');
 
     const [, body] = axios.post.mock.calls.find(([u]) => u.endsWith('/key/generate'));
-    expect(body.key_alias).toMatch(/^agent-community-agent-openrouter-\d+$/);
+    expect(body.key_alias).toMatch(/^agent-community-agent-openrouter-\d+-[0-9a-f]{12}$/);
   });
 });
 

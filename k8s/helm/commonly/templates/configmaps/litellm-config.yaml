@@ -348,9 +348,14 @@ data:
       # (the nginx ingress maps only litellm.commonly.me/v1), so this is
       # defense-in-depth against a future ingress/tunnel change exposing it.
       ui_access_mode: "admin_only"
-      # Reject client-supplied api_base / api_key on requests. The /v1 endpoint
-      # is public for BYO goose/pi callers and is key-gated, so a leaked virtual
-      # key must NOT be usable to proxy to arbitrary upstreams on our spend.
+      # Reject client-supplied upstream overrides on requests: api_base / base_url
+      # and the provider endpoint + credential-override fields in LiteLLM's
+      # _BANNED_REQUEST_BODY_PARAMS. The /v1 endpoint is public for BYO goose/pi
+      # callers and is key-gated, so a leaked virtual key must NOT be usable to
+      # redirect to arbitrary upstreams on our spend — which this blocks.
+      # NOTE: on v1.106.2 this does NOT ban a request-body `api_key` (it is not in
+      # _BANNED_REQUEST_BODY_PARAMS); that path would bill the caller's own key,
+      # not our spend, so it is out of scope for this setting.
       # Default is already false; set explicitly so it can't drift (2026-10-28).
       allow_client_side_credentials: false
       # Spend log retention — without these, LiteLLM_SpendLogs grows unbounded

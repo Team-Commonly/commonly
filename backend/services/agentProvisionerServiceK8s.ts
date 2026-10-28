@@ -11,6 +11,7 @@ const stream = require('stream');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const PodAsset = require('../models/PodAsset');
 const PodAssetService = require('./podAssetService');
 const GlobalModelConfigService = require('./globalModelConfigService');
@@ -1669,10 +1670,12 @@ const issueLiteLLMVirtualKey = async (agentId: any) => {
         max_budget: LITELLM_KEY_MAX_BUDGET_USD,
         budget_duration: LITELLM_KEY_BUDGET_DURATION,
         // Human-readable attribution on the key (the 2026-10-28 audit found 73 keys
-        // with no alias). Suffixed with a mint timestamp because LiteLLM enforces
-        // key_alias uniqueness: a bare `agent-<id>` would 409 when a stale key is
-        // deleted and re-minted for the same agent, silently failing the seat.
-        key_alias: `agent-${agentId}-${Date.now()}`,
+        // with no alias). Suffixed with a mint timestamp AND 6 random bytes because
+        // LiteLLM enforces key_alias uniqueness: a bare `agent-<id>` would 409 when a
+        // stale key is deleted and re-minted for the same agent, and two concurrent
+        // mints can read the same Date.now() millisecond — either silently fails the
+        // seat. The random suffix makes the alias collision-free regardless of clock.
+        key_alias: `agent-${agentId}-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`,
         metadata: { agent_id: agentId, provisioned_at: new Date().toISOString() },
       },
       { headers },
@@ -1754,7 +1757,7 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
         rpm_limit: LITELLM_KEY_RPM_LIMIT,
         max_budget: LITELLM_KEY_MAX_BUDGET_USD,
         budget_duration: LITELLM_KEY_BUDGET_DURATION,
-        key_alias: `agent-${agentId}-openrouter-${Date.now()}`,
+        key_alias: `agent-${agentId}-openrouter-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`,
         metadata: { agent_id: agentId, key_type: 'openrouter', provisioned_at: new Date().toISOString() },
       },
       { headers },
