@@ -7,9 +7,10 @@ import fs from 'fs';
 import path from 'path';
 
 const v2Css = fs.readFileSync(path.join(__dirname, '../v2.css'), 'utf8');
+// Body of the first rule whose selector list includes `selector`, so grouped selectors match too.
 const ruleBody = (selector) => {
-  const start = v2Css.indexOf(`${selector} {`);
-  return start === -1 ? '' : v2Css.slice(start, v2Css.indexOf('}', start));
+  const match = v2Css.match(new RegExp(`${selector}[^{}]*\\{([^}]*)\\}`));
+  return match ? match[1] : '';
 };
 
 afterEach(() => jest.clearAllMocks());
@@ -42,9 +43,17 @@ describe('V2HarnessPicker', () => {
   it('draws the OS dots from the table: filled when walked, dashed when not', () => {
     render(<V2HarnessPicker selectedId="claude" onSelect={jest.fn()} />);
     const claude = screen.getByTestId('harness-row-claude');
-    expect(within(claude).getByTestId('harness-dot-mac')).toHaveAttribute('data-state', 'walked');
-    expect(within(claude).getByTestId('harness-dot-linux')).toHaveAttribute('data-state', 'not-walked');
-    expect(within(claude).getByTestId('harness-dot-windows')).toHaveAttribute('data-state', 'not-walked');
+    expect(within(claude).getByTestId('harness-dot-claude-mac')).toHaveAttribute('data-state', 'walked');
+    expect(within(claude).getByTestId('harness-dot-claude-linux')).toHaveAttribute('data-state', 'mcp-only');
+    expect(within(claude).getByTestId('harness-dot-claude-windows')).toHaveAttribute('data-state', 'mcp-only');
+    expect(within(screen.getByTestId('harness-row-codex')).getByTestId('harness-dot-codex-linux')).toHaveAttribute('data-state', 'not-walked');
+  });
+
+  it('titles each OS dot with why it is filled or dashed', () => {
+    render(<V2HarnessPicker selectedId="claude" onSelect={jest.fn()} />);
+    expect(screen.getByTestId('harness-dot-claude-mac')).toHaveAttribute('title', 'Walked on Mac');
+    expect(screen.getByTestId('harness-dot-claude-linux')).toHaveAttribute('title', 'Linux: connects over MCP only, no @mention listener');
+    expect(screen.getByTestId('harness-dot-dsh-windows')).toHaveAttribute('title', 'Not offered on Windows');
   });
 
   it('keeps the filled and dashed dot rules in v2.css', () => {
@@ -56,7 +65,7 @@ describe('V2HarnessPicker', () => {
     render(<V2HarnessPicker selectedId="claude" onSelect={jest.fn()} />);
     const privateRows = HARNESS_WALK_TABLE.filter((row) => row.privatePodsOnly).map((row) => row.id);
     expect(privateRows).toEqual(['dsh']);
-    expect(within(screen.getByTestId('harness-row-dsh')).getByText('private pods only')).toBeInTheDocument();
+    expect(within(screen.getByTestId('harness-row-dsh')).getByRole('img', { name: 'private pods only' })).toBeInTheDocument();
   });
 
   it('marks the selected row and reports the id it picks', () => {
@@ -70,7 +79,7 @@ describe('V2HarnessPicker', () => {
 
   it('uses the connect method from the table for each row', () => {
     render(<V2HarnessPicker selectedId="claude" onSelect={jest.fn()} />);
-    expect(screen.getByTestId('harness-connects-claude')).toHaveTextContent('one command');
-    expect(screen.getByTestId('harness-connects-opencode')).toHaveTextContent('terminal steps');
+    expect(screen.getByTestId('harness-connects-claude')).toHaveAttribute('aria-label', 'one command');
+    expect(screen.getByTestId('harness-connects-opencode')).toHaveAttribute('aria-label', 'terminal steps');
   });
 });

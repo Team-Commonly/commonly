@@ -2,7 +2,11 @@
 // (ux-lead, 2026-10-27). A harness is listed in the picker only when it has a passing walk on
 // record. Change a row here only with a new walk on record, and update the table to match.
 
-export type HarnessOsState = 'walked' | 'not-walked';
+/**
+ * walked: passing walk on record. mcp-only: connects, but no @mention listener on this OS.
+ * not-walked: no walk yet. not-offered: the harness does not ship for this OS.
+ */
+export type HarnessOsState = 'walked' | 'mcp-only' | 'not-walked' | 'not-offered';
 
 export interface HarnessWalkRow {
   id: string;
@@ -23,7 +27,7 @@ export const HARNESS_WALK_TABLE: readonly HarnessWalkRow[] = [
     label: 'Claude Code',
     monogram: 'CC',
     connects: 'command',
-    os: { mac: 'walked', linux: 'not-walked', windows: 'not-walked' },
+    os: { mac: 'walked', linux: 'mcp-only', windows: 'mcp-only' },
     privatePodsOnly: false,
     walkedOn: '2026-10-26',
   },
@@ -59,7 +63,7 @@ export const HARNESS_WALK_TABLE: readonly HarnessWalkRow[] = [
     label: 'DeepSeek Harness',
     monogram: 'DS',
     connects: 'terminal',
-    os: { mac: 'walked', linux: 'not-walked', windows: 'not-walked' },
+    os: { mac: 'walked', linux: 'not-offered', windows: 'not-offered' },
     privatePodsOnly: true,
     walkedOn: '2026-10-23',
   },

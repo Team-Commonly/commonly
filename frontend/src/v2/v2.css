@@ -13352,11 +13352,12 @@ body.modern-ui.v2-canvas {
 .v2-harness-picker__head,
 .v2-harness-picker__row {
   display: grid;
-  grid-template-columns: 1fr 96px 56px 56px 56px;
+  grid-template-columns: minmax(0, 1fr) 24px 14px 14px 14px;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
 }
 .v2-harness-picker__head { padding: 0 16px; font-family: var(--v2-font-mono); font-size: 12px; color: var(--v2-text-tertiary); }
+.v2-harness-picker__head > span:nth-child(2) { justify-self: center; }
 .v2-harness-picker__row {
   width: 100%;
   padding: 14px 16px;
@@ -13370,10 +13371,11 @@ body.modern-ui.v2-canvas {
 }
 .v2-harness-picker__row:hover { background: var(--v2-surface-hover); }
 .v2-harness-picker__row--selected { border-color: var(--v2-accent); }
-.v2-harness-picker__name { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 500; }
+.v2-harness-picker__name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 15px; font-weight: 500; }
 .v2-harness-picker__mark {
   display: inline-grid;
   place-items: center;
+  flex: none;
   width: 28px;
   height: 28px;
   border: 1px solid var(--v2-border);
@@ -13381,8 +13383,19 @@ body.modern-ui.v2-canvas {
   font-family: var(--v2-font-mono);
   font-size: 11px;
 }
-.v2-harness-picker__lock { font-size: 12px; font-weight: 400; color: var(--v2-text-tertiary); }
-.v2-harness-picker__connects { font-size: 13px; color: var(--v2-text-secondary); }
+.v2-harness-picker__lock { display: inline-flex; color: var(--v2-text-tertiary); }
+.v2-harness-picker__connects { display: inline-flex; justify-self: center; color: var(--v2-text-secondary); }
 .v2-harness-picker__dot { justify-self: center; width: 8px; height: 8px; border-radius: 50%; }
 .v2-harness-picker__dot--walked { background: var(--v2-ink); }
-.v2-harness-picker__dot--not-walked { border: 1px dashed var(--v2-text-tertiary); }
+.v2-harness-picker__dot--mcp-only,
+.v2-harness-picker__dot--not-walked,
+.v2-harness-picker__dot--not-offered { border: 1px dashed var(--v2-text-tertiary); }
+
+@media (max-width: 760px) {
+  .v2-harness-picker__head,
+  .v2-harness-picker__row { grid-template-columns: minmax(0, 1fr) 20px 12px 12px 12px; gap: 10px; }
+  .v2-harness-picker__head,
+  .v2-harness-picker__row { padding-left: 12px; padding-right: 12px; }
+  .v2-harness-picker__mark { width: 24px; height: 24px; font-size: 10px; }
+  .v2-harness-picker__name { font-size: 14px; }
+}

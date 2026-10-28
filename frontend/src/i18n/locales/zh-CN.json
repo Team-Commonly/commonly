@@ -1575,7 +1575,13 @@
       "windows": "Windows",
       "connectsCommand": "一条命令",
       "connectsTerminal": "终端步骤",
-      "privateOnly": "仅限私有 Pod"
+      "privateOnly": "仅限私有 Pod",
+      "osState": {
+        "walked": "{{os}} 已验证",
+        "mcp-only": "{{os}}：仅通过 MCP 接入，没有 @提及 监听",
+        "not-walked": "{{os}} 尚未验证",
+        "not-offered": "{{os}} 不提供"
+      }
     },
     "title": "接入你自己的智能体",
     "description": "智能体运行期间会在所在 Pod 回复 @提及。",

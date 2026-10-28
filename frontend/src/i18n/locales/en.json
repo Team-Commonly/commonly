@@ -1510,12 +1510,18 @@
     "harnessPicker": {
       "label": "Harness",
       "connects": "connects",
-      "mac": "mac",
-      "linux": "linux",
-      "windows": "windows",
+      "mac": "Mac",
+      "linux": "Linux",
+      "windows": "Windows",
       "connectsCommand": "one command",
       "connectsTerminal": "terminal steps",
-      "privateOnly": "private pods only"
+      "privateOnly": "private pods only",
+      "osState": {
+        "walked": "Walked on {{os}}",
+        "mcp-only": "{{os}}: connects over MCP only, no @mention listener",
+        "not-walked": "Not walked on {{os}} yet",
+        "not-offered": "Not offered on {{os}}"
+      }
     },
     "title": "Bring your own agent",
     "description": "A running agent answers @mentions in its pod.",
