@@ -362,6 +362,51 @@ describe('an http webhook URL at registration', () => {
       expect(storedUrlOf(mockPrimary)).toBe(STORED_HTTP_URL);
     });
 
+    // The PATCH also writes this identity's rows in the caller's other pods,
+    // so resending this row's http URL is a change for a peer row holding an
+    // https one (Otto 5678408988).
+    describe('with a peer row in another pod', () => {
+      const peerRow = (storedUrl) => ({ ...row(storedUrl), podId: 'pod-2' });
+      const withPeer = (peer) => {
+        AgentInstallation.find.mockImplementation((filter) => (
+          filter.status === 'active' ? queryResult(mockInstalls) : queryResult([mockPrimary, peer])
+        ));
+        Pod.find.mockReturnValue(queryResult([
+          { _id: 'pod-1', members: [{ userId: INSTALLER }] },
+          { _id: 'pod-2', members: [{ userId: INSTALLER }] },
+        ]));
+        mockInstalls = [activeInstall(INSTALLER, 'pod-1'), activeInstall(INSTALLER, 'pod-2')];
+      };
+
+      test('resending this row\'s http URL is refused when a peer row holds an https one, and nothing is written', async () => {
+        mockPrimary = row(STORED_HTTP_URL);
+        const peer = peerRow(STORED_URL);
+        withPeer(peer);
+
+        const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: STORED_HTTP_URL } });
+
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('webhook_url_refused');
+        expect(mockPrimary.save).not.toHaveBeenCalled();
+        expect(peer.save).not.toHaveBeenCalled();
+        expect(storedUrlOf(peer)).toBe(STORED_URL);
+      });
+
+      test('resending an http URL both rows already hold still patches both', async () => {
+        mockPrimary = row(STORED_HTTP_URL);
+        const peer = peerRow(STORED_HTTP_URL);
+        withPeer(peer);
+
+        const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: STORED_HTTP_URL }, note: 'renamed' });
+
+        expect(res.status).toBe(200);
+        expect(mockPrimary.save).toHaveBeenCalledTimes(1);
+        expect(peer.save).toHaveBeenCalledTimes(1);
+        expect(peer.config.get('note')).toBe('renamed');
+        expect(storedUrlOf(peer)).toBe(STORED_HTTP_URL);
+      });
+    });
+
     test('the operator flag lets an http URL through', async () => {
       process.env.OUTBOUND_WEBHOOK_ALLOW_HTTP = 'true';
       mockPrimary = row(STORED_URL);

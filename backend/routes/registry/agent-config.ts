@@ -199,13 +199,6 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         return res.status(403).json({ code: ownership.failure, error: webhookUrlRefusal[ownership.failure] });
       }
     }
-    // A new or changed URL must be https, admins included. The stored value is
-    // exempt so a row registered over http stays patchable until TASK-303's
-    // census decides those rows.
-    if (requestedWebhookUrl && requestedWebhookUrl !== storedWebhookUrl) {
-      const schemeRefusal = webhookUrlRegistrationRefusal(requestedWebhookUrl);
-      if (schemeRefusal) return res.status(400).json({ code: 'webhook_url_refused', error: schemeRefusal });
-    }
 
     const applyInstallationSettings = (targetInstallation: any) => {
       if (!targetInstallation) return;
@@ -318,6 +311,18 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
     const installationsToUpdate: any[] = isInstanceAdmin
       ? accessibleInstallations
       : accessibleInstallations.filter(ownsInstallation);
+    // A new or changed URL must be https, admins included. A row already
+    // holding this exact URL is exempt so one registered over http stays
+    // patchable until TASK-303's census decides those rows. Checked against
+    // every row the write reaches, not only this pod's: resending this row's
+    // http URL would otherwise copy it onto a peer row that holds an https one.
+    const webhookUrlChangesARow = requestedWebhookUrl && installationsToUpdate.some(
+      (entry: any) => normalizeConfigMap(entry.config)?.runtime?.webhookUrl !== requestedWebhookUrl,
+    );
+    if (webhookUrlChangesARow) {
+      const schemeRefusal = webhookUrlRegistrationRefusal(requestedWebhookUrl);
+      if (schemeRefusal) return res.status(400).json({ code: 'webhook_url_refused', error: schemeRefusal });
+    }
     // A rename changes the portable User label seen in every pod. Refuse it
     // unless the same request will update every non-uninstalled projection.
     if (displayName !== undefined && installationsToUpdate.length !== peerByPod.size) {
