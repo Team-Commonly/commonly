@@ -241,6 +241,9 @@ router.get('/:agentName/:instanceId?', async (req: Req, res: Res) => {
         agentName,
         instanceId,
         displayName: scopedDisplayName || resolveAgentDisplayLabel(user, user.username),
+        // Chat, the inspector and Your Team seed an unpicked agent's face on
+        // its user id. The profile needs the same seed or it draws another face.
+        userId: String(user._id),
         profilePicture: user.profilePicture || 'default',
         // agentName is a legacy identity field, not a runtime descriptor. Falling
         // back to it rendered the raw seat name as a misleading runtime badge.
@@ -278,7 +281,8 @@ router.get('/:agentName/:instanceId?', async (req: Req, res: Res) => {
 // "If created by someone" — the gate is creation-shaped: the caller must be an
 // admin or the installer of an active installation of this agent. Accepts the
 // deterministic robot scheme ('bottts:<seed>') or an uploaded-image reference;
-// never raw AI generation, which is deprecated.
+// never raw AI generation, which is deprecated. 'default' clears the pick, so
+// every surface falls back to the face seeded on the agent's user id.
 //
 // Writes go through the ONE sanctioned door for the dual-store problem:
 // Mongo User first, then AgentIdentityService.syncUserToPostgreSQL — the July
@@ -317,8 +321,9 @@ router.put('/:agentName/:instanceId?/avatar', authMiddleware, async (req: any, r
     const instanceId = String(req.params?.instanceId || 'default').trim() || 'default';
     const avatar = String(req.body?.avatar || '').trim();
 
-    if (!AGENT_AVATAR_SCHEME.test(avatar) && !isUploadRef(avatar)) {
-      res.status(400).json({ error: 'avatar must be a bottts:<seed> preset or an uploaded image reference' });
+    const reset = avatar === 'default';
+    if (!reset && !AGENT_AVATAR_SCHEME.test(avatar) && !isUploadRef(avatar)) {
+      res.status(400).json({ error: "avatar must be 'default', a bottts:<seed> preset or an uploaded image reference" });
       return;
     }
     if (!(await canEditAgentAvatar(req, agentName, instanceId))) {
@@ -347,7 +352,7 @@ router.put('/:agentName/:instanceId?/avatar', authMiddleware, async (req: any, r
 
     // Your-Team cards read AgentRegistry.iconUrl; move it in the same request.
     try {
-      await AgentRegistry.updateOne({ agentName }, { $set: { iconUrl: avatar } });
+      await AgentRegistry.updateOne({ agentName }, { $set: { iconUrl: reset ? '' : avatar } });
     } catch (regErr) {
       console.warn('[agent-avatar] registry iconUrl update failed:', (regErr as Error).message);
     }

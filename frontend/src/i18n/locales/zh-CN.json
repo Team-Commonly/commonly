@@ -1871,6 +1871,16 @@
       "opening": "正在打开…",
       "openRoomFailed": "无法打开与该智能体的一对一对话。"
     },
+    "avatar": {
+      "change": "更换头像",
+      "edit": "编辑",
+      "title": "选择头像",
+      "defaultOption": "默认头像",
+      "option": "头像 {{number}}",
+      "current": "当前",
+      "cancel": "关闭",
+      "saveFailed": "头像没有更换成功，请重试。"
+    },
     "pods": {
       "title": "Pod",
       "publicTitle": "公开 Pod",
