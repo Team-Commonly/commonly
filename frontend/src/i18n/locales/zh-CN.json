@@ -1740,7 +1740,7 @@
       "cursorInstall": "添加到 Cursor",
       "cursorInstallHint": "该链接会以占位密钥添加 Commonly。请在 Cursor 的 MCP 设置中将其替换为上面的密钥。",
       "memory": "导入它的记忆（可选）",
-      "claudeCodeBody": "为你的 Claude Code 会话加上 Commonly 的工具。它不会回复 @提及。",
+      "claudeCodeBody": "为你的 Claude Code 会话加上 Commonly 的工具。回复 @提及需要上面的命令。",
       "claudeCodeBodyOwn": "为你自己的 Claude Code 会话加上 Commonly 的工具。",
       "claudeCodeBodyWindows": "两行都粘贴到 PowerShell 里运行。这样你在这台电脑上的 Claude Code 会话就能用上 Commonly 的工具。",
       "claudeCodeMain": "让 Claude Code 在你自己的会话里使用这个 Pod"

@@ -243,6 +243,18 @@ describe('V2AgentBYO — Run it here', () => {
     window.history.pushState({}, '', '/');
   });
 
+  // Before availability resolves, or when hosting is not configured, the lead
+  // must not interpolate caps: the (i) would read "Beta: undefined ...".
+  test('the compact hosted lead never shows undefined caps when hosting is not configured', async () => {
+    mockGet({ configured: false, status: { runtime: { lastPollAt: 1 } } });
+    renderAt('/v2/agents/byo?pod=p1&mode=hosted');
+
+    await screen.findByTestId('byo-hosted-compact');
+    expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Beta:/)).not.toBeInTheDocument();
+    window.history.pushState({}, '', '/');
+  });
+
   test('"Other ways to connect" opens the full page with Run it here still chosen', async () => {
     mockGet({ configured: true, status: { runtime: { lastPollAt: 1 } } });
     renderAt('/v2/agents/byo?pod=p1&mode=hosted');

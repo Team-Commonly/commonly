@@ -1681,7 +1681,7 @@
       "cursorInstall": "Add to Cursor",
       "cursorInstallHint": "The link adds Commonly with a placeholder key. Replace it in Cursor’s MCP settings with the key above.",
       "memory": "Bring its memory (optional)",
-      "claudeCodeBody": "Gives your Claude Code sessions the pod’s tools. It won’t answer @mentions.",
+      "claudeCodeBody": "Gives your Claude Code sessions Commonly’s tools. Answering @mentions needs the command above.",
       "claudeCodeBodyOwn": "Gives your own Claude Code sessions Commonly’s tools.",
       "claudeCodeBodyWindows": "Paste both lines in PowerShell. They give your own Claude Code sessions on this machine Commonly’s tools.",
       "claudeCodeMain": "Let Claude Code use the pod in your own sessions"
