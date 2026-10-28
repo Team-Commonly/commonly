@@ -22,14 +22,18 @@ import { join } from 'node:path';
 import { prepareCommitAttribution } from '../src/lib/commit-attribution.js';
 
 // A developer's global or system core.hooksPath would move every expected
-// hooks directory, so the fixtures read only repository config.
-const fixtureEnv = {
-  ...Object.fromEntries(Object.entries(process.env).filter(([name]) => (
-    !name.startsWith('GIT_CONFIG_') && !name.startsWith('COMMONLY_AGENT_')
+// hooks directory, so the fixtures read only repository config. An inherited
+// GIT_CONFIG would also send each fixture `git config` write to that file.
+const isolateGitConfig = (env) => ({
+  ...Object.fromEntries(Object.entries(env).filter(([name]) => (
+    name !== 'GIT_CONFIG'
+      && !name.startsWith('GIT_CONFIG_')
+      && !name.startsWith('COMMONLY_AGENT_')
   ))),
   GIT_CONFIG_GLOBAL: '/dev/null',
   GIT_CONFIG_NOSYSTEM: '1',
-};
+});
+const fixtureEnv = isolateGitConfig(process.env);
 const execFileSync = (command, args, options = {}) => execFileSyncWithEnv(command, args, {
   env: fixtureEnv,
   ...options,
@@ -293,6 +297,23 @@ describe('prepareCommitAttribution', () => {
         agentName: 'sprint-impl',
         adapter: 'codex',
       })).toThrow(/GIT_CONFIG_COUNT is invalid/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('fixture git config writes land in the repository, not an inherited GIT_CONFIG file', () => {
+    const root = mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-git-config-'));
+    const repo = join(root, 'repo');
+    const outside = join(root, 'outside.gitconfig');
+    try {
+      mkdirSync(repo);
+      writeFileSync(outside, '[user]\n\tname = Outside\n');
+      const env = isolateGitConfig({ ...process.env, GIT_CONFIG: outside });
+      execFileSync('git', ['init', '--quiet'], { cwd: repo, env });
+      execFileSync('git', ['config', 'core.hooksPath', 'team-hooks'], { cwd: repo, env });
+      expect(readFileSync(outside, 'utf8')).toBe('[user]\n\tname = Outside\n');
+      expect(readFileSync(join(repo, '.git', 'config'), 'utf8')).toContain('hooksPath = team-hooks');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
