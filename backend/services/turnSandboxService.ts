@@ -23,6 +23,11 @@ export const SANDBOX_TEMPLATE = 'code-interpreter-v1';
 const SANDBOX_LIFETIME_MS = 3 * 60 * 1000;
 const RUN_TIMEOUT_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 45_000;
+// Bounds the create call itself: a hung E2B control plane must not hold the turn.
+const CREATE_TIMEOUT_MS = 30_000;
+// What the model is told when E2B refuses a sandbox (concurrency cap, rate
+// limit, or a create that timed out). The raw SDK message stays server-side.
+export const SANDBOX_BUSY_MESSAGE = 'sandbox busy, try again in a minute';
 const MAX_CODE_CHARS = 20_000;
 const STDOUT_LIMIT = 4000;
 const STDERR_LIMIT = 2000;
@@ -51,6 +56,13 @@ export interface RunCodeResult {
   error?: string;
 }
 
+// E2B's own refusal classes: RateLimitError (cap or 429), TimeoutError (create
+// ran past its request timeout). Anything else is a fault, and still throws.
+const isSandboxRefusal = (error: unknown): boolean => {
+  const { name, status } = (error || {}) as { name?: string; status?: number };
+  return name === 'RateLimitError' || name === 'TimeoutError' || status === 429;
+};
+
 const clip = (text: string, limit: number): string => (
   text.length > limit ? `${text.slice(0, limit)}\n… [${text.length - limit} more characters]` : text
 );
@@ -76,6 +88,7 @@ export class TurnSandbox {
       this.creating = Sandbox.create(SANDBOX_TEMPLATE, {
         apiKey: process.env.E2B_API_KEY,
         timeoutMs: SANDBOX_LIFETIME_MS,
+        requestTimeoutMs: CREATE_TIMEOUT_MS,
         allowInternetAccess: false,
         // E2B serves every sandbox port on a public URL unless told not to;
         // with this off, a URL needs the traffic token only this process holds,
@@ -97,7 +110,16 @@ export class TurnSandbox {
     if (this.runs >= MAX_RUNS_PER_TURN) return refuse(`this turn has used its ${MAX_RUNS_PER_TURN} code runs`);
     this.runs += 1;
 
-    const sandbox = await this.open();
+    let sandbox: E2BSandbox;
+    try {
+      sandbox = await this.open();
+    } catch (error) {
+      if (!isSandboxRefusal(error)) throw error;
+      // Forget the failed create, so close() has nothing to kill and a later run may try again.
+      this.creating = null;
+      console.warn('[sandbox] E2B refused a sandbox:', (error as Error).name);
+      return refuse(SANDBOX_BUSY_MESSAGE);
+    }
     const execution = await sandbox.runCode(code, {
       language, timeoutMs: RUN_TIMEOUT_MS, requestTimeoutMs: REQUEST_TIMEOUT_MS, envs: {},
     });
