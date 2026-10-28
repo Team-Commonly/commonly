@@ -17,11 +17,15 @@ own CLI becomes the second path.
 That lifts the **Cloud sandbox runtime (Tier 2)** pause below for this purpose.
 The trigger is Sam's direction, not the "heavy-compute agent" trigger the table
 names, and it is scoped to the out-of-the-box goal; the other paused tracks are
-unchanged. The direction does not decide the runtime itself. Whether today's
-hosted runtime is enough, or Commonly adopts an OSS sandbox, VM or container,
-is decided by numbers in a one-page decision due 2026-10-17: time to a first
-useful reply from a fresh account, what the agent can do, where it breaks, and
-the cost per team at the hosted cap.
+unchanged. The direction does not decide the runtime itself. The runtime was to be chosen by
+numbers in a one-page decision due 2026-10-17: time to a first useful reply from a
+fresh account, what the agent can do, where it breaks, and the cost per team at the
+hosted cap.
+
+**Status now:** the E2B sandbox is on `main` as `commonly_run_code` (#2232, TASK-266,
+2026-10-15). **Still open:** the 2026-10-17 decision memo is not in the repo, so its
+numbers are not recorded here. E2B is a hosted outside service, so whether to
+self-host an OSS sandbox is not decided.
 
 ## Status update — 2026-04-29
 
