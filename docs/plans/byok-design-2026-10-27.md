@@ -31,6 +31,22 @@ Line references are to `origin/main` at `9823d2bb`. Every claim about current co
 - Store the vendor key the way `AGENT_PROVIDER_KEY` already stores material: an encrypted `ConnectorSecret` with a generation and a revoke-after-commit (`connectorSecrets.ts:164-183`, `connectorSecretKinds.ts:111-113`). Add a new kind, e.g. `MODEL_PROVIDER_KEY`, so the audit and rewrap paths stay separate.
 - At call time, the gateway resolves the caller's virtual key to its owner and team, then selects the owner's or team's vendor key for that one request. The mechanism is **to verify**: LiteLLM team- or key-scoped model deployments are the likely route. A spike must show that a request carrying team A's virtual key cannot resolve team B's deployment, and that the key string never appears in the response, the logs or the agent's env.
 - Do **not** extend `launchProviderKey` (`agentsRuntime.ts:525`) to model-layer keys. That path hands the plaintext to a daemon. The model layer needs the key to stay in the gateway's process.
+- **Design rule: BYOK keys are bound to the in-cluster proxy, and client-side overrides are disabled.** A request can't carry its own `api_base` or `api_key`, so it can't redirect a stored key, and a key that resolves to a user's vendor key is accepted only on the in-cluster path.
+- **The agent's gateway bearer is bounded.** The per-agent virtual key stays in the agent's environment, and the agent's tools can read it. So any virtual key that can resolve to a user's vendor key gets its own model allowlist, budget and rate limit, and is rotated on reprovision. The vendor key is never exposed. The bearer that spends it is exposed, which is why it must be bounded.
+- LiteLLM's credential routing selects credentials by team and project, not by user. A personal key maps to a one-member team and an agent key to a project. That mapping is **to verify** in the spike.
+
+## 1a. Scopes and which key a turn uses
+
+There are three scopes, plus our default:
+
+| Scope | Set by | Serves | Precedence |
+|---|---|---|---|
+| Agent | the agent's owner | one hosted agent | 1 |
+| Team | a team admin | hosted agents run in that team's pods | 2 |
+| User | the person | hosted agents that person owns | 3 |
+| Ours | — | everything else (the default, never a fallback) | 4 |
+
+The source is resolved once, at turn start. It is recorded on `AgentRun` as `keySource: ours | user | team | agent` and never changes mid-turn. Open: whether team should beat user (as here) or user beat team, and whether "team" means the workspace rather than the pod.
 
 ## 2. Harness layer: a person's own subscription
 
@@ -55,6 +71,9 @@ Line references are to `origin/main` at `9823d2bb`. Every claim about current co
 - **Caps:** a per-key budget set at the gateway (LiteLLM's key or team budget, **to verify**). The budget is enforced by the vendor-side path, so a runaway agent cannot exceed it.
 - **Run ceiling: recommendation.** A team key does **not** change the run ceiling. Runs still count against the invoking user's ceiling (`hostedRuntimeService.ts:83-89`, `manage-settings.ts:111`). The ceiling protects our abuse surface; the key cap protects the money. Two separate limits.
 - **Team key cap:** a team key carries its own cap, set by a team admin. It does not draw from any member's personal cap.
+- **Metering split.** A BYOK turn removes our inference cost, not our compute cost. It still counts toward the run ceiling and any agent-hour meter, but not toward anything that meters our inference spend. `AgentRun.keySource` makes that split computable.
+- **Plans (proposed).** Personal and agent keys on Free and Pro. Team keys on Pro, because they need admin roles and a team cap. No markup on inference that runs on a user's key.
+- **Labels.** A run on someone's key shows "on your key" or "on the team key". Settings show last use, month-to-date spend from the gateway, and the cap, never the key.
 
 ## 5. Failure is visible, with no fallback onto our key
 
@@ -75,18 +94,18 @@ Today the setter is keyed by **seat** (`AgentProviderKey.agentUserId`, unique) a
 
 My estimate, one owner, not yet reviewed by CTO:
 
-| PR | Scope | Size | Gate |
-|---|---|---|---|
-| 0 | Spike: LiteLLM team/key-scoped deployment routing, key-not-in-response proof, budget field behaviour | S (2–3 days) | Opus |
-| 1 | Schema: `scope` on `AgentProviderKey`, migration of seat rows, index change | S | Opus |
-| 2 | Gateway resolver and per-request routing for user keys | M | Opus |
-| 3 | Named turn errors, `disable_fallbacks` on BYO turns, `fallbacks === 0` test | S | Opus |
-| 4 | Spend attribution: `liteLLMCallId` joined to gateway spend log; per-key budget | M | Opus |
-| 5 | Write-only personal key UI | S | Opus + ux-lead |
-| 6 | Team key: admin role, team cap, team UI | M | Opus + ux-lead |
-| 7 | Copy: drop Cloudflare from `V2LegalPage.tsx:54`, add a BYO section to the legal and privacy pages | XS | ux-lead |
+| PR | Scope | Size | Gate | Done when |
+|---|---|---|---|---|
+| 0 | Spike: LiteLLM credential routing as the isolation boundary | S | Opus, security | Team A's virtual key never resolves team B's credential. A client-side `api_base` or `api_key` is refused for an agent key, and the stored key is never sent to that base. The key appears in no response or log. A one-member team and a project carry the user and agent scopes. Results are posted on the row. |
+| 1 | Schema: `scope` on `AgentProviderKey`, seat-row migration, index change | S | Opus | Existing opencode rows migrate to `kind: 'user'` and still resolve. The unique index holds per scope. |
+| 2 | Key-source resolution and the per-request gateway resolver | M | Opus | Unit tests cover each precedence pair. The source never changes mid-turn. `AgentRun.keySource` is written. |
+| 3 | Bound the agent's gateway bearer | S | Opus, security | A BYOK-resolving virtual key gets 403 for a model off its allowlist, `budget_exceeded` when its budget is spent, and is refused outside the in-cluster path. Reprovision invalidates the old key. |
+| 4 | Named turn errors, `disable_fallbacks` on BYO turns | S | Opus | A revoked key ends the turn with `auth_failed`, `AgentRun.fallbacks === 0`, and `keySource` unchanged. |
+| 5 | Spend attribution and the metering split | M | Opus | A service test with mixed turns gives correct run-ceiling, agent-hour and inference totals per `keySource`. Per-key spend comes from the gateway log joined on `liteLLMCallId`. |
+| 6 | Write-only key UI for personal, agent and team keys, plus plan gating | M | Opus + ux-lead | Entitlement tests show Free can't set a team key. No route returns key material. Screenshots at 390 and 1440 of each scope and of the "on your key" label. zh-CN pass. |
+| 7 | Copy: drop the Cloudflare line from `V2LegalPage.tsx:54`; add a BYOK section to the legal and privacy pages | XS | ux-lead | Every claim on the pages is backed by PRs 0–6 as each lands. |
 
-Total: about 7 PRs, roughly 3–4 weeks for one owner, with PR 0 deciding whether PRs 2 and 4 keep their shape. PR 7 is copy-only and does not need the prod freeze lifted, so it can go before launch if Growth wants it.
+Total: about 8 PRs, roughly 3–4 weeks for one owner, with PR 0 deciding whether PRs 2 and 4 keep their shape. PR 7 is copy-only and does not need the prod freeze lifted, so it can go before launch if Growth wants it.
 
 ## Open questions
 
