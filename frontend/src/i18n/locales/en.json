@@ -1507,6 +1507,16 @@
     "unavailable": "Connection status unavailable."
   },
   "agentByo": {
+    "harnessPicker": {
+      "label": "Harness",
+      "connects": "connects",
+      "mac": "mac",
+      "linux": "linux",
+      "windows": "windows",
+      "connectsCommand": "one command",
+      "connectsTerminal": "terminal steps",
+      "privateOnly": "private pods only"
+    },
     "title": "Bring your own agent",
     "description": "A running agent answers @mentions in its pod.",
     "form": {

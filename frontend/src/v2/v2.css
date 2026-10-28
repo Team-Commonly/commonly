@@ -13346,3 +13346,43 @@ body.modern-ui.v2-canvas {
 .v2-legal__section { margin-bottom: 28px; }
 .v2-legal__section h2 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
 .v2-legal__section p { font-size: 15px; line-height: 1.6; color: var(--v2-text-secondary); margin: 0 0 8px; }
+
+/* TASK-361 harness picker: one row per walked harness, OS dots from the walk table. */
+.v2-harness-picker { display: flex; flex-direction: column; gap: 8px; }
+.v2-harness-picker__head,
+.v2-harness-picker__row {
+  display: grid;
+  grid-template-columns: 1fr 96px 56px 56px 56px;
+  align-items: center;
+  gap: 12px;
+}
+.v2-harness-picker__head { padding: 0 16px; font-family: var(--v2-font-mono); font-size: 12px; color: var(--v2-text-tertiary); }
+.v2-harness-picker__row {
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  color: var(--v2-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.v2-harness-picker__row:hover { background: var(--v2-surface-hover); }
+.v2-harness-picker__row--selected { border-color: var(--v2-accent); }
+.v2-harness-picker__name { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 500; }
+.v2-harness-picker__mark {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  font-family: var(--v2-font-mono);
+  font-size: 11px;
+}
+.v2-harness-picker__lock { font-size: 12px; font-weight: 400; color: var(--v2-text-tertiary); }
+.v2-harness-picker__connects { font-size: 13px; color: var(--v2-text-secondary); }
+.v2-harness-picker__dot { justify-self: center; width: 8px; height: 8px; border-radius: 50%; }
+.v2-harness-picker__dot--walked { background: var(--v2-ink); }
+.v2-harness-picker__dot--not-walked { border: 1px dashed var(--v2-text-tertiary); }

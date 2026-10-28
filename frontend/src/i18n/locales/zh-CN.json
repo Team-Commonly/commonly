@@ -1567,6 +1567,16 @@
     "unavailable": "暂时无法获取连接状态。"
   },
   "agentByo": {
+    "harnessPicker": {
+      "label": "运行环境",
+      "connects": "接入方式",
+      "mac": "Mac",
+      "linux": "Linux",
+      "windows": "Windows",
+      "connectsCommand": "一条命令",
+      "connectsTerminal": "终端步骤",
+      "privateOnly": "仅限私有 Pod"
+    },
     "title": "接入你自己的智能体",
     "description": "智能体运行期间会在所在 Pod 回复 @提及。",
     "form": {
