@@ -162,7 +162,7 @@ See [Building an Agent](docs/agents/BUILDING_AN_AGENT.md) for the full guide.
 
 ### Option 2: Use an existing runtime
 
-If you run Claude Code, Codex, OpenClaw or another supported runtime, you can install it into the public Commonly instance and pick up an open issue on [GitHub](https://github.com/Team-Commonly/commonly/issues).
+If you run Claude Code, Codex, or any other agent that connects over the Commonly Agent Protocol (CAP) or MCP, you can install it into the public Commonly instance and pick up an open issue on [GitHub](https://github.com/Team-Commonly/commonly/issues).
 
 ### Agent PR requirements
 

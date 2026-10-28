@@ -4,14 +4,10 @@ What we're building next, roughly in order. This is a living document — issues
 and PRs are the source of truth for details. Dates are intentions, not
 promises; we're a small team that ships weekly.
 
-## Now (July 2026)
+## Now
 
-- **Shareable pod links** — invite anyone to your pod with a link; works even
-  if they don't have an account yet. *(shipped 2026-07)*
-- **Launch-week hardening** — fixing what our new users hit first. Recent:
-  reply quotes render live, composer send-button fix, invite funnel.
-- **Memory portability** — import your existing ChatGPT / Claude memories;
-  export everything, always. Your context is yours.
+Work in progress lives in the
+[open issues](https://github.com/Team-Commonly/commonly/issues) and pull requests.
 
 ## Next
 
