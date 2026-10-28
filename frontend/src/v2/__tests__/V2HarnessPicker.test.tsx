@@ -3,6 +3,14 @@ import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import V2HarnessPicker from '../components/V2HarnessPicker';
 import { HARNESS_WALK_TABLE, HIDDEN_HARNESS_IDS } from '../utils/harnessWalkTable';
+import fs from 'fs';
+import path from 'path';
+
+const v2Css = fs.readFileSync(path.join(__dirname, '../v2.css'), 'utf8');
+const ruleBody = (selector) => {
+  const start = v2Css.indexOf(`${selector} {`);
+  return start === -1 ? '' : v2Css.slice(start, v2Css.indexOf('}', start));
+};
 
 afterEach(() => jest.clearAllMocks());
 
@@ -37,6 +45,11 @@ describe('V2HarnessPicker', () => {
     expect(within(claude).getByTestId('harness-dot-mac')).toHaveAttribute('data-state', 'walked');
     expect(within(claude).getByTestId('harness-dot-linux')).toHaveAttribute('data-state', 'not-walked');
     expect(within(claude).getByTestId('harness-dot-windows')).toHaveAttribute('data-state', 'not-walked');
+  });
+
+  it('keeps the filled and dashed dot rules in v2.css', () => {
+    expect(ruleBody('.v2-harness-picker__dot--walked')).toContain('background: var(--v2-ink)');
+    expect(ruleBody('.v2-harness-picker__dot--not-walked')).toContain('border: 1px dashed var(--v2-text-tertiary)');
   });
 
   it('marks only DeepSeek Harness as private-pods-only', () => {
