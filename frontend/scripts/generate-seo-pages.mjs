@@ -354,7 +354,7 @@ const renderGuide = (guide) => {
         ${(guide.intro || []).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}
       </section>
       ${sections}
-      <section><h2>Frequently asked questions</h2><div class="seo-grid">${faq}</div></section>
+      ${guide.faq.length ? `<section><h2>Frequently asked questions</h2><div class="seo-grid">${faq}</div></section>` : ''}
       <section class="seo-band"><h2>${escapeHtml(guide.cta.title)}</h2><p>${escapeHtml(guide.cta.body)}</p><p class="seo-actions"><a class="seo-primary" href="${escapeHtml(guide.cta.primary.path)}">${escapeHtml(guide.cta.primary.label)}</a><a href="${escapeHtml(guide.cta.secondary.path)}">${escapeHtml(guide.cta.secondary.label)}</a></p></section>
       <p class="seo-note">${relatedLinks}</p>
     </main>
