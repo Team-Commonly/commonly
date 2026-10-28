@@ -23,6 +23,7 @@ const LINEAR_FIRST_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list
 const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-14.json');
 const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-19.json');
 const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
+const AIRTABLE_AS_CAPTURE = require('../../fixtures/hostedMcp/airtable-authorization-server-2026-10-28.json');
 const SENTRY_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-10-19.json');
 const NOTION_CAPTURE = require('../../fixtures/hostedMcp/notion-tools-list-2026-10-19.json');
 
@@ -739,7 +740,6 @@ describe('the shipped catalogue cannot land half-wired', () => {
     // read-only. Every writer stays out by class.
     const capture = AIRTABLE_CAPTURE;
     const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'airtable');
-    expect(entry.client).toBe('cimd');
     expect(capture.server).toBe(entry.resource);
     // Root PRM metadata fetched 2026-10-14 names the bare origin, while the
     // consenting 2026-10-09 tools/list capture used /mcp as its endpoint.
@@ -769,6 +769,22 @@ describe('the shipped catalogue cannot land half-wired', () => {
       expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
     }
     expect(capture.tools).toHaveLength(46);
+  });
+
+  test('Airtable registers a public client at the registration endpoint its issuer advertises', () => {
+    // TASK-318: Airtable refused our metadata URL as a client_id without
+    // fetching it, so the entry registers by DCR. The registry reads the
+    // endpoint from discovery; this capture of that document (2026-10-28) pins
+    // where it points and that a public client is on offer.
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'airtable');
+    const { url, metadata } = AIRTABLE_AS_CAPTURE;
+    expect(entry.client).toBe('dcr');
+    expect(url).toBe('https://airtable.com/.well-known/oauth-authorization-server/oauth2/v1');
+    expect(metadata.issuer).toBe(entry.issuer);
+    expect(metadata.registration_endpoint).toBe('https://airtable.com/oauth2/v1/register');
+    expect(metadata.token_endpoint_auth_methods_supported).toContain('none');
+    expect(metadata.code_challenge_methods_supported).toEqual(['S256']);
+    expect([...entry.scopes].every((scope) => metadata.scopes_supported.includes(scope))).toBe(true);
   });
 
   test('the Sentry pin restricts resource lookup to type and ID and parks its destructive writer', () => {
