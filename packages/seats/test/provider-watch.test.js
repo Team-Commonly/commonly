@@ -133,3 +133,14 @@ test('a client that hangs up takes its upstream request with it', async () => {
     await new Promise((resolve) => { upstream.close(resolve); });
   }
 });
+
+test('failureForStatus reads its own status prefix: a JSON body keeps only its named message', () => {
+  const extra = 'x'.repeat(2000);
+  for (const [status, kind] of [[401, 'refusal_retry_loop'], [503, 'provider_unavailable']]) {
+    const failure = failureForStatus(status, JSON.stringify({ error: { message: 'model is overloaded' }, extra }));
+    assert.equal(failure.kind, kind);
+    assert.equal(failure.detail, `provider answered ${status}: model is overloaded`);
+  }
+  // A structured body with no named field contributes nothing; the status stays.
+  assert.equal(failureForStatus(400, JSON.stringify({ trace: extra })).detail, 'provider answered 400');
+});

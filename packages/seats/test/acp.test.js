@@ -1,12 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import {
+  existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PassThrough } from 'node:stream';
 import { createAcpAdapter, defaultPermissionDecision, readsAsRefusal } from '../src/adapters/acp.js';
-import { readOpencodeRetry } from '../src/adapters/acp-launch.js';
+import { isolatedEnv, readOpencodeRetry } from '../src/adapters/acp-launch.js';
 import { createAcpClient } from '../src/acp/client.js';
 import {
   launchGoose, launchOpencode, readGooseReplyFailure, acpGoose, acpOpencode,
@@ -15,6 +17,8 @@ import { RunFailure, runFailure } from '../src/failures.js';
 import { recordTrace } from '../test-support/record-trace.js';
 import { createPermissionPolicy } from '../src/valet/permissions.js';
 import { startFakeProvider } from '../test-support/fake-provider.js';
+import { superviseRun } from '../src/supervisor.js';
+import { createTraceStore } from '../src/trace/store.js';
 
 const AGENT = fileURLToPath(new URL('../test-support/fake-acp-agent.mjs', import.meta.url));
 const KEY = ['sk', 'test', '0123456789abcdef'].join('-');
@@ -791,4 +795,62 @@ test('readOpencodeRetry reads only the opencode/retry key', () => {
   assert.deepEqual(readOpencodeRetry({ _meta: { 'opencode/retry': null } }), { state: 'started' });
   const report = readOpencodeRetry({ _meta: { 'opencode/retry': { attempt: 2, nextRetryAt: 'n', error: { type: 't', status: 500, message: 'm', response: { body: 'b' } } } } });
   assert.deepEqual(report, { state: 'scheduled', attempt: 2, nextRetryAt: 'n', status: 500, errorType: 't' });
+});
+
+test('the secrets the launch injects are scrubbed from the record even when nothing pre-registered them', async () => {
+  // A store with NOTHING registered: the adapter itself must hand the store
+  // the key it put in the child's env, or agent text carries it in clear.
+  // A secret-named variable the launch minted itself is not in ctx at all;
+  // only the launch env names it.
+  const MINTED = 'launch-minted-session-0123456789';
+  const replies = [
+    `Ran into this error: Authentication failed (401) for key ${KEY}`,
+    `debug key=${KEY}`,
+    `debug session=${MINTED}`,
+  ];
+  for (const reply of replies) {
+    const h = harness({ env: { SESSION_TOKEN: MINTED } });
+    const root = join(scratch(), 'store');
+    try {
+      const store = createTraceStore({ root });
+      const ctx = { ...h.ctx(), trace: undefined };
+      const run = await superviseRun({ adapter: h.adapter, prompt: `[[reply:${reply}]]`, ctx, store });
+      assert.equal(run.outcome, 'ok', JSON.stringify(run.failure?.message));
+      const lines = store.readRun(run.runId);
+      const chunks = lines.filter((line) => line.type === 'agent.message_chunk');
+      assert.ok(chunks.length > 0, 'the reply was recorded');
+      assert.match(chunks.map((line) => line.data.text).join(''), /\[redacted\]/);
+      for (const file of readdirSync(root, { recursive: true, withFileTypes: true }).filter((d) => d.isFile())) {
+        const text = readFileSync(join(file.parentPath ?? file.path, file.name), 'utf8');
+        assert.equal(text.includes(KEY), false, `the provider key appears in ${file.name} for reply ${JSON.stringify(reply)}`);
+        assert.equal(text.includes(MINTED), false, `the launch-minted secret appears in ${file.name}`);
+      }
+    } finally { h.done(); rmSync(dirname(root), { recursive: true, force: true }); }
+  }
+});
+
+test('a key the stderr window would cut is scrubbed whole before the tail is taken', async () => {
+  const h = harness();
+  try {
+    // The key ends 390 characters before the end of the line, so a 400-char
+    // window taken before the scrub keeps its last ten characters.
+    const error = await rejectsKind(h.adapter.spawn('[[exit:390]]', h.ctx()), 'exited');
+    assert.equal(error.message.includes(KEY.slice(-10)), false, error.message);
+    assert.match(error.message, /redacted\]\.{390}$/);
+  } finally { h.done(); }
+});
+
+test('isolatedEnv passes the real locale categories and no other LC_-named variable', async () => {
+  const locale = {
+    LC_ALL: 'C', LC_CTYPE: 'C', LC_COLLATE: 'C', LC_MESSAGES: 'C', LC_MONETARY: 'C', LC_NUMERIC: 'C', LC_TIME: 'C',
+    LC_ADDRESS: 'C', LC_IDENTIFICATION: 'C', LC_MEASUREMENT: 'C', LC_NAME: 'C', LC_PAPER: 'C', LC_TELEPHONE: 'C',
+  };
+  const home = scratch();
+  try {
+    const { env } = await isolatedEnv({
+      env: { ...locale, HOME: home, LC_SECRET_TOKEN: KEY, LC_TERMINAL: 'iTerm2', LC_: 'x', PATH: '/bin' },
+    }, 'test');
+    for (const name of Object.keys(locale)) assert.equal(env[name], 'C', name);
+    for (const name of ['LC_SECRET_TOKEN', 'LC_TERMINAL', 'LC_']) assert.equal(name in env, false, name);
+  } finally { rmSync(home, { recursive: true, force: true }); }
 });

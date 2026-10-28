@@ -21,23 +21,23 @@
  */
 import { createServer, request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { runFailure } from './failures.js';
+import { RunFailure, runFailure } from './failures.js';
+import { scrubAdapterFailure } from './upstream-refusal.js';
 
 const BODY_SAMPLE_CHARS = 4096;
 
 /** The failure a provider status names, or null when the answer is fine. */
 export const failureForStatus = (status, body, { credentials = [] } = {}) => {
-  // The status leads the text so the shared keep-list reads `NNN: {body}`
-  // and keeps at most the body's one named message field.
-  const text = `${status}: ${String(body ?? '').slice(0, BODY_SAMPLE_CHARS)}`;
   const transient = status === 408 || status === 429 || (status >= 500 && status <= 599);
-  if (transient) {
-    return runFailure('provider_unavailable', `provider answered ${text}`, { credentials, limit: 500 });
-  }
-  if (status >= 400 && status <= 499) {
-    return runFailure('refusal_retry_loop', `provider answered ${text}`, { credentials, limit: 500 });
-  }
-  return null;
+  const kind = transient ? 'provider_unavailable' : status >= 400 && status <= 499 ? 'refusal_retry_loop' : null;
+  if (!kind) return null;
+  // The status must LEAD the text the shared keep-list reads, so it parses
+  // `NNN: {body}` and keeps at most the body's one named message field. The
+  // readable prefix is added after the scrub; put first, it hides the status
+  // and the whole body sample is kept instead.
+  const text = `${status}: ${String(body ?? '').slice(0, BODY_SAMPLE_CHARS)}`;
+  const { detail } = scrubAdapterFailure(text, { credentials, limit: 500 });
+  return new RunFailure(kind, `provider answered ${status}${detail ? `: ${detail}` : ''}`);
 };
 
 /**

@@ -262,7 +262,9 @@ const runTurn = ({
   }
 
   const exitedFailure = () => {
-    const tail = stderr.trim().slice(-STDERR_IN_FAILURE);
+    // Scrub the whole buffer before taking the tail: a window cut first can
+    // split a key, and the exact-match scrub cannot see half of one.
+    const tail = redactKnownCredentials(stderr, credentials).trim().slice(-STDERR_IN_FAILURE);
     const how = exitInfo ? `code ${exitInfo.code}, signal ${exitInfo.signal}` : 'no exit status';
     return runFailure('exited', `${name} exited before the turn settled (${how})${tail ? `: ${tail}` : ''}`, {
       credentials, limit: FAILURE_LIMIT,
@@ -601,6 +603,12 @@ export const createAcpAdapter = ({
       let launched;
       try {
         launched = await launch(watch ? { ...ctx, provider: { ...ctx.provider, baseURL: watch.baseURL } } : ctx);
+        // The store scrubs only values registered with it, and the launch put
+        // the provider key (and any secret-named variable) in the child's
+        // env, so agent text can echo it: a goose "Ran into this error: …"
+        // reply, a tool title, a plan entry. Every launch path passes here,
+        // before the agent can speak.
+        traceOf(ctx).redact?.(acpCredentials(ctx, launched?.env));
         return await runTurn({
           name, launched, prompt, ctx, memoryPreamble, readReplyFailure, readRetryStatus, maxLineChars, timings: resolvedTimings, wire,
         });

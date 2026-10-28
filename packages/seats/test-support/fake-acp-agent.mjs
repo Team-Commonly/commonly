@@ -19,6 +19,7 @@
  *   [[malformed]]             write a non-JSON line, then hang
  *   [[huge:N]]                write one N-char line, then hang
  *   [[exit]]                  write OPENAI_API_KEY to stderr and exit 3
+ *   [[exit:N]]                same, with N dots after the key on its line
  *   [[hang]]                  never answer until session/cancel, then stopReason cancelled
  *   [[hang-deaf]]             never answer, ignore cancel and SIGTERM
  *   [[hang-permission]]       ask permission and wait; on cancel answer cancelled
@@ -130,7 +131,7 @@ const runPrompt = async (id, { sessionId, prompt }) => {
     case 'malformed': process.stdout.write('this is not json\n'); return undefined;
     case 'huge': process.stdout.write(`${'x'.repeat(Number(arg) || 1000)}\n`); return undefined;
     case 'exit':
-      process.stderr.write(`fatal: provider rejected key ${process.env.OPENAI_API_KEY}\n`);
+      process.stderr.write(`fatal: provider rejected key ${process.env.OPENAI_API_KEY}${'.'.repeat(Number(arg) || 0)}\n`);
       setTimeout(() => process.exit(3), 10);
       return undefined;
     case 'hang': activePrompt = { id, sessionId }; return undefined;

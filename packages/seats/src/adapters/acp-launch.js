@@ -19,7 +19,11 @@ import { join } from 'node:path';
 import { runFailure } from '../failures.js';
 import { createAcpAdapter, readsAsRefusal } from './acp.js';
 
-const SAFE_ENV = /^(?:PATH|LANG|LC_[A-Z_]+|TERM|USER|LOGNAME|NO_COLOR|CI|TMPDIR|SSL_CERT_FILE|SSL_CERT_DIR)$/;
+// The locale names are the POSIX and glibc categories by name, never an LC_
+// prefix: a prefix match admits any variable that starts with it
+// (LC_SECRET_TOKEN), and the child env is where the provider key lives.
+const LOCALE_ENV = 'LC_(?:ALL|CTYPE|COLLATE|MESSAGES|MONETARY|NUMERIC|TIME|ADDRESS|IDENTIFICATION|MEASUREMENT|NAME|PAPER|TELEPHONE)';
+const SAFE_ENV = new RegExp(`^(?:PATH|LANG|${LOCALE_ENV}|TERM|USER|LOGNAME|NO_COLOR|CI|TMPDIR|SSL_CERT_FILE|SSL_CERT_DIR)$`);
 const VERSION_TIMEOUT_MS = 5000;
 
 /** The provider route, checked: a plain HTTP(S) base URL, a key and a model. */
