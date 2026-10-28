@@ -111,7 +111,8 @@ const agentKey = (a: { name: string; instanceId?: string }) => `${a.name}:${a.in
 // gets no laptop mark: we don't know which machine it runs on.
 type RunsOn = 'cloud' | 'laptop' | null;
 const CLOUD_RUNTIME_TYPES = new Set(['hosted', 'moltbot', 'internal', 'native', 'managed-agents', 'codex']);
-const BYO_RUNTIME_TYPES = new Set(['webhook', 'claude-code']);
+// 'wrapper' is a daemon-bound seat (pod-agents projects it over the harness label).
+const BYO_RUNTIME_TYPES = new Set(['webhook', 'claude-code', 'wrapper']);
 const runsOn = (a: AgentInstallationSummary, viewerId: string | undefined): RunsOn => {
   const type = (a.runtime?.runtimeType || '').trim().toLowerCase();
   const host = (a.runtime?.host || '').trim().toLowerCase();

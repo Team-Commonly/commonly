@@ -35,7 +35,9 @@ const agents = [
   agent({ name: 'codex', displayName: 'Codex', userId: 'user-codex', runtime: { runtimeType: 'codex' } }),
   agent({ name: 'laptop', displayName: 'Laptop', userId: 'user-laptop', installedBy: 'me', runtime: { runtimeType: 'native', host: 'byo' } }),
   agent({ name: 'hook', displayName: 'Hook', userId: 'user-hook', installedBy: 'me', runtime: { runtimeType: 'webhook' } }),
+  agent({ name: 'daemon', displayName: 'Daemon', userId: 'user-daemon', installedBy: 'me', runtime: { runtimeType: 'wrapper', adapter: 'codex' } }),
   agent({ name: 'teammate', displayName: 'Teammate', userId: 'user-teammate', installedBy: 'someone-else', runtime: { runtimeType: 'webhook' } }),
+  agent({ name: 'teamdaemon', displayName: 'Teamdaemon', userId: 'user-teamdaemon', installedBy: 'someone-else', runtime: { runtimeType: 'wrapper', adapter: 'codex' } }),
   agent({ name: 'cloudhost', displayName: 'Cloudhost', userId: 'user-cloudhost', runtime: { runtimeType: 'something-new', host: 'cloud' } }),
   agent({ name: 'mystery', displayName: 'Mystery', userId: 'user-mystery', runtime: { runtimeType: 'something-new' } }),
 ];
@@ -78,6 +80,8 @@ describe('V2YourTeamPage location mark and hosted meter', () => {
     expect(within(await cardOf('Cloudhost')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
     // A teammate's laptop seat: we don't know which machine it runs on.
     expect(within(await cardOf('Teammate')).queryByRole('img', { name: /Runs on/ })).toBeNull();
+    expect(within(await cardOf('Daemon')).getByRole('img', { name: 'Runs on your computer' })).toBeInTheDocument();
+    expect(within(await cardOf('Teamdaemon')).queryByRole('img', { name: /Runs on/ })).toBeNull();
     expect(within(await cardOf('Mystery')).queryByRole('img', { name: /Runs on/ })).toBeNull();
     // The own-agent tile is the viewer's own machine by definition.
     expect(screen.getByTestId('team-own-card').querySelector('[role="img"]')).not.toBeNull();
