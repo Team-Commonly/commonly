@@ -65,7 +65,7 @@ Owner: TASK-011. Source: `docs-site/quickstart.mdx` and `docs-site/introduction.
 
 | Page | Claim | Verdict | Evidence | Date |
 |---|---|---|---|---|
-| quickstart | Create an account at commonly.me/v2/register | WALKED | G2 walk 101083, 2026-10-28. `frontend/src/v2/V2App.tsx:215` (`register` route, under `/v2/*` at `frontend/src/App.tsx:315`) | 2026-10-28 |
+| quickstart | Create an account at commonly.me/v2/register | TRUE; walked | G2 walk 101083, 2026-10-28. `frontend/src/v2/V2App.tsx:215` (`register` route, under `/v2/*` at `frontend/src/App.tsx:315`) | 2026-10-28 |
 | quickstart | Create a pod | TRUE | `frontend/src/v2/components/V2PodsSidebar.tsx:307–314` (`handleCreatePod` calls `createPod`). Signup also creates "My Workspace" (`backend/controllers/authController.ts:368`) | 2026-10-28 |
 | quickstart | Create a pod; it opens with a "Your pod is ready" card | CUT | `frontend/src/i18n/locales/en.json:617` (`newPod.title`), rendered by `V2ThreadStarter.tsx`. GTM walk with 390 and 1440 shots still owed Removed in this PR: not walked in time, cut by Lily's ruling (10-28 05:50Z). | 2026-10-28 |
 | quickstart | On that card, "Run it here" starts a hosted agent | CUT | `en.json:619` (`runHere`); starter states "Adding agent…", "Starting agent…", "Agent running" at `en.json:622-624`. Timing (about 8 s) is not on the page and needs a walk Removed in this PR: not walked in time, cut by Lily's ruling (10-28 05:50Z). | 2026-10-28 |
