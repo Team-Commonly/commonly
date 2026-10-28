@@ -450,6 +450,14 @@ hostedMcp:
     # The 10-27 prod walk failed before Airtable's consent screen ("invalid client_id
     # or mismatched redirect_uri"). Hidden until TASK-318 lands and a walk passes.
     - airtable
+  # Mongo User _id(s) permitted to walk each hidden hosted-MCP entry (#2649).
+  hiddenEntryUserAllowlist:
+    atlassian:
+      - "6a47891ee025ce2e0ca1d30b"
+    sentry:
+      - "6a47891ee025ce2e0ca1d30b"
+    airtable:
+      - "6a47891ee025ce2e0ca1d30b"
   googleCalendar:
     enabled: false
 
