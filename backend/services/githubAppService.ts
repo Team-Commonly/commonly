@@ -6,6 +6,13 @@ export interface GitHubToken {
   expiresAt: string | null;
 }
 
+export interface PatLiveness {
+  live: boolean | null;
+  status: 'absent' | 'accepted' | 'rejected' | 'unreachable';
+  upstreamStatus?: number;
+  detail?: string;
+}
+
 export interface GitHubIssueLabel {
   name: string;
   color?: string;
@@ -171,6 +178,35 @@ class GitHubAppService {
    */
   static getPatToken(): GitHubToken {
     return { token: process.env.GITHUB_PAT as string, expiresAt: null };
+  }
+
+  /**
+   * Ask GitHub whether the PAT is accepted. Presence is not liveness: a token
+   * can be set and still refused (revoked, expired), which is what the
+   * 2026-08-04 outage looked like from inside the pods.
+   *
+   * Kept separate from isPatConfigured, which guards hot request paths and
+   * must stay free of I/O. GET /rate_limit is documented as not counting
+   * against the rate limit, so this diagnostic can be called freely.
+   *
+   * `live: null` means we could not reach a verdict. Only a 401 is a
+   * rejection; anything else (403, 5xx, network) is reported as unknown rather
+   * than guessed, since a false "dead" sends an operator to rotate a good key.
+   */
+  static async checkPatLiveness(): Promise<PatLiveness> {
+    if (!this.isPatConfigured()) return { live: false, status: 'absent' };
+    try {
+      await axios.get('https://api.github.com/rate_limit', {
+        headers: { Authorization: `Bearer ${process.env.GITHUB_PAT}`, Accept: 'application/vnd.github+json' },
+        timeout: 5000,
+      });
+      return { live: true, status: 'accepted', upstreamStatus: 200 };
+    } catch (err) {
+      const e = err as { message?: string; response?: { status?: number } };
+      const upstreamStatus = e.response?.status;
+      if (upstreamStatus === 401) return { live: false, status: 'rejected', upstreamStatus };
+      return { live: null, status: 'unreachable', upstreamStatus, detail: e.message };
+    }
   }
 
   // ─── Issues API ──────────────────────────────────────────────────────────
