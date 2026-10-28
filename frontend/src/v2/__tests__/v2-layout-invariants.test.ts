@@ -3208,21 +3208,6 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
     ).toContain('box-shadow: var(--v2-focus-ring)');
   });
 
-  test('the mode kicker is mono 500 at 11px, lowercase, cobalt only when chosen (item 3)', () => {
-    const kicker = cssDeclarations(ruleBody(v2, '.v2-byo__mode-kicker'));
-    expect(kicker.font).toBe('500 11px/16px var(--v2-font-mono)');
-    expect(kicker['text-transform']).toBeUndefined();
-    expect(kicker.color).toBe('var(--v2-text-muted)');
-    const chosen = cssDeclarations(
-      ruleBody(v2, '.v2-root button.v2-byo__mode[aria-pressed="true"] .v2-byo__mode-kicker'),
-    );
-    expect(chosen.color).toBe('var(--v2-accent-text)');
-    // The caps were data, not only CSS, so the data is where they must not come
-    // back from: a lowercase transform over zh-CN copy would be the wrong fix.
-    expect(en).toContain('"onCommonly": "on Commonly"');
-    expect(en).toContain('"yours": "your machine"');
-  });
-
   test('the preview label is mono 500 at 11px with no caps transform (item 4)', () => {
     const label = cssDeclarations(ruleBody(v2, '.v2-byo__preview-label'));
     expect(label.font).toBe('500 11px/16px var(--v2-font-mono)');

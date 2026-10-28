@@ -6490,21 +6490,6 @@ body.modern-ui.v2-canvas {
   cursor: pointer;
   transition: border-color 0.08s ease, background 0.08s ease;
 }
-/* Signal rule 3 — meta is mono 500 at 11px and lowercase; the caps lived in
-   en.json, which now carries lowercase strings, so no transform is needed
-   (and a transform over zh-CN copy would be wrong). */
-.v2-byo__mode-kicker {
-  color: var(--v2-text-muted);
-  font: 500 11px/16px var(--v2-font-mono);
-  letter-spacing: 0;
-}
-.v2-byo__mode-kicker--quiet { color: var(--v2-text-muted); }
-
-/* The chosen card is the row's one cobalt mark (Signal rule 1); the modifier
-   above is what the untouched cards wear. */
-.v2-root button.v2-byo__mode[aria-pressed="true"] .v2-byo__mode-kicker {
-  color: var(--v2-accent-text);
-}
 .v2-byo__mode-option > .v2-hint { margin-top: 0; }
 .v2-root button.v2-byo__mode:hover {
   background: var(--v2-surface-hover);

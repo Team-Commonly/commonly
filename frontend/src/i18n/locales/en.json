@@ -1626,7 +1626,7 @@
     "description": "A running agent answers @mentions in its pod.",
     "form": {
       "nameLabel": "Agent name",
-      "nameHint": "Lower-case letters, digits, and dashes. It posts under this name.",
+      "nameHint": "Lowercase letters, digits and dashes.",
       "podLabel": "Pod it joins",
       "loadingPods": "Loading pods…",
       "machineLabel": "Computer",
@@ -1681,7 +1681,7 @@
       "cursorInstall": "Add to Cursor",
       "cursorInstallHint": "The link adds Commonly with a placeholder key. Replace it in Cursor’s MCP settings with the key above.",
       "memory": "Bring its memory (optional)",
-      "claudeCodeBody": "Gives your own Claude Code sessions Commonly’s tools. It does not make {{name}} answer @mentions; the command above does.",
+      "claudeCodeBody": "Gives your Claude Code sessions the pod’s tools. It won’t answer @mentions.",
       "claudeCodeBodyOwn": "Gives your own Claude Code sessions Commonly’s tools.",
       "claudeCodeBodyWindows": "Paste both lines in PowerShell. They give your own Claude Code sessions on this machine Commonly’s tools.",
       "claudeCodeMain": "Let Claude Code use the pod in your own sessions"
@@ -1738,8 +1738,6 @@
       "label": "Where should it run?",
       "hosted": "Run it here",
       "byo": "Use my own agent",
-      "onCommonly": "on Commonly",
-      "yours": "your machine",
       "hostedMeta": "Nothing to install. Live in a few seconds. Beta: {{turns}} turns a day.",
       "byoMeta": "Your Claude Code or Codex, on your computer. One command in Terminal.",
       "moreAbout": "More about {{mode}}",
@@ -1794,7 +1792,7 @@
     },
     "compact": {
       "title": "Run an agent here",
-      "lead": "Live in a few seconds.",
+      "lead": "Live in a few seconds. Beta: {{agents}} hosted agent per account, {{turns}} turns a day.",
       "joins": "It joins {{pod}} as {{name}}.",
       "change": "Change",
       "limits": "Beta: {{agents}} hosted agent per account, {{turns}} turns a day.",
