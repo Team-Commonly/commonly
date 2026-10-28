@@ -60,7 +60,11 @@ endpoint. Every writer and the endpoint are off unless the pod is listed in
   resolver records that, so it is skipped here, and no call gets two terminal
   decisions. The resolver writes B3 once the ending is saved: the decision by
   the credential owner, then `tool.update` from the saved ending. Expiry at
-  decide time and in the sweep writes B4.
+  decide time and in the sweep writes B4. Both read the decider the approval
+  row stored with its terminal write (`decidedBy`, `decidedByRole`, TASK-512),
+  never the caller. A row whose stored decider is missing, or does not fit its
+  outcome (B3 needs `credential-owner`, B4 needs `policy`), writes no lines and
+  logs a warning: an audit gap, not a guessed decider.
 - **Pod-target grants only.** A seat grant's target is a seat and its card
   sits in the granter–seat DM, so neither names the pod a call belongs to.
   Those calls write nothing until a pod is ruled for them. The seat tests run

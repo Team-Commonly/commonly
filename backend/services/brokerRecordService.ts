@@ -74,6 +74,22 @@ type ApprovalRow = {
   podId?: unknown;
   agentUserId?: unknown;
   toolCallEnding?: string | null;
+  decidedBy?: string | null;
+  decidedByRole?: string | null;
+};
+type OutcomeKind = 'approved' | 'declined' | 'expired';
+
+/**
+ * The decider the approval row stored with its terminal write (TASK-512),
+ * never re-derived here. B3 is the credential owner's and B4 the policy's, so
+ * a row whose stored decider is missing or does not fit its outcome gets no
+ * lines: an audit gap, not a guessed decider.
+ */
+const storedDecider = (row: ApprovalRow, kind: OutcomeKind): string | null => {
+  const role = kind === 'expired' ? 'policy' : 'credential-owner';
+  const decidedBy = row?.decidedBy ? String(row.decidedBy) : '';
+  if (row?.decidedByRole !== role || !decidedBy) return null;
+  return (decidedBy === 'policy') === (role === 'policy') ? decidedBy : null;
 };
 
 /**
@@ -84,10 +100,15 @@ type ApprovalRow = {
 export const recordApprovalOutcome = (
   row: ApprovalRow,
   parkedCall: ParkedCall,
-  outcome: { kind: 'approved' | 'declined'; resolvedBy: string } | { kind: 'expired' },
+  outcome: { kind: OutcomeKind },
 ): void => {
   const cardPodId = row?.podId ? String(row.podId) : '';
   if (!parkedCall?.callId || !parkedCall.grantId || !cardPodId || !isRecordEnabled(cardPodId)) return;
+  const decidedBy = storedDecider(row, outcome.kind);
+  if (!decidedBy) {
+    console.warn('[record] approval outcome skipped: the row stores no', outcome.kind, 'decider');
+    return;
+  }
   const approvalId = row._id ? String(row._id) : undefined;
   void (async () => {
     const grant = await lazyRoomGrant().findOne({ grantId: String(parkedCall.grantId) }).select('target').lean();
@@ -100,7 +121,7 @@ export const recordApprovalOutcome = (
         agent: await agentById(row.agentUserId),
       };
       if (outcome.kind === 'expired') return expiredCallLines(call, approvalId);
-      const lines = resolvedCallLines(call, outcome.kind === 'approved', outcome.resolvedBy, approvalId);
+      const lines = resolvedCallLines(call, outcome.kind === 'approved', decidedBy, approvalId);
       if (outcome.kind !== 'approved') return lines;
       return [...lines, toolUpdate(call, row.toolCallEnding === 'ran' ? 'completed' : 'failed')];
     });

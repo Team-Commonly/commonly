@@ -77,11 +77,16 @@ describe('recordBrokerCall', () => {
 });
 
 describe('recordApprovalOutcome', () => {
-  const approval = (over) => ({ _id: 'approval_1', podId: POD, agentUserId: AGENT, toolCallEnding: 'ran', ...over });
+  // The decider is the one the row stored with its terminal write (TASK-512).
+  const approval = (over) => ({
+    _id: 'approval_1', podId: POD, agentUserId: AGENT, toolCallEnding: 'ran',
+    decidedBy: OWNER, decidedByRole: 'credential-owner', ...over,
+  });
+  const expiredApproval = (over) => approval({ decidedBy: 'policy', decidedByRole: 'policy', toolCallEnding: 'expired', ...over });
   const parked = { grantId: 'grant_1', callId: 'tool_call_1', tool: 'sentry.resolve_issue' };
 
   it('approved and run: decided by the owner, then completed', async () => {
-    service.recordApprovalOutcome(approval(), parked, { kind: 'approved', resolvedBy: OWNER });
+    service.recordApprovalOutcome(approval(), parked, { kind: 'approved' });
     await flush();
     const lines = await linesOf(mockEmits[0]);
     expect(mockEmits[0].key).toBe('approval/approval_1/approved');
@@ -92,25 +97,51 @@ describe('recordApprovalOutcome', () => {
   });
 
   it('approved but the run failed: the update says failed', async () => {
-    service.recordApprovalOutcome(approval({ toolCallEnding: 'failed' }), parked, { kind: 'approved', resolvedBy: OWNER });
+    service.recordApprovalOutcome(approval({ toolCallEnding: 'failed' }), parked, { kind: 'approved' });
     await flush();
     expect((await linesOf(mockEmits[0]))[1].data.status).toBe('failed');
   });
 
   it('declined, and expired, each end the call once', async () => {
-    service.recordApprovalOutcome(approval(), parked, { kind: 'declined', resolvedBy: OWNER });
-    service.recordApprovalOutcome(approval(), parked, { kind: 'expired' });
+    service.recordApprovalOutcome(approval(), parked, { kind: 'declined' });
+    service.recordApprovalOutcome(expiredApproval(), parked, { kind: 'expired' });
     await flush();
     expect((await linesOf(mockEmits[0])).map((l) => l.data.approval || l.data.status)).toEqual(['rejected', 'failed']);
     expect((await linesOf(mockEmits[1])).map((l) => l.data.approval || l.data.status)).toEqual(['timed_out', 'failed']);
   });
 
+  it('writes the decider the row stored, not the caller', async () => {
+    const other = '6a693bfee833c668acdce5a5';
+    service.recordApprovalOutcome(approval({ decidedBy: other }), parked, { kind: 'declined' });
+    await flush();
+    expect((await linesOf(mockEmits[0]))[0].data).toMatchObject({ decidedBy: other, decidedByRole: 'credential-owner' });
+  });
+
+  it.each([
+    ['approved', { decidedBy: undefined, decidedByRole: undefined }],
+    ['approved', { decidedBy: null }],
+    ['declined', { decidedByRole: undefined }],
+    ['approved', { decidedBy: 'policy', decidedByRole: 'policy' }],
+    ['declined', { decidedBy: 'policy' }],
+    ['expired', { decidedBy: OWNER, decidedByRole: 'credential-owner' }],
+    ['expired', { decidedBy: OWNER, decidedByRole: 'policy' }],
+    ['expired', { decidedBy: undefined, decidedByRole: undefined }],
+  ])('writes no %s lines when the stored decider is %o', async (kind, over) => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const base = kind === 'expired' ? expiredApproval : approval;
+    service.recordApprovalOutcome(base(over), parked, { kind });
+    await flush();
+    expect(mockEmits).toHaveLength(0);
+    expect(warn).toHaveBeenCalledWith('[record] approval outcome skipped: the row stores no', kind, 'decider');
+    warn.mockRestore();
+  });
+
   it('records nothing when the card sits in a DM for a seat grant', async () => {
     mockRoomGrant.findOne.mockReturnValue(lean(seatGrant));
-    service.recordApprovalOutcome(approval(), { ...parked, grantId: 'grant_2' }, { kind: 'declined', resolvedBy: OWNER });
+    service.recordApprovalOutcome(approval(), { ...parked, grantId: 'grant_2' }, { kind: 'declined' });
     // A pod grant whose card is somewhere else is not this pod's call either.
     mockRoomGrant.findOne.mockReturnValue(lean({ grantId: 'grant_1', target: { kind: 'pod', id: '6a692a1be833c668acdb84ce' } }));
-    service.recordApprovalOutcome(approval(), parked, { kind: 'declined', resolvedBy: OWNER });
+    service.recordApprovalOutcome(approval(), parked, { kind: 'declined' });
     await flush();
     expect(mockEmits).toHaveLength(0);
   });

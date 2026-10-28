@@ -971,7 +971,7 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
   // (ADR-033 B3). The broker's own trail row for an approved run carries the
   // approval id, so recordBrokerCall leaves it to this line.
   if (parkedCall) {
-    recordApprovalOutcome(transitioned, parkedCall, { kind: decision, resolvedBy: String(callerUserId) });
+    recordApprovalOutcome(transitioned, parkedCall, { kind: decision });
   }
 
   await updateCardEverywhere(transitioned);

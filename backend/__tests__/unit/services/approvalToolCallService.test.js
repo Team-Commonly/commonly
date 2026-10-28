@@ -403,7 +403,7 @@ describe('record wiring', () => {
     expect(approval).toBe(resolved);
     expect(approval.toolCallEnding).toBe('ran');
     expect(parked).toMatchObject({ grantId: 'grant-1', callId: 'tool_call_original', tool: toolCall.tool });
-    expect(outcome).toEqual({ kind: 'approved', resolvedBy: OWNER });
+    expect(outcome).toEqual({ kind: 'approved' });
   });
 
   test('declined', async () => {
@@ -411,7 +411,7 @@ describe('record wiring', () => {
     mockApproval.findById.mockResolvedValue(pending);
     mockApproval.findOneAndUpdate.mockResolvedValue(row({ status: 'resolved', decision: 'declined' }));
     await service.resolveApproval({ approvalId: pending._id, callerUserId: OWNER, decision: 'declined' });
-    expect(outcomeCall()[2]).toEqual({ kind: 'declined', resolvedBy: OWNER });
+    expect(outcomeCall()[2]).toEqual({ kind: 'declined' });
   });
 
   test('expired at decide time, and in the sweep', async () => {
