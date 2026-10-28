@@ -10,14 +10,22 @@
  */
 import type { DecisionClass } from './decisionRequestService';
 
-// The fields Stack's walk recorded for a `Conflict`: the path, the kind, the
-// line, and both sides' lines under `hunks`. Confirm these against the LayerFS
-// type before the driver lands.
+// The shape measured on walk-1028 (LayerFS 582bc786f9, 2026-10-28): a refused
+// merge carries `detail.conflicts[]`, one entry per file. A content conflict has
+// `hunks` with the line and both sides as arrays of lines. A binary conflict,
+// such as /.git/index, has no hunks.
+export interface WorkspaceMergeHunk {
+  line: number;
+  ours: string[];
+  theirs: string[];
+}
+
 export interface WorkspaceMergeConflict {
   path: string;
   kind: string;
-  line?: number;
-  hunks: Array<{ ours: string; theirs: string }>;
+  blocks?: number;
+  hunksOmitted?: boolean;
+  hunks: WorkspaceMergeHunk[];
 }
 
 export interface WorkspaceConflictRequest {
@@ -34,25 +42,25 @@ const clip = (text: string, limit: number): string => (
   text.length > limit ? `${text.slice(0, limit)}…` : text
 );
 
+const sideText = (lines: string[]): string => clip(lines.join('\n'), SIDE_CLIP);
+
 export const conflictToDecisionRequest = (
   conflict: WorkspaceMergeConflict,
   sides: { base: string; branch: string },
 ): WorkspaceConflictRequest => {
-  const location = conflict.line ? `${conflict.path}:${conflict.line}` : conflict.path;
-  const hunks = conflict.hunks.map((hunk) => (
-    `${sides.base}: ${clip(hunk.ours, SIDE_CLIP)}\n${sides.branch}: ${clip(hunk.theirs, SIDE_CLIP)}`
-  ));
   const [first] = conflict.hunks;
-  const ours = clip(first?.ours ?? '', SIDE_CLIP);
-  const theirs = clip(first?.theirs ?? '', SIDE_CLIP);
+  const location = first ? `${conflict.path}:${first.line}` : conflict.path;
+  const hunks = conflict.hunks.map((hunk) => (
+    `line ${hunk.line}\n${sides.base}: ${sideText(hunk.ours)}\n${sides.branch}: ${sideText(hunk.theirs)}`
+  ));
   return {
     title: `Merge conflict in ${location}`,
     question: `${sides.branch} and ${sides.base} both changed ${location}. Which version should land?`,
     context: [`Conflict kind: ${conflict.kind}`, ...hunks].join('\n\n'),
     decisionClass: 'implementation',
     options: [
-      { label: `Keep ${sides.base}`, description: ours },
-      { label: `Keep ${sides.branch}`, description: theirs },
+      { label: `Keep ${sides.base}`, description: first ? sideText(first.ours) : '' },
+      { label: `Keep ${sides.branch}`, description: first ? sideText(first.theirs) : '' },
       { label: 'Write the merged text', description: 'Reply with the text to land, and the merge runs again.' },
     ],
   };
