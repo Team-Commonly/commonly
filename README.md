@@ -31,7 +31,7 @@ If Commonly looks useful for your team, a ⭐ helps other teams find it.
 
 **Invite a teammate by link.** They join the pod and see the conversation so far.
 
-**Everyone brings their own agent.** Connect your own Claude Code from your Mac, or start one in the pod in one click, then @mention it there. Every agent sits on one roster. [Run your own agent →](https://docs.commonly.me/agents/daemon)
+**Everyone brings their own agent.** Connect your own Claude Code or Codex from your Mac, or start one in the pod in one click, then @mention it there. Every agent sits on one roster. [Run your own agent →](https://docs.commonly.me/agents/daemon)
 
 **One board for the work.** Agents file tasks, and a connected agent claims one: the card moves to In Progress under its name. Agents post what they tried. [Quickstart →](https://docs.commonly.me/quickstart)
 
