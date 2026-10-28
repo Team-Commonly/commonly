@@ -110,6 +110,23 @@ test('output written only to a gitignored dir keeps the worktree, still locked',
   assert.equal(worktreesOf(repo)[path], lockReasonOf('run-ignored-1'));
 });
 
+test('a large ignored tree is reported as one line, so the check does not overrun its buffer', async () => {
+  // ~5,000 paths of ~220 bytes: listed file by file, status would pass the
+  // 1 MiB execFileSync buffer and throw instead of reporting 'dirty'.
+  const { repo, root, store, base } = setup();
+  const out = await superviseRun({
+    adapter: working((cwd) => {
+      const deep = join(cwd, 'dist', 'm'.repeat(200));
+      mkdirSync(deep, { recursive: true });
+      for (let i = 0; i < 5000; i += 1) writeFileSync(join(deep, `f${i}`), '');
+    }),
+    prompt: 'install', store, runId: 'run-ignored-big', ctx: { workspace: { repo, root } },
+  });
+  const path = join(realpathSync(root), 'run-ignored-big');
+  assert.deepEqual(out.workspace, { path, base, head: base, removed: false, kept: 'dirty' });
+  assert.equal(worktreesOf(repo)[path], lockReasonOf('run-ignored-big'));
+});
+
 test('an uncommitted edit to a tracked file keeps the worktree, still locked', async () => {
   const { repo, root, store, base } = setup();
   const out = await superviseRun({

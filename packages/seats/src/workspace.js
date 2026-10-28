@@ -67,10 +67,12 @@ const listWorktrees = (repo) => {
 /**
  * null when the worktree is clean against base, else why it is kept. Ignored
  * files count: a build into a gitignored dist/ is still the run's output, and
- * `git worktree remove` deletes ignored files without asking.
+ * `git worktree remove` deletes ignored files without asking. Untracked
+ * "normal" lists an untracked or ignored directory as one line; "all" would
+ * list every file in node_modules and overrun execFileSync's buffer.
  */
 const keepReason = (path, base) => {
-  if (git(path, ['status', '--porcelain', '--untracked-files=all', '--ignored'])) return 'dirty';
+  if (git(path, ['status', '--porcelain', '--untracked-files=normal', '--ignored'])) return 'dirty';
   if (git(path, ['rev-parse', 'HEAD']) !== base) return 'committed';
   return null;
 };
