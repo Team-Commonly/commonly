@@ -8,9 +8,11 @@
  * says this package made it; nothing here touches a worktree without one.
  *
  * When the run settles, a clean worktree is unlocked and removed. Clean means
- * no tracked change, no untracked file (ignored files don't count, as with
- * `git worktree remove`), and HEAD still at base. A commit the agent made on
- * the detached HEAD lives only in that worktree, so a moved HEAD keeps it too.
+ * no tracked change, no untracked file, no ignored file, and HEAD still at
+ * base. Ignored files count because `git worktree remove` deletes them without
+ * asking, so a build into a gitignored dist/ would go with the worktree. A
+ * commit the agent made on the detached HEAD lives only in that worktree, so a
+ * moved HEAD keeps it too.
  * Anything else stays where it is, still locked, and its path is reported.
  *
  * A run whose wrapper died never settles. `sweepWorktrees` finds those through
