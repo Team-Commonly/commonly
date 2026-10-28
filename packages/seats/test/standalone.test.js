@@ -10,6 +10,7 @@ import {
   runStandaloneTurn, standaloneAdapter, defaultTraceDir, traceDirRefusal, cwdRefusal, workTreeOf,
 } from '../src/standalone.js';
 import { createFakeCliAdapter } from '../test-support/fake-cli-adapter.js';
+import { adapterFailure } from '../src/upstream-refusal.js';
 import { startFakeProvider } from '../test-support/fake-provider.js';
 
 const recordOf = (root, runId) => readFileSync(join(root, 'traces', 'runs', `${runId}.jsonl`), 'utf8');
@@ -179,3 +180,24 @@ test('cwdRefusal names a missing or non-directory cwd', () => withDirs(async ({ 
   writeFileSync(file, '');
   assert.match(cwdRefusal(file), /not a directory/);
 }));
+
+test('a provider status the adapter passed through names the failure, after refusal and auth wording', async () => {
+  const cases = [
+    ['503: {"error":"overloaded"}', 'provider_unavailable', 17],
+    ['429: {"error":"slow down"}', 'provider_unavailable', 17],
+    ['408: request timeout', 'provider_unavailable', 17],
+    ['400: {"error":"bad tool schema"}', null, 1],
+    ['503: this content was flagged for possible cybersecurity risk', 'refusal', 14],
+    ['503: invalid api key', 'not_authenticated', 23],
+  ];
+  for (const [text, kind, exitCode] of cases) {
+    await withDirs(async ({ cwd, store }) => {
+      const run = await runStandaloneTurn({
+        adapter: adapterOf(async () => { throw adapterFailure('opencode turn failed', text); }),
+        prompt: 'x', store, cwd, timeoutMs: 5000, stallMs: 0,
+      });
+      assert.equal(run.kind, kind, text);
+      assert.equal(run.exitCode, exitCode, text);
+    });
+  }
+});

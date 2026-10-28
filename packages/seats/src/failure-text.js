@@ -52,7 +52,7 @@ export const isMissingBinary = (error) => error?.code === 'ENOENT'
 /**
  * The failure kind a bare adapter Error names, or null when its text names
  * none. Order matters: a refusal is never read as anything retryable, and an
- * auth wording is read before the timer's.
+ * auth wording is read before the provider's status and the timer's.
  */
 export const kindOfAdapterError = (error) => {
   if (!error) return null;
@@ -60,6 +60,9 @@ export const kindOfAdapterError = (error) => {
   const text = errorText(error);
   if (CONTENT_REFUSED_RE.test(text)) return 'refusal';
   if (error.status === 401 || error.status === 403 || NOT_AUTHENTICATED_RE.test(text)) return 'not_authenticated';
+  // The status `adapterFailure` read off the provider's reply. Any other 4xx
+  // stays unnamed: it is the request that was wrong, and its words carry why.
+  if (error.status >= 500 || error.status === 408 || error.status === 429) return 'provider_unavailable';
   if (ADAPTER_TIMEOUT_RE.test(text)) return 'timeout';
   return null;
 };
