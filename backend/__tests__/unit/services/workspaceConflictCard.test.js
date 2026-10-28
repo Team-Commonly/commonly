@@ -3,7 +3,7 @@
  * decision request an agent raises. The request must pass the same checks the
  * decision route applies, or the agent's card is refused at the door.
  *
- * The conflict fixture is the shape measured on walk-1028 (LayerFS 582bc786f9):
+ * The conflict fixture is the Conflict shape LayerFS 582bc786f9 returns:
  * detail.conflicts[] with per-hunk line numbers and both sides as line arrays.
  */
 const { conflictToDecisionRequest } = require('../../../services/workspaceConflictCard');

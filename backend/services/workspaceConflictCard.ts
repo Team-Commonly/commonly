@@ -10,8 +10,7 @@
  */
 import type { DecisionClass } from './decisionRequestService';
 
-// The shape measured on walk-1028 (LayerFS 582bc786f9, 2026-10-28): a refused
-// merge carries `detail.conflicts[]`, one entry per file. A content conflict has
+// The Conflict shape LayerFS 582bc786f9 returns: a refused merge carries `detail.conflicts[]`, one entry per file. A content conflict has
 // `hunks` with the line and both sides as arrays of lines. A binary conflict,
 // such as /.git/index, has no hunks.
 export interface WorkspaceMergeHunk {
