@@ -56,8 +56,8 @@ stats; you must read file *contents* to see the wall.
 - `me.commonly.sre-gate-drift` — reads `~/Documents/workspace/commonly`;
   degraded, but self-alerts after 3 failed fetches (its message blames the
   network, not TCC).
-- `me.commonly.linkedin-send` — **not** affected: it resolves its repo to its
-  own `~/.commonly/repos/commonly-gtm` location and only falls back to
+- One job is **not** affected: it resolves its repo under
+  `~/.commonly/repos/<repo>` (the reference pattern) and only falls back to
   `~/Documents` as a last resort it never reaches. **This is the pattern to
   copy.**
 
@@ -70,7 +70,8 @@ the same wall; none are.
 **Preferred — relocate (no security setting, no GUI):** keep the script and the
 repo it reads under `~/.commonly/repos/` (not TCC-protected), and resolve the
 repo path from the cwd's git top-level rather than hardcoding `~/Documents`, the
-way `linkedin-send` does:
+way a job that resolves its repo under `~/.commonly/repos/<repo>` does (the
+reference pattern):
 
 ```sh
 if   [ -n "$MY_REPO" ]; then REPO="$MY_REPO"
