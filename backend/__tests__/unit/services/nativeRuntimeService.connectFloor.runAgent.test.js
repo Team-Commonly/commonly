@@ -9,13 +9,22 @@ jest.mock('axios', () => ({
 }));
 
 jest.mock('../../../models/Pod', () => ({
-  findById: jest.fn(() => ({ lean: jest.fn().mockResolvedValue({ name: 'Launch Room' }) })),
+  findById: jest.fn(() => ({
+    lean: jest.fn().mockResolvedValue({ name: 'Launch Room' }),
+    select: () => ({ lean: async () => ({ members: ['seat-1'] }) }),
+  })),
 }));
 
 jest.mock('../../../models/AgentRun', () => ({ create: jest.fn() }));
 
 jest.mock('../../../models/User', () => ({
   findById: jest.fn(() => ({ select: () => ({ lean: async () => ({ isBot: false }) }) })),
+  findOne: jest.fn(() => ({ select: () => ({ lean: async () => ({ _id: 'seat-1' }) }) })),
+}));
+
+jest.mock('../../../services/grantBrokerProjectionService', () => ({
+  hostedBrokerToolsForRun: jest.fn(),
+  dispatchHostedBrokerTool: jest.fn(),
 }));
 
 jest.mock('../../../models/ApprovalAction', () => ({ exists: jest.fn() }));
@@ -45,6 +54,11 @@ jest.mock('../../../services/webSearchService', () => ({
   searchWeb: (...args) => mockSearchWeb(...args),
 }));
 
+jest.mock('../../../services/messageClaimService', () => ({
+  claim: jest.fn().mockResolvedValue({ claimed: true }),
+  release: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('../../../services/agentMessageService', () => ({
   postMessage: jest.fn().mockResolvedValue({ success: true }),
 }));
@@ -53,8 +67,10 @@ const axios = require('axios').default;
 const AgentRun = require('../../../models/AgentRun');
 const ApprovalAction = require('../../../models/ApprovalAction');
 const AgentMessageService = require('../../../services/agentMessageService');
+const MessageClaimService = require('../../../services/messageClaimService');
 const { proposeAction, suggestLocalAgentName } = require('../../../services/approvalActionService');
 const { podHasOutsiderWritableGrant } = require('../../../services/nativeOutsiderGrantPolicy');
+const brokerProjection = require('../../../services/grantBrokerProjectionService');
 const { runAgent } = require('../../../services/nativeRuntimeService');
 
 const SCOUT = (tools) => ({
@@ -103,6 +119,8 @@ describe('connect-intent floor through runAgent', () => {
     suggestLocalAgentName.mockResolvedValue('sam-claude');
     proposeAction.mockResolvedValue({ ok: true });
     podHasOutsiderWritableGrant.mockResolvedValue(false);
+    brokerProjection.hostedBrokerToolsForRun.mockResolvedValue({ tools: [], dispatch: new Map() });
+    brokerProjection.dispatchHostedBrokerTool.mockResolvedValue({ callId: 'b1', outcome: 'ok' });
   });
 
   test('proposes the card when the model replies with nothing', async () => {
@@ -144,6 +162,38 @@ describe('connect-intent floor through runAgent', () => {
 
     expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
     expect(proposeAction).not.toHaveBeenCalled();
+  });
+
+  test('a broker-tainted turn in a bridged pod gets no connect card', async () => {
+    // A granted broker tool ran this turn and the pod is bridged. dispatchTool
+    // refuses commonly_propose_action here, so the floor must not post it.
+    mockBridged.mockResolvedValue(true);
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('b1', 'commonly_brokered_lookup', {})))
+      .mockResolvedValueOnce(modelSays(''));
+
+    await runAgent(SCOUT(['commonly_propose_action', 'commonly_web_search']), CONNECT_MESSAGE);
+
+    expect(brokerProjection.dispatchHostedBrokerTool).toHaveBeenCalled();
+    expect(proposeAction).not.toHaveBeenCalled();
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+  });
+
+  test('a human connect turn that posts the card completes its claim', async () => {
+    const humanConnect = {
+      ...CONNECT_MESSAGE,
+      payload: { ...CONNECT_MESSAGE.payload, senderIsHuman: true },
+    };
+    axios.post.mockResolvedValue(modelSays(''));
+
+    const result = await runAgent(SCOUT(['commonly_propose_action']), humanConnect);
+
+    expect(result.status).toBe('succeeded');
+    expect(proposeAction).toHaveBeenCalledTimes(1);
+    expect(MessageClaimService.release).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: 'm1',
+      outcome: 'completed',
+    }));
   });
 
   test('stays out in an outsider-granted pod, where only in-pod tools are offered', async () => {

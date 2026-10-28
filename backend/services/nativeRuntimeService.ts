@@ -2520,9 +2520,12 @@ export async function runAgent(
       // The floor is a proposal, so it takes the same offer the model got: the
       // install must declare the tool, an outsider grant narrows to in-pod
       // tools, and a web-tainted or set-aside turn offers no proposal at all.
+      // A broker call taints too (not only a web result): once the pod is
+      // bridged, dispatchTool refuses every posting tool, propose included.
       const inPodOnly = await inPodOnlyNow();
       const podBridged = mayLookUp ? await podBridgedNow() : false;
-      const proposeOffered = !webSetAside && toolsForConfig(cfg, inPodOnly, {
+      const postingRefused = podBridged && Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen);
+      const proposeOffered = !webSetAside && !postingRefused && toolsForConfig(cfg, inPodOnly, {
         webTainted: Boolean(dispatchCtx.webTainted),
         computerReadSeen: Boolean(dispatchCtx.computerReadSeen),
         podBridged,
