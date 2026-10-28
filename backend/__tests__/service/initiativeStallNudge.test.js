@@ -115,6 +115,22 @@ describe('initiative stall nudge', () => {
     expect(sendNeedsYouEmail).toHaveBeenCalledTimes(1);
   });
 
+  it('when the nudged owner has left the pod, the new owner gets the episode', async () => {
+    const tasks = [taskRow('t1', 'claimed', [merge(hoursAgo(50))])];
+    const before = initiativeFor({ userId: owner._id }, [link('t1')]);
+    const after = { ...before, owner: { userId: giver._id }, ownerId: String(giver._id) };
+
+    await run(before, tasks);
+    await Pod.updateOne({ _id: pod._id }, { $pull: { members: owner._id } });
+    const second = await run(after, tasks, new Date(NOW.getTime() + 3600 * 1000));
+
+    expect(second).toMatchObject({ state: 'nudged', recipientUserId: String(giver._id) });
+    const rows = await stallRows();
+    expect(rows.map((r) => String(r.recipientUserId)).sort())
+      .toEqual([String(giver._id), String(owner._id)].sort());
+    expect(sendNeedsYouEmail).toHaveBeenCalledTimes(2);
+  });
+
   it('a failed write reports failed, and the next run retries it', async () => {
     const initiative = initiativeFor({ userId: owner._id }, [link('t1')]);
     const tasks = [taskRow('t1', 'claimed', [merge(hoursAgo(50))])];

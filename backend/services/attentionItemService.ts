@@ -555,7 +555,9 @@ export const recordTaskAttention = async (task: any, options: TaskAttentionOptio
 // row goes to one current human member of the pod: the owner when the owner is
 // a person, otherwise the agent's installer. No agent is woken. The unique
 // index includes the recipient, so an owner change mid-episode would open a
-// second card; the episode's existing row, to anyone, is checked first.
+// second card; the episode's existing row, to anyone, is checked first. It
+// only counts while its recipient is still a human member of its pod: a row
+// the queue hides is no nudge, so the guard fails toward a second card.
 const INITIATIVE_STALL = 'stall';
 export const initiativeStallSourceId = (initiativeId: unknown, episodeStart: Date): string => (
   `initiative:${String(initiativeId)}:${INITIATIVE_STALL}:${episodeStart.toISOString()}`
@@ -569,9 +571,15 @@ export const recordInitiativeStall = async (stall: {
     const { podId } = stall;
     if (!podId || !stall.initiativeId) return { recipientUserId: null };
     const sourceId = initiativeStallSourceId(stall.initiativeId, stall.episodeStart);
-    const existing = await AttentionItem.findOne({ 'source.type': 'initiative', 'source.id': sourceId })
-      .select('recipientUserId').lean();
-    if (existing) return { recipientUserId: String(existing.recipientUserId) };
+    const existing = await AttentionItem.find({ 'source.type': 'initiative', 'source.id': sourceId })
+      .select('recipientUserId podId').lean();
+    for (const row of existing) {
+      // eslint-disable-next-line no-await-in-loop
+      const members = await currentHumanMembers(row.podId);
+      if (members.some((member) => String(member._id) === String(row.recipientUserId))) {
+        return { recipientUserId: String(row.recipientUserId) };
+      }
+    }
     const target = stall.ownerUserId ? String(stall.ownerUserId)
       : stall.ownerAgentUserId ? await installerForAgent(stall.ownerAgentUserId, podId) : null;
     if (!target) return { recipientUserId: null };
