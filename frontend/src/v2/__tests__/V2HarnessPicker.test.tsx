@@ -10,7 +10,10 @@ const v2Css = fs.readFileSync(path.join(__dirname, '../v2.css'), 'utf8').replace
 // Body of the first rule whose selector list includes `selector` as a complete selector
 // (not a prefix of a longer class name), so grouped selectors match too.
 const ruleBody = (selector) => {
-  const match = v2Css.match(new RegExp(`${selector}(?![\\w-])[^{}]*\\{([^}]*)\\}`));
+  // Escape the selector, then require it to start a selector-list entry and end at a comma or
+  // an opening brace. A compound selector such as `.dot--walked.is-active` does not match.
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = v2Css.match(new RegExp(`(?:^|[,\\n])\\s*${escaped}\\s*(?=,|\\{)[^{}]*\\{([^}]*)\\}`));
   return match ? match[1] : '';
 };
 
@@ -84,6 +87,10 @@ describe('V2HarnessPicker', () => {
     expect(screen.getByTestId('harness-row-claude')).toHaveAttribute('aria-pressed', 'false');
     fireEvent.click(screen.getByTestId('harness-row-opencode'));
     expect(onSelect).toHaveBeenCalledWith('opencode');
+  });
+
+  it('pins the one-command rows to Claude Code and Codex', () => {
+    expect(HARNESS_WALK_TABLE.filter((row) => row.connects === 'command').map((row) => row.id)).toEqual(['claude', 'codex']);
   });
 
   it('uses the connect method from the table for each row', () => {
