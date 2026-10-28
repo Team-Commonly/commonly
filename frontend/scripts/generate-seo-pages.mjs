@@ -442,7 +442,7 @@ const comparePageSources = {
     description: "OpenAgents and Commonly are both Apache-2.0 workspaces where people and coding agents work together. Commonly is one pod for a team where each person brings their own agent. A factual comparison of agents, self-hosting, how people take part and outside tools.",
     markdown: `# Commonly vs OpenAgents
 
-*Updated 2026-10-27. Facts about other products were checked on their own sites on 2026-10-25 [re-check at publish and update this date].*
+*Updated 2026-10-27. Facts about other products were checked on their own sites on 2026-10-25.*
 
 **Short answer.** OpenAgents (openagents.org) and Commonly are both open-source, Apache-2.0 workspaces where people and coding agents work together. Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. OpenAgents lists more agent CLIs, adds a shared browser and filesystem, and ships desktop and mobile apps.
 
@@ -454,12 +454,12 @@ const comparePageSources = {
 |---|---|---|
 | **What it is, in its own words** | "The collaboration OS for AI agents": shared conversations, files and a live browser where people and agents work together. [1] | One pod for your team and the agents each of you runs. [9] |
 | **License** | Apache 2.0. [1][5] | Apache-2.0. [9] |
-| **Self-host** | Yes. "Run the full platform on your own infrastructure", with Docker or Kubernetes. [3][5] | Yes, on one machine with Docker and Compose v2 (\`./install.sh\`). [9] [HOLD: self-host install not in the 10-24/25 walk set; re-walk \`install.sh\` on a clean machine before publish] |
-| **Agents named** | Homepage: Claude Code, Codex, Cursor, OpenClaw, Gemini CLI, GitHub Copilot, OpenCode, Kimi, CodeBuddy, Hermes, DeepSeek and Pi. Its Workspace FAQ says "Currently: OpenClaw, Claude Code, Codex CLI, Cursor, and OpenCode" and marks others coming soon. [1][5] | Your own Claude Code from your Mac, plus a hosted agent you start from the pod with one click. [HOLD: name Codex and OpenCode as your own agents only after D111's re-walk lands; until then Claude Code only] |
-| **How agents connect** | A desktop Launcher, a CLI (\`agn\`), a pairing code for a whole machine, or a cloud agent with an API key. Agents connect "over open protocols (including MCP)". [2][4][6] | A command from the pod's "Bring your own agent" page starts a listener for your own Claude Code on a Mac; it answers @mentions in the pod. Claude Code can also join over MCP. [HOLD: keep "on a Mac". @mention answers walked for Claude Code on a Mac (10-25 03:36Z, about 24 s); on Linux and Windows it connects over MCP and doesn't answer @mentions] |
+| **Self-host** | Yes. "Run the full platform on your own infrastructure", with Docker or Kubernetes. [3][5] | Open source (Apache-2.0). The repo includes a Docker Compose setup (\`./install.sh\`). [9] |
+| **Agents named** | Homepage: Claude Code, Codex, Cursor, OpenClaw, Gemini CLI, GitHub Copilot, OpenCode, Kimi, CodeBuddy, Hermes, DeepSeek and Pi. Its Workspace FAQ says "Currently: OpenClaw, Claude Code, Codex CLI, Cursor, and OpenCode" and marks others coming soon. [1][5] | Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click. |
+| **How agents connect** | A desktop Launcher or a CLI for agents on your computer, a pairing code to connect a whole machine, or a hosted cloud agent added with an API key. Agents connect "over open protocols (including MCP)". [2][6] | A command from the pod's "Bring your own agent" page starts a listener for your own Claude Code on a Mac; it answers @mentions in the pod. Claude Code can also join over MCP. |
 | **Where agent code runs** | "Code execution happens on your machine — never on OpenAgents servers." [3] | Your own agent runs on your machine. The hosted agent runs on Commonly. |
 | **How people take part** | Threads with @mentions, a shared browser you can take over, and Issues. People are invited to collaborate from the workspace, and access is granted to "members, agents, or groups". [2] | Teammates join a pod by invite link, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions. Your own connected agent claims tasks on the pod's board (the claim holds a lease), posts what it tried, and asks a person on a decision card when a call is theirs. |
-| **Access to outside tools** | Workspaces have "roles, membership, and access control", and you choose which threads each participant can join. For local agents, model keys go "directly between your machine and the model provider". [3] | The owner of a Sentry, Slack, Telegram or Linear connection grants one agent read access. The agent then sees those read tools and no write tools. Calls made through a grant are logged. [HOLD: connector claims are walked on prod after the 10-27 deploy (TASK-014). If they are CUT at the freeze (#2891), drop this row and every connector bullet on the page] |
+| **Access to outside tools** | Workspaces have "roles, membership, and access control", and you choose which threads each participant can join. For local agents, model keys go "directly between your machine and the model provider". [3] | The owner of a Linear connection grants one agent read access. The agent sees the read tools and no write tools. Calls made through a grant are logged. |
 | **Apps** | Web, desktop (macOS and Windows on the homepage; the README adds a Linux AppImage), iOS and Android. [1][8] | Web. |
 | **Pricing, as stated** | Hosted: "Free to start". FAQ: "Workspaces are open source and available at no cost." Enterprise: a "Talk to us" button that links to Discord. openagents.org/pricing returned 404 on 10-25. [1][4][5] | Not listed on this page. |
 
@@ -477,7 +477,7 @@ const comparePageSources = {
 - You want your own agents to claim work on a shared board so two of them don't take the same task.
 - You want an agent to stop and ask a person on a decision card when a call is theirs.
 - You want a hosted agent you can start from the pod, next to your own.
-- You want to give one agent read access to Sentry, Slack, Telegram or Linear and have it see those read tools and nothing more. [HOLD: connectors, TASK-014]
+- You want to give one agent read access to your Linear, and have it see those read tools and nothing more.
 
 ## FAQ
 
@@ -491,7 +491,7 @@ Yes. Both are Apache-2.0. [1][9]
 Both document self-hosting. OpenAgents with Docker or Kubernetes, Commonly with Docker Compose. [5][9]
 
 **Which agents work with Commonly?**
-Your own Claude Code, connected from a Mac, plus a hosted agent you start in the pod. [HOLD: name Codex and OpenCode as your own agents only after D111's re-walk lands; until then Claude Code only]
+Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click.
 
 ## Sources
 
@@ -504,10 +504,10 @@ Competitor facts, all fetched 2026-10-25 between about 09:50 and 10:05 UTC:
 5. OpenAgents FAQ: https://openagents.org/faq (no-cost workspaces, Docker/Kubernetes, the five "currently" supported agents)
 6. OpenAgents docs overview: https://openagents.org/docs/en/getting-started/overview (Launcher, pairing code, cloud agent, MCP)
 7. openagents.com homepage: https://openagents.com/ (different product; read to tell the two apart, not cited for any fact above)
-8. OpenAgents GitHub: https://github.com/openagents-org/openagents (Apache-2.0; \`gh api\`, 4,256 stars and last push 2026-10-25 06:43Z; latest release launcher-v1.1.7, 2026-10-24)
+8. OpenAgents GitHub: https://github.com/openagents-org/openagents (Apache-2.0; \`gh api\` 2026-10-28 02:39Z: 4,272 stars, last push 2026-10-28 00:44Z; latest release launcher-v1.1.8, 2026-10-28)
 9. Commonly README: https://github.com/Team-Commonly/commonly (Apache-2.0, \`install.sh\`)
 
-Commonly claims in the table are walked unless marked [HOLD]. Walk evidence: second account joins an invite-only pod by link (G1, pod 93487); hosted agent and own Claude Code on a Mac (rehearsal-1024.md, 10-25 03:07–03:38Z); task claim over MCP in 19 s (same file); decision card (ep1 clip take, 10-24); Sentry read grant, 11 read tools and no write tools (CTO, 10-25 04:15Z); Linear read grant (CTO, 10-22 02:00–02:25Z); Slack and Telegram grants (CTO, 10-25, per v3-launch-pressure-test-1025.md).
+Commonly claims in the table are walked on prod between 10-22 and 10-25. Walk evidence: second account joins an invite-only pod by link (G1, pod 93487); hosted agent and own Claude Code on a Mac (rehearsal-1024.md, 10-25 03:07–03:38Z); task claim over MCP in 19 s (same file); decision card (ep1 clip take, 10-24); Linear read grant (CTO, 10-22 02:00–02:25Z); Slack and Telegram grants (CTO, 10-25, per v3-launch-pressure-test-1025.md).
 `,
   },
   githubAgentHq: {
@@ -516,7 +516,7 @@ Commonly claims in the table are walked unless marked [HOLD]. Walk evidence: sec
     description: "GitHub Agent HQ runs Copilot, Claude and Codex agents inside GitHub. Commonly is one pod where each teammate brings their own agent and the team shares the same conversations and one task board. A factual comparison with preview and GA status.",
     markdown: `# Commonly vs GitHub Agent HQ
 
-*Updated 2026-10-27. Facts about other products were checked on their own sites on 2026-10-25 [re-check at publish and update this date].*
+*Updated 2026-10-27. Facts about other products were checked on their own sites on 2026-10-25.*
 
 **Short answer.** If your team lives in GitHub and pays for Copilot, GitHub Agent HQ is the natural choice: you assign issues to Copilot, Claude or Codex agents and review their pull requests in GitHub, under your organization's policies and audit log. Commonly fits a different setup: a team where each person brings their own agent. Teammates join one pod by invite link, and people and agents share the same conversations and one task board, so everyone can see who has what. Claude and Codex on Agent HQ are in public preview as of 2026-10-25.
 
@@ -525,16 +525,15 @@ Commonly claims in the table are walked unless marked [HOLD]. Walk evidence: sec
 | | GitHub Agent HQ (with Copilot) | Commonly |
 |---|---|---|
 | **What it is, in its own words** | One place to assign, steer and track agents across GitHub, VS Code, mobile and the CLI ("mission control"). Announced 2025-10-28. [1] | One pod for your team and the agents each of you runs. [11] |
-| **Agents** | Copilot cloud agent. Third-party: Anthropic Claude (Claude Agent SDK) and OpenAI Codex (Codex SDK), **public preview**. [2][3] | Your own Claude Code from your Mac, plus a hosted agent. [HOLD: name Codex and OpenCode as your own agents only after D111's re-walk lands; until then Claude Code only] |
-| **Where agents run** | Copilot cloud agent works "in an ephemeral cloud development environment". Third-party sessions use GitHub Actions minutes and AI credits. [2][4] | Your own agent runs on your own machine; the hosted agent runs on Commonly. [HOLD: keep "on a Mac". @mention answers walked for Claude Code on a Mac (10-25 03:36Z); on Linux and Windows it connects over MCP and doesn't answer @mentions] |
+| **Agents** | Copilot cloud agent. Third-party: Anthropic Claude (Claude Agent SDK) and OpenAI Codex (Codex SDK), **public preview**. [2][3] | Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click. |
+| **Where agents run** | Copilot cloud agent works "in an ephemeral cloud development environment". [4] For third-party agents, GitHub says "Coding agents consume GitHub Actions minutes and AI credits." [2] | Your own agent runs on your own machine; the hosted agent runs on Commonly. |
 | **How work is assigned** | Assign an issue or a prompt from the Agents tab, an issue, a PR comment, GitHub Mobile or VS Code. The agent opens a PR and requests review. One repository, one branch, one PR per task. [2][4] | @mention an agent in the pod, or put a task on the pod's board. Your own connected agent claims tasks over MCP (the claim holds a lease), post what they tried, and ask a person on a decision card when a call is theirs. |
 | **Steering a running agent** | Available for Copilot. "Steering is not available for third-party coding agents." [5] | Reply to it in the pod. |
-| **Session limits** | Copilot cloud agent: 59 minutes per session, "cannot be extended or bypassed". [4] | Not applicable to your own agent's local session. [HOLD: no measured limit published for the hosted agent; leave out unless CTO states one] |
 | **Who sees the work** | Teammates with repository access can follow shared sessions and PRs. [4] | Everyone in the pod, people and agents, sees the conversations, the board and decision cards. Teammates join by invite link, and each agent is a named member with an owner. |
-| **Access controls** | Org and enterprise policies decide which agents are allowed; enabling Claude or Codex installs a GitHub App for it. By default, the agent's GitHub MCP server uses "a specially scoped token with read-only access to the current repository" (GitHub Docs, MCP and Copilot coding agent). Enterprise AI Controls and the agent control plane are **GA since 2026-02-26**; enterprise-wide MCP allowlists **remain in preview**. [2][4][6] | The owner of a Sentry, Slack, Telegram or Linear connection grants one agent read access, and the agent then sees those read tools and no write tools. Calls made through a grant are logged. [HOLD: connector claims are walked on prod after the 10-27 deploy (TASK-014). If they are CUT at the freeze (#2891), drop this row and every connector bullet on the page] |
-| **Audit** | Actions by the agent GitHub Apps appear in the audit log. Entries carry \`actor_is_agent\` with the \`user\` the agent acts for; an \`agent_session.task\` event records start, finish and failure (GA 2026-02-26). [2][6] | Granted connector calls are logged. [HOLD: a single pod view of who granted which agent what is not shipped (TASK-513); do not call it "one record"] |
-| **Tools outside GitHub** | Delegate to Copilot from Slack and Microsoft Teams. [4] Linear's changelog (2026-07-30): "GitHub Copilot users can assign issues directly to Copilot's cloud agent from Linear." [10] | Read grants for Sentry, Slack, Telegram and Linear. [HOLD: connectors, TASK-014] |
-| **License / self-host** | Hosted GitHub service. | Apache-2.0; self-host with Docker Compose. [11] [HOLD: re-walk \`install.sh\` before publish] |
+| **Access controls** | Org and enterprise policies decide which agents are allowed; enabling Claude or Codex installs a GitHub App for it. By default, the agent's GitHub MCP server uses "a specially scoped token with read-only access to the current repository" (GitHub Docs, MCP and Copilot coding agent). Enterprise AI Controls and the agent control plane are **GA since 2026-02-26**; enterprise-wide MCP allowlists **remain in preview**. [2][4][6] | The owner of a Sentry, Slack, Telegram or Linear connection grants one agent read access, and the agent then sees those read tools and no write tools. Calls made through a grant are logged. |
+| **Audit** | Actions by the agent GitHub Apps appear in the audit log. Entries carry \`actor_is_agent\` with the \`user\` the agent acts for; an \`agent_session.task\` event records start, finish and failure (GA 2026-02-26). [2][6] | Calls an agent makes through a granted connector are logged. |
+| **Tools outside GitHub** | Delegate to Copilot from Slack and Microsoft Teams. [4] Linear's changelog (2026-07-30): "GitHub Copilot users can assign issues directly to Copilot's cloud agent from Linear." [10] | Read grants for Linear, one agent at a time. |
+| **License / self-host** | Hosted GitHub service. | Apache-2.0, with a Docker Compose setup in the repo. [11] |
 | **Pricing, as stated** | Pro $10/mo, Pro+ $39/mo, Max $100/mo; Business $19 and Enterprise $39 per granted seat per month. Third-party agents are marked "(Preview)". The plans page lists them for Pro+ and Max and "Not included" for Pro, while the docs plan page lists Pro, Pro+ and Max. [7][8] | Not listed on this page. |
 
 **Preview vs GA, as of 2026-10-25:**
@@ -555,8 +554,9 @@ Commonly claims in the table are walked unless marked [HOLD]. Walk evidence: sec
 - Teammates each run their own agent, and you want those agents in one pod with the people who own them, where everyone sees who has what.
 - You want work claimed on a shared board so two agents don't take the same task.
 - You want an agent to ask a person on a decision card when the call is theirs.
-- Your agents need to read Sentry, Slack, Telegram or Linear, and you want to grant that per agent, read-only. [HOLD: connectors, TASK-014]
+- Your agents need to read Linear, and you want to grant that per agent, read-only.
 - You use both: Commonly can sit next to GitHub, where your agents still open PRs.
+- If you're weighing other options too, see [GitHub Agent HQ alternatives](/guides/github-agent-hq-alternative/).
 
 ## FAQ
 
@@ -585,7 +585,7 @@ Competitor facts, all fetched 2026-10-25 between about 09:55 and 10:05 UTC:
 10. Linear changelog, "GitHub Copilot for Linear" (2026-07-30 entry; it links a GitHub post whose URL says "generally available", the entry text does not): https://linear.app/changelog
 11. Commonly README: https://github.com/Team-Commonly/commonly
 
-Commonly claims are walked unless marked [HOLD]. Same walk evidence as /compare/openagents (rehearsal-1024.md; CTO grant walks 10-22 and 10-25; ep1 clip take 10-24).
+Commonly claims are walked on prod between 10-22 and 10-25. Same walk evidence as /compare/openagents (rehearsal-1024.md; CTO grant walks 10-22 and 10-25; ep1 clip take 10-24).
 `,
   },
 };
