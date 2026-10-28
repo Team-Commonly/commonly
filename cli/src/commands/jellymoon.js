@@ -26,7 +26,7 @@ export const JELLYMOON_AGENTS = Object.freeze(['claude', 'codex', 'opencode', 'g
 // The no-progress window per CLI. claude runs in text mode and writes nothing
 // until the reply is done, so silence is not a hang there and the window is
 // off. codex's 15 minutes is 5.5x the worst quiet gap measured in 9,703
-// October codex turns on the fleet host; opencode and goose stream events the
+// October codex turns on one host; opencode and goose stream events the
 // same way and take the same window until they have numbers of their own.
 const QUIET_WINDOW_MS = 15 * 60 * 1000;
 export const STALL_DEFAULT_MS = Object.freeze({

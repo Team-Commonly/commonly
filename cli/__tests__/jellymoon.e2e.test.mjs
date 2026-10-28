@@ -186,7 +186,7 @@ describe('usage errors exit 2 and start no run', () => {
   });
 });
 
-// PR #2854 review (Otto): a provider key must not reach a terminal, a trace,
+// A provider key must not reach a terminal, a trace,
 // a log or a failure line. These drive the REAL claude, codex and opencode
 // adapters through the shipped bin, against a fake CLI on PATH (a /bin/sh
 // script) that echoes the key back the way a real CLI's auth error would.
