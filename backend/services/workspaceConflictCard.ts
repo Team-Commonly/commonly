@@ -53,7 +53,17 @@ const clip = (text: string, limit: number): string => (
   text.length > limit ? `${text.slice(0, limit - 1)}…` : text
 );
 
-const sideText = (lines: string[]): string => clip(lines.join('\n').trim() || '(empty)', SIDE_CLIP);
+// Leading and trailing whitespace is drawn, not trimmed: two sides that differ
+// only in indentation must look different to the person deciding. Descriptions
+// are trimmed by normalizeOptions, so the drawn dots survive it.
+const showWhitespace = (line: string): string => line
+  .replace(/^[ \t]+/, (run) => run.replace(/ /g, '·').replace(/\t/g, '→'))
+  .replace(/[ \t]+$/, (run) => run.replace(/ /g, '·').replace(/\t/g, '→'));
+
+const sideText = (lines: string[]): string => {
+  if (!lines.join('').trim()) return '(empty)';
+  return clip(lines.map(showWhitespace).join('\n'), SIDE_CLIP);
+};
 
 const hunkBlock = (hunk: WorkspaceMergeHunk, sides: { base: string; branch: string }): string => (
   `line ${hunk.line}\n${sides.base}: ${sideText(hunk.ours)}\n${sides.branch}: ${sideText(hunk.theirs)}`

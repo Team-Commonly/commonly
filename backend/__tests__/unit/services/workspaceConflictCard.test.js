@@ -70,6 +70,19 @@ describe('conflictToDecisionRequest', () => {
     expect(() => normalizeOptions(req.options)).not.toThrow();
   });
 
+  test('sides that differ only in indentation look different in the card and its options', () => {
+    const req = conflictToDecisionRequest({
+      path: '/indent.js',
+      kind: 'content',
+      hunks: [{ line: 7, ours: ['    return x'], theirs: ['return x'] }],
+    }, sides);
+    expect(req.options[0].description).toBe('····return x');
+    expect(req.options[1].description).toBe('return x');
+    expect(req.context).toContain('main: ····return x');
+    expect(req.context).toContain('agent-b: return x');
+    expect(() => normalizeOptions(req.options)).not.toThrow();
+  });
+
   test('five long hunks stay inside the context limit, and the cut is named', () => {
     const block = 'y'.repeat(400);
     const hunks = Array.from({ length: 5 }, (_, i) => ({ line: i + 1, ours: [block], theirs: [block] }));
