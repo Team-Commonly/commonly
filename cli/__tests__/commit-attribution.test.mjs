@@ -14,6 +14,7 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -575,21 +576,12 @@ describe('prepareCommitAttribution', () => {
     }
   });
 
-  // A FIFO where git keeps a file would block a plain read forever, so each
-  // case runs in a child that is killed if it outlives the probe's own bound.
-  // The FIFO has no writer, and the repository is this user's own, so the
-  // ownership check cannot stand between the fallback and the read.
-  test.each([
-    { name: 'HEAD', granted: false },
-    { name: 'config', granted: true },
-  ])('a git that fails at once beside a FIFO $name finishes without reading it', ({ name, granted }) => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-fifo-')));
+  // The fallback's grant, computed in a child that is killed if it outlives
+  // the probe's own bound, so a read that blocks fails its case instead of
+  // hanging the suite. `input` becomes the child's stdin.
+  const fallbackHooksPathInChild = (root, input = '') => {
     const stubBin = join(root, 'bin');
-    mkdirSync(stubBin);
-    execFileSync('git', ['init', '--quiet'], { cwd: root });
-    mkdirSync(join(root, '.git', 'hooks'), { recursive: true });
-    rmSync(join(root, '.git', name));
-    execFileSync('mkfifo', [join(root, '.git', name)]);
+    mkdirSync(stubBin, { recursive: true });
     makeExecutable(join(stubBin, 'git'), FAILING_GIT);
     const moduleUrl = new URL('../src/lib/commit-attribution.js', import.meta.url).href;
     const script = `
@@ -601,18 +593,57 @@ describe('prepareCommitAttribution', () => {
       process.stdout.write(JSON.stringify(attribution.env.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH ?? null));
       attribution.cleanup();
     `;
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', script, root], {
+      env: { ...fixtureEnv, PATH: `${stubBin}:${fixtureEnv.PATH}` },
+      input,
+      encoding: 'utf8',
+      timeout: 8000,
+      killSignal: 'SIGKILL',
+    });
+    expect(child.signal).toBeNull();
+    expect(child.status).toBe(0);
+    const hooksPath = JSON.parse(child.stdout);
+    return hooksPath === null ? null : realpathSync(hooksPath);
+  };
+
+  // A FIFO where git keeps a file would block a plain read forever. The FIFO
+  // has no writer, and the repository is this user's own, so the ownership
+  // check cannot stand between the fallback and the read.
+  test.each([
+    { name: 'HEAD', granted: false },
+    { name: 'config', granted: true },
+    { name: 'commondir', granted: true },
+  ])('a git that fails at once beside a FIFO $name finishes without reading it', ({ name, granted }) => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-fifo-')));
+    execFileSync('git', ['init', '--quiet'], { cwd: root });
+    mkdirSync(join(root, '.git', 'hooks'), { recursive: true });
+    rmSync(join(root, '.git', name), { force: true });
+    execFileSync('mkfifo', [join(root, '.git', name)]);
     try {
-      const child = spawnSync(process.execPath, ['--input-type=module', '-e', script, root], {
-        env: { ...fixtureEnv, PATH: `${stubBin}:${fixtureEnv.PATH}` },
-        encoding: 'utf8',
-        timeout: 8000,
-        killSignal: 'SIGKILL',
-      });
-      expect(child.signal).toBeNull();
-      expect(child.status).toBe(0);
-      const hooksPath = JSON.parse(child.stdout);
-      if (granted) expect(realpathSync(hooksPath)).toBe(join(root, '.git', 'hooks'));
-      else expect(hooksPath).toBeNull();
+      expect(fallbackHooksPathInChild(root)).toBe(granted ? join(root, '.git', 'hooks') : null);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  // Only a regular file is read. A device such as /dev/zero never ends, so
+  // reading one would hang and grow without bound; this stands in a pipe that
+  // does end, carrying text that would move the grant if it were read.
+  test.each([
+    {
+      name: 'config',
+      text: (root) => `[core]\n\thooksPath = ${join(root, 'elsewhere', 'hooks')}\n`,
+    },
+    { name: 'commondir', text: (root) => `${join(root, 'elsewhere')}\n` },
+  ])('a git that fails at once beside a $name that is not a regular file grants the default hooks', ({ name, text }) => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-nonregular-')));
+    execFileSync('git', ['init', '--quiet'], { cwd: root });
+    mkdirSync(join(root, '.git', 'hooks'), { recursive: true });
+    ['objects', 'refs', 'hooks'].forEach((dir) => mkdirSync(join(root, 'elsewhere', dir), { recursive: true }));
+    rmSync(join(root, '.git', name), { force: true });
+    symlinkSync('/dev/stdin', join(root, '.git', name));
+    try {
+      expect(fallbackHooksPathInChild(root, text(root))).toBe(join(root, '.git', 'hooks'));
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
