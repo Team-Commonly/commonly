@@ -286,6 +286,33 @@ describe('prepareCommitAttribution', () => {
     }
   });
 
+  test('a git child that never exits cannot block the turn', () => {
+    const root = mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-hung-git-'));
+    const stubBin = join(root, 'bin');
+    mkdirSync(stubBin);
+    // Stands in for a git whose open() never returns, as on a seat whose
+    // gitdir sits under a consent-protected folder. It ignores SIGTERM, so
+    // only the SIGKILL the probe sends can end it.
+    makeExecutable(join(stubBin, 'git'), '#!/bin/sh\ntrap "" TERM\nexec sleep 60\n');
+    let attribution;
+    try {
+      const startedAt = Date.now();
+      attribution = prepareCommitAttribution({
+        cwd: root,
+        env: { ...fixtureEnv, PATH: `${stubBin}:${fixtureEnv.PATH}` },
+        agentName: 'quire',
+        adapter: 'claude',
+      });
+      expect(Date.now() - startedAt).toBeLessThan(15000);
+      expect(attribution.env.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH).toBeUndefined();
+      expect(attribution.env.GIT_CONFIG_VALUE_0).toBe(attribution.hooksDirectory);
+      expect(existsSync(join(attribution.hooksDirectory, 'prepare-commit-msg'))).toBe(true);
+    } finally {
+      attribution?.cleanup();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 30000);
+
   test('keeps long seat IDs inside the email local-part limit with a stable hash', () => {
     const root = mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-long-seat-'));
     execFileSync('git', ['init', '--quiet'], { cwd: root });
