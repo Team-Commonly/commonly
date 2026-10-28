@@ -302,18 +302,29 @@ describe('prepareCommitAttribution', () => {
     }
   });
 
-  test('fixture git config writes land in the repository, not an inherited GIT_CONFIG file', () => {
+  test('fixtures read and write only repository config despite inherited GIT_CONFIG variables', () => {
     const root = mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-git-config-'));
     const repo = join(root, 'repo');
     const outside = join(root, 'outside.gitconfig');
     try {
       mkdirSync(repo);
       writeFileSync(outside, '[user]\n\tname = Outside\n');
-      const env = isolateGitConfig({ ...process.env, GIT_CONFIG: outside });
+      const env = isolateGitConfig({
+        ...process.env,
+        GIT_CONFIG: outside,
+        GIT_CONFIG_COUNT: '1',
+        GIT_CONFIG_KEY_0: 'core.hooksPath',
+        GIT_CONFIG_VALUE_0: join(root, 'env-hooks'),
+      });
       execFileSync('git', ['init', '--quiet'], { cwd: repo, env });
       execFileSync('git', ['config', 'core.hooksPath', 'team-hooks'], { cwd: repo, env });
       expect(readFileSync(outside, 'utf8')).toBe('[user]\n\tname = Outside\n');
       expect(readFileSync(join(repo, '.git', 'config'), 'utf8')).toContain('hooksPath = team-hooks');
+      expect(execFileSync('git', ['config', '--get', 'core.hooksPath'], {
+        cwd: repo,
+        env,
+        encoding: 'utf8',
+      })).toBe('team-hooks\n');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
