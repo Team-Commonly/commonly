@@ -33,8 +33,10 @@ const agent = (overrides) => ({
 const agents = [
   agent({ name: 'scout', displayName: 'Scout', userId: 'user-scout', installedBy: 'me', runtime: { runtimeType: 'hosted' } }),
   agent({ name: 'codex', displayName: 'Codex', userId: 'user-codex', runtime: { runtimeType: 'codex' } }),
-  agent({ name: 'laptop', displayName: 'Laptop', userId: 'user-laptop', runtime: { runtimeType: 'native', host: 'byo' } }),
-  agent({ name: 'hook', displayName: 'Hook', userId: 'user-hook', runtime: { runtimeType: 'webhook' } }),
+  agent({ name: 'laptop', displayName: 'Laptop', userId: 'user-laptop', installedBy: 'me', runtime: { runtimeType: 'native', host: 'byo' } }),
+  agent({ name: 'hook', displayName: 'Hook', userId: 'user-hook', installedBy: 'me', runtime: { runtimeType: 'webhook' } }),
+  agent({ name: 'teammate', displayName: 'Teammate', userId: 'user-teammate', installedBy: 'someone-else', runtime: { runtimeType: 'webhook' } }),
+  agent({ name: 'cloudhost', displayName: 'Cloudhost', userId: 'user-cloudhost', runtime: { runtimeType: 'something-new', host: 'cloud' } }),
   agent({ name: 'mystery', displayName: 'Mystery', userId: 'user-mystery', runtime: { runtimeType: 'something-new' } }),
 ];
 
@@ -73,6 +75,9 @@ describe('V2YourTeamPage location mark and hosted meter', () => {
     expect(within(await cardOf('Codex')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
     expect(within(await cardOf('Laptop')).getByRole('img', { name: 'Runs on your computer' })).toBeInTheDocument();
     expect(within(await cardOf('Hook')).getByRole('img', { name: 'Runs on your computer' })).toBeInTheDocument();
+    expect(within(await cardOf('Cloudhost')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
+    // A teammate's laptop seat: we don't know which machine it runs on.
+    expect(within(await cardOf('Teammate')).queryByRole('img', { name: /Runs on/ })).toBeNull();
     expect(within(await cardOf('Mystery')).queryByRole('img', { name: /Runs on/ })).toBeNull();
     // The own-agent tile is the viewer's own machine by definition.
     expect(screen.getByTestId('team-own-card').querySelector('[role="img"]')).not.toBeNull();
@@ -87,5 +92,20 @@ describe('V2YourTeamPage location mark and hosted meter', () => {
     const statusCalls = axios.get.mock.calls.filter(([url]) => url === '/api/hosted/status');
     expect(statusCalls).toHaveLength(1);
     expect(statusCalls[0][1].params).toEqual({ agentName: 'scout', instanceId: 'default' });
+  });
+
+  it('keeps the card and drops the meter when the status read fails', async () => {
+    axios.get.mockImplementation(async (url) => {
+      if (url === '/api/hosted/status') throw new Error('upstream down');
+      if (url === '/api/pods') return { data: [{ _id: 'pod-1', name: 'Launch — plan' }] };
+      if (url === '/api/registry/pods/pod-1/agents') return { data: { agents } };
+      if (url.startsWith('/api/v1/tasks/')) return { data: { tasks: [] } };
+      if (url === '/api/activity/decision-queue') return { data: { items: [] } };
+      throw new Error(`unexpected GET ${url}`);
+    });
+    renderPage();
+    const scoutCard = (await screen.findByText('Scout')).closest('article');
+    expect(within(scoutCard).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
+    expect(screen.queryByTestId('team-card-meter')).toBeNull();
   });
 });

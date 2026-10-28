@@ -5142,6 +5142,13 @@ describe('v2 board on a phone (TASK-576)', () => {
     expect(ruleBody(phone, '.v2-mobile-tabs')).toContain('height: 56px');
   });
 
+  test('hosted meter track keeps its flex width and clips the fill inside the card', () => {
+    const v2 = read('../v2.css');
+    expect(ruleBody(v2, '.v2-team-card__meter-track')).toContain('flex: 1');
+    expect(ruleBody(v2, '.v2-team-card__meter-track')).toContain('min-width: 0');
+    expect(ruleBody(v2, '.v2-team-card__meter-track')).toContain('overflow: hidden');
+  });
+
   test('feature pages mount the phone tab bar and share one attention count with the rail', () => {
     const page = read('../components/V2FeaturePage.tsx');
     expect(page).toContain("import V2MobileTabs from './V2MobileTabs';");

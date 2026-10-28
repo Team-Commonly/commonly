@@ -107,15 +107,18 @@ const agentKey = (a: { name: string; instanceId?: string }) => `${a.name}:${a.in
 // 'hosted' is the ADR-023 hosted runtime, which Commonly runs, so it is cloud even
 // though isCloudRuntime excludes it from the operator gate. A seat we can't
 // classify gets no mark rather than a guessed one.
+// A laptop mark means the viewer's own machine, so a seat another teammate installed
+// gets no laptop mark: we don't know which machine it runs on.
 type RunsOn = 'cloud' | 'laptop' | null;
 const CLOUD_RUNTIME_TYPES = new Set(['hosted', 'moltbot', 'internal', 'native', 'managed-agents', 'codex']);
 const BYO_RUNTIME_TYPES = new Set(['webhook', 'claude-code']);
-const runsOn = (a: AgentInstallationSummary): RunsOn => {
+const runsOn = (a: AgentInstallationSummary, viewerId: string | undefined): RunsOn => {
   const type = (a.runtime?.runtimeType || '').trim().toLowerCase();
   const host = (a.runtime?.host || '').trim().toLowerCase();
-  if (host === 'byo') return 'laptop';
+  if (host === 'cloud') return 'cloud';
+  if (host === 'byo') return a.installedBy === viewerId ? 'laptop' : null;
   if (CLOUD_RUNTIME_TYPES.has(type)) return 'cloud';
-  if (BYO_RUNTIME_TYPES.has(type)) return 'laptop';
+  if (BYO_RUNTIME_TYPES.has(type)) return a.installedBy === viewerId ? 'laptop' : null;
   return null;
 };
 
@@ -395,7 +398,7 @@ const V2YourTeamPage: React.FC = () => {
     const display = a.displayName || a.name;
     const description = a.description?.trim();
     const key = agentKey(a);
-    const where = runsOn(a);
+    const where = runsOn(a, user?._id ? String(user._id) : undefined);
     const ask = a.userId ? asksByActor.get(a.userId)?.[0] : undefined;
     const task = claimedTaskFor(a);
     const needsReconnect = a.connection && ['revoked', 'stale'].includes(a.connection.state);
