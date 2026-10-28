@@ -2042,7 +2042,12 @@
         "minutes": "{{count}}分",
         "hours": "{{count}}时",
         "days": "{{count}}天"
-      }
+      },
+      "where": {
+        "hosted": "在 Commonly 上运行",
+        "local": "在你的电脑上运行"
+      },
+      "meter": "今日{{used}}/{{cap}}"
     },
     "activity": {
       "noRecent": "近期无活动",
