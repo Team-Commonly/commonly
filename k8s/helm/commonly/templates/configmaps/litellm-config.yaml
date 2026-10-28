@@ -344,8 +344,15 @@ data:
       master_key: os.environ/LITELLM_MASTER_KEY
       database_url: os.environ/DATABASE_URL
       store_model_in_db: true
-      # Allow UI access
-      ui_access_mode: "all"
+      # Restrict the admin UI to admin users. The UI is not publicly routed
+      # (the nginx ingress maps only litellm.commonly.me/v1), so this is
+      # defense-in-depth against a future ingress/tunnel change exposing it.
+      ui_access_mode: "admin_only"
+      # Reject client-supplied api_base / api_key on requests. The /v1 endpoint
+      # is public for BYO goose/pi callers and is key-gated, so a leaked virtual
+      # key must NOT be usable to proxy to arbitrary upstreams on our spend.
+      # Default is already false; set explicitly so it can't drift (2026-10-28).
+      allow_client_side_credentials: false
       # Spend log retention — without these, LiteLLM_SpendLogs grows unbounded
       # (prod dev observed 5+ GB on the 8 GiB Cloud SQL tier before this cap).
       # STORE_PROMPTS_IN_SPEND_LOGS=false keeps raw prompt and response text
