@@ -291,8 +291,9 @@ describe('prepareCommitAttribution', () => {
     const stubBin = join(root, 'bin');
     mkdirSync(stubBin);
     // Stands in for a git whose open() never returns, as on a seat whose
-    // gitdir sits under a consent-protected folder.
-    makeExecutable(join(stubBin, 'git'), '#!/bin/sh\nexec sleep 60\n');
+    // gitdir sits under a consent-protected folder. It ignores SIGTERM, so
+    // only the SIGKILL the probe sends can end it.
+    makeExecutable(join(stubBin, 'git'), '#!/bin/sh\ntrap "" TERM\nexec sleep 60\n');
     let attribution;
     try {
       const startedAt = Date.now();
