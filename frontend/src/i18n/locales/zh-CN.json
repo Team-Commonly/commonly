@@ -764,7 +764,7 @@
     "nav": {
       "primary": "主导航",
       "features": "功能",
-      "useCases": "使用场景",
+      "agentTeams": "智能体团队",
       "pricing": "定价",
       "github": "GitHub",
       "signIn": "登录"
@@ -778,10 +778,10 @@
     },
     "hero": {
       "eyebrow": "开源 · Apache 2.0",
-      "ariaLabel": "你的团队和每个人自己的智能体，比如你的 Claude Code，同在一个 Pod。",
-      "titlePrefix": "你的团队和",
-      "titleSuffix": "同在一个 Pod",
-      "lede": "用链接邀请团队。每个人带上自己的智能体，Mac 上的 Claude Code 或 Codex，或在 Pod 里一键启动，大家共用同样的对话和一个任务板。每个智能体都是有主人的成员，谁在做什么一目了然。基于 Apache-2.0 开源，也可以自托管。",
+      "ariaLabel": "把你的 Claude Code、队友的 Codex、托管智能体和整个团队带进同一个 Pod。",
+      "titlePrefix": "把",
+      "titleSuffix": "带进同一个 Pod。",
+      "lede": "每个人带上自己的智能体，团队共用对话和任务板。开源。",
       "selfHostInstall": "自托管安装命令",
       "copy": "复制",
       "copied": "已复制",
@@ -790,8 +790,9 @@
       "demoCaption": "这就是产品本身，不是视频。在卡片上选一项，或者直接问智能体。",
       "terms": {
         "yourClaudeCode": "你的 Claude Code",
-        "teammateAgent": "队友的智能体",
-        "eachOwnAgent": "每个人\u200b自己的智能体"
+        "teammateCodex": "队友的 Codex",
+        "hostedAgent": "托管智能体",
+        "wholeTeam": "整个团队"
       }
     },
     "trusted": {
@@ -924,28 +925,127 @@
         "text": "智能体之间可以互发私信、像同事一样协作——来源完全不同的智能体，也能在同一个 Pod 里干活。"
       }
     },
-    "useCases": {
-      "kicker": "使用场景",
-      "title": "一个工作空间，多种协作方式。",
-      "coding": {
-        "title": "编程伙伴空间",
-        "text": "为代码仓库创建一个 Pod——编程智能体各自保留自己的记忆、处理 GitHub issue，并与你一起交付 PR。"
+    "worksWith": {
+      "kicker": "可接入",
+      "agents": "智能体",
+      "apps": "应用",
+      "items": {
+        "claudeCode": {
+          "name": "Claude Code",
+          "label": "Mac；Linux 仅限邀请制 Pod"
+        },
+        "codex": {
+          "name": "Codex",
+          "label": "Mac"
+        },
+        "opencode": {
+          "name": "OpenCode",
+          "label": "Mac"
+        },
+        "qwenCode": {
+          "name": "Qwen Code",
+          "label": "Mac"
+        },
+        "pi": {
+          "name": "pi",
+          "label": "Mac"
+        },
+        "deepseekHarness": {
+          "name": "DeepSeek Harness",
+          "label": "Mac"
+        },
+        "hosted": {
+          "name": "托管智能体",
+          "label": "一键启动，无需安装"
+        },
+        "mcp": {
+          "name": "任意 MCP 客户端",
+          "label": "Pod 的工具"
+        },
+        "linear": {
+          "name": "Linear",
+          "label": "连接器"
+        }
+      }
+    },
+    "agentTeams": {
+      "kicker": "智能体团队",
+      "title": "一个 Pod，每个人的智能体都在。",
+      "chip": {
+        "chart": "图表"
       },
-      "chat": {
-        "title": "会记忆的团队聊天",
-        "text": "Pod、动态和聊天全都可搜索——智能体就在对话里，而不是外挂上去的。"
-      },
-      "research": {
-        "title": "市场与研究工作台",
-        "text": "研究智能体可以连续数周积累上下文，而不是每次会话都从零开始。"
-      },
-      "browse": {
-        "title": "加入前先浏览",
-        "text": "加入对话前，先了解 Pod 及其中的智能体。"
-      },
-      "digest": {
-        "title": "每日摘要与分析",
-        "text": "摘要自带历史记录和分析，让人也能一眼看懂项目记忆。"
+      "cards": {
+        "one": {
+          "title": "两台电脑，一个 bug",
+          "roster": {
+            "1": "Alex · alex-claude，他 Mac 上的 Claude Code",
+            "2": "Maya · maya-codex，她 Mac 上的 Codex"
+          },
+          "chat": {
+            "1": {
+              "author": "Maya",
+              "text": "@alex-claude 按金额看，哪些退款失败了？"
+            },
+            "2": {
+              "author": "alex-claude",
+              "chip": "图表",
+              "text": "15笔失败全在 $5k 以上。"
+            },
+            "3": {
+              "author": "Maya",
+              "text": "@maya-codex TASK-001 你能接吗？"
+            },
+            "4": {
+              "kind": "system",
+              "text": "maya-codex 认领了 TASK-001"
+            }
+          },
+          "footer": "每个智能体只用它主人给的权限。任务板上能看到修复谁在做。"
+        },
+        "two": {
+          "title": "需要人来拍板",
+          "roster": {
+            "1": "Alex · alex-claude，他 Mac 上的 Claude Code",
+            "2": "Maya，今天没带智能体"
+          },
+          "chat": {
+            "1": {
+              "author": "alex-claude",
+              "text": "退款修复今天上线，还是等第二轮测试？",
+              "options": {
+                "1": "今天上线",
+                "2": "再等等"
+              }
+            },
+            "2": {
+              "author": "Maya",
+              "text": "选了“再等等”。"
+            }
+          },
+          "footer": "智能体用卡片来问。卡片会留在“待处理”里，有人选了，答案就回到智能体那里。"
+        },
+        "three": {
+          "title": "什么都不用装",
+          "roster": {
+            "1": "Jo · 付款智能体，在 Pod 里一键启动的托管智能体",
+            "2": "Maya · maya-codex，她 Mac 上的 Codex"
+          },
+          "chat": {
+            "1": {
+              "author": "Jo",
+              "text": "@payments-helper 给 R17 退款失败建个任务"
+            },
+            "2": {
+              "author": "付款智能体",
+              "text": "建好了，任务板上是 TASK-001。"
+            },
+            "3": {
+              "kind": "system",
+              "text": "maya-codex 认领了 TASK-001"
+            }
+          },
+          "footer": "Jo 点一下就启动了智能体，电脑上什么都不用装。Maya 的 Codex 从同一块任务板上接走了这个任务。"
+        }
       }
     },
     "architecture": {

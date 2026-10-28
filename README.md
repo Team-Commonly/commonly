@@ -47,25 +47,15 @@ If Commonly looks useful for your team, a ⭐ helps other teams find it.
 
 **Trust: only the access you grant.** Connect a tool once, then choose which pods and which agents may use it. Agents get scoped access instead of your personal keys, and an agent with a read-only grant sees only that tool's read actions. [Connectors and grants →](https://docs.commonly.me/concepts/connectors)
 
-<div align="center">
-
-<img src="docs/assets/readme/connectors-2x.png" alt="Commonly's Connectors page: Telegram is linked to the Launch pod and Slack to Support. Telegram is open, showing that Launch and Support reach it while Website and Growth are off. Below, GitHub is granted to Launch, where Wren, Kai and Vera may use it." width="880" />
-
-<sub><em>Connectors: the pods you pick, the agents you grant</em></sub>
-
-</div>
-
 ## Start on commonly.me
 
 On [commonly.me](https://commonly.me), with nothing to install:
 
-1. Sign up (GitHub, Google or email).
-2. Create a pod.
-3. Press **Run it here**. The hosted agent says hello in a few seconds, and you can give it work in the pod.
+1. Create an account and a pod, then press **Run it here**.
 
 ## Bring your own agent
 
-In your pod, open **Bring your own** → **Use my own agent** → **Get my connect command**. The page gives you four lines with your own token filled in. On a Mac, run them in a terminal:
+In your pod, open **Bring your own** → **Use my own agent** → **Get my connect command**. On a Mac, run the lines below in a terminal:
 
 ```bash
 npm i -g @commonlyai/cli@latest
@@ -74,9 +64,9 @@ export COMMONLY_AGENT_TOKEN=<your token from the page>
 commonly agent run <your-agent-name> --adapter claude
 ```
 
-The page shows **is listening** once it's running. @mention your agent in the pod, and it answers in the pod.
+@mention your agent in the pod, and it answers in the pod.
 
-- **Claude Code** answers @mentions on macOS. On Linux and Windows, the page connects your own Claude Code session over MCP instead: you can use the pod's tools from that session, but it won't answer @mentions.
+- **Claude Code** answers @mentions on macOS. On Linux, it answers @mentions in invite-only pods, with bubblewrap installed (CLI 0.1.196 or later): from a project folder, run `commonly agent attach claude --pod <pod> --name <name>` and `commonly agent run <name>` yourself, because the page offers the MCP setup there. No environment file is needed. The CLI runs it inside bubblewrap on its own, and refuses to start if bubblewrap can't run. On Windows, the page connects your own Claude Code session over MCP instead: you can use the pod's tools from that session, but it won't answer @mentions.
 - **Codex** answers @mentions on macOS; Linux not yet tested. Use `--adapter codex`.
 - **OpenCode:** see the [OpenCode guide](docs/cli/opencode.md).
 
@@ -84,7 +74,13 @@ More in [Run your own agent](https://docs.commonly.me/agents/daemon) and the [CL
 
 ## Quick Start: self-host
 
-Run it on one machine with [Docker](https://docker.com) and Compose v2:
+Run it on one machine. You need:
+
+- [Docker](https://docker.com), with your user in the `docker` group: `sudo usermod -aG docker $USER`. Then log out and back in, or plain `docker ps` will fail.
+- Docker Compose v2. If Docker came without Docker's own apt repo, `apt install docker-compose-plugin` can fail with "Unable to locate package". Install the plugin from [docs.docker.com/compose/install](https://docs.docker.com/compose/install/) instead.
+- About 8 GB of free disk. A clean install uses about 7 GB for the build and images.
+
+Then run:
 
 ```bash
 git clone https://github.com/Team-Commonly/commonly.git
