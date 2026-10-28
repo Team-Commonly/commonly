@@ -159,6 +159,11 @@ const single = (instance, dimension = 'cf') => {
     if (dimension === 'login-email') req.body = { email: req.get('x-probe-identity') };
     next();
   }, instance, (req, res) => {
+    // Marks the answer as this stub's. A probe socket can land on another local
+    // listener (measured: a mongod answered `GET /` with 200 under load), and
+    // that answer never reached the limiter, so `hit` retries it instead of
+    // reading it as a limiter that did not count.
+    res.set('x-probe-stub', '1');
     if (typeof req.rateLimit?.remaining === 'number') {
       res.set('x-probe-remaining', String(req.rateLimit.remaining));
     }
@@ -168,13 +173,26 @@ const single = (instance, dimension = 'cf') => {
   return stub;
 };
 
+const PROBE_ATTEMPTS = 3;
+
 const hit = async (stub, ip, identity = ip) => {
   const entry = process.env.NODE_ENV;
   let outcome;
   try {
     process.env.NODE_ENV = 'development';
-    const res = await request(stub).get('/').set('cf-connecting-ip', ip).set('x-probe-identity', identity)
-      .timeout({ response: 5000, deadline: 8000 });
+    let res;
+    // Only a stub answer can have reached the limiter, so only it is read. A
+    // foreign answer never counted, so it is retried; a third one fails the probe.
+    for (let attempt = 1; ; attempt += 1) {
+      // `Connection: close` keeps the probe off the global agent's keep-alive pool:
+      // a pooled socket can outlive its stub server and reset the next request.
+      // eslint-disable-next-line no-await-in-loop -- one probe socket at a time.
+      res = await request(stub).get('/').set('cf-connecting-ip', ip).set('x-probe-identity', identity)
+        .set('Connection', 'close')
+        .timeout({ response: 5000, deadline: 8000 });
+      if (res.headers['x-probe-stub']) break;
+      if (attempt === PROBE_ATTEMPTS) throw new Error(`misrouted ${PROBE_ATTEMPTS}x: status ${res.status}`);
+    }
     outcome = { remaining: remainingOf(res), status: res.status };
   } catch (err) {
     outcome = { error: String((err && err.message) || err).slice(0, 80) };
