@@ -56,11 +56,13 @@ export interface RunCodeResult {
   error?: string;
 }
 
-// E2B's own refusal classes: RateLimitError (cap or 429), TimeoutError (create
-// ran past its request timeout). Anything else is a fault, and still throws.
+// E2B's own refusal classes: RateLimitError (cap or 429), ServiceBusyError (503,
+// capacity), TimeoutError (create ran past its request timeout). Anything else is
+// a fault, and still throws.
 const isSandboxRefusal = (error: unknown): boolean => {
-  const { name, status } = (error || {}) as { name?: string; status?: number };
-  return name === 'RateLimitError' || name === 'TimeoutError' || status === 429;
+  const { name, status, statusCode } = (error || {}) as { name?: string; status?: number; statusCode?: number };
+  return name === 'RateLimitError' || name === 'ServiceBusyError' || name === 'TimeoutError'
+    || status === 429 || statusCode === 429 || statusCode === 503;
 };
 
 const clip = (text: string, limit: number): string => (

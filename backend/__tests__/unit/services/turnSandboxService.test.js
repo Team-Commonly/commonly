@@ -130,7 +130,17 @@ describe('TurnSandbox', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockCreate.mockRejectedValueOnce(Object.assign(new Error('context deadline exceeded'), { name: 'TimeoutError' }));
     expect(await new TurnSandbox({}).run('python', 'print(1)')).toMatchObject({ ok: false, error: SANDBOX_BUSY_MESSAGE });
-    expect(mockCreate.mock.calls[0][1].requestTimeoutMs).toBeGreaterThan(0);
+    expect(mockCreate.mock.calls[0][1].requestTimeoutMs).toBe(30_000);
+    warn.mockRestore();
+  });
+
+  test('E2B capacity refusals (ServiceBusyError, 503) get the same busy line, and a later run retries', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockCreate.mockRejectedValueOnce(Object.assign(new Error('Service temporarily unavailable'), { name: 'ServiceBusyError', statusCode: 503 }));
+    const sandbox = new TurnSandbox({});
+    expect(await sandbox.run('python', 'print(1)')).toEqual({ ok: false, stdout: '', stderr: '', error: SANDBOX_BUSY_MESSAGE });
+    expect((await sandbox.run('python', 'print(1)')).ok).toBe(true);
+    expect(mockCreate).toHaveBeenCalledTimes(2);
     warn.mockRestore();
   });
 
