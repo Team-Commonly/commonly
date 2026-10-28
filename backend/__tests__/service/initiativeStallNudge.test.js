@@ -173,6 +173,19 @@ describe('initiative stall nudge', () => {
     expect(await stallRows()).toHaveLength(0);
   });
 
+  it('a failed installer lookup reports failed, not no-human', async () => {
+    const initiative = initiativeFor({ agentUserId: agent._id }, [link('t1')]);
+    const spy = jest.spyOn(AgentInstallation, 'findOne').mockImplementationOnce(() => {
+      throw new Error('mongo down');
+    });
+    try {
+      expect(await run(initiative, [taskRow('t1', 'claimed')])).toMatchObject({ state: 'failed', podId: String(pod._id) });
+      expect(await stallRows()).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('needs your check produces no nudge, however old the merge', async () => {
     const initiative = initiativeFor({ userId: owner._id }, [link('t1')]);
     expect(await run(initiative, [taskRow('t1', 'done', [merge(hoursAgo(24 * 5))])])).toEqual({ state: 'not-stalled' });

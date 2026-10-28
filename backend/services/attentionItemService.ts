@@ -46,22 +46,30 @@ const currentHumanMembers = async (podId: unknown): Promise<Array<{ _id: unknown
   return users.filter((user: any) => isListedPodMember(pod, user._id));
 };
 
+// Throws on a failed lookup. Use it where the installer is the required
+// recipient, so a read error is reported as a failure and not as "no human".
+const lookupInstaller = async (
+  agentUserId: unknown, podId: unknown, declaredName?: unknown, declaredInstanceId?: unknown,
+): Promise<string | null> => {
+  const agent = agentUserId
+    ? await User.findById(agentUserId).select('isBot username botMetadata').lean() : null;
+  const name = String(declaredName || (agent?.isBot && (agent.botMetadata?.agentName || agent.username)) || '').toLowerCase();
+  if (name) {
+    const instanceId = String(declaredInstanceId || agent?.botMetadata?.instanceId || 'default');
+    const installation = await AgentInstallation.findOne({
+      podId, agentName: name, instanceId, status: { $ne: 'uninstalled' },
+    }).select('installedBy').lean();
+    if (installation?.installedBy) return String(installation.installedBy);
+  }
+  return agent?.isBot && agent.botMetadata?.ownerUserId
+    ? String(agent.botMetadata.ownerUserId) : null;
+};
+
 const installerForAgent = async (
   agentUserId: unknown, podId: unknown, declaredName?: unknown, declaredInstanceId?: unknown,
 ): Promise<string | null> => {
   try {
-    const agent = agentUserId
-      ? await User.findById(agentUserId).select('isBot username botMetadata').lean() : null;
-    const name = String(declaredName || (agent?.isBot && (agent.botMetadata?.agentName || agent.username)) || '').toLowerCase();
-    if (name) {
-      const instanceId = String(declaredInstanceId || agent?.botMetadata?.instanceId || 'default');
-      const installation = await AgentInstallation.findOne({
-        podId, agentName: name, instanceId, status: { $ne: 'uninstalled' },
-      }).select('installedBy').lean();
-      if (installation?.installedBy) return String(installation.installedBy);
-    }
-    return agent?.isBot && agent.botMetadata?.ownerUserId
-      ? String(agent.botMetadata.ownerUserId) : null;
+    return await lookupInstaller(agentUserId, podId, declaredName, declaredInstanceId);
   } catch (error) {
     // The attention row still matters if its optional email owner cannot be
     // resolved. Never send to the pod creator as a fallback.
@@ -581,7 +589,7 @@ export const recordInitiativeStall = async (stall: {
       }
     }
     const target = stall.ownerUserId ? String(stall.ownerUserId)
-      : stall.ownerAgentUserId ? await installerForAgent(stall.ownerAgentUserId, podId) : null;
+      : stall.ownerAgentUserId ? await lookupInstaller(stall.ownerAgentUserId, podId) : null;
     if (!target) return { recipientUserId: null };
     const recipient = (await currentHumanMembers(podId)).find((member) => String(member._id) === target);
     if (!recipient) return { recipientUserId: null };
