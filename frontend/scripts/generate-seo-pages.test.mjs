@@ -2182,4 +2182,21 @@ test('a compare page renders GTM markdown and refuses to build while a HOLD is o
   assert.throws(() => assertNoOpenHolds('/compare/example/', 'Claim. [TODO: confirm the price]'), /TODO/);
   assert.throws(() => assertNoOpenHolds('/compare/example/', 'Empty [] marker'), /\[\]/);
   assert.doesNotThrow(() => assertNoOpenHolds('/compare/example/', 'Cited [1][5] and [a link](https://example.com/x).'));
+  assert.doesNotThrow(() => assertNoOpenHolds('/compare/example/', 'See [the alternatives](/guides/example-alternative/).'));
+  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Claim. [HOLD](pending)'), /1 open bracketed marker/);
+  assert.match(renderMarkdown('[Alternatives](/guides/example-alternative/)'), /<a href="\/guides\/example-alternative\/" rel="noreferrer">Alternatives<\/a>/);
+  assert.doesNotMatch(renderMarkdown('<!<!--x-->--> visible'), /<!--/);
+});
+
+test('buildPageDefinitions refuses a held compare page, not only the helper', async () => {
+  const [translationText, useCaseText, guideText] = await Promise.all([
+    readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
+  ]);
+  const translations = JSON.parse(translationText);
+  const args = { landing: translations.landing, compare: translations.compare, useCases: JSON.parse(useCaseText), guides: JSON.parse(guideText) };
+  const held = { held: { path: '/compare/held/', title: 'Held', description: 'Held', markdown: '# Held\n\nClaim. [HOLD: walk pending]' } };
+
+  assert.throws(() => buildPageDefinitions({ ...args, compareSources: held }), /1 open bracketed marker/);
 });

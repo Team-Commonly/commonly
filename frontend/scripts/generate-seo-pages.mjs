@@ -593,13 +593,13 @@ Commonly claims are walked on prod between 10-22 and 10-25. Same walk evidence a
 // Any bracketed text is an open marker (a HOLD, a re-check note, or anything
 // else GTM bracketed) except a numeric citation like [1] or a markdown link.
 export const assertNoOpenHolds = (key, markdown) => {
-  const markers = [...markdown.matchAll(/\[([^\]\n]*)\](?!\()/g)]
+  const markers = [...markdown.matchAll(/\[([^\]\n]*)\](?!\((?:https?:\/\/[^)\s]+|\/(?!\/)[^)\s]*)\))/g)]
     .filter(([, inner]) => !/^\d+$/.test(inner))
     .map(([marker]) => marker);
   if (markers.length) throw new Error(`${key} has ${markers.length} open bracketed marker(s), first ${markers[0]}; GTM must clear them before this page can build`);
 };
 
-const inlinePattern = /`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|(https?:\/\/[^\s<)\]]*[^\s<)\].,;:])|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
+const inlinePattern = /`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/(?!\/)[^)\s]*)\)|(https?:\/\/[^\s<)\]]*[^\s<)\].,;:])|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
 
 const renderInline = (text) => {
   let html = '';
@@ -636,7 +636,14 @@ const renderMarkdownTable = (lines) => {
 // The subset of markdown the compare drafts use: headings, paragraphs, bullet
 // and numbered lists, pipe tables, and inline code, bold, italic and links.
 export const renderMarkdown = (markdown) => {
-  const lines = markdown.replace(/<!--[\s\S]*?-->/g, '').split('\n');
+  // Strip until stable, so a nested comment cannot leave a live "<!--" behind.
+  let text = markdown;
+  let previous;
+  do {
+    previous = text;
+    text = text.replace(/<!--[\s\S]*?-->/g, '');
+  } while (text !== previous);
+  const lines = text.split('\n');
   const html = [];
   let i = 0;
   while (i < lines.length) {
@@ -676,7 +683,7 @@ export const renderMarkdown = (markdown) => {
   return html.join('\n');
 };
 
-export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, landingFaq = [] }) => {
+export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, landingFaq = [], compareSources = comparePageSources }) => {
   const organizationId = `${siteUrl}/#organization`;
   const websiteId = `${siteUrl}/#website`;
   const organization = {
@@ -738,7 +745,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     '@graph': [organization, website, softwareApplication, webPageNode(landingPage.title, landingPage.description, landingPage.path)],
   };
 
-  const comparePages = Object.values(comparePageSources).map((source) => {
+  const comparePages = Object.values(compareSources).map((source) => {
     assertNoOpenHolds(source.path, source.markdown);
     return {
       path: source.path,
