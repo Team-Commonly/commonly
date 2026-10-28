@@ -245,9 +245,17 @@ describe('macOS Seatbelt profile', () => {
     // The verb, not only the name: a deny here is the D106 hang itself, and a
     // bare allow would admit every service. Both modes carry the same rule.
     const resolverRule = '(allow mach-lookup (global-name "com.apple.SystemConfiguration.DNSConfiguration"))';
+    // SBPL ignores whitespace inside a form, so a bare allow can be spelled
+    // with spaces or a line break before the close; any spelling admits every
+    // service. A multi-line rule opens `(allow mach-lookup` and continues with
+    // `(global-name`, so it never matches.
+    const bareAllow = /\(\s*allow\s+mach-lookup\s*\)/;
+    for (const variant of ['(allow mach-lookup)', '(allow mach-lookup )', '( allow  mach-lookup)', '(allow mach-lookup\n)']) {
+      expect(`${loopback}\n${variant}\n`).toMatch(bareAllow);
+    }
     for (const profile of [open, loopback]) {
       expect(profile.split('\n')).toContain(resolverRule);
-      expect(profile).not.toMatch(/^\(allow mach-lookup\)$/m);
+      expect(profile).not.toMatch(bareAllow);
       expect(profile.split('\n').filter((line) => line.includes('DNSConfiguration'))).toEqual([resolverRule]);
     }
     expect(loopback).toContain(`(allow network-outbound (remote tcp "localhost:${port}"))`);
@@ -374,8 +382,8 @@ describe('macOS Seatbelt profile', () => {
       loopbackNetworkPorts: [9],
     });
     const run = spawnSync(argv[0], argv.slice(1), {
-      // SIGKILL: a child blocked on a denied resolver lookup outlived the
-      // default SIGTERM, so a regression hung the run instead of failing.
+      // SIGKILL, so a child blocked on a denied resolver lookup cannot hold
+      // the run past the timeout whether or not it honours SIGTERM.
       env: { PATH: process.env.PATH, HOME: state }, encoding: 'utf8', timeout: 20000, killSignal: 'SIGKILL',
     });
     expect(run.error).toBeUndefined();
