@@ -2523,7 +2523,10 @@ export async function runAgent(
       // A broker call taints too (not only a web result): once the pod is
       // bridged, dispatchTool refuses every posting tool, propose included.
       const inPodOnly = await inPodOnlyNow();
-      const podBridged = mayLookUp ? await podBridgedNow() : false;
+      // A broker call needs the bridge read too, even with no web tool declared:
+      // dispatchTool rechecks the bridge for every tainted posting tool.
+      const podBridged = mayLookUp || dispatchCtx.brokerCallSeen
+        ? await podBridgedNow() : false;
       const postingRefused = podBridged && Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen);
       const proposeOffered = !webSetAside && !postingRefused && toolsForConfig(cfg, inPodOnly, {
         webTainted: Boolean(dispatchCtx.webTainted),

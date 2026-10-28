@@ -172,7 +172,8 @@ describe('connect-intent floor through runAgent', () => {
       .mockResolvedValueOnce(toolCalls(call('b1', 'commonly_brokered_lookup', {})))
       .mockResolvedValueOnce(modelSays(''));
 
-    await runAgent(SCOUT(['commonly_propose_action', 'commonly_web_search']), CONNECT_MESSAGE);
+    // No web tool declared: the floor must read the bridge because of the broker call alone.
+    await runAgent(SCOUT(['commonly_propose_action']), CONNECT_MESSAGE);
 
     expect(brokerProjection.dispatchHostedBrokerTool).toHaveBeenCalled();
     expect(proposeAction).not.toHaveBeenCalled();
