@@ -71,8 +71,9 @@ endpoint. Every writer and the endpoint are off unless the pod is listed in
   with the pilot gate open everywhere, so only this rule can refuse them.
 - **Grants.** `grant.issued` comes from the two routes that mint, because the
   mint itself has no issuer: the connection owner as a person, the attenuating
-  agent as an agent. `revokeGrant` returns what it moved, through
-  `RoomGrant.revokeCascadeMoved`. One line per pod gives `manual` when the
+  agent as an agent. `RoomGrant.revokeCascadeMoved` returns the grants one
+  revoke moved, and `revokeGrant` passes them to the recorder (it returns
+  only their count). One line per pod gives `manual` when the
   revoked grant went alone and `cascade` (ancestor first) when descendants went
   with it. Expiry is written the first time the server sees an expired grant
   (at use, or as a lineage parent), keyed so it is written once, with the

@@ -51,6 +51,17 @@ describe('recordBrokerCall', () => {
     expect(lines[0].actor).toEqual({ type: 'agent', id: AGENT, owner: OWNER });
   });
 
+  it('a failed agent lookup loses only the owner, never the lines', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockUser.findById.mockReturnValue({ select: () => ({ lean: async () => { throw new Error('mongo down'); } }) });
+    service.recordBrokerCall(row({ outcome: 'ok' }));
+    const lines = await linesOf(mockEmits[0]);
+    expect(lines.map((l) => l.kind)).toEqual(['tool.call', 'permission.requested', 'permission.decided', 'tool.update']);
+    expect(lines[0].actor).toEqual({ type: 'agent', id: AGENT });
+    expect(warn).toHaveBeenCalledWith('[record] agent owner lookup failed:', 'Error');
+    warn.mockRestore();
+  });
+
   it('asks a parked call of the credential owner, on its card', async () => {
     service.recordBrokerCall(row({ outcome: 'pending_approval', approvalId: 'approval_1', credentialOwnerId: OWNER }));
     const [, requested] = await linesOf(mockEmits[0]);

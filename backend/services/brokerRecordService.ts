@@ -30,11 +30,19 @@ export const podOfGrant = (grant: GrantLike): string | null => {
   return target?.kind === 'pod' && target.id ? String(target.id) : null;
 };
 
-/** The calling agent, with its owner, from its user id. Unknown stays null. */
+/**
+ * The calling agent, with its owner, from its user id. Unknown stays null. A
+ * failed lookup only loses the owner: the lines still go out with the id.
+ */
 const agentById = async (agentUserId: unknown): Promise<RecordActor | null> => {
   if (!agentUserId) return null;
-  const user = await lazyUser().findById(String(agentUserId)).select('_id isBot botMetadata.ownerUserId').lean();
-  return agentActor(user || { _id: agentUserId });
+  let user: unknown = null;
+  try {
+    user = await lazyUser().findById(String(agentUserId)).select('_id isBot botMetadata.ownerUserId').lean();
+  } catch (error) {
+    console.warn('[record] agent owner lookup failed:', (error as Error).name);
+  }
+  return agentActor((user as Parameters<typeof agentActor>[0]) || { _id: agentUserId });
 };
 
 export type BrokerTrailRow = {
