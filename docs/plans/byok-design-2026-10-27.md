@@ -67,7 +67,7 @@ The source is resolved once, at turn start. It is recorded on `AgentRun` as `key
 
 ## 4. Spend attribution and caps
 
-- **Attribution:** every BYO call already has a `liteLLMCallId` (`AgentRun.ts:67`). Attribute spend by joining that to the gateway's spend log per key, not by parsing our token counts. Token counts in `AgentRun` are not money, and there is no cost field to fill (`:11`).
+- **Attribution:** `IAgentRunTurn.liteLLMCallId` is optional today (`AgentRun.ts:67`), so not every call is guaranteed to carry it. For BYO turns it becomes required: every metered BYO call, including a failed call that was still charged, records the gateway's call id. A BYO call with no id is counted as unattributed in the spend report, never dropped. The gateway spend log is reconciled against `AgentRun` daily. Attribute spend by joining the call id to the gateway's spend log per key, not by parsing our token counts. Token counts in `AgentRun` are not money, and there is no cost field to fill (`:11`).
 - **Caps:** a per-key budget set at the gateway (LiteLLM's key or team budget, **to verify**). The budget is enforced by the vendor-side path, so a runaway agent cannot exceed it.
 - **Run ceiling: recommendation.** A team key does **not** change the run ceiling. Runs still count against the invoking user's ceiling (`hostedRuntimeService.ts:83-89`, `manage-settings.ts:111`). The ceiling protects our abuse surface; the key cap protects the money. Two separate limits.
 - **Team key cap:** a team key carries its own cap, set by a team admin. It does not draw from any member's personal cap.
@@ -85,7 +85,7 @@ The source is resolved once, at turn start. It is recorded on `AgentRun` as `key
 
 Today the setter is keyed by **seat** (`AgentProviderKey.agentUserId`, unique) and gated by `ownKeyCapability` (`agentProviderKey.ts:13-24`). Extend it in four steps:
 
-1. **Scope.** Change the row from `agentUserId` to `scope: {kind: 'user' | 'team', id}`, keeping the seat row for the existing opencode path. Migrate existing rows to `kind: 'user'` with the seat as a sub-key. The unique index moves with it.
+1. **Scope.** Add `scope: {kind: 'user' | 'team' | 'agent', id}` **beside** `agentUserId`, not in place of it. `launchProviderKey` looks rows up by `agentUserId` and `ownerUserId`, so it keeps working unchanged. Existing rows are backfilled with `kind: 'user'` and keep `agentUserId`. The new unique index is added next to the old one. `agentUserId` is retired only after `launchProviderKey` reads `scope`, and that happens in its own PR with a rollback path.
 2. **Capability.** Keep `ownKeyCapability` for the opencode harness. Add a second capability for the model layer, which requires only an https provider, the gateway being reachable, and an owner or team role check. It does **not** depend on the harness, the sandbox trust or `runtimeType`, because the key never reaches the agent.
 3. **Resolution.** Do not reuse `launchProviderKey` for the model layer. Add a gateway-side resolver that the LiteLLM router calls, and keep `launchProviderKey` for opencode only.
 4. **Generations and revocation.** Keep the immutable per-generation secret and revoke-after-commit pattern (`agentProviderKey.ts:69-82`). Keep the 409 on a changed destination.
@@ -97,11 +97,11 @@ My estimate, one owner, not yet reviewed by CTO:
 | PR | Scope | Size | Gate | Done when |
 |---|---|---|---|---|
 | 0 | Spike: LiteLLM credential routing as the isolation boundary | S | Opus, security | Team A's virtual key never resolves team B's credential. A client-side `api_base` or `api_key` is refused for an agent key, and the stored key is never sent to that base. The key appears in no response or log. A one-member team and a project carry the user and agent scopes. Results are posted on the row. |
-| 1 | Schema: `scope` on `AgentProviderKey`, seat-row migration, index change | S | Opus | Existing opencode rows migrate to `kind: 'user'` and still resolve. The unique index holds per scope. |
+| 1 | Schema: additive `scope` on `AgentProviderKey` beside `agentUserId`, backfill, new index next to the old one | S | Opus | Before and after the backfill, an existing opencode key still resolves through `launchProviderKey` (test). The unique index holds per scope. `agentUserId` is not removed in this PR. |
 | 2 | Key-source resolution and the per-request gateway resolver | M | Opus | Unit tests cover each precedence pair. The source never changes mid-turn. `AgentRun.keySource` is written. |
 | 3 | Bound the agent's gateway bearer | S | Opus, security | A BYOK-resolving virtual key gets 403 for a model off its allowlist, `budget_exceeded` when its budget is spent, and is refused outside the in-cluster path. Reprovision invalidates the old key. |
 | 4 | Named turn errors, `disable_fallbacks` on BYO turns | S | Opus | A revoked key ends the turn with `auth_failed`, `AgentRun.fallbacks === 0`, and `keySource` unchanged. |
-| 5 | Spend attribution and the metering split | M | Opus | A service test with mixed turns gives correct run-ceiling, agent-hour and inference totals per `keySource`. Per-key spend comes from the gateway log joined on `liteLLMCallId`. |
+| 5 | Spend attribution and the metering split | M | Opus | A service test with mixed turns gives correct run-ceiling, agent-hour and inference totals per `keySource`. Every metered BYO call, including a charged failure, records a `liteLLMCallId`. A call missing one appears as unattributed, not omitted. |
 | 6 | Write-only key UI for personal, agent and team keys, plus plan gating | M | Opus + ux-lead | Entitlement tests show Free can't set a team key. No route returns key material. Screenshots at 390 and 1440 of each scope and of the "on your key" label. zh-CN pass. |
 | 7 | Copy: drop the Cloudflare line from `V2LegalPage.tsx:54`; add a BYOK section to the legal and privacy pages | XS | ux-lead | Every claim on the pages is backed by PRs 0–6 as each lands. |
 
