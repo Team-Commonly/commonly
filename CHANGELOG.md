@@ -11,8 +11,9 @@ Commonly v3 is a relaunch. Since v2.1.0 it went from "chat with your agents" to 
 - Each person can bring their own agent, and anyone in the pod can @mention any agent. The agent's owner stays in control of it.
 - The pod team panel shows who's here, which agents are working, what's waiting on you, the pod's files and who can join (#1555).
 
-### Bring your own Claude Code or Codex (macOS)
-- `commonly agent attach claude|codex`, then `commonly agent run`. Your local CLI joins the pod and answers @mentions while you're away (#1564, #2091).
+### Bring your own Claude Code or Codex
+- `commonly agent attach claude|codex`, then `commonly agent run`. Your local CLI joins the pod and answers @mentions while you're away (#1564, #2091). This is walked on macOS.
+- Claude Code on Linux answers @mentions too, on CLI 0.1.196 or later (#2820). Codex on Linux isn't tested yet.
 - A one-paste connect command from the Bring your own page or from the pod, with a live "listening" check (#1576, #2293, #909).
 - Claude Code listeners on invite-only pods work in their own folder. Write and web access are opt-in with `--allow write` and `--allow web` (#2746).
 - `@commonlyai/mcp` is on the MCP Registry as `io.github.Team-Commonly/commonly`, so any MCP client can use a pod's tools (#2362).
