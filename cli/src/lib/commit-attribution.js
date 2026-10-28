@@ -3,8 +3,10 @@ import { createHash } from 'node:crypto';
 import {
   accessSync,
   constants,
+  lstatSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -135,11 +137,41 @@ const configuredHooksPath = (configPath) => {
   return hooksPath || null;
 };
 
+// Git opens a git directory only if its HEAD names a ref or an object id and
+// its common directory holds objects/ and refs/.
+const isGitDirectory = (gitDir, commonDir) => {
+  if (!directoryOrNull(join(commonDir, 'objects')) || !directoryOrNull(join(commonDir, 'refs'))) {
+    return false;
+  }
+  const head = join(gitDir, 'HEAD');
+  try {
+    if (lstatSync(head).isSymbolicLink()) return readlinkSync(head).startsWith('refs/');
+    const line = readFileSync(head, 'utf8').split('\n')[0];
+    return /^ref:\s*refs\//.test(line) || /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(line);
+  } catch {
+    return false;
+  }
+};
+
+// Git refuses a repository whose files another user owns, unless global
+// safe.directory config allows it. That config is not read here, so such a
+// repository yields no hooks, which is git's own answer without it.
+const ownedByThisUser = (path) => {
+  if (typeof process.geteuid !== 'function') return false;
+  try {
+    return lstatSync(path).uid === process.geteuid();
+  } catch {
+    return false;
+  }
+};
+
 // The hooks directory a commit in `cwd` would use, read from the repository's
 // own files without running git: core.hooksPath from the repository config,
 // else the hooks folder of the common git directory (a linked worktree shares
 // its main repository's). Global config and includes are not read. `~` expands
-// against the HOME the probe gave git, as git itself would.
+// against the HOME the probe gave git, as git itself would. The nearest .git
+// must be a repository this user owns, or there are no hooks. Git would walk
+// on past a .git directory that is not a repository, and this stops there.
 const hooksPathFromGitFiles = (cwd, env) => {
   let top = resolve(cwd);
   let entry = join(top, '.git');
@@ -171,6 +203,9 @@ const hooksPathFromGitFiles = (cwd, env) => {
   } catch {
     // A main repository has no commondir file.
   }
+  if (!isGitDirectory(gitDir, commonDir)) return null;
+  const owned = [top, gitDir, ...(entryStat.isFile() ? [entry] : [])];
+  if (!owned.every(ownedByThisUser)) return null;
   const configured = configuredHooksPath(join(commonDir, 'config'));
   if (!configured) return directoryOrNull(join(commonDir, 'hooks'));
   if (configured === '~' || configured.startsWith('~/')) {

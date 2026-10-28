@@ -489,6 +489,91 @@ describe('prepareCommitAttribution', () => {
     }
   });
 
+  // Each .git holds a config whose core.hooksPath names a directory of
+  // executable hooks, and real git refuses each one as a repository.
+  test.each([
+    { name: 'a .git directory holding only config and hooks/', omit: ['HEAD', 'objects', 'refs'] },
+    { name: 'a .git directory without objects/', omit: ['objects'] },
+    { name: 'a .git directory without refs/', omit: ['refs'] },
+    { name: 'a .git directory whose HEAD names no ref', head: 'main\n' },
+    {
+      name: 'a .git file pointing at a directory holding only config and hooks/',
+      omit: ['HEAD', 'objects', 'refs'],
+      pointer: true,
+    },
+  ])('a git that fails at once under $name grants nothing and says nothing', ({ omit = [], head, pointer }) => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-not-a-repo-')));
+    const top = join(root, 'a');
+    const cwd = join(top, 'sub');
+    const granted = join(root, 'granted');
+    const gitDir = pointer ? join(root, 'store') : join(top, '.git');
+    const stubBin = join(root, 'bin');
+    mkdirSync(cwd, { recursive: true });
+    mkdirSync(granted);
+    mkdirSync(stubBin);
+    makeExecutable(join(granted, 'pre-commit'), '#!/bin/sh\nexit 0\n');
+    mkdirSync(join(gitDir, 'hooks'), { recursive: true });
+    writeFileSync(join(gitDir, 'config'), `[core]\n\thooksPath = ${granted}\n`);
+    if (!omit.includes('HEAD')) writeFileSync(join(gitDir, 'HEAD'), head ?? 'ref: refs/heads/main\n');
+    if (!omit.includes('objects')) mkdirSync(join(gitDir, 'objects'));
+    if (!omit.includes('refs')) mkdirSync(join(gitDir, 'refs'));
+    if (pointer) writeFileSync(join(top, '.git'), `gitdir: ${gitDir}\n`);
+    const real = spawnSync('git', ['rev-parse', '--git-path', 'hooks'], {
+      cwd, env: { ...fixtureEnv, GIT_CEILING_DIRECTORIES: root }, encoding: 'utf8',
+    });
+    expect(real.status).not.toBe(0);
+    expect(real.stderr).toContain('not a git repository');
+    makeExecutable(join(stubBin, 'git'), FAILING_GIT);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    let attribution;
+    try {
+      attribution = prepareCommitAttribution({
+        cwd,
+        env: { ...fixtureEnv, PATH: `${stubBin}:${fixtureEnv.PATH}` },
+        agentName: 'forge',
+        adapter: 'claude',
+      });
+      expect(attribution.env.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH).toBeUndefined();
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+      attribution?.cleanup();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // No second uid is available here, so a different effective uid stands in
+  // for another user. The same fixture under the real uid is the control.
+  test('a git that fails at once in a repository another user owns grants nothing and says nothing', () => {
+    const root = mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-foreign-'));
+    const stubBin = join(root, 'bin');
+    mkdirSync(stubBin);
+    execFileSync('git', ['init', '--quiet'], { cwd: root });
+    mkdirSync(join(root, '.git', 'hooks'), { recursive: true });
+    makeExecutable(join(stubBin, 'git'), FAILING_GIT);
+    const env = { ...fixtureEnv, PATH: `${stubBin}:${fixtureEnv.PATH}` };
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const attributions = [];
+    try {
+      attributions.push(prepareCommitAttribution({
+        cwd: root, env, agentName: 'forge', adapter: 'claude',
+      }));
+      expect(realpathSync(attributions[0].env.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH))
+        .toBe(realpathSync(join(root, '.git', 'hooks')));
+      warn.mockClear();
+      jest.spyOn(process, 'geteuid').mockReturnValue(process.geteuid() + 1);
+      attributions.push(prepareCommitAttribution({
+        cwd: root, env, agentName: 'forge', adapter: 'claude',
+      }));
+      expect(attributions[1].env.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH).toBeUndefined();
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      jest.restoreAllMocks();
+      attributions.forEach((attribution) => attribution.cleanup());
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('keeps long seat IDs inside the email local-part limit with a stable hash', () => {
     const root = mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-long-seat-'));
     execFileSync('git', ['init', '--quiet'], { cwd: root });
