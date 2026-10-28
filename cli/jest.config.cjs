@@ -1,0 +1,22 @@
+// Jest config lives here, not in package.json, so maxWorkers can be guarded by CI.
+// The fleet host (a 24 GB Mac running ~33 agent seats + operator sessions) breached
+// on 2026-10-28 when uncapped jest runs spun up cores-1 workers and pushed the host
+// into swap thrash. Local runs cap at 2 workers; CI keeps the jest default (cores-1)
+// for speed via the CI guard. Do NOT replace the guard with a static maxWorkers —
+// that would also throttle the runners. (SRE, Cofounder D77.)
+//
+// This file is .cjs (not .js) because cli/package.json is "type": "module", so a bare
+// .js here would be loaded as ESM and `module.exports` would fail.
+module.exports = {
+  testEnvironment: 'node',
+  setupFiles: ['<rootDir>/jest.setup.cjs'],
+  setupFilesAfterEnv: ['<rootDir>/jest.teardown.cjs'],
+  transform: {},
+  testMatch: [
+    '**/__tests__/**/*.[jt]s?(x)',
+    '**/__tests__/**/*.mjs',
+    '**/?(*.)+(spec|test).[jt]s?(x)',
+    '**/?(*.)+(spec|test).mjs',
+  ],
+  maxWorkers: process.env.CI ? undefined : 2,
+};
