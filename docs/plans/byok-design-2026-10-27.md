@@ -68,7 +68,7 @@ The source is resolved once, at turn start. It is recorded on `AgentRun` as `key
 ## 4. Spend attribution and caps
 
 - **Attribution:** `IAgentRunTurn.liteLLMCallId` is optional today (`AgentRun.ts:67`), so not every call is guaranteed to carry it. For BYO turns it becomes required: every metered BYO call, including a failed call that was still charged, records the gateway's call id. A BYO call with no id is counted as unattributed in the spend report, never dropped. The gateway spend log is reconciled against `AgentRun` daily. Attribute spend by joining the call id to the gateway's spend log per key, not by parsing our token counts. Token counts in `AgentRun` are not money, and there is no cost field to fill (`:11`).
-- **Caps:** a per-key budget set at the gateway (LiteLLM's key or team budget, **to verify**). The gateway enforces the budget (the LiteLLM key or team budget, **to verify**), so a runaway agent cannot exceed it.
+- **Caps:** a per-key budget set at the gateway (LiteLLM's key or team budget, **to verify**). The gateway enforces the budget, so a runaway agent cannot exceed it.
 - **Run ceiling: recommendation.** A team key does **not** change the run ceiling. Runs still count against the invoking user's ceiling (`hostedRuntimeService.ts:83-89`, `manage-settings.ts:111`). The ceiling protects our abuse surface; the key cap protects the money. Two separate limits.
 - **Team key cap:** a team key carries its own cap, set by a team admin. It does not draw from any member's personal cap.
 - **Metering split.** A BYOK turn removes our inference cost, not our compute cost. It still counts toward the run ceiling and any agent-hour meter, but not toward anything that meters our inference spend. `AgentRun.keySource` makes that split computable.
@@ -83,15 +83,13 @@ The source is resolved once, at turn start. It is recorded on `AgentRun` as `key
 
 ## 6. How it extends `agentProviderKey.ts`
 
-Today the setter is keyed by **seat** (`AgentProviderKey.agentUserId`, required and unique, `backend/models/AgentProviderKey.ts:3`) and gated by `ownKeyCapability` (`agentProviderKey.ts:13-24`). Extend it in four steps:
+Today the setter is keyed by **seat** (`AgentProviderKey.agentUserId`, required and unique, `backend/models/AgentProviderKey.ts:3`) and gated by `ownKeyCapability` (`agentProviderKey.ts:13-24`). Extend it in five steps:
 
 1. **Scope.** Add `scope: {kind: 'user' | 'team' | 'agent', id}` to `AgentProviderKey`. Existing rows are backfilled as `kind: 'agent'`, `id: agentUserId`. They are seat keys, one per agent, set through the opencode harness. Read as `user` scope, one seat's key would resolve for every agent its owner has. `agentUserId` becomes optional, because a user or team row has no seat. Its non-partial unique index is replaced by a partial unique index on `agentUserId` where `scope.kind` is `agent`, and a unique index on `(scope.kind, scope.id)` covers user and team rows. `launchProviderKey` looks rows up by `agentUserId` and `ownerUserId`, so it keeps finding only agent rows and works unchanged. `agentUserId` is retired only after `launchProviderKey` reads `scope`, in its own PR with a rollback path.
 2. **Model-layer keys get their own collection.** They do not share `AgentProviderKey`. A separate `ModelProviderKey` model means `launchProviderKey` cannot reach a model-layer row by construction. The shared-collection alternative needs a `layer` field and a pin on the daemon lookup. We reject it: one missed filter would send a plaintext model key to a daemon, which §1 says must never happen.
 3. **Capability.** Keep `ownKeyCapability` for the opencode harness. Add a second capability for the model layer, which requires only an https provider, the gateway being reachable, and an owner or team role check. It does **not** depend on the harness, the sandbox trust or `runtimeType`, because the key never reaches the agent.
 4. **Resolution.** Do not reuse `launchProviderKey` for the model layer. Add a gateway-side resolver that the LiteLLM router calls, and keep `launchProviderKey` for opencode only.
 5. **Generations and revocation.** Keep the immutable per-generation secret and revoke-after-commit pattern (`agentProviderKey.ts:69-82`), in both collections. Keep the 409 on a changed destination.
-3. **Resolution.** Do not reuse `launchProviderKey` for the model layer. Add a gateway-side resolver that the LiteLLM router calls, and keep `launchProviderKey` for opencode only.
-4. **Generations and revocation.** Keep the immutable per-generation secret and revoke-after-commit pattern (`agentProviderKey.ts:69-82`). Keep the 409 on a changed destination.
 
 ## 7. PR-by-PR estimate
 
