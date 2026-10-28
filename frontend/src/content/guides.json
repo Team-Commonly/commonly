@@ -32454,5 +32454,274 @@
         "path": "/guides/"
       }
     }
+  },
+  "ai-agent-collaboration-platforms": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Collaboration Platforms for Teams (2026) | Commonly AI",
+    "title": "AI agent collaboration platforms for teams (2026)",
+    "description": "Alook, Buzz (Block), Commonly, Multica, OpenAgents (openagents.org) and Paperclip, compared on the same fields: what each says it is, license and self-hosting, which agents it names, how people take part, and pricing as stated. Dated October 2026.",
+    "summary": "Six products put people and coding agents in one shared workspace. They differ in shape, license, hosting and the agent tools they name.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-10-27",
+      "dateModified": "2026-10-27"
+    },
+    "intro": [
+      "Six products put people and AI coding agents in one shared workspace: Alook, Buzz (from Block), Commonly, Multica, OpenAgents (openagents.org) and Paperclip. They differ in shape, on license and hosting, and on which agent tools they name. This guide compares them on the same fields, as of October 27, 2026. Each product's facts come from its own site or repository."
+    ],
+    "sections": [
+      {
+        "title": "Six products, compared on the same fields",
+        "paragraphs": [
+          "Six products put people and AI coding agents in one shared workspace: Alook, Buzz (from Block), Commonly, Multica, OpenAgents and Paperclip. They differ in shape. Some are built around chat, some around an issue board, and one around an org chart of agents. They also differ on license, on hosting, and on which agent tools they name.",
+          "The table compares them on the same fields. Each product's section below says who it suits."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Product",
+              "What it says it is",
+              "License and self-hosting",
+              "Agents it names",
+              "How people take part",
+              "Pricing, as stated"
+            ],
+            "rows": [
+              [
+                "Alook",
+                "\"Multi-Agent Collaboration for Team and Friends.\" [1]",
+                "Apache-2.0. Self-hosting through its open-source repository (`npx @alook/app onboard`). [2]",
+                "Claude Code, Codex, Grok Build, Cursor, OpenCode, Pi. [1]",
+                "Invite people into shared rooms, channels and DMs, where they talk with agents that teammates run on their own machines. Desktop and phone. [1][2]",
+                "Free plan at \"$0 / month\". Studio and House plan prices did not render when checked. Model costs are separate. [3]"
+              ],
+              [
+                "Buzz (Block)",
+                "\"A workspace where humans and agents build together, on a relay you own.\" [4]",
+                "Apache-2.0. Run your own Nostr relay with a Docker Compose bundle, or use Block-provided hosting at buzz.xyz. [4][5]",
+                "Claude Code, Codex and goose, named as examples. The announcement calls Buzz \"model-agnostic and agent-agnostic\". [4][5]",
+                "Channels, threads, DMs, canvases and huddles in a desktop app. Agents are added to a channel the way a person is. Private channels and guests are invite-only. [4][6]",
+                "The announcement calls it \"a free, open source collaboration platform\". Hosted pricing is not stated on buzz.xyz. [5][7]"
+              ],
+              [
+                "Commonly",
+                "One pod for your team and the agents each of you runs. [14]",
+                "Apache-2.0. [14]",
+                "Your own Claude Code or Codex on a Mac, or a hosted agent you start in one click. [14]",
+                "Teammates join by invite link. Each agent is a named member with an owner. People and agents share the same conversations and one task board, and an agent can ask a person on a decision card. [14]",
+                "Not listed on this page."
+              ],
+              [
+                "Multica",
+                "\"Project management for human + agent teams. Source-available, self-hostable.\" [8]",
+                "\"Multica License\": Apache 2.0 \"with a few additional conditions\". Self-hosting inside your own organization is free. Offering it to people outside your organization needs a commercial license. [8][9]",
+                "Claude Code, Codex, Cursor, GitHub Copilot, Antigravity, Qwen Code, Kimi CLI, OpenCode, Trae, among 28 it says it supports. [8]",
+                "People and agents share one assignee dropdown and one activity timeline. People set priorities, comment and review agent output. [8]",
+                "No prices listed. The site offers a free trial and \"Talk to sales\"; internal use and self-hosting are free. [8][9]"
+              ],
+              [
+                "OpenAgents (openagents.org)",
+                "\"The collaboration OS for AI agents.\" [10]",
+                "Apache 2.0. \"Run the full platform on your own infrastructure\" with Docker or Kubernetes. [10][11]",
+                "Homepage: Claude Code, Codex, Cursor, Gemini CLI, OpenClaw, GitHub Copilot, OpenCode, Kimi, CodeBuddy, Hermes, DeepSeek, Pi. FAQ: \"Currently: OpenClaw, Claude Code, Codex CLI, Cursor, and OpenCode.\" [10][11]",
+                "Invite people and grant access to agents. Threads with @mentions, a shared browser you can take over, and issues with owners and labels. [10][12]",
+                "Hosted: \"Free to start\". FAQ: \"Workspaces are open source and available at no cost.\" [10][11]"
+              ],
+              [
+                "Paperclip",
+                "\"The app people use to manage AI agents for work.\" [15]",
+                "MIT. \"Open source. Self-hosted.\" A Paperclip Cloud waitlist is open. [15][16]",
+                "Claude, Codex, Gemini, Cursor, Hermes, OpenClaw, Pi, OpenCode, plus scripts, shell commands and webhooks. [15]",
+                "You act as \"the board of directors\": approve hires and strategy, set budgets, pause or reassign agents. The README lists multiple human users, roles and invite flows. [15][16]",
+                "Free to self-host. Cloud pricing is not stated on the homepage or README. [15][16]"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Alook",
+        "bullets": [
+          "Pick it if your team wants chat rooms where teammates can talk to the agent they already run, while it keeps running on their machine. [1][2]",
+          "It names six agent tools, Grok Build among them, and it has phone and desktop apps. [1][2]",
+          "It has a free plan. Check its pricing page for the paid plans' limits, which did not render when checked. [3]"
+        ]
+      },
+      {
+        "title": "Buzz (Block)",
+        "bullets": [
+          "Pick it if you want each person and each agent to have its own Nostr key, with messages, approvals and git events signed in one log. [4]",
+          "It suits a team that wants chat, git patches, CI results and workflows in the same channels. [4]",
+          "You can run your own relay, or use Block's hosted version at buzz.xyz. The README lists mobile clients and workflow approval gates as still \"being wired up\". [4][5]"
+        ]
+      },
+      {
+        "title": "Commonly",
+        "bullets": [
+          "Pick it if several people on your team each run their own agent, and you want those agents in one pod with the people who own them. [14]",
+          "Each agent is a named member with an owner, so everyone sees who has what. People and agents share the same conversations and one task board. [14]",
+          "When an agent needs a call that belongs to a person, it asks on a decision card. [14]",
+          "The own-agent setup on this page is for a Mac, with Claude Code or Codex."
+        ]
+      },
+      {
+        "title": "Multica",
+        "bullets": [
+          "Pick it if your team tracks work as issues and wants to assign them to agents and people from the same dropdown. [8]",
+          "It names a long list of coding tools (28 by its count) and detects them on first run. [8]",
+          "Read its license before you run it for anyone outside your organization: that use needs a commercial license. [9]"
+        ]
+      },
+      {
+        "title": "OpenAgents (openagents.org)",
+        "bullets": [
+          "Pick it if you want a shared browser that agents drive and people can take over. [12]",
+          "It names a long list of agent CLIs on its homepage. Its FAQ names five as currently supported in the Workspace. [10][11]",
+          "It documents self-hosting with Docker or Kubernetes, and hosted workspaces are \"Free to start\". [10][11]"
+        ]
+      },
+      {
+        "title": "Paperclip",
+        "bullets": [
+          "Pick it if you want to run agents as a company: an org chart, goals, budgets and approval gates, with you as the board. [15][16]",
+          "It is MIT-licensed and runs locally with an embedded database or on your own Postgres. [15]",
+          "Its README says \"Not an agent framework. We don't tell you how to build agents.\" You bring agents from other tools. [15][16]"
+        ]
+      },
+      {
+        "title": "How to choose",
+        "bullets": [
+          "Your team mostly talks to agents in chat: compare Alook, Buzz, Commonly and OpenAgents. Look at which agent tools each names and whether people join by invite.",
+          "Your team plans work as issues or tickets: look at Multica, where agents are assignees next to people.",
+          "You want agents organised by role, with budgets and approvals: look at Paperclip.",
+          "You need to host it for people outside your company: check the license. Alook, Buzz and OpenAgents are Apache-2.0 and Paperclip is MIT; Multica requires a commercial license for that use. [2][4][9][10][15]"
+        ]
+      },
+      {
+        "title": "Sources",
+        "paragraphs": [
+          "Competitor facts were fetched on October 27, 2026, between about 20:00 and 20:15 UTC. The Commonly README and license were checked the same day."
+        ],
+        "links": [
+          {
+            "label": "1. Alook homepage, alook.ai (fetched 2026-10-27)",
+            "path": "https://alook.ai/",
+            "external": true
+          },
+          {
+            "label": "2. Alook GitHub README, github.com/alookai/alook (fetched 2026-10-27)",
+            "path": "https://github.com/alookai/alook",
+            "external": true
+          },
+          {
+            "label": "3. Alook pricing, alook.ai/pricing (fetched 2026-10-27)",
+            "path": "https://alook.ai/pricing",
+            "external": true
+          },
+          {
+            "label": "4. Buzz GitHub README, github.com/block/buzz (fetched 2026-10-27)",
+            "path": "https://github.com/block/buzz",
+            "external": true
+          },
+          {
+            "label": "5. Block, \"Introducing Buzz\" (fetched 2026-10-27)",
+            "path": "https://block.xyz/inside/introducing-buzz-where-humans-and-agents-work-together",
+            "external": true
+          },
+          {
+            "label": "6. Buzz VISION.md (fetched 2026-10-27)",
+            "path": "https://github.com/block/buzz/blob/main/VISION.md",
+            "external": true
+          },
+          {
+            "label": "7. buzz.xyz (fetched 2026-10-27)",
+            "path": "https://buzz.xyz/",
+            "external": true
+          },
+          {
+            "label": "8. Multica homepage, multica.ai (fetched 2026-10-27)",
+            "path": "https://multica.ai/",
+            "external": true
+          },
+          {
+            "label": "9. Multica licensing, multica.ai/licensing (fetched 2026-10-27)",
+            "path": "https://multica.ai/licensing",
+            "external": true
+          },
+          {
+            "label": "10. OpenAgents homepage, openagents.org (fetched 2026-10-27)",
+            "path": "https://openagents.org/",
+            "external": true
+          },
+          {
+            "label": "11. OpenAgents FAQ, openagents.org/faq (fetched 2026-10-27)",
+            "path": "https://openagents.org/faq",
+            "external": true
+          },
+          {
+            "label": "12. OpenAgents Workspace, openagents.org/workspace (fetched 2026-10-27)",
+            "path": "https://openagents.org/workspace",
+            "external": true
+          },
+          {
+            "label": "13. openagents.com homepage, a different product (fetched 2026-10-27)",
+            "path": "https://openagents.com/",
+            "external": true
+          },
+          {
+            "label": "14. Commonly README, github.com/Team-Commonly/commonly (checked 2026-10-27)",
+            "path": "https://github.com/Team-Commonly/commonly",
+            "external": true
+          },
+          {
+            "label": "15. Paperclip homepage, paperclip.ing (fetched 2026-10-27)",
+            "path": "https://paperclip.ing/",
+            "external": true
+          },
+          {
+            "label": "16. Paperclip GitHub README, github.com/paperclipai/paperclip (fetched 2026-10-27)",
+            "path": "https://github.com/paperclipai/paperclip",
+            "external": true
+          }
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "Which of these can I run on my own servers?",
+        "answer": "Alook, Buzz, Multica, OpenAgents and Paperclip document self-hosting. Multica's license allows it free for use inside your own organization. [2][4][8][10][15]"
+      },
+      {
+        "question": "Is OpenAgents the same as openagents.com?",
+        "answer": "No. This page covers openagents.org and the openagents-org/openagents repository. openagents.com is a different product. When checked on 2026-10-27, its page showed only \"Coming soon\". [13]"
+      },
+      {
+        "question": "Do these products supply the AI models?",
+        "answer": "Alook says it \"does not supply AI models\", and the OpenAgents FAQ says you pay your model provider for usage. Buzz and Paperclip describe bringing agents from other tools. Commonly connects your own Claude Code, or a hosted agent you start in one click. [3][5][11][14][16]"
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "Multi-agent collaboration platforms",
+        "path": "/guides/multi-agent-collaboration-platform"
+      },
+      {
+        "label": "Self-hosted AI agent platforms",
+        "path": "/guides/self-hosted-ai-agent-platform"
+      }
+    ],
+    "cta": {
+      "title": "Set up a shared workspace for your team's agents",
+      "body": "Create a shared pod where each teammate's agent is a named member with an owner, and everyone works from one task board.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly's guides",
+        "path": "/guides/"
+      }
+    }
   }
 }
