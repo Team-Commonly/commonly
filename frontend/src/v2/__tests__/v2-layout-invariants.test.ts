@@ -5150,3 +5150,17 @@ describe('v2 board on a phone (TASK-576)', () => {
     expect(page).toContain('<V2MobileTabs needsYouCount={attention.count ?? 0} />');
   });
 });
+
+describe('harness picker tracks (TASK-361)', () => {
+  const v2 = read('../v2.css');
+  test('the head and the rows share the same fixed tracks on desktop', () => {
+    const rule = ruleBody(v2, '.v2-harness-picker__head,\n.v2-harness-picker__row');
+    expect(rule).toContain('grid-template-columns: minmax(0, 1fr) var(--hp-connects) var(--hp-mac) var(--hp-linux) var(--hp-windows)');
+    expect(ruleBody(v2, '.v2-harness-picker')).toContain('--hp-connects: 64px');
+  });
+  test('the phone block keeps the 54/24/36/48 tracks and the 6px gap', () => {
+    const block = blockContaining(v2, '@media (max-width: 760px)', '.v2-harness-picker__head');
+    expect(block).toContain('--hp-connects: 54px; --hp-mac: 24px; --hp-linux: 36px; --hp-windows: 48px;');
+    expect(ruleBody(block, '.v2-harness-picker__head,\n  .v2-harness-picker__row')).toContain('gap: 6px');
+  });
+});

@@ -6,10 +6,11 @@ import { HARNESS_WALK_TABLE, HIDDEN_HARNESS_IDS } from '../utils/harnessWalkTabl
 import fs from 'fs';
 import path from 'path';
 
-const v2Css = fs.readFileSync(path.join(__dirname, '../v2.css'), 'utf8');
-// Body of the first rule whose selector list includes `selector`, so grouped selectors match too.
+const v2Css = fs.readFileSync(path.join(__dirname, '../v2.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+// Body of the first rule whose selector list includes `selector` as a complete selector
+// (not a prefix of a longer class name), so grouped selectors match too.
 const ruleBody = (selector) => {
-  const match = v2Css.match(new RegExp(`${selector}[^{}]*\\{([^}]*)\\}`));
+  const match = v2Css.match(new RegExp(`${selector}(?![\\w-])[^{}]*\\{([^}]*)\\}`));
   return match ? match[1] : '';
 };
 
@@ -47,6 +48,14 @@ describe('V2HarnessPicker', () => {
     expect(within(claude).getByTestId('harness-dot-claude-linux')).toHaveAttribute('data-state', 'mcp-only');
     expect(within(claude).getByTestId('harness-dot-claude-windows')).toHaveAttribute('data-state', 'mcp-only');
     expect(within(screen.getByTestId('harness-row-codex')).getByTestId('harness-dot-codex-linux')).toHaveAttribute('data-state', 'not-walked');
+  });
+
+  it('gives each dot the state class the stylesheet keys on, for every state', () => {
+    render(<V2HarnessPicker selectedId="claude" onSelect={jest.fn()} />);
+    expect(screen.getByTestId('harness-dot-claude-mac')).toHaveClass('v2-harness-picker__dot--walked');
+    expect(screen.getByTestId('harness-dot-claude-linux')).toHaveClass('v2-harness-picker__dot--mcp-only');
+    expect(screen.getByTestId('harness-dot-codex-linux')).toHaveClass('v2-harness-picker__dot--not-walked');
+    expect(screen.getByTestId('harness-dot-dsh-windows')).toHaveClass('v2-harness-picker__dot--not-offered');
   });
 
   it('titles each OS dot with why it is filled or dashed', () => {
