@@ -134,7 +134,7 @@
     "avatar": {
       "regenerate": "换一个",
       "uploadPhoto": "上传照片",
-      "description": "选择前不会显示面部或肤色。你可以换一个造型，或上传照片。",
+      "description": "你可以换一个造型，或上传照片。",
       "descriptionAfterChoice": "你可以换一个造型，或上传照片。",
       "uploadTitle": "上传照片",
       "cropPreview": "头像裁剪预览",
@@ -495,7 +495,7 @@
       "people": "邀请成员",
       "agent": "添加智能体"
     },
-    "peopleHint": "创建邀请链接，拥有 Commonly 账号的人都能用它加入这个 Pod。",
+    "peopleHint": "拿到链接的人都能加入。",
     "podMember": "Pod 成员",
     "options": {
       "expiresAfter": "有效期",
@@ -513,7 +513,6 @@
     "generate": "生成邀请链接",
     "generating": "正在生成…",
     "newLinkLabel": "新邀请链接",
-    "newLinkHint": "新链接也会出现在下方的有效链接中。",
     "activeLinks": "有效链接",
     "loadingLinks": "正在加载链接…",
     "noActiveLinks": "暂无有效邀请链接。",
@@ -541,7 +540,7 @@
       "unavailable": "无法查看有效期",
       "expiresOn": "{{date}} 到期"
     },
-    "agentHint": "添加一个智能体 —— Claude Code 或 Codex，或在这里运行一个 —— 它就会加入这个 Pod。大约需要两分钟。",
+    "agentHint": "Claude Code、Codex，或在这里运行一个。",
     "connectOwnAgent": "连接你自己的智能体 →",
     "errors": {
       "loadFailed": "邀请链接加载失败。",
@@ -1797,21 +1796,18 @@
     "mode": {
       "label": "在哪里运行？",
       "hosted": "在这里运行",
-      "hostedHint": "由 Commonly 代为运行，无需安装。测试期：每天{{turns}}轮。",
       "byo": "用我自己的智能体",
-      "byoHint": "你电脑上的 Claude Code 或 Codex。",
       "onCommonly": "在 Commonly 上",
       "yours": "你的电脑",
-      "hostedMeta": "几秒即可上线 · 测试期每天{{turns}}轮",
-      "byoMeta": "只需一条终端命令",
+      "hostedMeta": "无需安装，几秒即可上线。测试期每天{{turns}}轮。",
+      "byoMeta": "你电脑上的 Claude Code 或 Codex，只需一条终端命令。",
       "moreAbout": "更多关于{{mode}}的信息",
       "machine": "在我的电脑上",
-      "machineHint": "在你已添加的电脑上运行，你的文件、你的 CLI",
-      "machineMeta": "需要那台电脑运行 Commonly 守护进程"
+      "machineMeta": "在你已添加的电脑上运行，用你的文件和 CLI。需要那台电脑运行 Commonly 守护进程。"
     },
     "hosted": {
       "offerAction": "改为在这里运行",
-      "offerBody": "无需终端。在这个 Pod 中启动一个新的托管智能体。",
+      "offerBody": "无需终端。",
       "heading": "运行中：",
       "live": "{{name}} 已在 {{pod}} 上线。在那里 @ 它即可得到回复。",
       "starting": "正在启动 {{name}}…",
@@ -2214,7 +2210,7 @@
     },
     "own": {
       "title": "你自己的智能体",
-      "text": "Claude Code、Codex，或任何支持该协议的工具。在你的机器上运行一条命令，它的身份保留在这里。",
+      "text": "你自己电脑上的 Claude Code 或 Codex。",
       "command": "npx @commonlyai/cli agent attach claude",
       "setup": "开始设置"
     }
@@ -2296,7 +2292,6 @@
     "codeExpired": "启用码已过期。",
     "connect": "连接",
     "connectChannel": "连接频道",
-    "connectChannelHint": "选择频道，以及它要加入的 Pod。",
     "copied": "已复制",
     "copyCommand": "复制命令",
     "description": "每个频道从一个 Pod 接入一个智能体。它会在那里以自己的名义回复，其余团队成员都在幕后。",

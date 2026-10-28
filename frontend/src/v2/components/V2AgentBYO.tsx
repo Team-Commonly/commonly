@@ -1241,7 +1241,6 @@ const V2AgentBYO: React.FC = () => {
                       choice (ruled 2026-10-15). */}
                   <span className="v2-byo__mode-kicker v2-byo__mode-kicker--quiet">{t('agentByo.mode.onCommonly')}</span>
                   <span className="v2-byo__mode-title">{t('agentByo.mode.hosted')}</span>
-                  <span className="v2-byo__hint">{t('agentByo.mode.hostedHint', { turns: hosting.caps.turnsPerDay })}</span>
                 </button>
                 <V2Hint label={t('agentByo.mode.moreAbout', { mode: t('agentByo.mode.hosted') })}>
                   {t('agentByo.mode.hostedMeta', { turns: hosting.caps.turnsPerDay })}
@@ -1258,7 +1257,6 @@ const V2AgentBYO: React.FC = () => {
                   >
                     <span className="v2-byo__mode-kicker v2-byo__mode-kicker--quiet">{t('agentByo.mode.yours')}</span>
                     <span className="v2-byo__mode-title">{t('agentByo.mode.machine')}</span>
-                    <span className="v2-byo__hint">{t('agentByo.mode.machineHint')}</span>
                   </button>
                   <V2Hint label={t('agentByo.mode.moreAbout', { mode: t('agentByo.mode.machine') })}>
                     {t('agentByo.mode.machineMeta')}
@@ -1275,7 +1273,6 @@ const V2AgentBYO: React.FC = () => {
                 >
                   <span className="v2-byo__mode-kicker v2-byo__mode-kicker--quiet">{t('agentByo.mode.yours')}</span>
                   <span className="v2-byo__mode-title">{t('agentByo.mode.byo')}</span>
-                  <span className="v2-byo__hint">{t('agentByo.mode.byoHint')}</span>
                 </button>
                 <V2Hint label={t('agentByo.mode.moreAbout', { mode: t('agentByo.mode.byo') })}>
                   {t('agentByo.mode.byoMeta')}
