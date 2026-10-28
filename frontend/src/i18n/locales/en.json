@@ -1885,7 +1885,6 @@
       "title": "Choose an avatar",
       "defaultOption": "Default avatar",
       "option": "Avatar {{number}}",
-      "current": "current",
       "cancel": "Close",
       "saveFailed": "Could not change the avatar. Try again."
     },

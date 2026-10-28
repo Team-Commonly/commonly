@@ -428,8 +428,9 @@ const V2AgentProfile: React.FC = () => {
                     key={option.id}
                     type="button"
                     className={`v2-aprofile__avatar-choice${current ? ' is-current' : ''}`}
+                    // aria-pressed already announces the current avatar.
                     aria-pressed={current}
-                    aria-label={current ? `${label}, ${t('agentProfile.avatar.current')}` : label}
+                    aria-label={label}
                     title={label}
                     disabled={savingAvatar}
                     onClick={() => { if (!current) void saveAvatar(option.id); }}

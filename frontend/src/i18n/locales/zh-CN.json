@@ -1877,9 +1877,8 @@
       "title": "选择头像",
       "defaultOption": "默认头像",
       "option": "头像 {{number}}",
-      "current": "当前",
       "cancel": "关闭",
-      "saveFailed": "头像没有更换成功，请重试。"
+      "saveFailed": "无法更换头像，请重试。"
     },
     "pods": {
       "title": "Pod",

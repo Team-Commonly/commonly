@@ -105,7 +105,7 @@ describe('V2AgentProfile avatar picker', () => {
 
     const choices = within(picker).getAllByRole('button').filter((b) => b.hasAttribute('aria-pressed'));
     expect(choices).toHaveLength(3);
-    expect(choices[0]).toHaveAccessibleName('Default avatar, current');
+    expect(choices[0]).toHaveAccessibleName('Default avatar');
     expect(choices[0]).toHaveAttribute('aria-pressed', 'true');
     expect(choices[0].querySelector('img')).toHaveAttribute('src', 'face:bot-user-1');
     expect(choices[1]).toHaveAttribute('aria-pressed', 'false');
@@ -116,7 +116,7 @@ describe('V2AgentProfile avatar picker', () => {
     renderProfile();
     await openPicker();
 
-    expect(screen.getByRole('button', { name: 'Avatar 2, current' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Avatar 2' })).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(screen.getByRole('button', { name: 'Default avatar' }));
 
     expect(profileClient.put).toHaveBeenCalledWith(
@@ -131,7 +131,7 @@ describe('V2AgentProfile avatar picker', () => {
     renderProfile();
     await openPicker();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Default avatar, current' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Default avatar' }));
     expect(profileClient.put).not.toHaveBeenCalled();
   });
 
