@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -2145,4 +2146,32 @@ test('the compare page is unlisted: noindex, out of the sitemap, and linked from
   const sitemap = await readFile(resolve(outputDir, 'sitemap.xml'), 'utf8');
   assert.doesNotMatch(sitemap, /\/compare\//);
   assert.match(sitemap, /<loc>https:\/\/commonly\.me\/use-cases\/team-chat\/<\/loc>/);
+});
+
+// TASK-594 (D156): the guide restyle is CSS-only. Every generated page's markup
+// (words, URLs, titles, meta, canonical, JSON-LD) must match the hashes taken from
+// main's generator and template, with each <style> block removed.
+test('generated markup matches main byte for byte; only CSS moved (TASK-594)', async () => {
+  const fixture = JSON.parse(await readFile(resolve(frontendDir, 'scripts/fixtures/seo-markup-main.sha256.json'), 'utf8'));
+  const source = await readFile(resolve(frontendDir, 'index.html'), 'utf8');
+  // Vite output is not available here; stand in the entry script the generator expects.
+  const template = source.replace('</head>', '<link rel="modulepreload" href="/assets/chunk-shim.js"><script type="module" crossorigin src="/assets/index-shim.js"></script></head>');
+  const outputDir = await mkdtemp(join(tmpdir(), 'seo-markup-'));
+  try {
+    await writeFile(resolve(outputDir, 'index.html'), template);
+    const pages = await generateSeoPages({ outputDir });
+    assert.equal(pages.length, Object.keys(fixture).length);
+    for (const page of pages) {
+      const html = await readFile(resolve(outputDir, page.outputPath), 'utf8');
+      const markup = html.replace(/<style>[\s\S]*?<\/style>/g, '');
+      const digest = createHash('sha256').update(markup).digest('hex');
+      assert.equal(digest, fixture[page.outputPath], `${page.outputPath} markup drifted from main`);
+      if (page.outputPath === 'guides/index.html' || page.outputPath.startsWith('guides/')) {
+        // The restyle scopes on this header link, so every guide page must carry it.
+        assert.match(html, /<nav aria-label="Primary navigation">.*<a href="\/use-cases\/agent-collab\/">/);
+      }
+    }
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
 });
