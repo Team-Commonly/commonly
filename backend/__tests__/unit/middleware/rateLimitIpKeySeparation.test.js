@@ -64,6 +64,8 @@ const {
   authenticatedUserRateLimitKeyGenerator,
   loginEmailRateLimitKeyGenerator,
 } = require('../../../middleware/ipRateLimit');
+const { pgRoutesAreMounted } = require('../../../services/pgBootService');
+const { waitFor } = require('../../utils/testUtils');
 
 // Captured at MODULE LOAD, before any test can flip it. A baseline re-read inside
 // a test moves with a leak instead of catching it: measured, with the per-request
@@ -79,16 +81,20 @@ const ENTRY_NODE_ENV = process.env.NODE_ENV;
 // is needed — process.env is per test FILE (measured), so this assignment cannot
 // reach any other suite.
 process.env.PG_HOST = 'probe';
+let mockResolvePgInit;
 jest.mock('../../../config/db', () => jest.fn());
 jest.mock('../../../config/db-pg', () => {
   const actual = jest.requireActual('../../../config/db-pg');
   const pool = { query: jest.fn().mockResolvedValue({ rows: [] }), on: jest.fn(), end: jest.fn() };
   return { ...actual, connectPG: jest.fn().mockResolvedValue(pool) };
 });
-jest.mock('../../../config/init-pg-db', () => jest.fn().mockResolvedValue(true));
+jest.mock('../../../config/init-pg-db', () => jest.fn(() => new Promise((resolve) => {
+  mockResolvePgInit = resolve;
+})));
 jest.setTimeout(300000);
 
 const { app } = require('../../../server');
+const agentWebSocketService = require('../../../services/agentWebSocketService');
 
 // Each explicit policy is measured on the identity it declares; every other
 // limiter is measured on the CF-derived IP.
@@ -153,6 +159,11 @@ const single = (instance, dimension = 'cf') => {
     if (dimension === 'login-email') req.body = { email: req.get('x-probe-identity') };
     next();
   }, instance, (req, res) => {
+    // Marks the answer as this stub's. A probe socket can land on another local
+    // listener (measured: a mongod answered `GET /` with 200 under load), and
+    // that answer never reached the limiter, so `hit` retries it instead of
+    // reading it as a limiter that did not count.
+    res.set('x-probe-stub', '1');
     if (typeof req.rateLimit?.remaining === 'number') {
       res.set('x-probe-remaining', String(req.rateLimit.remaining));
     }
@@ -162,13 +173,26 @@ const single = (instance, dimension = 'cf') => {
   return stub;
 };
 
+const PROBE_ATTEMPTS = 3;
+
 const hit = async (stub, ip, identity = ip) => {
   const entry = process.env.NODE_ENV;
   let outcome;
   try {
     process.env.NODE_ENV = 'development';
-    const res = await request(stub).get('/').set('cf-connecting-ip', ip).set('x-probe-identity', identity)
-      .timeout({ response: 5000, deadline: 8000 });
+    let res;
+    // Only a stub answer can have reached the limiter, so only it is read. A
+    // foreign answer never counted, so it is retried; a third one fails the probe.
+    for (let attempt = 1; ; attempt += 1) {
+      // `Connection: close` keeps the probe off the global agent's keep-alive pool:
+      // a pooled socket can outlive its stub server and reset the next request.
+      // eslint-disable-next-line no-await-in-loop -- one probe socket at a time.
+      res = await request(stub).get('/').set('cf-connecting-ip', ip).set('x-probe-identity', identity)
+        .set('Connection', 'close')
+        .timeout({ response: 5000, deadline: 8000 });
+      if (res.headers['x-probe-stub']) break;
+      if (attempt === PROBE_ATTEMPTS) throw new Error(`misrouted ${PROBE_ATTEMPTS}x: status ${res.status}`);
+    }
     outcome = { remaining: remainingOf(res), status: res.status };
   } catch (err) {
     outcome = { error: String((err && err.message) || err).slice(0, 80) };
@@ -202,14 +226,18 @@ describe('TASK-126 ip key separation', () => {
   // file, the two controls included — the leak mutation was introduced by the
   // negative control, before the walk ever ran.
   afterAll(() => {
+    agentWebSocketService.stopPingInterval();
+    expect(agentWebSocketService.pingInterval).toBeNull();
     expect(process.env.NODE_ENV).toBe(ENTRY_NODE_ENV);
   });
 
   beforeAll(async () => {
-    // pg-messages and pg-status mount from promise callbacks (server.ts:380-400),
-    // so the walk has to wait for the PG connect to resolve or those limiters are
-    // invisible to it.
-    await new Promise((resolve) => { setTimeout(resolve, 2000); });
+    // The PG message router is mounted after connection and schema init. Hold
+    // schema init so the walk proves it waits for that mount, not a guessed delay.
+    await waitFor(() => typeof mockResolvePgInit === 'function');
+    expect(pgRoutesAreMounted()).toBe(false);
+    mockResolvePgInit(true);
+    await waitFor(pgRoutesAreMounted, { timeout: 10_000 });
     collect(app._router || app.router, '', walked, seen);
   });
 

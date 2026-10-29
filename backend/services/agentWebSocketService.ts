@@ -344,6 +344,10 @@ class AgentWebSocketService {
         }
       });
     }, 30000);
+    // The HTTP listener owns process lifetime. A heartbeat for existing
+    // sockets must not keep an otherwise idle process (or an app-importing
+    // test) alive after the listener closes.
+    this.pingInterval.unref();
   }
 
   stopPingInterval(): void {

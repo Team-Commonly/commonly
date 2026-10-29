@@ -915,12 +915,10 @@ describe('codex adapter — spawn()', () => {
     const proc = new EventEmitter();
     proc.stdout = new EventEmitter();
     proc.stderr = new EventEmitter();
-    proc.kill = jest.fn();
+    proc.kill = jest.fn(() => proc.emit('close', null));
     const impl = () => proc;
 
     const p = codex.spawn('x', { environment: { model: 'test-model' }, sessionId: null, timeoutMs: 20, _spawnImpl: impl });
-    setTimeout(() => proc.emit('close', null), 40);
-
     await expect(p).rejects.toThrow(/timed out after 20ms/);
     expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
   });
