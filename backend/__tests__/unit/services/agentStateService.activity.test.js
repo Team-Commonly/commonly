@@ -23,6 +23,10 @@ describe('deriveActivityBucket', () => {
     expect(deriveActivityBucket(minutesAgo(3), 'webhook')).toBe('active');
   });
 
+  test('seen seven minutes ago = idle, matching the five-minute connection window', () => {
+    expect(deriveActivityBucket(minutesAgo(7), 'webhook')).toBe('idle');
+  });
+
   test('seen within a day = idle', () => {
     expect(deriveActivityBucket(minutesAgo(120), 'webhook')).toBe('idle');
   });

@@ -388,9 +388,10 @@ export const TOOLS = [
     function: {
       name: 'commonly_agent_status',
       description:
-        'Check the connection status of every agent installed in this pod. '
+        'Check the connection status of every agent installed in this pod, and of '
+        + 'the asker\'s own agents in other pods (inThisPod: false). '
         + 'Returns each agent\'s runtime kind and state: active (seen in the last '
-        + '10 minutes), idle (last day), stale (silent for over a day), '
+        + '5 minutes), idle (last day), stale (silent for over a day), '
         + 'never-connected (a local/BYO seat whose runtime has never '
         + 'authenticated — the user still needs to link it from the connect '
         + 'page), or ready (a native agent; it runs when addressed and has no '

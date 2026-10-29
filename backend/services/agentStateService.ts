@@ -26,6 +26,7 @@
  * derives; the seam is what makes the honesty rules testable without a DB.
  */
 import { hostedRunsNative } from './hostedEngine';
+import { BYO_STALE_MS } from './agentConnectionStateService';
 
 export const AGENT_LISTENING_STALE_MS = 5 * 60 * 1000;
 
@@ -153,7 +154,10 @@ export function deriveAgentState(
 // Never add a "new" service without reading the path first; never name two
 // exports the same thing because they feel similar.
 
-const ACTIVE_WINDOW_MS = 10 * 60 * 1000; // active within 10 minutes
+// The same five minutes as the roster and Settings connection verdict
+// (agentConnectionStateService), so Scout and the page never disagree about
+// an agent that checked in seven minutes ago.
+const ACTIVE_WINDOW_MS = BYO_STALE_MS;
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000; // stale after a silent day
 
 export type AgentActivityBucket = 'active' | 'idle' | 'stale' | 'ready' | 'never-connected';

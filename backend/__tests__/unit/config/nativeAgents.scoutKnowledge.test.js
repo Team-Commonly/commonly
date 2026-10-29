@@ -302,4 +302,14 @@ describe('Scout running-state claims', () => {
     expect(prompt).toContain('Never judge that from earlier messages');
     expect(prompt).toContain('unless commonly_agent_status said so in this turn');
   });
+
+  // idle covers five minutes to a day, so a listener that stopped half an hour
+  // ago reads idle, not stale. Scout must give restart advice for it (rhea on #2969).
+  test('names every status bucket the tool returns, and gives restart advice for idle', () => {
+    for (const bucket of ['active:', 'idle:', 'stale:', 'never-connected', 'ready']) {
+      expect(prompt).toContain(bucket);
+    }
+    expect(prompt).toContain('idle and stale both mean its listener stopped');
+    expect(prompt).toContain('within the last 5 minutes');
+  });
 });
