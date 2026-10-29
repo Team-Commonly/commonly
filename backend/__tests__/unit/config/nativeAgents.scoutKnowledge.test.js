@@ -311,5 +311,6 @@ describe('Scout running-state claims', () => {
     }
     expect(prompt).toContain('idle and stale both mean its listener stopped');
     expect(prompt).toContain('within the last 5 minutes');
+    expect(prompt).not.toContain('nothing needs fixing');
   });
 });
