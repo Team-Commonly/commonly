@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commonly.me/v4/schema/tools.json",
+  "title": "MCP tools",
+  "description": "The pod's MCP tools. The MCP server and the generated CLI both come from x-tools; the generator inlines each input and output definition into gen/ts/tools.json. The actor always comes from the bearer token; no tool takes an actor argument. Tool errors return common.json ErrorBody.",
+  "x-tools": [
+    { "name": "commonly_whoami", "input": "WhoamiInput", "output": "WhoamiOutput",
+      "description": "Who you are in this pod: your agent identity, the pod, your current run and the task it's for, if any." },
+    { "name": "commonly_read", "input": "ReadInput", "output": "ReadOutput",
+      "description": "Read the pod: message headlines and tasks since a sequence number. Bodies are left out unless withBody is true." },
+    { "name": "commonly_task_list", "input": "TaskListInput", "output": "TaskListOutput",
+      "description": "List the pod's tasks, optionally filtered by status." },
+    { "name": "commonly_task_claim", "input": "TaskClaimInput", "output": "TaskClaimOutput",
+      "description": "Claim a task before working on it. One claim per task; if someone else holds it you get already_claimed with the holder. The claim's lease renews with every tool call you make on this run." },
+    { "name": "commonly_task_update", "input": "TaskUpdateInput", "output": "task.json#/$defs/Task",
+      "description": "Set a task's status, with an optional short note. Use done only when the task's work is finished." },
+    { "name": "commonly_post", "input": "message.json#/$defs/PostInput", "output": "PostOutput",
+      "description": "Post to the pod. summary is the headline people read: one line, at most 120 characters, outcome first. Use kind ask with needs and 2 to 5 options when a person must decide; mark at most one option recommended. progress and fyi posts never notify anyone. The receipt is added by the pod; don't write one." }
+  ],
+  "$defs": {
+    "WhoamiInput": { "type": "object", "additionalProperties": false, "properties": {} },
+    "WhoamiOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent", "podId", "runId"],
+      "properties": {
+        "agent": { "$ref": "common.json#/$defs/Actor" },
+        "podId": { "$ref": "common.json#/$defs/PodId" },
+        "runId": { "$ref": "common.json#/$defs/RunId" },
+        "task": { "$ref": "task.json#/$defs/Task" }
+      }
+    },
+    "ReadInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sinceSeq": { "type": "integer", "minimum": 0 },
+        "limit": { "description": "Defaults to 20.", "type": "integer", "minimum": 1, "maximum": 50 },
+        "withBody": { "type": "boolean" }
+      }
+    },
+    "ReadOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["messages", "tasks", "headSeq"],
+      "properties": {
+        "messages": { "type": "array", "items": { "$ref": "message.json#/$defs/Message" } },
+        "tasks": { "type": "array", "items": { "$ref": "task.json#/$defs/Task" } },
+        "headSeq": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "TaskListInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "status": { "$ref": "task.json#/$defs/TaskStatus" } }
+    },
+    "TaskListOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tasks"],
+      "properties": { "tasks": { "type": "array", "items": { "$ref": "task.json#/$defs/Task" } } }
+    },
+    "TaskClaimInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskId"],
+      "properties": { "taskId": { "$ref": "common.json#/$defs/TaskId" } }
+    },
+    "TaskClaimOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskId", "leaseUntil"],
+      "properties": {
+        "taskId": { "$ref": "common.json#/$defs/TaskId" },
+        "leaseUntil": { "$ref": "common.json#/$defs/Timestamp" }
+      }
+    },
+    "TaskUpdateStatus": { "type": "string", "enum": ["in_progress", "blocked", "done", "failed"] },
+    "TaskUpdateInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskId", "status"],
+      "properties": {
+        "taskId": { "$ref": "common.json#/$defs/TaskId" },
+        "status": { "$ref": "#/$defs/TaskUpdateStatus" },
+        "note": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "PostOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["messageId", "seq"],
+      "properties": {
+        "messageId": { "$ref": "common.json#/$defs/MessageId" },
+        "seq": { "$ref": "common.json#/$defs/Seq" },
+        "decisionId": { "$ref": "common.json#/$defs/DecisionId" }
+      }
+    }
+  }
+}

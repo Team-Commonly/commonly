@@ -27,13 +27,16 @@ jobs:
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - name: Generated contracts match the schema
-        run: |
-          if [ ! -f Makefile ] || ! grep -q '^gen:' Makefile; then
-            echo "::notice::no 'make gen' target yet; skipping"; exit 0
-          fi
-          make gen
-          git diff --exit-code
+        run: make check-gen
+      - name: Fixtures validate (ajv) and generated TS type-checks
+        run: make test-ts
 
   worker:
     runs-on: ubuntu-latest
@@ -50,10 +53,11 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - name: Daemon, ACP and TUI tests
-        run: |
-          if [ ! -f go.mod ]; then echo "::notice::no go.mod yet; skipping"; exit 0; fi
-          go vet ./... && go test -race ./...
+        run: make test-go
 
   install:
     runs-on: ubuntu-latest
@@ -85,7 +89,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          if [ ! -f worker/wrangler.toml ]; then echo "::notice::no worker/wrangler.toml yet; skipping"; exit 0; fi
+          if [ ! -f worker/wrangler.toml ] && [ ! -f worker/wrangler.jsonc ]; then echo "::notice::no worker/wrangler config yet; skipping"; exit 0; fi
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
             echo "::warning::CLOUDFLARE_API_TOKEN secret not set yet (owner action, spec §7); preview skipped"; exit 0
           fi

@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commonly.me/v4/schema/message.json",
+  "title": "Messages",
+  "description": "The message contract. PostInput is what an agent writes through commonly_post. Message is what the pod stores and sends: PostInput plus fields only the server sets. A post that carries a server-set field fails validation, because PostInput allows no other properties.",
+  "x-rules": [
+    "needs is required when kind is ask, and only allowed then.",
+    "options is required when kind is ask, and only allowed then. At most one option is recommended, and option ids are unique.",
+    "A post without summary is refused with summary_required, not derived.",
+    "A human post (the message.post socket event) is stored as kind fyi, status done, body = text and summary = the first line of text cut to 120 characters.",
+    "receipt is set on every agent post and never on a human post. decision is set exactly when kind is ask.",
+    "A decision is ruled once. A second ruling gets already_ruled and the first stays."
+  ],
+  "$defs": {
+    "MessageKind": { "type": "string", "enum": ["result", "ask", "progress", "fyi", "error"] },
+    "MessageStatus": { "type": "string", "enum": ["done", "in_progress", "blocked", "failed"] },
+    "NeedsAction": { "type": "string", "enum": ["approve", "decide", "review", "answer", "unblock"] },
+    "MemberRole": { "type": "string", "enum": ["member", "owner"] },
+    "NeedsTarget": {
+      "description": "Exactly one of userIds or role.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "maxProperties": 1,
+      "properties": {
+        "userIds": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "$ref": "common.json#/$defs/UserId" } },
+        "role": { "$ref": "#/$defs/MemberRole" }
+      }
+    },
+    "Needs": {
+      "description": "The only field that notifies anyone. progress and fyi posts never notify.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["to", "action"],
+      "properties": {
+        "to": { "$ref": "#/$defs/NeedsTarget" },
+        "action": { "$ref": "#/$defs/NeedsAction" }
+      }
+    },
+    "OptionId": { "type": "string", "enum": ["a", "b", "c", "d", "e"] },
+    "Option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label"],
+      "properties": {
+        "id": { "$ref": "#/$defs/OptionId" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "description": { "type": "string", "maxLength": 160 },
+        "recommended": { "type": "boolean" }
+      }
+    },
+    "LinkType": { "type": "string", "enum": ["pr", "commit", "task", "doc", "file", "log"] },
+    "Link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "url", "type"],
+      "properties": {
+        "label": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "url": {
+          "description": "https only, and no credentials in the URL.",
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^https://[^/\\s@]+(/[^\\s]*)?$"
+        },
+        "type": { "$ref": "#/$defs/LinkType" }
+      }
+    },
+    "WakeReason": { "type": "string", "enum": ["task_assigned", "mention", "decision_ruled"] },
+    "Receipt": {
+      "description": "Stamped by the pod from the run record. An agent can't write any of it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "agentId", "computerId", "harness", "startedAt", "postedAt", "toolCalls", "wakeReason"],
+      "properties": {
+        "runId": { "$ref": "common.json#/$defs/RunId" },
+        "agentId": { "$ref": "common.json#/$defs/AgentId" },
+        "computerId": { "$ref": "common.json#/$defs/ComputerId" },
+        "harness": { "$ref": "common.json#/$defs/Harness" },
+        "harnessVersion": { "description": "Reported by the daemon at session start.", "type": "string", "maxLength": 64 },
+        "startedAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "postedAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "toolCalls": { "description": "MCP calls the pod saw on this run's token.", "type": "integer", "minimum": 0 },
+        "taskId": { "$ref": "common.json#/$defs/TaskId" },
+        "wakeReason": { "$ref": "#/$defs/WakeReason" }
+      }
+    },
+    "DecisionState": { "type": "string", "enum": ["open", "ruled", "expired"] },
+    "Ruling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["optionId", "by", "at"],
+      "properties": {
+        "optionId": { "$ref": "#/$defs/OptionId" },
+        "by": { "$ref": "common.json#/$defs/Actor" },
+        "at": { "$ref": "common.json#/$defs/Timestamp" }
+      }
+    },
+    "Decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "state"],
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/DecisionId" },
+        "state": { "$ref": "#/$defs/DecisionState" },
+        "ruling": { "$ref": "#/$defs/Ruling" }
+      }
+    },
+    "PostInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "kind", "status"],
+      "properties": {
+        "summary": {
+          "description": "The headline, outcome first. One line, at most 120 characters.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "pattern": "^[^\\r\\n]*$"
+        },
+        "kind": { "$ref": "#/$defs/MessageKind" },
+        "status": { "$ref": "#/$defs/MessageStatus" },
+        "needs": { "$ref": "#/$defs/Needs" },
+        "options": { "type": "array", "minItems": 2, "maxItems": 5, "items": { "$ref": "#/$defs/Option" } },
+        "taskId": { "$ref": "common.json#/$defs/TaskId" },
+        "links": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/Link" } },
+        "caveat": { "description": "What isn't verified.", "type": "string", "maxLength": 160 },
+        "body": { "description": "Markdown. Folded by default in clients.", "type": "string", "maxLength": 16384 }
+      }
+    },
+    "Message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "seq", "podId", "author", "createdAt", "summary", "kind", "status"],
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/MessageId" },
+        "seq": { "$ref": "common.json#/$defs/Seq" },
+        "podId": { "$ref": "common.json#/$defs/PodId" },
+        "author": { "$ref": "common.json#/$defs/Actor" },
+        "createdAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "runId": { "$ref": "common.json#/$defs/RunId" },
+        "threadOf": { "$ref": "common.json#/$defs/MessageId" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 120, "pattern": "^[^\\r\\n]*$" },
+        "kind": { "$ref": "#/$defs/MessageKind" },
+        "status": { "$ref": "#/$defs/MessageStatus" },
+        "needs": { "$ref": "#/$defs/Needs" },
+        "options": { "type": "array", "minItems": 2, "maxItems": 5, "items": { "$ref": "#/$defs/Option" } },
+        "taskId": { "$ref": "common.json#/$defs/TaskId" },
+        "links": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/Link" } },
+        "caveat": { "type": "string", "maxLength": 160 },
+        "body": { "type": "string", "maxLength": 16384 },
+        "decision": { "$ref": "#/$defs/Decision" },
+        "receipt": { "$ref": "#/$defs/Receipt" }
+      }
+    }
+  }
+}

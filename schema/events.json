@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commonly.me/v4/schema/events.json",
+  "title": "Socket events",
+  "description": "Every WebSocket frame, in both directions, is an Envelope. x-variants maps each type to the definition its data must match and the direction it travels: s2c is pod to client, c2s is client to pod, local is daemon to TUI over the unix socket only. The TUI talks to the daemon with this same envelope.",
+  "x-rules": [
+    "seq and ts are set on s2c frames only. A c2s frame that carries either is refused.",
+    "subscribe with sinceSeq replays every event after it, in order, with no gaps.",
+    "run.wake is sent only to the computer that hosts the agent. Wakes for one agent coalesce: one pending wake means one turn. An un-acked wake is re-sent on the next heartbeat after 60 s.",
+    "A wake row is written only for the agent a change addresses: a task assigned to it, an @mention of it, or a ruling on its own ask. Ambient messages write none."
+  ],
+  "x-variants": {
+    "hello": { "dir": "s2c", "data": "Hello" },
+    "message.created": { "dir": "s2c", "data": "message.json#/$defs/Message" },
+    "message.updated": { "dir": "s2c", "data": "MessageUpdated" },
+    "task.created": { "dir": "s2c", "data": "task.json#/$defs/Task" },
+    "task.updated": { "dir": "s2c", "data": "task.json#/$defs/Task" },
+    "task.claimed": { "dir": "s2c", "data": "TaskClaimed" },
+    "presence.changed": { "dir": "s2c", "data": "PresenceChanged" },
+    "run.wake": { "dir": "s2c", "data": "RunWake" },
+    "error": { "dir": "s2c", "data": "common.json#/$defs/ErrorBody" },
+    "subscribe": { "dir": "c2s", "data": "Subscribe" },
+    "message.post": { "dir": "c2s", "data": "MessagePost" },
+    "task.create": { "dir": "c2s", "data": "TaskCreate" },
+    "decision.rule": { "dir": "c2s", "data": "DecisionRule" },
+    "presence.heartbeat": { "dir": "c2s", "data": "PresenceHeartbeat" },
+    "wake.ack": { "dir": "c2s", "data": "WakeAck" },
+    "daemon.status": { "dir": "local", "data": "DaemonStatus" }
+  },
+  "$defs": {
+    "EventType": {
+      "type": "string",
+      "enum": [
+        "hello", "message.created", "message.updated", "task.created", "task.updated", "task.claimed",
+        "presence.changed", "run.wake", "error", "subscribe", "message.post", "task.create",
+        "decision.rule", "presence.heartbeat", "wake.ack", "daemon.status"
+      ]
+    },
+    "Envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "type", "podId", "data"],
+      "properties": {
+        "v": { "type": "integer", "const": 1 },
+        "type": { "$ref": "#/$defs/EventType" },
+        "seq": { "$ref": "common.json#/$defs/Seq" },
+        "podId": { "$ref": "common.json#/$defs/PodId" },
+        "ts": { "$ref": "common.json#/$defs/Timestamp" },
+        "actor": { "$ref": "common.json#/$defs/Actor" },
+        "data": { "description": "Matches the definition x-variants names for type.", "type": "object" }
+      }
+    },
+    "Member": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor", "role"],
+      "properties": {
+        "actor": { "$ref": "common.json#/$defs/Actor" },
+        "role": { "$ref": "message.json#/$defs/MemberRole" }
+      }
+    },
+    "PresenceState": { "type": "string", "enum": ["online", "offline", "working"] },
+    "AgentPresence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent", "harness", "computerId", "state"],
+      "properties": {
+        "agent": { "$ref": "common.json#/$defs/Actor" },
+        "harness": { "$ref": "common.json#/$defs/Harness" },
+        "computerId": { "$ref": "common.json#/$defs/ComputerId" },
+        "state": { "$ref": "#/$defs/PresenceState" }
+      }
+    },
+    "Hello": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["podId", "headSeq", "you", "members", "agents"],
+      "properties": {
+        "podId": { "$ref": "common.json#/$defs/PodId" },
+        "headSeq": { "description": "0 for an empty pod.", "type": "integer", "minimum": 0 },
+        "you": { "$ref": "common.json#/$defs/Actor" },
+        "members": { "type": "array", "items": { "$ref": "#/$defs/Member" } },
+        "agents": { "type": "array", "items": { "$ref": "#/$defs/AgentPresence" } }
+      }
+    },
+    "MessageUpdated": {
+      "description": "Only a decision changes after a message is created. The summary never changes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "decision"],
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/MessageId" },
+        "decision": { "$ref": "message.json#/$defs/Decision" }
+      }
+    },
+    "TaskClaimed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskId", "by", "runId", "leaseUntil"],
+      "properties": {
+        "taskId": { "$ref": "common.json#/$defs/TaskId" },
+        "by": { "$ref": "common.json#/$defs/Actor" },
+        "runId": { "$ref": "common.json#/$defs/RunId" },
+        "leaseUntil": { "$ref": "common.json#/$defs/Timestamp" }
+      }
+    },
+    "PresenceChanged": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor", "state"],
+      "properties": {
+        "actor": { "$ref": "common.json#/$defs/Actor" },
+        "state": { "$ref": "#/$defs/PresenceState" },
+        "computerId": { "$ref": "common.json#/$defs/ComputerId" }
+      }
+    },
+    "WakeRefs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "taskId": { "$ref": "common.json#/$defs/TaskId" },
+        "messageId": { "$ref": "common.json#/$defs/MessageId" },
+        "decisionId": { "$ref": "common.json#/$defs/DecisionId" }
+      }
+    },
+    "RunWake": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wakeId", "agentId", "reason", "refs"],
+      "properties": {
+        "wakeId": { "$ref": "common.json#/$defs/WakeId" },
+        "agentId": { "$ref": "common.json#/$defs/AgentId" },
+        "reason": { "$ref": "message.json#/$defs/WakeReason" },
+        "refs": { "$ref": "#/$defs/WakeRefs" }
+      }
+    },
+    "Subscribe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sinceSeq"],
+      "properties": { "sinceSeq": { "description": "0 replays from the start of the kept log.", "type": "integer", "minimum": 0 } }
+    },
+    "MessagePost": {
+      "description": "A human post.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1, "maxLength": 16384 },
+        "threadOf": { "$ref": "common.json#/$defs/MessageId" }
+      }
+    },
+    "TaskCreate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "assignee": { "$ref": "common.json#/$defs/ActorId" },
+        "body": { "type": "string", "maxLength": 16384 }
+      }
+    },
+    "DecisionRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decisionId", "optionId"],
+      "properties": {
+        "decisionId": { "$ref": "common.json#/$defs/DecisionId" },
+        "optionId": { "$ref": "message.json#/$defs/OptionId" }
+      }
+    },
+    "PresenceHeartbeat": {
+      "description": "Every 15 s from the daemon.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "computerId": { "$ref": "common.json#/$defs/ComputerId" } }
+    },
+    "WakeAck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wakeId"],
+      "properties": { "wakeId": { "$ref": "common.json#/$defs/WakeId" } }
+    },
+    "ComputerStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "online"],
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/ComputerId" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "online": { "type": "boolean" }
+      }
+    },
+    "RunStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "agentId", "startedAt"],
+      "properties": {
+        "runId": { "$ref": "common.json#/$defs/RunId" },
+        "agentId": { "$ref": "common.json#/$defs/AgentId" },
+        "startedAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "taskId": { "$ref": "common.json#/$defs/TaskId" }
+      }
+    },
+    "DaemonStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["computers", "agents", "runs"],
+      "properties": {
+        "computers": { "type": "array", "items": { "$ref": "#/$defs/ComputerStatus" } },
+        "agents": { "type": "array", "items": { "$ref": "#/$defs/AgentPresence" } },
+        "runs": { "type": "array", "items": { "$ref": "#/$defs/RunStatus" } }
+      }
+    }
+  }
+}

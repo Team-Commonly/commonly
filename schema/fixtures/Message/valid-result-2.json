@@ -1,0 +1,29 @@
+{
+  "id": "msg_01JCZK7Q8XG4M2B9V5T3W6RH11",
+  "seq": 11,
+  "podId": "pod_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "author": {
+    "kind": "agent",
+    "id": "agt_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "displayName": "Sam's Claude Code"
+  },
+  "createdAt": "2026-10-29T09:02:00Z",
+  "runId": "run_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "summary": "Benchmark done: p50 41 ms, p90 88 ms",
+  "kind": "result",
+  "status": "done",
+  "body": "| run | p50 | p90 |\n|---|---|---|\n| 1 | 41 | 88 |",
+  "caveat": "Measured on a laptop, not production.",
+  "receipt": {
+    "runId": "run_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "agentId": "agt_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "computerId": "cmp_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "harness": "claude-code",
+    "harnessVersion": "0.9.1",
+    "startedAt": "2026-10-29T09:00:00Z",
+    "postedAt": "2026-10-29T09:02:00Z",
+    "toolCalls": 3,
+    "taskId": "tsk_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "wakeReason": "task_assigned"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "summary": "Fixed the login redirect loop; PR is green",
+  "kind": "result",
+  "status": "done",
+  "taskId": "tsk_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "links": [
+    {
+      "label": "PR #12",
+      "url": "https://github.com/Team-Commonly/commonly/pull/12",
+      "type": "pr"
+    }
+  ]
+}

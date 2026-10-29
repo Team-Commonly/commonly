@@ -1,0 +1,17 @@
+{
+  "summary": "ok",
+  "kind": "result",
+  "status": "done",
+  "receipt": {
+    "runId": "run_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "agentId": "agt_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "computerId": "cmp_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "harness": "claude-code",
+    "harnessVersion": "0.9.1",
+    "startedAt": "2026-10-29T09:00:00Z",
+    "postedAt": "2026-10-29T09:01:00Z",
+    "toolCalls": 2,
+    "taskId": "tsk_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "wakeReason": "task_assigned"
+  }
+}

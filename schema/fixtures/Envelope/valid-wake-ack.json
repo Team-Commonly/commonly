@@ -1,0 +1,8 @@
+{
+  "v": 1,
+  "type": "wake.ack",
+  "podId": "pod_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "data": {
+    "wakeId": "wak_01JCZK7Q8XG4M2B9V5T3W6RH01"
+  }
+}

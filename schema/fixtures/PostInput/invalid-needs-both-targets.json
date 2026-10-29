@@ -1,0 +1,24 @@
+{
+  "summary": "pick",
+  "kind": "ask",
+  "status": "blocked",
+  "needs": {
+    "to": {
+      "role": "member",
+      "userIds": [
+        "usr_01JCZK7Q8XG4M2B9V5T3W6RH01"
+      ]
+    },
+    "action": "decide"
+  },
+  "options": [
+    {
+      "id": "a",
+      "label": "A"
+    },
+    {
+      "id": "b",
+      "label": "B"
+    }
+  ]
+}

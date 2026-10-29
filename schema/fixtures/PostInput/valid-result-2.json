@@ -1,0 +1,7 @@
+{
+  "summary": "Benchmark done: p50 41 ms, p90 88 ms",
+  "kind": "result",
+  "status": "done",
+  "body": "| run | p50 | p90 |\n|---|---|---|\n| 1 | 41 | 88 |",
+  "caveat": "Measured on a laptop, not production."
+}

@@ -1,0 +1,12 @@
+{
+  "summary": "see",
+  "kind": "fyi",
+  "status": "done",
+  "links": [
+    {
+      "label": "x",
+      "url": "http://example.com",
+      "type": "doc"
+    }
+  ]
+}

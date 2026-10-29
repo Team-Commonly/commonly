@@ -1,0 +1,12 @@
+{
+  "summary": "Migrated 3 tables; no rows lost",
+  "kind": "result",
+  "status": "done",
+  "links": [
+    {
+      "label": "log",
+      "url": "https://example.com/log/1",
+      "type": "log"
+    }
+  ]
+}

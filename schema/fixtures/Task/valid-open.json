@@ -1,0 +1,13 @@
+{
+  "id": "tsk_01JCZK7Q8XG4M2B9V5T3W6RH02",
+  "podId": "pod_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "title": "Write the README",
+  "status": "open",
+  "createdBy": {
+    "kind": "human",
+    "id": "usr_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "displayName": "Sam"
+  },
+  "createdAt": "2026-10-29T09:00:00Z",
+  "updatedAt": "2026-10-29T09:00:00Z"
+}

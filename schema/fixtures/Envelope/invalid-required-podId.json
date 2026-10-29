@@ -1,0 +1,7 @@
+{
+  "v": 1,
+  "type": "subscribe",
+  "data": {
+    "sinceSeq": 1
+  }
+}

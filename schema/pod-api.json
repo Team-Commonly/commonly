@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commonly.me/v4/schema/pod-api.json",
+  "title": "Worker HTTP API",
+  "description": "Request and response bodies for the Worker's HTTP routes. Every error response body is common.json ErrorBody. The Worker validates, authenticates, then calls the pod Durable Object; all authorization lives in the pod, never the client.",
+  "x-routes": [
+    { "method": "POST", "path": "/v1/auth/device", "auth": "none", "response": "DeviceStartResponse" },
+    { "method": "POST", "path": "/v1/auth/device/token", "auth": "none", "request": "DeviceTokenRequest", "response": "DeviceTokenResponse" },
+    { "method": "POST", "path": "/v1/pods", "auth": "user", "request": "CreatePodRequest", "response": "Pod" },
+    { "method": "POST", "path": "/v1/pods/:pod/invites", "auth": "user", "request": "CreateInviteRequest", "response": "Invite" },
+    { "method": "POST", "path": "/v1/invites/:code/accept", "auth": "user", "response": "AcceptInviteResponse" },
+    { "method": "POST", "path": "/v1/computers", "auth": "user", "request": "RegisterComputerRequest", "response": "RegisterComputerResponse" },
+    { "method": "POST", "path": "/v1/pods/:pod/agents", "auth": "computer", "request": "RegisterAgentRequest", "response": "RegisterAgentResponse" },
+    { "method": "GET", "path": "/v1/pods/:pod/ws", "auth": "user|computer", "upgrade": "websocket" },
+    { "method": "POST", "path": "/v1/runs", "auth": "computer", "request": "ClaimRunRequest", "response": "ClaimRunResponse" },
+    { "method": "POST", "path": "/v1/runs/:run/end", "auth": "computer", "request": "EndRunRequest" },
+    { "method": "POST", "path": "/mcp", "auth": "run|user", "protocol": "mcp-streamable-http, stateless" }
+  ],
+  "x-rules": [
+    "/__test/* routes exist only when ENV is local or preview, and are absent from the production bundle.",
+    "A device code polled before approval gets authorization_pending; after approval exactly one exchange succeeds and the next gets invalid_grant; an expired code gets expired_token.",
+    "A used or expired invite gets gone (HTTP 410). Only a member can create an invite."
+  ],
+  "$defs": {
+    "DeviceStartResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deviceCode", "userCode", "verificationUri", "interval", "expiresIn"],
+      "properties": {
+        "deviceCode": { "type": "string", "minLength": 32, "maxLength": 128 },
+        "userCode": { "description": "What the person types on the sign-in page, e.g. WDJB-MJHT.", "type": "string", "pattern": "^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$" },
+        "verificationUri": { "type": "string", "pattern": "^https?://" },
+        "interval": { "description": "Seconds between polls.", "type": "integer", "minimum": 1 },
+        "expiresIn": { "description": "Seconds until the code expires.", "type": "integer", "minimum": 1 }
+      }
+    },
+    "DeviceTokenRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deviceCode"],
+      "properties": { "deviceCode": { "type": "string", "minLength": 32, "maxLength": 128 } }
+    },
+    "DeviceTokenResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token", "user", "expiresAt"],
+      "properties": {
+        "token": { "$ref": "tokens.json#/$defs/UserToken" },
+        "user": { "$ref": "common.json#/$defs/Actor" },
+        "expiresAt": { "$ref": "common.json#/$defs/Timestamp" }
+      }
+    },
+    "CreatePodRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": { "name": { "type": "string", "minLength": 1, "maxLength": 80 } }
+    },
+    "Pod": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "createdAt"],
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/PodId" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "createdAt": { "$ref": "common.json#/$defs/Timestamp" }
+      }
+    },
+    "CreateInviteRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxUses": { "description": "Defaults to 1.", "type": "integer", "minimum": 1, "maximum": 100 },
+        "ttlSeconds": { "description": "Defaults to 7 days.", "type": "integer", "minimum": 60, "maximum": 2592000 }
+      }
+    },
+    "Invite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "url", "expiresAt", "usesLeft"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^inv_[0-9A-Za-z]{22}$" },
+        "url": { "type": "string", "pattern": "^https?://" },
+        "expiresAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "usesLeft": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "AcceptInviteResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pod"],
+      "properties": { "pod": { "$ref": "#/$defs/Pod" } }
+    },
+    "OS": { "type": "string", "enum": ["darwin", "linux"] },
+    "Arch": { "type": "string", "enum": ["arm64", "amd64"] },
+    "RegisterComputerRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "os", "arch"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "os": { "$ref": "#/$defs/OS" },
+        "arch": { "$ref": "#/$defs/Arch" }
+      }
+    },
+    "RegisterComputerResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["computerId", "token"],
+      "properties": {
+        "computerId": { "$ref": "common.json#/$defs/ComputerId" },
+        "token": { "$ref": "tokens.json#/$defs/ComputerToken" }
+      }
+    },
+    "RegisterAgentRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["harness", "displayName"],
+      "properties": {
+        "harness": { "$ref": "common.json#/$defs/Harness" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 80 }
+      }
+    },
+    "RegisterAgentResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agentId"],
+      "properties": { "agentId": { "$ref": "common.json#/$defs/AgentId" } }
+    },
+    "ClaimRunRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wakeId"],
+      "properties": { "wakeId": { "$ref": "common.json#/$defs/WakeId" } }
+    },
+    "ClaimRunResponse": {
+      "description": "The brief is built by the server and sent as the agent's first prompt. The run token goes to the agent; the computer token never does.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "runToken", "brief", "mcpUrl", "expiresAt"],
+      "properties": {
+        "runId": { "$ref": "common.json#/$defs/RunId" },
+        "runToken": { "$ref": "tokens.json#/$defs/RunToken" },
+        "brief": { "type": "string", "minLength": 1, "maxLength": 32768 },
+        "mcpUrl": { "type": "string", "pattern": "^https?://" },
+        "expiresAt": { "$ref": "common.json#/$defs/Timestamp" }
+      }
+    },
+    "RunOutcome": { "type": "string", "enum": ["completed", "failed", "cancelled"] },
+    "EndRunRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome"],
+      "properties": {
+        "outcome": { "$ref": "#/$defs/RunOutcome" },
+        "harnessVersion": { "type": "string", "maxLength": 64 }
+      }
+    }
+  }
+}

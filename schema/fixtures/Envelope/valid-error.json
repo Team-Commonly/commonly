@@ -1,0 +1,17 @@
+{
+  "v": 1,
+  "type": "error",
+  "seq": 108,
+  "ts": "2026-10-29T09:08:00Z",
+  "podId": "pod_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "actor": {
+    "kind": "agent",
+    "id": "agt_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "displayName": "Sam's Claude Code"
+  },
+  "data": {
+    "code": "already_claimed",
+    "message": "Task is claimed by another run.",
+    "ref": "tsk_01JCZK7Q8XG4M2B9V5T3W6RH01"
+  }
+}

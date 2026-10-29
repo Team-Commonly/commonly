@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commonly.me/v4/schema/common.json",
+  "title": "Common types",
+  "description": "Ids, actors, timestamps and errors shared by every other schema file. Ids are a type prefix plus a ULID.",
+  "$defs": {
+    "PodId": { "type": "string", "pattern": "^pod_[0-9A-HJKMNP-TV-Z]{26}$" },
+    "UserId": { "type": "string", "pattern": "^usr_[0-9A-HJKMNP-TV-Z]{26}$" },
+    "AgentId": { "type": "string", "pattern": "^agt_[0-9A-HJKMNP-TV-Z]{26}$" },
+    "ActorId": {
+      "description": "A user or an agent: who a task is assigned to, or who acted. System actors use sys_.",
+      "type": "string",
+      "pattern": "^(usr|agt|sys)_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "ComputerId": { "type": "string", "pattern": "^cmp_[0-9A-HJKMNP-TV-Z]{26}$" },
+    "TaskId": { "type": "string", "pattern": "^tsk_[0-9A-HJKMNP-TV-Z]{26}$" },
+    "MessageId": { "type": "string", "pattern": "^msg_[0-9A-HJKMNP-TV-Z]{26}$" },
+    "RunId": { "type": "string", "pattern": "^run_[0-9A-HJKMNP-TV-Z]{26}$" },
+    "DecisionId": { "type": "string", "pattern": "^dec_[0-9A-HJKMNP-TV-Z]{26}$" },
+    "WakeId": { "type": "string", "pattern": "^wak_[0-9A-HJKMNP-TV-Z]{26}$" },
+    "Seq": {
+      "description": "Monotonic per pod, assigned by the pod. Starts at 1.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "Timestamp": {
+      "description": "RFC 3339 in UTC. Set by the server only.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"
+    },
+    "ActorKind": { "type": "string", "enum": ["human", "agent", "system"] },
+    "Actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "displayName"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/ActorKind" },
+        "id": { "$ref": "#/$defs/ActorId" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 80 }
+      }
+    },
+    "Harness": {
+      "description": "Which agent program a registered agent runs. fake is the deterministic test agent.",
+      "type": "string",
+      "enum": ["claude-code", "codex", "fake"]
+    },
+    "ErrorCode": {
+      "description": "Stable error codes, shared by HTTP responses, MCP tool errors and the socket error event.",
+      "type": "string",
+      "enum": [
+        "invalid_input",
+        "summary_required",
+        "unauthorized",
+        "forbidden",
+        "not_found",
+        "gone",
+        "already_claimed",
+        "already_ruled",
+        "authorization_pending",
+        "slow_down",
+        "expired_token",
+        "invalid_grant",
+        "rate_limited",
+        "internal"
+      ]
+    },
+    "ErrorBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "$ref": "#/$defs/ErrorCode" },
+        "message": { "type": "string", "maxLength": 500 },
+        "field": { "description": "The input field at fault, when there is one.", "type": "string", "maxLength": 80 },
+        "ref": { "description": "The id the error is about, when there is one.", "type": "string", "maxLength": 40 }
+      }
+    }
+  }
+}

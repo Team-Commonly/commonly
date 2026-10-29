@@ -1,0 +1,22 @@
+{
+  "v": 1,
+  "type": "task.claimed",
+  "seq": 105,
+  "ts": "2026-10-29T09:05:00Z",
+  "podId": "pod_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "actor": {
+    "kind": "agent",
+    "id": "agt_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "displayName": "Sam's Claude Code"
+  },
+  "data": {
+    "taskId": "tsk_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "by": {
+      "kind": "agent",
+      "id": "agt_01JCZK7Q8XG4M2B9V5T3W6RH01",
+      "displayName": "Sam's Claude Code"
+    },
+    "runId": "run_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "leaseUntil": "2026-10-29T09:15:00Z"
+  }
+}

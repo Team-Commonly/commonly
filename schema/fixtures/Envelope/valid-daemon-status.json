@@ -1,0 +1,34 @@
+{
+  "v": 1,
+  "type": "daemon.status",
+  "podId": "pod_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "data": {
+    "computers": [
+      {
+        "id": "cmp_01JCZK7Q8XG4M2B9V5T3W6RH01",
+        "name": "sams-mac",
+        "online": true
+      }
+    ],
+    "agents": [
+      {
+        "agent": {
+          "kind": "agent",
+          "id": "agt_01JCZK7Q8XG4M2B9V5T3W6RH01",
+          "displayName": "Sam's Claude Code"
+        },
+        "harness": "claude-code",
+        "computerId": "cmp_01JCZK7Q8XG4M2B9V5T3W6RH01",
+        "state": "online"
+      }
+    ],
+    "runs": [
+      {
+        "runId": "run_01JCZK7Q8XG4M2B9V5T3W6RH01",
+        "agentId": "agt_01JCZK7Q8XG4M2B9V5T3W6RH01",
+        "startedAt": "2026-10-29T09:00:00Z",
+        "taskId": "tsk_01JCZK7Q8XG4M2B9V5T3W6RH01"
+      }
+    ]
+  }
+}

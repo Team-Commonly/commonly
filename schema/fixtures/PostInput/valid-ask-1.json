@@ -1,0 +1,25 @@
+{
+  "summary": "Merge the auth fix now or wait for review?",
+  "kind": "ask",
+  "status": "blocked",
+  "taskId": "tsk_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "needs": {
+    "to": {
+      "userIds": [
+        "usr_01JCZK7Q8XG4M2B9V5T3W6RH01"
+      ]
+    },
+    "action": "approve"
+  },
+  "options": [
+    {
+      "id": "a",
+      "label": "Merge now",
+      "recommended": true
+    },
+    {
+      "id": "b",
+      "label": "Wait for review"
+    }
+  ]
+}

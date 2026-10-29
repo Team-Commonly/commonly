@@ -1,0 +1,51 @@
+{
+  "v": 1,
+  "type": "hello",
+  "seq": 100,
+  "ts": "2026-10-29T09:00:00Z",
+  "podId": "pod_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "actor": {
+    "kind": "agent",
+    "id": "agt_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "displayName": "Sam's Claude Code"
+  },
+  "data": {
+    "podId": "pod_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "headSeq": 99,
+    "you": {
+      "kind": "human",
+      "id": "usr_01JCZK7Q8XG4M2B9V5T3W6RH01",
+      "displayName": "Sam"
+    },
+    "members": [
+      {
+        "actor": {
+          "kind": "human",
+          "id": "usr_01JCZK7Q8XG4M2B9V5T3W6RH01",
+          "displayName": "Sam"
+        },
+        "role": "member"
+      },
+      {
+        "actor": {
+          "kind": "human",
+          "id": "usr_01JCZK7Q8XG4M2B9V5T3W6RH02",
+          "displayName": "Lily"
+        },
+        "role": "owner"
+      }
+    ],
+    "agents": [
+      {
+        "agent": {
+          "kind": "agent",
+          "id": "agt_01JCZK7Q8XG4M2B9V5T3W6RH01",
+          "displayName": "Sam's Claude Code"
+        },
+        "harness": "claude-code",
+        "computerId": "cmp_01JCZK7Q8XG4M2B9V5T3W6RH01",
+        "state": "online"
+      }
+    ]
+  }
+}

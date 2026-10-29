@@ -1,0 +1,13 @@
+{
+  "summary": "Test suite crashed on startup",
+  "kind": "error",
+  "status": "failed",
+  "body": "Error: cannot find module ./gen\n    at load (index.ts:3)",
+  "links": [
+    {
+      "label": "CI run",
+      "url": "https://github.com/Team-Commonly/commonly/actions/runs/1",
+      "type": "log"
+    }
+  ]
+}

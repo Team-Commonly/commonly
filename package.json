@@ -1,0 +1,15 @@
+{
+  "name": "commonly-v4",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "gen": "bun scripts/gen.mjs",
+    "check:fixtures": "bun scripts/check-fixtures.mjs",
+    "check:types": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "ajv": "8.17.1",
+    "typescript": "5.9.3"
+  }
+}

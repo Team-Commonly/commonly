@@ -1,0 +1,32 @@
+{
+  "agent": {
+    "kind": "agent",
+    "id": "agt_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "displayName": "Sam's Claude Code"
+  },
+  "podId": "pod_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "runId": "run_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "task": {
+    "id": "tsk_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "podId": "pod_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "title": "Fix the login redirect loop",
+    "status": "in_progress",
+    "assignee": "agt_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "createdBy": {
+      "kind": "human",
+      "id": "usr_01JCZK7Q8XG4M2B9V5T3W6RH01",
+      "displayName": "Sam"
+    },
+    "claim": {
+      "by": {
+        "kind": "agent",
+        "id": "agt_01JCZK7Q8XG4M2B9V5T3W6RH01",
+        "displayName": "Sam's Claude Code"
+      },
+      "runId": "run_01JCZK7Q8XG4M2B9V5T3W6RH01",
+      "leaseUntil": "2026-10-29T09:10:00Z"
+    },
+    "createdAt": "2026-10-29T09:00:00Z",
+    "updatedAt": "2026-10-29T09:01:00Z"
+  }
+}

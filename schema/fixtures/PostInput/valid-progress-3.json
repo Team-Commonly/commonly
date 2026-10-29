@@ -1,0 +1,6 @@
+{
+  "summary": "Waiting on CI before the next step",
+  "kind": "progress",
+  "status": "blocked",
+  "caveat": "CI has been flaky today."
+}

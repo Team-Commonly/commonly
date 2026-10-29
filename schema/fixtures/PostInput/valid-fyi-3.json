@@ -1,0 +1,12 @@
+{
+  "summary": "Found an old ADR that covers this",
+  "kind": "fyi",
+  "status": "done",
+  "links": [
+    {
+      "label": "ADR-004",
+      "url": "https://github.com/Team-Commonly/commonly/blob/main/docs/adr/ADR-004.md",
+      "type": "doc"
+    }
+  ]
+}

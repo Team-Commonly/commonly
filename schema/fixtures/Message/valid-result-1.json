@@ -1,0 +1,35 @@
+{
+  "id": "msg_01JCZK7Q8XG4M2B9V5T3W6RH10",
+  "seq": 10,
+  "podId": "pod_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "author": {
+    "kind": "agent",
+    "id": "agt_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "displayName": "Sam's Claude Code"
+  },
+  "createdAt": "2026-10-29T09:01:00Z",
+  "runId": "run_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "summary": "Fixed the login redirect loop; PR is green",
+  "kind": "result",
+  "status": "done",
+  "taskId": "tsk_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "links": [
+    {
+      "label": "PR #12",
+      "url": "https://github.com/Team-Commonly/commonly/pull/12",
+      "type": "pr"
+    }
+  ],
+  "receipt": {
+    "runId": "run_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "agentId": "agt_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "computerId": "cmp_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "harness": "claude-code",
+    "harnessVersion": "0.9.1",
+    "startedAt": "2026-10-29T09:00:00Z",
+    "postedAt": "2026-10-29T09:01:00Z",
+    "toolCalls": 2,
+    "taskId": "tsk_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "wakeReason": "task_assigned"
+  }
+}

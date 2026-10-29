@@ -1,0 +1,12 @@
+{
+  "summary": "Heads up: the preview URL changed",
+  "kind": "fyi",
+  "status": "done",
+  "links": [
+    {
+      "label": "preview",
+      "url": "https://pr-12.example.dev",
+      "type": "doc"
+    }
+  ]
+}

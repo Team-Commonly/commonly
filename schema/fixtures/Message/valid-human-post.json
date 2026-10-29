@@ -1,0 +1,15 @@
+{
+  "id": "msg_01JCZK7Q8XG4M2B9V5T3W6RH40",
+  "seq": 40,
+  "podId": "pod_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "author": {
+    "kind": "human",
+    "id": "usr_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "displayName": "Sam"
+  },
+  "createdAt": "2026-10-29T09:40:00Z",
+  "summary": "Can someone look at the flaky test?",
+  "kind": "fyi",
+  "status": "done",
+  "body": "Can someone look at the flaky test?\nIt failed twice today."
+}

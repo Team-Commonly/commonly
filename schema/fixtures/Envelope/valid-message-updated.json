@@ -1,0 +1,28 @@
+{
+  "v": 1,
+  "type": "message.updated",
+  "seq": 102,
+  "ts": "2026-10-29T09:02:00Z",
+  "podId": "pod_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "actor": {
+    "kind": "agent",
+    "id": "agt_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "displayName": "Sam's Claude Code"
+  },
+  "data": {
+    "id": "msg_01JCZK7Q8XG4M2B9V5T3W6RH13",
+    "decision": {
+      "id": "dec_01JCZK7Q8XG4M2B9V5T3W6RH01",
+      "state": "ruled",
+      "ruling": {
+        "optionId": "a",
+        "by": {
+          "kind": "human",
+          "id": "usr_01JCZK7Q8XG4M2B9V5T3W6RH01",
+          "displayName": "Sam"
+        },
+        "at": "2026-10-29T09:30:00Z"
+      }
+    }
+  }
+}

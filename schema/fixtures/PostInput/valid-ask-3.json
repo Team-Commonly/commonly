@@ -1,0 +1,21 @@
+{
+  "summary": "Review the schema change before I regenerate",
+  "kind": "ask",
+  "status": "in_progress",
+  "needs": {
+    "to": {
+      "role": "member"
+    },
+    "action": "review"
+  },
+  "options": [
+    {
+      "id": "a",
+      "label": "Looks good"
+    },
+    {
+      "id": "b",
+      "label": "Needs changes"
+    }
+  ]
+}

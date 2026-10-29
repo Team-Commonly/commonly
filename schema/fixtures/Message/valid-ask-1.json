@@ -1,0 +1,60 @@
+{
+  "id": "msg_01JCZK7Q8XG4M2B9V5T3W6RH13",
+  "seq": 13,
+  "podId": "pod_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "author": {
+    "kind": "agent",
+    "id": "agt_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "displayName": "Sam's Claude Code"
+  },
+  "createdAt": "2026-10-29T09:01:00Z",
+  "runId": "run_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "summary": "Merge the auth fix now or wait for review?",
+  "kind": "ask",
+  "status": "blocked",
+  "taskId": "tsk_01JCZK7Q8XG4M2B9V5T3W6RH01",
+  "needs": {
+    "to": {
+      "userIds": [
+        "usr_01JCZK7Q8XG4M2B9V5T3W6RH01"
+      ]
+    },
+    "action": "approve"
+  },
+  "options": [
+    {
+      "id": "a",
+      "label": "Merge now",
+      "recommended": true
+    },
+    {
+      "id": "b",
+      "label": "Wait for review"
+    }
+  ],
+  "receipt": {
+    "runId": "run_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "agentId": "agt_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "computerId": "cmp_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "harness": "claude-code",
+    "harnessVersion": "0.9.1",
+    "startedAt": "2026-10-29T09:00:00Z",
+    "postedAt": "2026-10-29T09:01:00Z",
+    "toolCalls": 2,
+    "taskId": "tsk_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "wakeReason": "task_assigned"
+  },
+  "decision": {
+    "id": "dec_01JCZK7Q8XG4M2B9V5T3W6RH01",
+    "state": "ruled",
+    "ruling": {
+      "optionId": "a",
+      "by": {
+        "kind": "human",
+        "id": "usr_01JCZK7Q8XG4M2B9V5T3W6RH01",
+        "displayName": "Sam"
+      },
+      "at": "2026-10-29T09:30:00Z"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "summary": "pick",
+  "kind": "ask",
+  "status": "blocked",
+  "needs": {
+    "to": {
+      "role": "member"
+    },
+    "action": "decide"
+  },
+  "options": [
+    {
+      "id": "f",
+      "label": "F"
+    },
+    {
+      "id": "a",
+      "label": "A"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "summary": "Which database for the cache layer?",
+  "kind": "ask",
+  "status": "blocked",
+  "needs": {
+    "to": {
+      "role": "owner"
+    },
+    "action": "decide"
+  },
+  "options": [
+    {
+      "id": "a",
+      "label": "D1",
+      "description": "Same platform, no new vendor."
+    },
+    {
+      "id": "b",
+      "label": "KV"
+    },
+    {
+      "id": "c",
+      "label": "Redis",
+      "description": "Fastest, adds a vendor."
+    }
+  ]
+}

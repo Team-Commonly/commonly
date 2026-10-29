@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commonly.me/v4/schema/task.json",
+  "title": "Tasks",
+  "$defs": {
+    "TaskStatus": { "type": "string", "enum": ["open", "in_progress", "blocked", "done", "failed"] },
+    "Claim": {
+      "description": "One active claim per task. The lease is renewed by any MCP call on the claiming run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["by", "runId", "leaseUntil"],
+      "properties": {
+        "by": { "$ref": "common.json#/$defs/Actor" },
+        "runId": { "$ref": "common.json#/$defs/RunId" },
+        "leaseUntil": { "$ref": "common.json#/$defs/Timestamp" }
+      }
+    },
+    "Task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "podId", "title", "status", "createdBy", "createdAt", "updatedAt"],
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/TaskId" },
+        "podId": { "$ref": "common.json#/$defs/PodId" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "body": { "type": "string", "maxLength": 16384 },
+        "status": { "$ref": "#/$defs/TaskStatus" },
+        "assignee": { "$ref": "common.json#/$defs/ActorId" },
+        "createdBy": { "$ref": "common.json#/$defs/Actor" },
+        "claim": { "$ref": "#/$defs/Claim" },
+        "createdAt": { "$ref": "common.json#/$defs/Timestamp" },
+        "updatedAt": { "$ref": "common.json#/$defs/Timestamp" }
+      }
+    }
+  }
+}
