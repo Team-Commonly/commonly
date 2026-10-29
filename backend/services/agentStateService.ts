@@ -264,23 +264,22 @@ export const collectPodAgentActivity = async (
   // daemon mints, spawn children) or on a legacy installation. Runtime auth
   // stamps lastUsedAt on whichever store authenticated the call, so the
   // status read has to take all three.
+  // A failed ledger read throws rather than reading as "never connected":
+  // the status tool turns it into a failed call, and the roster route keeps
+  // its advisory fallback.
   const credentialTimeByUser = new Map<string, number>();
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const AgentCredential = require('../models/AgentCredential');
-    const agentUserIds = (userRows as Array<{ _id?: unknown }>).map((u) => u._id).filter(Boolean);
-    const credentials = agentUserIds.length > 0
-      ? await AgentCredential.find({ kind: 'runtime', agentUserId: { $in: agentUserIds } })
-        .select('agentUserId lastUsedAt')
-        .lean()
-      : [];
-    for (const credential of credentials as Array<{ agentUserId?: unknown; lastUsedAt?: Date | null }>) {
-      const time = credential.lastUsedAt ? new Date(credential.lastUsedAt).getTime() : 0;
-      const id = String(credential.agentUserId);
-      if (time > (credentialTimeByUser.get(id) || 0)) credentialTimeByUser.set(id, time);
-    }
-  } catch (credentialErr) {
-    console.warn('[agent-state] credential activity lookup failed:', (credentialErr as Error).message);
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const AgentCredential = require('../models/AgentCredential');
+  const agentUserIds = (userRows as Array<{ _id?: unknown }>).map((u) => u._id).filter(Boolean);
+  const credentials = agentUserIds.length > 0
+    ? await AgentCredential.find({ kind: 'runtime', agentUserId: { $in: agentUserIds } })
+      .select('agentUserId lastUsedAt')
+      .lean()
+    : [];
+  for (const credential of credentials as Array<{ agentUserId?: unknown; lastUsedAt?: Date | null }>) {
+    const time = credential.lastUsedAt ? new Date(credential.lastUsedAt).getTime() : 0;
+    const id = String(credential.agentUserId);
+    if (time > (credentialTimeByUser.get(id) || 0)) credentialTimeByUser.set(id, time);
   }
 
   for (const i of installations) {
