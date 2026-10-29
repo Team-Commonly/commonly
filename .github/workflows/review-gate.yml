@@ -55,3 +55,4 @@ jobs:
       - name: In the merge queue
         if: github.event_name == 'merge_group'
         run: echo "Gate was checked on the PR head before it entered the queue."
+# smoke: review gate should fail on a workflow path
