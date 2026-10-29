@@ -8,10 +8,10 @@ name: CI
 
 on:
   pull_request:
-    branches: [v4]
+    branches: [v4, "v4-*"]
   merge_group:
   push:
-    branches: [v4]
+    branches: [v4, "v4-*"]
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
