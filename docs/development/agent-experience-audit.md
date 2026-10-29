@@ -4494,8 +4494,10 @@ pinned at `45e3606e`, two days and one rebase behind.
 **The mechanism.** `git fetch` refuses non-fast-forward ref updates unless
 given `--force`. A rebase moves a branch non-fast-forward by definition, so
 every rebased PR's local mirror silently stays at its pre-rebase commit. The
-fetch does not fail — it updates the refs it can and leaves the others, and
-the summary line for a skipped ref scrolls past among ten that succeeded.
+fetch exits `1`, but it still updates the refs it can and leaves the others.
+Measured on git 2.54.0 with one fast-forward ref and one rejected ref in a
+single fetch: the fast-forward ref moved in either order, the rejected ref did
+not. The summary line for a skipped ref scrolls past among ten that succeeded.
 
 **Why this is an agent-experience defect.** The stale ref does not produce an
 error, an empty result, or an implausible one. It produces a **real conflict
