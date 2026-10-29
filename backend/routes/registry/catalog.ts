@@ -25,7 +25,13 @@ const catalogRouter = express.Router();
 // ~120 req/min/IP, same shape as agentProfile's limiter: generous for a
 // human browsing the catalog, low enough to blunt scrapers now that every
 // listing request may also cost a role lookup. Skipped in tests.
-catalogRouter.use(rateLimit({
+//
+// Attached per route, never via `catalogRouter.use`: registry.ts mounts this
+// router ahead of pod-agents, files, install and the rest, so a router-level
+// limiter ran for every /api/registry/* request and spent the catalog budget
+// on them. /v2/agents reads `/pods/:podId/agents` once per pod, and a 62-pod
+// account hit 429 on every call from its third load (D175, 10-28).
+const catalogRateLimit = rateLimit({
   windowMs: 60_000,
   max: 120,
   standardHeaders: true,
@@ -33,10 +39,10 @@ catalogRouter.use(rateLimit({
   skip: () => process.env.NODE_ENV === 'test',
   keyGenerator: (req: any) => cloudflareIpRateLimitKeyGenerator(req),
   handler: (_req: any, res: any) => res.status(429).json({ code: 'rate_limited' }),
-}));
+});
 
 /** Suggest a free BYO name across the caller's installable pods. */
-catalogRouter.get('/agents/next-free-name', auth, async (req: any, res: any) => {
+catalogRouter.get('/agents/next-free-name', catalogRateLimit, auth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
@@ -96,7 +102,7 @@ const findExistingAgentInstance = async (agentName: any, instanceId: any) => {
  * GET /api/registry/agents
  * List available agents in the registry
  */
-catalogRouter.get('/agents', auth, async (req: any, res: any) => {
+catalogRouter.get('/agents', catalogRateLimit, auth, async (req: any, res: any) => {
   try {
     const {
       q, category, verified, registry, limit = 20, offset = 0,
@@ -161,7 +167,7 @@ catalogRouter.get('/agents', auth, async (req: any, res: any) => {
  * GET /api/registry/agents/:name
  * Get agent details
  */
-catalogRouter.get('/agents/:name', auth, async (req: any, res: any) => {
+catalogRouter.get('/agents/:name', catalogRateLimit, auth, async (req: any, res: any) => {
   try {
     const agent = await AgentRegistry.getByName(req.params.name);
 
@@ -201,7 +207,7 @@ catalogRouter.get('/agents/:name', auth, async (req: any, res: any) => {
  * GET /api/registry/agents/:name/instances/:instanceId
  * Check if an agent instance exists globally (across all pods).
  */
-catalogRouter.get('/agents/:name/instances/:instanceId', auth, async (req: any, res: any) => {
+catalogRouter.get('/agents/:name/instances/:instanceId', catalogRateLimit, auth, async (req: any, res: any) => {
   try {
     const { name, instanceId } = req.params;
     const userId = getUserId(req);
@@ -242,7 +248,7 @@ catalogRouter.get('/agents/:name/instances/:instanceId', auth, async (req: any, 
  * GET /api/registry/agents/:name/instances
  * List all instances of an agent type (for discovery).
  */
-catalogRouter.get('/agents/:name/instances', auth, async (req: any, res: any) => {
+catalogRouter.get('/agents/:name/instances', catalogRateLimit, auth, async (req: any, res: any) => {
   try {
     const { name } = req.params;
     const userId = getUserId(req);
@@ -291,7 +297,7 @@ catalogRouter.get('/agents/:name/instances', auth, async (req: any, res: any) =>
  * GET /api/registry/categories
  * List agent categories
  */
-catalogRouter.get('/categories', auth, async (req: any, res: any) => {
+catalogRouter.get('/categories', catalogRateLimit, auth, async (req: any, res: any) => {
   try {
     const categories = await AgentRegistry.distinct('categories');
     res.json({ categories });
@@ -305,7 +311,7 @@ catalogRouter.get('/categories', auth, async (req: any, res: any) => {
  * GET /api/registry/openclaw/bundled-skills
  * List bundled gateway skills available under /app/skills.
  */
-catalogRouter.get('/openclaw/bundled-skills', auth, async (req: any, res: any) => {
+catalogRouter.get('/openclaw/bundled-skills', catalogRateLimit, auth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) {
@@ -329,7 +335,7 @@ catalogRouter.get('/openclaw/bundled-skills', auth, async (req: any, res: any) =
  * GET /api/registry/agents/:name/installations
  * List pods where an agent instance is installed (user-visible only)
  */
-catalogRouter.get('/agents/:name/installations', auth, async (req: any, res: any) => {
+catalogRouter.get('/agents/:name/installations', catalogRateLimit, auth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) {
