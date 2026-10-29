@@ -3340,19 +3340,20 @@ const SUPPORTED_LANGUAGES = ['python'];
 // three levels up. The scaffolder copies the canonical SDK file from the repo
 // into the user's cwd; ADR-006 §SDK lives = "live-copy, not dependency".
 //
-// Removal condition: ADR-006 §Migration path Phase 4 — when the CLI is
-// published as `@commonlyai/cli` on npm, the example files won't sit at a
-// repo-relative path; we'll need to bundle them into the package at build
-// time and resolve via `import.meta.resolve` or a packaged-data lookup.
-// Until that phase, repo-relative is the simplest correct answer.
-const repoFile = (...parts) => pathResolve(
-  dirname(fileURLToPath(import.meta.url)), '..', '..', '..', ...parts,
-);
+// The published package carries these files under cli/assets/webhook-sdk/,
+// bundled from examples/ by scripts/bundle-sdk-examples.mjs at prepack (npm
+// pack and publish run it). A repo clone that has not packed yet falls back to
+// the examples/ tree, which stays the single source of truth.
+const cliRoot = pathResolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const sdkAsset = (bundledRel, repoRel) => {
+  const bundled = pathResolve(cliRoot, 'assets', 'webhook-sdk', bundledRel);
+  return existsSync(bundled) ? bundled : pathResolve(cliRoot, '..', 'examples', repoRel);
+};
 
 const SDK_SOURCES = {
   python: {
-    sdkSrc: () => repoFile('examples', 'sdk', 'python', 'commonly.py'),
-    botSrc: () => repoFile('examples', 'hello-world-python', 'bot.py'),
+    sdkSrc: () => sdkAsset('python/commonly.py', join('sdk', 'python', 'commonly.py')),
+    botSrc: () => sdkAsset('python/bot.py', join('hello-world-python', 'bot.py')),
     sdkOut: 'commonly.py',
     botOut: (name) => `${name}.py`,
     runHint: (name) => `COMMONLY_TOKEN=$(cat .commonly-env) python3 ${name}.py`,

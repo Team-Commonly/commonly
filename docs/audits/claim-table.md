@@ -1,7 +1,6 @@
 # Docs claim table
 
-One row per factual claim on a customer-facing page, each with one verdict and its evidence. The
-rule is in [fleet-efficiency.md §6](../agents/fleet-efficiency.md#6-claims). Evidence is a walk on
+One row per factual claim on a customer-facing page, each with one verdict and its evidence. Evidence is a walk on
 prod with a 390 and a 1440 screenshot, or a `file:line` on `main`. It is no older than 14 days. A
 claim past 14 days is re-walked in the next release batch, or it comes out. The first-touch pages
 (quickstart, bring your own agent, connectors, self-host, pricing) are re-walked every week.
@@ -37,15 +36,16 @@ Owner: TASK-010. Source: `README.md`.
 | README | Agents claim work on the pod's board and post what they tried (L36) | TRUE | backend/routes/tasksApi.ts:616 (`POST /:podId/:taskId/claim`); backend/routes/tasksApi.ts:809 (`POST /:podId/:taskId/updates`) | 2026-10-26 |
 | README | Activity shows what needs you across every pod (L38) | TRUE | frontend/src/i18n/locales/en.json:160 ("what needs you, then what moved"), :175 ("All pods" filter), :811 ("Every open question, from every pod, lands in one place") | 2026-10-25 |
 | README | On commonly.me, with nothing to install (L60) | TRUE | Takes the verdict of the hosted-agent row above (en.json:619, V2AgentBYO.tsx:137). | 2026-10-26 |
-| README | Sign up with GitHub, Google or email (L62) | TRUE | backend/controllers/authController.ts:615–625 (`registrationOpen`); backend/routes/auth.ts:237 (`/registration-policy`); live `https://api.commonly.me/api/auth/registration-policy` on 10-25 returned `inviteOnly:false, registrationOpen:true`. Invite-only is the production default when `REGISTRATION_INVITE_ONLY` is unset (authController.ts:36–40), so this depends on that env var being off. Providers: frontend/src/i18n/locales/en.json:116–117, :380 (Google, GitHub). | 2026-10-25 |
+| README | Sign up with GitHub, Google or email (L62) | CUT | backend/controllers/authController.ts:615–625 (`registrationOpen`); backend/routes/auth.ts:237 (`/registration-policy`); live `https://api.commonly.me/api/auth/registration-policy` on 10-25 returned `inviteOnly:false, registrationOpen:true`. Invite-only is the production default when `REGISTRATION_INVITE_ONLY` is unset (authController.ts:36–40), so this depends on that env var being off. Providers: frontend/src/i18n/locales/en.json:116–117, :380 (Google, GitHub). Removed in this PR: not walked in time, cut by Lily's ruling (10-28 05:50Z). | 2026-10-28 |
 | README | Install the CLI with `npm i -g @commonlyai/cli@latest` (L71) | TRUE | cli/package.json:2 (name), :9 (bin `commonly`) | 2026-10-25 |
 | README | `commonly agent run <name> --adapter claude` (L74) | TRUE | cli/src/commands/agent.js:295 (`agent run --adapter`), :361 | 2026-10-25 |
 | README | Bring your own → Use my own agent → Get my connect command (L68) | TRUE | frontend/src/i18n/locales/en.json:1620 ("Use my own agent"), :1469 ("Get my connect command") | 2026-10-25 |
-| README | The connect page gives four lines with your token filled in (L68–75) | TRUE | frontend/src/v2/components/V2AgentBYO.tsx:980 (install, two exports, `commonly agent run`) | 2026-10-25 |
-| README | The page shows **is listening** once running (L77) | TRUE | frontend/src/i18n/locales/en.json:1640 ("{{name}} is listening.") | 2026-10-25 |
+| README | The connect page gives four lines with your token filled in (L68–75) | CUT | frontend/src/v2/components/V2AgentBYO.tsx:980 (install, two exports, `commonly agent run`) Removed in this PR: not walked in time, cut by Lily's ruling (10-28 05:50Z). | 2026-10-28 |
+| README | The page shows **is listening** once running (L77) | CUT | frontend/src/i18n/locales/en.json:1640 ("{{name}} is listening.") Removed in this PR: not walked in time, cut by Lily's ruling (10-28 05:50Z). | 2026-10-28 |
 | README | Claude Code answers @mentions on macOS (L79) | TRUE | cli/src/lib/adapters/claude.js:760 (workspace trust refused under bwrap: "run on macOS only for now"). Linux support for invite-only pods is in review (#2820) and will change this row when it ships | 2026-10-25 |
 | README | On Linux and Windows, the page connects Claude Code over MCP (L79) | TRUE | frontend/src/v2/components/V2AgentBYO.tsx:957 (`claude mcp add … npx -y @commonlyai/mcp`), :964 (Windows `cmd /c commonly-mcp`) | 2026-10-25 |
-| README | Codex answers @mentions on macOS (L80, macOS half) | TRUE | cli/src/lib/adapters/codex.js:487 (Codex's permission-profile boundary runs on macOS). The adapter has no platform gate. The mention path itself is not walked; GTM's walk can still cut it. | 2026-10-26 |
+| README | Codex answers @mentions on macOS (L80, macOS half) | TRUE | cli/src/lib/adapters/codex.js:487 (Codex's permission-profile boundary runs on macOS). The adapter has no platform gate. The mention path was walked on prod 10-27 (Codex seat answered an @mention and claimed a task, messages 96834 and 96836). | 2026-10-26 |
+| README | Connect your own Claude Code or Codex from your Mac (L34) | TRUE | cli/src/lib/adapters/codex.js (ships in the CLI, `--adapter codex`). Walked on prod 10-27 22:36Z with CLI 0.1.191: a Codex seat attached from the Bring your own page greeted the pod and answered an @mention by claiming TASK-001 in 21 s (pod messages 96834, 96836). | 2026-10-27 |
 | README | Codex answers @mentions on Linux (L80, Linux half) | CUT | frontend/src/v2/components/V2AgentBYO.tsx:103–105 offers Codex on Linux, and nobody has walked it. The line reads "Linux not yet tested". | 2026-10-26 |
 | README | OpenCode guide "(walked on macOS)" (was L80; L81 has no parenthetical) | CUT | Nothing shows the walk did not happen, so this is CUT rather than FALSE. The parenthetical is removed in this PR (README.md:81). | 2026-10-27 |
 | README | Run it on one machine with Docker and Compose v2 (L87) | TRUE | install.sh:17–22 (checks `docker` and `docker compose version`) | 2026-10-25 |
@@ -65,9 +65,9 @@ Owner: TASK-011. Source: `docs-site/quickstart.mdx` and `docs-site/introduction.
 | Page | Claim | Verdict | Evidence | Date |
 |---|---|---|---|---|
 | quickstart | Create an account at commonly.me/v2/register | TRUE | `frontend/src/v2/V2App.tsx:215` (`register` route) | 2026-10-26 |
-| quickstart | Create a pod; it opens with a "Your pod is ready" card | TRUE (copy); walk pending | `frontend/src/i18n/locales/en.json:617` (`newPod.title`), rendered by `V2ThreadStarter.tsx`. GTM walk with 390 and 1440 shots still owed | 2026-10-26 |
-| quickstart | On that card, "Run it here" starts a hosted agent | TRUE (copy); walk pending | `en.json:619` (`runHere`); starter states "Adding agent…", "Starting agent…", "Agent running" at `en.json:622-624`. Timing (about 8 s) is not on the page and needs a walk | 2026-10-26 |
-| quickstart | Type `@` in the pod's message box to pick the agent | TRUE (copy); walk pending | `en.json:612` ("Use @ to mention an agent or teammate") | 2026-10-26 |
+| quickstart | Create a pod; it opens with a "Your pod is ready" card | CUT | `frontend/src/i18n/locales/en.json:617` (`newPod.title`), rendered by `V2ThreadStarter.tsx`. GTM walk with 390 and 1440 shots still owed Removed in this PR: not walked in time, cut by Lily's ruling (10-28 05:50Z). | 2026-10-28 |
+| quickstart | On that card, "Run it here" starts a hosted agent | CUT | `en.json:619` (`runHere`); starter states "Adding agent…", "Starting agent…", "Agent running" at `en.json:622-624`. Timing (about 8 s) is not on the page and needs a walk Removed in this PR: not walked in time, cut by Lily's ruling (10-28 05:50Z). | 2026-10-28 |
+| quickstart | Type `@` in the pod's message box to pick the agent | CUT | `en.json:612` ("Use @ to mention an agent or teammate") Removed in this PR: not walked in time, cut by Lily's ruling (10-28 05:50Z). | 2026-10-28 |
 | quickstart | Commonly runs a hosted agent on DeepSeek V4 Flash | TRUE | `backend/services/nativeRuntimeService.ts:101` (`DEFAULT_MODEL`), `:224` (display name). Overridable by `LITELLM_CHAT_MODEL`, so re-check on prod | 2026-10-26 |
 | quickstart | The Run it here setup shows the free plan's agent and daily turn limits | TRUE | `frontend/src/v2/components/V2AgentBYO.tsx:1136-1139` renders `hosting.caps.turnsPerDay`; caps from `backend/services/hostedRuntimeService.ts:55-60`. No numbers are stated on the page | 2026-10-26 |
 | quickstart | "About a minute" (frontmatter description) | CUT | No walk of the full sign-up-to-answer time. Removed from the description | 2026-10-26 |
@@ -76,9 +76,9 @@ Owner: TASK-011. Source: `docs-site/quickstart.mdx` and `docs-site/introduction.
 | introduction | Agents run on your own machine and connect with a runtime token | TRUE | `backend/middleware/agentRuntimeAuth.ts:52` (`cm_agent_` token); `cli/src/index.js:62` (`commonly agent attach`) | 2026-10-26 |
 | introduction | A pod holds conversation, files, tasks and context | TRUE | Conversation: `backend/models/Message.ts:43` (`podId`). Files: `backend/models/PodAsset.ts:40` (`podId`). Tasks: `backend/routes/tasksApi.ts:226-253` (`GET /:podId` filters `Task.find` by `podId`; mounted at `backend/server.ts:257`). Context: `backend/routes/contextApi.ts:80-91` (`/context/:podId`) | 2026-10-26 |
 | introduction | Each agent keeps its own identity and memory | TRUE | Agent memory routes: `backend/routes/agentMemoryView.ts`, `backend/routes/agentProfile.ts` | 2026-10-26 |
-| introduction | Request a seat via Agents → Bring your own agent → On my computer, then pick the computer and seat | TRUE (copy); walk pending | `en.json:70` ("Agents"), `:1510` ("Bring your own agent"), `:1630` ("On my computer"). The click path needs a walk | 2026-10-26 |
-| introduction | The local daemon supervises requested seats and owns the machine credential | TRUE | `cli/src/lib/daemon-supervisor.js` (machine heartbeat, D5); `cli/src/index.js:46` (daemon lifecycle) | 2026-10-26 |
-| introduction | The manual `commonly agent attach` flow remains available and does not request a seat for the daemon | TRUE (command); the "does not request" half is not yet cited | `cli/src/index.js:62` shows the command. Needs a `file:line` for the no-seat-request behaviour | 2026-10-26 |
+| introduction | Request a seat via Agents → Bring your own agent → On my computer, then pick the computer and seat | CUT | `en.json:70` ("Agents"), `:1510` ("Bring your own agent"), `:1630` ("On my computer"). The click path needs a walk Removed in this PR: not walked in time, cut by Lily's ruling (10-28 05:50Z). | 2026-10-28 |
+| introduction | The local daemon supervises requested seats and owns the machine credential | CUT | `cli/src/lib/daemon-supervisor.js` (machine heartbeat, D5); `cli/src/index.js:46` (daemon lifecycle) Removed in this PR: not walked in time, cut by Lily's ruling (10-28 08:33Z). | 2026-10-28 |
+| introduction | The manual `commonly agent attach` flow remains available and does not request a seat for the daemon | CUT | `cli/src/index.js:62` shows the command. Needs a `file:line` for the no-seat-request behaviour Removed in this PR: not walked in time, cut by Lily's ruling (10-28 08:33Z). | 2026-10-28 |
 | introduction | Card links resolve (concepts, agents, deployment, runtime-protocol, openapi) | TRUE | Targets exist, including `docs/api/openapi.yaml` | 2026-10-26 |
 | introduction | The pod can mix Claude Code, Codex, a hosted agent and your own program | TRUE | `frontend/src/v2/components/V2RuntimeControls.tsx:18` (runtime labels) | 2026-10-26 |
 | introduction | Each agent is a named member with an owner | TRUE | `backend/models/AgentRegistry.ts:261` (`installedBy`, required, on every installation) | 2026-10-27 |
@@ -137,23 +137,25 @@ The connectors page is a first-touch page. A row marked `first-touch` in the Pag
 
 | Page | Claim | Verdict | Evidence | Date |
 |---|---|---|---|---|
-| connectors (first-touch) | Open Connectors in Commonly | TRUE | `frontend/src/v2/components/V2NavRail.tsx:38` | 2026-10-26 |
-| connectors (first-touch) | Channels carry messages between a pod and an outside chat | TRUE | `backend/services/slackApi.ts:69, :82`; `backend/routes/webhooks/telegram.ts:173–177` | 2026-10-26 |
-| connectors (first-touch) | Tools let an agent read or act in another service after the connection owner grants access | TRUE | `backend/routes/grants.ts:320, :430` | 2026-10-27 |
-| connectors (first-touch) | Slack and Telegram are channels; GitHub and Linear are tools | TRUE | `frontend/src/v2/components/V2ConnectorsPage.tsx:175` | 2026-10-26 |
-| connectors (first-touch) | Telegram: bind a private chat and choose which pods reach it | TRUE | `backend/routes/webhooks/telegram.ts:173–177`; `frontend/src/v2/components/V2ConnectorsPage.tsx:616–641` | 2026-10-26 |
-| connectors (first-touch) | Slack: authorize a workspace | TRUE | `backend/services/slackOAuthService.ts:53, :66` | 2026-10-26 |
-| connectors | Slack: "then confirm the connection" | CUT | Not walked in time. This PR removes the sentence. | 2026-10-26 |
-| connectors (first-touch) | GitHub App: an instance administrator installs the app | TRUE | `backend/routes/integrations.ts:239–262` | 2026-10-26 |
-| connectors (first-touch) | GitHub App: the connection owner grants tools | TRUE | `backend/routes/grants.ts:320, :346` | 2026-10-26 |
-| connectors | GitHub App on commonly.me: "limited to the instance's own repository" | CUT | Not walked in time. This PR removes the sentence. | 2026-10-26 |
-| connectors (first-touch) | Linear: connect your account | TRUE | `backend/routes/hostedMcpConnect.ts:351, :697` | 2026-10-26 |
-| connectors (first-touch) | Linear: grant read access to an eligible pod | TRUE | `backend/integrations/hostedMcp/linear.ts:28–31, :64, :92–93`; `backend/services/outsiderGrantPodEligibility.ts:46–54` | 2026-10-26 |
-| connectors | Live page shows a free account before any connection or tool grant | CUT | Not walked in time. This PR removes the sentence. | 2026-10-26 |
-| connectors | "Other tools visible in the list" | CUT | Not walked in time. This PR removes the sentence. | 2026-10-26 |
+| connectors (first-touch) | Open Connectors in Commonly | WALKED | Prod, build 4fd217a, 2026-10-27, non-author, signed-in account. 390 and 1440 screenshots. File:line `frontend/src/v2/components/V2NavRail.tsx:38` | 2026-10-27 |
+| connectors (first-touch) | Channels carry messages between a pod and an outside chat | CUT | Not walked: needs a live Slack or Telegram connection, which is a write. Cut 10-27 (TASK-014); restore on walk. | 2026-10-27 |
+| connectors (first-touch) | Tools let an agent read another service after the connection owner grants access | TRUE | Read walked. Prod, 2026-10-27, non-author: a read-only Linear grant, and the granted agent listed the teams. No write grant was walked. Walked on prod 10-27, no screenshots; WALKED when the 390/1440 land. File:line `backend/routes/grants.ts:320, :430` | 2026-10-27 |
+| connectors (first-touch) | Tools let an agent act in another service after the connection owner grants access | CUT | Not walked: the only grant walked was read-mode (a read-only Linear grant). Cut 10-27 (TASK-014); restore on a write-mode walk. | 2026-10-27 |
+| connectors (first-touch) | Slack and Telegram are channels | TRUE | Prod, build 4fd217a, 2026-10-27, non-author: "Connect a channel" lists Slack and Telegram. Airtable also appears under Tools on prod; no docs page names it. Walked on prod 10-27, no screenshots; WALKED when the 390/1440 land. File:line `frontend/src/v2/components/V2ConnectorsPage.tsx:193–194`, `:1684` | 2026-10-27 |
+| connectors (first-touch) | Linear is a tool you can grant today | TRUE | Prod, 2026-10-27, non-author: a read-mode Linear grant made from the Connectors UI; the granted agent listed the Linear teams. Walked on prod 10-27, no screenshots; WALKED when the 390/1440 land. File:line `backend/routes/hostedMcpConnect.ts:351, :697`; `backend/integrations/hostedMcp/linear.ts:28–31` | 2026-10-27 |
+| connectors (first-touch) | Telegram: bind a private chat and choose which pods reach it | CUT | Partial walk: the channel list and pod picker were seen; the private-chat bind was not run. Cut 10-27 (TASK-014); the table row is removed. Restore on walk. | 2026-10-27 |
+| connectors (first-touch) | Slack: authorize a workspace | CUT | Partial walk: "Add · one click in your workspace" was seen; OAuth was not started. Cut 10-27 (TASK-014); the table row is removed. Restore on walk. | 2026-10-27 |
+| connectors | Slack: "then confirm the connection" | CUT | Removed from main by #2817 (e00b5c887). | 2026-10-26 |
+| connectors (first-touch) | GitHub App: an instance administrator installs the app | TRUE | Prod, build 4fd217a, 2026-10-27, non-author: the page says the app is installed first, once, by an admin. Walked on prod 10-27, no screenshots; WALKED when the 390/1440 land. File:line `backend/routes/integrations.ts:239–262` | 2026-10-27 |
+| connectors (first-touch) | GitHub App: the connection owner grants tools | CUT | Not walked: the GitHub App is not installed for the walk account. Cut 10-27 (TASK-014): the grant sentence is removed from the intro and the GitHub row. The page makes no claim that GitHub grants are unavailable, because the grant path exists at `backend/routes/grants.ts:346`. Restore on walk. | 2026-10-27 |
+| connectors | GitHub App on commonly.me: "limited to the instance's own repository" | CUT | Removed from main by #2817 (e00b5c887). | 2026-10-26 |
+| connectors (first-touch) | Linear: connect your account | TRUE | Prod, 2026-10-27, non-author: a Linear grant made from the Connectors UI on a signed-in account. Walked on prod 10-27, no screenshots; WALKED when the 390/1440 land. File:line `backend/routes/hostedMcpConnect.ts:351, :697` | 2026-10-27 |
+| connectors (first-touch) | Linear: grant read access to an eligible pod | TRUE | Prod, 2026-10-27, non-author: a read-mode grant to an invite-only pod; the granted agent listed the Linear teams. Walked on prod 10-27, no screenshots; WALKED when the 390/1440 land. File:line `backend/integrations/hostedMcp/linear.ts:28–31, :64, :92–93`; `backend/services/outsiderGrantPodEligibility.ts:46–54` | 2026-10-27 |
+| connectors | Live page shows a free account before any connection or tool grant | CUT | Removed from main by #2817 (e00b5c887). | 2026-10-26 |
+| connectors | "Other tools visible in the list" | CUT | Removed from main by #2817 (e00b5c887). | 2026-10-26 |
 | connectors | Two screenshots and captions | CUT | Not walked in time. The images stay in `docs-site/images` and are no longer referenced. | 2026-10-26 |
-| connectors | The page lists unavailable connectors; a listed row is not a working connection | CUT | Not walked in time. This PR removes the paragraph. | 2026-10-26 |
-| connectors (first-touch) | The grants guide explains how a connection owner limits tool access and revokes it | TRUE | `backend/services/roomGrantService.ts:324–373`; `backend/routes/grants.ts:480–501` | 2026-10-27 |
+| connectors | The page lists unavailable connectors; a listed row is not a working connection | CUT | Removed from main by #2817 (e00b5c887). | 2026-10-26 |
+| connectors (first-touch) | The grants guide explains how a connection owner limits tool access and revokes it | TRUE | Prod, build 4fd217a, 2026-10-27, non-author: the guide is live and covers audience, expiry and revoke. Walked on prod 10-27, 1440 screenshot only; WALKED when the 390 lands. File:line `backend/services/roomGrantService.ts:324–373`; `backend/routes/grants.ts:480–501` | 2026-10-27 |
 | grants | A grant is scoped to a pod and the members allowed to use it, and can expire or be revoked | TRUE | `backend/models/RoomGrant.ts:28, :32–34` (target, audience snapshot, expiry); `backend/routes/grants.ts:371–379` (audience defaults to current members; each listed id must be one of them); `backend/services/roomGrantService.ts:233–239` (effective audience is the snapshot ∩ current members), `:242–243, :255–257` (expiry required and future), `:431` (expiry enforced on use); revoke `backend/routes/grants.ts:480–501`, `backend/services/roomGrantService.ts:390–396`, `backend/models/RoomGrant.ts:106–136` | 2026-10-27 |
 | grants | A grant is a server-enforced capability record | TRUE | `backend/models/RoomGrant.ts:11–36` | 2026-10-26 |
 | grants | It is not a credential, and revoking it does not replace the connector's credentials | TRUE | `backend/models/RoomGrant.ts:24–45` (no credential field); `:128–134` (revoke writes only `revokedAt` and `revokedBy`); `backend/models/AgentCredential.ts:41–58` | 2026-10-27 |
@@ -284,3 +286,31 @@ the FAQ, and `CONTRIBUTING.md`. The section is complete when every surface in th
 | CONTRIBUTING.md | "you can install it into the public Commonly instance" (OpenClaw) | TRUE | The provider route exists: `backend/routes/providers/moltbot.ts:4`. This row checks the code path only, not a contributor install on commonly.me. | 2026-10-26 |
 | CONTRIBUTING.md | "pick up an open issue on GitHub" (the open-issues link) | TRUE | `gh issue list -R Team-Commonly/commonly --state open` returned 138 on 2026-10-27. `--label "good first issue"` returned 0, so the old label link was empty. | 2026-10-27 |
 | CONTRIBUTING.md | "you can install Claude Code or Codex into the public Commonly instance" | TRUE (code path only) | `cli/src/commands/agent.js:3671` (`.command('attach <adapter>')`); `cli/src/commands/agent.js:173` (`BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex', 'pi']`). Not a contributor install on commonly.me. | 2026-10-27 |
+
+## GitHub App page
+
+Owner: TASK-014. Source: `docs-site/integrations/github.mdx`.
+
+The grant flow, the repository scope and the desktop view were not walked, so this PR cuts them. Each cut claim keeps a row here and can return with evidence.
+
+| Page | Claim | Verdict | Evidence | Date |
+|---|---|---|---|---|
+| integrations/github | Description: "Scoped access to the connected repository" | CUT | Not walked. This PR replaces the description. | 2026-10-27 |
+| integrations/github | "On commonly.me, the supported GitHub App connection is for the instance's own repository" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "A team cannot connect a different repository through this page" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The task board does not create or close GitHub issues by itself" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "GitHub actions require a separate connector grant" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The instance administrator installs the app on the repository" (the repository scope) | CUT | Not walked. This PR drops "on the repository". | 2026-10-27 |
+| integrations/github | "The instance administrator installs the GitHub App and creates the connection" | TRUE | `backend/routes/integrations.ts:244` (`auth, adminAuth` on `POST /github-app`); `:263` (`new Integration({`, the connection row). Code path only, not walked. | 2026-10-27 |
+| integrations/github | "A non-admin sees the installation requirement in Connectors → Tools, but cannot install the app" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The app installation bounds which repositories its connection can reach" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The connection owner selects Add on the GitHub row, chooses the pod, agents, access mode, and end date, then selects Grant" | CUT | Not walked. The connection-owner grant flow is removed by this PR. | 2026-10-27 |
+| integrations/github | "Open the grant to inspect its calls, access and end date. Revoke it there when the agents no longer need it" | CUT | Not walked. This PR removes the steps. | 2026-10-27 |
+| integrations/github | "The grant requires a private, unbridged pod with agents running in Commonly's narrowed in-process runtime" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "If the pod is joinable, the grant flow can ask its owner to make it invite-only before continuing" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The live desktop view shows the GitHub row before installation or a grant" | CUT | Not walked. This PR removes the paragraph and its screenshot. | 2026-10-27 |
+| integrations/github | "It names the instance's own repository and tells a non-admin that an administrator must install the app first" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The recorded grant named list_issues, create_issue, and close_issue for the instance's repository, with confirmation before writes" | CUT | Not walked on the current build. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "The readiness matrix has not recorded an agent completing those actions on the current build" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "A grant limits tools, audience, and end date within the app installation's repository boundary" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |
+| integrations/github | "It cannot add a repository the app was not installed on" | CUT | Not walked. This PR removes the sentence. | 2026-10-27 |

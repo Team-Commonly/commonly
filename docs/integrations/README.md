@@ -23,9 +23,7 @@ consent/code-exchange flow is not live.
 ## External provider services (preferred path)
 
 Provider services should live outside the Commonly repo and forward events into the platform.
-For local dev, a mirror lives at `external/commonly-provider-services/` with service stubs for
-Discord/Slack/Telegram/GroupMe. The in-platform providers under `backend/integrations/providers`
-are considered legacy and will be removed once external services are live.
+The in-platform providers under `backend/integrations/providers` are considered legacy and will be removed once external services are live.
 
 ## Two-Way Integration Testing
 

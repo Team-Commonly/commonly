@@ -23,7 +23,10 @@ const LINEAR_FIRST_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list
 const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-14.json');
 const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-19.json');
 const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
+const AIRTABLE_AS_CAPTURE = require('../../fixtures/hostedMcp/airtable-authorization-server-2026-10-28.json');
 const SENTRY_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-10-19.json');
+const NOTION_CAPTURE = require('../../fixtures/hostedMcp/notion-tools-list-2026-10-19.json');
+const GITLAB_CAPTURE = require('../../fixtures/hostedMcp/gitlab-tools-list-2026-10-19.json');
 
 const ENTRY_TEXT = 'ENTRY TEXT the pin agreed to.';
 const VENDOR_TEXT = 'VENDOR TEXT nobody reviewed.';
@@ -575,17 +578,17 @@ describe('the comparison is cached per row, and an outage is not cacheable', () 
 });
 
 describe('the shipped catalogue cannot land half-wired', () => {
-  test('ships Linear, Google Calendar, Atlassian, Airtable and Sentry, and lookup names the requested entry', () => {
+  test('ships the hosted-MCP catalogue and lookup names the requested entry', () => {
     // The catalogue is the one place that says what an instance offers before
     // any member has connected anything. Its ordering follows the build plan.
     expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual([
-      'linear', 'google-calendar', 'atlassian', 'airtable', 'sentry',
+      'linear', 'google-calendar', 'atlassian', 'airtable', 'sentry', 'notion', 'gitlab',
     ]);
     const catalogue = [linear(), linear({ id: 'notion', title: 'Notion' })];
     expect(findHostedMcpEntry(catalogue, 'notion').title).toBe('Notion');
     expect(findHostedMcpEntry(catalogue, 'linear').title).toBe('Linear');
     expect(findHostedMcpEntry(catalogue, 'atlassian')).toBeUndefined();
-    expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'notion')).toBeUndefined();
+    expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'notion').title).toBe('Notion');
     expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'linear').title).toBe('Linear');
     expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'google-calendar').title).toBe('Google Calendar');
   });
@@ -738,7 +741,6 @@ describe('the shipped catalogue cannot land half-wired', () => {
     // read-only. Every writer stays out by class.
     const capture = AIRTABLE_CAPTURE;
     const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'airtable');
-    expect(entry.client).toBe('cimd');
     expect(capture.server).toBe(entry.resource);
     // Root PRM metadata fetched 2026-10-14 names the bare origin, while the
     // consenting 2026-10-09 tools/list capture used /mcp as its endpoint.
@@ -768,6 +770,22 @@ describe('the shipped catalogue cannot land half-wired', () => {
       expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
     }
     expect(capture.tools).toHaveLength(46);
+  });
+
+  test('Airtable registers a public client at the registration endpoint its issuer advertises', () => {
+    // TASK-318: Airtable refused our metadata URL as a client_id without
+    // fetching it, so the entry registers by DCR. The registry reads the
+    // endpoint from discovery; this capture of that document (2026-10-28) pins
+    // where it points and that a public client is on offer.
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'airtable');
+    const { url, metadata } = AIRTABLE_AS_CAPTURE;
+    expect(entry.client).toBe('dcr');
+    expect(url).toBe('https://airtable.com/.well-known/oauth-authorization-server/oauth2/v1');
+    expect(metadata.issuer).toBe(entry.issuer);
+    expect(metadata.registration_endpoint).toBe('https://airtable.com/oauth2/v1/register');
+    expect(metadata.token_endpoint_auth_methods_supported).toContain('none');
+    expect(metadata.code_challenge_methods_supported).toEqual(['S256']);
+    expect([...entry.scopes].every((scope) => metadata.scopes_supported.includes(scope))).toBe(true);
   });
 
   test('the Sentry pin restricts resource lookup to type and ID and parks its destructive writer', () => {
@@ -964,6 +982,112 @@ describe('the shipped catalogue cannot land half-wired', () => {
   test('a namespaced name is the entry id and the pinned name', () => {
     const entry = linear();
     expect(hostedMcpToolName(entry, entry.tools[0])).toBe('linear.list_issues');
+  });
+  test('the Notion pin contains captured workspace tools and excludes Notion agent sessions', () => {
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'notion');
+    const capture = NOTION_CAPTURE;
+    expect(entry.resource).toBe(capture.server);
+    expect(entry.client).toBe('cimd');
+    expect(entry.scopes).toEqual([capture.tokenShape.grantedScope]);
+    expect(entry.tools).toHaveLength(24);
+    const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
+    for (const tool of entry.tools) {
+      const source = measured.get(tool.upstreamName);
+      expect(source).toBeDefined();
+      expect(tool.name).toBe(tool.upstreamName.replace(/-/g, '_'));
+      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(source.inputSchema));
+      expect(tool.annotations).toMatchObject({
+        readOnlyHint: source.annotations.readOnlyHint,
+        destructiveHint: source.annotations.destructiveHint,
+      });
+      expect(tool.class).toBe(source.annotations.readOnlyHint ? 'read' : 'write');
+      expect(Boolean(tool.irreversible)).toBe(Boolean(source.annotations.destructiveHint)
+        || ['notion-move-pages', 'notion-update-view'].includes(tool.upstreamName));
+    }
+    const names = entry.tools.map((tool) => tool.upstreamName);
+    expect(names).toContain('notion-create-pages');
+    expect(names).toContain('notion-create-comment');
+    expect(names).toContain('notion-query-data-sources');
+    expect(names).not.toContain('notion-spawn-session');
+    expect(names).not.toContain('notion-send-message-to-session');
+    expect(names).not.toContain('notion-search-sessions');
+    expect(names).not.toContain('notion-upload-skill');
+    expect(names).not.toContain('notion-ai-search');
+    expect(names).not.toContain('notion-get-tool-access');
+    const newlyListedExcluded = [
+      'notion-memory-search', 'notion-get-file-download-urls',
+      'notion-delete-pages', 'notion-delete-databases', 'notion-restore-pages',
+      'notion-get-enabled-skills', 'notion-update-enabled-skills',
+      'notion-update-comment', 'notion-delete-comment',
+      'notion-set-discussion-resolved', 'notion-set-comment-reaction',
+      'notion-get-groups', 'notion-list-page-backlinks',
+      'notion-calendar-list-calendars', 'notion-calendar-list-events',
+      'notion-calendar-list-coworkers-events', 'notion-calendar-list-calendar-resources',
+      'notion-calendar-list-contacts', 'notion-calendar-create-events',
+      'notion-calendar-update-events', 'notion-calendar-cancel-events',
+      'notion-get-self',
+    ];
+    expect(newlyListedExcluded).toHaveLength(22);
+    expect(newlyListedExcluded.every((name) => capture.tools.some((tool) => tool.name === name))).toBe(true);
+    expect(newlyListedExcluded.some((name) => names.includes(name))).toBe(false);
+    const descriptionOf = (name) => entry.tools.find((tool) => tool.upstreamName === name).description;
+    expect(descriptionOf('notion-fetch')).toContain('id: memory');
+    expect(descriptionOf('notion-fetch')).toContain('include_file_urls');
+    expect(descriptionOf('notion-create-pages')).toContain('parent: memory');
+    expect(descriptionOf('notion-create-view')).toContain('anonymous responses');
+    expect(descriptionOf('notion-update-view')).toContain('CLEAR can remove filters, sorts and grouping');
+    expect(entryToolProjections(entry).find((tool) => tool.name === 'notion.notion_move_pages'))
+      .toMatchObject({ requiredWriteMode: 'write-with-confirm', irreversible: true });
+    expect(entryToolProjections(entry).find((tool) => tool.name === 'notion.notion_update_view'))
+      .toMatchObject({ requiredWriteMode: 'write-with-confirm', irreversible: true });
+  });
+
+  test('the GitLab.com pin keeps 21 measured project, work-item, MR and CI operations', () => {
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'gitlab');
+    expect(entry).toMatchObject({
+      resource: GITLAB_CAPTURE.server,
+      issuer: 'https://gitlab.com',
+      client: 'dcr',
+      scopes: ['mcp'],
+      revoke: {
+        page: 'https://gitlab.com/-/user_settings/applications',
+        endpoint: 'https://gitlab.com/oauth/revoke',
+      },
+    });
+    expect(GITLAB_CAPTURE.scopeRequested).toBe('mcp');
+    expect(GITLAB_CAPTURE.toolCount).toBe(36);
+    expect(GITLAB_CAPTURE.tools).toHaveLength(36);
+    expect(entry.tools).toHaveLength(21);
+    expect(entry.tools.map((tool) => tool.name).sort()).toEqual([
+      'accept_merge_request', 'add_branch', 'add_commit', 'get_commit', 'get_job',
+      'get_merge_request', 'get_pipeline', 'get_project', 'get_repository_file', 'get_user',
+      'get_work_item', 'list_branches', 'list_commits', 'list_merge_requests', 'list_pipelines',
+      'list_projects', 'list_repository_tree', 'list_work_items', 'save_note', 'save_pipeline',
+      'save_work_item',
+    ]);
+    const writes = [
+      'accept_merge_request', 'add_branch', 'add_commit',
+      'save_note', 'save_pipeline', 'save_work_item',
+    ];
+    expect(entry.tools.filter((tool) => tool.class === 'write').map((tool) => tool.name).sort())
+      .toEqual(writes.sort());
+    expect(entry.tools.find((tool) => tool.name === 'accept_merge_request').irreversible).toBe(true);
+    expect(entry.tools.find((tool) => tool.name === 'add_commit').irreversible).toBe(true);
+    expect(entry.tools.find((tool) => tool.name === 'save_pipeline').irreversible).toBe(true);
+    const measured = new Map(GITLAB_CAPTURE.tools.map((tool) => [tool.name, tool]));
+    for (const tool of entry.tools) {
+      const found = measured.get(tool.upstreamName);
+      expect(found).toBeDefined();
+      expect(tool.name).toBe(tool.upstreamName);
+      expect(tool.class).toBe(found.annotations.readOnlyHint ? 'read' : 'write');
+      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
+      expect(canonicalJson(tool.annotations)).toBe(canonicalJson(found.annotations));
+    }
+    expect(entry.tools.map((tool) => tool.name)).not.toContain('save_merge_request');
+    expect(entry.tools.find((tool) => tool.name === 'add_commit').description).toMatch(/start.*pipeline/);
+    expect(entry.tools.find((tool) => tool.name === 'save_pipeline').description).toMatch(/Variables.*override/);
+    expect(entry.tools.map((tool) => tool.name)).not.toContain('semantic_search');
+    expect(entry.tools.map((tool) => tool.name)).not.toContain('search');
   });
 });
 

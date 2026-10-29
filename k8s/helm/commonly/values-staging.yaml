@@ -49,7 +49,7 @@ email:
 
 # No prod GitHub PAT on staging. The shared commonly-github-pat has write power over
 # prod repos, and staging auto-deploys every merge (the reckless lane), so the
-# api-keys render must not reference it (Cofounder's ruling, same principle as
+# api-keys render must not reference it (the same principle as
 # keeping atlasAdmin off staging). The backend uses GitHub App installation tokens
 # and does not read this key. If staging agents ever need git, that is a
 # separate fine-grained PAT on a throwaway repo, post-11/1.
