@@ -297,6 +297,5 @@ publishRouter.post('/generate-avatar', avatarRateLimit, auth, async (req: any, r
 });
 
 module.exports = publishRouter;
-module.exports.avatarCallerKey = avatarCallerKey;
 
 export {};
