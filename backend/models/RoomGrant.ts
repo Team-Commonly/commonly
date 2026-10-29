@@ -47,6 +47,10 @@ export interface IRoomGrant extends Document {
 export interface RoomGrantModel extends Model<IRoomGrant> {
   /** Revoke a grant and all descendants with one updateMany write. */
   revokeCascade(grantId: string, revokedBy: string): Promise<number>;
+  revokeCascadeMoved(
+    grantId: string,
+    revokedBy: string,
+  ): Promise<Array<{ grantId: string; target?: { kind?: string; id?: string } }>>;
 }
 
 const GrantBudgetSchema = new Schema<IRoomGrantBudget>(
@@ -107,6 +111,18 @@ RoomGrantSchema.statics.revokeCascade = async function revokeCascade(
   grantId: string,
   revokedBy: string,
 ): Promise<number> {
+  return (await (this as RoomGrantModel).revokeCascadeMoved(grantId, revokedBy)).length;
+};
+
+/**
+ * revokeCascade, returning the grants this write moved (grantId and target),
+ * for the record's grant.revoked lines (TASK-560). A grant already revoked is
+ * not moved again and is not returned.
+ */
+RoomGrantSchema.statics.revokeCascadeMoved = async function revokeCascadeMoved(
+  grantId: string,
+  revokedBy: string,
+): Promise<Array<{ grantId: string; target?: { kind?: string; id?: string } }>> {
   const ids: string[] = [grantId];
   const seen = new Set(ids);
   let frontier: string[] = [grantId];
@@ -132,7 +148,9 @@ RoomGrantSchema.statics.revokeCascade = async function revokeCascade(
     },
     { $set: { revokedAt, revokedBy } },
   );
-  return result.modifiedCount || 0;
+  if (!result.modifiedCount) return [];
+  // The stamp this write set identifies the rows it moved.
+  return this.find({ grantId: { $in: ids }, revokedAt, revokedBy }).select('grantId target').lean();
 };
 
 const RoomGrant: RoomGrantModel =
