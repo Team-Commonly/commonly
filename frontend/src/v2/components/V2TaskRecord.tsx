@@ -74,7 +74,7 @@ const V2TaskRecord: React.FC = () => {
   const [lines, setLines] = useState<RecordLine[]>([]);
   const [error, setError] = useState<LoadError | null>(null);
   const [downloadError, setDownloadError] = useState(false);
-  const [names, setNames] = useState<Record<string, string>>({});
+  const [names, setNames] = useState<Map<string, string>>(() => new Map());
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
 
@@ -102,7 +102,9 @@ const V2TaskRecord: React.FC = () => {
     api.get<{ members?: Array<{ _id?: string; username?: string; displayName?: string }> }>(`/api/pods/${encodeURIComponent(podId)}`)
       .then((pod) => {
         if (!live) return;
-        setNames(Object.fromEntries((pod.members || [])
+        // A Map, not an object: an id like `__proto__` or `constructor` must
+        // never resolve to an inherited property and reach the render.
+        setNames(new Map((pod.members || [])
           .filter((member) => member._id)
           .map((member) => [String(member._id), member.displayName || member.username || String(member._id)])));
       })
@@ -110,7 +112,7 @@ const V2TaskRecord: React.FC = () => {
     return () => { live = false; };
   }, [api, podId, valid]);
 
-  const personLabel = useCallback((id: string) => names[id] || id, [names]);
+  const personLabel = useCallback((id: string) => names.get(id) || id, [names]);
   const actorLabel = (actor: RecordLine['actor']) => {
     if (!actor) return t('taskRecord.actor.unknown');
     if (actor.type === 'system') return actor.id === 'board' ? t('taskRecord.actor.board') : t('taskRecord.actor.system', { id: actor.id });

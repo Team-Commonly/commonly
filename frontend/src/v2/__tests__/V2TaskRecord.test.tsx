@@ -55,8 +55,34 @@ test('paths come from ids the record route accepts, never from arbitrary text', 
 });
 
 test('parseable text that is not a record entry is refused, not rendered', () => {
-  ['null', '7', '[]', '{"seq":1}', JSON.stringify({ ...JSON.parse(line(1, 'task.claimed', null)), actor: { type: 'agent' } })]
+  ['null', '7', '[]', '{"seq":1}']
     .forEach((bad) => expect(() => parseRecord(`${line(1, 'task.claimed', null)}\n${bad}\n`)).toThrow());
+});
+
+// One field wrong at a time on an otherwise valid line, so each guard is tested on its own.
+test.each([
+  ['seq', { seq: 1.5 }],
+  ['ts', { ts: 7 }],
+  ['kind', { kind: null }],
+  ['runId', { runId: null }],
+  ['actor', { actor: 'agent' }],
+  ['actor.type', { actor: { type: 7, id: AGENT } }],
+  ['actor.id', { actor: { type: 'agent' } }],
+  ['data', { data: null }],
+])('refuses an otherwise valid line whose %s is the wrong shape', (_field, patch) => {
+  expect(() => parseRecord(`${line(1, 'task.claimed', { id: AGENT, type: 'agent' })}\n`)).not.toThrow();
+  const value = { ...JSON.parse(line(1, 'task.claimed', { id: AGENT, type: 'agent' })), ...patch };
+  expect(() => parseRecord(`${JSON.stringify(value)}\n`)).toThrow();
+});
+
+test('ids that name Object properties show as ids, never as an inherited value', async () => {
+  wire(() => Promise.resolve([
+    line(1, 'task.claimed', { id: '__proto__', type: 'human' }),
+    line(2, 'task.done', { id: 'board', type: 'system' }, { doneBy: 'constructor' }),
+  ].join('\n')));
+  setup();
+  expect(await screen.findByText('__proto__ ·', { exact: false })).toBeInTheDocument();
+  expect(screen.getByText('constructor')).toBeInTheDocument();
 });
 
 test('reads the JSONL as text and shows every entry with member names, unknown kinds by name', async () => {
