@@ -31,6 +31,7 @@ const HostedRuntime = require('../../services/hostedRuntimeService');
 const HostedEngine = require('../../services/hostedEngine');
 const { reservedAgentNameRefusal } = require('../../services/agentNameReservation');
 const { normalizeAvatarUrl } = require('../../services/avatarService');
+const { isPersonalPodType } = require('../../services/podTypePolicyService');
 const {
   getUserId,
   resolveUsername,
@@ -871,7 +872,10 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         podId,
         installedByUserId: userId,
         installerIsAgent: installerUser?.isBot === true,
-        ...(greetsItself ? { mentionHandle: handle } : {}),
+        // A personal pod (agent-room, agent-dm, agent-admin) auto-routes every
+        // plain reply to the agent, so the greeting must not tell the person to
+        // @mention it there. Only a team pod needs the handle.
+        ...(greetsItself && !isPersonalPodType(pod?.type) ? { mentionHandle: handle } : {}),
         ...(greetsItself ? { hostedAgentUserId: String(agentUser._id) } : {}),
       });
     } catch (firstContactError: unknown) {
