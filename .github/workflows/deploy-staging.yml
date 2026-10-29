@@ -193,7 +193,7 @@ jobs:
       - name: Set up Node for the Tier-1 smoke
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       # Tier-1 UI smoke (Playwright): health/ready, seeded non-admin login, /v2 home + a pod +
       # /v2/connectors + Bring-your-own render with no console errors, left rail no horizontal
