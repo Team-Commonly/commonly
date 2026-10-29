@@ -11,12 +11,18 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-COMPOSE=(docker compose -f "$ROOT/docker-compose.dev.yml")
+# The mongo and postgres services have fixed container names, so every worktree must
+# use the same compose project. Otherwise a second worktree fails with a name conflict.
+COMPOSE=(docker compose -p "${COMMONLY_SHARED_PROJECT:-commonly}" -f "$ROOT/docker-compose.dev.yml")
 DEV_DIR="${COMMONLY_DEV_DIR:-$HOME/.commonly/dev}"
 LOCK_DIR="$DEV_DIR/registry.lock"
 SLOTS_MJS="$ROOT/scripts/dev-slots.mjs"
+# Postgres: the shared volume was initialised with the role `commonly`. Docker exec reaches it over
+# the local socket without a password; the backend needs the role and password explicitly.
+PG_ADMIN_USER="${COMMONLY_PG_ADMIN_USER:-commonly}"
+PG_APP_USER="${PG_USER:-commonly}"
+PG_APP_PASSWORD="${PG_PASSWORD:-}"
 MONGO_CREDS="commonly:commonly_dev"
-PG_CREDS="postgres:postgres"
 
 # Node 20 matches CI. Use the Homebrew keg when it exists; otherwise fall back to PATH.
 node20_bin() {
@@ -78,10 +84,21 @@ wait_http() {
   done
 }
 
+# The PID that actually listens on a port. A background subshell's $! is not reliable as the server PID.
+listening_pid() {
+  local pid
+  pid="$(/usr/sbin/lsof -nP -iTCP:"$1" -sTCP:LISTEN -t 2>/dev/null | head -n 1 || true)"
+  if [ -z "$pid" ]; then
+    echo "nothing is listening on port $1 after the health check passed" >&2
+    exit 1
+  fi
+  echo "$pid"
+}
+
 ensure_pg_database() {
   local name="$1"
-  if ! "${COMPOSE[@]}" exec -T postgres psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$name'" | grep -q 1; then
-    "${COMPOSE[@]}" exec -T postgres psql -U postgres -qc "CREATE DATABASE \"$name\""
+  if ! "${COMPOSE[@]}" exec -T postgres psql -U "$PG_ADMIN_USER" -tAc "SELECT 1 FROM pg_database WHERE datname='$name'" | grep -q 1; then
+    "${COMPOSE[@]}" exec -T postgres psql -U "$PG_ADMIN_USER" -qc "CREATE DATABASE \"$name\""
   fi
 }
 
@@ -107,7 +124,7 @@ up_ephemeral() {
 
   lock_acquire
   local slug assignments
-  slug="$(basename "$ROOT" | tr -cs 'a-zA-Z0-9' '_' | tr 'A-Z' 'a-z' | cut -c1-24)"
+  slug="$(basename "$ROOT" | tr -cs 'a-zA-Z0-9' '_' | tr 'A-Z' 'a-z' | sed -E 's/^_+//; s/_+$//' | cut -c1-24)"
   assignments="$(node "$SLOTS_MJS" claim "$ROOT" "$slug")"
   eval "$assignments"
   lock_release
@@ -129,16 +146,19 @@ up_ephemeral() {
 
   # Start the server with the slot's own connection settings. RUN_WORKER=0 keeps the
   # scheduler out of a local walk, and LOCAL_DEV_LOGIN_ENABLED exposes the fixed dev login.
-  (cd "$ROOT/backend" && env \
+  # exec makes the subshell's PID the node PID, so backend.pid names the server itself.
+  # Its stdio is detached, or the pipe into this script never closes.
+  (cd "$ROOT/backend" && exec env \
     PORT="$BACKEND_PORT" \
     MONGO_URI="mongodb://$MONGO_CREDS@127.0.0.1:27017/$DB_NAME?authSource=admin" \
-    PG_HOST=127.0.0.1 PG_PORT=5432 PG_USER=postgres PG_PASSWORD=postgres PG_DATABASE="$DB_NAME" \
+    PG_HOST=127.0.0.1 PG_PORT=5432 PG_USER="$PG_APP_USER" PG_PASSWORD="$PG_APP_PASSWORD" PG_DATABASE="$DB_NAME" \
     RUN_WORKER=0 LOCAL_DEV_LOGIN_ENABLED=true \
     NODE_OPTIONS="--max-old-space-size=768" \
-    nohup node dist/server.js >"$SLOT_DIR/backend.log" 2>&1 & echo $! >"$SLOT_DIR/backend.pid")
-  local backend_pid
-  backend_pid="$(cat "$SLOT_DIR/backend.pid")"
+    node dist/server.js </dev/null >"$SLOT_DIR/backend.log" 2>&1) </dev/null >/dev/null 2>&1 &
   wait_http "http://127.0.0.1:$BACKEND_PORT/api/health/live" backend "$SLOT_DIR/backend.log"
+  local backend_pid
+  backend_pid="$(listening_pid "$BACKEND_PORT")"
+  echo "$backend_pid" >"$SLOT_DIR/backend.pid"
 
   echo "🔨 Building frontend..."
   (cd "$ROOT/frontend" && REACT_APP_API_URL="http://127.0.0.1:$BACKEND_PORT" \
@@ -147,11 +167,12 @@ up_ephemeral() {
     tail -n 20 "$SLOT_DIR/build-frontend.log" >&2
     exit 1
   }
-  (cd "$ROOT/frontend" && nohup ./node_modules/.bin/vite preview --outDir "$SLOT_DIR/web" \
-    --host 127.0.0.1 --port "$FRONTEND_PORT" --strictPort >"$SLOT_DIR/preview.log" 2>&1 & echo $! >"$SLOT_DIR/frontend.pid")
-  local frontend_pid
-  frontend_pid="$(cat "$SLOT_DIR/frontend.pid")"
+  (cd "$ROOT/frontend" && exec ./node_modules/.bin/vite preview --outDir "$SLOT_DIR/web" \
+    --host 127.0.0.1 --port "$FRONTEND_PORT" --strictPort </dev/null >"$SLOT_DIR/preview.log" 2>&1) </dev/null >/dev/null 2>&1 &
   wait_http "http://127.0.0.1:$FRONTEND_PORT/" frontend "$SLOT_DIR/preview.log"
+  local frontend_pid
+  frontend_pid="$(listening_pid "$FRONTEND_PORT")"
+  echo "$frontend_pid" >"$SLOT_DIR/frontend.pid"
 
   lock_acquire
   node "$SLOTS_MJS" set-pids "$SLOT_N" "$backend_pid" "$frontend_pid"
@@ -179,11 +200,15 @@ gc_ephemeral() {
     stop_pid "$backend" "dist/server.js"
     stop_pid "$frontend" "vite"
     if docker info >/dev/null 2>&1; then
-      "${COMPOSE[@]}" exec -T postgres psql -U postgres -qc "DROP DATABASE IF EXISTS \"$db\"" 2>/dev/null \
+      "${COMPOSE[@]}" exec -T postgres psql -U "$PG_ADMIN_USER" -qc "DROP DATABASE IF EXISTS \"$db\"" 2>/dev/null \
         || echo "   could not drop Postgres database $db" >&2
-      "${COMPOSE[@]}" exec -T mongo mongosh --quiet -u commonly -p commonly_dev \
-        --authenticationDatabase admin "$db" --eval 'db.dropDatabase()' >/dev/null 2>&1 \
-        || echo "   could not drop Mongo database $db (mongosh missing or auth failed)" >&2
+      # The mongo image ships no mongosh, so drop through the backend's own mongoose.
+      (cd "$ROOT/backend" && node -e '
+        const mongoose = require("mongoose");
+        mongoose.connect(process.argv[1]).then((c) => c.connection.db.dropDatabase())
+          .then(() => mongoose.disconnect()).catch((e) => { console.error(e.message); process.exit(1); });
+      ' "mongodb://$MONGO_CREDS@127.0.0.1:27017/$db?authSource=admin" >/dev/null) \
+        || echo "   could not drop Mongo database $db" >&2
     fi
     rm -rf "$dir"
     node "$SLOTS_MJS" drop "$n"
