@@ -32,9 +32,26 @@ const PERSON_FIELDS = new Set(['doneBy', 'decidedBy', 'issuedBy']);
 type LoadError = 'access' | 'members' | 'store' | 'error' | 'unreadable';
 const STATUS_ERRORS: Record<number, LoadError> = { 403: 'members', 404: 'access', 503: 'store' };
 
+const isObject = (value: unknown): value is Record<string, unknown> => (
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+);
+// The fields this view reads. Parseable text of any other shape (null, a bare
+// number, an actor without an id) is as unreadable as text that is not JSON.
+const isRecordLine = (value: unknown): value is RecordLine => isObject(value)
+  && Number.isInteger(value.seq) && typeof value.ts === 'string'
+  && typeof value.kind === 'string' && typeof value.runId === 'string'
+  && (value.actor === null || (isObject(value.actor)
+    && typeof value.actor.type === 'string' && typeof value.actor.id === 'string'))
+  && isObject(value.data);
+
+/** Every line of a record, or a throw when any line is not a record-v1 entry. */
 export const parseRecord = (jsonl: string): RecordLine[] => jsonl.split('\n')
   .filter((line) => line.trim())
-  .map((line) => JSON.parse(line) as RecordLine);
+  .map((line) => {
+    const value: unknown = JSON.parse(line);
+    if (!isRecordLine(value)) throw new Error('not a record line');
+    return value;
+  });
 
 const saveFile = (content: string, type: string, name: string) => {
   const url = URL.createObjectURL(new Blob([content], { type }));

@@ -51,7 +51,12 @@ test('paths come from ids the record route accepts, never from arbitrary text', 
   expect(taskRecordPath('pod-1', 'TASK-7')).toBeNull();
   expect(taskRecordPath(POD, '../admin')).toBeNull();
   expect(taskRecordPath(POD, 'https://evil.example')).toBeNull();
-  expect(parseRecord('{"seq":1}\n\n{"seq":2}\n').map((entry) => entry.seq)).toEqual([1, 2]);
+  expect(parseRecord(`${line(1, 'task.claimed', null)}\n\n${line(2, 'task.done', null)}\n`).map((entry) => entry.seq)).toEqual([1, 2]);
+});
+
+test('parseable text that is not a record entry is refused, not rendered', () => {
+  ['null', '7', '[]', '{"seq":1}', JSON.stringify({ ...JSON.parse(line(1, 'task.claimed', null)), actor: { type: 'agent' } })]
+    .forEach((bad) => expect(() => parseRecord(`${line(1, 'task.claimed', null)}\n${bad}\n`)).toThrow());
 });
 
 test('reads the JSONL as text and shows every entry with member names, unknown kinds by name', async () => {
@@ -98,6 +103,13 @@ test.each([
 
 test('a line that is not JSON makes the whole record unreadable, not partly shown', async () => {
   wire(() => Promise.resolve(`${line(1, 'task.claimed', null)}\nnot json\n`));
+  setup();
+  expect(await screen.findByRole('alert')).toHaveTextContent('This record could not be read.');
+  expect(screen.queryByText('Claimed')).toBeNull();
+});
+
+test('a JSON line that is not a record entry makes the record unreadable too', async () => {
+  wire(() => Promise.resolve(`${line(1, 'task.claimed', null)}\nnull\n`));
   setup();
   expect(await screen.findByRole('alert')).toHaveTextContent('This record could not be read.');
   expect(screen.queryByText('Claimed')).toBeNull();
