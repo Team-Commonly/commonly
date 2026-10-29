@@ -1,0 +1,92 @@
+name: CI
+
+# v4 verification loop (build spec §4.6–4.7). Every required check on `v4` is a
+# job here, so a check name never goes missing. A job whose code does not exist
+# yet passes with a notice; it starts enforcing the moment its directory lands.
+# Budget: 5 minutes wall clock for the whole workflow. The review gate is
+# review-gate.yml, kept separate so a review event never re-runs these jobs.
+
+on:
+  pull_request:
+    branches: [v4]
+  merge_group:
+  push:
+    branches: [v4]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  gen-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generated contracts match the schema
+        run: |
+          if [ ! -f Makefile ] || ! grep -q '^gen:' Makefile; then
+            echo "::notice::no 'make gen' target yet; skipping"; exit 0
+          fi
+          make gen
+          git diff --exit-code
+
+  worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Worker, DO and MCP tests
+        run: |
+          if [ ! -f worker/package.json ]; then echo "::notice::no worker/ yet; skipping"; exit 0; fi
+          cd worker && npm ci && npx vitest run
+
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Daemon, ACP and TUI tests
+        run: |
+          if [ ! -f go.mod ]; then echo "::notice::no go.mod yet; skipping"; exit 0; fi
+          go vet ./... && go test -race ./...
+
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: install.sh against a fixture release
+        run: |
+          if [ ! -f worker/public/install.sh ]; then echo "::notice::no install.sh yet; skipping"; exit 0; fi
+          make test-install
+
+  e2e-local:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Full slice, local
+        run: |
+          if [ ! -d e2e ]; then echo "::notice::no e2e/ yet; skipping"; exit 0; fi
+          make e2e
+
+  e2e-preview:
+    needs: gen-drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy a per-PR preview and run the slice against it
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ ! -f worker/wrangler.toml ]; then echo "::notice::no worker/wrangler.toml yet; skipping"; exit 0; fi
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::warning::CLOUDFLARE_API_TOKEN secret not set yet (owner action, spec §7); preview skipped"; exit 0
+          fi
+          echo "::error::preview deploy not wired yet (spec §4.5)"; exit 1

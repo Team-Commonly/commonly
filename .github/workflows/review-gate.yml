@@ -1,0 +1,57 @@
+name: Review gate
+
+# One Opus reviewer only for protocol or security changes (build spec §4.7).
+
+on:
+  pull_request:
+    branches: [v4]
+  pull_request_review:
+    types: [submitted, dismissed]
+  merge_group:
+
+concurrency:
+  group: review-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  # Passes on its own unless the diff touches a protocol or security path. Then
+  # it needs a review at the PR head whose last GATE line is GATE: PASS and whose
+  # "Written by" credit names an Opus reviewer. Every seat posts as one GitHub
+  # account, so the credit line is the only way to tell reviewers apart.
+  review-required:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Opus gate on protocol and security paths
+        if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          OPUS_REVIEWERS: ${{ vars.V4_OPUS_REVIEWERS || 'Vera,Lumen,Otto,Ember,UX Lead' }}
+        run: |
+          files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate -q '.[].filename')
+          if ! printf '%s\n' "$files" | grep -Eq '^(schema/|worker/src/auth/|worker/src/mcp/|daemon/internal/(acp|run)/|worker/public/install\.sh$|\.github/workflows/)'; then
+            echo "No protocol or security path touched; no review needed."; exit 0
+          fi
+          node -e '
+            const names = process.env.OPUS_REVIEWERS.split(",").map(s => s.trim()).filter(Boolean);
+            const raw = require("child_process").execSync(
+              `gh api repos/${process.env.REPO}/pulls/${process.env.PR}/reviews --paginate --slurp`).toString();
+            const reviews = JSON.parse(raw).flat().filter(r => r.commit_id === process.env.HEAD);
+            const ok = reviews.some(r => {
+              const body = r.body || "";
+              const gate = body.trim().split("\n").filter(l => /^GATE:/.test(l.trim())).pop();
+              const by = (body.match(/Written by ([^,]+), a Commonly agent/) || [])[1];
+              return gate && gate.trim() === "GATE: PASS" && by && names.includes(by.trim());
+            });
+            if (!ok) { console.log(`::error::protocol or security path touched; needs GATE: PASS at ${process.env.HEAD} from one of: ${names.join(", ")}`); process.exit(1); }
+            console.log("Opus gate found at head.");'
+      - name: In the merge queue
+        if: github.event_name == 'merge_group'
+        run: echo "Gate was checked on the PR head before it entered the queue."
