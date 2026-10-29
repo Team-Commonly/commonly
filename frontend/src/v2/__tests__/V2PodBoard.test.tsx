@@ -660,3 +660,21 @@ test('a delayed Follow response cannot replace another follower from the current
   expect(await screen.findByRole('button', { name: /Following/ })).toHaveAttribute('aria-pressed', 'true');
   expect(document.querySelectorAll('.v2-board__watcher')).toHaveLength(2);
 });
+
+test('the drawer links to the task record only when the server says the reader may read it', async () => {
+  const POD = 'aaaaaaaaaaaaaaaaaaaaaaa1';
+  const task = { taskId: 'TASK-7', title: 'Recorded work', status: 'claimed', watchers: [] };
+  let canReadRecord = true;
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.startsWith('/api/v1/tasks/')
+    ? { tasks: [task], permissions: { canWrite: true, canReadRecord } } : {} }));
+  const { unmount } = renderBoard(`/v2/pods/${POD}/board`);
+  fireEvent.click(await screen.findByTitle('TASK-7'));
+  expect(screen.getByRole('link', { name: 'View record' })).toHaveAttribute('href', `/v2/pods/${POD}/tasks/TASK-7/record`);
+  unmount();
+
+  canReadRecord = false;
+  renderBoard(`/v2/pods/${POD}/board`);
+  fireEvent.click(await screen.findByTitle('TASK-7'));
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'View record' })).toBeNull();
+});

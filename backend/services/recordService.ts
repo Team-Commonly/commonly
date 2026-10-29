@@ -56,6 +56,17 @@ export const isRecordEnabled = (podId: unknown): boolean => {
 };
 
 /**
+ * Who may read a pod's record lines: actual members, agents included. The
+ * lines carry approver and credential-owner ids verbatim, so admins and
+ * agent-DM observers who pass canViewPod are not readers. `members` is the
+ * lean, unpopulated array, so each entry is an ObjectId.
+ */
+export const isRecordReader = (members: unknown, userId: unknown): boolean => (
+  Boolean(userId) && Array.isArray(members)
+  && members.some((member: unknown) => String(member) === String(userId))
+);
+
+/**
  * The spec's runId for a server chain (ADR-033 §8 q3, option a). Derived, so
  * the same pod and task always name the same chain, and so the id carries no
  * pod or task text beyond what the line's own podId/taskId already say.

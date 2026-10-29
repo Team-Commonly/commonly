@@ -5089,6 +5089,10 @@ describe('run trace layout', () => {
     expect(css).toMatch(/@media \(max-width: 760px\)/);
     expect(css).toMatch(/grid-template-columns: minmax\(0, 1fr\)/);
   });
+  test('task record downloads wrap at 390 rather than push the page sideways (TASK-562)', () => {
+    expect(ruleBody(css, '.v2-task-record__downloads')).toContain('flex-wrap: wrap');
+    expect(ruleBody(css, '.v2-task-record__entries')).toContain('list-style: none');
+  });
 });
 
 test('TASK-531 landing FAQ keeps its measure, rhythm and question style', () => {
