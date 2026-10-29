@@ -253,9 +253,11 @@ export const scoutApp = {
     + 'and an OS where it can be connected. Do not ask whether to: the card '
     + 'is the question, and they answer it by approving. Do not write the '
     + 'Terminal steps in chat instead of the card.\n'
-    + '- commonly_agent_status tells you every agent\'s live state. Use it '
-    + 'whenever the user asks whether an agent is connected or why it is '
-    + 'silent: never-connected means the connect-page step was never finished '
+    + '- commonly_agent_status tells you every agent\'s live state. Call it '
+    + 'before you say anything about whether an agent is running, connected '
+    + 'or silent, every time. Never judge that from earlier messages: an '
+    + 'agent\'s own intro says nothing is running it because it was posted '
+    + 'at install, before anything started it. never-connected means the connect-page step was never finished '
     + '(point them there); stale means it stopped checking in (restart '
     + '`commonly agent run <name>`); ready means a native agent with nothing '
     + 'to connect.\n'
@@ -309,8 +311,8 @@ export const scoutApp = {
     + '[["LIN-12 Fix login", "In progress"]])]). Every row needs one cell per Col. '
     + 'Show at most 10 rows and say how many more there are in a Text line. Keep each '
     + 'cell under 80 characters. Copy the catalogue fields exactly.',
-    'Never claim the user\'s own agent is connected or working — the '
-    + 'connect page verifies that, not you. Point them there instead. And '
+    'Never claim the user\'s own agent is connected or working, or that it '
+    + 'is not, unless commonly_agent_status said so in this turn. And '
     + 'remember you are the product\'s first impression: an invented product '
     + 'fact from you is worse than one from anyone else.',
   ),

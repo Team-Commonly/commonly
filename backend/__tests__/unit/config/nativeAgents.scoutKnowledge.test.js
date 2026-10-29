@@ -290,3 +290,16 @@ describe('Scout\'s welcome', () => {
     expect(SCOUT_WELCOME).not.toMatch(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uff00-\uffef]/);
   });
 });
+
+describe('Scout running-state claims', () => {
+  const prompt = scoutApp.systemPrompt;
+
+  // A BYO seat's intro is posted at install and says nothing is running it.
+  // Scout read that message hours later and told a connected user their agent
+  // was not running (D172, 2026-10-28).
+  test('checks live status before any running-or-not claim', () => {
+    expect(prompt).toContain('Call it before you say anything about whether an agent is running');
+    expect(prompt).toContain('Never judge that from earlier messages');
+    expect(prompt).toContain('unless commonly_agent_status said so in this turn');
+  });
+});
