@@ -1,9 +1,20 @@
 # The `DEV_HELM_HIDDENMCP_ALLOWLIST` secret is a YAML overlay, not a word list
 
 **One-line trap:** `DEV_HELM_HIDDENMCP_ALLOWLIST` (a GitHub Actions secret used
-by `deploy-dev.yml`) is **not** a comma- or space-separated list of entry names.
-Its entire value is the text of a Helm **values overlay file**. Setting it to
-`atlassian,sentry,airtable` silently produces an invalid overlay.
+by `deploy-dev.yml`) is the text of a Helm **values overlay file** — a map, not a
+comma- or space-separated list of entry names. A bare word list like
+`atlassian,sentry,airtable` does **not** fail silently: `helm` refuses to
+unmarshal a scalar string into the map-typed value (`cannot unmarshal string
+into Go value of type map`) and the deploy fails loudly, so the running release
+keeps its current allowlist. The failures that drop users *silently* are
+different, and they are the ones to guard against:
+
+- **The secret is unset or empty when the hidden-entries feature deploys.** The
+  chart default is `{}`, so every hidden entry is then hidden from *all* its
+  users — every exception is removed. **Set the secret before that deploy.**
+- **The overlay parses but is semantically invalid** — see "What the overlay
+  must contain". The backend then throws the whole allowlist away (`{}`), with
+  the same effect.
 
 ## How it is consumed
 
@@ -19,42 +30,52 @@ helm upgrade ... -f k8s/helm/commonly/values-dev.yaml \
   -f "$RUNNER_TEMP/allowlist.yaml" ...
 ```
 
-So the secret's value **is** `allowlist.yaml`. It must be a complete, valid
-Helm values document whose keys merge onto the chart. If the secret is unset or
-empty the step writes an empty overlay (a no-op merge), which is the intended
-"no allowlist" default — not an error.
+So the secret's value **is** `allowlist.yaml`. It must be a complete, valid Helm
+values document whose keys merge onto the chart. An unset or empty secret writes
+an empty overlay, which merges the chart default `{}` — i.e. no exceptions.
 
 ## What the overlay must contain
 
 It overrides `hostedMcp.hiddenEntryUserAllowlist` — a **map** of hidden
-hosted-MCP entry name → list of Mongo user `_id`s permitted to walk that entry.
-This block used to live in `values-dev.yaml`; it was moved into the secret so
-the per-user allowlist stays out of the public repo.
+hosted-MCP entry name → list of authenticated user `_id`s permitted to see that
+entry. (It feeds `HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST`, read by
+`backend/integrations/hostedMcp/visibility.ts`.) The per-user allowlist was
+moved out of `values-dev.yaml` into the secret so the ids stay out of the public
+repo.
 
 ```yaml
 # shape only — real user ids are NOT committed; they live in the secret
 hostedMcp:
   hiddenEntryUserAllowlist:
     atlassian:
-      - "<USER_ID>"
-    sentry:
-      - "<USER_ID>"
-    airtable:
-      - "<USER_ID>"
+      - "<USER_ID>"   # a 24-hex-char user _id
 ```
+
+**The backend validates the whole overlay atomically.** Each key must also be in
+`hostedMcp.hiddenEntries`, must match `^[a-z0-9][a-z0-9-]*$`, and every id must
+be 24 hex characters. If **any** key or id fails, the backend discards the
+**entire** allowlist (not just the bad entry) and grants no exceptions. One
+malformed id silently hides every allowlisted entry from everyone.
 
 ## Editing it
 
-- To allowlist a newly-hidden entry, add a **key** under
-  `hiddenEntryUserAllowlist` with its user-id list — edit the YAML, not a word
-  list.
+- To grant a user access to a hidden entry, add or extend that entry's key with
+  their 24-hex-char `_id`. Edit the YAML, not a word list.
 - `gh secret set DEV_HELM_HIDDENMCP_ALLOWLIST --repo <repo> --body-file <overlay.yaml>`.
   Never paste ids on the command line or into logs.
-- The set of **hidden** entries themselves is a separate field
-  (`hostedMcp.hiddenEntries`, a plain list) that stays in `values-dev.yaml`.
-  Only the per-user allowlist is overlaid from the secret.
-- Each entry's list is YAML; an entry present with an empty list is not the same
-  as the entry being absent.
+- **Merge order:** set the secret before the change that first hides entries
+  deploys, or that deploy's chart-default `{}` removes every exception.
+- **Un-hiding trap:** `hiddenEntries` (the list of hidden entries) lives in
+  `values-dev.yaml`; the per-user allowlist lives in the secret. When you remove
+  an entry from `hiddenEntries` (un-hide it), remove its key from the secret in
+  the **same change** — an allowlist key for an entry that is no longer hidden
+  fails validation and voids the *entire* allowlist, silently dropping every
+  allowlisted user across all entries.
+- An entry with an empty list and an entry omitted entirely both leave that entry
+  hidden for everyone; neither grants access. Access requires a non-empty list of
+  valid ids.
 
-> Earned 2026-10-29: the name reads like a feature-flag word list, and treating
-> it as one would drop every allowlisted user on the next deploy.
+> Earned 2026-10-29: the name reads like a feature-flag word list. A word list
+> would at least fail the deploy loudly; the real hazard is the silent
+> exception-drop when the secret is unset/empty at the first hide-entries deploy,
+> or when an un-hidden entry's key is left behind in the overlay.
