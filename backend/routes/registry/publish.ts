@@ -19,19 +19,23 @@ const publishRouter = express.Router();
 
 // generate-avatar calls the configured image provider (Gemini or OpenAI) on
 // every request, so it gets its own per-caller budget on top of the
-// registry-wide IP limiter. Keyed on the hashed Authorization header because
-// `auth` has not run yet; anonymous callers fall back to the IP key.
+// registry-wide IP limiter. It runs ahead of `auth` (which does a Mongo
+// lookup), so it derives the token exactly as `auth` does: every spelling that
+// `auth` accepts as one token (`Bearer cm_x`, `cm_x`, `x-auth-token: cm_x`)
+// shares one budget. Only a hash of the token is kept in limiter state.
+const avatarCallerKey = (req: any) => {
+  const token = req.header?.('Authorization')?.replace('Bearer ', '') || req.header?.('x-auth-token');
+  if (token) return `tok:${createHash('sha256').update(token).digest('hex').slice(0, 16)}`;
+  return cloudflareIpRateLimitKeyGenerator(req);
+};
+
 const avatarRateLimit = rateLimit({
   windowMs: 60_000,
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'test',
-  keyGenerator: (req: any) => {
-    const authHeader = req.get?.('authorization');
-    if (authHeader) return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
-    return cloudflareIpRateLimitKeyGenerator(req);
-  },
+  keyGenerator: avatarCallerKey,
   handler: (_req: any, res: any) => res.status(429).json({ code: 'rate_limited' }),
 });
 
@@ -293,5 +297,6 @@ publishRouter.post('/generate-avatar', avatarRateLimit, auth, async (req: any, r
 });
 
 module.exports = publishRouter;
+module.exports.avatarCallerKey = avatarCallerKey;
 
 export {};

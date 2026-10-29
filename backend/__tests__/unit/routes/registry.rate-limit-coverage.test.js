@@ -35,4 +35,14 @@ describe('registry rate-limit coverage (D175)', () => {
     expect(layer).toBeDefined();
     expect(typeof layer.route.stack[0].handle.resetKey).toBe('function');
   });
+
+  it('gives every spelling of one token the same avatar budget', () => {
+    const { avatarCallerKey } = require('../../../routes/registry/publish');
+    const req = (headers) => ({ header: (name) => headers[name], headers: {}, ip: '203.0.113.9' });
+    const bearer = avatarCallerKey(req({ Authorization: 'Bearer cm_abc' }));
+    expect(bearer).toMatch(/^tok:/);
+    expect(avatarCallerKey(req({ Authorization: 'cm_abc' }))).toBe(bearer);
+    expect(avatarCallerKey(req({ 'x-auth-token': 'cm_abc' }))).toBe(bearer);
+    expect(avatarCallerKey(req({ Authorization: 'Bearer cm_other' }))).not.toBe(bearer);
+  });
 });
