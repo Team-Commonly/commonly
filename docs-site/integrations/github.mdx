@@ -1,40 +1,6 @@
 ---
 title: GitHub App
-description: Scoped access to the connected repository
+description: Install the GitHub App for this instance
 ---
 
-On commonly.me, the supported GitHub App connection is for the instance's own
-repository. A team cannot connect a different repository through this page.
-The task board does not create or close GitHub issues by
-itself; GitHub actions require a separate connector grant.
-
-## Grant access
-
-The instance administrator installs the app on the repository and creates the
-connection. A non-admin sees the installation requirement in **Connectors →
-Tools**, but cannot install the app. The app installation bounds which
-repositories its connection can reach. For the existing connection:
-
-1. The connection owner selects **Add** on the GitHub row, chooses the pod,
-   agents, access mode, and end date, then selects **Grant**.
-2. Open the grant to inspect its calls, access and end date. Revoke it there
-   when the agents no longer need it.
-
-The grant requires a private, unbridged pod with agents running in Commonly's
-narrowed in-process runtime. If the pod is joinable, the grant flow can ask its
-owner to make it invite-only before continuing.
-
-The live desktop view shows the GitHub row before installation or a grant. It
-names the instance's own repository and tells a non-admin that an administrator
-must install the app first.
-
-<div style={{maxHeight: "420px", overflow: "hidden"}}>
-  <img src="/images/connectors-desktop.png" alt="GitHub tool row on the desktop Connectors page, before the app is installed or access granted" style={{width: "100%"}} />
-</div>
-
-The recorded grant named `list_issues`, `create_issue`, and `close_issue` for
-the instance's repository, with confirmation before writes. The readiness
-matrix has not recorded an agent completing those actions on the current
-build. A grant limits tools, audience, and end date within the app
-installation's repository boundary; it cannot add a repository the app was
-not installed on.
+The instance administrator installs the GitHub App and creates the connection.

@@ -289,12 +289,23 @@ const OPEN_NETWORK = String.raw`
     (socket-protocol 2)))
 (allow mach-lookup
   (global-name "com.apple.SecurityServer")
-  (global-name "com.apple.SystemConfiguration.DNSConfiguration")
   (global-name "com.apple.SystemConfiguration.configd")
   (global-name "com.apple.networkd")
   (global-name "com.apple.ocspd")
   (global-name "com.apple.securityd")
   (global-name "com.apple.securityd.xpc"))
+`;
+
+// Both network modes. On macOS, c-ares (node's dns.Resolver and dns.resolve*)
+// reads the resolver list from configd's DNSConfiguration service while the
+// Resolver is constructed. Denied, that lookup does not always fail: at
+// times it blocks the main thread forever. dsh builds a Resolver as it loads,
+// so confined turns ran to their 900 s timeout without sending a request
+// (D106). Admitted, resolution fails fast, because mDNSResponder and port 53
+// stay unreachable in a loopback profile. The service returns configuration
+// and opens no channel out.
+const RESOLVER_CONFIG = String.raw`
+(allow mach-lookup (global-name "com.apple.SystemConfiguration.DNSConfiguration"))
 `;
 
 const escapeSbplString = (value) => String(value)
@@ -466,7 +477,7 @@ export const buildSeatbeltProfile = ({
   })() : [];
 
   return [
-    (network === 'open' ? `${PLATFORM_BASELINE}${OPEN_NETWORK}` : PLATFORM_BASELINE).trim(),
+    `${PLATFORM_BASELINE}${RESOLVER_CONFIG}${network === 'open' ? OPEN_NETWORK : ''}`.trim(),
     executableRules,
     executableSymlinkRules,
     `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(resolvedWorkspace)}"))`,

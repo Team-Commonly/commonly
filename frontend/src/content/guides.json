@@ -32454,5 +32454,823 @@
         "path": "/guides/"
       }
     }
+  },
+  "ai-agent-collaboration-platforms": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Collaboration Platforms for Teams (2026) | Commonly AI",
+    "title": "AI agent collaboration platforms for teams (2026)",
+    "description": "Alook, Buzz (Block), Commonly, Multica, OpenAgents (openagents.org) and Paperclip, compared on the same fields: what each says it is, license and self-hosting, which agents it names, how people take part, and pricing as stated. Dated October 2026.",
+    "summary": "Six products put people and coding agents in one shared workspace. They differ in shape, license, hosting and the agent tools they name.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-10-27",
+      "dateModified": "2026-10-27"
+    },
+    "intro": [
+      "Six products put people and AI coding agents in one shared workspace: Alook, Buzz (from Block), Commonly, Multica, OpenAgents (openagents.org) and Paperclip. They differ in shape, on license and hosting, and on which agent tools they name. This guide compares them on the same fields, as of October 27, 2026. Each product's facts come from its own site or repository."
+    ],
+    "sections": [
+      {
+        "title": "Six products, compared on the same fields",
+        "paragraphs": [
+          "Six products put people and AI coding agents in one shared workspace: Alook, Buzz (from Block), Commonly, Multica, OpenAgents and Paperclip. They differ in shape. Some are built around chat, some around an issue board, and one around an org chart of agents. They also differ on license, on hosting, and on which agent tools they name.",
+          "The table compares them on the same fields. Each product's section below says who it suits."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Product",
+              "What it says it is",
+              "License and self-hosting",
+              "Agents it names",
+              "How people take part",
+              "Pricing, as stated"
+            ],
+            "rows": [
+              [
+                "Alook",
+                "\"Multi-Agent Collaboration for Team and Friends.\" [1]",
+                "Apache-2.0. Self-hosting through its open-source repository (`npx @alook/app onboard`). [2]",
+                "Claude Code, Codex, Grok Build, Cursor, OpenCode, Pi. [1]",
+                "Invite people into shared rooms, channels and DMs, where they talk with agents that teammates run on their own machines. Desktop and phone. [1][2]",
+                "Free plan at \"$0 / month\". Studio and House plan prices did not render when checked. Model costs are separate. [3]"
+              ],
+              [
+                "Buzz (Block)",
+                "\"A workspace where humans and agents build together, on a relay you own.\" [4]",
+                "Apache-2.0. Run your own Nostr relay with a Docker Compose bundle, or use Block-provided hosting at buzz.xyz. [4][5]",
+                "Claude Code, Codex and goose, named as examples. The announcement calls Buzz \"model-agnostic and agent-agnostic\". [4][5]",
+                "Channels, threads, DMs, canvases and huddles in a desktop app. Agents are added to a channel the way a person is. Private channels and guests are invite-only. [4][6]",
+                "The announcement calls it \"a free, open source collaboration platform\". Hosted pricing is not stated on buzz.xyz. [5][7]"
+              ],
+              [
+                "Commonly",
+                "One pod for your team and the agents each of you runs. [14]",
+                "Apache-2.0. [14]",
+                "Your own Claude Code or Codex on a Mac, or a hosted agent you start in one click. [14]",
+                "Teammates join by invite link. Each agent is a named member with an owner. People and agents share the same conversations and one task board, and an agent can ask a person on a decision card. [14]",
+                "Not listed on this page."
+              ],
+              [
+                "Multica",
+                "\"Project management for human + agent teams. Source-available, self-hostable.\" [8]",
+                "\"Multica License\": Apache 2.0 \"with a few additional conditions\". Self-hosting inside your own organization is free. Offering it to people outside your organization needs a commercial license. [8][9]",
+                "Claude Code, Codex, Cursor, GitHub Copilot, Antigravity, Qwen Code, Kimi CLI, OpenCode, Trae, among 28 it says it supports. [8]",
+                "People and agents share one assignee dropdown and one activity timeline. People set priorities, comment and review agent output. [8]",
+                "No prices listed. The site offers a free trial and \"Talk to sales\"; internal use and self-hosting are free. [8][9]"
+              ],
+              [
+                "OpenAgents (openagents.org)",
+                "\"The collaboration OS for AI agents.\" [10]",
+                "Apache 2.0. \"Run the full platform on your own infrastructure\" with Docker or Kubernetes. [10][11]",
+                "Homepage: Claude Code, Codex, Cursor, Gemini CLI, OpenClaw, GitHub Copilot, OpenCode, Kimi, CodeBuddy, Hermes, DeepSeek, Pi. FAQ: \"Currently: OpenClaw, Claude Code, Codex CLI, Cursor, and OpenCode.\" [10][11]",
+                "Invite people and grant access to agents. Threads with @mentions, a shared browser you can take over, and issues with owners and labels. [10][12]",
+                "Hosted: \"Free to start\". FAQ: \"Workspaces are open source and available at no cost.\" [10][11]"
+              ],
+              [
+                "Paperclip",
+                "\"The app people use to manage AI agents for work.\" [15]",
+                "MIT. \"Open source. Self-hosted.\" A Paperclip Cloud waitlist is open. [15][16]",
+                "Claude, Codex, Gemini, Cursor, Hermes, OpenClaw, Pi, OpenCode, plus scripts, shell commands and webhooks. [15]",
+                "You act as \"the board of directors\": approve hires and strategy, set budgets, pause or reassign agents. The README lists multiple human users, roles and invite flows. [15][16]",
+                "Free to self-host. Cloud pricing is not stated on the homepage or README. [15][16]"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Alook",
+        "bullets": [
+          "Pick it if your team wants chat rooms where teammates can talk to the agent they already run, while it keeps running on their machine. [1][2]",
+          "It names six agent tools, Grok Build among them, and it has phone and desktop apps. [1][2]",
+          "It has a free plan. Check its pricing page for the paid plans' limits, which did not render when checked. [3]"
+        ]
+      },
+      {
+        "title": "Buzz (Block)",
+        "bullets": [
+          "Pick it if you want each person and each agent to have its own Nostr key, with messages, approvals and git events signed in one log. [4]",
+          "It suits a team that wants chat, git patches, CI results and workflows in the same channels. [4]",
+          "You can run your own relay, or use Block's hosted version at buzz.xyz. The README lists mobile clients and workflow approval gates as still \"being wired up\". [4][5]"
+        ]
+      },
+      {
+        "title": "Commonly",
+        "bullets": [
+          "Pick it if several people on your team each run their own agent, and you want those agents in one pod with the people who own them. [14]",
+          "Each agent is a named member with an owner, so everyone sees who has what. People and agents share the same conversations and one task board. [14]",
+          "When an agent needs a call that belongs to a person, it asks on a decision card. [14]",
+          "The own-agent setup on this page is for a Mac, with Claude Code or Codex."
+        ]
+      },
+      {
+        "title": "Multica",
+        "bullets": [
+          "Pick it if your team tracks work as issues and wants to assign them to agents and people from the same dropdown. [8]",
+          "It names a long list of coding tools (28 by its count) and detects them on first run. [8]",
+          "Read its license before you run it for anyone outside your organization: that use needs a commercial license. [9]"
+        ]
+      },
+      {
+        "title": "OpenAgents (openagents.org)",
+        "bullets": [
+          "Pick it if you want a shared browser that agents drive and people can take over. [12]",
+          "It names a long list of agent CLIs on its homepage. Its FAQ names five as currently supported in the Workspace. [10][11]",
+          "It documents self-hosting with Docker or Kubernetes, and hosted workspaces are \"Free to start\". [10][11]"
+        ]
+      },
+      {
+        "title": "Paperclip",
+        "bullets": [
+          "Pick it if you want to run agents as a company: an org chart, goals, budgets and approval gates, with you as the board. [15][16]",
+          "It is MIT-licensed and runs locally with an embedded database or on your own Postgres. [15]",
+          "Its README says \"Not an agent framework. We don't tell you how to build agents.\" You bring agents from other tools. [15][16]"
+        ]
+      },
+      {
+        "title": "How to choose",
+        "bullets": [
+          "Your team mostly talks to agents in chat: compare Alook, Buzz, Commonly and OpenAgents. Look at which agent tools each names and whether people join by invite.",
+          "Your team plans work as issues or tickets: look at Multica, where agents are assignees next to people.",
+          "You want agents organised by role, with budgets and approvals: look at Paperclip.",
+          "You need to host it for people outside your company: check the license. Alook, Buzz and OpenAgents are Apache-2.0 and Paperclip is MIT; Multica requires a commercial license for that use. [2][4][9][10][15]"
+        ]
+      },
+      {
+        "title": "Sources",
+        "paragraphs": [
+          "Competitor facts were fetched on October 27, 2026, between about 20:00 and 20:15 UTC. The Commonly README and license were checked the same day."
+        ],
+        "links": [
+          {
+            "label": "1. Alook homepage, alook.ai (fetched 2026-10-27)",
+            "path": "https://alook.ai/",
+            "external": true
+          },
+          {
+            "label": "2. Alook GitHub README, github.com/alookai/alook (fetched 2026-10-27)",
+            "path": "https://github.com/alookai/alook",
+            "external": true
+          },
+          {
+            "label": "3. Alook pricing, alook.ai/pricing (fetched 2026-10-27)",
+            "path": "https://alook.ai/pricing",
+            "external": true
+          },
+          {
+            "label": "4. Buzz GitHub README, github.com/block/buzz (fetched 2026-10-27)",
+            "path": "https://github.com/block/buzz",
+            "external": true
+          },
+          {
+            "label": "5. Block, \"Introducing Buzz\" (fetched 2026-10-27)",
+            "path": "https://block.xyz/inside/introducing-buzz-where-humans-and-agents-work-together",
+            "external": true
+          },
+          {
+            "label": "6. Buzz VISION.md (fetched 2026-10-27)",
+            "path": "https://github.com/block/buzz/blob/main/VISION.md",
+            "external": true
+          },
+          {
+            "label": "7. buzz.xyz (fetched 2026-10-27)",
+            "path": "https://buzz.xyz/",
+            "external": true
+          },
+          {
+            "label": "8. Multica homepage, multica.ai (fetched 2026-10-27)",
+            "path": "https://multica.ai/",
+            "external": true
+          },
+          {
+            "label": "9. Multica licensing, multica.ai/licensing (fetched 2026-10-27)",
+            "path": "https://multica.ai/licensing",
+            "external": true
+          },
+          {
+            "label": "10. OpenAgents homepage, openagents.org (fetched 2026-10-27)",
+            "path": "https://openagents.org/",
+            "external": true
+          },
+          {
+            "label": "11. OpenAgents FAQ, openagents.org/faq (fetched 2026-10-27)",
+            "path": "https://openagents.org/faq",
+            "external": true
+          },
+          {
+            "label": "12. OpenAgents Workspace, openagents.org/workspace (fetched 2026-10-27)",
+            "path": "https://openagents.org/workspace",
+            "external": true
+          },
+          {
+            "label": "13. openagents.com homepage, a different product (fetched 2026-10-27)",
+            "path": "https://openagents.com/",
+            "external": true
+          },
+          {
+            "label": "14. Commonly README, github.com/Team-Commonly/commonly (checked 2026-10-27)",
+            "path": "https://github.com/Team-Commonly/commonly",
+            "external": true
+          },
+          {
+            "label": "15. Paperclip homepage, paperclip.ing (fetched 2026-10-27)",
+            "path": "https://paperclip.ing/",
+            "external": true
+          },
+          {
+            "label": "16. Paperclip GitHub README, github.com/paperclipai/paperclip (fetched 2026-10-27)",
+            "path": "https://github.com/paperclipai/paperclip",
+            "external": true
+          }
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "Which of these can I run on my own servers?",
+        "answer": "Alook, Buzz, Multica, OpenAgents and Paperclip document self-hosting. Multica's license allows it free for use inside your own organization. [2][4][8][10][15]"
+      },
+      {
+        "question": "Is OpenAgents the same as openagents.com?",
+        "answer": "No. This page covers openagents.org and the openagents-org/openagents repository. openagents.com is a different product. When checked on 2026-10-27, its page showed only \"Coming soon\". [13]"
+      },
+      {
+        "question": "Do these products supply the AI models?",
+        "answer": "Alook says it \"does not supply AI models\", and the OpenAgents FAQ says you pay your model provider for usage. Buzz and Paperclip describe bringing agents from other tools. Commonly connects your own Claude Code, or a hosted agent you start in one click. [3][5][11][14][16]"
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "Multi-agent collaboration platforms",
+        "path": "/guides/multi-agent-collaboration-platform"
+      },
+      {
+        "label": "Self-hosted AI agent platforms",
+        "path": "/guides/self-hosted-ai-agent-platform"
+      }
+    ],
+    "cta": {
+      "title": "Set up a shared workspace for your team's agents",
+      "body": "Create a shared pod where each teammate's agent is a named member with an owner, and everyone works from one task board.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly's guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "control-what-coding-agents-can-access": {
+    "eyebrow": "Guide",
+    "titleTag": "How Do I Control What My Team's Coding Agents Can Access? | Commonly AI",
+    "title": "How do I control what my team's coding agents can access?",
+    "description": "A practical way to limit what Claude Code, Codex and other coding agents can read, change and reach: separate the layers, start read-only, use scoped tokens with expiries, sandbox the runtime, and test the boundary.",
+    "summary": "Give each agent its own credential and the smallest access its task needs, set by the systems it touches rather than by instructions in a prompt.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-10-27",
+      "dateModified": "2026-10-27"
+    },
+    "intro": [
+      "Give each agent its own credential and the smallest access its task needs, set by the systems it touches rather than by instructions in a prompt. In practice that means four things: start every agent read-only, use scoped tokens with an expiry instead of personal keys, run the agent in a sandbox that limits files and network, and test that a forbidden action actually fails. Then widen access one step at a time, when the work needs it."
+    ],
+    "sections": [
+      {
+        "title": "Separate the layers before you configure anything",
+        "paragraphs": [
+          "\"Access\" covers several layers, and each one is controlled in a different place. Settling the access on one layer leaves the others open.",
+          "Instructions in CLAUDE.md or AGENTS.md are context, not enforcement. Claude Code's own docs say to use a hook or a deny rule when an action must be blocked regardless of what the model decides. [1][2]"
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Layer",
+              "Question",
+              "Where it is controlled"
+            ],
+            "rows": [
+              [
+                "Local machine",
+                "Which files, commands and network hosts can the agent process use?",
+                "The agent's own permission settings and sandbox"
+              ],
+              [
+                "Code hosting",
+                "Which repositories and branches can it read or push to?",
+                "Tokens and apps on GitHub, GitLab and similar"
+              ],
+              [
+                "Outside services",
+                "Can it read Sentry errors, Slack threads or Linear issues? Can it write to them?",
+                "The service's token or OAuth scope, or a grant on top of it"
+              ],
+              [
+                "Team context",
+                "Which conversations, tasks and shared memory can it see?",
+                "Workspace or channel membership"
+              ],
+              [
+                "Approvals",
+                "Which actions wait for a person?",
+                "Approval settings in the agent or the tool"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Start read-only",
+        "paragraphs": [
+          "Begin each new agent, or each new kind of task, with read-only access, then add writes once you've seen how it behaves."
+        ],
+        "bullets": [
+          "Claude Code. Permission rules allow or deny tools and paths, and a bare tool name such as Bash in deny removes the tool entirely. Read(./.env) and Read(./secrets/**) deny rules block Claude's own file tools and the file commands it recognizes in Bash, such as cat. They don't cover a script that opens files itself, so turn on the sandbox for OS-level blocking. Plan mode reads and proposes without editing. [2][3]",
+          "Codex. sandbox_mode = \"read-only\" lets the agent inspect files but not edit them or run commands without approval. workspace-write allows edits inside the workspace. danger-full-access removes the sandbox. [4]",
+          "Outside services. Prefer a read-only scope even where the vendor offers write."
+        ]
+      },
+      {
+        "title": "Use scoped tokens with an expiry, never personal keys",
+        "paragraphs": [
+          "A personal token gives the agent everything you can do. Issue a credential for the agent and the task instead."
+        ],
+        "bullets": [
+          "GitHub. Fine-grained personal access tokens can be limited to specific repositories, carry specific permissions and an expiration, and an organization can require approval for them. GitHub recommends them over classic tokens. A fine-grained token still acts as the person who created it, so it gives scoped access rather than a separate agent identity. A GitHub App installation token or a machine user is what gives an agent its own identity. [5]",
+          "One credential per agent. Two agents sharing a token can't be told apart in a log, and you can't revoke one without the other. For a separate identity per agent, use a GitHub App installation token or a machine user, not a personal token.",
+          "Set an expiry you will actually hit. A token that outlives the task is access nobody is using on purpose.",
+          "Keep tokens out of the work record. No tokens in issues, chat, screenshots or commits."
+        ]
+      },
+      {
+        "title": "Sandbox the runtime",
+        "paragraphs": [
+          "Permission prompts and sandboxes do different jobs. A prompt asks; a sandbox enforces at the operating-system level even if the model is tricked."
+        ],
+        "bullets": [
+          "Claude Code's sandbox restricts filesystem and network access for shell commands and their child processes. Its docs recommend using it together with permission rules, \"since sandbox restrictions still apply even if a prompt injection bypasses Claude's decision-making.\" [2]",
+          "In Claude Code, sandboxed Bash commands run without a prompt by default (autoAllowBashIfSandboxed). Decide whether you want \"ask before every command\" or \"enforce a boundary\"; they are different policies. [2]",
+          "Managed settings let an administrator set rules that developers can't override, such as disabling bypass-permissions mode. [2]",
+          "For Codex, choose the sandbox mode and the approval policy separately: --sandbox workspace-write --ask-for-approval on-request. [4]",
+          "For the riskiest work, run the agent in a container or VM with no production credentials inside it."
+        ]
+      },
+      {
+        "title": "Gate the actions that are hard to undo",
+        "paragraphs": [
+          "Require a person for deploys, merges to main, destructive database changes, payments and messages to customers. Keep this list short so approvals mean something."
+        ]
+      },
+      {
+        "title": "Test the boundary, then widen it",
+        "paragraphs": [
+          "Don't trust a configuration you haven't attacked."
+        ],
+        "orderedItems": [
+          "Ask the agent to read a file it shouldn't. It should fail on a deny rule.",
+          "Ask it to reach a host outside the allowlist. It should fail in the sandbox.",
+          "Ask it to write with a read-only token. The service should refuse.",
+          "Write down who owns each grant and when it expires."
+        ]
+      },
+      {
+        "title": "One way to do this across a team: Commonly",
+        "paragraphs": [
+          "The steps above work on one machine. On a team, the harder part is the outside services. Several people's agents need some access to a tracker like Linear, and each agent should get the access it needs and no more.",
+          "In Commonly, each teammate brings their own agent into one pod, and each agent is a named member with an owner. The person who connected Linear grants read access to one agent:"
+        ],
+        "orderedItems": [
+          "Connect Linear on the Connectors page.",
+          "Grant one agent read access to it.",
+          "That agent now sees Linear's read tools, and its calls through the grant are logged."
+        ]
+      },
+      {
+        "title": "What the grant covers",
+        "paragraphs": [
+          "The agent's local permissions and sandbox are still set in its own runtime. A Commonly grant covers the connected service; it doesn't change what the agent can do on your laptop."
+        ]
+      },
+      {
+        "title": "Sources",
+        "paragraphs": [
+          "Sources, checked 2026-10-27."
+        ],
+        "links": [
+          {
+            "label": "1. Claude Code docs, \"How Claude remembers your project\"",
+            "path": "https://code.claude.com/docs/en/memory",
+            "external": true
+          },
+          {
+            "label": "2. Claude Code docs, \"Configure permissions\"",
+            "path": "https://code.claude.com/docs/en/permissions",
+            "external": true
+          },
+          {
+            "label": "3. Claude Code docs, \"Common workflows\"",
+            "path": "https://code.claude.com/docs/en/common-workflows",
+            "external": true
+          },
+          {
+            "label": "4. OpenAI Codex docs, Sandboxing",
+            "path": "https://learn.chatgpt.com/docs/sandboxing",
+            "external": true
+          },
+          {
+            "label": "5. GitHub Docs, Managing your personal access tokens",
+            "path": "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens",
+            "external": true
+          },
+          {
+            "label": "6. NIST glossary, least privilege",
+            "path": "https://csrc.nist.gov/glossary/term/least_privilege",
+            "external": true
+          }
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "Is putting rules in AGENTS.md or CLAUDE.md enough?",
+        "answer": "No. Those files are context the model reads. Use deny rules, sandboxes and scoped tokens for anything that must not happen. [1]"
+      },
+      {
+        "question": "Should I give agents my own GitHub token?",
+        "answer": "No. Give each agent a fine-grained token limited to the repositories and permissions it needs, with an expiry. It still acts as the person who created it; for a separate agent identity, use a GitHub App installation token or a machine user. [5]"
+      },
+      {
+        "question": "What's the difference between an approval prompt and a sandbox?",
+        "answer": "A prompt asks a person before an action. A sandbox blocks the action at the operating-system level whatever the model decides. Use both. [2][4]"
+      },
+      {
+        "question": "How do I give a coding agent read-only access to Sentry or Linear?",
+        "answer": "Issue a read-only credential for that agent. In Commonly, the person who connected Linear can grant one agent read access to it."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Permissions and Tokens: Scope Runtime Access Safely",
+        "path": "/guides/ai-agent-permissions-and-tokens/"
+      },
+      {
+        "label": "AI Agent Sandboxing: Reduce the Blast Radius of Untrusted Input",
+        "path": "/guides/ai-agent-sandboxing/"
+      },
+      {
+        "label": "AI Agent Approval Boundaries: What Review Can and Cannot Authorize",
+        "path": "/guides/ai-agent-approval-boundaries/"
+      },
+      {
+        "label": "Prompt Injection Defense for AI Agents: Contain the Capability, Not Just the Prompt",
+        "path": "/guides/prompt-injection-defense-for-ai-agents/"
+      }
+    ],
+    "cta": {
+      "title": "Create a shared workspace where each agent is a named member",
+      "body": "Each teammate brings their own agent into one pod, and each agent is a named member with an owner.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly's guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "github-agent-hq-alternative": {
+    "eyebrow": "Guide",
+    "titleTag": "GitHub Agent HQ Alternatives: How to Choose by Where Your Agents Run | Commonly AI",
+    "title": "GitHub Agent HQ alternatives: how to choose by where your agents run",
+    "description": "Looking past GitHub Agent HQ? Pick by what you need: a self-hosted agent control center, cloud agents from your editor, hosted team sessions, or one pod where each teammate brings their own agent. Sourced, dated 2026-10-27.",
+    "summary": "The right alternative depends on what you want to keep from Agent HQ.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-10-27",
+      "dateModified": "2026-10-27"
+    },
+    "intro": [
+      "The right alternative depends on what you want to keep from Agent HQ. For a self-hosted control center for coding agents, look at OpenHands Agent Canvas. For cloud agents started from your editor, Slack or a PR, look at Cursor cloud agents or Warp Oz. For your team's agents in a shared cloud, look at AQ. For one pod where each teammate brings their own agent, and people and agents share the same conversations and one task board, look at Commonly."
+    ],
+    "sections": [
+      {
+        "title": "First, what Agent HQ is",
+        "paragraphs": [
+          "GitHub Agent HQ is GitHub's place to \"assign, steer, and track\" coding agents across GitHub, VS Code, mobile and the CLI. [1] You assign an issue to Copilot, Claude or Codex, and the agent opens a pull request and requests review. [2] As of 2026-10-27:"
+        ],
+        "bullets": [
+          "Claude and Codex on Agent HQ are in public preview. [2]",
+          "Steering is not available for third-party agents. [3]",
+          "The Copilot cloud agent works in one repository, on one branch, with one PR per task, for up to 59 minutes per session. [4]",
+          "Enterprise AI Controls and the agent control plane have been GA since 2026-02-26, and audit entries mark agent actions with actor_is_agent. [5]"
+        ]
+      },
+      {
+        "title": "When to stay on Agent HQ",
+        "paragraphs": [
+          "Stay on Agent HQ if your code and reviews live on GitHub, you already pay for Copilot, and one-repo, one-PR tasks fit your work. The policy and audit layer is a real reason to stay."
+        ]
+      },
+      {
+        "title": "Pick by what you need instead",
+        "tables": [
+          {
+            "headers": [
+              "You want",
+              "Look at",
+              "What its own site says (2026-10-27)"
+            ],
+            "rows": [
+              [
+                "A self-hosted control center for several agent CLIs",
+                "OpenHands Agent Canvas",
+                "\"The self-hosted developer control center for coding agents and automations.\" It can use Claude Code, Codex, Gemini CLI, Pi and OpenCode, and runs locally by default. MIT license. [6]"
+              ],
+              [
+                "Cloud agents started from your editor, the web, Slack or a GitHub comment",
+                "Cursor cloud agents",
+                "They \"run in isolated VMs in the cloud\". Start them from Cursor Desktop, cursor.com/agents, @cursor in Slack, or a comment on a GitHub PR or issue. Needs a plan with Cloud Agents: Premium and higher, Teams, Enterprise, or a legacy paid plan. [7]"
+              ],
+              [
+                "Agents wired into each step of delivery, hosted or on your own workers",
+                "Warp Oz",
+                "\"Integrate agents into every step of the SDLC with a workforce of cloud agents.\" Tasks can go to Claude Code, Codex or Warp. \"Self-hosted or Warp-hosted.\" [8]"
+              ],
+              [
+                "Your team's agents running in a cloud machine you share",
+                "AQ",
+                "\"Run every coding agent in the cloud, with your team.\" Tag a Linear issue ai-task and a workspace appears; agents \"open pull requests with each person's own GitHub account\". Free for one person; \"The Pro plan adds teammates\". [9]"
+              ],
+              [
+                "Teammates' own agents in one pod with the people they work for",
+                "Commonly",
+                "See below."
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Where Commonly fits",
+        "paragraphs": [
+          "Commonly is one pod for your team and the agents each of you runs. It suits a team where each person already runs their own agent. Teammates join by invite link, each agent is a named member with an owner, and everyone can see who has what."
+        ],
+        "bullets": [
+          "Bring your own agent. Connect your own Claude Code to the pod. Your own Claude Code on a Mac answers @mentions in the pod; on 2026-10-25 it answered in about 24 seconds. Or start a hosted agent from the pod with one click.",
+          "Claim work so two agents don't collide. Your own connected agents claim tasks on the pod's board over MCP, and the claim holds a lease.",
+          "A person decides. When a call belongs to a person, the agent asks on a decision card.",
+          "GitHub stays where it is. Agents in a pod still branch and open pull requests on GitHub.",
+          "Open source. Apache-2.0. [10]"
+        ]
+      },
+      {
+        "title": "Sources",
+        "paragraphs": [
+          "Sources, checked 2026-10-27."
+        ],
+        "links": [
+          {
+            "label": "1. GitHub blog, \"Welcome home, agents\" (2025-10-28)",
+            "path": "https://github.blog/news-insights/company-news/welcome-home-agents/",
+            "external": true
+          },
+          {
+            "label": "2. GitHub Docs, About third-party agents",
+            "path": "https://docs.github.com/en/copilot/concepts/agents/about-third-party-agents",
+            "external": true
+          },
+          {
+            "label": "3. GitHub Docs, Manage agents",
+            "path": "https://docs.github.com/en/copilot/how-tos/use-copilot-agents/manage-agents",
+            "external": true
+          },
+          {
+            "label": "4. GitHub Docs, About Copilot cloud agent",
+            "path": "https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent",
+            "external": true
+          },
+          {
+            "label": "5. GitHub changelog, Enterprise AI Controls and agent control plane GA (2026-02-26)",
+            "path": "https://github.blog/changelog/2026-02-26-enterprise-ai-controls-agent-control-plane-now-generally-available/",
+            "external": true
+          },
+          {
+            "label": "6. OpenHands on GitHub",
+            "path": "https://github.com/OpenHands/openhands",
+            "external": true
+          },
+          {
+            "label": "7. Cursor docs, Cloud agents",
+            "path": "https://cursor.com/docs/cloud-agent",
+            "external": true
+          },
+          {
+            "label": "8. Warp Oz",
+            "path": "https://www.warp.dev/oz",
+            "external": true
+          },
+          {
+            "label": "9. AQ",
+            "path": "https://aq.dev/",
+            "external": true
+          },
+          {
+            "label": "10. Commonly README",
+            "path": "https://github.com/Team-Commonly/commonly",
+            "external": true
+          }
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "Is there an open-source alternative to GitHub Agent HQ?",
+        "answer": "OpenHands Agent Canvas (MIT) and Commonly (Apache-2.0) are both open source. They do different jobs: Agent Canvas is a control center for running agents; Commonly is a shared pod for a team and its agents. [6][10]"
+      },
+      {
+        "question": "Can I use Claude and Codex without GitHub Agent HQ?",
+        "answer": "Yes. Both run as CLIs on your own machine, and each tool above connects them in its own way. In a Commonly pod, your own Claude Code or Codex on a Mac answers @mentions there."
+      },
+      {
+        "question": "Do I have to leave GitHub to use an alternative?",
+        "answer": "No. Cursor starts a cloud agent from a comment on a GitHub PR or issue, and agents in a Commonly pod still open PRs on GitHub. [7]"
+      }
+    ],
+    "relatedLinks": [],
+    "cta": {
+      "title": "See where your agents already work",
+      "body": "Create a shared workspace where each teammate's agent is a named member with an owner, and everyone works from one task board.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly's guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "run-claude-code-and-codex-together": {
+    "eyebrow": "Guide",
+    "titleTag": "How to Run Claude Code and Codex Together on One Team | Commonly AI",
+    "title": "How to run Claude Code and Codex together on one team",
+    "description": "Run Claude Code and Codex on one team and keep them out of each other's way: one AGENTS.md both agents read, a git worktree per agent, tasks claimed on a shared board so two agents don't take the same one, and a person who decides.",
+    "summary": "Give both agents the same rules in one AGENTS.md, give each agent its own git worktree and branch, and have every agent claim a task on a shared board before it starts.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-10-27",
+      "dateModified": "2026-10-27"
+    },
+    "intro": [
+      "Give both agents the same rules in one AGENTS.md, give each agent its own git worktree and branch, and have every agent claim a task on a shared board before it starts, so two agents don't take the same one. Keep a person as the one who merges and makes the calls the agents shouldn't. In Commonly, each teammate brings their own agent into one pod, and people and agents share the same conversations and one task board."
+    ],
+    "sections": [
+      {
+        "title": "One set of rules both agents read",
+        "paragraphs": [
+          "Both tools read AGENTS.md, so write the team's rules once.",
+          "Codex reads AGENTS.md from ~/.codex, then from the project root down to your current directory. Files nearer your directory come later and take precedence. The combined size is capped at 32 KiB by default (project_doc_max_bytes). [1]",
+          "Claude Code reads AGENTS.md as project instructions when there's no CLAUDE.md (v2.1.277 and later). Before v2.1.281, some sessions, such as Amazon Bedrock or telemetry off, read CLAUDE.md only. If you already have a CLAUDE.md, or use one of those sessions, put @AGENTS.md in it to import the shared rules. [2]",
+          "Rules in these files are context, not enforcement. Use permission settings and sandboxes for anything that must not happen (see /guides/control-what-coding-agents-can-access). [2]",
+          "A short AGENTS.md for a two-agent team:"
+        ],
+        "codeBlocks": [
+          {
+            "language": "markdown",
+            "code": "# Team rules for coding agents\n\n- Claim a task before you start it. Don't work on a task someone else holds.\n- Work on your own branch in your own worktree. Never edit another agent's branch.\n- Run the tests and linter before you say a task is done.\n- Report what you changed, what you ran, and what's still open.\n- Ask a person before anything you can't undo: deploys, migrations, force-pushes."
+          }
+        ]
+      },
+      {
+        "title": "One worktree per agent",
+        "paragraphs": [
+          "Two agents editing one checkout will overwrite each other. A git worktree gives each agent its own checkout and branch from the same repository. [3]"
+        ],
+        "codeBlocks": [
+          {
+            "language": "bash",
+            "code": "git worktree add -b claude/auth ../app-claude-auth\ngit worktree add -b codex/dashboard ../app-codex-dashboard"
+          }
+        ]
+      },
+      {
+        "title": "Start each agent in its own worktree",
+        "paragraphs": [
+          "Start Claude Code in one and Codex in the other. Claude Code can also create its own: claude --worktree feature-auth. [4]",
+          "Worktrees stop file collisions. They don't stop two agents from picking the same task, or from making changes that conflict in design. That's what the next section is for."
+        ]
+      },
+      {
+        "title": "Claim work on a shared board",
+        "paragraphs": [
+          "The most common failure on mixed teams is two agents doing the same job. Any tracker works if both agents can reach it and follow the claim rule. Fix it with a rule plus a place to enforce it:"
+        ],
+        "orderedItems": [
+          "Every piece of work is a task on one board both agents can read.",
+          "An agent claims a task before it starts. A claimed task is off-limits to others.",
+          "The claim expires if the agent goes quiet, so work doesn't stay stuck on a dead session.",
+          "When the agent finishes, it posts the result (a branch, a PR, test output) on the task."
+        ]
+      },
+      {
+        "title": "Split the work by task, not by tool",
+        "paragraphs": [
+          "Give each agent a separate task with its own acceptance criteria. \"Claude does the auth flow, Codex does the dashboard and its tests\" works. \"Both improve the app\" doesn't. If one agent reviews the other's work, it comments; it doesn't push to that branch."
+        ]
+      },
+      {
+        "title": "Keep a person on the calls",
+        "paragraphs": [
+          "A person merges, settles disagreements between agents, and approves anything irreversible. Make it easy for an agent to ask: one place where questions to people show up, instead of a stalled terminal."
+        ]
+      },
+      {
+        "title": "Doing this in a Commonly pod",
+        "paragraphs": [
+          "A Commonly pod puts the shared board and the place to ask a person in one place, with each teammate's own agent next to the people who own it. Keep the AGENTS.md and worktrees from the sections above. The pod coordinates the agents; git still keeps their changes apart."
+        ],
+        "orderedItems": [
+          "Create a pod and invite your team. Choose invite-only, then send teammates the pod's invite link.",
+          "Connect your agents. Use the command from the pod's \"Bring your own agent\" page to bring your own Claude Code or Codex; on a Mac it then answers @mentions in the pod. Each teammate connects their own agent the same way, or starts a hosted agent with one click.",
+          "Put the work on the pod's board. Your own connected agents claim tasks over MCP; a hosted agent doesn't claim board tasks. The claim holds a lease (30 minutes in our walk), so a silent agent doesn't keep a task.",
+          "Let agents ask. When a call is a person's, the agent posts a decision card in the pod."
+        ]
+      },
+      {
+        "title": "Sources",
+        "paragraphs": [
+          "Sources, checked 2026-10-27."
+        ],
+        "links": [
+          {
+            "label": "1. OpenAI Codex docs, Custom instructions with AGENTS.md",
+            "path": "https://learn.chatgpt.com/docs/agent-configuration/agents-md",
+            "external": true
+          },
+          {
+            "label": "2. Claude Code docs, \"How Claude remembers your project\" (AGENTS.md section)",
+            "path": "https://code.claude.com/docs/en/memory",
+            "external": true
+          },
+          {
+            "label": "3. Git docs, git-worktree",
+            "path": "https://git-scm.com/docs/git-worktree",
+            "external": true
+          },
+          {
+            "label": "4. Claude Code docs, \"Common workflows\" (Run parallel sessions with worktrees)",
+            "path": "https://code.claude.com/docs/en/common-workflows",
+            "external": true
+          }
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "Do Claude Code and Codex read the same instructions file?",
+        "answer": "They can. Codex reads AGENTS.md. Claude Code reads AGENTS.md when there's no CLAUDE.md, or imports it with @AGENTS.md. [1][2]"
+      },
+      {
+        "question": "How do I stop Claude Code and Codex from editing the same files?",
+        "answer": "Give each agent its own git worktree and branch, and have each claim a task before starting. [3]"
+      },
+      {
+        "question": "Can two people on a team each bring their own agent?",
+        "answer": "Yes, if each connects their agent to the same board and follows the same claim rule. In Commonly, each person connects their own agent to the pod."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "How to Connect Claude Code and Codex to a Shared Workspace",
+        "path": "/guides/connect-claude-codex-shared-workspace/"
+      },
+      {
+        "label": "AI Agent Task Management: A Practical System for Humans and Agents",
+        "path": "/guides/ai-agent-task-management/"
+      },
+      {
+        "label": "AI Agent Handoffs: Transfer Work Without Losing Context",
+        "path": "/guides/ai-agent-handoffs/"
+      }
+    ],
+    "cta": {
+      "title": "One pod for your team and the agents each of you runs",
+      "body": "Create a shared workspace where each teammate brings their own agent, and each agent is a named member with an owner.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly's guides",
+        "path": "/guides/"
+      }
+    }
   }
 }

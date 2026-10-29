@@ -44,8 +44,6 @@ sender-authentication mechanism.
 - ✅ Webhook route `POST /api/webhooks/groupme/:integrationId`
 - UI: Sidebar Apps quick-add uses a redirect flow (no inline config fields); the integration stores Bot ID for outbound replies and Group ID for callback routing (the callback does not supply Bot ID).
 
-External service stub lives at `external/commonly-provider-services/groupme-service/`.
-
 ## Notes
 - Inbound delivery is callback-based, while command and summary responses use
   the GroupMe bot API; this avoids mirroring every message and limits loops.

@@ -7,10 +7,13 @@
 // can take the offer away before it is seen.
 import React, { useState } from 'react';
 import {
+  cleanup,
   fireEvent, render, screen, waitFor, within,
 } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
+import axios from 'axios';
 import V2Thread from '../components/V2Thread';
+import { resetByoStepsForTest } from '../utils/byoTelemetry';
 import { AuthContext } from '../../context/AuthContext';
 
 jest.mock('../../context/SocketContext', () => ({
@@ -240,6 +243,45 @@ describe('V2Thread — the connect start links Bring your own', () => {
       pod: { ...OWN_POD, createdBy: 'someone-else' },
     });
     expect(screen.queryByRole('button', { name: OPEN_BYO })).not.toBeInTheDocument();
+  });
+
+  test('the link pings byo-offer-shown once; a thread without it does not', async () => {
+    resetByoStepsForTest();
+    const pings = () => axios.post.mock.calls.filter(([url, body]) => String(url).endsWith('/api/stats/byo-step')
+      && body?.step === 'byo-offer-shown').length;
+    axios.post.mockClear();
+    renderThread([welcome]);
+    expect(pings()).toBe(0);
+    cleanup();
+    renderThread([welcome, message('mine', 'u1', 'maya', CONNECT, 4)]);
+    await screen.findByRole('button', { name: OPEN_BYO });
+    expect(pings()).toBe(1);
+  });
+
+  test('a matching reply folded into a thread card renders no link and records no offer', () => {
+    resetByoStepsForTest();
+    axios.post.mockClear();
+    renderThread([
+      welcome,
+      message('root', 'u1', 'maya', 'Where do I start?', 4),
+      message('reply', 'u1', 'maya', CONNECT, 5, { thread_root_id: 'root' }),
+    ]);
+    expect(screen.queryByRole('button', { name: OPEN_BYO })).not.toBeInTheDocument();
+    expect(axios.post.mock.calls.filter(([url, body]) => String(url).endsWith('/api/stats/byo-step')
+      && body?.step === 'byo-offer-shown')).toHaveLength(0);
+  });
+
+  test('a matching thread root renders the link and records the offer', async () => {
+    resetByoStepsForTest();
+    axios.post.mockClear();
+    renderThread([
+      welcome,
+      message('root', 'u1', 'maya', CONNECT, 4),
+      message('reply', 'scout-1', 'scout', 'Which one do you use?', 5, { thread_root_id: 'root', user: { username: 'scout', isBot: true } }),
+    ]);
+    await screen.findByRole('button', { name: OPEN_BYO });
+    await waitFor(() => expect(axios.post.mock.calls.filter(([url, body]) => String(url).endsWith('/api/stats/byo-step')
+      && body?.step === 'byo-offer-shown')).toHaveLength(1));
   });
 
   test('a message from Scout with that text gets no link', () => {

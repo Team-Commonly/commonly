@@ -10,7 +10,7 @@ jest.mock('../../../models/User', () => ({
 
 const {
   markPodOpened, markStartPicked, markByoOpened, markByoCommandCopied,
-  markByoConnectionAttempt, markWelcomeHostedStart, resetOnboardingMarksForTest,
+  markByoConnectionAttempt, markWelcomeHostedStart, markSurface, resetOnboardingMarksForTest,
 } = require('../../../services/onboardingMarks');
 
 const flush = () => new Promise((r) => setImmediate(r));
@@ -222,6 +222,44 @@ describe('BYO setup marks', () => {
     markByoConnectionAttempt('u2', { config: { runtime: { runtimeType: 'native' } } });
     markByoConnectionAttempt('u3', { config: { runtime: { runtimeType: 'webhook', webhookUrl: 'https://example.test' } } });
     expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+});
+
+describe('markSurface (D139)', () => {
+  test.each(['inviteCardShownAt', 'inviteCardDismissedAt', 'byoOfferShownAt'])('%s is write-once in the filter, never for bots', (mark) => {
+    markSurface('u1', mark);
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+    const [filter, update] = mockUpdateOne.mock.calls[0];
+    expect(filter).toEqual({ _id: 'u1', isBot: { $ne: true }, [`onboarding.${mark}`]: { $exists: false } });
+    expect(Object.keys(update.$set)).toEqual([`onboarding.${mark}`]);
+    expect(update.$set[`onboarding.${mark}`]).toBeInstanceOf(Date);
+  });
+
+  test('refuses any field outside the three surface marks, and no person means no write', () => {
+    markSurface('u1', 'podOpenedAt');
+    markSurface('u1', 'isAdmin');
+    markSurface('', 'inviteCardShownAt');
+    markSurface(undefined, 'byoOfferShownAt');
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+
+  test('one write per person per mark per process; each mark is independent', () => {
+    markSurface('u1', 'inviteCardShownAt');
+    markSurface('u1', 'inviteCardShownAt');
+    markSurface('u1', 'inviteCardDismissedAt');
+    markSurface('u2', 'inviteCardShownAt');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(3);
+  });
+
+  test('a failed write is retried on the next ping and never throws; reset forgets', async () => {
+    mockUpdateOne.mockRejectedValueOnce(new Error('mongo down'));
+    expect(() => markSurface('u1', 'byoOfferShownAt')).not.toThrow();
+    await flush();
+    markSurface('u1', 'byoOfferShownAt');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(2);
+    resetOnboardingMarksForTest();
+    markSurface('u1', 'byoOfferShownAt');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(3);
   });
 });
 

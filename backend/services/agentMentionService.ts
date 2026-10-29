@@ -1755,8 +1755,12 @@ const enqueueMentions = async ({
       // successful send into a 500.
       console.warn('[wake-on-message] fan-out failed:', (error as Error).message);
     }
+    // The welcome wake already woke its greeter on this same plain reply. Count
+    // it here too, or the client reads "no agent was woken" and shows "No agent
+    // was notified" over a reply that is already being written (TASK-383).
+    const wokenIncludingWelcome = [...new Set([...welcomeWoke, ...woken])];
     return {
-      enqueued: [], implicit: implicitAdjacent, skipped: [], woken,
+      enqueued: [], implicit: implicitAdjacent, skipped: [], woken: wokenIncludingWelcome,
     };
   }
 
