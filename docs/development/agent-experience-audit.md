@@ -2337,8 +2337,9 @@ as "older response shape," not "your message reached nobody."
 
 ## 41. A conflicting PR's checks describe a tree that will never exist (2026-08-22, pod-architect + sprint-review)
 
-> Numbering assumes #1122 (entry 39) and #1132 (entry 40) land first. If they
-> merge in a different order, renumber this one rather than them.
+> Entries 39 and 40 are unused: #1122 and #1132 closed unmerged on 2026-10-23.
+> #1122's entry now sits at 86, and this entry's number no longer depends on
+> either.
 
 Three stacked threading PRs sat at heads I had just pushed. Their pages showed
 green ticks. I reported them as green in a task update. All three reports were
@@ -2488,12 +2489,26 @@ considered and declined, or the next reader re-derives it.
 
 4. *The base branch predates the workflow fix* → the fix never applies. For a
    `pull_request` event GitHub reads the workflow definition from the **merge
-   ref**, which is base + head — so the BASE branch's copy of the file decides
-   whether the event matches. `#1123` dropped `branches: [main]` from
-   `tests.yml` on main at 15:20:27Z, and `#1132` still got zero test runs from
-   a head pushed at 18:11:30Z, three hours later, because its base
-   (`docs/ax-two-call-sites`, last touched 06:52) still carries the old
-   filter. Verified by reading `tests.yml` on that branch.
+   ref**, which is base + head — so when the head does not touch that workflow
+   file, the BASE branch's copy of it decides whether the event matches. A head
+   that edits the workflow itself contributes its version to the merge ref and
+   can fix its own triggering; that is not the case below. `#1123` dropped
+   `branches: [main]` from `tests.yml` on main at 15:20:27Z, and `#1132` still
+   got zero test runs from a head pushed at 18:11:30Z, three hours later,
+   because its base (`docs/ax-two-call-sites`, last touched 06:52) still
+   carries the old filter.
+
+   **Evidence classes differ across this mechanism, and the difference is worth
+   marking.** The example is verified *here*: pre-`#1123` the block was
+   `pull_request: branches: [main, v1.0.x]` with no `paths:` at all, so the
+   filter is the sole candidate cause rather than merely a present one — an
+   earlier basis established only that it was present, which a competing cause
+   would survive. The qualifying clause is different: *"a head that edits the
+   workflow contributes its version to the merge ref"* is a **GitHub platform
+   rule, unverified in this repo** — no PR here has edited a workflow its own
+   base would have excluded, so nothing in this history reads it. It is
+   documentation of the platform, not a measurement of us. (@sprint-review.
+   Same standing as the `edited` line elsewhere in this entry.)
 
    Its whole check list is one skipped `Release Branch Guard`, and its
    `mergeStateStatus` is `CLEAN` — nothing failing, because nothing ran.
@@ -2633,10 +2648,146 @@ workflow's clock instead of the pod's, the parent commit instead of the head.
   retarget. Reading the check *names* answers a question the check *count*
   cannot.
 
+### Addendum: what the six absent checks mean, and why one of them is unfalsifiable from a checkout
+
+@sprint-review, 2026-08-22. The table above establishes the counts and the
+membership; two consequences of it are worth stating outright rather than
+leaving to be re-derived.
+
+**A stacked PR is not differently checked, it is LESS checked, and the missing
+set is weighted toward analysis.** Four of the six extras are CodeQL's — the
+umbrella check plus `Analyze (actions)`, `(javascript-typescript)` and
+`(python)`. So until its base is `main`, a stacked PR gets **no static
+analysis at all**.
+
+**What that costs, measured rather than assumed (2026-08-25).** The first
+draft of this addendum said such a change "can be reviewed, gated, and merged
+having never been scanned." The merge half does not survive checking:
+
+    last 200 merged PRs with base != main ........ 0
+    18 most recent merged, carrying CodeQL ....... 18 / 18
+       incl. #1187 (commonly-mcp only), #1185 (scripts + dev.sh + docs),
+             #1189 (backend + cli)
+    open stacked PRs at time of writing .......... 2, both docs-only
+
+GitHub auto-retargets a stacked PR to `main` when its parent lands, and the
+retargeted head then draws the full main-based set. **That second clause is too
+strong, and #1251 is what caught it** — @sprint-review, 2026-08-26. Being *in*
+the main-based population and being *checked* by its full set are two claims,
+and this sentence ran them together. The two base-scoped guards list
+`opened, synchronize, reopened[, ready_for_review]`; retargeting fires `edited`,
+which is in neither list, so neither guard runs on the transition itself — only
+on the next push, if one comes. What the retarget reliably does is move the head
+into the population, not subject it to the checks. The CodeQL family is
+configured outside any `on:` block in this repo, so whether *it* fires on a
+retarget cannot be answered from a checkout either — this entry's own complaint,
+pointed back at the entry. The measurement above is unaffected: it samples
+CodeQL presence on merged heads, and that observation stands however the
+transition is triggered. Where the child merges into
+the parent branch instead, that merge is a `synchronize` on the parent's own
+main-based PR, so the combined content is analysed there before it reaches
+`main`. Nothing in the sampled window reached `main` unanalysed.
+
+So the harm is **not merge safety — it is a review-time verdict hazard**. A
+reviewer reads green on a stacked PR and cannot tell from the checks that
+nothing has been scanned yet. That is entry-worthy on its own: by the
+cheap/expensive split, a stale observation costs a paragraph, while an approval
+issued against an unanalysed head is the expensive kind, and the reviewer has
+no signal distinguishing the two. The retarget stays load-bearing for the
+auto-close hazard and for moving the verdict onto scanned ground; it is not
+what stands between unscanned code and `main`.
+
+Window, since a negative is only as good as its range: 200 merged PRs by
+`baseRefName`, 18 by check history, all open PRs as of 2026-08-25. `baseRefName`
+reports the **final** base, so a PR that was stacked and then retargeted is
+indistinguishable from one never stacked — which is why the CodeQL-presence
+sample is the load-bearing half here and the base count is not.
+
+**Not every absence is a stacking absence, and E2E is the one that fools you.**
+Two axes move the denominator independently — **paths** and **base** — and
+folding one into the other is how a count stops being portable. Three PRs
+measured 2026-08-25 separate them, because the middle one holds content
+constant and varies only the base:
+
+| PR | content | base | checks |
+|---|---|---|---|
+| #1170 | `backend/` | `main` | 11 |
+| #1122 | `docs/` | `main` | 10 |
+| #1132 | `docs/` | stacked | 4 |
+
+`#1170 → #1122` isolates the **paths** axis and moves exactly one check:
+`E2E Tests`. `playwright.yml` carries no `branches` filter on `pull_request` —
+the line above it says so outright, *"No branches filter: stacked PRs must get
+E2E too"* — so E2E is absent from a docs-only PR whether or not it is stacked.
+
+The docs-only case is the *weak* form of the paths axis, and reading it as the
+whole of it under-states the gap — @sprint-review, 2026-08-25. `playwright.yml`
+is gated on `frontend/** | backend/** | e2e/** | playwright.config.*`, so a
+stacked PR **carrying code** in `cli/`, `scripts/`, `k8s/`, `commonly-mcp/`,
+`packages/` or `_external/clawdbot` gets `Tests` + `Detect secrets` and
+**neither E2E nor static analysis**. That is the case this entry is really
+about. The two axes bite independently, confirmed on merged history: #1187
+(`commonly-mcp` only) and #1185 (`scripts`, `dev.sh`, `install.sh`, docs) each
+ran CodeQL and neither ran E2E; stack either and the remaining coverage is two
+checks.
+
+Worth naming why it is easy to miss: `playwright.yml`'s `pull_request` block
+carries the comment *"No branches filter: stacked PRs must get E2E too"*, which
+is true about the **base** dimension and is silently undone for a whole class of
+code by the `paths:` clause three lines below it. A comment asserting coverage
+that a sibling clause in the same `on:` block removes — in the file that
+documents the fix.
+
+`#1122 → #1132` isolates the **base** axis and moves six: the four CodeQL-family
+jobs plus the two base-scoped merge guards (`Source changed ⇒ version bumped`,
+`Stale-base merge guard`). The guards are correctly filtered rather than lost,
+so **what stacking actually costs you is the CodeQL family, entire and nothing
+else** — which is a sharper claim than a raw "seven missing", and a falsifiable
+one.
+
+@sprint-review first decomposed #1132's seven as "4 analysis, 1 E2E, 2 by-design
+guards" and put the E2E in the stacking gap, then retracted it and supplied the
+#1122 measurement that settles it. Worth recording because the misattribution
+was made by the person who found the CodeQL scoping in the first place: two
+absences render identically in the checks list, so an absence has to be traced
+to its filter before it is counted.
+
+**The scoping of those three cannot be checked from inside a checkout.** The
+entry above notes there is no `codeql.yml`; the sharper form is that the
+configuration lives *only* behind an API call:
+
+    gh api repos/<owner>/<repo>/code-scanning/default-setup
+      state: configured
+      languages: actions, javascript, javascript-typescript, python, typescript
+
+Every other check in this repo traces to a file with an `on:` block a reader
+can inspect and falsify. This one does not — so an agent computing "which
+checks should this PR have?" from `.github/workflows/` will confidently
+produce the wrong denominator, with the *security* jobs as the omission it has
+no way to see. The failure is silent and points the wrong way: the checks that
+are hardest to notice missing are the ones you would most want to notice.
+
+**One exclusion, stated so nobody "fixes" it later** — @sprint-review,
+2026-08-25. Counting `branches`-scoped `pull_request` workflows in
+`.github/workflows/` returns **three**, not two: `package-version-guard.yml`,
+`pr-base-freshness.yml`, and `release-safety.yml`. The third is
+`branches: [ v1.0.x ]` — a different release line, not a main-PR skip. It is
+absent from a `main`-based PR and from a stacked one alike, so it belongs
+**outside** this denominator entirely. Anyone recomputing the gap from the
+workflow files will find it and, without this note, will either count it as a
+fourth base-scoped guard or "correct" it to `main`.
+
+**Practical rule**, the mirror of the base-scoped-guard tell above: `Analyze
+(…)` jobs are a second certificate that a run happened against `main`. Their
+absence means the PR is stacked — and that nothing has scanned it yet. Read it
+as a fact about the *verdict you are about to issue*, not about what will reach
+`main`: the code will be scanned, later, on someone else's PR.
+
 ## 42. A dual-auth route degrades to the other identity silently, so a test can name a shape it never exercises (2026-08-22, sprint-review + pod-architect)
 
-> Numbering follows entry 41's caveat: 39 and 40 are still reserved by #1122
-> and #1132. Renumber this one, not those, if they land in another order.
+> Entries 39, 40, 44 and 45 are unused: #1122, #1132, #1143 and #1204 closed
+> unmerged on 2026-10-23. The entries #1122, #1143 and #1204 carried now sit
+> at 86, 87 and 88.
 
 `/api/v1/tasks` does not take one auth middleware. It dispatches on the token:
 
@@ -4220,3 +4371,170 @@ Measured with `createParser(catalogue).parse(source)`: a `Text` body of 601 char
 **Repair:** inspect every statement/call before accepting source, then validate the materialized element tree with a full JSON Schema validator. Element wrappers preserve component identity when following child/helper references. `backend/__tests__/unit/services/uiCardValidation.test.js` pins string/array/number limits, helper placement and cross-item rules as well as dormant unsafe calls.
 
 **Lesson:** accepting a schema as a parser input does not establish which schema constraints it enforces. Probe the actual boundary values before making the parser an authorization or resource-limit boundary.
+
+## 86. An early return bounds the code below it, not the helper a later call site re-enters (2026-08-22, pod-architect)
+
+*Provenance: this seat's own error, asserted twice in the team's pod channel and caught only by writing the test that depended on it. No peer challenged it; both statements were read and neither was contradicted, which is the part worth filing.*
+
+`agentMentionService.enqueueMentions` computes `isRouted` and then does:
+
+```js
+if (!isRouted) {
+  woken = await enqueueWakeOnMessage({ ..., excludeKeys: null, ... });
+  return { enqueued: [], implicit: [], skipped: [], woken };
+}
+```
+
+Reading that, this seat concluded — and posted twice, as a design fact others were invited to build on — that **`isRouted` short-circuits before any ambient fan-out, so a routed message never reaches wake-on-message.** The second statement went further and named it the single boundary a reviewer should gate on.
+
+It is false. `enqueueWakeOnMessage` has a **second call site**, later in the same function, for routed messages: it wakes the opt-ins the mention path did not reach, passing `excludeKeys: enqueuedIdentityKeys`. Both call sites are in the same function. The early return bounds the *statements below it*; it says nothing about a helper that a later call site invokes again.
+
+**Lesson:** an early return is a claim about control flow at one point, and it is routinely read as a claim about a *callee*. Those differ whenever the callee has more than one caller — which is invisible from the early return, invisible from the callee's body, and invisible from any amount of careful reading at either location. The check is one command, and this seat did not run it: `grep -n '<helperName>(' <file>` before asserting that anything short-circuits it.
+
+Two properties made this survive longer than it should have.
+
+It was **stated confidently to peers and drew no objection** — because a peer verifying it would read the same early return and reach the same conclusion. The error is reproducible from the same evidence, so social review cannot catch it. This is entry #37's shape in a new dimension: a fact scoped to the surface you read it from, where the surface is a control-flow construct rather than a store.
+
+And it was **load-bearing in the safe direction.** The belief was "scoping can never touch addressing," strictly more conservative than the truth, so nothing broke, no test failed, and the wrong model predicted correct behaviour everywhere it was applied. **A wrong belief that predicts correct behaviour is not self-correcting**, and it is the kind that gets built on — it had already been offered to a reviewer as the thing to gate hardest.
+
+**What the truth turned out to be, and it is better than the belief:** an addressed message delivers its `chat.mention` unconditionally, while the ambient fan-out *accompanying* it is scoped like any other ambient traffic. Addressing is untouchable; its ambient companion is not, and should not be — an opt-in who neither follows the thread nor was addressed has no claim on it.
+
+*Status: both call sites now carry a comment naming the other, with the correction stated at the site that produced it — the "ONE OF TWO CALL SITES" / "SECOND OF TWO CALL SITES" pair, shipped in #1120. Fixing the belief and not the surface that produced it is how a peer reproduces it next week.*
+
+## 87. A known-red suite absorbs the next failure (2026-08-22, pod-architect + sprint-review)
+
+`backend/__tests__/unit/server.test.js` fails 9/9 on `main` locally, and has
+for a while. The cause is environmental and known: local Node 26 versus CI's
+Node 22, where `jsonwebtoken` → `jws` → `jwa` → `buffer-equal-constant-time`
+throws at import, taking `server.ts:9` with it. CI is green; nothing is
+actually broken. The standing advice is "ignore those, they're the Node 26
+thing."
+
+@sprint-review named the cost of that advice: a known-red suite does
+not merely lose its own signal, it **absorbs any new failure that lands in
+it**. Measured on `main`, and the result is worse than the framing:
+
+```
+baseline                                     Tests: 9 failed, 9 total
+add one trivially-passing test               Tests: 9 failed, 1 passed, 10 total
+simulate a real boot regression              Tests: 9 failed, 9 total
+  (throw at the top of config/db-pg.ts,
+   which server.ts requires)
+```
+
+**The regression's output is byte-identical to the healthy baseline.** The
+suite already dies at import, so a second reason to die changes nothing you
+can see. Meanwhile adding an unrelated passing test *does* move the number.
+
+So the count is not weakly informative here — it is anti-informative. It moves
+for changes that do not matter and holds still for the one that does. A
+developer watching "still 9, same as always" is watching the one statistic
+guaranteed not to respond.
+
+**Scope, stated precisely.** This is a *local* blindness. CI runs Node 22, the
+suite passes there, and the simulated regression would have gone red in CI.
+The exposure is a person or agent using a local run to decide something — "I
+didn't break anything, the failures are the usual ones" — which is exactly how
+local runs get used between pushes.
+
+**But that reassurance is conditional, and it did not hold for the incident
+that produced this entry.** @sprint-review's read: combined with those
+branches having no CI at all, the boot bug had precisely zero instruments
+pointed at it. The timeline confirms it — `#1123`, which dropped the
+`branches: [main]` filter and so gave stacked PRs any CI at all, merged at
+15:20:27Z. The boot bug (a controller importing a script that ran `main()` at
+module scope, so booting the server ran a data migration) lived on a stacked
+branch before that, where `pull_request` workflows did not dispatch.
+
+So during that window the local suite could not show a new boot failure
+(this entry) and the remote suite was not running (entry 41, mechanism 1).
+**Each entry's stated mitigation is the other entry's failure mode**, and
+they coincided on one defect. "CI would catch it" is not a property of the
+repo; it is a property of whether CI ran on that PR, which entry 41 exists
+to say you cannot assume.
+
+Related to entry 42 but distinct. There the count sits in the verdict slot and
+means nothing (`0 total`). Here the count is real, the suite genuinely ran, and
+the failures are genuine — the defect is that the **baseline is non-zero**, so
+a delta has nowhere to show up.
+
+**Rules earned.**
+
+- **A permanently-red suite is a hole in coverage the size of that suite, not
+  a nuisance.** "Known failures" is a status, and statuses need an expiry or a
+  quarantine. Either fix the environment, pin the runtime locally, or mark the
+  suite skipped-with-reason so a *new* failure in it cannot hide behind an old
+  one.
+- **Compare counts against a recorded baseline, never against memory.** "Still
+  9" is only meaningful if 9 was written down and the suite's test count has
+  not changed. Both of those move.
+- **Do not accept an unchanged failure count as evidence you broke nothing.**
+  On any suite that fails at import, it is evidence of nothing at all. Run the
+  specific suites your change touches, or push and read CI, which is the tier
+  that is actually measuring.
+
+## 88. A stale PR ref answers with a conflict, not with an error (2026-08-25, pod-architect + sprint-review)
+
+The standing way to check a queue of stacked PRs for merge conflicts is to
+mirror every pull head locally and merge each pair in memory:
+
+```sh
+git fetch origin main 'refs/pull/*/head:refs/remotes/pr/*'
+git merge-tree --write-tree --messages pr/1122 origin/main
+```
+
+Run against eleven open PRs it reported `#1122` conflicting with `main` and
+with eight of the other ten — one file, `agent-experience-audit.md`, every
+time. That is a coherent story: a long-lived branch on a hot append-only file
+falling behind. It was published to the pod on that reading.
+
+`#1122` conflicts with nothing. Its head is `a1334af6`; the local mirror was
+pinned at `45e3606e`, two days and one rebase behind.
+
+**The mechanism.** `git fetch` refuses non-fast-forward ref updates unless
+given `--force`. A rebase moves a branch non-fast-forward by definition, so
+every rebased PR's local mirror silently stays at its pre-rebase commit. The
+fetch does not fail — it updates the refs it can and leaves the others, and
+the summary line for a skipped ref scrolls past among ten that succeeded.
+
+**Why this is an agent-experience defect.** The stale ref does not produce an
+error, an empty result, or an implausible one. It produces a **real conflict
+between two real commits** — `45e3606e` genuinely does conflict with today's
+`main`. The instrument was working perfectly and answering a question nobody
+asked: *would the branch as it stood on Saturday merge today?* Nothing in
+`git merge-tree`'s output carries the age of its inputs, so the verdict reads
+identically whether the ref is current or abandoned.
+
+This is the harder shape of the failure catalogued in entry 41. There the
+missing artifact was the tell — zero checks is visibly odd. Here the artifact
+is present, well-formed, and specific down to the filename, which is exactly
+what makes it convincing enough to publish.
+
+**What to do.**
+
+- **Force the fetch.** `git fetch --force origin 'refs/pull/*/head:refs/remotes/pr/*'`
+  costs nothing and removes the failure mode entirely. Without `--force` the
+  command is not a mirror, it is a mirror of whatever has not been rebased.
+- **Pin the inputs before trusting the verdict.** A merge check should print
+  the sha it merged and reconcile it against the live head:
+
+  ```sh
+  git rev-parse --short=8 pr/$N
+  gh pr view $N --repo <owner>/<repo> --json headRefOid -q '.headRefOid[0:8]'
+  ```
+
+  A conflict matrix without the shas it was computed from cannot be audited
+  later, and decays the moment anything in the queue is rebased.
+- **A conflict verdict is a measurement of a moment, not a property of two
+  branches.** Re-run it rather than citing an earlier run; three separate runs
+  of this same matrix over three days each gave a different answer, and every
+  one of them was correct when taken.
+- **The `--messages` grep and the resolve check are separate guards.**
+  `git merge-tree` exits `1` both for a genuine conflict and for an
+  unresolvable ref, so an exit-code-only control cannot tell a typo'd branch
+  from a conflicting one. Resolve both refs with
+  `git rev-parse --verify -q '<ref>^{commit}'` first, then grep the output for
+  `^CONFLICT`. That guard was in place here and did not help: the ref resolved
+  fine. It was just old.
+- Companion: entry 41 (a conflicting PR's checks describe a tree that will
+  never exist) and reviewer-checklist rule 12.
