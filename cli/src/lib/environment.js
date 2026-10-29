@@ -47,7 +47,14 @@ const ALLOWED_TOP_KEYS = new Set([
 const ALLOWED_SANDBOX_MODES = new Set([
   'none', 'workspace', 'read-only', 'bwrap', 'firejail', 'container', 'managed',
 ]);
-const ALLOWED_SANDBOX_TRUST = new Set(['public']);
+// `workspace` is the middle trust the comment below waits for (TASK-294): a seat
+// on a pod nobody outside it can read, allowed to read its start directory and
+// run read-only git there. Only the claude adapter reads it; every other adapter
+// refuses it before spawning, so it never degrades into a bare spawn.
+const ALLOWED_SANDBOX_TRUST = new Set(['public', 'workspace']);
+// The opt-ins a `workspace` seat can carry. Each one widens a single thing:
+// `write` adds Edit/Write/Bash and a writable workspace; `web` adds WebFetch.
+export const WORKSPACE_SANDBOX_ALLOW = Object.freeze(['write', 'web']);
 const ALLOWED_NETWORK_POLICIES = new Set(['unrestricted', 'restricted']);
 const INLINE_PROVIDER_CREDENTIAL_FIELD = /(?:key|token|secret|password|authorization|header|credential|auth)/i;
 
@@ -72,7 +79,8 @@ const findInlineProviderCredentialField = (value, path) => {
 // above, and a record that already carries it is resolved TOWARD confinement,
 // never toward the bare spawn (Wren 69585): `internal` is read as `public`, so
 // such a seat is confined where it can be and refuses to derive where it
-// cannot. A real middle trust arrives as its own adapter that reads it.
+// cannot. A real middle trust arrives as its own adapter that reads it — and
+// `workspace` (above) is that trust, which is why it is NOT a legacy alias.
 export const LEGACY_SANDBOX_TRUST = Object.freeze({ internal: 'public' });
 export const isLegacySandboxTrust = (sandbox) => (
   typeof sandbox?.trust === 'string'
@@ -99,6 +107,21 @@ export const effectiveSandboxTrust = (trust) => (
     ? LEGACY_SANDBOX_TRUST[trust]
     : trust
 );
+
+/**
+ * Throw when an adapter that does not implement the `workspace` tier is handed
+ * one (TASK-294). Only claude reads it. Every other adapter branches on
+ * `trust === 'public'`, so an unread `workspace` would fall into its
+ * non-public branch — the same silent widening `internal` was (Vera 69592).
+ * Called at each adapter's spawn entry, before any other sandbox read.
+ */
+export const refuseWorkspaceTrust = (sandbox, adapterLabel) => {
+  if (sandbox?.trust !== 'workspace') return;
+  throw new Error(
+    `${adapterLabel} adapter: sandbox.trust=workspace is claude-only for now. `
+    + "Declare sandbox.trust 'public' for this seat, or attach it with the claude adapter.",
+  );
+};
 
 const expandHome = (p) => {
   if (!p || typeof p !== 'string') return p;
@@ -294,17 +317,32 @@ export const validateEnvironmentSpec = (spec) => {
       errors.push('sandbox must be an object');
     } else {
       const {
-        mode, trust, network, filesystem,
+        mode, trust, network, filesystem, allow,
       } = spec.sandbox;
       if (mode !== undefined && !ALLOWED_SANDBOX_MODES.has(mode)) {
         errors.push(`sandbox.mode must be one of: ${[...ALLOWED_SANDBOX_MODES].join(', ')}`);
       }
       if (trust !== undefined && !ALLOWED_SANDBOX_TRUST.has(trust)) {
         errors.push(
-          "sandbox.trust must be 'public' — it marks a seat anyone in the pod can "
-          + 'talk to; omit it for your own seat '
+          "sandbox.trust must be 'public' or 'workspace' — 'public' marks a seat "
+          + "anyone in the pod can talk to, 'workspace' a seat on a private pod that "
+          + 'reads its start directory; omit it for an unconfined seat of your own '
           + `(got ${JSON.stringify(trust)})`,
         );
+      }
+      if (allow !== undefined) {
+        if (!Array.isArray(allow) || !allow.every((a) => WORKSPACE_SANDBOX_ALLOW.includes(a))) {
+          errors.push(`sandbox.allow must be an array of: ${WORKSPACE_SANDBOX_ALLOW.join(', ')}`);
+        } else if (trust !== 'workspace') {
+          // An opt-in widens the workspace tier and nothing else. On a public
+          // seat it would read as a way to hand strangers Bash.
+          errors.push(
+            "sandbox.allow applies only to trust 'workspace' "
+            + `(got trust ${JSON.stringify(trust)})`,
+          );
+        } else if (allow.includes('write') && mode === 'read-only') {
+          errors.push("sandbox.allow 'write' cannot be combined with sandbox.mode 'read-only'");
+        }
       }
       if (network !== undefined) {
         if (typeof network !== 'object' || network === null) {

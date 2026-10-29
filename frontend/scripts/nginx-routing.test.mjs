@@ -16,11 +16,19 @@ test('unknown public routes are real 404s while documented app routes retain SPA
   assert.match(config, /location = \/404\.html\s*\{\s*internal;/s);
   assert.doesNotMatch(config, /error_page\s+404\s+\/index\.html/);
   assert.match(config, /location ~ \^\/\(\?:v2\(\?:\/\|\$\).*try_files \$uri \$uri\/ \/index\.html;/s);
+  assert.match(config, /privacy\/\?\$\|terms\/\?\$/);
   assert.match(config, /login\/\?\$/);
   assert.match(config, /pods\(\?:\/\|\$\)/);
-  assert.match(notFoundPage, /<title>Page not found \| Commonly<\/title>/);
+  assert.match(notFoundPage, /<title>Page not found \| Commonly AI<\/title>/);
   assert.match(notFoundPage, /<h1>We couldn’t find that page<\/h1>/);
   assert.match(notFoundPage, /href="\/guides\/"/);
+});
+
+test('/pricing and /pricing/ redirect to the pricing section', async () => {
+  const config = await readFile(resolve(frontendDir, 'nginx.conf'), 'utf8');
+
+  assert.match(config, /location = \/pricing \{\s*return 301 \/#pricing;\s*\}/s);
+  assert.match(config, /location = \/pricing\/ \{\s*return 301 \/#pricing;\s*\}/s);
 });
 
 test('HTML and inherited NGINX locations enforce the same image source policy', async () => {

@@ -52,6 +52,8 @@ jest.mock('../../../middleware/adminAuth', () => (req, res, next) => next());
 jest.mock('../../../middleware/integrationRateLimit', () => ({
   writeIntegrationsRateLimit: (_req, _res, next) => next(),
   listIntegrationsRateLimit: (_req, _res, next) => next(),
+  ingestIngressRateLimit: (_req, _res, next) => next(),
+  ingestIntegrationsRateLimit: (_req, _res, next) => next(),
 }));
 jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
@@ -61,6 +63,7 @@ jest.mock('../../../models/ToolCall', () => ({
   countsForGrant: jest.fn(),
 }));
 jest.mock('../../../controllers/podController', () => ({
+  updatePodParent: jest.fn(),
   getAllPods: jest.fn(), getPodsByType: jest.fn(), getPodById: jest.fn(), createPod: jest.fn(),
   joinPod: jest.fn(), leavePod: jest.fn(), removeMember: jest.fn(), deletePod: jest.fn(),
 }));

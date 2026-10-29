@@ -1,0 +1,217 @@
+import { jest } from '@jest/globals';
+import os from 'os';
+import path from 'path';
+import fs from 'fs';
+
+// TASK-294: a workspace seat re-reads its pods before every turn, and a turn
+// it cannot confirm private runs as a public seat in the scratch folder.
+const sessionsTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-workspace-turn-test-'));
+const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-workspace-turn-repo-'));
+
+await jest.unstable_mockModule('os', () => {
+  const actual = os;
+  return {
+    ...actual,
+    default: { ...actual, homedir: () => sessionsTmpDir },
+    homedir: () => sessionsTmpDir,
+  };
+});
+
+await jest.unstable_mockModule('../src/lib/api.js', () => ({
+  createClient: jest.fn(),
+  login: jest.fn(),
+}));
+
+const { createClient } = await import('../src/lib/api.js');
+const { performRun } = await import('../src/commands/agent.js');
+const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
+
+const scratchDir = path.join(os.tmpdir(), 'commonly-agents', 'workspace-stub');
+const privatePod = {
+  podId: 'pod-ws', publicRead: false, communityListed: false, joinPolicy: 'invite-only',
+};
+const noopTimeout = () => 0;
+const drain = async () => {
+  for (let i = 0; i < 24; i += 1) await new Promise((resolve) => setImmediate(resolve));
+};
+
+let eventCount = 0;
+const runOneTurn = async ({
+  environment, installations, newSessionId, adapterName = 'stub', spawns = 1,
+}) => {
+  eventCount += 1;
+  const eventId = `ws-event-${eventCount}`;
+  const get = jest.fn(async (route) => {
+    if (route === '/api/agents/runtime/events') {
+      return {
+        events: [{
+          _id: eventId, type: 'chat.mention', podId: 'pod-ws', agentName: 'workspace-stub',
+          payload: { content: 'read the repo' },
+        }],
+      };
+    }
+    if (route === '/api/agents/runtime/installations') {
+      if (installations instanceof Error) throw installations;
+      return { installations };
+    }
+    if (route === '/api/agents/runtime/memory') return { sections: { long_term: { content: 'notes from the project' } } };
+    if (route.endsWith('/messages')) return { messages: [] };
+    if (route.endsWith('/context')) return { focus: { podId: 'pod-ws', revision: 0, focus: null } };
+    return {};
+  });
+  const post = jest.fn().mockResolvedValue({});
+  createClient.mockReturnValue({ get, post });
+  const spawn = jest.fn().mockResolvedValue({ text: 'done', newSessionId });
+  const logs = [];
+  const { stop } = performRun({
+    instanceUrl: 'http://localhost:5000',
+    token: 'cm_agent_workspace',
+    adapter: { name: adapterName, detect: stubAdapter.detect, spawn },
+    agentName: 'workspace-stub',
+    environment,
+    workspacePath: workspaceDir,
+    log: (line) => logs.push(line),
+    setTimeoutImpl: noopTimeout,
+  });
+  await drain();
+  stop();
+  expect(spawn).toHaveBeenCalledTimes(spawns);
+  return { ctx: spawn.mock.calls[0]?.[1], get, post, logs };
+};
+
+describe('performRun workspace turn placement', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    fs.rmSync(path.join(sessionsTmpDir, '.commonly'), { recursive: true, force: true });
+  });
+
+  test('a workspace seat whose pods are all private reads its workspace', async () => {
+    const { ctx, get, logs } = await runOneTurn({
+      environment: { sandbox: { trust: 'workspace' } },
+      installations: [privatePod],
+    });
+    expect(ctx.cwd).toBe(workspaceDir);
+    expect(ctx.environment.sandbox.trust).toBe('workspace');
+    // Skills are copied here, not into the project (the claude adapter).
+    expect(ctx.skillMountDir).toBe(scratchDir);
+    expect(get).toHaveBeenCalledWith('/api/agents/runtime/installations', {}, {
+      signal: expect.any(AbortSignal),
+    });
+    expect(logs.some((line) => line.includes('public seat'))).toBe(false);
+    expect(ctx.memoryWithheld).toBe(false);
+    expect(ctx.memoryLongTerm).toBe('notes from the project');
+  });
+
+  test('a turn that runs public never reads the seat\'s memory', async () => {
+    const { ctx, get } = await runOneTurn({
+      environment: { sandbox: { trust: 'workspace' } },
+      installations: [privatePod, { podId: 'pod-open', publicRead: true, communityListed: false }],
+    });
+    expect(ctx.environment.sandbox.trust).toBe('public');
+    expect(ctx.memoryWithheld).toBe(true);
+    expect(ctx.memoryLongTerm).toBeUndefined();
+    expect(get.mock.calls.some(([route]) => route === '/api/agents/runtime/memory')).toBe(false);
+  });
+
+  test('a pod that turned public runs the turn as a public seat in the scratch folder', async () => {
+    const { ctx, logs } = await runOneTurn({
+      environment: { sandbox: { trust: 'workspace' } },
+      installations: [privatePod, { podId: 'pod-open', publicRead: true, communityListed: false }],
+    });
+    expect(ctx.cwd).toBe(scratchDir);
+    expect(fs.existsSync(scratchDir)).toBe(true);
+    expect(ctx.environment.sandbox.trust).toBe('public');
+    expect(logs).toContain(
+      `this turn runs as a public seat in ${scratchDir}, because a pod it answers in is `
+      + 'publicly readable or open to join, or did not report whether it is',
+    );
+  });
+
+  test('a failed read of its pods degrades the turn the same way', async () => {
+    const { ctx, logs } = await runOneTurn({
+      environment: { sandbox: { trust: 'workspace' } },
+      installations: Object.assign(new Error('boom'), { status: 503 }),
+    });
+    expect(ctx.cwd).toBe(scratchDir);
+    expect(ctx.environment.sandbox.trust).toBe('public');
+    expect(logs).toContain(
+      `this turn runs as a public seat in ${scratchDir}, because its pods could not be read`,
+    );
+  });
+
+  test('a public seat spawns as declared and does not re-read its pods', async () => {
+    const { ctx, get } = await runOneTurn({
+      environment: { sandbox: { trust: 'public' } },
+      installations: [privatePod],
+    });
+    expect(ctx.cwd).toBe(workspaceDir);
+    expect(ctx.environment.sandbox.trust).toBe('public');
+    expect(get.mock.calls.some(([route]) => route === '/api/agents/runtime/installations')).toBe(false);
+  });
+
+  test('a public turn never resumes a conversation that read the workspace', async () => {
+    const environment = { sandbox: { trust: 'workspace' } };
+    await runOneTurn({ environment, installations: [privatePod], newSessionId: 'sess-ws' });
+    const resumed = await runOneTurn({ environment, installations: [privatePod] });
+    expect(resumed.ctx.sessionId).toBe('sess-ws');
+
+    const degraded = await runOneTurn({
+      environment,
+      installations: [{ podId: 'pod-ws', publicRead: true, communityListed: true }],
+    });
+    expect(degraded.ctx.sessionId).toBeFalsy();
+  });
+});
+
+// TASK-027: Claude Code on Linux has only the workspace jail, so a workspace
+// turn placed public is refused before anything is read or spawned, never
+// run in the public jail that cannot carry Claude's install or login.
+describe('performRun workspace turn placement for Claude Code on Linux', () => {
+  const originalPlatform = process.platform;
+  beforeEach(() => {
+    jest.clearAllMocks();
+    fs.rmSync(path.join(sessionsTmpDir, '.commonly'), { recursive: true, force: true });
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+  });
+  afterEach(() => Object.defineProperty(process, 'platform', { value: originalPlatform }));
+
+  const posted = (post) => post.mock.calls.filter(([route]) => /\/messages$/.test(route));
+
+  test('a private turn spawns in the workspace', async () => {
+    const { ctx } = await runOneTurn({
+      environment: { sandbox: { trust: 'workspace' } }, installations: [privatePod], adapterName: 'claude',
+    });
+    expect(ctx.cwd).toBe(workspaceDir);
+    expect(ctx.environment.sandbox.trust).toBe('workspace');
+  });
+
+  test.each([
+    ['its pod turned public', [privatePod, { podId: 'pod-open', publicRead: true, communityListed: false }],
+      /because a pod it answers in is publicly readable/],
+    ['a pod reports no visibility', [privatePod, { podId: 'pod-unknown', joinPolicy: 'invite-only' }],
+      /did not report whether it is/],
+  ])('a turn is refused when %s, with nothing read, spawned or posted', async (_label, installations, why) => {
+    const { get, post, logs } = await runOneTurn({
+      environment: { sandbox: { trust: 'workspace' } }, installations, adapterName: 'claude', spawns: 0,
+    });
+    expect(logs.some((line) => /^turn refused, because /.test(line) && why.test(line)
+      && /pods are all invite-only/.test(line))).toBe(true);
+    expect(get.mock.calls.some(([route]) => route === '/api/agents/runtime/memory')).toBe(false);
+    expect(posted(post)).toHaveLength(0);
+  });
+
+  test('a failed read of its pods defers the turn for a retry instead of refusing it', async () => {
+    const { get, post, logs } = await runOneTurn({
+      environment: { sandbox: { trust: 'workspace' } },
+      installations: Object.assign(new Error('boom'), { status: 503 }),
+      adapterName: 'claude',
+      spawns: 0,
+    });
+    expect(logs.some((line) => /turn deferred, because its pods could not be read: boom/.test(line)
+      && /retrying 1 held event/.test(line))).toBe(true);
+    expect(logs.some((line) => /^turn refused, because /.test(line))).toBe(false);
+    expect(post.mock.calls.some(([route]) => /\/ack$/.test(route))).toBe(false);
+    expect(get.mock.calls.some(([route]) => route === '/api/agents/runtime/memory')).toBe(false);
+    expect(posted(post)).toHaveLength(0);
+  });
+});

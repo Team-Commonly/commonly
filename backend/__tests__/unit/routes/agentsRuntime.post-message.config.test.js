@@ -283,7 +283,9 @@ describe('bot-token send-time freshness', () => {
     _id: 'bot-1', username: 'openclaw', isBot: true,
     botMetadata: { agentName: 'openclaw', instanceId: 'default' },
   };
-  const req = { params: { podId: 'pod-1' }, userId: 'bot-1', query: {}, body: { content: 'hello' } };
+  // The /bot/* routes take a pod id only as an ObjectId.
+  const botPodId = '6a0000000000000000000001';
+  const req = { params: { podId: botPodId }, userId: 'bot-1', query: {}, body: { content: 'hello' } };
   const response = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
 
   beforeEach(() => {
@@ -329,7 +331,7 @@ describe('bot-token send-time freshness', () => {
     await get(req, getRes);
     expect(getRes.json).toHaveBeenCalledWith({ messages });
     expect(AgentSendFreshness.recordRead).toHaveBeenCalledWith(
-      'bot-1', 'pod-1', expect.objectContaining({ at: expect.any(Date) }), ['m1'],
+      'bot-1', botPodId, expect.objectContaining({ at: expect.any(Date) }), ['m1'],
     );
 
     AgentSendFreshness.unseenMessages.mockResolvedValueOnce({ code: 'unseen_messages', unseenCount: 1 });

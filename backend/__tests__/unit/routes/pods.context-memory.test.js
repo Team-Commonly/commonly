@@ -7,6 +7,7 @@ jest.mock('../../../middleware/auth', () => (req, _res, next) => {
 });
 
 jest.mock('../../../controllers/podController', () => ({
+  updatePodParent: jest.fn(),
   getAllPods: jest.fn((_, res) => res.json([])),
   getPodsByType: jest.fn((_, res) => res.json([])),
   getPodById: jest.fn((_, res) => res.json({})),

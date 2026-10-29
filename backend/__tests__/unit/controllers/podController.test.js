@@ -73,7 +73,7 @@ describe('podController', () => {
   });
 
   it('getPodsByType allows agent-ensemble', async () => {
-    const req = { params: { type: 'agent-ensemble' } };
+    const req = { params: { type: 'agent-ensemble' }, userId: String(new mongoose.Types.ObjectId()) };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     const sort = jest.fn().mockResolvedValue([]);
     const populateSecond = jest.fn(() => ({ sort }));
@@ -82,7 +82,7 @@ describe('podController', () => {
 
     await podController.getPodsByType(req, res);
 
-    expect(Pod.find).toHaveBeenCalledWith({ type: 'agent-ensemble' });
+    expect(Pod.find).toHaveBeenCalledWith(expect.objectContaining({ type: 'agent-ensemble' }));
     expect(res.json).toHaveBeenCalledWith([]);
   });
 
@@ -120,7 +120,7 @@ describe('podController', () => {
 
     expect(save).toHaveBeenCalled();
     expect(savedPod.populate).toHaveBeenCalledWith('createdBy', 'username profilePicture');
-    expect(savedPod.populate).toHaveBeenCalledWith('members', 'username profilePicture isBot');
+    expect(savedPod.populate).toHaveBeenCalledWith(expect.objectContaining({ path: 'members', select: 'username profilePicture isBot' }));
     expect(AgentInstallation.install).toHaveBeenCalledWith('commonly-bot', 'p1', expect.objectContaining({
       installedBy: 'creator',
       instanceId: 'default',
@@ -180,7 +180,7 @@ describe('podController', () => {
   // pins the separation: refusing to CREATE agent-room must not stop READING
   // the agent-room pods that the DM rail legitimately created.
   it('getPodsByType still serves agent-room after the creation guard', async () => {
-    const req = { params: { type: 'agent-room' } };
+    const req = { params: { type: 'agent-room' }, userId: String(new mongoose.Types.ObjectId()) };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     const sort = jest.fn().mockResolvedValue([]);
     const populateSecond = jest.fn(() => ({ sort }));
@@ -190,7 +190,7 @@ describe('podController', () => {
     await podController.getPodsByType(req, res);
 
     expect(res.status).not.toHaveBeenCalledWith(400);
-    expect(Pod.find).toHaveBeenCalledWith({ type: 'agent-room' });
+    expect(Pod.find).toHaveBeenCalledWith(expect.objectContaining({ type: 'agent-room' }));
   });
 
   it('createPod does NOT auto-install commonly-bot by default (opt-in via AUTO_INSTALL_DEFAULT_AGENT=1)', async () => {
@@ -290,7 +290,7 @@ describe('podController', () => {
     expect(pod.members).toEqual(['creator']);
     expect(pod.save).toHaveBeenCalled();
     expect(pod.populate).toHaveBeenCalledWith('createdBy', 'username profilePicture');
-    expect(pod.populate).toHaveBeenCalledWith('members', 'username profilePicture isBot');
+    expect(pod.populate).toHaveBeenCalledWith(expect.objectContaining({ path: 'members', select: 'username profilePicture isBot' }));
     expect(res.json).toHaveBeenCalledWith(pod);
   });
 
@@ -469,35 +469,45 @@ describe('podController', () => {
     expect(Pod.updateOne).not.toHaveBeenCalled();
   });
 
-  it('getPodsByType filters agent-room to caller membership for non-admins', async () => {
-    const otherPod = { _id: 'p1', type: 'agent-room', members: [{ _id: 'agent-id' }, { _id: 'someone-else' }] };
-    const myPod = { _id: 'p2', type: 'agent-room', members: [{ _id: 'agent-id' }, { _id: 'me' }] };
-    const sort = jest.fn().mockResolvedValue([otherPod, myPod]);
+  // The membership predicate runs in Mongo, so these pin the query: an
+  // agent-room listing is the caller's rooms only, with no Community arm and
+  // no admin bypass. pods.read-scope.test.js runs the same rule on a real DB.
+  it.each([
+    ['a non-admin', 'user'],
+    ['a global admin', 'admin'],
+  ])('getPodsByType limits agent-room to the caller\'s own rooms for %s', async (_label, role) => {
+    // Regression: admins used to bypass membership and see every private DM
+    // in the instance in their sidebar. That leaked other users' rooms and
+    // produced the "Talk to → can't post" UX bug.
+    const me = new mongoose.Types.ObjectId();
+    const myPod = { _id: 'p2', type: 'agent-room', members: [{ _id: 'agent-id' }, { _id: me }] };
+    const sort = jest.fn().mockResolvedValue([myPod]);
     const populateSecond = jest.fn(() => ({ sort }));
     const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
     Pod.find.mockReturnValue({ populate: populateFirst });
-    const req = { params: { type: 'agent-room' }, userId: 'me', user: { id: 'me', role: 'user' } };
+    const req = { params: { type: 'agent-room' }, userId: String(me), user: { id: String(me), role } };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.getPodsByType(req, res);
+    const [query] = Pod.find.mock.calls[0];
+    expect(query.type).toBe('agent-room');
+    expect(query.$or).toHaveLength(1);
+    expect(String(query.$or[0].members)).toBe(String(me));
     expect(res.json).toHaveBeenCalledWith([myPod]);
   });
 
-  it('getPodsByType filters agent-room to caller membership even for global admins', async () => {
-    // Regression: admins used to bypass membership and see every private DM
-    // in the instance in their sidebar. That leaked other users' rooms and
-    // produced the "Talk to → can't post" UX bug. Admins now see only
-    // their own personal pods on this listing; moderation goes via a
-    // dedicated admin tool, not this generic endpoint.
-    const otherPod = { _id: 'p1', type: 'agent-room', members: [{ _id: 'agent-id' }, { _id: 'someone-else' }] };
-    const myPod = { _id: 'p2', type: 'agent-room', members: [{ _id: 'agent-id' }, { _id: 'admin-id' }] };
-    const sort = jest.fn().mockResolvedValue([otherPod, myPod]);
+  it('getPodsByType adds the Community-listed arm for a listable type', async () => {
+    const me = new mongoose.Types.ObjectId();
+    const sort = jest.fn().mockResolvedValue([]);
     const populateSecond = jest.fn(() => ({ sort }));
     const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
     Pod.find.mockReturnValue({ populate: populateFirst });
-    const req = { params: { type: 'agent-room' }, userId: 'admin-id', user: { id: 'admin-id', role: 'admin' } };
+    const req = { params: { type: 'team' }, userId: String(me), user: { id: String(me), role: 'admin' } };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.getPodsByType(req, res);
-    expect(res.json).toHaveBeenCalledWith([myPod]);
+    const [query] = Pod.find.mock.calls[0];
+    expect(String(query.$or[0].members)).toBe(String(me));
+    expect(query.$or[1]).toEqual({ publicRead: true, communityListed: true });
+    expect(query.$or).toHaveLength(2);
   });
 
   it('getAllPods default scope=mine filters to caller membership even for admins', async () => {

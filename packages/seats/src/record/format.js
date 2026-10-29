@@ -7,6 +7,7 @@
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import { FAILURE_KINDS } from '../failures.js';
+import { SWITCH_REASONS, entryLabel, parseEntry } from '../harness-plan.js';
 
 export const RECORD_VERSION = 1;
 export const RECORD_SCHEMA = 'seats.record';
@@ -84,6 +85,8 @@ export const KINDS = Object.freeze({
   'session.opened': Object.freeze({ group: 'attempt', actor: 'system' }),
   'attempt.settled': Object.freeze({ group: 'attempt', actor: 'system' }),
   'run.settled': Object.freeze({ group: 'attempt', actor: 'system' }),
+  // The attempt that follows runs on another harness entry than the seat was on.
+  'harness.switched': Object.freeze({ group: 'attempt', actor: 'system' }),
   'tool.call': Object.freeze({ group: 'tool', actor: 'run' }),
   'tool.update': Object.freeze({ group: 'tool', actor: 'run' }),
   'credential.granted': Object.freeze({ group: 'credential', actor: 'system' }),
@@ -371,7 +374,13 @@ const CHECKS = {
     optionalArgsDigest(data, 'tool.call');
     return data;
   },
-  'credential.granted': (data) => ({ ...data, names: envNames(data.names ?? [], 'credential.granted.names') }),
+  'credential.granted': (data) => {
+    const names = envNames(data.names ?? [], 'credential.granted.names');
+    if (data.injected === undefined) return { ...data, names };
+    const injected = envNames(data.injected, 'credential.granted.injected');
+    if (!injected.every((name) => names.includes(name))) fail('credential.granted.injected must be a subset of names');
+    return { ...data, names, injected };
+  },
   'credential.denied': (data) => {
     envNames([data.name], 'credential.denied.name');
     return data;
@@ -399,6 +408,18 @@ const CHECKS = {
         fail('session.opened.fallback must be "agent supports neither session/resume nor session/load" or "session/<resume|load> answered error <code>"');
       }
     }
+    return data;
+  },
+  'harness.switched': (data) => {
+    refuseUnknownKeys(data, ['from', 'to', 'reason'], 'harness.switched.');
+    for (const key of ['from', 'to']) {
+      let entry = null;
+      try { entry = typeof data[key] === 'string' ? parseEntry(data[key]) : null; } catch { entry = null; }
+      // The canonical label only, so one entry is always written one way.
+      if (!entry || entryLabel(entry) !== data[key]) fail(`harness.switched.${key} must be an entry label harness/model[@effort]`);
+    }
+    if (data.from === data.to) fail('harness.switched.from and to must differ');
+    if (!SWITCH_REASONS.includes(data.reason)) fail(`harness.switched.reason must be one of ${SWITCH_REASONS.join(', ')}`);
     return data;
   },
   'agent.retry': (data) => {

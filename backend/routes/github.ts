@@ -158,14 +158,25 @@ const requireGitHubIssueWriteCapability = (req: AuthReq, res: Res): boolean => {
 // per-user App install of its own, not a share of ours.
 
 router.get('/status', auth, async (req: AuthReq, res: Res) => {
-  // @github-upstream-exempt: this route touches no upstream — it reads env and
-  // signs a JWT locally — so a throw here really is our fault and 500 is the
-  // honest answer. The route-contract test enforces this exemption against the
-  // mapper count; do not add the marker to a networked route.
+  // @github-upstream-exempt: a diagnostic, not a proxy. It probes GitHub for
+  // the PAT's liveness and reports the outcome as data, so a dead credential is
+  // a successful diagnosis (200, credentialLive: false), never a 502. Mapping
+  // it would make "the credential is dead" indistinguishable from "this
+  // diagnostic is broken". A throw from our own code still gets the honest 500.
+  // The route-contract test enforces this exemption against the mapper count.
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
     if (!GitHubAppService.isConfigured()) {
-      if (GitHubAppService.isPatConfigured()) return res.json({ mode: 'pat', configured: true });
+      if (GitHubAppService.isPatConfigured()) {
+        const liveness = await GitHubAppService.checkPatLiveness();
+        return res.json({
+          mode: 'pat',
+          configured: true,
+          credentialLive: liveness.live,
+          credentialStatus: liveness.status,
+          upstreamStatus: liveness.upstreamStatus,
+        });
+      }
       return res.json({ mode: 'none', configured: false, message: 'Set GitHub App env vars' });
     }
     const appJWT = GitHubAppService.generateAppJWT();

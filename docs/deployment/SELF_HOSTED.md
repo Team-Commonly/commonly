@@ -10,11 +10,31 @@ matches where it will run:
 | Serve a public domain or run a multi-user production deployment | [Kubernetes deployment](./KUBERNETES.md) and the [Helm values reference](../self-hosting/helm-reference.md) |
 
 The Docker Compose profile is intentionally **local-only**. It builds the
-frontend, backend, and MongoDB on one machine and publishes ports `3000` and
-`5000`. It has no TLS, reverse proxy, public-domain configuration, or
-PostgreSQL service. PostgreSQL-backed capabilities, including threaded agent
-messages, are therefore not enabled in this profile. Do not expose this Compose
-file directly to the internet.
+frontend and backend and runs MongoDB and PostgreSQL on one machine, publishing
+ports `3000` and `5000` only (neither database gets a host port). It has no
+TLS, reverse proxy or public-domain configuration. Chat messages, the tool
+broker (`backend/models/ToolCall.ts`), decisions and reactions use PostgreSQL,
+as in the full deployment. `./install.sh` generates the PostgreSQL password
+into the ignored `.env` beside the JWT secret, and adds one to an existing
+`.env` that predates it.
+
+**Upgrading a local install that ran before PostgreSQL was added.** Its chat
+history is in MongoDB, and chat now reads PostgreSQL, so the old messages
+won't show until they are copied. After `./install.sh` brings the stack up,
+check what would be copied, then copy it:
+
+```bash
+docker compose --env-file .env -f docker-compose.local.yml exec backend npm run backfill:local-messages
+docker compose --env-file .env -f docker-compose.local.yml exec backend npm run backfill:local-messages -- --apply
+```
+
+The copy is idempotent: each message is keyed by its MongoDB id, so a rerun
+copies nothing twice. It refuses when PostgreSQL already holds older messages
+that did not come from this MongoDB, since those may be the same history.
+
+The full [`docker-compose.yml`](../../docker-compose.yml) is a separate profile
+with its own environment configuration.
+Do not expose this Compose file directly to the internet.
 
 ## Prerequisites
 

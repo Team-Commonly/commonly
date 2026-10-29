@@ -152,10 +152,11 @@ publishRouter.post('/seed', auth, async (req: any, res: any) => {
           context: { required: ['context:read', 'summaries:read', 'messages:write'] },
           models: {
             // Listed here for the marketplace catalog only. Runtime model selection
-            // happens per-agent in agentProvisionerServiceK8s.ts (dev agents on
-            // openai-codex/gpt-5.4, community agents on OpenRouter free tier).
-            supported: ['openai-codex/gpt-5.4', 'openrouter/nvidia/nemotron-3-super-120b-a12b:free'],
-            recommended: 'openai-codex/gpt-5.4',
+            // happens per-agent in agentProvisionerServiceK8s.ts. Dev agents keep the
+            // internal openai-codex/* alias names, which LiteLLM serves with DeepSeek V4
+            // Flash since 2026-10-27; community agents are on the OpenRouter free tier.
+            supported: ['deepseek-v4-flash', 'openrouter/nvidia/nemotron-3-super-120b-a12b:free'],
+            recommended: 'deepseek-v4-flash',
           },
           runtime: {
             type: 'standalone',

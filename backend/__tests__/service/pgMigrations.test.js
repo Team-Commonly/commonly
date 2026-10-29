@@ -7,6 +7,9 @@ const { createRealPgSchema } = require('../utils/realPgSchema');
 const { waitFor } = require('../utils/testUtils');
 
 const real = process.env.INTEGRATION_TEST === 'true' ? describe : describe.skip;
+// Every migration that ships, in order. A new migration adds its name here, so
+// two lanes claiming the same number conflict on this line.
+const SHIPPED = ['0001_legacy_schema.sql', '0002_record_chains.sql'];
 real('Postgres migrations: real DDL, rollback and competing boots', () => {
   let database;
   let pool;
@@ -23,7 +26,7 @@ real('Postgres migrations: real DDL, rollback and competing boots', () => {
   });
 
   it('boots the shipped baseline on a fresh database and does not reapply it', async () => {
-    expect(await runPgMigrations(pool)).toEqual(['0001_legacy_schema.sql']);
+    expect(await runPgMigrations(pool)).toEqual(SHIPPED);
     const history = (await pool.query('SELECT * FROM schema_migrations')).rows;
     expect(history[0].applied_at).toBeInstanceOf(Date);
     expect(await runPgMigrations(pool)).toEqual([]);
@@ -46,7 +49,7 @@ real('Postgres migrations: real DDL, rollback and competing boots', () => {
       INSERT INTO messages (pod_id, user_id, content) VALUES ('pod', 'user', 'old message');
       INSERT INTO migration_records (name, details) VALUES ('thread-cutoff', '{"cutoff":"kept"}');
     `);
-    expect(await runPgMigrations(pool)).toEqual(['0001_legacy_schema.sql']);
+    expect(await runPgMigrations(pool)).toEqual(SHIPPED);
     expect((await pool.query('SELECT id, content, thread_root_id, freshness_revision FROM messages')).rows)
       .toEqual([{
         id: 1, content: 'old message', thread_root_id: null, freshness_revision: '0',

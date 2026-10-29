@@ -155,6 +155,18 @@ describe('BYO listener snippet', () => {
     expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI signed in/);
   });
 
+  test('a Claude Code listener says what it can reach and how --allow widens it; Codex says nothing of folders', async () => {
+    await issueToken();
+    const reach = screen.getByTestId('byo-listen-reach');
+    expect(reach).toHaveTextContent(/By default, on macOS, when every pod it's in is private, invite-only and not listed in Community, .+ reads only the folder you run this from\. Otherwise, or when you run it from your home folder, it works in its own scratch folder\./);
+    // The folder bound is the default only: write's commands read past it.
+    expect(reach).toHaveTextContent(/add --allow write to the last line\. Those commands can read beyond the folder\./);
+    expect(reach).toHaveTextContent(/To let it fetch web pages, add --allow web\./);
+    expect(reach).toHaveTextContent(/send what it reads off this computer/);
+    fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
+    expect(screen.queryByTestId('byo-listen-reach')).toBeNull();
+  });
+
   test('the Claude Code MCP line shows for Claude Code only', async () => {
     await issueToken();
     expect(screen.getByTestId('byo-mcp-claude')).toBeInTheDocument();
@@ -241,17 +253,18 @@ describe('BYO listener snippet', () => {
       expect(screen.getByTestId('byo-mcp-claude')).not.toHaveTextContent(/command above/);
     });
 
-    test('Linux with Claude Code: no listener command, and the bash MCP command; with Codex the listener is back', async () => {
+    test('Linux with Claude Code or Codex: no listener command, and the bash MCP command; Codex says it is not tested yet', async () => {
       setUserAgent(LINUX);
       await issueToken();
       expect(screen.getByTestId('byo-setup-os-linux')).toHaveAttribute('aria-pressed', 'true');
       expect(listener()).toBeUndefined();
+      expect(screen.queryByTestId('byo-listen-reach')).toBeNull();
       expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/from Linux yet/);
       expect(mcpBox()).toMatch(/-- npx -y @commonlyai\/mcp$/);
       expect(screen.getByTestId('byo-mcp-claude')).not.toHaveTextContent(/command above|Optional/);
       fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
-      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/ --adapter codex$/);
-      expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI signed in/);
+      expect(listener()).toBeUndefined();
+      expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/The Codex CLI can’t answer @mentions from Linux yet\. .*Linux is not tested yet\./);
     });
 
     test('Codex on Windows says so, and offers hosted or another machine', async () => {

@@ -14,8 +14,13 @@ import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
 import { POD_VISITS_KEY } from '../lib/podRecency';
-// This suite owns the BYO request sequence, not the rail's attention query.
+// This suite owns the BYO request sequence, not the attention queries the chrome
+// makes. Each one would otherwise consume a queued pod-list response.
 jest.mock('../components/V2NavRail', () => () => null);
+jest.mock('../hooks/useV2PodAttention', () => ({
+  ...jest.requireActual('../hooks/useV2PodAttention'),
+  useV2PodAttention: () => ({ items: [], count: null, countByPod: {}, refresh: async () => {} }),
+}));
 
 jest.mock('axios', () => {
   const mock = {

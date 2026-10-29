@@ -55,6 +55,12 @@ const platformFetchReferences = (source) => {
   const visit = (node) => {
     // `typeof fetch` is a type annotation, not a runtime reference.
     if (ts.isTypeNode(node)) return;
+    // An SDK options key is not a reference to the platform function. Its
+    // initializer still is: { fetch: fetch } must remain refused.
+    if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name) && node.name.text === 'fetch') {
+      visit(node.initializer);
+      return;
+    }
     if (ts.isIdentifier(node) && node.text === 'fetch') positions.push(node.getStart(file));
     if (ts.isElementAccessExpression(node)
       && ts.isStringLiteral(node.argumentExpression)
@@ -88,6 +94,8 @@ describe('hosted-MCP requests are wired through the outbound guard', () => {
   test.each([
     ['guarded default', 'const request = (fetchImpl: typeof fetch = hostedVendorFetch) => fetchImpl(url);', false],
     ['injected fetch type', 'type Deps = { fetcher: typeof fetch };', false],
+    ['SDK guarded fetch option', 'new Transport(url, { fetch: guardedFetch });', false],
+    ['SDK raw fetch option', 'new Transport(url, { fetch: fetch });', true],
     ['direct fetch', 'const response = fetch(url);', true],
     ['globalThis.fetch default', 'const request = (fetchImpl = globalThis.fetch) => fetchImpl(url);', true],
     ['global.fetch default', 'const request = (fetchImpl = global.fetch) => fetchImpl(url);', true],

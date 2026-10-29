@@ -1,3 +1,4 @@
+import { podMemberPopulate } from '../services/podMemberPopulate';
 import path from 'path';
 import fs from 'fs';
 import { createHash } from 'crypto';
@@ -11,7 +12,7 @@ const auth = require('../middleware/auth');
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 const { refuseDollarKeys } = require('../middleware/refuseDollarKeys');
 // eslint-disable-next-line global-require
-const { getAllPods, getPodsByType, getPodById, createPod, joinPod, leavePod, removeMember, deletePod } = require('../controllers/podController');
+const { getAllPods, getPodsByType, getPodById, createPod, joinPod, leavePod, removeMember, deletePod, updatePodParent } = require('../controllers/podController');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 const User = require('../models/User');
@@ -119,8 +120,39 @@ const podListingRateLimit = rateLimit({
   legacyHeaders: false,
   keyGenerator: podJoinRateLimitKey,
 });
+// Typed listings and by-id reads (`/:param`, `/:type/:id`) run the same
+// populate-heavy queries as the sidebar listing. Their own bucket at the same
+// budget, so opening pods does not spend the sidebar's refresh allowance.
+const podReadRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: podJoinRateLimitKey,
+});
+// Coarse ingress ceiling also counts rotating invalid credentials before they
+// allocate token-store entries or reach authentication. Use the canonical edge
+// IP key, not the reverse proxy address. Clients sharing a public IP share this
+// broader budget; the 60/min token budget below remains their write isolation.
+const podLifecycleIngressRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 6000,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+});
+// Bound lifecycle writes before authentication. Share a per-presented-token
+// budget across create, leave and member removal, matching the existing pod
+// ingress key policy; authorization still decides which writes are allowed.
+const podLifecycleRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 60,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: podJoinRateLimitKey,
+});
 router.get('/', podListingRateLimit, auth, getAllPods);
-router.post('/', auth, createPod);
+router.post('/', podLifecycleIngressRateLimit, podLifecycleRateLimit, auth, createPod);
 
 router.post('/announcement', auth, async (req: AuthReq, res: Res) => {
   try {
@@ -405,8 +437,8 @@ router.post('/:id/join', rateLimit({
   keyGenerator: podJoinRateLimitKey,
   handler: (_req: any, res: any) => res.status(429).json({ msg: 'rate limit exceeded: 20 pod joins per 60s' }),
 }), auth, joinPod);
-router.post('/:id/leave', auth, leavePod);
-router.delete('/:id/members/:memberId', auth, removeMember);
+router.post('/:id/leave', podLifecycleIngressRateLimit, podLifecycleRateLimit, auth, leavePod);
+router.delete('/:id/members/:memberId', podLifecycleIngressRateLimit, podLifecycleRateLimit, auth, removeMember);
 
 // Pod admin actions hit Mongo on every call but don't need much volume.
 // Capping per-IP keeps a stuck client from re-pinging contacts at full
@@ -418,6 +450,8 @@ const podAdminRateLimit = rateLimit({
   legacyHeaders: false,
   keyGenerator: cloudflareIpRateLimitKeyGenerator,
 });
+
+router.patch('/:id/parent', podAdminRateLimit, auth, updatePodParent);
 
 /**
  * PATCH /api/pods/:id/contacts
@@ -625,7 +659,7 @@ router.get('/:id/children', auth, async (req: AuthReq, res: Res) => {
     if (!canViewParent) return res.status(403).json({ msg: 'Not authorized to view child pods' });
     const children = await Pod.find({ parentPod: parentId })
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture')
+      .populate(podMemberPopulate('username profilePicture'))
       .sort({ name: 1 });
     const visibleChildren = [];
     for (const child of children) {
@@ -639,7 +673,7 @@ router.get('/:id/children', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/:param', auth, async (req: AuthReq, res: Res) => {
+router.get('/:param', podReadRateLimit, auth, async (req: AuthReq, res: Res) => {
   const { param } = req.params || {};
   const isObjectId = /^[0-9a-fA-F]{24}$/.test(param || '');
   if (isObjectId) { req.params!.id = param || ''; return getPodById(req, res); }
@@ -825,7 +859,7 @@ router.patch('/:id/join-policy', podAdminRateLimit, auth, async (req: AuthReq, r
   }
 });
 
-router.get('/:type/:id', auth, getPodById);
+router.get('/:type/:id', podReadRateLimit, auth, getPodById);
 router.delete('/:id', auth, deletePod);
 
 module.exports = router;

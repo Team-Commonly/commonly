@@ -37,7 +37,8 @@ router.get('/:podId/runs/:runId', traceReadLimit, auth, async (req, res) => {
       .select([
         'agentName instanceId status trigger startedAt completedAt totalTokens errorKind',
         'traceTruncated omittedTurns omittedToolCalls',
-        'turns.turnIndex turns.model turns.elapsedMs turns.promptTokens turns.completionTokens turns.totalTokens',
+        'turns.turnIndex turns.model turns.servedModel turns.fallbacks turns.elapsedMs',
+        'turns.promptTokens turns.completionTokens turns.totalTokens',
         'turns.toolCalls.name turns.toolCalls.elapsedMs turns.toolCalls.callId turns.toolCalls.outcome',
       ].join(' '))
       .lean();
@@ -59,7 +60,8 @@ router.get('/:podId/runs/:runId', traceReadLimit, auth, async (req, res) => {
         traceTruncated: Boolean(run.traceTruncated), omittedTurns: run.omittedTurns || 0,
         omittedToolCalls: run.omittedToolCalls || 0,
         turns: run.turns.map((turn) => ({
-          turnIndex: turn.turnIndex, model: turn.model, elapsedMs: turn.elapsedMs,
+          turnIndex: turn.turnIndex, model: turn.model, servedModel: turn.servedModel,
+          fallbacks: turn.fallbacks, elapsedMs: turn.elapsedMs,
           promptTokens: turn.promptTokens, completionTokens: turn.completionTokens, totalTokens: turn.totalTokens,
           toolCalls: turn.toolCalls.map((call) => ({
             name: call.name, elapsedMs: call.elapsedMs, callId: call.callId,

@@ -140,6 +140,15 @@ describe('claimReleaseFor', () => {
     expect(claimReleaseFor(humanBroadcast, { outcome: 'no_action' })).toEqual({ outcome: 'declined' });
   });
 
+  // Empty output carries its own reason so a digest is not read on it (#2753),
+  // but it must still hand a human's message to another listener.
+  test('empty output on a human broadcast declines, and completes elsewhere', () => {
+    expect(claimReleaseFor(humanBroadcast, { outcome: 'no_action', reason: 'empty-output' }))
+      .toEqual({ outcome: 'declined' });
+    expect(claimReleaseFor(agentMention, { outcome: 'no_action', reason: 'empty-output' }))
+      .toEqual({ outcome: 'completed' });
+  });
+
   test('a skip that is not a refusal completes — the paired control', () => {
     // `claim-held` and `duplicate-delivery` carry a reason but nothing was
     // refused.

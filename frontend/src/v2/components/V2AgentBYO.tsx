@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import { recordByoStep, type ByoStep } from '../utils/byoTelemetry';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
+import { daemonSetupCommand } from '../utils/daemonSetupCommand';
 import V2FeaturePage from './V2FeaturePage';
 import V2Avatar from './V2Avatar';
 import V2Hint from './V2Hint';
@@ -65,10 +66,9 @@ type MachineRow = {
 };
 const MACHINE_STATUS_POLL_MS = 4000;
 const MACHINE_STATUS_MAX_TICKS = 30;
-// One-time computer setup (ADR-026 D1). Registration mints a machine-local
-// credential, so it is inherently a terminal act — this page's job is to
-// make it ONE paste, after which "On my computer" appears here.
-const DAEMON_SETUP_COMMAND = 'npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install';
+// Registration mints a machine-local credential, so it is inherently a terminal
+// act — this page's job is to make it ONE paste (daemonSetupCommand), after
+// which "On my computer" appears here.
 const CLAUDE_FILE_NAME = 'CLAUDE.md';
 type MachineAdapter = '' | 'claude' | 'codex';
 
@@ -99,10 +99,9 @@ const SETUP_OS_OPTIONS: Array<{ os: SetupOs; labelKey: string }> = [
 // host check leaves Codex alone (it confines with its own profiles, not
 // Seatbelt or bubblewrap), but this page's command is bash `export` lines,
 // which PowerShell cannot run, and Codex on native Windows is unmeasured.
-// Not drift: the page only offers what it has seen work.
-const listenerRunsOn = (os: SetupOs, adapter: 'claude' | 'codex'): boolean => (
-  os === 'mac' || (os === 'linux' && adapter === 'codex')
-);
+// Not drift: the page only offers what it has seen work. Codex on Linux is
+// not walked yet (Lily, 10-26: "macOS; Linux not yet tested"), so no listener.
+const listenerRunsOn = (os: SetupOs): boolean => os === 'mac';
 type ModelOption = { value: string; labelKey: string };
 const CLAUDE_MODEL_OPTIONS: ModelOption[] = [
   { value: 'opus', labelKey: 'agentByo.form.modelOpus' },
@@ -199,7 +198,7 @@ const V2AgentBYO: React.FC = () => {
   // Where the person sets up, defaulted from this browser. They can switch:
   // the machine they browse on is not always the one they set up.
   const [setupOs, setSetupOs] = useState<SetupOs>(browserOs);
-  const listenerAvailable = listenerRunsOn(setupOs, listenAdapter);
+  const listenerAvailable = listenerRunsOn(setupOs);
   // Live listening verification (#887 class, second half). #888 made the
   // listening step legible; this makes it CHECKABLE — the page polls the
   // kernel until THIS agent's runtime token authenticates for the first time
@@ -952,6 +951,7 @@ const V2AgentBYO: React.FC = () => {
   const chooseMode = (nextMode: 'hosted' | 'byo' | 'machine') => setMode(nextMode);
 
   const apiUrl = getApiBaseUrl().replace(/\/+$/, '');
+  const daemonCommand = daemonSetupCommand(apiUrl);
 
   const claudeSnippet = issued
     ? `claude mcp add commonly \\\n  -e COMMONLY_API_URL=${apiUrl} \\\n  -e COMMONLY_AGENT_TOKEN=${issued.token} \\\n  -- npx -y @commonlyai/mcp`
@@ -1333,11 +1333,11 @@ const V2AgentBYO: React.FC = () => {
             <div className="v2-byo__add-computer" data-testid="byo-add-computer">
               <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
               <div className="v2-byo__add-computer-row">
-                <code>{DAEMON_SETUP_COMMAND}</code>
+                <code>{daemonCommand}</code>
                 <button
                   type="button"
                   className="v2-byo__copy"
-                  onClick={() => copy('daemon-setup', DAEMON_SETUP_COMMAND)}
+                  onClick={() => copy('daemon-setup', daemonCommand)}
                 >
                   {copied === 'daemon-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
                 </button>
@@ -1351,6 +1351,7 @@ const V2AgentBYO: React.FC = () => {
                 : 'agentByo.footnote.cliRouteCodexUnavailable', {
               byo: t('agentByo.mode.byo'),
               hosted: t('agentByo.mode.hosted'),
+              os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
             })}{' '}
             {t('agentByo.footnote.notSure')}{' '}
             <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/agents/CONNECTING_LOCAL_AGENTS.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.mcpVsCli')}</a>
@@ -1543,6 +1544,11 @@ const V2AgentBYO: React.FC = () => {
                   {t('agentByo.listen.note', { name: issued.agentName })}
                 </p>
               </>
+            )}
+            {listenerAvailable && listenAdapter === 'claude' && (
+              <p className="v2-byo__listen-note" data-testid="byo-listen-reach">
+                {t('agentByo.listen.reachClaude', { name: issued.agentName })}
+              </p>
             )}
           </div>
           <p data-testid="byo-key-once">{t('agentByo.result.keyOnce')}</p>

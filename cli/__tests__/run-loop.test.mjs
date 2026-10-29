@@ -180,6 +180,8 @@ describe('performRun', () => {
     // so the whole page reaches one composite turn instead of aging untouched
     // behind a prior single-event turn.
     expect(mockGet.mock.calls[0][1].limit).toBe(10);
+    // TASK-317: the poll names the CLI for the chat chip (display only).
+    expect(mockGet.mock.calls[0][1].reportedCli).toBe('codex');
     expect(spawn).toHaveBeenCalledTimes(1);
     const spawnedEnv = spawn.mock.calls[0][1].env;
     const configIndex = Number(process.env.GIT_CONFIG_COUNT || 0);
@@ -282,7 +284,7 @@ describe('performRun', () => {
     expect(lines.some((line) => line.includes('upstream refused'))).toBe(false);
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-1/ack',
-      { result: { outcome: 'no_action' } },
+      { result: { outcome: 'no_action', reason: 'empty-output' } },
     );
   });
 
@@ -473,6 +475,79 @@ describe('performRun', () => {
 
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(ackPosts(post).map(([route]) => route)).toEqual(['/api/agents/runtime/events/evt-refused/ack']);
+  });
+
+  // The server answers an intentional NO_REPLY with `silent_or_empty`. That
+  // seat read the batch and chose silence, so its digest is read; any other
+  // skip leaves the digest for the next turn (rhea, 2026-10-25).
+  test.each([
+    ['silent_or_empty', true],
+    ['duplicate_recent', false],
+  ])('a server skip as %s marks the digest read: %s', async (reason, read) => {
+    const events = [
+      makeEvent({ _id: 'evt-wake', payload: { content: 'question' } }),
+      makeEvent({ _id: 'evt-ambient', type: 'message.posted', deliveryMode: 'digest',
+        payload: { content: 'background' } }),
+    ];
+    const get = jest.fn(async (route) => (
+      route.endsWith('/messages') ? { messages: [] } : { events, inboxCount: 2 }
+    ));
+    const post = jest.fn(async (route) => (
+      route === '/api/agents/runtime/pods/pod-abc/messages'
+        ? { success: true, skipped: true, reason }
+        : {}
+    ));
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'Nothing to add.' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const acked = ackPosts(post).map(([route]) => route);
+    expect(acked).toContain('/api/agents/runtime/events/evt-wake/ack');
+    expect(acked.includes('/api/agents/runtime/events/evt-ambient/ack')).toBe(read);
+    if (read) {
+      expect(post).toHaveBeenCalledWith('/api/agents/runtime/events/evt-ambient/ack', {
+        result: { outcome: 'no_action', reason: 'digest-read' },
+      });
+    }
+  });
+
+  // Only the sentinel is a choice. A seat that prints nothing every turn (a
+  // crash, a timeout, a lost route that says nothing) must not drain the
+  // digest it never saw (sable, #2753).
+  test.each([
+    ['NO_REPLY', { outcome: 'no_action' }, true],
+    ['', { outcome: 'no_action', reason: 'empty-output' }, false],
+  ])('a reply of %j acks the wake as %j and reads the digest: %s', async (text, wakeResult, read) => {
+    const events = [
+      makeEvent({ _id: 'evt-wake', payload: { content: 'question' } }),
+      makeEvent({ _id: 'evt-ambient', type: 'message.posted', deliveryMode: 'digest',
+        payload: { content: 'background' } }),
+    ];
+    const get = jest.fn(async (route) => (
+      route.endsWith('/messages') ? { messages: [] } : { events, inboxCount: 2 }
+    ));
+    const post = jest.fn(async () => ({}));
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith('/api/agents/runtime/events/evt-wake/ack', { result: wakeResult });
+    const acked = ackPosts(post).map(([route]) => route);
+    expect(acked.includes('/api/agents/runtime/events/evt-ambient/ack')).toBe(read);
   });
 
   test('a lost binding item stays read-only context while another batch item may run', async () => {
@@ -1273,6 +1348,60 @@ describe('performRun', () => {
       '/api/agents/runtime/events/evt-ask-response/ack',
       { result: { outcome: 'no_action' } },
     );
+  });
+
+  // TASK-293: the wrapper posts any final text that is not exactly NO_REPLY, so
+  // every prompt whose final text reaches the pod says so. Pinned as a literal
+  // rather than imported, so rewording the line is a deliberate test change.
+  const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
+    + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary.';
+
+  const firstPromptFor = async (events) => {
+    createClient.mockReturnValue({
+      get: jest.fn().mockResolvedValue({ events }),
+      post: jest.fn().mockResolvedValue({}),
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    return spawn.mock.calls[0][0];
+  };
+
+  test.each([
+    ['a heartbeat wake', { _id: 'evt-hb-posted-line', type: 'heartbeat', payload: { content: 'Run your heartbeat checklist.' } }],
+    ['a mention', { _id: 'evt-mention-posted-line' }],
+  ])('the inbox-batch prompt for %s says its final text is posted unless it is exactly NO_REPLY', async (_label, overrides) => {
+    const prompt = await firstPromptFor([makeEvent(overrides)]);
+    expect(prompt).toContain('[Inbox batch: 1 new event in this pod.');
+    expect(prompt).toContain(FINAL_TEXT_IS_POSTED);
+  });
+
+  test('the agent.ask.response prompt says its final text is posted unless it is exactly NO_REPLY', async () => {
+    const prompt = await firstPromptFor([makeEvent({
+      _id: 'evt-ask-response-posted-line',
+      type: 'agent.ask.response',
+      payload: { requestId: 'ask-456', fromAgent: 'reviewer', response: 'Ship it.' },
+    })]);
+    expect(prompt).toContain('[Private agent consultation response]');
+    expect(prompt).toContain(FINAL_TEXT_IS_POSTED);
+  });
+
+  test('the agent.ask prompt does not say its final text is posted: that text goes to the requester', async () => {
+    const prompt = await firstPromptFor([makeEvent({
+      _id: 'evt-ask-posted-line',
+      type: 'agent.ask',
+      payload: { requestId: 'ask-789', fromAgent: 'planner', question: 'Ready?' },
+    })]);
+    expect(prompt).toContain('@planner asks:');
+    expect(prompt).not.toContain(FINAL_TEXT_IS_POSTED);
   });
 
   test('decision.ruled spawns a turn with the durable pick, rather than dropping it as an unknown event', async () => {

@@ -5,6 +5,8 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import V2LangSwitch from '../components/V2LangSwitch';
 import DemoWorkspace from './DemoWorkspace';
+import { FAQ_JSONLD_ID, LANDING_FAQ, buildFaqPageJsonLd } from './landingFaq';
+import { formatStarCount, useGithubStarCount } from './githubStars';
 import '../v2.css';
 import './v2-landing.css';
 import './demo-workspace.css';
@@ -33,32 +35,63 @@ const X_HANDLE = 'https://x.com/sam_commonly';
 // before install.sh runs; the earlier one-liner skipped both, so anyone who
 // pasted it got a bare clone and no started stack (TASK-152).
 const SELF_HOST_COMMAND = 'git clone https://github.com/Team-Commonly/commonly.git && cd commonly && ./install.sh';
-const ADR_COUNT = 31;
+const ADR_COUNT = 32;
 // A count on a marketing page drifts silently: nothing on the page notices a
 // new ADR, and docs/ is outside this image's build context so the page cannot
 // count at build time. The TASK-167 row D test counts docs/adr/ADR-*.md and
 // compares it with the constant above, so the PR that adds an ADR is the one
 // that fails.
+/** Works-with entries that were walked end to end (facts sheet rows 6, 9, 13). Logos are name chips: the repo has no agent marks. */
+const WORKS_WITH_AGENTS = ['claudeCode', 'codex', 'opencode', 'qwenCode', 'pi', 'deepseekHarness', 'hosted', 'mcp'] as const;
+const WORKS_WITH_APPS = ['linear'] as const;
+const TEAM_CARDS = ['one', 'two', 'three'] as const;
+
+/** Locale entries are keyed by position ("1", "2", …), so the copy stays flat strings. */
+type TeamChatLine = {
+  kind?: 'system';
+  author?: string;
+  chip?: string;
+  text: string;
+  options?: Record<string, string>;
+};
+
 /**
- * The use-case row's arrow. Decorative — the row is already a link and its
- * title carries the meaning — so it is aria-hidden and inherits the row's
- * colour rather than carrying one of its own.
+ * One agent-team example: a roster, a few pod messages and a footer. Sample
+ * names only; the copy lives in the locale files.
  */
-const UseCaseArrow = () => (
-  <svg
-    className="v2-landing__usecase-arrow"
-    width={16}
-    height={16}
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="square"
-    aria-hidden="true"
-  >
-    <path d="M3 8h9M8.5 4.5L12 8l-3.5 3.5" />
-  </svg>
-);
+const TeamCard = ({ id }: { id: (typeof TEAM_CARDS)[number] }) => {
+  const { t } = useTranslation();
+  const base = `landing.agentTeams.cards.${id}`;
+  const roster = t(`${base}.roster`, { returnObjects: true }) as Record<string, string>;
+  const chat = t(`${base}.chat`, { returnObjects: true }) as Record<string, TeamChatLine>;
+  return (
+    <article className="v2-landing__team-card">
+      <h3 className="v2-landing__team-title">{t(`${base}.title`)}</h3>
+      <ul className="v2-landing__team-roster">
+        {Object.entries(roster).map(([key, line]) => <li key={key}>{line}</li>)}
+      </ul>
+      <div className="v2-landing__team-chat">
+        {Object.entries(chat).map(([key, line]) => (line.kind === 'system' ? (
+          <p key={key} className="v2-landing__team-msg v2-landing__team-msg--system">{line.text}</p>
+        ) : (
+          <p key={key} className="v2-landing__team-msg">
+            {line.author && <span className="v2-landing__team-author">{line.author}</span>}
+            {line.chip && <span className="v2-landing__team-chip">{line.chip}</span>}
+            <span className="v2-landing__team-text">{line.text}</span>
+            {line.options && (
+              <span className="v2-landing__team-options">
+                {Object.entries(line.options).map(([optionKey, option]) => (
+                  <span key={optionKey} className="v2-landing__team-option">{option}</span>
+                ))}
+              </span>
+            )}
+          </p>
+        )))}
+      </div>
+      <p className="v2-landing__team-footer">{t(`${base}.footer`)}</p>
+    </article>
+  );
+};
 // Every entry's affiliation basis, and every logo file's source, licence,
 // modifications and the org's brand policy, is recorded in
 // docs/design/landing-trusted-banner-provenance.md — one row per org. Issue
@@ -105,6 +138,21 @@ interface Stats {
   agentCount?: number;
 }
 
+// The hero copy: the rotating term sits inside one sentence, and the sentence
+// is stated once on the h1's aria-label.
+const heroCopy = (t: (key: string) => string) => ({
+  ariaLabel: t('landing.hero.ariaLabel'),
+  titlePrefix: t('landing.hero.titlePrefix'),
+  terms: [
+    t('landing.hero.terms.yourClaudeCode'),
+    t('landing.hero.terms.teammateCodex'),
+    t('landing.hero.terms.hostedAgent'),
+    t('landing.hero.terms.wholeTeam'),
+  ],
+  titleSuffix: t('landing.hero.titleSuffix'),
+  lede: t('landing.hero.lede'),
+});
+
 const fmt = (n: number | undefined, locale: string): string => (
   typeof n === 'number' ? new Intl.NumberFormat(locale).format(n) : '—'
 );
@@ -113,9 +161,10 @@ const fmt = (n: number | undefined, locale: string): string => (
 // asserting it. Grid-stacks every term in one cell (the slot sizes to the
 // widest term, so the line never reflows), slides the active one up on a
 // brisk 1.4s cadence (slow felt like an assertion, not an enumeration). Reduced-motion / no-JS visitors get the static last
-// term ("your whole team"), which reads correctly on its own.
-// Completes "Chat with your …" — tools first, then the payoff. The last term
-// is the static/reduced-motion fallback, so it must read as the full claim.
+// term, which must read as the full claim on its own.
+// Completes "One pod for your team and …" — the teammate's agent, then the
+// payoff. The last term is the static/reduced-motion fallback, so it must read
+// as the full claim.
 const RotatingTerm: React.FC<{ terms: string[] }> = ({ terms }) => {
   const [active, setActive] = useState(0);
   const [rotating, setRotating] = useState(false);
@@ -133,14 +182,15 @@ const RotatingTerm: React.FC<{ terms: string[] }> = ({ terms }) => {
   const staticIndex = terms.length - 1;
   const shownIndex = rotating ? active : staticIndex;
   return (
-    // The sizer holds ONLY the active term in normal flow, so the slot width
-    // tracks that term instead of the widest one. Critical for suffixed
-    // grammars (zh 「与你的___对话」): a fixed widest-term slot would strand
-    // the suffix far to the right on short terms. English has no suffix, so
-    // this is invisible there. Animated terms are absolutely positioned over
-    // the sizer.
+    // The sizer holds EVERY term, stacked in one grid cell, so the slot is as
+    // wide and as tall as the widest term and the h1 keeps one height on every
+    // rotation. Only the active term shows; the animated terms sit over it.
     <span className="v2-landing__rotator" aria-hidden="true">
-      <span className="v2-landing__rotator-sizer">{terms[shownIndex]}</span>
+      <span className="v2-landing__rotator-sizer">
+        {terms.map((term) => (
+          <span key={term}>{term}</span>
+        ))}
+      </span>
       <span className="v2-landing__rotator-stack">
         {terms.map((term, i) => (
           <span
@@ -230,6 +280,8 @@ const FeatureRow: React.FC<{
 
 const V2LandingPage: React.FC = () => {
   const { t, i18n } = useTranslation();
+  const starCount = useGithubStarCount();
+  const starLabel = starCount === null ? null : formatStarCount(starCount, i18n.language);
   const { isAuthenticated } = useAuth();
   const [stats, setStats] = useState<Stats | null>(null);
   // Scroll-reveal gate (marketing-surface motion carve-out — see the
@@ -299,11 +351,24 @@ const V2LandingPage: React.FC = () => {
   const appHref = isAuthenticated ? '/v2' : '/v2/register';
   const primaryLabel = isAuthenticated ? t('landing.actions.openApp') : t('landing.actions.getStarted');
   const locale = i18n.resolvedLanguage || i18n.language;
-  const rotatingTerms = [
-    t('landing.hero.terms.claudeCode'),
-    t('landing.hero.terms.codex'),
-    t('landing.hero.terms.wholeTeam'),
-  ];
+  const isEnglish = locale.startsWith('en');
+  // FAQPage JSON-LD follows the visible FAQ: present on en, removed otherwise.
+  // On a direct load of `/` the static HTML already carries the tag (same id).
+  useEffect(() => {
+    const id = FAQ_JSONLD_ID;
+    const existing = document.getElementById(id) as HTMLScriptElement | null;
+    if (!isEnglish) {
+      existing?.remove();
+      return undefined;
+    }
+    const script = existing ?? document.createElement('script');
+    script.id = id;
+    script.type = 'application/ld+json';
+    script.textContent = JSON.stringify(buildFaqPageJsonLd());
+    if (!existing) document.head.appendChild(script);
+    return () => { document.getElementById(id)?.remove(); };
+  }, [isEnglish]);
+  const hero = heroCopy(t);
 
   useEffect(() => {
     let cancelled = false;
@@ -317,6 +382,18 @@ const V2LandingPage: React.FC = () => {
     if (typeof IntersectionObserver === 'undefined') return;
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
     setMotion(true);
+  }, []);
+
+  // A fresh load of `/#pricing` (the /pricing redirect) makes the browser try
+  // the fragment scroll before React has rendered the sections, so it finds
+  // nothing and the page stays at the hero. Scroll once after mount. The
+  // scroller's scroll-padding-top keeps the target clear of the sticky bar.
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (!id) return;
+    // Instant: the landing scroller is smooth, and an animated jump ends short
+    // of the target on a 390 viewport, which parks the label under the bar.
+    document.getElementById(id)?.scrollIntoView({ behavior: 'instant' });
   }, []);
 
   // `stats` is a dependency on purpose: when /api/stats/public resolves, the
@@ -384,9 +461,14 @@ const V2LandingPage: React.FC = () => {
         </div>
         <nav className="v2-landing__nav" aria-label={t('landing.nav.primary')}>
           <a className="v2-landing__navlink" href="#features">{t('landing.nav.features')}</a>
-          <a className="v2-landing__navlink" href="#use-cases">{t('landing.nav.useCases')}</a>
+          <a className="v2-landing__navlink" href="#agent-teams">{t('landing.nav.agentTeams')}</a>
           <a className="v2-landing__navlink" href="#pricing">{t('landing.nav.pricing')}</a>
-          <a className="v2-landing__navlink" href={REPO} target="_blank" rel="noreferrer">{t('landing.nav.github')}</a>
+          {/* The star ask sits in the nav and the open-source section, not only the
+              final CTA: most repo visitors leave without starring (D139). */}
+          <a className="v2-landing__navlink" href={REPO} target="_blank" rel="noreferrer">
+            {t('landing.actions.starGithub')}
+            {starLabel && <span className="v2-landing__star-count" data-testid="star-count">{` · ${starLabel}`}</span>}
+          </a>
           {!isAuthenticated && (
             <Link className="v2-landing__navlink" to="/v2/login">{t('landing.nav.signIn')}</Link>
           )}
@@ -408,20 +490,24 @@ const V2LandingPage: React.FC = () => {
                 grammars that wrap the object work: en "Chat with your ___"
                 (empty suffix), zh 「与你的___对话」. Never concatenate a
                 translated sentence around the term at one end only. */}
-            <h1 className="v2-landing__title" aria-label={t('landing.hero.ariaLabel')}>
-              <StaggerWords text={t('landing.hero.titlePrefix')} />
+            <h1 className="v2-landing__title" aria-label={hero.ariaLabel}>
+              {hero.titlePrefix && <StaggerWords text={hero.titlePrefix} />}
+              {/* The prefix gets its own line in both locales: inline, zh 把 was
+                  pushed off the term's line at 320. */}
               <br />
-              <RotatingTerm terms={rotatingTerms} />
-              {t('landing.hero.titleSuffix') && (
+              <RotatingTerm terms={hero.terms} />
+              {hero.titleSuffix && (
                 // TASK-215: the sentence is stated once, on the h1's aria-label,
                 // so this span is decoration like the rotator above it. Without
                 // aria-hidden the tree announced the sentence AND a stray 「对话」.
-                <span className="v2-landing__title-suffix" aria-hidden="true">
-                  {t('landing.hero.titleSuffix')}
+                // The suffix always takes its own line: inline, the widest term
+                // pushed it to a third line at 1440 and the h1 jumped ~84px.
+                <span className="v2-landing__title-suffix v2-landing__title-suffix--own-line" aria-hidden="true">
+                  {hero.titleSuffix}
                 </span>
               )}
             </h1>
-            <p className="v2-landing__lede">{t('landing.hero.lede')}</p>
+            <p className="v2-landing__lede">{hero.lede}</p>
 
             <div className="v2-landing__hero-actions">
               <div className="v2-landing__cta-row">
@@ -680,14 +766,16 @@ const V2LandingPage: React.FC = () => {
               <h2 className="v2-landing__h2">{t('landing.openSource.title')}</h2>
               <p className="v2-landing__open-lede">{t('landing.openSource.lede')}</p>
               <div className="v2-landing__cta-row">
-                <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.readSource')}</a>
+                <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">
+                  {t('landing.actions.starGithub')}
+                  {starLabel && <span className="v2-landing__star-count" data-testid="star-count">{` · ${starLabel}`}</span>}
+                </a>
               </div>
             </div>
             <ul className="v2-landing__open-list">
               <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.source.title')}</strong> {t('landing.openSource.items.source.text')}</li>
               <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.data.title')}</strong> {t('landing.openSource.items.data.text')}</li>
               <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.tax.title')}</strong> {t('landing.openSource.items.tax.text')}</li>
-              <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.federation.title')}</strong> {t('landing.openSource.items.federation.text')}</li>
             </ul>
           </div>
         </section>
@@ -718,38 +806,45 @@ const V2LandingPage: React.FC = () => {
           </div>
         </section>
 
-        {/* ---- Use cases ---- */}
-        <section className="v2-landing__section" id="use-cases">
+        {/* ---- Works with: only the connectors and agents we have walked ---- */}
+        <section className="v2-landing__section" id="works-with">
           <div className="v2-landing__section-head" data-reveal>
-            <div className="v2-landing__kicker">{t('landing.useCases.kicker')}</div>
-            <h2 className="v2-landing__h2">{t('landing.useCases.title')}</h2>
+            <div className="v2-landing__kicker">{t('landing.worksWith.kicker')}</div>
           </div>
-          <div className="v2-landing__usecases" data-reveal data-reveal-stagger>
-            <Link className="v2-landing__usecase" to="/use-cases/agent-collab/">
-              <div className="v2-landing__usecase-title">{t('landing.useCases.coding.title')}</div>
-              <p className="v2-landing__usecase-text">{t('landing.useCases.coding.text')}</p>
-              <UseCaseArrow />
-            </Link>
-            <Link className="v2-landing__usecase" to="/use-cases/team-chat/">
-              <div className="v2-landing__usecase-title">{t('landing.useCases.chat.title')}</div>
-              <p className="v2-landing__usecase-text">{t('landing.useCases.chat.text')}</p>
-              <UseCaseArrow />
-            </Link>
-            <Link className="v2-landing__usecase" to="/use-cases/research-desk/">
-              <div className="v2-landing__usecase-title">{t('landing.useCases.research.title')}</div>
-              <p className="v2-landing__usecase-text">{t('landing.useCases.research.text')}</p>
-              <UseCaseArrow />
-            </Link>
-            <Link className="v2-landing__usecase" to="/use-cases/pod-browser/">
-              <div className="v2-landing__usecase-title">{t('landing.useCases.browse.title')}</div>
-              <p className="v2-landing__usecase-text">{t('landing.useCases.browse.text')}</p>
-              <UseCaseArrow />
-            </Link>
-            <Link className="v2-landing__usecase" to="/use-cases/daily-digest/">
-              <div className="v2-landing__usecase-title">{t('landing.useCases.digest.title')}</div>
-              <p className="v2-landing__usecase-text">{t('landing.useCases.digest.text')}</p>
-              <UseCaseArrow />
-            </Link>
+          <div className="v2-landing__works" data-reveal>
+            <div className="v2-landing__works-group">
+              <div className="v2-landing__works-label">{t('landing.worksWith.agents')}</div>
+              <ul className="v2-landing__works-list">
+                {WORKS_WITH_AGENTS.map((key) => (
+                  <li key={key} className="v2-landing__works-item">
+                    <span className="v2-landing__works-name">{t(`landing.worksWith.items.${key}.name`)}</span>
+                    <span className="v2-landing__works-note">{t(`landing.worksWith.items.${key}.label`)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="v2-landing__works-group">
+              <div className="v2-landing__works-label">{t('landing.worksWith.apps')}</div>
+              <ul className="v2-landing__works-list">
+                {WORKS_WITH_APPS.map((key) => (
+                  <li key={key} className="v2-landing__works-item">
+                    <span className="v2-landing__works-name">{t(`landing.worksWith.items.${key}.name`)}</span>
+                    <span className="v2-landing__works-note">{t(`landing.worksWith.items.${key}.label`)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        {/* ---- Agent teams: three examples, sample names only ---- */}
+        <section className="v2-landing__section" id="agent-teams">
+          <div className="v2-landing__section-head" data-reveal>
+            <div className="v2-landing__kicker">{t('landing.agentTeams.kicker')}</div>
+            <h2 className="v2-landing__h2">{t('landing.agentTeams.title')}</h2>
+          </div>
+          <div className="v2-landing__team-cards" data-reveal data-reveal-stagger>
+            {TEAM_CARDS.map((id) => <TeamCard key={id} id={id} />)}
           </div>
         </section>
 
@@ -865,6 +960,23 @@ const V2LandingPage: React.FC = () => {
           </p>
         </section>
 
+        {/* ---- FAQ (en only: the JSON-LD must describe text the page shows) ---- */}
+        {isEnglish && (
+          <section className="v2-landing__section" id="faq">
+            <div className="v2-landing__section-head" data-reveal>
+              <h2 className="v2-landing__h2">{t('landing.faq.title')}</h2>
+            </div>
+            <dl className="v2-landing__faq">
+              {LANDING_FAQ.map((item) => (
+                <div className="v2-landing__faq-item" key={item.question}>
+                  <dt>{item.question}</dt>
+                  <dd className="v2-landing__card-text">{item.answer}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        )}
+
         {/* ---- Final CTA ---- */}
         <section className="v2-landing__cta">
           {/* Two blocks, one sentence: the break is the copy's, not the
@@ -916,6 +1028,8 @@ const V2LandingPage: React.FC = () => {
           <div className="v2-landing__footer-col">
             <div className="v2-landing__footer-title">{t('landing.footer.legal')}</div>
             <a className="v2-landing__footer-link" href={`${REPO}/blob/main/LICENSE`} target="_blank" rel="noreferrer">{t('landing.footer.license')}</a>
+            <Link className="v2-landing__footer-link" to="/terms">{t('landing.footer.terms')}</Link>
+            <Link className="v2-landing__footer-link" to="/privacy">{t('landing.footer.privacy')}</Link>
           </div>
         </div>
         {/* Copyright is retained under Apache-2.0 — the license grants

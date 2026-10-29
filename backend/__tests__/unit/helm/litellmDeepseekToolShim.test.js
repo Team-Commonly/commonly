@@ -33,7 +33,7 @@ describe('LiteLLM DeepSeek tool shim', () => {
     for (const file of ['deepseek_tool_shim.py', 'deepseek_tool_shim_core.py']) {
       expect(cm).toContain(`  ${file}: |\n    {{- .Files.Get "files/litellm/${file}" | nindent 4 }}`);
     }
-    expect(cm).toContain('callbacks: ["rate_limit_signal.proxy_handler_instance", "deepseek_tool_shim.proxy_handler_instance"]');
+    expect(cm).toMatch(/^ {6}callbacks: \[[^\]\n]*"deepseek_tool_shim\.proxy_handler_instance"[^\]\n]*\]$/m);
   });
 
   test('both files are mounted next to config.yaml, where LiteLLM resolves callbacks', () => {

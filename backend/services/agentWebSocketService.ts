@@ -12,6 +12,8 @@ const User = require('../models/User');
 const { hash } = require('../utils/secret');
 // eslint-disable-next-line global-require
 const { markByoConnectionAttempt } = require('./onboardingMarks');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { embeddedRuntimeTokenExpired, runtimeCredentialRefusalReason } = require('./runtimeCredentialGate');
 
 interface AgentSocket {
   agentName: string;
@@ -68,7 +70,7 @@ interface AgentUserDoc {
   username?: string;
   isBot?: boolean;
   botMetadata?: Record<string, unknown>;
-  agentRuntimeTokens?: Array<{ tokenHash: string; lastUsedAt?: Date }>;
+  agentRuntimeTokens?: Array<{ tokenHash: string; lastUsedAt?: Date; expiresAt?: Date | null }>;
 }
 
 interface InstallationDoc {
@@ -372,21 +374,14 @@ class AgentWebSocketService {
         // The ledger is an assertion, not a filtered runtime lookup: a daemon
         // hash in a legacy token list must veto the WS fallback too.
         const credential = await AgentCredential.findOne({ tokenHash });
-        if (credential) {
-          if (credential.kind !== 'runtime') return null;
-          if (credential.status !== 'active') return null;
-          if (credential.expiresAt && credential.expiresAt < new Date()) return null;
-          if (credential.parentId) {
-            const parent = await AgentCredential.findById(credential.parentId).select('status').lean();
-            if (!parent || parent.status !== 'active') return null;
-          }
-        }
+        if (credential && await runtimeCredentialRefusalReason(credential)) return null;
         const agentUser = await User.findOne({
           'agentRuntimeTokens.tokenHash': tokenHash,
           isBot: true,
         }) as AgentUserDoc | null;
 
         if (agentUser) {
+          if (embeddedRuntimeTokenExpired(agentUser, tokenHash)) return null;
           // Pre-update: no lastUsedAt = first-ever authentication. The WS
           // transport stamps the same field the HTTP middleware does, so
           // skipping the hook here would swallow the first-use signal for

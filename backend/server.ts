@@ -22,6 +22,7 @@ const attributionRoutes = require('./routes/attribution');
 const messageRoutes = require('./routes/messages');
 const uploadsRoutes = require('./routes/uploads');
 const { socketAuthMiddleware, installSocketSessionGuard } = require('./middleware/socketAuth');
+const { installSocketEventBudget } = require('./middleware/socketRateLimit');
 const { sessionSocketRoom } = require('./services/sessionSocketService');
 const docsRoutes = require('./routes/docs');
 const summariesRoutes = require('./routes/summaries');
@@ -120,19 +121,9 @@ const app = express();
 // `req.protocol`, so a URL built as `${req.protocol}://...` is https behind the
 // TLS edge instead of http (Mixed Content on every page load).
 app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
-const buildAllowedOrigins = () => {
-  const raw = process.env.FRONTEND_URL;
-  if (raw && raw.trim()) {
-    return raw
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean);
-  }
-  return ['http://localhost:3000', 'https://commonly.me'];
-};
+const { buildAllowedOrigins, corsOptions } = require('./middleware/corsPolicy');
 
 const allowedOrigins = buildAllowedOrigins();
-const isAllowedOrigin = (origin: any) => !origin || allowedOrigins.includes(origin);
 
 const server = http.createServer(app);
 const io = socketIo(server, {
@@ -166,25 +157,8 @@ const { bindSocketIO: bindTaskEventSocketIO } = require('./services/taskEventSer
 
 const PORT = process.env.PORT || 5000;
 
-// Middleware
-app.use(
-  cors({
-    origin: (origin: any, callback: any) => {
-      if (isAllowedOrigin(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
-    // Slack OAuth starts in the authenticated shell and returns through an
-    // unauthenticated callback. The browser-bound nonce is HttpOnly on the
-    // API origin, so the authorize-url request must be allowed to persist it
-    // when the shell is served from commonly.me.
-    credentials: true,
-  }),
-);
+// Middleware. A disallowed origin is refused with 403 (middleware/corsPolicy).
+app.use(cors(corsOptions(allowedOrigins)));
 
 // Raw body middleware for Discord signature verification
 app.use('/api/discord/interactions', express.raw({ type: 'application/json' }));
@@ -254,6 +228,7 @@ app.use('/api', attributionRoutes);
 // Before podRoutes: its `/:type/:id` catch-all would answer `/:podId/grants` as type=<podId>, id='grants' (Wren 67721).
 app.use('/api/pods', require('./routes/grants').podGrantsRouter); // tools plan §6: GET /api/pods/:podId/grants, the page's list
 app.use('/api/pods', require('./routes/runTraces'));
+app.use('/api/pods', require('./routes/podRecords')); // TASK-513: GET /api/pods/:podId/record/tasks/:taskId
 app.use('/api/pods', podRoutes);
 app.use('/api/billing', require('./routes/billing'));
 app.use('/api/messages', messageRoutes);
@@ -564,6 +539,8 @@ const authorizeSocketPodAccess = async (socket: any, podId: any, action: any) =>
 
 // Socket.io event handlers
 io.on('connection', (socket: any) => {
+  // Budget first, so a flood is dropped before each packet's session re-check.
+  installSocketEventBudget(socket);
   installSocketSessionGuard(socket);
   socket.join(sessionSocketRoom(socket.userId));
   console.log(

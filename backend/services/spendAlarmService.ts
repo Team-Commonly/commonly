@@ -95,7 +95,9 @@ export const userSpendForDay = async (now: Date = new Date()): Promise<UserSpend
     { $unwind: '$turns' },
     {
       $group: {
-        _id: { userId: '$userId', model: '$turns.model' },
+        // Priced by the model that answered: a fallback bills the group that
+        // served it, not the one asked for (TASK-028). Older turns kept only `model`.
+        _id: { userId: '$userId', model: { $ifNull: ['$turns.servedModel', '$turns.model'] } },
         runs: { $addToSet: '$_id' },
         promptTokens: { $sum: { $ifNull: ['$turns.promptTokens', 0] } },
         completionTokens: { $sum: { $ifNull: ['$turns.completionTokens', 0] } },
@@ -211,9 +213,11 @@ export const composeSpendPage = (
     + `across ${spend.runs} run${spend.runs === 1 ? '' : 's'}.${handle}`;
 };
 
-const pageSre = async (content: string): Promise<void> => {
+export const pageSre = async (content: string): Promise<void> => {
   const podId = String(process.env.SPEND_ALARM_POD_ID || '').trim();
-  if (!podId) return;
+  // Throw rather than return: a caller that retries undelivered pages must
+  // not count a page with nowhere to go as sent.
+  if (!podId) throw new Error('SPEND_ALARM_POD_ID is not set');
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const AgentIdentityService = require('./agentIdentityService');
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports

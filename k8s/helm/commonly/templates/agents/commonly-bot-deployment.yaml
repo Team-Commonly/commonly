@@ -44,6 +44,9 @@ spec:
           value: /app/config/runtime.json
         - name: COMMONLY_AGENT_POLL_MS
           value: {{ .Values.agents.commonlyBot.env.pollIntervalMs | quote }}
+        # Match the backend default; avoid a dead Gemini primary before fallback.
+        - name: AGENT_MODEL
+          value: "deepseek-v4-flash"
         - name: LITELLM_BASE_URL
           value: http://litellm:4000
         - name: LITELLM_MASTER_KEY
@@ -52,6 +55,15 @@ spec:
               name: api-keys
               key: litellm-master-key
               optional: true
+        {{- if .Values.litellm.serviceKeys.fromSecret }}
+        # Model calls use this budgeted key (TASK-555); litellm-client.js
+        # prefers LITELLM_API_KEY over the master key.
+        - name: LITELLM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: litellm-commonly-bot-key
+        {{- end }}
         - name: GEMINI_API_KEY
           valueFrom:
             secretKeyRef:

@@ -316,3 +316,16 @@ describe('V2Register invite code handoff', () => {
     expect(body.invitationCode).toBe('CM-KEPT');
   });
 });
+
+// Launch row 2: signup links the Terms and Privacy pages it asks people to agree to.
+describe('V2Register legal links', () => {
+  beforeEach(() => {
+    axios.get.mockResolvedValue({ data: { inviteOnly: false, providers: [] } });
+  });
+
+  it('links Terms and Privacy under the form', async () => {
+    renderRegister();
+    expect(await screen.findByRole('link', { name: 'Terms' })).toHaveAttribute('href', '/terms');
+    expect(screen.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy');
+  });
+});

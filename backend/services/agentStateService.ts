@@ -67,14 +67,11 @@ const latestUse = (tokenLists: TokenRow[][]): Date | null => {
   return latest;
 };
 
-export function deriveAgentState(
-  installation: InstallationRow,
-  userTokens: TokenRow[],
-  callerId: string,
-  now: number = Date.now(),
-): AgentStateRow {
-  const agentName = String(installation.agentName || '').toLowerCase();
-  const instanceId = String(installation.instanceId || 'default');
+// One classification for both the liveness derivation and the run instruction,
+// so the two cannot disagree about what kind of seat this is.
+export function classifyRuntime(installation: InstallationRow): {
+  isNative: boolean; isPushWebhook: boolean; isByo: boolean;
+} {
   const runtime = installation.config?.runtime || {};
   const runtimeType = String(runtime.runtimeType || '').toLowerCase();
   const isPushWebhook = Boolean(runtime.webhookUrl);
@@ -87,6 +84,33 @@ export function deriveAgentState(
   // A provisioned hosted install on the native engine has no connection to
   // make either (services/hostedEngine.ts).
   const isNative = runtimeType === 'native' || hostedRunsNative(installation);
+  return { isNative, isPushWebhook, isByo };
+}
+
+export const WEBHOOK_RUN_INSTRUCTION = 'Run the program behind your webhook URL. '
+  + 'A webhook agent has no `commonly` run command; see docs/agents/WEBHOOK_SDK.md.';
+
+// What to tell an owner who must make an agent run. `commonly agent run` only
+// starts a polling BYO wrapper. A push webhook runs the owner's own endpoint,
+// and a native or hosted seat runs on Commonly, so neither gets that command.
+// Null means there is no instruction to give.
+export function runInstructionFor(installation: InstallationRow): string | null {
+  const { isByo, isPushWebhook } = classifyRuntime(installation);
+  if (isByo) return `commonly agent run ${String(installation.agentName || '').toLowerCase()}`;
+  if (isPushWebhook) return WEBHOOK_RUN_INSTRUCTION;
+  return null;
+}
+
+export function deriveAgentState(
+  installation: InstallationRow,
+  userTokens: TokenRow[],
+  callerId: string,
+  now: number = Date.now(),
+): AgentStateRow {
+  const agentName = String(installation.agentName || '').toLowerCase();
+  const instanceId = String(installation.instanceId || 'default');
+  const { isNative, isPushWebhook, isByo } = classifyRuntime(installation);
+  const runtimeType = String(installation.config?.runtime?.runtimeType || '').toLowerCase();
 
   let state: AgentReachState;
   let lastUsedAt: Date | null = null;
@@ -112,7 +136,8 @@ export function deriveAgentState(
     isOwner,
     // The shell hides Scout's "Run it here" start once the viewer holds one.
     hosted: runtimeType === 'hosted',
-    ...(isOwner && needsFix ? { fixCommand: `commonly agent run ${agentName}` } : {}),
+    ...(isOwner && needsFix && runInstructionFor(installation)
+      ? { fixCommand: runInstructionFor(installation) as string } : {}),
   };
 }
 

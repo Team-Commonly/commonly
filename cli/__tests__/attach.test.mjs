@@ -33,6 +33,8 @@ const {
   loadAgentToken,
   buildDefaultEnvironment,
   bootstrapAgentRecordFromEnv,
+  parseAllowGrants,
+  checkRunAllowRequest,
   NO_AGENT_CLI_CODE,
   savedSeatLacksDefaultSandbox,
   BOOTSTRAP_ADAPTER_DETECT_ORDER,
@@ -106,6 +108,45 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     expect(resolveAttachSandbox({
       environment: { sandbox: { mode: 'none', trust: 'private' } },
     })).toEqual({ mode: 'none', trust: 'private' });
+  });
+});
+
+const { default: dsh, TESTED_DSH_VERSIONS } = await import('../src/lib/adapters/dsh.js');
+
+describe("resolveAttachSandbox — dsh's confined shape (D106)", () => {
+  const confined = { sandbox: { mode: 'workspace', network: { policy: 'restricted' } } };
+
+  test('attach dsh admits the one shape the dsh adapter enforces, with no trust', () => {
+    // Before this, the trust-keyed gate refused mode:'workspace' without public
+    // trust, while dsh throws on public or workspace trust: no env passed both.
+    expect(resolveAttachSandbox({ environment: confined, adapterName: 'dsh', adapter: dsh }))
+      .toEqual({ mode: 'workspace', trust: undefined });
+  });
+
+  test('dsh still refuses every other sandbox shape at attach', () => {
+    for (const sandbox of [
+      { mode: 'workspace' },
+      { mode: 'workspace', network: { policy: 'open' } },
+      { mode: 'workspace', network: { policy: 'restricted' }, extra: 1 },
+      { mode: 'read-only', network: { policy: 'restricted' } },
+      { mode: 'workspace', network: { policy: 'restricted' }, trust: 'public' },
+      { mode: 'workspace', network: { policy: 'restricted' }, trust: 'workspace' },
+    ]) {
+      expect(() => resolveAttachSandbox({ environment: { sandbox }, adapterName: 'dsh', adapter: dsh }))
+        .toThrow(/dsh adapter/);
+    }
+  });
+
+  test('the same env is still refused for adapters without their own confined shape', () => {
+    for (const adapterName of ['claude', 'codex', 'opencode', 'qwen', 'pi']) {
+      expect(() => resolveAttachSandbox({ environment: confined, adapterName, adapter: { name: adapterName } }))
+        .toThrow(/requires public trust and an adapter with sandbox enforcement/);
+    }
+  });
+
+  test('without the adapter object, the old refusal still holds for dsh', () => {
+    expect(() => resolveAttachSandbox({ environment: confined, adapterName: 'dsh' }))
+      .toThrow(/requires public trust and an adapter with sandbox enforcement/);
   });
 });
 
@@ -412,6 +453,50 @@ describe('performAttach', () => {
     client.get.mockResolvedValueOnce({ publicRead: false, communityListed: false });
     await expect(assertSandboxDeclaredForPublicPod({ client, podId: 'pod-private', adapterName: 'dsh' }))
       .resolves.toBeUndefined();
+  });
+
+  // D106: performAttach must hand the adapter to resolveAttachSandbox, or the
+  // confined dsh shape meets the trust-keyed refusal. dsh's real validator runs
+  // (only detection is stubbed), and the Seatbelt probe is injected so both of
+  // its outcomes are pinned on every host.
+  const attachConfinedDsh = async (seatbelt) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-dsh-attach-'));
+    try {
+      const keyFile = path.join(root, 'provider-key');
+      const envPath = path.join(root, 'environment.json');
+      fs.writeFileSync(keyFile, 'provider-key', { mode: 0o600 });
+      fs.writeFileSync(envPath, JSON.stringify({
+        version: 1,
+        workspace: { path: path.join(root, 'workspace') },
+        model: 'deepseek-chat',
+        provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile },
+        sandbox: { mode: 'workspace', network: { policy: 'restricted' } },
+      }));
+      const client = makeClient({ runtimeToken: 'cm_agent_dsh' });
+      client.get = jest.fn(async () => ({ publicRead: false, communityListed: false }));
+      const adapter = { ...dsh, detect: async () => ({ path: '/usr/local/bin/dsh', version: TESTED_DSH_VERSIONS[0] }) };
+      const logs = [];
+      const error = await performAttach({
+        client, adapterName: 'dsh', agentName: 'dsh-seat', podId: 'pod-private', envPath,
+        log: (line) => logs.push(line),
+        seatbelt: () => seatbelt,
+        adapterRegistry: { getAdapter: () => adapter, listAdapterNames: () => ['dsh'] },
+      }).then(() => null, (e) => e);
+      return { error, logs };
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  };
+
+  test('attach --env admits confined dsh and logs its Seatbelt confinement (D106)', async () => {
+    const { error, logs } = await attachConfinedDsh({ available: true });
+    expect(error).toBeNull();
+    expect(logs).toContain('sandbox: confined dsh workspace via macOS Seatbelt (restricted network)');
+  });
+
+  test('attach --env carries confined dsh to the Seatbelt check, not the trust refusal (D106)', async () => {
+    const { error } = await attachConfinedDsh({ available: false, error: 'sandbox-exec not found' });
+    expect(error.message).toBe('confined dsh sandbox.mode=workspace requires macOS Seatbelt: sandbox-exec not found.');
   });
 
   test('attach --env gives provider-backed Qwen the same Commonly MCP baseline as the daemon', async () => {
@@ -838,6 +923,182 @@ describe('bootstrapAgentRecordFromEnv', () => {
     expect(record.environment.sandbox).toEqual({ trust: 'public' });
   });
 
+  // TASK-294: a claude seat whose every pod is confirmed private reads the
+  // directory it was started from; anything less keeps the public default.
+  describe('first-run workspace trust', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'commonly-bootstrap-ws-'));
+    const home = path.join(root, 'home');
+    const repo = path.join(home, 'code', 'repo');
+    fs.mkdirSync(repo, { recursive: true });
+    afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+
+    const withVisibility = (publicRead) => ({
+      ...identityResponse,
+      installations: identityResponse.installations.map((row) => ({
+        ...row, publicRead, communityListed: false, joinPolicy: 'invite-only',
+      })),
+    });
+    const run = async ({
+      response, startDir = repo, registry = makeRegistry(), allow, platform = 'darwin',
+    } = {}) => {
+      const lines = [];
+      const record = await bootstrapAgentRecordFromEnv({
+        name: 'smoke-agent',
+        env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+        clientFactory: makeFactory(response),
+        adapterRegistry: registry,
+        log: (line) => lines.push(line),
+        startDir,
+        home,
+        platform,
+        ...(allow ? { allow } : {}),
+      });
+      return { record, lines };
+    };
+
+    test('every pod private and a project start dir: the seat reads that project', async () => {
+      const { record, lines } = await run({ response: withVisibility(false) });
+      expect(record.adapter).toBe('claude');
+      expect(record.environment.sandbox).toEqual({ trust: 'workspace' });
+      expect(record.workspacePath).toBe(fs.realpathSync(repo));
+      expect(record.environment.mcp[0].name).toBe('commonly');
+      expect(lines.some((line) => line.includes(fs.realpathSync(repo)))).toBe(true);
+    });
+
+    test('one publicly readable pod keeps the public default and says why', async () => {
+      const response = withVisibility(false);
+      response.installations[1] = { ...response.installations[1], publicRead: true };
+      const { record, lines } = await run({ response });
+      expect(record.environment.sandbox).toEqual({ trust: 'public' });
+      expect(record.workspacePath).toBeNull();
+      expect(lines.some((line) => /scratch folder.*publicly readable/.test(line))).toBe(true);
+    });
+
+    test('a server that reports no visibility keeps the public default', async () => {
+      const { record } = await run({ response: identityResponse });
+      expect(record.environment.sandbox).toEqual({ trust: 'public' });
+      expect(record.workspacePath).toBeNull();
+    });
+
+    test('started from $HOME keeps the public default and says where to start instead', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), startDir: home });
+      expect(record.environment.sandbox).toEqual({ trust: 'public' });
+      expect(record.workspacePath).toBeNull();
+      expect(lines.some((line) => /your home directory\. To let it read a project/.test(line))).toBe(true);
+    });
+
+    // #2784 runs a workspace seat under bwrap on Linux; agent run checks that
+    // the host can start the jail before the token file is written.
+    test('on Linux, every pod private: the seat reads that project, and takes its grants', async () => {
+      const { record } = await run({ response: withVisibility(false), platform: 'linux' });
+      expect(record.environment.sandbox).toEqual({ trust: 'workspace' });
+      expect(record.workspacePath).toBe(fs.realpathSync(repo));
+      const granted = await run({ response: withVisibility(false), platform: 'linux', allow: ['write'] });
+      expect(granted.record.environment.sandbox).toEqual({ trust: 'workspace', allow: ['write'] });
+    });
+
+    test('on Linux a public pod keeps the public default, which agent run then refuses for Claude', async () => {
+      const { record, lines } = await run({ response: withVisibility(true), platform: 'linux' });
+      expect(record.environment.sandbox).toEqual({ trust: 'public' });
+      expect(record.workspacePath).toBeNull();
+      expect(lines.some((line) => /scratch folder, because a pod it answers in is publicly readable/
+        .test(line))).toBe(true);
+    });
+
+    test('on native Windows the seat keeps the public default and says why', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), platform: 'win32' });
+      expect(record.environment.sandbox).toEqual({ trust: 'public' });
+      expect(record.workspacePath).toBeNull();
+      expect(lines.some((line) => /scratch folder, because an agent works in its folder only on macOS and Linux/
+        .test(line))).toBe(true);
+      await expect(run({ response: withVisibility(false), platform: 'win32', allow: ['write'] }))
+        .rejects.toThrow(/--allow write applies only .* only on macOS and Linux for now/);
+    });
+
+    test('a codex seat keeps its baseline and hears nothing about workspaces', async () => {
+      const { record, lines } = await run({
+        response: withVisibility(false), registry: makeRegistry({ claudeFound: false }),
+      });
+      expect(record.adapter).toBe('codex');
+      expect(record.workspacePath).toBeNull();
+      expect(record.environment.sandbox?.trust).not.toBe('workspace');
+      expect(lines.some((line) => /scratch folder|can read/.test(line))).toBe(false);
+    });
+
+    test('a write grant lands on the record, and the line says its commands reach the network', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), allow: ['write'] });
+      expect(record.environment.sandbox).toEqual({ trust: 'workspace', allow: ['write'] });
+      const said = lines.find((line) => line.includes(fs.realpathSync(repo)));
+      expect(said).toMatch(/can read and edit files in .* and run commands there\./);
+      expect(said).toMatch(/commands can reach the network/);
+      expect(said).toMatch(/\.git stays read-only, so it cannot commit/);
+    });
+
+    test('a web grant alone reads, runs read-only git and fetches pages, and still cannot edit', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), allow: ['web'] });
+      expect(record.environment.sandbox).toEqual({ trust: 'workspace', allow: ['web'] });
+      expect(lines.some((line) => /run read-only git there, and fetch web pages; it cannot edit files\./
+        .test(line))).toBe(true);
+    });
+
+    test('both grants are named in one line', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), allow: ['write', 'web'] });
+      expect(record.environment.sandbox).toEqual({ trust: 'workspace', allow: ['write', 'web'] });
+      expect(lines.some((line) => /run commands there, and fetch web pages\. Its commands can reach the network/
+        .test(line))).toBe(true);
+    });
+
+    test('grants on a seat that will not work in its folder are refused with the reason', async () => {
+      const response = withVisibility(false);
+      response.installations[1] = { ...response.installations[1], publicRead: true };
+      await expect(run({ response, allow: ['write'] }))
+        .rejects.toThrow(/--allow write applies only to an agent that works in the folder it starts in.*scratch folder, because .*publicly readable/);
+    });
+
+    test('grants on a codex seat are refused rather than dropped', async () => {
+      await expect(run({
+        response: withVisibility(false), registry: makeRegistry({ claudeFound: false }), allow: ['web'],
+      })).rejects.toThrow(/--allow web applies only to an agent that works in the folder it starts in/);
+    });
+  });
+
+  // TASK-294: `run --allow`, read once when the token file is written.
+  describe('run --allow', () => {
+    test('takes write and web, comma-separated, in a fixed order, once each', () => {
+      expect(parseAllowGrants(undefined)).toEqual([]);
+      expect(parseAllowGrants('web,write')).toEqual(['write', 'web']);
+      expect(parseAllowGrants(' write , write,')).toEqual(['write']);
+    });
+
+    test.each(['', ',', 'bash', 'write,net', 'Write'])('refuses %j rather than dropping it', (value) => {
+      expect(() => parseAllowGrants(value)).toThrow(/--allow takes write and\/or web, comma-separated/);
+    });
+
+    const saved = (allow) => ({
+      agentName: 'smoke-agent',
+      environment: { sandbox: { trust: 'workspace', ...(allow ? { allow } : {}) } },
+    });
+
+    test('a run without --allow keeps whatever the token file holds', () => {
+      expect(checkRunAllowRequest({ record: saved(['write']), requested: [] })).toEqual({ ok: true });
+    });
+
+    test('a run that asks for the grants the token file holds goes ahead', () => {
+      expect(checkRunAllowRequest({ record: saved(['write', 'web']), requested: ['write', 'web'] }))
+        .toEqual({ ok: true });
+    });
+
+    test('a run that asks for other grants is refused with the way to change them', () => {
+      const none = checkRunAllowRequest({ record: saved(), requested: ['write'] });
+      expect(none.ok).toBe(false);
+      expect(none.message).toMatch(/'smoke-agent' was set up with no --allow; --allow write was not applied\./);
+      expect(none.message).toMatch(/commonly agent detach smoke-agent --force, then re-run .* --allow write/);
+      const fewer = checkRunAllowRequest({ record: saved(['write', 'web']), requested: ['write'] });
+      expect(fewer.ok).toBe(false);
+      expect(fewer.message).toMatch(/was set up with --allow write,web; --allow write was not applied/);
+    });
+  });
+
   test('a pi seat bootstrapped from env gets the kernel server but no sandbox block, which pi refuses', async () => {
     const record = await bootstrapAgentRecordFromEnv({
       name: 'smoke-agent',
@@ -952,6 +1213,20 @@ describe('bootstrapAgentRecordFromEnv', () => {
       adapterRegistry: makeRegistry({ opencodeFound: true }),
       adapterOverride: 'opencode',
     })).rejects.toThrow(/sign in with commonly login, then run commonly agent attach opencode --pod pod-main --name smoke-agent \[--env <environment\.yaml>\]/);
+  });
+
+  test('TASK-317: a reported CLI on the installation never counts as a declared adapter', () => {
+    const refusal = serverAdapterBindingRefusal({
+      adapterName: 'pi',
+      agentName: 'smoke-agent',
+      installations: [{
+        podId: 'pod-main', podType: 'chat', instanceId: 'default', status: 'active',
+        type: 'installation', runtimeAdapter: null, reportedCli: 'pi', runtime: { reportedCli: 'pi' },
+      }],
+      podId: 'pod-main',
+      instanceId: 'default',
+    });
+    expect(refusal).toMatch(/Adapter 'pi' is not declared for this Commonly installation/);
   });
 
   test('an older server without runtimeAdapter projection says to upgrade instead of re-attaching', async () => {
@@ -1252,5 +1527,30 @@ describe('bootstrapAgentRecordFromEnv', () => {
     // otherwise be silent: a seat booting against a pod whose installation is
     // not live.
     expect(record.podId).toBe('pod-stale');
+  });
+});
+
+describe('resolveAttachSandbox — workspace trust (TASK-294)', () => {
+  test('a claude seat resolves the same host mode a public one does', () => {
+    expect(resolveAttachSandbox({
+      environment: { sandbox: { trust: 'workspace' } }, adapterName: 'claude', platform: 'darwin',
+    })).toEqual({ mode: 'workspace', trust: 'workspace' });
+    expect(resolveAttachSandbox({
+      environment: { sandbox: { trust: 'workspace' } }, adapterName: 'claude', platform: 'linux',
+    })).toEqual({ mode: 'bwrap', trust: 'workspace' });
+  });
+
+  test('every other adapter is refused before anything is published', () => {
+    for (const adapterName of ['codex', 'opencode', 'qwen', 'pi', 'goose', 'dsh']) {
+      expect(() => resolveAttachSandbox({
+        environment: { sandbox: { trust: 'workspace' } }, adapterName, platform: 'darwin',
+      })).toThrow(new RegExp(`^${adapterName} adapter: sandbox\\.trust=workspace is claude-only for now`));
+    }
+  });
+
+  test('beside mode none it is refused, never run unsandboxed', () => {
+    expect(() => resolveAttachSandbox({
+      environment: { sandbox: { trust: 'workspace', mode: 'none' } }, adapterName: 'claude',
+    })).toThrow(/sandbox\.trust=workspace requires an enforced sandbox mode/);
   });
 });

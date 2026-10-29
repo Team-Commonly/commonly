@@ -10,6 +10,8 @@ import { dirname, join, relative, resolve, sep } from 'path';
 import { fileURLToPath } from 'url';
 import { createHermesAdapter, createRegistry, stub } from '@commonlyai/seats';
 import cliHermes from '../src/lib/adapters/hermes.js';
+import * as seatsProxy from '@commonlyai/seats/wire/provider-proxy';
+import * as cliProxy from '../src/lib/provider-proxy.js';
 import { getAdapter } from '../src/lib/adapters/index.js';
 
 const CLI = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -61,6 +63,11 @@ describe('packages/seats', () => {
     expect(hermes.requiresModel).toBe(false);
     await expect(hermes.validateEnvironment({ sandbox: { trust: 'public' } }))
       .rejects.toThrow('no enforced confinement adapter exists');
+  });
+
+  test('the CLI provider proxy is the package module', () => {
+    expect(Object.keys(cliProxy).sort()).toEqual(['PROVIDER_WIRES', 'redactProviderMaterial', 'resolveProviderKeyFile', 'startProviderProxy']);
+    for (const name of Object.keys(cliProxy)) expect(cliProxy[name]).toBe(seatsProxy[name]);
   });
 
   test('a registry refuses duplicate names', () => {

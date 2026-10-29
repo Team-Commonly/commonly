@@ -74,5 +74,6 @@ export const hostedVendorFetch = (async (
   const headers: Record<string, string> = {};
   if (reply.contentType) headers['content-type'] = reply.contentType;
   if (reply.location) headers.location = reply.location;
+  if (reply.mcpSessionId) headers['mcp-session-id'] = reply.mcpSessionId;
   return new Response(NULL_BODY_STATUSES.has(reply.status) ? null : reply.text, { status: reply.status, headers });
 }) as typeof fetch;

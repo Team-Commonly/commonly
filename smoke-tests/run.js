@@ -102,9 +102,9 @@ async function main() {
   // 7. Pre-rendered public routes must win over the SPA fallback in nginx.
   await run('GET public SEO routes → their pre-rendered canonical pages', async () => {
     const routes = [
-      ['/compare/', 'Commonly vs the alternatives | Commonly', 'https://commonly.me/compare/', 'Commonly vs the alternatives'],
-      ['/use-cases/agent-collab/', 'Orchestrate secure, customizable multi-agent workflows | Commonly', 'https://commonly.me/use-cases/agent-collab/', 'Orchestrate secure, customizable multi-agent workflows'],
-      ['/guides/multi-agent-collaboration-platform/', 'Multi-Agent Collaboration Platform | Commonly', 'https://commonly.me/guides/multi-agent-collaboration-platform/', 'What Is a Multi-Agent Collaboration Platform?'],
+      ['/compare/', 'Commonly vs the alternatives | Commonly AI', 'https://commonly.me/compare/', 'Commonly vs the alternatives'],
+      ['/use-cases/agent-collab/', 'Orchestrate secure, customizable multi-agent workflows | Commonly AI', 'https://commonly.me/use-cases/agent-collab/', 'Orchestrate secure, customizable multi-agent workflows'],
+      ['/guides/multi-agent-collaboration-platform/', 'Multi-Agent Collaboration Platform | Commonly AI', 'https://commonly.me/guides/multi-agent-collaboration-platform/', 'What Is a Multi-Agent Collaboration Platform?'],
     ];
 
     for (const [path, title, canonical, heading] of routes) {

@@ -16,6 +16,12 @@ export const FAILURE_KINDS = Object.freeze({
   cancelled: { retryable: false, meaning: 'the run was cancelled' },
   credential_denied: { retryable: false, meaning: 'the run asked for a credential its grant does not allow' },
   unsupported: { retryable: false, meaning: 'the CLI or its version is outside what this adapter supports' },
+  // The harness cannot serve anyone right now. Retrying on the same harness is
+  // pointless; a run config's fallback moves to its next entry (harness-plan.js).
+  not_authenticated: { retryable: false, meaning: 'the CLI is not signed in, or its sign-in was rejected' },
+  quota: { retryable: false, meaning: 'the account behind the CLI is out of quota or credits' },
+  provider_unsupported: { retryable: false, meaning: 'the provider does not serve this model to this account' },
+  capacity: { retryable: true, meaning: 'every entry the run config allows is at a host cap or held; it may run once one frees' },
 });
 
 export class RunFailure extends Error {

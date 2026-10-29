@@ -1,4 +1,5 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
+import { declaredRuntimeIdentity } from '../utils/runtimeIdentity';
 
 export type RegistryType = 'commonly-official' | 'commonly-community' | 'private';
 export type RegistryStatus = 'active' | 'deprecated' | 'unpublished' | 'pending-review';
@@ -210,6 +211,8 @@ export interface IAgentInstallationRegistry extends Document {
   status: AgentInstallationStatus;
   errorMessage?: string;
   staleSince?: Date;
+  /** Moves only when this install's runtime identity is written or changes. */
+  runtimeIdentityAt?: Date;
   lastFoundWorkAt?: Date | null;
   installedBy: Types.ObjectId;
   skillLoad?: { at: Date; mounted: string[]; conflicted: string[]; status?: 'available' | 'unavailable' };
@@ -252,6 +255,10 @@ const AgentInstallationSchema = new Schema<IAgentInstallationRegistry>(
     status: { type: String, enum: ['active', 'paused', 'uninstalled', 'error', 'stale'], default: 'active' },
     errorMessage: String,
     staleSince: { type: Date },
+    // The clock a seat's runtime chip is read by (TASK-569). updatedAt moves on
+    // every write, including the skill-load report, so it cannot say which
+    // install was attached last; this one moves only with the identity.
+    runtimeIdentityAt: { type: Date },
     // CAS throttle for the kernel's unclaimed-work nudge, per seat and pod.
     lastFoundWorkAt: { type: Date, default: null },
     installedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
@@ -276,6 +283,22 @@ const AgentInstallationSchema = new Schema<IAgentInstallationRegistry>(
   },
   { timestamps: true },
 );
+
+const identitySignature = (config: unknown): string => JSON.stringify(declaredRuntimeIdentity(config));
+
+AgentInstallationSchema.post('init', function (this: any) {
+  this.$locals.runtimeIdentitySignature = identitySignature(this.config);
+});
+AgentInstallationSchema.pre('save', function (this: any) {
+  const signature = identitySignature(this.config);
+  const changed = this.isNew
+    ? signature !== 'null'
+    : this.isModified('config') && signature !== 'null' && signature !== this.$locals.runtimeIdentitySignature;
+  // A reactivated install is a re-attach even when its identity is unchanged.
+  const reattached = !this.isNew && this.isModified('status') && this.status === 'active' && signature !== 'null';
+  if (changed || reattached) this.runtimeIdentityAt = new Date();
+  this.$locals.runtimeIdentitySignature = signature;
+});
 
 AgentInstallationSchema.index({ agentName: 1, podId: 1, instanceId: 1 }, { unique: true });
 AgentInstallationSchema.index({ podId: 1, status: 1 });
@@ -365,6 +388,10 @@ AgentInstallationSchema.statics.upsert = async function (agentName: string, podI
   const update = {
     $setOnInsert: { agentName: agentName.toLowerCase(), podId, instanceId, installedBy, version, displayName },
     $set: {
+      // An upsert that declares an identity is an attach, onto a new row or an
+      // existing one, so it moves the clock either way. findOneAndUpdate skips
+      // the pre('save') stamp, so it is set here (Sable on #2795).
+      ...(declaredRuntimeIdentity(config) ? { runtimeIdentityAt: new Date() } : {}),
       ...(config ? { config } : {}),
       ...(scopes ? { scopes } : {}),
       ...(githubIssueWrite !== undefined ? { githubIssueWrite: githubIssueWrite === true } : {}),

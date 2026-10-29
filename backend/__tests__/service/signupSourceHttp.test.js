@@ -56,7 +56,7 @@ describe('signup source over the public HTTP auth surface', () => {
       ? [{ email: 'source-http@example.com', verified: true, primary: true }]
       : { id: 4245, login: 'source-http' } }));
     const callback = `/api/auth/oauth/github/callback?state=${state}&code=source-code`;
-    await request(app).get(`${callback}&signupSource=forged`).expect(302);
+    await request(app).get(`${callback}&signupSource=forged`).set('Cookie', response.headers['set-cookie'].map((cookie) => cookie.split(';')[0])).expect(302);
     const user = await User.findOne({ email: 'source-http@example.com' }).select('+signupSource');
     expect(user.signupSource.authMethod).toBe('github');
     expect(user.signupSource.ref).toBe('hn');

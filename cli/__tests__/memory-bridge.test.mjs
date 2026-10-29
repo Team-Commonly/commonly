@@ -165,6 +165,18 @@ describe('syncBack', () => {
 
 
 describe('buildMemoryPreamble', () => {
+  test('withheld memory is neither shown nor called empty or unreadable, and asks for no save', () => {
+    const out = buildMemoryPreamble('do the thing', 'notes from the project', {
+      freshSession: true, memoryWithheld: true,
+    });
+    expect(out).toContain('withheld this turn');
+    expect(out).not.toContain('notes from the project');
+    expect(out).not.toContain('(empty');
+    expect(out).not.toContain('unreadable');
+    expect(out).not.toContain('commonly_save_my_memory');
+    expect(out).toContain('=== Current turn ===\ndo the thing');
+  });
+
   // The non-empty path is load-bearing for every seat that has content, and
   // this change must not touch it. Asserted byte-for-byte, not by substring.
   it('prepends existing memory verbatim, unchanged', () => {

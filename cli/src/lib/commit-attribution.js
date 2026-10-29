@@ -70,13 +70,27 @@ const seatAddressId = (agentName, instanceId) => {
   return `sha256-${createHash('sha256').update(identity).digest('base64url')}`;
 };
 
+// This probe runs before every turn and blocks the listener's event loop, so a
+// git child that never exits (one waiting on an inherited stdin, or one whose
+// open() the OS holds pending consent) must not stall the seat. On timeout
+// spawnSync kills the child and sets result.error; the wrapper hook then
+// resolves the original hooks itself at commit time.
+const GIT_PROBE_TIMEOUT_MS = 5000;
+
 const resolveOriginalHooksPath = (cwd, env) => {
   const result = spawnSync(
     'git',
     ['rev-parse', '--path-format=absolute', '--git-path', 'hooks'],
-    { cwd, env, encoding: 'utf8' },
+    {
+      cwd,
+      env,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: GIT_PROBE_TIMEOUT_MS,
+      killSignal: 'SIGKILL',
+    },
   );
-  if (result.status !== 0 || !result.stdout.trim()) return null;
+  if (result.error || result.status !== 0 || !result.stdout?.trim()) return null;
   const hooksPath = resolve(result.stdout.trim());
   try {
     return statSync(hooksPath).isDirectory() ? hooksPath : null;

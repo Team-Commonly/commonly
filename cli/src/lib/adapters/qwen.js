@@ -1,4 +1,4 @@
-/** Qwen Code 0.25.1 wrapper. Public turns have fresh HOME, config and keys. */
+/** Qwen Code 0.25.1 and 0.26.2 wrapper. Public turns have fresh HOME, config and keys. */
 import { requireSeatModel } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { lstatSync, realpathSync } from 'fs';
@@ -9,7 +9,7 @@ import { buildMemoryPreamble } from '../memory-bridge.js';
 import { deliverSeatCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
 import { writeCredentialFile } from '../credential-file.js';
-import { normalizeSandboxTrust, validateEnvironmentSpec } from '../environment.js';
+import { normalizeSandboxTrust, refuseWorkspaceTrust, validateEnvironmentSpec } from '../environment.js';
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
@@ -17,7 +17,7 @@ import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
 // Add a version only with a passing real clean-box sandbox smoke that names it.
-const TESTED_QWEN_VERSIONS = Object.freeze(['0.25.1']);
+const TESTED_QWEN_VERSIONS = Object.freeze(['0.25.1', '0.26.2']);
 const ALLOW_UNTESTED_QWEN_VERSION_ENV = 'COMMONLY_QWEN_ALLOW_UNTESTED_VERSION';
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const TERMINATION_GRACE_MS = 5000;
@@ -234,6 +234,7 @@ export default {
   async spawn(prompt, ctx = {}) {
     const seatModel = requireSeatModel(ctx.environment, 'qwen', true);
     const sandbox = normalizeSandboxTrust(ctx.environment?.sandbox);
+    refuseWorkspaceTrust(sandbox, 'qwen');
     const isPublic = sandbox?.trust === 'public';
     const mode = isPublic ? resolvePublicSandboxMode(sandbox) : null;
     if (isPublic && !['workspace', 'read-only', 'bwrap'].includes(mode)) {

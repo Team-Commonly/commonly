@@ -8,6 +8,12 @@ const mockWrite = jest.fn();
 const mockApi = { get: mockGet, post: mockPost };
 jest.mock('../hooks/useV2Api', () => ({ useV2Api: () => mockApi }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+const mockRecord = jest.fn();
+const mockRecordOnce = jest.fn();
+jest.mock('../utils/byoTelemetry', () => ({
+  recordByoStep: (...args: unknown[]) => mockRecord(...args),
+  recordByoStepOnce: (...args: unknown[]) => mockRecordOnce(...args),
+}));
 const token = 'a'.repeat(32);
 const props = { podId: 'pod', podName: 'Work', userId: 'person', source: 'solo-pod' as const };
 const press = () => fireEvent.click(screen.getByRole('button', { name: 'teammate.act' }));
@@ -119,4 +125,23 @@ test('a retry shares its read across visibility changes and retains the new link
   expect(mockPost).toHaveBeenCalledTimes(1);
   expect(mockWrite).toHaveBeenCalledTimes(1);
   expect(screen.getByRole('textbox')).toHaveValue(`${window.location.origin}/v2/invite/${token}`);
+});
+
+test('D139 marks: showing the card pings invite-card-shown; dismissing pings invite-card-dismissed', () => {
+  const view = render(<V2BringTeammate {...props} enabled={false} />);
+  expect(mockRecordOnce).not.toHaveBeenCalled();
+  view.rerender(<V2BringTeammate {...props} enabled />);
+  expect(mockRecordOnce).toHaveBeenCalledWith(mockApi, 'invite-card-shown', 'person');
+  expect(mockRecord).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'teammate.dismiss' }));
+  expect(mockRecord).toHaveBeenCalledWith(mockApi, 'invite-card-dismissed');
+});
+
+test('D139 marks: a card dismissed earlier never pings shown', () => {
+  const view = render(<V2BringTeammate {...props} />);
+  fireEvent.click(screen.getByRole('button', { name: 'teammate.dismiss' }));
+  view.unmount();
+  mockRecordOnce.mockClear();
+  render(<V2BringTeammate {...props} />);
+  expect(mockRecordOnce).not.toHaveBeenCalled();
 });

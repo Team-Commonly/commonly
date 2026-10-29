@@ -47,7 +47,6 @@ spec:
           const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
           const geminiKey2 = (process.env.GEMINI_API_KEY_2 || '').trim();
           const openrouterKey = (process.env.OPENROUTER_API_KEY || '').trim();
-          const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
           const openaiKey = (process.env.OPENAI_API_KEY || '').trim();
           const codexAccess = (process.env.OPENAI_CODEX_ACCESS_TOKEN || '').trim();
           const codexRefresh = (process.env.OPENAI_CODEX_REFRESH_TOKEN || '').trim();
@@ -143,9 +142,6 @@ spec:
               }
               if (openrouterKey && !store.profiles['openrouter:default']) {
                 store.profiles['openrouter:default'] = { type: 'api_key', provider: 'openrouter', key: openrouterKey };
-              }
-              if (anthropicKey && !store.profiles['anthropic:default']) {
-                store.profiles['anthropic:default'] = { type: 'api_key', provider: 'anthropic', key: anthropicKey };
               }
               if (openaiKey && !store.profiles['openai:default']) {
                 store.profiles['openai:default'] = { type: 'api_key', provider: 'openai', key: openaiKey };
@@ -337,12 +333,6 @@ spec:
             secretKeyRef:
               name: api-keys
               key: gemini-api-key-2
-              optional: true
-        - name: ANTHROPIC_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: anthropic-api-key
               optional: true
         - name: OPENROUTER_API_KEY
           valueFrom:
@@ -638,12 +628,6 @@ spec:
             secretKeyRef:
               name: api-keys
               key: gemini-api-key
-        - name: ANTHROPIC_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: anthropic-api-key
-              optional: true
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:

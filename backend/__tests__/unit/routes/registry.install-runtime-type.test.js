@@ -82,6 +82,7 @@ const AgentIdentityService = require('../../../services/agentIdentityService');
 const { podHasOutsiderWritableGrant } = require('../../../services/nativeOutsiderGrantPolicy');
 const GlobalModelConfigService = require('../../../services/globalModelConfigService');
 const FirstContactService = require('../../../services/firstContactService');
+const AgentMessageService = require('../../../services/agentMessageService');
 const installRouter = require('../../../routes/registry/install');
 
 const getInstallHandler = () => {
@@ -538,5 +539,50 @@ describe('registry install runtimeType fallback', () => {
         profilePicture: '/api/uploads/aria.png',
       }),
     );
+  });
+
+  describe('install intro in a solo pod (TASK-223)', () => {
+    // The handler reads the pod twice: `.lean()` for the access check and
+    // `.select(...).lean()` for the intro. The fixture must answer both.
+    const SoloPod = (name) => {
+      const doc = { _id: 'pod-1', name, createdBy: 'user-1', members: ['user-1'], type: 'chat' };
+      Pod.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue(doc),
+        select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(doc) }),
+      });
+    };
+    const runInstall = async () => {
+      AgentRegistry.getByName.mockResolvedValue({
+        agentName: 'sample-agent',
+        displayName: 'Sample Agent',
+        description: 'Community marketplace app',
+        latestVersion: '1.0.0',
+        manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
+      });
+      const req = {
+        body: { agentName: 'sample-agent', podId: 'pod-1', version: '1.0.0', config: {}, scopes: [] },
+        user: { id: 'user-1', username: 'installer' },
+        userId: 'user-1',
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await installHandler(req, res);
+      await new Promise((resolve) => setImmediate(resolve));
+    };
+
+    it('posts the intro in the installer\'s own solo My Workspace', async () => {
+      SoloPod('My Workspace');
+      await runInstall();
+
+      expect(AgentMessageService.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ podId: 'pod-1' }),
+      );
+    });
+
+    it('stays silent in a solo pod that is not a My Workspace', async () => {
+      SoloPod('Side project');
+      await runInstall();
+
+      expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+    });
   });
 });

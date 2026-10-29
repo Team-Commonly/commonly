@@ -49,6 +49,7 @@ jest.mock('../../../models/AuditLog', () => ({ create: jest.fn(() => Promise.res
 
 // Route module pulls in a wide surface; stub the parts irrelevant here.
 jest.mock('../../../controllers/podController', () => ({
+  updatePodParent: jest.fn(),
   getAllPods: (_q, res) => res.json([]),
   getPodsByType: (_q, res) => res.json([]),
   getPodById: (_q, res) => res.json({}),

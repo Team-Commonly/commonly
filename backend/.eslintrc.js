@@ -8,7 +8,23 @@ module.exports = {
   parserOptions: {
     ecmaVersion: 2020,
   },
+  // JavaScript tests also import TypeScript modules. Keep resolution shared
+  // so both file types resolve the same extensionless paths.
+  settings: {
+    'import/resolver': {
+      node: { extensions: ['.js', '.ts', '.json'] },
+    },
+  },
   rules: {
+    // Extensionless imports are shared by JavaScript and TypeScript callers.
+    'import/extensions': ['error', 'ignorePackages', {
+      js: 'never',
+      mjs: 'never',
+      jsx: 'never',
+      ts: 'never',
+      tsx: 'never',
+    }],
+
     // Allow console logs
     'no-console': 'off',
 
@@ -49,6 +65,16 @@ module.exports = {
       },
     },
     {
+      // This child-process probe installs a ts-node hook and deliberately
+      // requires the .ts path. Preserve its explicit-extension contract.
+      files: ['__tests__/utils/sentryLayerWrapProbe.js'],
+      rules: {
+        'import/extensions': ['error', 'ignorePackages', {
+          js: 'never', mjs: 'never', jsx: 'never', ts: 'always', tsx: 'never',
+        }],
+      },
+    },
+    {
       // TypeScript. Added 2026-08-28 for TASK-024, which measured backend
       // eslint reaching 0 of 286 `.ts` files: `npm run lint` was scoped
       // `--ext .js`, every backend `lint-staged` glob had gone stale to zero
@@ -66,14 +92,6 @@ module.exports = {
         sourceType: 'module',
       },
       plugins: ['@typescript-eslint'],
-      // Without this the import plugin cannot resolve a single relative import
-      // in this tree, because its default resolver does not know about .ts.
-      // That is what made the two rules below look unusable.
-      settings: {
-        'import/resolver': {
-          node: { extensions: ['.js', '.ts', '.json'] },
-        },
-      },
       rules: {
         // TypeScript's own checker owns undefined symbols and unused locals,
         // and it runs in CI already (`tsc --noEmit`). The base rules do not
@@ -84,27 +102,6 @@ module.exports = {
           'warn',
           { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
         ],
-        // These two were 'off' when this PR was first pushed, with a comment
-        // saying resolution is tsconfig's job. That was true only because no
-        // resolver was configured — the cause was this file, not TypeScript.
-        // Switching them off retires two rules that catch real defects: an
-        // import of a path that does not exist, and the extension mistake that
-        // separates a working require from a broken one. The `settings` block
-        // above gives the plugin the extension list it was missing, and both
-        // rules then pass on the whole tree. Measured: exit 0 either way, with
-        // byte-identical warning output — so this costs nothing and restores
-        // two bug-catchers.
-        //
-        // `ts: 'never'` is not decoration. Once the resolver can see .ts, the
-        // default policy DEMANDS an explicit extension on every relative
-        // import, which is the opposite of what this codebase and tsc want.
-        'import/extensions': ['error', 'ignorePackages', {
-          js: 'never',
-          mjs: 'never',
-          jsx: 'never',
-          ts: 'never',
-          tsx: 'never',
-        }],
         // This codebase deliberately uses inline `require()` inside functions
         // to break import cycles between services, and says so in comments at
         // the call sites.

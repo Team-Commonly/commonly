@@ -46,15 +46,17 @@ export const windowsSandboxMessage = (adapterName) => {
 };
 
 /**
- * Claude Code on Linux (WSL included). The bubblewrap namespace binds the
- * system binary folders only, and Claude Code installs under the person's
- * home or /usr/local, so a confined spawn could not even start it; its login
- * and settings live under that home too (Ubuntu run, 2026-10-16). Until the
- * namespace carries what Claude needs, the seat stops here with its options.
+ * Claude Code on Linux (WSL included) for any seat but a workspace one. Only
+ * the workspace jail (#2784) carries what Claude needs: its install, a HOME
+ * of its own and a copy of the login. The public jail binds the system binary
+ * folders only, so a confined spawn could not even start Claude (Ubuntu run,
+ * 2026-10-16), and giving it the login would hand strangers a jail that holds
+ * it. A workspace seat needs every pod it answers in to be invite-only.
  */
 export const linuxClaudeMessage = () => [
-  'Commonly runs a connected Claude Code inside a sandbox, and on Linux (WSL included) that sandbox',
-  'cannot run Claude Code yet, so this agent cannot listen for @mentions here. Instead:',
+  'Commonly runs a connected Claude Code inside a sandbox. On Linux (WSL included) it does that only',
+  'for an agent whose pods are all invite-only, and this one is not, so it cannot listen for @mentions here. Instead:',
+  '  - From an invite-only pod: run the commands its Connect page shows, from your project\'s folder.',
   '  - Use Commonly from your own Claude Code sessions: the Connect page shows a `claude mcp add` command.',
   HOSTED_LINE,
 ].join('\n');
@@ -70,11 +72,17 @@ export const hostSandboxRefusal = ({
   if (!Object.prototype.hasOwnProperty.call(ADAPTER_LABELS, adapterName)) return null;
   const sandbox = normalizeSandboxTrust(environment?.sandbox);
   if (!sandbox || typeof sandbox !== 'object') return null;
-  const mode = sandbox.mode ?? (sandbox.trust === 'public' ? resolvePublicSandboxMode(sandbox, platform) : undefined);
+  // Every host-confined trust (public, and workspace since TASK-294) derives its
+  // mode here; any other trust gets back only the mode it declared.
+  const mode = sandbox.mode ?? resolvePublicSandboxMode(sandbox, platform);
   if (mode !== 'bwrap' && !SEATBELT_MODES.has(mode)) return null;
 
   if (platform === 'win32') return windowsSandboxMessage(adapterName);
-  if (mode === 'bwrap' && adapterName === 'claude') return linuxClaudeMessage();
+  // A workspace claude seat falls through to the bubblewrap probe below; the
+  // probe failing, for any reason, is a refusal like any other adapter's.
+  if (mode === 'bwrap' && adapterName === 'claude' && sandbox.trust !== 'workspace') {
+    return linuxClaudeMessage();
+  }
   if (mode === 'bwrap') {
     const bwrap = detectBwrap();
     return bwrap.available ? null : `This seat runs in a bubblewrap sandbox, which is not available here. ${bwrap.error}`;

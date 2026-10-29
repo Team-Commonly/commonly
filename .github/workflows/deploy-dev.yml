@@ -12,7 +12,11 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: 'Image tag override (defaults to short SHA of HEAD)'
+        description: 'Image tag override (defaults to the short SHA of the deployed commit)'
+        required: false
+        default: ''
+      ref:
+        description: 'Full 40-character commit SHA to deploy (defaults to main HEAD). It needs a green staging-smoke.'
         required: false
         default: ''
       allow_without_staging_smoke:
@@ -43,14 +47,47 @@ jobs:
   # commit status on this exact SHA. Deploy Staging runs the Tier-1 UI smoke and posts that
   # status; this job reads it and blocks the deploy if it is not success. The
   # allow_without_staging_smoke input is the explicit emergency override.
+  #
+  # The run is always dispatched on main, which the deploy identity trusts. `inputs.ref` picks
+  # which commit it builds: a commit that is not main HEAD, e.g. a release commit holding main's
+  # reviewed changes up to a point plus a cherry-picked fix. Only a full SHA is accepted, and the
+  # deploy job checks out the SHA this job resolved, never a branch name.
   require_staging_smoke:
     name: Require green staging-smoke on this SHA
     runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
     steps:
+      - name: Resolve the commit to deploy
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ inputs.ref }}
+          HEAD_SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ -z "$REF" ]; then
+            echo "sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+            echo "Deploying main HEAD $HEAD_SHA"
+            exit 0
+          fi
+          if ! printf '%s' "$REF" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error title=ref::ref must be a full 40-character lowercase commit SHA (got: $REF)"
+            exit 1
+          fi
+          FOUND=$(gh api "repos/$REPO/commits/$REF" --jq .sha 2>/dev/null || echo "")
+          if [ "$FOUND" != "$REF" ]; then
+            echo "::error title=ref::commit $REF is not in $REPO"
+            exit 1
+          fi
+          echo "sha=$REF" >> "$GITHUB_OUTPUT"
+          echo "::notice title=ref::Deploying $REF instead of main HEAD $HEAD_SHA"
+
       - name: Gate on the staging-smoke commit status
         env:
           GH_TOKEN: ${{ github.token }}
-          SHA: ${{ github.sha }}
+          SHA: ${{ steps.resolve.outputs.sha }}
           REPO: ${{ github.repository }}
           ALLOW: ${{ inputs.allow_without_staging_smoke }}
         run: |
@@ -80,6 +117,7 @@ jobs:
       - name: Checkout (with submodules for _external/clawdbot)
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.require_staging_smoke.outputs.sha }}
           submodules: recursive
 
       - name: Compute image tag

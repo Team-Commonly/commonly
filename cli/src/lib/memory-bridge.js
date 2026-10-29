@@ -60,7 +60,7 @@ export const ROW_SLICING_CUE = 'Slicing: when a row is too large for one turn, s
 export const buildMemoryPreamble = (
   prompt,
   memoryLongTerm,
-  { freshSession = false, workCues = [] } = {},
+  { freshSession = false, workCues = [], memoryWithheld = false } = {},
 ) => {
   // `null` is the UNREADABLE signal, and it is deliberately not the same value
   // as `''`. Telling a seat whose token was revoked that "nothing has ever been
@@ -68,7 +68,14 @@ export const buildMemoryPreamble = (
   // defect this cue exists to fix — one state over. When we could not read, say
   // that, and say nothing about what is stored.
   let context;
-  if (memoryLongTerm === null) {
+  if (memoryWithheld) {
+    // A workspace seat's turn that runs public: not unreadable and not empty,
+    // so neither of those cues is true. Its memory tools are off as well.
+    context = `=== Context (your persistent memory) ===\n`
+      + `(withheld this turn — this turn runs as a public seat because not every `
+      + `pod you answer in is confirmed private, so your memory stays out of it and `
+      + `the memory tools are off. This says nothing about what you have saved.)`;
+  } else if (memoryLongTerm === null) {
     context = `=== Context (your persistent memory) ===\n`
       + `(unreadable this turn — the memory read failed, so this says NOTHING `
       + `about what you have saved. Do not treat it as empty and do not re-save `
@@ -96,7 +103,9 @@ export const buildMemoryPreamble = (
     + 'This is a fresh session. Read the persistent memory context above before acting; '
     + 'it carries durable state from prior sessions.\n';
   let sessionEndCue = '=== Before this session ends ===\n';
-  if (memoryLongTerm === null) {
+  if (memoryWithheld) {
+    sessionEndCue += 'Memory is withheld this turn, so there is nothing to save.';
+  } else if (memoryLongTerm === null) {
     sessionEndCue += 'Memory was unreadable on this fresh session. Do not treat it as empty or '
       + 'write a replacement based on this cue.';
   } else if (memoryLongTerm) {

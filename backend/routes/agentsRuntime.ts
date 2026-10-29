@@ -1,3 +1,5 @@
+import mongoose from 'mongoose';
+import { podMemberPopulate } from '../services/podMemberPopulate';
 import dualAuth from '../middleware/dualAuth';
 import { validateAgentCardPayload } from '../services/uiCardValidation';
 export {};
@@ -41,6 +43,7 @@ const Post = require('../models/Post');
 const Pod = require('../models/Pod');
 const PodAsset = require('../models/PodAsset');
 const { AgentInstallation } = require('../models/AgentRegistry');
+const { recordReportedCli } = require('../services/reportedCli');
 const File = require('../models/File');
 const { getObjectStore } = require('../services/objectStore');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
@@ -281,12 +284,39 @@ const requireBotUser = async (req: any, res: any) => {
   return { user };
 };
 
+// The agent a /bot/* caller acts as, named in its query or body. A query or
+// body value can arrive as an array or object, which a Mongo filter reads as
+// an operator, so only strings are taken. The token's bot user must be that
+// agent.
+const resolveBotIdentity = (res: any, user: any, fields: any) => {
+  const { agentName, instanceId } = fields || {};
+  if ((agentName !== undefined && typeof agentName !== 'string')
+    || (instanceId !== undefined && typeof instanceId !== 'string')) {
+    return { error: res.status(400).json({ message: 'agentName and instanceId must be strings' }) };
+  }
+  const identity = {
+    agentName: String(agentName || user.botMetadata?.agentName || user.username),
+    instanceId: String(instanceId || user.botMetadata?.instanceId || 'default'),
+  };
+  const expectedUsername = AgentIdentityService.buildAgentUsername(identity.agentName, identity.instanceId);
+  if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
+    return { error: res.status(403).json({ message: 'Agent token does not match bot user' }) };
+  }
+  return { identity };
+};
+
+// A pod id from a route param or a request body is taken only as an ObjectId
+// or its hex string, so an object or array never reaches a filter as an
+// operator.
+const isPodId = (podId: unknown): boolean => mongoose.isObjectIdOrHexString(podId);
+
 const ensureBotInstallation = async (
-  agentName: any,
-  podId: any,
+  agentName: string,
+  podId: unknown,
   statuses = ['active'],
   instanceId = 'default',
 ) => {
+  if (!isPodId(podId)) return null;
   const installation = await AgentInstallation.findOne({
     agentName: agentName.toLowerCase(),
     podId,
@@ -298,11 +328,12 @@ const ensureBotInstallation = async (
 
 const ensureBotPodAccess = async (
   user: any,
-  agentName: any,
-  podId: any,
+  agentName: string,
+  podId: unknown,
   statuses = ['active'],
   instanceId = 'default',
 ) => {
+  if (!isPodId(podId)) return null;
   const installation = await ensureBotInstallation(agentName, podId, statuses, instanceId);
   if (installation) return installation;
 
@@ -539,10 +570,27 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
     const allPodIds = [...podIds.map(String), ...dmPodIds.map(String)];
 
     const pods = allPodIds.length > 0
-      ? await Pod.find({ _id: { $in: allPodIds } }).select('_id name type').lean()
+      ? await Pod.find({ _id: { $in: allPodIds } }).select('_id name type publicRead communityListed joinPolicy').lean()
       : [];
 
     const podMap = Object.fromEntries(pods.map((p: any) => [String(p._id), p]));
+
+    // Whether strangers can read or join each room this seat answers in
+    // (TASK-294). A `workspace`-trust CLI seat reads it before every turn and
+    // runs that turn public unless every pod here is private and invite-only,
+    // so the effective values are reported: an absent stored visibility field
+    // means false, as everywhere else that reads `publicRead || communityListed`,
+    // and an absent joinPolicy means open, as in podListing.ts. Visibility
+    // alone is not enough: POST /pods/:podId/self-install admits any agent to
+    // an open pod an agent created, whether or not it is listed. A pod that no
+    // longer exists gets none of the fields, which the CLI reads as not-private.
+    const podVisibility = (pod: any) => (pod?._id
+      ? {
+        publicRead: pod.publicRead === true,
+        communityListed: pod.communityListed === true,
+        joinPolicy: pod.joinPolicy === 'invite-only' ? 'invite-only' : 'open',
+      }
+      : {});
 
     const installationList = installations.map((inst: any) => {
       const pod = podMap[String(inst?.podId)] || {};
@@ -557,6 +605,7 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
         // Known runtime kinds (such as a connect-page `webhook`) stay null.
         // Expose only this non-secret discriminator, never the full config.
         runtimeAdapter: adapterForRuntimeBinding(inst?.config?.runtime),
+        ...podVisibility(pod),
         type: 'installation',
       };
     });
@@ -569,6 +618,7 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
         podType: pod.type || 'agent-admin',
         instanceId,
         status: 'active',
+        ...podVisibility(pod),
         type: 'dm',
       };
     });
@@ -601,6 +651,11 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
       || 'default';
     if (!agentName) {
       return res.status(403).json({ message: 'Agent token not authorized for events' });
+    }
+    // TASK-317: the chat chip's label for a BYO seat, display only and
+    // unverified (services/reportedCli.ts). Never feeds runtime.adapter.
+    if (req.query.reportedCli) {
+      recordReportedCli((req.agentInstallations || []).map((item: any) => item?._id), req.query.reportedCli);
     }
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
     const installationPodIds = (req.agentInstallations || [])
@@ -672,13 +727,9 @@ router.get('/bot/events', longPollIpLimit, auth, requireApiTokenScopes(['agent:e
     const { user, error } = await requireBotUser(req, res);
     if (error) return error;
 
-    const agentName = req.query.agentName || user.botMetadata?.agentName || null;
-    const instanceId = req.query.instanceId || user.botMetadata?.instanceId || 'default';
-    const resolvedAgentName = agentName || user.username;
-    const expectedUsername = AgentIdentityService.buildAgentUsername(resolvedAgentName, instanceId);
-    if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
-      return res.status(403).json({ message: 'Agent token does not match bot user' });
-    }
+    const { identity, error: refused } = resolveBotIdentity(res, user, req.query);
+    if (!identity) return refused;
+    const { agentName: resolvedAgentName, instanceId } = identity;
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
 
     // Find all pods where this agent is installed
@@ -717,7 +768,7 @@ router.get('/bot/events', longPollIpLimit, auth, requireApiTokenScopes(['agent:e
   }
 });
 
-router.post('/dm', auth, async (req: any, res: any) => {
+router.post('/dm', phase4RateLimit, auth, async (req: any, res: any) => {
   try {
     const userId = req.userId || req.user?.id;
     if (!userId) {
@@ -735,6 +786,9 @@ router.post('/dm', auth, async (req: any, res: any) => {
     const normalizedInstanceId = instanceId ? String(instanceId).toLowerCase() : null;
     if (!agentName) {
       return res.status(400).json({ message: 'agentName is required' });
+    }
+    if (requestedPodId && !isPodId(requestedPodId)) {
+      return res.status(400).json({ message: 'podId must be a pod id' });
     }
 
     const installationQuery = {
@@ -1270,18 +1324,14 @@ router.post('/agent-dm', phase4RateLimit, agentRuntimeAuth, async (req: any, res
  * POST /bot/events/:id/ack (user API token auth)
  * For bot users to acknowledge events
  */
-router.post('/bot/events/:id/ack', auth, requireApiTokenScopes(['agent:events:ack']), async (req: any, res: any) => {
+router.post('/bot/events/:id/ack', phase4RateLimit, auth, requireApiTokenScopes(['agent:events:ack']), async (req: any, res: any) => {
   try {
     const { user, error } = await requireBotUser(req, res);
     if (error) return error;
 
-    const agentName = req.body.agentName || user.botMetadata?.agentName || null;
-    const instanceId = req.body.instanceId || user.botMetadata?.instanceId || 'default';
-    const resolvedAgentName = agentName || user.username;
-    const expectedUsername = AgentIdentityService.buildAgentUsername(resolvedAgentName, instanceId);
-    if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
-      return res.status(403).json({ message: 'Agent token does not match bot user' });
-    }
+    const { identity, error: refused } = resolveBotIdentity(res, user, req.body);
+    if (!identity) return refused;
+    const { agentName: resolvedAgentName, instanceId } = identity;
     const delivery = req.body?.result || req.body?.delivery || null;
     const deliveryId = req.body?.deliveryId || null;
     // Which consumer is acking. Phase B is keyed on this rather than flipped
@@ -1410,6 +1460,7 @@ router.post('/events/:id/ack', phase4RateLimit, agentRuntimeAuth, async (req: an
  */
 router.get(
   '/bot/pods/:podId/context',
+  phase4RateLimit,
   auth,
   requireApiTokenScopes(['agent:context:read']),
   async (req: any, res: any) => {
@@ -1418,13 +1469,9 @@ router.get(
       const { user, error } = await requireBotUser(req, res);
       if (error) return error;
 
-      const agentName = req.query.agentName || user.botMetadata?.agentName || null;
-      const instanceId = req.query.instanceId || user.botMetadata?.instanceId || 'default';
-      const resolvedAgentName = agentName || user.username;
-      const expectedUsername = AgentIdentityService.buildAgentUsername(resolvedAgentName, instanceId);
-      if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
-        return res.status(403).json({ message: 'Agent token does not match bot user' });
-      }
+      const { identity, error: refused } = resolveBotIdentity(res, user, req.query);
+      if (!identity) return refused;
+      const { agentName: resolvedAgentName, instanceId } = identity;
 
       const installation = await ensureBotPodAccess(
         user,
@@ -1480,6 +1527,7 @@ router.get(
  */
 router.get(
   '/bot/pods/:podId/messages',
+  phase4RateLimit,
   auth,
   requireApiTokenScopes(['agent:messages:read']),
   async (req: any, res: any) => {
@@ -1488,13 +1536,9 @@ router.get(
       const { user, error } = await requireBotUser(req, res);
       if (error) return error;
 
-      const agentName = req.query.agentName || user.botMetadata?.agentName || null;
-      const instanceId = req.query.instanceId || user.botMetadata?.instanceId || 'default';
-      const resolvedAgentName = agentName || user.username;
-      const expectedUsername = AgentIdentityService.buildAgentUsername(resolvedAgentName, instanceId);
-      if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
-        return res.status(403).json({ message: 'Agent token does not match bot user' });
-      }
+      const { identity, error: refused } = resolveBotIdentity(res, user, req.query);
+      if (!identity) return refused;
+      const { agentName: resolvedAgentName, instanceId } = identity;
 
       const installation = await ensureBotPodAccess(
         user,
@@ -1530,6 +1574,7 @@ router.get(
  */
 router.post(
   '/bot/pods/:podId/messages',
+  phase4RateLimit,
   auth,
   requireApiTokenScopes(['agent:messages:write']),
   async (req: any, res: any) => {
@@ -1538,13 +1583,9 @@ router.post(
       const { user, error } = await requireBotUser(req, res);
       if (error) return error;
 
-      const agentName = req.body.agentName || user.botMetadata?.agentName || null;
-      const instanceId = req.body.instanceId || user.botMetadata?.instanceId || 'default';
-      const resolvedAgentName = agentName || user.username;
-      const expectedUsername = AgentIdentityService.buildAgentUsername(resolvedAgentName, instanceId);
-      if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
-        return res.status(403).json({ message: 'Agent token does not match bot user' });
-      }
+      const { identity, error: refused } = resolveBotIdentity(res, user, req.body);
+      if (!identity) return refused;
+      const { agentName: resolvedAgentName, instanceId } = identity;
 
       const installation = await ensureBotPodAccess(
         user,
@@ -1599,6 +1640,7 @@ router.post(
  */
 router.post(
   '/bot/threads/:threadId/comments',
+  phase4RateLimit,
   auth,
   requireApiTokenScopes(['agent:messages:write']),
   async (req: any, res: any) => {
@@ -1607,13 +1649,9 @@ router.post(
       const { user, error } = await requireBotUser(req, res);
       if (error) return error;
 
-      const agentName = req.body.agentName || user.botMetadata?.agentName || null;
-      const instanceId = req.body.instanceId || user.botMetadata?.instanceId || 'default';
-      const resolvedAgentName = agentName || user.username;
-      const expectedUsername = AgentIdentityService.buildAgentUsername(resolvedAgentName, instanceId);
-      if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
-        return res.status(403).json({ message: 'Agent token does not match bot user' });
-      }
+      const { identity, error: refused } = resolveBotIdentity(res, user, req.body);
+      if (!identity) return refused;
+      const { agentName: resolvedAgentName, instanceId } = identity;
 
       const { content, podId: requestPodId } = req.body || {};
       if (!content) {
@@ -3287,7 +3325,7 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
     // Global dedup by name: if a pod with this name already exists anywhere, join it and return it
     const existingPod = await Pod.findOne({ name })
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture');
+      .populate(podMemberPopulate('username profilePicture'));
     if (existingPod) {
       // DM pods are strictly 1:1 (ADR-001 §3.10). VALID_POD_TYPES above gates
       // the type the caller ASKED for, but this dedup branch matches on name
@@ -3379,7 +3417,7 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
       if (!isMember) {
         existingPod.members.push(agentUser._id);
         await existingPod.save();
-        await existingPod.populate('members', 'username profilePicture');
+        await existingPod.populate(podMemberPopulate('username profilePicture'));
       }
       // Ensure an AgentInstallation exists so the agent appears in the Agents section
       if (sourceInstall) {
@@ -3431,7 +3469,7 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
     const pod = await newPod.save();
 
     await pod.populate('createdBy', 'username profilePicture');
-    await pod.populate('members', 'username profilePicture');
+    await pod.populate(podMemberPopulate('username profilePicture'));
 
     if (process.env.PG_HOST && PGPod) {
       try {

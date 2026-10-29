@@ -12,6 +12,7 @@ jest.mock('../../middleware/auth', () => (req, res, next) => {
   next();
 });
 jest.mock('../../controllers/podController', () => ({
+  updatePodParent: jest.fn(),
   getAllPods: jest.fn((req, res) => res.status(200).end()),
   getPodsByType: jest.fn((req, res) => res.status(200).end()),
   getPodById: jest.fn((req, res) => res.status(404).json({ error: 'Pod not found' })),

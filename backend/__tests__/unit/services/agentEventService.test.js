@@ -423,10 +423,18 @@ describe('AgentEventService', () => {
         status: 'delivered', payload: { messageId: '42' },
       }) });
     readFoldedDigest.mockResolvedValueOnce({ unreadCount: 3, lastEventIds: ['older-1'], revision: 4 });
-    AgentEvent.updateOne.mockResolvedValueOnce({ modifiedCount: 1 });
+    AgentEvent.updateOne
+      .mockResolvedValueOnce({ modifiedCount: 1 }) // the wake's digest snapshot
+      .mockResolvedValueOnce({ modifiedCount: 1 }); // the folded rollup it carries
     const page = await AgentEventService.listInboxPage({ agentName: 'inbox', podId: 'pod-a' });
     expect(page.events.map((event) => event._id)).toEqual(['wake', 'digest']);
     expect(page.inboxCount).toBe(2);
+    // A wake that carried digest records when it read it, so its ack settles
+    // the pod's backlog up to that moment.
+    expect(AgentEvent.updateOne).toHaveBeenNthCalledWith(1,
+      expect.objectContaining({ _id: 'wake', status: 'delivered' }),
+      { $set: { digestSnapshotAt: expect.any(Date) } });
+    expect(page.events[0].digestSnapshotAt).toEqual(expect.any(Date));
     expect(page.events[0].payload.digestRollup).toEqual({ unreadCount: 3, lastEventIds: ['older-1'] });
     expect(page.events[1].payload.digestRollup).toBeUndefined();
     expect(AgentEvent.find).toHaveBeenNthCalledWith(3, expect.objectContaining({
