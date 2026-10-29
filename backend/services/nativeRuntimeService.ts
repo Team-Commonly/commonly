@@ -1197,12 +1197,39 @@ export async function dispatchTool(
         // Raft-comparison P4 rule: never fork status vocabulary per surface.
         const { AgentInstallation } = require('../models/AgentRegistry');
         const { collectPodAgentActivity, deriveActivityBucket } = require('./agentStateService');
-        const installations = await AgentInstallation.find({
-          podId: ctx.podId,
+        const mongoose = require('mongoose');
+        // This pod's agents, plus the ones the person asking installed in
+        // other pods: someone who connected an agent from another pod still
+        // asks Scout here whether it is running. Only their own installs, and
+        // only name and state, never the other pod.
+        const requesterId = ctx.computerRequesterId;
+        const rows = await AgentInstallation.find({
           status: 'active',
-        }).select('agentName instanceId displayName config').lean();
-        const activity = await collectPodAgentActivity(String(ctx.podId), installations);
-        const agents = (installations as Array<Record<string, any>>).map((i) => {
+          ...(requesterId && mongoose.Types.ObjectId.isValid(requesterId)
+            ? { $or: [{ podId: ctx.podId }, { installedBy: requesterId }] }
+            : { podId: ctx.podId }),
+        }).select('agentName instanceId displayName config podId runtimeTokens.lastUsedAt').limit(100).lean();
+        const seen = new Set<string>();
+        const installations = (rows as Array<Record<string, any>>)
+          .sort((a, b) => Number(String(b.podId) === String(ctx.podId)) - Number(String(a.podId) === String(ctx.podId)))
+          .filter((i) => {
+            const key = `${i.agentName}:${i.instanceId || 'default'}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+        const byPod = new Map<string, Array<Record<string, any>>>();
+        for (const i of installations) {
+          const podKey = String(i.podId);
+          byPod.set(podKey, [...(byPod.get(podKey) || []), i]);
+        }
+        const activity = new Map<string, Date | null>();
+        for (const [podKey, group] of byPod) {
+          // eslint-disable-next-line no-await-in-loop
+          const podActivity = await collectPodAgentActivity(podKey, group as never);
+          for (const [key, value] of podActivity) activity.set(key, value);
+        }
+        const agents = installations.map((i) => {
           const key = `${i.agentName}:${i.instanceId || 'default'}`;
           const lastActiveAt = activity.get(key) || null;
           const runtimeType = String(i.config?.runtime?.runtimeType || '') || 'unknown';
@@ -1213,6 +1240,7 @@ export async function dispatchTool(
             // A hosted agent on the native engine is ready in the same sense.
             state: deriveActivityBucket(lastActiveAt, hostedRunsNative(i) ? 'native' : runtimeType),
             lastActiveAt: lastActiveAt ? new Date(lastActiveAt).toISOString() : null,
+            inThisPod: String(i.podId) === String(ctx.podId),
           };
         });
         return { content: { agents } };

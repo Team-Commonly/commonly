@@ -162,6 +162,7 @@ interface ActivityInstallationLike {
   agentName: string;
   instanceId?: string;
   config?: { runtime?: { runtimeType?: string } };
+  runtimeTokens?: Array<{ lastUsedAt?: Date | null }>;
 }
 
 /**
@@ -252,19 +253,43 @@ export const collectPodAgentActivity = async (
   }
   const userRows = usernameByKey.size > 0
     ? await User.find({ username: { $in: Array.from(usernameByKey.values()) } })
-      .select('username agentRuntimeTokens.lastUsedAt')
+      .select('_id username agentRuntimeTokens.lastUsedAt')
       .lean()
     : [];
-  const userByUsername = new Map<string, { agentRuntimeTokens?: Array<{ lastUsedAt?: Date }> }>(
+  const userByUsername = new Map<string, { _id?: unknown; agentRuntimeTokens?: Array<{ lastUsedAt?: Date }> }>(
     (userRows as Array<{ username: string }>).map((u) => [u.username, u as never]),
   );
+
+  // A seat's key can also live in the credential ledger (connect page,
+  // daemon mints, spawn children) or on a legacy installation. Runtime auth
+  // stamps lastUsedAt on whichever store authenticated the call, so the
+  // status read has to take all three.
+  const credentialTimeByUser = new Map<string, number>();
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const AgentCredential = require('../models/AgentCredential');
+    const agentUserIds = (userRows as Array<{ _id?: unknown }>).map((u) => u._id).filter(Boolean);
+    const credentials = agentUserIds.length > 0
+      ? await AgentCredential.find({ kind: 'runtime', agentUserId: { $in: agentUserIds } })
+        .select('agentUserId lastUsedAt')
+        .lean()
+      : [];
+    for (const credential of credentials as Array<{ agentUserId?: unknown; lastUsedAt?: Date | null }>) {
+      const time = credential.lastUsedAt ? new Date(credential.lastUsedAt).getTime() : 0;
+      const id = String(credential.agentUserId);
+      if (time > (credentialTimeByUser.get(id) || 0)) credentialTimeByUser.set(id, time);
+    }
+  } catch (credentialErr) {
+    console.warn('[agent-state] credential activity lookup failed:', (credentialErr as Error).message);
+  }
 
   for (const i of installations) {
     const k = key(i.agentName, i.instanceId);
     const user = userByUsername.get(usernameByKey.get(k) || '');
-    const tokenTimes = (user?.agentRuntimeTokens || [])
+    const tokenTimes = [...(user?.agentRuntimeTokens || []), ...(i.runtimeTokens || [])]
       .map((tok) => (tok?.lastUsedAt ? new Date(tok.lastUsedAt).getTime() : 0));
-    const candidates = [heartbeatMap.get(k), runMap.get(k), ...tokenTimes]
+    const credentialTime = user?._id ? credentialTimeByUser.get(String(user._id)) : undefined;
+    const candidates = [heartbeatMap.get(k), runMap.get(k), ...tokenTimes, credentialTime]
       .map((v) => (v ? new Date(v as Date).getTime() : 0))
       .filter((v) => Number.isFinite(v) && v > 0);
     result.set(k, candidates.length > 0 ? new Date(Math.max(...candidates)) : null);
