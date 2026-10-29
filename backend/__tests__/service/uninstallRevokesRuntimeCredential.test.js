@@ -18,6 +18,7 @@ process.env.NODE_ENV = 'test';
 jest.mock('../../services/starterTaskService', () => ({ completeConnectAgentStarterTask: jest.fn() }));
 
 const Pod = require('../../models/Pod');
+const Message = require('../../models/Message');
 const User = require('../../models/User');
 const AgentCredential = require('../../models/AgentCredential');
 const { AgentInstallation } = require('../../models/AgentRegistry');
@@ -127,5 +128,20 @@ describe('the last installation going away revokes the runtime token', () => {
 
     expect(await pruneStaleInstallations(14)).toEqual({ deleted: 1, failures: 0 });
     expect(await credentialStatus()).toEqual(['revoked']);
+  });
+  test('a pod deletion whose revoke fails deletes nothing, and the retry revokes', async () => {
+    const pod = await makePod('Retry delete');
+    await issue(await install(pod));
+    await Message.create({ podId: pod._id, userId: ownerId, content: 'keep me' });
+    jest.spyOn(tokens, 'revokeRuntimeTokensAfterLastUninstall').mockRejectedValueOnce(new Error('db blip'));
+
+    await expect(deletePodCascade(String(pod._id))).rejects.toThrow('db blip');
+    expect(await Pod.countDocuments({ _id: pod._id })).toBe(1);
+    expect(await Message.countDocuments({ podId: pod._id })).toBe(1);
+    expect(await AgentInstallation.countDocuments({ podId: pod._id })).toBe(1);
+
+    await deletePodCascade(String(pod._id));
+    expect(await credentialStatus()).toEqual(['revoked']);
+    expect(await Pod.countDocuments({ _id: pod._id })).toBe(0);
   });
 });
