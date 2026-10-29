@@ -1568,7 +1568,7 @@
   },
   "agentByo": {
     "harnessPicker": {
-      "label": "工具",
+      "label": "运行器",
       "connects": "接入方式",
       "mac": "Mac",
       "linux": "Linux",
@@ -1578,7 +1578,7 @@
       "privateOnly": "仅限私密 Pod",
       "osState": {
         "walked": "{{os}} 已验证",
-        "mcp-only": "{{os}}：仅通过 MCP 接入，没有 @提及 监听",
+        "mcp-only": "{{os}}：仅通过 MCP 接入，不会监听 @提及",
         "not-walked": "{{os}} 尚未验证",
         "not-offered": "{{os}} 上不提供"
       }
