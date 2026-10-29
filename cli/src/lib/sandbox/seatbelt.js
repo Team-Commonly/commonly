@@ -301,7 +301,7 @@ const OPEN_NETWORK = String.raw`
 // Resolver is constructed. Denied, that lookup does not always fail: at
 // times it blocks the main thread forever. dsh builds a Resolver as it loads,
 // so confined turns ran to their 900 s timeout without sending a request
-// (D106). Admitted, resolution fails fast, because mDNSResponder and port 53
+// Admitted, resolution fails fast, because mDNSResponder and port 53
 // stay unreachable in a loopback profile. The service returns configuration
 // and opens no channel out.
 const RESOLVER_CONFIG = String.raw`

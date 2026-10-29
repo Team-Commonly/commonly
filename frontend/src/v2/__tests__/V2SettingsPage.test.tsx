@@ -95,7 +95,7 @@ describe('V2SettingsPage', () => {
   // Two shapes, two tests, because jest abandons a test at its first failing
   // expect: held together, a change to the shipped languages reported only the
   // literal and said nothing about whether this surface still reads the
-  // registry (otto, gate on #2436). Split, a failing run names both.
+  // registry (gate on #2436). Split, a failing run names both.
   const languageRadioLabels = () => within(screen.getByRole('radiogroup', { name: 'Language' }))
     .getAllByRole('radio')
     .map((radio) => radio.textContent);
@@ -226,28 +226,28 @@ describe('V2SettingsPage', () => {
 
   test('renames the username through the dedicated route and explains historical mentions', async () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
-    auth.updateUsername.mockResolvedValue({ ...auth.currentUser, username: 'lily-shen' });
+    auth.updateUsername.mockResolvedValue({ ...auth.currentUser, username: 'team-member' });
     renderSettings();
 
-    fireEvent.change(screen.getByLabelText('Username'), { target: { value: ' Lily-Shen ' } });
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: ' Team-Member ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save username' }));
 
-    await waitFor(() => expect(auth.updateUsername).toHaveBeenCalledWith('lily-shen'));
+    await waitFor(() => expect(auth.updateUsername).toHaveBeenCalledWith('team-member'));
     expect(await screen.findByRole('status')).toHaveTextContent('Username saved.');
-    expect(screen.getByText('@lily-shen')).toBeInTheDocument();
+    expect(screen.getByText('@team-member')).toBeInTheDocument();
     expect(screen.getByText(/previous username stays reserved/i)).toBeInTheDocument();
   });
 
   test('submits the username rename from Enter without submitting the display-name form', async () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
-    auth.updateUsername.mockResolvedValue({ ...auth.currentUser, username: 'lily-shen' });
+    auth.updateUsername.mockResolvedValue({ ...auth.currentUser, username: 'team-member' });
     renderSettings();
 
     const usernameInput = screen.getByLabelText('Username');
-    fireEvent.change(usernameInput, { target: { value: 'lily-shen' } });
+    fireEvent.change(usernameInput, { target: { value: 'team-member' } });
     fireEvent.keyDown(usernameInput, { key: 'Enter', code: 'Enter' });
 
-    await waitFor(() => expect(auth.updateUsername).toHaveBeenCalledWith('lily-shen'));
+    await waitFor(() => expect(auth.updateUsername).toHaveBeenCalledWith('team-member'));
     expect(auth.updateProfile).not.toHaveBeenCalled();
     expect(screen.queryByText('No account changes to save.')).not.toBeInTheDocument();
   });
@@ -276,11 +276,11 @@ describe('V2SettingsPage', () => {
 
     expect(screen.getByRole('button', { name: '保存用户名' })).toBeInTheDocument();
     expect(screen.getByText(/你的旧用户名会继续保留/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'lily-shen' } });
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'team-member' } });
     fireEvent.click(screen.getByRole('button', { name: '保存用户名' }));
     expect(screen.getByRole('button', { name: '保存中…' })).toBeDisabled();
 
-    await act(async () => { finishUpdate?.({ ...auth.currentUser, username: 'lily-shen' }); });
+    await act(async () => { finishUpdate?.({ ...auth.currentUser, username: 'team-member' }); });
     view.unmount();
     await act(async () => { await i18n.changeLanguage('en'); });
   });

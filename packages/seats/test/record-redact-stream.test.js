@@ -51,7 +51,7 @@ const assertScrubbed = (store, root, runId, streams) => {
 
 const splits = (n) => Array.from({ length: n - 1 }, (_, i) => i + 1);
 
-test('rhea\'s case: a value split across two message deltas is scrubbed', () => withStore(async (store, root) => {
+test('a value split across two message deltas is scrubbed', () => withStore(async (store, root) => {
   const run = store.startRun({ runId: 'run-split-rhea' });
   run.redact([CANARY]);
   run.emit('agent.message_chunk', { text: 'the key is sk-test-CANA' });

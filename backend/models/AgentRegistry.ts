@@ -376,7 +376,7 @@ AgentInstallationSchema.statics.upsert = async function (agentName: string, podI
     $set: {
       // An upsert that declares an identity is an attach, onto a new row or an
       // existing one, so it moves the clock either way. findOneAndUpdate skips
-      // the pre('save') stamp, so it is set here (Sable on #2795).
+      // the pre('save') stamp, so it is set here.
       ...(declaredRuntimeIdentity(config) ? { runtimeIdentityAt: new Date() } : {}),
       ...(config ? { config } : {}),
       ...(scopes ? { scopes } : {}),

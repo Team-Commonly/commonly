@@ -2,7 +2,7 @@
 
 **Status:** Proposed, 2026-10-24. Nothing here is built.
 **Asked by:** the CTO, after the long-term review ([long-term-review-2026-10.md](../architecture/long-term-review-2026-10.md), TASK-438).
-**Design:** Wren. **Gate:** Rhea (docs). **Build:** unassigned. Rows are filed after the gate.
+**Build:** unassigned. Rows are filed after the gate.
 **Code read at:** `main` `36244e5a4`. Code paths are relative to `backend/`.
 
 ## What this answers

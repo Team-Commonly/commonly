@@ -252,7 +252,7 @@ test('TASK-164: the grant, budget and trail times read in zh-CN, not English', a
     const aside = await screen.findByRole('complementary');
     expect(within(aside).getByText(/前由 sam 授权。/)).toBeInTheDocument();
     expect(within(aside).getByText(/后结束。/)).toBeInTheDocument();
-    // lily-shen's TASK-180 ruling names this key explicitly — 「每{{window}}可调用
+    // The TASK-180 ruling names this key explicitly — 「每{{window}}可调用
     // {{calls}}次」 — so the budget line loses both of its spaces. This assertion
     // pinned the old spacing, which is why it had to move with the ruling.
     expect(within(aside).getByText(/每1小时可调用50次/)).toBeInTheDocument();
@@ -365,7 +365,7 @@ test('the aside reads the grant and the trail: agents, allow-list under its mode
   // still say 3 while the trail lists its 4 rows, and only the genuinely open
   // one is counted as awaiting a person.
   expect(lines.map((line) => line.textContent).filter((text) => text.includes('awaiting a person'))).toHaveLength(1);
-  // Wren 69819: `answered` covers a resolution that was declined or expired as
+  // `answered` covers a resolution that was declined or expired as
   // well as one that ran, so its mark must say SETTLED without saying approved —
   // the sibling row beside it is the one that carries the verdict. Shield plus a
   // short bar; the shield-and-check it shipped with read as "approved" next to a
@@ -456,7 +456,7 @@ test('the catalogue draws the not-yet row, and Add mints the grant exactly as th
   const [url, body] = axios.post.mock.calls[0];
   expect(url).toBe('/api/grants');
   expect(body).toMatchObject({ connectionId: 'conn-1', target: { kind: 'pod', id: 'p1' }, writeMode: 'write', audience: ['a1'], tools: ['github.list_issues', 'github.comment_on_issue', 'github.close_issue'] });
-  // Both are the server's: the broker from the catalogue (Vera 67728), the installation from the Connection (#1677).
+  // Both are the server's: the broker from the catalogue, the installation from the Connection (#1677).
   expect(body).not.toHaveProperty('brokerId');
   expect(body).not.toHaveProperty('installationId');
   expect(Object.keys(body).sort()).toEqual(['audience', 'connectionId', 'expiresAt', 'target', 'tools', 'writeMode']);

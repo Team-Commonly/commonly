@@ -145,7 +145,7 @@ const grantServersForIdentities = async (
   return output;
 };
 
-// Ownership predicate — SOLE-INSTALLER (Vera's ruling on #1315). Shared with
+// Ownership predicate — SOLE-INSTALLER. Shared with
 // the token routes since 2026-10-14; see services/runtimeIdentityOwnership.ts.
 const ownsAgent = ownsRuntimeIdentity;
 
@@ -539,7 +539,7 @@ router.post('/runtime-token', bindingRateLimit, daemonAuth('agents:adopt'), asyn
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const AgentCredential = require('../models/AgentCredential');
 
-    // req.machine is deliberately a minimal projection (Vera's S1 ruling), so
+    // req.machine is deliberately a minimal projection, so
     // re-derive the issuing daemon credential for parent lineage.
     const daemonCredential = await AgentCredential.findOne({
       kind: 'daemon', machineId: machine.machineId, ownerUserId: machine.ownerUserId, status: 'active',

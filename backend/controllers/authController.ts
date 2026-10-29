@@ -253,7 +253,7 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
       // A's "my repo is X" surfacing in user B's workspace. Same leak class
       // as the 2026-07-03 BYO incident, caught pre-data this time.
       //
-      // CONVENTION (Sam, 2026-08-13 — this is the per-user-agent identity
+      // CONVENTION (2026-08-13 — this is the per-user-agent identity
       // rule, not a guide special case): `u` + first 10 hex of
       // sha256(userId). Short enough to live in a mention handle, stable and
       // derivable at signup with no lookup, and OPAQUE — the raw ObjectId

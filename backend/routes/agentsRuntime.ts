@@ -97,7 +97,7 @@ const { patchAgentRuntimeConfiguration } = require('../services/agentRuntimeConf
 // Pre-auth, agentRateLimitKeyGenerator has no `req.agentTokenHash` yet (that
 // is set by agentRuntimeAuth), so it keys on a sha256 of the Authorization /
 // x-commonly-agent-token header. That isolates callers, but a caller who
-// rotates the header gets a fresh bucket every request (Vera measured it on
+// rotates the header gets a fresh bucket every request (measured on
 // #1689: 300 fixed-header requests reached auth 120 times, 300 rotating
 // headers reached auth 300 times — the same class as the B2 webhook finding).
 // So the stack is two tiers, IP first: a coarse per-IP limiter keyed by the
@@ -138,13 +138,13 @@ const phase4AgentRateLimit = rateLimit({
 const phase4RateLimit = [phase4IpRateLimit, phase4AgentRateLimit, rateLimitObserver];
 
 // TASK-108 / TASK-097 §5: the long-poll reads take the IP tier with the token
-// tier OFF (ruled, wren 71374) — a long-poll's request count is not a per-token
+// tier OFF (ruled) — a long-poll's request count is not a per-token
 // budget question, and a retry storm is still an IP. 3000/60s is the existing
 // IP tier's own budget, restated here rather than reusing `phase4IpRateLimit`
 // because that instance emits the legacy `{message, code}` body and these two
 // routes sit on a seat's tool path, where a refusal has to be classifiable
 // (see middleware/platformRateLimit.ts). Registering a limiter per ROUTE is
-// not (A): (A) is the mount-level limiter on the family, which is Sam's order
+// not (A): (A) is the mount-level limiter on the family, which is a separate order
 // and is not registered by this change.
 const longPollIpLimit = platformIpRateLimit({
   windowMs: 60_000,
@@ -404,7 +404,7 @@ router.post('/messages/:messageId/claim', phase4RateLimit, agentRuntimeAuth, asy
     // this pod, or absent entirely, so the route leaks no membership oracle —
     // and the guard inside messageExists runs before the query, because
     // `messages.id` is SERIAL and a non-numeric id would otherwise reach
-    // Postgres as a syntax error the catch turns into a 500 (vera 71873).
+    // Postgres as a syntax error the catch turns into a 500.
     // That guard is a split over namespaces, not a digits test: the wake for a
     // post-thread comment carries a Mongo ObjectId, so refusing that shape
     // 404s a legitimate wake and costs the claim race its dedupe.
@@ -1169,7 +1169,7 @@ router.post('/agent-dm', phase4RateLimit, agentRuntimeAuth, async (req: any, res
       // and we explicitly choose stricter behavior on the new endpoint.
       const expectedUsername = AgentIdentityService.buildAgentUsername(agentName, instanceId);
       const existing = await User.findOne({
-        // Bot rows only (TASK-133 b, wren 73994): the derived name is plain
+        // Bot rows only (TASK-133 b): the derived name is plain
         // lowercase, so a person's row matches the username branch below — and
         // the §3.7 co-pod check runs AFTER `getOrCreateAgentUser`, so the probe
         // would hand the identity service a person to adopt. The legacy /room
@@ -2318,7 +2318,7 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       messageType,
       ...(payload !== undefined ? { payload } : {}),
       replyToMessageId: replyToMessageId || null,
-      // In-thread post WITHOUT addressing (constraint 5, Sam's independence
+      // In-thread post WITHOUT addressing (constraint 5, the independence
       // rule): the thread is ambient membership, the reply edge is a ping.
       // Validated by threadRootResolver on the service side — same five
       // rejections as the human composer path.

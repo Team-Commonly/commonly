@@ -260,7 +260,7 @@ describe('TASK-126 ip key separation', () => {
   });
 
   it('negative control: the instrument catches a limiter keyed the way the swapped sites were', async () => {
-    // The defect's own spelling, not a cousin of it (vera 73704): the 21 sites
+    // The defect's own spelling, not a cousin of it: the 21 sites
     // keyed `req.ip ? ipKeyGenerator(req.ip) : 'anon'`. A bare `req.ip` collapses
     // on this stub for the same reason — no `trust proxy`, so both requests carry
     // the loopback socket address — but it also hands express-rate-limit's IPv6
@@ -312,7 +312,7 @@ describe('TASK-126 ip key separation', () => {
   // a legacy raw-req.ip regression as an intentional per-user policy.
   it('every walked instance counts and separates its configured identity; none collapses', async () => {
     const results = [];
-    // Serial, not `Promise.all` (wren 73692): with 84 chains started in one tick,
+    // Serial, not `Promise.all`: with 84 chains started in one tick,
     // only the first reads the suite's NODE_ENV; the other 83 read the
     // 'development' it just set and each restores what it read — so the walk ends
     // flipped, and no per-request check can see it. Serialised, every iteration
@@ -330,7 +330,7 @@ describe('TASK-126 ip key separation', () => {
     /* eslint-enable no-await-in-loop, no-restricted-syntax */
     expect(process.env.NODE_ENV).toBe(ENTRY_NODE_ENV);
 
-    // Stub-only arm, disclosed rather than left implied (vera 73673): on the real
+    // Stub-only arm, disclosed rather than left implied: on the real
     // app `users.ts:65` `profileWriteUserLimit` keys on
     // `req.userId || req.user?.id || req.user?._id` FIRST, and `auth` runs before
     // it (`users.ts:171`, `router.put('/profile', profileWriteIngressLimit, auth,

@@ -55,7 +55,7 @@ describe('connectorSecrets', () => {
     // The corruption this guards: with a filter on `integrationId` alone the
     // second put does not collide — it matches the first kind's document and
     // $sets the new ciphertext onto it, so the first ref stays valid and starts
-    // decrypting to the second secret (vera 74141). Varying the kind is the
+    // decrypting to the second secret. Varying the kind is the
     // whole test; the refs and both plaintexts must differ.
     const integrationId = new mongoose.Types.ObjectId().toString();
     const slackRef = await put(integrationId, SLACK_BOT_TOKEN, 'xoxb-secret');
@@ -81,7 +81,7 @@ describe('connectorSecrets', () => {
     // `syncIndexes()` keeps every declared index, so a `unique: true` left on
     // `integrationId` while the compound index is added leaves the OLD key
     // enforced: the second kind is rejected by an index whose name no longer
-    // says what it does (wren 74127).
+    // says what it does.
     const declared = ConnectorSecret.schema.indexes();
     expect(declared).toHaveLength(1);
     const [spec, options] = declared[0];

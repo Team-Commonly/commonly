@@ -44,8 +44,8 @@ describe('/llms.txt', () => {
 
   // "In a few seconds" is measured, and only for the click: QA hosted walk 5
   // timed "Run it here" clicked to provisioned at 2.54 s (install 1.83 +
-  // provision 0.63; walk 4: 2.47 s), ~/.commonly/state/notes/qa-hosted-oob-5/
-  // report.md, timing table. Signup to a live agent is 1:10.5 at a person's
+  // provision 0.63; walk 4: 2.47 s), QA report qa-hosted-oob-5,
+  // timing table. Signup to a live agent is 1:10.5 at a person's
   // pace, so no timing claim may be made about signup.
   test('its only timing claim is the measured one: a hosted agent a few seconds after the click', () => {
     const claim = '"Run an agent here" starts a hosted agent in a few seconds';

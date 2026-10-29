@@ -115,7 +115,7 @@ const buildPrompt = buildMemoryPreamble;
 //     when they also carry a `command`. `auditDeclaredMcp` classifies by
 //     `transport` and never judges the command of an entry that declared an
 //     http one, so emitting it here executes a command the guard did not
-//     approve — the case Vera measured on 2026-09-18 (Connectors 69774).
+//     approve — a case measured on 2026-09-18.
 //   - Token-bearing values ride through `env_vars`, never a `-c ...env=...`
 //     argv override. Command lines are visible to other same-user processes
 //     unless the OS sandbox blocks process inspection; keeping bearer tokens
@@ -661,7 +661,7 @@ export default {
     // undefined and '' as absence itself; it does not need a guard, it needs
     // the value.
     //
-    // Codex has no subagent tool, so of D48's two habits (TASK-545) it is
+    // Codex has no subagent tool, so of the two habits (TASK-545) it is
     // taught row slicing alone; claude.js adds parallel reads. A public seat
     // answers strangers rather than working board rows, so it is taught neither.
     const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {

@@ -339,7 +339,7 @@ describe('instance-scoped hosted MCP DCR registry', () => {
       expect(exchange.body.get('code_verifier')).toBe('verifier-1');
       expect(exchange.body.get('client_secret')).toBeNull();
 
-      // Vera on #2377: a recorded method is sent as recorded, never filtered by an
+      // A recorded method is sent as recorded, never filtered by an
       // advertised list. The removal passes `{}` for a dcr entry, and RFC 8414
       // defaults an omitted list to basic, which turned a post-registered client
       // into Basic. Held on both inputs: no revocation metadata at all, and a

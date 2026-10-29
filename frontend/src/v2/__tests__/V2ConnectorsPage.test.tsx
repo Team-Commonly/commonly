@@ -102,7 +102,7 @@ const renderPage = () => render(
 
 // The reconciler's own constant — the reason a person reads when the channel
 // record behind a connector is gone. It replaced the old 'projection missing'
-// wording in the TASK-131 copy pass (wren 73914, vera 73915).
+// wording in the TASK-131 copy pass.
 const REASON_CHANNEL_GONE = "This connector's channel is gone. Retry to rebuild it.";
 
 describe('V2ConnectorsPage', () => {
@@ -440,7 +440,7 @@ describe('V2ConnectorsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
     const refusal = await screen.findByText(/bound to Rewire Live Demo/);
     expect(refusal).toBeInTheDocument();
-    // TASK-154 item 6 (wren): the old copy ('Remove it to bind a different
+    // TASK-154 item 6: the old copy ('Remove it to bind a different
     // pod') taught the one-pod model. The refusal is about the bind, and other
     // pods reach the channel through the switches. TASK-173: the arm used to
     // pin the word 'gate switches', which is this file's internal name and no
@@ -836,7 +836,7 @@ describe('V2ConnectorsPage', () => {
     expect(screen.queryByText('The connection dropped.')).toBeNull();
   });
 
-  it('does not print a provider error text in a connector row, only a message written for a person (vera 73848)', async () => {
+  it('does not print a provider error text in a connector row, only a message written for a person', async () => {
     // `Integration.errorMessage` has an older writer: externalFeedService copies
     // a provider's response, or a raw exception message, into it for the `x` and
     // `instagram` rows. Those rows reach this same error branch, so a value in
@@ -1029,7 +1029,7 @@ describe('V2ConnectorsPage', () => {
       expect(screen.queryByText('Setup didn’t finish.')).toBeNull();
     });
 
-    // Tools plan (Sam's option A, two lists): a tool Installable shares the
+    // Tools plan (option A, two lists): a tool Installable shares the
     // catalogue response but belongs to the Tools page, never to this one.
     it('a tool Installable in the catalogue never renders as a channel row', async () => {
       mockCatalog([
@@ -1130,7 +1130,7 @@ describe('V2ConnectorsPage', () => {
 
     it('offers a rostered provider with Add, and an unmapped one inherits no onboarding sentence', async () => {
       // Slack's line is in the map; Discord's is not. The point of the map is
-      // that Discord renders NO sentence rather than Slack's (Vera 71165).
+      // that Discord renders NO sentence rather than Slack's.
       mockCatalog([
         entry({ installableId: 'discord', label: 'Discord', available: true, offered: true }),
         entry({ installableId: 'slack', label: 'Slack', available: true, offered: true }),
@@ -1149,10 +1149,10 @@ describe('V2ConnectorsPage', () => {
     });
 
     it('reads a usable-but-unrostered provider as not connectable, with no Add anywhere', async () => {
-      // The ruled middle state (Wren 71170/71174): this instance can use Discord
+      // The ruled middle state: this instance can use Discord
       // and there is no builtin Installable row to install, so the row states the
       // state and offers no action. Before this, the row rendered an Add whose
-      // click ended in 404 installable_not_found (Wren 71162/71163).
+      // click ended in 404 installable_not_found.
       mockCatalog([
         entry({ installableId: 'discord', label: 'Discord', available: true, offered: false }),
       ]);
@@ -1174,7 +1174,7 @@ describe('V2ConnectorsPage', () => {
       // The eyebrow must not contradict the line under it. `notEnabled` drives
       // this row's class and Ask link, so it also drove the kicker: the keys-set
       // render read "not enabled" directly above "Not connectable yet." — asking
-      // an operator for credentials the instance already has (Vera, #1826).
+      // an operator for credentials the instance already has (#1826).
       // TASK-338: a dead row carries no state word in its kicker; the fold and
       // the line say it.
       expect(roster.querySelector('.v2-connector-row__kicker')).toBeEmptyDOMElement();
@@ -1473,7 +1473,7 @@ describe('V2ConnectorsPage', () => {
 
       expect(await screen.findByText('Rewire crew · linked to Rewire Live Demo')).toBeInTheDocument();
       expect(screen.getByText('Pods that reach this channel')).toBeInTheDocument();
-      // The anchors, measured rather than assumed (Vera's gate): the aside that
+      // The anchors, measured rather than assumed: the aside that
       // holds that section is reachable by its ACCESSIBLE NAME and never as
       // text. A copy that names it sends a sighted user hunting, which is the
       // defect TASK-173 was opened for — so the distinction is witnessed here,

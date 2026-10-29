@@ -11,7 +11,7 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
 const { platformIpRateLimit } = require('../middleware/platformRateLimit');
 
-// TASK-108 (triage doc §6, ruled wren 71392): `GET /public` is NOT a probe
+// TASK-108 (triage doc §6): `GET /public` is NOT a probe
 // exemption, and the rule is why — "does an anonymous hit do database work".
 // This one runs three countDocuments (Mongo) plus a Postgres COUNT per hit,
 // uncached, so it takes the IP tier beside the OAuth callback at the same
@@ -91,7 +91,7 @@ const BYO_STEPS = new Set([
   'token-copied', 'listen-confirmed', 'listen-timeout', 'hosted-offer-shown', 'hosted-offer-clicked',
   'invite-card-shown', 'invite-card-dismissed', 'byo-offer-shown',
 ]);
-// D139 surfaces: each step also sets its write-once onboarding mark.
+// Onboarding surfaces: each step also sets its write-once onboarding mark.
 const SURFACE_STEPS: Record<string, string> = {
   'invite-card-shown': 'inviteCardShownAt',
   'invite-card-dismissed': 'inviteCardDismissedAt',

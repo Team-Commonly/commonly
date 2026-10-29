@@ -39,7 +39,7 @@ const codex = (await import('../src/lib/adapters/codex.js')).default;
  * inherited from the runner. Three tests in this file assert the runtime's
  * environment carries no credential; they passed in a runner without
  * `COMMONLY_AGENT_TOKEN` and failed in one with it, so the property they were
- * checking was decided by whoever ran the suite (Vera, 70455).
+ * checking was decided by whoever ran the suite.
  */
 const LAUNCHER_TOKEN = 'cm_agent_'.padEnd(73, 'L');
 const spawnEnv = () => ({ ...process.env, COMMONLY_AGENT_TOKEN: LAUNCHER_TOKEN });
@@ -362,7 +362,7 @@ describe('codex adapter — spawn()', () => {
 
     // Before this, `internal` read by no adapter meant the operator got the
     // bypass flag — the exact opposite of the confinement they declared
-    // (Vera 69592). It is now read as public and confined.
+    // It is now read as public and confined.
     const args = calls[0].args;
     expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
     expect(args).not.toContain('--sandbox');
@@ -447,7 +447,7 @@ describe('codex adapter — spawn()', () => {
   // `auditDeclaredMcp` classifies an entry by `transport` and never judges the
   // command of one that declared an http transport, so emitting it here ran a
   // command the guard had not approved, with the seat's token substituted
-  // (Vera, Connectors 69774). The flag list must be empty for such an entry even
+  // The flag list must be empty for such an entry even
   // though it carries a perfectly Array-shaped command.
   test('an entry declaring a non-stdio transport is skipped even when it carries a command', async () => {
     const { impl, calls } = makeSpawnImpl({
@@ -632,12 +632,12 @@ describe('codex adapter — spawn()', () => {
     expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
   });
 
-  // INVERTED deliberately (TASK-052, Wren 69545): this test used to require a
+  // INVERTED deliberately (TASK-052): this test used to require a
   // throw for a mode-less public record. The derived record stores trust only —
   // the block is portable, the host is not — so a mode-less public record must
   // now spawn under the public profile with the write-capable workspace default.
   // Leaving the throw in place would make every derived codex seat unspawnable,
-  // which is the same breakage Vera measured on Linux for claude (69542).
+  // which is the same breakage measured on Linux for claude.
   test('public trust with no mode defaults to the workspace permission profile', async () => {
     const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
     const publicHome = await mkdtemp(join(tmpdir(), 'commonly-codex-public-home-'));
@@ -764,7 +764,7 @@ describe('codex adapter — spawn()', () => {
     expect(calls[0].args[calls[0].args.length - 1]).not.toContain('=== Fresh session ===');
   });
 
-  // D48 (TASK-545). Codex has no subagent tool, so it is taught row slicing
+  // TASK-545. Codex has no subagent tool, so it is taught row slicing
   // and not parallel reads; claude.js carries that half.
   test('a fresh private Codex seat is taught row slicing alone', async () => {
     const { impl, calls } = makeSpawnImpl({

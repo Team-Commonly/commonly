@@ -61,9 +61,9 @@ const LITELLM_KEY_RPM_LIMIT = 120;
 // group budget sits on that model name, which alias callers never touch.
 //
 // Sized from measured monthly spend (2026-10-28 key audit, lifetime/age): the
-// heaviest agent, theo, runs ~$75-88/mo; nova ~$37/mo; others <$30/mo. The
-// first cut was a flat $30 (D111, 2026-10-27), which would 429 theo and nova
-// within one 30d window — a self-inflicted silent-seat outage. $150/30d clears
+// heaviest agent runs ~$75-88/mo; the next ~$37/mo; others <$30/mo. The
+// first cut was a flat $30 (2026-10-27), which would 429 the two heaviest
+// agents within one 30d window — a self-inflicted silent-seat outage. $150/30d clears
 // the heaviest legit agent with ~70% headroom while still bounding a leaked key
 // to a finite monthly spend instead of unlimited. budget_duration is REQUIRED:
 // a bare max_budget is lifetime in LiteLLM, so it would silence any key already

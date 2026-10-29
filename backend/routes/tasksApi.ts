@@ -622,7 +622,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
     // Classify the current holder only after this claim's CAS wins:
     // a same-holder continuation (renewal, or re-take after the holder's own
     // lapse) is no news to the room and must not fan out (the redundant wakes
-    // burned a model turn per seat per renewal and filled Sharpen with seats
+    // burned a model turn per seat per renewal and filled a pod with seats
     // narrating why they won't act — measured 2026-08-25, 4 wakes in one
     // session for one task). The revision CAS binds the ownership snapshot to
     // this successful write, even if an assignee PATCH raced the claim.

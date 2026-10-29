@@ -15,14 +15,14 @@
  *      filter. Filtered on `integrationId` alone, the second `put` does not
  *      collide: it matches the first kind's row and `$set`s the new ciphertext
  *      onto it, so the first ref stays valid and starts decrypting to the second
- *      secret. A missing secret is loud; a substituted one is not (Vera 74141).
+ *      secret. A missing secret is loud; a substituted one is not.
  *   3. `installableReconciler.sweepOrphanedConnectorSecrets` — its keep-condition
  *      is `refPaths`. With a literal `botTokenRef` there, a Discord secret is
  *      revoked ten minutes after it is written (`ORPHAN_SECRET_GRACE_MS`),
- *      which is the defect this module exists for (Vera 74130).
+ *      which is the defect this module exists for.
  *   4. `installableReconciler.sweepUnavailableConnectorSecretKeys` — the message
  *      it marks the row with is `unavailableReason`, so a Discord owner is not
- *      told a Slack secret is unavailable (Vera 74131).
+ *      told a Slack secret is unavailable.
  *
  * Adding a kind means adding a spec here and nothing else.
  */

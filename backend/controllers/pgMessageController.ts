@@ -39,7 +39,7 @@ type CreatedMessage = {
 // proof: `PGPod.create` inserts the owner unconditionally and `syncPodFromMongo`
 // backfills Mongo's `createdBy`, so a leave plus any later backfill re-created a
 // row for someone no longer in the pod. Measured read-only on production
-// (Vera 74648, 727 rows): 77 rows present in PG and absent from their pod's
+// (727 rows): 77 rows present in PG and absent from their pod's
 // Mongo `members` — 36 of them the pod's own creator — plus 140 rows pointing at
 // a pod id Mongo does not have, which passed membership because the fallback
 // never consulted Mongo. Reading Mongo at request time settles both classes,

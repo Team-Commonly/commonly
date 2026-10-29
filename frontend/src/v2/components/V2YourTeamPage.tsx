@@ -18,7 +18,7 @@ import { AgentConnection, connectionLabel } from '../utils/agentConnection';
  * waiting on you, Talk alone otherwise. The card that needs you carries the
  * 2px cobalt ring — the only cobalt on the page beside the rail mark.
  *
- * Rulings carried (ux-lead, Sharpen 66163–66165):
+ * Rulings carried:
  *  - the sentence is `description` from the listing (botMetadata), else nothing;
  *  - `working · TASK-nnn` comes from the tasks API: a claimed task whose
  *    `claimedBy` is this seat's User id; `working · <pod>` when the claim has

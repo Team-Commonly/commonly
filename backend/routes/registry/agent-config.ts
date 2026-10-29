@@ -116,8 +116,8 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
     // reaches the owner's machine: agentBinding projects `config.environment`
     // to the owner's daemon as the seat's declared spec, so a member who can
     // write it can make that daemon run a declared stdio command and mail the
-    // seat's runtime token to a host of their choosing. Measured on 23e00668
-    // (Vera 69500): a non-owner member PATCHed `config.environment` and got 200.
+    // seat's runtime token to a host of their choosing. Measured on 23e00668:
+    // a non-owner member PATCHed `config.environment` and got 200.
     const isInstaller = installation.installedBy?.toString?.() === userId.toString();
     // `req.user.role` is only populated on the API-token auth path, so fall
     // back to the stored user. Computed even when the caller IS the installer:
@@ -156,7 +156,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       return res.status(400).json({ error: 'Invalid sandbox mode' });
     }
 
-    // WRITE-TIME SHAPE CHECK (TASK-071, Vera's ruling). This route is one of
+    // WRITE-TIME SHAPE CHECK (TASK-071). This route is one of
     // TWO backend writers of `config.environment` (the other is
     // POST /api/registry/install, which checks the same thing), and that field
     // is projected to the owner's daemon as the seat's declared spec — so an
@@ -304,8 +304,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
     // over someone else's row there, so an installer who is not an admin only
     // writes the rows they installed — while an INSTANCE ADMIN keeps the
     // instance-wide reach whether or not they are also this row's installer:
-    // authority is a role, not a coincidence of which row they created
-    // (Wren 69565).
+    // authority is a role, not a coincidence of which row they created.
     const ownsInstallation = (entry: any) => entry?.installedBy?.toString?.() === userId.toString();
     const installationsToUpdate: any[] = isInstanceAdmin
       ? accessibleInstallations

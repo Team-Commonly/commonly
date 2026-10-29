@@ -115,7 +115,7 @@ describe('agent runtime tokens', () => {
     expect(agentUser.save).toHaveBeenCalled();
   });
 
-  // Rhea on #2224, Wren for plain native: an agent Commonly runs in-process
+  // An agent Commonly runs in-process
   // (native, or hosted on the native engine) holds no runtime token.
   const mintFor = async (agentName, config) => {
     Pod.findById.mockReturnValue({
@@ -146,7 +146,7 @@ describe('agent runtime tokens', () => {
     expect(agentUser.agentRuntimeTokens).toHaveLength(0);
   });
 
-  // Rhea on #2236: a mint that passed the in-process check can still be
+  // A mint that passed the in-process check can still be
   // saving when a migration marks the identity in-process. The issuer
   // re-checks after its save and takes the token back.
   it('a mint whose identity went in-process while it was saving takes its token back and refuses', async () => {

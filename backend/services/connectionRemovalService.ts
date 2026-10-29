@@ -18,7 +18,7 @@
  *   dies with the request and a retry reads only the row (§10.5). A retry that
  *   finds the mark skips the vendor: without it, a failure in steps 4 or 5
  *   leaves a row whose retry has no material to revoke with, so every retry
- *   refuses — measured, Vera 75638. The mark is server-owned and a PATCH cannot
+ *   refuses — measured. The mark is server-owned and a PATCH cannot
  *   write it: `SERVER_OWNED_CONFIG_KEYS` carries it and `stripServerOwnedConfig`
  *   drops it from the body before the write loop reads `relay.next`
  *   (`routes/integrations.ts:750-757`), pinned by

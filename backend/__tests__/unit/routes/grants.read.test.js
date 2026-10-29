@@ -30,8 +30,8 @@ jest.mock('../../../models/ToolCall', () => ({
   countsForGrant: jest.fn(),
 }));
 // pods.ts ends with `router.get('/:type/:id', getPodById)`, which would answer
-// `/:podId/grants` as type=<podId>, id='grants' if it were mounted first
-// (Wren 67721 / Vera 67727). The controller is stubbed so that shadowing shows.
+// `/:podId/grants` as type=<podId>, id='grants' if it were mounted first.
+// The controller is stubbed so that shadowing shows.
 jest.mock('../../../controllers/podController', () => ({
   updatePodParent: jest.fn(),
   getAllPods: jest.fn((req, res) => res.status(500).json({ shadowed: 'getAllPods' })),
@@ -86,7 +86,7 @@ const trailRow = (over = {}) => ({
 // whether the daemon-facing projection would withhold the broker from this
 // seat. The scope is part of the contract on purpose — it says WHAT was judged
 // (`seat` / `not_installed` / `unbound` / `not_evaluated`), so a null refusal
-// cannot mean both "checked, fine" and "never looked" (Vera 69881, 69890). A
+// cannot mean both "checked, fine" and "never looked". A
 // DAEMON-side refusal still reaches no surface, so the pair says nothing about
 // liveness either.
 const FIELDS = ['grantId', 'installationId', 'target', 'tools', 'writeMode', 'budget', 'effectiveAudience',
@@ -249,7 +249,7 @@ describe('GET /api/grants/:grantId', () => {
     expect((await request(app).get(`/api/grants/${row.grantId}`).set('x-test-user', STRANGER)).status).toBe(403);
   });
 
-  test("a seat grant's read is gated like its trail: granter and seat only (Vera 67727)", async () => {
+  test("a seat grant's read is gated like its trail: granter and seat only", async () => {
     const row = await RoomGrant.create(grant({ target: { kind: 'seat', id: SEAT }, audience: [SEAT] }));
     const read = (headers) => request(app).get(`/api/grants/${row.grantId}`).set(headers);
     const owner = await read({ 'x-test-user': OWNER });
@@ -299,7 +299,7 @@ describe('POST /api/grants/:grantId/revoke', () => {
  * the two surfaces agree rather than that this route re-implements the
  * predicate.
  *
- * The scope carries the honesty (Vera 69881): a null refusal means "checked,
+ * The scope carries the honesty: a null refusal means "checked,
  * not refused" ONLY when the scope says the seat was resolved and judged.
  */
 describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)', () => {
@@ -470,7 +470,7 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
   });
 
   test('a bound seat with no installation under its owner is reported as not installed', async () => {
-    // INVERTED DELIBERATELY (Vera 69890). This test previously asserted
+    // INVERTED DELIBERATELY. This test previously asserted
     // `seat` + null here, reading as "judged, the broker reaches it". It is a
     // verdict from an authoritative scope but not a verdict about a REFUSAL:
     // the owner's projection holds no row for this seat, so the daemon is

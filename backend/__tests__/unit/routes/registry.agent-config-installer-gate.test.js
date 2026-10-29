@@ -4,7 +4,7 @@ jest.mock('../../../services/runtimeControlValidation', () => ({ runtimeControlR
 // OWNER's daemon as the seat's declared environment — plus the AgentProfile.
 // A plain member could therefore make another member's machine run a declared
 // command and mail that seat's runtime token to a host of their choosing
-// (Vera 69500, measured on 23e00668: non-owner PATCH returned 200).
+// (measured on 23e00668: non-owner PATCH returned 200).
 const request = require('supertest');
 const express = require('express');
 
@@ -623,10 +623,10 @@ describe('agent config PATCH — installer gate', () => {
   });
 
   it('lets an instance admin who IS the installer write every row, because authority is a role', async () => {
-    // Wren 69565: installing the seat here is the narrower claim. An admin's
+    // Installing the seat here is the narrower claim. An admin's
     // reach is instance-wide whether or not they happen to have created this
     // row, so the same admin must not get two different scopes depending on
-    // which of two rows they opened (Sam 69582 filed this as the follow-up).
+    // which of two rows they opened.
     const primary = installation({ installedBy: MEMBER });
     const otherOwnersRow = installation({
       podId: 'pod-2', installedBy: INSTALLER, config: new Map(),

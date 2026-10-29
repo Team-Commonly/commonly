@@ -1,12 +1,12 @@
-// Tools — the second list on the Connectors page (tools plan §6, option A,
-// Sam 67407). Same container grammar as the channels: dot, 20px glyph,
+// Tools — the second list on the Connectors page (tools plan §6, option A).
+// Same container grammar as the channels: dot, 20px glyph,
 // display name, two-line middle, mono when, one action. It renders only what
 // the server counts: a row per RoomGrant the person can see, a not-yet row per
 // tool Installable the catalogue returns (#1670), the aside from the projected
 // grant read, the trail from ToolCall rows the broker wrote. The Add form posts
-// the mint exactly as the server takes it — never a brokerId (Vera 67728).
+// the mint exactly as the server takes it — never a brokerId.
 //
-// Direction A (Sam 2026-09-11): categories are glyphs — a trail outcome and a
+// Direction A: categories are glyphs — a trail outcome and a
 // grant's mode carry a mark with the word in `title`; the deciding act (Add,
 // Grant, Manage on a row with one act) keeps its word.
 
@@ -181,7 +181,7 @@ const G: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 /** Outcome marks: a category, so a glyph; the word stays in the log line and the title.
  *
  * The `superseded` mark is a shield with a SHORT BAR, not the shield-and-check it
- * first shipped with (wren, 69819): the resolution it stands for may be an
+ * first shipped with: the resolution it stands for may be an
  * approval, a decline or an expiry, and the row beside it carries the verdict —
  * a check read as "approved" next to a sibling that says `refused`. The bar says
  * settled without saying how. */
@@ -202,7 +202,7 @@ const ModeGlyph: React.FC<{ mode: GrantWriteMode }> = ({ mode }) => {
 const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) => {
   const { t } = useTranslation();
   const api = useV2Api();
-  // Revoke and Change access are the granter's (Vera 67912 / Wren 67913): the route 403s anyone else.
+  // Revoke and Change access are the granter's: the route 403s anyone else.
   const { currentUser } = useAuth();
   const viewerId = currentUser?._id ? String(currentUser._id) : '';
   const isGranter = (grant: ToolGrant): boolean => Boolean(viewerId) && grant.grantedBy === viewerId;
@@ -469,8 +469,8 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     setPolicyFixedPodId(null);
     try {
       const expiresAt = new Date(Date.now() + draft.expiryDays * 86_400_000).toISOString();
-      // The mint's body, as routes/grants.ts takes it: the server names the broker (Vera 67728)
-      // and takes the installation from the Connection (#1677, Vera 67821) — neither is the caller's.
+      // The mint's body, as routes/grants.ts takes it: the server names the broker
+      // and takes the installation from the Connection (#1677) — neither is the caller's.
       const minted = await api.post<{ grantId?: string }>('/api/grants', {
         connectionId: draft.connectionId,
         target: { kind: 'pod', id: draft.podId },
@@ -487,7 +487,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
       }
       // Change access: a change is a new grant and a revoke of the old one, because `tools` is never
       // widened in place. The mint is kept whatever happens next; a failed revoke is retried alone
-      // (Vera on 0368992e), never by minting a third grant.
+      // (0368992e), never by minting a third grant.
       if (draft.replaces) {
         const oldGrantId = draft.replaces;
         const newGrantId = String(minted?.grantId || '');
@@ -754,7 +754,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
           </span>
         </button>
         {dead && entry && isGranter(grant) ? (
-          // Grant again is the granter's too (Wren 67920): the mint 403s anyone but the Connection's owner.
+          // Grant again is the granter's too: the mint 403s anyone but the Connection's owner.
           <button type="button" className="v2-connector-row__action v2-connector-row__action--secondary" onClick={() => openDraft(entry, grant)}>
             {t('tools.grantAgain', { defaultValue: 'Grant again' })}
           </button>

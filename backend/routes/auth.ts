@@ -224,7 +224,7 @@ const oauthLimiter = rateLimit({
 // needs `status` plus a named reason (see middleware/platformRateLimit.ts for
 // why the name must not be an upstream one).
 //
-// Both budgets are threat models, not fitted numbers (vera 71390: zero hits on
+// Both budgets are threat models, not fitted numbers (zero hits on
 // either route in a 24h ingress window), so they are stated here as the
 // posture rather than as a measurement.
 const registrationPolicyLimit = platformIpRateLimit({

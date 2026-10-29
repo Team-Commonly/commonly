@@ -360,7 +360,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(head).toContain('font: 600 12px/16px var(--v2-font)');
     expect(search).toContain('height: 32px');
     // The + square shares the search box's 32px so the two tools sit on one
-    // baseline (Sam caught the 28/32 mismatch on the first walk, 2026-09-06).
+    // baseline (the 28/32 mismatch was caught on the first walk, 2026-09-06).
     expect(ruleBody(v2, '.v2-root button.v2-pods__new')).toContain('height: 32px');
     expect(ruleBody(v2, '.v2-root button.v2-pods__new')).toContain('width: 32px');
     expect(row).toContain('grid-template-columns: 22px minmax(0, 1fr) auto');
@@ -552,7 +552,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('touch inputs are 16px — iOS auto-zoom never fires and never strands the page zoomed', () => {
     // Every input under 16px makes iOS Safari zoom on focus and stay zoomed
-    // on blur (Sam, 2026-08-26). The floor lives in the touch media block and
+    // on blur (2026-08-26). The floor lives in the touch media block and
     // must keep its !important (it has to beat per-component sizes including
     // a legacy 15px !important).
     expect(v2).toMatch(/@media \(hover: none\), \(pointer: coarse\) \{[\s\S]*?\.v2-root input,\n\s*\.v2-root textarea,\n\s*\.v2-root select \{\n\s*font-size: 16px !important;/);
@@ -610,7 +610,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(detail).toContain('overflow: hidden');
     const reveal = selectorRuleBody(v2, '.v2-root .v2-activity__queue-detail--expanded');
     expect(reveal).toContain('display: block');
-    // Tab-in preview is kept; a reader's collapse is excluded so focus can't re-open it (Lumen HOLD on #2407).
+    // Tab-in preview is kept; a reader's collapse is excluded so focus can't re-open it (#2407).
     const focusReveal = selectorRuleBody(v2, '.v2-root .v2-activity__queue-detail:focus-visible:not(.v2-activity__queue-detail--dismissed)');
     expect(focusReveal).toContain('display: block');
     expect(focusReveal).toContain('-webkit-line-clamp: unset');
@@ -720,7 +720,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('the mobile inspector is a drawer, never display:none — the header avatars button must do something', () => {
     // Below 1024px the pane used display:none while V2Layout still mounted it
     // on tap: the avatar-stack button looked broken and members/files were
-    // unreachable on phones (Sam, 2026-08-26). The pane's presence in the DOM
+    // unreachable on phones (2026-08-26). The pane's presence in the DOM
     // is the open state, so the drawer needs no extra toggle class.
     // Slice the 1023px block out rather than regex across it — a lazy
     // [\s\S]*? happily crosses media-block boundaries and matches unrelated
@@ -821,7 +821,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('v2 claims the page canvas — the V1 dark body cannot show through', () => {
     // App.tsx stamps `modern-ui` (V1 dark gradient) on <body> unconditionally;
     // .v2-root paints only its own box. Without this override the V1 dark
-    // showed on load flash, overscroll, and gaps (Sam, 2026-08-24). The
+    // showed on load flash, overscroll, and gaps (2026-08-24). The
     // compound selector must out-rank body.modern-ui so bundle order can
     // never decide the canvas color. Keep the literal in lockstep with
     // --v2-page-bg (tokens don't reach body — it sits outside .v2-root).
@@ -853,7 +853,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // still see the content. The script must PRECEDE the style block that
     // uses it, and both must precede </head>.
     const indexHtml = read('../../../index.html');
-    // Rev 2 (Sam re-sighted the flash, 2026-08-26): the script-gate had a
+    // Rev 2 (the flash was re-sighted, 2026-08-26): the script-gate had a
     // timing window — delayed head-script execution painted the prerender.
     // Hidden-by-default has none: #seo-page is display:none from the first
     // byte, and <noscript> reveals it only for text-only crawlers. The
@@ -867,7 +867,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // painted the whole viewport — the SAME shape as the four above, one
     // mount point further out. ux-lead's #1861 gate, 390 at 1.6 Mbps: light
     // at 3.0 s from the entry CSS, #0b1220 from 4.4 s to 7.35 s from this
-    // frame, light again. Three seconds of the flash Sam ruled out on 08-24,
+    // frame, light again. Three seconds of the flash ruled out on 08-24,
     // and under 150 ms unthrottled, so a laptop check cannot see it.
     //
     // The frame therefore paints nothing and lets the bare-body canvas pinned
@@ -890,7 +890,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('the conversation column is FULL-WIDTH — no measure cap, one left edge (rule 2, v5)', () => {
-    // Fifth mechanism, ruled by Sam 2026-08-23: the Slack model. With a
+    // Fifth mechanism, ruled 2026-08-23: the Slack model. With a
     // line cap, leftover space must pool somewhere — center was rejected,
     // and left-anchor pools it all on the right — so the cap itself goes.
     // No revision may reintroduce a conversation measure token: that is
@@ -898,7 +898,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('--v2-conv-measure');
     // v6 (2026-09-01): the var ban was not enough — #1367 reintroduced the
     // cap as a LITERAL (`max-width: 75ch`) via a craft audit that called it
-    // a P0, and even claimed this test guarded it. Sam's third ruling:
+    // a P0, and even claimed this test guarded it. The third ruling:
     // full-width stands. Ban any ch-unit max-width inside the message
     // content block, not just the token.
     const msgContentBlock = v2.slice(v2.indexOf('.v2-msg__content {'), v2.indexOf('.v2-msg__content p'));
@@ -912,7 +912,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-composer')).toContain('border: 1px solid var(--v2-border)');
     // Direction C: the identity line is gone; the plus and Send sit inside the one bordered row.
     expect(ruleBody(v2, '.v2-root button.v2-composer__plus')).toContain('border: 1px solid var(--v2-border)');
-    // Nothing in the column may escape the shared edge (Sam, 2026-08-23:
+    // Nothing in the column may escape the shared edge (2026-08-23:
     // mentions and threads sat off-grid while messages aligned).
     // Mentions: the wash bleed must equal the padding (the old -12px against
     // 10px padding put mention TEXT 2px off-grid), widening the wash by one
@@ -930,7 +930,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-thread .v2-thread-block__inner')).toContain('margin-left: 36px');
     // Indent + width must still sum to 100%: an indented child that ALSO
     // carried width:100% pushed every thread past the pane's right edge and
-    // made the transcript horizontally swipeable (Sam, 2026-08-24; 350 vs
+    // made the transcript horizontally swipeable (2026-08-24; 350 vs
     // 326 scrollWidth at 390). The inner wrap must never take a width.
     expect(ruleBody(v2, '.v2-thread .v2-thread-block__inner')).not.toContain('width');
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-block__inner \{[\s\S]*?margin-left: 24px/);
@@ -1788,7 +1788,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // gains a line whenever a term is long enough to push 对话 onto a third
     // line: at 320–414 it measures 94.6px under three terms and 140.6px under
     // the fourth, so the lede, the CTAs and everything below move 46px once per
-    // rotation cycle. lily-shen ruled option 1 (2026-09-30 00:23Z): the suffix
+    // rotation cycle. Option 1 was chosen: the suffix
     // is a block at ≤680, which makes the height the same under every term.
     // Scoped with `mediaAt` rather than a whole-sheet read or an `indexOf`: the
     // sheet has one (max-width: 680px) block today, and the helper is what makes
@@ -1804,7 +1804,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(selectorRuleBody(phone, '.v2-landing__title-suffix')).toContain('margin-left: 0');
   });
 
-  test('the D129 phone hero rotator wraps and balances, and zh terms break only at the ZWSP', () => {
+  test('the phone hero rotator wraps and balances, and zh terms break only at the ZWSP', () => {
     // CodeRabbit (Minor) on #2883: presence pins for the ≤760 rotator rules. jsdom
     // has no line boxes, so these only guard against the declarations being dropped.
     // The block is placed last in the sheet and wins by order over the ≤680 rules.
@@ -1845,7 +1845,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('reaction chips baseline-align emoji ink with the count (not box-centering)', () => {
     // align-items: center centers the spans' layout boxes, but Apple Color
     // Emoji ink extends below the baseline while digit ink does not, so the
-    // count visibly rides high on desktop (2026-08-05, Sam's HQ screenshot).
+    // count visibly rides high on desktop (2026-08-05, HQ screenshot).
     // Baseline alignment + a 22px emoji line box (chip inner height, which is
     // the only thing vertically centering the pair once baseline is on) is
     // the fix; both halves are load-bearing and invisible to jsdom.
@@ -1854,7 +1854,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('message actions live in ONE hover cluster, and its picker opens downward', () => {
-    // 2026-08-23 (Sam's placement rulings): Reply, Thread, and the reaction
+    // 2026-08-23 (placement rulings): Reply, Thread, and the reaction
     // trigger share a floating pill at the row's top-right — no inline head
     // buttons (layout shift), no orphaned "+" in an empty reactions band
     // (the 2026-08-13 phantom-band bug cannot recur because a chip-less row
@@ -2117,7 +2117,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // correct rail from a missing one — the card and replies still appear,
     // just unindented and with no rule. This pins the three numbers that a
     // reader would otherwise have to take from a comment.
-    // REV 3 (Sam, 2026-08-23): the whole thread block is indented to the
+    // REV 3 (2026-08-23): the whole thread block is indented to the
     // message TEXT column like an attachment (margin-left 50px, pinned in
     // the column test above), so the rail sits AT the block edge — margin 0
     // — and card, rail, and message text share one line. Rev 2's
@@ -2167,7 +2167,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Tap-reveal, not always-on: the touch blocks must gate visibility on
     // .v2-msg--reveal (set by the bubble's tap handler) — an ungated
     // `.v2-msg__actions { opacity: 1 }` here would put chrome over every
-    // message by default (Sam's report, 2026-08-23).
+    // message by default (reported 2026-08-23).
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-msg--reveal \.v2-msg__actions[\s\S]*?opacity: 1/);
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root button\.v2-msg__action[\s\S]*?height: 44px/);
     // Reply in thread / Follow / Collapse moved from the chip to the band's
@@ -2234,10 +2234,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2.slice(floorStart, v2.indexOf('}', floorStart))).toContain('font-size: 12px');
   });
 
-  // Connectors v2 (Wren spec §5): platform tint tokens must exist in BOTH
+  // Connectors v2 (spec §5): platform tint tokens must exist in BOTH
   // token files (the same-PR rule), and the tile class must consume them.
-  it('chat message text has NO measure cap (Sam overruled craft finding 6, 2026-09-01)', () => {
-    // #1367 pinned a 75ch cap here as the audit's P0. Sam overruled it —
+  it('chat message text has NO measure cap (craft finding 6 overruled, 2026-09-01)', () => {
+    // #1367 pinned a 75ch cap here as the audit's P0. It was overruled —
     // third full-width ruling; worst case was a large screen with the
     // sidebar collapsed. The rule-2 v6 assertion above owns the ban; this
     // test flips to the same polarity so the two can never disagree.
@@ -2281,7 +2281,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('.v2-connector__tile--telegram');
   });
 
-  it('nothing in v2.css hides the connector row\'s reason, at 390 or anywhere (eng lead 73726, vera 73776)', () => {
+  it('nothing in v2.css hides the connector row\'s reason, at 390 or anywhere', () => {
     // Show is the default. This rule used to hide __detail for every state except
     // two enumerated ones, so the not-yet row that IS available
     // (V2ConnectorTools.tsx:562) lost "install the GitHub App first" /
@@ -2294,8 +2294,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Scope is the whole sheet, deliberately rather than by accident. Three
     // rounds of this guard each picked the wrong media set — unbounded, then
     // 760-only, then every `max-width >= 390` — because a 390 phone matches
-    // `max-width` blocks *and* `@media (hover: none)` / `(pointer: coarse)`
-    // (vera 73776). The claim is not about a viewport: no rule in this sheet may
+    // `max-width` blocks *and* `@media (hover: none)` / `(pointer: coarse)`.
+    // The claim is not about a viewport: no rule in this sheet may
     // hide the reason, and NAMED_DETAIL_HIDE_CASES is the deliberate exception
     // list. So this reads the whole file and no media-picking predicate is left
     // to get wrong.
@@ -2310,7 +2310,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // same loss through a different property, and neither hides the rule from a
     // reader who greps for the class.
     //
-    // The class test below is a substring on purpose (vera 73782):
+    // The class test below is a substring on purpose:
     // `.v2-connector-row__detail` also matches `.v2-connector-row__details`, the
     // wrapper the reason sits inside, and hiding that wrapper loses the reason
     // just as completely. Do not tighten it to an exact-selector match.
@@ -2510,7 +2510,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     }
   });
 
-  describe('TASK-122 Phase A — the ruled restyle (Sam, 2026-09-03; spec on TASK-122)', () => {
+  describe('TASK-122 Phase A — the ruled restyle (spec on TASK-122)', () => {
     const v2Root = ruleBody(v2, '.v2-root');
 
     test('the tint step exists in both token files and the content pane is the inset card', () => {
@@ -2609,7 +2609,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // One seat, one mark: agent cobalt, human tint.
       expect(ruleBody(v2, '.v2-activity__queue-row .v2-activity__queue-mark--agent')).toContain('background: var(--v2-accent)');
       expect(ruleBody(v2, '.v2-activity__queue-row .v2-activity__queue-mark--human')).toContain('background: var(--v2-surface-hover)');
-      // Direction A (Sam 2026-09-11): the mark holds a 16px glyph; a secondary act is a 32px square
+      // Direction A: the mark holds a 16px glyph; a secondary act is a 32px square
       // (44 under 760), never a word — and never a menu.
       expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-mark svg')).toContain('width: 16px');
       expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--icon svg')).toContain('width: 16px');
@@ -4083,7 +4083,7 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
 
   test('the copy column is uncapped, and the title is uncapped inside it', () => {
     // 288 + 24 + 784 = 1096 wrapped the install box at 1440 and 1200 while the
-    // inner was capped at 1000 (ux-lead's #2018 finding 3). The D129 title is
+    // inner was capped at 1000 (ux-lead's #2018 finding 3). The hero title is
     // uncapped so "One pod for your team and" stays on one line at 1440; the
     // hero column is the cap.
     expect(selectorRuleBody(landing, '.v2-landing__hero-inner {')).not.toContain('max-width');

@@ -57,7 +57,7 @@ interface Connector {
   // own classifier, and externalFeedService, which copies a provider's error
   // text or a raw `err.message` in here. `errorMessageUserFacing` is what tells
   // them apart, and only a message written for a person is rendered — the field
-  // holding a value is not permission to show it (vera 73848).
+  // holding a value is not permission to show it.
   errorMessage?: string | null;
   errorMessageUserFacing?: boolean;
   scope?: 'user' | 'pod';
@@ -74,7 +74,7 @@ interface CatalogInstallation {
   // holding a value is not permission to show it. A catalog failure is
   // `markProjectionFailure`'s raw exception message unless a writer says
   // otherwise, so the flag decides and the generic sentence is the fallback
-  // (TASK-131, vera 73848).
+  // (TASK-131).
   errorMessage?: string;
   errorMessageUserFacing?: boolean;
   boundPodId?: string;
@@ -85,14 +85,14 @@ interface CatalogInstallation {
 
 interface CatalogEntry {
   installableId: string;
-  // Two lists (tools plan, Sam's option A): this page draws channels; the
+  // Two lists (tools plan, option A): this page draws channels; the
   // Tools page draws tool Installables, so a `tools` row never renders here.
   list?: 'channels' | 'tools';
   connectionType?: 'github-app' | 'hosted-mcp';
   label?: string;
   description?: string;
   available: boolean;
-  // Capability vs offerability (Wren 71169/71174). `available` says this
+  // Capability vs offerability. `available` says this
   // instance holds the credentials; `offered` says a builtin Installable row
   // exists to install. Only both together may show an Add. Absent is read as
   // offered: the field's only producer always emits it, so a missing value
@@ -181,7 +181,7 @@ const mappedTypeLabel = (type: string): string | null => TYPE_LABELS[type] || nu
 // detail line at all. The two-branch ternary this replaces gave every provider
 // that was not telegram Slack's "one click in your workspace", so a stranger
 // reading a Discord row was told to click something in a workspace they may not
-// have (Vera 71165).
+// have.
 const CONNECT_DETAIL: Record<string, { key: string; defaultValue: string }> = {
   telegram: { key: 'connectors.availableTelegram', defaultValue: 'one message' },
   slack: { key: 'connectors.availableSlack', defaultValue: 'one click in your workspace' },
@@ -559,7 +559,7 @@ const V2ConnectorsPage: React.FC = () => {
           // (:1220, :1286) — an `aria-label`, not visible text, so naming it in
           // the copy sent a sighted user hunting for a string the page never
           // renders. That is the same defect as "gate switches" sourced from an
-          // attribute instead of an identifier (Vera, TASK-173 gate), so the
+          // attribute instead of an identifier (TASK-173 gate), so the
           // copy names the section title alone.
           defaultValue: 'Your {{connector}} channel is bound to {{pod}}. Other pods reach it through "Pods that reach this channel" — switch a pod on there.',
           connector: typeLabel,
@@ -618,7 +618,7 @@ const V2ConnectorsPage: React.FC = () => {
   // The server validates every key against membership and refuses the whole
   // body on the first miss, so a gate for a pod the owner has since left
   // (not yet pruned by the reconciler) is dropped here rather than sent —
-  // otherwise every toggle would 403 for up to one sweep (Vera, 63997).
+  // otherwise every toggle would 403 for up to one sweep.
   const writeGate = (connector: Connector, podId: string, next: ConnectorGate) => {
     const current = connector.config?.gates || {};
     const memberOf = new Set(podList.map((pod) => String(pod._id)));
@@ -950,7 +950,7 @@ const V2ConnectorsPage: React.FC = () => {
       return {
         action: null,
         // The copy decision here is main's, not this branch's: this commit set
-        // `detail: ''` citing Wren's 09-04 one-state-line rule, but #1557 landed
+        // `detail: ''` citing the 09-04 one-state-line rule, but #1557 landed
         // the detail AFTER that ruling and its tests assert the text is present.
         // A rebase is not the place to re-open it, so the line is restored and
         // raised on the row; everything else in the commit is unchanged.
@@ -966,7 +966,7 @@ const V2ConnectorsPage: React.FC = () => {
     // Usable here, but with nothing to install: declaring readiness is a claim
     // about this instance's keys, not about whether a row exists to install.
     // Showing the Add anyway is what produced a lowercase `discord` row whose
-    // click ended in 404 installable_not_found (Wren 71162/71163).
+    // click ended in 404 installable_not_found.
     if (entry.offered === false) {
       return {
         action: null,
@@ -1154,7 +1154,7 @@ const V2ConnectorsPage: React.FC = () => {
   // Direction A rule 3: every row's kicker is `pod · verb age` in mono. The verb
   // stays ("added 23d", never "23d") so an age beside a state dot is not read as
   // last-used; a connection with no pod says so. Both parts come from keys and
-  // the timestamp, never from rendered English (Vera, Connectors 70300).
+  // the timestamp, never from rendered English.
   const kickerFor = (item: ListItem, row: ConnectorRow): string => {
     // Inactive rows sit under the "inactive · N" fold. Their state is the fold's
     // job, so the kicker carries no pod and no state word.

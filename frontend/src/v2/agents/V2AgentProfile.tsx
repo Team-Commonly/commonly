@@ -217,7 +217,7 @@ const V2AgentProfile: React.FC = () => {
     return () => { cancelled = true; };
   }, [agentName, instanceId, memIndex]);
 
-  // Owner-editable avatar (Sam, 2026-08-20): visible only when the caller is
+  // Owner-editable avatar (2026-08-20): visible only when the caller is
   // the agent's installer or an admin — the backend is the real gate; this
   // check only decides whether to show the affordance.
   const [canEditAvatar, setCanEditAvatar] = useState(false);
@@ -324,7 +324,7 @@ const V2AgentProfile: React.FC = () => {
       <main className="v2-aprofile__main">
         {/* Identity header */}
         <section className="v2-aprofile__hero">
-          {/* The avatar IS the edit control (Sam, 2026-09-01: "a button called
+          {/* The avatar IS the edit control (2026-09-01: "a button called
               change avatar … should be enough just clicking the avatar").
               Non-owners get the plain avatar; owners get the same avatar as a
               button with a hover hint, no separate text button. */}

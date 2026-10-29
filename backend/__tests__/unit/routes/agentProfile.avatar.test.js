@@ -1,5 +1,5 @@
 /**
- * Owner-editable agent avatar (Sam, 2026-08-20).
+ * Owner-editable agent avatar.
  *
  * The gate is creation-shaped: the caller must be an admin or the installer of
  * an ACTIVE installation of this agent. These tests pin the gate and the write

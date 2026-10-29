@@ -1,8 +1,8 @@
 /**
  * TASK-103 — the failure tail the codex and claude adapters raise.
  *
- * Both adapters reported LOUDLY before this (Vera 71177 corrected an earlier row
- * that claimed otherwise: claude rejects on a non-zero exit and reports stdout
+ * Both adapters reported LOUDLY before this (an earlier row
+ * claimed otherwise: claude rejects on a non-zero exit and reports stdout
  * with it, codex rejects on `turnFailedMessage` even at exit 0). What they did
  * NOT do was the two things pi's refusal log learned in #1823/#1827:
  *
@@ -84,7 +84,7 @@ describe('the shared reader — scrubAdapterFailure', () => {
     // Dropped WHOLE, not redacted: the keep-listed field echoed a handed value,
     // and exact-match redaction cannot see that same value base64'd or
     // percent-encoded (limit (a) in the file header). Emitting the rest of the
-    // body was the defect Vera 71350 named.
+    // body was the defect.
     expect(detail).toBe('');
     expect(detail).not.toContain('has no budget');
     // Nothing in the body names a status, so none is invented (`classifySpawnFailure`
@@ -120,7 +120,7 @@ describe('the shared reader — scrubAdapterFailure', () => {
     expect(scrubAdapterFailure('warn | 200: ok | upstream closed the connection').status).toBeNull();
     // A bare 3-digit scan reads every one of these as 500. The classifier tests
     // the status field BEFORE the message, so a count misread as a status stands
-    // the fleet down on a refusal that never happened (Vera 71352).
+    // the fleet down on a refusal that never happened.
     expect(scrubAdapterFailure('retrying: 500 tokens remaining').status).toBeNull();
     expect(scrubAdapterFailure('context_limit: {"max_tokens": 500}').status).toBeNull();
     expect(scrubAdapterFailure('overloaded, retry in 500 seconds').status).toBeNull();
@@ -136,7 +136,7 @@ describe('the shared reader — scrubAdapterFailure', () => {
   });
 
   test('a JSON ARRAY tail is structured data, so nothing of it is echoed', () => {
-    // Vera 71360, measured: an array parsed, `keptRefusalDetail` found no named
+    // Measured: an array parsed, `keptRefusalDetail` found no named
     // field (there is no top-level `error`/`message` on a list), and the old
     // is-JSON-OBJECT gate excluded arrays — so the fallback treated upstream
     // structured data as prose and shipped it whole under exact-match alone. That
@@ -150,7 +150,7 @@ describe('the shared reader — scrubAdapterFailure', () => {
   });
 
   test('an HTTP status LINE names its status — the most canonical shape there is', () => {
-    // Vera 71359: `HTTP/1.1 429 Too Many Requests` read as `status: null`, because
+    // `HTTP/1.1 429 Too Many Requests` read as `status: null`, because
     // the named-shape gap cannot cross the `1` in `/1.1` (it is a WORD character).
     // A real status line classified as an unclassified runtime failure — the
     // misclassification this row exists to remove.

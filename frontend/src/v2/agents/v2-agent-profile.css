@@ -228,7 +228,7 @@
 }
 .v2-root button.v2-aprofile__pod-remove:disabled { opacity: 0.6; cursor: default; }
 
-/* Owner-editable avatar: the avatar itself is the button (Sam, 2026-09-01).
+/* Owner-editable avatar: the avatar itself is the button (2026-09-01).
    Keep the explicit root/button scope for this visual control; the global
    button reset is a low-specificity default. */
 .v2-root button.v2-aprofile__avatar-button {

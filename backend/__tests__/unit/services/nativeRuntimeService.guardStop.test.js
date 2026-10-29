@@ -170,7 +170,7 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(posted()).toEqual(['Here is the changelog. I could not use the blog page.']);
   });
 
-  // Rhea on #2305: the extra round is one model call, not the rest of the budget.
+  // The extra round is one model call, not the rest of the budget.
   describe('the extra round is one model call', () => {
     const neverAsked = reply('A later round.');
 

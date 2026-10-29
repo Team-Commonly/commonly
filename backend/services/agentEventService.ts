@@ -99,10 +99,10 @@ const DIGEST_FRAME_ROWS = 8;
 // NO_REPLY (a suppressed runtime failure is `runtime_*_suppressed` instead), so
 // it is the seat's decision, not a refusal. Treating it as unread left a
 // silent seat's digest pending, and the hourly unread-digest wake re-woke it to
-// be silent again (rhea, 2026-10-25). A turn that printed nothing acks as
+// be silent again. A turn that printed nothing acks as
 // `empty-output`, which is not a read: that is what a silently failing seat
 // sends every turn, and reading on it would drain a backlog nobody saw
-// (sable, #2753).
+// (#2753).
 const digestConsumedBy = (outcome?: string, reason?: string): boolean => outcome === 'posted'
   || outcome === 'acknowledged'
   || (outcome === 'no_action' && (!reason || reason === 'silent_or_empty'));
@@ -112,7 +112,7 @@ const digestConsumedBy = (outcome?: string, reason?: string): boolean => outcome
 const STUCK_REDISPATCH_BATCH = 50;
 const ABANDONED_RUN_MINUTES = 30;
 
-// TASK-265 (Rhea on #2236): an in-process event is born 'delivered', so one
+// TASK-265: an in-process event is born 'delivered', so one
 // left 'pending' for an agent that now runs in-process was routed before the
 // agent moved in-process (the hosted migration: enqueue decides routing before
 // the insert) and nothing polls it. The sweep runs those once they are a
@@ -128,7 +128,7 @@ const STRANDED_PENDING_MAX_AGE_MS = 30 * 60 * 1000;
 // Phase A (default): a presented nonce must match; an absent one is accepted
 // and counted. Phase B: an absent nonce is refused.
 //
-// **Phase B flips PER CONSUMER, not globally** (Sam, 2026-08-30). The first
+// **Phase B flips PER CONSUMER, not globally**. The first
 // draft gated the flip on `withoutNonce` reaching zero across everything,
 // which hands a veto to whichever consumer is slowest — and one of them, the
 // openclaw extension, has been parked since 2026-08-20. A parked runtime
@@ -1154,7 +1154,7 @@ class AgentEventService {
    * identities (projections included), and keeps only the rows the routing
    * rule itself runs, with the engine in effect. An unfinished migration's
    * rows are therefore not targets, so their events can never fill the
-   * sweep's batch and starve a runnable agent's event (Rhea on #2236).
+   * sweep's batch and starve a runnable agent's event.
    */
   static async inProcessEventTargets(): Promise<{ agentName: string; instanceId: string; podId: unknown }[]> {
     const identities = await AgentInstallation.find({ status: 'active', ...IN_PROCESS_RUNTIME_FILTER })
@@ -1477,7 +1477,7 @@ class AgentEventService {
    * runtime runs for `installationDoc` (merged with `sibling`'s config when the
    * row is a projection with no runtime of its own), or null. Shared by
    * `resolveInProcessInstallation` and the stranded-event sweep, so the sweep
-   * can never select an event that enqueue would not run (Rhea on #2236).
+   * can never select an event that enqueue would not run.
    */
   static inProcessInstallationFrom(
     installationDoc: InstallationDoc,

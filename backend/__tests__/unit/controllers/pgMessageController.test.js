@@ -150,7 +150,7 @@ describe('pgMessageController', () => {
   });
 
   it('refuses a departed CREATOR whose PG row is present', async () => {
-    // 36 of the 77 ghost rows are the pod's own creator (Vera 74648), which is
+    // 36 of the 77 ghost rows are the pod's own creator, which is
     // the population where the creator clause and the stale row reinforce each
     // other. `createdBy` is not membership: it says who made the pod, not who is
     // in it.
