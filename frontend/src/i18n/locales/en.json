@@ -2150,7 +2150,12 @@
         "minutes": "{{count}}m",
         "hours": "{{count}}h",
         "days": "{{count}}d"
-      }
+      },
+      "where": {
+        "hosted": "Runs on Commonly",
+        "local": "Runs on your computer"
+      },
+      "meter": "{{used}}/{{cap}} today"
     },
     "activity": {
       "noRecent": "No recent activity",
