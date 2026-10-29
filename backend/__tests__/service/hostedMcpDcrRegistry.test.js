@@ -157,6 +157,36 @@ describe('instance-scoped hosted MCP DCR registry', () => {
     expect(await ConnectorSecret.countDocuments({})).toBe(0);
   });
 
+  // The shared metadata puts the endpoint at issuer + /register, so only an
+  // endpoint on another path shows the POST follows the metadata.
+  test('registers at the endpoint the metadata names, never one guessed from the issuer', async () => {
+    const sent = [];
+    const elsewhere = { ...metadata, registration_endpoint: 'https://register.close.com/oauth2/v1/clients' };
+    await ensureDcrClient(entry, elsewhere, callback, registrationFetch(sent));
+    expect(sent.map(({ url }) => url)).toEqual(['https://register.close.com/oauth2/v1/clients']);
+  });
+
+  test('an answer that does not confirm our sole callback is refused, and nothing is stored', async () => {
+    const unconfirmed = [
+      ['https://elsewhere.example/callback'],
+      [callback, 'https://elsewhere.example/callback'],
+      [],
+      undefined,
+    ];
+    for (const redirectUris of unconfirmed) {
+      const answer = jest.fn(async () => new Response(JSON.stringify({
+        client_id: 'unconfirmed',
+        token_endpoint_auth_method: 'none',
+        redirect_uris: redirectUris,
+      }), { status: 201 }));
+      // eslint-disable-next-line no-await-in-loop
+      await expect(ensureDcrClient(entry, metadata, callback, answer))
+        .rejects.toMatchObject({ code: 'client_registration_unsupported' });
+      expect(answer).toHaveBeenCalledTimes(1);
+    }
+    expect(await Model.countDocuments({})).toBe(0);
+  });
+
   describe('a vendor that offers only confidential registration (TASK-248)', () => {
     const confidential = { ...metadata, token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'] };
     const confidentialAnswer = (seen, overrides = {}) => jest.fn(async (_url, init) => {
