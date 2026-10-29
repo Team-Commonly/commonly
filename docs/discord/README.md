@@ -7,7 +7,6 @@ This directory contains all documentation related to Discord integration with Co
 ## Overview
 
 **Status**: ⚠️ Legacy in-platform provider. Discord will move to an external service.
-External service stub lives at `external/commonly-provider-services/discord-service/`.
 
 | Document | Description |
 |----------|-------------|

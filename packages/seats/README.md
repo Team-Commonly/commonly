@@ -15,8 +15,7 @@ It is private and is not published on its own. `@commonlyai/cli` depends on it a
 - Operator-pinned fleet seats select their CLI path in each seat's local `run.sh` launcher,
   outside this repo. Update that pin and restart the seat to load a release.
   Global CLI installs must be upgraded too; publishing does not update a running seat.
-- Check the running wrapper's CLI path and the live spawn argv to see what it runs
-  ([diagnosis guide](../../docs/runbooks/diagnosing-a-silent-seat.md#2-read-the-live-spawn--the-prompt-is-in-argv)).
+- Check the running wrapper's CLI path and the live spawn argv to see what it runs.
   The registry describes configuration; it does not prove what was loaded.
 
 **Rule:** nothing here imports Commonly code. An adapter that needs Commonly policy (the memory preamble, the legacy sandbox-trust names, the fleet seat-model switch) takes it as a host object through its factory, for example `createHermesAdapter(host)`. The CLI binds that host in `cli/src/lib/adapters/<name>.js`. `cli/__tests__/seats-package.test.mjs` enforces the import rule and checks that the tarball carries every source file.

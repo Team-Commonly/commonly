@@ -1,0 +1,52 @@
+{
+  "measuredAt": "2026-10-28T04:00:12Z",
+  "url": "https://airtable.com/.well-known/oauth-authorization-server/oauth2/v1",
+  "metadata": {
+    "issuer": "https://airtable.com/oauth2/v1",
+    "registration_endpoint": "https://airtable.com/oauth2/v1/register",
+    "authorization_endpoint": "https://airtable.com/oauth2/v1/authorize",
+    "token_endpoint": "https://airtable.com/oauth2/v1/token",
+    "jwks_uri": "https://airtable.com/oauth2/v1/jwks",
+    "response_types_supported": [
+      "code"
+    ],
+    "scopes_supported": [
+      "data.records:read",
+      "data.records:write",
+      "schema.bases:read",
+      "schema.bases:write",
+      "data.recordComments:read",
+      "data.recordComments:write",
+      "workspacesAndBases:read"
+    ],
+    "token_endpoint_auth_methods_supported": [
+      "client_secret_basic",
+      "none"
+    ],
+    "code_challenge_methods_supported": [
+      "S256"
+    ],
+    "resource_indicators_supported": true,
+    "token_endpoint_auth_signing_alg_values_supported": [
+      "RS256",
+      "HS256"
+    ],
+    "id_token_signing_alg_values_supported": [
+      "RS256"
+    ],
+    "subject_types_supported": [
+      "public"
+    ],
+    "claims_supported": [
+      "iss",
+      "sub",
+      "aud",
+      "iat",
+      "exp",
+      "email",
+      "email_verified",
+      "nonce"
+    ],
+    "client_id_metadata_document_supported": true
+  }
+}

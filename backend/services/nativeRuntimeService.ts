@@ -1323,6 +1323,65 @@ export const triggerTextIsHumanWritten = async (trigger: NativeRunTrigger): Prom
   }
 };
 
+// TASK-417 / ADR-020 (ruled 2026-10-27): a connect-intent message from a person
+// gets the connect_local_agent card even when Scout's model proposes nothing
+// that turn. The floor only asks: the owner still approves the card.
+// The tool name must follow a determiner (my, a, an), which marks a seat the
+// person is setting up. "the Codex API" and "the codex repo" are prose, and a
+// bare "claude" matches the Claude API and the Claude docs.
+const CONNECT_INTENT = /\b(connect|link|hook up|set up)\b[^.!?\n]{0,40}?\b(my|a|an)\s+(claude code|codex|local agent)\b/i;
+
+export const isConnectIntent = (text: string): boolean => CONNECT_INTENT.test(text);
+
+// Any reply this run, not just a card, answers the connect request.
+export const connectRequestAnswered = (postedViaTool: boolean, finalMessage: string | undefined): boolean => (
+  postedViaTool || finalMessage !== undefined
+);
+
+export const connectIntentFloor = async (input: {
+  trigger: NativeRunTrigger;
+  podId: string;
+  agentName: string;
+  instanceId: string;
+  displayName: string;
+  runId: string;
+  installationConfig: unknown;
+  noOutboundRelay: boolean;
+}): Promise<boolean> => {
+  if (input.agentName !== 'scout') return false;
+  if (!(await triggerTextIsHumanWritten(input.trigger))) return false;
+  const payload = (input.trigger.payload && typeof input.trigger.payload === 'object'
+    ? input.trigger.payload : {}) as Record<string, unknown>;
+  const text = String(payload.content || '').trim();
+  if (!isConnectIntent(text)) return false;
+  // One pending card per pod: a second floor would stack a card on the first.
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const ApprovalAction = require('../models/ApprovalAction');
+  const pending = await ApprovalAction.exists({
+    podId: input.podId, actionType: 'connect_local_agent', status: 'flagged',
+  });
+  if (pending) return false;
+  const adapter = /\bcodex\b/i.test(text) ? 'codex' : 'claude';
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { proposeAction, suggestLocalAgentName } = require('./approvalActionService');
+  const name = await suggestLocalAgentName(adapter, String(payload.userId || ''));
+  if (!name) return false;
+  const result = await proposeAction({
+    runId: input.runId,
+    runPodId: input.podId,
+    podId: input.podId,
+    agentName: input.agentName,
+    instanceId: input.instanceId,
+    displayName: input.displayName,
+    actionType: 'connect_local_agent',
+    params: { name, adapter },
+    summary: `Connect your local ${adapter} agent as ${name}. Approve, then link it from the connect page.`,
+    installationConfig: input.installationConfig,
+    noOutboundRelay: input.noOutboundRelay,
+  });
+  return Boolean(result.ok);
+};
+
 export function buildUserMessage(
   trigger: NativeRunTrigger,
   podName: string,
@@ -2449,6 +2508,47 @@ export async function runAgent(
   // The spend alarm does not read this field.
   if (dispatchCtx.webFetches) {
     run.webFetches = dispatchCtx.webFetches;
+  }
+
+  // TASK-417: the deterministic floor runs after the model turn. A turn that
+  // already replied (a post, a proposal, an offer, or the text fallback) has
+  // handled the request, so the floor stays out of it. A guardrail refusal
+  // (run.errorKind) is a block, not a miss, so no card routes around it.
+  if (run.status === 'succeeded' && !run.errorKind && !connectRequestAnswered(postedViaTool, finalMessage)) {
+    try {
+      // The floor is a proposal, so it takes the same offer the model got: the
+      // install must declare the tool, an outsider grant narrows to in-pod
+      // tools, and a web-tainted or set-aside turn offers no proposal at all.
+      // A broker call taints too (not only a web result): once the pod is
+      // bridged, dispatchTool refuses every posting tool, propose included.
+      const inPodOnly = await inPodOnlyNow();
+      // A broker call needs the bridge read too, even with no web tool declared:
+      // dispatchTool rechecks the bridge for every tainted posting tool.
+      const podBridged = mayLookUp || dispatchCtx.brokerCallSeen
+        ? await podBridgedNow() : false;
+      const postingRefused = podBridged && Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen);
+      const proposeOffered = !webSetAside && !postingRefused && toolsForConfig(cfg, inPodOnly, {
+        webTainted: Boolean(dispatchCtx.webTainted),
+        computerReadSeen: Boolean(dispatchCtx.computerReadSeen),
+        podBridged,
+      }).some((tool) => tool.function.name === 'commonly_propose_action');
+      if (proposeOffered && await connectIntentFloor({
+        trigger,
+        podId,
+        agentName,
+        instanceId,
+        displayName,
+        runId,
+        installationConfig: cfg,
+        noOutboundRelay: Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen),
+      })) {
+        // A card posted here is the turn's reply, so the claim is completed,
+        // not released as declined.
+        postedViaTool = true;
+      }
+    } catch (floorErr) {
+      console.warn('[native-runtime] connect-intent floor not posted:', (floorErr as Error).message);
+    }
   }
 
   run.completedAt = new Date();

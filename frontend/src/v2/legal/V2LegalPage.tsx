@@ -62,6 +62,7 @@ const PRIVACY_SECTIONS: LegalSection[] = [
     body: [
       'Campaign links: when you first arrive with a ref code in the link (?ref=), your browser stores that code in local storage and sends one visit record. The record holds the code and the UTC day. It has no person, address or user agent.',
       'If you sign up through a ref link, the code is saved on your account.',
+      'Your browser fetches our public GitHub star count from GitHub.',
     ],
   },
   {

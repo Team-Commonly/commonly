@@ -9,7 +9,9 @@ jest.mock('@e2b/code-interpreter', () => ({
   Sandbox: { create: (...args) => mockCreate(...args) },
 }));
 
-const { TurnSandbox, MAX_RUNS_PER_TURN, isSandboxConfigured } = require('../../../services/turnSandboxService');
+const {
+  TurnSandbox, MAX_RUNS_PER_TURN, isSandboxConfigured, SANDBOX_BUSY_MESSAGE,
+} = require('../../../services/turnSandboxService');
 
 describe('TurnSandbox', () => {
   const previousKey = process.env.E2B_API_KEY;
@@ -102,6 +104,110 @@ describe('TurnSandbox', () => {
     }
     expect(await sandbox.run('python', 'print(1)')).toMatchObject({ ok: false, error: expect.stringMatching(/code runs/) });
     expect(mockRunCode).toHaveBeenCalledTimes(MAX_RUNS_PER_TURN);
+  });
+
+  test('a refused sandbox returns the fixed busy line, not the SDK message, and the turn carries on', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const rateLimit = Object.assign(new Error('Rate limit exceeded: concurrent sandbox cap reached (acct 42)'), { name: 'RateLimitError' });
+    mockCreate.mockRejectedValueOnce(rateLimit);
+
+    const sandbox = new TurnSandbox({});
+    // Resolves, so the tool loop gets a result and the model can still reply.
+    const result = await sandbox.run('python', 'print(1)');
+    expect(result).toEqual({ ok: false, stdout: '', stderr: '', error: SANDBOX_BUSY_MESSAGE });
+    expect(JSON.stringify(result)).not.toMatch(/acct 42|Rate limit/);
+    // No sandbox exists, so close has nothing to kill and reports nothing.
+    expect(await sandbox.close()).toBe(0);
+    expect(mockKill).not.toHaveBeenCalled();
+
+    // A later run in the same turn may try again.
+    expect((await sandbox.run('python', 'print(1)')).ok).toBe(true);
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
+  });
+
+  test('a create that times out is refused the same way, and the create call is bounded', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockCreate.mockRejectedValueOnce(Object.assign(new Error('context deadline exceeded'), { name: 'TimeoutError' }));
+    expect(await new TurnSandbox({}).run('python', 'print(1)')).toMatchObject({ ok: false, error: SANDBOX_BUSY_MESSAGE });
+    expect(mockCreate.mock.calls[0][1].requestTimeoutMs).toBe(30_000);
+    warn.mockRestore();
+  });
+
+  test('a create that never answers gets the busy line by our own bound, and a later run retries', async () => {
+    jest.useFakeTimers();
+    try {
+      // The pinned SDK ignores requestTimeoutMs here, so only our own timer can end this.
+      mockCreate.mockImplementationOnce(() => new Promise(() => {}));
+      const sandbox = new TurnSandbox({});
+      let settled = false;
+      const pending = sandbox.run('python', 'print(1)').then((result) => { settled = true; return result; });
+      await jest.advanceTimersByTimeAsync(29_999);
+      expect(settled).toBe(false);
+      await jest.advanceTimersByTimeAsync(1);
+      expect(await pending).toEqual({ ok: false, stdout: '', stderr: '', error: SANDBOX_BUSY_MESSAGE });
+      expect(await sandbox.close()).toBe(0);
+
+      expect((await sandbox.run('python', 'print(1)')).ok).toBe(true);
+      expect(mockCreate).toHaveBeenCalledTimes(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('a create that answers after our bound is killed on arrival, not left to bill', async () => {
+    jest.useFakeTimers();
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      let resolveLate;
+      mockCreate.mockImplementationOnce(() => new Promise((resolve) => { resolveLate = resolve; }));
+      const sandbox = new TurnSandbox({});
+      const pending = sandbox.run('python', 'print(1)');
+      await jest.advanceTimersByTimeAsync(30_000);
+      expect((await pending).error).toBe(SANDBOX_BUSY_MESSAGE);
+
+      resolveLate({ runCode: mockRunCode, kill: mockKill });
+      await jest.advanceTimersByTimeAsync(0);
+      expect(mockKill).toHaveBeenCalledTimes(1);
+      expect(mockRunCode).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+      warn.mockRestore();
+    }
+  });
+
+  test('a late sandbox whose first kill fails is killed again once, and no warning is logged when the retry works', async () => {
+    jest.useFakeTimers();
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      let resolveLate;
+      mockCreate.mockImplementationOnce(() => new Promise((resolve) => { resolveLate = resolve; }));
+      const sandbox = new TurnSandbox({});
+      const pending = sandbox.run('python', 'print(1)');
+      await jest.advanceTimersByTimeAsync(30_000);
+      expect((await pending).error).toBe(SANDBOX_BUSY_MESSAGE);
+      expect(await sandbox.close()).toBe(0);
+
+      warn.mockClear();
+      mockKill.mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce(true);
+      resolveLate({ runCode: mockRunCode, kill: mockKill });
+      await jest.advanceTimersByTimeAsync(0);
+      expect(mockKill).toHaveBeenCalledTimes(2);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+      warn.mockRestore();
+    }
+  });
+
+  test('E2B capacity refusals (ServiceBusyError, 503) get the same busy line, and a later run retries', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockCreate.mockRejectedValueOnce(Object.assign(new Error('Service temporarily unavailable'), { name: 'ServiceBusyError', statusCode: 503 }));
+    const sandbox = new TurnSandbox({});
+    expect(await sandbox.run('python', 'print(1)')).toEqual({ ok: false, stdout: '', stderr: '', error: SANDBOX_BUSY_MESSAGE });
+    expect((await sandbox.run('python', 'print(1)')).ok).toBe(true);
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
   });
 
   test('is configured only when the instance has an E2B key', () => {
