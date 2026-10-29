@@ -9,9 +9,12 @@ into Go value of type map`) and the deploy fails loudly, so the running release
 keeps its current allowlist. The failures that drop users *silently* are
 different, and they are the ones to guard against:
 
-- **The secret is unset or empty when the hidden-entries feature deploys.** The
-  chart default is `{}`, so every hidden entry is then hidden from *all* its
-  users — every exception is removed. **Set the secret before that deploy.**
+- **The secret is unset or empty at the deploy that removes
+  `hiddenEntryUserAllowlist` from `values-dev.yaml`.** The chart default is `{}`,
+  so every hidden entry is then hidden from *all* its users — every exception is
+  removed. **Set the secret before that deploy.** (Entries themselves have been
+  hidden since an earlier change; the exposure is the map moving out of the
+  committed values into the secret.)
 - **The overlay parses but is semantically invalid** — see "What the overlay
   must contain". The backend then throws the whole allowlist away (`{}`), with
   the same effect.
@@ -63,8 +66,8 @@ malformed id silently hides every allowlisted entry from everyone.
   their 24-hex-char `_id`. Edit the YAML, not a word list.
 - `gh secret set DEV_HELM_HIDDENMCP_ALLOWLIST --repo <repo> --body-file <overlay.yaml>`.
   Never paste ids on the command line or into logs.
-- **Merge order:** set the secret before the change that first hides entries
-  deploys, or that deploy's chart-default `{}` removes every exception.
+- **Merge order:** set the secret before the deploy that removes the map from
+  `values-dev.yaml`, or that deploy's chart-default `{}` removes every exception.
 - **Un-hiding trap:** `hiddenEntries` (the list of hidden entries) lives in
   `values-dev.yaml`; the per-user allowlist lives in the secret. When you remove
   an entry from `hiddenEntries` (un-hide it), remove its key from the secret in
@@ -77,5 +80,6 @@ malformed id silently hides every allowlisted entry from everyone.
 
 > Earned 2026-10-29: the name reads like a feature-flag word list. A word list
 > would at least fail the deploy loudly; the real hazard is the silent
-> exception-drop when the secret is unset/empty at the first hide-entries deploy,
-> or when an un-hidden entry's key is left behind in the overlay.
+> exception-drop when the secret is unset/empty at the deploy that removes the map
+> from `values-dev.yaml`, or when an un-hidden entry's key is left behind in the
+> overlay.
