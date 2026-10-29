@@ -24,7 +24,7 @@ permissions:
 jobs:
   gen-drift:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -37,6 +37,10 @@ jobs:
         run: make check-gen
       - name: Fixtures validate (ajv) and generated TS type-checks
         run: make test-ts
+      - name: Entropy gate (budgets, ratchet, dead code, boundaries)
+        run: |
+          git fetch --no-tags --depth=1 origin v4:refs/remotes/origin/v4 || true
+          make entropy
 
   worker:
     runs-on: ubuntu-latest

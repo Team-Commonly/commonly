@@ -1,0 +1,53 @@
+{
+  "$comment": "Entropy budgets enforced by `make entropy` (scripts/check-entropy.mjs). Exceptions may only shrink: a new one must cite a docs/adr/ note in its reason. LOC budgets cover hand-written code only; generated files and fixtures are excluded.",
+  "maxFileLines": 400,
+  "maxFunctionLines": 60,
+  "generated": [
+    "gen/",
+    "daemon/internal/protocol/gen.go",
+    "schema/fixtures/",
+    "bun.lock",
+    "go.sum"
+  ],
+  "markerScanSkip": [
+    "scripts/check-entropy.mjs"
+  ],
+  "locBudget": {
+    "core": {
+      "paths": [
+        "schema/",
+        "scripts/"
+      ],
+      "max": 1500
+    },
+    "worker": {
+      "paths": [
+        "worker/"
+      ],
+      "max": 4000
+    },
+    "daemon": {
+      "paths": [
+        "daemon/"
+      ],
+      "max": 3500
+    },
+    "e2e": {
+      "paths": [
+        "e2e/"
+      ],
+      "max": 1500
+    }
+  },
+  "goImports": {
+    "daemon/internal/protocol": {
+      "allow": [
+        "std"
+      ]
+    }
+  },
+  "exceptions": {
+    "files": {},
+    "functions": {}
+  }
+}

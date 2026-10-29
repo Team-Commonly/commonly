@@ -1,0 +1,257 @@
+{
+  "$comment": "The v4 slice as end-to-end tests, in priority order. A building session changes ONLY the `passes` field, and sets it true only after `test` passes locally and in CI. Never delete, reword or reorder a feature to make it pass; a feature that turns out wrong gets a new feature plus a note in progress.md. `blockedBy` names what must happen before work starts. See docs/development/workflow.md.",
+  "features": [
+    {
+      "id": "F01",
+      "category": "contract",
+      "description": "One schema generates the TS and Go contracts, and every fixture validates in both",
+      "steps": [
+        "make gen twice leaves the tree clean",
+        "check-fixtures passes all fixtures with ajv",
+        "the Go round-trip test passes and rejects every invalid-required fixture",
+        "a schema edit without make gen fails check-gen"
+      ],
+      "test": "make check-gen test",
+      "passes": true
+    },
+    {
+      "id": "F02",
+      "category": "harness",
+      "description": "make e2e boots wrangler dev on a free port, waits for /healthz, runs the named e2e tests and prints E2E_MS",
+      "steps": [
+        "make e2e starts the Worker with --persist-to a temp dir",
+        "GET /healthz returns 200 within 10 s",
+        "a failing step names itself and prints the last 20 events",
+        "the run ends with E2E_MS=<n> STEPS=<k>/<k>"
+      ],
+      "test": "go test ./e2e -run TestF02",
+      "passes": false
+    },
+    {
+      "id": "F03",
+      "category": "pod",
+      "description": "A test user creates a pod and receives hello over the pod WebSocket",
+      "steps": [
+        "POST /__test/seed mints a user and returns a cmu_ token (local and preview builds only)",
+        "POST /v1/pods with that token creates a pod and returns its id",
+        "GET /v1/pods/:pod/ws with the token upgrades and the first frame is hello with headSeq 0 and the user as owner"
+      ],
+      "test": "go test ./e2e -run TestF03",
+      "passes": false
+    },
+    {
+      "id": "F04",
+      "category": "pod",
+      "description": "Human messages fan out live, and a reconnecting client resumes from sinceSeq with no gaps",
+      "steps": [
+        "two members subscribe; one sends message.post",
+        "both receive message.created with the same seq",
+        "the second client disconnects, three more posts happen, it reconnects with subscribe{sinceSeq}",
+        "it receives exactly the three missed events, in order",
+        "the same holds after the Durable Object hibernates"
+      ],
+      "test": "go test ./e2e -run TestF04",
+      "passes": false
+    },
+    {
+      "id": "F05",
+      "category": "pod",
+      "description": "Invites add members; used, expired and non-member cases are refused",
+      "steps": [
+        "the owner creates an invite and a second user accepts it",
+        "the second user's hello lists them as a member",
+        "accepting the same single-use invite again returns 410",
+        "a non-member creating an invite gets 403"
+      ],
+      "test": "go test ./e2e -run TestF05",
+      "passes": false
+    },
+    {
+      "id": "F06",
+      "category": "board",
+      "description": "A member creates a task assigned to an agent and every member sees task.created",
+      "steps": [
+        "a registered agent exists in the pod",
+        "a member sends task.create with the agent as assignee",
+        "all subscribers receive task.created with status open and the assignee set"
+      ],
+      "test": "go test ./e2e -run TestF06",
+      "passes": false
+    },
+    {
+      "id": "F07",
+      "category": "wake",
+      "description": "Only addressed changes wake an agent, wakes coalesce, and unacked wakes are re-sent",
+      "steps": [
+        "an ambient human message produces no run.wake",
+        "assigning three tasks to the agent in a row produces one pending wake, delivered once",
+        "a wake not acked within 60 s is re-sent on the next heartbeat (clock is test-controlled)",
+        "run.wake goes only to the computer that hosts the agent"
+      ],
+      "test": "go test ./e2e -run TestF07",
+      "passes": false
+    },
+    {
+      "id": "F08",
+      "category": "daemon",
+      "description": "The daemon registers its computer and an agent, and the pod shows the agent online",
+      "steps": [
+        "commonly daemon start --foreground registers the computer and stores cmc_ at mode 0600",
+        "commonly agent add fake registers an agent in the pod",
+        "members receive presence.changed online for the agent within 5 s",
+        "killing the daemon produces presence.changed offline within 45 s"
+      ],
+      "test": "go test ./e2e -run TestF08",
+      "passes": false
+    },
+    {
+      "id": "F09",
+      "category": "run",
+      "description": "On run.wake the daemon claims a run and starts the agent with a run token and the pod MCP server",
+      "steps": [
+        "the daemon receives run.wake and calls POST /v1/runs",
+        "the response carries runId, a cmr_ token, a brief and the MCP URL",
+        "the fake ACP agent starts with the MCP server passed in session/new",
+        "commonly_whoami over MCP returns the agent, pod and run",
+        "the agent's argv and env contain cmr_ and never cmc_"
+      ],
+      "test": "go test ./e2e -run TestF09",
+      "passes": false
+    },
+    {
+      "id": "F10",
+      "category": "board",
+      "description": "commonly_task_claim is exclusive and its lease renews on every tool call",
+      "steps": [
+        "two runs claim the same task concurrently; exactly one wins",
+        "the loser gets already_claimed naming the holder",
+        "members receive task.claimed with leaseUntil",
+        "a later tool call on the winning run moves leaseUntil forward"
+      ],
+      "test": "go test ./e2e -run TestF10",
+      "passes": false
+    },
+    {
+      "id": "F11",
+      "category": "cards",
+      "description": "commonly_post enforces the headline contract and the pod stamps the receipt",
+      "steps": [
+        "a post without summary gets summary_required; one over 120 chars gets invalid_input",
+        "an ask without options, or a non-ask with needs, gets invalid_input",
+        "a post carrying receipt is rejected",
+        "a valid ask creates a message whose receipt has the runId, harness fake, wakeReason and toolCalls equal to the MCP calls made so far",
+        "the ask carries an open decision"
+      ],
+      "test": "go test ./e2e -run TestF11",
+      "passes": false
+    },
+    {
+      "id": "F12",
+      "category": "cards",
+      "description": "A human rules on an ask once, and the agent is woken with the ruling and finishes the task",
+      "steps": [
+        "a member sends decision.rule with an option id",
+        "members receive message.updated with the decision ruled and frozen",
+        "a second ruling returns already_ruled and changes nothing",
+        "the agent receives run.wake with reason decision_ruled",
+        "the agent calls commonly_task_update done and members receive task.updated done"
+      ],
+      "test": "go test ./e2e -run TestF12",
+      "passes": false
+    },
+    {
+      "id": "F13",
+      "category": "security",
+      "description": "Tokens are scoped: a run cannot cross pods, an ended run is dead, and test routes are absent in production",
+      "steps": [
+        "a cmr_ for pod A posting to pod B gets forbidden",
+        "after POST /v1/runs/:run/end the same cmr_ gets unauthorized",
+        "an actor field in MCP tool arguments is ignored",
+        "the production build of the Worker contains no /__test handler"
+      ],
+      "test": "go test ./e2e -run TestF13",
+      "passes": false
+    },
+    {
+      "id": "F14",
+      "category": "slice",
+      "description": "The whole slice runs end to end with the fake agent in under 60 s",
+      "steps": [
+        "sign in, create pod, invite, join",
+        "start the daemon and add the fake agent",
+        "create a task assigned to it",
+        "observe run.wake, task.claimed, then an ask with a receipt",
+        "rule on the ask, observe the second wake and task.updated done",
+        "E2E_MS under 60000"
+      ],
+      "test": "go test ./e2e -run TestF14",
+      "passes": false
+    },
+    {
+      "id": "F15",
+      "category": "auth",
+      "description": "commonly login signs in with GitHub's device flow and stores a user token safely",
+      "steps": [
+        "against a stub GitHub, commonly login prints the user code and verification URL",
+        "after the stub approves, the CLI exchanges the GitHub token at POST /v1/auth/github for a cmu_",
+        "the token file is mode 0600 and the token is never printed",
+        "a revoked or invalid GitHub token gets unauthorized"
+      ],
+      "test": "go test ./e2e -run TestF15",
+      "passes": false
+    },
+    {
+      "id": "F16",
+      "category": "harness-real",
+      "description": "A recorded real Claude Code session (claude-agent-acp) replays through the daemon and makes the slice's pod calls",
+      "steps": [
+        "daemon/testdata/acp/claude-slice.jsonl is recorded against the pinned adapter, scrubbed",
+        "the replay test drives the daemon with it and the pod calls match the golden list",
+        "one operator walks the slice by hand with real Claude Code and the result is noted in progress.md"
+      ],
+      "test": "go test ./daemon/... -run TestReplayClaude",
+      "passes": false
+    },
+    {
+      "id": "F17",
+      "category": "preview",
+      "description": "Every PR deploys a Workers preview and F14 passes against it",
+      "steps": [
+        "the preview job deploys the PR to its own preview with its own DO namespace and the preview D1",
+        "COMMONLY_URL=<preview> go test ./e2e -run TestF14 passes"
+      ],
+      "test": "CI job e2e-preview",
+      "blockedBy": "CLOUDFLARE_API_TOKEN secret (owner action)",
+      "passes": false
+    },
+    {
+      "id": "F18",
+      "category": "client",
+      "description": "A person uses the slice from the client chosen in the client options review",
+      "steps": ["defined after docs/design/client-options.md is reviewed with Sam"],
+      "test": "TBD by the review",
+      "blockedBy": "client options review (docs/design/client-options.md)",
+      "passes": false
+    },
+    {
+      "id": "F19",
+      "category": "connector",
+      "description": "An agent reads Linear through a pod grant without ever holding the Linear token",
+      "steps": ["defined after docs/design/connector-options.md is reviewed with Sam"],
+      "test": "TBD by the review",
+      "blockedBy": "connector options review (docs/design/connector-options.md)",
+      "passes": false
+    },
+    {
+      "id": "F20",
+      "category": "harness-real",
+      "description": "A recorded real Codex session (codex-acp) replays through the daemon and makes the slice's pod calls",
+      "steps": [
+        "daemon/testdata/acp/codex-slice.jsonl is recorded against the pinned adapter, scrubbed",
+        "the replay test passes"
+      ],
+      "test": "go test ./daemon/... -run TestReplayCodex",
+      "passes": false
+    }
+  ]
+}

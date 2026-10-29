@@ -2,7 +2,7 @@
 # toolchain prefix; CI installs them with setup-go and setup-bun.
 export PATH := $(HOME)/.commonly/toolchains/v4/bin:$(PATH)
 
-.PHONY: gen check-gen test test-ts test-go preflight
+.PHONY: gen check-gen test test-ts test-go entropy preflight
 
 node_modules: package.json bun.lock
 	bun install --frozen-lockfile
@@ -28,4 +28,15 @@ test-go:
 
 test: test-ts test-go
 
-preflight: check-gen test
+# Entropy gate (docs/development/workflow.md): budgets and ratchets in entropy.json,
+# dead code (knip, staticcheck, deadcode), TS module boundaries (dependency-cruiser).
+STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.2
+DEADCODE := golang.org/x/tools/cmd/deadcode@v0.51.0
+entropy: node_modules
+	bun run check:entropy
+	bun run check:dead
+	bun run check:boundaries
+	go run $(STATICCHECK) ./...
+	@if [ -n "$$(go list -f '{{if eq .Name "main"}}{{.ImportPath}}{{end}}' ./...)" ]; then go run $(DEADCODE) -test ./...; fi
+
+preflight: check-gen test entropy

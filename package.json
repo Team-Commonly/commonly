@@ -6,10 +6,15 @@
   "scripts": {
     "gen": "bun scripts/gen.mjs",
     "check:fixtures": "bun scripts/check-fixtures.mjs",
-    "check:types": "tsc -p tsconfig.json"
+    "check:types": "tsc -p tsconfig.json",
+    "check:entropy": "bun scripts/check-entropy.mjs",
+    "check:dead": "knip",
+    "check:boundaries": "depcruise scripts gen --config .dependency-cruiser.cjs"
   },
   "devDependencies": {
     "ajv": "8.17.1",
+    "dependency-cruiser": "18.6.0",
+    "knip": "6.41.0",
     "typescript": "5.9.3"
   }
 }
