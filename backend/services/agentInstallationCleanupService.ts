@@ -313,6 +313,11 @@ export async function pruneStaleInstallations(
       }
 
       await AgentInstallation.deleteOne({ _id: inst._id });
+      // A pruned install is an uninstall: once none is active, the agent's
+      // runtime token stops authenticating too.
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const { revokeRuntimeTokensAfterLastUninstall } = require('../routes/registry/tokens');
+      await revokeRuntimeTokensAfterLastUninstall(inst.agentName, inst.instanceId || 'default');
       deleted += 1;
     } catch (err) {
       console.error(
