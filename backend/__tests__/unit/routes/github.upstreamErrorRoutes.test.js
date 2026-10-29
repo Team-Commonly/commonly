@@ -9,8 +9,9 @@
  * reaches the upstream service. The source-level check below counts every
  * handler that calls GitHubAppService, not merely every mapper call, so an
  * unmapped proxy route cannot make both sides of the assertion move together.
- * `/status` carries the single explicit exemption because it only reads local
- * configuration and signs locally; it must keep its honest local 500.
+ * `/status` carries the single explicit exemption because it is a diagnostic:
+ * it reports a refused credential as data (200, credentialLive: false) rather
+ * than mapping it to a 502. Its own tests live in github.status.test.js.
  */
 
 jest.mock('../../../middleware/agentRuntimeAuth', () => jest.fn((req, res, next) => {

@@ -56,4 +56,13 @@ describe('platform glyph catalogue contract', () => {
     expect(svg?.querySelector('path')?.getAttribute('d')).toContain('M3.5 10h17');
     expect(svg?.querySelector('circle')).toBeNull();
   });
+
+  it('renders GitLab with its mark instead of the unknown-platform dot', () => {
+    const { container } = render(React.createElement(PlatformGlyph, { type: 'gitlab' }));
+    const svg = container.querySelector('svg');
+    expect(svg).toHaveAttribute('width', '20');
+    expect(svg).toHaveAttribute('fill', 'currentColor');
+    expect(svg?.querySelector('path')?.getAttribute('d')).toContain('m23.6004 9.5927');
+    expect(svg?.querySelector('circle')).toBeNull();
+  });
 });

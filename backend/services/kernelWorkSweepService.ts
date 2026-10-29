@@ -44,6 +44,11 @@ const User = require('../models/User');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { deriveAgentState } = require('./agentStateService');
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { BOARD_ACTOR } = require('./recordService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { recordTaskTransition } = require('./taskRecordService');
+
 const KERNEL_ACTOR = 'kernel-sweep';
 const TASK_CLAIM_LEASE_MS = 30 * 60 * 1000;
 
@@ -281,7 +286,18 @@ class KernelWorkSweepService {
         },
         { new: true },
       ) as TaskRow | null;
-      if (won) rescued.push(won);
+      if (won) {
+        rescued.push(won);
+        recordTaskTransition({
+          podId: t.podId,
+          task: won,
+          from: 'claimed',
+          to: 'pending',
+          at: now,
+          actor: BOARD_ACTOR,
+          reason: 'lease_expired',
+        });
+      }
     }
     return { rescued, deferred };
   }

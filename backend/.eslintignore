@@ -10,3 +10,5 @@ scripts/deploy-discord-commands.js
 scripts/register-discord-commands.js
 services/discordService.js
 services/discordCommandService.js 
+# Byte-identical copies of packages/seats (see vendor/seats/README.md).
+vendor/
