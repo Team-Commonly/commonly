@@ -22,7 +22,9 @@ const User = require('../../models/User');
 const AgentCredential = require('../../models/AgentCredential');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentIdentityService = require('../../services/agentIdentityService');
-const { issueRuntimeTokenForAgent } = require('../../routes/registry/tokens');
+const tokens = require('../../routes/registry/tokens');
+
+const { issueRuntimeTokenForAgent } = tokens;
 const { deletePodCascade } = require('../../services/podDeletionService');
 const { pruneStaleInstallations } = require('../../services/agentInstallationCleanupService');
 const agentRuntimeAuth = require('../../middleware/agentRuntimeAuth');
@@ -107,5 +109,23 @@ describe('the last installation going away revokes the runtime token', () => {
     expect(await credentialStatus()).toEqual(['revoked']);
     await install(pod);
     expect((await probe(token)).status).toBe(401);
+  });
+  test('a prune whose revoke fails keeps the row, and the next run finishes the job', async () => {
+    const pod = await makePod('Retry pod');
+    const installation = await install(pod);
+    await issue(installation);
+    await AgentInstallation.updateOne(
+      { _id: installation._id },
+      { $set: { status: 'stale', staleSince: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
+    );
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.spyOn(tokens, 'revokeRuntimeTokensAfterLastUninstall').mockRejectedValueOnce(new Error('db blip'));
+
+    expect(await pruneStaleInstallations(14)).toEqual({ deleted: 0, failures: 1 });
+    expect(await AgentInstallation.countDocuments({ _id: installation._id })).toBe(1);
+    expect(await credentialStatus()).toEqual(['active']);
+
+    expect(await pruneStaleInstallations(14)).toEqual({ deleted: 1, failures: 0 });
+    expect(await credentialStatus()).toEqual(['revoked']);
   });
 });

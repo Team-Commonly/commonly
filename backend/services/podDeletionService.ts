@@ -25,12 +25,27 @@ export const deletePodCascade = async (podId: string): Promise<void> => {
   // A hierarchy link is not ownership. Keep children and their contents.
   await Pod.updateMany({ parentPod: podId }, { $unset: { parentPod: 1 } });
   await Message.deleteMany({ podId });
-  // Read before the rows go: an agent whose last install was in this pod
-  // must lose its runtime token with it, same as an uninstall.
-  const installedAgents = await AgentInstallation.find({ podId })
-    .select('agentName instanceId').lean();
   if (PGMessage) {
     await PGMessage.deleteByPodId(podId);
+  }
+
+  // An agent whose last install was in this pod loses its runtime token, as
+  // on uninstall. Uninstall the rows first and revoke before deleting them:
+  // if a revoke throws, the rows are still here and a retried delete finds
+  // them again. The helper counts active installs, so an agent installed in
+  // another pod keeps its token.
+  const installedAgents = await AgentInstallation.find({ podId })
+    .select('agentName instanceId').lean();
+  await AgentInstallation.updateMany({ podId }, { $set: { status: 'uninstalled' } });
+  const identities = new Map<string, { agentName: string; instanceId: string }>();
+  for (const row of installedAgents || []) {
+    const instanceId = row.instanceId || 'default';
+    identities.set(`${row.agentName}:${instanceId}`, { agentName: row.agentName, instanceId });
+  }
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { revokeRuntimeTokensAfterLastUninstall } = require('../routes/registry/tokens');
+  for (const { agentName, instanceId } of identities.values()) {
+    await revokeRuntimeTokensAfterLastUninstall(agentName, instanceId);
   }
 
   await Promise.allSettled([
@@ -41,19 +56,6 @@ export const deletePodCascade = async (podId: string): Promise<void> => {
     AgentInstallation.deleteMany({ podId }),
     AgentProfile.deleteMany({ podId }),
   ]);
-
-  const identities = new Map<string, { agentName: string; instanceId: string }>();
-  for (const row of installedAgents || []) {
-    const instanceId = row.instanceId || 'default';
-    identities.set(`${row.agentName}:${instanceId}`, { agentName: row.agentName, instanceId });
-  }
-  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-  const { revokeRuntimeTokensAfterLastUninstall } = require('../routes/registry/tokens');
-  // The helper counts active installs first, so an agent still installed in
-  // another pod keeps its token, and a failed delete above revokes nothing.
-  for (const { agentName, instanceId } of identities.values()) {
-    await revokeRuntimeTokensAfterLastUninstall(agentName, instanceId);
-  }
 
   if (PGPod) {
     await PGPod.delete(podId);

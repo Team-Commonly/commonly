@@ -376,13 +376,12 @@ router.post('/deprovision', hostedRateLimit, auth, async (req: any, res: any) =>
     await hostedRuntime.deprovisionAgent(agentName, instanceId);
     // The stopped runtime was the token's only holder. Revoke it now rather
     // than at the next provision, which may never come.
+    // Without a bot user the installation copies are still revoked.
     const agentUser = await User.findOne({
       username: AgentIdentityService.buildAgentUsername(agentName, instanceId),
       isBot: true,
     });
-    if (agentUser) {
-      await revokeRuntimeTokensForAgent({ agentUser, agentName, instanceId, installation });
-    }
+    await revokeRuntimeTokensForAgent({ agentUser, agentName, instanceId, installation });
     // A row migrated meanwhile keeps the migration's record; the worker is
     // stopped either way, which is what both wanted.
     await writeDurableObjectRecord(installation, { provisionedAt: null, deprovisionedAt: new Date() });
