@@ -2785,9 +2785,9 @@ as a fact about the *verdict you are about to issue*, not about what will reach
 
 ## 42. A dual-auth route degrades to the other identity silently, so a test can name a shape it never exercises (2026-08-22, sprint-review + pod-architect)
 
-> Entries 39, 40, 44 and 45 are unused: #1122, #1132, #1143 and #1204 closed
-> unmerged on 2026-10-23. The entries #1122, #1143 and #1204 carried now sit
-> at 86, 87 and 88.
+> Entries 39, 40, 44, 45 and 46 are unused: #1122, #1132, #1143, #1204 and
+> #1213 closed unmerged on 2026-10-23. The entries #1122, #1143 and #1204
+> carried now sit at 86, 87 and 88.
 
 `/api/v1/tasks` does not take one auth middleware. It dispatches on the token:
 
