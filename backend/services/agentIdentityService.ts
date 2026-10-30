@@ -4,7 +4,7 @@ import Pod from '../models/Pod';
 import { AgentRegistry } from '../models/AgentRegistry';
 import { normalizeAvatarUrl } from './avatarService';
 import { assertAgentRuntimeMayJoinPod, assertInstalledAgentMayJoinPod } from './outsiderGrantAgentJoinPolicy';
-import { FIRST_PARTY_DISPLAY_NAMES } from '../constants/firstPartyDisplayNames';
+import { FIRST_PARTY_DISPLAY_NAMES, isFirstPartyAgentName } from '../constants/firstPartyDisplayNames';
 
 let dbPg: { pool: { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }> } } | null;
 try {
@@ -353,16 +353,18 @@ interface GetOrCreateOptions {
 /**
  * Disambiguate an agent's displayName at WRITE time so it doesn't collide
  * with another bot User row's displayName. Mirrors the offline dedup
- * script's logic (scripts/dedupe-agent-display-names.ts) but runs inline
+ * script's logic (backend/scripts/dedupe-agent-display-names.ts) but runs inline
  * during getOrCreateAgentUser so a fresh install / reprovision can never
  * (re-)introduce a "Pixel" / "Pixel" collision.
  *
  * Canonical rule (matches the one-shot script — keep these aligned):
  *   - Group claimants by displayName.
- *   - Canonical = the default instance if one claims the name, else the
- *     shortest instanceId; alphabetical tiebreak. The official agent keeps
- *     its bare name, so a named instance is the one that gets suffixed.
- *   - Non-canonical entries get suffixed `"<base> (<HumanizedInstanceId>)"`.
+ *   - First-party agents only (isFirstPartyAgentName, keyed on agentName): the
+ *     default instance keeps the bare name when it claims one, so a named
+ *     instance gets suffixed.
+ *   - Every other agent: the shortest instanceId keeps the bare name.
+ *   - Alphabetical tiebreak. Non-canonical entries get suffixed
+ *     `"<base> (<HumanizedInstanceId>)"`.
  *
  * This call returns the disambiguated name the CURRENT caller should use.
  * It does NOT rewrite peers — for the "new shorter instanceId arrives
@@ -400,6 +402,7 @@ export const endsWithParenthetical = (trimmed: string): boolean => {
 async function resolveCollisionFreeDisplayName(
   desiredName: string,
   instanceId: string,
+  agentName: string,
   selfUserId?: unknown,
 ): Promise<string> {
   const trimmed = (desiredName || '').trim();
@@ -425,20 +428,25 @@ async function resolveCollisionFreeDisplayName(
   }
   const peers = await User.find(peerQuery)
     .select('botMetadata')
-    .lean<Array<{ botMetadata?: { instanceId?: string } }>>();
+    .lean<Array<{ botMetadata?: { instanceId?: string; agentName?: string } }>>();
   if (peers.length === 0) return trimmed;
 
   // Include `self` in the canonical-pick comparison so the rule is stable
   // regardless of which row writes first.
   const all = [
-    ...peers.map((p) => p.botMetadata?.instanceId || ''),
-    instanceId,
+    ...peers.map((p) => ({
+      instanceId: p.botMetadata?.instanceId || '',
+      agentName: p.botMetadata?.agentName || '',
+    })),
+    { instanceId, agentName },
   ];
-  const canonical = [...all].sort((a, b) => {
-    // The default instance ranks first, so it keeps the bare name and a named
-    // instance takes the suffix. Length alone let a shorter named peer
-    // ('scout') win and turned the default row into "Scout (Default)" (TASK-551).
-    if ((a === 'default') !== (b === 'default')) return a === 'default' ? -1 : 1;
+  // Default-first applies when the default instance belongs to a first-party
+  // agent. Length alone let a shorter named peer ('scout') win and turned the
+  // default row into "Scout (Default)" (TASK-551). Every other agent keeps the
+  // shortest-instanceId rule it has on main.
+  const defaultFirst = all.some((c) => c.instanceId === 'default' && isFirstPartyAgentName(c.agentName));
+  const canonical = all.map((c) => c.instanceId).sort((a, b) => {
+    if (defaultFirst && ((a === 'default') !== (b === 'default'))) return a === 'default' ? -1 : 1;
     if (a.length !== b.length) return a.length - b.length;
     return a.localeCompare(b);
   })[0];
@@ -480,7 +488,7 @@ class AgentIdentityService {
     if (peers.length) {
       throw new AgentDisplayNameTakenError();
     }
-    const displayName = await resolveCollisionFreeDisplayName(desiredName, instanceId, user._id);
+    const displayName = await resolveCollisionFreeDisplayName(desiredName, instanceId, resolvedType, user._id);
     user.botMetadata = { ...user.botMetadata, displayName };
     await user.save();
     const mirrorSynced = await AgentIdentityService.syncUserToPostgreSQL(user);
@@ -525,7 +533,7 @@ class AgentIdentityService {
       const rawDisplayName = options.displayName || typeConfig?.officialDisplayName
         || FIRST_PARTY_DISPLAY_NAMES.get(resolvedType) || resolvedType;
       const botMetadata = {
-        displayName: await resolveCollisionFreeDisplayName(rawDisplayName, instanceId),
+        displayName: await resolveCollisionFreeDisplayName(rawDisplayName, instanceId, resolvedType),
         // No invented sentence (#1649): a seat without a description shows no line on
         // Your Team, never "<name> agent". The hire flow supplies the persona's sentence.
         description: options.description || typeConfig?.officialDescription || '',
@@ -588,7 +596,9 @@ class AgentIdentityService {
       const upgradeRawDisplayName = options.displayName || typeConfig?.officialDisplayName
         || FIRST_PARTY_DISPLAY_NAMES.get(resolvedType) || agentUser.username;
       agentUser.botMetadata = {
-        displayName: await resolveCollisionFreeDisplayName(upgradeRawDisplayName, instanceId, agentUser._id),
+        displayName: await resolveCollisionFreeDisplayName(
+          upgradeRawDisplayName, instanceId, resolvedType, agentUser._id,
+        ),
         description: options.description || typeConfig?.officialDescription || '',
         icon: typeConfig?.icon || '🤖',
         runtimeId: options.runtimeId || agentUser.botMetadata?.runtimeId || undefined,
@@ -627,7 +637,9 @@ class AgentIdentityService {
             || FIRST_PARTY_DISPLAY_NAMES.get(resolvedType) || resolvedType);
         agentUser.botMetadata = {
           ...existingMeta,
-          displayName: await resolveCollisionFreeDisplayName(refreshRawDisplayName, instanceId, agentUser._id),
+          displayName: await resolveCollisionFreeDisplayName(
+            refreshRawDisplayName, instanceId, resolvedType, agentUser._id,
+          ),
           description: options.description || existingMeta.description || typeConfig?.officialDescription || '',
           icon: existingMeta.icon || typeConfig?.icon || '🤖',
           runtimeId: options.runtimeId || existingMeta.runtimeId || undefined,
