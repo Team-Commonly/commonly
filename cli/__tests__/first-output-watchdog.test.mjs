@@ -38,6 +38,7 @@ const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
 const claude = (await import('../src/lib/adapters/claude.js')).default;
 const {
   consoleLocked, spawnStalledError, watchFirstOutput, firstOutputWindowMs, DEFAULT_FIRST_OUTPUT_WINDOW_MS, physicalPath,
+  killStallSurvivors,
 } = await import('../src/lib/first-output-watchdog.js');
 const { classifySpawnFailure, spawnRetryPolicy, SPAWN_FAILURE_CLASS } = await import('../src/lib/spawn-retry.js');
 
@@ -198,6 +199,23 @@ describe('watchFirstOutput', () => {
       await fire();
       expect(onStall).toHaveBeenCalledTimes(expected);
     }
+  });
+
+  test('a descendant that outlived the stalled spawn is SIGKILLed, even reparented; a reused pid is not', () => {
+    const snapshot = [
+      { pid: 501, ppid: 400, started: 'Thu Oct 30 06:59:59 2026' }, // survived, now under launchd
+      { pid: 502, ppid: 400, started: 'Thu Oct 30 06:59:59 2026' }, // exited
+      { pid: 503, ppid: 501, started: 'Thu Oct 30 07:00:01 2026' }, // pid reused since
+    ];
+    const now = {
+      501: { pid: 501, ppid: 1, started: 'Thu Oct 30 06:59:59 2026' },
+      503: { pid: 503, ppid: 1, started: 'Thu Oct 30 07:05:00 2026' },
+    };
+    const kill = jest.fn();
+    const killed = killStallSurvivors(snapshot, { read: (pid) => now[pid] || null, kill });
+    expect(killed).toEqual([501]);
+    expect(kill).toHaveBeenCalledWith(501, 'SIGKILL');
+    expect(kill).toHaveBeenCalledTimes(1);
   });
 
   test('the transcript is looked for under the physical cwd', () => {

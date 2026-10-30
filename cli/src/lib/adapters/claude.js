@@ -1,9 +1,11 @@
 import { claudeRuntimeInventory } from '../native-runtime-inventory.js';
 import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
 import {
-  firstOutputWindowMs, physicalPath, spawnStalledError, STALL_KILL_GRACE_MS, watchFirstOutput,
+  firstOutputWindowMs, killStallSurvivors, physicalPath, spawnStalledError, STALL_KILL_GRACE_MS, watchFirstOutput,
 } from '../first-output-watchdog.js';
-import { killProcessTree, spawnInOwnGroup, wantsOwnProcessGroup } from '@commonlyai/seats/process-group';
+import {
+  descendantsOf, killProcessTree, readProcessTable, spawnInOwnGroup, wantsOwnProcessGroup,
+} from '@commonlyai/seats/process-group';
 /**
  * claude adapter — wraps the local `claude` CLI as a Commonly agent.
  *
@@ -490,6 +492,7 @@ const publicSkillPromptArgs = async (skillSources) => {
 const runClaude = ({
   cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
   transcriptPath = null, firstOutputMs = firstOutputWindowMs(), lockProbe, stallKillGraceMs = STALL_KILL_GRACE_MS,
+  processTable = readProcessTable, survivorIo,
 }) => new Promise((resolve, reject) => {
   const proc = spawnInOwnGroup(spawnImpl, cmd, args, {
     cwd,
@@ -508,6 +511,7 @@ const runClaude = ({
   // A turn that never starts is killed long before the run timeout.
   let stalled = null;
   let stallKill = null;
+  let stallSnapshot = [];
   const watchdog = watchFirstOutput({
     proc,
     windowMs: firstOutputMs,
@@ -515,7 +519,10 @@ const runClaude = ({
     lockProbe,
     onStall: (reason) => {
       stalled = spawnStalledError({ label: 'claude', windowMs: firstOutputMs, reason });
-      proc.kill('SIGTERM');
+      // Snapshot the descendants first: once the spawn exits they are
+      // reparented and can no longer be found from it.
+      if (Number.isInteger(proc.pid)) stallSnapshot = descendantsOf(processTable(), proc.pid);
+      killProcessTree(proc, 'SIGTERM');
       // A process parked in a system call may not act on SIGTERM. SIGKILL the
       // child, its group when it leads one, and its descendants.
       stallKill = setTimeout(() => killProcessTree(proc, 'SIGKILL'), stallKillGraceMs);
@@ -535,7 +542,11 @@ const runClaude = ({
     clearTimeout(timer);
     clearTimeout(stallKill);
     watchdog.stop();
-    if (stalled) return reject(stalled);
+    if (stalled) {
+      // The spawn exited, but a descendant may have outlived SIGTERM.
+      killStallSurvivors(stallSnapshot, survivorIo);
+      return reject(stalled);
+    }
     if (timedOut) return reject(new Error(`claude timed out after ${timeoutMs}ms`));
     if (code !== 0) {
       // Report stdout too, not just stderr. In `-p` mode claude writes terminal

@@ -18,6 +18,7 @@
  * spawn is killed only if the console is also locked.
  */
 import { realpathSync, statSync } from 'fs';
+import { readProcess } from '@commonlyai/seats/process-group';
 
 export const DEFAULT_FIRST_OUTPUT_WINDOW_MS = 180_000;
 
@@ -72,6 +73,22 @@ export const physicalPath = (dir) => {
 
 // How long a stalled spawn gets to exit after SIGTERM before SIGKILL.
 export const STALL_KILL_GRACE_MS = 10_000;
+
+/**
+ * SIGKILL each snapshotted descendant of a stalled spawn that is still alive
+ * once the spawn itself has exited. Its parent may have exited, so it may now
+ * belong to launchd: only the pid and start time are matched, which still
+ * rules out a reused pid. Returns the pids signalled.
+ */
+export const killStallSurvivors = (snapshot, { read = readProcess, kill = process.kill.bind(process) } = {}) => {
+  const killed = [];
+  for (const row of snapshot || []) {
+    const now = read(row.pid);
+    if (!now || now.started !== row.started) continue;
+    try { kill(row.pid, 'SIGKILL'); killed.push(row.pid); } catch { /* gone */ }
+  }
+  return killed;
+};
 
 const sizeOf = (file) => {
   if (!file) return -1;
