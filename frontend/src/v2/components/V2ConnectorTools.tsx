@@ -14,7 +14,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { useRelativeNow } from '../hooks/useRelativeNow';
-import { localizeRelativeTime, localizeWindow } from '../utils/localizeRelativeTime';
+import { localizeRelativeTime, localizeWindow, relativeParts } from '../utils/localizeRelativeTime';
 import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
@@ -139,16 +139,17 @@ const MODE_RANK: Record<GrantWriteMode, number> = { read: 0, 'write-with-confirm
 // a JSX expression as copy — and these are ids, not words (TASK-164).
 const WRITE_MODES: GrantWriteMode[] = ['read', 'write-with-confirm', 'write'];
 
-/** The age as a unit-suffixed number ("23d", "5m", "just now"), from the timestamp and keys. */
+/**
+ * The age as a unit-suffixed number ("23d", "5m", "just now"). Rounds through
+ * relativeParts, the same rule as the "revoked … ago" line, so one timestamp
+ * pair never reads "1d" in one place and "2d" in the other (TASK-649).
+ */
 export const shortAge = (date: string | null | undefined, now: number, t: (key: string, options?: Record<string, unknown>) => string): string => {
-  const timestamp = date ? new Date(date).getTime() : NaN;
-  if (!Number.isFinite(timestamp)) return t('time.age.justNow', { defaultValue: 'just now' });
-  const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000));
-  if (minutes < 1) return t('time.age.justNow', { defaultValue: 'just now' });
-  if (minutes < 60) return t('time.age.minutes', { defaultValue: '{{n}}m', n: minutes });
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return t('time.age.hours', { defaultValue: '{{n}}h', n: hours });
-  return t('time.age.days', { defaultValue: '{{n}}d', n: Math.floor(hours / 24) });
+  const parts = relativeParts(date, { includeFuture: false, now });
+  if (parts.kind !== 'rel') return t('time.age.justNow', { defaultValue: 'just now' });
+  if (parts.unit === 'minute') return t('time.age.minutes', { defaultValue: '{{n}}m', n: parts.count });
+  if (parts.unit === 'hour') return t('time.age.hours', { defaultValue: '{{n}}h', n: parts.count });
+  return t('time.age.days', { defaultValue: '{{n}}d', n: parts.count });
 };
 
 // Both surfaces used to carry their own copy of this grammar; the locale family

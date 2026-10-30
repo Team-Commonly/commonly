@@ -242,6 +242,20 @@ test('rows carry the states table: a live grant pulses when used in the last 10 
 
 // TASK-164: every {{rel}} in these lines used to be filled with an English
 // relative time, so a zh grant read "Granted by sam 1小时前." worst of both.
+// TASK-649: one timestamp pair, two ages. A grant made 16 minutes before its
+// revoke and read 41h later must say the same day count for both lines, not
+// "granted 1d" beside "revoked 2d ago".
+test('TASK-649: the grant age and the revoke age round the same way on one row', async () => {
+  const createdAt = iso(-(41 * 3600_000 + 24 * 60_000));
+  const revokedAt = iso(-(41 * 3600_000 + 8 * 60_000));
+  const grant = { ...grantRevoked, createdAt, revokedAt, revokedBy: 'u1' };
+  mockTwoEntries({ grants: { p1: [], p2: [grant] } });
+  renderTools();
+  const gone = await screen.findByRole('button', { name: 'View GitHub in Ops' });
+  expect(within(gone).getByText(/granted 2d$/)).toBeInTheDocument();
+  expect(within(gone).getByText('revoked by sam 2d ago')).toBeInTheDocument();
+});
+
 test('TASK-164: the grant, budget and trail times read in zh-CN, not English', async () => {
   await i18nReady;
   await act(async () => { await i18n.changeLanguage('zh-CN'); });
