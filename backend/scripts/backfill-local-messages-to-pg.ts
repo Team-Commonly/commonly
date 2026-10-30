@@ -23,8 +23,18 @@
  * Dry run by default; `--apply` writes. Replies keep their text but not their
  * reply edge, same as the reconciler.
  *
+ * `--since <ISO date>` (or `--since=<ISO date>`) copies only Mongo rows created
+ * at or after that time; any other argument throws, so a typo cannot widen it.
+ * It is for a deployment that already moved its history into PG and has a
+ * bounded tail of Mongo-only rows left (TASK-503, hosted: socket sends during
+ * PG boot were written to Mongo without the `pgFallback` flag, so the
+ * reconciler never moves them). The overlap check still runs on that tail; a
+ * live deployment has unmarked PG rows in any window, so it needs `--force`
+ * after the dry run shows the expected count.
+ *
  *   npm run backfill:local-messages            # report only
  *   npm run backfill:local-messages -- --apply
+ *   npm run backfill:local-messages -- --since 2026-09-30T00:00:00Z --apply --force
  *
  * Exit codes: 0 done, or a dry run that would proceed; 1 some rows failed;
  * 2 refused (a dry run that finds the overlap refuses too, so it also exits 2).
@@ -99,12 +109,16 @@ interface PgPool {
   end: () => Promise<void>;
 }
 
-export const productionDeps = (pool: PgPool): LocalBackfillDeps => {
+export interface BackfillScope { since?: Date }
+
+export const productionDeps = (pool: PgPool, { since }: BackfillScope = {}): LocalBackfillDeps => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const Message = require('../models/Message');
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const { syncPodFromMongo } = require('../services/pgPodSyncService');
-  const unreconciled = { reconciledAt: { $exists: false } };
+  const unreconciled = since
+    ? { reconciledAt: { $exists: false }, createdAt: { $gte: since } }
+    : { reconciledAt: { $exists: false } };
   return {
     countPending: () => Message.countDocuments(unreconciled),
     newestPendingAt: async () => {
@@ -144,7 +158,7 @@ export const exitCodeFor = (report: Pick<LocalBackfillReport, 'refused' | 'faile
 export interface OpenedStores { deps: LocalBackfillDeps; close: () => Promise<void> }
 
 /** Connects both stores for a real run. main() takes it as a parameter so a test can swap it. */
-export const openStores = async (): Promise<OpenedStores> => {
+export const openStores = async (scope: BackfillScope = {}): Promise<OpenedStores> => {
   if (!process.env.MONGO_URI) throw new Error('MONGO_URI is required');
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const { pool } = require('../config/db-pg') as { pool: PgPool | null };
@@ -157,20 +171,57 @@ export const openStores = async (): Promise<OpenedStores> => {
     await close();
     throw err;
   }
-  return { deps: productionDeps(pool), close };
+  return { deps: productionDeps(pool, scope), close };
+};
+
+export interface BackfillArgs { apply: boolean; force: boolean; since?: Date }
+
+const toSince = (raw: string | undefined): Date => {
+  const since = raw ? new Date(raw) : null;
+  if (!since || Number.isNaN(since.getTime())) {
+    throw new Error(`--since needs an ISO date, got ${raw === undefined ? 'nothing' : JSON.stringify(raw)}`);
+  }
+  return since;
+};
+
+/**
+ * Reads the flags after `node script`. `--since` takes its date as the next
+ * argument or after `=`. Any other argument throws: a misspelt or misread
+ * bound would otherwise run unbounded, and with `--apply --force` that copies
+ * the whole pre-PG history again.
+ */
+export const parseArgs = (argv: string[]): BackfillArgs => {
+  const args: BackfillArgs = { apply: false, force: false };
+  let sinceSeen = false;
+  const setSince = (raw: string | undefined) => {
+    if (sinceSeen) throw new Error('--since given more than once');
+    sinceSeen = true;
+    args.since = toSince(raw);
+  };
+  const rest = argv.slice(2);
+  for (let i = 0; i < rest.length; i += 1) {
+    const arg = rest[i];
+    if (arg === '--apply') args.apply = true;
+    else if (arg === '--force') args.force = true;
+    else if (arg === '--since') {
+      setSince(rest[i + 1]);
+      i += 1;
+    } else if (arg.startsWith('--since=')) setSince(arg.slice('--since='.length));
+    else throw new Error(`unknown argument ${JSON.stringify(arg)}; expected --apply, --force, --since <ISO date>`);
+  }
+  return args;
 };
 
 /** Runs the backfill, sets process.exitCode (see exitCodeFor) and returns it. */
 export async function main(
   argv: string[] = process.argv,
-  open: () => Promise<OpenedStores> = openStores,
+  open: (scope: BackfillScope) => Promise<OpenedStores> = openStores,
 ): Promise<number> {
-  const apply = argv.includes('--apply');
-  const force = argv.includes('--force');
-  const { deps, close } = await open();
+  const { apply, force, since } = parseArgs(argv);
+  const { deps, close } = await open({ since });
   try {
     const report = await backfillLocalMessages(deps, { apply, force });
-    console.log(`[backfill-local-messages] ${JSON.stringify(report)}`);
+    console.log(`[backfill-local-messages] ${JSON.stringify({ ...report, since: since?.toISOString() ?? null })}`);
     if (report.refused) {
       console.log(`REFUSED — PostgreSQL already holds ${report.overlap} messages with no Mongo id`
         + ' that predate the newest Mongo message. They may be the same history; copying would duplicate it.'

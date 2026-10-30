@@ -1,6 +1,6 @@
 jest.mock('../../../services/pgMessageReconcileService', () => ({ copyOne: jest.fn(), ensureLegacyIdIndex: jest.fn() }));
 
-const { backfillLocalMessages, main } = require('../../../scripts/backfill-local-messages-to-pg');
+const { backfillLocalMessages, main, parseArgs } = require('../../../scripts/backfill-local-messages-to-pg');
 
 const doc = (id) => ({ _id: { toString: () => id }, podId: 'p', userId: 'u', content: id, createdAt: new Date('2026-01-01') });
 
@@ -88,5 +88,51 @@ describe('main() exit code', () => {
     expect((await run(fakeDeps())).exitCode).toBe(0);
     expect((await run(fakeDeps(), ['node', 'script'])).exitCode).toBe(0);
     expect((await run(fakeDeps({ overlap: 4 }), ['node', 'script'])).exitCode).toBe(2);
+  });
+});
+
+describe('--since', () => {
+  it('passes the parsed time to the stores, and no flag passes none', async () => {
+    const open = jest.fn(async () => ({ deps: fakeDeps(), close: async () => {} }));
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const before = process.exitCode;
+    try {
+      await main(['node', 'script', '--since', '2026-09-30T00:00:00Z'], open);
+      await main(['node', 'script'], open);
+    } finally {
+      process.exitCode = before;
+      log.mockRestore();
+    }
+    expect(open.mock.calls[0][0].since.toISOString()).toBe('2026-09-30T00:00:00.000Z');
+    expect(open.mock.calls[1][0].since).toBeUndefined();
+  });
+
+  it('an unparseable or missing date throws before any store opens', async () => {
+    const open = jest.fn();
+    await expect(main(['node', 'script', '--since', 'last-month'], open)).rejects.toThrow('--since needs an ISO date');
+    await expect(main(['node', 'script', '--since'], open)).rejects.toThrow('got nothing');
+    expect(open).not.toHaveBeenCalled();
+    expect(parseArgs(['node', 'script']).since).toBeUndefined();
+  });
+
+  it('reads the = form the same as the space form', () => {
+    const spaced = parseArgs(['node', 'script', '--since', '2026-09-30T00:00:00Z', '--apply', '--force']);
+    const joined = parseArgs(['node', 'script', '--since=2026-09-30T00:00:00Z', '--apply', '--force']);
+    expect(joined).toEqual(spaced);
+    expect(joined).toMatchObject({ apply: true, force: true });
+    expect(joined.since.toISOString()).toBe('2026-09-30T00:00:00.000Z');
+    expect(() => parseArgs(['node', 'script', '--since='])).toThrow('--since needs an ISO date');
+  });
+
+  it('a misspelt or unknown flag throws before any store opens, so the run cannot go unbounded', async () => {
+    const open = jest.fn();
+    await Promise.all([
+      ['node', 'script', '--snce', '2026-09-30T00:00:00Z', '--apply', '--force'],
+      ['node', 'script', '--since-date=2026-09-30T00:00:00Z', '--apply', '--force'],
+      ['node', 'script', '--apply', '--force', '2026-09-30T00:00:00Z'],
+    ].map((argv) => expect(main(argv, open)).rejects.toThrow('unknown argument')));
+    await expect(main(['node', 'script', '--since', '2026-09-30', '--since=2026-10-01'], open))
+      .rejects.toThrow('more than once');
+    expect(open).not.toHaveBeenCalled();
   });
 });
