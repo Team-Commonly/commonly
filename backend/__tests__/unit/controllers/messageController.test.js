@@ -308,7 +308,7 @@ describe('messageController', () => {
       expect(res.json).toHaveBeenCalledWith({
         ...mockMessage,
         agentDelivery: {
-          enqueued: 0, implicit: [], agentsInPod: 2, woken: 0,
+          enqueued: 0, implicit: [], agentsInPod: 2, woken: 0, wokenAgents: [],
         },
       });
       expect(AgentMentionService.enqueueMentions).toHaveBeenCalled();
@@ -341,7 +341,7 @@ describe('messageController', () => {
       expect(res.json).toHaveBeenCalledWith({
         ...mockMessage,
         agentDelivery: {
-          enqueued: 1, implicit: [], agentsInPod: 2, woken: 0,
+          enqueued: 1, implicit: [], agentsInPod: 2, woken: 0, wokenAgents: [],
         },
       });
     });
@@ -543,7 +543,7 @@ describe('messageController', () => {
       expect(res.json).toHaveBeenCalledWith({
         ...mockMessage,
         agentDelivery: {
-          enqueued: 0, implicit: [], agentsInPod: 1, woken: 1,
+          enqueued: 0, implicit: [], agentsInPod: 1, woken: 1, wokenAgents: ['guide'],
         },
       });
     });

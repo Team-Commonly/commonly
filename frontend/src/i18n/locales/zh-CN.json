@@ -571,6 +571,7 @@
     "cancelReply": "取消回复",
     "replyingTo": "回复 <author>{{author}}</author>：",
     "deliveryHint": "尚未通知任何智能体。@提及一个智能体即可让它回复，例如 <handle>@{{handle}}</handle>。",
+    "deliveryHintOthers": "{{woken}} 会回复这条消息。这里的其他智能体只在你 @提及 时回复，试试 <handle>@{{handle}}</handle>。",
     "mentionNotInPod": "{{handle}} 不在这个 Pod 中。请邀请对方加入，或到对方已加入的 Pod 中提问。",
     "mentionNotInPodWithPods": "{{handle}} 不在这个 Pod 中。可前往这些 Pod 提问：",
     "noAgentsInPod": {
@@ -584,6 +585,10 @@
       "unknown": "{{agentName}} 的可用状态未知，回复可能需要更长时间。",
       "waiting": "正在等待 {{agentName}} 回复…",
       "timedOut": "{{agentName}} 还没有回复。你的消息仍在此对话中。"
+    },
+    "podAgentLiveness": {
+      "notConnected": "{{agentName}} 还没有连接，运行起来之前不会在这里回复。",
+      "offlineSince": "{{agentName}} 上次连接是{{age}}，恢复连接后会回复。"
     },
     "typing": {
       "one": "{{name}} 正在思考…",
