@@ -80,6 +80,7 @@ import {
   readPodFocus,
 } from '../lib/pod-focus.js';
 import { claimReleaseFor, ackResultFor, EMPTY_OUTPUT } from '../lib/claim-outcome.js';
+import { createClaimedWorkGate } from '../lib/claimed-work-gate.js';
 import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
@@ -1536,6 +1537,7 @@ export const performRun = ({
     warn: (message) => log(`cascade config: ${message}`),
   });
   const cascadeGovernor = createCascadeGovernor(cascadeSettings);
+  const claimedWorkGate = createClaimedWorkGate({ client });
   // Unconditional, because the only other cascade line on this path is the
   // warn callback above — which fires only when a value is BAD. Without this,
   // a seat running COMMONLY_CASCADE_CAP=8 logs exactly what a seat on the
@@ -1691,6 +1693,13 @@ export const performRun = ({
     // Recording a human trigger sets the streak to 0, so this call and the
     // completion-time one are idempotent with each other.
     if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
+    // Defer-while-claimed (TASK-640), before the cascade check so a deferred
+    // broadcast spends none of the addressed grace.
+    if (await claimedWorkGate.shouldDefer(eventPodId, [{ event, trigger }])) {
+      log(`[${event.type}] holding a claimed row in pod ${eventPodId} — broadcast`
+        + (event?.payload?.messageId ? ` ${event.payload.messageId}` : '') + ' acked without a spawn');
+      return { outcome: 'no_action', reason: 'claimed-work', details: { messageId: event?.payload?.messageId || null } };
+    }
     const admission = cascadeGovernor.admit(eventPodId, trigger, event.type, event.payload);
     if (!admission.allowed) {
       // Name the MESSAGE, not just the pod. Without this the refusal is silent at
@@ -2743,6 +2752,17 @@ export const performRun = ({
     const trigger = triggers.includes('human') ? 'human'
       : (triggers.includes('agent') ? 'agent' : 'unknown');
     if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
+    if (await claimedWorkGate.shouldDefer(eventPodId, wakingEntries.map((entry, index) => ({
+      event: entry.event, trigger: triggers[index],
+    })))) {
+      log(`[inbox.batch] holding a claimed row in pod ${eventPodId} — ${wakingEntries.length} broadcast`
+        + `${wakingEntries.length === 1 ? '' : 's'} acked without a spawn`);
+      // Digests are left as the cascade refusal leaves them: unread.
+      for (const entry of wakingEntries) {
+        entry.result = { outcome: 'no_action', reason: 'claimed-work', details: { messageId: entry.event.payload?.messageId || null } };
+      }
+      return { entries };
+    }
     const admissionEvent = wakingEntries.find((entry) => (
       ADDRESSED_EVENT_TYPES.has(entry.event.type) || entry.event.payload?.addressed === true
     ))
