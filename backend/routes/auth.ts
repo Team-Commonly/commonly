@@ -6,6 +6,7 @@ const { cloudflareIpRateLimitKeyGenerator, loginEmailRateLimitKeyGenerator } = r
 const { platformIpRateLimit } = require('../middleware/platformRateLimit');
 const { refuseDollarKeys } = require('../middleware/refuseDollarKeys');
 const { loginEmailOf } = require('../utils/loginEmail');
+const { publicAppUrl } = require('../utils/publicAppUrl');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
@@ -259,7 +260,7 @@ router.post('/login', loginLimiter, loginAccountLimiter, login);
 router.post('/device/start', deviceStartLimiter, async (req: any, res: Res) => {
   try {
     const { deviceCode, userCode } = await createDeviceAuthorization(req.body || {});
-    const origin = String(process.env.FRONTEND_URL || 'https://commonly.me').replace(/\/$/, '');
+    const origin = publicAppUrl();
     return res.status(201).json({
       deviceCode,
       userCode,

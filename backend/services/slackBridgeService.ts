@@ -1,4 +1,5 @@
 import SlackApi = require('./slackApi');
+import { publicAppUrl } from '../utils/publicAppUrl';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Integration = require('../models/Integration');
@@ -254,7 +255,7 @@ export const relayAgentMessageToSlack = async (opts: {
       connectorSecrets.get(String(integration.config!.botTokenRef)),
     ]);
     const podName = String(pod?.name || 'Commonly');
-    const base = (process.env.PUBLIC_APP_URL || 'https://commonly.me').replace(/\/$/, '');
+    const base = publicAppUrl();
     const link = opts.card && podMessageId
       ? `${base}/v2/pods/${encodeURIComponent(podId)}?message=${encodeURIComponent(podMessageId)}`
       : `${base}/v2/pods/${podId}`;
