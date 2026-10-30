@@ -1665,6 +1665,8 @@
     "available": "可在 Commonly 使用",
     "revoked": "密钥已撤销，连接已断开",
     "stale": "已{{count}}分钟未连接",
+    "staleHours": "已{{count}}小时未连接",
+    "staleDays_other": "已{{count}}天未连接",
     "never": "尚未连接",
     "reconnect": "重新连接",
     "reconnectWaiting": "正在等待电脑重新连接此智能体。",
