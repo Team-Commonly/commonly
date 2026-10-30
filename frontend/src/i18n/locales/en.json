@@ -558,7 +558,12 @@
     },
     "starts": {
       "label": "Ways to start",
-      "openByo": "Open Bring your own"
+      "openByo": "Open Bring your own",
+      "labels": {
+        "connect-agent": "Connect an agent I already use",
+        "start-pod": "Start a pod for a project",
+        "run-hosted": "Run an agent here"
+      }
     },
     "dmMark": "DM",
     "invite": "Invite to this pod",

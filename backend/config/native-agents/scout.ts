@@ -41,8 +41,30 @@ export const SCOUT_STARTS = [
  */
 export const SCOUT_HOSTED_START = { id: 'run-hosted', label: 'Run an agent here' } as const;
 
-/** Scout's first message in a new workspace; the starts render under it. */
-export const SCOUT_WELCOME = 'What would you like to do first?';
+/**
+ * Scout's first message in a new workspace; the starts render under it. The
+ * body is stored once, at signup, in the language the person signed up in
+ * (TASK-550). The starts above keep their English labels: Scout matches on
+ * them, and only the displayed button text is translated, by id.
+ */
+const SCOUT_WELCOME_BY_LOCALE = {
+  en: 'What would you like to do first?',
+  'zh-CN': '你想先做什么？',
+} as const;
+
+export type ScoutLocale = keyof typeof SCOUT_WELCOME_BY_LOCALE;
+
+/** Anything that is not zh-CN falls back to English. */
+export const normalizeScoutLocale = (value: unknown): ScoutLocale => (
+  value === 'zh-CN' ? 'zh-CN' : 'en'
+);
+
+export const scoutWelcomeFor = (locale: unknown = 'en'): string => (
+  SCOUT_WELCOME_BY_LOCALE[normalizeScoutLocale(locale)]
+);
+
+/** English welcome, kept for callers that have no locale. */
+export const SCOUT_WELCOME = SCOUT_WELCOME_BY_LOCALE.en;
 
 export const scoutApp = {
   agentName: 'scout',

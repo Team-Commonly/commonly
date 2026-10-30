@@ -312,7 +312,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                           aria-busy={starting || undefined}
                           onClick={() => onStart(start, String(message.id))}
                         >
-                          {starting ? t('agentByo.actions.starting') : start.label}
+                          {starting ? t('agentByo.actions.starting') : t(`podChat.starts.labels.${start.id}`, { defaultValue: start.label })}
                         </button>
                         {hostedHere?.status === 'failed' && (
                           <p className="v2-chat__start-note v2-chat__start-note--error" role="alert">{hostedHere.error}</p>
