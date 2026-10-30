@@ -316,6 +316,7 @@ const V2AgentBYO: React.FC = () => {
     }
   }, [defaultAgentName, nameTouched]);
 
+  const lastSuggestedName = useRef<string | null>(null);
   useEffect(() => {
     if (!choicesKnown) return undefined;
     if (prefill.reconnect && prefill.name) {
@@ -326,16 +327,30 @@ const V2AgentBYO: React.FC = () => {
     const base = sanitizeAgentName(prefill.name || defaultAgentName);
     setNamesReady(false);
     setNameLookupError(false);
-    api.get<{ name?: string }>(`/api/registry/agents/next-free-name?base=${encodeURIComponent(base)}`)
+    // The pod lets the server hand back this person's own install there whose
+    // key never arrived, instead of "<name>-2". BYO only: that install is a
+    // webhook, so another mode handed its name would hit "already installed".
+    // Not with a persona: its display name derives a non-default instance,
+    // and the server only hands back installs on the default one.
+    const inPod = mode === 'byo' && podId && !personaCard ? `&podId=${encodeURIComponent(podId)}` : '';
+    api.get<{ name?: string }>(`/api/registry/agents/next-free-name?base=${encodeURIComponent(base)}${inPod}`)
       .then((result) => {
         if (cancelled) return;
         if (!result?.name) throw new Error('Empty name suggestion');
-        setName((current) => (!nameTouched || current === prefill.name ? result.name! : current));
+        // A name the page suggested earlier is still the page's to replace,
+        // e.g. "<name>-2" before the person picked the pod holding <name>.
+        // Read before the update: React runs the updater later.
+        const previous = lastSuggestedName.current;
+        lastSuggestedName.current = result.name;
+        setName((current) => (
+          !nameTouched || current === prefill.name || current === previous
+            ? result.name! : current));
         setNamesReady(true);
       })
       .catch(() => { if (!cancelled) setNameLookupError(true); });
     return () => { cancelled = true; };
-  }, [api, choicesKnown, defaultAgentName, nameLookupRetry, nameTouched, prefill.name, prefill.reconnect]);
+  }, [api, choicesKnown, defaultAgentName, mode, nameLookupRetry, nameTouched, personaCard, podId, prefill.name,
+    prefill.reconnect]);
   const [placed, setPlaced] = useState<{ agentName: string; machineId: string; machineName: string } | null>(null);
   const [placedState, setPlacedState] = useState<'waiting' | 'running' | 'slow'>('waiting');
   const [reconnectRequest, setReconnectRequest] = useState<{
@@ -708,6 +723,11 @@ const V2AgentBYO: React.FC = () => {
     }
     setSubmitting(true);
     try {
+      // "Already installed" is the lost-token recovery path. The issue below
+      // never revokes a running key: an agent that holds one answers
+      // existing:true and the page asks for an explicit replacement. One that
+      // never got its key (an earlier click's issue failed or was abandoned)
+      // gets it now, instead of a second install under "<name>-2".
       try {
         await api.post('/api/registry/install', {
           agentName: cleanName,
@@ -719,13 +739,9 @@ const V2AgentBYO: React.FC = () => {
           ...(personaCard ? { description: personaCard.card } : {}),
         });
       } catch (installErr) {
-        // A repeat install is the lost-token recovery path. Stop before
-        // revoking the running key and ask for an explicit replacement.
         const msg = (installErr as { response?: { data?: { error?: string } } })
           ?.response?.data?.error || '';
         if (!/already installed/i.test(msg)) throw installErr;
-        setPendingReplacement({ agentName: cleanName, podId });
-        return;
       }
       // An agent can have a token from another pod. A nonrotating issue
       // returns existing:true in that case, so no key is revoked here.
@@ -1255,7 +1271,7 @@ const V2AgentBYO: React.FC = () => {
             <input
               type="text"
               value={name}
-              onChange={(e) => { setErrorField(null); setNameTouched(true); setPendingReplacement(null); setName(e.target.value); }}
+              onChange={(e) => { setErrorField(null); setNameTouched(true); setPendingReplacement(null); lastSuggestedName.current = null; setName(e.target.value); }}
               placeholder={DEFAULT_AGENT_NAME}
               className="v2-byo__input"
             />

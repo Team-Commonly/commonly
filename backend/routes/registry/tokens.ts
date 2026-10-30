@@ -289,13 +289,40 @@ const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installatio
   await refuseDeletingOwner();
   if (await runsInProcess(agentUser, installation)) throw new InProcessAgentTokenRefused();
   // Check if agent already has a runtime token (reuse existing)
-  const existingToken = agentUser.agentRuntimeTokens?.[0] || installation?.runtimeTokens?.[0];
+  // A legacy key can also sit on another installation of the same identity.
+  // Minting beside it would leave two live keys, so it counts as existing and
+  // the caller must ask for an explicit (forced) replacement, which revokes
+  // every copy first.
+  const siblingLegacyToken = async () => {
+    if (!installation?.agentName) return null;
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { AgentInstallation } = require('../../models/AgentRegistry');
+    const siblings = await AgentInstallation.find({
+      agentName: installation.agentName,
+      instanceId: installation.instanceId || 'default',
+      'runtimeTokens.0': { $exists: true },
+    }).collation({ locale: 'en', strength: 2 }).select('runtimeTokens installedBy').lean();
+    const sibling = (siblings || []).find((entry: any) => entry.runtimeTokens?.length);
+    return sibling ? { token: sibling.runtimeTokens[0], installedBy: sibling.installedBy } : null;
+  };
+  let existingToken = agentUser.agentRuntimeTokens?.[0] || installation?.runtimeTokens?.[0];
+  // A sibling's key still blocks a second mint, whoever installed it. But only
+  // a sibling this issuer installed may record the issuer as the key's owner:
+  // another person's key backfilled under the caller would be revoked when the
+  // caller's account is deleted.
+  let backfillOwner = Boolean(existingToken);
+  if (!existingToken) {
+    const sibling = await siblingLegacyToken();
+    existingToken = sibling?.token || null;
+    backfillOwner = Boolean(sibling && issuer?.ownerUserId
+      && String(sibling.installedBy) === String(issuer.ownerUserId));
+  }
   if (existingToken) {
     // Backfill a credential row for the pre-substrate token so the existing
     // fleet becomes listable and cascade-revocable (#1312: without
     // this the collection stays near-empty while coverage looks fine).
     // Provenance is unknown, so no parent lineage is claimed.
-    if (issuer?.ownerUserId) {
+    if (issuer?.ownerUserId && backfillOwner) {
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const AgentCredential = require('../../models/AgentCredential');
       await AgentCredential.updateOne(
