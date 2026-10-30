@@ -1,6 +1,8 @@
 import { describe, expect, test } from '@jest/globals';
 import { EventEmitter } from 'events';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import {
+  mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -46,6 +48,37 @@ describe('claude adapter reports the turn context from the child HOME', () => {
       });
       expect(res.newSessionId).toBe('sid-ctx');
       expect(res.contextTokens).toBe(2104);
+    } finally {
+      rmSync(childHome, { recursive: true, force: true });
+    }
+  });
+
+  test('a symlinked cwd is read under its physical path, where claude writes it', async () => {
+    const childHome = mkdtempSync(join(tmpdir(), 'claude-home-'));
+    const real = join(childHome, 'real-work');
+    const link = join(childHome, 'linked-work');
+    mkdirSync(real);
+    symlinkSync(real, link);
+    try {
+      const impl = (_cmd, args) => {
+        const sid = args[args.indexOf('--session-id') + 1];
+        // claude names the folder after process.cwd(), the resolved path.
+        const dir = join(childHome, '.claude', 'projects', realpathSync(real).replace(/[^a-zA-Z0-9]/g, '-'));
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, `${sid}.jsonl`), `${JSON.stringify({
+          type: 'assistant',
+          message: { usage: { input_tokens: 7, cache_creation_input_tokens: 0, cache_read_input_tokens: 500 } },
+        })}\n`);
+        return fakeChild();
+      };
+      const res = await claude.spawn('hi', { environment: { model: 'test-model' },
+        sessionId: 'sid-link',
+        cwd: link,
+        env: { HOME: childHome },
+        memoryLongTerm: '',
+        _spawnImpl: impl,
+      });
+      expect(res.contextTokens).toBe(507);
     } finally {
       rmSync(childHome, { recursive: true, force: true });
     }

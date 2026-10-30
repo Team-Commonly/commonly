@@ -182,6 +182,39 @@ describe('the claude adapter under the first-output watchdog', () => {
     }
   });
 
+  test('at the grace deadline the pipes are dropped, so a holder the snapshot missed cannot block close', async () => {
+    const saved = process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS;
+    process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS = '50';
+    const spawned = {};
+    try {
+      const { error } = await claude.spawn('hello', {
+        environment: { model: 'test-model' },
+        _spawnImpl: () => {
+          const proc = fakeChild();
+          proc.kill = jest.fn();
+          // Close fires only once both of our pipe ends are gone.
+          let open = 2;
+          const drop = () => { open -= 1; if (open === 0) setImmediate(() => proc.emit('close', null)); };
+          proc.stdout.destroy = jest.fn(drop);
+          proc.stderr.destroy = jest.fn(drop);
+          spawned.child = proc;
+          return proc;
+        },
+        _lockProbe: async () => true,
+        _stallKillGraceMs: 30,
+        _processTable: () => [], // ps saw no descendants
+        env: { ...process.env, HOME: sessionsTmpDir },
+        cwd: sessionsTmpDir,
+      }).then(() => ({}), (err) => ({ error: err }));
+      expect(error.code).toBe('spawn_stalled');
+      expect(spawned.child.stdout.destroy).toHaveBeenCalled();
+      expect(spawned.child.stderr.destroy).toHaveBeenCalled();
+    } finally {
+      if (saved === undefined) delete process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS;
+      else process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS = saved;
+    }
+  });
+
   test('a spawn that ignores SIGTERM gets SIGKILL after the grace', async () => {
     const spawned = {};
     const saved = process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS;
