@@ -152,6 +152,13 @@ describe('BYO listener snippet', () => {
     expect(needs.compareDocumentPosition(listenCommand()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  // The page renders in English here, so the English test above never reads the
+  // zh-CN copy. Read the zh-CN string straight from the locale file.
+  test('the zh-CN "needs" line names the same Node floor', () => {
+    const zhNeeds: string = require('../../i18n/locales/zh-CN.json').agentByo.listen.needs;
+    expect(zhNeeds).toMatch(new RegExp(`需要 Node ${CLI_NODE_FLOOR}\\+`));
+  });
+
   test('"I use Codex instead" gives a Codex command and says Codex is what it needs', async () => {
     await issueToken();
     fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
