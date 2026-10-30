@@ -537,6 +537,11 @@ const runClaude = ({
       stallKill = setTimeout(() => {
         killProcessTree(proc, 'SIGKILL', treeIo(processTable));
         sweepStallSurvivors();
+        // A pipe holder the snapshot missed (ps failed, or it was reparented
+        // before the stall) would still keep close from firing. Dropping our
+        // ends of the pipes bounds every stalled turn at window plus grace.
+        proc.stdout?.destroy?.();
+        proc.stderr?.destroy?.();
       }, stallKillGraceMs);
       stallKill.unref?.();
     },
@@ -1262,7 +1267,7 @@ export default {
       // TASK-440: the context this turn left, read from the transcript the
       // child wrote under its own env (an isolated HOME for public seats).
       const contextTokens = claudeContextTokens({
-        cwd: ctx.cwd, sessionId, configDir: claudeConfigDirFor({ ...env, HOME: childHome || env?.HOME }),
+        cwd: physicalPath(ctx.cwd), sessionId, configDir: claudeConfigDirFor({ ...env, HOME: childHome || env?.HOME }),
       });
       return { text: stdout.trim(), newSessionId: sessionId, contextTokens };
     } catch (err) {
@@ -1324,7 +1329,7 @@ export default {
           survivorIo: ctx._survivorIo,
         });
         const contextTokens = claudeContextTokens({
-          cwd: ctx.cwd, sessionId: freshId,
+          cwd: physicalPath(ctx.cwd), sessionId: freshId,
           configDir: claudeConfigDirFor({ ...retry.env, HOME: retry.childHome || retry.env?.HOME }),
         });
         return { text: stdout.trim(), newSessionId: freshId, contextTokens };
