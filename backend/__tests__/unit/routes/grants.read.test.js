@@ -137,9 +137,9 @@ describe('GET /api/grants?connectionOwner=me', () => {
       { _id: 'ffffffffffffffffffffff01', installationId: 'conn-1', createdBy: OWNER },
       { _id: hostedId, createdBy: OWNER },
     ] }) }));
-    Pod.find.mockImplementation(() => ({ select: () => ({ lean: async () => [
-      { _id: POD, members: [OWNER, SEAT] },
-    ] }) }));
+    Pod.findById.mockImplementation((id) => ({ select: () => ({ lean: async () => (
+      { _id: id, type: 'public', members: [OWNER, SEAT] }
+    ) }) }));
 
     const res = await request(app).get('/api/grants?connectionOwner=me').set('x-test-user', OWNER);
     expect(res.status).toBe(200);
@@ -158,9 +158,9 @@ describe('GET /api/grants?connectionOwner=me', () => {
       { _id: 'conn-1', installationId: 'conn-1', createdBy: OWNER },
       { _id: 'conn-other', createdBy: STRANGER },
     ] }) }));
-    Pod.find.mockImplementation(({ _id }) => ({ select: () => ({ lean: async () => _id.$in.map((id) => (
-      { _id: id, members: [OWNER, SEAT] }
-    )) }) }));
+    Pod.findById.mockImplementation((id) => ({ select: () => ({ lean: async () => (
+      { _id: id, type: 'public', members: [OWNER, SEAT] }
+    ) }) }));
 
     const res = await request(app).get('/api/grants?connectionOwner=me').set('x-test-user', OWNER);
     expect(res.status).toBe(200);
@@ -176,9 +176,28 @@ describe('GET /api/grants?connectionOwner=me', () => {
     expect(Integration.find).toHaveBeenCalledWith({ createdBy: OWNER });
   });
 
+  test('drops a pod grant once the owner can no longer view that pod', async () => {
+    const hidden = '0000000000000000000000ab';
+    const visible = '0000000000000000000000ac';
+    const [hiddenGrant, visibleGrant] = await RoomGrant.create([
+      grant({ target: { kind: 'pod', id: hidden } }),
+      grant({ target: { kind: 'pod', id: visible } }),
+    ]);
+    Pod.findById.mockImplementation((id) => ({ select: () => ({ lean: async () => (
+      { _id: id, type: 'private', members: id === hidden ? [SEAT] : [OWNER, SEAT] }
+    ) }) }));
+
+    const res = await request(app).get('/api/grants?connectionOwner=me').set('x-test-user', OWNER);
+    expect(res.status).toBe(200);
+    const ids = res.body.grants.map((row) => row.grantId);
+    expect(ids).toContain(visibleGrant.grantId);
+    expect(ids).not.toContain(hiddenGrant.grantId);
+    expect(JSON.stringify(res.body)).not.toContain(hidden);
+  });
+
   test('requires a signed-in owner and never gives a different user or admin the owner’s grants', async () => {
     await RoomGrant.create(grant());
-    Pod.find.mockImplementation(() => ({ select: () => ({ lean: async () => [] }) }));
+    Pod.findById.mockImplementation(() => ({ select: () => ({ lean: async () => null }) }));
     // Deliberately return a foreign row even for the admin caller. The route
     // must enforce ownership after the query as well as in its predicate.
     Integration.find.mockImplementation(() => ({ select: () => ({ lean: async () => [

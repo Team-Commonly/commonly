@@ -619,16 +619,23 @@ router.get('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: exp
       .filter((grant) => grant.target.kind === 'pod' && Types.ObjectId.isValid(grant.target.id))
       .map((grant) => grant.target.id)));
     const [pods, confinements] = await Promise.all([
-      podIds.length ? Pod.find({ _id: { $in: podIds } }).select('members').lean() : [],
+      Promise.all(podIds.map(async (podId) => [podId, await loadPod(podId)] as const)),
       seatGrantRefusals(grants),
     ]);
-    const membersByPod = new Map(pods.map((pod: any) => [String(pod._id), memberIdsOf(pod)]));
-    return res.json({ grants: grants.map((grant) => projectGrant(
-      grant,
-      grant.target.kind === 'seat' ? grant.audience : membersByPod.get(grant.target.id) || [],
-      userId,
-      confinements.get(grant.grantId),
-    )) });
+    // A pod grant is returned only while the caller can still view its pod: an owner
+    // who has left a private pod does not see that pod's grants.
+    const visiblePods = new Map<string, string[]>();
+    for (const [podId, pod] of pods) {
+      if (pod && await DMService.canViewPod(userId, pod)) visiblePods.set(podId, memberIdsOf(pod));
+    }
+    return res.json({ grants: grants
+      .filter((grant) => grant.target.kind !== 'pod' || visiblePods.has(grant.target.id))
+      .map((grant) => projectGrant(
+        grant,
+        grant.target.kind === 'seat' ? grant.audience : visiblePods.get(grant.target.id) || [],
+        userId,
+        confinements.get(grant.grantId),
+      )) });
   } catch (error) {
     return handleError(res, error);
   }
