@@ -12,6 +12,10 @@ import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
 
+// The page names the Node floor the CLI declares. Read it from cli/package.json
+// rather than copying the number, so a CLI engines bump fails this test.
+const CLI_NODE_FLOOR = Number(require('../../../../cli/package.json').engines.node.match(/\d+/)[0]);
+
 jest.mock('../components/V2NavRail', () => () => null);
 jest.mock('axios', () => {
   const mock = {
@@ -143,7 +147,7 @@ describe('BYO listener snippet', () => {
   test('what it needs is said before the command it is about', async () => {
     await issueToken();
     const needs = screen.getByTestId('byo-listen-needs');
-    expect(needs).toHaveTextContent(/Needs Node 18\+ with npm and Claude Code signed in/);
+    expect(needs).toHaveTextContent(new RegExp(`Needs Node ${CLI_NODE_FLOOR}\\+ with npm and Claude Code signed in`));
     // eslint-disable-next-line no-bitwise
     expect(needs.compareDocumentPosition(listenCommand()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
