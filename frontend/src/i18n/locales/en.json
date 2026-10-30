@@ -1722,8 +1722,7 @@
       "toolCodex": "the Codex CLI",
       "unavailableClaude": "Claude Code can’t answer @mentions from {{os}} yet: Commonly runs it in a sandbox, and on {{os}} that sandbox can’t run it. Connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
       "unavailableCodex": "The Codex CLI can’t answer @mentions from {{os}} yet. Choose “Run it here” for a hosted agent, or run the command on a Mac. Linux is not tested yet.",
-      "switchToCodex": "I use Codex instead",
-      "switchToClaude": "I use Claude Code instead"
+      "useDifferentRunner": "Use a different runner"
     },
     "mode": {
       "label": "Where should it run?",

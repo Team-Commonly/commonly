@@ -1031,6 +1031,29 @@ const V2AgentBYO: React.FC = () => {
     : '';
   const cursorInstallHref = cursorMcpInstallLink(apiUrl);
 
+  // The runner is picked before the install and never after it: the name
+  // follows the runner, so a switch after issue would leave a claude-named
+  // install under a codex listener. Going back to the start is the way to change it.
+  const runnerPicker = mode === 'byo' && !issued ? (
+    <p className="v2-byo__os" data-testid="byo-runner">
+      {t('agentByo.form.adapterLabel')}{' '}
+      {(['claude', 'codex'] as const).map((runner, i) => (
+        <React.Fragment key={runner}>
+          {i > 0 && ' · '}
+          <button
+            type="button"
+            className="v2-byo__link"
+            aria-pressed={listenAdapter === runner}
+            data-testid={`byo-runner-${runner}`}
+            onClick={() => setListenAdapter(runner)}
+          >
+            {t(runner === 'claude' ? 'agentByo.form.adapterClaude' : 'agentByo.form.adapterCodex')}
+          </button>
+        </React.Fragment>
+      ))}
+    </p>
+  ) : null;
+
   return (
     <V2FeaturePage
       title={(() => {
@@ -1131,6 +1154,7 @@ const V2AgentBYO: React.FC = () => {
           {/* Enabled once the pod list confirms the pod: a link's pod the person
               cannot install into is replaced by their own, and that is the line
               above the button, so the click never lands somewhere unshown. */}
+          {runnerPicker}
           {!isOtherOwner && <button
             type="button"
             onClick={() => {
@@ -1291,6 +1315,7 @@ const V2AgentBYO: React.FC = () => {
               </span>
             </label>
           )}
+          {runnerPicker}
           <label className={`v2-byo__field${errorField === 'name' || nameLookupError ? ' v2-byo__field--error' : ''}`}>
             <span className="v2-byo__label">{t('agentByo.form.nameLabel')}</span>
             <input
@@ -1551,10 +1576,10 @@ const V2AgentBYO: React.FC = () => {
               <button
                 type="button"
                 className="v2-byo__link"
-                data-testid="byo-listen-adapter-switch"
-                onClick={() => setListenAdapter((a) => (a === 'codex' ? 'claude' : 'codex'))}
+                data-testid="byo-use-different-runner"
+                onClick={() => setIssued(null)}
               >
-                {listenAdapter === 'codex' ? t('agentByo.listen.switchToClaude') : t('agentByo.listen.switchToCodex')}
+                {t('agentByo.listen.useDifferentRunner')}
               </button>
             </p>
             {listenerAvailable && (

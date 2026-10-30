@@ -240,7 +240,14 @@ describe('the command page puts only what the paste needs above the copy', () =>
     fireEvent.click(act);
     await screen.findByTestId('byo-listen');
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Connect your Claude Code');
-    fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
+    // After issue there is no runner switch; the way back to the start is the only control.
+    expect(screen.queryByTestId('byo-listen-adapter-switch')).toBeNull();
+    fireEvent.click(screen.getByTestId('byo-use-different-runner'));
+    fireEvent.click(screen.getByTestId('byo-runner-codex'));
+    const again = await screen.findByRole('button', { name: /get my connect command|install/i });
+    await waitFor(() => expect(again).toBeEnabled());
+    fireEvent.click(again);
+    await screen.findByTestId('byo-listen');
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Connect your Codex');
   });
 
