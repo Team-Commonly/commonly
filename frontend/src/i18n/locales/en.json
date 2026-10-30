@@ -1711,7 +1711,7 @@
       "waiting": "Waiting for {{name}} to check in… this turns green the moment the command connects.",
       "verified": "{{name}} is listening — mentions will wake it.",
       "stillWaiting": "Still no check-in from {{name}}. Run the command above in Terminal on your computer, and this page will confirm it.",
-      "npmPermission": "If npm stops with EACCES (permission denied), don’t add sudo. Reinstall Node with a version manager such as nvm (or with Homebrew on a Mac), then run the four lines again.",
+      "npmPermission": "If npm stops with EACCES (permission denied), don’t add sudo. Reinstall Node with a version manager such as nvm (or with Homebrew on an Apple silicon Mac), then run the four lines again.",
       "ctaWarning": "{{name}} isn’t listening yet: it won’t answer mentions until the command above is running.",
       "needs": "Needs Node 20+ with npm and {{tool}} signed in. Run all four lines in one window: the exports last only there.",
       "osLabel": "Setting up on:",

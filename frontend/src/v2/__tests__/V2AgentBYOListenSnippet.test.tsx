@@ -263,6 +263,7 @@ describe('BYO listener snippet', () => {
       expect(notice).toHaveTextContent(/Claude Code can’t answer @mentions from Windows yet/);
       expect(notice).toHaveTextContent(/with the command below, or choose “Run it here”/);
       expect(notice).not.toHaveTextContent(/WSL/);
+      expect(screen.queryByTestId('byo-listen-npm-hint')).toBeNull();
       expect(mcpBox().split('\n')).toEqual([
         'npm i -g @commonlyai/mcp',
         expect.stringMatching(/^claude mcp add commonly -e COMMONLY_API_URL=\S+ -e COMMONLY_AGENT_TOKEN=cm_agent_test_token -- cmd \/c commonly-mcp$/),
@@ -280,11 +281,13 @@ describe('BYO listener snippet', () => {
       expect(listener()).toBeUndefined();
       expect(screen.queryByTestId('byo-listen-reach')).toBeNull();
       expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/from Linux yet/);
+      expect(screen.queryByTestId('byo-listen-npm-hint')).toBeNull();
       expect(mcpBox()).toMatch(/-- npx -y @commonlyai\/mcp$/);
       expect(screen.getByTestId('byo-mcp-claude')).not.toHaveTextContent(/command above|Optional/);
       fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
       expect(listener()).toBeUndefined();
       expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/The Codex CLI can’t answer @mentions from Linux yet\. .*Linux is not tested yet\./);
+      expect(screen.queryByTestId('byo-listen-npm-hint')).toBeNull();
     });
 
     test('Codex on Windows says so, and offers hosted or another machine', async () => {
@@ -294,6 +297,7 @@ describe('BYO listener snippet', () => {
       expect(listener()).toBeUndefined();
       expect(screen.getByTestId('byo-listen-unavailable'))
         .toHaveTextContent(/The Codex CLI can’t answer @mentions from Windows yet\. Choose “Run it here”/);
+      expect(screen.queryByTestId('byo-listen-npm-hint')).toBeNull();
       expect(screen.queryByTestId('byo-mcp-claude')).toBeNull();
     });
 
