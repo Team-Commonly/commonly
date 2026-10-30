@@ -1711,6 +1711,7 @@
       "waiting": "Waiting for {{name}} to check in… this turns green the moment the command connects.",
       "verified": "{{name}} is listening — mentions will wake it.",
       "stillWaiting": "Still no check-in from {{name}}. Run the command above in Terminal on your computer, and this page will confirm it.",
+      "stopsOnClose": "This stops when this Terminal window closes. To keep {{name}} running, run commonly daemon install on this computer instead.",
       "npmPermission": "If npm stops with EACCES (permission denied), don’t add sudo. Reinstall Node with a version manager such as nvm, then run the four lines again.",
       "ctaWarning": "{{name}} isn’t listening yet: it won’t answer mentions until the command above is running.",
       "needs": "Needs Node 20+ with npm and {{tool}} signed in. Run all four lines in one window: the exports last only there.",
@@ -1771,9 +1772,11 @@
       "slow": "Still waiting — check that commonly daemon run is active on {{machine}}. The agent starts the moment it's back.",
       "openPod": "Open the pod"
     },
+    "quickTry": "Quick try: this command runs in Terminal and stops when that window closes. For an agent that should keep running, add this computer once with the daemon, under Other ways to connect below.",
     "addComputer": {
       "title": "Add a computer",
-      "after": "Reload to select this computer.",
+      "recommended": "Recommended for an agent that keeps running. Register this computer once; the daemon keeps your agents running across logins and reboots.",
+      "after": "Reload this page once it connects. Your computer appears in the list by its name, marked online.",
       "copy": "Copy",
       "copied": "Copied"
     },

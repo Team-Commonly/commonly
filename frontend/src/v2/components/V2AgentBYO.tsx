@@ -1407,6 +1407,11 @@ const V2AgentBYO: React.FC = () => {
               })()}
             </button>
           )}
+          {/* The run command is the quick try; it dies with its Terminal. The
+              daemon is the one that keeps the agent running (TASK-645 item 3). */}
+          {mode === 'byo' && machines.length === 0 && (
+            <p className="v2-byo__hint" data-testid="byo-quick-try">{t('agentByo.quickTry')}</p>
+          )}
           {/* One command is THE path (QA BYO walk 1): the daemon and the SDK
               are real alternatives, but shown as equals beside the button they
               read as a choice a stranger has to make before starting. */}
@@ -1418,6 +1423,7 @@ const V2AgentBYO: React.FC = () => {
           {machines.length === 0 && (
             <div className="v2-byo__add-computer" data-testid="byo-add-computer">
               <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
+              <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">{t('agentByo.addComputer.recommended')}</p>
               <div className="v2-byo__add-computer-row">
                 <code>{daemonCommand}</code>
                 <button
@@ -1616,6 +1622,11 @@ const V2AgentBYO: React.FC = () => {
             {listenerAvailable && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-npm-hint">
                 {t('agentByo.listen.npmPermission')}
+              </p>
+            )}
+            {listenerAvailable && (
+              <p className="v2-byo__listen-note" data-testid="byo-listen-stops-on-close">
+                {t('agentByo.listen.stopsOnClose', { name: issued.agentName })}
               </p>
             )}
             {!listenerAvailable ? null : listenState === 'listening' ? (
