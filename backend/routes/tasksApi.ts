@@ -236,9 +236,16 @@ router.get('/:podId', taskReadIpRateLimit, auth, async (req: AuthReq, res: Res) 
     // One `now` for the whole page: derived per row, two rows either side of a
     // tick boundary could otherwise report lease states that never coexisted.
     const now = new Date();
+    // The same holder id the claim route writes, so a seat can tell its own
+    // claims from a peer's without knowing its user id (TASK-640).
+    const caller = resolveAgentInstanceId(req) || userId?.toString() || '';
     return res.json({
       permissions: { canWrite: access.canWrite === true },
-      tasks: tasks.sort(compareTaskPriority).map((task: Record<string, unknown>) => ({ ...task, leaseState: deriveLeaseState(task, now) })),
+      tasks: tasks.sort(compareTaskPriority).map((task: Record<string, unknown>) => ({
+        ...task,
+        leaseState: deriveLeaseState(task, now),
+        claimedByMe: Boolean(caller) && task.claimedBy === caller,
+      })),
     });
   } catch (err) {
     console.error('GET /tasks error:', err);
