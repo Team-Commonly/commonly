@@ -175,6 +175,22 @@ describe('agent broadcast carries thread_root_id', () => {
   });
 });
 
+describe('a configured PostgreSQL store is the only write path (TASK-503)', () => {
+  it('fails the post when the PG write throws, writing nothing to MongoDB', async () => {
+    PGMessage.create.mockRejectedValue(new Error('connection terminated'));
+
+    await expect(AgentMessageService.postMessage({
+      agentName: 'sprint-review',
+      instanceId: 'default',
+      podId: POD,
+      content: 'A live agent message',
+    })).rejects.toThrow('connection terminated');
+
+    expect(Message).not.toHaveBeenCalled();
+    expect(emitted.find((e) => e.event === 'newMessage')).toBeUndefined();
+  });
+});
+
 describe('agent broadcast carries author identity', () => {
   it('preserves the bot marker through Mongo population and the socket whitelist', async () => {
     delete process.env.PG_HOST;
@@ -201,7 +217,9 @@ describe('agent broadcast carries author identity', () => {
     });
 
     const msg = emitted.find((e) => e.event === 'newMessage');
-    expect(Message).toHaveBeenCalledWith(expect.objectContaining({ pgFallback: true }));
+    // No PG configured: a plain MongoDB row, not a pgFallback one (TASK-503).
+    expect(Message).toHaveBeenCalledWith(expect.objectContaining({ content: 'A live agent message' }));
+    expect(Message.mock.calls[0][0]).not.toHaveProperty('pgFallback');
     expect(msg.payload.userId).toEqual(expect.objectContaining({
       _id: 'agent-user-1',
       isBot: true,

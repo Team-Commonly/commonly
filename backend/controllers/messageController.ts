@@ -245,11 +245,9 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     // Best-effort backfill: pods created via the Mongo-only POST /api/pods
     // path (podController) have no row in the PG `pods` table, so the
     // subsequent PGMessage.create fails the messages.pod_id foreign key
-    // and the message lands in the Mongo fallback indefinitely.
-    // pgMessageController already does this; mirror it here so the dual-DB
-    // path stays consistent with the PG-primary path. Swallow errors —
-    // if PG is unreachable, PGMessage.create below will throw and the
-    // existing Mongo fallback handles it.
+    // and the send fails. pgMessageController already does this; mirror it
+    // here. Swallow errors: if PG is unreachable, PGMessage.create below
+    // throws and the send returns 503.
     try {
       const pgPodExists = await PGPod.findById(podId);
       if (!pgPodExists) {
@@ -324,30 +322,16 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       }
       message = (populated || created) as NormalizedMessage;
     } catch (pgErr) {
+      // PostgreSQL is the only message store (TASK-503). A failed write is
+      // a failed send the client can retry, never a silent MongoDB row that
+      // pod chat (which reads PG) cannot show.
       const e = pgErr as { message?: string };
-      console.warn('PG unavailable for createMessage, falling back to MongoDB:', e.message);
-      // Mongo rows have no reply_to_message_id column, and the reconciler
-      // (services/pgMessageReconcileService, TASK-313 part 2) copies them into
-      // PG without a reply edge. A reply written here would look successful
-      // while losing its parent edge, so replies still wait for Postgres.
-      // Non-replies take this fallback and are moved once PG is back.
-      if (replyToMessageId) {
-        res.status(503).json({
-          error: 'Replies are temporarily unavailable. Please try again shortly.',
-          code: 'REPLY_REQUIRES_POSTGRES',
-        });
-        return;
-      }
-      const mongoMsg = await MongoMessage.create({
-        pgFallback: true,
-        podId,
-        userId,
-        content: messageContent || '',
-        messageType: 'text',
+      console.error('[messageController] PG message write failed:', e.message);
+      res.status(503).json({
+        error: 'Messages are temporarily unavailable. Please try again shortly.',
+        code: 'MESSAGE_STORE_UNAVAILABLE',
       });
-      const populated = await MongoMessage.findById(mongoMsg._id)
-        .populate('userId', 'username profilePicture');
-      message = normalizeMongo(populated || mongoMsg);
+      return;
     }
 
     // Scout's first-task proposal is a deterministic handoff tied to the pod

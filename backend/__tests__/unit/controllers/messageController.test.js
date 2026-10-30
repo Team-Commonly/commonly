@@ -356,8 +356,8 @@ describe('messageController', () => {
 
       expect(res.status).toHaveBeenCalledWith(503);
       expect(res.json).toHaveBeenCalledWith({
-        error: 'Replies are temporarily unavailable. Please try again shortly.',
-        code: 'REPLY_REQUIRES_POSTGRES',
+        error: 'Messages are temporarily unavailable. Please try again shortly.',
+        code: 'MESSAGE_STORE_UNAVAILABLE',
       });
       expect(MongoMessage.create).not.toHaveBeenCalled();
       expect(AgentMentionService.enqueueMentions).not.toHaveBeenCalled();
@@ -398,38 +398,25 @@ describe('messageController', () => {
       }));
     });
 
-    it('keeps the Mongo availability fallback for a non-reply when PostgreSQL is unavailable', async () => {
-      const mongoFallbackRow = {
-        _id: { toString: () => 'mongo-message' },
-        podId: { toString: () => 'p1' },
-        userId: {
-          _id: { toString: () => 'u1' }, username: 'alice', profilePicture: 'default',
-        },
-        content: 'ordinary message',
-        messageType: 'text',
-      };
+    it('fails a non-reply with 503 when PostgreSQL is unavailable, writing nothing to MongoDB (TASK-503)', async () => {
       Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
       PGMessage.create.mockRejectedValueOnce(new Error('PostgreSQL unavailable'));
-      MongoMessage.create.mockResolvedValueOnce(mongoFallbackRow);
-      MongoMessage.findById.mockReturnValueOnce({
-        populate: jest.fn().mockResolvedValue(mongoFallbackRow),
-      });
       const req = {
         params: { podId: 'p1' },
-        body: { content: mongoFallbackRow.content },
+        body: { content: 'ordinary message' },
         user: { id: 'u1' },
       };
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
 
       await messageController.createMessage(req, res);
 
-      expect(MongoMessage.create).toHaveBeenCalledWith({
-        pgFallback: true, podId: 'p1', userId: 'u1', content: mongoFallbackRow.content, messageType: 'text',
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith({
+        error: 'Messages are temporarily unavailable. Please try again shortly.',
+        code: 'MESSAGE_STORE_UNAVAILABLE',
       });
-      expect(res.status).not.toHaveBeenCalled();
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        id: 'mongo-message', content: mongoFallbackRow.content,
-      }));
+      expect(MongoMessage.create).not.toHaveBeenCalled();
+      expect(AgentMentionService.enqueueMentions).not.toHaveBeenCalled();
     });
 
     it('uses the joined PG author for a JWT-posted chat wake', async () => {

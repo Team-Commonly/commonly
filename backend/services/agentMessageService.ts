@@ -1743,7 +1743,7 @@ class AgentMessageService {
         // to pod chat, which reads PG. Found in the 2026-07-03 live smoke:
         // the BYO hero path ("install agent → talk to it") broke at the
         // agent's first reply. Swallow errors: if PG is truly down the
-        // create below throws and the existing Mongo fallback handles it.
+        // create below throws and the post fails.
         try {
           // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
           const PGPod = require('../models/pg/Pod');
@@ -1814,20 +1814,18 @@ class AgentMessageService {
           thread_root_id: (newMessage.thread_root_id as number | string | null) ?? null,
         };
       } catch (pgError) {
-        console.error('PostgreSQL message creation failed, falling back to MongoDB:', pgError);
+        // PostgreSQL is the only message store once it is configured
+        // (TASK-503). A failed write fails the post so the caller can retry;
+        // a MongoDB row here would be invisible to pod chat, which reads PG.
+        console.error('[agent-msg] PostgreSQL message write failed:', (pgError as Error).message);
+        throw pgError;
       }
     }
 
-    if (!message && resolvedThreadRootId != null) {
-      // PG accepted the resolve but the INSERT failed. Falling to Mongo here
-      // would strand an explicitly-threaded post as an unthreaded row —
-      // fail the post instead; the caller can retry.
-      throw new Error('thread-scoped post failed at the PostgreSQL store');
-    }
-
+    // Reached only when PostgreSQL is not configured at all (no PG_HOST): a
+    // configured store that fails has already thrown above.
     if (!message) {
       const mongoMessage = new Message({
-        pgFallback: true,
         content,
         userId: agentUser._id,
         podId,

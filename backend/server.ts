@@ -631,67 +631,26 @@ io.on('connection', (socket: any) => {
           }
         }
 
-        // Use PostgreSQL for messages if available, otherwise fallback to MongoDB
-        if (pgAvailable) {
-          try {
-            // Create message in PostgreSQL
-            console.log('Creating message in PostgreSQL:', {
-              podId,
-              userId: socketUserId,
-              content,
-              messageType,
-            });
-            const newMessage = await PGMessage.create(
-              podId,
-              socketUserId,
-              content,
-              messageType,
-              replyToMessageId,
-            );
-            console.log('Message created successfully:', newMessage);
-
-            message = await PGMessage.findById(newMessage.id);
-            console.log('Message retrieved for broadcast:', message);
-          } catch (dbError) {
-            console.error(
-              'Database error with PostgreSQL, falling back to MongoDB:',
-              dbError,
-            );
-            try {
-              // Create message in MongoDB
-              const user = await User.findById(socketUserId);
-              const newMessage = new Message({
-                podId,
-                userId: socketUserId,
-                content,
-                messageType,
-              });
-
-              await newMessage.save();
-              console.log(
-                'Message saved to MongoDB after PG fallback:',
-                newMessage._id,
-              );
-
-              // Populate user info
-              message = {
-                ...newMessage.toObject(),
-                username: user.username,
-                profilePicture: user.profilePicture,
-              };
-            } catch (mongoDbError) {
-              console.error(
-                'Failed to save message in MongoDB fallback:',
-                mongoDbError,
-              );
-              socket.emit('error', {
-                message: 'Failed to save message to any database',
-              });
-              return;
-            }
+        // PostgreSQL is the only message store once it is configured
+        // (TASK-503); MongoDB is written only when no PG is configured.
+        if (process.env.PG_HOST) {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { writeSocketMessage } = require('./services/socketMessageWrite');
+          const written = await writeSocketMessage({
+            pgReady: pgAvailable,
+            podId,
+            userId: socketUserId,
+            content,
+            messageType,
+            replyToMessageId,
+          });
+          if (!written.ok) {
+            socket.emit('error', written.error);
+            return;
           }
+          message = written.message;
         } else {
-          console.log('Using MongoDB for messages (PostgreSQL not available)');
+          console.log('Using MongoDB for messages (PostgreSQL not configured)');
           try {
             // Create message in MongoDB
             const user = await User.findById(socketUserId);
