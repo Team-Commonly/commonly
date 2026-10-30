@@ -19,7 +19,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
-import { recordByoStep, type ByoStep } from '../utils/byoTelemetry';
+import { recordByoStep, recordByoStepOnce, type ByoStep } from '../utils/byoTelemetry';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { daemonSetupCommand } from '../utils/daemonSetupCommand';
 import V2FeaturePage from './V2FeaturePage';
@@ -906,6 +906,15 @@ const V2AgentBYO: React.FC = () => {
     recordByoStep(api, 'page-viewed');
   }, [api, currentUser]);
 
+  // "Run it here" is on screen from first paint whenever the instance hosts,
+  // so its exposure is counted here, once per page view. The post-issue
+  // fallback below counts a separate, later exposure.
+  const hostedChooserOnScreen = Boolean(hosting?.configured) && !issued && !hosted && !placed && !reconnectRequest;
+  useEffect(() => {
+    if (!currentUser || !hostedChooserOnScreen) return;
+    recordByoStepOnce(api, 'hosted-offer-shown', currentUser._id);
+  }, [api, currentUser, hostedChooserOnScreen]);
+
   useEffect(() => {
     if (commandViewed.current === issued) return;
     commandViewed.current = issued;
@@ -964,7 +973,10 @@ const V2AgentBYO: React.FC = () => {
     }
   };
 
-  const chooseMode = (nextMode: 'hosted' | 'byo' | 'machine') => setMode(nextMode);
+  const chooseMode = (nextMode: 'hosted' | 'byo' | 'machine') => {
+    if (nextMode === 'hosted') recordByoStep(api, 'hosted-offer-clicked');
+    setMode(nextMode);
+  };
 
   const apiUrl = getApiBaseUrl().replace(/\/+$/, '');
   const daemonCommand = daemonSetupCommand(apiUrl);
@@ -1061,7 +1073,10 @@ const V2AgentBYO: React.FC = () => {
           {error && <div className="v2-byo__error">{error}</div>}
           <button
             type="button"
-            onClick={submit}
+            onClick={() => {
+              recordByoStep(api, 'hosted-offer-clicked');
+              void submit();
+            }}
             disabled={submitting || !podId || mode !== 'hosted'}
             className="v2-byo__submit"
           >
