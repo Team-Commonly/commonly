@@ -9,6 +9,7 @@
  */
 
 jest.mock('../../../models/User', () => ({
+  findOne: jest.fn(),
   findOneAndUpdate: jest.fn(),
 }));
 jest.mock('../../../models/Pod', () => ({}));
@@ -141,6 +142,49 @@ describe('agent avatar editing', () => {
     const res = response();
     await putAvatar(reqFor({ id: 'admin-1', role: 'admin' }, '/api/uploads/custom-icon.png'), res);
     expect(res.json).toHaveBeenCalledWith({ ok: true, avatar: '/api/uploads/custom-icon.png' });
+  });
+
+  const currentPicture = (profilePicture) => {
+    User.findOne.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(profilePicture === null ? null : { profilePicture }) }),
+    });
+  };
+
+  it("'default' clears the pick on the user row and on Your Team's registry icon", async () => {
+    currentPicture('bottts:theo:v3');
+    User.findOneAndUpdate.mockResolvedValue({ _id: 'bot-1', profilePicture: 'default' });
+    const res = response();
+    await putAvatar(reqFor({ id: 'admin-1', role: 'admin' }, 'default'), res);
+    // Lumen on #2932: Your Team reads AgentRegistry.iconUrl, so a reset that
+    // left it would bring the old face back there. The filter clears only the
+    // pick being undone: a catalog icon or another instance's pick stays.
+    expect(AgentRegistry.updateOne).toHaveBeenCalledWith(
+      { agentName: 'theo', iconUrl: 'bottts:theo:v3' }, { $set: { iconUrl: '' } },
+    );
+    expect(User.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.anything(), { $set: { profilePicture: 'default' } }, { new: true },
+    );
+    // The registry clear runs before the User write.
+    expect(AgentRegistry.updateOne.mock.invocationCallOrder[0])
+      .toBeLessThan(User.findOneAndUpdate.mock.invocationCallOrder[0]);
+    expect(res.json).toHaveBeenCalledWith({ ok: true, avatar: 'default' });
+  });
+
+  it('a reset whose registry clear fails changes nothing, so a retry can still clear it', async () => {
+    currentPicture('bottts:theo:v3');
+    AgentRegistry.updateOne.mockRejectedValue(new Error('registry down'));
+    const res = response();
+    await putAvatar(reqFor({ id: 'admin-1', role: 'admin' }, 'default'), res);
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(User.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it("'default' on an agent that never had a pick leaves the registry icon alone", async () => {
+    currentPicture('default');
+    const res = response();
+    await putAvatar(reqFor({ id: 'admin-1', role: 'admin' }, 'default'), res);
+    expect(AgentRegistry.updateOne).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ ok: true, avatar: 'default' });
   });
 
   it('404s when no bot User row matches the identity', async () => {

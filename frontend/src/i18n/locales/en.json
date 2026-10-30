@@ -1882,6 +1882,15 @@
       "opening": "Opening…",
       "openRoomFailed": "The 1:1 with this agent could not be opened."
     },
+    "avatar": {
+      "change": "Change avatar",
+      "edit": "Edit",
+      "title": "Choose an avatar",
+      "defaultOption": "Default avatar",
+      "option": "Avatar {{number}}",
+      "cancel": "Close",
+      "saveFailed": "Could not change the avatar. Try again."
+    },
     "pods": {
       "title": "Pods",
       "publicTitle": "Public pods",
