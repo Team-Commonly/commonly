@@ -174,6 +174,16 @@ describe('V2Inspector', () => {
     expect(screen.queryByText('openclaw')).not.toBeInTheDocument();
   });
 
+  test('names a working agent with no roster name generically, never with an empty label', async () => {
+    mockGet.mockResolvedValue({ tasks: [] });
+    renderInspector({ detail: { ...detail, agents: [{
+      agentName: 'openclaw', instanceId: 'pixel', status: 'working',
+    }] } as any, attentionCount: 0, attentionItems: [] });
+
+    expect(await screen.findByText('Nothing. Agent is working.')).toBeInTheDocument();
+    expect(screen.queryByText(/openclaw/)).not.toBeInTheDocument();
+  });
+
   test('does not assign anonymous attention to an agent without a profile name', () => {
     renderInspector({ detail: { ...detail, agents: [{
       agentName: 'scout', instanceId: 'default', displayName: 'Scout',
