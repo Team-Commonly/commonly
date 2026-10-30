@@ -70,6 +70,22 @@ describe('per-agent Wake and Pods settings', () => {
     ));
   });
 
+  it('loads and saves the every-message choice', async () => {
+    client.get.mockResolvedValue({ data: { turnCap: 30, activePodCount: 1, podCount: 1, installations: [{
+        podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: true, humanOnly: false,
+        boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60,
+      }] } });
+    renderSettings();
+    expect(await screen.findByLabelText('Every message')).toBeChecked();
+    fireEvent.click(screen.getByLabelText('Mentions only'));
+    await waitFor(() => expect(updatePod).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByLabelText('Every message'));
+    await waitFor(() => expect(updatePod).toHaveBeenLastCalledWith(
+      'pod-1',
+      { wakeOnMessage: true, humanOnly: false, boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60 },
+    ));
+  });
+
   it('removes a pod installation and leaves the settings view open', async () => {
     const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
     renderSettings();
