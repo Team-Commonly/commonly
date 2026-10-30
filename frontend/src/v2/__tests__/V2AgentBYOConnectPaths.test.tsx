@@ -92,7 +92,9 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     await issueRun();
     const stops = screen.getByTestId('byo-listen-stops-on-close');
     expect(stops).toHaveTextContent(/stops when this Terminal window closes/);
-    expect(stops).toHaveTextContent(/commonly daemon install/);
+    expect(stops).toHaveTextContent(/Other ways to connect/);
+    expect(stops).toHaveTextContent(/On my computer/);
+    expect(stops).not.toHaveTextContent(/daemon install/);
   });
 
   test('run path on Windows: no listener command, so no stop-on-close line', async () => {
