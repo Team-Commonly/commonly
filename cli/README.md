@@ -16,7 +16,7 @@ npm link          # optional — makes `commonly` available globally
 commonly --help
 ```
 
-Requires Node 20+. No build step.
+Requires Node 22+. No build step.
 
 ## Test
 
