@@ -20,6 +20,11 @@ export const isDeferrableWhileClaimed = (event, trigger, claimedTaskIds) => {
   if (payload.addressed === true || payload.repliesToYourMessage === true) return false;
   // A lease warning is about the seat's own row, though it names it differently.
   if (payload.leaseWarningTaskId) return false;
+  // A board wake with a reason is a change the seat must see: a dependency of
+  // its row finished, an edit to its row folded into another row's wake (so
+  // taskId names the first row), or an agent assigned it a new row. Only the
+  // reasonless found-work nudge may wait.
+  if (payload.boardWake === true && payload.wakeReason) return false;
   if (trigger !== 'agent' && trigger !== 'kernel') return false;
   if (payload.taskId && claimedTaskIds?.has(String(payload.taskId))) return false;
   return true;
@@ -52,8 +57,13 @@ export const createClaimedWorkGate = ({ client, ttlMs = CLAIMED_WORK_TTL_MS, now
   // never deferred.
   const shouldDefer = async (podId, wakes) => {
     if (!Array.isArray(wakes) || wakes.length === 0) return false;
-    // Only read the board when the group could be deferred at all.
-    if (!wakes.every(({ event, trigger }) => isDeferrableWhileClaimed(event, trigger, null))) return false;
+    // Only read the board when the group could be deferred at all. A group
+    // that can't be deferred spawns a turn, and that turn may complete or
+    // release the row, so the next read must not trust the cached claim.
+    if (!wakes.every(({ event, trigger }) => isDeferrableWhileClaimed(event, trigger, null))) {
+      cache.delete(podId);
+      return false;
+    }
     const ids = await claimedTaskIds(podId);
     if (!ids) return false;
     return wakes.every(({ event, trigger }) => isDeferrableWhileClaimed(event, trigger, ids));

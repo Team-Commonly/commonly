@@ -27,6 +27,10 @@ describe('isDeferrableWhileClaimed', () => {
     ['an addressed broadcast', broadcast({ addressed: true }), 'agent', false],
     ['a reply to the seat\'s own message', broadcast({ repliesToYourMessage: true }), 'agent', false],
     ['a lease warning for another row', broadcast({ leaseWarningTaskId: 'TASK-700' }), 'kernel', false],
+    ['a dependency-done board wake', broadcast({ boardWake: true, wakeReason: 'dependency-done', taskId: 'TASK-700' }), 'agent', false],
+    ['a board wake folded into another row', broadcast({ boardWake: true, wakeReason: 'edited', taskId: 'TASK-700' }), 'agent', false],
+    ['a board wake assigning a new row', broadcast({ boardWake: true, wakeReason: 'assigned', taskId: 'TASK-701' }), 'agent', false],
+    ['the reasonless found-work nudge', broadcast({ boardWake: true, foundWorkAt: 1 }), 'kernel', true],
     ['a chat mention', { type: 'chat.mention', payload: {} }, 'agent', false],
     ['a DM', { type: 'dm.message', payload: {} }, 'agent', false],
     ['a heartbeat', { type: 'heartbeat', payload: {} }, 'kernel', false],
@@ -45,7 +49,7 @@ describe('createClaimedWorkGate', () => {
   });
 
   test('does not defer when the seat holds nothing, even if peers do', async () => {
-    const gate = createClaimedWorkGate({ client: board([{ taskId: 'TASK-700', claimedByMe: false }]) });
+    const gate = createClaimedWorkGate({ client: board([{ taskId: 'TASK-700', claimedByMe: false, leaseState: 'held' }]) });
     await expect(gate.shouldDefer(POD, [{ event: broadcast(), trigger: 'agent' }])).resolves.toBe(false);
   });
 
@@ -56,7 +60,7 @@ describe('createClaimedWorkGate', () => {
   });
 
   test('fails open on a kernel that does not mark claimedByMe', async () => {
-    const gate = createClaimedWorkGate({ client: board([{ taskId: 'TASK-642', claimedBy: 'someone' }]) });
+    const gate = createClaimedWorkGate({ client: board([{ taskId: 'TASK-642', claimedBy: 'someone', leaseState: 'held' }]) });
     await expect(gate.shouldDefer(POD, [{ event: broadcast(), trigger: 'agent' }])).resolves.toBe(false);
   });
 
@@ -75,6 +79,30 @@ describe('createClaimedWorkGate', () => {
       { event: broadcast(), trigger: 'agent' },
       { event: { type: 'chat.mention', payload: {} }, trigger: 'agent' },
     ])).resolves.toBe(false);
+  });
+
+  test('a batch defers only when every entry may wait', async () => {
+    const gate = createClaimedWorkGate({ client: board(HOLDS_642) });
+    await expect(gate.shouldDefer(POD, [
+      { event: broadcast(), trigger: 'agent' },
+      { event: broadcast({ messageId: 'm2', taskId: 'TASK-700' }), trigger: 'kernel' },
+    ])).resolves.toBe(true);
+    await expect(gate.shouldDefer(POD, [
+      { event: broadcast(), trigger: 'agent' },
+      { event: broadcast({ messageId: 'm2', taskId: 'TASK-642' }), trigger: 'kernel' },
+    ])).resolves.toBe(false);
+  });
+
+  test('a turn that spawns drops the cached claim, so a released row stops deferring', async () => {
+    const client = { get: jest.fn()
+      .mockResolvedValueOnce({ tasks: HOLDS_642 })
+      .mockResolvedValueOnce({ tasks: [] }) };
+    const gate = createClaimedWorkGate({ client, ttlMs: 60_000, now: () => 0 });
+    await expect(gate.shouldDefer(POD, [{ event: broadcast(), trigger: 'agent' }])).resolves.toBe(true);
+    // A human post spawns a turn; the seat may complete its row in it.
+    await expect(gate.shouldDefer(POD, [{ event: broadcast(), trigger: 'human' }])).resolves.toBe(false);
+    await expect(gate.shouldDefer(POD, [{ event: broadcast(), trigger: 'agent' }])).resolves.toBe(false);
+    expect(client.get).toHaveBeenCalledTimes(2);
   });
 
   test('reads the board only when the group could be deferred, and caches the read', async () => {
