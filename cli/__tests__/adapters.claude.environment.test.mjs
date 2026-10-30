@@ -1527,6 +1527,28 @@ describe('claude adapter — a workspace seat on Linux', () => {
     expect(inner.join(' ')).toContain('Read(./.env)');
   });
 
+  // TASK-284: the host env stays outside the jail. The CLAUDE_CONFIG_DIR check
+  // above covers one key; a spawn that dropped that key and kept the rest of
+  // the host env passed it. This one plants secrets and pins the whole set.
+  test('gets only the safe part of the host env, never its secrets', async () => {
+    const planted = {
+      AWS_SECRET_ACCESS_KEY: 'host-secret', GH_TOKEN: 'host-secret', OPENAI_API_KEY: 'host-secret',
+    };
+    const { impl, calls } = childImpl();
+    await linuxSpawn(impl, { trust: 'workspace' }, { ...planted, LANG: 'C.UTF-8' });
+
+    expect(calls).toHaveLength(1);
+    const { args, opts } = calls[0];
+    expect(Object.keys(opts.env).sort()).toEqual([
+      'CLAUDE_CODE_TMPDIR', 'HOME', 'LANG', 'PATH', 'TMPDIR',
+      'XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME',
+    ]);
+    expect(Object.values(opts.env)).not.toContain('host-secret');
+    // Nor through bwrap's argv: --setenv carries HOME and nothing else.
+    expect(args).not.toContain('host-secret');
+    expect(flagTriples(args, '--setenv')).toEqual([['HOME', state]]);
+  });
+
   test('a write grant makes the project writable and keeps its .git read-only', async () => {
     const gitDir = path.join(cwd, '.git');
     fs.mkdirSync(gitDir);
