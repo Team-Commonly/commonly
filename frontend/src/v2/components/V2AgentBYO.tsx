@@ -320,6 +320,9 @@ const V2AgentBYO: React.FC = () => {
     }
   }, [defaultAgentName, nameTouched]);
 
+  // The card's name is the lookup's base only while the card is on screen.
+  // Once the person goes back to the start, the runner names the install.
+  const cardName = onCardStart ? prefill.name : '';
   const lastSuggestedName = useRef<string | null>(null);
   useEffect(() => {
     if (!choicesKnown) return undefined;
@@ -328,7 +331,7 @@ const V2AgentBYO: React.FC = () => {
       return undefined;
     }
     let cancelled = false;
-    const base = sanitizeAgentName(prefill.name || defaultAgentName);
+    const base = sanitizeAgentName(cardName || defaultAgentName);
     setNamesReady(false);
     setNameLookupError(false);
     // The pod lets the server hand back this person's own install there whose
@@ -347,14 +350,14 @@ const V2AgentBYO: React.FC = () => {
         const previous = lastSuggestedName.current;
         lastSuggestedName.current = result.name;
         setName((current) => (
-          !nameTouched || current === prefill.name || current === previous
+          !nameTouched || current === cardName || current === previous
             ? result.name! : current));
         setNamesReady(true);
       })
       .catch(() => { if (!cancelled) setNameLookupError(true); });
     return () => { cancelled = true; };
-  }, [api, choicesKnown, defaultAgentName, mode, nameLookupRetry, nameTouched, personaCard, podId, prefill.name,
-    prefill.reconnect]);
+  }, [api, cardName, choicesKnown, defaultAgentName, mode, nameLookupRetry, nameTouched, personaCard, podId,
+    prefill.reconnect, prefill.name]);
   const [placed, setPlaced] = useState<{ agentName: string; machineId: string; machineName: string } | null>(null);
   const [placedState, setPlacedState] = useState<'waiting' | 'running' | 'slow'>('waiting');
   const [reconnectRequest, setReconnectRequest] = useState<{
