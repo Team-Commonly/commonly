@@ -2078,6 +2078,9 @@ export async function runAgent(
   const webResults: Array<{ round: number; index: number }> = [];
   const roundEnds: number[] = [];
   let webSetAside = false;
+  // Set when the recovery round was stopped too, and every web result left
+  // was set aside for one last round.
+  let webSetAsideAll = false;
   // Returns how many results were set aside, and how many web results the
   // turn lost in all (those plus the ones in the dropped rounds).
   const setAsideStoppedWebResult = async (): Promise<{ setAside: number; removed: number }> => {
@@ -2193,6 +2196,25 @@ export async function runAgent(
                 run.webSetAside = removed;
                 continue;
               }
+            } else if (webSetAside && !webSetAsideAll && !postedViaTool && webResults.length > 0) {
+              // The recovery round was stopped too, though every result it
+              // kept passed the check on its own: the guard stops on them
+              // together. One outside user's research turns failed this way 6
+              // times in a day (10-25). Set aside the rest of the web results
+              // and give the same single round once more.
+              webResults.forEach(({ index }) => {
+                messages[index] = { ...messages[index], content: JSON.stringify({ ok: false, error: WEB_SET_ASIDE_NOTICE }) };
+              });
+              // The model's own text after the first web result may quote it.
+              // Keep its tool calls, so every tool result still has its call.
+              const firstWeb = Math.min(...webResults.map(({ index }) => index));
+              for (let i = firstWeb + 1; i < messages.length; i += 1) {
+                if (messages[i]?.role === 'assistant' && messages[i].content) messages[i] = { ...messages[i], content: null };
+              }
+              run.webSetAside = Number(run.webSetAside || 0) + webResults.length;
+              webResults.splice(0, webResults.length);
+              webSetAsideAll = true;
+              continue;
             }
             run.status = 'failed';
             run.errorKind = 'guardrail_blocked';
