@@ -175,7 +175,23 @@ describe('BYO listener snippet', () => {
     await issueToken('codex');
     expect((listenCommand().textContent || '').split('\n')[3]).toMatch(/^commonly agent run sam-codex --adapter codex$/);
     expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI signed in/);
-    expect(screen.queryByTestId('byo-listen-adapter-switch')).toBeNull();
+    expect(screen.queryByTestId('byo-runner')).toBeNull();
+  });
+
+  test('issue as Claude, go back, pick Codex, issue again: the second install is <user>-codex on --adapter codex', async () => {
+    await issueToken();
+    expect(axios.post.mock.calls.find(([url]) => url === '/api/registry/install')[1].agentName).toBe('sam-claude');
+    fireEvent.click(screen.getByTestId('byo-use-different-runner'));
+    axios.post
+      .mockResolvedValueOnce({ data: { ok: true } })
+      .mockResolvedValueOnce({ data: { token: 'cm_agent_test_token_codex' } });
+    fireEvent.click(screen.getByTestId('byo-runner-codex'));
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
+    await screen.findByText(/your connect command for/i);
+    const installs = axios.post.mock.calls.filter(([url]) => url === '/api/registry/install');
+    expect(installs[installs.length - 1][1].agentName).toBe('sam-codex');
+    expect((listenCommand().textContent || '').split('\n')[3]).toMatch(/^commonly agent run sam-codex --adapter codex$/);
   });
 
   test('after issue, the way back returns to the start and leaves the install alone', async () => {

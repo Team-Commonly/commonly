@@ -239,6 +239,10 @@ const V2AgentBYO: React.FC = () => {
   // page shows the act and where it lands; the full page is one click away.
   // The key is still minted by the click, never on load: the click is consent.
   const [compactByo, setCompactByo] = useState<boolean>(prefill.fromCard && Boolean(prefill.name));
+  // A card fixes the name, and the approval already installed under it, so the
+  // runner belongs to the card too: no picker on a card. "Use a different
+  // runner" from a card opens the plain page with nothing carried over.
+  const [onCardStart, setOnCardStart] = useState<boolean>(prefill.fromCard);
   const [hostedState, setHostedState] = useState<'starting' | 'running' | 'slow'>('starting');
   // ADR-026 Phase 2: "on my computer" — install + placement request; the
   // daemon on the chosen machine adopts, provisions, and starts the agent.
@@ -1034,7 +1038,16 @@ const V2AgentBYO: React.FC = () => {
   // The runner is picked before the install and never after it: the name
   // follows the runner, so a switch after issue would leave a claude-named
   // install under a codex listener. Going back to the start is the way to change it.
-  const runnerPicker = mode === 'byo' && !issued ? (
+  const backToStart = () => {
+    if (onCardStart) {
+      setOnCardStart(false);
+      setCompactByo(false);
+      setName(defaultNameFor('byo', listenAdapter));
+      setNameTouched(false);
+    }
+    setIssued(null);
+  };
+  const runnerPicker = mode === 'byo' && !issued && !onCardStart ? (
     <p className="v2-byo__os" data-testid="byo-runner">
       {t('agentByo.form.adapterLabel')}{' '}
       {(['claude', 'codex'] as const).map((runner, i) => (
@@ -1577,7 +1590,7 @@ const V2AgentBYO: React.FC = () => {
                 type="button"
                 className="v2-byo__link"
                 data-testid="byo-use-different-runner"
-                onClick={() => setIssued(null)}
+                onClick={backToStart}
               >
                 {t('agentByo.listen.useDifferentRunner')}
               </button>
