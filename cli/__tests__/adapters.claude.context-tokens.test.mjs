@@ -61,7 +61,8 @@ describe('claude adapter reports the turn context from the child HOME', () => {
     symlinkSync(real, link);
     try {
       const impl = (_cmd, args) => {
-        const sid = args[args.indexOf('--session-id') + 1];
+        const flag = args.includes('--resume') ? '--resume' : '--session-id';
+        const sid = args[args.indexOf(flag) + 1];
         // claude names the folder after process.cwd(), the resolved path.
         const dir = join(childHome, '.claude', 'projects', realpathSync(real).replace(/[^a-zA-Z0-9]/g, '-'));
         mkdirSync(dir, { recursive: true });
