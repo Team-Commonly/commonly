@@ -256,6 +256,19 @@ test('TASK-649: the grant age and the revoke age round the same way on one row',
   expect(within(gone).getByText('revoked by sam 2d ago')).toBeInTheDocument();
 });
 
+// TASK-649: the same rule holds below a day. A grant's own age must round the
+// way the revoke line rounds, at the minute and hour boundaries too.
+test.each([
+  [5 * 60_000 + 40_000, 'granted 6m'],
+  [100 * 60_000, 'granted 2h'],
+])('TASK-649: a grant aged %p ms reads "%s" on its row', async (ageMs, expected) => {
+  const grant = { ...grantRevoked, createdAt: iso(-ageMs), revokedAt: null, revokedBy: null };
+  mockTwoEntries({ grants: { p1: [], p2: [grant] } });
+  renderTools();
+  const row = await screen.findByRole('button', { name: 'View GitHub in Ops' });
+  expect(within(row).getByText(new RegExp(`${expected}$`))).toBeInTheDocument();
+});
+
 test('TASK-164: the grant, budget and trail times read in zh-CN, not English', async () => {
   await i18nReady;
   await act(async () => { await i18n.changeLanguage('zh-CN'); });
