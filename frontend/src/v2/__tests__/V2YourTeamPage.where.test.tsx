@@ -42,6 +42,11 @@ const agents = [
   agent({ name: 'teamdaemon', displayName: 'Teamdaemon', userId: 'user-teamdaemon', installedBy: 'someone-else', runtime: { runtimeType: 'wrapper', adapter: 'codex', host: 'byo' } }),
   agent({ name: 'cloudhost', displayName: 'Cloudhost', userId: 'user-cloudhost', runtime: { runtimeType: 'something-new', host: 'cloud' } }),
   agent({ name: 'mystery', displayName: 'Mystery', userId: 'user-mystery', runtime: { runtimeType: 'something-new' } }),
+  agent({ name: 'hookowned', displayName: 'Hookowned', userId: 'user-hookowned', installedBy: 'me', runtime: { runtimeType: 'webhook' } }),
+  agent({ name: 'wrapnohost', displayName: 'Wrapnohost', userId: 'user-wrapnohost', installedBy: 'me', runtime: { runtimeType: 'wrapper', adapter: 'codex' } }),
+  agent({ name: 'nativeunstamped', displayName: 'Nativeunstamped', userId: 'user-nativeunstamped', runtime: { runtimeType: 'native' } }),
+  agent({ name: 'internalunstamped', displayName: 'Internalunstamped', userId: 'user-internalunstamped', runtime: { runtimeType: 'internal' } }),
+  agent({ name: 'moltbotunstamped', displayName: 'Moltbotunstamped', userId: 'user-moltbotunstamped', runtime: { runtimeType: 'moltbot' } }),
 ];
 
 const renderPage = () => render(
@@ -89,6 +94,13 @@ describe('V2YourTeamPage location mark and hosted meter', () => {
     expect(within(await cardOf('Daemon')).getByRole('img', { name: 'Runs on your computer' })).toBeInTheDocument();
     expect(within(await cardOf('Teamdaemon')).queryByRole('img', { name: /Runs on/ })).toBeNull();
     expect(within(await cardOf('Mystery')).queryByRole('img', { name: /Runs on/ })).toBeNull();
+    // No host stamp and a BYO type: no mark, even for the installer's own seat.
+    expect(within(await cardOf('Hookowned')).queryByRole('img', { name: /Runs on/ })).toBeNull();
+    expect(within(await cardOf('Wrapnohost')).queryByRole('img', { name: /Runs on/ })).toBeNull();
+    // Cloud-only runtime types with no stamp read as cloud.
+    expect(within(await cardOf('Nativeunstamped')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
+    expect(within(await cardOf('Internalunstamped')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
+    expect(within(await cardOf('Moltbotunstamped')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
     // The own-agent tile is the viewer's own machine by definition.
     expect(screen.getByTestId('team-own-card').querySelector('[role="img"]')).not.toBeNull();
   });
