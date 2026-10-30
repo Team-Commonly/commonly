@@ -236,6 +236,32 @@ describe('Slack installable bridge', () => {
     expect(api.postMessage).toHaveBeenCalledWith('D1', expect.stringContaining('Launch'));
   });
 
+  test('escapes the pod name it refuses with, so the name cannot ping the chat or plant a link', async () => {
+    Pod.findById.mockImplementation(podsById('R&D <!channel> <https://evil.example|open>'));
+
+    await relaySlackMessageToPod({
+      integration: {
+        ...integration,
+        scope: 'user',
+        config: {
+          ...integration.config,
+          linkedUserId: 'user-1',
+          slackUserId: 'U1',
+          gates: {},
+          relayMap: [{ externalMessageId: '171234.0001', agentUsername: 'kai', podId: 'pod-2' }],
+        },
+      },
+      event: { text: 'yes, ship it', user: 'U1', thread_ts: '171234.0001' },
+    });
+
+    const api = SlackApi.mock.results[0].value;
+    expect(api.postMessage).toHaveBeenCalledWith(
+      'D1',
+      '⚠️ That line came from “R&amp;D &lt;!channel&gt; &lt;https://evil.example|open&gt;”, '
+        + 'which this chat no longer reaches. Nothing was posted — open Commonly to reply there.',
+    );
+  });
+
   test('refuses a thread reply into a pod the linked user has left, posting nothing', async () => {
     // The gate is still on for pod-2; the membership half is what has to refuse.
     // Without this arm the Slack path's membership re-check is unwitnessed —
