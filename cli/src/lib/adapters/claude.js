@@ -1244,6 +1244,8 @@ export default {
         }),
         lockProbe: ctx._lockProbe, // test seams only
         stallKillGraceMs: ctx._stallKillGraceMs,
+        processTable: ctx._processTable,
+        survivorIo: ctx._survivorIo,
       });
       // TASK-440: the context this turn left, read from the transcript the
       // child wrote under its own env (an isolated HOME for public seats).
@@ -1306,6 +1308,8 @@ export default {
           }),
           lockProbe: ctx._lockProbe,
           stallKillGraceMs: ctx._stallKillGraceMs,
+          processTable: ctx._processTable,
+          survivorIo: ctx._survivorIo,
         });
         const contextTokens = claudeContextTokens({
           cwd: ctx.cwd, sessionId: freshId,

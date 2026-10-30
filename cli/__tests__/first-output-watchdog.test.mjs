@@ -98,6 +98,39 @@ describe('the claude adapter under the first-output watchdog', () => {
     expect(value.text).toBe('done quietly');
   });
 
+  test('a descendant still alive when the stalled spawn closes is SIGKILLed', async () => {
+    const saved = process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS;
+    process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS = '50';
+    const kill = jest.fn();
+    const started = 'Thu Oct 30 06:59:59 2026';
+    try {
+      const { error } = await claude.spawn('hello', {
+        environment: { model: 'test-model' },
+        _spawnImpl: () => {
+          const proc = fakeChild();
+          proc.pid = 4242;
+          // The spawn exits on SIGTERM; its child does not.
+          proc.kill = jest.fn((signal) => {
+            if (signal === 'SIGTERM') setImmediate(() => proc.emit('close', null));
+          });
+          return proc;
+        },
+        _lockProbe: async () => true,
+        _stallKillGraceMs: 60_000,
+        _processTable: () => [{ pid: 4243, ppid: 4242, started }],
+        // By close it has been reparented to launchd.
+        _survivorIo: { read: (pid) => (pid === 4243 ? { pid, ppid: 1, started } : null), kill },
+        env: { ...process.env, HOME: sessionsTmpDir },
+        cwd: sessionsTmpDir,
+      }).then(() => ({}), (err) => ({ error: err }));
+      expect(error.code).toBe('spawn_stalled');
+      expect(kill).toHaveBeenCalledWith(4243, 'SIGKILL');
+    } finally {
+      if (saved === undefined) delete process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS;
+      else process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS = saved;
+    }
+  });
+
   test('a spawn that ignores SIGTERM gets SIGKILL after the grace', async () => {
     const spawned = {};
     const saved = process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS;
