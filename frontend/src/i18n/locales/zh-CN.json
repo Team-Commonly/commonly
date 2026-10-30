@@ -583,7 +583,7 @@
     },
     "podAgentLiveness": {
       "notConnected": "{{agentName}} 还没有连接，运行起来之前不会在这里回复。",
-      "offlineSince": "{{agentName}} 上次连接是 {{age}}，恢复连接后会回复。"
+      "offlineSince": "{{agentName}} 上次连接是{{age}}，恢复连接后会回复。"
     },
     "typing": {
       "one": "{{name}} 正在思考…",

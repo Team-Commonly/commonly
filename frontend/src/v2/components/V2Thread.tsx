@@ -1605,13 +1605,21 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
         const wokenNames = new Set((delivery?.wokenAgents || []).map((name) => String(name).toLowerCase()));
         const isWoken = (agent: (typeof agents)[number]) => wokenNames.has(String(agent?.agentName || '').toLowerCase());
         const anyWoken = (delivery?.woken ?? 0) > 0;
+        // Suggest only an agent that can answer: one whose reach says it is not
+        // running would contradict its own liveness row on the same screen.
+        // An agent with no reach row (older backend, failed read) keeps the
+        // install-status rule.
+        const canAnswer = (agent: (typeof agents)[number]) => {
+          if (agent?.status !== 'active') return false;
+          const reach = (agent.instanceId && agentStateByHandle.get(String(agent.instanceId).toLowerCase()))
+            || agentStateByHandle.get(String(agent.agentName || '').toLowerCase());
+          return !reach || REACH_IS_ACTIVE.has(reach.state);
+        };
         const unwokenAgent = anyWoken && wokenNames.size > 0
-          ? agents.find((agent) => agent.status === 'active' && !isWoken(agent))
+          ? agents.find((agent) => canAnswer(agent) && !isWoken(agent))
           : undefined;
         const wokenAgent = unwokenAgent ? agents.find(isWoken) : undefined;
-        const exampleAgent = anyWoken
-          ? unwokenAgent
-          : (agents.find((agent) => agent.status === 'active') || agents[0]);
+        const exampleAgent = anyWoken ? unwokenAgent : agents.find(canAnswer);
         // Same handle rule as the typeahead: human-chosen instanceId is the
         // identity and stays; an opaque per-user token must never be the
         // suggested handle ("Try @u3f9c2a1b7d") — persona displayName slug
