@@ -220,7 +220,7 @@ entrance and scroll-reveal animation is allowed within these limits:
 
 ## Caveats
 
-- **One webfont shipped.** Inter Variable is bundled from `@fontsource-variable/inter` (OFL); everything else is system. Do not add a second family, and never load a face from Google Fonts.
+- **Faces are self-hosted from `@fontsource`, never Google Fonts.** Signal ships Bricolage Grotesque, IBM Plex Sans and IBM Plex Mono; Night Shift adds Recursive Variable (`@fontsource-variable/recursive/full.css`, all axes). Do not add a family outside an identity decision.
 - **No Figma file** is committed. All visual decisions trace back to `tokens.css` and `frontend/src/v2/v2.css`.
 - **Marketing site styling lives elsewhere.** Only the in-app experience is documented here.
 
@@ -237,3 +237,16 @@ Chosen on the Shell Parity canvas from three directions (Studio, Workshop, Signa
 The canvas is the spec of record for every screen: https://claude.ai/code/artifact/3c07344a-86f2-4296-b3f0-a49a0b451503 (pages: Workspace in C · Front door · Directions · Coverage). A screen is done when it matches its artboard at 1200 and 390 in a real browser.
 
 **The full system — state grammar, component grammar with exact values, copy rules, the process that made it land, and how to add a screen — is [`docs/design/signal-identity.md`](../../docs/design/signal-identity.md).** This section is the short form; when the two disagree, fix both in the same PR.
+
+## Night Shift on the pod thread (D194, 2026-10-30)
+
+Sam picked direction C from the v3 look sprint: "I do like night shift, also it is about to be Halloween" (ledger D194). It is the one exception to D169's fix-only rule, and it covers only the screens in the demo video: the pod thread (message list, composer, header) and its inspector. Every other screen stays Signal.
+
+- **Scope is one class.** `.v2-nightshift` sits on the pod `<main>` (V2Thread) and the inspector `<aside>` (V2Inspector), and remaps the `--v2-*` tokens underneath it. The rail and pods list stay on the light Signal ground, so the dark pane reads as one inset card. Moving the class up to `.v2-shell` takes the whole app dark; that is a ruling, not a CSS change.
+- **Walnut and parchment.** Ground walnut `#2c1e15`, side panel walnut-deep `#221610`, cards panel `#3a2a1e`, chips panel-2 `#483629`, borders seam `#544437`. Text parchment `#f0e7d6`, secondary `#cfc2af`, meta `#ab9c89` (5.1:1 on panel). The primary action is a parchment block with walnut-deep text.
+- **Two signals, one job each.** Flare `#ff7c4c` means needs you: the pending ring (1.5px plus glow), an open decision's primary option, the inspector's attention mark. Green `#95dfa4` means an agent ran or is running: the 3px inset edge on an agent's message, the run receipt link, the working dot. Cobalt does not appear inside the Night Shift pane.
+- **One face, Recursive, with its axes doing the work.** Body is `"CASL" 0,"MONO" 0`; names and the pod title are `"CASL" 1,"MONO" 0` at 750–800; times, runtime chips, code and receipts are `"CASL" 1,"MONO" 1`. Nothing under 11px.
+- **Softer shape.** Avatars are circles (36px, 32 on phones). Radius 6 on chips, 9–10 on controls, 11 on inspector cards, 12 on the composer, 16 on an agent's message card.
+- **How an agent message reads.** A panel card with a green inset edge; the author in casual 750; the runtime chip in casual mono on panel-2; inline code on panel-2, blocks on walnut-deep with a seam border; the run receipt is a punched "time card" on walnut-deep (three panel dots, green link, mono retention line). Every row carries the same 12px inset, so human and agent text share one column without the card bleeding past the pane.
+
+Tokens: `--c-ns-*` in `tokens.css`, `--v2-ns-*` in the `.v2-nightshift` block at the end of `frontend/src/v2/v2.css`. Pinned in `frontend/src/v2/__tests__/v2-layout-invariants.test.ts`.
