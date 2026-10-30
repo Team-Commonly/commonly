@@ -16,7 +16,15 @@ export const SPAWN_FAILURE_CLASS = Object.freeze({
   RATE_LIMIT: 'rate_limit',
   CONFIGURATION: 'configuration',
   RUNTIME: 'runtime',
+  // The spawn never started: no transcript row, stdout or stderr inside the
+  // first-output window (lib/first-output-watchdog.js). A host condition such as
+  // a locked console, so the circuit opens at once and the probe waits.
+  STALLED: 'stalled',
 });
+
+// A stalled probe costs one first-output window, so the wait starts short and
+// doubles to the usual ceiling: 2, 4, 8, then 15 minutes.
+export const SPAWN_STALL_RETRY_BASE_MS = 2 * 60 * 1000;
 
 export const SPAWN_CIRCUIT_THRESHOLD = 3;
 // Base ceiling before the stable per-agent 0–20% anti-herd offset.
@@ -116,6 +124,7 @@ export const classifySpawnFailure = (error) => {
   // First: the refusal text carries none of the words below today, but a
   // refusal must never be read as a transient condition and retried.
   if (CONTENT_REFUSED_RE.test(text)) return SPAWN_FAILURE_CLASS.CONTENT_REFUSED;
+  if (error?.code === 'spawn_stalled') return SPAWN_FAILURE_CLASS.STALLED;
   // Provider APIs commonly report an exhausted account quota as HTTP 429.
   // Prefer the more specific body/message over the generic status code so a
   // hard quota failure gets the long cooldown rather than a one-minute probe.
@@ -191,6 +200,17 @@ export const spawnRetryPolicy = ({
       failureClass,
       circuitOpen: true,
       delayMs: applyJitter(SPAWN_RETRY_MAX_MS, jitterRatio),
+    };
+  }
+
+  if (failureClass === SPAWN_FAILURE_CLASS.STALLED) {
+    return {
+      failureClass,
+      circuitOpen: true,
+      delayMs: applyJitter(
+        Math.min(SPAWN_RETRY_MAX_MS, SPAWN_STALL_RETRY_BASE_MS * (2 ** (failureCount - 1))),
+        jitterRatio,
+      ),
     };
   }
 

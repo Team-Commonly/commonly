@@ -1,6 +1,11 @@
 import { claudeRuntimeInventory } from '../native-runtime-inventory.js';
 import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
-import { spawnInOwnGroup, wantsOwnProcessGroup } from '@commonlyai/seats/process-group';
+import {
+  firstOutputWindowMs, killStallSurvivors, physicalPath, spawnStalledError, STALL_KILL_GRACE_MS, watchFirstOutput,
+} from '../first-output-watchdog.js';
+import {
+  descendantsOf, killProcessTree, readProcessTable, spawnInOwnGroup, wantsOwnProcessGroup,
+} from '@commonlyai/seats/process-group';
 /**
  * claude adapter — wraps the local `claude` CLI as a Commonly agent.
  *
@@ -88,7 +93,7 @@ import {
   prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_CODE, publicMcpUnavailableError, selectedMcpVersionDir,
 } from '../mcp-home.js';
 import { buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
-import { claudeConfigDirFor, claudeContextTokens } from '../session-recycle.js';
+import { claudeConfigDirFor, claudeContextTokens, claudeTranscriptPath } from '../session-recycle.js';
 import { skillsAsText } from '../skill-prompt.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
@@ -484,7 +489,11 @@ const publicSkillPromptArgs = async (skillSources) => {
 
 // `ownGroup` is set only under the run supervisor, which kills the child's
 // whole group; unsupervised, the spawn options are exactly what they were.
-const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false }) => new Promise((resolve, reject) => {
+const runClaude = ({
+  cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
+  transcriptPath = null, firstOutputMs = firstOutputWindowMs(), lockProbe, stallKillGraceMs = STALL_KILL_GRACE_MS,
+  processTable = readProcessTable, survivorIo,
+}) => new Promise((resolve, reject) => {
   const proc = spawnInOwnGroup(spawnImpl, cmd, args, {
     cwd,
     env,
@@ -499,15 +508,57 @@ const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl
     timedOut = true;
     proc.kill('SIGTERM');
   }, timeoutMs);
+  // A turn that never starts is killed long before the run timeout.
+  let stalled = null;
+  let stallKill = null;
+  let stallSnapshot = [];
+  // SIGKILL snapshotted descendants that are still alive. Safe to repeat. It
+  // runs when the spawn exits, at the grace deadline and on close: a survivor
+  // still holding the spawn's stdout or stderr keeps close from ever firing,
+  // and once the spawn is reaped killProcessTree can no longer reach it.
+  const sweepStallSurvivors = () => {
+    if (stalled) killStallSurvivors(stallSnapshot, survivorIo);
+  };
+  const treeIo = (table) => ({ table, ...(survivorIo?.read ? { read: survivorIo.read } : {}) });
+  const watchdog = watchFirstOutput({
+    proc,
+    windowMs: firstOutputMs,
+    transcriptPath,
+    lockProbe,
+    onStall: (reason) => {
+      stalled = spawnStalledError({ label: 'claude', windowMs: firstOutputMs, reason });
+      // Snapshot the descendants first: once the spawn exits they are
+      // reparented and can no longer be found from it.
+      const table = Number.isInteger(proc.pid) ? processTable() : null;
+      if (table) stallSnapshot = descendantsOf(table, proc.pid);
+      killProcessTree(proc, 'SIGTERM', treeIo(() => table));
+      // A process parked in a system call may not act on SIGTERM. SIGKILL the
+      // child, its group when it leads one, and its descendants.
+      stallKill = setTimeout(() => {
+        killProcessTree(proc, 'SIGKILL', treeIo(processTable));
+        sweepStallSurvivors();
+      }, stallKillGraceMs);
+      stallKill.unref?.();
+    },
+  });
+  proc.on('exit', sweepStallSurvivors);
 
   proc.stdout?.on('data', (chunk) => { stdout += chunk.toString(); });
   proc.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
   proc.on('error', (err) => {
     clearTimeout(timer);
+    clearTimeout(stallKill);
+    watchdog.stop();
     reject(err);
   });
   proc.on('close', (code) => {
     clearTimeout(timer);
+    clearTimeout(stallKill);
+    watchdog.stop();
+    if (stalled) {
+      sweepStallSurvivors();
+      return reject(stalled);
+    }
     if (timedOut) return reject(new Error(`claude timed out after ${timeoutMs}ms`));
     if (code !== 0) {
       // Report stdout too, not just stderr. In `-p` mode claude writes terminal
@@ -1200,6 +1251,13 @@ export default {
         credentials: spawnCredentials(spawnCtx),
         spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }), // test seam only — do not use in production
         ownGroup: wantsOwnProcessGroup(ctx),
+        transcriptPath: claudeTranscriptPath({
+          cwd: physicalPath(ctx.cwd), sessionId, configDir: claudeConfigDirFor({ ...env, HOME: childHome || env?.HOME }),
+        }),
+        lockProbe: ctx._lockProbe, // test seams only
+        stallKillGraceMs: ctx._stallKillGraceMs,
+        processTable: ctx._processTable,
+        survivorIo: ctx._survivorIo,
       });
       // TASK-440: the context this turn left, read from the transcript the
       // child wrote under its own env (an isolated HOME for public seats).
@@ -1256,6 +1314,14 @@ export default {
           credentials: spawnCredentials(retryCtx),
           spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
           ownGroup: wantsOwnProcessGroup(ctx),
+          transcriptPath: claudeTranscriptPath({
+            cwd: physicalPath(ctx.cwd), sessionId: freshId,
+            configDir: claudeConfigDirFor({ ...retry.env, HOME: retry.childHome || retry.env?.HOME }),
+          }),
+          lockProbe: ctx._lockProbe,
+          stallKillGraceMs: ctx._stallKillGraceMs,
+          processTable: ctx._processTable,
+          survivorIo: ctx._survivorIo,
         });
         const contextTokens = claudeContextTokens({
           cwd: ctx.cwd, sessionId: freshId,
