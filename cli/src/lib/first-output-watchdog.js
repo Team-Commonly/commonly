@@ -13,9 +13,11 @@
  * transcript: measured on the dart seat, the first row landed 0.7 s after the
  * spawn, and the hung spawns that night wrote no row at all. So a spawn counts
  * as started when it writes any stdout or stderr byte OR its transcript grows.
- * A spawn that does neither inside the window is killed with a reason.
+ * A spawn that does neither inside the window is killed with a reason. When
+ * the transcript is missing altogether, the path may simply be wrong, so the
+ * spawn is killed only if the console is also locked.
  */
-import { statSync } from 'fs';
+import { realpathSync, statSync } from 'fs';
 
 export const DEFAULT_FIRST_OUTPUT_WINDOW_MS = 180_000;
 
@@ -57,6 +59,20 @@ export const consoleLocked = async ({ platform = process.platform, execFileImpl 
   });
 };
 
+// Claude names its project folder after process.cwd(), which on macOS is the
+// physical path (/tmp is /private/tmp), so the transcript is looked for there.
+export const physicalPath = (dir) => {
+  if (!dir) return dir;
+  try {
+    return realpathSync(dir);
+  } catch {
+    return dir;
+  }
+};
+
+// How long a stalled spawn gets to exit after SIGTERM before SIGKILL.
+export const STALL_KILL_GRACE_MS = 10_000;
+
 const sizeOf = (file) => {
   if (!file) return -1;
   try {
@@ -89,9 +105,13 @@ export const watchFirstOutput = ({
   // A missing file counts as empty, so creating an empty one is not growth.
   const baseline = Math.max(0, sizeOf(transcriptPath));
   const timer = setTimeoutImpl(async () => {
-    if (started || sizeOf(transcriptPath) > baseline) return;
+    const size = sizeOf(transcriptPath);
+    if (started || size > baseline) return;
     const locked = await lockProbe().catch(() => null);
     if (stopped) return;
+    // No transcript where one was expected may only mean the path is wrong, so
+    // that alone never kills a turn: it takes a locked console as well.
+    if (size < 0 && locked !== true) return;
     onStall(locked ? 'console locked' : 'no transcript, stdout or stderr');
   }, windowMs);
   timer?.unref?.();

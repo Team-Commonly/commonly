@@ -37,7 +37,7 @@ const { performRun } = await import('../src/commands/agent.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
 const claude = (await import('../src/lib/adapters/claude.js')).default;
 const {
-  consoleLocked, spawnStalledError, watchFirstOutput, firstOutputWindowMs, DEFAULT_FIRST_OUTPUT_WINDOW_MS,
+  consoleLocked, spawnStalledError, watchFirstOutput, firstOutputWindowMs, DEFAULT_FIRST_OUTPUT_WINDOW_MS, physicalPath,
 } = await import('../src/lib/first-output-watchdog.js');
 const { classifySpawnFailure, spawnRetryPolicy, SPAWN_FAILURE_CLASS } = await import('../src/lib/spawn-retry.js');
 
@@ -85,9 +85,45 @@ describe('the claude adapter under the first-output watchdog', () => {
     expect(classifySpawnFailure(error)).toBe(SPAWN_FAILURE_CLASS.STALLED);
   });
 
-  test('an unlocked console names the missing output instead', async () => {
-    const { error } = await spawnClaude(undefined, { windowMs: 50, locked: false });
-    expect(error.stallReason).toBe('no transcript, stdout or stderr');
+  test('a missing transcript alone does not kill: the path may be wrong, so it takes a locked console', async () => {
+    const { value, error, child } = await spawnClaude((proc) => {
+      setTimeout(() => {
+        proc.stdout.emit('data', Buffer.from('done quietly'));
+        proc.emit('close', 0);
+      }, 150);
+    }, { windowMs: 50, locked: false });
+    expect(error).toBeUndefined();
+    expect(child.kill).not.toHaveBeenCalled();
+    expect(value.text).toBe('done quietly');
+  });
+
+  test('a spawn that ignores SIGTERM gets SIGKILL after the grace', async () => {
+    const spawned = {};
+    const saved = process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS;
+    process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS = '50';
+    try {
+      const { error } = await claude.spawn('hello', {
+        environment: { model: 'test-model' },
+        _spawnImpl: () => {
+          const proc = fakeChild();
+          // Parked: SIGTERM does nothing, only SIGKILL ends it.
+          proc.kill = jest.fn((signal) => {
+            if (signal === 'SIGKILL') setImmediate(() => proc.emit('close', null));
+          });
+          spawned.child = proc;
+          return proc;
+        },
+        _lockProbe: async () => true,
+        _stallKillGraceMs: 30,
+        env: { ...process.env, HOME: sessionsTmpDir },
+        cwd: sessionsTmpDir,
+      }).then(() => ({}), (err) => ({ error: err }));
+      expect(spawned.child.kill.mock.calls.map(([signal]) => signal)).toEqual(['SIGTERM', 'SIGKILL']);
+      expect(error.code).toBe('spawn_stalled');
+    } finally {
+      if (saved === undefined) delete process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS;
+      else process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS = saved;
+    }
   });
 
   test('a slow spawn that is talking is not killed', async () => {
@@ -146,6 +182,30 @@ describe('watchFirstOutput', () => {
     fs.writeFileSync(transcript, '');
     await fire();
     expect(onStall).toHaveBeenCalledWith('no transcript, stdout or stderr');
+  });
+
+  test('a missing transcript is a stall only on a locked console', async () => {
+    const transcript = path.join(sessionsTmpDir, 'never-written.jsonl');
+    fs.rmSync(transcript, { force: true });
+    for (const [locked, expected] of [[false, 0], [null, 0], [true, 1]]) {
+      const onStall = jest.fn();
+      let fire;
+      watchFirstOutput({
+        proc: quietProc(), windowMs: 1000, transcriptPath: transcript, onStall,
+        lockProbe: async () => locked, setTimeoutImpl: (cb) => { fire = cb; return 0; }, clearTimeoutImpl: () => {},
+      });
+      // eslint-disable-next-line no-await-in-loop
+      await fire();
+      expect(onStall).toHaveBeenCalledTimes(expected);
+    }
+  });
+
+  test('the transcript is looked for under the physical cwd', () => {
+    const link = path.join(sessionsTmpDir, 'linked-cwd');
+    fs.rmSync(link, { force: true });
+    fs.symlinkSync(os.tmpdir(), link);
+    expect(physicalPath(link)).toBe(fs.realpathSync(os.tmpdir()));
+    expect(physicalPath(path.join(sessionsTmpDir, 'absent'))).toBe(path.join(sessionsTmpDir, 'absent'));
   });
 
   test('a window of 0 turns it off', () => {

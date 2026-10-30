@@ -1,7 +1,9 @@
 import { claudeRuntimeInventory } from '../native-runtime-inventory.js';
 import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
-import { firstOutputWindowMs, spawnStalledError, watchFirstOutput } from '../first-output-watchdog.js';
-import { spawnInOwnGroup, wantsOwnProcessGroup } from '@commonlyai/seats/process-group';
+import {
+  firstOutputWindowMs, physicalPath, spawnStalledError, STALL_KILL_GRACE_MS, watchFirstOutput,
+} from '../first-output-watchdog.js';
+import { killProcessTree, spawnInOwnGroup, wantsOwnProcessGroup } from '@commonlyai/seats/process-group';
 /**
  * claude adapter — wraps the local `claude` CLI as a Commonly agent.
  *
@@ -487,7 +489,7 @@ const publicSkillPromptArgs = async (skillSources) => {
 // whole group; unsupervised, the spawn options are exactly what they were.
 const runClaude = ({
   cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
-  transcriptPath = null, firstOutputMs = firstOutputWindowMs(), lockProbe,
+  transcriptPath = null, firstOutputMs = firstOutputWindowMs(), lockProbe, stallKillGraceMs = STALL_KILL_GRACE_MS,
 }) => new Promise((resolve, reject) => {
   const proc = spawnInOwnGroup(spawnImpl, cmd, args, {
     cwd,
@@ -505,6 +507,7 @@ const runClaude = ({
   }, timeoutMs);
   // A turn that never starts is killed long before the run timeout.
   let stalled = null;
+  let stallKill = null;
   const watchdog = watchFirstOutput({
     proc,
     windowMs: firstOutputMs,
@@ -513,6 +516,10 @@ const runClaude = ({
     onStall: (reason) => {
       stalled = spawnStalledError({ label: 'claude', windowMs: firstOutputMs, reason });
       proc.kill('SIGTERM');
+      // A process parked in a system call may not act on SIGTERM. SIGKILL the
+      // child, its group when it leads one, and its descendants.
+      stallKill = setTimeout(() => killProcessTree(proc, 'SIGKILL'), stallKillGraceMs);
+      stallKill.unref?.();
     },
   });
 
@@ -520,11 +527,13 @@ const runClaude = ({
   proc.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
   proc.on('error', (err) => {
     clearTimeout(timer);
+    clearTimeout(stallKill);
     watchdog.stop();
     reject(err);
   });
   proc.on('close', (code) => {
     clearTimeout(timer);
+    clearTimeout(stallKill);
     watchdog.stop();
     if (stalled) return reject(stalled);
     if (timedOut) return reject(new Error(`claude timed out after ${timeoutMs}ms`));
@@ -1220,9 +1229,10 @@ export default {
         spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }), // test seam only — do not use in production
         ownGroup: wantsOwnProcessGroup(ctx),
         transcriptPath: claudeTranscriptPath({
-          cwd: ctx.cwd, sessionId, configDir: claudeConfigDirFor({ ...env, HOME: childHome || env?.HOME }),
+          cwd: physicalPath(ctx.cwd), sessionId, configDir: claudeConfigDirFor({ ...env, HOME: childHome || env?.HOME }),
         }),
-        lockProbe: ctx._lockProbe, // test seam only
+        lockProbe: ctx._lockProbe, // test seams only
+        stallKillGraceMs: ctx._stallKillGraceMs,
       });
       // TASK-440: the context this turn left, read from the transcript the
       // child wrote under its own env (an isolated HOME for public seats).
@@ -1280,10 +1290,11 @@ export default {
           spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
           ownGroup: wantsOwnProcessGroup(ctx),
           transcriptPath: claudeTranscriptPath({
-            cwd: ctx.cwd, sessionId: freshId,
+            cwd: physicalPath(ctx.cwd), sessionId: freshId,
             configDir: claudeConfigDirFor({ ...retry.env, HOME: retry.childHome || retry.env?.HOME }),
           }),
           lockProbe: ctx._lockProbe,
+          stallKillGraceMs: ctx._stallKillGraceMs,
         });
         const contextTokens = claudeContextTokens({
           cwd: ctx.cwd, sessionId: freshId,
