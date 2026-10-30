@@ -388,9 +388,10 @@ export const TOOLS = [
     function: {
       name: 'commonly_agent_status',
       description:
-        'Check the connection status of every agent installed in this pod. '
+        'Check the connection status of every agent installed in this pod, and of '
+        + 'the asker\'s own agents in other pods (inThisPod: false). '
         + 'Returns each agent\'s runtime kind and state: active (seen in the last '
-        + '10 minutes), idle (last day), stale (silent for over a day), '
+        + '5 minutes), idle (last day), stale (silent for over a day), '
         + 'never-connected (a local/BYO seat whose runtime has never '
         + 'authenticated — the user still needs to link it from the connect '
         + 'page), or ready (a native agent; it runs when addressed and has no '
@@ -1197,12 +1198,41 @@ export async function dispatchTool(
         // Raft-comparison P4 rule: never fork status vocabulary per surface.
         const { AgentInstallation } = require('../models/AgentRegistry');
         const { collectPodAgentActivity, deriveActivityBucket } = require('./agentStateService');
-        const installations = await AgentInstallation.find({
-          podId: ctx.podId,
-          status: 'active',
-        }).select('agentName instanceId displayName config').lean();
-        const activity = await collectPodAgentActivity(String(ctx.podId), installations);
-        const agents = (installations as Array<Record<string, any>>).map((i) => {
+        const mongoose = require('mongoose');
+        // This pod's agents, plus the ones the person asking installed in
+        // other pods: someone who connected an agent from another pod still
+        // asks Scout here whether it is running. Only their own installs, and
+        // only name and state, never the other pod. This pod is read uncapped,
+        // as the roster reads it; only the asker's installs elsewhere are
+        // capped, so a busy asker never pushes an agent here out of the answer.
+        const requesterId = ctx.computerRequesterId;
+        const fields = 'agentName instanceId displayName config podId runtimeTokens.lastUsedAt';
+        const podRows = await AgentInstallation.find({ status: 'active', podId: ctx.podId }).select(fields).lean();
+        const otherRows = requesterId && mongoose.Types.ObjectId.isValid(requesterId)
+          ? await AgentInstallation.find({ status: 'active', installedBy: requesterId, podId: { $ne: ctx.podId } })
+            .select(fields).sort({ _id: 1 }).limit(100).lean()
+          : [];
+        const seen = new Set<string>();
+        // This pod's rows come first, so a duplicate keeps its in-pod copy.
+        const installations = ([...podRows, ...otherRows] as Array<Record<string, any>>)
+          .filter((i) => {
+            const key = `${i.agentName}:${i.instanceId || 'default'}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+        const byPod = new Map<string, Array<Record<string, any>>>();
+        for (const i of installations) {
+          const podKey = String(i.podId);
+          byPod.set(podKey, [...(byPod.get(podKey) || []), i]);
+        }
+        const activity = new Map<string, Date | null>();
+        for (const [podKey, group] of byPod) {
+          // eslint-disable-next-line no-await-in-loop
+          const podActivity = await collectPodAgentActivity(podKey, group as never);
+          for (const [key, value] of podActivity) activity.set(key, value);
+        }
+        const agents = installations.map((i) => {
           const key = `${i.agentName}:${i.instanceId || 'default'}`;
           const lastActiveAt = activity.get(key) || null;
           const runtimeType = String(i.config?.runtime?.runtimeType || '') || 'unknown';
@@ -1213,6 +1243,7 @@ export async function dispatchTool(
             // A hosted agent on the native engine is ready in the same sense.
             state: deriveActivityBucket(lastActiveAt, hostedRunsNative(i) ? 'native' : runtimeType),
             lastActiveAt: lastActiveAt ? new Date(lastActiveAt).toISOString() : null,
+            inThisPod: String(i.podId) === String(ctx.podId),
           };
         });
         return { content: { agents } };
