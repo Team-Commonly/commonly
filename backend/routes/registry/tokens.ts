@@ -301,17 +301,28 @@ const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installatio
       agentName: installation.agentName,
       instanceId: installation.instanceId || 'default',
       'runtimeTokens.0': { $exists: true },
-    }).collation({ locale: 'en', strength: 2 }).select('runtimeTokens').lean();
-    return (siblings || []).flatMap((entry: any) => entry.runtimeTokens || [])[0] || null;
+    }).collation({ locale: 'en', strength: 2 }).select('runtimeTokens installedBy').lean();
+    const sibling = (siblings || []).find((entry: any) => entry.runtimeTokens?.length);
+    return sibling ? { token: sibling.runtimeTokens[0], installedBy: sibling.installedBy } : null;
   };
-  const existingToken = agentUser.agentRuntimeTokens?.[0] || installation?.runtimeTokens?.[0]
-    || await siblingLegacyToken();
+  let existingToken = agentUser.agentRuntimeTokens?.[0] || installation?.runtimeTokens?.[0];
+  // A sibling's key still blocks a second mint, whoever installed it. But only
+  // a sibling this issuer installed may record the issuer as the key's owner:
+  // another person's key backfilled under the caller would be revoked when the
+  // caller's account is deleted.
+  let backfillOwner = Boolean(existingToken);
+  if (!existingToken) {
+    const sibling = await siblingLegacyToken();
+    existingToken = sibling?.token || null;
+    backfillOwner = Boolean(sibling && issuer?.ownerUserId
+      && String(sibling.installedBy) === String(issuer.ownerUserId));
+  }
   if (existingToken) {
     // Backfill a credential row for the pre-substrate token so the existing
     // fleet becomes listable and cascade-revocable (#1312: without
     // this the collection stays near-empty while coverage looks fine).
     // Provenance is unknown, so no parent lineage is claimed.
-    if (issuer?.ownerUserId) {
+    if (issuer?.ownerUserId && backfillOwner) {
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const AgentCredential = require('../../models/AgentCredential');
       await AgentCredential.updateOne(

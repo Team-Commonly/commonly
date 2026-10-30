@@ -18,7 +18,11 @@ const AgentIdentityService = require('./agentIdentityService');
  * if the key never arrived (the request failed, or the person left first),
  * suggesting "<name>-2" makes the next click mint a second install and orphans
  * the first. Only in the pod being installed into: elsewhere the name would
- * put the same identity into a second pod. No pod given, no exemption.
+ * put the same identity into a second pod. No pod given, no exemption. And
+ * only an install on the `default` instance: that is the instance the install
+ * route derives when the display name is the agent's own name, which is how
+ * both callers install. A keyless install on any other instance keeps its
+ * name taken, or the next click would create a second installation beside it.
  */
 export const nextFreeByoName = async (
   userId: unknown,
@@ -40,9 +44,10 @@ export const nextFreeByoName = async (
     if (String(row.installedBy) !== String(userId)) return false;
     if (row.config?.runtime?.runtimeType !== 'webhook') return false;
     if (row.runtimeTokens?.length) return false;
+    if ((row.instanceId || 'default') !== 'default') return false;
     const username = AgentIdentityService.buildAgentUsername(
       AgentIdentityService.resolveAgentType(row.agentName),
-      row.instanceId || 'default',
+      'default',
     );
     const agentUser: any = await User.findOne({ username }).select('agentRuntimeTokens').lean();
     return !agentUser?.agentRuntimeTokens?.length;

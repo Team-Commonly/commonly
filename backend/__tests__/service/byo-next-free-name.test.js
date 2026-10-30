@@ -167,6 +167,14 @@ describe('BYO next-free-name lookup', () => {
     expect(await suggest('sam-claude', first._id)).toBe('sam-claude-2');
   });
 
+  it('keeps the name taken when the keyless own install is on a non-default instance', async () => {
+    // The install route derives the default instance for these clicks, so
+    // handing this name back would create a second installation beside it.
+    const first = await pod('one', [owner._id]);
+    await webhookInstall(first, 'sam-claude', owner._id, { instanceId: 'work' });
+    expect(await suggest('sam-claude', first._id)).toBe('sam-claude-2');
+  });
+
   it('the connect card gets the same keyless-own-install exemption as the page', async () => {
     // Without the exemption both would skip sam-claude-2 and land on -3.
     const here = await pod('here', [owner._id]);

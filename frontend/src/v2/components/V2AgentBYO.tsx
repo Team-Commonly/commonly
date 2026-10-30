@@ -330,7 +330,9 @@ const V2AgentBYO: React.FC = () => {
     // The pod lets the server hand back this person's own install there whose
     // key never arrived, instead of "<name>-2". BYO only: that install is a
     // webhook, so another mode handed its name would hit "already installed".
-    const inPod = mode === 'byo' && podId ? `&podId=${encodeURIComponent(podId)}` : '';
+    // Not with a persona: its display name derives a non-default instance,
+    // and the server only hands back installs on the default one.
+    const inPod = mode === 'byo' && podId && !personaCard ? `&podId=${encodeURIComponent(podId)}` : '';
     api.get<{ name?: string }>(`/api/registry/agents/next-free-name?base=${encodeURIComponent(base)}${inPod}`)
       .then((result) => {
         if (cancelled) return;
@@ -347,7 +349,8 @@ const V2AgentBYO: React.FC = () => {
       })
       .catch(() => { if (!cancelled) setNameLookupError(true); });
     return () => { cancelled = true; };
-  }, [api, choicesKnown, defaultAgentName, mode, nameLookupRetry, nameTouched, podId, prefill.name, prefill.reconnect]);
+  }, [api, choicesKnown, defaultAgentName, mode, nameLookupRetry, nameTouched, personaCard, podId, prefill.name,
+    prefill.reconnect]);
   const [placed, setPlaced] = useState<{ agentName: string; machineId: string; machineName: string } | null>(null);
   const [placedState, setPlacedState] = useState<'waiting' | 'running' | 'slow'>('waiting');
   const [reconnectRequest, setReconnectRequest] = useState<{
