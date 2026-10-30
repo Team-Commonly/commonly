@@ -488,19 +488,25 @@ const V2AgentBYO: React.FC = () => {
         // into (not in their list) must not survive as a phantom selection.
         const podKnown = podId && installablePods.some((p) => p._id === podId);
         if ((!podId || !podKnown) && installablePods.length > 0) {
-          // A person coming from a team pod should install there, not in the
-          // private workspace created for them at signup. V2Layout records
-          // visits when a pod opens. Only consider pods still in this safe,
-          // installable list; a stale visit to a public pod cannot select it.
+          // Default to the person's own workspace (TASK-645 item 9): the
+          // picker no longer jumps to the last pod they opened. Recent visits
+          // only decide when they own no installable pod. Signup creates
+          // My Workspace before anything the person makes, so the OLDEST
+          // owned pod is that workspace; the name is not a reliable marker
+          // (it can be renamed). V2Layout records visits when a pod opens; a
+          // stale visit to a public pod cannot select it because the list
+          // above already excludes publicRead pods.
+          const uid = currentUser?._id;
+          const owned = uid
+            ? installablePods.filter((p) => p.createdBy?._id && String(p.createdBy._id) === String(uid))
+            : [];
+          const createdMs = (p: V2Pod) => (p.createdAt ? Date.parse(p.createdAt) : Number.POSITIVE_INFINITY);
+          const own = owned.sort((a, b) => createdMs(a) - createdMs(b))[0];
           const visits = readPodVisits();
           const recent = installablePods
             .filter((p) => visits[p._id] > 0)
             .sort((a, b) => visits[b._id] - visits[a._id])[0];
-          const uid = currentUser?._id;
-          const own = uid
-            ? installablePods.find((p) => p.createdBy?._id && String(p.createdBy._id) === String(uid))
-            : undefined;
-          setPodId((recent || own || installablePods[0])._id);
+          setPodId((own || recent || installablePods[0])._id);
         }
       } catch {
         // Defensive: keep the form usable; user will see the error on submit.
