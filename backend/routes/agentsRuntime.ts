@@ -3747,13 +3747,24 @@ router.get('/pods/:podId/integrations/:integrationId/messages', phase4RateLimit,
         after,
       });
     } else if (integration.type === 'groupme') {
-      if (!integration.config?.accessToken || !integration.config?.groupId) {
+      // The token lives in connectorSecrets; the row's own `accessToken` is not
+      // read (TASK-539). A ref whose secret is gone answers like a missing token.
+      // Any other failure (key ring, decryption, database) is a 500.
+      const { readGroupmeAccessToken } = require('../services/chatConnectorTokens');
+      const { ConnectorSecretNotFoundError } = require('../services/connectorSecrets');
+      let accessToken: string | undefined;
+      try {
+        accessToken = await readGroupmeAccessToken(integration.config);
+      } catch (error) {
+        if (!(error instanceof ConnectorSecretNotFoundError)) throw error;
+      }
+      if (!accessToken || !integration.config?.groupId) {
         return res.status(400).json({ message: 'GroupMe integration missing accessToken or groupId' });
       }
       const GroupMeService = require('../services/groupmeService');
       messages = await GroupMeService.fetchMessages({
         groupId: integration.config.groupId,
-        accessToken: integration.config.accessToken,
+        accessToken,
         limit,
         before,
         after,
@@ -3766,7 +3777,9 @@ router.get('/pods/:podId/integrations/:integrationId/messages', phase4RateLimit,
 
     return res.json({ messages });
   } catch (error: any) {
-    console.error('Error fetching messages for agent:', error);
+    // The message only: a provider's HTTP error object carries its request
+    // config, which holds the credential (a query param or an auth header).
+    console.error('Error fetching messages for agent:', (error as Error)?.message);
     return res.status(500).json({ message: (error as Error).message || 'Failed to fetch messages' });
   }
 });

@@ -107,6 +107,9 @@ export const SERVER_OWNED_CONFIG_KEYS = [
   // The X / Instagram feed refs. Only `services/feedCredentials` writes them; a
   // body that supplied one would point its row at another row's secret.
   'feedAccessTokenRef', 'feedRefreshTokenRef',
+  // The GroupMe access token's ref, for the same reason. Only
+  // `services/chatConnectorTokens` writes it.
+  'accessTokenRef',
 ];
 
 export const isServerOwnedConfigKey = (key: string): boolean => SERVER_OWNED_CONFIG_KEYS.includes(key);

@@ -24,6 +24,7 @@ const connectorSecrets = require('../services/connectorSecrets');
 const { DISCORD_WEBHOOK_URL } = require('../services/connectorSecretKinds');
 // eslint-disable-next-line global-require
 const { isFeedType, takeFeedTokens, storeFeedTokens } = require('../services/feedCredentials');
+const { isChatTokenType, takeChatTokens, storeGroupmeAccessToken } = require('../services/chatConnectorTokens');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
@@ -517,6 +518,12 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
       const { rest, tokens } = takeFeedTokens(nextConfig);
       rowConfig = { ...rest, ...await storeFeedTokens(String(integrationId), type, tokens) };
     }
+    if (isChatTokenType(type)) {
+      // GroupMe's token is stored through connectorSecrets; Slack's copy has no
+      // reader and is dropped (TASK-539).
+      const { rest, accessToken } = takeChatTokens(type, nextConfig);
+      rowConfig = { ...rest, ...await storeGroupmeAccessToken(String(integrationId), accessToken) };
+    }
     const integration = new Integration({
       _id: integrationId, podId, type, config: rowConfig, createdBy: req.user?.id, status: 'pending',
     });
@@ -861,6 +868,10 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
       // A supplied token is stored through connectorSecrets; the row takes the ref.
       const { rest, tokens } = takeFeedTokens(incoming);
       written = { ...rest, ...await storeFeedTokens(String(integrationId), integration.type || '', tokens) };
+    }
+    if (incoming && isChatTokenType(integration.type)) {
+      const { rest, accessToken } = takeChatTokens(integration.type, incoming);
+      written = { ...rest, ...await storeGroupmeAccessToken(String(integrationId), accessToken) };
     }
     if (incoming && written) {
       Object.keys(written).forEach((key) => {
