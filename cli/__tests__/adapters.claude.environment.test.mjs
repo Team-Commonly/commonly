@@ -423,6 +423,9 @@ describe('claude adapter — ctx.environment', () => {
       expect(call.args).toContain('Read(./**)');
       expect(call.args).toContain('mcp__capture__*');
       expect(call.args).toContain('Bash');
+      // TASK-287: a public seat is not offered attach_file.
+      expect(call.args.slice(call.args.indexOf('--disallowedTools')))
+        .toContain('mcp__capture__commonly_attach_file');
       expect(call.opts.env.HOME).toBe(publicState);
       expect(call.opts.env.TMPDIR).toBe(path.join(publicState, 'tmp'));
       // Without it Claude creates /tmp/claude-<uid>, which the profile denies.
@@ -1272,6 +1275,8 @@ describe('claude adapter — a workspace seat', () => {
       'Read(./.git/**)', 'Read(./**/.git/**)',
       'mcp__commonly__commonly_self_install_into_pod',
     ]));
+    // The person's own repo seat keeps attach_file; only public seats lose it.
+    expect(denied).not.toContain('mcp__commonly__commonly_attach_file');
     expect(opts.env.HOME).toBe(publicState);
     expect(opts.env.COMMONLY_HOST_SECRET).toBeUndefined();
   });
