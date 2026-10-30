@@ -86,7 +86,8 @@ export const watchFirstOutput = ({
   const markStarted = () => { started = true; };
   proc.stdout?.on('data', markStarted);
   proc.stderr?.on('data', markStarted);
-  const baseline = sizeOf(transcriptPath);
+  // A missing file counts as empty, so creating an empty one is not growth.
+  const baseline = Math.max(0, sizeOf(transcriptPath));
   const timer = setTimeoutImpl(async () => {
     if (started || sizeOf(transcriptPath) > baseline) return;
     const locked = await lockProbe().catch(() => null);

@@ -134,6 +134,20 @@ describe('watchFirstOutput', () => {
     expect(onStall).toHaveBeenCalledWith('no transcript, stdout or stderr');
   });
 
+  test('a transcript created empty is not a start', async () => {
+    const transcript = path.join(sessionsTmpDir, 'created-empty.jsonl');
+    fs.rmSync(transcript, { force: true });
+    const onStall = jest.fn();
+    let fire;
+    watchFirstOutput({
+      proc: quietProc(), windowMs: 1000, transcriptPath: transcript, onStall,
+      lockProbe: async () => null, setTimeoutImpl: (cb) => { fire = cb; return 0; }, clearTimeoutImpl: () => {},
+    });
+    fs.writeFileSync(transcript, '');
+    await fire();
+    expect(onStall).toHaveBeenCalledWith('no transcript, stdout or stderr');
+  });
+
   test('a window of 0 turns it off', () => {
     expect(firstOutputWindowMs({ COMMONLY_FIRST_OUTPUT_WINDOW_MS: '0' })).toBe(0);
     expect(firstOutputWindowMs({ COMMONLY_FIRST_OUTPUT_WINDOW_MS: 'soon' })).toBe(DEFAULT_FIRST_OUTPUT_WINDOW_MS);
