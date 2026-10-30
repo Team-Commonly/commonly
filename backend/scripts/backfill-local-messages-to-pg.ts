@@ -36,6 +36,12 @@
  *   npm run backfill:local-messages -- --apply
  *   npm run backfill:local-messages -- --since 2026-09-30T00:00:00Z --apply --force
  *
+ * A row whose pod is in neither store is an orphan: its pod was deleted, so
+ * there is nothing to mirror into PG and the FK on `pods` refuses the copy.
+ * Those rows are skipped, left untouched in Mongo and counted as `orphaned`;
+ * they never fail the run. `orphanedPending` reports how many of the pending
+ * rows are orphans before anything is written, dry run included.
+ *
  * Exit codes: 0 done, or a dry run that would proceed; 1 some rows failed;
  * 2 refused (a dry run that finds the overlap refuses too, so it also exits 2).
  */
@@ -44,7 +50,7 @@
 import mongoose from 'mongoose';
 import { copyOne, ensureLegacyIdIndex } from '../services/pgMessageReconcileService';
 
-type CopyResult = 'moved' | 'present';
+type CopyResult = 'moved' | 'present' | 'orphaned';
 
 export interface PendingDoc {
   _id: { toString(): string };
@@ -59,6 +65,8 @@ export interface LocalBackfillDeps {
   newestPendingAt: () => Promise<Date | null>;
   /** PG rows with no legacy_mongo_id written at or before `at`. */
   countOverlap: (at: Date) => Promise<number>;
+  /** Pending rows whose pod exists in neither MongoDB nor PG `pods`. */
+  countOrphaned: () => Promise<number>;
   /** The next pending docs after `afterId`, oldest id first. */
   nextBatch: (afterId: string | null, limit: number) => Promise<PendingDoc[]>;
   copy: (doc: PendingDoc) => Promise<CopyResult>;
@@ -71,6 +79,10 @@ export interface LocalBackfillReport {
   refused: boolean;
   moved: number;
   alreadyPresent: number;
+  /** Pending rows whose pod is gone, counted before any write. */
+  orphanedPending: number;
+  /** Rows this run skipped because their pod is gone. */
+  orphaned: number;
   failed: number;
 }
 
@@ -81,8 +93,17 @@ export async function backfillLocalMessages(
   const pending = await deps.countPending();
   const newest = pending ? await deps.newestPendingAt() : null;
   const overlap = newest ? await deps.countOverlap(newest) : 0;
+  const orphanedPending = pending ? await deps.countOrphaned() : 0;
   const report: LocalBackfillReport = {
-    dryRun: !apply, pending, overlap, refused: overlap > 0 && !force, moved: 0, alreadyPresent: 0, failed: 0,
+    dryRun: !apply,
+    pending,
+    overlap,
+    refused: overlap > 0 && !force,
+    moved: 0,
+    alreadyPresent: 0,
+    orphanedPending,
+    orphaned: 0,
+    failed: 0,
   };
   if (!apply || report.refused || !pending) return report;
 
@@ -92,7 +113,9 @@ export async function backfillLocalMessages(
     if (!batch.length) break;
     for (const doc of batch) {
       try {
-        if (await deps.copy(doc) === 'moved') report.moved += 1;
+        const result = await deps.copy(doc);
+        if (result === 'moved') report.moved += 1;
+        else if (result === 'orphaned') report.orphaned += 1;
         else report.alreadyPresent += 1;
       } catch (err) {
         report.failed += 1;
@@ -116,6 +139,8 @@ export const productionDeps = (pool: PgPool, { since }: BackfillScope = {}): Loc
   const Message = require('../models/Message');
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const { syncPodFromMongo } = require('../services/pgPodSyncService');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const MongoPod = require('../models/Pod');
   const unreconciled = since
     ? { reconciledAt: { $exists: false }, createdAt: { $gte: since } }
     : { reconciledAt: { $exists: false } };
@@ -132,13 +157,28 @@ export const productionDeps = (pool: PgPool, { since }: BackfillScope = {}): Loc
       );
       return Number(rows[0]?.n || 0);
     },
+    // An orphan's pod is in neither store: a pod already in PG copies without
+    // a mirror, and a Mongo-only pod gets mirrored, so only the rest fail the FK.
+    countOrphaned: async () => {
+      const podIds: Array<{ toString(): string }> = await Message.distinct('podId', unreconciled);
+      if (!podIds.length) return 0;
+      const ids = podIds.map(String);
+      const inMongo: Array<{ toString(): string }> = await MongoPod.find({ _id: { $in: podIds } }).distinct('_id');
+      const { rows } = await pool.query('SELECT id FROM pods WHERE id = ANY($1)', [ids]);
+      const live = new Set([...inMongo.map(String), ...rows.map((r) => String(r.id))]);
+      const gone = podIds.filter((id) => !live.has(String(id)));
+      return gone.length ? Message.countDocuments({ ...unreconciled, podId: { $in: gone } }) : 0;
+    },
     nextBatch: (afterId, limit) => Message.find(afterId
       ? { ...unreconciled, _id: { $gt: new mongoose.Types.ObjectId(afterId) } }
       : unreconciled).sort({ _id: 1 }).limit(limit).lean(),
-    // Same pod fallback as the reconciler: a Mongo-only pod is mirrored, then retried.
+    // Same pod fallback as the reconciler: a Mongo-only pod is mirrored, then
+    // retried. syncPodFromMongo returns null when the pod is gone from Mongo
+    // too; retrying would hit the same FK, so the row is an orphan.
     copy: (doc) => copyOne(doc).catch(async (err: { code?: string }) => {
       if (err.code !== '23503') throw err;
-      await syncPodFromMongo(doc.podId.toString(), doc.userId.toString());
+      const pod = await syncPodFromMongo(doc.podId.toString(), doc.userId.toString());
+      if (!pod) return 'orphaned' as const;
       return copyOne(doc);
     }),
   };
@@ -228,6 +268,10 @@ export async function main(
         + ' Re-run with --force only if you have checked.');
     } else if (!apply) {
       console.log('DRY RUN — nothing written. Re-run with --apply.');
+    }
+    if (report.orphanedPending) {
+      console.log(`${report.orphanedPending} pending message(s) belong to pods that exist in neither MongoDB nor PG;`
+        + ' they are skipped and left in MongoDB.');
     }
     process.exitCode = exitCodeFor(report);
     return process.exitCode;

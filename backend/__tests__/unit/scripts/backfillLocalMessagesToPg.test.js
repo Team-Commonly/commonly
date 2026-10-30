@@ -4,13 +4,14 @@ const { backfillLocalMessages, main, parseArgs } = require('../../../scripts/bac
 
 const doc = (id) => ({ _id: { toString: () => id }, podId: 'p', userId: 'u', content: id, createdAt: new Date('2026-01-01') });
 
-const fakeDeps = ({ pending = ['a1', 'a2', 'a3'], overlap = 0, copy } = {}) => {
+const fakeDeps = ({ pending = ['a1', 'a2', 'a3'], overlap = 0, orphans = 0, copy } = {}) => {
   const copied = [];
   return {
     copied,
     countPending: jest.fn(async () => pending.length),
     newestPendingAt: jest.fn(async () => new Date('2026-01-01')),
     countOverlap: jest.fn(async () => overlap),
+    countOrphaned: jest.fn(async () => orphans),
     nextBatch: jest.fn(async (afterId, limit) => {
       const start = afterId ? pending.indexOf(afterId) + 1 : 0;
       return pending.slice(start, start + limit).map(doc);
@@ -53,6 +54,22 @@ describe('backfillLocalMessages', () => {
     expect(report).toMatchObject({ refused: false, moved: 3 });
   });
 
+  it('a dry run reports how many pending rows belong to deleted pods', async () => {
+    const deps = fakeDeps({ orphans: 2 });
+    const report = await backfillLocalMessages(deps);
+    expect(report).toMatchObject({ dryRun: true, pending: 3, orphanedPending: 2, orphaned: 0 });
+    expect(deps.copy).not.toHaveBeenCalled();
+  });
+
+  it('a row whose pod is gone is counted as orphaned, not failed, and the run continues', async () => {
+    const deps = fakeDeps({
+      orphans: 1,
+      copy: async (d) => (d._id.toString() === 'a2' ? 'orphaned' : 'moved'),
+    });
+    const report = await backfillLocalMessages(deps, { apply: true, batchSize: 1 });
+    expect(report).toMatchObject({ moved: 2, orphaned: 1, alreadyPresent: 0, failed: 0 });
+  });
+
   it('a failed row is counted and the run moves past it', async () => {
     const deps = fakeDeps({ copy: async (d) => { if (d._id.toString() === 'a2') throw new Error('bad'); return 'moved'; } });
     const report = await backfillLocalMessages(deps, { apply: true, batchSize: 1 });
@@ -88,6 +105,7 @@ describe('main() exit code', () => {
     expect((await run(fakeDeps())).exitCode).toBe(0);
     expect((await run(fakeDeps(), ['node', 'script'])).exitCode).toBe(0);
     expect((await run(fakeDeps({ overlap: 4 }), ['node', 'script'])).exitCode).toBe(2);
+    expect((await run(fakeDeps({ orphans: 3, copy: async () => 'orphaned' }))).exitCode).toBe(0);
   });
 });
 
