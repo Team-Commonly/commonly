@@ -207,7 +207,7 @@ test('"Run it here" exposure is counted on first paint, once, and a pick counts 
   fireEvent.click(screen.getByTestId('byo-mode-hosted'));
   expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }, { step: 'hosted-offer-clicked' }]);
 });
-test('the compact hosted form counts its submit as a click, and the compact BYO form counts no offer', async () => {
+test('the compact hosted form counts its submit as a click', async () => {
   window.history.pushState({}, '', '/v2/agents/byo?mode=hosted');
   renderPage();
   await waitFor(() => expect(document.querySelector('[data-testid="byo-hosted-compact"] .v2-byo__submit')).not.toBeNull());
@@ -215,4 +215,16 @@ test('the compact hosted form counts its submit as a click, and the compact BYO 
   await waitFor(() => expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }]));
   fireEvent.click(document.querySelector('[data-testid="byo-hosted-compact"] .v2-byo__submit'));
   expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }, { step: 'hosted-offer-clicked' }]);
+});
+test('the compact BYO form counts no offer, and Other ways counts the exposure once the form is left', async () => {
+  window.history.pushState({}, '', '/v2/agents/byo?from=card&name=sam-claude');
+  renderPage();
+  await waitFor(() => expect(screen.getByTestId('byo-card-other-ways')).toBeInTheDocument());
+  // The instance's hosting answer must land before the no-offer check means anything.
+  await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/api/hosted/availability'), expect.anything()));
+  for (let i = 0; i < 5; i += 1) await act(async () => {});
+  expect(offerEvents()).toEqual([]);
+  fireEvent.click(screen.getByTestId('byo-card-other-ways'));
+  await waitFor(() => expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }]));
+  window.history.pushState({}, '', '/');
 });
