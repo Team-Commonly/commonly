@@ -15,6 +15,14 @@ const { syncPodFromMongo } = require('../../../services/pgPodSyncService');
 const MongoMessage = require('../../../models/Message');
 const { writeSocketMessage, MESSAGE_STORE_UNAVAILABLE } = require('../../../services/socketMessageWrite');
 
+// The refusal names the send so the client can drop its optimistic copy.
+const REFUSED = {
+  ok: false,
+  error: {
+    ...MESSAGE_STORE_UNAVAILABLE, podId: 'p1', content: 'hi', messageType: 'text',
+  },
+};
+
 const input = (over = {}) => ({
   pgReady: true, podId: 'p1', userId: 'u1', content: 'hi', messageType: 'text', replyToMessageId: null, ...over,
 });
@@ -31,7 +39,7 @@ describe('writeSocketMessage', () => {
   it('refuses while PG is still booting, without touching either store', async () => {
     const result = await writeSocketMessage(input({ pgReady: false }));
 
-    expect(result).toEqual({ ok: false, error: MESSAGE_STORE_UNAVAILABLE });
+    expect(result).toEqual(REFUSED);
     expect(PGMessage.create).not.toHaveBeenCalled();
     expect(MongoMessage).not.toHaveBeenCalled();
   });
@@ -41,7 +49,7 @@ describe('writeSocketMessage', () => {
 
     const result = await writeSocketMessage(input());
 
-    expect(result).toEqual({ ok: false, error: MESSAGE_STORE_UNAVAILABLE });
+    expect(result).toEqual(REFUSED);
     expect(MongoMessage).not.toHaveBeenCalled();
   });
 

@@ -635,7 +635,7 @@ io.on('connection', (socket: any) => {
         // (TASK-503); MongoDB is written only when no PG is configured.
         if (process.env.PG_HOST) {
           // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-          const { writeSocketMessage } = require('./services/socketMessageWrite');
+          const { writeSocketMessage, MESSAGE_SEND_FAILED_EVENT } = require('./services/socketMessageWrite');
           const written = await writeSocketMessage({
             pgReady: pgAvailable,
             podId,
@@ -645,7 +645,7 @@ io.on('connection', (socket: any) => {
             replyToMessageId,
           });
           if (!written.ok) {
-            socket.emit('error', written.error);
+            socket.emit(MESSAGE_SEND_FAILED_EVENT, written.error);
             return;
           }
           message = written.message;

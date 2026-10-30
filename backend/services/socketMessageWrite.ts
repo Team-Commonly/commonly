@@ -21,6 +21,20 @@ export const MESSAGE_STORE_UNAVAILABLE = {
   code: 'MESSAGE_STORE_UNAVAILABLE',
 } as const;
 
+// A refused send goes to the sender on its own event, not the generic socket
+// `error`: the client treats `error` as a broken connection and stops sending
+// until a reload. The payload names the send so the client can drop its
+// optimistic copy and tell the person.
+export const MESSAGE_SEND_FAILED_EVENT = 'messageSendFailed';
+
+export interface MessageSendFailure {
+  podId: string;
+  content: string;
+  messageType: string;
+  message: string;
+  code: string;
+}
+
 export interface SocketMessageWriteInput {
   pgReady: boolean;
   podId: string;
@@ -32,12 +46,16 @@ export interface SocketMessageWriteInput {
 
 export type SocketMessageWriteResult =
   | { ok: true; message: Record<string, unknown> }
-  | { ok: false; error: typeof MESSAGE_STORE_UNAVAILABLE };
+  | { ok: false; error: MessageSendFailure };
 
 export async function writeSocketMessage({
   pgReady, podId, userId, content, messageType, replyToMessageId = null,
 }: SocketMessageWriteInput): Promise<SocketMessageWriteResult> {
-  if (!pgReady) return { ok: false, error: MESSAGE_STORE_UNAVAILABLE };
+  const failed = (): SocketMessageWriteResult => ({
+    ok: false,
+    error: { ...MESSAGE_STORE_UNAVAILABLE, podId, content, messageType },
+  });
+  if (!pgReady) return failed();
 
   let created: Record<string, unknown>;
   try {
@@ -51,7 +69,7 @@ export async function writeSocketMessage({
     created = await PGMessage.create(podId, userId, content, messageType, replyToMessageId);
   } catch (writeErr) {
     console.error('[socket] PG message write failed:', (writeErr as Error).message);
-    return { ok: false, error: MESSAGE_STORE_UNAVAILABLE };
+    return failed();
   }
 
   // The joined re-read only adds author fields. Its failure must not fail
@@ -65,4 +83,4 @@ export async function writeSocketMessage({
   return { ok: true, message: joined || created };
 }
 
-export default { writeSocketMessage, MESSAGE_STORE_UNAVAILABLE };
+export default { writeSocketMessage, MESSAGE_STORE_UNAVAILABLE, MESSAGE_SEND_FAILED_EVENT };
