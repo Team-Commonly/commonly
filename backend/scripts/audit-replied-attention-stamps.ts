@@ -20,19 +20,39 @@ const { auditRepliedMentionAttention } = require('../services/attentionItemServi
 type PgPool = { end: () => Promise<void> };
 
 /**
- * Read the flags out of argv. Exported so the throw below is testable without
- * a database: an unparsable bound must NOT fall through as `undefined`. It
- * would widen the audit from the cutover window to every replied stamp ever
- * written, and under `--apply` that is an unbounded reopen from a typo.
+ * Read the flags out of argv. Exported so the throws below are testable without
+ * a database. Three things must fail loudly, never fall through: a bound that
+ * is missing or unparsable (it would widen the audit from the cutover window
+ * to every replied stamp ever written), a bound whose value is swallowed by a
+ * neighbouring flag, and an unknown flag such as a misspelled `--apply`. Under
+ * `--apply` each of those is an unbounded or unintended reopen.
  */
 export const parseArgs = (argv: string[]): { apply: boolean; resolvedBefore?: Date } => {
-  const apply = argv.includes('--apply');
-  const flag = argv.find((arg) => arg.startsWith('--resolved-before='));
-  if (!flag) return { apply };
-  const raw = flag.split('=').slice(1).join('=');
+  const args = argv.slice(2);
+  const BOUND = '--resolved-before';
+  let apply = false;
+  let sawBound = false;
+  let raw = '';
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--apply') {
+      apply = true;
+    } else if (arg === BOUND || arg.startsWith(`${BOUND}=`)) {
+      sawBound = true;
+      if (arg === BOUND) {
+        raw = args[i + 1] ?? '';
+        i += 1;
+      } else {
+        raw = arg.slice(BOUND.length + 1);
+      }
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  if (!sawBound) return { apply };
   const parsed = new Date(raw);
-  if (!raw.trim() || Number.isNaN(parsed.getTime())) {
-    throw new Error(`--resolved-before is not a date: ${flag}`);
+  if (!raw.trim() || raw.startsWith('--') || Number.isNaN(parsed.getTime())) {
+    throw new Error(`--resolved-before is not a date: ${raw || '(missing)'}`);
   }
   return { apply, resolvedBefore: parsed };
 };

@@ -29,8 +29,25 @@ describe('audit-replied-attention-stamps argv', () => {
     },
   );
 
-  // A test for `split('=').slice(1).join('=')` was written here and deleted:
-  // no valid date contains an `=`, so truncating at the first one changes
-  // nothing a test can observe. It passed against both implementations, which
-  // makes it a claim about nothing. The join stays as defensive code.
+  // The space form is the one a shell user types. It used to parse as an
+  // unbounded run under --apply: the bound was never read, so the scan widened.
+  it('reads the space form and keeps --apply after it', () => {
+    const { apply, resolvedBefore } = parseArgs(['node', 'script', '--resolved-before', '2026-09-06', '--apply']);
+    expect(apply).toBe(true);
+    expect(resolvedBefore.toISOString()).toBe('2026-09-06T00:00:00.000Z');
+  });
+
+  it.each([
+    ['--resolved-before', '--apply'],
+    ['--resolved-before'],
+  ])('throws when the bound has no value: %s', (...argv) => {
+    expect(() => parseArgs(['node', 'script', ...argv])).toThrow(/not a date/);
+  });
+
+  it.each([['--aplly'], ['--apply=yes'], ['--resolved_before=2026-09-06']])(
+    'throws on an unknown or misspelled flag: %s',
+    (flag) => {
+      expect(() => parseArgs(['node', 'script', flag])).toThrow(/Unknown argument/);
+    },
+  );
 });

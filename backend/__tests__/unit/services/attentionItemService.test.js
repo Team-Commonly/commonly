@@ -748,6 +748,19 @@ describe('attentionItemService', () => {
     expect(mockPgMessageHasReplyByUserAfter).not.toHaveBeenCalled();
   });
 
+  it('counts a source-less stamp as undecidable and never reopens it', async () => {
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => [{
+      _id: 'attention-sourceless', recipientUserId: 'sam', podId: 'pod-1', kind: 'mention',
+      sourceCreatedAt: new Date('2026-09-05T09:00:00.000Z'),
+    }] }) });
+
+    const result = await AttentionItemService.auditRepliedMentionAttention({ apply: true });
+
+    expect(result).toMatchObject({ scanned: 1, kept: 0, contradicted: 0, reopened: 0, undecidable: 1 });
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+    expect(mockPgMessageHasReplyByUserAfter).not.toHaveBeenCalled();
+  });
+
   it('reads only replied stamps, and honours the resolvedBefore bound', async () => {
     mockFind.mockReturnValue({ sort: () => ({ lean: async () => [] }) });
     const before = new Date('2026-09-06T00:00:00.000Z');
