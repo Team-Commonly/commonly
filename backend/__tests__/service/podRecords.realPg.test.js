@@ -177,6 +177,36 @@ real('task record route on real PostgreSQL and MongoDB', () => {
     expect(lines[2].actor).toEqual({ type: 'human', id: String(owner._id) });
   });
 
+  it('serves the record in seq pages, and refuses a malformed cursor before any read', async () => {
+    expect((await claim()).status).toBe(200);
+    expect((await request(app).patch(`/api/v1/tasks/${pod._id}/TASK-1`).set(as(AGENT_TOKEN)).send({ status: 'blocked' })).status).toBe(200);
+    expect((await claim()).status).toBe(200);
+    await flushRecordWrites();
+    const asOwner = generateTestToken(owner._id);
+    const whole = await read(asOwner);
+    expect(whole.headers['x-record-next-after']).toBeUndefined();
+
+    const first = await read(asOwner, pod._id, 'TASK-1', '?limit=2');
+    expect(first.status).toBe(200);
+    expect(first.headers['x-record-next-after']).toBe('2');
+    const rest = await read(asOwner, pod._id, 'TASK-1', '?after=2&limit=2');
+    expect(rest.headers['x-record-next-after']).toBeUndefined();
+    // Both pages name the whole chain's head, and together are the whole chain.
+    expect([first, rest].map((page) => [page.headers['x-record-entries'], page.headers['x-record-head']]))
+      .toEqual([['3', whole.headers['x-record-head']], ['3', whole.headers['x-record-head']]]);
+    expect(first.text + rest.text).toBe(whole.text);
+    expect(verifyRecord(first.text + rest.text)).toMatchObject({ ok: true, entries: 3 });
+    const otlp = await read(asOwner, pod._id, 'TASK-1', '?format=otlp&after=2');
+    expect(otlp.status).toBe(200);
+    expect(otlp.headers['x-record-next-after']).toBeUndefined();
+
+    const readChain = jest.spyOn(repository, 'readChain');
+    const bad = ['?after=-1', '?after=1.5', '?after=abc', '?after=1&after=2', '?limit=0', '?limit=1001', '?limit='];
+    const answers = await Promise.all(bad.map((query) => read(asOwner, pod._id, 'TASK-1', query)));
+    expect(answers.map((res) => [res.status, res.body.error])).toEqual(bad.map(() => [400, 'record_bad_cursor']));
+    expect(readChain).not.toHaveBeenCalled();
+  });
+
   it('refuses everyone else before any record byte is read', async () => {
     await claim();
     await flushRecordWrites();
@@ -201,6 +231,29 @@ real('task record route on real PostgreSQL and MongoDB', () => {
     process.env.RECORD_V1_PODS = podIds().join(',');
     await Pod.updateOne({ _id: pod._id }, { $pull: { members: agent._id } });
     expect(await read(AGENT_TOKEN)).toMatchObject({ status: 404 });
+    expect(readChain).not.toHaveBeenCalled();
+  });
+
+  it('an agent-DM observer can view the DM but reads neither of its records', async () => {
+    // §3.7: a person who shares a pod with either DM member may view the DM.
+    const peer = await User.create({
+      username: `record-peer-${Date.now()}`,
+      email: `record-peer-${Date.now()}@agents.commonly.local`,
+      password: 'Password123!',
+      isBot: true,
+      botType: 'agent',
+      botMetadata: { agentName: 'record-peer', instanceId: 'default', ownerUserId: String(owner._id) },
+    });
+    const dm = await Pod.create({ name: 'agent DM', type: 'agent-dm', createdBy: agent._id, members: [agent._id, peer._id] });
+    await Pod.create({ name: 'Shared pod', type: 'team', createdBy: owner._id, members: [outsider._id, agent._id] });
+    await Task.create({ podId: dm._id, taskNum: 1, taskId: 'TASK-1', title: 'dm task', status: 'pending' });
+    process.env.RECORD_V1_PODS = [...podIds(), String(dm._id)].join(',');
+    const readChain = jest.spyOn(repository, 'readChain');
+    const observer = generateTestToken(outsider._id);
+
+    expect(await read(observer, dm._id)).toMatchObject({ status: 403, body: { error: 'record_requires_membership' } });
+    expect(await request(app).get(`/api/pods/${dm._id}/record`).set(as(observer)))
+      .toMatchObject({ status: 403, body: { error: 'record_requires_membership' } });
     expect(readChain).not.toHaveBeenCalled();
   });
 

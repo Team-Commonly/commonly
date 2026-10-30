@@ -25,6 +25,13 @@ import { grantBrokerRefusal } from '../services/grantBrokerConfinement';
 import type { GrantBrokerRefusal } from '../services/grantBrokerConfinement';
 import { projectSeatEnvironments, seatEnvironmentKey } from '../services/seatEnvironmentProjection';
 import { outsiderGrantPodRefusal, outsiderGrantRefusalMessage } from '../services/outsiderGrantPodEligibility';
+import { recordGrantIssued } from '../services/brokerRecordService';
+import { agentActor, humanActor } from '../services/recordService';
+
+const plainGrant = (grant: unknown) => {
+  const doc = grant as { toObject?: () => Record<string, unknown> };
+  return (typeof doc?.toObject === 'function' ? doc.toObject() : grant) as Parameters<typeof recordGrantIssued>[0];
+};
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -428,6 +435,8 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       brokerId: broker.brokerId,
     };
     const grant = await createGrant(grantInput);
+    // The connection owner minted it (checked above); the record names them.
+    recordGrantIssued(plainGrant(grant), humanActor(userId));
     return res.status(201).json(grant);
   } catch (error) {
     return handleError(res, error);
@@ -470,6 +479,8 @@ router.post(
       audience: body.audience as string[] | undefined,
       expiresAt: body.expiresAt as string | undefined,
     });
+    // An agent attenuated its own grant: the agent is the issuer.
+    recordGrantIssued(plainGrant(child), agentActor(req.agentUser as Parameters<typeof agentActor>[0]));
     return res.status(201).json(child);
   } catch (error) {
     return handleError(res, error);

@@ -51,6 +51,52 @@ endpoint. Every writer and the endpoint are off unless the pod is listed in
   process so one process appends in commit order, and never changes the
   source write's result.
 
+### Decisions taken in slice 2 (TASK-560)
+
+- **Where each line comes from.** The broker's trail write (`recordCall`)
+  emits B1 (refused), B2 (parked, asked of the credential owner, on its card)
+  and B5 (run under the grant with no ask). A trail row that carries an
+  approval id and is not the park is the run of an approved call. The approval
+  resolver records that, so it is skipped here, and no call gets two terminal
+  decisions. The resolver writes B3 once the ending is saved: the decision by
+  the credential owner, then `tool.update` from the saved ending. Expiry at
+  decide time and in the sweep writes B4. Both read the decider the approval
+  row stored with its terminal write (`decidedBy`, `decidedByRole`, TASK-512),
+  never the caller. A row whose stored decider is missing, or does not fit its
+  outcome (B3 needs `credential-owner`, B4 needs `policy`), writes no lines and
+  logs a warning: an audit gap, not a guessed decider.
+- **Pod-target grants only.** A seat grant's target is a seat and its card
+  sits in the granter–seat DM, so neither names the pod a call belongs to.
+  Those calls write nothing until a pod is ruled for them. The seat tests run
+  with the pilot gate open everywhere, so only this rule can refuse them.
+- **Grants.** `grant.issued` comes from the two routes that mint, because the
+  mint itself has no issuer: the connection owner as a person, the attenuating
+  agent as an agent. `RoomGrant.revokeCascadeMoved` returns the grants one
+  revoke moved, and `revokeGrant` passes them to the recorder (it returns
+  only their count). One line per pod gives `manual` when the
+  revoked grant went alone and `cascade` (ancestor first) when descendants went
+  with it. Expiry is written the first time the server sees an expired grant
+  (at use, or as a lineage parent), keyed so it is written once, with the
+  server as actor (`system`/`commonly`). Nothing sweeps expiry, so a grant
+  nobody uses again gets no line; R2 makes that an audit gap, not access.
+- **No `argsDigest`** on any line, JSONL or OTLP (CTO, ADR-033 §8 q9).
+- **Reads.** `GET /api/pods/:podId/record` serves the pod's taskless chain
+  under the same gate as the task route.
+
+### Decisions taken in slice 3 (TASK-561)
+
+- **Reads are paged by seq.** One read returns at most 1000 lines
+  (`MAX_PAGE_LINES`) after `?after=<seq>`, fewer with `?limit=`. A read with
+  no cursor is the first page, never the whole history. While lines remain,
+  `X-Record-Next-After` names the next cursor. `X-Record-Entries` and
+  `X-Record-Head` describe the whole chain on every page, so a client knows
+  where the chain ends before it reads that far. A page's first line carries
+  `prev`, the hash of line `after`. Pages read in order join into one chain
+  that `verifyRecord` accepts, and a single page on its own does not verify
+  unless it starts at seq 1. A malformed cursor gets a 400 before any record
+  is read. The v2 view (slice 4) calls the API from another origin. It can
+  read these headers only after CORS exposes them.
+
 ## Measured inputs (2026-10-25)
 
 - TASK-504 landed in #2684, merge `ab5132313ad399d8fb990d69bc39db0ccf99e055`.
