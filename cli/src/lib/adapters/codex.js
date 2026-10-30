@@ -71,6 +71,7 @@ import { buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
 import { resolveSkillSource, skillsAsText } from '../skill-prompt.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
+import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 
 // Default timeout for a single codex spawn (exec mode).
 //
@@ -212,6 +213,10 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
       '-c',
       `mcp_servers.${server.name}.default_tools_approval_mode="approve"`,
     );
+    // ...except the tools no public seat is offered (public-withheld-tools.js).
+    if (ctx.publicSeat) {
+      flags.push('-c', `mcp_servers.${server.name}.disabled_tools=[${PUBLIC_WITHHELD_TOOLS.map(toml).join(',')}]`);
+    }
     if (rest.length) {
       flags.push('-c', `mcp_servers.${server.name}.args=[${rest.map(toml).join(',')}]`);
     }

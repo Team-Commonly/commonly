@@ -96,6 +96,7 @@ import { buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
 import { claudeConfigDirFor, claudeContextTokens, claudeTranscriptPath } from '../session-recycle.js';
 import { skillsAsText } from '../skill-prompt.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
+import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 
 // See codex.js for the rationale on bumping the default + env override.
 // Keeping both adapters in lockstep so any wrapper agent runtime has the
@@ -446,6 +447,10 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, { trust, allow = [], memor
   const memoryDenies = memoryWithheld
     ? MEMORY_TOOLS.flatMap((tool) => mcpToolPatterns.map((pattern) => pattern.replace(/\*$/, tool)))
     : [];
+  // Nor, on any confined trust, the tools no public seat is offered
+  // (public-withheld-tools.js).
+  const withheldDenies = PUBLIC_WITHHELD_TOOLS
+    .flatMap((tool) => mcpToolPatterns.map((pattern) => pattern.replace(/\*$/, tool)));
   return [
     // HOME points at an isolated, sanitized state directory. Ignore settings
     // from user/project/local sources and disable slash-command extensions;
@@ -457,7 +462,7 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, { trust, allow = [], memor
     '--permission-mode', 'dontAsk',
     '--allowedTools', 'Read(./**)', ...granted, ...mcpToolPatterns,
     '--disallowedTools', ...PUBLIC_DENIED_TOOLS.filter((tool) => !granted.includes(tool)),
-    ...deniedReads, ...workspaceDenies, ...memoryDenies,
+    ...deniedReads, ...workspaceDenies, ...memoryDenies, ...withheldDenies,
   ];
 };
 
