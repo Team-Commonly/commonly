@@ -389,4 +389,49 @@ describe('BYO on-my-computer mode', () => {
     expect(screen.queryByTestId('byo-machine-result')).toBeNull();
     expect(screen.queryByText(/has no runtime token/)).toBeNull();
   });
+
+  test('two computers with one name get distinct labels and the online one is the default', async () => {
+    mockGet({
+      machines: [
+        { id: 'm2', machineId: 'mach-new', name: 'Sams-MacBook', status: 'online', createdAt: '2026-10-24T09:00:00.000Z', agentStates: [] },
+        { id: 'm1', machineId: 'mach-old', name: 'Sams-MacBook', status: 'offline', createdAt: '2026-09-06T09:00:00.000Z', agentStates: [] },
+      ],
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    const select = screen.getByTestId('byo-machine-select');
+    const labels = Array.from(select.querySelectorAll('option')).map((option) => option.textContent);
+    expect(labels).toEqual([
+      'Sams-MacBook · added Oct 24 (online)',
+      'Sams-MacBook · added Sep 6 (offline)',
+    ]);
+    expect(select).toHaveValue('mach-new');
+  });
+
+  test('a unique computer name renders without a date', async () => {
+    mockGet({
+      machines: [
+        { id: 'm1', machineId: 'mach-a', name: 'Sam’s MacBook', status: 'online', createdAt: '2026-09-06T09:00:00.000Z', agentStates: [] },
+      ],
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    const labels = Array.from(screen.getByTestId('byo-machine-select').querySelectorAll('option')).map((option) => option.textContent);
+    expect(labels).toEqual(['Sam’s MacBook (online)']);
+  });
+
+  test('the default computer is the online one even when an offline one is listed first', async () => {
+    mockGet({
+      machines: [
+        { id: 'm1', machineId: 'mach-off', name: 'Old Mac', status: 'offline', createdAt: '2026-09-06T09:00:00.000Z', agentStates: [] },
+        { id: 'm2', machineId: 'mach-on', name: 'Studio', status: 'online', createdAt: '2026-10-01T09:00:00.000Z', agentStates: [] },
+      ],
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    expect(screen.getByTestId('byo-machine-select')).toHaveValue('mach-on');
+  });
 });

@@ -1765,6 +1765,7 @@
     "machine": {
       "online": "online",
       "offline": "offline",
+      "addedOn": "added {{date}}",
       "heading": "Now starting:",
       "running": "Running on {{machine}} — say hi in the pod.",
       "waiting": "Waiting for the daemon on {{machine}} to pick it up…",
