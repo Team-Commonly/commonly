@@ -84,7 +84,9 @@ test('two computers with one name are told apart by when each was added', async 
   renderSection();
   const select = await screen.findByLabelText('Run on');
   const labels = Array.from(select.querySelectorAll('option')).map((option) => option.textContent);
-  expect(labels).toEqual(['Sams-MacBook · added Oct 24', 'Sams-MacBook · added Sep 6', 'Studio']);
+  expect(labels[0]).toMatch(/^Sams-MacBook · added Oct 24, /);
+  expect(labels[1]).toMatch(/^Sams-MacBook · added Sep 6, /);
+  expect(labels[2]).toBe('Studio');
 });
 
 test('without an active computer, the setup hint includes daemon installation', async () => {

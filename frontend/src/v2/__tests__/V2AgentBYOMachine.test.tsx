@@ -402,10 +402,8 @@ describe('BYO on-my-computer mode', () => {
     fireEvent.click(screen.getByTestId('byo-mode-machine'));
     const select = screen.getByTestId('byo-machine-select');
     const labels = Array.from(select.querySelectorAll('option')).map((option) => option.textContent);
-    expect(labels).toEqual([
-      'Sams-MacBook · added Oct 24 (online)',
-      'Sams-MacBook · added Sep 6 (offline)',
-    ]);
+    expect(labels[0]).toMatch(/^Sams-MacBook · added Oct 24, .* \(online\)$/);
+    expect(labels[1]).toMatch(/^Sams-MacBook · added Sep 6, .* \(offline\)$/);
     expect(select).toHaveValue('mach-new');
   });
 
