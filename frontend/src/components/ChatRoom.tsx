@@ -1932,6 +1932,11 @@ const ChatRoom = () => {
                     if (i < 0) return prevMessages;
                     return [...prevMessages.slice(0, i), ...prevMessages.slice(i + 1)];
                 });
+                // Give the refused text back so a retry is one keystroke, unless
+                // the person has already started typing something else.
+                if (failure.messageType === 'text' && failure.content) {
+                    setMessage(current => current || failure.content);
+                }
                 setSendError(failure.message || 'Failed to send message. Please try again.');
             };
             socket.on('messageSendFailed', handleSendFailed);
