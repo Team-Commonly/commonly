@@ -23,7 +23,8 @@
  * Dry run by default; `--apply` writes. Replies keep their text but not their
  * reply edge, same as the reconciler.
  *
- * `--since <ISO date>` copies only Mongo rows created at or after that time.
+ * `--since <ISO date>` (or `--since=<ISO date>`) copies only Mongo rows created
+ * at or after that time; any other argument throws, so a typo cannot widen it.
  * It is for a deployment that already moved its history into PG and has a
  * bounded tail of Mongo-only rows left (TASK-503, hosted: socket sends during
  * PG boot were written to Mongo without the `pgFallback` flag, so the
@@ -173,11 +174,9 @@ export const openStores = async (scope: BackfillScope = {}): Promise<OpenedStore
   return { deps: productionDeps(pool, scope), close };
 };
 
-/** `--since <ISO date>` as a Date; absent is undefined, anything unparseable throws. */
-export const parseSince = (argv: string[]): Date | undefined => {
-  const at = argv.indexOf('--since');
-  if (at === -1) return undefined;
-  const raw = argv[at + 1];
+export interface BackfillArgs { apply: boolean; force: boolean; since?: Date }
+
+const toSince = (raw: string | undefined): Date => {
   const since = raw ? new Date(raw) : null;
   if (!since || Number.isNaN(since.getTime())) {
     throw new Error(`--since needs an ISO date, got ${raw === undefined ? 'nothing' : JSON.stringify(raw)}`);
@@ -185,14 +184,40 @@ export const parseSince = (argv: string[]): Date | undefined => {
   return since;
 };
 
+/**
+ * Reads the flags after `node script`. `--since` takes its date as the next
+ * argument or after `=`. Any other argument throws: a misspelt or misread
+ * bound would otherwise run unbounded, and with `--apply --force` that copies
+ * the whole pre-PG history again.
+ */
+export const parseArgs = (argv: string[]): BackfillArgs => {
+  const args: BackfillArgs = { apply: false, force: false };
+  let sinceSeen = false;
+  const setSince = (raw: string | undefined) => {
+    if (sinceSeen) throw new Error('--since given more than once');
+    sinceSeen = true;
+    args.since = toSince(raw);
+  };
+  const rest = argv.slice(2);
+  for (let i = 0; i < rest.length; i += 1) {
+    const arg = rest[i];
+    if (arg === '--apply') args.apply = true;
+    else if (arg === '--force') args.force = true;
+    else if (arg === '--since') {
+      setSince(rest[i + 1]);
+      i += 1;
+    } else if (arg.startsWith('--since=')) setSince(arg.slice('--since='.length));
+    else throw new Error(`unknown argument ${JSON.stringify(arg)}; expected --apply, --force, --since <ISO date>`);
+  }
+  return args;
+};
+
 /** Runs the backfill, sets process.exitCode (see exitCodeFor) and returns it. */
 export async function main(
   argv: string[] = process.argv,
   open: (scope: BackfillScope) => Promise<OpenedStores> = openStores,
 ): Promise<number> {
-  const apply = argv.includes('--apply');
-  const force = argv.includes('--force');
-  const since = parseSince(argv);
+  const { apply, force, since } = parseArgs(argv);
   const { deps, close } = await open({ since });
   try {
     const report = await backfillLocalMessages(deps, { apply, force });

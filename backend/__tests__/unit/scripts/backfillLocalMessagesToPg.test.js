@@ -1,6 +1,6 @@
 jest.mock('../../../services/pgMessageReconcileService', () => ({ copyOne: jest.fn(), ensureLegacyIdIndex: jest.fn() }));
 
-const { backfillLocalMessages, main, parseSince } = require('../../../scripts/backfill-local-messages-to-pg');
+const { backfillLocalMessages, main, parseArgs } = require('../../../scripts/backfill-local-messages-to-pg');
 
 const doc = (id) => ({ _id: { toString: () => id }, podId: 'p', userId: 'u', content: id, createdAt: new Date('2026-01-01') });
 
@@ -112,6 +112,27 @@ describe('--since', () => {
     await expect(main(['node', 'script', '--since', 'last-month'], open)).rejects.toThrow('--since needs an ISO date');
     await expect(main(['node', 'script', '--since'], open)).rejects.toThrow('got nothing');
     expect(open).not.toHaveBeenCalled();
-    expect(parseSince(['node', 'script'])).toBeUndefined();
+    expect(parseArgs(['node', 'script']).since).toBeUndefined();
+  });
+
+  it('reads the = form the same as the space form', () => {
+    const spaced = parseArgs(['node', 'script', '--since', '2026-09-30T00:00:00Z', '--apply', '--force']);
+    const joined = parseArgs(['node', 'script', '--since=2026-09-30T00:00:00Z', '--apply', '--force']);
+    expect(joined).toEqual(spaced);
+    expect(joined).toMatchObject({ apply: true, force: true });
+    expect(joined.since.toISOString()).toBe('2026-09-30T00:00:00.000Z');
+    expect(() => parseArgs(['node', 'script', '--since='])).toThrow('--since needs an ISO date');
+  });
+
+  it('a misspelt or unknown flag throws before any store opens, so the run cannot go unbounded', async () => {
+    const open = jest.fn();
+    await Promise.all([
+      ['node', 'script', '--snce', '2026-09-30T00:00:00Z', '--apply', '--force'],
+      ['node', 'script', '--since-date=2026-09-30T00:00:00Z', '--apply', '--force'],
+      ['node', 'script', '--apply', '--force', '2026-09-30T00:00:00Z'],
+    ].map((argv) => expect(main(argv, open)).rejects.toThrow('unknown argument')));
+    await expect(main(['node', 'script', '--since', '2026-09-30', '--since=2026-10-01'], open))
+      .rejects.toThrow('more than once');
+    expect(open).not.toHaveBeenCalled();
   });
 });
