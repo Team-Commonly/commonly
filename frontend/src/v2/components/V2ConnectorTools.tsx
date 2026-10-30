@@ -325,8 +325,9 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     || t('tools.unknownConnector', { defaultValue: 'Unknown connector' });
 
   const podName = (podId: string): string => pods.find((pod) => String(pod._id) === podId)?.name || t('tools.aPod', { defaultValue: 'a pod' });
-  // A bot member is named the way the server names an agent (resolveAgentDisplayLabel):
-  // its curated displayName, then its instanceId when that names an identity, then its username.
+  // A bot member takes its curated displayName, then a non-default instanceId, then its
+  // username. This client does not screen leaked runtime labels the way the server's
+  // resolveAgentDisplayLabel does, so a bot whose displayName is a runtime name shows it.
   const memberName = (userId: string | null): string | null => {
     if (!userId) return null;
     for (const pod of pods) {
