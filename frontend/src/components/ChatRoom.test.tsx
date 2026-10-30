@@ -315,7 +315,12 @@ test('a send the server refuses is removed and shown in the composer (TASK-503)'
     });
   });
 
-  expect(container.textContent).not.toContain('store is down');
+  // The optimistic bubble is gone (the composer field is not part of the list).
+  const listOnly = container.cloneNode(true);
+  listOnly.querySelectorAll('textarea, input').forEach((field) => field.remove());
+  expect(listOnly.textContent).not.toContain('store is down');
+  // The refused text is back in the composer, ready to resend.
+  expect(container.querySelector('[placeholder="Message #Room"]').value).toBe('store is down');
   expect(container.querySelector('[role="alert"]').textContent)
     .toContain('Messages are temporarily unavailable. Please try again shortly.');
   // The room stays mounted and listening: the refusal is not a page error.

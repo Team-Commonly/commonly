@@ -9,11 +9,15 @@ jest.mock('../../../models/pg/Pod', () => ({ findById: jest.fn() }));
 jest.mock('../../../services/pgPodSyncService', () => ({ syncPodFromMongo: jest.fn() }));
 jest.mock('../../../models/Message', () => jest.fn());
 
+const fs = require('fs');
+const path = require('path');
 const PGMessage = require('../../../models/pg/Message');
 const PGPod = require('../../../models/pg/Pod');
 const { syncPodFromMongo } = require('../../../services/pgPodSyncService');
 const MongoMessage = require('../../../models/Message');
-const { writeSocketMessage, MESSAGE_STORE_UNAVAILABLE } = require('../../../services/socketMessageWrite');
+const {
+  writeSocketMessage, MESSAGE_STORE_UNAVAILABLE, MESSAGE_SEND_FAILED_EVENT,
+} = require('../../../services/socketMessageWrite');
 
 // The refusal names the send so the client can drop its optimistic copy.
 const REFUSED = {
@@ -83,5 +87,18 @@ describe('writeSocketMessage', () => {
     expect(syncPodFromMongo).toHaveBeenCalledWith('p1', 'u1');
     expect(syncPodFromMongo.mock.invocationCallOrder[0])
       .toBeLessThan(PGMessage.create.mock.invocationCallOrder[0]);
+  });
+});
+
+describe('the refused-send event name', () => {
+  // The server names the event in one constant; the legacy ChatRoom listens
+  // for it by literal. A rename on either side would drop every refusal
+  // silently, so pin the two together.
+  it('is the event ChatRoom subscribes to and unsubscribes from', () => {
+    const chatRoomPath = path.resolve(__dirname, '../../../../frontend/src/components/ChatRoom.tsx');
+    const chatRoom = fs.readFileSync(chatRoomPath, 'utf8');
+
+    expect(chatRoom).toContain(`socket.on('${MESSAGE_SEND_FAILED_EVENT}', handleSendFailed)`);
+    expect(chatRoom).toContain(`socket.off('${MESSAGE_SEND_FAILED_EVENT}', handleSendFailed)`);
   });
 });
