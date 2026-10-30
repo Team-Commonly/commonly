@@ -43,6 +43,33 @@ describe('per-agent Wake and Pods settings', () => {
     ));
   });
 
+  it('shows all three message-wake choices without first opting in (D173)', async () => {
+    client.get.mockResolvedValue({ data: { turnCap: 30, activePodCount: 1, podCount: 1, installations: [{
+        podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: false, humanOnly: false,
+        boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60,
+      }] } });
+    renderSettings();
+    expect(await screen.findByRole('group', { name: 'Messages that wake it' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Mentions only')).toBeChecked();
+    expect(screen.getByLabelText('Every message')).not.toBeChecked();
+    fireEvent.click(screen.getByLabelText('Messages from people'));
+    await waitFor(() => expect(updatePod).toHaveBeenCalledWith(
+      'pod-1',
+      { wakeOnMessage: true, humanOnly: true, boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60 },
+    ));
+    expect(screen.getByLabelText('Messages from people')).toBeChecked();
+  });
+
+  it('marks the saved human-only setting and clears it on mentions only', async () => {
+    renderSettings();
+    expect(await screen.findByLabelText('Messages from people')).toBeChecked();
+    fireEvent.click(screen.getByLabelText('Mentions only'));
+    await waitFor(() => expect(updatePod).toHaveBeenCalledWith(
+      'pod-1',
+      { wakeOnMessage: false, humanOnly: false, boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60 },
+    ));
+  });
+
   it('removes a pod installation and leaves the settings view open', async () => {
     const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
     renderSettings();

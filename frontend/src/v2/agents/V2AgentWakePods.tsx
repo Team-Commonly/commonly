@@ -16,6 +16,20 @@ interface InstallationSettings {
   heartbeatMinutes: number;
 }
 
+// Message wake is one choice of three, shown together: the human-only
+// filter used to appear only after "Wake on messages" was ticked (D173).
+const MESSAGE_WAKE_CHOICES = ['mentions', 'human', 'all'] as const;
+type MessageWakeChoice = typeof MESSAGE_WAKE_CHOICES[number];
+const MESSAGE_WAKE_SETTINGS: Record<MessageWakeChoice, Pick<InstallationSettings, 'wakeOnMessage' | 'humanOnly'>> = {
+  mentions: { wakeOnMessage: false, humanOnly: false },
+  human: { wakeOnMessage: true, humanOnly: true },
+  all: { wakeOnMessage: true, humanOnly: false },
+};
+const messageWakeChoice = (entry: InstallationSettings): MessageWakeChoice => {
+  if (!entry.wakeOnMessage) return 'mentions';
+  return entry.humanOnly ? 'human' : 'all';
+};
+
 const V2AgentWakePods: React.FC<{
   agentName: string;
   instanceId: string;
@@ -136,16 +150,17 @@ const V2AgentWakePods: React.FC<{
         {installations.map((entry) => (
           <div className="v2-agent-wake-pods__pod" key={entry.podId}>
             <Link to={`/v2/pods/${entry.podId}`}>{entry.podName}</Link>
-            <label className="v2-agent-wake-pods__row">
-              <span>{t('agentSettings.wakeOnMessage')}</span>
-              <input type="checkbox" checked={entry.wakeOnMessage} disabled={busyPod === entry.podId}
-                onChange={(event) => { void save(entry, { wakeOnMessage: event.target.checked }); }} />
-            </label>
-            {entry.wakeOnMessage && <label className="v2-agent-wake-pods__row v2-agent-wake-pods__subrow">
-              <span>{t('agentSettings.humanOnly')}</span>
-              <input type="checkbox" checked={entry.humanOnly} disabled={busyPod === entry.podId}
-                onChange={(event) => { void save(entry, { humanOnly: event.target.checked }); }} />
-            </label>}
+            <fieldset className="v2-agent-wake-pods__choice" disabled={busyPod === entry.podId}>
+              <legend>{t('agentSettings.messageWake')}</legend>
+              {MESSAGE_WAKE_CHOICES.map((choice) => (
+                <label className="v2-agent-wake-pods__row v2-agent-wake-pods__subrow" key={choice}>
+                  <span>{t(`agentSettings.messageWake_${choice}`)}</span>
+                  <input type="radio" name={`message-wake-${entry.podId}`} value={choice}
+                    checked={messageWakeChoice(entry) === choice}
+                    onChange={() => { void save(entry, MESSAGE_WAKE_SETTINGS[choice]); }} />
+                </label>
+              ))}
+            </fieldset>
             <label className="v2-agent-wake-pods__row">
               <span>{t('agentSettings.boardWake')}</span>
               <input type="checkbox" checked={entry.boardWake} disabled={busyPod === entry.podId}
