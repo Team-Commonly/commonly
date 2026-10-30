@@ -18,6 +18,10 @@ export interface RoomGrantCreateInput {
   expiresAt: Date | string | number;
   brokerId: string;
   parentGrantId?: string;
+  /** The Integration row `_id` the route resolved; set by the mint, never the body. */
+  connectionRowId?: string;
+  /** The row's owner at mint; set by the mint, never the body. */
+  ownerId?: string;
 }
 
 export interface RoomGrantAttenuationInput {
@@ -273,6 +277,8 @@ export const mintGrant = async (input: RoomGrantCreateInput): Promise<IRoomGrant
     parentGrantId,
     rootGrantId,
     brokerId: asId(input.brokerId, 'brokerId'),
+    connectionRowId: input.connectionRowId ? asId(input.connectionRowId, 'connectionRowId') : null,
+    ownerId: input.ownerId ? asId(input.ownerId, 'ownerId') : null,
   });
 
   // Re-read the root after insertion. A revoke can race the pre-insert check;
@@ -384,6 +390,10 @@ export const attenuateGrant = async (input: RoomGrantAttenuationInput): Promise<
     expiresAt,
     parentGrantId,
     brokerId: parent.brokerId,
+    // A child inherits the parent's binding, bound or unbound, so attenuation
+    // can never re-bind a grant to whoever holds the connection now.
+    connectionRowId: parent.connectionRowId || undefined,
+    ownerId: parent.ownerId || undefined,
   });
 };
 
