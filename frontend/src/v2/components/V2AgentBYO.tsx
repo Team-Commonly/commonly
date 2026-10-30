@@ -19,7 +19,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
-import { recordByoStep, recordByoStepOnce, type ByoStep } from '../utils/byoTelemetry';
+import { recordByoStep, type ByoStep } from '../utils/byoTelemetry';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { daemonSetupCommand } from '../utils/daemonSetupCommand';
 import V2FeaturePage from './V2FeaturePage';
@@ -906,14 +906,18 @@ const V2AgentBYO: React.FC = () => {
     recordByoStep(api, 'page-viewed');
   }, [api, currentUser]);
 
-  // "Run it here" is on screen from first paint whenever the instance hosts,
-  // so its exposure is counted here, once per page view. The post-issue
-  // fallback below counts a separate, later exposure.
-  const hostedChooserOnScreen = Boolean(hosting?.configured) && !issued && !hosted && !placed && !reconnectRequest;
+  // "Run it here" is on screen from first paint whenever the instance hosts
+  // (the chooser, or the compact hosted form), so its exposure is counted
+  // here, once per page view. The post-issue fallback below counts a separate,
+  // later exposure. The compact BYO form has no hosted button, so it is out.
+  const hostedOfferOnScreen = Boolean(hosting?.configured) && !issued && !hosted && !placed
+    && !reconnectRequest && !showCompactByo;
+  const hostedShownCounted = useRef(false);
   useEffect(() => {
-    if (!currentUser || !hostedChooserOnScreen) return;
-    recordByoStepOnce(api, 'hosted-offer-shown', currentUser._id);
-  }, [api, currentUser, hostedChooserOnScreen]);
+    if (!hostedOfferOnScreen || hostedShownCounted.current) return;
+    hostedShownCounted.current = true;
+    recordByoStep(api, 'hosted-offer-shown');
+  }, [api, hostedOfferOnScreen]);
 
   useEffect(() => {
     if (commandViewed.current === issued) return;

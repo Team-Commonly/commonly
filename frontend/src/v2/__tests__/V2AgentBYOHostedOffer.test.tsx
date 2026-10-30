@@ -181,8 +181,9 @@ test.each(['timer', 'exit'])('records offer shown once via %s despite later time
   fireEvent.mouseLeave(document.documentElement, { clientY: 0 });
   // The first-paint exposure is counted too; the fallback adds its own, once.
   expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }, { step: 'hosted-offer-shown' }]);
+  // A new page view counts its own first-paint exposure; the fallback does not repeat.
   view.unmount(); await issue(); await tick(30000);
-  expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }, { step: 'hosted-offer-shown' }]);
+  expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }, { step: 'hosted-offer-shown' }, { step: 'hosted-offer-shown' }]);
 });
 test('records accepted offer activation once while hosted lookup is pending', async () => {
   await issue(); await tick(30000);
@@ -204,5 +205,14 @@ test('"Run it here" exposure is counted on first paint, once, and a pick counts 
   expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }]);
   fireEvent.click(screen.getByTestId('byo-mode-byo'));
   fireEvent.click(screen.getByTestId('byo-mode-hosted'));
+  expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }, { step: 'hosted-offer-clicked' }]);
+});
+test('the compact hosted form counts its submit as a click, and the compact BYO form counts no offer', async () => {
+  window.history.pushState({}, '', '/v2/agents/byo?mode=hosted');
+  renderPage();
+  await waitFor(() => expect(document.querySelector('[data-testid="byo-hosted-compact"] .v2-byo__submit')).not.toBeNull());
+  window.history.pushState({}, '', '/');
+  await waitFor(() => expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }]));
+  fireEvent.click(document.querySelector('[data-testid="byo-hosted-compact"] .v2-byo__submit'));
   expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }, { step: 'hosted-offer-clicked' }]);
 });
