@@ -906,6 +906,19 @@ const V2AgentBYO: React.FC = () => {
     recordByoStep(api, 'page-viewed');
   }, [api, currentUser]);
 
+  // "Run it here" is on screen from first paint whenever the instance hosts
+  // (the chooser, or the compact hosted form), so its exposure is counted
+  // here, once per page view. The post-issue fallback below counts a separate,
+  // later exposure. The compact BYO form has no hosted button, so it is out.
+  const hostedOfferOnScreen = Boolean(hosting?.configured) && !issued && !hosted && !placed
+    && !reconnectRequest && !showCompactByo;
+  const hostedShownCounted = useRef(false);
+  useEffect(() => {
+    if (!hostedOfferOnScreen || hostedShownCounted.current) return;
+    hostedShownCounted.current = true;
+    recordByoStep(api, 'hosted-offer-shown');
+  }, [api, hostedOfferOnScreen]);
+
   useEffect(() => {
     if (commandViewed.current === issued) return;
     commandViewed.current = issued;
@@ -964,7 +977,10 @@ const V2AgentBYO: React.FC = () => {
     }
   };
 
-  const chooseMode = (nextMode: 'hosted' | 'byo' | 'machine') => setMode(nextMode);
+  const chooseMode = (nextMode: 'hosted' | 'byo' | 'machine') => {
+    if (nextMode === 'hosted') recordByoStep(api, 'hosted-offer-clicked');
+    setMode(nextMode);
+  };
 
   const apiUrl = getApiBaseUrl().replace(/\/+$/, '');
   const daemonCommand = daemonSetupCommand(apiUrl);
@@ -1061,7 +1077,10 @@ const V2AgentBYO: React.FC = () => {
           {error && <div className="v2-byo__error">{error}</div>}
           <button
             type="button"
-            onClick={submit}
+            onClick={() => {
+              recordByoStep(api, 'hosted-offer-clicked');
+              void submit();
+            }}
             disabled={submitting || !podId || mode !== 'hosted'}
             className="v2-byo__submit"
           >

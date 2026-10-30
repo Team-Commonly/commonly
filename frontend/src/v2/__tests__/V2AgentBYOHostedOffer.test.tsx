@@ -9,6 +9,7 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
+import { resetByoStepsForTest } from '../utils/byoTelemetry';
 
 jest.mock('axios', () => {
   const mock = {
@@ -63,7 +64,7 @@ const renderPage = () => render(
 );
 
 beforeEach(() => {
-  sessionStorage.clear();
+  sessionStorage.clear(); resetByoStepsForTest();
   window.matchMedia = jest.fn().mockReturnValue({ matches: true });
   jest.useFakeTimers(); mockGet({ configured: true });
   axios.post.mockImplementation((url) => Promise.resolve({ data: url.includes('runtime-tokens') ? { token: 'fixture-only-key' } : { ready: true } }));
@@ -101,7 +102,7 @@ test('page entry is recorded once under StrictMode; command rendering is separat
   render(<StrictMode><AuthContext.Provider value={authValue}><MemoryRouter><V2AgentBYO /></MemoryRouter></AuthContext.Provider></StrictMode>);
   await screen.findByTestId('byo-mode-byo'); fireEvent.click(screen.getByTestId('byo-mode-byo'));
   await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled()); fireEvent.click(screen.getByRole('button', { name: /get my connect command/i })); await screen.findByText(/your connect command for/i);
-  expect(axios.post.mock.calls.filter(([url]) => url === '/api/stats/byo-step').map(([, body]) => body)).toEqual([{ step: 'page-viewed' }, { step: 'seat-created' }]);
+  expect(axios.post.mock.calls.filter(([url]) => url === '/api/stats/byo-step').map(([, body]) => body)).toEqual([{ step: 'page-viewed' }, { step: 'hosted-offer-shown' }, { step: 'seat-created' }]);
 });
 test('a failed clipboard write leaves the fallback available', async () => {
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: jest.fn().mockRejectedValue(new Error('Denied')) } });
@@ -172,15 +173,17 @@ const offerEvents = () => axios.post.mock.calls
   .map(([, body]) => body);
 test.each(['timer', 'exit'])('records offer shown once via %s despite later timers and exit intent', async (trigger) => {
   const view = await issue();
-  expect(offerEvents()).toEqual([]);
+  expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }]);
   if (trigger === 'timer') await tick(30000);
   else fireEvent.mouseLeave(document.documentElement, { clientY: 0 });
   expect(offer()).toBeInTheDocument();
   await tick(60000);
   fireEvent.mouseLeave(document.documentElement, { clientY: 0 });
-  expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }]);
+  // The first-paint exposure is counted too; the fallback adds its own, once.
+  expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }, { step: 'hosted-offer-shown' }]);
+  // A new page view counts its own first-paint exposure; the fallback does not repeat.
   view.unmount(); await issue(); await tick(30000);
-  expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }]);
+  expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }, { step: 'hosted-offer-shown' }, { step: 'hosted-offer-shown' }]);
 });
 test('records accepted offer activation once while hosted lookup is pending', async () => {
   await issue(); await tick(30000);
@@ -188,12 +191,28 @@ test('records accepted offer activation once while hosted lookup is pending', as
   axios.get.mockImplementation((url) => url.startsWith('/api/registry/agents/next-free-name?')
     ? new Promise(resolve => { resolveName = resolve; }) : get(url));
   const button = offer(); fireEvent.click(button); fireEvent.click(button);
-  expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }, { step: 'hosted-offer-clicked' }]);
+  expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }, { step: 'hosted-offer-shown' }, { step: 'hosted-offer-clicked' }]);
   await act(async () => resolveName({ data: { name: 'sam-agent' } }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/hosted/provision', { agentName: 'sam-agent' }, expect.anything()));
 });
 test('copy suppression emits neither hosted-offer event', async () => {
   await issue(); fireEvent.copy(screen.getByTestId('byo-listen').querySelector('.v2-byo__command'));
   await tick(60000); fireEvent.mouseLeave(document.documentElement, { clientY: 0 });
-  expect(offerEvents()).toEqual([]);
+  expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }]);
+});
+test('"Run it here" exposure is counted on first paint, once, and a pick counts as a click', async () => {
+  renderPage(); await screen.findByTestId('byo-mode-hosted');
+  expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }]);
+  fireEvent.click(screen.getByTestId('byo-mode-byo'));
+  fireEvent.click(screen.getByTestId('byo-mode-hosted'));
+  expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }, { step: 'hosted-offer-clicked' }]);
+});
+test('the compact hosted form counts its submit as a click, and the compact BYO form counts no offer', async () => {
+  window.history.pushState({}, '', '/v2/agents/byo?mode=hosted');
+  renderPage();
+  await waitFor(() => expect(document.querySelector('[data-testid="byo-hosted-compact"] .v2-byo__submit')).not.toBeNull());
+  window.history.pushState({}, '', '/');
+  await waitFor(() => expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }]));
+  fireEvent.click(document.querySelector('[data-testid="byo-hosted-compact"] .v2-byo__submit'));
+  expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }, { step: 'hosted-offer-clicked' }]);
 });
