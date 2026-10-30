@@ -199,12 +199,12 @@ But **nothing derives wake policy from pod type**, and `approvalActionService:64
 
 | limit I cited | reality |
 |---|---|
-| `dailyRunCap: 60` | **the only one actually read** (`:616`) |
-| `maxTurns: 6` | **not read anywhere.** `MAX_TURNS = 10` is hardcoded (`:50`) |
-| `maxTokens: 12000` | **not read anywhere.** `MAX_TOKENS = 50_000` is hardcoded (`:51`) |
-| the 50k token ceiling | **inert.** `:794` tests `run.totalTokens >= MAX_TOKENS`, and the `|| 0` at `:926` pins that at 0 whenever `usage` is empty |
+| `dailyRunCap: 60` | **the only one actually read** (`:616` then; `:1725` on 2026-10-30) |
+| `maxTurns: 6` | **not read anywhere.** `MAX_TURNS = 10` is hardcoded (`:50` then; `:89` now) |
+| `maxTokens: 12000` | **not read anywhere.** `MAX_TOKENS = 50_000` was hardcoded (`:51`); it is `200_000` at `:96` since #2983 |
+| the 50k token ceiling | **inert when written; live since.** `:794` tested `run.totalTokens >= MAX_TOKENS`, and the `|| 0` at `:926` pinned that at 0 whenever `usage` was empty. Usage now arrives, and the check at `:2116` fired: 48 hosted runs failed with "exceeded MAX_TOKENS" from 2026-10-01 to 10-29, all ordinary research turns. #2983 raised the cap to 200k |
 
-The manifest's `maxTurns`/`maxTokens` appear nowhere in `backend/services`. Live bounds are **10 turns / 60s wall-clock / daily cap**.
+The manifest's `maxTurns`/`maxTokens` appear nowhere in `backend/services`. Live bounds are **10 turns / 200k tokens per run / 60s wall-clock / daily cap**. Line numbers above drift; search for the constant, not the line.
 
 **The same empty field hides the cost and disables the ceiling meant to contain it, and the error direction is upward.** That is the finding, not the price.
 
