@@ -325,11 +325,18 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     || t('tools.unknownConnector', { defaultValue: 'Unknown connector' });
 
   const podName = (podId: string): string => pods.find((pod) => String(pod._id) === podId)?.name || t('tools.aPod', { defaultValue: 'a pod' });
+  // A bot member is named the way the server names an agent (resolveAgentDisplayLabel):
+  // its curated displayName, then its instanceId when that names an identity, then its username.
   const memberName = (userId: string | null): string | null => {
     if (!userId) return null;
     for (const pod of pods) {
       for (const member of pod.members || []) {
-        if (typeof member === 'object' && member && String(member._id) === userId && member.username) return member.username;
+        if (typeof member !== 'object' || !member || String(member._id) !== userId) continue;
+        const instanceId = member.botMetadata?.instanceId;
+        const botLabel = member.botMetadata?.displayName?.trim()
+          || (instanceId && instanceId !== 'default' ? instanceId : '');
+        if (botLabel) return botLabel;
+        if (member.username) return member.username;
       }
     }
     return null;

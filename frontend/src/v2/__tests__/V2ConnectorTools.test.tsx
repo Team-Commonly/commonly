@@ -404,6 +404,29 @@ test('TASK-050: a human member in the audience is named, not called "an agent"',
   expect(within(aside).getByText('agents allowed').nextElementSibling).toHaveTextContent('sam, Scout');
 });
 
+test('TASK-624: a per-user bot member with no roster row is named by its curated label, not its instance id', async () => {
+  // A per-user Scout is a pod member with no AgentInstallation row in the roster, so the
+  // audience id resolves through the pod member. Its username is the raw instance id.
+  const perUserPods = [{
+    _id: 'p1', name: 'Launch pod',
+    members: [
+      { _id: 'u1', username: 'sam' },
+      { _id: 'a1', username: 'uf2554d19c9', isBot: true, botMetadata: { displayName: 'Scout', instanceId: 'uf2554d19c9' } },
+    ],
+  }];
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/installables') return Promise.resolve({ data: { installables: [githubEntry] } });
+    if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { podId: 'p1', grants: [grantLive] } });
+    if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [] } });
+    if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'grant_live', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
+    return Promise.resolve({ data: {} });
+  });
+  renderTools({ pods: perUserPods });
+  const live = await screen.findByRole('button', { name: 'View GitHub in Launch pod' });
+  expect(within(live).getByText('Scout may use it')).toBeInTheDocument();
+  expect(screen.queryByText(/uf2554d19c9/)).not.toBeInTheDocument();
+});
+
 test('Revoke is two-click and posts the revoke verb, then reloads; a dead grant offers no Revoke', async () => {
   renderTools();
   fireEvent.click(await screen.findByRole('button', { name: 'View GitHub in Launch pod' }));
