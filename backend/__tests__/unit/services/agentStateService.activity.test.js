@@ -19,8 +19,19 @@ describe('deriveActivityBucket', () => {
     expect(deriveActivityBucket(null, 'native')).toBe('ready');
   });
 
-  test('seen within 10 minutes = active', () => {
+  test('seen within 5 minutes = active', () => {
     expect(deriveActivityBucket(minutesAgo(3), 'webhook')).toBe('active');
+  });
+
+  test('the five-minute boundary: active at exactly 5 minutes, idle just past it', () => {
+    const now = new Date('2026-10-30T12:00:00Z').getTime();
+    const spy = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      expect(deriveActivityBucket(new Date(now - 5 * 60 * 1000), 'webhook')).toBe('active');
+      expect(deriveActivityBucket(new Date(now - 5 * 60 * 1000 - 1), 'webhook')).toBe('idle');
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test('seen seven minutes ago = idle, matching the five-minute connection window', () => {
