@@ -354,8 +354,7 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
  * POST /api/hosted/deprovision { agentName, instanceId? }
  * Stops the runtime. The installation and identity stay — ADR-001 §3 identity
  * continuity; re-provisioning finds the same memory. The token does NOT
- * survive: provision rotates on every call, so a
- * re-provision mints fresh and orphans anything still holding the old one.
+ * survive: it is revoked here, and provision mints a fresh one.
  */
 router.post('/deprovision', hostedRateLimit, auth, async (req: any, res: any) => {
   try {
@@ -375,6 +374,17 @@ router.post('/deprovision', hostedRateLimit, auth, async (req: any, res: any) =>
     }
     if (!requireConfigured(res, hostedEngineOf(installation))) return undefined;
     await hostedRuntime.deprovisionAgent(agentName, instanceId);
+    // The stopped runtime was the token's only holder. Revoke it now rather
+    // than at the next provision, which may never come.
+    // Without a bot user the installation copies are still revoked.
+    const agentUser = await User.findOne({
+      username: AgentIdentityService.buildAgentUsername(agentName, instanceId),
+      isBot: true,
+    });
+    await revokeRuntimeTokensForAgent({ agentUser, agentName, instanceId, installation });
+    // A socket authenticated with the old token stays open until told to go.
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    require('../services/agentWebSocketService').disconnectIdentity(agentName, instanceId);
     // A row migrated meanwhile keeps the migration's record; the worker is
     // stopped either way, which is what both wanted.
     await writeDurableObjectRecord(installation, { provisionedAt: null, deprovisionedAt: new Date() });
