@@ -1062,7 +1062,9 @@ const V2AgentBYO: React.FC = () => {
             className="v2-byo__link"
             aria-pressed={listenAdapter === runner}
             data-testid={`byo-runner-${runner}`}
-            onClick={() => setListenAdapter(runner)}
+            disabled={submitting}
+            // The name follows the runner, so a key prompt for the old name is stale.
+            onClick={() => { setPendingReplacement(null); setListenAdapter(runner); }}
           >
             {t(runner === 'claude' ? 'agentByo.form.adapterClaude' : 'agentByo.form.adapterCodex')}
           </button>
