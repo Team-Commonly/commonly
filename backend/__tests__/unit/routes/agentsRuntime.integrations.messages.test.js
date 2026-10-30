@@ -274,5 +274,28 @@ describe('agentsRuntime integration messages route', () => {
       expect(res.status).not.toHaveBeenCalledWith(400);
       expect(GroupMeService.fetchMessages).not.toHaveBeenCalled();
     });
+
+    it('logs a failed fetch without the request config that carries the token', async () => {
+      const util = require('util'); // eslint-disable-line global-require
+      connectorSecrets.get.mockResolvedValue('groupme-secret-token');
+      GroupMeService.fetchMessages.mockRejectedValue(Object.assign(
+        new Error('Request failed with status code 401'),
+        { config: { params: { token: 'groupme-secret-token' } }, response: { status: 401 } },
+      ));
+      Integration.findOne.mockReturnValue(groupmeRow({ accessTokenRef: 'ref-1' }));
+      const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const res = await call();
+
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(spy).toHaveBeenCalled();
+        spy.mock.calls.forEach((args) => {
+          expect(util.inspect(args, { depth: 10 })).not.toContain('groupme-secret-token');
+        });
+        expect(JSON.stringify(res.json.mock.calls)).not.toContain('groupme-secret-token');
+      } finally {
+        spy.mockRestore();
+      }
+    });
   });
 });

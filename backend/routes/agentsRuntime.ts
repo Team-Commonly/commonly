@@ -3777,7 +3777,9 @@ router.get('/pods/:podId/integrations/:integrationId/messages', phase4RateLimit,
 
     return res.json({ messages });
   } catch (error: any) {
-    console.error('Error fetching messages for agent:', error);
+    // The message only: a provider's HTTP error object carries its request
+    // config, which holds the credential (a query param or an auth header).
+    console.error('Error fetching messages for agent:', (error as Error)?.message);
     return res.status(500).json({ message: (error as Error).message || 'Failed to fetch messages' });
   }
 });

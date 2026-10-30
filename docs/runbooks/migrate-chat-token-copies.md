@@ -52,8 +52,9 @@ npx ts-node scripts/migrate-chat-token-copies.ts
 - `remaining`;
 - after `| not written:`, how many rows still carry `botToken`, `signingSecret`
   or `appToken`. Those fields are inventory only and this script never writes
-  them. Slack's `botToken` is still a legacy fallback in
-  `providers/slackProvider`'s `tokenFor`.
+  them. No code reads a Slack row's `botToken` any more: `providers/slackProvider`'s
+  `tokenFor` takes `botTokenRef` only. A nonzero Slack `botToken` count is
+  copies left at rest, for a later scrub.
 
 No credential value, ref or row id is printed.
 
