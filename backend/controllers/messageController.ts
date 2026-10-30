@@ -45,16 +45,6 @@ interface NormalizedMessage {
   user?: { username: string; profile_picture?: string };
 }
 
-const pgAvailable = (): boolean => {
-  try {
-    // eslint-disable-next-line global-require
-    const { pool } = require('../config/db-pg');
-    return !!pool;
-  } catch {
-    return false;
-  }
-};
-
 const normalizeMongo = (m: Record<string, unknown>): NormalizedMessage => {
   // When .populate('userId') ran, m.userId is a populated User document. Calling
   // .toString() on a Mongoose document returns util.inspect output
@@ -297,41 +287,63 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       throw err;
     }
 
-    try {
-      const created = await PGMessage.create(
+    if (!process.env.PG_HOST) {
+      // No PostgreSQL configured: MongoDB is this instance's only message
+      // store, as on the socket and agent paths and in the readers. Mongo
+      // rows have no reply edge, so replies still need PostgreSQL.
+      if (replyToMessageId) {
+        res.status(503).json({
+          error: 'Replies are temporarily unavailable. Please try again shortly.',
+          code: 'REPLY_REQUIRES_POSTGRES',
+        });
+        return;
+      }
+      const mongoMsg = await MongoMessage.create({
         podId,
         userId,
-        messageContent || '',
-        'text',
-        replyToMessageId || null,
-        null,
-        resolvedThreadRootId,
-      );
-      // create() returns the raw INSERT row with no users JOIN, so the
-      // response would lack username/profile_picture and the v2 chat would
-      // render the author as "Unknown" until a refresh pulled the joined
-      // row. findById re-fetches with the JOIN so the optimistic render
-      // already has the right author identity. A JOIN failure is not a write
-      // failure: falling into the Mongo fallback after INSERT would duplicate
-      // the message (or falsely reject an already-persisted reply).
-      let populated = null;
-      try {
-        populated = created?.id ? await PGMessage.findById(created.id) : null;
-      } catch (readErr) {
-        console.warn('[messageController] PG post-write read failed:', (readErr as Error).message);
-      }
-      message = (populated || created) as NormalizedMessage;
-    } catch (pgErr) {
-      // PostgreSQL is the only message store (TASK-503). A failed write is
-      // a failed send the client can retry, never a silent MongoDB row that
-      // pod chat (which reads PG) cannot show.
-      const e = pgErr as { message?: string };
-      console.error('[messageController] PG message write failed:', e.message);
-      res.status(503).json({
-        error: 'Messages are temporarily unavailable. Please try again shortly.',
-        code: 'MESSAGE_STORE_UNAVAILABLE',
+        content: messageContent || '',
+        messageType: 'text',
       });
-      return;
+      const populated = await MongoMessage.findById(mongoMsg._id)
+        .populate('userId', 'username profilePicture');
+      message = normalizeMongo(populated || mongoMsg);
+    } else {
+      try {
+        const created = await PGMessage.create(
+          podId,
+          userId,
+          messageContent || '',
+          'text',
+          replyToMessageId || null,
+          null,
+          resolvedThreadRootId,
+        );
+        // create() returns the raw INSERT row with no users JOIN, so the
+        // response would lack username/profile_picture and the v2 chat would
+        // render the author as "Unknown" until a refresh pulled the joined
+        // row. findById re-fetches with the JOIN so the optimistic render
+        // already has the right author identity. A JOIN failure is not a write
+        // failure: falling into the Mongo fallback after INSERT would duplicate
+        // the message (or falsely reject an already-persisted reply).
+        let populated = null;
+        try {
+          populated = created?.id ? await PGMessage.findById(created.id) : null;
+        } catch (readErr) {
+          console.warn('[messageController] PG post-write read failed:', (readErr as Error).message);
+        }
+        message = (populated || created) as NormalizedMessage;
+      } catch (pgErr) {
+        // PostgreSQL is the only message store (TASK-503). A failed write is
+        // a failed send the client can retry, never a silent MongoDB row that
+        // pod chat (which reads PG) cannot show.
+        const e = pgErr as { message?: string };
+        console.error('[messageController] PG message write failed:', e.message);
+        res.status(503).json({
+          error: 'Messages are temporarily unavailable. Please try again shortly.',
+          code: 'MESSAGE_STORE_UNAVAILABLE',
+        });
+        return;
+      }
     }
 
     // Scout's first-task proposal is a deterministic handoff tied to the pod

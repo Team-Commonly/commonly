@@ -172,6 +172,60 @@ describe('messageController', () => {
   });
 
   describe('createMessage', () => {
+    // The write follows PG_HOST like the socket and agent paths; the unit
+    // setup unsets it, so the PostgreSQL cases opt in here.
+    const OLD_PG_HOST = process.env.PG_HOST;
+    beforeEach(() => { process.env.PG_HOST = 'localhost'; });
+    afterEach(() => {
+      if (OLD_PG_HOST === undefined) delete process.env.PG_HOST;
+      else process.env.PG_HOST = OLD_PG_HOST;
+    });
+
+    describe('with no PostgreSQL configured (no PG_HOST)', () => {
+      beforeEach(() => { delete process.env.PG_HOST; });
+
+      it('writes the send to MongoDB, the only store, instead of failing it with 503', async () => {
+        const row = {
+          _id: { toString: () => 'mongo-1' },
+          podId: { toString: () => 'p1' },
+          userId: { toString: () => 'u1' },
+          content: 'hello',
+          messageType: 'text',
+        };
+        Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
+        MongoMessage.create.mockResolvedValueOnce(row);
+        MongoMessage.findById.mockReturnValueOnce({ populate: jest.fn().mockResolvedValue(row) });
+        const req = { params: { podId: 'p1' }, body: { content: 'hello' }, user: { id: 'u1' } };
+        const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+        await messageController.createMessage(req, res);
+
+        expect(PGMessage.create).not.toHaveBeenCalled();
+        expect(MongoMessage.create).toHaveBeenCalledWith({
+          podId: 'p1', userId: 'u1', content: 'hello', messageType: 'text',
+        });
+        expect(res.status).not.toHaveBeenCalledWith(503);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ id: 'mongo-1', content: 'hello' }));
+      });
+
+      it('refuses a reply, which a MongoDB row cannot carry', async () => {
+        Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
+        const req = {
+          params: { podId: 'p1' },
+          body: { content: 'a reply', replyToMessageId: 'parent-1' },
+          user: { id: 'u1' },
+        };
+        const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+        await messageController.createMessage(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(503);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'REPLY_REQUIRES_POSTGRES' }));
+        expect(MongoMessage.create).not.toHaveBeenCalled();
+        expect(PGMessage.create).not.toHaveBeenCalled();
+      });
+    });
+
     it('turns the creator\'s first answer into one proposal while preserving explicit delivery', async () => {
       Pod.findById.mockResolvedValue({
         members: ['u1'], type: 'chat', createdBy: 'u1',
