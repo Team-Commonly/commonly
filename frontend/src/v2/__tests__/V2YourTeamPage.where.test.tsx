@@ -31,13 +31,14 @@ const agent = (overrides) => ({
 });
 
 const agents = [
-  agent({ name: 'scout', displayName: 'Scout', userId: 'user-scout', installedBy: 'me', runtime: { runtimeType: 'hosted' } }),
+  agent({ name: 'scout', displayName: 'Scout', userId: 'user-scout', installedBy: 'me', runtime: { runtimeType: 'hosted', host: 'cloud' } }),
   agent({ name: 'codex', displayName: 'Codex', userId: 'user-codex', runtime: { runtimeType: 'codex' } }),
+  agent({ name: 'agentrun', displayName: 'Agentrun', userId: 'user-agentrun', installedBy: 'me', runtime: { runtimeType: 'codex' } }),
   agent({ name: 'laptop', displayName: 'Laptop', userId: 'user-laptop', installedBy: 'me', runtime: { runtimeType: 'native', host: 'byo' } }),
-  agent({ name: 'hook', displayName: 'Hook', userId: 'user-hook', installedBy: 'me', runtime: { runtimeType: 'webhook' } }),
-  agent({ name: 'daemon', displayName: 'Daemon', userId: 'user-daemon', installedBy: 'me', runtime: { runtimeType: 'wrapper', adapter: 'codex' } }),
-  agent({ name: 'teammate', displayName: 'Teammate', userId: 'user-teammate', installedBy: 'someone-else', runtime: { runtimeType: 'webhook' } }),
-  agent({ name: 'teamdaemon', displayName: 'Teamdaemon', userId: 'user-teamdaemon', installedBy: 'someone-else', runtime: { runtimeType: 'wrapper', adapter: 'codex' } }),
+  agent({ name: 'hook', displayName: 'Hook', userId: 'user-hook', installedBy: 'me', runtime: { runtimeType: 'webhook', host: 'byo' } }),
+  agent({ name: 'daemon', displayName: 'Daemon', userId: 'user-daemon', installedBy: 'me', runtime: { runtimeType: 'wrapper', adapter: 'codex', host: 'byo' } }),
+  agent({ name: 'teammate', displayName: 'Teammate', userId: 'user-teammate', installedBy: 'someone-else', runtime: { runtimeType: 'webhook', host: 'byo' } }),
+  agent({ name: 'teamdaemon', displayName: 'Teamdaemon', userId: 'user-teamdaemon', installedBy: 'someone-else', runtime: { runtimeType: 'wrapper', adapter: 'codex', host: 'byo' } }),
   agent({ name: 'cloudhost', displayName: 'Cloudhost', userId: 'user-cloudhost', runtime: { runtimeType: 'something-new', host: 'cloud' } }),
   agent({ name: 'mystery', displayName: 'Mystery', userId: 'user-mystery', runtime: { runtimeType: 'something-new' } }),
 ];
@@ -74,7 +75,9 @@ describe('V2YourTeamPage location mark and hosted meter', () => {
     renderPage();
     const cardOf = async (name) => (await screen.findByText(name)).closest('article');
     expect(within(await cardOf('Scout')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
-    expect(within(await cardOf('Codex')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
+    // A codex seat with no host stamp gets no mark, even though codex is a cloud type.
+    expect(within(await cardOf('Codex')).queryByRole('img', { name: /Runs on/ })).toBeNull();
+    expect(within(await cardOf('Agentrun')).queryByRole('img', { name: /Runs on/ })).toBeNull();
     expect(within(await cardOf('Laptop')).getByRole('img', { name: 'Runs on your computer' })).toBeInTheDocument();
     expect(within(await cardOf('Hook')).getByRole('img', { name: 'Runs on your computer' })).toBeInTheDocument();
     expect(within(await cardOf('Cloudhost')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
