@@ -387,6 +387,11 @@ Items are ranked by measured cost removed per day of effort.
 
 **Moves:** message stores, from two to one, and files with a MongoDB message fallback, from 7 to 0.
 
+**Status (2026-10-30, TASK-503):** the trigger fired. SRE counted 13 MongoDB message rows created in the 30 days to 10-30, so this moved to Do now.
+- *Writes, done in the TASK-503 write PR:* once `PG_HOST` is set, the HTTP send, the socket send (`services/socketMessageWrite.ts`) and agent posts write PostgreSQL only. A failed write returns `MESSAGE_STORE_UNAVAILABLE` (503, or a socket `error`) instead of writing MongoDB.
+- *Where the rows came from (not yet confirmed per row):* there are three MongoDB writers. The socket wrote MongoDB whenever PostgreSQL was configured but had not finished booting, which happens on every rollout until `onMounted`. It set no `pgFallback` flag, so the reconciler never moved those rows and pod chat, which reads PostgreSQL, never showed them. The controller and agent fallbacks set `pgFallback: true`, and agent rows also carry `metadata`. Grouping the 13 rows by `pgFallback`, `metadata` and `reconciledAt` will tell the writers apart.
+- *Still open:* removing the read, get-by-id and delete fallbacks, `pgMessageReconcileService`, and the MongoDB write used when no PostgreSQL is configured (the unit harness runs that way). That waits until the existing fallback rows are copied into PostgreSQL.
+
 ### D. Remove OpenClaw, per ADR-021 Phases 3–4 (3–5 days, plus 1 for docs)
 
 **Removes:** code and agent context that a parked runtime still costs.

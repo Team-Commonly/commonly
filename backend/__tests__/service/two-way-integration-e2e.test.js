@@ -21,7 +21,9 @@ const request = require('supertest');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 
-const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
+const {
+  setupMongoDb, closeMongoDb, setupPgDb, closePgDb,
+} = require('../utils/testUtils');
 
 // Models
 const User = require('../../models/User');
@@ -103,6 +105,9 @@ describe('Two-Way Integration E2E Tests', () => {
   beforeAll(async () => {
     process.env.JWT_SECRET = JWT_SECRET;
     await setupMongoDb();
+    // Agent posts write PostgreSQL only (TASK-503); before it, these suites
+    // passed through the silent MongoDB fallback without a PG schema.
+    await setupPgDb();
 
     // Create Express app with routes
     app = express();
@@ -128,6 +133,7 @@ describe('Two-Way Integration E2E Tests', () => {
   });
 
   afterAll(async () => {
+    await closePgDb();
     await closeMongoDb();
   });
 

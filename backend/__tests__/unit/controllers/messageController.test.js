@@ -172,6 +172,60 @@ describe('messageController', () => {
   });
 
   describe('createMessage', () => {
+    // The write follows PG_HOST like the socket and agent paths; the unit
+    // setup unsets it, so the PostgreSQL cases opt in here.
+    const OLD_PG_HOST = process.env.PG_HOST;
+    beforeEach(() => { process.env.PG_HOST = 'localhost'; });
+    afterEach(() => {
+      if (OLD_PG_HOST === undefined) delete process.env.PG_HOST;
+      else process.env.PG_HOST = OLD_PG_HOST;
+    });
+
+    describe('with no PostgreSQL configured (no PG_HOST)', () => {
+      beforeEach(() => { delete process.env.PG_HOST; });
+
+      it('writes the send to MongoDB, the only store, instead of failing it with 503', async () => {
+        const row = {
+          _id: { toString: () => 'mongo-1' },
+          podId: { toString: () => 'p1' },
+          userId: { toString: () => 'u1' },
+          content: 'hello',
+          messageType: 'text',
+        };
+        Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
+        MongoMessage.create.mockResolvedValueOnce(row);
+        MongoMessage.findById.mockReturnValueOnce({ populate: jest.fn().mockResolvedValue(row) });
+        const req = { params: { podId: 'p1' }, body: { content: 'hello' }, user: { id: 'u1' } };
+        const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+        await messageController.createMessage(req, res);
+
+        expect(PGMessage.create).not.toHaveBeenCalled();
+        expect(MongoMessage.create).toHaveBeenCalledWith({
+          podId: 'p1', userId: 'u1', content: 'hello', messageType: 'text',
+        });
+        expect(res.status).not.toHaveBeenCalledWith(503);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ id: 'mongo-1', content: 'hello' }));
+      });
+
+      it('refuses a reply, which a MongoDB row cannot carry', async () => {
+        Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
+        const req = {
+          params: { podId: 'p1' },
+          body: { content: 'a reply', replyToMessageId: 'parent-1' },
+          user: { id: 'u1' },
+        };
+        const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+        await messageController.createMessage(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(503);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'REPLY_REQUIRES_POSTGRES' }));
+        expect(MongoMessage.create).not.toHaveBeenCalled();
+        expect(PGMessage.create).not.toHaveBeenCalled();
+      });
+    });
+
     it('turns the creator\'s first answer into one proposal while preserving explicit delivery', async () => {
       Pod.findById.mockResolvedValue({
         members: ['u1'], type: 'chat', createdBy: 'u1',
@@ -356,8 +410,8 @@ describe('messageController', () => {
 
       expect(res.status).toHaveBeenCalledWith(503);
       expect(res.json).toHaveBeenCalledWith({
-        error: 'Replies are temporarily unavailable. Please try again shortly.',
-        code: 'REPLY_REQUIRES_POSTGRES',
+        error: 'Messages are temporarily unavailable. Please try again shortly.',
+        code: 'MESSAGE_STORE_UNAVAILABLE',
       });
       expect(MongoMessage.create).not.toHaveBeenCalled();
       expect(AgentMentionService.enqueueMentions).not.toHaveBeenCalled();
@@ -398,38 +452,25 @@ describe('messageController', () => {
       }));
     });
 
-    it('keeps the Mongo availability fallback for a non-reply when PostgreSQL is unavailable', async () => {
-      const mongoFallbackRow = {
-        _id: { toString: () => 'mongo-message' },
-        podId: { toString: () => 'p1' },
-        userId: {
-          _id: { toString: () => 'u1' }, username: 'alice', profilePicture: 'default',
-        },
-        content: 'ordinary message',
-        messageType: 'text',
-      };
+    it('fails a non-reply with 503 when PostgreSQL is unavailable, writing nothing to MongoDB (TASK-503)', async () => {
       Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
       PGMessage.create.mockRejectedValueOnce(new Error('PostgreSQL unavailable'));
-      MongoMessage.create.mockResolvedValueOnce(mongoFallbackRow);
-      MongoMessage.findById.mockReturnValueOnce({
-        populate: jest.fn().mockResolvedValue(mongoFallbackRow),
-      });
       const req = {
         params: { podId: 'p1' },
-        body: { content: mongoFallbackRow.content },
+        body: { content: 'ordinary message' },
         user: { id: 'u1' },
       };
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
 
       await messageController.createMessage(req, res);
 
-      expect(MongoMessage.create).toHaveBeenCalledWith({
-        pgFallback: true, podId: 'p1', userId: 'u1', content: mongoFallbackRow.content, messageType: 'text',
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith({
+        error: 'Messages are temporarily unavailable. Please try again shortly.',
+        code: 'MESSAGE_STORE_UNAVAILABLE',
       });
-      expect(res.status).not.toHaveBeenCalled();
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        id: 'mongo-message', content: mongoFallbackRow.content,
-      }));
+      expect(MongoMessage.create).not.toHaveBeenCalled();
+      expect(AgentMentionService.enqueueMentions).not.toHaveBeenCalled();
     });
 
     it('uses the joined PG author for a JWT-posted chat wake', async () => {
