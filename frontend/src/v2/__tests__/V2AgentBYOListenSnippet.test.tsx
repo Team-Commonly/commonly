@@ -217,6 +217,9 @@ describe('BYO listener snippet', () => {
   test('a Codex listener shows no Claude folder note', async () => {
     await issueToken('codex');
     expect(screen.queryByTestId('byo-listen-reach')).toBeNull();
+    // Codex gets its own note: it runs in its scratch folder, and --allow is refused for it.
+    expect(screen.getByTestId('byo-listen-reach-codex')).toHaveTextContent(/its own scratch folder under your temp directory/);
+    expect(screen.getByTestId('byo-listen-reach-codex')).toHaveTextContent(/--allow does not apply to Codex/);
   });
 
   test('the Claude Code MCP line shows for Claude Code only', async () => {
