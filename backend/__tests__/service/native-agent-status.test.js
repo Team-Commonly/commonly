@@ -85,6 +85,16 @@ describe('commonly_agent_status', () => {
     expect(agents.filter((a) => !a.inThisPod)).toHaveLength(100);
   });
 
+  it('lists every agent in this pod, even past 100', async () => {
+    // Rhea on #2969: capping the in-pod read must fail this test.
+    await AgentInstallation.insertMany(Array.from({ length: 105 }, (_, n) => ({
+      agentName: 'claude-code', instanceId: `here-${n}`, podId: scoutPod, version: '1',
+      installedBy: new mongoose.Types.ObjectId(), config: new Map([['runtime', { runtimeType: 'wrapper' }]]),
+    })));
+    const { agents } = (await ask(String(new mongoose.Types.ObjectId()))).content;
+    expect(agents.filter((a) => a.inThisPod)).toHaveLength(105);
+  });
+
   it('reports a failed key-store read as a failed call, not as never-connected', async () => {
     const spy = jest.spyOn(AgentCredential, 'find').mockImplementation(() => { throw new Error('ledger down'); });
     try {
