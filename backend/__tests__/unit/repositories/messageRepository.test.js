@@ -41,9 +41,12 @@ describe('listPodMessages', () => {
   });
 
   it('with PG configured, a PG failure is an error and MongoDB is never read', async () => {
-    PGMessage.findByPodId.mockRejectedValue(new Error('pg down'));
+    PGMessage.findByPodId.mockRejectedValue(new Error('connect ECONNREFUSED 10.9.8.7:5432'));
     mongoChain([{ _id: 'm1', podId: 'p1', userId: 'u1', content: 'stale', createdAt: new Date() }]);
-    await expect(listPodMessages('p1')).rejects.toThrow('pg down');
+    const failure = await listPodMessages('p1').catch((error) => error);
+    expect(failure).toMatchObject({ code: 'MESSAGE_STORE_UNAVAILABLE', statusCode: 503 });
+    // The driver text names the store's address; agent tool results echo err.message.
+    expect(failure.message).not.toMatch(/10\.9\.8\.7|5432|ECONNREFUSED/);
     expect(MongoMessage.find).not.toHaveBeenCalled();
   });
 

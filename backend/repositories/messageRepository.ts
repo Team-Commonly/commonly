@@ -16,6 +16,7 @@
 const PGMessage = require('../models/pg/Message');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const MongoMessage = require('../models/Message');
+import { messageStoreUnavailable } from '../services/messageStoreError';
 
 export type PodMessageAuthor = { _id: string; username: string; profilePicture?: string; isBot?: boolean };
 
@@ -106,7 +107,8 @@ export async function listPodMessages(
 ): Promise<PodMessage[]> {
   const safeLimit = clampLimit(limit);
   if (process.env.PG_HOST) {
-    return await PGMessage.findByPodId(podId, safeLimit, before || null) as PodMessage[];
+    return await PGMessage.findByPodId(podId, safeLimit, before || null)
+      .catch((pgError: unknown) => { throw messageStoreUnavailable('read', pgError); }) as PodMessage[];
   }
   const query: Record<string, unknown> = { podId };
   if (before) query.createdAt = { $lt: new Date(before) };

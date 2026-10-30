@@ -60,16 +60,8 @@ const ATTACH_CLAIM_SCAN_LIMIT = 2000;
 // add an entry here only after observing it as a wrapper artifact in production.
 const BARE_RUNTIME_ARTIFACTS = new Set(['RGCTX']);
 
-// PostgreSQL is the only message store once configured (TASK-503). Any failed
-// read or write on it surfaces as this retryable error, never the driver's own
-// message, which can carry the database host and port.
-const messageStoreUnavailable = (op: string, cause: unknown): Error & { code: string; statusCode: number } => {
-  console.error(`[agent-msg] PostgreSQL message ${op} failed:`, (cause as Error)?.message);
-  return Object.assign(
-    new Error('Messages are temporarily unavailable. Please try again shortly.'),
-    { code: 'MESSAGE_STORE_UNAVAILABLE', statusCode: 503, cause },
-  );
-};
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { messageStoreUnavailable } = require('./messageStoreError');
 
 const NO_REPLY_SENTINEL = 'NO_REPLY';
 // `trim()` does not remove every invisible Unicode code point. Normalize a
