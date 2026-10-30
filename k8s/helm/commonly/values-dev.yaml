@@ -450,6 +450,9 @@ hostedMcp:
     # The 10-27 prod walk failed before Airtable's consent screen ("invalid client_id
     # or mismatched redirect_uri"). Hidden until TASK-318 lands and a walk passes.
     - airtable
+    # Hidden until a fresh non-admin account walks connect, grant, call and
+    # refusal end to end (TASK-290). That account joins the allowlist below.
+    - github-mcp
   # Mongo User _id(s) permitted to walk each hidden hosted-MCP entry (#2649).
   hiddenEntryUserAllowlist:
     atlassian:
@@ -460,6 +463,11 @@ hostedMcp:
       - "6a47891ee025ce2e0ca1d30b"
   googleCalendar:
     enabled: false
+  # Commonly Connect App's client ID and secret each have an enabled version
+  # in Secret Manager (verified 2026-10-19). The backend refs remain optional.
+  githubMcp:
+    enabled: true
+    appSlug: commonly-connect
 
 # The team's own accounts, left out of the "typed and got no reply" alert, come
 # from the secret store (INTERNAL_ACCOUNTS, #2373). The key exists, and on

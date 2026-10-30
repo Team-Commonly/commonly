@@ -172,6 +172,7 @@ const toolEntriesFor = async (userId: string): Promise<{ entries: unknown[]; hid
       label: row.name || row.installableId,
       description: row.description || '',
       ...(hostedEntry?.connectNotice ? { connectNotice: hostedEntry.connectNotice } : {}),
+      ...(hostedEntry?.accessPage ? { accessPage: hostedEntry.accessPage } : {}),
       connectionType: meta.connectionType,
       ...(meta.entryId ? { entryId: meta.entryId } : {}),
       available: readiness.available,
