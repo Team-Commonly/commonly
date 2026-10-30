@@ -12,8 +12,8 @@
  * What the script does:
  *   1. Group every bot User by botMetadata.displayName.
  *   2. For each group with >1 user, pick ONE canonical to keep as-is
- *      (preference: shortest instanceId, then alphabetically first
- *       instanceId — deterministic across re-runs).
+ *      (preference: the default instance, then shortest instanceId, then
+ *       alphabetically first instanceId — deterministic across re-runs).
  *   3. For every other user in the group, rewrite displayName to
  *      `<originalDisplayName> (<instanceId>)`. instanceId is humanized:
  *      `pixel-demo` → "Pixel-demo", `inst-315667` → "inst-315667".
@@ -69,11 +69,14 @@ const isOpaquePerUserToken = (instanceId: string): boolean => (
 );
 
 const pickCanonical = (users: BotUser[]): BotUser => {
-  // Deterministic preference: shortest instanceId wins (so "pixel" beats
-  // "pixel-demo"); ties resolved alphabetically. Stable across re-runs.
+  // Deterministic preference: the default instance keeps the bare name, as
+  // in the inline resolver (TASK-551); then shortest instanceId wins (so
+  // "pixel" beats "pixel-demo"); ties resolved alphabetically. Stable
+  // across re-runs.
   return [...users].sort((a, b) => {
     const ai = a.botMetadata?.instanceId || '';
     const bi = b.botMetadata?.instanceId || '';
+    if ((ai === 'default') !== (bi === 'default')) return ai === 'default' ? -1 : 1;
     if (ai.length !== bi.length) return ai.length - bi.length;
     return ai.localeCompare(bi);
   })[0];

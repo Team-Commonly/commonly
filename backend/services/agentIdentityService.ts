@@ -4,6 +4,7 @@ import Pod from '../models/Pod';
 import { AgentRegistry } from '../models/AgentRegistry';
 import { normalizeAvatarUrl } from './avatarService';
 import { assertAgentRuntimeMayJoinPod, assertInstalledAgentMayJoinPod } from './outsiderGrantAgentJoinPolicy';
+import { FIRST_PARTY_DISPLAY_NAMES } from '../constants/firstPartyDisplayNames';
 
 let dbPg: { pool: { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }> } } | null;
 try {
@@ -358,7 +359,9 @@ interface GetOrCreateOptions {
  *
  * Canonical rule (matches the one-shot script — keep these aligned):
  *   - Group claimants by displayName.
- *   - Canonical = shortest instanceId; alphabetical tiebreak.
+ *   - Canonical = the default instance if one claims the name, else the
+ *     shortest instanceId; alphabetical tiebreak. The official agent keeps
+ *     its bare name, so a named instance is the one that gets suffixed.
  *   - Non-canonical entries get suffixed `"<base> (<HumanizedInstanceId>)"`.
  *
  * This call returns the disambiguated name the CURRENT caller should use.
@@ -432,6 +435,10 @@ async function resolveCollisionFreeDisplayName(
     instanceId,
   ];
   const canonical = [...all].sort((a, b) => {
+    // The default instance ranks first, so it keeps the bare name and a named
+    // instance takes the suffix. Length alone let a shorter named peer
+    // ('scout') win and turned the default row into "Scout (Default)" (TASK-551).
+    if ((a === 'default') !== (b === 'default')) return a === 'default' ? -1 : 1;
     if (a.length !== b.length) return a.length - b.length;
     return a.localeCompare(b);
   })[0];
@@ -515,7 +522,8 @@ class AgentIdentityService {
     const isOfficial = instanceId === 'default' && !!typeConfig;
 
     if (!agentUser) {
-      const rawDisplayName = options.displayName || typeConfig?.officialDisplayName || resolvedType;
+      const rawDisplayName = options.displayName || typeConfig?.officialDisplayName
+        || FIRST_PARTY_DISPLAY_NAMES.get(resolvedType) || resolvedType;
       const botMetadata = {
         displayName: await resolveCollisionFreeDisplayName(rawDisplayName, instanceId),
         // No invented sentence (#1649): a seat without a description shows no line on
@@ -577,7 +585,8 @@ class AgentIdentityService {
       // Upgrade existing user to bot if not already marked
       agentUser.isBot = true;
       agentUser.botType = (typeConfig?.botType || options.botType || 'agent') as typeof agentUser.botType;
-      const upgradeRawDisplayName = options.displayName || typeConfig?.officialDisplayName || agentUser.username;
+      const upgradeRawDisplayName = options.displayName || typeConfig?.officialDisplayName
+        || FIRST_PARTY_DISPLAY_NAMES.get(resolvedType) || agentUser.username;
       agentUser.botMetadata = {
         displayName: await resolveCollisionFreeDisplayName(upgradeRawDisplayName, instanceId, agentUser._id),
         description: options.description || typeConfig?.officialDescription || '',
@@ -614,7 +623,8 @@ class AgentIdentityService {
       if (needsUpdate) {
         const refreshRawDisplayName = hasStoredDisplayName
           ? String(existingMeta.displayName)
-          : (options.displayName || typeConfig?.officialDisplayName || resolvedType);
+          : (options.displayName || typeConfig?.officialDisplayName
+            || FIRST_PARTY_DISPLAY_NAMES.get(resolvedType) || resolvedType);
         agentUser.botMetadata = {
           ...existingMeta,
           displayName: await resolveCollisionFreeDisplayName(refreshRawDisplayName, instanceId, agentUser._id),

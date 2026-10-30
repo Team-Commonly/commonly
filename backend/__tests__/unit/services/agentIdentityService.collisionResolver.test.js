@@ -504,6 +504,47 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
     expect(mockSaved[0].botMetadata.displayName).toBe('Pixel');
   });
 
+  test('the default instance keeps its bare name when a shorter named peer shares it', async () => {
+    // 'scout' is shorter than 'default', so it used to outrank the official
+    // agent and turn its label into "Scout (Default)" in every invite line.
+    mockPeers = [
+      {
+        _id: 'named-scout',
+        botMetadata: { displayName: 'Scout', instanceId: 'scout' },
+      },
+    ];
+    await AgentIdentityService.getOrCreateAgentUser('scout', { displayName: 'Scout' });
+    expect(mockSaved.length).toBe(1);
+    expect(mockSaved[0].botMetadata.displayName).toBe('Scout');
+  });
+
+  test('a named instance that collides with the default agent takes the suffix', async () => {
+    mockPeers = [
+      {
+        _id: 'default-scout',
+        botMetadata: { displayName: 'Scout', instanceId: 'default' },
+      },
+    ];
+    await AgentIdentityService.getOrCreateAgentUser('scout', {
+      instanceId: 'scout-demo',
+      displayName: 'Scout',
+    });
+    expect(mockSaved.length).toBe(1);
+    expect(mockSaved[0].botMetadata.displayName).toBe('Scout (Scout-Demo)');
+  });
+
+  test('a first-party agent with no displayName is stored under its curated label, not its agentName', async () => {
+    await AgentIdentityService.getOrCreateAgentUser('scout', {});
+    expect(mockSaved.length).toBe(1);
+    expect(mockSaved[0].botMetadata.displayName).toBe('Scout');
+  });
+
+  test('the first-party label map agrees with the native scout config', () => {
+    const { FIRST_PARTY_DISPLAY_NAMES } = require('../../../constants/firstPartyDisplayNames');
+    const { scoutApp } = require('../../../config/native-agents/scout');
+    expect(FIRST_PARTY_DISPLAY_NAMES.get('scout')).toBe(scoutApp.displayName);
+  });
+
   test('refresh (reprovision) on existing collision-suffixed name does NOT double-suffix', async () => {
     mockExisting = {
       _id: 'reprovision-id',
