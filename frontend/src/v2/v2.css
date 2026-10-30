@@ -11601,7 +11601,10 @@ body.modern-ui.v2-canvas {
 
   .v2-thread__header-row { align-items: center; gap: 8px; }
   .v2-thread__title-line { display: flex; flex-wrap: wrap; align-items: center; }
-  .v2-thread__title h1 { font: 600 15px/20px var(--v2-font); }
+  /* The name takes the free width with a zero basis and truncates, so the
+     "i" hint keeps its place on the line instead of wrapping under it and
+     growing the header (TASK-647 item 3). */
+  .v2-thread__title h1 { font: 600 15px/20px var(--v2-font); flex: 1 1 0; min-width: 0; white-space: nowrap; text-overflow: ellipsis; }
 
   .v2-thread .v2-msg__author,
   .v2-thread .v2-msg__author-btn { font-size: 15px; }
@@ -12076,12 +12079,13 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-pod-header__board:hover { text-decoration: underline; }
 
 /* Phone: the board link keeps a 44px tap target without growing the line:
-   the hit area is a pseudo-element that extends past the 28px meta row. */
+   the hit area is a pseudo-element (16px text line + 14px each side = 44px
+   tall, 10px wider each side) that extends past the 28px meta row. */
 .v2-root button.v2-pod-header__board--compact { position: relative; }
 .v2-root button.v2-pod-header__board--compact::before {
   content: '';
   position: absolute;
-  inset: -8px -10px;
+  inset: -14px -10px;
 }
 
 .v2-root button.v2-thread__back { display: none; }
@@ -12144,7 +12148,7 @@ body.modern-ui.v2-canvas {
     align-items: flex-start;
   }
   .v2-pod-header__meta { display: none; }
-  .v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; min-height: 28px; }
+  .v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; min-height: 28px; flex: 0 0 auto; white-space: nowrap; }
 
   .v2-root button.v2-thread__back {
     display: inline-grid;
