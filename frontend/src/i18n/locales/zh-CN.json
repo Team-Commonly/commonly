@@ -1782,8 +1782,7 @@
       "unavailableClaude": "Claude Code 在 {{os}} 上暂时不能回复 @提及：Commonly 要把它放进沙箱里运行，而 Commonly 用的沙箱在 {{os}} 上还做不到。你可以用下面的命令把 Commonly 的工具接进自己的 Claude Code 会话，或者选择“在这里运行”，改用托管智能体。",
       "unavailableCodex": "Codex CLI 在 {{os}} 上暂时不能回复 @提及。你可以选择“在这里运行”，改用托管智能体；也可以换到 Mac 机器上运行这条命令（Linux 尚未测试）。",
       "toolCodex": "Codex CLI",
-      "switchToCodex": "我用的是 Codex",
-      "switchToClaude": "我用的是 Claude Code"
+      "useDifferentRunner": "换一种适配器"
     },
     "mode": {
       "label": "在哪里运行？",

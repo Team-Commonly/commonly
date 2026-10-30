@@ -239,6 +239,10 @@ const V2AgentBYO: React.FC = () => {
   // page shows the act and where it lands; the full page is one click away.
   // The key is still minted by the click, never on load: the click is consent.
   const [compactByo, setCompactByo] = useState<boolean>(prefill.fromCard && Boolean(prefill.name));
+  // A card fixes the name, and the approval already installed under it, so the
+  // runner belongs to the card too: no picker on a card. "Use a different
+  // runner" from a card opens the plain page with nothing carried over.
+  const [onCardStart, setOnCardStart] = useState<boolean>(prefill.fromCard);
   const [hostedState, setHostedState] = useState<'starting' | 'running' | 'slow'>('starting');
   // ADR-026 Phase 2: "on my computer" — install + placement request; the
   // daemon on the chosen machine adopts, provisions, and starts the agent.
@@ -316,6 +320,10 @@ const V2AgentBYO: React.FC = () => {
     }
   }, [defaultAgentName, nameTouched]);
 
+  // A card's name is the lookup's base only while the card is on screen.
+  // Once the person goes back to the start, the runner names the install.
+  // Any other link keeps its ?name= prefill as before.
+  const namePrefill = prefill.fromCard && !onCardStart ? '' : prefill.name;
   const lastSuggestedName = useRef<string | null>(null);
   useEffect(() => {
     if (!choicesKnown) return undefined;
@@ -324,7 +332,7 @@ const V2AgentBYO: React.FC = () => {
       return undefined;
     }
     let cancelled = false;
-    const base = sanitizeAgentName(prefill.name || defaultAgentName);
+    const base = sanitizeAgentName(namePrefill || defaultAgentName);
     setNamesReady(false);
     setNameLookupError(false);
     // The pod lets the server hand back this person's own install there whose
@@ -343,14 +351,14 @@ const V2AgentBYO: React.FC = () => {
         const previous = lastSuggestedName.current;
         lastSuggestedName.current = result.name;
         setName((current) => (
-          !nameTouched || current === prefill.name || current === previous
+          !nameTouched || current === namePrefill || current === previous
             ? result.name! : current));
         setNamesReady(true);
       })
       .catch(() => { if (!cancelled) setNameLookupError(true); });
     return () => { cancelled = true; };
-  }, [api, choicesKnown, defaultAgentName, mode, nameLookupRetry, nameTouched, personaCard, podId, prefill.name,
-    prefill.reconnect]);
+  }, [api, choicesKnown, defaultAgentName, mode, namePrefill, nameLookupRetry, nameTouched, personaCard, podId,
+    prefill.reconnect, prefill.name]);
   const [placed, setPlaced] = useState<{ agentName: string; machineId: string; machineName: string } | null>(null);
   const [placedState, setPlacedState] = useState<'waiting' | 'running' | 'slow'>('waiting');
   const [reconnectRequest, setReconnectRequest] = useState<{
@@ -1031,6 +1039,40 @@ const V2AgentBYO: React.FC = () => {
     : '';
   const cursorInstallHref = cursorMcpInstallLink(apiUrl);
 
+  // The runner is picked before the install and never after it: the name
+  // follows the runner, so a switch after issue would leave a claude-named
+  // install under a codex listener. Going back to the start is the way to change it.
+  const backToStart = () => {
+    if (onCardStart) {
+      setOnCardStart(false);
+      setCompactByo(false);
+      setName(defaultNameFor('byo', listenAdapter));
+      setNameTouched(false);
+    }
+    setIssued(null);
+  };
+  const runnerPicker = mode === 'byo' && !issued && !onCardStart ? (
+    <p className="v2-byo__os" data-testid="byo-runner">
+      {t('agentByo.form.adapterLabel')}{' '}
+      {(['claude', 'codex'] as const).map((runner, i) => (
+        <React.Fragment key={runner}>
+          {i > 0 && ' · '}
+          <button
+            type="button"
+            className="v2-byo__link"
+            aria-pressed={listenAdapter === runner}
+            data-testid={`byo-runner-${runner}`}
+            disabled={submitting}
+            // The name follows the runner, so a key prompt for the old name is stale.
+            onClick={() => { setPendingReplacement(null); setListenAdapter(runner); }}
+          >
+            {t(runner === 'claude' ? 'agentByo.form.adapterClaude' : 'agentByo.form.adapterCodex')}
+          </button>
+        </React.Fragment>
+      ))}
+    </p>
+  ) : null;
+
   return (
     <V2FeaturePage
       title={(() => {
@@ -1131,6 +1173,7 @@ const V2AgentBYO: React.FC = () => {
           {/* Enabled once the pod list confirms the pod: a link's pod the person
               cannot install into is replaced by their own, and that is the line
               above the button, so the click never lands somewhere unshown. */}
+          {runnerPicker}
           {!isOtherOwner && <button
             type="button"
             onClick={() => {
@@ -1291,6 +1334,7 @@ const V2AgentBYO: React.FC = () => {
               </span>
             </label>
           )}
+          {runnerPicker}
           <label className={`v2-byo__field${errorField === 'name' || nameLookupError ? ' v2-byo__field--error' : ''}`}>
             <span className="v2-byo__label">{t('agentByo.form.nameLabel')}</span>
             <input
@@ -1551,10 +1595,10 @@ const V2AgentBYO: React.FC = () => {
               <button
                 type="button"
                 className="v2-byo__link"
-                data-testid="byo-listen-adapter-switch"
-                onClick={() => setListenAdapter((a) => (a === 'codex' ? 'claude' : 'codex'))}
+                data-testid="byo-use-different-runner"
+                onClick={backToStart}
               >
-                {listenAdapter === 'codex' ? t('agentByo.listen.switchToClaude') : t('agentByo.listen.switchToCodex')}
+                {t('agentByo.listen.useDifferentRunner')}
               </button>
             </p>
             {listenerAvailable && (
