@@ -60,6 +60,8 @@ export interface V2Message {
     agentsInPod: number;
     // Wake-on-message targets (#914). Optional: older backends omit it.
     woken?: number;
+    // Who was woken; older backends omit it.
+    wokenAgents?: string[];
   };
   // Sender-only feedback from the POST response. Socket broadcasts and
   // history omit it, so other pod members never see the notice.

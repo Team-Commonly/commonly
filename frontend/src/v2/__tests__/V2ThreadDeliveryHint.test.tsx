@@ -418,4 +418,46 @@ describe('V2Thread agent delivery hint', () => {
       expect(screen.queryByText('no agent in this pod')).not.toBeInTheDocument();
     });
   });
+
+  // Silence census, 10-20: Scout woke on an unmentioned message, the person's
+  // own hosted agent did not, and the hint stayed hidden because "an agent
+  // was woken". Name the agent that wasn't.
+  const SCOUT_AND_OWN = [
+    { agentName: 'guide', instanceId: 'u3f9c2a1b7d', displayName: 'Scout', status: 'active' },
+    { agentName: 'sly-agent', instanceId: 'default', displayName: 'Sly', status: 'active' },
+  ];
+
+  test('when Scout woke and another agent did not, names that agent', async () => {
+    renderHarness(
+      makeMessage('can you research this', {
+        enqueued: 0, implicit: [], agentsInPod: 2, woken: 1, wokenAgents: ['guide'],
+      }),
+      jest.fn(),
+      { agents: SCOUT_AND_OWN },
+    );
+
+    sendDraft('can you research this');
+
+    const hint = await screen.findByText(/will answer this/);
+    expect(hint.closest('.v2-chat__delivery-hint')).toHaveTextContent(
+      'Scout will answer this. Other agents here answer only when you @mention them. Try @sly.',
+    );
+  });
+
+  test('stays hidden when every agent in the pod was woken', async () => {
+    const sendSpy = jest.fn();
+    renderHarness(
+      makeMessage('hello all', {
+        enqueued: 0, implicit: [], agentsInPod: 2, woken: 2, wokenAgents: ['guide', 'sly-agent'],
+      }),
+      sendSpy,
+      { agents: SCOUT_AND_OWN },
+    );
+
+    sendDraft('hello all');
+    await screen.findByText('hello all');
+
+    expect(screen.queryByText(/will answer this/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No agent was notified/i)).not.toBeInTheDocument();
+  });
 });
