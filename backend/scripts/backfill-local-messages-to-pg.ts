@@ -36,11 +36,11 @@
  *   npm run backfill:local-messages -- --apply
  *   npm run backfill:local-messages -- --since 2026-09-30T00:00:00Z --apply --force
  *
- * A row whose pod no longer exists in MongoDB is an orphan: its pod was
- * deleted, so there is no pod to mirror into PG and the FK on `pods` refuses
- * the copy. Those rows are skipped, left untouched in Mongo and counted as
- * `orphaned`; they never fail the run. `orphanedPending` reports how many of
- * the pending rows are orphans before anything is written, dry run included.
+ * A row whose pod is in neither store is an orphan: its pod was deleted, so
+ * there is nothing to mirror into PG and the FK on `pods` refuses the copy.
+ * Those rows are skipped, left untouched in Mongo and counted as `orphaned`;
+ * they never fail the run. `orphanedPending` reports how many of the pending
+ * rows are orphans before anything is written, dry run included.
  *
  * Exit codes: 0 done, or a dry run that would proceed; 1 some rows failed;
  * 2 refused (a dry run that finds the overlap refuses too, so it also exits 2).
@@ -157,11 +157,17 @@ export const productionDeps = (pool: PgPool, { since }: BackfillScope = {}): Loc
       );
       return Number(rows[0]?.n || 0);
     },
+    // An orphan's pod is in neither store: a pod already in PG copies without
+    // a mirror, and a Mongo-only pod gets mirrored, so only the rest fail the FK.
     countOrphaned: async () => {
-      const podIds = await Message.distinct('podId', unreconciled);
+      const podIds: Array<{ toString(): string }> = await Message.distinct('podId', unreconciled);
       if (!podIds.length) return 0;
-      const live = await MongoPod.find({ _id: { $in: podIds } }).distinct('_id');
-      return Message.countDocuments({ ...unreconciled, podId: { $nin: live } });
+      const ids = podIds.map(String);
+      const inMongo: Array<{ toString(): string }> = await MongoPod.find({ _id: { $in: podIds } }).distinct('_id');
+      const { rows } = await pool.query('SELECT id FROM pods WHERE id = ANY($1)', [ids]);
+      const live = new Set([...inMongo.map(String), ...rows.map((r) => String(r.id))]);
+      const gone = podIds.filter((id) => !live.has(String(id)));
+      return gone.length ? Message.countDocuments({ ...unreconciled, podId: { $in: gone } }) : 0;
     },
     nextBatch: (afterId, limit) => Message.find(afterId
       ? { ...unreconciled, _id: { $gt: new mongoose.Types.ObjectId(afterId) } }
