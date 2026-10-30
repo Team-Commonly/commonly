@@ -204,9 +204,10 @@ describe('BYO listener snippet', () => {
     expect(axios.delete).not.toHaveBeenCalled();
   });
 
-  test('a Claude Code listener says what it can reach and how --allow widens it; Codex says nothing of folders', async () => {
+  test('a Claude Code listener says what it can reach and how --allow widens it; Codex gets its own note only', async () => {
     await issueToken();
     const reach = screen.getByTestId('byo-listen-reach');
+    expect(screen.queryByTestId('byo-listen-reach-codex')).toBeNull();
     expect(reach).toHaveTextContent(/By default, on macOS, when every pod it's in is private, invite-only and not listed in Community, .+ reads only the folder you run this from\. Otherwise, or when you run it from your home folder, it works in its own scratch folder\./);
     // The folder bound is the default only: write's commands read past it.
     expect(reach).toHaveTextContent(/add --allow write to the last line\. Those commands can read beyond the folder\./);
@@ -330,6 +331,7 @@ describe('BYO listener snippet', () => {
       expect(listener()).toBeUndefined();
       expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/The Codex CLI can’t answer @mentions from Linux yet\. .*Linux is not tested yet\./);
       expect(screen.queryByTestId('byo-listen-npm-hint')).toBeNull();
+      expect(screen.queryByTestId('byo-listen-reach-codex')).toBeNull();
     });
 
     test('Codex on Windows says so, and offers hosted or another machine', async () => {
@@ -339,6 +341,7 @@ describe('BYO listener snippet', () => {
       expect(screen.getByTestId('byo-listen-unavailable'))
         .toHaveTextContent(/The Codex CLI can’t answer @mentions from Windows yet\. Choose “Run it here”/);
       expect(screen.queryByTestId('byo-listen-npm-hint')).toBeNull();
+      expect(screen.queryByTestId('byo-listen-reach-codex')).toBeNull();
       expect(screen.queryByTestId('byo-mcp-claude')).toBeNull();
     });
 
