@@ -1,6 +1,6 @@
 jest.mock('../../../services/pgMessageReconcileService', () => ({ copyOne: jest.fn(), ensureLegacyIdIndex: jest.fn() }));
 
-const { backfillLocalMessages, main } = require('../../../scripts/backfill-local-messages-to-pg');
+const { backfillLocalMessages, main, parseSince } = require('../../../scripts/backfill-local-messages-to-pg');
 
 const doc = (id) => ({ _id: { toString: () => id }, podId: 'p', userId: 'u', content: id, createdAt: new Date('2026-01-01') });
 
@@ -88,5 +88,30 @@ describe('main() exit code', () => {
     expect((await run(fakeDeps())).exitCode).toBe(0);
     expect((await run(fakeDeps(), ['node', 'script'])).exitCode).toBe(0);
     expect((await run(fakeDeps({ overlap: 4 }), ['node', 'script'])).exitCode).toBe(2);
+  });
+});
+
+describe('--since', () => {
+  it('passes the parsed time to the stores, and no flag passes none', async () => {
+    const open = jest.fn(async () => ({ deps: fakeDeps(), close: async () => {} }));
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const before = process.exitCode;
+    try {
+      await main(['node', 'script', '--since', '2026-09-30T00:00:00Z'], open);
+      await main(['node', 'script'], open);
+    } finally {
+      process.exitCode = before;
+      log.mockRestore();
+    }
+    expect(open.mock.calls[0][0].since.toISOString()).toBe('2026-09-30T00:00:00.000Z');
+    expect(open.mock.calls[1][0].since).toBeUndefined();
+  });
+
+  it('an unparseable or missing date throws before any store opens', async () => {
+    const open = jest.fn();
+    await expect(main(['node', 'script', '--since', 'last-month'], open)).rejects.toThrow('--since needs an ISO date');
+    await expect(main(['node', 'script', '--since'], open)).rejects.toThrow('got nothing');
+    expect(open).not.toHaveBeenCalled();
+    expect(parseSince(['node', 'script'])).toBeUndefined();
   });
 });

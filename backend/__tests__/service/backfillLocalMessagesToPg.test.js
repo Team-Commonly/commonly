@@ -140,6 +140,21 @@ d('TASK-503: local-upgrade backfill into PostgreSQL', () => {
     }
   });
 
+  test('since copies only Mongo rows created at or after it', async () => {
+    const since = new Date('2026-09-30T00:00:00Z');
+    await mongoMessage('older history', new Date('2026-09-29T23:59:59Z'));
+    const atSince = await mongoMessage('at since', since);
+    const after = await mongoMessage('recent tail', new Date('2026-10-20T00:00:00Z'));
+    const deps = productionDeps(pool, { since });
+
+    const dry = await backfillLocalMessages(deps, { force: true });
+    expect(dry).toMatchObject({ dryRun: true, pending: 2, moved: 0 });
+
+    const applied = await backfillLocalMessages(deps, { apply: true, force: true });
+    expect(applied).toMatchObject({ pending: 2, moved: 2, failed: 0 });
+    expect(await pgCopies()).toEqual([atSince._id.toString(), after._id.toString()].sort());
+  });
+
   test('refuses when PG holds unmarked history older than the newest Mongo message', async () => {
     await pgUnmarked('copied by an older migration', new Date('2026-01-01T00:00:00Z'));
     await mongoMessage('same history', new Date('2026-01-02T00:00:00Z'));
