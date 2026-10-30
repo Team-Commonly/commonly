@@ -447,10 +447,10 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, { trust, allow = [], memor
   const memoryDenies = memoryWithheld
     ? MEMORY_TOOLS.flatMap((tool) => mcpToolPatterns.map((pattern) => pattern.replace(/\*$/, tool)))
     : [];
-  // Nor the tools no public seat is offered (public-withheld-tools.js).
-  const withheldDenies = trust === 'workspace'
-    ? []
-    : PUBLIC_WITHHELD_TOOLS.flatMap((tool) => mcpToolPatterns.map((pattern) => pattern.replace(/\*$/, tool)));
+  // Nor, on any confined trust, the tools no public seat is offered
+  // (public-withheld-tools.js).
+  const withheldDenies = PUBLIC_WITHHELD_TOOLS
+    .flatMap((tool) => mcpToolPatterns.map((pattern) => pattern.replace(/\*$/, tool)));
   return [
     // HOME points at an isolated, sanitized state directory. Ignore settings
     // from user/project/local sources and disable slash-command extensions;

@@ -1275,8 +1275,8 @@ describe('claude adapter — a workspace seat', () => {
       'Read(./.git/**)', 'Read(./**/.git/**)',
       'mcp__commonly__commonly_self_install_into_pod',
     ]));
-    // The person's own repo seat keeps attach_file; only public seats lose it.
-    expect(denied).not.toContain('mcp__commonly__commonly_attach_file');
+    // Workspace seats follow the same list as public ones (TASK-287).
+    expect(denied).toContain('mcp__commonly__commonly_attach_file');
     expect(opts.env.HOME).toBe(publicState);
     expect(opts.env.COMMONLY_HOST_SECRET).toBeUndefined();
   });
