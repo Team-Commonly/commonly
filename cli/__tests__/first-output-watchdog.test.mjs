@@ -131,6 +131,57 @@ describe('the claude adapter under the first-output watchdog', () => {
     }
   });
 
+  test('a stall SIGTERMs the live tree, and a survivor holding the pipe is SIGKILLed when the spawn exits', async () => {
+    const saved = process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS;
+    process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS = '50';
+    const started = 'Thu Oct 30 06:59:59 2026';
+    const spawned = {};
+    let rootAlive = true;
+    // The descendant ignores SIGTERM and holds the inherited stdout, so close
+    // fires only once it is SIGKILLed.
+    const survivorKill = jest.fn((pid, signal) => {
+      if (pid === 4243 && signal === 'SIGKILL') setImmediate(() => spawned.child.emit('close', null));
+    });
+    const treeKill = jest.spyOn(process, 'kill').mockImplementation(() => true);
+    try {
+      const { error } = await claude.spawn('hello', {
+        environment: { model: 'test-model' },
+        _spawnImpl: () => {
+          const proc = fakeChild();
+          Object.assign(proc, { pid: 4242, exitCode: null, signalCode: null });
+          proc.kill = jest.fn((signal) => {
+            if (signal !== 'SIGTERM') return;
+            setImmediate(() => {
+              rootAlive = false;
+              proc.signalCode = 'SIGTERM';
+              proc.emit('exit', null, 'SIGTERM');
+            });
+          });
+          spawned.child = proc;
+          return proc;
+        },
+        _lockProbe: async () => true,
+        _stallKillGraceMs: 60_000,
+        _processTable: () => [{ pid: 4243, ppid: 4242, started }],
+        _survivorIo: {
+          read: (pid) => (pid === 4243 ? { pid, ppid: rootAlive ? 4242 : 1, started } : null),
+          kill: survivorKill,
+        },
+        env: { ...process.env, HOME: sessionsTmpDir },
+        cwd: sessionsTmpDir,
+      }).then(() => ({}), (err) => ({ error: err }));
+      expect(error.code).toBe('spawn_stalled');
+      // The first signal reached the descendant, not only the root.
+      expect(treeKill).toHaveBeenCalledWith(4243, 'SIGTERM');
+      expect(spawned.child.kill).toHaveBeenCalledWith('SIGTERM');
+      expect(survivorKill).toHaveBeenCalledWith(4243, 'SIGKILL');
+    } finally {
+      treeKill.mockRestore();
+      if (saved === undefined) delete process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS;
+      else process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS = saved;
+    }
+  });
+
   test('a spawn that ignores SIGTERM gets SIGKILL after the grace', async () => {
     const spawned = {};
     const saved = process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS;

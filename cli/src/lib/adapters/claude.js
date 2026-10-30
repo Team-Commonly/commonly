@@ -512,6 +512,14 @@ const runClaude = ({
   let stalled = null;
   let stallKill = null;
   let stallSnapshot = [];
+  // SIGKILL snapshotted descendants that are still alive. Safe to repeat. It
+  // runs when the spawn exits, at the grace deadline and on close: a survivor
+  // still holding the spawn's stdout or stderr keeps close from ever firing,
+  // and once the spawn is reaped killProcessTree can no longer reach it.
+  const sweepStallSurvivors = () => {
+    if (stalled) killStallSurvivors(stallSnapshot, survivorIo);
+  };
+  const treeIo = (table) => ({ table, ...(survivorIo?.read ? { read: survivorIo.read } : {}) });
   const watchdog = watchFirstOutput({
     proc,
     windowMs: firstOutputMs,
@@ -521,14 +529,19 @@ const runClaude = ({
       stalled = spawnStalledError({ label: 'claude', windowMs: firstOutputMs, reason });
       // Snapshot the descendants first: once the spawn exits they are
       // reparented and can no longer be found from it.
-      if (Number.isInteger(proc.pid)) stallSnapshot = descendantsOf(processTable(), proc.pid);
-      killProcessTree(proc, 'SIGTERM');
+      const table = Number.isInteger(proc.pid) ? processTable() : null;
+      if (table) stallSnapshot = descendantsOf(table, proc.pid);
+      killProcessTree(proc, 'SIGTERM', treeIo(() => table));
       // A process parked in a system call may not act on SIGTERM. SIGKILL the
       // child, its group when it leads one, and its descendants.
-      stallKill = setTimeout(() => killProcessTree(proc, 'SIGKILL'), stallKillGraceMs);
+      stallKill = setTimeout(() => {
+        killProcessTree(proc, 'SIGKILL', treeIo(processTable));
+        sweepStallSurvivors();
+      }, stallKillGraceMs);
       stallKill.unref?.();
     },
   });
+  proc.on('exit', sweepStallSurvivors);
 
   proc.stdout?.on('data', (chunk) => { stdout += chunk.toString(); });
   proc.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
@@ -543,8 +556,7 @@ const runClaude = ({
     clearTimeout(stallKill);
     watchdog.stop();
     if (stalled) {
-      // The spawn exited, but a descendant may have outlived SIGTERM.
-      killStallSurvivors(stallSnapshot, survivorIo);
+      sweepStallSurvivors();
       return reject(stalled);
     }
     if (timedOut) return reject(new Error(`claude timed out after ${timeoutMs}ms`));
