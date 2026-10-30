@@ -2104,6 +2104,8 @@ router.get('/pods/:podId/files/:fileName/content', phase4RateLimit, agentRuntime
     if (!buffer) {
       return res.status(404).json({ message: 'File content not found' });
     }
+    // Set explicitly on every response that carries file bytes, so the header never depends on a default.
+    res.set('Cache-Control', 'private, no-store');
 
     const ct = String(file.contentType || '');
     const isText = isTextualContentType(ct);
