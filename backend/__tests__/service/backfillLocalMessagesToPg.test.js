@@ -140,6 +140,26 @@ d('TASK-503: local-upgrade backfill into PostgreSQL', () => {
     }
   });
 
+  test('a message whose pod is gone from both stores is skipped as orphaned and never fails the run', async () => {
+    const deletedPod = new mongoose.Types.ObjectId();
+    const orphan = await MongoMessage.create({
+      podId: deletedPod, userId: USER, content: `${MARKER} deleted pod`, messageType: 'text',
+    });
+    const live = await mongoMessage('live pod');
+    const deps = productionDeps(pool);
+
+    const dry = await backfillLocalMessages(deps, { force: true });
+    expect(dry).toMatchObject({ dryRun: true, pending: 2, orphanedPending: 1, orphaned: 0 });
+
+    const applied = await backfillLocalMessages(deps, { apply: true, force: true });
+    expect(applied).toMatchObject({ pending: 2, orphanedPending: 1, moved: 1, orphaned: 1, failed: 0 });
+    expect(await pgCopies()).toEqual([live._id.toString()]);
+    const { rows } = await pool.query('SELECT id FROM pods WHERE id = $1', [deletedPod.toHexString()]);
+    expect(rows).toHaveLength(0);
+    const left = await MongoMessage.findById(orphan._id).lean();
+    expect(left.reconciledAt).toBeUndefined();
+  });
+
   test('since copies only Mongo rows created at or after it', async () => {
     const since = new Date('2026-09-30T00:00:00Z');
     await mongoMessage('older history', new Date('2026-09-29T23:59:59Z'));
