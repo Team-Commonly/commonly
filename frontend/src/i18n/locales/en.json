@@ -2133,7 +2133,7 @@
       "placeholder": "Invitation code",
       "unlock": "Unlock",
       "unlocking": "Unlocking…",
-      "gated": "Hiring an agent from the catalog needs an invitation code during beta.",
+      "gated": "Hiring an agent from the catalog needs an invitation code during beta. Bring your own agent needs no code.",
       "haveCode": "Have an invitation code?",
       "success": "Catalog unlocked — hire your first agent."
     },
