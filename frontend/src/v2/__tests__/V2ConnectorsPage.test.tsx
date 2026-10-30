@@ -827,6 +827,28 @@ describe('V2ConnectorsPage', () => {
     expect(screen.getByRole('status')).not.toHaveTextContent('remove Commonly there');
   });
 
+  it('keeps the generic manual-revoke copy for an entry without its own', async () => {
+    const revokePage = 'https://airtable.com/account/security';
+    window.history.replaceState(
+      {},
+      '',
+      `/v2/connectors?hostedMcp=connected&entryId=airtable&revokeAt=${encodeURIComponent(revokePage)}`,
+    );
+    mockGets([{
+      _id: 'i-airtable', type: 'hosted-mcp', status: 'connected',
+      config: { entryId: 'airtable', revokePage },
+    }], [{
+      ...hostedLinearCatalogEntry('i-airtable'),
+      installableId: 'airtable', label: 'Airtable', entryId: 'airtable',
+    }]);
+    renderPage();
+
+    expect(await screen.findByRole('link', { name: "Open Airtable's connected apps" })).toHaveAttribute('href', revokePage);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Your previous Airtable account may still have Commonly connected. Switch to it on Airtable, then remove Commonly there.',
+    );
+  });
+
   it('does not turn a callback query into a provider link unless it matches the row', async () => {
     window.history.replaceState(
       {},

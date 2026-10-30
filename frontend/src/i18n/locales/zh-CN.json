@@ -2279,7 +2279,7 @@
     "gatesTitle": "接入此频道的 Pod",
     "hostedMcpManualRevoke": "你之前的 {{provider}} 账号可能仍保留对 Commonly 的授权。请在 {{provider}} 切换到那个账号，再在那里移除 Commonly。",
     "hostedMcpManualRevoke_linear": "你之前的 Linear 账号可能仍连着一个 MCP 授权。请在 Linear 切换到那个账号，再在其已连接应用中撤销该 MCP 授权。",
-    "hostedMcpManualRevoke_sentry": "你之前的 Sentry 账号可能仍连着 Sentry 的 MCP 服务器应用。请在 Sentry 切换到那个账号，再在那里撤销该应用。撤销会结束该服务器在此账号上持有的所有客户端，不只是 Commonly。",
+    "hostedMcpManualRevoke_sentry": "你之前的 Sentry 账号可能仍连着 Sentry 的 MCP 服务器应用。请在 Sentry 切换到那个账号，再在那里撤销该应用。撤销后，此账号下该服务器的所有客户端都会断开，不只是 Commonly。",
     "hostedMcpManualRevoke_supabase": "Commonly 可能仍在你之前连接的 Supabase 组织中获得授权。在“已授权应用”中移除 Commonly，会断开所有连接该组织的成员。",
     "hostedMcpReviewAuthorization": "打开 {{provider}} 的已连接应用",
     "hostedMcpReviewAuthorization_supabase": "打开 Supabase 已授权应用",
