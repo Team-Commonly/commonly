@@ -428,8 +428,6 @@ if (process.env.PG_HOST) {
             retentionErr?.message || retentionErr,
           );
         }
-        // TASK-313 part 2: moves Mongo fallback messages into PG once it is back.
-        require('./services/pgMessageReconcileService').initPgMessageReconcile();
         try {
           require('./services/agentInstallationCleanupService').initInstallationCleanup();
         } catch (cleanupErr: any) {

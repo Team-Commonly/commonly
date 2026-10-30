@@ -5,11 +5,11 @@
  * The local profile (docker-compose.local.yml) used to run without Postgres,
  * so every chat message lived in Mongo. Once Postgres is healthy, chat reads
  * Postgres only and never merges the two stores, so that history disappears
- * from the UI. The background reconciler (pgMessageReconcileService) does not
- * help: it moves only rows flagged `pgFallback`, written while PG was down.
+ * from the UI. Nothing else moves it: the TASK-313 background reconciler is
+ * gone, and it only ever moved rows flagged `pgFallback`.
  *
- * This copies every not-yet-reconciled Mongo message through the reconciler's
- * own `copyOne`, so it inherits its guarantees: the PG insert is ON CONFLICT
+ * This copies every not-yet-reconciled Mongo message through `copyOne`
+ * (services/legacyMessageCopy), so it inherits its guarantees: the PG insert is ON CONFLICT
  * on `legacy_mongo_id` and the Mongo row is stamped `reconciledAt` afterwards,
  * so a rerun or a crash mid-run inserts nothing twice.
  *
@@ -48,7 +48,7 @@
 /* eslint-disable no-console, no-await-in-loop */
 
 import mongoose from 'mongoose';
-import { copyOne, ensureLegacyIdIndex } from '../services/pgMessageReconcileService';
+import { copyOne, ensureLegacyIdIndex } from '../services/legacyMessageCopy';
 
 type CopyResult = 'moved' | 'present' | 'orphaned';
 

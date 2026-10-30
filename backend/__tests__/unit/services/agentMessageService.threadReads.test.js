@@ -11,10 +11,11 @@
  *
  *  - every PG message carries the two threading columns (explicit null for
  *    "not in a thread" — an absent key means "server cannot say", which is
- *    the Mongo-fallback shape, same convention as the frontend threadView);
+ *    the Mongo-store shape, same convention as the frontend threadView);
  *  - `threadRootId` scopes the read and reaches the model verbatim;
- *  - the Mongo fallback REFUSES a thread-scoped read rather than returning
- *    the whole pod as if it were the thread.
+ *  - with PG configured, a PG failure surfaces; there is no Mongo fallback;
+ *  - the Mongo store (no PG_HOST) REFUSES a thread-scoped read rather than
+ *    returning the whole pod as if it were the thread.
  */
 
 const AgentMessageService = require('../../../services/agentMessageService');
@@ -83,11 +84,21 @@ describe('getRecentMessages — thread structure on the PG path', () => {
     expect(PGMessage.findByPodId).toHaveBeenCalledWith(POD, 20, null, '57577');
   });
 
-  test('the Mongo fallback refuses a thread-scoped read instead of faking it', async () => {
+  test('with PG configured, a PG failure surfaces instead of reading MongoDB', async () => {
     PGMessage.findByPodId.mockRejectedValue(new Error('pg down'));
 
     await expect(
       AgentMessageService.getRecentMessages(POD, 20, undefined, undefined, '57577'),
+    ).rejects.toThrow('pg down');
+    await expect(AgentMessageService.getRecentMessages(POD, 20)).rejects.toThrow('pg down');
+  });
+
+  test('the Mongo store refuses a thread-scoped read instead of faking it', async () => {
+    delete process.env.PG_HOST;
+
+    await expect(
+      AgentMessageService.getRecentMessages(POD, 20, undefined, undefined, '57577'),
     ).rejects.toThrow('threadRootId reads require the PostgreSQL message store');
+    expect(PGMessage.findByPodId).not.toHaveBeenCalled();
   });
 });

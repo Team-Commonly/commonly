@@ -64,7 +64,7 @@ d('TASK-503: local-upgrade backfill into PostgreSQL', () => {
     // eslint-disable-next-line global-require
     ({ backfillLocalMessages, productionDeps } = require('../../scripts/backfill-local-messages-to-pg'));
     // eslint-disable-next-line global-require
-    ({ ensureLegacyIdIndex } = require('../../services/pgMessageReconcileService'));
+    ({ ensureLegacyIdIndex } = require('../../services/legacyMessageCopy'));
     expect(await ensureLegacyIdIndex()).toBeTruthy();
   });
 

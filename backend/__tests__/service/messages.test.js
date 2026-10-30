@@ -23,8 +23,11 @@ jest.mock('../../models/pg/Message');
 
 describe('Message Routes Integration Tests', () => {
   let app;
+  const priorPgHost = process.env.PG_HOST;
 
   beforeAll(async () => {
+    // PGMessage is mocked; PG_HOST selects the PG read (TASK-503).
+    process.env.PG_HOST = process.env.PG_HOST || 'pg.mocked';
     await setupMongoDb();
     app = express();
     app.use(express.json());
@@ -33,6 +36,8 @@ describe('Message Routes Integration Tests', () => {
   });
 
   afterAll(async () => {
+    if (priorPgHost === undefined) delete process.env.PG_HOST;
+    else process.env.PG_HOST = priorPgHost;
     await closeMongoDb();
   });
 

@@ -1,4 +1,4 @@
-jest.mock('../../../services/pgMessageReconcileService', () => ({ copyOne: jest.fn(), ensureLegacyIdIndex: jest.fn() }));
+jest.mock('../../../services/legacyMessageCopy', () => ({ copyOne: jest.fn(), ensureLegacyIdIndex: jest.fn() }));
 
 const { backfillLocalMessages, main, parseArgs } = require('../../../scripts/backfill-local-messages-to-pg');
 

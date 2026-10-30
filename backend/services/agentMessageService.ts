@@ -2204,7 +2204,7 @@ class AgentMessageService {
    * is how a client detects an older server (see #757).
    *
    * `before` is an exclusive timestamp cursor applied identically on the PG
-   * and Mongo fallback paths. It must already be a validated epoch timestamp
+   * and Mongo paths. It must already be a validated epoch timestamp
    * so raw request values never cross this service boundary into a database
    * query and the query value cannot carry a user-controlled object shape.
    * Callers may request one extra row to determine whether an older page
@@ -2212,25 +2212,18 @@ class AgentMessageService {
    * internal consumers.
    */
   static async authorIdsSince(podId: unknown, since: Date): Promise<string[]> {
-    const mongo = Message.distinct('userId', {
-      podId: { $eq: podId }, createdAt: { $gt: since }, messageType: { $ne: 'system' },
-    }) as Promise<unknown[]>;
-    if (!PGMessage || !process.env.PG_HOST) return (await mongo).map(String);
-    // A post that fell back to MongoDB while PostgreSQL was failing is only
-    // there until it is reconciled, so read both. An author either store
-    // returns did post, so one store failing keeps the other's authors; only
-    // both failing leaves nothing to answer with.
-    const [pg, fallback] = await Promise.allSettled([
-      (PGMessage as { findAuthorIdsSince(id: unknown, at: Date): Promise<string[]> }).findAuthorIdsSince(podId, since),
-      mongo,
-    ]);
-    if (pg.status === 'rejected' && fallback.status === 'rejected') throw pg.reason;
-    const ids: string[] = [];
-    for (const [store, read] of [['postgres', pg], ['mongo', fallback]] as const) {
-      if (read.status === 'fulfilled') ids.push(...read.value.map(String));
-      else console.warn(`[agent-message] ${store} author read failed:`, String(podId), (read.reason as Error)?.message);
+    // One store answers, by the same PG_HOST gate as the writes: with PG
+    // configured nothing writes Mongo messages, so a PG failure throws and the
+    // caller fails closed rather than reading a store that has no new posts.
+    if (PGMessage && process.env.PG_HOST) {
+      const ids = await (PGMessage as { findAuthorIdsSince(id: unknown, at: Date): Promise<string[]> })
+        .findAuthorIdsSince(podId, since);
+      return [...new Set(ids.map(String))];
     }
-    return [...new Set(ids)];
+    const ids = await Message.distinct('userId', {
+      podId: { $eq: podId }, createdAt: { $gt: since }, messageType: { $ne: 'system' },
+    }) as unknown[];
+    return ids.map(String);
   }
 
   static async getRecentMessages(
@@ -2238,9 +2231,9 @@ class AgentMessageService {
     limit = 20,
     selfUserId?: unknown,
     beforeMs?: number,
-    // PG-only thread scoping. On the Mongo fallback (no threading columns)
-    // this filter cannot be honored, so rather than silently returning the
-    // whole pod as if it were the thread, the fallback throws — an agent
+    // PG-only thread scoping. On the Mongo store (no PG_HOST, no threading
+    // columns) this filter cannot be honored, so rather than silently returning
+    // the whole pod as if it were the thread, the Mongo read throws — an agent
     // that asked for a thread must never mistake the pod for it.
     threadRootId?: string,
   ): Promise<MessageNormalized[]> {
@@ -2261,63 +2254,59 @@ class AgentMessageService {
     );
 
     if (PGMessage && process.env.PG_HOST) {
-      try {
-        const messages: Array<Record<string, unknown>> = await (PGMessage as {
-          findByPodId(
-            id: string,
-            limit: number,
-            before?: string | null,
-            threadRootId?: string | null,
-          ): Promise<Array<Record<string, unknown>>>;
-        }).findByPodId(
-          String(podId),
-          limit,
-          before?.toISOString() ?? null,
-          threadRootId ?? null,
-        );
+      const messages: Array<Record<string, unknown>> = await (PGMessage as {
+        findByPodId(
+          id: string,
+          limit: number,
+          before?: string | null,
+          threadRootId?: string | null,
+        ): Promise<Array<Record<string, unknown>>>;
+      }).findByPodId(
+        String(podId),
+        limit,
+        before?.toISOString() ?? null,
+        threadRootId ?? null,
+      );
 
-        const normalized = messages.map((msg) => {
-          const username = (msg.username as string) || 'Unknown';
-          // Trust the mirrored `is_bot` column only. This used to fall back to
-          // a username substring test ('-bot', endsWith 'bot', 'openclaw-'),
-          // which misclassified any human named e.g. "talbot" or "abbot" as a
-          // bot — and `isBot` gates the wrapper's echo suppression, so a false
-          // positive silently ate that agent's reply.
-          const isBot = msg.is_bot === true || msg.is_bot === 'true';
-          return {
-            _id: msg.id,
-            id: msg.id,
-            content: msg.content as string,
-            messageType: (msg.message_type as string) || 'text',
-            userId: {
-              _id: msg.user_id,
-              username,
-              profilePicture: msg.profile_picture as string | undefined,
-            },
+      const normalized = messages.map((msg) => {
+        const username = (msg.username as string) || 'Unknown';
+        // Trust the mirrored `is_bot` column only. This used to fall back to
+        // a username substring test ('-bot', endsWith 'bot', 'openclaw-'),
+        // which misclassified any human named e.g. "talbot" or "abbot" as a
+        // bot — and `isBot` gates the wrapper's echo suppression, so a false
+        // positive silently ate that agent's reply.
+        const isBot = msg.is_bot === true || msg.is_bot === 'true';
+        return {
+          _id: msg.id,
+          id: msg.id,
+          content: msg.content as string,
+          messageType: (msg.message_type as string) || 'text',
+          userId: {
+            _id: msg.user_id,
             username,
-            isBot,
-            ...withSelf(msg.user_id),
-            createdAt: msg.created_at as Date,
-            // Threading structure for agent readers (TASK-052's read half):
-            // the SELECT has carried these since #1106; this mapper was the
-            // last literal dropping them, which is why the cue teaching
-            // "continue in a thread" was held — a peer agent reading context
-            // could not see that a thread existed. Explicit null = "not in a
-            // thread"; the Mongo fallback below omits the keys entirely =
-            // "this server cannot say" (same convention as the frontend).
-            reply_to_message_id: (msg.reply_to_message_id as string | number | null) ?? null,
-            thread_root_id: (msg.thread_root_id as string | number | null) ?? null,
-            author_kind: (msg.author_kind as 'kernel' | null) ?? null,
-            replyTo: (msg.replyTo as MessageNormalized['replyTo']) ?? null,
-          };
-        });
-        // Internal provenance for send-time read acknowledgement. A Mongo
-        // fallback may omit PG-only messages and must not clear a PG cursor.
-        Object.defineProperty(normalized, 'readSource', { value: 'postgres' });
-        return normalized;
-      } catch (pgError) {
-        console.error('PostgreSQL message fetch failed, falling back to MongoDB:', pgError);
-      }
+            profilePicture: msg.profile_picture as string | undefined,
+          },
+          username,
+          isBot,
+          ...withSelf(msg.user_id),
+          createdAt: msg.created_at as Date,
+          // Threading structure for agent readers (TASK-052's read half):
+          // the SELECT has carried these since #1106; this mapper was the
+          // last literal dropping them, which is why the cue teaching
+          // "continue in a thread" was held — a peer agent reading context
+          // could not see that a thread existed. Explicit null = "not in a
+          // thread"; the Mongo fallback below omits the keys entirely =
+          // "this server cannot say" (same convention as the frontend).
+          reply_to_message_id: (msg.reply_to_message_id as string | number | null) ?? null,
+          thread_root_id: (msg.thread_root_id as string | number | null) ?? null,
+          author_kind: (msg.author_kind as 'kernel' | null) ?? null,
+          replyTo: (msg.replyTo as MessageNormalized['replyTo']) ?? null,
+        };
+      });
+      // Internal provenance for send-time read acknowledgement. A Mongo
+      // read never sees PG messages and must not clear a PG cursor.
+      Object.defineProperty(normalized, 'readSource', { value: 'postgres' });
+      return normalized;
     }
 
     if (threadRootId) {
