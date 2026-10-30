@@ -298,6 +298,47 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
   });
 
+  // 10-25: the recovery round was stopped though every kept result passed the
+  // check on its own. The rest are set aside for one last round.
+  test('a stop in the extra round sets aside the web results left and answers in one last round', async () => {
+    chatReplies = [
+      toolCalls(fetchCall('c1', CLEAN_URL), fetchCall('c2', LATER_URL)),
+      toolCalls(fetchCall('c3', STOPPED_URL)),
+      guardStop,
+      guardStop,
+      reply('Here is what I can say without those pages.'),
+    ];
+
+    const result = await runAgent(hostedInstall(), mention);
+
+    expect(result.status).toBe('succeeded');
+    expect(chatBodies).toHaveLength(5);
+    const last = JSON.stringify(chatBodies[4].messages);
+    expect(last).not.toContain(STOPPED_TEXT);
+    expect(last).not.toContain(CLEAN_TEXT);
+    expect(last).not.toContain(LATER_TEXT);
+    expect(offeredIn(chatBodies[4])).toEqual(['commonly_post_message']);
+    expect(savedRun.webSetAside).toBe(3);
+    expect(posted()).toEqual(['Here is what I can say without those pages.']);
+  });
+
+  test('a third stop ends the run with the fixed line', async () => {
+    chatReplies = [
+      toolCalls(fetchCall('c1', CLEAN_URL)),
+      toolCalls(fetchCall('c2', STOPPED_URL)),
+      guardStop,
+      guardStop,
+      guardStop,
+      reply('Never asked.'),
+    ];
+
+    const result = await runAgent(hostedInstall(), mention);
+
+    expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'guardrail_blocked' }));
+    expect(chatBodies).toHaveLength(5);
+    expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+  });
+
   test('a stop with no web read checks nothing and ends with the fixed line', async () => {
     chatReplies = [guardStop];
 
