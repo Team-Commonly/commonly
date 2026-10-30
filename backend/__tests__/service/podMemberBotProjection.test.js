@@ -7,6 +7,7 @@ process.env.PG_HOST = '';
 const mongoose = require('mongoose');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
+const AgentIdentityService = require('../../services/agentIdentityService');
 const podController = require('../../controllers/podController');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils');
 
@@ -24,31 +25,22 @@ describe('getAllPods projects a bot member to its label fields only (TASK-624)',
 
   it('returns exactly displayName and instanceId for a per-user bot, never its owner, machine or runtime', async () => {
     const me = new mongoose.Types.ObjectId();
-    const bot = new mongoose.Types.ObjectId();
     const owner = new mongoose.Types.ObjectId();
-    await User.create([
-      { _id: me, username: 'bot-projection-me', email: 'bot-projection-me@example.com', password: 'x' },
-      {
-        _id: bot,
-        username: 'scout-uf2554d19c9',
-        email: 'scout-uf2554d19c9@example.com',
-        password: 'x',
-        isBot: true,
-        botType: 'agent',
-        botMetadata: {
-          displayName: 'Scout',
-          instanceId: 'uf2554d19c9',
-          agentName: 'scout',
-          ownerUserId: String(owner),
-          machineId: 'machine-1',
-          runtimeId: 'runtime-1',
-        },
-      },
-    ]);
-    await Pod.create({ name: 'Mine', type: 'team', createdBy: me, members: [me, bot] });
+    await User.create({ _id: me, username: 'bot-projection-me', email: 'bot-projection-me@example.com', password: 'x' });
+    // The production identity writer, so the stored shape is the one a real per-user Scout carries.
+    const bot = await AgentIdentityService.getOrCreateAgentUser('scout', {
+      instanceId: 'uf2554d19c9',
+      displayName: 'Scout',
+      ownerUserId: String(owner),
+      runtimeId: 'runtime-1',
+    });
+    bot.botMetadata.machineId = 'machine-1';
+    await bot.save();
+    expect(bot.username).toBe('scout-uf2554d19c9');
+    await Pod.create({ name: 'Mine', type: 'team', createdBy: me, members: [me, bot._id] });
 
     const body = await callGetAllPods(me);
-    const member = body[0].members.find((m) => String(m._id) === String(bot));
+    const member = body[0].members.find((m) => String(m._id) === String(bot._id));
 
     // Exact equality: a widened projection adds owner/machine/runtime and fails here.
     expect(member.botMetadata).toEqual({ displayName: 'Scout', instanceId: 'uf2554d19c9' });
