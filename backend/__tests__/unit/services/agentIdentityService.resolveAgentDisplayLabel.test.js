@@ -102,6 +102,24 @@ describe('resolveAgentDisplayLabel', () => {
       expect(resolveAgentDisplayLabel(user)).toBe('cody');
     });
 
+    // claude-code is a shared runtime too. Its runtime name and its
+    // officialDisplayName 'Claude Code' both fall back to the instanceId.
+    it('falls back to instanceId when a shared claude-code runtime name leaks as displayName', () => {
+      const user = {
+        username: 'claude-code-ops',
+        botMetadata: { displayName: 'claude-code', agentName: 'claude-code', instanceId: 'ops' },
+      };
+      expect(resolveAgentDisplayLabel(user)).toBe('ops');
+    });
+
+    it('falls back to instanceId when the claude-code officialDisplayName leaks as displayName', () => {
+      const user = {
+        username: 'claude-code-ops',
+        botMetadata: { displayName: 'Claude Code', agentName: 'claude-code', instanceId: 'ops' },
+      };
+      expect(resolveAgentDisplayLabel(user)).toBe('ops');
+    });
+
     it('is case-insensitive — "OpenClaw (Pixel)" still rejected', () => {
       const user = {
         username: 'openclaw-pixel',
