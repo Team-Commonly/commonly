@@ -744,7 +744,7 @@ describe('V2ConnectorsPage', () => {
     expect(reviewLink).toHaveAttribute('rel', 'noopener noreferrer');
     const notice = screen.getByRole('status');
     expect(notice).toHaveTextContent(
-      'Your previous Linear account may still have Commonly connected. Switch to it on Linear, then remove Commonly there.',
+      'Your previous Linear account may still have an MCP grant connected. Switch to it in Linear, then revoke the MCP grant under Linear\'s connected apps.',
     );
     expect(notice.closest('.v2-connector-row')).toHaveTextContent('Linear');
     expect(window.location.search).toBe('');
@@ -770,7 +770,7 @@ describe('V2ConnectorsPage', () => {
       expect(reviewLink).toHaveAttribute('href', revokePage);
       const notice = screen.getByRole('status');
       expect(notice).toHaveTextContent(
-        '你之前的 Linear 账号可能仍保留对 Commonly 的授权。请在 Linear 切换到那个账号，再在那里移除 Commonly。',
+        '你之前的 Linear 账号可能仍连着一个 MCP 授权。请在 Linear 切换到那个账号，再在其已连接应用中撤销该 MCP 授权。',
       );
       expect(notice.closest('.v2-connector-row')).toHaveTextContent('Linear');
       expect(window.location.search).toBe('');
@@ -801,6 +801,52 @@ describe('V2ConnectorsPage', () => {
       'Removing Commonly under Authorized apps disconnects everyone who connected that organization.',
     );
     expect(screen.getByRole('status')).not.toHaveTextContent('remove Commonly there');
+  });
+
+  it('warns that revoking the Sentry MCP app ends every client that server holds, and does not name Commonly', async () => {
+    const revokePage = 'https://sentry.io/settings/account/api/authorizations/';
+    window.history.replaceState(
+      {},
+      '',
+      `/v2/connectors?hostedMcp=connected&entryId=sentry&revokeAt=${encodeURIComponent(revokePage)}`,
+    );
+    mockGets([{
+      _id: 'i-sentry', type: 'hosted-mcp', status: 'connected',
+      config: { entryId: 'sentry', revokePage },
+    }], [{
+      ...hostedLinearCatalogEntry('i-sentry'),
+      installableId: 'sentry', label: 'Sentry', entryId: 'sentry',
+    }]);
+    renderPage();
+
+    const reviewLink = await screen.findByRole('link', { name: "Open Sentry's connected apps" });
+    expect(reviewLink).toHaveAttribute('href', revokePage);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      "Revoking it ends every client that server holds for the account, not only Commonly.",
+    );
+    expect(screen.getByRole('status')).not.toHaveTextContent('remove Commonly there');
+  });
+
+  it('keeps the generic manual-revoke copy for an entry without its own', async () => {
+    const revokePage = 'https://airtable.com/account/security';
+    window.history.replaceState(
+      {},
+      '',
+      `/v2/connectors?hostedMcp=connected&entryId=airtable&revokeAt=${encodeURIComponent(revokePage)}`,
+    );
+    mockGets([{
+      _id: 'i-airtable', type: 'hosted-mcp', status: 'connected',
+      config: { entryId: 'airtable', revokePage },
+    }], [{
+      ...hostedLinearCatalogEntry('i-airtable'),
+      installableId: 'airtable', label: 'Airtable', entryId: 'airtable',
+    }]);
+    renderPage();
+
+    expect(await screen.findByRole('link', { name: "Open Airtable's connected apps" })).toHaveAttribute('href', revokePage);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Your previous Airtable account may still have Commonly connected. Switch to it on Airtable, then remove Commonly there.',
+    );
   });
 
   it('does not turn a callback query into a provider link unless it matches the row', async () => {

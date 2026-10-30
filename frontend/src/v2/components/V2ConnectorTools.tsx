@@ -199,6 +199,8 @@ const ModeGlyph: React.FC<{ mode: GrantWriteMode }> = ({ mode }) => {
   return <G><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6z" /><path d="m9 12 2 2 4-4" /></G>;
 };
 
+const PER_ENTRY_REVOKE_COPY = new Set(['supabase', 'linear', 'sentry']);
+
 const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) => {
   const { t } = useTranslation();
   const api = useV2Api();
@@ -300,7 +302,8 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   );
   const renderManualRevokeNotice = (entry: ToolCatalogEntry | null) => {
     if (!manualRevokeNotice || !noticeMatchesEntry(entry)) return null;
-    const context = manualRevokeNotice.entryId === 'supabase' ? 'supabase' : undefined;
+    // Per-entry copy names only what that vendor's page lists; entries without it fall back to the generic line.
+    const context = PER_ENTRY_REVOKE_COPY.has(manualRevokeNotice.entryId) ? manualRevokeNotice.entryId : undefined;
     return (
       <p className="v2-connector-row__refusal" role="status">
         {t('connectors.hostedMcpManualRevoke', {
@@ -1110,7 +1113,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
         {error && !draft && !selected && !githubAppSetup && (
           <p className="v2-connector-aside__note" role="alert">{error}</p>
         )}
-        {removedHiddenNotice && <p className="v2-connector-aside__note" role="status">{t('tools.removedReviewProvider', { defaultValue: 'Connection removed. Review Commonly access at {{label}}.', label: removedHiddenNotice.label })} <a href={removedHiddenNotice.revokePage} target="_blank" rel="noopener noreferrer">{t('tools.openProviderSettings', { defaultValue: 'Open provider settings' })}</a></p>}
+        {removedHiddenNotice && <p className="v2-connector-aside__note" role="status">{t('tools.removedReviewProvider', { defaultValue: 'Connection removed. Review its access at {{label}}.', label: removedHiddenNotice.label })} <a href={removedHiddenNotice.revokePage} target="_blank" rel="noopener noreferrer">{t('tools.openProviderSettings', { defaultValue: 'Open provider settings' })}</a></p>}
         <div className="v2-connectors__rows">
           {liveRows.map(renderRow)}
           {notYet.map(renderNotYet)}

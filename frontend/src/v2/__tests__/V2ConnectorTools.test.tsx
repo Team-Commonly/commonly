@@ -761,7 +761,7 @@ test('a hidden hosted entry has no offering while its existing connection can be
   fireEvent.click(screen.getByRole('button', { name: 'Remove connection' }));
   fireEvent.click(screen.getByRole('button', { name: 'Yes, remove' }));
   await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/integrations/conn-hidden', expect.anything()));
-  expect(await screen.findByText(/Connection removed. Review Commonly access at Airtable/)).toBeInTheDocument();
+  expect(await screen.findByText(/Connection removed. Review its access at Airtable/)).toBeInTheDocument();
 });
 
 test('a hosted connect start error uses fixed copy instead of response text', async () => {
