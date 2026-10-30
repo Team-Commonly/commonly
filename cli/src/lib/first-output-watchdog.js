@@ -15,7 +15,6 @@
  * as started when it writes any stdout or stderr byte OR its transcript grows.
  * A spawn that does neither inside the window is killed with a reason.
  */
-import { execFile } from 'child_process';
 import { statSync } from 'fs';
 
 export const DEFAULT_FIRST_OUTPUT_WINDOW_MS = 180_000;
@@ -43,10 +42,14 @@ export const spawnStalledError = ({ label, windowMs, reason }) => {
 
 // `ioreg -n Root -d1` prints `"IOConsoleLocked" = Yes` while the screen is
 // locked. True, false, or null when it cannot tell (not darwin, ioreg failed).
-export const consoleLocked = ({ platform = process.platform, execFileImpl = execFile } = {}) => {
-  if (platform !== 'darwin') return Promise.resolve(null);
+// child_process is loaded on demand: suites that mock it with only `spawn`
+// would otherwise fail to import every adapter that uses this module.
+export const consoleLocked = async ({ platform = process.platform, execFileImpl } = {}) => {
+  if (platform !== 'darwin') return null;
+  const run = execFileImpl || (await import('child_process')).execFile;
+  if (typeof run !== 'function') return null;
   return new Promise((resolve) => {
-    execFileImpl('/usr/sbin/ioreg', ['-n', 'Root', '-d1'], { timeout: 5000 }, (error, stdout) => {
+    run('/usr/sbin/ioreg', ['-n', 'Root', '-d1'], { timeout: 5000 }, (error, stdout) => {
       if (error) return resolve(null);
       const match = String(stdout).match(/"IOConsoleLocked"\s*=\s*(Yes|No)/);
       return resolve(match ? match[1] === 'Yes' : null);
