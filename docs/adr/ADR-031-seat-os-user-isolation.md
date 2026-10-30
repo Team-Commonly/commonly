@@ -10,6 +10,14 @@
   device-auth by a second macOS user on this host invalidates the operator's session.
 - **Date:** 2026-10-22 (stub); full decision text 2026-10-25
 - **Motivation:** issue #2427 (a seat read an operator's gh token from the login keychain)
+- **Second forcing function (2026-10-30):** a *locked* macOS console stalls every launchd-spawned
+  seat turn at an early login-keychain op — the fleet stalled ~6h, and the only recovery that works
+  while locked (a tmux tree whose children inherit an already-authorized session) loses launchd's
+  unattended restart across a reboot. The same lock also blocks Docker Desktop's VM from starting.
+  Both dependencies come from the seat tree sharing the operator's login session and keychain. A
+  dedicated seat OS user with its own keychain — unlocked at boot and never screen-locked — removes
+  them, which is the same isolation this ADR builds for the credential-theft class. So the
+  locked-console stall is a second, independent reason to do ADR-031, not a separate project.
 - **Related:** [ADR-008](ADR-008-agent-environment-primitive.md) (sandbox modes; `bwrap` on
   Linux), [ADR-005](ADR-005-local-cli-wrapper-driver.md) (local wrapper seats),
   [ADR-030](ADR-030-agent-identity.md) (agent identity)
