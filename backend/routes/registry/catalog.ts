@@ -51,13 +51,14 @@ catalogRouter.get('/agents/next-free-name', catalogRateLimit, auth, async (req: 
     }
     const memberId = new mongoose.Types.ObjectId(String(userId));
     const base = req.query.base;
+    const selectedPodId = typeof req.query.podId === 'string' ? req.query.podId : '';
     if (typeof base !== 'string' || base.length < 1 || base.length > 64
         || !/^[a-z0-9-]+$/.test(base)) {
       return res.status(400).json({ error: 'Invalid agent name' });
     }
 
     // The shared rule: the connect card proposes the same name (TASK-329).
-    const name = await nextFreeByoName(memberId, base);
+    const name = await nextFreeByoName(memberId, base, { podId: selectedPodId });
     return res.json({ name });
   } catch (error) {
     console.error('Error suggesting BYO agent name:', error);

@@ -489,7 +489,9 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     const reconnect = await AgentInstallation.findOne({
       agentName: requestedName, podId, instanceId: 'default', installedBy: ownerUserId, status: 'active',
     });
-    const freeName = reconnect ? requestedName : await nextFreeByoName(ownerUserId, requestedName);
+    const freeName = reconnect
+      ? requestedName
+      : await nextFreeByoName(ownerUserId, requestedName, { podId: String(podId) });
     if (freeName !== requestedName) {
       if (!LOCAL_AGENT_NAME_RE.test(freeName)) {
         return {

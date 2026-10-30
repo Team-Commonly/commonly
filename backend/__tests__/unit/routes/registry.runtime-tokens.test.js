@@ -233,6 +233,45 @@ describe('agent runtime tokens', () => {
     expect(res.body.token).toBeUndefined();
   });
 
+  it('returns {existing:true} when another installation of the identity holds the only legacy key', async () => {
+    // BYO now issues after "already installed". A key on a sibling installation
+    // is invisible to the issue itself, so minting would leave two live keys.
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ _id: 'pod-1', createdBy: 'user-1', members: ['user-1'] }),
+    });
+    const installation = {
+      agentName: 'Sam-Claude', podId: 'pod-1', instanceId: 'default', displayName: 'sam-claude',
+      status: 'active', runtimeTokens: [], save: jest.fn().mockResolvedValue(true),
+    };
+    const agentUser = { agentRuntimeTokens: [], save: jest.fn().mockResolvedValue(true) };
+    AgentInstallation.findOne.mockResolvedValue(installation);
+    let siblingQuery;
+    AgentInstallation.find.mockImplementation((query) => {
+      if (query['runtimeTokens.0']) siblingQuery = query;
+      const rows = query['runtimeTokens.0']
+        ? [{ runtimeTokens: [{ tokenHash: 'legacy-hash', label: 'legacy', createdAt: new Date() }] }]
+        : [];
+      return {
+        collation: jest.fn(function collation() { return this; }),
+        select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(rows) })),
+      };
+    });
+    AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
+    AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
+
+    const res = await request(app)
+      .post('/api/registry/pods/pod-1/agents/sam-claude/runtime-tokens')
+      .send({ label: 'BYO MCP — initial issue' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ existing: true });
+    expect(res.body.token).toBeUndefined();
+    expect(agentUser.save).not.toHaveBeenCalled();
+    expect(siblingQuery).toEqual({
+      agentName: 'Sam-Claude', instanceId: 'default', 'runtimeTokens.0': { $exists: true },
+    });
+  });
+
   it('with force:true, clears existing tokens and mints a fresh one (detach + reattach race fix)', async () => {
     // ADR-005 detach + reattach: CLI deletes its local token file, but the
     // server-side hashed copy on the agent User row persists. Without

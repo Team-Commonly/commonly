@@ -289,7 +289,23 @@ const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installatio
   await refuseDeletingOwner();
   if (await runsInProcess(agentUser, installation)) throw new InProcessAgentTokenRefused();
   // Check if agent already has a runtime token (reuse existing)
-  const existingToken = agentUser.agentRuntimeTokens?.[0] || installation?.runtimeTokens?.[0];
+  // A legacy key can also sit on another installation of the same identity.
+  // Minting beside it would leave two live keys, so it counts as existing and
+  // the caller must ask for an explicit (forced) replacement, which revokes
+  // every copy first.
+  const siblingLegacyToken = async () => {
+    if (!installation?.agentName) return null;
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { AgentInstallation } = require('../../models/AgentRegistry');
+    const siblings = await AgentInstallation.find({
+      agentName: installation.agentName,
+      instanceId: installation.instanceId || 'default',
+      'runtimeTokens.0': { $exists: true },
+    }).collation({ locale: 'en', strength: 2 }).select('runtimeTokens').lean();
+    return (siblings || []).flatMap((entry: any) => entry.runtimeTokens || [])[0] || null;
+  };
+  const existingToken = agentUser.agentRuntimeTokens?.[0] || installation?.runtimeTokens?.[0]
+    || await siblingLegacyToken();
   if (existingToken) {
     // Backfill a credential row for the pre-substrate token so the existing
     // fleet becomes listable and cascade-revocable (#1312: without
