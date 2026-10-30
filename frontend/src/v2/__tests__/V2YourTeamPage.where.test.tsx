@@ -31,7 +31,8 @@ const agent = (overrides) => ({
 });
 
 const agents = [
-  agent({ name: 'scout', displayName: 'Scout', userId: 'user-scout', installedBy: 'me', runtime: { runtimeType: 'hosted', host: 'cloud' } }),
+  agent({ name: 'scout', displayName: 'Scout', userId: 'user-scout', installedBy: 'me', runtime: { runtimeType: 'hosted' } }),
+  agent({ name: 'stampedhost', displayName: 'Stampedhost', userId: 'user-stampedhost', runtime: { runtimeType: 'codex', host: 'cloud' } }),
   agent({ name: 'codex', displayName: 'Codex', userId: 'user-codex', runtime: { runtimeType: 'codex' } }),
   agent({ name: 'agentrun', displayName: 'Agentrun', userId: 'user-agentrun', installedBy: 'me', runtime: { runtimeType: 'codex' } }),
   agent({ name: 'laptop', displayName: 'Laptop', userId: 'user-laptop', installedBy: 'me', runtime: { runtimeType: 'native', host: 'byo' } }),
@@ -75,12 +76,14 @@ describe('V2YourTeamPage location mark and hosted meter', () => {
     renderPage();
     const cardOf = async (name) => (await screen.findByText(name)).closest('article');
     expect(within(await cardOf('Scout')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
-    // A codex seat with no host stamp gets no mark, even though codex is a cloud type.
+    // A hosted seat with no stamp is cloud by its type: it has no BYO form.
+    // A codex seat with no host stamp gets no mark: codex can run on someone's machine.
     expect(within(await cardOf('Codex')).queryByRole('img', { name: /Runs on/ })).toBeNull();
     expect(within(await cardOf('Agentrun')).queryByRole('img', { name: /Runs on/ })).toBeNull();
     expect(within(await cardOf('Laptop')).getByRole('img', { name: 'Runs on your computer' })).toBeInTheDocument();
     expect(within(await cardOf('Hook')).getByRole('img', { name: 'Runs on your computer' })).toBeInTheDocument();
     expect(within(await cardOf('Cloudhost')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
+    expect(within(await cardOf('Stampedhost')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
     // A teammate's laptop seat: we don't know which machine it runs on.
     expect(within(await cardOf('Teammate')).queryByRole('img', { name: /Runs on/ })).toBeNull();
     expect(within(await cardOf('Daemon')).getByRole('img', { name: 'Runs on your computer' })).toBeInTheDocument();

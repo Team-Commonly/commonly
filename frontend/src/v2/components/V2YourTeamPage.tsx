@@ -103,15 +103,20 @@ const STATE_DOT = '\u25CF';
 
 const agentKey = (a: { name: string; instanceId?: string }) => `${a.name}:${a.instanceId || 'default'}`;
 
-// Where a seat runs. Only the stamped host decides it: config.runtime.host is
-// 'cloud' (Commonly runs it) or 'byo' (a machine polling in). A seat with no host
-// gets no mark. Inferring from runtime type labelled agent-run seats on a Mac as
-// cloud, so the card no longer guesses. A laptop mark means the viewer's own
-// machine, so a byo seat another teammate installed gets no laptop mark either.
+// Where a seat runs. A stamped host decides it: config.runtime.host is 'cloud'
+// (Commonly runs it) or 'byo' (a machine polling in). A runtime type with no BYO
+// form has only one possible location, so it reads as cloud without a stamp:
+// hosted, native, internal and moltbot (the cluster gateway). Nothing stamps host
+// on a new hosted install, so these need the type. Every other type (codex,
+// claude-code, webhook, wrapper) can run on someone's machine, so it gets no mark
+// unless its host is stamped. A laptop mark means the viewer's own machine, so a
+// byo seat another teammate installed gets no laptop mark either.
 type RunsOn = 'cloud' | 'laptop' | null;
+const CLOUD_ONLY_RUNTIME_TYPES = new Set(['hosted', 'native', 'internal', 'moltbot']);
 const runsOn = (a: AgentInstallationSummary, viewerId: string | undefined): RunsOn => {
   const host = (a.runtime?.host || '').trim().toLowerCase();
-  if (host === 'cloud') return 'cloud';
+  const type = (a.runtime?.runtimeType || '').trim().toLowerCase();
+  if (host === 'cloud' || (!host && CLOUD_ONLY_RUNTIME_TYPES.has(type))) return 'cloud';
   if (host === 'byo') return a.installedBy === viewerId ? 'laptop' : null;
   return null;
 };
