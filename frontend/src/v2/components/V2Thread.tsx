@@ -1802,12 +1802,18 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                 {pod.description && <V2Hint label={t('podChat.header.aboutPod')}>{pod.description}</V2Hint>}
               </div>
             </div>
-            <span
-              className="v2-pod-header__meta v2-pod-header__meta--compact"
-              role="group"
-              aria-label={t('podChat.header.compactMetaAccessible', { members: memberCountText, agents: agentCountText })}
-            >
-              <span aria-hidden="true">{t('podChat.header.compactMeta', { members: humanMemberCount, agents: agentCountText })}</span>
+            {/* The phone line carries the board link and the member count, the
+                same two facts the desktop meta leads with (TASK-647 item 3). */}
+            <span className="v2-pod-header__meta v2-pod-header__meta--compact">
+              {headerMeta.boardOpen !== null && (
+                <>
+                  <button type="button" className="v2-pod-header__board v2-pod-header__board--compact" onClick={() => navigate(`/v2/pods/${pod._id}/board`)}>
+                    {t('podChat.header.boardOpen', { count: headerMeta.boardOpen })}
+                  </button>
+                  <span className="v2-pod-header__sep" aria-hidden="true">·</span>
+                </>
+              )}
+              <span>{memberCountText}</span>
             </span>
             <span className="v2-pod-header__meta">
               {metaParts.map((part, index) => (

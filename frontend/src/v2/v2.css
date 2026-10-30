@@ -2013,6 +2013,19 @@ body.modern-ui.v2-canvas {
   cursor: default;
 }
 
+/* TASK-647 item 4: the run-hosted start is the screen's one filled action.
+   Keyed on the action in the component, not on its position. */
+.v2-root button.v2-chat__start.v2-chat__start--primary {
+  background: var(--v2-ink);
+  border-color: var(--v2-ink);
+  color: var(--v2-on-ink);
+  font-weight: 600;
+}
+.v2-root button.v2-chat__start.v2-chat__start--primary:hover:not(:disabled) {
+  background: var(--v2-ink-hover);
+  border-color: var(--v2-ink-hover);
+}
+
 /* A line that belongs to the start above it: the hosted start's beta limits,
    or why it could not start. Same slot and size as the delivery hint. */
 .v2-chat__start-note {
@@ -2180,7 +2193,16 @@ body.modern-ui.v2-canvas {
   text-decoration: none;
 }
 
-.v2-root a.v2-first-run__setup:hover,
+.v2-root a.v2-first-run__setup {
+  /* Bordered, not ink: the first-run card keeps one ink action (TASK-647 item 4). */
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  color: var(--v2-text-primary);
+}
+.v2-root a.v2-first-run__setup:hover {
+  background: var(--v2-surface-hover);
+  border-color: var(--v2-border-strong);
+}
 .v2-root button.v2-first-run__hello:hover:not(:disabled) {
   background: var(--v2-ink-hover);
   color: var(--v2-on-ink);
@@ -6536,14 +6558,15 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 /* Signal §3 not yet: where the act will be, until a place to run it is
-   chosen. Sized like the submit button it stands in for. */
+   chosen. A muted hint line, not a box: a dashed slot read as a dead button
+   (TASK-647 item 1). */
 .v2-byo__unchosen {
   align-self: flex-start;
-  padding: 10px 18px;
-  border: 1px dashed var(--v2-border-strong);
-  border-radius: var(--v2-radius);
+  padding: 0;
+  border: 0;
   color: var(--v2-text-muted);
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 20px;
 }
 .v2-root button.v2-byo__link {
   /* A text action beside or under a line of copy ("Change", "Other ways to
@@ -11600,7 +11623,10 @@ body.modern-ui.v2-canvas {
 
   .v2-thread__header-row { align-items: center; gap: 8px; }
   .v2-thread__title-line { display: flex; flex-wrap: wrap; align-items: center; }
-  .v2-thread__title h1 { font: 600 15px/20px var(--v2-font); }
+  /* The name takes the free width with a zero basis and truncates, so the
+     "i" hint keeps its place on the line instead of wrapping under it and
+     growing the header (TASK-647 item 3). */
+  .v2-thread__title h1 { font: 600 15px/20px var(--v2-font); flex: 1 1 0; min-width: 0; white-space: nowrap; text-overflow: ellipsis; }
 
   .v2-thread .v2-msg__author,
   .v2-thread .v2-msg__author-btn { font-size: 15px; }
@@ -12074,6 +12100,8 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pod-header__board:hover { text-decoration: underline; }
 
+
+
 .v2-root button.v2-thread__back { display: none; }
 
 @media (max-width: 760px) {
@@ -12134,7 +12162,18 @@ body.modern-ui.v2-canvas {
     align-items: flex-start;
   }
   .v2-pod-header__meta { display: none; }
-  .v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; min-height: 28px; }
+  .v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; min-height: 28px; flex: 0 0 auto; white-space: nowrap; }
+  /* TASK-647 item 3: the board link keeps a 44px tap target without growing
+     the 28px meta row (the hit area is a pseudo-element), the name keeps room
+     for the "i" hint, and the compact meta sits closer to the link. */
+  .v2-root button.v2-pod-header__board--compact { position: relative; }
+  .v2-root button.v2-pod-header__board--compact::before {
+    content: '';
+    position: absolute;
+    inset: -14px -10px;
+  }
+  .v2-thread__title-line > h1 { max-width: calc(100% - 36px); }
+  .v2-pod-header__meta--compact { gap: 4px; }
 
   .v2-root button.v2-thread__back {
     display: inline-grid;

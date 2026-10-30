@@ -307,7 +307,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                       <React.Fragment key={start.id}>
                         <button
                           type="button"
-                          className="v2-chat__start"
+                          className={`v2-chat__start${start.action === WELCOME_HOSTED_ACTION ? ' v2-chat__start--primary' : ''}`}
                           disabled={startsDisabled || starting}
                           aria-busy={starting || undefined}
                           onClick={() => onStart(start, String(message.id))}
