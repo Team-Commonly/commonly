@@ -1,3 +1,10 @@
+// agentNames that name a shared runtime, not an agent. Only these can leak
+// their runtime name as a displayName. A product agent that happens to share
+// its name with its curated label ('Scout' on agentName 'scout', TASK-551)
+// keeps that label. A codex seat created without a displayName takes the
+// officialDisplayName 'Codex' (agentIdentityService.ts), so codex must stay here.
+const SHARED_RUNTIME_AGENT_NAMES = new Set(['openclaw', 'codex', 'claude-code']);
+
 // Resolve the human-readable label for an agent User row. The fallback
 // chain is intentional and load-bearing for any UI / pod-naming surface
 // that shows agent identity (agent-dm pod names, sidebar member rows):
@@ -18,12 +25,6 @@
 // runtime name ('openclaw') rather than the agent's identity. Falling
 // back to it produces "openclaw ↔ openclaw" pod names where what we want
 // is "Pixel ↔ Strategist (Aria)".
-// agentNames that name a shared runtime, not an agent. Only these can leak
-// their runtime name as a displayName. A product agent that happens to share
-// its name with its curated label ('Scout' on agentName 'scout', TASK-551)
-// keeps that label.
-const SHARED_RUNTIME_AGENT_NAMES = new Set(['openclaw']);
-
 export function resolveAgentDisplayLabel(
   user: {
     username?: string;

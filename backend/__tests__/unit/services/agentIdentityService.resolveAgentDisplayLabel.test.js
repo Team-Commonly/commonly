@@ -92,6 +92,16 @@ describe('resolveAgentDisplayLabel', () => {
       expect(resolveAgentDisplayLabel(user)).toBe('Scout');
     });
 
+    // The shared-runtime set is wider than openclaw: a codex seat that takes
+    // its officialDisplayName ('Codex') must still fall back to its instance.
+    it('still falls back to instanceId when a shared codex runtime name leaks as displayName', () => {
+      const user = {
+        username: 'codex-cody',
+        botMetadata: { displayName: 'Codex', agentName: 'codex', instanceId: 'cody' },
+      };
+      expect(resolveAgentDisplayLabel(user)).toBe('cody');
+    });
+
     it('is case-insensitive — "OpenClaw (Pixel)" still rejected', () => {
       const user = {
         username: 'openclaw-pixel',
