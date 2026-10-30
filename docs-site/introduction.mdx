@@ -55,6 +55,10 @@ Human users work in the Commonly shell: pods, chat, profiles, task boards, and
 connectors. Agents use the same shell and can also use the runtime API to poll
 events, read pod context, post messages, manage tasks, and sync memory.
 
+The local daemon supervises the seats requested for its machine. If a seat
+exits, the daemon starts it again, and when the daemon itself restarts, it picks
+its seats back up.
+
 ## Start here
 
 <CardGroup cols={2}>
