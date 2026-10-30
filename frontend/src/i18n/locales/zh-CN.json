@@ -54,6 +54,44 @@
     "limitedCalls": "此轨迹受到存储大小限制，省略了{{calls}}次工具调用，大型内容字段也已截断。",
     "limitedContent": "此轨迹受到存储大小限制，大型内容字段已截断。"
   },
+  "taskRecord": {
+    "title": "任务记录",
+    "back": "返回看板",
+    "intro": "按顺序列出此任务发生的事。每条记录都带有上一条的哈希，任何一条被改动，链就会断开。",
+    "loading": "正在加载记录…",
+    "access": "此记录不可用。该 Pod 可能没有开启记录，或你已无权访问它。",
+    "members": "只有此 Pod 的成员可以查看它的记录。",
+    "store": "记录存储暂时不可用，请稍后重试。",
+    "error": "无法加载记录，请重试。",
+    "unreadable": "无法读取此记录。",
+    "retry": "重试",
+    "counts_one": "{{count}}条记录",
+    "counts_other": "{{count}}条记录",
+    "run": "运行 {{id}}",
+    "empty": "此任务还没有任何记录。",
+    "entry": "第{{number}}条",
+    "downloadJsonl": "下载 JSONL",
+    "downloadOtlp": "下载 OTLP",
+    "downloadError": "无法下载记录，请重试。",
+    "actor": {
+      "unknown": "未知操作者",
+      "board": "看板",
+      "system": "系统：{{id}}",
+      "policy": "策略：{{id}}",
+      "agent": "{{name}}（智能体）"
+    },
+    "kinds": {
+      "task_claimed": "已认领",
+      "task_released": "已释放",
+      "task_done": "已完成",
+      "grant_issued": "已签发授权",
+      "grant_revoked": "已撤销授权",
+      "permission_requested": "请求审批",
+      "permission_decided": "审批已决定",
+      "tool_call": "工具调用",
+      "tool_update": "工具更新"
+    }
+  },
   "common": {
     "brandName": "Commonly",
     "brandWordmark": "commonly",
@@ -1495,6 +1533,7 @@
     "detail": {
       "updates": "更新记录",
       "pr": "查看 PR",
+      "record": "查看记录",
       "priority": "优先级",
       "assignedTo": "分配给",
       "claimedBy": "认领人",

@@ -3,7 +3,7 @@ import rateLimit from 'express-rate-limit';
 import mongoose from 'mongoose';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import {
-  isRecordEnabled, readRecordExport, RecordStoreUnavailableError, toOtlp,
+  isRecordEnabled, isRecordReader, readRecordExport, RecordStoreUnavailableError, toOtlp,
 } from '../services/recordService';
 
 /* eslint-disable @typescript-eslint/no-require-imports, global-require */
@@ -49,9 +49,7 @@ router.get('/:podId/record/tasks/:taskId', recordReadLimit, auth, async (req: Re
     const userId = req.userId || req.user?._id || req.agentUser?._id;
     const pod = await Pod.findById(podId).select('members type').lean();
     if (!pod || !await DMService.canViewPod(userId, pod)) return notFound(res);
-    // Lean and unpopulated, so members are ObjectIds.
-    const isMember = (pod.members || []).some((member: unknown) => String(member) === String(userId));
-    if (!isMember) return res.status(403).json({ error: 'record_requires_membership' });
+    if (!isRecordReader(pod.members, userId)) return res.status(403).json({ error: 'record_requires_membership' });
     const task = await Task.findOne({ podId: pod._id, taskId }).select('_id').lean();
     if (!task) return notFound(res);
 

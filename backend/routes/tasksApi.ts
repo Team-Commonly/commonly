@@ -30,7 +30,7 @@ const { recordTaskAttention, resolveTaskAttention } = require('../services/atten
 // eslint-disable-next-line global-require
 const { parseAssignee, toSingleLineTitle } = require('../utils/taskFieldNormalization');
 // eslint-disable-next-line global-require
-const { requestActor } = require('../services/recordService');
+const { isRecordEnabled, isRecordReader, requestActor } = require('../services/recordService');
 // eslint-disable-next-line global-require
 const { recordTaskTransition } = require('../services/taskRecordService');
 
@@ -237,7 +237,12 @@ router.get('/:podId', taskReadIpRateLimit, auth, async (req: AuthReq, res: Res) 
     // tick boundary could otherwise report lease states that never coexisted.
     const now = new Date();
     return res.json({
-      permissions: { canWrite: access.canWrite === true },
+      permissions: {
+        canWrite: access.canWrite === true,
+        // The board shows a task's record link only to someone the record
+        // route will serve (routes/podRecords.ts).
+        canReadRecord: isRecordEnabled(podId) && isRecordReader((access.pod as { members?: unknown })?.members, userId),
+      },
       tasks: tasks.sort(compareTaskPriority).map((task: Record<string, unknown>) => ({ ...task, leaseState: deriveLeaseState(task, now) })),
     });
   } catch (err) {

@@ -40,6 +40,7 @@ const V2ConnectPage = React.lazy(() => import('./components/V2ConnectPage'));
 const V2ConnectorsPage = React.lazy(() => import('./components/V2ConnectorsPage'));
 const V2PodBoard = React.lazy(() => import('./components/V2PodBoard'));
 const V2RunTrace = React.lazy(() => import('./components/V2RunTrace'));
+const V2TaskRecord = React.lazy(() => import('./components/V2TaskRecord'));
 const V2ActivityPage = React.lazy(() => import('./components/V2ActivityPage'));
 const V2ArtifactsPage = React.lazy(() => import('./components/V2ArtifactsPage'));
 const ChatRoom = React.lazy(() => import('../components/ChatRoom'));
@@ -309,6 +310,10 @@ const V2App: React.FC = () => {
                 <Route
                   path="pods/:podId/runs/:runId"
                   element={feature('Run trace', <V2RunTrace />, false, false)}
+                />
+                <Route
+                  path="pods/:podId/tasks/:taskId/record"
+                  element={feature('Task record', <V2TaskRecord />, false, false)}
                 />
                 <Route
                   path="activity"

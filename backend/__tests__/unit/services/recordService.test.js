@@ -95,6 +95,17 @@ describe('recordService', () => {
     expect(record.isRecordEnabled('anything')).toBe(true);
   });
 
+  it('reads lines only for actual members, never for a missing caller', () => {
+    const { Types } = jest.requireActual('mongoose');
+    const member = new Types.ObjectId();
+    expect(record.isRecordReader([member], String(member))).toBe(true);
+    expect(record.isRecordReader([member], new Types.ObjectId())).toBe(false);
+    expect(record.isRecordReader([member], undefined)).toBe(false);
+    expect(record.isRecordReader(undefined, String(member))).toBe(false);
+    // A role-bearing entry is not a schema member; the read route refuses it too.
+    expect(record.isRecordReader([{ userId: member, role: 'viewer' }], String(member))).toBe(false);
+  });
+
   it('takes the actor from the authenticated caller and never guesses one', () => {
     expect(record.requestActor({ agentUser: AGENT, agentTokenHash: 'h' })).toEqual({
       type: 'agent', id: AGENT._id, owner: AGENT.botMetadata.ownerUserId,

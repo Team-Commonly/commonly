@@ -13,7 +13,7 @@
 // update + revert — the same call the v1 board makes, so both boards stay
 // behaviorally interchangeable while v1 winds down.
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
 import AddIcon from '@mui/icons-material/Add';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -21,6 +21,7 @@ import { useV2Api } from '../hooks/useV2Api';
 import { useSocket } from '../../context/SocketContext';
 import V2Avatar from './V2Avatar';
 import { useAuth } from '../../context/AuthContext';
+import { taskRecordPath } from './V2TaskRecord';
 
 type TaskPriority = 'P0' | 'P1' | 'P2' | 'P3';
 const PRIORITIES: TaskPriority[] = ['P0', 'P1', 'P2', 'P3'];
@@ -147,6 +148,7 @@ const V2PodBoard: React.FC = () => {
 
   const [tasks, setTasks] = useState<BoardTask[]>([]);
   const [taskWriteAllowed, setTaskWriteAllowed] = useState(false);
+  const [recordReadAllowed, setRecordReadAllowed] = useState(false);
   const reloadTasksRef = useRef<() => void>(() => undefined);
   const taskLoadPendingRef = useRef(false);
   const [claimClock, setClaimClock] = useState(() => Date.now());
@@ -320,10 +322,11 @@ const V2PodBoard: React.FC = () => {
     const requestId = ++taskRequestRef.current;
     taskLoadPendingRef.current = true;
     try {
-      const data = await api.get<{ tasks: BoardTask[]; permissions?: { canWrite: boolean } }>(`/api/v1/tasks/${podId}`);
+      const data = await api.get<{ tasks: BoardTask[]; permissions?: { canWrite: boolean; canReadRecord?: boolean } }>(`/api/v1/tasks/${podId}`);
       if (requestId !== taskRequestRef.current) return;
       setTasks(data.tasks || []);
       setTaskWriteAllowed(data.permissions?.canWrite === true);
+      setRecordReadAllowed(data.permissions?.canReadRecord === true);
       setSelected((previous) => previous ? (data.tasks || []).find((task) => task.taskId === previous.taskId) || null : null);
       setClaimClock(Date.now());
       setLoadError(false);
@@ -802,6 +805,11 @@ const V2PodBoard: React.FC = () => {
                   <a className="v2-board__detail-pr" href={selected.prUrl} target="_blank" rel="noreferrer">
                     {t('board.detail.pr')}
                   </a>
+                )}
+                {recordReadAllowed && taskRecordPath(podId, selected.taskId) && (
+                  <Link className="v2-board__detail-pr" to={taskRecordPath(podId, selected.taskId) as string}>
+                    {t('board.detail.record')}
+                  </Link>
                 )}
               </div>
               <dl className="v2-board__ownership">
