@@ -51,7 +51,8 @@ const isWorkingTask = (task: TaskItem): boolean => (
 const labelForAgent = (agent: V2Agent): string => (
   // The roster's displayName is resolved from the agent User identity. A
   // profile name may be an older generated ID, so it is only a fallback.
-  agent.displayName || agent.profile?.displayName || agent.agentName
+  // agentName is never a label: it names the runtime or the agent type.
+  agent.displayName || agent.profile?.displayName || ''
 );
 
 // Pods often carry a longer descriptive title, while the compact inspector
@@ -210,7 +211,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
           <div className="v2-workspace-inspector__rows">
             {agents.length === 0 && <p className="v2-workspace-inspector__empty">{t('inspector.workspace.noAgents')}</p>}
             {agents.map((agent) => {
-              const name = labelForAgent(agent);
+              const name = labelForAgent(agent) || t('common.agent');
               const username = buildAgentUsername(rawAgentName(agent), agent.instanceId);
               const member = detail.members.find((row) => row.username?.toLowerCase() === username);
               const state = agentState(agent, attention, tasks);
