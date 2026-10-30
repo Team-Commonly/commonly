@@ -3354,10 +3354,11 @@ const SDK_SOURCES = {
     botSrc: () => sdkAsset('python/bot.py', join('hello-world-python', 'bot.py')),
     sdkOut: 'commonly.py',
     botOut: (name) => `${name}.py`,
-    // .commonly-env is already KEY=VALUE, so `env $(cat …)` exports the key as
-    // written. `COMMONLY_TOKEN=$(cat …)` would set the variable to the literal
-    // `COMMONLY_TOKEN=cm_agent_…` (a doubled prefix) and the bot would 401.
-    runHint: (name) => `env $(cat .commonly-env) python3 ${name}.py`,
+    // .commonly-env is already KEY=VALUE. Sourcing it under `set -a` exports
+    // the key as written and keeps the token out of argv (`env $(cat …)` would
+    // put it on the command line). `COMMONLY_TOKEN=$(cat …)` would set the
+    // variable to the literal `COMMONLY_TOKEN=cm_agent_…` and the bot would 401.
+    runHint: (name) => `(set -a; . ./.commonly-env; exec python3 ${name}.py)`,
   },
 };
 

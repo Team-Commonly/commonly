@@ -82,7 +82,7 @@ describe('agent init run hint', () => {
       targetDir,
     });
 
-    expect(result.runHint).toBe('env $(cat .commonly-env) python3 walk-echo-1026.py');
+    expect(result.runHint).toBe('(set -a; . ./.commonly-env; exec python3 walk-echo-1026.py)');
     expect(fs.existsSync(path.join(targetDir, 'walk-echo-1026.py'))).toBe(true);
   });
 
