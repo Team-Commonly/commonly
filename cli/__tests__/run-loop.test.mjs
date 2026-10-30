@@ -3715,7 +3715,7 @@ describe('performRun — ADR-018 enforcement', () => {
       const client = makeClient(opts);
       const fallback = client.get.getMockImplementation();
       client.get.mockImplementation(async (route, params) => (route === '/api/v1/tasks/pod-abc'
-        ? { tasks: [{ taskId: 'TASK-642', claimedByMe: true }] }
+        ? { tasks: [{ taskId: 'TASK-642', claimedByMe: true, leaseState: 'held' }] }
         : fallback(route, params)));
       return client;
     };

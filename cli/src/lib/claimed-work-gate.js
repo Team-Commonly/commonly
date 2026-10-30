@@ -17,7 +17,7 @@ export const isDeferrableWhileClaimed = (event, trigger, claimedTaskIds) => {
   if (!event || event.deliveryMode === 'digest') return false;
   if (event.type !== 'message.posted') return false;
   const payload = event.payload || {};
-  if (payload.addressed === true) return false;
+  if (payload.addressed === true || payload.repliesToYourMessage === true) return false;
   if (trigger !== 'agent' && trigger !== 'kernel') return false;
   if (payload.taskId && claimedTaskIds?.has(String(payload.taskId))) return false;
   return true;
@@ -35,7 +35,9 @@ export const createClaimedWorkGate = ({ client, ttlMs = CLAIMED_WORK_TTL_MS, now
     let ids = null;
     try {
       const { tasks = [] } = await client.get(`/api/v1/tasks/${podId}`, { status: 'claimed' });
-      const mine = tasks.filter((task) => task?.claimedByMe === true).map((task) => String(task.taskId));
+      // A lapsed lease still carries claimedBy; only a live one holds the seat.
+      const mine = tasks.filter((task) => task?.claimedByMe === true && task?.leaseState === 'held')
+        .map((task) => String(task.taskId));
       ids = mine.length > 0 ? new Set(mine) : null;
     } catch {
       ids = null;

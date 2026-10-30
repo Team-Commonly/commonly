@@ -10,7 +10,10 @@ import { createClaimedWorkGate, isDeferrableWhileClaimed } from '../src/lib/clai
 const POD = 'pod-1';
 const broadcast = (payload = {}) => ({ type: 'message.posted', deliveryMode: 'wake', payload: { messageId: 'm1', ...payload } });
 const board = (rows) => ({ get: jest.fn().mockResolvedValue({ tasks: rows }) });
-const HOLDS_642 = [{ taskId: 'TASK-642', claimedByMe: true }, { taskId: 'TASK-700', claimedByMe: false }];
+const HOLDS_642 = [
+  { taskId: 'TASK-642', claimedByMe: true, leaseState: 'held' },
+  { taskId: 'TASK-700', claimedByMe: false, leaseState: 'held' },
+];
 
 describe('isDeferrableWhileClaimed', () => {
   const held = new Set(['TASK-642']);
@@ -22,6 +25,7 @@ describe('isDeferrableWhileClaimed', () => {
     ['an unclassifiable trigger', broadcast(), 'unknown', false],
     ['a broadcast about the seat\'s own row', broadcast({ taskId: 'TASK-642' }), 'kernel', false],
     ['an addressed broadcast', broadcast({ addressed: true }), 'agent', false],
+    ['a reply to the seat\'s own message', broadcast({ repliesToYourMessage: true }), 'agent', false],
     ['a chat mention', { type: 'chat.mention', payload: {} }, 'agent', false],
     ['a DM', { type: 'dm.message', payload: {} }, 'agent', false],
     ['a heartbeat', { type: 'heartbeat', payload: {} }, 'kernel', false],
@@ -41,6 +45,12 @@ describe('createClaimedWorkGate', () => {
 
   test('does not defer when the seat holds nothing, even if peers do', async () => {
     const gate = createClaimedWorkGate({ client: board([{ taskId: 'TASK-700', claimedByMe: false }]) });
+    await expect(gate.shouldDefer(POD, [{ event: broadcast(), trigger: 'agent' }])).resolves.toBe(false);
+  });
+
+  test('does not defer on a lapsed lease the seat still names', async () => {
+    const lapsed = [{ taskId: 'TASK-642', claimedByMe: true, leaseState: 'lapsed' }];
+    const gate = createClaimedWorkGate({ client: board(lapsed) });
     await expect(gate.shouldDefer(POD, [{ event: broadcast(), trigger: 'agent' }])).resolves.toBe(false);
   });
 
