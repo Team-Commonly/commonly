@@ -195,6 +195,40 @@ describe('V2Inspector', () => {
     expect(screen.getByRole('button', { name: /Scout idle/ })).toBeInTheDocument();
   });
 
+  test('names an attention item by the agent it matches, never by its agentName or instance id', () => {
+    renderInspector({ detail: { ...detail, agents: [{
+      agentName: 'scout', instanceId: 'ubd1004e0d7', displayName: 'Scout',
+    }] } as any, attentionItems: [{
+      id: 'scout-request', kind: 'decision', title: 'Scout request',
+      actorName: 'scout', podId: 'pod-1',
+    }] });
+
+    expect(document.querySelector('.v2-workspace-inspector__actor')?.textContent).toBe('Scout');
+    expect(screen.queryByText('scout')).not.toBeInTheDocument();
+    expect(screen.queryByText('ubd1004e0d7')).not.toBeInTheDocument();
+  });
+
+  test('names an unmatched attention actor generically, never by its raw id', () => {
+    renderInspector({ detail: { ...detail, agents: [{
+      agentName: 'scout', instanceId: 'ubd1004e0d7', displayName: 'Scout',
+    }] } as any, attentionItems: [{
+      id: 'orphan-request', kind: 'decision', title: 'Orphan request',
+      actorName: 'u1a9e5ecede', podId: 'pod-1',
+    }] });
+
+    expect(document.querySelector('.v2-workspace-inspector__actor')?.textContent).toBe('Agent');
+    expect(screen.queryByText('u1a9e5ecede')).not.toBeInTheDocument();
+  });
+
+  test('labels an agent whose profile name is only its agentName generically', () => {
+    renderInspector({ detail: { ...detail, agents: [{
+      agentName: 'scout', instanceId: 'ubd1004e0d7', profile: { displayName: 'scout' },
+    }] } as any, attentionCount: 0, attentionItems: [] });
+
+    expect(screen.getByRole('button', { name: /Agent idle/ })).toBeInTheDocument();
+    expect(screen.queryByText('scout')).not.toBeInTheDocument();
+  });
+
   test('does not assign an unowned active task to an agent without a profile name', async () => {
     mockGet.mockImplementation((url: string) => Promise.resolve(url === '/api/v1/tasks/pod-1'
       ? { tasks: [{ taskId: 'TASK-1', title: 'Unowned work', status: 'claimed' }] }
