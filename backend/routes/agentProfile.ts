@@ -332,18 +332,30 @@ router.put('/:agentName/:instanceId?/avatar', authMiddleware, async (req: any, r
       return;
     }
 
-    // Read the row as it was, so a reset knows which pick it is undoing.
-    const user = await User.findOneAndUpdate(
-      { isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId },
-      { $set: { profilePicture: avatar } },
-      { new: false },
-    );
+    const identity = { isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId };
+
+    // Your-Team cards read AgentRegistry.iconUrl. The registry row is one per
+    // agentName, shared by every instance and the catalog, so a reset clears it
+    // only while it still holds the pick being undone. It runs before the User
+    // write and fails the request if it fails: once the User row says
+    // 'default', a retry could no longer tell which pick to clear.
+    if (reset) {
+      const current = await User.findOne(identity).select('profilePicture').lean();
+      if (!current) {
+        res.status(404).json({ error: 'Not found' });
+        return;
+      }
+      const previousAvatar = String((current as any).profilePicture || '');
+      if (previousAvatar && previousAvatar !== 'default') {
+        await AgentRegistry.updateOne({ agentName, iconUrl: previousAvatar }, { $set: { iconUrl: '' } });
+      }
+    }
+
+    const user = await User.findOneAndUpdate(identity, { $set: { profilePicture: avatar } }, { new: true });
     if (!user) {
       res.status(404).json({ error: 'Not found' });
       return;
     }
-    const previousAvatar = String(user.profilePicture || '');
-    user.profilePicture = avatar;
 
     // The chat stream reads the PG mirror; skipping this line is exactly the
     // July incident. Fire-and-log rather than fail the request: Mongo is the
@@ -354,18 +366,13 @@ router.put('/:agentName/:instanceId?/avatar', authMiddleware, async (req: any, r
       console.warn('[agent-avatar] pg mirror sync failed (mongo committed):', (syncErr as Error).message);
     }
 
-    // Your-Team cards read AgentRegistry.iconUrl; move it in the same request.
-    // The registry row is one per agentName and shared by every instance and
-    // the catalog, so a reset clears it only while it still holds the pick
-    // being undone; a catalog icon or another instance's later pick stays.
-    try {
-      if (!reset) {
+    // A pick moves the Your-Team icon in the same request.
+    if (!reset) {
+      try {
         await AgentRegistry.updateOne({ agentName }, { $set: { iconUrl: avatar } });
-      } else if (previousAvatar && previousAvatar !== 'default') {
-        await AgentRegistry.updateOne({ agentName, iconUrl: previousAvatar }, { $set: { iconUrl: '' } });
+      } catch (regErr) {
+        console.warn('[agent-avatar] registry iconUrl update failed:', (regErr as Error).message);
       }
-    } catch (regErr) {
-      console.warn('[agent-avatar] registry iconUrl update failed:', (regErr as Error).message);
     }
 
     res.json({ ok: true, avatar });
