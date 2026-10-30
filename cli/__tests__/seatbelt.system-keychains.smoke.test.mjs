@@ -1,5 +1,5 @@
 import { spawnSync } from 'child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
@@ -12,7 +12,6 @@ const state = root && join(root, 'state');
 if (root) {
   mkdirSync(workspace);
   mkdirSync(state);
-  writeFileSync(join(workspace, 'openssl.cnf'), '');
 }
 afterAll(() => { if (root) rmSync(root, { recursive: true, force: true }); });
 
@@ -30,7 +29,6 @@ const run = (code, options = {}) => spawnSync('/usr/bin/sandbox-exec', [
   }), process.execPath, '-e', code,
 ], {
   cwd: workspace, encoding: 'utf8', timeout: 15_000,
-  env: { ...process.env, OPENSSL_CONF: join(workspace, 'openssl.cnf') },
 });
 
 describe.each(PROFILES)('$label Seatbelt', ({ options }) => {
@@ -47,6 +45,16 @@ describe.each(PROFILES)('$label Seatbelt', ({ options }) => {
     expect(result.error).toBeUndefined();
     expect({ status: result.status, stderr: result.stderr }).toEqual({ status: 0, stderr: '' });
     expect(result.stdout.trim().split('\n')).toEqual(['EPERM', 'EPERM', 'EPERM']);
+  });
+
+  // Node reads this file at startup with no OPENSSL_CONF override, so the
+  // literal grant in PLATFORM_BASELINE must let the read through (TASK-233).
+  macTest('reads the system OpenSSL config that Node loads at startup', () => {
+    const result = run(`const fs = require('fs');
+      try { fs.readFileSync('/System/Library/OpenSSL/openssl.cnf'); console.log('READ'); }
+      catch (error) { console.log(error.code); }`, options);
+    expect(result.error).toBeUndefined();
+    expect(result.stdout.trim()).toBe('READ');
   });
 });
 
