@@ -439,7 +439,7 @@ test('TASK-624: a per-user bot member with no roster row is named by its curated
   }];
   axios.get.mockImplementation((url) => {
     if (url === '/api/installables') return Promise.resolve({ data: { installables: [githubEntry] } });
-    if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { podId: 'p1', grants: [grantLive] } });
+    if (url === '/api/grants') return Promise.resolve({ data: { grants: [grantLive] } });
     if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [] } });
     if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'grant_live', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
     return Promise.resolve({ data: {} });
@@ -461,7 +461,7 @@ test('TASK-624: a bot member with a blank displayName falls back to its non-defa
   }];
   axios.get.mockImplementation((url) => {
     if (url === '/api/installables') return Promise.resolve({ data: { installables: [githubEntry] } });
-    if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { podId: 'p1', grants: [{ ...grantLive, effectiveAudience: ['a1', 'a2'] }] } });
+    if (url === '/api/grants') return Promise.resolve({ data: { grants: [{ ...grantLive, effectiveAudience: ['a1', 'a2'] }] } });
     if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [] } });
     if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'grant_live', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
     return Promise.resolve({ data: {} });
