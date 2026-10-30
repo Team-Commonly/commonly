@@ -86,6 +86,39 @@ describe('per-agent Wake and Pods settings', () => {
     ));
   });
 
+  it('keeps the radios usable while a pick saves, so a second arrow key reaches the third choice', async () => {
+    client.get.mockResolvedValue({ data: { turnCap: 30, activePodCount: 1, podCount: 1, installations: [{
+        podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: false, humanOnly: false,
+        boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60,
+      }] } });
+    let settleFirst: (value?: unknown) => void = () => {};
+    updatePod.mockImplementationOnce(() => new Promise((resolve) => { settleFirst = resolve; }));
+    renderSettings();
+    const human = await screen.findByLabelText('Messages from people');
+    // jsdom has no native arrow-key radio movement: an ArrowDown is a focus
+    // move plus a change on the next radio.
+    act(() => { human.focus(); });
+    fireEvent.click(human);
+    await waitFor(() => expect(updatePod).toHaveBeenCalledTimes(1));
+    expect(human).toBeChecked();
+    expect(human).not.toBeDisabled();
+    expect(document.activeElement).toBe(human);
+
+    const every = screen.getByLabelText('Every message');
+    expect(every).not.toBeDisabled();
+    act(() => { every.focus(); });
+    fireEvent.click(every);
+    await waitFor(() => expect(updatePod).toHaveBeenCalledTimes(2));
+    expect(document.activeElement).toBe(every);
+    expect(updatePod).toHaveBeenLastCalledWith(
+      'pod-1',
+      { wakeOnMessage: true, humanOnly: false, boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60 },
+    );
+    // The first save settling late does not pull the row back to its value.
+    await act(async () => { settleFirst({}); });
+    expect(every).toBeChecked();
+  });
+
   it('removes a pod installation and leaves the settings view open', async () => {
     const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
     renderSettings();

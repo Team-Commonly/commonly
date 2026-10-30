@@ -85,12 +85,22 @@ const V2AgentWakePods: React.FC<{
     return () => { active = false; };
   }, [base, query, identity, t]);
 
+  // The latest save per pod. The message-wake radios stay enabled while a save
+  // is in flight (disabling them drops keyboard focus to the page), so two
+  // saves can overlap and only the newest may settle the row.
+  const saveSeq = useRef<Record<string, number>>({});
+
   const save = async (entry: InstallationSettings, changes: Partial<InstallationSettings>) => {
     const requestedIdentity = identity;
+    const seq = (saveSeq.current[entry.podId] || 0) + 1;
+    saveSeq.current[entry.podId] = seq;
+    const isLatest = () => identityRef.current === requestedIdentity && saveSeq.current[entry.podId] === seq;
+    const next = { ...entry, ...changes };
     setBusyPod(entry.podId);
     setError(null);
+    // Show the pick at once, so the next arrow key moves on from it.
+    setInstallations((current) => current.map((item) => item.podId === entry.podId ? next : item));
     try {
-      const next = { ...entry, ...changes };
       await updatePod(entry.podId, {
         wakeOnMessage: next.wakeOnMessage,
         boardWake: next.boardWake,
@@ -98,14 +108,14 @@ const V2AgentWakePods: React.FC<{
         heartbeatEnabled: next.heartbeatEnabled,
         heartbeatMinutes: next.heartbeatMinutes,
       });
-      if (identityRef.current === requestedIdentity) {
-        setInstallations((current) => current.map((item) => item.podId === entry.podId ? next : item));
-      }
     } catch (requestError) {
-      if (identityRef.current === requestedIdentity) setError((requestError as { response?: { status?: number } })?.response?.status === 403
-        ? t('agentSettings.forbidden') : t('agentSettings.saveError'));
+      if (isLatest()) {
+        setInstallations((current) => current.map((item) => item.podId === entry.podId ? entry : item));
+        setError((requestError as { response?: { status?: number } })?.response?.status === 403
+          ? t('agentSettings.forbidden') : t('agentSettings.saveError'));
+      }
     } finally {
-      if (identityRef.current === requestedIdentity) setBusyPod(null);
+      if (isLatest()) setBusyPod(null);
     }
   };
 
@@ -150,7 +160,7 @@ const V2AgentWakePods: React.FC<{
         {installations.map((entry) => (
           <div className="v2-agent-wake-pods__pod" key={entry.podId}>
             <Link to={`/v2/pods/${entry.podId}`}>{entry.podName}</Link>
-            <fieldset className="v2-agent-wake-pods__choice" disabled={busyPod === entry.podId}>
+            <fieldset className="v2-agent-wake-pods__choice" aria-busy={busyPod === entry.podId}>
               <legend>{t('agentSettings.messageWake')}</legend>
               {MESSAGE_WAKE_CHOICES.map((choice) => (
                 <label className="v2-agent-wake-pods__row v2-agent-wake-pods__subrow" key={choice}>
