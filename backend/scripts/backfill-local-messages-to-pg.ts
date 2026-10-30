@@ -65,7 +65,7 @@ export interface LocalBackfillDeps {
   newestPendingAt: () => Promise<Date | null>;
   /** PG rows with no legacy_mongo_id written at or before `at`. */
   countOverlap: (at: Date) => Promise<number>;
-  /** Pending rows whose pod no longer exists in MongoDB. */
+  /** Pending rows whose pod exists in neither MongoDB nor PG `pods`. */
   countOrphaned: () => Promise<number>;
   /** The next pending docs after `afterId`, oldest id first. */
   nextBatch: (afterId: string | null, limit: number) => Promise<PendingDoc[]>;
@@ -270,7 +270,7 @@ export async function main(
       console.log('DRY RUN — nothing written. Re-run with --apply.');
     }
     if (report.orphanedPending) {
-      console.log(`${report.orphanedPending} pending message(s) belong to pods that no longer exist in MongoDB;`
+      console.log(`${report.orphanedPending} pending message(s) belong to pods that exist in neither MongoDB nor PG;`
         + ' they are skipped and left in MongoDB.');
     }
     process.exitCode = exitCodeFor(report);
