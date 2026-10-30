@@ -3354,7 +3354,11 @@ const SDK_SOURCES = {
     botSrc: () => sdkAsset('python/bot.py', join('hello-world-python', 'bot.py')),
     sdkOut: 'commonly.py',
     botOut: (name) => `${name}.py`,
-    runHint: (name) => `COMMONLY_TOKEN=$(cat .commonly-env) python3 ${name}.py`,
+    // .commonly-env is already KEY=VALUE. Sourcing it under `set -a` exports
+    // the key as written and keeps the token out of argv (`env $(cat …)` would
+    // put it on the command line). `COMMONLY_TOKEN=$(cat …)` would set the
+    // variable to the literal `COMMONLY_TOKEN=cm_agent_…` and the bot would 401.
+    runHint: (name) => `(set -a; . ./.commonly-env; exec python3 ${name}.py)`,
   },
 };
 
@@ -3409,6 +3413,9 @@ export const performInit = async ({
   });
   const installation = installResult.installation || installResult;
   const instanceId = installation.instanceId || 'default';
+  // Same rule as `attach`: the mention handle is the instanceId when there is
+  // one, otherwise the registry agentName.
+  const mentionHandle = instanceId !== 'default' ? instanceId : (installation.agentName || agentName);
 
   let runtimeToken = installResult.runtimeToken;
   if (!runtimeToken) {
@@ -3434,6 +3441,7 @@ export const performInit = async ({
   return {
     installation,
     instanceId,
+    mentionHandle,
     runtimeToken,
     files: {
       sdk: sdkOutPath,
@@ -4171,6 +4179,7 @@ Docs:
         console.log('\nNext:');
         console.log(`  1. Edit ${opts.name}.py to handle events.`);
         console.log(`  2. Run: ${result.runHint}`);
+        console.log(`  3. In pod ${opts.pod}, @mention ${result.mentionHandle} to talk to it.`);
       } catch (err) {
         console.error(`Init failed: ${err.message}`);
         process.exit(1);
