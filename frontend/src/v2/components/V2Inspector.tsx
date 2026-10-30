@@ -48,10 +48,14 @@ const isWorkingTask = (task: TaskItem): boolean => (
 );
 
 
-const labelForAgent = (agent: V2Agent): string => (
-  // The roster's displayName is resolved from the agent User identity. A
+const labelForAgent = (agent: V2Agent, fallback: string): string => (
+  // The roster's displayName already went through resolveAgentDisplayLabel on
+  // the backend for agents with a User row. This chain stops there on purpose:
+  // instanceId and username are raw identifiers, which TASK-551 reports. A
   // profile name may be an older generated ID, so it is only a fallback.
-  agent.displayName || agent.profile?.displayName || agent.agentName
+  // agentName is never a label: it names the runtime or the agent type. Each
+  // caller passes its own generic fallback, so no label renders blank.
+  agent.displayName || agent.profile?.displayName || fallback
 );
 
 // Pods often carry a longer descriptive title, while the compact inspector
@@ -63,8 +67,9 @@ const shortRoomName = (name: string): string => (
 const matchesAgent = (agent: V2Agent, value?: string): boolean => {
   const candidate = (value || '').trim().toLowerCase();
   if (!candidate) return false;
+  // Matching never uses the generic label: '' keeps it out of the comparison.
   return candidate === (agent.agentName || '').toLowerCase()
-    || candidate === labelForAgent(agent).toLowerCase()
+    || candidate === labelForAgent(agent, '').toLowerCase()
     || candidate === (agent.profile?.displayName || '').toLowerCase()
     || candidate === (agent.instanceId || '').toLowerCase();
 };
@@ -73,7 +78,7 @@ const labelForAttentionActor = (agents: V2Agent[], actorName: string): string =>
   const legacyAgent = agents.find((agent) => (
     agent.profile?.displayName?.toLowerCase() === actorName.toLowerCase()
   ));
-  return legacyAgent ? labelForAgent(legacyAgent) : actorName;
+  return legacyAgent ? labelForAgent(legacyAgent, actorName) : actorName;
 };
 
 const agentState = (
@@ -171,7 +176,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
 
   const workingAgents = agents
     .filter((agent) => agentState(agent, attention, tasks).kind === 'working')
-    .map(labelForAgent);
+    .map((agent) => labelForAgent(agent, t('common.agent')));
   const emptyAttentionCopy = workingAgents.length > 0
     ? t('inspector.workspace.nothingWorking', { agents: workingAgents.join(' and '), count: workingAgents.length })
     : t('inspector.workspace.nothingOpen');
@@ -210,7 +215,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
           <div className="v2-workspace-inspector__rows">
             {agents.length === 0 && <p className="v2-workspace-inspector__empty">{t('inspector.workspace.noAgents')}</p>}
             {agents.map((agent) => {
-              const name = labelForAgent(agent);
+              const name = labelForAgent(agent, t('common.agent'));
               const username = buildAgentUsername(rawAgentName(agent), agent.instanceId);
               const member = detail.members.find((row) => row.username?.toLowerCase() === username);
               const state = agentState(agent, attention, tasks);
