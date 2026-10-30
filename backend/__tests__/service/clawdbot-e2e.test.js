@@ -15,7 +15,9 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 
-const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils');
+const {
+  setupMongoDb, closeMongoDb, clearMongoDb, setupPgDb, closePgDb,
+} = require('../utils/testUtils');
 
 // This suite exercises the legacy Mongo-backed Clawdbot flow. Freshness has
 // its own real-database service coverage; Tier 1's PostgreSQL host is present
@@ -66,6 +68,9 @@ describe('Clawdbot E2E Integration Tests', () => {
   beforeAll(async () => {
     process.env.JWT_SECRET = JWT_SECRET;
     await setupMongoDb();
+    // Agent posts write PostgreSQL only (TASK-503); before it, these suites
+    // passed through the silent MongoDB fallback without a PG schema.
+    await setupPgDb();
 
     // Create Express app with routes
     app = express();
@@ -163,6 +168,7 @@ describe('Clawdbot E2E Integration Tests', () => {
   });
 
   afterAll(async () => {
+    await closePgDb();
     await closeMongoDb();
   });
 

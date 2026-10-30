@@ -184,7 +184,7 @@ describe('a configured PostgreSQL store is the only write path (TASK-503)', () =
       instanceId: 'default',
       podId: POD,
       content: 'A live agent message',
-    })).rejects.toThrow('connection terminated');
+    })).rejects.toMatchObject({ code: 'MESSAGE_STORE_UNAVAILABLE', statusCode: 503 });
 
     expect(Message).not.toHaveBeenCalled();
     expect(emitted.find((e) => e.event === 'newMessage')).toBeUndefined();

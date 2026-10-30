@@ -1621,7 +1621,9 @@ router.post(
       return res.json(result);
     } catch (error: any) {
       const err = error as Error & { code?: string; statusCode?: number };
-      if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+      // A message-store outage is retryable (TASK-503): 503, not 500.
+      if (err.statusCode && ((err.statusCode >= 400 && err.statusCode < 500)
+        || err.code === 'MESSAGE_STORE_UNAVAILABLE')) {
         console.warn('Bot message refused:', { code: err.code, status: err.statusCode, message: err.message });
         return res.status(err.statusCode).json({
           message: err.message,
@@ -2382,7 +2384,9 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
     // from "pod truly missing" (404) and unexpected failures (500). Without
     // this, the post-message route 500'd on every legitimate guard refusal,
     // and the gateway logged "Failed to post message: 500" floods.
-    if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+    // A message-store outage is retryable (TASK-503): 503, not 500.
+    if (err.statusCode && ((err.statusCode >= 400 && err.statusCode < 500)
+      || err.code === 'MESSAGE_STORE_UNAVAILABLE')) {
       console.warn('Agent message refused:', { code: err.code, status: err.statusCode, message: err.message });
       return res.status(err.statusCode).json({
         message: err.message,

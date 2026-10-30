@@ -1818,7 +1818,10 @@ class AgentMessageService {
         // (TASK-503). A failed write fails the post so the caller can retry;
         // a MongoDB row here would be invisible to pod chat, which reads PG.
         console.error('[agent-msg] PostgreSQL message write failed:', (pgError as Error).message);
-        throw pgError;
+        throw Object.assign(
+          new Error('Messages are temporarily unavailable. Please try again shortly.'),
+          { code: 'MESSAGE_STORE_UNAVAILABLE', statusCode: 503, cause: pgError },
+        );
       }
     }
 
