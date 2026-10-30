@@ -84,7 +84,7 @@ describe('agent avatar editing', () => {
     expect(User.findOneAndUpdate).toHaveBeenCalledWith(
       { isBot: true, 'botMetadata.agentName': 'theo', 'botMetadata.instanceId': 'default' },
       { $set: { profilePicture: 'bottts:theo:default-v3' } },
-      { new: true },
+      { new: false },
     );
     // Both downstream surfaces moved in the same request.
     expect(AgentIdentityService.syncUserToPostgreSQL).toHaveBeenCalled();
@@ -143,13 +143,28 @@ describe('agent avatar editing', () => {
     expect(res.json).toHaveBeenCalledWith({ ok: true, avatar: '/api/uploads/custom-icon.png' });
   });
 
-  it("'default' clears the pick on the user row and leaves the shared registry icon alone", async () => {
+  it("'default' clears the pick on the user row and on Your Team's registry icon", async () => {
     const res = response();
     await putAvatar(reqFor({ id: 'admin-1', role: 'admin' }, 'default'), res);
     expect(User.findOneAndUpdate).toHaveBeenCalledWith(
-      expect.anything(), { $set: { profilePicture: 'default' } }, { new: true },
+      expect.anything(), { $set: { profilePicture: 'default' } }, { new: false },
     );
-    // One registry row serves every instance of the agent and the catalog.
+    // Lumen on #2932: Your Team reads AgentRegistry.iconUrl, so a reset that
+    // left it would bring the old face back there. The filter clears only the
+    // pick being undone: a catalog icon or another instance's pick stays.
+    expect(AgentRegistry.updateOne).toHaveBeenCalledWith(
+      { agentName: 'theo', iconUrl: 'bottts:theo:v3' }, { $set: { iconUrl: '' } },
+    );
+    expect(AgentIdentityService.syncUserToPostgreSQL).toHaveBeenCalledWith(
+      expect.objectContaining({ profilePicture: 'default' }),
+    );
+    expect(res.json).toHaveBeenCalledWith({ ok: true, avatar: 'default' });
+  });
+
+  it("'default' on an agent that never had a pick leaves the registry icon alone", async () => {
+    User.findOneAndUpdate.mockResolvedValue({ _id: 'bot-1', profilePicture: 'default' });
+    const res = response();
+    await putAvatar(reqFor({ id: 'admin-1', role: 'admin' }, 'default'), res);
     expect(AgentRegistry.updateOne).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ ok: true, avatar: 'default' });
   });

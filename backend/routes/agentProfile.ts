@@ -332,15 +332,18 @@ router.put('/:agentName/:instanceId?/avatar', authMiddleware, async (req: any, r
       return;
     }
 
+    // Read the row as it was, so a reset knows which pick it is undoing.
     const user = await User.findOneAndUpdate(
       { isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId },
       { $set: { profilePicture: avatar } },
-      { new: true },
+      { new: false },
     );
     if (!user) {
       res.status(404).json({ error: 'Not found' });
       return;
     }
+    const previousAvatar = String(user.profilePicture || '');
+    user.profilePicture = avatar;
 
     // The chat stream reads the PG mirror; skipping this line is exactly the
     // July incident. Fire-and-log rather than fail the request: Mongo is the
@@ -353,13 +356,16 @@ router.put('/:agentName/:instanceId?/avatar', authMiddleware, async (req: any, r
 
     // Your-Team cards read AgentRegistry.iconUrl; move it in the same request.
     // The registry row is one per agentName and shared by every instance and
-    // the catalog, so a one-instance reset must not clear it.
-    if (!reset) {
-      try {
+    // the catalog, so a reset clears it only while it still holds the pick
+    // being undone; a catalog icon or another instance's later pick stays.
+    try {
+      if (!reset) {
         await AgentRegistry.updateOne({ agentName }, { $set: { iconUrl: avatar } });
-      } catch (regErr) {
-        console.warn('[agent-avatar] registry iconUrl update failed:', (regErr as Error).message);
+      } else if (previousAvatar && previousAvatar !== 'default') {
+        await AgentRegistry.updateOne({ agentName, iconUrl: previousAvatar }, { $set: { iconUrl: '' } });
       }
+    } catch (regErr) {
+      console.warn('[agent-avatar] registry iconUrl update failed:', (regErr as Error).message);
     }
 
     res.json({ ok: true, avatar });
