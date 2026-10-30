@@ -28,9 +28,17 @@ jest.mock('../../../services/dmService', () => ({ getOrCreateAgentDM: jest.fn() 
 jest.mock('../../../models/AgentRegistry', () => ({ AgentInstallation: { findOne: jest.fn(), find: jest.fn() } }));
 // TASK-124: the discord branch's fetch is asserted to receive the env token.
 jest.mock('../../../services/discordService', () => ({ fetchMessages: jest.fn() }));
+// TASK-539: the groupme branch reads its token through connectorSecrets.
+jest.mock('../../../services/groupmeService', () => ({ fetchMessages: jest.fn() }));
+jest.mock('../../../services/connectorSecrets', () => {
+  class ConnectorSecretNotFoundError extends Error {}
+  return { get: jest.fn(), ConnectorSecretNotFoundError };
+});
 
 const Integration = require('../../../models/Integration');
 const DiscordService = require('../../../services/discordService');
+const GroupMeService = require('../../../services/groupmeService');
+const connectorSecrets = require('../../../services/connectorSecrets');
 const router = require('../../../routes/agentsRuntime');
 
 const getRouteHandler = (path, method) => {
@@ -195,6 +203,76 @@ describe('agentsRuntime integration messages route', () => {
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(DiscordService.fetchMessages).not.toHaveBeenCalled();
+    });
+  });
+  // TASK-539: the token lives in connectorSecrets, and the row's own copy is
+  // never read, so a stale plaintext token cannot be served.
+  describe('groupme: the token comes from the connector secret', () => {
+    const groupmeRow = (config = {}) => ({
+      lean: jest.fn().mockResolvedValue({
+        _id: 'groupme-1',
+        type: 'groupme',
+        config: {
+          agentAccessEnabled: true, globalAgentAccess: true, groupId: 'group-1', ...config,
+        },
+      }),
+    });
+
+    const call = async () => {
+      const handler = getRouteHandler('/pods/:podId/integrations/:integrationId/messages', 'get');
+      const req = {
+        params: { podId: 'pod-1', integrationId: 'groupme-1' },
+        query: {},
+        agentInstallation: { podId: 'pod-1', scopes: ['integration:messages:read'] },
+        agentInstallations: [{ podId: 'pod-1', scopes: ['integration:messages:read'] }],
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await handler(req, res);
+      return res;
+    };
+
+    it('fetches with the secret behind the ref, not the row copy', async () => {
+      connectorSecrets.get.mockResolvedValue('groupme-secret-token');
+      GroupMeService.fetchMessages.mockResolvedValue([]);
+      Integration.findOne.mockReturnValue(groupmeRow({ accessTokenRef: 'ref-1', accessToken: 'stale-copy' }));
+
+      const res = await call();
+
+      expect(connectorSecrets.get).toHaveBeenCalledWith('ref-1');
+      expect(GroupMeService.fetchMessages).toHaveBeenCalledWith(
+        expect.objectContaining({ accessToken: 'groupme-secret-token', groupId: 'group-1' }),
+      );
+      expect(res.status).not.toHaveBeenCalledWith(400);
+    });
+
+    it('refuses a row that carries only a plaintext copy', async () => {
+      Integration.findOne.mockReturnValue(groupmeRow({ accessToken: 'plaintext-only' }));
+
+      const res = await call();
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(GroupMeService.fetchMessages).not.toHaveBeenCalled();
+    });
+
+    it('refuses, rather than 500s, when the secret behind the ref is gone', async () => {
+      connectorSecrets.get.mockRejectedValue(new connectorSecrets.ConnectorSecretNotFoundError('gone'));
+      Integration.findOne.mockReturnValue(groupmeRow({ accessTokenRef: 'ref-gone' }));
+
+      const res = await call();
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(GroupMeService.fetchMessages).not.toHaveBeenCalled();
+    });
+
+    it('answers 500, not "missing token", when the key ring or decryption fails', async () => {
+      connectorSecrets.get.mockRejectedValue(new Error('key ring unavailable'));
+      Integration.findOne.mockReturnValue(groupmeRow({ accessTokenRef: 'ref-1' }));
+
+      const res = await call();
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.status).not.toHaveBeenCalledWith(400);
+      expect(GroupMeService.fetchMessages).not.toHaveBeenCalled();
     });
   });
 });

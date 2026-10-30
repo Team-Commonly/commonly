@@ -7,7 +7,8 @@ run it while an older backend can still write the legacy fields.
 This migration **redacts**, rather than imports, `config.accessToken` and
 `config.refreshToken` on X and Instagram Integration rows, including disabled
 rows and blank/null residue. Existing encrypted feed refs remain authoritative
-and unchanged. Other connector types (including GroupMe) are untouched.
+and unchanged. Other connector types are untouched; GroupMe and Slack have
+their own migration, [migrate-chat-token-copies](migrate-chat-token-copies.md).
 A feed with only legacy plaintext already has no usable credential under #2692;
 reconnect it to supply a fresh token. Do not reuse an older plaintext copy over a
 newer encrypted credential.
