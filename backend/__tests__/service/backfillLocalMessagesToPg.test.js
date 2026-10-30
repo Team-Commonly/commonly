@@ -129,8 +129,11 @@ d('TASK-503: local-upgrade backfill into PostgreSQL', () => {
       podId: mongoOnlyPod, userId: USER, content: `${MARKER} mongo-only pod`, messageType: 'text',
     });
     try {
+      // A live Mongo pod is not an orphan, before the mirror and after it.
+      const dry = await backfillLocalMessages(productionDeps(pool), { force: true });
+      expect(dry).toMatchObject({ dryRun: true, pending: 1, orphanedPending: 0 });
       const report = await backfillLocalMessages(productionDeps(pool), { apply: true, force: true });
-      expect(report).toMatchObject({ pending: 1, moved: 1, failed: 0 });
+      expect(report).toMatchObject({ pending: 1, moved: 1, failed: 0, orphanedPending: 0, orphaned: 0 });
       expect(await pgCopies()).toEqual([doc._id.toString()]);
       const { rows } = await pool.query('SELECT id FROM pods WHERE id = $1', [mongoOnlyPod.toHexString()]);
       expect(rows).toHaveLength(1);
