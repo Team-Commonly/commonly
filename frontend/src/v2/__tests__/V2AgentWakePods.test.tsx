@@ -130,10 +130,37 @@ describe('per-agent Wake and Pods settings', () => {
     renderSettings();
     fireEvent.click(await screen.findByLabelText('Messages from people'));
     fireEvent.click(screen.getByLabelText('Every message'));
+    // The second pick shows while the first save is pending (a disabled
+    // fieldset would have swallowed it), so the rollback has something to undo.
+    expect(screen.getByLabelText('Every message')).toBeChecked();
     await act(async () => { failFirst(new Error('down')); });
     await waitFor(() => expect(screen.getByLabelText('Mentions only')).toBeChecked());
     // The queued pick is dropped with the failure; it never reached the server.
     expect(updatePod).toHaveBeenCalledTimes(1);
+  });
+
+  it('a save still in flight for the previous agent does not let the next agent\'s saves overlap', async () => {
+    mentionsOnlyInstall();
+    const settles: Array<(value?: unknown) => void> = [];
+    updatePod.mockImplementation(() => new Promise((resolve) => { settles.push(resolve); }));
+    const view = renderSettings();
+    fireEvent.click(await screen.findByLabelText('Messages from people'));
+    await waitFor(() => expect(updatePod).toHaveBeenCalledTimes(1));
+
+    view.rerender(
+      <MemoryRouter><V2AgentWakePods agentName="test-agent" instanceId="other-machine" updatePod={updatePod} /></MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByLabelText('Messages from people'));
+    await waitFor(() => expect(updatePod).toHaveBeenCalledTimes(2));
+
+    // The old agent's save settles while the new agent's first save is still out.
+    await act(async () => { settles[0]({}); });
+    fireEvent.click(screen.getByLabelText('Every message'));
+    // The new pick queues behind the new agent's pending save instead of racing it.
+    expect(updatePod).toHaveBeenCalledTimes(2);
+    await act(async () => { settles[1]({}); });
+    await waitFor(() => expect(updatePod).toHaveBeenCalledTimes(3));
+    expect(updatePod).toHaveBeenLastCalledWith('pod-1', EVERY);
   });
 
   it('removes a pod installation and leaves the settings view open', async () => {

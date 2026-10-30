@@ -103,18 +103,24 @@ const V2AgentWakePods: React.FC<{
     const requestedIdentity = identity;
     const { podId } = entry;
     const next = { ...entry, ...changes };
-    if (!committedRef.current[podId]) committedRef.current[podId] = entry;
-    queuedRef.current[podId] = next;
+    // An agent switch replaces these objects. Hold the ones this save started
+    // with, so a loop still in flight for the old agent never writes into the
+    // new agent's queue.
+    const committed = committedRef.current;
+    const queued = queuedRef.current;
+    const sending = sendingRef.current;
+    if (!committed[podId]) committed[podId] = entry;
+    queued[podId] = next;
     setBusyPod(podId);
     setError(null);
     // Show the pick at once, so the next arrow key moves on from it.
     setInstallations((current) => current.map((item) => item.podId === podId ? next : item));
-    if (sendingRef.current[podId]) return;
-    sendingRef.current[podId] = true;
+    if (sending[podId]) return;
+    sending[podId] = true;
     try {
-      while (queuedRef.current[podId]) {
-        const target = queuedRef.current[podId] as InstallationSettings;
-        queuedRef.current[podId] = undefined;
+      while (queued[podId]) {
+        const target = queued[podId] as InstallationSettings;
+        queued[podId] = undefined;
         try {
           // eslint-disable-next-line no-await-in-loop
           await updatePod(podId, {
@@ -124,19 +130,19 @@ const V2AgentWakePods: React.FC<{
             heartbeatEnabled: target.heartbeatEnabled,
             heartbeatMinutes: target.heartbeatMinutes,
           });
-          committedRef.current[podId] = target;
+          committed[podId] = target;
         } catch (requestError) {
-          queuedRef.current[podId] = undefined;
+          queued[podId] = undefined;
           if (identityRef.current === requestedIdentity) {
-            const committed = committedRef.current[podId];
-            setInstallations((current) => current.map((item) => item.podId === podId ? committed : item));
+            const saved = committed[podId];
+            setInstallations((current) => current.map((item) => item.podId === podId ? saved : item));
             setError((requestError as { response?: { status?: number } })?.response?.status === 403
               ? t('agentSettings.forbidden') : t('agentSettings.saveError'));
           }
         }
       }
     } finally {
-      sendingRef.current[podId] = false;
+      sending[podId] = false;
       if (identityRef.current === requestedIdentity) setBusyPod(null);
     }
   };
