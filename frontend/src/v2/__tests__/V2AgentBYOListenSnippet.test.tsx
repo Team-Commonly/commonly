@@ -159,6 +159,15 @@ describe('BYO listener snippet', () => {
     expect(zhNeeds).toMatch(new RegExp(`需要 Node ${CLI_NODE_FLOOR}\\+`));
   });
 
+  test('an npm EACCES names the fix and says not to use sudo, right after the command', async () => {
+    await issueToken();
+    const hint = screen.getByTestId('byo-listen-npm-hint');
+    expect(hint).toHaveTextContent(/npm stops with EACCES/);
+    expect(hint).toHaveTextContent(/don’t add sudo/);
+    // eslint-disable-next-line no-bitwise
+    expect(listenCommand().compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   test('"I use Codex instead" gives a Codex command and says Codex is what it needs', async () => {
     await issueToken();
     fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));

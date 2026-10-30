@@ -1563,6 +1563,11 @@ const V2AgentBYO: React.FC = () => {
                 </button>
               </div>
             )}
+            {listenerAvailable && (
+              <p className="v2-byo__listen-note" data-testid="byo-listen-npm-hint">
+                {t('agentByo.listen.npmPermission')}
+              </p>
+            )}
             {!listenerAvailable ? null : listenState === 'listening' ? (
               <p className="v2-byo__live" data-testid="byo-listen-ok">
                 {t('agentByo.listen.verified', { name: issued.agentName })}
