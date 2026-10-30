@@ -88,6 +88,17 @@ describe('V2AgentBYO pod picker safety (HQ funnel incident 2026-07-24)', () => {
     expect(screen.queryByText('Commonly HQ (chat)')).not.toBeInTheDocument();
   });
 
+  test('defaults to the oldest owned pod (signup workspace), even when a newer team pod is listed first and visited last', async () => {
+    localStorage.setItem(POD_VISITS_KEY, JSON.stringify({ team: 99 }));
+    axios.get.mockResolvedValueOnce({ data: [
+      { _id: 'team', name: 'Team Project', type: 'team', createdBy: { _id: 'u1' }, createdAt: '2026-10-01T00:00:00.000Z' },
+      { _id: 'ws', name: 'My Workspace', type: 'chat', createdBy: { _id: 'u1' }, createdAt: '2026-09-01T00:00:00.000Z' },
+    ] });
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Team Project (team)')).toBeInTheDocument());
+    expect(screen.getByRole('combobox').value).toBe('ws');
+  });
+
   test('falls back to the last opened pod only when the user owns none', async () => {
     localStorage.setItem(POD_VISITS_KEY, JSON.stringify({ a: 10, team: 20 }));
     axios.get.mockResolvedValueOnce({ data: [

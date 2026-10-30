@@ -490,13 +490,18 @@ const V2AgentBYO: React.FC = () => {
         if ((!podId || !podKnown) && installablePods.length > 0) {
           // Default to the person's own workspace (TASK-645 item 9): the
           // picker no longer jumps to the last pod they opened. Recent visits
-          // only decide when they own no installable pod. V2Layout records
-          // visits when a pod opens; a stale visit to a public pod cannot
-          // select it because the list above already excludes publicRead pods.
+          // only decide when they own no installable pod. Signup creates
+          // My Workspace before anything the person makes, so the OLDEST
+          // owned pod is that workspace; the name is not a reliable marker
+          // (it can be renamed). V2Layout records visits when a pod opens; a
+          // stale visit to a public pod cannot select it because the list
+          // above already excludes publicRead pods.
           const uid = currentUser?._id;
-          const own = uid
-            ? installablePods.find((p) => p.createdBy?._id && String(p.createdBy._id) === String(uid))
-            : undefined;
+          const owned = uid
+            ? installablePods.filter((p) => p.createdBy?._id && String(p.createdBy._id) === String(uid))
+            : [];
+          const createdMs = (p: V2Pod) => (p.createdAt ? Date.parse(p.createdAt) : Number.POSITIVE_INFINITY);
+          const own = owned.sort((a, b) => createdMs(a) - createdMs(b))[0];
           const visits = readPodVisits();
           const recent = installablePods
             .filter((p) => visits[p._id] > 0)
