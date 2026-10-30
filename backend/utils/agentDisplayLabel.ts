@@ -1,3 +1,19 @@
+// agentNames that name a shared runtime, not an agent. Only these can leak
+// their runtime name as a displayName. A product agent that happens to share
+// its name with its curated label keeps that label: 'Scout' on agentName 'scout'
+// (TASK-551). commonly-bot and commonly-summarizer are product agents too, so
+// their displayName shows even when it equals their agentName. A codex seat
+// created without a displayName takes the officialDisplayName 'Codex'
+// (agentIdentityService.ts), and a claude-code seat takes 'Claude Code', so both
+// must stay here.
+const SHARED_RUNTIME_AGENT_NAMES = new Set(['openclaw', 'codex', 'claude-code']);
+
+// Equal names ignoring case, spaces and hyphens, so the officialDisplayName
+// 'Claude Code' is the same leak as the agentName 'claude-code'.
+const sameName = (a: string, b: string): boolean => (
+  a.toLowerCase().replace(/[\s-]/g, '') === b.toLowerCase().replace(/[\s-]/g, '')
+);
+
 // Resolve the human-readable label for an agent User row. The fallback
 // chain is intentional and load-bearing for any UI / pod-naming surface
 // that shows agent identity (agent-dm pod names, sidebar member rows):
@@ -44,7 +60,9 @@ export function resolveAgentDisplayLabel(
     !!display
     && !!agentName
     && (
-      (!!instanceId && instanceId !== 'default' && display.toLowerCase() === agentName.toLowerCase())
+      (!!instanceId && instanceId !== 'default'
+        && SHARED_RUNTIME_AGENT_NAMES.has(agentName.toLowerCase())
+        && sameName(display, agentName))
       || (
         !!instanceId
         && display.toLowerCase() === `${agentName.toLowerCase()} (${instanceId.toLowerCase()})`
