@@ -86,11 +86,16 @@ describe('per-agent Wake and Pods settings', () => {
     ));
   });
 
+  const mentionsOnlyInstall = () => client.get.mockResolvedValue({ data: {
+    turnCap: 30, activePodCount: 1, podCount: 1, installations: [{
+      podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: false, humanOnly: false,
+      boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60,
+    }],
+  } });
+  const EVERY = { wakeOnMessage: true, humanOnly: false, boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60 };
+
   it('keeps the radios usable while a pick saves, so a second arrow key reaches the third choice', async () => {
-    client.get.mockResolvedValue({ data: { turnCap: 30, activePodCount: 1, podCount: 1, installations: [{
-        podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: false, humanOnly: false,
-        boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60,
-      }] } });
+    mentionsOnlyInstall();
     let settleFirst: (value?: unknown) => void = () => {};
     updatePod.mockImplementationOnce(() => new Promise((resolve) => { settleFirst = resolve; }));
     renderSettings();
@@ -108,15 +113,27 @@ describe('per-agent Wake and Pods settings', () => {
     expect(every).not.toBeDisabled();
     act(() => { every.focus(); });
     fireEvent.click(every);
-    await waitFor(() => expect(updatePod).toHaveBeenCalledTimes(2));
-    expect(document.activeElement).toBe(every);
-    expect(updatePod).toHaveBeenLastCalledWith(
-      'pod-1',
-      { wakeOnMessage: true, humanOnly: false, boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60 },
-    );
-    // The first save settling late does not pull the row back to its value.
-    await act(async () => { settleFirst({}); });
     expect(every).toBeChecked();
+    expect(document.activeElement).toBe(every);
+    // The second pick waits for the first, so the server sees them in order.
+    expect(updatePod).toHaveBeenCalledTimes(1);
+    await act(async () => { settleFirst({}); });
+    await waitFor(() => expect(updatePod).toHaveBeenCalledTimes(2));
+    expect(updatePod).toHaveBeenLastCalledWith('pod-1', EVERY);
+    expect(every).toBeChecked();
+  });
+
+  it('a failed save rolls back to what the server last accepted, not to an unsaved pick', async () => {
+    mentionsOnlyInstall();
+    let failFirst: (error: unknown) => void = () => {};
+    updatePod.mockImplementationOnce(() => new Promise((_, reject) => { failFirst = reject; }));
+    renderSettings();
+    fireEvent.click(await screen.findByLabelText('Messages from people'));
+    fireEvent.click(screen.getByLabelText('Every message'));
+    await act(async () => { failFirst(new Error('down')); });
+    await waitFor(() => expect(screen.getByLabelText('Mentions only')).toBeChecked());
+    // The queued pick is dropped with the failure; it never reached the server.
+    expect(updatePod).toHaveBeenCalledTimes(1);
   });
 
   it('removes a pod installation and leaves the settings view open', async () => {

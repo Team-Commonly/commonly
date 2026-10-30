@@ -51,6 +51,10 @@ const V2AgentWakePods: React.FC<{
   const identity = `${agentName}:${instanceId}`;
   const identityRef = useRef(identity);
   identityRef.current = identity;
+  // Per-pod save state; see save() below.
+  const committedRef = useRef<Record<string, InstallationSettings>>({});
+  const queuedRef = useRef<Record<string, InstallationSettings | undefined>>({});
+  const sendingRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     let active = true;
@@ -59,6 +63,9 @@ const V2AgentWakePods: React.FC<{
     setBusyPod(null);
     setError(null);
     setDraftMinutes({});
+    committedRef.current = {};
+    queuedRef.current = {};
+    sendingRef.current = {};
     const load = async () => {
       try {
         const settingsResult = await axios.get<{
@@ -67,6 +74,7 @@ const V2AgentWakePods: React.FC<{
         if (!active) return;
         const rows = Array.isArray(settingsResult.data.installations) ? settingsResult.data.installations : [];
         setInstallations(rows);
+        committedRef.current = Object.fromEntries(rows.map((row) => [row.podId, row]));
         setActivePodCount(settingsResult.data.activePodCount ?? rows.filter((row) => row.status === 'active').length);
         setPodCount(settingsResult.data.podCount ?? rows.length);
         setDraftMinutes(Object.fromEntries(rows.map((row) => [row.podId, row.heartbeatMinutes])));
@@ -85,37 +93,51 @@ const V2AgentWakePods: React.FC<{
     return () => { active = false; };
   }, [base, query, identity, t]);
 
-  // The latest save per pod. The message-wake radios stay enabled while a save
-  // is in flight (disabling them drops keyboard focus to the page), so two
-  // saves can overlap and only the newest may settle the row.
-  const saveSeq = useRef<Record<string, number>>({});
+  // Saves per pod go out one at a time, newest pick last. The message-wake
+  // radios stay enabled while a save is in flight (disabling them dropped
+  // keyboard focus to the page), so a second pick queues behind the first
+  // rather than racing it to the server. A failure rolls the row back to the
+  // last settings the server accepted, never to an unsaved pick.
 
   const save = async (entry: InstallationSettings, changes: Partial<InstallationSettings>) => {
     const requestedIdentity = identity;
-    const seq = (saveSeq.current[entry.podId] || 0) + 1;
-    saveSeq.current[entry.podId] = seq;
-    const isLatest = () => identityRef.current === requestedIdentity && saveSeq.current[entry.podId] === seq;
+    const { podId } = entry;
     const next = { ...entry, ...changes };
-    setBusyPod(entry.podId);
+    if (!committedRef.current[podId]) committedRef.current[podId] = entry;
+    queuedRef.current[podId] = next;
+    setBusyPod(podId);
     setError(null);
     // Show the pick at once, so the next arrow key moves on from it.
-    setInstallations((current) => current.map((item) => item.podId === entry.podId ? next : item));
+    setInstallations((current) => current.map((item) => item.podId === podId ? next : item));
+    if (sendingRef.current[podId]) return;
+    sendingRef.current[podId] = true;
     try {
-      await updatePod(entry.podId, {
-        wakeOnMessage: next.wakeOnMessage,
-        boardWake: next.boardWake,
-        humanOnly: next.humanOnly,
-        heartbeatEnabled: next.heartbeatEnabled,
-        heartbeatMinutes: next.heartbeatMinutes,
-      });
-    } catch (requestError) {
-      if (isLatest()) {
-        setInstallations((current) => current.map((item) => item.podId === entry.podId ? entry : item));
-        setError((requestError as { response?: { status?: number } })?.response?.status === 403
-          ? t('agentSettings.forbidden') : t('agentSettings.saveError'));
+      while (queuedRef.current[podId]) {
+        const target = queuedRef.current[podId] as InstallationSettings;
+        queuedRef.current[podId] = undefined;
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await updatePod(podId, {
+            wakeOnMessage: target.wakeOnMessage,
+            boardWake: target.boardWake,
+            humanOnly: target.humanOnly,
+            heartbeatEnabled: target.heartbeatEnabled,
+            heartbeatMinutes: target.heartbeatMinutes,
+          });
+          committedRef.current[podId] = target;
+        } catch (requestError) {
+          queuedRef.current[podId] = undefined;
+          if (identityRef.current === requestedIdentity) {
+            const committed = committedRef.current[podId];
+            setInstallations((current) => current.map((item) => item.podId === podId ? committed : item));
+            setError((requestError as { response?: { status?: number } })?.response?.status === 403
+              ? t('agentSettings.forbidden') : t('agentSettings.saveError'));
+          }
+        }
       }
     } finally {
-      if (isLatest()) setBusyPod(null);
+      sendingRef.current[podId] = false;
+      if (identityRef.current === requestedIdentity) setBusyPod(null);
     }
   };
 
