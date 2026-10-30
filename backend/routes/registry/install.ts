@@ -51,6 +51,7 @@ const {
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 const { willSolelyInstallRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
+const { webhookUrlRegistrationRefusal } = require('../../services/outboundUrlGuard');
 const { personAgentWakeDefault } = require('../../services/wakeDefaultService');
 const { logAgentInstallRefusal } = require('../../middleware/logAgentInstallRefusal');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
@@ -503,6 +504,12 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       if (!ownership.owned) {
         return res.status(403).json({ code: ownership.failure, error: webhookUrlRefusal[ownership.failure] });
       }
+    }
+    // A URL supplied at install is a new registration, so it must be https,
+    // admins included.
+    if (requestedWebhookUrl) {
+      const schemeRefusal = webhookUrlRegistrationRefusal(requestedWebhookUrl);
+      if (schemeRefusal) return res.status(400).json({ code: 'webhook_url_refused', error: schemeRefusal });
     }
     const runtimeConfig = typeof installConfig.runtime === 'object' && installConfig.runtime
       ? { ...installConfig.runtime }
