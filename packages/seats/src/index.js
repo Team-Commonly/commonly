@@ -19,4 +19,16 @@ export {
   RECORD_VERSION, RECORD_SCHEMA, KINDS, canonicalLine, appendEntry, verifyRecord, readRecord, hashLine, toolSurfaceOf, argsDigestOf,
 } from './record/format.js';
 export { toOtlpJson } from './record/otel.js';
-export { superviseRun, SUPERVISOR_DEFAULTS, DEFAULT_RETRY_ON } from './supervisor.js';
+export {
+  superviseRun, resolveTurnTimeoutMs, SUPERVISOR_DEFAULTS, DEFAULT_RETRY_ON,
+} from './supervisor.js';
+export {
+  EXIT_OK, EXIT_FAILED, EXIT_USAGE, FAILURE_EXIT_CODES, UNNAMED_FAILURE,
+  exitCodeForKind, exitCodeOf, failureLine, exitCodeTable,
+} from './exit-codes.js';
+export {
+  CONTENT_REFUSED_RE, NOT_AUTHENTICATED_RE, MISSING_BINARY_RE, isMissingBinary, kindOfAdapterError,
+} from './failure-text.js';
+export {
+  runStandaloneTurn, standaloneAdapter, defaultTraceDir, traceDirRefusal, cwdRefusal, workTreeOf,
+} from './standalone.js';

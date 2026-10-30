@@ -6,7 +6,8 @@
   "type": "module",
   "main": "./src/index.js",
   "bin": {
-    "commonly": "src/index.js"
+    "commonly": "src/index.js",
+    "jellymoon": "src/jellymoon.js"
   },
   "files": [
     "src",

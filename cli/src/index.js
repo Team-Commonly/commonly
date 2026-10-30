@@ -20,6 +20,7 @@ import { registerAgent } from './commands/agent.js';
 import { registerDaemon } from './commands/daemon.js';
 import { registerPod } from './commands/pod.js';
 import { registerDev } from './commands/dev.js';
+import { registerJellymoon } from './commands/jellymoon.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'));
@@ -52,6 +53,9 @@ registerPod(program);
 // Local dev environment
 registerDev(program);
 
+// One supervised turn of a local agent CLI, with no account or server
+registerJellymoon(program);
+
 // Each subcommand owns its own `--instance <url>` flag; a program-level
 // duplicate shadowed the subcommand value on commander v12, causing
 // `commonly login --instance …` to silently fall back to the default URL.
@@ -65,6 +69,9 @@ Quick start:
   $ commonly daemon register --name "My MacBook"
   $ commonly daemon status
   $ commonly inbox list --token-file ~/.commonly/bin/ops-token   # an operator's own queue
+
+No account needed:
+  $ commonly jellymoon run claude "summarise README.md"   # one supervised turn, local only
 
 Custom Python agent:
   $ commonly agent init --language python --name research-bot --pod <podId>

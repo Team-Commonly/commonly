@@ -87,7 +87,7 @@ import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credent
 import {
   prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_CODE, publicMcpUnavailableError, selectedMcpVersionDir,
 } from '../mcp-home.js';
-import { buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
+import { memoryPreambleFor, ROW_SLICING_CUE } from '../memory-bridge.js';
 import { claudeConfigDirFor, claudeContextTokens } from '../session-recycle.js';
 import { skillsAsText } from '../skill-prompt.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
@@ -103,7 +103,6 @@ const DEFAULT_TIMEOUT_MS = (() => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 })();
 
-const buildPrompt = buildMemoryPreamble;
 
 // The working habits a private claude seat is taught on a fresh session
 // (TASK-545). Parallel reads live here because only this CLI has a subagent
@@ -1070,12 +1069,12 @@ export default {
     // Passed through UNCOALESCED. `ctx.memoryLongTerm || ''` was here, and
     // `null || ''` is `''` — which routed the unreadable case straight into
     // the empty-memory branch and made the whole distinction unreachable from
-    // the only two paths that build a real prompt. buildPrompt handles
+    // the only two paths that build a real prompt. the preamble builder handles
     // undefined and '' as absence itself; it does not need a guard, it needs
     // the value.
     const publicTrust = isConfinedTrust(ctx.environment?.sandbox?.trust);
     const workCues = publicTrust ? [] : WORK_CUES;
-    const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
+    const fullPrompt = memoryPreambleFor(ctx)(prompt, ctx.memoryLongTerm, {
       freshSession: !isResume,
       workCues,
       memoryWithheld: ctx.memoryWithheld === true,
@@ -1221,7 +1220,7 @@ export default {
         // The retry creates a new underlying CLI session. Rebuild its prompt
         // as fresh too: otherwise a session-recovery path is the one fresh
         // session that misses the durable-state cue.
-        const freshPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
+        const freshPrompt = memoryPreambleFor(ctx)(prompt, ctx.memoryLongTerm, {
           freshSession: true,
           workCues,
           memoryWithheld: ctx.memoryWithheld === true,

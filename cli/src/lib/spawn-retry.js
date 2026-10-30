@@ -7,6 +7,10 @@
  * retry policy here so every adapter gets the same bounded behavior.
  */
 
+import {
+  CONTENT_REFUSED_RE, MISSING_BINARY_RE, NOT_AUTHENTICATED_RE, errorText,
+} from '@commonlyai/seats/failure-text';
+
 export const SPAWN_FAILURE_CLASS = Object.freeze({
   // The provider refused the request's CONTENT. Re-sending the same content
   // can only be refused again, so this class is never retried: the run loop
@@ -54,15 +58,8 @@ export const SPAWN_RETRY_JITTER_MAX_RATIO = 0.2;
 // Deliberately NOT loosened to a bare `limit`: QUOTA is tested before
 // RATE_LIMIT, so that would swallow every "rate limit" error into the 15-minute
 // cooldown. Add exact wordings, not looser ones.
-// Measured 2026-10-16 from a codex seat (gpt-6-astra over the ChatGPT login),
-// on a security-gate request carrying SSRF/exfil/ReDoS test cases: "codex turn
-// failed: This content was flagged for possible cybersecurity risk. If this
-// seems wrong, try rephrasing your request. If you're doing authorized security
-// work … apply for Daybreak access …". Classed as `runtime`, it was re-sent on
-// backoff 5 times in 52 minutes, every one refused, and the seat handled
-// nothing else until the kernel retired the event. Only the refusal wordings
-// themselves are matched, so an ordinary failure that mentions a flag is not.
-const CONTENT_REFUSED_RE = /(?:flagged for possible cybersecurity risk|this content was flagged|content[_ ]policy[_ ]violation|cyber[_ ]policy)/i;
+// CONTENT_REFUSED_RE (and the evidence for each wording) lives in
+// @commonlyai/seats/failure-text, shared with the standalone runner.
 // The third miss is why there is now a PHRASE as well as a word list, and it is
 // a different failure from the first two. Measured across the fleet's logs on
 // 2026-08-25: 283 failures reading "You've hit your weekly limit", 55 reading
@@ -99,17 +96,9 @@ const QUOTA_POSSESSIVE_RE = /you'?ve (?:hit|reached) your (?!rate[ -]?limit)(?:[
 // limit" is an exhausted allowance that a provider reports as HTTP 429.
 const THROTTLE_WORDING_RE = /(?:rate[ -]?limit|too many requests|overloaded|capacity)/i;
 const RATE_LIMIT_RE = /(?:rate[ -]?limit|too many requests|\b429\b|overloaded|capacity)/i;
-const CONFIGURATION_RE = /(?:ENOENT|command not found|not on PATH|login required|not logged in|invalid api key|authentication failed|unauthori[sz]ed|forbidden|\b40[13]\b)/i;
-
-const errorText = (error) => [
-  error?.message,
-  error?.stderr,
-  error?.body?.error,
-  error?.body?.message,
-]
-  .filter(Boolean)
-  .map(String)
-  .join('\n');
+// The configuration class is a missing binary or a CLI that is not signed in;
+// both halves live in failure-text.js, where the standalone runner reads them apart.
+const isConfigurationText = (text) => MISSING_BINARY_RE.test(text) || NOT_AUTHENTICATED_RE.test(text);
 
 export const classifySpawnFailure = (error) => {
   const text = errorText(error);
@@ -138,7 +127,7 @@ export const classifySpawnFailure = (error) => {
     error?.code === 'ENOENT'
     || error?.status === 401
     || error?.status === 403
-    || CONFIGURATION_RE.test(text)
+    || isConfigurationText(text)
   ) {
     return SPAWN_FAILURE_CLASS.CONFIGURATION;
   }

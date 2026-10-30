@@ -55,6 +55,7 @@ import { detectMemorySources, composeImport, importMemory } from '../lib/memory-
 import { detectSkills, importSkills, parseSkillMeta } from '../lib/skills-import.js';
 import { compileServerSkills } from '../lib/server-skills.js';
 import {
+  assertProviderCapable,
   environmentForServer,
   normalizeSandboxTrust,
   parseEnvironmentFile,
@@ -88,6 +89,7 @@ import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
 import { createSeatStop } from '../lib/seat-stop.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import { describeUpstreamRefusal } from '../lib/upstream-refusal.js';
+import { resolveTurnTimeoutMs } from '@commonlyai/seats/supervisor';
 import {
   DEFAULT_HOOK_TIMEOUT_MS,
   clampHookTimeoutMs,
@@ -864,10 +866,10 @@ export const updateAgentConfiguration = async ({
   if (!environment && Object.keys(environmentRuntime).length) {
     environment = { ...environmentRuntime };
   }
-  if (environment?.provider !== undefined
-    && !adapterRegistry.getAdapter(String(runtime.adapter || record.adapter || '').trim().toLowerCase())?.supportsProvider) {
-    throw new Error('environment.provider requires a provider-capable adapter');
-  }
+  assertProviderCapable(
+    environment,
+    adapterRegistry.getAdapter(String(runtime.adapter || record.adapter || '').trim().toLowerCase()),
+  );
   if (environment) config.environment = environmentForServer(environment);
   if (!Object.keys(config).length) {
     throw new Error('provide at least one of --adapter, --model, --effort, or --env');
@@ -1020,9 +1022,7 @@ export const performAttach = async ({
     // An explicit spec augments the seat; it does not remove the Commonly
     // kernel server. The daemon applies this same baseline before every spawn.
     environment = withDefaultMcpServer(await parseEnvironmentFile(envPath), adapterName);
-    if (environment?.provider !== undefined && !adapter.supportsProvider) {
-      throw new Error('environment.provider requires a provider-capable adapter');
-    }
+    assertProviderCapable(environment, adapter);
     workspace = await resolveWorkspace(environment, agentName, dirname(envPath));
     if (typeof adapter.validateEnvironment === 'function') {
       await adapter.validateEnvironment(environment, workspace.path);
@@ -1430,12 +1430,8 @@ export const performRun = ({
   refusalHandoff = null,
 }) => {
   reportRuntime = reportRuntime && WALKED_HARNESSES.includes(adapter?.name);
-  if (environment?.provider !== undefined && !adapter?.supportsProvider) {
-    throw new Error('environment.provider requires a provider-capable adapter');
-  }
-  const requestedTurnTimeout = Number(turnTimeoutMs ?? process.env.COMMONLY_AGENT_RUN_TIMEOUT_MS);
-  const effectiveTurnTimeoutMs = Number.isFinite(requestedTurnTimeout) && requestedTurnTimeout > 0
-    ? Math.min(requestedTurnTimeout, 2_147_483_647) : 15 * 60 * 1000;
+  assertProviderCapable(environment, adapter);
+  const effectiveTurnTimeoutMs = resolveTurnTimeoutMs(turnTimeoutMs ?? process.env.COMMONLY_AGENT_RUN_TIMEOUT_MS);
   const client = createClient({ instance: instanceUrl, token });
   const runtimeReporter = createRuntimeReporter({
     client: runtimeReportClient || { post: async () => {} },

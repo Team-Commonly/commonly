@@ -123,6 +123,18 @@ export const buildMemoryPreamble = (
   return `${context}\n${freshReadCue}${workCue}\n=== Current turn ===\n${prompt}\n${sessionEndCue}`;
 };
 
+/**
+ * The preamble builder for one spawn. A host that is not a Commonly seat (the
+ * standalone `jellymoon run`) passes `ctx.memoryPreamble`, with the SeatHost
+ * signature in packages/seats/src/contract.js, and the adapter uses it in
+ * place of this module's: `(prompt) => prompt` sends the task verbatim, with
+ * no memory cue for a memory the run does not have. Absent, a seat gets
+ * buildMemoryPreamble exactly as before.
+ */
+export const memoryPreambleFor = (ctx) => (
+  typeof ctx?.memoryPreamble === 'function' ? ctx.memoryPreamble : buildMemoryPreamble
+);
+
 export const readLongTerm = async (client, { onError } = {}) => {
   try {
     const body = await client.get('/api/agents/runtime/memory');
