@@ -244,6 +244,10 @@ describe('the command page puts only what the paste needs above the copy', () =>
     expect(screen.queryByTestId('byo-listen-adapter-switch')).toBeNull();
     fireEvent.click(screen.getByTestId('byo-use-different-runner'));
     fireEvent.click(screen.getByTestId('byo-runner-codex'));
+    // The second issue needs its own install and token responses; the beforeEach ones are spent.
+    axios.post
+      .mockResolvedValueOnce({ data: { ok: true } })
+      .mockResolvedValueOnce({ data: { token: 'cm_agent_test_token_codex' } });
     const again = await screen.findByRole('button', { name: /get my connect command|install/i });
     await waitFor(() => expect(again).toBeEnabled());
     fireEvent.click(again);
