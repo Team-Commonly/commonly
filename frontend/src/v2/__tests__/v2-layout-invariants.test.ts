@@ -5158,3 +5158,52 @@ describe('v2 board on a phone (TASK-576)', () => {
     expect(page).toContain('<V2MobileTabs needsYouCount={attention.count ?? 0} />');
   });
 });
+
+describe('v2 Night Shift on the pod thread (TASK-642, D194)', () => {
+  const NS = '.v2-root .v2-nightshift';
+
+  test('the scope class remaps the tokens to walnut, parchment, flare and Recursive', () => {
+    const block = ruleBody(read('../v2.css'), NS);
+    expect(block).toContain('--v2-bg: var(--v2-ns-walnut);');
+    expect(block).toContain('--v2-text-primary: var(--v2-ns-parch);');
+    expect(block).toContain('--v2-ink: var(--v2-ns-parch);');
+    expect(block).toContain('--v2-on-ink: var(--v2-ns-walnut-deep);');
+    expect(block).toContain('--v2-accent: var(--v2-ns-flare);');
+    expect(block).toContain('--v2-font: "Recursive Variable"');
+    expect(block).toContain('--v2-font-mono: "Recursive Variable"');
+    expect(block).toContain('color-scheme: dark;');
+  });
+
+  test('the --v2-ns-* hex values mirror --c-ns-* in the design-system tokens', () => {
+    const block = ruleBody(read('../v2.css'), NS);
+    const tokens = read('../../../design-system/tokens.css');
+    const pairs = [...block.matchAll(/--v2-ns-([a-z0-9-]+): (#[0-9a-f]{6});/g)];
+    expect(pairs.length).toBeGreaterThanOrEqual(11);
+    pairs.forEach(([, name, hex]) => {
+      expect(tokens).toContain(`--c-ns-${name}: ${hex};`);
+    });
+  });
+
+  test('only the pod thread and its inspector carry the scope class', () => {
+    expect(read('../components/V2Thread.tsx')).toContain('className="v2-pane v2-pane--main v2-nightshift"');
+    expect(read('../components/V2Inspector.tsx')).toContain('className="v2-pane v2-pane--inspector v2-nightshift"');
+    expect(read('../V2App.tsx')).toContain("import '@fontsource-variable/recursive/full.css';");
+  });
+
+  test('an agent message is a panel card with a green edge, and every row shares its inset', () => {
+    const css = read('../v2.css');
+    const card = ruleBody(css, `${NS} .v2-thread .v2-msg--bot`);
+    expect(card).toContain('background: var(--v2-ns-panel);');
+    expect(card).toContain('inset 3px 0 0 rgba(149, 223, 164, 0.75)');
+    // A bleeding card overflowed the phone pane by 12px; the inset lives on
+    // every row instead, so agent and human text share one column.
+    expect(card).not.toMatch(/margin[^;]*-\d/);
+    expect(ruleBody(css, `${NS} .v2-thread .v2-msg`)).toContain('padding: 10px 12px;');
+    expect(read('../components/V2MessageRow.tsx')).toContain("message.user?.isBot ? ' v2-msg--bot' : ''");
+  });
+
+  test('the system action line keeps its 16px face under the round 36px avatars', () => {
+    const css = read('../v2.css');
+    expect(ruleBody(css, `${NS} .v2-thread .v2-system-action-line .v2-avatar`)).toContain('width: 16px; height: 16px;');
+  });
+});

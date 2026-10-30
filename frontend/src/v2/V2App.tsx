@@ -14,6 +14,9 @@ import '@fontsource/ibm-plex-sans/400.css';
 import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
 import '@fontsource/ibm-plex-mono/500.css';
+// Night Shift (D194): Recursive, all axes (CASL + MONO), self-hosted. The
+// woff2 only downloads when a .v2-nightshift surface renders a glyph.
+import '@fontsource-variable/recursive/full.css';
 import './v2.css';
 
 // TASK-145 — inside the shell, only the surfaces the composer path needs stay

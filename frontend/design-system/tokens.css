@@ -170,6 +170,32 @@
   --c-platform-groupme: #00aff0;
   --c-platform-groupme-soft: #e3f5fd;
 
+  /* ── Night Shift (D194, 2026-10-30) ─────────────────────────
+     The dark-first look for the pod thread and its inspector only;
+     every other screen stays Signal. Production: the `.v2-nightshift`
+     block at the end of frontend/src/v2/v2.css (--v2-ns-*), which
+     remaps the --v2-* tokens under that class. Hex from the source
+     oklch values in the D194 direction sheet. */
+  --c-ns-walnut: #2c1e15;       /* pane ground            oklch(25% .027 55) */
+  --c-ns-walnut-deep: #221610;  /* inspector, receipt, pre oklch(21.5% .023 52) */
+  --c-ns-panel: #3a2a1e;        /* agent card, cards      oklch(30% .031 57) */
+  --c-ns-panel-2: #483629;      /* chips, mentions, code  oklch(35% .033 58) */
+  --c-ns-seam: #544437;         /* borders                oklch(40% .031 60) */
+  --c-ns-parch: #f0e7d6;        /* text, primary action   oklch(93% .024 82) */
+  --c-ns-parch-2: #cfc2af;      /* secondary text         oklch(82% .03 78) */
+  --c-ns-parch-3: #ab9c89;      /* meta, placeholder      oklch(70% .032 72); 5.1:1 on panel */
+  --c-ns-flare: #ff7c4c;        /* needs you, nothing else oklch(73.5% .175 40) */
+  --c-ns-flare-ink: #2c1309;    /* text on flare          oklch(22% .045 42) */
+  --c-ns-green: #95dfa4;        /* agent ran / running    oklch(84% .11 150) */
+  --c-ns-danger: #f47b74;
+  --c-ns-font: "Recursive Variable", ui-sans-serif, system-ui, sans-serif;
+  /* Recursive axes: body "CASL" 0,"MONO" 0 · names "CASL" 1,"MONO" 0 ·
+     meta, code, chips "CASL" 1,"MONO" 1 */
+  --c-ns-radius-sm: 6px;
+  --c-ns-radius: 9px;
+  --c-ns-radius-lg: 14px;
+  --c-ns-radius-card: 16px;
+
 }
 
 /* ============================================================
