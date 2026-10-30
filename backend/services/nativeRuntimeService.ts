@@ -91,8 +91,8 @@ const MAX_TURNS = 10;
 // context, so the sum grows much faster than any one prompt. 50k failed
 // ordinary hosted research turns: five calls whose prompts grow from ~3k to
 // ~19k sum to 55-76k (43 of one outside user's 73 assigned-task wakes,
-// 10-24 to 10-26; no prompt over 28k in any of the 47 cap failures since
-// 10-01). 200k fits MAX_TURNS calls at that late-turn size.
+// 10-24 to 10-26; no prompt over 28k in any of the 48 cap failures from
+// 2026-10-01 to 10-29). 200k fits MAX_TURNS calls at that late-turn size.
 const MAX_TOKENS = 200_000;
 const MAX_WALL_CLOCK_MS = 60_000;
 // Free-tier default for the native runtime. Per-installation config can

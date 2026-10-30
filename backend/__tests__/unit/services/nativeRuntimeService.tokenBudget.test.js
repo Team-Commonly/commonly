@@ -7,7 +7,7 @@
  * failed this way at the old 50k budget, some after the reply had posted.
  *
  * Contract under test: a five-call hosted run shaped like those, summing to
- * ~63k tokens, completes and posts; a run past the budget still stops.
+ * 64,410 tokens, completes and posts; a run past the budget still stops.
  */
 
 
