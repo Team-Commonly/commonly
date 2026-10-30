@@ -1,5 +1,6 @@
 import { claudeRuntimeInventory } from '../native-runtime-inventory.js';
 import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
+import { firstOutputWindowMs, spawnStalledError, watchFirstOutput } from '../first-output-watchdog.js';
 import { spawnInOwnGroup, wantsOwnProcessGroup } from '@commonlyai/seats/process-group';
 /**
  * claude adapter — wraps the local `claude` CLI as a Commonly agent.
@@ -88,7 +89,7 @@ import {
   prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_CODE, publicMcpUnavailableError, selectedMcpVersionDir,
 } from '../mcp-home.js';
 import { buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
-import { claudeConfigDirFor, claudeContextTokens } from '../session-recycle.js';
+import { claudeConfigDirFor, claudeContextTokens, claudeTranscriptPath } from '../session-recycle.js';
 import { skillsAsText } from '../skill-prompt.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
@@ -484,7 +485,10 @@ const publicSkillPromptArgs = async (skillSources) => {
 
 // `ownGroup` is set only under the run supervisor, which kills the child's
 // whole group; unsupervised, the spawn options are exactly what they were.
-const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false }) => new Promise((resolve, reject) => {
+const runClaude = ({
+  cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
+  transcriptPath = null, firstOutputMs = firstOutputWindowMs(), lockProbe,
+}) => new Promise((resolve, reject) => {
   const proc = spawnInOwnGroup(spawnImpl, cmd, args, {
     cwd,
     env,
@@ -499,15 +503,30 @@ const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl
     timedOut = true;
     proc.kill('SIGTERM');
   }, timeoutMs);
+  // A turn that never starts is killed long before the run timeout.
+  let stalled = null;
+  const watchdog = watchFirstOutput({
+    proc,
+    windowMs: firstOutputMs,
+    transcriptPath,
+    lockProbe,
+    onStall: (reason) => {
+      stalled = spawnStalledError({ label: 'claude', windowMs: firstOutputMs, reason });
+      proc.kill('SIGTERM');
+    },
+  });
 
   proc.stdout?.on('data', (chunk) => { stdout += chunk.toString(); });
   proc.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
   proc.on('error', (err) => {
     clearTimeout(timer);
+    watchdog.stop();
     reject(err);
   });
   proc.on('close', (code) => {
     clearTimeout(timer);
+    watchdog.stop();
+    if (stalled) return reject(stalled);
     if (timedOut) return reject(new Error(`claude timed out after ${timeoutMs}ms`));
     if (code !== 0) {
       // Report stdout too, not just stderr. In `-p` mode claude writes terminal
@@ -1200,6 +1219,10 @@ export default {
         credentials: spawnCredentials(spawnCtx),
         spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }), // test seam only — do not use in production
         ownGroup: wantsOwnProcessGroup(ctx),
+        transcriptPath: claudeTranscriptPath({
+          cwd: ctx.cwd, sessionId, configDir: claudeConfigDirFor({ ...env, HOME: childHome || env?.HOME }),
+        }),
+        lockProbe: ctx._lockProbe, // test seam only
       });
       // TASK-440: the context this turn left, read from the transcript the
       // child wrote under its own env (an isolated HOME for public seats).
@@ -1256,6 +1279,11 @@ export default {
           credentials: spawnCredentials(retryCtx),
           spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
           ownGroup: wantsOwnProcessGroup(ctx),
+          transcriptPath: claudeTranscriptPath({
+            cwd: ctx.cwd, sessionId: freshId,
+            configDir: claudeConfigDirFor({ ...retry.env, HOME: retry.childHome || retry.env?.HOME }),
+          }),
+          lockProbe: ctx._lockProbe,
         });
         const contextTokens = claudeContextTokens({
           cwd: ctx.cwd, sessionId: freshId,
