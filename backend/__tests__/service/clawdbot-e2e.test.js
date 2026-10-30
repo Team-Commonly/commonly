@@ -16,7 +16,7 @@ const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 
 const {
-  setupMongoDb, closeMongoDb, clearMongoDb, setupPgDb, closePgDb,
+  setupMongoDb, closeMongoDb, clearMongoDb, setupPgDb, clearPgDb, closePgDb,
 } = require('../utils/testUtils');
 
 // This suite exercises the legacy Mongo-backed Clawdbot flow. Freshness has
@@ -178,6 +178,9 @@ describe('Clawdbot E2E Integration Tests', () => {
     await AgentEvent.deleteMany({});
     await AgentProfile.deleteMany({});
     await Message.deleteMany({});
+    // Agent posts now land in PG (TASK-503). Clear them too, or one test's
+    // posts count toward the next test's consecutive-run cap.
+    await clearPgDb();
     await Summary.deleteMany({});
     // Reset agent runtime tokens so each beforeEach gets a fresh token
     await User.updateMany({ isBot: true }, { $set: { agentRuntimeTokens: [] } });
