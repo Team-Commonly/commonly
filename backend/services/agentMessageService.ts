@@ -60,6 +60,17 @@ const ATTACH_CLAIM_SCAN_LIMIT = 2000;
 // add an entry here only after observing it as a wrapper artifact in production.
 const BARE_RUNTIME_ARTIFACTS = new Set(['RGCTX']);
 
+// PostgreSQL is the only message store once configured (TASK-503). Any failed
+// read or write on it surfaces as this retryable error, never the driver's own
+// message, which can carry the database host and port.
+const messageStoreUnavailable = (op: string, cause: unknown): Error & { code: string; statusCode: number } => {
+  console.error(`[agent-msg] PostgreSQL message ${op} failed:`, (cause as Error)?.message);
+  return Object.assign(
+    new Error('Messages are temporarily unavailable. Please try again shortly.'),
+    { code: 'MESSAGE_STORE_UNAVAILABLE', statusCode: 503, cause },
+  );
+};
+
 const NO_REPLY_SENTINEL = 'NO_REPLY';
 // `trim()` does not remove every invisible Unicode code point. Normalize a
 // decision-only copy before total-match and leading-sentinel checks so one
@@ -1817,11 +1828,7 @@ class AgentMessageService {
         // PostgreSQL is the only message store once it is configured
         // (TASK-503). A failed write fails the post so the caller can retry;
         // a MongoDB row here would be invisible to pod chat, which reads PG.
-        console.error('[agent-msg] PostgreSQL message write failed:', (pgError as Error).message);
-        throw Object.assign(
-          new Error('Messages are temporarily unavailable. Please try again shortly.'),
-          { code: 'MESSAGE_STORE_UNAVAILABLE', statusCode: 503, cause: pgError },
-        );
+        throw messageStoreUnavailable('write', pgError);
       }
     }
 
@@ -2217,7 +2224,8 @@ class AgentMessageService {
     // caller fails closed rather than reading a store that has no new posts.
     if (PGMessage && process.env.PG_HOST) {
       const ids = await (PGMessage as { findAuthorIdsSince(id: unknown, at: Date): Promise<string[]> })
-        .findAuthorIdsSince(podId, since);
+        .findAuthorIdsSince(podId, since)
+        .catch((pgError: unknown) => { throw messageStoreUnavailable('author read', pgError); });
       return [...new Set(ids.map(String))];
     }
     const ids = await Message.distinct('userId', {
@@ -2266,7 +2274,7 @@ class AgentMessageService {
         limit,
         before?.toISOString() ?? null,
         threadRootId ?? null,
-      );
+      ).catch((pgError: unknown) => { throw messageStoreUnavailable('read', pgError); });
 
       const normalized = messages.map((msg) => {
         const username = (msg.username as string) || 'Unknown';
@@ -2295,7 +2303,7 @@ class AgentMessageService {
           // last literal dropping them, which is why the cue teaching
           // "continue in a thread" was held — a peer agent reading context
           // could not see that a thread existed. Explicit null = "not in a
-          // thread"; the Mongo fallback below omits the keys entirely =
+          // thread"; the no-PG Mongo read below omits the keys entirely =
           // "this server cannot say" (same convention as the frontend).
           reply_to_message_id: (msg.reply_to_message_id as string | number | null) ?? null,
           thread_root_id: (msg.thread_root_id as string | number | null) ?? null,

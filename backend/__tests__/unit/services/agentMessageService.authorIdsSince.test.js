@@ -37,7 +37,8 @@ describe('authorIdsSince', () => {
     process.env.PG_HOST = 'localhost';
     PGMessage.findAuthorIdsSince.mockRejectedValue(new Error('pg down'));
     Message.distinct.mockResolvedValue(['person-2']);
-    await expect(AgentMessageService.authorIdsSince('pod-1', SINCE)).rejects.toThrow('pg down');
+    await expect(AgentMessageService.authorIdsSince('pod-1', SINCE))
+      .rejects.toMatchObject({ code: 'MESSAGE_STORE_UNAVAILABLE', statusCode: 503 });
     expect(Message.distinct).not.toHaveBeenCalled();
   });
 

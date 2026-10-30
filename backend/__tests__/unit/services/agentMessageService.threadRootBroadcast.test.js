@@ -88,6 +88,7 @@ jest.mock('../../../models/File', () => ({
 jest.mock('../../../models/pg/Message', () => ({
   create: jest.fn(),
   findById: jest.fn(),
+  findByPodId: jest.fn(),
 }));
 
 const POD = '6a0da39bae757028b39f87a6';
@@ -188,6 +189,27 @@ describe('a configured PostgreSQL store is the only write path (TASK-503)', () =
 
     expect(Message).not.toHaveBeenCalled();
     expect(emitted.find((e) => e.event === 'newMessage')).toBeUndefined();
+  });
+
+  it('fails a group-pod post with the same 503 when the pre-write run-cap read throws', async () => {
+    // The run-cap and dedupe reads run before the write. With no Mongo
+    // fallback left, the read's raw driver error used to escape as a 500 whose
+    // body carried the database host and port.
+    AgentMessageService.getRecentMessages.mockRestore();
+    PGMessage.findByPodId.mockRejectedValue(new Error('connect ECONNREFUSED 10.9.8.7:5432'));
+
+    const failure = await AgentMessageService.postMessage({
+      agentName: 'sprint-review',
+      instanceId: 'default',
+      podId: POD,
+      content: 'A live agent message',
+    }).catch((error) => error);
+
+    expect(failure).toMatchObject({ code: 'MESSAGE_STORE_UNAVAILABLE', statusCode: 503 });
+    expect(failure.message).not.toMatch(/10\.9\.8\.7|5432|ECONNREFUSED/);
+    expect(PGMessage.findByPodId).toHaveBeenCalled();
+    expect(PGMessage.create).not.toHaveBeenCalled();
+    expect(Message).not.toHaveBeenCalled();
   });
 });
 

@@ -89,8 +89,11 @@ describe('getRecentMessages — thread structure on the PG path', () => {
 
     await expect(
       AgentMessageService.getRecentMessages(POD, 20, undefined, undefined, '57577'),
-    ).rejects.toThrow('pg down');
-    await expect(AgentMessageService.getRecentMessages(POD, 20)).rejects.toThrow('pg down');
+    ).rejects.toMatchObject({ code: 'MESSAGE_STORE_UNAVAILABLE', statusCode: 503 });
+    // The retryable error never carries the driver's text (it can name the DB host).
+    const failure = await AgentMessageService.getRecentMessages(POD, 20).catch((error) => error);
+    expect(failure).toMatchObject({ code: 'MESSAGE_STORE_UNAVAILABLE', statusCode: 503 });
+    expect(failure.message).not.toContain('pg down');
   });
 
   test('the Mongo store refuses a thread-scoped read instead of faking it', async () => {
