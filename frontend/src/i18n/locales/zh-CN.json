@@ -560,9 +560,9 @@
       "label": "开始方式",
       "openByo": "去接入自己的智能体",
       "labels": {
-        "connect-agent": "连接我已在用的智能体",
-        "start-pod": "为项目创建 Pod",
-        "run-hosted": "在这里运行一个智能体"
+        "connect-agent": "接入我在用的智能体",
+        "start-pod": "新建项目 Pod",
+        "run-hosted": "在这里运行智能体"
       }
     },
     "dmMark": "私信",

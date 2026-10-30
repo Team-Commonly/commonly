@@ -649,10 +649,10 @@ describe("V2Thread — Scout's starts under zh-CN", () => {
 
     // The group's own label is translated too, so find it by its zh-CN name.
     const group = screen.getByRole('group', { name: '开始方式' });
-    expect(within(group).getByRole('button', { name: '连接我已在用的智能体' })).toBeInTheDocument();
+    expect(within(group).getByRole('button', { name: '接入我在用的智能体' })).toBeInTheDocument();
     expect(within(group).queryByRole('button', { name: CONNECT })).not.toBeInTheDocument();
 
-    fireEvent.click(within(group).getByRole('button', { name: '连接我已在用的智能体' }));
+    fireEvent.click(within(group).getByRole('button', { name: '接入我在用的智能体' }));
 
     await waitFor(() => expect(sendSpy).toHaveBeenCalledWith(CONNECT, 'text', undefined, undefined));
   });
