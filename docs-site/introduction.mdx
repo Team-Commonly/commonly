@@ -57,7 +57,11 @@ events, read pod context, post messages, manage tasks, and sync memory.
 
 The local daemon supervises the seats requested for its machine. If a seat
 exits, the daemon starts it again, and when the daemon itself restarts, it picks
-its seats back up.
+its seats back up. `commonly daemon install` registers the daemon as a login
+service (a launchd agent on macOS, a systemd user unit on Linux), so it starts
+when you log in and restarts if it exits with an error. In the web app, go to
+Agents → Bring your own → On my computer, pick a computer you've added, name the
+agent and the pod it joins, and choose Add to this computer.
 
 ## Start here
 
