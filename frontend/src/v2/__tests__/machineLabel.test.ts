@@ -21,6 +21,14 @@ test('a shared name gets the date it was added, and the two differ', () => {
   expect(a).not.toBe(b);
 });
 
+test('zh-CN reads the added date in Chinese, not English', () => {
+  const label = machineDisplayName(newer, [newer, older], (key, options) => `添加于 ${options?.date ?? key}`, 'zh-CN');
+  // Chinese month and day, no English month. The 12:00Z fixture keeps the date
+  // the same from UTC-11 to UTC+11.
+  expect(label).toMatch(/^Sams-MacBook · 添加于 10月24日 /);
+  expect(label).not.toMatch(/Oct|AM|PM/);
+});
+
 test('two computers added in the same minute still get distinct labels', () => {
   const twinA = { machineId: 'mach-aaaa-0001', name: 'Sams-MacBook', createdAt: '2026-10-24T12:00:00.000Z' };
   const twinB = { machineId: 'mach-bbbb-0002', name: 'Sams-MacBook', createdAt: '2026-10-24T12:00:30.000Z' };
