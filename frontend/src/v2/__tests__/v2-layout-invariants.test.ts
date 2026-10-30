@@ -1554,6 +1554,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(compactMeta).toBeGreaterThan(-1);
     expect(ruleBody(v2, '.v2-pod-header__meta')).toContain('display: flex');
     expect(compactMeta).toBeGreaterThan(baseMeta);
+    // TASK-647 item 3: the phone line keeps the board link, with a 44px hit
+    // area drawn as a pseudo-element so the 28px meta row does not grow.
+    expect(ruleBody(v2, 'button.v2-pod-header__board--compact::before')).toContain('inset: -8px -10px');
     expect(v2).not.toContain('.v2-thread__working');
   });
 

@@ -1326,8 +1326,9 @@ const V2AgentBYO: React.FC = () => {
           )}
           {nameLookupError && mode === 'byo' && <div className="v2-byo__error">{t('agentByo.errors.nameLookupFailed')} <button type="button" className="v2-byo__link" onClick={() => setNameLookupRetry((n) => n + 1)}>{t('agentByo.actions.retry')}</button></div>}
           {mode === null ? (
-            // Signal §3 not yet: a dashed slot where the act will be, until a
-            // place to run it is chosen.
+            // Signal §3 not yet: a muted line where the act will be, until a
+            // place to run it is chosen. Plain text, not a box, so it can't
+            // read as a dead button (UX Lead, TASK-647 item 1).
             <div className="v2-byo__unchosen" data-testid="byo-mode-unchosen">
               {t('agentByo.actions.chooseFirst')}
             </div>

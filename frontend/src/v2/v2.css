@@ -6536,14 +6536,15 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 /* Signal §3 not yet: where the act will be, until a place to run it is
-   chosen. Sized like the submit button it stands in for. */
+   chosen. A muted hint line, not a box: a dashed slot read as a dead button
+   (TASK-647 item 1). */
 .v2-byo__unchosen {
   align-self: flex-start;
-  padding: 10px 18px;
-  border: 1px dashed var(--v2-border-strong);
-  border-radius: var(--v2-radius);
+  padding: 0;
+  border: 0;
   color: var(--v2-text-muted);
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 20px;
 }
 .v2-root button.v2-byo__link {
   /* A text action beside or under a line of copy ("Change", "Other ways to
@@ -12073,6 +12074,15 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-pod-header__board:hover { text-decoration: underline; }
+
+/* Phone: the board link keeps a 44px tap target without growing the line:
+   the hit area is a pseudo-element that extends past the 28px meta row. */
+.v2-root button.v2-pod-header__board--compact { position: relative; }
+.v2-root button.v2-pod-header__board--compact::before {
+  content: '';
+  position: absolute;
+  inset: -8px -10px;
+}
 
 .v2-root button.v2-thread__back { display: none; }
 
