@@ -12,7 +12,7 @@
  * never suffixes a label: a repaired label that now shares a name with
  * another agent is printed with its peers, and the operator decides.
  *
- * Run:  node --import tsx backend/scripts/repair-first-party-labels.ts [--apply]
+ * Run:  cd backend && npx ts-node scripts/repair-first-party-labels.ts [--apply]
  */
 import mongoose from 'mongoose';
 import { FIRST_PARTY_DISPLAY_NAMES } from '../constants/firstPartyDisplayNames';
