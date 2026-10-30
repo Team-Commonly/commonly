@@ -18,6 +18,8 @@ export const isDeferrableWhileClaimed = (event, trigger, claimedTaskIds) => {
   if (event.type !== 'message.posted') return false;
   const payload = event.payload || {};
   if (payload.addressed === true || payload.repliesToYourMessage === true) return false;
+  // A lease warning is about the seat's own row, though it names it differently.
+  if (payload.leaseWarningTaskId) return false;
   if (trigger !== 'agent' && trigger !== 'kernel') return false;
   if (payload.taskId && claimedTaskIds?.has(String(payload.taskId))) return false;
   return true;

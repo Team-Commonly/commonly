@@ -26,6 +26,7 @@ describe('isDeferrableWhileClaimed', () => {
     ['a broadcast about the seat\'s own row', broadcast({ taskId: 'TASK-642' }), 'kernel', false],
     ['an addressed broadcast', broadcast({ addressed: true }), 'agent', false],
     ['a reply to the seat\'s own message', broadcast({ repliesToYourMessage: true }), 'agent', false],
+    ['a lease warning for another row', broadcast({ leaseWarningTaskId: 'TASK-700' }), 'kernel', false],
     ['a chat mention', { type: 'chat.mention', payload: {} }, 'agent', false],
     ['a DM', { type: 'dm.message', payload: {} }, 'agent', false],
     ['a heartbeat', { type: 'heartbeat', payload: {} }, 'kernel', false],
