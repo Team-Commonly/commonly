@@ -120,6 +120,9 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     mockPage({ machines: [{ machineId: 'm1', name: 'Sams-MacBook', status: 'online', lastSeenAt: new Date().toISOString() }] });
     renderPage();
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/machines', expect.anything()));
+    // Select Bring your own first: with mode still null the line is absent for
+    // a different reason, and the test would pass with the machines guard removed.
+    fireEvent.click(await screen.findByTestId('byo-mode-byo'));
     expect(screen.queryByTestId('byo-quick-try')).toBeNull();
     expect(screen.queryByTestId('byo-add-computer')).toBeNull();
   });
