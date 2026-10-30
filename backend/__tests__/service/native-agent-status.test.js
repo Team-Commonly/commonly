@@ -69,6 +69,32 @@ describe('commonly_agent_status', () => {
     expect(result.content.agents[0].state).toBe('active');
   });
 
+  it('keeps this pod\'s agents when the asker has more than 100 installs elsewhere', async () => {
+    // Inserted before the pod's own row, so a capped $or read could cut it.
+    await AgentInstallation.insertMany(Array.from({ length: 110 }, (_, n) => ({
+      agentName: 'claude-code', instanceId: `elsewhere-${n}`, podId: new mongoose.Types.ObjectId(), version: '1',
+      installedBy: owner._id, config: new Map([['runtime', { runtimeType: 'wrapper' }]]),
+    })));
+    await AgentInstallation.create({
+      agentName: 'claude-code', instanceId: 'in-scout-pod', podId: scoutPod, version: '1',
+      installedBy: new mongoose.Types.ObjectId(), config: new Map([['runtime', { runtimeType: 'wrapper' }]]),
+    });
+    const { agents } = (await ask(String(owner._id))).content;
+    expect(agents[0]).toEqual(expect.objectContaining({ inThisPod: true }));
+    expect(agents.filter((a) => a.inThisPod)).toHaveLength(1);
+    expect(agents.filter((a) => !a.inThisPod)).toHaveLength(100);
+  });
+
+  it('reports a failed key-store read as a failed call, not as never-connected', async () => {
+    const spy = jest.spyOn(AgentCredential, 'find').mockImplementation(() => { throw new Error('ledger down'); });
+    try {
+      const result = await ask(String(owner._id));
+      expect(result.content).toEqual({ ok: false, error: 'ledger down' });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('does not list another person\'s agents from other pods', async () => {
     const result = await ask(String(new mongoose.Types.ObjectId()));
     expect(result.content.agents).toEqual([]);

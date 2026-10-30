@@ -1202,17 +1202,19 @@ export async function dispatchTool(
         // This pod's agents, plus the ones the person asking installed in
         // other pods: someone who connected an agent from another pod still
         // asks Scout here whether it is running. Only their own installs, and
-        // only name and state, never the other pod.
+        // only name and state, never the other pod. This pod is read uncapped,
+        // as the roster reads it; only the asker's installs elsewhere are
+        // capped, so a busy asker never pushes an agent here out of the answer.
         const requesterId = ctx.computerRequesterId;
-        const rows = await AgentInstallation.find({
-          status: 'active',
-          ...(requesterId && mongoose.Types.ObjectId.isValid(requesterId)
-            ? { $or: [{ podId: ctx.podId }, { installedBy: requesterId }] }
-            : { podId: ctx.podId }),
-        }).select('agentName instanceId displayName config podId runtimeTokens.lastUsedAt').limit(100).lean();
+        const fields = 'agentName instanceId displayName config podId runtimeTokens.lastUsedAt';
+        const podRows = await AgentInstallation.find({ status: 'active', podId: ctx.podId }).select(fields).lean();
+        const otherRows = requesterId && mongoose.Types.ObjectId.isValid(requesterId)
+          ? await AgentInstallation.find({ status: 'active', installedBy: requesterId, podId: { $ne: ctx.podId } })
+            .select(fields).sort({ _id: 1 }).limit(100).lean()
+          : [];
         const seen = new Set<string>();
-        const installations = (rows as Array<Record<string, any>>)
-          .sort((a, b) => Number(String(b.podId) === String(ctx.podId)) - Number(String(a.podId) === String(ctx.podId)))
+        // This pod's rows come first, so a duplicate keeps its in-pod copy.
+        const installations = ([...podRows, ...otherRows] as Array<Record<string, any>>)
           .filter((i) => {
             const key = `${i.agentName}:${i.instanceId || 'default'}`;
             if (seen.has(key)) return false;
