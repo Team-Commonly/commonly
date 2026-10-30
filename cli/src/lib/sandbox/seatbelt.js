@@ -45,8 +45,8 @@ const PLATFORM_BASELINE = String.raw`
     (path "/dev/null")
     (vnode-type CHARACTER-DEVICE)))
 
-; Loader + standard system resources. Some Node builds read this one macOS
-; OpenSSL config file before the CLI entrypoint runs.
+; Loader + standard system resources. Node opens this one macOS OpenSSL config
+; file at startup; the macOS adapter job's Node was denied it without this rule.
 (allow file-read* file-test-existence
   (subpath "/Library/Apple")
   (subpath "/Library/Filesystems/NetFSPlugins")

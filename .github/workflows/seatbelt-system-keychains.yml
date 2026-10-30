@@ -5,6 +5,7 @@ on:
     paths:
       - 'cli/src/lib/sandbox/seatbelt.js'
       - 'cli/__tests__/seatbelt.system-keychains.smoke.test.mjs'
+      - 'cli/__tests__/seatbelt.claude-keychain-read.smoke.test.mjs'
       - '.github/workflows/seatbelt-system-keychains.yml'
 
 permissions:
@@ -15,6 +16,8 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -26,10 +29,13 @@ jobs:
       - name: Exercise system Keychains denials and real adapter turns
         env:
           COMMONLY_OPENCODE_SMOKE_BINARY: ${{ runner.temp }}/opencode-smoke/node_modules/.bin/opencode
+          # Writes a probe item into this disposable runner's login keychain.
+          COMMONLY_KEYCHAIN_PROBE: '1'
         run: |
           cd cli
           node --experimental-vm-modules node_modules/.bin/jest \
             __tests__/seatbelt.system-keychains.smoke.test.mjs \
+            __tests__/seatbelt.claude-keychain-read.smoke.test.mjs \
             __tests__/adapters.opencode.seatbelt.smoke.test.mjs \
             __tests__/adapters.qwen.seatbelt.smoke.test.mjs \
             __tests__/seatbelt.claude-runtime.smoke.test.mjs \
