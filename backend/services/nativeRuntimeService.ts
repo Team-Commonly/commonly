@@ -2199,6 +2199,12 @@ export async function runAgent(
               webResults.forEach(({ index }) => {
                 messages[index] = { ...messages[index], content: JSON.stringify({ ok: false, error: WEB_SET_ASIDE_NOTICE }) };
               });
+              // The model's own text after the first web result may quote it.
+              // Keep its tool calls, so every tool result still has its call.
+              const firstWeb = Math.min(...webResults.map(({ index }) => index));
+              for (let i = firstWeb + 1; i < messages.length; i += 1) {
+                if (messages[i]?.role === 'assistant' && messages[i].content) messages[i] = { ...messages[i], content: null };
+              }
               run.webSetAside = Number(run.webSetAside || 0) + webResults.length;
               webResults.splice(0, webResults.length);
               webSetAsideAll = true;

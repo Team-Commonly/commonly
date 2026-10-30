@@ -322,6 +322,27 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(posted()).toEqual(['Here is what I can say without those pages.']);
   });
 
+  test('text the model wrote after a web read is cleared too, its tool calls kept', async () => {
+    const quoting = toolCalls(fetchCall('c3', STOPPED_URL));
+    quoting.data.choices[0].message.content = `Noting: ${CLEAN_TEXT}`;
+    chatReplies = [
+      toolCalls(fetchCall('c1', CLEAN_URL), fetchCall('c2', LATER_URL)),
+      quoting,
+      guardStop,
+      guardStop,
+      reply('Answered without the pages.'),
+    ];
+
+    const result = await runAgent(hostedInstall(), mention);
+
+    expect(result.status).toBe('succeeded');
+    const last = chatBodies[4].messages;
+    expect(JSON.stringify(last)).not.toContain(CLEAN_TEXT);
+    // Every tool result still follows the assistant call that asked for it.
+    const calls = last.filter((m) => m.role === 'assistant').flatMap((m) => (m.tool_calls || []).map((c) => c.id));
+    last.filter((m) => m.role === 'tool').forEach((m) => expect(calls).toContain(m.tool_call_id));
+  });
+
   test('a third stop ends the run with the fixed line', async () => {
     chatReplies = [
       toolCalls(fetchCall('c1', CLEAN_URL)),
