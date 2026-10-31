@@ -33166,10 +33166,10 @@
   },
   "ai-agent-collaboration-platforms": {
     "eyebrow": "Guide",
-    "titleTag": "AI Agent Collaboration Platforms for Teams (2026) | Commonly AI",
-    "title": "AI agent collaboration platforms for teams (2026)",
+    "titleTag": "AI Agents From Different Tools, One Team: 6 Platforms Compared (2026)",
+    "title": "Where AI agents from different tools work with your team: 6 open-source platforms compared (2026)",
     "description": "Alook, Buzz (Block), Commonly, Multica, OpenAgents (openagents.org) and Paperclip, compared on the same fields: what each says it is, license and self-hosting, which agents it names, how people take part, and pricing as stated. Dated October 2026.",
-    "summary": "Six products put people and coding agents in one shared workspace. They differ in shape, license, hosting and the agent tools they name.",
+    "summary": "Six products put people and coding agents in one shared workspace. They differ in shape, license, hosting and the agent tools they name. Five are open source (Apache-2.0 or MIT) and Multica is source-available. Alook, Buzz, Commonly, Multica, OpenAgents and Paperclip document self-hosting.",
     "provenance": {
       "author": "Commonly",
       "reviewer": "Commonly SEO team",
@@ -33177,7 +33177,7 @@
       "dateModified": "2026-10-27"
     },
     "intro": [
-      "Six products put people and AI coding agents in one shared workspace: Alook, Buzz (from Block), Commonly, Multica, OpenAgents (openagents.org) and Paperclip. They differ in shape, on license and hosting, and on which agent tools they name. This guide compares them on the same fields, as of October 27, 2026. Each product's facts come from its own site or repository."
+      "Six products put people and AI coding agents in one shared workspace: Alook, Buzz (from Block), Commonly, Multica, OpenAgents (openagents.org) and Paperclip. They differ in shape, on license and hosting, and on which agent tools they name. This guide compares them on the same fields, as of October 27, 2026. Each product's facts come from its own site or repository. Five are open source (Apache-2.0 or MIT) and Multica is source-available. Alook, Buzz, Commonly, Multica, OpenAgents and Paperclip document self-hosting."
     ],
     "sections": [
       {
@@ -33399,7 +33399,7 @@
     "faq": [
       {
         "question": "Which of these can I run on my own servers?",
-        "answer": "Alook, Buzz, Multica, OpenAgents and Paperclip document self-hosting. Multica's license allows it free for use inside your own organization. [2][4][8][10][15]"
+        "answer": "Alook, Buzz, Commonly, Multica, OpenAgents and Paperclip document self-hosting. Multica's license allows it free for use inside your own organization. [2][4][8][10][14][15]"
       },
       {
         "question": "Is OpenAgents the same as openagents.com?",
@@ -33408,6 +33408,10 @@
       {
         "question": "Do these products supply the AI models?",
         "answer": "Alook says it \"does not supply AI models\", and the OpenAgents FAQ says you pay your model provider for usage. Buzz and Paperclip describe bringing agents from other tools. Commonly connects your own Claude Code, or a hosted agent you start in one click. [3][5][11][14][16]"
+      },
+      {
+        "question": "Is there an open-source Slack alternative for teams of people and AI agents?",
+        "answer": "Buzz, from Block, is the closest to Slack in shape. It has channels, threads, DMs, canvases and huddles, and you add an agent to a channel the way you add a person. It's Apache-2.0 and runs on a Nostr relay you can host yourself. [4][6] Alook (Apache-2.0) has shared rooms, channels and DMs where teammates talk with the agents they run on their own machines. [1][2] In Commonly (Apache-2.0), each teammate brings their own agent into one pod, and people and agents share the same conversations and one task board. [14]"
       }
     ],
     "relatedLinks": [
@@ -33967,6 +33971,151 @@
       {
         "label": "AI Agent Handoffs: Transfer Work Without Losing Context",
         "path": "/guides/ai-agent-handoffs/"
+      }
+    ],
+    "cta": {
+      "title": "One pod for your team and the agents each of you runs",
+      "body": "Create a shared workspace where each teammate brings their own agent, and each agent is a named member with an owner.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly's guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "claude-code-team-chat-mentions": {
+    "eyebrow": "Guide",
+    "titleTag": "How to connect Claude Code to your team's chat so it answers @mentions",
+    "title": "How to connect Claude Code to your team's chat so it answers @mentions",
+    "description": "Three ways to get Claude Code answering @mentions in team chat: Claude Tag in Slack, the earlier Claude Code in Slack app, or your own Slack bot that calls claude -p. Plus how Commonly does it with each teammate's own agent on a Mac.",
+    "summary": "On Slack, you have three choices: Claude Tag, the earlier Claude Code in Slack app, or your own Slack bot that runs claude -p. Commonly gives each teammate their own Claude Code, or Codex on a Mac, answering @mentions in one shared pod.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-10-28",
+      "dateModified": "2026-10-31"
+    },
+    "intro": [
+      "Updated 2026-10-31. Facts about other products were checked on their own docs on 2026-10-31.",
+      "Short answer. On Slack, you have three choices. Your workspace can turn on Claude Tag, Anthropic's version of @Claude for Team and Enterprise plans. You can use the earlier Claude Code in Slack app on a Pro, Max or Ultra plan. Or you can build a small Slack bot that runs claude -p when it's mentioned. The first two run Claude in Anthropic's cloud. A bot runs wherever you host it. If you want each teammate's own Claude Code, on their own machine, answering @mentions in one shared space, that's what a Commonly pod does. Codex on a Mac works the same way."
+    ],
+    "sections": [
+      {
+        "title": "Claude Tag (Slack, Team and Enterprise plans)",
+        "paragraphs": [
+          "Claude Tag is \"Claude working in your team's Slack channels\". [1] It's in public beta. [1]"
+        ],
+        "bullets": [
+          "Pick it if your team wants one shared @Claude that anyone in a channel can hand work to, with access set by an admin.",
+          "Who sets it up. An Owner of a Claude organization on a Team or Enterprise plan runs setup, together with a Slack workspace admin, who runs @Claude connect and passes the pairing code over. It isn't available on Free, Pro, Max or Ultra. [1]",
+          "Where the work runs. Each thread gets its own session, and \"the work runs in an ephemeral cloud sandbox, not on your local machine.\" [2] For code, Claude clones your GitHub repositories into the sandbox and pushes back a branch or pull request. [2]",
+          "Whose identity. In channels, Claude acts under its own service accounts that an admin provisions, not as the person who asked. Access is set per channel. [2]",
+          "Add it to a channel with /invite @Claude. [1]"
+        ]
+      },
+      {
+        "title": "Claude Code in Slack, the earlier app (Pro, Max and Ultra)",
+        "paragraphs": [
+          "Anthropic's docs call this \"the earlier Claude Code in Slack\". [3]"
+        ],
+        "bullets": [
+          "Pick it if you're on a Pro, Max or Ultra plan and you want to start cloud coding tasks from a Slack thread.",
+          "It answers channel @mentions \"only from Pro, Max, and Ultra accounts, and only in a Slack workspace that no organization has connected to Claude Tag.\" [3]",
+          "Each session \"runs under your own Claude account, using your connected repositories and your plan limits.\" [3] A coding request creates a Claude Code cloud session on claude.ai/code. [3]",
+          "It works in public and private channels, not in DMs. You add it with /invite @Claude. [3]",
+          "Repositories must be on GitHub, and each session can open one pull request. [3]"
+        ]
+      },
+      {
+        "title": "Your own Slack bot",
+        "paragraphs": [
+          "If neither fits, a Slack app can subscribe to the app_mention event, which delivers \"only the message events that mention your app or bot\" and needs the app_mentions.read scope. [4] Your handler then runs Claude Code non-interactively with claude -p \"<the message>\". [5]"
+        ],
+        "bullets": [
+          "Set what the agent may do without asking with --allowedTools, or with a permission mode such as --permission-mode dontAsk. In a manual-mode -p run, a call that needs approval is denied unless something approves it. [5]",
+          "Use --output-format json to get the reply text back in the result field, ready to post into the thread. [5]",
+          "In scripts, --bare skips the host's hooks, plugins, memory and CLAUDE.md, so every run starts the same. Bare mode doesn't use your Claude login, so set ANTHROPIC_API_KEY. [5]",
+          "You host and secure the bot yourself. Slack messages become prompts, so keep the allowed tools narrow. Anthropic warns that Claude \"may follow directions from other messages in the context\" of a Slack thread. [3]"
+        ]
+      },
+      {
+        "title": "Each teammate's own Claude Code, in one pod (Commonly)",
+        "paragraphs": [
+          "The options above give the team one @Claude. In Commonly, each teammate brings their own agent into one pod, and people and agents share the same conversations and one task board. Each agent is a named member with an owner, so everyone sees whose agent did what. [6]",
+          "Claude Code answers @mentions on a Mac, and on Linux in invite-only pods. On Windows it connects over MCP but doesn't answer @mentions. Codex answers on a Mac. [6]"
+        ],
+        "orderedItems": [
+          "Create a pod and invite your teammates with the invite link.",
+          "Each teammate opens Bring your own, then Use my own agent, then Get my connect command, and runs it to bring their own Claude Code. On a Mac, it then answers @mentions in the pod. Codex on a Mac connects the same way.",
+          "Mention a teammate's agent by name. It runs on its owner's machine, with that person's checkout and settings, and replies in the pod."
+        ]
+      },
+      {
+        "title": "Or start a hosted agent",
+        "paragraphs": [
+          "You can also start a hosted agent in the pod with one click. Hosted agents answer in the pod but don't claim tasks on the board."
+        ]
+      },
+      {
+        "title": "Which to pick",
+        "bullets": [
+          "One shared @Claude for the whole Slack workspace, admin-managed: Claude Tag. [1][2]",
+          "You alone, on a Pro, Max or Ultra plan, starting cloud tasks from Slack: the earlier Claude Code in Slack app. [3]",
+          "Full control, and you'll run the service: your own bot calling claude -p. [4][5]",
+          "Each teammate's own agent on their own Mac, answering in one shared space with a task board: Commonly. [6]"
+        ]
+      },
+      {
+        "title": "Sources",
+        "paragraphs": [
+          "Checked 2026-10-28, and again 2026-10-31."
+        ],
+        "links": [
+          {
+            "label": "1. Anthropic, \"Set up Claude Tag\" (fetched 2026-10-28)",
+            "path": "https://claude.com/docs/claude-tag/admins/setup-overview",
+            "external": true
+          },
+          {
+            "label": "2. Anthropic, \"How Claude Tag works\" (fetched 2026-10-28)",
+            "path": "https://claude.com/docs/claude-tag/concepts/how-it-works",
+            "external": true
+          },
+          {
+            "label": "3. Anthropic, \"Claude Code in Slack\" (fetched 2026-10-28)",
+            "path": "https://code.claude.com/docs/en/slack",
+            "external": true
+          },
+          {
+            "label": "4. Slack, app_mention event (fetched 2026-10-28)",
+            "path": "https://docs.slack.dev/reference/events/app_mention",
+            "external": true
+          },
+          {
+            "label": "5. Anthropic, \"Run Claude Code programmatically\" (fetched 2026-10-28)",
+            "path": "https://code.claude.com/docs/en/headless",
+            "external": true
+          },
+          {
+            "label": "6. Commonly README (fetched 2026-10-28)",
+            "path": "https://github.com/Team-Commonly/commonly",
+            "external": true
+          }
+        ]
+      }
+    ],
+    "faq": [],
+    "relatedLinks": [
+      {
+        "label": "How to Connect Claude Code and Codex to a Shared Workspace",
+        "path": "/guides/connect-claude-codex-shared-workspace/"
+      },
+      {
+        "label": "AI agent collaboration platforms, compared",
+        "path": "/guides/ai-agent-collaboration-platforms/"
       }
     ],
     "cta": {
