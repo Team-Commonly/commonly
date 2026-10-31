@@ -324,7 +324,8 @@ const { backfillGrantOwners } = require('./services/grantOwnerBinding');
 // refuse unbound grants. This runs at boot without holding requests, so a
 // revoke that lands while it is still scanning can be refused until it
 // finishes; the scan is idempotent and a restart re-runs it for the rest.
-mongoose.connection.once('open', () => {
+// A boot job, so only the service singleton registers it.
+if (startServices) mongoose.connection.once('open', () => {
   if (process.env.NODE_ENV === 'test') return;
   backfillGrantOwners()
     .then((result: { scanned: number; bound: number; unbound: number }) => console.log(
