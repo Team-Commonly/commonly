@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import V2AgentMemory, { groupSections } from '../agents/V2AgentMemory';
 
@@ -64,6 +64,24 @@ describe('V2AgentMemory', () => {
     expect(screen.getByRole('heading', { name: /How I work/ })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Journal/ })).toBeInTheDocument();
     expect(axios.get).toHaveBeenCalledWith('/api/agent-memory/maya-claude/default');
+  });
+
+  it('filters notes by the search box and keeps only groups that still match', async () => {
+    axios.get.mockResolvedValue({ data: {
+      viewerRole: 'owner', totalEntries: 3,
+      sections: [named('long_term', ['Rules', 'Host notes']), section('daily', 1)],
+    } });
+    render(
+      <MemoryRouter initialEntries={['/v2/agents/maya-claude/default/memory']}>
+        <Routes>
+          <Route path="/v2/agents/:agentName/:instanceId/memory" element={<V2AgentMemory />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByRole('heading', { name: /Journal/ })).toBeInTheDocument());
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'host' } });
+    expect(screen.getByText('Host notes')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Journal/ })).toBeNull();
   });
 
   it('shows a denied notice instead of the index when the viewer is not owner or admin', async () => {

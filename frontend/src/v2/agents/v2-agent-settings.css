@@ -127,7 +127,21 @@
   .v2-agent-settings__key-meta { display: grid; gap: 4px; }
 }
 
-/* Agent memory tab (TASK-690 slice 1): grouped index, one column at 390. */
+/* Agent memory tab (TASK-690 slice 1): group nav beside the notes at 1440,
+   stacked below 768. Tags and recency are not drawn: the API has no data
+   for them yet (slice 2). */
+.v2-agent-memory { display: grid; gap: 20px; }
+@media (min-width: 768px) {
+  .v2-agent-memory { grid-template-columns: 200px minmax(0, 1fr); align-items: start; }
+}
+.v2-agent-memory__nav { display: grid; gap: 8px; }
+.v2-agent-memory__search { width: 100%; height: 32px; box-sizing: border-box; padding: 0 10px; border-radius: 8px; border: 1px solid var(--v2-border, #d0d4dc); background: transparent; color: inherit; font: inherit; font-size: 13px; }
+.v2-agent-memory__nav ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.v2-agent-memory__nav a { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 8px; color: inherit; text-decoration: none; font-size: 13.5px; }
+.v2-agent-memory__nav a:hover { background: var(--v2-hover, rgba(127, 127, 127, 0.12)); }
+.v2-agent-memory__nav a .v2-aprofile__count { margin-left: auto; }
+.v2-agent-memory__group { display: grid; gap: 8px; }
+.v2-agent-memory__group-title { display: flex; align-items: center; gap: 8px; font-size: 15px; margin: 0; }
 .v2-agent-memory__sec { margin-top: 12px; }
 .v2-agent-memory__sec-title { font-size: 14px; margin: 0 0 6px; }
 .v2-agent-memory__notes { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }

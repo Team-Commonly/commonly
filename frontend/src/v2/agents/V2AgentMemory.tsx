@@ -67,6 +67,7 @@ const V2AgentMemory: React.FC = () => {
   const { agentName = '', instanceId = '' } = useParams<{ agentName: string; instanceId: string }>();
   const [index, setIndex] = useState<MemoryIndex | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'denied'>('loading');
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -102,27 +103,68 @@ const V2AgentMemory: React.FC = () => {
           {t('agentProfile.memory.none', { defaultValue: 'Memory is visible to the agent owner and admins.' })}
         </p>
       )}
-      {state === 'ready' && index && groupSections(index.sections).filter((g) => g.sections.length > 0).map((group) => (
-        <section key={group.id} className="v2-agent-settings__section" aria-labelledby={`memory-group-${group.id}`}>
-          <h2 id={`memory-group-${group.id}`} className="v2-agent-settings__section-title">
-            {group.label}
-            <span className="v2-aprofile__count">{group.sections.reduce((n, s) => n + s.notes.length, 0)}</span>
-          </h2>
-          {group.sections.map((sec) => (
-            <div key={sec.key} className="v2-agent-memory__sec">
-              <h3 className="v2-agent-memory__sec-title">{sec.label}</h3>
-              <ul className="v2-agent-memory__notes">
-                {sec.notes.map((n, i) => (
-                  <li key={i} className="v2-agent-memory__note">
-                    <span className="v2-agent-memory__note-h">{n.header}</span>
-                    {n.snippet && <span className="v2-agent-memory__note-s">{n.snippet}</span>}
+      {state === 'ready' && index && (() => {
+        const needle = query.trim().toLowerCase();
+        const groups = groupSections(index.sections)
+          .map((group) => ({
+            ...group,
+            sections: group.sections
+              .map((sec) => ({
+                ...sec,
+                notes: needle
+                  ? sec.notes.filter((n) => `${n.header} ${n.snippet}`.toLowerCase().includes(needle))
+                  : sec.notes,
+              }))
+              .filter((sec) => sec.notes.length > 0),
+          }));
+        return (
+          <div className="v2-agent-memory">
+            <aside className="v2-agent-memory__nav" aria-label={t('agentSettings.memory', { defaultValue: 'Memory' })}>
+              <input
+                type="search"
+                className="v2-agent-memory__search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t('agentProfile.memory.search', { defaultValue: 'Search memory' })}
+                aria-label={t('agentProfile.memory.search', { defaultValue: 'Search memory' })}
+              />
+              <ul>
+                {groups.map((group) => (
+                  <li key={group.id}>
+                    <a href={`#memory-group-${group.id}`}>
+                      {group.label}
+                      <span className="v2-aprofile__count">{group.sections.reduce((n, s) => n + s.notes.length, 0)}</span>
+                    </a>
                   </li>
                 ))}
               </ul>
+            </aside>
+            <div className="v2-agent-memory__body">
+              {groups.filter((g) => g.sections.length > 0).map((group) => (
+                <section key={group.id} className="v2-agent-memory__group" aria-labelledby={`memory-group-${group.id}`}>
+                  <h2 id={`memory-group-${group.id}`} className="v2-agent-memory__group-title">
+                    {group.label}
+                    <span className="v2-aprofile__count">{group.sections.reduce((n, s) => n + s.notes.length, 0)}</span>
+                  </h2>
+                  {group.sections.map((sec) => (
+                    <div key={sec.key} className="v2-agent-memory__sec">
+                      <h3 className="v2-agent-memory__sec-title">{sec.label}</h3>
+                      <ul className="v2-agent-memory__notes">
+                        {sec.notes.map((n, i) => (
+                          <li key={i} className="v2-agent-memory__note">
+                            <span className="v2-agent-memory__note-h">{n.header}</span>
+                            {n.snippet && <span className="v2-agent-memory__note-s">{n.snippet}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </section>
+              ))}
             </div>
-          ))}
-        </section>
-      ))}
+          </div>
+        );
+      })()}
     </main>
   );
 };
