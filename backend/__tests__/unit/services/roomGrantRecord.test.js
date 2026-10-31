@@ -168,3 +168,58 @@ test('a pod outside RECORD_V1_PODS gets no lines, and its grants still revoke', 
   expect(mockChains.size).toBe(0);
   expect((await mongoose.model('RoomGrant').findById(grant._id)).revocationReason).toBe('task.done');
 });
+
+// TASK-333: a mint racing a close. Only Date is faked, so both writers can be
+// given one timestamp; the driver's timers and hrtime stay real.
+const DATE_ONLY = {
+  doNotFake: ['hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame', 'cancelAnimationFrame',
+    'requestIdleCallback', 'cancelIdleCallback', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval',
+    'setTimeout', 'clearTimeout'],
+};
+const RoomGrant = () => mongoose.model('RoomGrant');
+const raceCreate = (between) => {
+  const realCreate = RoomGrant().create.bind(RoomGrant());
+  return jest.spyOn(RoomGrant(), 'create').mockImplementationOnce(async (doc) => {
+    const created = await realCreate(doc);
+    await between(created);
+    return created;
+  });
+};
+
+test('a grant a refused mint revoked in the same millisecond is not named by the close', async () => {
+  let live;
+  jest.useFakeTimers({ ...DATE_ONLY, now: Date.now() });
+  try {
+    live = await service.mintGrant(input());
+    const spy = raceCreate(() => Task.updateOne({ podId: POD, taskId: 'TASK-1' }, { $inc: { grantEpoch: 1 } }));
+    await expect(service.mintGrant(input())).rejects.toMatchObject({ code: 'task_closed' });
+    spy.mockRestore();
+    await close();
+  } finally {
+    jest.useRealTimers();
+  }
+  const revoked = (await chainLines()).filter((l) => l.kind === 'grant.revoked');
+  expect(revoked.map((l) => l.data.grantIds)).toEqual([[live.grantId]]);
+});
+
+test('a refused mint the close already revoked keeps the close\'s revocation and stays named', async () => {
+  let closedAt;
+  jest.useFakeTimers({ ...DATE_ONLY, now: Date.now() });
+  try {
+    const spy = raceCreate(async (created) => {
+      await close();
+      closedAt = (await RoomGrant().findById(created._id)).revokedAt;
+      jest.setSystemTime(Date.now() + 1000);
+    });
+    await expect(service.mintGrant(input())).rejects.toMatchObject({ code: 'task_closed' });
+    spy.mockRestore();
+  } finally {
+    jest.useRealTimers();
+  }
+  const [grant] = await RoomGrant().find({}).lean();
+  expect(closedAt).toBeInstanceOf(Date);
+  expect(grant.revokedAt).toEqual(closedAt);
+  expect(grant.revocationReason).toBe('task.done');
+  const revoked = (await chainLines()).filter((l) => l.kind === 'grant.revoked');
+  expect(revoked.map((l) => l.data.grantIds)).toEqual([[grant.grantId]]);
+});
