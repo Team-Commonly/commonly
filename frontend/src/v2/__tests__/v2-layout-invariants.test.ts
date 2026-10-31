@@ -341,6 +341,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(item).toContain('height: 32px');
     expect(item).toContain('border-radius: var(--v2-radius)');
     expect(active).toContain('background: var(--v2-ink)');
+    // TASK-701: inactive glyphs read a token, so the dark set can lift them.
+    expect(item).toContain('color: var(--v2-rail-icon)');
   });
 
   test('the rail account avatar matches the nav-mark axis as a 32px hard-edged square', () => {

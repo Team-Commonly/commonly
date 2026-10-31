@@ -29,6 +29,12 @@ body.modern-ui.v2-canvas {
   --v2-border-strong: #98a2b3;
   --v2-text-primary: #101828;
   --v2-message-text: #1f2937;
+  /* TASK-701: inactive rail glyphs, join-radio outlines (3:1 on white and
+     #f2f4f7) and the neutral selected pod row. Dark values sit in both dark
+     sets below. */
+  --v2-rail-icon: #374151;
+  --v2-control-outline: #667085;
+  --v2-row-active: #e9edfb;
   --v2-text-secondary: #475467;
   --v2-text-tertiary: #667085;
   --v2-text-muted: #667085;
@@ -200,6 +206,9 @@ body.modern-ui.v2-canvas {
     --v2-border-strong: #5f6979;
     --v2-text-primary: #e8ebf1;
     --v2-message-text: #e8ebf1;
+    --v2-rail-icon: #aeb6c4;
+    --v2-control-outline: #737e92;
+    --v2-row-active: #1e2531;
     --v2-text-secondary: #aeb6c4;
     --v2-text-tertiary: #8b94a5;
     --v2-text-muted: #8b94a5;
@@ -246,6 +255,9 @@ body.modern-ui.v2-canvas {
       --v2-border-strong: #5f6979;
       --v2-text-primary: #e8ebf1;
       --v2-message-text: #e8ebf1;
+      --v2-rail-icon: #aeb6c4;
+      --v2-control-outline: #737e92;
+      --v2-row-active: #1e2531;
       --v2-text-secondary: #aeb6c4;
       --v2-text-tertiary: #8b94a5;
       --v2-text-muted: #8b94a5;
@@ -815,7 +827,7 @@ body.modern-ui.v2-canvas {
   border-radius: var(--v2-radius);
   font-size: 14px;
   font-weight: 600;
-  color: #374151;
+  color: var(--v2-rail-icon);
   background: var(--v2-surface-hover);
   text-align: left;
   transition: background 80ms ease;
@@ -1138,12 +1150,29 @@ body.modern-ui.v2-canvas {
   cursor: pointer;
 }
 
+/* Native radios ignore border tokens, so draw the outline from one. Checked, the
+   border thickens into the accent dot, so no cobalt background is added. */
 .v2-pods__join-policy input,
-.v2-pod-join-settings input { accent-color: var(--v2-accent); }
+.v2-pod-join-settings input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  flex-shrink: 0;
+  border: 1.5px solid var(--v2-control-outline);
+  border-radius: 50%;
+  background: var(--v2-surface);
+  cursor: pointer;
+}
+
+.v2-pods__join-policy input:checked,
+.v2-pod-join-settings input:checked {
+  border: 4px solid var(--v2-accent);
+}
 
 .v2-pods__join-policy-hint {
   margin: 0;
-  color: var(--v2-text-tertiary);
+  color: var(--v2-text-secondary);
   font: 400 var(--v2-fs-meta)/16px var(--v2-font);
 }
 
@@ -1311,7 +1340,7 @@ body.modern-ui.v2-canvas {
    the low-specificity default reset. Source order then resolves the local
    active-row variants. */
 .v2-root button.v2-pods__item--active {
-  background: var(--v2-accent-soft);
+  background: var(--v2-row-active);
   border-color: transparent;
   position: relative;
 }
