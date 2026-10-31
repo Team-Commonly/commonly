@@ -221,7 +221,7 @@ router.get('/ready', async (_req: unknown, res: Res) => {
 });
 
 // Anonymous, and each hit makes a request to the agent gateway, so it gets the
-// IP tier. The one caller (AgentsHub) asks once per page load.
+// IP tier for health checks from the legacy agent manager.
 const gatewayHealthLimit = platformIpRateLimit({
   windowMs: 60 * 1000,
   limit: 60,

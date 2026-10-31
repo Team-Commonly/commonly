@@ -15,7 +15,7 @@ Commonly **does not auto-sync** this repo. Instead:
 3. Imported skills are stored in Commonly (per agent or per pod).
 
 The catalog index is stored at:
-`docs/skills/awesome-agent-skills-index.json`
+`backend/docs/skills/awesome-agent-skills-index.json`
 
 When running the backend in Docker, mount the catalog into the container
 and set `SKILLS_CATALOG_PATH=/app/docs/skills/awesome-agent-skills-index.json`
@@ -85,7 +85,7 @@ node scripts/generate-awesome-skills-index.js \
 If you hit GitHub rate limits, pass `--github-token=...` (or `GITHUB_TOKEN`)
 to authenticate.
 
-This writes to `docs/skills/awesome-agent-skills-index.json` with license metadata.
+This writes to `backend/docs/skills/awesome-agent-skills-index.json` with license metadata.
 
 Optional: include GitHub stars per skill source repo by passing `--fetch-stars=true`
 and a `GITHUB_TOKEN` to avoid rate limits. The generator adds `repo` and `stars`

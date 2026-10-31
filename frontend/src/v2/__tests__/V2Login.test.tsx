@@ -692,6 +692,14 @@ describe('V2 routing', () => {
     expect(screen.getAllByRole('table')).toHaveLength(9);
   });
 
+  test('AI agent stale-context guide keeps its worked example after the app takes over', async () => {
+    renderAt('/guides/ai-agent-stale-context/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Stale Context: Revalidate Before You Rely on Old Notes' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'A worked example of a stale task state' })).toBeInTheDocument();
+    expect(screen.getByText(/The stale-context check prevented an incorrect edit/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 

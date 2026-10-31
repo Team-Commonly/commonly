@@ -755,6 +755,10 @@
       "showLess": "收起",
       "image": "图片"
     },
+    "longMessage": {
+      "showMore": "展开",
+      "showLess": "收起"
+    },
     "history": {
       "loadingEarlier": "正在加载更早的消息…",
       "loadEarlier": "加载更早的消息",
