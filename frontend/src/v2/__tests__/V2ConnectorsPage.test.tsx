@@ -1288,6 +1288,20 @@ describe('V2ConnectorsPage', () => {
       expect(screen.queryByText(/Tell us which channel/)).toBeNull();
     });
 
+    it('keeps a no-longer-offered provider listed when the person has only an integration row', async () => {
+      // The third arm of the D215 filter: a channel connected before the roster
+      // row went away can leave an integration with no installation. Dropping it
+      // from the list would hide a live connection from its owner.
+      mockCatalog([
+        entry({ installableId: 'discord', label: 'Discord', available: true, offered: false, integration: liveIntegration() }),
+      ]);
+      renderPage();
+
+      await openInactiveFold();
+      const row = (await screen.findByText('Unavailable here.')).closest('.v2-connector-row') as HTMLElement;
+      expect(row.textContent).toContain('Discord');
+    });
+
     it('renders an unavailable provider with a state line and an available one with Add', async () => {
       mockCatalog([
         entry(),
