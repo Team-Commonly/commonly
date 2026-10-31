@@ -227,6 +227,9 @@ export interface IAgentInstallationRegistry extends Document {
     createdAt: Date;
     lastUsedAt?: Date;
   }>;
+  // Server-granted because GitHub issue writes use the instance credential.
+  // Never map this to the client-editable `scopes` array.
+  githubIssueWrite: boolean;
   createdAt: Date;
   updatedAt: Date;
   recordUsage(tokens?: number): Promise<IAgentInstallationRegistry>;
@@ -235,8 +238,8 @@ export interface IAgentInstallationRegistry extends Document {
 export interface IAgentInstallationRegistryModel extends Model<IAgentInstallationRegistry> {
   getInstalledAgents(podId: Types.ObjectId): mongoose.Query<IAgentInstallationRegistry[], IAgentInstallationRegistry>;
   isInstalled(agentName: string, podId: Types.ObjectId, instanceId?: string): Promise<boolean>;
-  install(agentName: string, podId: Types.ObjectId, options: { version: string; config?: Map<string, unknown>; scopes?: string[]; installedBy: Types.ObjectId; instanceId?: string; displayName?: string }): Promise<IAgentInstallationRegistry>;
-  upsert(agentName: string, podId: Types.ObjectId, options: { version: string; config?: Map<string, unknown>; scopes?: string[]; installedBy: Types.ObjectId; instanceId?: string; displayName?: string }): Promise<IAgentInstallationRegistry>;
+  install(agentName: string, podId: Types.ObjectId, options: { version: string; config?: Map<string, unknown>; scopes?: string[]; githubIssueWrite?: boolean; installedBy: Types.ObjectId; instanceId?: string; displayName?: string }): Promise<IAgentInstallationRegistry>;
+  upsert(agentName: string, podId: Types.ObjectId, options: { version: string; config?: Map<string, unknown>; scopes?: string[]; githubIssueWrite?: boolean; installedBy: Types.ObjectId; instanceId?: string; displayName?: string }): Promise<IAgentInstallationRegistry>;
   uninstall(agentName: string, podId: Types.ObjectId, instanceId?: string): Promise<mongoose.UpdateWriteOpResult>;
 }
 
@@ -276,6 +279,7 @@ const AgentInstallationSchema = new Schema<IAgentInstallationRegistry>(
         lastUsedAt: Date,
       },
     ],
+    githubIssueWrite: { type: Boolean, default: false },
   },
   { timestamps: true },
 );
@@ -332,11 +336,14 @@ AgentInstallationSchema.statics.install = async function (agentName: string, pod
   version: string;
   config?: Map<string, unknown>;
   scopes?: string[];
+  githubIssueWrite?: boolean;
   installedBy: Types.ObjectId;
   instanceId?: string;
   displayName?: string;
 }) {
-  const { version, config, scopes, installedBy, instanceId = 'default', displayName } = options;
+  const {
+    version, config, scopes, githubIssueWrite, installedBy, instanceId = 'default', displayName,
+  } = options;
   const existing = await this.findOne({ agentName: agentName.toLowerCase(), podId, instanceId });
   if (existing) {
     if (existing.status === 'active') throw new Error('Agent already installed');
@@ -344,9 +351,13 @@ AgentInstallationSchema.statics.install = async function (agentName: string, pod
     existing.version = version;
     existing.config = config;
     existing.scopes = scopes;
+    if (githubIssueWrite !== undefined) existing.githubIssueWrite = githubIssueWrite === true;
     return existing.save();
   }
-  return this.create({ agentName: agentName.toLowerCase(), podId, instanceId, displayName, version, config, scopes, installedBy });
+  return this.create({
+    agentName: agentName.toLowerCase(), podId, instanceId, displayName, version, config, scopes, installedBy,
+    githubIssueWrite: githubIssueWrite === true,
+  });
 };
 
 /**
@@ -365,21 +376,25 @@ AgentInstallationSchema.statics.upsert = async function (agentName: string, podI
   version: string;
   config?: Map<string, unknown>;
   scopes?: string[];
+  githubIssueWrite?: boolean;
   installedBy: Types.ObjectId;
   instanceId?: string;
   displayName?: string;
 }) {
-  const { version, config, scopes, installedBy, instanceId = 'default', displayName } = options;
+  const {
+    version, config, scopes, githubIssueWrite, installedBy, instanceId = 'default', displayName,
+  } = options;
   const filter = { agentName: agentName.toLowerCase(), podId, instanceId };
   const update = {
     $setOnInsert: { agentName: agentName.toLowerCase(), podId, instanceId, installedBy, version, displayName },
     $set: {
       // An upsert that declares an identity is an attach, onto a new row or an
       // existing one, so it moves the clock either way. findOneAndUpdate skips
-      // the pre('save') stamp, so it is set here (Sable on #2795).
+      // the pre('save') stamp, so it is set here.
       ...(declaredRuntimeIdentity(config) ? { runtimeIdentityAt: new Date() } : {}),
       ...(config ? { config } : {}),
       ...(scopes ? { scopes } : {}),
+      ...(githubIssueWrite !== undefined ? { githubIssueWrite: githubIssueWrite === true } : {}),
       status: 'active',
     },
   };

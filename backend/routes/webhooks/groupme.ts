@@ -50,20 +50,19 @@ router.post('/:integrationId', groupMeWebhookIpRateLimit, groupMeWebhookRateLimi
     const body = req.body || {};
     const expectedGroupId = String(integration.config?.groupId || '').trim();
     const actualGroupId = String(body.group_id || '').trim();
-    const allowUnverified = process.env.GROUPME_WEBHOOK_ALLOW_UNVERIFIED === 'true';
     // GroupMe has no callback signature. The callback's group_id is a routing
     // key, so require it to match this integration. This does not authenticate
     // the sender; a per-integration callback URL secret is a follow-up. The
     // bot_id belongs to the outbound API and is not present in V3 callbacks.
-    if (actualGroupId && expectedGroupId && actualGroupId !== expectedGroupId) {
-      return res.status(401).send('invalid GroupMe group');
-    }
-    if ((!expectedGroupId || !actualGroupId) && !allowUnverified) {
+    if (!expectedGroupId || !actualGroupId) {
       return res.status(401).send('unverified GroupMe webhook');
+    }
+    if (actualGroupId !== expectedGroupId) {
+      return res.status(401).send('invalid GroupMe group');
     }
     const eventId = body.id;
     if (!eventId) return res.status(400).send('missing GroupMe message id');
-    deliveryId = `${actualGroupId || expectedGroupId || 'unverified'}:${String(eventId)}`;
+    deliveryId = `${actualGroupId}:${String(eventId)}`;
     const claim = await claimDelivery('groupme', deliveryId, WEBHOOK_DELIVERY_TTL_MS);
     if (claim === 'unavailable') {
       return res.status(503).json({ error: 'GroupMe delivery unavailable' });

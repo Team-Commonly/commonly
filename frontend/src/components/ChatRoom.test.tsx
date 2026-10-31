@@ -273,3 +273,56 @@ describe('uploadImageSrc', () => {
     expect(uploadImageSrc('data:image/png;base64,AAAA')).toBe('data:image/png;base64,AAAA');
   });
 });
+
+test('a send the server refuses is removed and shown in the composer (TASK-503)', async () => {
+  axios.get
+    .mockResolvedValueOnce({ data: { _id: '1', name: 'Room', members: [{ _id: 'u' }], createdBy: { _id: 'u', username: 'me', profilePicture: null } } })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({ data: { entries: [] } });
+  const socket = { on: jest.fn(), off: jest.fn() };
+  const sendMessage = jest.fn();
+  useSocket.mockReturnValue({
+    socket, connected: true, pgAvailable: false, joinPod: jest.fn(), leavePod: jest.fn(), sendMessage,
+  });
+
+  await TestUtils.act(async () => { root.render(<ChatRoom />); });
+  await TestUtils.act(async () => Promise.resolve());
+
+  const input = container.querySelector('[placeholder="Message #Room"]');
+  const setValue = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value').set;
+  await TestUtils.act(async () => {
+    setValue.call(input, 'store is down');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await TestUtils.act(async () => {
+    container.querySelector('form.message-input-container')
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  });
+  expect(sendMessage).toHaveBeenCalledWith('1', 'store is down', 'text', null);
+  expect(container.textContent).toContain('store is down');
+
+  const [, onFailed] = socket.on.mock.calls.find(([event]) => event === 'messageSendFailed');
+  await TestUtils.act(async () => {
+    onFailed({
+      podId: '1',
+      content: 'store is down',
+      messageType: 'text',
+      code: 'MESSAGE_STORE_UNAVAILABLE',
+      message: 'Messages are temporarily unavailable. Please try again shortly.',
+    });
+  });
+
+  // The optimistic bubble is gone (the composer field is not part of the list).
+  const listOnly = container.cloneNode(true);
+  listOnly.querySelectorAll('textarea, input').forEach((field) => field.remove());
+  expect(listOnly.textContent).not.toContain('store is down');
+  // The refused text is back in the composer, ready to resend.
+  expect(container.querySelector('[placeholder="Message #Room"]').value).toBe('store is down');
+  expect(container.querySelector('[role="alert"]').textContent)
+    .toContain('Messages are temporarily unavailable. Please try again shortly.');
+  // The room stays mounted and listening: the refusal is not a page error.
+  expect(container.textContent).toContain('Room');
+});

@@ -231,6 +231,10 @@ describe('opencode MCP config', () => {
     expect(permission.external_directory).toBe('deny');
     expect(permission['commonly_*']).toBe('allow');
     expect(permission['room_grants_*']).toBe('allow');
+    // TASK-287: attach_file is denied after the wildcard allow, so the deny wins.
+    const keys = Object.keys(permission);
+    expect(permission.commonly_commonly_attach_file).toBe('deny');
+    expect(keys.indexOf('commonly_commonly_attach_file')).toBeGreaterThan(keys.indexOf('commonly_*'));
     expect(permission.edit['*']).toBe('allow');
     expect(permission.edit['**/.npmrc']).toBe('deny');
     expect(permission.edit['**/.yarnrc*']).toBe('deny');
@@ -303,7 +307,7 @@ describe('opencode MCP config', () => {
 // `list_artifacts`) is returning `fetch failed`". A public seat withholds such a
 // turn: nothing is posted and the event stays unacked. Events are the shape
 // OpenCode 1.19.0 emits, captured from that canary.
-// Vera's HOLD on #2374 (79595): matching connection failures let an API 5xx
+// A hold on #2374: matching connection failures let an API 5xx
 // through, because the shipped MCP reports it as `{ status, body, message }`.
 // The rule is now inverted: only named answerable errors leave the turn to post.
 describe('opencode public seat withholds a turn whose Commonly tools failed', () => {

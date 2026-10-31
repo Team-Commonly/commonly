@@ -8,8 +8,8 @@
  * gate between this script's read and write.
  *
  * Usage:
- *   ts-node backend/scripts/migrate-connector-gates.ts --dry
- *   ts-node backend/scripts/migrate-connector-gates.ts
+ *   cd backend && node dist/scripts/migrate-connector-gates.js --dry
+ *   cd backend && node dist/scripts/migrate-connector-gates.js
  */
 
 import mongoose from 'mongoose';

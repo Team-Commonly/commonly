@@ -1,6 +1,11 @@
 import { claudeRuntimeInventory } from '../native-runtime-inventory.js';
 import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
-import { spawnInOwnGroup, wantsOwnProcessGroup } from '@commonlyai/seats/process-group';
+import {
+  firstOutputWindowMs, killStallSurvivors, physicalPath, spawnStalledError, STALL_KILL_GRACE_MS, watchFirstOutput,
+} from '../first-output-watchdog.js';
+import {
+  descendantsOf, killProcessTree, readProcessTable, spawnInOwnGroup, wantsOwnProcessGroup,
+} from '@commonlyai/seats/process-group';
 /**
  * claude adapter — wraps the local `claude` CLI as a Commonly agent.
  *
@@ -88,9 +93,10 @@ import {
   prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_CODE, publicMcpUnavailableError, selectedMcpVersionDir,
 } from '../mcp-home.js';
 import { buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
-import { claudeConfigDirFor, claudeContextTokens } from '../session-recycle.js';
+import { claudeConfigDirFor, claudeContextTokens, claudeTranscriptPath } from '../session-recycle.js';
 import { skillsAsText } from '../skill-prompt.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
+import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 
 // See codex.js for the rationale on bumping the default + env override.
 // Keeping both adapters in lockstep so any wrapper agent runtime has the
@@ -105,8 +111,8 @@ const DEFAULT_TIMEOUT_MS = (() => {
 
 const buildPrompt = buildMemoryPreamble;
 
-// The working habits a private claude seat is taught on a fresh session (D48,
-// TASK-545). Parallel reads live here because only this CLI has a subagent
+// The working habits a private claude seat is taught on a fresh session
+// (TASK-545). Parallel reads live here because only this CLI has a subagent
 // tool; codex is passed row slicing alone. A public seat is passed neither: its
 // argv allows Read and the MCP under dontAsk, so it has no subagent to spawn,
 // and it answers strangers rather than working board rows.
@@ -441,6 +447,10 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, { trust, allow = [], memor
   const memoryDenies = memoryWithheld
     ? MEMORY_TOOLS.flatMap((tool) => mcpToolPatterns.map((pattern) => pattern.replace(/\*$/, tool)))
     : [];
+  // Nor, on any confined trust, the tools no public seat is offered
+  // (public-withheld-tools.js).
+  const withheldDenies = PUBLIC_WITHHELD_TOOLS
+    .flatMap((tool) => mcpToolPatterns.map((pattern) => pattern.replace(/\*$/, tool)));
   return [
     // HOME points at an isolated, sanitized state directory. Ignore settings
     // from user/project/local sources and disable slash-command extensions;
@@ -452,7 +462,7 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, { trust, allow = [], memor
     '--permission-mode', 'dontAsk',
     '--allowedTools', 'Read(./**)', ...granted, ...mcpToolPatterns,
     '--disallowedTools', ...PUBLIC_DENIED_TOOLS.filter((tool) => !granted.includes(tool)),
-    ...deniedReads, ...workspaceDenies, ...memoryDenies,
+    ...deniedReads, ...workspaceDenies, ...memoryDenies, ...withheldDenies,
   ];
 };
 
@@ -484,7 +494,11 @@ const publicSkillPromptArgs = async (skillSources) => {
 
 // `ownGroup` is set only under the run supervisor, which kills the child's
 // whole group; unsupervised, the spawn options are exactly what they were.
-const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false }) => new Promise((resolve, reject) => {
+const runClaude = ({
+  cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
+  transcriptPath = null, firstOutputMs = firstOutputWindowMs(), lockProbe, stallKillGraceMs = STALL_KILL_GRACE_MS,
+  processTable = readProcessTable, survivorIo,
+}) => new Promise((resolve, reject) => {
   const proc = spawnInOwnGroup(spawnImpl, cmd, args, {
     cwd,
     env,
@@ -499,15 +513,62 @@ const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl
     timedOut = true;
     proc.kill('SIGTERM');
   }, timeoutMs);
+  // A turn that never starts is killed long before the run timeout.
+  let stalled = null;
+  let stallKill = null;
+  let stallSnapshot = [];
+  // SIGKILL snapshotted descendants that are still alive. Safe to repeat. It
+  // runs when the spawn exits, at the grace deadline and on close: a survivor
+  // still holding the spawn's stdout or stderr keeps close from ever firing,
+  // and once the spawn is reaped killProcessTree can no longer reach it.
+  const sweepStallSurvivors = () => {
+    if (stalled) killStallSurvivors(stallSnapshot, survivorIo);
+  };
+  const treeIo = (table) => ({ table, ...(survivorIo?.read ? { read: survivorIo.read } : {}) });
+  const watchdog = watchFirstOutput({
+    proc,
+    windowMs: firstOutputMs,
+    transcriptPath,
+    lockProbe,
+    onStall: (reason) => {
+      stalled = spawnStalledError({ label: 'claude', windowMs: firstOutputMs, reason });
+      // Snapshot the descendants first: once the spawn exits they are
+      // reparented and can no longer be found from it.
+      const table = Number.isInteger(proc.pid) ? processTable() : null;
+      if (table) stallSnapshot = descendantsOf(table, proc.pid);
+      killProcessTree(proc, 'SIGTERM', treeIo(() => table));
+      // A process parked in a system call may not act on SIGTERM. SIGKILL the
+      // child, its group when it leads one, and its descendants.
+      stallKill = setTimeout(() => {
+        killProcessTree(proc, 'SIGKILL', treeIo(processTable));
+        sweepStallSurvivors();
+        // A pipe holder the snapshot missed (ps failed, or it was reparented
+        // before the stall) would still keep close from firing. Dropping our
+        // ends of the pipes bounds every stalled turn at window plus grace.
+        proc.stdout?.destroy?.();
+        proc.stderr?.destroy?.();
+      }, stallKillGraceMs);
+      stallKill.unref?.();
+    },
+  });
+  proc.on('exit', sweepStallSurvivors);
 
   proc.stdout?.on('data', (chunk) => { stdout += chunk.toString(); });
   proc.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
   proc.on('error', (err) => {
     clearTimeout(timer);
+    clearTimeout(stallKill);
+    watchdog.stop();
     reject(err);
   });
   proc.on('close', (code) => {
     clearTimeout(timer);
+    clearTimeout(stallKill);
+    watchdog.stop();
+    if (stalled) {
+      sweepStallSurvivors();
+      return reject(stalled);
+    }
     if (timedOut) return reject(new Error(`claude timed out after ${timeoutMs}ms`));
     if (code !== 0) {
       // Report stdout too, not just stderr. In `-p` mode claude writes terminal
@@ -841,7 +902,7 @@ const prepareArgv = async (innerArgv, ctx) => {
   // A public trust is ONE contract on both platforms: the jail bounds the
   // filesystem and the policy bounds the tools. The bwrap branch below used to
   // get the jail only — a derived Linux seat kept Bash/Write/WebFetch and ran on
-  // the operator's own Claude settings inside the namespace (Vera 69578).
+  // the operator's own Claude settings inside the namespace.
   const publicBwrapSandbox = sandboxTrust === 'public' && sandboxMode === 'bwrap';
   // A workspace seat on Linux: the same jail, with the workspace tier's policy
   // and a HOME of its own outside the project.
@@ -867,7 +928,7 @@ const prepareArgv = async (innerArgv, ctx) => {
   // above; anything else that lands here (the literal 'none', a typo, a
   // non-string) used to fall through to the bare `claude` spawn below — an
   // unconfined seat with a public record, which is how a record can claim
-  // confinement it never applies (Vera 69548).
+  // confinement it never applies.
   if (isConfinedTrust(sandboxTrust) && !publicNativeSandbox && sandboxMode !== 'bwrap') {
     throw new Error(
       `${sandboxTrust} Claude agents require an enforced sandbox mode `
@@ -929,7 +990,7 @@ const prepareArgv = async (innerArgv, ctx) => {
   if (publicBwrapSandbox || workspaceBwrapSandbox) {
     // The mode is chosen here, so the mechanism is verified here: a missing
     // bwrap must fail the seat's derivation with an actionable message, not
-    // every one of its spawns with a bare ENOENT (Wren 69586). On a non-Linux
+    // every one of its spawns with a bare ENOENT. On a non-Linux
     // host this reports the macOS-only message, same as the wrapper would.
     const bwrap = (ctx._detectBwrap || detectBwrap)();
     if (!bwrap.available) {
@@ -1043,7 +1104,7 @@ export default {
     const seatModel = requireSeatModel(rawCtx.environment, 'claude');
     // `sandbox.trust: 'internal'` is refused for new declarations and read as
     // `public` for a record that already carries it; such a seat is confined
-    // where it can be and refuses to derive where it cannot (Wren 69585).
+    // where it can be and refuses to derive where it cannot.
     // Resolved ONCE here and threaded to BOTH consumers — the public-state
     // preparation below and the argv builder — because two independent reads of
     // one declaration is exactly how this seat crashed with "public Claude
@@ -1091,9 +1152,9 @@ export default {
     // present in one but not the other means a retry silently runs a different
     // model than the turn it is replacing — the same drifting-copy shape that
     // has bitten this codebase repeatedly.
-    // `effort` rides in the same array for the same reason: Sam's 2026-09-01
-    // order ("flip all fable agents into fable 5.1 with high or above
-    // effort") needs both facts to reach every spawn, including the
+    // `effort` rides in the same array for the same reason: an order
+    // like "flip all fable agents into fable 5.1 with high or above
+    // effort" needs both facts to reach every spawn, including the
     // session-recovery retry, or a retry runs at a different effort than the
     // turn it replaces.
     const modelArgs = [
@@ -1133,7 +1194,7 @@ export default {
       // Trust is normalized at entry (legacy `internal` reads as public). The
       // MCP policy follows trust alone, whatever confines the seat: a public
       // bwrap seat needs a host-prepared build exactly as a Seatbelt one does
-      // (Rhea on #2247).
+      // (#2247).
       if (publicNativeSandbox) {
         publicClaudeState = await preparePublicClaudeState(ctx);
       } else if (workspaceBwrapSandbox) {
@@ -1200,17 +1261,24 @@ export default {
         credentials: spawnCredentials(spawnCtx),
         spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }), // test seam only — do not use in production
         ownGroup: wantsOwnProcessGroup(ctx),
+        transcriptPath: claudeTranscriptPath({
+          cwd: physicalPath(ctx.cwd), sessionId, configDir: claudeConfigDirFor({ ...env, HOME: childHome || env?.HOME }),
+        }),
+        lockProbe: ctx._lockProbe, // test seams only
+        stallKillGraceMs: ctx._stallKillGraceMs,
+        processTable: ctx._processTable,
+        survivorIo: ctx._survivorIo,
       });
       // TASK-440: the context this turn left, read from the transcript the
       // child wrote under its own env (an isolated HOME for public seats).
       const contextTokens = claudeContextTokens({
-        cwd: ctx.cwd, sessionId, configDir: claudeConfigDirFor({ ...env, HOME: childHome || env?.HOME }),
+        cwd: physicalPath(ctx.cwd), sessionId, configDir: claudeConfigDirFor({ ...env, HOME: childHome || env?.HOME }),
       });
       return { text: stdout.trim(), newSessionId: sessionId, contextTokens };
     } catch (err) {
       // A public seat's refusal is not a session-store failure, whatever its
       // message happens to contain: it must reach the run loop, never the
-      // fresh-session retry below (Rhea on #2247).
+      // fresh-session retry below (#2247).
       if (err?.code === PUBLIC_MCP_UNAVAILABLE_CODE) throw err;
       // Self-heal against a corrupted session store. If the persisted id is
       // already in use (or claude has forgotten about it), discard it and
@@ -1256,9 +1324,17 @@ export default {
           credentials: spawnCredentials(retryCtx),
           spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
           ownGroup: wantsOwnProcessGroup(ctx),
+          transcriptPath: claudeTranscriptPath({
+            cwd: physicalPath(ctx.cwd), sessionId: freshId,
+            configDir: claudeConfigDirFor({ ...retry.env, HOME: retry.childHome || retry.env?.HOME }),
+          }),
+          lockProbe: ctx._lockProbe,
+          stallKillGraceMs: ctx._stallKillGraceMs,
+          processTable: ctx._processTable,
+          survivorIo: ctx._survivorIo,
         });
         const contextTokens = claudeContextTokens({
-          cwd: ctx.cwd, sessionId: freshId,
+          cwd: physicalPath(ctx.cwd), sessionId: freshId,
           configDir: claudeConfigDirFor({ ...retry.env, HOME: retry.childHome || retry.env?.HOME }),
         });
         return { text: stdout.trim(), newSessionId: freshId, contextTokens };

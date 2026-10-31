@@ -1,7 +1,7 @@
 // ADR-026 D4: authenticates cm_daemon_* bearers against the AgentCredential
 // ledger. A daemon credential authorizes agent-LIFECYCLE operations only —
 // it deliberately does NOT pass agentRuntimeAuth and cannot act as any agent
-// (Vera's scope ruling on #1312/S1). Sets req.machine only.
+// (scope ruling on #1312/S1). Sets req.machine only.
 import { Request, Response, NextFunction } from 'express';
 import AgentCredential from '../models/AgentCredential';
 import { machineHasLiveAuthorization } from '../services/machineService';
@@ -9,7 +9,7 @@ import { machineHasLiveAuthorization } from '../services/machineService';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { hash } = require('../utils/secret') as { hash: (value: string) => string };
 
-// The contract (Vera's S1 ruling): routes see req.machine and NOTHING else —
+// The contract: routes see req.machine and NOTHING else —
 // a minimal projection, never the credential document. Keeps the ledger's
 // internals (hashes, lineage ids) out of route handlers by construction.
 export interface MachineContext {

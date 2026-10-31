@@ -3,7 +3,7 @@
 The heavy jobs in `.github/workflows/tests.yml` (the three backend shards,
 frontend tests and the two Tier 1 service shards) can run on Latchkey runners,
 which don't count against the org's 20-concurrent-job cap on GitHub-hosted
-runners. That cap is what made the merge queue wait (D37).
+runners. That cap is what made the merge queue wait.
 
 They do so only on **merge-queue runs**, and only while the repository
 variable `LATCHKEY_HEAVY` is `on`. Every other run, PRs included, stays on

@@ -170,7 +170,7 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(posted()).toEqual(['Here is the changelog. I could not use the blog page.']);
   });
 
-  // Rhea on #2305: the extra round is one model call, not the rest of the budget.
+  // The extra round is one model call, not the rest of the budget.
   describe('the extra round is one model call', () => {
     const neverAsked = reply('A later round.');
 
@@ -295,6 +295,68 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(chatBodies).toHaveLength(3);
     expect(savedRun.webSetAside).toBe(1);
     expect(savedRun.metered).toBe(false);
+    expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+  });
+
+  // 10-25: the recovery round was stopped though every kept result passed the
+  // check on its own. The rest are set aside for one last round.
+  test('a stop in the extra round sets aside the web results left and answers in one last round', async () => {
+    chatReplies = [
+      toolCalls(fetchCall('c1', CLEAN_URL), fetchCall('c2', LATER_URL)),
+      toolCalls(fetchCall('c3', STOPPED_URL)),
+      guardStop,
+      guardStop,
+      reply('Here is what I can say without those pages.'),
+    ];
+
+    const result = await runAgent(hostedInstall(), mention);
+
+    expect(result.status).toBe('succeeded');
+    expect(chatBodies).toHaveLength(5);
+    const last = JSON.stringify(chatBodies[4].messages);
+    expect(last).not.toContain(STOPPED_TEXT);
+    expect(last).not.toContain(CLEAN_TEXT);
+    expect(last).not.toContain(LATER_TEXT);
+    expect(offeredIn(chatBodies[4])).toEqual(['commonly_post_message']);
+    expect(savedRun.webSetAside).toBe(3);
+    expect(posted()).toEqual(['Here is what I can say without those pages.']);
+  });
+
+  test('text the model wrote after a web read is cleared too, its tool calls kept', async () => {
+    const quoting = toolCalls(fetchCall('c3', STOPPED_URL));
+    quoting.data.choices[0].message.content = `Noting: ${CLEAN_TEXT}`;
+    chatReplies = [
+      toolCalls(fetchCall('c1', CLEAN_URL), fetchCall('c2', LATER_URL)),
+      quoting,
+      guardStop,
+      guardStop,
+      reply('Answered without the pages.'),
+    ];
+
+    const result = await runAgent(hostedInstall(), mention);
+
+    expect(result.status).toBe('succeeded');
+    const last = chatBodies[4].messages;
+    expect(JSON.stringify(last)).not.toContain(CLEAN_TEXT);
+    // Every tool result still follows the assistant call that asked for it.
+    const calls = last.filter((m) => m.role === 'assistant').flatMap((m) => (m.tool_calls || []).map((c) => c.id));
+    last.filter((m) => m.role === 'tool').forEach((m) => expect(calls).toContain(m.tool_call_id));
+  });
+
+  test('a third stop ends the run with the fixed line', async () => {
+    chatReplies = [
+      toolCalls(fetchCall('c1', CLEAN_URL)),
+      toolCalls(fetchCall('c2', STOPPED_URL)),
+      guardStop,
+      guardStop,
+      guardStop,
+      reply('Never asked.'),
+    ];
+
+    const result = await runAgent(hostedInstall(), mention);
+
+    expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'guardrail_blocked' }));
+    expect(chatBodies).toHaveLength(5);
     expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
   });
 

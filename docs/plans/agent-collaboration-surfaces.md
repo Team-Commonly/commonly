@@ -3,7 +3,7 @@
 Status: **draft v2** (2026-05-03). Revised after a code-reviewer
 pass; the v1 had two correctness gaps in Phase 1 (silent-drop on
 the new pod type, no auth on mention-driven autoJoin) plus a named
-hard-code (`sam-local-codex`) we don't actually need given our
+hard-code (`local-codex`) we don't actually need given our
 existing provisioning + LiteLLM stack. v2 fixes both, drops the
 hard-code, and pins the read-access / autoJoin rule to the
 "co-pod member" invariant.
@@ -14,7 +14,7 @@ agents:
 - Pixel/Theo/Ops still call `acpx_run` directly — we want them
   delegating to a real codex agent provisioned on the clawdbot
   gateway (LiteLLM-backed, multi-account rotator already live).
-  Today's `sam-local-codex` is a stop-gap that broke when we
+  Today's `local-codex` is a stop-gap that broke when we
   refreshed account-2/3 tokens; we're not bringing it back.
 - Agent ↔ agent conversations have nowhere to live. They either
   pollute team pods or vanish into nowhere. We need a DM-shaped
@@ -22,7 +22,7 @@ agents:
   `agent-room`.
 - Agents pick contacts implicitly today — there's no first-class
   notion of "go ask my codex" or "the planner I trust." The closest
-  thing is a global default (sam-local-codex) baked into heartbeat
+  thing is a global default (local-codex) baked into heartbeat
   templates.
 
 This doc collapses those into one model so we don't end up with
@@ -179,7 +179,7 @@ contact list without an extra tool call.
    pod-event.
 
 No instance-level fallback. The v1 plan ended with
-"sam-local-codex" as the terminal default; that's a named
+"local-codex" as the terminal default; that's a named
 operator-specific hard-code in a code path that runs for every
 tenant and breaks the moment we ship OSS or federate. Drop it.
 
@@ -199,7 +199,7 @@ pod.contacts: { [alias: string]: { agentName, instanceId } }
 ```
 
 Optional. Lets a pod admin pin "for this pod, `@codex` always means
-sam-local-codex" or "@reviewer is theo" without changing the
+local-codex" or "@reviewer is theo" without changing the
 agent's own contact list. Empty by default; resolution falls
 through.
 
@@ -250,7 +250,7 @@ with `role: 'codex'` provisioned on the existing infra:
 - Model wiring: LiteLLM (`gpt-5.4-mini` heartbeats, `gpt-5.4` for
   longer turns); the `codex-auth-rotator` sidecar already cycles
   account-1/2/3 every 10 min so quota burn stays balanced.
-  No local CLI on the operator laptop, no `sam-local-codex`
+  No local CLI on the operator laptop, no `local-codex`
   registry row, no special HEARTBEAT.md tied to a polling daemon.
 - Heartbeat: standard agent preset; responds to `chat.mention`
   events, posts replies through the normal dispatcher (same
@@ -265,7 +265,7 @@ This is what "we are backend-rich" actually means. The hard-coded
 fallback existed because we didn't have a real codex agent;
 provisioning one is a 30-line preset entry, not new infrastructure.
 
-Cleanup follow-up: deprecate `sam-local-codex` from the registry
+Cleanup follow-up: deprecate `local-codex` from the registry
 once Phase 2 ships and the clawdbot codex agent is taking traffic.
 Local CLI wrapping (ADR-005 Stage 2) stays useful for personal
 operator use, but it isn't the platform's codex.
@@ -394,7 +394,7 @@ Phase 2 ships a real codex agent first, then flips the heartbeats.
    on clawdbot codex agent → reply posts back into the
    originating pod → DM-creation event card appears → next
    heartbeat tick reads the reply and advances the task.
-6. **Deprecate `sam-local-codex`** from registry presets once
+6. **Deprecate `local-codex`** from registry presets once
    the new agent is taking traffic for >24h. The local CLI
    wrapper (ADR-005 Stage 2) stays, but it's no longer the
    platform's codex.
@@ -483,7 +483,7 @@ pod-level pin. Phase 3 adds the user/agent contact CRUD.
 
 - New filter: **Agent ↔ Agent** (next to All / Team / Private).
 - Rows show both agent avatars overlapped, displayName format
-  `"Pixel ↔ sam-local-codex"`.
+  `"Pixel ↔ local-codex"`.
 - Hidden by default for users who haven't created or aren't
   observers of any; reveals when first row exists.
 
@@ -559,12 +559,12 @@ ADR-008 environment-primitive umbrella, not blocked by this plan.
 1. Operator types in `Backend Tasks` pod:
    `@pixel can you cut the v2 reactions hot-fix?`
 2. Pixel's heartbeat fires (or @-mention dispatch). Pixel resolves
-   `@codex` against `pod.contacts.codex` → sam-local-codex.
-3. sam-local-codex isn't in `Backend Tasks`. Auto-join fires.
-   System event in pod: "Pixel pulled in sam-local-codex via
-   @codex." sam-local-codex now sees a `chat.mention` event in the
+   `@codex` against `pod.contacts.codex` → local-codex.
+3. local-codex isn't in `Backend Tasks`. Auto-join fires.
+   System event in pod: "Pixel pulled in local-codex via
+   @codex." local-codex now sees a `chat.mention` event in the
    pod.
-4. sam-local-codex runs the task locally (Codex CLI), posts reply
+4. local-codex runs the task locally (Codex CLI), posts reply
    in `Backend Tasks` with code/diff. Operator + Pixel see it
    inline.
 5. Optional: operator clicks "Open DM" in the system event card —
@@ -575,7 +575,7 @@ ADR-008 environment-primitive umbrella, not blocked by this plan.
 6. Pixel's next heartbeat sees the reply, advances the task, marks
    complete with PR URL.
 
-If Pixel had instead **DM'd** sam-local-codex (no `@` in pod), the
+If Pixel had instead **DM'd** local-codex (no `@` in pod), the
 sequence is the same except the conversation lives entirely in
 the agent-dm; pod gets only the "DM started" event card.
 

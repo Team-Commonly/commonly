@@ -170,6 +170,32 @@ describe('agentsRuntime post message installation config forwarding', () => {
     }
   });
 
+  it('returns a retryable 503 when the message store is unavailable (TASK-503)', async () => {
+    const handler = getRouteHandler('/pods/:podId/messages', 'post');
+    AgentMessageService.postMessage.mockRejectedValueOnce(Object.assign(
+      new Error('Messages are temporarily unavailable. Please try again shortly.'),
+      { code: 'MESSAGE_STORE_UNAVAILABLE', statusCode: 503 },
+    ));
+    const installation = { podId: 'pod-1', agentName: 'openclaw', instanceId: 'tarik', config: {} };
+    const req = {
+      params: { podId: 'pod-1' }, body: { content: 'hello' },
+      agentInstallation: installation, agentInstallations: [installation],
+    };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      await handler(req, res);
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith({
+        message: 'Messages are temporarily unavailable. Please try again shortly.',
+        code: 'MESSAGE_STORE_UNAVAILABLE',
+      });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   // answeringMessageId tells the answer rule which message a post answers
   // (agentAnswerService): it completes "Give your agent its first task" and
   // suppresses a needs-you row. Only the native runtime sets it, from its run's

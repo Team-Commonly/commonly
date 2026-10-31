@@ -6,8 +6,8 @@ jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // /api/pods, and the old `installablePods[0]` default silently attached
 // personal agents to the public room — a prompt-injection surface running with
 // the owner's own tokens. The picker must (a) never offer a publicRead pod, and
-// (b) prefer the pod this person opened over their signup workspace, never
-// the most-active pod.
+// (b) prefer the person's own workspace (TASK-645 item 9), never the
+// most-active pod.
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -75,7 +75,7 @@ describe('V2AgentBYO pod picker safety (HQ funnel incident 2026-07-24)', () => {
     expect(screen.queryByText('Commonly HQ (chat)')).not.toBeInTheDocument();
   });
 
-  test('defaults to the last opened team pod instead of the user\'s workspace', async () => {
+  test('defaults to the user\'s workspace even when a team pod was opened last', async () => {
     localStorage.setItem(POD_VISITS_KEY, JSON.stringify({ ws: 10, team: 20, hq: 30 }));
     axios.get.mockResolvedValueOnce({ data: [
       { _id: 'hq', name: 'Commonly HQ', type: 'chat', publicRead: true },
@@ -83,8 +83,31 @@ describe('V2AgentBYO pod picker safety (HQ funnel incident 2026-07-24)', () => {
       { _id: 'team', name: 'Team Project', type: 'team', createdBy: { _id: 'u2' } },
     ] });
     renderPage();
-    await waitFor(() => expect(screen.getByRole('combobox').value).toBe('team'));
+    await waitFor(() => expect(screen.getByText('Team Project (team)')).toBeInTheDocument());
+    expect(screen.getByRole('combobox').value).toBe('ws');
     expect(screen.queryByText('Commonly HQ (chat)')).not.toBeInTheDocument();
+  });
+
+  test('defaults to the oldest owned pod (signup workspace), even when a newer team pod is listed first and visited last', async () => {
+    localStorage.setItem(POD_VISITS_KEY, JSON.stringify({ team: 99 }));
+    axios.get.mockResolvedValueOnce({ data: [
+      { _id: 'team', name: 'Team Project', type: 'team', createdBy: { _id: 'u1' }, createdAt: '2026-10-01T00:00:00.000Z' },
+      { _id: 'ws', name: 'My Workspace', type: 'chat', createdBy: { _id: 'u1' }, createdAt: '2026-09-01T00:00:00.000Z' },
+    ] });
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Team Project (team)')).toBeInTheDocument());
+    expect(screen.getByRole('combobox').value).toBe('ws');
+  });
+
+  test('falls back to the last opened pod only when the user owns none', async () => {
+    localStorage.setItem(POD_VISITS_KEY, JSON.stringify({ a: 10, team: 20 }));
+    axios.get.mockResolvedValueOnce({ data: [
+      { _id: 'a', name: 'Team A', type: 'team', createdBy: { _id: 'u2' } },
+      { _id: 'team', name: 'Team Project', type: 'team', createdBy: { _id: 'u2' } },
+    ] });
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Team Project (team)')).toBeInTheDocument());
+    expect(screen.getByRole('combobox').value).toBe('team');
   });
 
   test('a valid deep link wins over visits, and other My Workspace pods name their owner', async () => {

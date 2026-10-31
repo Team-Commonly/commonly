@@ -40,7 +40,6 @@ const discordWebhookRateLimit = rateLimit({
 const header = (req: any, name: string): string => String(req.get?.(name) || req.headers?.[name.toLowerCase()] || '');
 
 export const verifyDiscordWebhookRequest = (req: any): boolean => {
-  if (process.env.DISCORD_WEBHOOK_ALLOW_UNVERIFIED === 'true') return true;
   const rawBody = typeof req.rawBody === 'string' ? req.rawBody : JSON.stringify(req.body || {});
   return verifyDiscordSignature({
     publicKey: process.env.DISCORD_PUBLIC_KEY,

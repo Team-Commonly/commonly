@@ -48,8 +48,10 @@ const app = express();
 app.use(express.json());
 app.use('/api/webhooks/telegram', telegramRoutes);
 
+const SECRET = 'test-secret';
 const enable = (code, chat = { id: 42, type: 'private', first_name: 'Sam' }) => request(app)
   .post('/api/webhooks/telegram')
+  .set('x-telegram-bot-api-secret-token', SECRET)
   .send({ message: { text: `/commonly-enable ${code}`, chat, from: { id: 7 } } });
 
 const freshCode = () => ({
@@ -71,11 +73,10 @@ describe('/commonly-enable hardening', () => {
     jest.clearAllMocks();
     resetEnableAttempts();
     process.env.TELEGRAM_BOT_TOKEN = 'bot-token';
-    delete process.env.TELEGRAM_SECRET_TOKEN;
-    // Verification is fail-closed on main (hardening H1); these tests exercise
-    // the enable handler, not auth, so they run with the explicit dev override
-    // and a stubbed delivery-claim store, same as telegram.webhook.test.js.
-    process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED = 'true';
+    // Verification always runs (hardening H1, D137 A9); these tests exercise
+    // the enable handler, not auth, so they send the configured secret and use
+    // a stubbed delivery-claim store, same as telegram.webhook.test.js.
+    process.env.TELEGRAM_SECRET_TOKEN = SECRET;
     WebhookDelivery.create.mockResolvedValue({});
     WebhookDelivery.deleteOne.mockResolvedValue({});
     Integration.findByIdAndUpdate = jest.fn().mockResolvedValue({});

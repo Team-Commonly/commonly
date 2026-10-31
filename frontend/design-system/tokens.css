@@ -56,6 +56,19 @@
   --c-danger-text:     #b91c1c;
   --c-danger-soft:     rgba(239, 68, 68, 0.10);
 
+  /* ---------- Character-avatar grounds (TASK-679) ----------
+     The fill behind each avatar figure. Mirrors --v2-avatar-* in v2.css and
+     CHARACTER_GROUNDS in utils/avatars.ts; change all three together. */
+  --c-avatar-agent-1:  #dbe5f1;   /* cool blue */
+  --c-avatar-agent-2:  #e1e6ee;   /* blue-grey */
+  --c-avatar-agent-3:  #d6e7e4;   /* sage */
+  --c-avatar-human-1:  #f1e7df;   /* warm sand */
+  --c-avatar-human-2:  #f2e8d8;   /* warm cream */
+  --c-avatar-human-3:  #efe1dc;   /* blush */
+  --c-avatar-human-4:  #f4e3d7;   /* apricot */
+  --c-avatar-frame:    rgba(16, 24, 40, 0.06);  /* hairline ring */
+  --c-avatar-frame-dark: rgba(255, 255, 255, 0.10);  /* ring on dark; tile stays light */
+
   /* ---------- Agent role accents (avatar tints, role chips) ---------- */
   --c-role-pink:       #f472b6;
   --c-role-violet:     #a78bfa;
@@ -118,9 +131,9 @@
   --motion-ease-linear: linear;
 
   /* ---------- Typography ---------- */
-  /* Inter (variable, self-hosted from the bundle via @fontsource-variable/inter);
-     SF Pro is the fallback only while the woff2 loads or if it fails. One face:
-     display weight comes from font-weight, not a second family. (TASK-122) */
+  /* IBM Plex Sans (self-hosted from the bundle via @fontsource/ibm-plex-sans);
+     SF Pro is the fallback only while the woff2 loads or if it fails. Display
+     is Bricolage Grotesque (--c-font-display). (TASK-122) */
   --c-font-sans:   "IBM Plex Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont,
                    "Segoe UI", Roboto, sans-serif;
   --c-font-display: "Bricolage Grotesque Variable", "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
@@ -134,7 +147,7 @@
   --c-fs-base:14px;   /* messages, inputs */
   --c-fs-lg:  15px;   /* section titles */
   --c-fs-xl:  16px;
-  /* Featured-card name step (BEND-1, Sam-approved 2026-08-30) — mirrors --v2-fs-feature. */
+  /* Featured-card name step (BEND-1, 2026-08-30) — mirrors --v2-fs-feature. */
   --c-fs-feature: 17px;   /* sidebar titles */
   --c-fs-2xl: 20px;   /* chat header */
   --c-fs-3xl: 24px;   /* feature page title */
@@ -190,7 +203,7 @@ html, body {
 h1, .c-h1 {
   font-family: var(--c-font-sans);
   font-size: var(--c-fs-3xl);
-  font-weight: 700;            /* 850 was tuned for SF Pro Display; Inter reads right at 700 */
+  font-weight: 700;
   line-height: var(--c-lh-tight);
   letter-spacing: -0.03em;
   margin: 0;

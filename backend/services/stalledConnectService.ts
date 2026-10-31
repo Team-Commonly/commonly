@@ -183,6 +183,14 @@ export const scan = async ({
     $or: [
       { 'config.runtime.host': 'byo' },
       { 'config.runtime.runtimeType': 'local-cli' },
+      // Legacy polling seats: runtimeType 'webhook' with no host stamp and no
+      // push URL. classifyRuntime calls these BYO, so the pre-filter must too,
+      // or they never reach deriveAgentState (TASK-655, #1320).
+      {
+        'config.runtime.runtimeType': 'webhook',
+        'config.runtime.host': { $in: [null, ''] },
+        'config.runtime.webhookUrl': { $in: [null, ''] },
+      },
     ],
   }).limit(CANDIDATE_LIMIT).lean();
   result.candidates = candidates.length;

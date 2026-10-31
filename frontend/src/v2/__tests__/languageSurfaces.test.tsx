@@ -79,7 +79,7 @@ describe('language surfaces derive from the registry', () => {
       .getAllByRole('option');
     // Accessible names, not textContent: the active row carries a decorative
     // aria-hidden check mark, and stripping that glyph here would couple this
-    // assertion to CHECK_ICON in the component (otto, gate on #2436). Name
+    // assertion to CHECK_ICON in the component (gate on #2436). Name
     // computation ignores aria-hidden content, so the strip is unnecessary.
     expect(options).toHaveLength(EXPECTED_LANGUAGES.length);
     EXPECTED_LANGUAGES.forEach(({ label }, index) => {

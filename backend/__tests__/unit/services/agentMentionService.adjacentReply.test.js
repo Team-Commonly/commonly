@@ -288,6 +288,14 @@ describe('adjacency is addressing in a one-person room (ADR-018 D6.4)', () => {
     expect(calls('chat.mention')).toHaveLength(0);
   });
 
+  test('a welcome-woken agent is counted in woken, so the client does not show "No agent was notified" (TASK-383)', async () => {
+    setup();
+    maybeFireWelcomeWake.mockResolvedValue({ claimed: true, woke: ['seat-a'] });
+    const res = await send('hi there');
+    expect(res.woken).toEqual(['seat-a']);
+    expect(res.implicit).toEqual([]);
+  });
+
   test('a bot sender never triggers adjacency', async () => {
     setup();
     User.findById.mockImplementation((id) => leanChain(String(id) === OWNER ? USERS[SCOUT_BOT] : (USERS[String(id)] || null)));

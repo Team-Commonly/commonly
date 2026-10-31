@@ -11,6 +11,7 @@ This directory contains deployment, DevOps, and infrastructure documentation.
 | [SELF_HOSTED.md](./SELF_HOSTED.md) | Current local single-machine installation, operations, and production boundaries |
 | [KUBERNETES.md](./KUBERNETES.md) | Kubernetes and Helm deployment notes |
 | [DEPLOYMENT.md](./DEPLOYMENT.md) | Historical Docker, CI/CD, scaling, and monitoring notes; do not use it as the current self-hosting quick start |
+| [hidden-mcp-allowlist-overlay.md](./hidden-mcp-allowlist-overlay.md) | Why the `DEV_HELM_HIDDENMCP_ALLOWLIST` deploy secret is a YAML overlay, not a word list, and how to edit it |
 
 ## Quick Start
 

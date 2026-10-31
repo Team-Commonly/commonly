@@ -1,6 +1,6 @@
 # Task priority, live owner and watchers
 
-TASK-443 · D40 · Implementation design, 2026-10-24 · Owner: Tern
+TASK-443 · Implementation design, 2026-10-24
 
 ## Behavior
 
@@ -24,7 +24,7 @@ Use a rerunnable direct collection writes for open rows. Copy a leading [P0]–[
 - UI: frontend/src/v2/components/V2PodBoard.tsx, board styles in frontend/src/v2/v2.css, en/zh-CN locale files and V2PodBoard tests. Pin any load-bearing CSS in v2-layout-invariants and verify 1440/390 against UX Lead's artboard.
 - Migration: backend/scripts/migrate-task-priority.ts plus service tests. Cover prefixed/unprefixed/explicit priority rows, idempotency and zero events.
 
-Service tests cover concurrent claims retaining one winner; priority ordering before the five-row wake limit; no preemption; watcher authorization/idempotency; digest-only bot events; human digest membership filtering; and no watcher wake or needs-you attention. Gates: CodeRabbit first, Sable code, Rhea wake/security, UX Lead render. Design page plus UX card artboard precede component implementation.
+Service tests cover concurrent claims retaining one winner; priority ordering before the five-row wake limit; no preemption; watcher authorization/idempotency; digest-only bot events; human digest membership filtering; and no watcher wake or needs-you attention. Gates: CodeRabbit first, then code, wake/security and render review. Design page plus UX card artboard precede component implementation.
 
 ## Render reference
 

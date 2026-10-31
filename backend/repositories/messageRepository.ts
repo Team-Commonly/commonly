@@ -1,11 +1,12 @@
 /**
- * Pod message reads (TASK-503). PostgreSQL is the message store; MongoDB holds
- * only legacy rows and the `pgFallback` rows written while PG was down.
+ * Pod message reads (TASK-503). With PG_HOST set, PostgreSQL is the only
+ * message store: every write path goes there, and a PG read failure surfaces
+ * as an error rather than a silent read from MongoDB, whose rows the PG read
+ * never shows. Without PG_HOST, MongoDB is the instance's only store, the same
+ * gate the write paths use.
  *
- * Every read that pages a pod's messages goes through `listPodMessages`, so the
- * Mongo fallback lives here and nowhere else. Removing it once the 30-day
- * trigger check clears is a change to this file only; a PG failure then
- * surfaces as an error instead of a silent read from the other store.
+ * Every read that pages a pod's messages goes through `listPodMessages`, so
+ * that choice lives here and nowhere else.
  *
  * Callers get one row shape whichever store answered: the shape of
  * `models/pg/Message` `findByPodId`, oldest first.
@@ -15,6 +16,7 @@
 const PGMessage = require('../models/pg/Message');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const MongoMessage = require('../models/Message');
+import { messageStoreUnavailable } from '../services/messageStoreError';
 
 export type PodMessageAuthor = { _id: string; username: string; profilePicture?: string; isBot?: boolean };
 
@@ -51,7 +53,7 @@ export interface ListPodMessagesOptions {
   before?: string | null;
 }
 
-/** Same clamp as the PG read, so the fallback can never page more rows. */
+/** Same clamp as the PG read, so the Mongo read can never page more rows. */
 const clampLimit = (limit: unknown): number => Math.min(200, Math.max(1, Number.parseInt(String(limit), 10) || 50));
 
 type MongoAuthor = { _id?: { toString(): string }; username?: string; profilePicture?: string; isBot?: boolean };
@@ -104,10 +106,9 @@ export async function listPodMessages(
   { limit = 50, before = null }: ListPodMessagesOptions = {},
 ): Promise<PodMessage[]> {
   const safeLimit = clampLimit(limit);
-  try {
-    return await PGMessage.findByPodId(podId, safeLimit, before || null) as PodMessage[];
-  } catch (pgError) {
-    console.warn('[messages] PG read failed, falling back to MongoDB:', (pgError as Error).message);
+  if (process.env.PG_HOST) {
+    return await PGMessage.findByPodId(podId, safeLimit, before || null)
+      .catch((pgError: unknown) => { throw messageStoreUnavailable('read', pgError); }) as PodMessage[];
   }
   const query: Record<string, unknown> = { podId };
   if (before) query.createdAt = { $lt: new Date(before) };

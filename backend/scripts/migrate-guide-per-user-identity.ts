@@ -26,8 +26,8 @@
  * Idempotent: a second run finds zero 'default' guide installs.
  *
  * Usage:
- *   ts-node backend/scripts/migrate-guide-per-user-identity.ts          # apply
- *   ts-node backend/scripts/migrate-guide-per-user-identity.ts --dry    # report
+ *   cd backend && node dist/scripts/migrate-guide-per-user-identity.js          # apply
+ *   cd backend && node dist/scripts/migrate-guide-per-user-identity.js --dry    # report
  */
 
 import mongoose from 'mongoose';

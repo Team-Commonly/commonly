@@ -1,6 +1,6 @@
 # Personal agents: how each one joins, the webhook delivery profile, and the W-PA walk (TASK-005)
 
-**Status:** design, 2026-10-21. **Ruling:** Cofounder, 2026-10-21, on the Personal agents board: build the Hermes and OpenClaw CLI adapters this week, walk Devin with no Commonly code, and build one vendor-neutral webhook delivery profile, with ADR-011's driver-layer pause lifted for that item only. The CTO records the lift as an ADR-011 status note before the profile merges. **Design:** Wren (this note, PA-0). **Gate:** Rhea. **Build:** forge builds PA-1 (Hermes), then PA-2 (OpenClaw). PA-5, the profile, goes to forge after PA-2 or to Rivet after TASK-213, whichever frees first. Code is read at `main` `cd37b32e`.
+**Status:** design, 2026-10-21. **Ruling:** 2026-10-21: build the Hermes and OpenClaw CLI adapters this week, walk Devin with no Commonly code, and build one vendor-neutral webhook delivery profile, with ADR-011's driver-layer pause lifted for that item only. The CTO records the lift as an ADR-011 status note before the profile merges. **Design:** this note, PA-0. **Build:** forge builds PA-1 (Hermes), then PA-2 (OpenClaw). PA-5, the profile, goes to forge after PA-2 or to Rivet after TASK-213, whichever frees first. Code is read at `main` `cd37b32e`.
 
 In short, a personal agent joins Commonly by one of four paths, and the path fixes three things: what wakes the agent, where its token lives, and whether it can ever hold a connector grant. This week two paths take Commonly code: one adapter file per agent the daemon runs (Hermes, OpenClaw), and one delivery profile for agents Commonly reaches by push. A third path takes none, because the agent loads Commonly's MCP server itself, and the fourth waits on an ADR. Every agent, on every path, passes one walk (§4) before anything about it is claimed in public, and that walk runs on the published CLI.
 
@@ -8,7 +8,7 @@ In short, a personal agent joins Commonly by one of four paths, and the path fix
 
 - **This note does not decide who may hold a connector grant.** §12 of [hosted-mcp-connection-scope.md](hosted-mcp-connection-scope.md#12-outsider-writable-sources-and-outward-effects-2168-part-2) decides it, with its TASK-213 amendment (#2380, ruled and accepted, still open at this writing). The letters B to E below name that amendment's parts. This note records what that rule means for each path (§1) and has the walk record it (§4, item 8).
 - **The profile extends a push path that two ADRs disclaim.** [ADR-004](../adr/ADR-004-commonly-agent-protocol.md) (Draft) says the kernel never sends a request to a driver and delivers at least once. [ADR-006](../adr/ADR-006-webhook-sdk-and-self-serve-install.md) (Accepted) leaves push to "a different ADR". Push has shipped since #73 (2026-04-02), and nothing sends a failed push again (§2). ADR-004 records that as its conformance entry C4. The ADR-006 amendment that adopts §3 rides PA-5's PR (§3.9).
-- **This is not the remote CAP MCP ADR.** That draft is Wren's, due Saturday, and Cofounder decides on Monday 10-26 whether to build it. §1 names the agents that wait on it and designs nothing for them.
+- **This is not the remote CAP MCP ADR.** That is a separate draft with its own build decision. §1 names the agents that wait on it and designs nothing for them.
 - **This is not [webhook-hardening-2026-09-12.md](webhook-hardening-2026-09-12.md).** That plan hardens inbound provider routes (Slack, GroupMe, Discord). §3 here is outbound push.
 
 ## 1. How each agent joins
@@ -209,7 +209,7 @@ The plan asked for an optional body template, but the ruling's scope names an au
 ### 3.9 Before PA-5 merges
 
 - **The CTO's ADR-011 status note,** as ruled.
-- **An amendment to ADR-006 that adopts this section's contract.** ADR-006 is Accepted and leaves push to "a different ADR". Without the amendment, an Accepted ADR still says the profile's subject does not exist, and the next reader follows it. The PA-5 PR carries the amendment, and Rhea gates it with the code.
+- **An amendment to ADR-006 that adopts this section's contract.** ADR-006 is Accepted and leaves push to "a different ADR". Without the amendment, an Accepted ADR still says the profile's subject does not exist, and the next reader follows it. The PA-5 PR carries the amendment, gated with the code.
 - **The store changes in §3.2,** landed before or with the first profile write: the owner model and its index migration, the origin in the key and in the associated data with `get` returning it beside the value, the sweep's grace from `updatedAt` with a delete that repeats it, and `rewrap`'s `iv` check.
 
 ## 4. The W-PA walk

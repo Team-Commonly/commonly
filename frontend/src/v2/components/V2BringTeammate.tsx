@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
+import { recordByoStep, recordByoStepOnce } from '../utils/byoTelemetry';
 import './V2BringTeammate.css';
 
 export type TeammateInviteSource = 'first-agent-post' | 'scout-first-session' | 'solo-pod';
@@ -137,7 +138,10 @@ const BringTeammateContent: React.FC<Props> = ({
   const onShownRef = useRef(onShown);
   onShownRef.current = onShown;
   useEffect(() => {
-    if (shown) onShownRef.current?.();
+    if (!shown) return;
+    onShownRef.current?.();
+    recordByoStepOnce(apiRef.current, 'invite-card-shown', userId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shown]);
   const card = shown ? (
     <section className={`v2-teammate${source === 'solo-pod' ? ' v2-teammate--empty' : ' v2-teammate--message'}`} aria-label={t('teammate.title', { podName })}>
@@ -152,6 +156,7 @@ const BringTeammateContent: React.FC<Props> = ({
         </button>
         <button type="button" className="v2-teammate__dismiss" aria-label={t('teammate.dismiss')} onClick={() => {
           setDismissed(true);
+          recordByoStep(apiRef.current, 'invite-card-dismissed');
           try { localStorage.setItem(storageKey, '1'); } catch { /* This mount still dismisses. */ }
         }}>
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>

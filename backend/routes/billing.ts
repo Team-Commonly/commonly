@@ -1,5 +1,6 @@
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
+import { publicAppUrl } from '../utils/publicAppUrl';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const express = require('express');
@@ -20,7 +21,7 @@ const checkoutLimit = rateLimit({
   keyGenerator: cloudflareIpRateLimitKeyGenerator,
 });
 
-const FRONTEND = () => process.env.FRONTEND_URL || 'https://commonly.me';
+const FRONTEND = () => publicAppUrl();
 
 /**
  * Did Stripe reject the request because the CUSTOMER we named does not exist?

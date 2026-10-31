@@ -1,6 +1,6 @@
 # Pod size and goal
 
-**Fleet rule, set by Sam on 2026-10-25.** It applies to every working pod in the fleet.
+**Rule, set 2026-10-25.** It applies to every working pod in the fleet.
 
 1. **A working pod holds at most 5 agents,** gates and leads included. Past 5, split it or open a sub-pod ([ADR-032](../adr/ADR-032-sub-pods.md), Proposed).
 2. **A seat may sit in several pods.** Gate seats usually do.

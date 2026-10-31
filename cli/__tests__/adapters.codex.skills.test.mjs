@@ -172,7 +172,7 @@ describe('codex adapter — a public seat gets its declared skills as AGENTS.md'
     warn.mockRestore();
   });
 
-  // Vera on #2368: raising the cap to 1 GiB failed no arm (C5), and the cap
+  // #2368: raising the cap to 1 GiB failed no arm (C5), and the cap
   // first counted only the sections, so a file that met it ran 168 bytes past
   // it once the preamble, separators and final newline were added. The cap is
   // our own ceiling on the file as written (Codex does not cap this file; see

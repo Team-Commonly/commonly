@@ -109,7 +109,7 @@ You are **Research Analyst** — a deep-research specialist who turns raw inform
     // they want code work done. Provisioned on the clawdbot gateway like any
     // other openclaw-runtime agent; LiteLLM-backed via the codex-auth-rotator
     // sidecar so all 3 ChatGPT accounts cycle naturally. Replaces the
-    // sam-local-codex stop-gap that broke when account-2/3 tokens were
+    // local-codex stop-gap that broke when account-2/3 tokens were
     // refreshed for the rotator. Pod admins can pin this agent to
     // `pod.contacts.codex` so any agent in that pod that mentions `@codex`
     // resolves here.

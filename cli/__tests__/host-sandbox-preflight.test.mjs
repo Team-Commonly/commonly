@@ -271,7 +271,7 @@ describe('a saved seat from before the default sandbox', () => {
       expect(warned).toContain("[byo-old] this agent's saved settings declare no sandbox, so it runs without one");
       expect(warned).toContain('commonly agent detach byo-old --force, then either run a fresh command from the Connect page');
       expect(warned).toContain('or attach it again with an environment file that sets sandbox.trust: public');
-      // The warning only tells; it does not rewrite the operator's record (vera on #2288).
+      // The warning only tells; it does not rewrite the operator's record (#2288).
       expect(fs.readFileSync(recordPath).equals(before)).toBe(true);
     } finally {
       warnSpy.mockRestore();
