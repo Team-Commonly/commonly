@@ -247,7 +247,13 @@ async function openPage(browser, viewport, scheme, record) {
       }
       const location = res.headers().location;
       if (res.status() >= 300 && res.status() < 400 && location) {
-        url = new URL(location, url).href;
+        try {
+          url = new URL(location, url).href;
+        } catch {
+          // A malformed Location cannot be checked, so it is refused rather than followed.
+          record.blockedReads += 1;
+          return r.abort().catch(() => {});
+        }
         continue;
       }
       return r.fulfill({ response: res });
