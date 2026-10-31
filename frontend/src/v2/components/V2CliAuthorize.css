@@ -1,20 +1,23 @@
+/* Mounted inside .v2-root (TASK-682), so every value below is a token and
+   follows the dark theme. .v2-root resets button chrome and link/input
+   colour at (0,1,0)–(0,1,1); the controls here are prefixed with
+   .v2-cli-authorize so they win on specificity, not on stylesheet order. */
 .v2-cli-authorize {
   min-height: 100vh;
   display: grid;
   place-items: center;
   padding: 24px;
-  background: #f8f8fb;
-  color: #111827;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-primary);
+  font-family: var(--v2-font);
 }
 
 .v2-cli-authorize__card {
   width: min(100%, 460px);
   padding: 32px;
-  border: 1px solid #e5e7eb;
-  border-radius: 18px;
-  background: var(--v2-surface, #fff);
-  box-shadow: 0 12px 32px rgba(17, 24, 39, 0.08);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-surface);
 }
 
 .v2-cli-authorize__card form { margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; }
@@ -24,27 +27,28 @@
   width: 36px;
   height: 36px;
   place-items: center;
-  border-radius: 10px;
-  background: var(--v2-accent, #1d3fd1);
-  color: var(--v2-on-accent, #fff);
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
   font-weight: 800;
 }
 
-.v2-cli-authorize__eyebrow { margin: 16px 0 0 !important; color: var(--v2-accent, #1d3fd1) !important; font-size: 11px; font-weight: 800; letter-spacing: .11em; }
+.v2-cli-authorize__eyebrow { margin: 16px 0 0 !important; color: var(--v2-accent-text) !important; font-size: 11px; font-weight: 800; letter-spacing: .11em; }
 .v2-cli-authorize__card h1 { margin: 18px 0 8px; font-size: 24px; }
-.v2-cli-authorize__card p { margin: 0 0 20px; color: #4b5563; line-height: 1.5; }
+.v2-cli-authorize__card p { margin: 0 0 20px; color: var(--v2-text-secondary); line-height: 1.5; }
 .v2-cli-authorize__field { display: grid; gap: 7px; margin-bottom: 18px; font-size: 13px; font-weight: 700; }
-.v2-cli-authorize__field input { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid #d7dce7; border-radius: 9px; font: 600 18px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
-.v2-cli-authorize__field input:focus { outline: none; border-color: var(--v2-accent, #1d3fd1); box-shadow: var(--v2-focus-ring, 0 0 0 3px rgba(29, 63, 209, .18)); }
-.v2-cli-authorize__primary, .v2-cli-authorize__secondary { display: inline-flex; justify-content: center; align-items: center; min-height: 42px; padding: 0 16px; border-radius: 9px; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
-.v2-cli-authorize__primary { border: 1px solid var(--v2-accent, #1d3fd1); background: var(--v2-accent, #1d3fd1); color: var(--v2-on-accent, #fff); }
-.v2-cli-authorize__primary:disabled { cursor: wait; opacity: .65; }
-.v2-cli-authorize__secondary { border: 1px solid #d7dce7; background: var(--v2-surface, #fff); color: #374151; }
-.v2-cli-authorize__facts { margin: 0 0 18px; padding: 14px; border-radius: 10px; background: #f7f7fa; }
+.v2-cli-authorize .v2-cli-authorize__field input { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid var(--v2-border-strong); border-radius: var(--v2-radius); background: var(--v2-surface); color: var(--v2-text-primary); font: 600 18px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
+.v2-cli-authorize .v2-cli-authorize__field input:focus { outline: none; border-color: var(--v2-accent); box-shadow: var(--v2-focus-ring); }
+.v2-cli-authorize .v2-cli-authorize__primary, .v2-cli-authorize .v2-cli-authorize__secondary { display: inline-flex; justify-content: center; align-items: center; min-height: 42px; padding: 0 16px; border-radius: var(--v2-radius); font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
+.v2-cli-authorize .v2-cli-authorize__primary { border: 1px solid var(--v2-accent-fill); background: var(--v2-accent-fill); color: var(--v2-on-accent); }
+.v2-cli-authorize .v2-cli-authorize__primary:disabled { cursor: wait; opacity: .65; }
+.v2-cli-authorize .v2-cli-authorize__secondary { border: 1px solid var(--v2-border-strong); background: var(--v2-surface); color: var(--v2-text-secondary); }
+.v2-cli-authorize__facts { margin: 0 0 18px; padding: 14px; border-radius: var(--v2-radius-lg); background: var(--v2-bg-subtle); }
 .v2-cli-authorize__facts div { display: flex; justify-content: space-between; gap: 18px; padding: 5px 0; }
-.v2-cli-authorize__facts dt { color: #6b7280; }
+.v2-cli-authorize__facts dt { color: var(--v2-text-muted); }
 .v2-cli-authorize__facts dd { margin: 0; font-weight: 600; text-align: right; }
-.v2-cli-authorize__warning { padding: 10px 12px; border-radius: 8px; background: var(--v2-warning-soft, #fdefdc); color: #7c4a03 !important; font-size: 13px; }
+/* #7c4a03 stays literal: no warning-ink token exists on main or #3058 yet. */
+.v2-cli-authorize__warning { padding: 10px 12px; border-radius: var(--v2-radius); background: var(--v2-warning-soft); color: #7c4a03 !important; font-size: 13px; }
 .v2-cli-authorize__actions { display: flex; justify-content: flex-end; gap: 10px; }
 
 @media (max-width: 480px) {

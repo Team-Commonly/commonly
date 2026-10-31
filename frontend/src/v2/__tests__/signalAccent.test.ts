@@ -106,10 +106,23 @@ describe('Signal accent on standalone and bridged surfaces', () => {
     expect(guidePage).toContain('sx={guideTextButtonSx} onClick={() => navigate(link.path)}>');
   });
 
-  test('the CLI authorize surface uses shared tokens with standalone fallbacks', () => {
+  test('the CLI authorize surface mounts in .v2-root and reads tokens only', () => {
+    // TASK-682: wrapped in .v2-root so the tokens resolve and the dark theme reaches it.
+    const tsx = read('src/v2/components/V2CliAuthorize.tsx');
+    expect(tsx).toContain('<main className="v2-root v2-cli-authorize">');
     const css = read('src/v2/components/V2CliAuthorize.css');
-    expect(css).toContain('var(--v2-accent, #1d3fd1)');
-    expect(css).toContain('var(--v2-focus-ring, 0 0 0 3px rgba(29, 63, 209, .18))');
+    expect(css).toContain('background: var(--v2-accent-fill)');
+    expect(css).toContain('box-shadow: var(--v2-focus-ring)');
+    // No standalone fallbacks inside var(), and no card shadow (Signal has none).
+    expect(css).not.toMatch(/var\(--v2-[a-z-]+,/);
+    expect(css).not.toContain('0 12px 32px');
+    // The only hex left is the warning ink, which has no token yet.
+    expect(css.replace(/\/\*[\s\S]*?\*\//g, '').match(/#[0-9a-f]{3,8}\b/gi)).toEqual(['#7c4a03']);
+    // .v2-root resets button chrome at (0,1,0): the controls must out-specify it.
+    expect(css).toContain('.v2-cli-authorize .v2-cli-authorize__primary {');
+    expect(css).toContain('.v2-cli-authorize .v2-cli-authorize__secondary {');
+    // Inputs set their own ground, or dark leaves them browser white.
+    expect(css).toMatch(/\.v2-cli-authorize__field input \{[^}]*background: var\(--v2-surface\)/);
   });
 
   test.each([

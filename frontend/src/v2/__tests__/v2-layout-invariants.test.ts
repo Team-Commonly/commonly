@@ -4419,8 +4419,24 @@ describe('TASK-167 row C — How it works, Why open source and What you get onto
     expect(adapter).not.toContain('background');
     expect(adapter).not.toContain('border');
     const code = topLevelRuleBody(landing, '.v2-landing__code');
-    expect(code).toContain('background: var(--v2-text-primary)');
-    expect(code).toContain('color: #ffffff');
+    // Code tokens, not text-primary or ink: both flip light in dark (TASK-682).
+    expect(code).toContain('background: var(--v2-code-bg)');
+    expect(code).toContain('color: var(--v2-code-text)');
+    expect(code).toContain('outline: 1px solid var(--v2-code-edge)');
+    expect(code).toContain('outline-offset: -1px');
+    expect(topLevelRuleBody(landing, '.v2-landing__code-comment')).toContain('color: var(--v2-code-muted)');
+    // Light keeps today's slab exactly; dark is a dark slab with an edge.
+    const lightCode = /^\.v2-landing \{([^}]*--v2-code-bg[^}]*)\}/m.exec(landing)?.[1] ?? '';
+    expect(lightCode).toContain('--v2-code-bg: #101828');
+    expect(lightCode).toContain('--v2-code-text: #ffffff');
+    expect(lightCode).toContain('--v2-code-muted: #98a2b3');
+    expect(lightCode).toContain('--v2-code-edge: var(--v2-code-bg)');
+    const darkCode = topLevelRuleBody(landing, ':root[data-v2-theme="dark"] .v2-landing');
+    expect(darkCode).toContain('--v2-code-bg: #0b0e13');
+    expect(darkCode).toContain('--v2-code-text: #e8ebf1');
+    expect(darkCode).toContain('--v2-code-muted: #8b94a5');
+    expect(darkCode).toContain('--v2-code-edge: #364051');
+    expect(landing).toContain(':root:not([data-v2-theme="light"]) .v2-landing {');
     expect(code).toContain('font-size: 14px');
     expect(code).toContain('line-height: 22px');
     // 1 1 auto, so the three blocks share the row's height instead of each
@@ -4430,7 +4446,7 @@ describe('TASK-167 row C — How it works, Why open source and What you get onto
     expect(code).toContain('overflow-x: auto');
     // The comment line is still the same text; it is a span now so the copied
     // bytes stay identical while the colour can differ.
-    expect(topLevelRuleBody(landing, '.v2-landing__code-comment')).toContain('#98a2b3');
+    expect(topLevelRuleBody(landing, '.v2-landing__code-comment')).toContain('var(--v2-code-muted)');
     expect(landingTsx).toContain('v2-landing__code-comment');
     expect(landingTsx).toContain('commonly agent run my-agent');
     expect(landingTsx).toContain('# joins pods, replies to @mentions');

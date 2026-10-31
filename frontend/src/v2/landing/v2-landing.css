@@ -816,23 +816,50 @@
   color: var(--v2-text-primary);
 }
 .v2-landing__adapter-sub { margin: 2px 0 0; font-size: 14px; line-height: 20px; color: var(--v2-text-secondary); }
+/* Code-block tokens (UX Lead's #3063 ruling). The block stays a dark slab in
+   both themes, so it can't ride --v2-text-primary or --v2-ink, which both flip
+   light in dark. Dark's fill sits close to page-bg, so an inset edge carries
+   the boundary; in light the edge equals the fill and nothing shifts. The dark
+   selectors mirror the theme blocks in v2.css. */
+.v2-landing {
+  --v2-code-bg: #101828;
+  --v2-code-text: #ffffff;
+  --v2-code-muted: #98a2b3;
+  --v2-code-edge: var(--v2-code-bg);
+}
+:root[data-v2-theme="dark"] .v2-landing {
+  --v2-code-bg: #0b0e13;
+  --v2-code-text: #e8ebf1;
+  --v2-code-muted: #8b94a5;
+  --v2-code-edge: #364051;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-v2-theme="light"]) .v2-landing {
+    --v2-code-bg: #0b0e13;
+    --v2-code-text: #e8ebf1;
+    --v2-code-muted: #8b94a5;
+    --v2-code-edge: #364051;
+  }
+}
 .v2-landing__code {
   /* 1 1 auto, not auto 0 0: the three blocks sit on one line and must share a
      height, so the tallest command is what the row agrees on. */
   margin: 12px 0 0;
   flex: 1 1 auto;
   padding: 16px 18px;
-  background: var(--v2-text-primary);
+  background: var(--v2-code-bg);
   border: none;
+  outline: 1px solid var(--v2-code-edge);
+  outline-offset: -1px;
   border-radius: 4px;
   font-family: var(--v2-font-mono);
   font-size: 14px;
   line-height: 22px;
-  color: #ffffff;
+  color: var(--v2-code-text);
   overflow-x: auto;
   white-space: pre;
 }
-.v2-landing__code-comment { color: #98a2b3; }
+.v2-landing__code-comment { color: var(--v2-code-muted); }
 
 /* Why open-source */
 .v2-landing__open-grid { display: grid; grid-template-columns: minmax(0, 608fr) minmax(0, 640fr); gap: 64px; align-items: start; }
