@@ -133,11 +133,11 @@ Preferred: run the script **inside the backend pod** so it picks up the same
 ```bash
 # One-shot inside the running backend pod
 kubectl exec -n commonly-dev deployment/backend -it -- \
-  npx ts-node backend/scripts/generate-team-avatars.ts
+  cd backend && node dist/scripts/generate-team-avatars.js
 
 # Force regeneration (even if profilePicture is already set)
 kubectl exec -n commonly-dev deployment/backend -it -- \
-  npx ts-node backend/scripts/generate-team-avatars.ts --force
+  cd backend && node dist/scripts/generate-team-avatars.js --force
 ```
 
 Local / off-cluster run (direct OpenAI, no proxy):
@@ -145,7 +145,7 @@ Local / off-cluster run (direct OpenAI, no proxy):
 ```bash
 cd /path/to/commonly
 OPENAI_API_KEY=sk-... MONGO_URI=mongodb://... \
-  npx ts-node backend/scripts/generate-team-avatars.ts
+  cd backend && node dist/scripts/generate-team-avatars.js
 ```
 
 The script is idempotent: it skips any agent whose `profilePicture` already

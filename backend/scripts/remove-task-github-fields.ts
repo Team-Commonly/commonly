@@ -7,8 +7,8 @@
  * half of the schema removal.
  *
  * Usage:
- *   npx ts-node backend/scripts/remove-task-github-fields.ts
- *   npx ts-node backend/scripts/remove-task-github-fields.ts --apply
+ *   cd backend && node dist/scripts/remove-task-github-fields.js
+ *   cd backend && node dist/scripts/remove-task-github-fields.js --apply
  */
 
 /* eslint-disable no-console */
