@@ -473,12 +473,13 @@ const revokeHandler = async (req: AuthenticatedRequest, res: express.Response): 
   try {
     const grant = await RoomGrant.findOne({ grantId: req.params.grantId });
     if (!grant) return res.status(404).json({ error: 'grant_not_found' });
-    // An unbound grant has no proven owner, so this route cannot act on it.
-    if (!grant.ownerId) return res.status(403).json({ error: 'grant_unbound' });
     const userId = callerId(req);
-    const isOwner = grant.ownerId === userId;
+    const isOwner = Boolean(grant.ownerId) && grant.ownerId === userId;
     const isAdmin = !isOwner && (req.user?.role === 'admin'
       || (Boolean(userId) && (await User.findById(userId).select('role').lean())?.role === 'admin'));
+    // An unbound grant has no proven owner, so only an admin may act on it. Revoking
+    // only narrows access, so that is safe; no owner path is opened for it.
+    if (!grant.ownerId && !isAdmin) return res.status(403).json({ error: 'grant_unbound' });
     if (!isOwner && !isAdmin) {
       return res.status(403).json({ error: 'access_denied' });
     }

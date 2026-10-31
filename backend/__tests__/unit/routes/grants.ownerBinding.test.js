@@ -11,7 +11,7 @@ const mongoose = require('mongoose');
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
   const id = req.get('x-test-user');
   if (!id) return res.status(401).json({ error: 'unauthorized' });
-  req.user = { id, role: 'user' };
+  req.user = { id, role: req.get('x-test-role') || 'user' };
   req.userId = id;
   return next();
 });
@@ -123,6 +123,21 @@ describe('revoke refuses an unbound grant', () => {
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: 'grant_unbound' });
     expect((await RoomGrant.findOne({ grantId: grant.grantId }).lean()).revokedAt).toBeNull();
+  });
+
+  test('an admin can revoke an unbound grant, and a non-admin still gets grant_unbound', async () => {
+    const grant = await seatGrant({ ownerId: null, connectionRowId: null });
+    const member = await request(app).post(`/api/grants/${grant.grantId}/revoke`).set('x-test-user', STRANGER);
+    expect(member.status).toBe(403);
+    expect(member.body).toMatchObject({ error: 'grant_unbound' });
+
+    const admin = await request(app).post(`/api/grants/${grant.grantId}/revoke`)
+      .set('x-test-user', STRANGER).set('x-test-role', 'admin');
+    expect(admin.status).toBe(200);
+    expect(admin.body).toMatchObject({ revoked: 1 });
+    const stored = await RoomGrant.findOne({ grantId: grant.grantId }).lean();
+    expect(stored.revokedAt).toBeInstanceOf(Date);
+    expect(stored.revokedBy).toBe(STRANGER);
   });
 
   test('a bound grant is revoked by its owner and refused to anyone else', async () => {

@@ -75,12 +75,14 @@ export interface GrantOwnerBackfillResult {
 }
 
 /**
- * Binds every grant still missing an owner. Idempotent: a bound grant is never
- * matched again, and the conditional update never overwrites a binding that
- * landed between the read and the write.
+ * Binds every live grant still missing an owner. Revoked and expired grants are
+ * skipped: no read or revoke path acts on them, so binding them is wasted work,
+ * and an unbound dead grant would otherwise be re-queried on every boot.
+ * Idempotent: a bound grant is never matched again, and the conditional update
+ * never overwrites a binding that landed between the read and the write.
  */
 export const backfillGrantOwners = async (): Promise<GrantOwnerBackfillResult> => {
-  const grants = await RoomGrant.find({ ownerId: null })
+  const grants = await RoomGrant.find({ ownerId: null, revokedAt: null, expiresAt: { $gt: new Date() } })
     .select('grantId connectionId createdAt')
     .lean();
   const result: GrantOwnerBackfillResult = { scanned: grants.length, bound: 0, unbound: 0 };

@@ -169,6 +169,14 @@ describe('backfillGrantOwners (memory Mongo)', () => {
     expect(stored.connectionRowId).toBe(ROW_A);
   });
 
+  test('revoked and expired unbound grants are not scanned at all', async () => {
+    await insertRow({ _id: new mongoose.Types.ObjectId(ROW_A), createdBy: new mongoose.Types.ObjectId(OWNER), createdAt: BEFORE });
+    await insertGrant({ expiresAt: new Date('2020-01-01T00:00:00.000Z') });
+    await insertGrant({ revokedAt: AFTER });
+
+    expect(await backfillGrantOwners()).toEqual({ scanned: 0, bound: 0, unbound: 0 });
+  });
+
   test('a grant naming a row _id whose row is gone stays unbound; the installation id is not a fallback', async () => {
     // Row A is removed. Row B reuses the installation id the grant also carries.
     await insertRow({ _id: new mongoose.Types.ObjectId(ROW_B), createdBy: new mongoose.Types.ObjectId(OTHER), createdAt: AFTER });
