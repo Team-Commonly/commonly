@@ -1641,6 +1641,11 @@ const V2AgentBYO: React.FC = () => {
                 {t('agentByo.listen.reachClaude', { name: issued.agentName })}
               </p>
             )}
+            {listenerAvailable && listenAdapter === 'codex' && (
+              <p className="v2-byo__listen-note" data-testid="byo-listen-reach-codex">
+                {t('agentByo.listen.reachCodex')}
+              </p>
+            )}
           </div>
           <p data-testid="byo-key-once">{t('agentByo.result.keyOnce')}</p>
 
