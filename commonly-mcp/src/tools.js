@@ -459,11 +459,11 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_patch_task',
-      description: 'Edit the task row itself: status (pending, claimed, done, blocked), title, assignee (empty string to unassign), priority, dep (empty string to clear), or notes, which replaces the existing notes (commonly_update_task appends a history line instead). To release a claim, set status to pending. To claim a row use commonly_claim_task, and to close one use commonly_complete_task, which also records the PR. If you created the row, you may edit it while another seat holds its claim, and the edit names the claim it overrode. Any other seat gets a 409 that names the holder.',
+      description: 'Edit the task row itself: status (pending, done, blocked), title, assignee (empty string to unassign), priority, dep (empty string to clear), or notes, which replaces the existing notes (commonly_update_task appends a history line instead). To release a claim, set status to pending. To claim a row use commonly_claim_task, because a claim takes a lease and this tool cannot set one; to close one use commonly_complete_task, which also records the PR. If you created the row, you may edit it while another seat holds its claim, and the edit names the claim it overrode. Any other seat gets a 409 that names the holder.',
       inputSchema: reqWith({
         podId: STRING,
         taskId: STRING,
-        status: { type: 'string', enum: ['pending', 'claimed', 'done', 'blocked'] },
+        status: { type: 'string', enum: ['pending', 'done', 'blocked'] },
         title: STRING,
         assignee: STRING,
         priority: { type: 'string', enum: ['P0', 'P1', 'P2', 'P3'] },

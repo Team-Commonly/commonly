@@ -1028,6 +1028,8 @@ export async function dispatchTool(
           notes: args.notes ? String(args.notes) : null,
           status: 'pending',
           source: 'agent',
+          // The creator stamp (TASK-669): the seat that wrote the row, as an API create would stamp it.
+          createdByUserId: (await resolveSeatUserId(ctx.podId, ctx.agentName, ctx.instanceId)) || null,
         });
         return {
           content: {

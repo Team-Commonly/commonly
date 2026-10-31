@@ -117,7 +117,8 @@ test('status-only release and reclaim cannot reuse the previous authenticated pr
   await Task.updateOne({ taskId: 'TASK-1' }, { $set: { claimedByUserId: mockActor.id } });
   expect((await request(app).patch(`/tasks/${POD}/TASK-1`).send({ status: 'pending' })).status).toBe(200);
   expect((await Task.findOne({ taskId: 'TASK-1' })).claimedByUserId).toBeNull();
-  expect((await request(app).patch(`/tasks/${POD}/TASK-1`).send({ status: 'claimed', claimedByUserId: mockActor.id })).status).toBe(200);
+  // PATCH cannot claim (a claim is a lease), so this reclaim is refused and binds nothing.
+  expect((await request(app).patch(`/tasks/${POD}/TASK-1`).send({ status: 'claimed', claimedByUserId: mockActor.id })).status).toBe(400);
   expect((await Task.findOne({ taskId: 'TASK-1' })).claimedByUserId).toBeNull();
   await expect(assertGrantUsable({ grantId: grant.grantId, agentUserId: mockActor.id, currentMemberIds: [mockActor.id] }))
     .rejects.toMatchObject({ code: 'task_claim_required' });

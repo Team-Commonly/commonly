@@ -65,6 +65,13 @@ jest.mock('../../../services/roomGrantService', () => ({
   onTaskClosed: (...args) => mockOnTaskClosed(...args),
 }));
 
+// The task-completed trigger (ADR-012 §4) writes system-exchange rows this file's mocked
+// models cannot back. A PATCH to done fires it, the same as /complete does.
+const mockRecordTaskCompleted = jest.fn(async () => {});
+jest.mock('../../../services/systemExchangeTriggers', () => ({
+  recordTaskCompleted: (...args) => mockRecordTaskCompleted(...args),
+}));
+
 const tasksApi = require('../../../routes/tasksApi');
 const Task = require('../../../models/Task');
 
@@ -85,12 +92,11 @@ beforeEach(() => {
   mockResolveTaskAttention.mockReset();
   mockResolveTaskAttention.mockResolvedValue(undefined);
   mockOnTaskClosed.mockClear();
+  mockRecordTaskCompleted.mockClear();
 });
 
 describe('PATCH /:podId/:taskId status vocabulary', () => {
   test.each([
-    ['in_progress', 'claimed'],
-    ['In_Progress', 'claimed'],
     ['completed', 'done'],
     ['todo', 'pending'],
   ])("normalizes alias '%s' to canonical '%s'", async (alias, canonical) => {
@@ -156,6 +162,51 @@ describe('PATCH /:podId/:taskId status vocabulary', () => {
     expect(mockNotifyPodAgents).toHaveBeenCalledWith(
       POD_ID, task, 'updated', expect.any(Object), { status: 'claimed' },
     );
+  });
+
+  test.each(['claimed', 'in_progress', 'In_Progress'])(
+    "refuses status '%s' on PATCH: a claim takes a lease, and this route writes none",
+    async (status) => {
+      const res = await request(app)
+        .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
+        .send({ status });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/commonly_claim_task/);
+      expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  test('a PATCH to done is a completion: it stamps completedAt and fires the task-completed trigger', async () => {
+    // A PATCH to done used to set the status and nothing else, so the row had no
+    // completedAt and no ADR-012 §4 trigger, where /complete gives it both.
+    const task = { _id: 'task-1', taskId: 'TASK-001', title: 'ship it', assignee: 'scout', status: 'claimed', podId: POD_ID, updates: [] };
+    mockFindOneAndUpdate.mockResolvedValueOnce(task);
+
+    const res = await request(app)
+      .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
+      .send({ status: 'done' });
+
+    expect(res.status).toBe(200);
+    expect(mockFindOneAndUpdate.mock.calls[0][1].$set.completedAt).toBeInstanceOf(Date);
+    expect(mockRecordTaskCompleted).toHaveBeenCalledWith({
+      podId: POD_ID,
+      assignee: 'scout',
+      taskTitle: 'ship it',
+      prUrlOrStatus: null,
+    });
+  });
+
+  test('a PATCH to done on a row already done does not announce the completion again', async () => {
+    const task = { _id: 'task-1', taskId: 'TASK-001', title: 'ship it', assignee: 'scout', status: 'done', podId: POD_ID, updates: [] };
+    mockFindOneAndUpdate.mockResolvedValueOnce(task);
+
+    const res = await request(app)
+      .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
+      .send({ status: 'done' });
+
+    expect(res.status).toBe(200);
+    expect(mockRecordTaskCompleted).not.toHaveBeenCalled();
   });
 
   test('rejects unknown statuses with the vocabulary in the error', async () => {
