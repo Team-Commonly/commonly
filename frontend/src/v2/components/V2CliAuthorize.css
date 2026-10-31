@@ -13,7 +13,7 @@
   padding: 32px;
   border: 1px solid #e5e7eb;
   border-radius: 18px;
-  background: #fff;
+  background: var(--v2-surface, #fff);
   box-shadow: 0 12px 32px rgba(17, 24, 39, 0.08);
 }
 
@@ -26,7 +26,7 @@
   place-items: center;
   border-radius: 10px;
   background: var(--v2-accent, #1d3fd1);
-  color: #fff;
+  color: var(--v2-on-accent, #fff);
   font-weight: 800;
 }
 
@@ -37,14 +37,14 @@
 .v2-cli-authorize__field input { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid #d7dce7; border-radius: 9px; font: 600 18px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
 .v2-cli-authorize__field input:focus { outline: none; border-color: var(--v2-accent, #1d3fd1); box-shadow: var(--v2-focus-ring, 0 0 0 3px rgba(29, 63, 209, .18)); }
 .v2-cli-authorize__primary, .v2-cli-authorize__secondary { display: inline-flex; justify-content: center; align-items: center; min-height: 42px; padding: 0 16px; border-radius: 9px; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
-.v2-cli-authorize__primary { border: 1px solid var(--v2-accent, #1d3fd1); background: var(--v2-accent, #1d3fd1); color: #fff; }
+.v2-cli-authorize__primary { border: 1px solid var(--v2-accent, #1d3fd1); background: var(--v2-accent, #1d3fd1); color: var(--v2-on-accent, #fff); }
 .v2-cli-authorize__primary:disabled { cursor: wait; opacity: .65; }
-.v2-cli-authorize__secondary { border: 1px solid #d7dce7; background: #fff; color: #374151; }
+.v2-cli-authorize__secondary { border: 1px solid #d7dce7; background: var(--v2-surface, #fff); color: #374151; }
 .v2-cli-authorize__facts { margin: 0 0 18px; padding: 14px; border-radius: 10px; background: #f7f7fa; }
 .v2-cli-authorize__facts div { display: flex; justify-content: space-between; gap: 18px; padding: 5px 0; }
 .v2-cli-authorize__facts dt { color: #6b7280; }
 .v2-cli-authorize__facts dd { margin: 0; font-weight: 600; text-align: right; }
-.v2-cli-authorize__warning { padding: 10px 12px; border-radius: 8px; background: #fdefdc; color: #7c4a03 !important; font-size: 13px; }
+.v2-cli-authorize__warning { padding: 10px 12px; border-radius: 8px; background: var(--v2-warning-soft, #fdefdc); color: #7c4a03 !important; font-size: 13px; }
 .v2-cli-authorize__actions { display: flex; justify-content: flex-end; gap: 10px; }
 
 @media (max-width: 480px) {

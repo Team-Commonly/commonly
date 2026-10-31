@@ -1013,8 +1013,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // The footer CTA sits on the accent-deep band, so it keeps main's white fill.
     // An ink fill there reads as a dark hole (review 5673841827).
     const footerPrimary = ruleBody(aprofile, '.v2-root .v2-aprofile__footer-cta .v2-aprofile__btn--primary');
-    expect(footerPrimary).toContain('background: #fff');
-    expect(footerPrimary).toContain('color: var(--v2-accent)');
+    expect(footerPrimary).toContain('background: var(--v2-on-accent, #fff)');
+    expect(footerPrimary).toContain('color: var(--v2-accent-fill, var(--v2-accent))');
 
     const avatarFocus = ruleBody(aprofile, '.v2-root button.v2-aprofile__avatar-button:focus-visible');
     expect(avatarFocus).toContain('outline: none');
@@ -4043,7 +4043,7 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
 
   test('the band is a block of cobalt with the demo half on it', () => {
     const hero = selectorRuleBody(landing, '.v2-landing__hero {');
-    expect(hero).toContain('background: #1d3fd1');
+    expect(hero).toContain('background: var(--v2-accent-fill, #1d3fd1)');
     expect(hero).toContain('padding-top: 72px');
     expect(hero).toContain('padding-bottom: 376px');
     // The overlap is a pair: 376 of band padding against a 360 pull-up leaves
@@ -4126,7 +4126,7 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
 
   test('the bar is cobalt on the band and white past it, wordmark only', () => {
     const band = selectorRuleBody(landing, '.v2-landing__bar--band {');
-    expect(band).toContain('background: #1d3fd1');
+    expect(band).toContain('background: var(--v2-accent-fill, #1d3fd1)');
     expect(band).toContain('backdrop-filter: none');
     expect(band).toContain('border-bottom-color: rgba(255, 255, 255, 0.22)');
     // The state starts ON in the component, so first paint is the band state
@@ -4144,18 +4144,18 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
     expect(bar).not.toContain('<Mark');
     // The lang trigger is a v2.css <button>; the override has to carry the
     // .v2-root prefix plus the band class to outrank the rail pin.
-    expect(landing).toContain('.v2-root .v2-landing__bar--band button.v2-lang-switch__trigger { color: #ffffff; }');
+    expect(landing).toContain('.v2-root .v2-landing__bar--band button.v2-lang-switch__trigger { color: var(--v2-on-accent, #ffffff); }');
   });
 
   test('the rotator is white on the band — the accent is cobalt and would vanish', () => {
     const rotator = selectorRuleBody(landing, '.v2-landing__rotator {');
-    expect(rotator).toContain('color: #ffffff');
+    expect(rotator).toContain('color: var(--v2-on-accent, #ffffff)');
     expect(rotator).not.toContain('var(--v2-accent)');
   });
 
   test('the demo caption is on the band, above the frame, and the old lift is gone', () => {
     const cap = selectorRuleBody(landing, '.v2-landing__demo-cap {');
-    expect(cap).toContain('color: #ffffff');
+    expect(cap).toContain('color: var(--v2-on-accent, #ffffff)');
     expect(cap).toContain('margin: 44px 0 0');
     expect(cap).not.toContain('var(--v2-font-mono)');
     expect(mediaAt(landing, '@media (max-width: 760px) {')).toContain('.v2-landing__demo-cap { margin: 28px 0 0; }');
