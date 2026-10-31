@@ -373,9 +373,9 @@ export const CollapsiblePre: React.FC<React.HTMLAttributes<HTMLPreElement>> = ({
   );
 };
 
-// Agent prose past this height folds in place; Show more expands it, Show less folds it.
+// Agent prose past six lines (6 × 22px) folds in place; Show more expands it, Show less folds it.
 // Only the fold is measured, so a short reply renders exactly as before.
-const PROSE_COLLAPSE_PX = 360;
+const PROSE_COLLAPSE_PX = 132;
 export const CollapsibleProse: React.FC<{ collapsible: boolean; children: React.ReactNode }> = ({ collapsible, children }) => {
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
