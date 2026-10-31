@@ -18,6 +18,8 @@ As of TASK-483 and TASK-493 (2026-10-24), the browser sends:
 | `hosted-offer-clicked` | The user activated the offer to start hosted setup. Recorded before name lookup, including failed attempts; concurrent duplicate activations are suppressed. A retry records another activation. This is separate from choosing the initial hosted mode. |
 | `listen-timeout` | The page's connection polling window expired. |
 
+The backend writes one more row, `seat-registered`, itself; the browser cannot post it (the route answers 400). It is written once per runtime token, on the token's first authenticated call (`middleware/agentRuntimeAuth.ts`), with the installing user as `userId`. It fires whether or not the user is still on the page, so it measures registration when `listen-confirmed` is missing. It is not limited to BYO: a hosted seat's first call also writes it.
+
 Before TASK-483, the client never emitted `page-viewed` or `seat-created`.
 Historical counts of those events cannot measure page or command exposure.
 A selected-text copy from a command or key block dismisses the hosted offer but does not claim that a complete

@@ -84,7 +84,7 @@ const { rateLimit } = require('express-rate-limit');
 // eslint-disable-next-line global-require
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 // eslint-disable-next-line global-require
-const mongoose = require('mongoose');
+const { recordByoEvent } = require('../services/byoTelemetry');
 
 const BYO_STEPS = new Set([
   'page-viewed', 'seat-created', 'mcp-command-copied', 'cli-command-copied',
@@ -115,18 +115,10 @@ router.post('/byo-step', rateLimit({
     markByoCommandCopied(req.userId, step === 'mcp-command-copied' ? 'mcp' : 'cli');
   }
   if (SURFACE_STEPS[step]) markSurface(req.userId, SURFACE_STEPS[step]);
-  try {
-    await mongoose.connection.db.collection('byo_telemetry').insertOne({
-      userId: req.userId,
-      step,
-      ...(step === 'mcp-command-copied' ? { commandType: 'mcp' } : {}),
-      ...(step === 'cli-command-copied' ? { commandType: 'cli' } : {}),
-      at: new Date(),
-    });
-  } catch (err: any) {
-    // Telemetry must never fail the caller's flow.
-    console.warn('[byo-telemetry] write failed:', err?.message);
-  }
+  await recordByoEvent(req.userId, step as any, {
+    ...(step === 'mcp-command-copied' ? { commandType: 'mcp' } : {}),
+    ...(step === 'cli-command-copied' ? { commandType: 'cli' } : {}),
+  });
   return res.json({ ok: true });
 });
 

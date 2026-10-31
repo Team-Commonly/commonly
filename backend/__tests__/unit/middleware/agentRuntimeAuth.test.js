@@ -23,12 +23,16 @@ const mockInstallationFind = jest.fn();
 const mockInstallationUpdateOne = jest.fn();
 const mockCompleteStarterTask = jest.fn();
 const mockMarkByoConnectionAttempt = jest.fn();
+const mockRecordByoEvent = jest.fn();
 
 jest.mock('../../../services/starterTaskService', () => ({
   completeConnectAgentStarterTask: (...args) => mockCompleteStarterTask(...args),
 }));
 jest.mock('../../../services/onboardingMarks', () => ({
   markByoConnectionAttempt: (...args) => mockMarkByoConnectionAttempt(...args),
+}));
+jest.mock('../../../services/byoTelemetry', () => ({
+  recordByoEvent: (...args) => mockRecordByoEvent(...args),
 }));
 
 jest.mock('../../../models/User', () => {
@@ -133,6 +137,9 @@ describe('agentRuntimeAuth path 2 (install-bound token) — #66 fix', () => {
       agentLabel: 'codex',
     });
     expect(mockMarkByoConnectionAttempt).toHaveBeenCalledWith('human-a', matchedInstall);
+    // Backend-side seat-registered row, written once for the first use of the token.
+    expect(mockRecordByoEvent).toHaveBeenCalledTimes(1);
+    expect(mockRecordByoEvent).toHaveBeenCalledWith('human-a', 'seat-registered');
   });
 
   test('does not fire the starter hook when the token was used before (#916)', async () => {
@@ -150,6 +157,7 @@ describe('agentRuntimeAuth path 2 (install-bound token) — #66 fix', () => {
     await agentRuntimeAuth(buildReq('cm_agent_test'), buildRes(), jest.fn());
 
     expect(mockCompleteStarterTask).not.toHaveBeenCalled();
+    expect(mockRecordByoEvent).not.toHaveBeenCalled();
   });
 });
 
@@ -188,6 +196,7 @@ describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#
       'human-1',
       expect.objectContaining({ podId: expect.anything(), installedBy: 'human-1' }),
     );
+    expect(mockRecordByoEvent).toHaveBeenCalledWith('human-1', 'seat-registered');
   });
 
   test('stays silent on every subsequent authentication', async () => {

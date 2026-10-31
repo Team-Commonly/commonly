@@ -85,6 +85,13 @@ describe('POST /api/stats/byo-step', () => {
     expect(mockMarkSurface).not.toHaveBeenCalled();
   });
 
+  it('rejects seat-registered from the browser: the backend alone writes that row', async () => {
+    const res = await request(app).post('/api/stats/byo-step').send({ step: 'seat-registered' });
+
+    expect(res.status).toBe(400);
+    expect(mockInsertOne).not.toHaveBeenCalled();
+  });
+
   it('rejects unknown steps without writing a mark or telemetry event', async () => {
     const res = await request(app)
       .post('/api/stats/byo-step')
