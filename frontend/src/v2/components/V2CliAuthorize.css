@@ -1,7 +1,12 @@
 /* Mounted inside .v2-root (TASK-682), so every value below is a token and
-   follows the dark theme. .v2-root resets button chrome and link/input
-   colour at (0,1,0)–(0,1,1); the controls here are prefixed with
-   .v2-cli-authorize so they win on specificity, not on stylesheet order. */
+   follows the dark theme. Two sets of resets compete with these rules:
+   .v2-root's button/link/input resets at (0,1,0)-(0,1,1), and App.css's
+   legacy `body.modern-ui:not(.v2-canvas) input` (0,2,2) and
+   `...:not(.guide-canvas) button` (0,3,2) with :hover at (0,4,2). The
+   controls carry .v2-root and .v2-cli-authorize (plus __card on buttons and
+   the hover rules) so they win on specificity, not on stylesheet order.
+   No fallbacks inside var(): this file merges strictly after #3058, which
+   defines --v2-accent-fill and --v2-on-accent (UX Lead, msg 120679). */
 /* Warning ink (UX Lead, pod msg 120615): #7c4a03 vanishes on dark
    warning-soft. Scoped here with the same dark selectors as v2.css until the
    token has a second consumer. */
@@ -46,12 +51,14 @@
 .v2-cli-authorize__card h1 { margin: 18px 0 8px; font-size: 24px; }
 .v2-cli-authorize__card p { margin: 0 0 20px; color: var(--v2-text-secondary); line-height: 1.5; }
 .v2-cli-authorize__field { display: grid; gap: 7px; margin-bottom: 18px; font-size: 13px; font-weight: 700; }
-.v2-cli-authorize .v2-cli-authorize__field input { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid var(--v2-border-strong); border-radius: var(--v2-radius); background: var(--v2-surface); color: var(--v2-text-primary); font: 600 18px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
-.v2-cli-authorize .v2-cli-authorize__field input:focus { outline: none; border-color: var(--v2-accent); box-shadow: var(--v2-focus-ring); }
-.v2-cli-authorize .v2-cli-authorize__primary, .v2-cli-authorize .v2-cli-authorize__secondary { display: inline-flex; justify-content: center; align-items: center; min-height: 42px; padding: 0 16px; border-radius: var(--v2-radius); font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
-.v2-cli-authorize .v2-cli-authorize__primary { border: 1px solid var(--v2-accent-fill); background: var(--v2-accent-fill); color: var(--v2-on-accent); }
-.v2-cli-authorize .v2-cli-authorize__primary:disabled { cursor: wait; opacity: .65; }
-.v2-cli-authorize .v2-cli-authorize__secondary { border: 1px solid var(--v2-border-strong); background: var(--v2-surface); color: var(--v2-text-secondary); }
+.v2-root.v2-cli-authorize .v2-cli-authorize__field input { width: 100%; box-sizing: border-box; margin: 0; padding: 12px; border: 1px solid var(--v2-border-strong); border-radius: var(--v2-radius); background: var(--v2-surface); color: var(--v2-text-primary); font: 600 18px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
+.v2-root.v2-cli-authorize .v2-cli-authorize__field input:focus { outline: none; border-color: var(--v2-accent); box-shadow: var(--v2-focus-ring); }
+.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__primary, .v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__secondary { display: inline-flex; justify-content: center; align-items: center; min-height: 42px; padding: 0 16px; border-radius: var(--v2-radius); font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
+.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__primary { border: 1px solid var(--v2-accent-fill); background: var(--v2-accent-fill); color: var(--v2-on-accent); }
+.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__primary:disabled { cursor: wait; opacity: .65; }
+.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__secondary { border: 1px solid var(--v2-border-strong); background: var(--v2-surface); color: var(--v2-text-secondary); }
+.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__primary:hover, .v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__primary:active { background: var(--v2-accent-fill); transform: none; }
+.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__secondary:hover, .v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__secondary:active { background: var(--v2-surface-hover); transform: none; }
 .v2-cli-authorize__facts { margin: 0 0 18px; padding: 14px; border-radius: var(--v2-radius-lg); background: var(--v2-bg-subtle); }
 .v2-cli-authorize__facts div { display: flex; justify-content: space-between; gap: 18px; padding: 5px 0; }
 .v2-cli-authorize__facts dt { color: var(--v2-text-muted); }

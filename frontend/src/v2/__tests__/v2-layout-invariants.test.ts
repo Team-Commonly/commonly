@@ -4043,7 +4043,7 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
 
   test('the band is a block of cobalt with the demo half on it', () => {
     const hero = selectorRuleBody(landing, '.v2-landing__hero {');
-    expect(hero).toContain('background: var(--v2-accent-fill, #1d3fd1)');
+    expect(hero).toContain('background: #1d3fd1');
     expect(hero).toContain('padding-top: 72px');
     expect(hero).toContain('padding-bottom: 376px');
     // The overlap is a pair: 376 of band padding against a 360 pull-up leaves
@@ -4126,7 +4126,7 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
 
   test('the bar is cobalt on the band and white past it, wordmark only', () => {
     const band = selectorRuleBody(landing, '.v2-landing__bar--band {');
-    expect(band).toContain('background: var(--v2-accent-fill, #1d3fd1)');
+    expect(band).toContain('background: #1d3fd1');
     expect(band).toContain('backdrop-filter: none');
     expect(band).toContain('border-bottom-color: rgba(255, 255, 255, 0.22)');
     // The state starts ON in the component, so first paint is the band state

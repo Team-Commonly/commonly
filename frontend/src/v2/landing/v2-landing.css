@@ -94,7 +94,10 @@
    V2LandingPage), and the class starts ON so first paint is the band state and
    there is no white flash before the observer runs. */
 .v2-landing__bar--band {
-  background: var(--v2-accent-fill, #1d3fd1);
+  /* Brand block, fixed cobalt in both themes (Lumen, #3063 HOLD): the band's
+     translucent white text is tuned on #1d3fd1 and drops below AA on dark
+     --v2-accent-fill (#3d5ef2). */
+  background: #1d3fd1;
   backdrop-filter: none;
   border-bottom-color: rgba(255, 255, 255, 0.22);
 }
@@ -132,7 +135,7 @@
    text while the band is under it. */
 .v2-landing__bar .v2-landing__btn--sm { height: 40px; padding: 0 16px; font-size: 15px; font-weight: 600; }
 .v2-root .v2-landing__bar--band .v2-landing__btn--primary {
-  color: var(--v2-accent-fill, #1d3fd1);
+  color: #1d3fd1; /* follows the fixed band (UX Lead, msg 120679) */
   background: var(--v2-on-accent, #ffffff);
   border-color: var(--v2-on-accent, #ffffff);
 }
@@ -170,7 +173,7 @@
 }
 .v2-landing__btn--ghost:hover { background: var(--v2-surface-hover); border-color: var(--v2-border-strong, var(--v2-border)); }
 .v2-landing__btn--onaccent {
-  color: var(--v2-accent-fill, var(--v2-accent));
+  color: #1d3fd1; /* on-band CTA text follows the fixed band */
   background: var(--v2-on-accent, #ffffff);
   border: 1px solid var(--v2-on-accent, #ffffff);
 }
@@ -189,7 +192,7 @@
    login link documents in v2.css. */
 .v2-root .v2-landing__btn--primary { color: var(--v2-on-accent, #ffffff); }
 .v2-root .v2-landing__btn--ghost { color: var(--v2-text-primary); }
-.v2-root .v2-landing__btn--onaccent { color: var(--v2-accent-fill, var(--v2-accent)); }
+.v2-root .v2-landing__btn--onaccent { color: #1d3fd1; }
 .v2-root .v2-landing__btn--onaccent-ghost { color: var(--v2-on-accent, #ffffff); }
 
 .v2-landing__cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
@@ -235,7 +238,10 @@
   align-items: start;
   padding-top: 72px;
   padding-bottom: 376px;
-  background: var(--v2-accent-fill, #1d3fd1);
+  /* Brand block, fixed cobalt in both themes (Lumen, #3063 HOLD): the band's
+     translucent white text is tuned on #1d3fd1 and drops below AA on dark
+     --v2-accent-fill (#3d5ef2). */
+  background: #1d3fd1;
   color: var(--v2-on-accent, #ffffff);
 }
 /* No width cap here: the copy column and the actions row share this box, and a
