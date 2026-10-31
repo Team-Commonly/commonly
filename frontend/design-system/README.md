@@ -96,7 +96,7 @@ Reply/Open/Mark handled controls are bordered secondary controls.
 
 ### Type
 
-- **Inter first, self-hosted**: `"Inter Variable", "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif` via `@fontsource-variable/inter` (OFL, bundled, `font-display: swap`, no Google Fonts request). SF Pro is the fallback only while the woff2 loads or if it fails. One face: display weight comes from `font-weight`, not a second family. Mono keeps `"SF Mono"` first.
+- **IBM Plex Sans first, self-hosted**: `"IBM Plex Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif` via `@fontsource/ibm-plex-sans` (OFL, bundled, no Google Fonts request). SF Pro is the fallback only while the woff2 loads or if it fails. Body and controls use this one face; display uses Bricolage Grotesque, not a second weight of the body face. Mono is `"IBM Plex Mono"` first (`@fontsource/ibm-plex-mono`).
 - **Tight letter-spacing on big text**: feature titles `-0.03em`, h2 `-0.025em`, h3 `-0.02em`. Body stays at 0.
 - **Heavy weights at large sizes**: feature titles use `700` in Inter (`850` was tuned for SF Pro Display), headers `700`, section titles `650`. Body is `400`/`500`. Buttons are `600`.
 - **Sizes hover small**: body `14/20`, meta `12/16`, labels `11/14`. Secondary copy keeps body size and carries hierarchy by colour. The biggest type in normal product UI is the 24px feature title.
@@ -220,7 +220,7 @@ entrance and scroll-reveal animation is allowed within these limits:
 
 ## Caveats
 
-- **One webfont shipped.** Inter Variable is bundled from `@fontsource-variable/inter` (OFL); everything else is system. Do not add a second family, and never load a face from Google Fonts.
+- **Three faces shipped, all self-hosted.** IBM Plex Sans (body and controls, `@fontsource/ibm-plex-sans`), Bricolage Grotesque (display, `@fontsource-variable/bricolage-grotesque`) and IBM Plex Mono (meta, `@fontsource/ibm-plex-mono`), all OFL. Everything else is system. Do not add a fourth family, and never load a face from Google Fonts.
 - **No Figma file** is committed. All visual decisions trace back to `tokens.css` and `frontend/src/v2/v2.css`.
 - **Marketing site styling lives elsewhere.** Only the in-app experience is documented here.
 
