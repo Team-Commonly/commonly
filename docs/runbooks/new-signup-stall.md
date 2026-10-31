@@ -25,6 +25,7 @@ confirm, for example against `lastActive` or whether they sent a message
 | `podOpenedAt` | the first authorized first-page fetch (no `before` cursor) of the messages of any pod they created; for a new signup that is normally My Workspace. It is set before the messages are read, so it records the request, not a render | their client asked for a pod's messages; for a new signup, very likely the welcome |
 | `firstStartAt` + `firstStartId` | their first message in a pod they created matches a start's label, or the server resolves a click on their own "Run an agent here" | they acted, and which choice |
 | `byoOpenedAt` | they first load Bring your own (`GET /api/hosted/availability`) | they looked at setup |
+| `byoOpenedOs` | written with `byoOpenedAt`, from the `?os=` the page sends: `mac`, `linux`, `windows` or `other`. Unset for anyone who opened the page before it shipped, and for an unknown value | whether the listener path (Mac only) could have worked for them |
 
 Read them together with whether the person sent a message in their workspace,
 and when (timestamps and ids).
