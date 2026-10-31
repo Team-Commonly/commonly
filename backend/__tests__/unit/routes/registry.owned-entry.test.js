@@ -133,6 +133,16 @@ describe('PATCH /agents/:name/owned-entry (TASK-419)', () => {
     expect(res.body.error).toBe('not_entry_owner');
     expect(e.save).not.toHaveBeenCalled();
     expect(e.status).toBe('active');
+    expect(AuditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('treats an entry with no publisher as not owned, so a plain user is refused', async () => {
+    const e = entry({ publisher: undefined });
+    AgentRegistry.findOne.mockResolvedValue(e);
+
+    await request(app).patch('/api/registry/agents/walk-agent/owned-entry').send({ retired: true }).expect(403);
+    expect(e.save).not.toHaveBeenCalled();
+    expect(AuditLog.create).not.toHaveBeenCalled();
   });
 
   it('rejects a blank or over-long display name and a non-boolean retired flag', async () => {
