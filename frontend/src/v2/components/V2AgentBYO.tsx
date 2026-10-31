@@ -1053,24 +1053,21 @@ const V2AgentBYO: React.FC = () => {
   };
   // The daemon block lives in Other ways to connect on both the start form and
   // the result page, so the stop-on-close line can point to it from the result.
-  const addComputerBlock = machines.length === 0 ? (
+  // Windows has no daemon install (systemd), so there is no block to offer.
+  const addComputerBlock = machines.length === 0 && setupOs !== 'windows' ? (
     <div className="v2-byo__add-computer" data-testid="byo-add-computer">
       <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
-      {setupOs !== 'windows' && (
-        <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">{t('agentByo.addComputer.recommended')}</p>
-      )}
-      {setupOs !== 'windows' && (
-        <div className="v2-byo__add-computer-row">
-          <code>{daemonCommand}</code>
-          <button
-            type="button"
-            className="v2-byo__copy"
-            onClick={() => copy('daemon-setup', daemonCommand)}
-          >
-            {copied === 'daemon-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
-          </button>
-        </div>
-      )}
+      <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">{t('agentByo.addComputer.recommended')}</p>
+      <div className="v2-byo__add-computer-row">
+        <code>{daemonCommand}</code>
+        <button
+          type="button"
+          className="v2-byo__copy"
+          onClick={() => copy('daemon-setup', daemonCommand)}
+        >
+          {copied === 'daemon-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
+        </button>
+      </div>
       <p className="v2-byo__hint">{t('agentByo.addComputer.after')}</p>
     </div>
   ) : null;

@@ -140,11 +140,20 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     setUserAgent(WINDOWS);
     mockPage({ machines: [] });
     renderPage();
-    const add = await screen.findByTestId('byo-add-computer');
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/machines', expect.anything()));
     expect(screen.queryByTestId('byo-quick-try')).toBeNull();
     expect(screen.queryByTestId('byo-add-computer-recommended')).toBeNull();
-    // Windows gets no daemon command row: systemd cannot install there.
-    expect(add).not.toHaveTextContent('commonly daemon register && commonly daemon install');
+    // Windows gets no daemon block at all: systemd cannot install there, so
+    // there is nothing to run and nothing to offer.
+    expect(screen.queryByTestId('byo-add-computer')).toBeNull();
+  });
+
+  test('on Windows, the result page offers no daemon block either', async () => {
+    setUserAgent(WINDOWS);
+    mockPage({ machines: [] });
+    renderPage();
+    await issueRun();
+    expect(screen.queryByTestId('byo-add-computer')).toBeNull();
   });
 
   test('with a computer already added, the quick-try line and the daemon block are both gone', async () => {
