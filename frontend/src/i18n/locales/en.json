@@ -585,11 +585,12 @@
       "action": "Add an agent"
     },
     "agentRoomLiveness": {
-      "neverConnected": "{{agentName}} isn't connected. Messages sent here will wait for this seat to connect.",
+      "neverConnected": "{{agentName}} isn't connected yet. Messages sent here will wait until it runs.",
       "goneDark": "{{agentName}} hasn't checked in recently. A reply may take longer.",
       "unknown": "{{agentName}}'s availability is unknown. A reply may take longer.",
       "waiting": "Waiting for {{agentName}} to reply…",
-      "timedOut": "{{agentName}} hasn't replied yet. Your message is still in this conversation."
+      "timedOut": "{{agentName}} hasn't replied yet. Your message is still in this conversation.",
+      "runCommand": "To connect it, run:"
     },
     "podAgentLiveness": {
       "notConnected": "{{agentName}} isn't connected yet, so it won't answer here until it's running.",

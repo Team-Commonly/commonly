@@ -589,7 +589,8 @@
       "goneDark": "{{agentName}} 最近没有接入，回复可能需要更长时间。",
       "unknown": "{{agentName}} 的可用状态未知，回复可能需要更长时间。",
       "waiting": "正在等待 {{agentName}} 回复…",
-      "timedOut": "{{agentName}} 还没有回复。你的消息仍在此对话中。"
+      "timedOut": "{{agentName}} 还没有回复。你的消息仍在此对话中。",
+      "runCommand": "要连接它，请运行："
     },
     "podAgentLiveness": {
       "notConnected": "{{agentName}} 还没有连接，运行起来之前不会在这里回复。",

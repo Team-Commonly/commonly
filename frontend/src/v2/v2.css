@@ -2495,6 +2495,14 @@ body.modern-ui.v2-canvas {
   line-height: 1.4;
 }
 
+.v2-chat__agent-room-command {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--v2-font-mono, ui-monospace, monospace);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
 .v2-chat__agent-room-status--wait {
   border-color: var(--v2-border);
   background: var(--v2-surface-hover);
