@@ -10,6 +10,8 @@
  * @property {() => Promise<{ path: string, version: string } | null>} detect
  * @property {(environment: object) => Promise<void>} [validateEnvironment]  refuse before spawn
  * @property {(prompt: string, ctx: object) => Promise<SpawnResult>} spawn
+ * @property {boolean} [nativeWorktree]  the CLI makes its own git worktree (Claude Code `--worktree`,
+ *   Codex `--worktree`) from ctx.workspace; the supervisor then makes none (workspace.js)
  *
  * @typedef {object} SpawnResult
  * @property {string} text
