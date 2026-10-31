@@ -5,6 +5,7 @@ const express = require('express');
 const auth = require('../../middleware/auth');
 const { AgentRegistry } = require('../../models/AgentRegistry');
 const User = require('../../models/User');
+const AuditLog = require('../../models/AuditLog');
 const { getUserId } = require('./helpers');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { rateLimit } = require('express-rate-limit');
@@ -40,6 +41,8 @@ router.patch('/agents/:name/owned-entry', ownedEntryRateLimit, auth, async (req:
     }
 
     const { displayName, retired } = (req.body || {}) as { displayName?: unknown; retired?: unknown };
+    const previousName = entry.displayName;
+    const previousStatus = entry.status;
     if (displayName !== undefined) {
       const trimmed = typeof displayName === 'string' ? displayName.trim() : '';
       if (!trimmed || trimmed.length > DISPLAY_NAME_MAX) {
@@ -54,6 +57,28 @@ router.patch('/agents/:name/owned-entry', ownedEntryRateLimit, auth, async (req:
     }
 
     await entry.save();
+
+    const nameChanged = previousName !== entry.displayName;
+    const statusChanged = previousStatus !== entry.status;
+    if (nameChanged || statusChanged) {
+      // Retire/restore names the action; a rename-only write is 'renamed'.
+      const action = !statusChanged
+        ? 'registry.entry.renamed'
+        : entry.status === 'unpublished' ? 'registry.entry.retired' : 'registry.entry.restored';
+      try {
+        await AuditLog.create({
+          action,
+          target: entry.agentName,
+          detail: `role=${isOwner ? 'owner' : 'admin'} previousName=${previousName || ''} name=${entry.displayName || ''} previousStatus=${previousStatus} status=${entry.status}`,
+          userId,
+          ip: req.ip,
+          userAgent: req.headers?.['user-agent'],
+        });
+      } catch (auditErr: any) {
+        console.warn('[registry] owned-entry audit log write failed (non-fatal):', auditErr?.message);
+      }
+    }
+
     return res.json({
       agentName: entry.agentName,
       displayName: entry.displayName,

@@ -16,8 +16,13 @@ jest.mock('../../../models/User', () => ({
   findById: jest.fn(),
 }));
 
+jest.mock('../../../models/AuditLog', () => ({
+  create: jest.fn(),
+}));
+
 const { AgentRegistry } = require('../../../models/AgentRegistry');
 const User = require('../../../models/User');
+const AuditLog = require('../../../models/AuditLog');
 const router = require('../../../routes/registry/owned-entry');
 
 const actor = (role) => ({ select: () => ({ lean: async () => ({ role }) }) });
@@ -30,6 +35,7 @@ describe('PATCH /agents/:name/owned-entry (TASK-419)', () => {
     app.use('/api/registry', router);
     jest.clearAllMocks();
     User.findById.mockReturnValue(actor('user'));
+    AuditLog.create.mockResolvedValue({});
   });
 
   const entry = (overrides = {}) => {
@@ -74,6 +80,45 @@ describe('PATCH /agents/:name/owned-entry (TASK-419)', () => {
     User.findById.mockReturnValue(actor('admin'));
 
     await request(app).patch('/api/registry/agents/walk-agent/owned-entry').send({ retired: true }).expect(200);
+  });
+
+  it('writes one AuditLog row per effective change, with the actor role', async () => {
+    AgentRegistry.findOne.mockResolvedValue(entry());
+
+    await request(app).patch('/api/registry/agents/walk-agent/owned-entry').send({ displayName: 'Scout Lite' }).expect(200);
+    expect(AuditLog.create).toHaveBeenLastCalledWith(expect.objectContaining({
+      action: 'registry.entry.renamed',
+      target: 'walk-agent',
+      userId: 'user1',
+      detail: expect.stringContaining('role=owner'),
+    }));
+
+    await request(app).patch('/api/registry/agents/walk-agent/owned-entry').send({ retired: true }).expect(200);
+    expect(AuditLog.create).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'registry.entry.retired' }));
+
+    await request(app).patch('/api/registry/agents/walk-agent/owned-entry').send({ retired: false }).expect(200);
+    expect(AuditLog.create).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'registry.entry.restored' }));
+    expect(AuditLog.create).toHaveBeenCalledTimes(3);
+  });
+
+  it('records a global admin change as role=admin', async () => {
+    AgentRegistry.findOne.mockResolvedValue(entry({ publisher: { userId: 'someone-else' } }));
+    User.findById.mockReturnValue(actor('admin'));
+
+    await request(app).patch('/api/registry/agents/walk-agent/owned-entry').send({ retired: true }).expect(200);
+    expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'registry.entry.retired',
+      target: 'walk-agent',
+      userId: 'user1',
+      detail: expect.stringContaining('role=admin'),
+    }));
+  });
+
+  it('writes no AuditLog row for a no-op write', async () => {
+    AgentRegistry.findOne.mockResolvedValue(entry({ status: 'active' }));
+
+    await request(app).patch('/api/registry/agents/walk-agent/owned-entry').send({ retired: false, displayName: 'Walk Agent' }).expect(200);
+    expect(AuditLog.create).not.toHaveBeenCalled();
   });
 
   it('refuses a user who neither published the entry nor is an admin, and saves nothing', async () => {
