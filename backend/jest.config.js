@@ -1,10 +1,10 @@
 module.exports = {
   testEnvironment: 'node',
-  // Cap worker fan-out on LOCAL runs only. The fleet host (a 24 GB Mac running
-  // ~33 agent seats + operator sessions) breached on 2026-10-28 when an uncapped
+  // Cap worker fan-out on LOCAL runs only. A shared dev host (24 GB,
+  // running many agent processes) breached on 2026-10-28 when an uncapped
   // backend jest run spun up cores-1 workers and pushed the host into swap thrash.
   // CI keeps the jest default (cores-1) via the CI guard — do NOT replace this with
-  // a static maxWorkers, that would also throttle the runners. (SRE, Cofounder D77.)
+  // a static maxWorkers, that would also throttle the runners.
   // The key is SPREAD IN, not set to `undefined` on CI: jest validates the config
   // and rejects `maxWorkers: undefined` ("has to be of type string or number"), so
   // on CI the key must be absent entirely, not present-and-undefined.
@@ -25,6 +25,9 @@ module.exports = {
   // parallel workers never race the download lock (the CI flake root cause).
   globalSetup: '<rootDir>/__tests__/utils/globalSetup.js',
   transform: {
+    // The vendored record-v1 closure is ESM (byte-identical to
+    // packages/seats/src); ts-jest down-levels it to CommonJS like tsc does.
+    '/vendor/seats/.+\\.js$': ['ts-jest', { tsconfig: { allowJs: true, checkJs: false } }],
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: { allowJs: true, checkJs: false } }],
     '^.+\\.jsx?$': 'babel-jest',
   },
@@ -35,6 +38,7 @@ module.exports = {
     '!**/coverage/**',
     '!**/jest.config.js',
     '!**/__tests__/utils/**',
+    '!vendor/**',
     '!server.ts',
     '!server.js',
   ],

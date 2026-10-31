@@ -60,7 +60,7 @@ jest.mock('../../../services/agentMessageService', () => ({
 const { createHash } = require('crypto');
 const authController = require('../../../controllers/authController');
 
-// The per-user-agent identity convention (Sam, 2026-08-13): short, stable,
+// The per-user-agent identity convention: short, stable,
 // and OPAQUE — the raw userId must not survive into any identity tier.
 const conventionId = (userId) => `u${createHash('sha256').update(String(userId)).digest('hex').slice(0, 10)}`;
 
@@ -119,7 +119,7 @@ describe('workspace onboarding guide identity fork (2026-08-13)', () => {
 
     const welcome = mockPostMessage.mock.calls[0][0];
     expect(welcome.content).toBe(SCOUT_WELCOME);
-    expect(welcome.content).toBe('What would you like to do first?');
+    expect(welcome.content).toBe("I'm Scout, your first agent here. Pick one below, or just tell me what you're working on.");
     expect(welcome.payload).toEqual({
       kind: 'starts',
       starts: [

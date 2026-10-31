@@ -15,14 +15,14 @@
  *      filter. Filtered on `integrationId` alone, the second `put` does not
  *      collide: it matches the first kind's row and `$set`s the new ciphertext
  *      onto it, so the first ref stays valid and starts decrypting to the second
- *      secret. A missing secret is loud; a substituted one is not (Vera 74141).
+ *      secret. A missing secret is loud; a substituted one is not.
  *   3. `installableReconciler.sweepOrphanedConnectorSecrets` — its keep-condition
  *      is `refPaths`. With a literal `botTokenRef` there, a Discord secret is
  *      revoked ten minutes after it is written (`ORPHAN_SECRET_GRACE_MS`),
- *      which is the defect this module exists for (Vera 74130).
+ *      which is the defect this module exists for.
  *   4. `installableReconciler.sweepUnavailableConnectorSecretKeys` — the message
  *      it marks the row with is `unavailableReason`, so a Discord owner is not
- *      told a Slack secret is unavailable (Vera 74131).
+ *      told a Slack secret is unavailable.
  *
  * Adding a kind means adding a spec here and nothing else.
  */
@@ -141,6 +141,20 @@ export const INSTAGRAM_FEED_ACCESS_TOKEN: ConnectorSecretKindSpec = {
   unavailableReason: 'Instagram feed credential is unavailable',
 };
 
+/**
+ * The GroupMe access token (TASK-539). GroupMe's bot posts with `botId` alone,
+ * but an agent that reads a group's history (`agentsRuntime` integration
+ * messages) calls the GroupMe API with a member's access token, so the token is
+ * a bearer credential and is stored like the feed pair: the row keeps only the
+ * ref (`services/chatConnectorTokens`). GroupMe issues no refresh token.
+ */
+export const GROUPME_ACCESS_TOKEN: ConnectorSecretKindSpec = {
+  kind: 'groupme-access-token',
+  provider: 'groupme',
+  refPaths: ['config.accessTokenRef'],
+  unavailableReason: 'GroupMe access token is unavailable',
+};
+
 export const CONNECTOR_SECRET_KINDS: readonly ConnectorSecretKindSpec[] = [
   AGENT_PROVIDER_KEY,
   SLACK_BOT_TOKEN,
@@ -151,6 +165,7 @@ export const CONNECTOR_SECRET_KINDS: readonly ConnectorSecretKindSpec[] = [
   X_FEED_ACCESS_TOKEN,
   X_FEED_REFRESH_TOKEN,
   INSTAGRAM_FEED_ACCESS_TOKEN,
+  GROUPME_ACCESS_TOKEN,
 ];
 
 /** Whether a kind's ref lives on an Integration row (the default owner). */

@@ -4,7 +4,7 @@
  *
  * The official Discord invite went into the README with a top badge on 07-19
  * (#694, #695). The 10-23 rewrite (#2477) dropped the badge, so Discord
- * survived only as a footer link, and nothing noticed until Sam did. This check
+ * survived only as a footer link, and nothing noticed until a person did. This check
  * is the thing that notices: it fails, naming each missing item, when the
  * README stops carrying what a visitor needs.
  *

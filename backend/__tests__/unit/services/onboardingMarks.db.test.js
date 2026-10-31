@@ -1,4 +1,4 @@
-// D139: markSurface against the real User schema. The sibling suite mocks
+// MarkSurface against the real User schema. The sibling suite mocks
 // User, so it cannot see a field the schema would strip in strict mode.
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');

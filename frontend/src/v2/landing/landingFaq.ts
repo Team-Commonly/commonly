@@ -2,7 +2,7 @@ import landingFaq from '../../content/landing-faq.json';
 
 /**
  * TASK-531. The five GEO category questions and GTM's answers, verbatim,
- * plus GTM's one-loop-vs-a-team entry (D107). The questions are fixed (weekly
+ * plus GTM's one-loop-vs-a-team entry. The questions are fixed (weekly
  * checks compare them across weeks), so do not reword them. Every answer must
  * describe something the live product does.
  *

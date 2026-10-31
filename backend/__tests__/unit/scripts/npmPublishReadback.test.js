@@ -20,7 +20,7 @@
  * TASK-115 adds a fourth: the poll reads the VERSION DOCUMENT (2.4KB,
  * `cf-cache-status: DYNAMIC`), not the packument (130KB, `cache-control:
  * public, max-age=300`). The old form raced a cache rather than propagation —
- * 31 E404s then success, Vera 71761-71763 — and the reason is the endpoint, not
+ * 31 E404s then success — and the reason is the endpoint, not
  * the number: a packument read answers from the CDN's copy, so it reports the
  * cache's age instead of the publish's state at any budget. The 300s TTL and
  * the budget happened to match when that was measured; the budget in force is
@@ -479,7 +479,7 @@ describe('npm publish read-back', () => {
   });
 
   test('the budget is a clock: interval 0 with a non-zero budget still terminates', () => {
-    // Vera 71347, reproduced: `elapsed` advanced only by INTERVAL_SECONDS, so at
+    // Reproduced: `elapsed` advanced only by INTERVAL_SECONDS, so at
     // interval 0 it never reached the timeout — 789 attempts in 8s, still
     // reporting 0s, killed by an external alarm. In the release job that is not a
     // red step but a run held to the six-hour limit. The assertion is that the
@@ -561,10 +561,10 @@ describe('npm publish read-back', () => {
   });
 
   test('the budget in force is the value the script prints — and the number is stated in one place, so a re-tune cannot leave a copy behind', () => {
-    // TASK-116 follow-up, recut after wren 73043 and vera 73057. The first
+    // TASK-116 follow-up, recut after review. The first
     // version asserted the printed value against a literal AND added an
     // agreement check for three sites — and left six prose restatements outside
-    // it, every one shaped like the value then in force. Vera reproduced it:
+    // it, every one shaped like the value then in force. Reproduced:
     // re-tune the value, update the three checked sites, and the suite stays green with six stale
     // copies of the number, including the name of this test. Fewer copies beats
     // more assertions, so this now states the number in ONE place in the script

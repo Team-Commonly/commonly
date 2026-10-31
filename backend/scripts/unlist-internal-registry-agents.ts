@@ -29,8 +29,8 @@
  * list is enumerated and anything unrecognised is left alone and reported.
  *
  * Usage:
- *   npx ts-node backend/scripts/unlist-internal-registry-agents.ts          # dry run
- *   npx ts-node backend/scripts/unlist-internal-registry-agents.ts --apply
+ *   cd backend && node dist/scripts/unlist-internal-registry-agents.js          # dry run
+ *   cd backend && node dist/scripts/unlist-internal-registry-agents.js --apply
  */
 
 /* eslint-disable no-console */

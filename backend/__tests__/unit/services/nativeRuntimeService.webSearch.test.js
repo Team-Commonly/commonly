@@ -491,7 +491,7 @@ describe('native turn with commonly_web_search', () => {
     expect(offeredIn(0)).not.toContain('commonly_web_search');
   });
 
-  // Rhea on #2244: posting in the pod is the way out the narrowing keeps, and
+  // Posting in the pod is the way out the narrowing keeps, and
   // a bridged pod relays its posts to an external chat.
   describe('in a pod bridged to an external chat', () => {
     const postedContents = () => AgentMessageService.postMessage.mock.calls.map(([args]) => args.content);
@@ -571,7 +571,7 @@ describe('native turn with commonly_web_search', () => {
       await runAgent(install, mention);
 
       expect(postedContents()).toEqual(['found it']);
-      // In the pod, never through a channel relay (Rhea on #2244).
+      // In the pod, never through a channel relay.
       expect(AgentMessageService.postMessage.mock.calls[0][0].noOutboundRelay).toBe(true);
     });
 

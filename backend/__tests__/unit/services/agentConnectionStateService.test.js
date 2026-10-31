@@ -21,10 +21,22 @@ describe('agent connection verdict', () => {
     ], now }).state).toBe('stale');
   });
 
-  it('uses machine heartbeat for a wrapper', () => {
+  it('calls a polling listener on a computer connected while the daemon is silent', () => {
+    expect(deriveAgentConnection({ runtimeType: 'wrapper', credentials: [
+      { status: 'active', lastUsedAt: new Date(now - 10_000) },
+    ], machineCredentials: [{ status: 'active' }], machineLastSeenAt: null, now }).state).toBe('connected');
+  });
+
+  it('does not let a live daemon stand in for a listener that stopped polling', () => {
+    expect(deriveAgentConnection({ runtimeType: 'wrapper', credentials: [
+      { status: 'active', lastUsedAt: seen(10) },
+    ], machineCredentials: [{ status: 'active' }], machineLastSeenAt: seen(0), now }).state).toBe('stale');
+  });
+
+  it('never calls a computer agent connected from the heartbeat alone', () => {
     expect(deriveAgentConnection({ runtimeType: 'wrapper', credentials: [
       { status: 'active' },
-    ], machineCredentials: [{ status: 'active' }], machineLastSeenAt: seen(2), now }).state).toBe('stale');
+    ], machineCredentials: [{ status: 'active' }], machineLastSeenAt: seen(0), now }).state).toBe('never');
   });
 
   it('does not let a live machine mask the agent runtime key being revoked', () => {

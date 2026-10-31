@@ -5,15 +5,14 @@
  * derives `sandbox: { trust: 'public' }` with NO mode (lib/default-environment.js)
  * because `mode: 'workspace'` is Seatbelt on macOS and is refused on Linux,
  * while `mode: 'bwrap'` is meaningless on macOS — writing either into the row
- * moves a host fact into the database and breaks the day the seat is re-homed
- * (Wren 69545).
+ * moves a host fact into the database and breaks the day the seat is re-homed.
  *
  * So the mode is resolved here, at the point that knows the host:
  *   darwin  → 'workspace' (the claude adapter maps it to Seatbelt)
  *   else    → 'bwrap'     (bubblewrap; attach checks it is installed)
  *
  * Resolution is PUBLIC-only on purpose, and PUBLIC IS THE EFFECTIVE TRUST: a
- * legacy `internal` declaration reads as `public` (environment.js, Wren 69585),
+ * legacy `internal` declaration reads as `public` (environment.js),
  * so the mapping is applied before this comparison. Comparing the raw value
  * made `{ trust: 'internal' }` resolve to no mode at all — the mapping was
  * applied in `confinementReason` and not here, which is half a rule, and the
@@ -22,7 +21,7 @@
  * whatever mode it wrote, and an adapter that cannot enforce it is expected to
  * refuse rather than quietly spawn unconfined. An explicit mode on a public
  * declaration still wins — including a wrong one, which the caller then refuses
- * (Vera 69548: an unresolvable public mode must not fall through to a bare,
+ * (an unresolvable public mode must not fall through to a bare,
  * unconfined spawn).
  *
  * NOT used by the codex adapter. Codex's `mode` is read-vs-write access, not a

@@ -30,8 +30,8 @@
  * an explicit host are never touched.
  *
  * Usage:
- *   npx ts-node backend/scripts/backfill-byo-host-stamp.ts          # dry run
- *   npx ts-node backend/scripts/backfill-byo-host-stamp.ts --apply
+ *   cd backend && node dist/scripts/backfill-byo-host-stamp.js          # dry run
+ *   cd backend && node dist/scripts/backfill-byo-host-stamp.js --apply
  */
 
 /* eslint-disable no-console */

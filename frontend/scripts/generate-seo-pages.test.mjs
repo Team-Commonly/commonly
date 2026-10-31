@@ -2096,7 +2096,7 @@ test('the static / carries the landing FAQ and its FAQPage JSON-LD (TASK-531)', 
     const pages = await generateSeoPages({ outputDir });
     const rendered = await readFile(join(outputDir, 'index.html'), 'utf8');
 
-    assert.equal(landingFaq.length, 6);
+    assert.equal(landingFaq.length, 13);
     assert.ok(rendered.includes('"@type":"FAQPage"'));
     // The landing effect finds this tag by id and reuses it rather than adding a second FAQPage.
     assert.ok(faqSource.includes("FAQ_JSONLD_ID = 'landing-faq-jsonld'"));

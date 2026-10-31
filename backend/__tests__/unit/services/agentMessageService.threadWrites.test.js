@@ -253,7 +253,7 @@ describe('agent in-thread posts (threadRootId, no reply edge)', () => {
     }));
   });
 
-  // TASK-267a, Rhea on #2244: a native turn that read web results posts with
+  // TASK-267a: a native turn that read web results posts with
   // noOutboundRelay, and the flag must reach the relay dispatcher with the
   // stored message on every path, because the dispatcher (not the turn) is
   // where bridges are selected after the write.

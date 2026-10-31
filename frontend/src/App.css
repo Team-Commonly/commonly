@@ -24,7 +24,7 @@ body.modern-ui:not(.v2-canvas) img {
 
 /* No dark default on bare body: it painted EVERY page load dark for the
    beat before React mounts — including v2, whose canvas is light — and
-   that flash read as "a dark background hidden behind" (Sam, 2026-08-24).
+   that flash read as "a dark background hidden behind" (2026-08-24).
    The V1 dark palette lives under body.modern-ui below, which App.tsx
    stamps at mount; v2 out-ranks it with body.v2-canvas (v2.css). The
    pre-mount canvas matches v2's --v2-page-bg because v2 is the front

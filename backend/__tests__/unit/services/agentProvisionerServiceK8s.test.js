@@ -561,7 +561,7 @@ describe('issueLiteLLMVirtualKey never sends the master key to LiteLLM', () => {
     expect(key).toBe('sk-virtual-theo');
   });
 
-  // D111: these keys now route to a paid model, and the $60 group budget is on
+  // These keys now route to a paid model, and the $60 group budget is on
   // the deepseek-v4-flash model name, which alias callers never touch.
   it('mints a fresh key with a monthly spend budget', async () => {
     k8s.__mock.execStdout = '';
@@ -570,7 +570,9 @@ describe('issueLiteLLMVirtualKey never sends the master key to LiteLLM', () => {
 
     const [url, body] = axios.post.mock.calls.find(([u]) => u.endsWith('/key/generate'));
     expect(url).toBe('http://litellm:4000/key/generate');
-    expect(body.max_budget).toBe(30);
+    // Sized above the heaviest agent's measured monthly (~$88/mo) with headroom;
+    // a bare max_budget is lifetime in LiteLLM, so budget_duration is required.
+    expect(body.max_budget).toBe(150);
     expect(body.budget_duration).toBe('30d');
   });
 
@@ -582,8 +584,30 @@ describe('issueLiteLLMVirtualKey never sends the master key to LiteLLM', () => {
     const [url, body] = axios.post.mock.calls.find(([u]) => u.endsWith('/key/generate'));
     expect(url).toBe('http://litellm:4000/key/generate');
     expect(body.user_id).toBe('community-agent');
-    expect(body.max_budget).toBe(30);
+    expect(body.max_budget).toBe(150);
     expect(body.budget_duration).toBe('30d');
+  });
+
+  // 2026-10-28 key audit found 73 keys with no alias — attribution had to lean on
+  // user_id. Both mint paths now stamp a unique, human-readable key_alias so a
+  // key is traceable to its agent, and the uniqueness suffix avoids a 409 on
+  // delete-then-remint for the same agent (which would silently fail the seat).
+  it('stamps a unique, attributable key_alias on the virtual key', async () => {
+    k8s.__mock.execStdout = '';
+
+    await issueLiteLLMVirtualKey('theo');
+
+    const [, body] = axios.post.mock.calls.find(([u]) => u.endsWith('/key/generate'));
+    expect(body.key_alias).toMatch(/^agent-theo-\d+-[0-9a-f]{12}$/);
+  });
+
+  it('stamps a unique, attributable key_alias on the community/openrouter key', async () => {
+    k8s.__mock.execStdout = '';
+
+    await issueLiteLLMOpenRouterKey('community-agent');
+
+    const [, body] = axios.post.mock.calls.find(([u]) => u.endsWith('/key/generate'));
+    expect(body.key_alias).toMatch(/^agent-community-agent-openrouter-\d+-[0-9a-f]{12}$/);
   });
 });
 

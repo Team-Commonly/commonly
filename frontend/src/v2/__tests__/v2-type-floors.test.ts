@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 /**
- * Signal's type floors (ruling h, Sam, 2026-09-06), enforced over the whole
+ * Signal's type floors (ruling h, 2026-09-06), enforced over the whole
  * stylesheet rather than per component.
  *
  *   mono  — never below 11px

@@ -77,8 +77,9 @@ const AgentMentionService = require('./services/agentMentionService');
 const { createPgBoot } = require('./services/pgBootService');
 const { setPgMountProbe, routerIsMounted } = require('./services/pgBootService');
 
-// Global flag to track PostgreSQL availability
-let pgAvailable = false;
+
+// Load file-based configuration before deciding which PG routes to require.
+dotenv.config();
 
 if (process.env.PG_HOST) {
   pgMessageRoutes = require('./routes/pg-messages');
@@ -86,9 +87,11 @@ if (process.env.PG_HOST) {
   _PGPod = require('./models/pg/Pod');
 }
 
-// Load environment variables
-dotenv.config();
-
+/** Construct the production mount table without connecting databases or starting workers.
+ * Callers own database setup and close app.locals.socketServer after their HTTP run.
+ */
+const buildApp = ({ startServices = false } = {}) => {
+  let pgAvailable = false;
 // Initialize express app
 const app = express();
 // Trust the reverse proxy (Cloudflare → ingress → backend). Without this,
@@ -143,7 +146,7 @@ const { bindSocketIO: bindAgentTypingSocketIO } = require('./services/agentTypin
 const { bindSocketIO: bindTaskEventSocketIO } = require('./services/taskEventService');
 
 // Socket.io Redis adapter initialization is async in K8s mode
-(async () => {
+if (startServices) (async () => {
   try {
     await socketConfig.init(io);
     agentWebSocketService.init(io);
@@ -155,7 +158,6 @@ const { bindSocketIO: bindTaskEventSocketIO } = require('./services/taskEventSer
   }
 })();
 
-const PORT = process.env.PORT || 5000;
 
 // Middleware. A disallowed origin is refused with 403 (middleware/corsPolicy).
 app.use(cors(corsOptions(allowedOrigins)));
@@ -228,6 +230,7 @@ app.use('/api', attributionRoutes);
 // Before podRoutes: its `/:type/:id` catch-all would answer `/:podId/grants` as type=<podId>, id='grants' (Wren 67721).
 app.use('/api/pods', require('./routes/grants').podGrantsRouter); // tools plan §6: GET /api/pods/:podId/grants, the page's list
 app.use('/api/pods', require('./routes/runTraces'));
+app.use('/api/pods', require('./routes/podRecords')); // TASK-513: GET /api/pods/:podId/record/tasks/:taskId
 app.use('/api/pods', podRoutes);
 app.use('/api/billing', require('./routes/billing'));
 app.use('/api/messages', messageRoutes);
@@ -308,16 +311,31 @@ if (require('./config/devRoutes').devRoutesEnabled()) {
 }
 
 // Connect to MongoDB (for posts and user data)
-connectDB();
+if (startServices) connectDB();
 
 // Bootstrap agent registry after MongoDB connects
 const mongoose = require('mongoose');
 const AgentBootstrapService = require('./services/agentBootstrapService');
 const { ensureLocalDevLogin } = require('./services/localDevLoginService');
 const { AgentInstallation } = require('./models/AgentRegistry');
+const { backfillGrantOwners } = require('./services/grantOwnerBinding');
 
-mongoose.connection.once('open', () => {
-  if (process.env.NODE_ENV !== 'test') {
+// Binds pre-existing room grants to their owner. Revoke and seat-grant read
+// refuse unbound grants. This runs at boot without holding requests, so a
+// revoke that lands while it is still scanning can be refused until it
+// finishes; the scan is idempotent and a restart re-runs it for the rest.
+// A boot job, so only the service singleton registers it.
+if (startServices) mongoose.connection.once('open', () => {
+  if (process.env.NODE_ENV === 'test') return;
+  backfillGrantOwners()
+    .then((result: { scanned: number; bound: number; unbound: number }) => console.log(
+      `[grant-owner-backfill] scanned=${result.scanned} bound=${result.bound} unbound=${result.unbound}`,
+    ))
+    .catch((error: any) => console.error('[grant-owner-backfill] Error:', error.message));
+});
+
+if (startServices) mongoose.connection.once('open', () => {
+  if (startServices && process.env.NODE_ENV !== 'test') {
     (async () => {
       try {
         await ensureLocalDevLogin();
@@ -364,10 +382,12 @@ mongoose.connection.once('open', () => {
 const schedulerService = require('./services/schedulerService');
 const discordGatewayService = require('./services/discordGatewayService');
 const { startBackgroundServices, shouldRunBackgroundServices } = require('./services/backgroundWorkerStart');
-startBackgroundServices(process.env, {
-  scheduler: schedulerService,
-  discordGateway: discordGatewayService,
-});
+if (startServices) {
+  startBackgroundServices(process.env, {
+    scheduler: schedulerService,
+    discordGateway: discordGatewayService,
+  });
+}
 
 // PostgreSQL status is mounted unconditionally, and NOT as a placeholder:
 // checkStatus reads the pool and the schema itself, so it answers
@@ -379,6 +399,10 @@ startBackgroundServices(process.env, {
 // by the frontend after a GET said available:true (SocketContext.tsx:45-49),
 // i.e. only when the pool is up.
 app.use('/api/pg/status', pgStatusRoutes);
+if (!startServices && process.env.PG_HOST) {
+  app.use('/api/pg/messages', pgMessageRoutes);
+  pgAvailable = true;
+}
 
 // Connect to PostgreSQL if configured (for chat functionality).
 //
@@ -391,7 +415,7 @@ app.use('/api/pg/status', pgStatusRoutes);
 // restart. PG itself was healthy (331ms from that same pod). The retry with
 // backoff, the late mount and the state the health route reads all live in
 // services/pgBootService.ts (TASK-168).
-if (process.env.PG_HOST) {
+if (startServices && process.env.PG_HOST) {
   // Readiness asks the route table, not this block's own bookkeeping (TASK-168):
   // it checks that this very router is on the app, so a pod that mounts PG late
   // starts passing its readiness probe without being restarted.
@@ -417,7 +441,7 @@ if (process.env.PG_HOST) {
       // Kick off the daily 30-day message retention cron. Kept out
       // of schedulerService.ts on purpose so other tracks can edit
       // that file without stomping on this cron.
-      if (shouldRunBackgroundServices(process.env)) {
+      if (startServices && shouldRunBackgroundServices(process.env)) {
         try {
           const { initPgRetention } = require('./services/pgRetentionService');
           initPgRetention();
@@ -427,8 +451,6 @@ if (process.env.PG_HOST) {
             retentionErr?.message || retentionErr,
           );
         }
-        // TASK-313 part 2: moves Mongo fallback messages into PG once it is back.
-        require('./services/pgMessageReconcileService').initPgMessageReconcile();
         try {
           require('./services/agentInstallationCleanupService').initInstallationCleanup();
         } catch (cleanupErr: any) {
@@ -448,7 +470,7 @@ if (process.env.PG_HOST) {
       // an unhandled rejection at boot.
       console.error('Error starting the PostgreSQL boot retry:', err?.message || err);
     });
-} else {
+} else if (!process.env.PG_HOST) {
   pgAvailable = false;
   console.log(
     'PostgreSQL connection not configured. Chat functionality will use MongoDB.',
@@ -630,67 +652,26 @@ io.on('connection', (socket: any) => {
           }
         }
 
-        // Use PostgreSQL for messages if available, otherwise fallback to MongoDB
-        if (pgAvailable) {
-          try {
-            // Create message in PostgreSQL
-            console.log('Creating message in PostgreSQL:', {
-              podId,
-              userId: socketUserId,
-              content,
-              messageType,
-            });
-            const newMessage = await PGMessage.create(
-              podId,
-              socketUserId,
-              content,
-              messageType,
-              replyToMessageId,
-            );
-            console.log('Message created successfully:', newMessage);
-
-            message = await PGMessage.findById(newMessage.id);
-            console.log('Message retrieved for broadcast:', message);
-          } catch (dbError) {
-            console.error(
-              'Database error with PostgreSQL, falling back to MongoDB:',
-              dbError,
-            );
-            try {
-              // Create message in MongoDB
-              const user = await User.findById(socketUserId);
-              const newMessage = new Message({
-                podId,
-                userId: socketUserId,
-                content,
-                messageType,
-              });
-
-              await newMessage.save();
-              console.log(
-                'Message saved to MongoDB after PG fallback:',
-                newMessage._id,
-              );
-
-              // Populate user info
-              message = {
-                ...newMessage.toObject(),
-                username: user.username,
-                profilePicture: user.profilePicture,
-              };
-            } catch (mongoDbError) {
-              console.error(
-                'Failed to save message in MongoDB fallback:',
-                mongoDbError,
-              );
-              socket.emit('error', {
-                message: 'Failed to save message to any database',
-              });
-              return;
-            }
+        // PostgreSQL is the only message store once it is configured
+        // (TASK-503); MongoDB is written only when no PG is configured.
+        if (process.env.PG_HOST) {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { writeSocketMessage, MESSAGE_SEND_FAILED_EVENT } = require('./services/socketMessageWrite');
+          const written = await writeSocketMessage({
+            pgReady: pgAvailable,
+            podId,
+            userId: socketUserId,
+            content,
+            messageType,
+            replyToMessageId,
+          });
+          if (!written.ok) {
+            socket.emit(MESSAGE_SEND_FAILED_EVENT, written.error);
+            return;
           }
+          message = written.message;
         } else {
-          console.log('Using MongoDB for messages (PostgreSQL not available)');
+          console.log('Using MongoDB for messages (PostgreSQL not configured)');
           try {
             // Create message in MongoDB
             const user = await User.findById(socketUserId);
@@ -810,14 +791,36 @@ io.on('connection', (socket: any) => {
   socket.emit('welcome', { message: 'Connected to chat server successfully' });
 });
 
-// Start the server only when executed directly
-if (require.main === module) {
-  require('./services/hostedShutdownService').installHostedShutdown(server);
-  server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-}
 
-module.exports = {
-  app,
-  server,
-  authorizeSocketPodAccess,
+  app.locals.httpServer = server;
+  app.locals.socketServer = io;
+  app.locals.authorizeSocketPodAccess = authorizeSocketPodAccess;
+  return app;
 };
+
+// Preserve the legacy app/server exports lazily. Merely importing the factory
+// must not connect Mongo, start PostgreSQL retries or launch background workers.
+let defaultApp: any;
+const getDefaultApp = () => {
+  if (!defaultApp) defaultApp = buildApp({ startServices: true });
+  return defaultApp;
+};
+// Service startup owns process-wide pools, readiness and workers. Only the lazy
+// singleton may start it; independent HTTP test apps use already-prepared stores.
+const createApp = ({ startServices = false } = {}) => {
+  if (startServices) throw new Error('Service startup is singleton-only; use the app/server exports');
+  return buildApp();
+};
+module.exports = {
+  createApp,
+  get app() { return getDefaultApp(); },
+  get server() { return getDefaultApp().locals.httpServer; },
+  get authorizeSocketPodAccess() { return getDefaultApp().locals.authorizeSocketPodAccess; },
+};
+
+if (require.main === module) {
+  const app = getDefaultApp();
+  const port = process.env.PORT || 5000;
+  require('./services/hostedShutdownService').installHostedShutdown(app.locals.httpServer);
+  app.locals.httpServer.listen(port, () => console.log(`Server running on port ${port}`));
+}

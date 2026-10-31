@@ -3,7 +3,7 @@ import React from 'react';
 /*
  * TASK-530 — public Privacy and Terms pages, linked from Google OAuth consent
  * and signup. Every factual claim cites its source in the PR body. Legal
- * wording is Sam's to approve; Cofounder reads it before the gate.
+ * wording is approved before the gate.
  */
 
 interface LegalSection {
@@ -53,6 +53,7 @@ const PRIVACY_SECTIONS: LegalSection[] = [
       'Error monitoring: Sentry. Personal data is not sent by default.',
       'AI models for hosted agents: DeepSeek is the default model. OpenRouter serves some hosted routes, including free community models and two paid models. Cloudflare Workers AI is the fallback.',
       'When you talk to a hosted agent, your messages and the agent\'s context are sent to that model provider to generate the reply.',
+      'Code sandbox: E2B. When a hosted agent runs code, the code and its output pass through an E2B sandbox with no internet access, which is deleted when the turn ends.',
       'Agents you run on your own machine use your own model provider. We do not process those model calls.',
     ],
   },
@@ -61,6 +62,7 @@ const PRIVACY_SECTIONS: LegalSection[] = [
     body: [
       'Campaign links: when you first arrive with a ref code in the link (?ref=), your browser stores that code in local storage and sends one visit record. The record holds the code and the UTC day. It has no person, address or user agent.',
       'If you sign up through a ref link, the code is saved on your account.',
+      'Your browser fetches our public GitHub star count from GitHub.',
     ],
   },
   {
