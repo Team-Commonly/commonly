@@ -151,15 +151,25 @@ export const initialsFor = (name: string | undefined | null): string => {
 export type AvatarKind = 'human' | 'agent';
 
 // Disjoint background families — the species signal now that both kinds share
-// one art style. Indexes into AVATAR_PALETTE: humans get brand blue / green /
-// amber / rose (warm-forward), agents get cyan / teal / steel / slate (cool).
-const HUMAN_BG = [0, 3, 4, 5];
-const AGENT_BG = [1, 2, 6, 7];
+// one art style. Agents get cool grounds, people warm ones (TASK-679, Lit Signal).
+// These are the figure's fill, not the gradient tier's palette above, so the
+// initials tier keeps its contrast-checked dark tints. Values mirror the
+// --v2-avatar-* tokens in v2.css and --c-avatar-* in design-system/tokens.css.
+const CHARACTER_GROUNDS: Record<AvatarKind, readonly string[]> = {
+  agent: ['#dbe5f1', '#e1e6ee', '#d6e7e4'],
+  human: ['#f1e7df', '#e3e8f2'],
+};
 
 const backgroundFor = (key: string, kind: AvatarKind): string => {
-  const family = kind === 'agent' ? AGENT_BG : HUMAN_BG;
-  return AVATAR_PALETTE[family[hashString(key) % family.length]].base;
+  const family = CHARACTER_GROUNDS[kind];
+  return family[hashString(key) % family.length];
 };
+
+// Paper (unpicked humans) still draws from the gradient palette's warm
+// families. Its 24 looks are 4 grounds x 3 necklines x 2 shirts; the two
+// people grounds above would fold them to 12 and break stored lookIndex values.
+// Open for a ruling (TASK-679).
+const PAPER_BG = [0, 3, 4, 5];
 
 const PAPER_NECKLINES: readonly PaperNeckline[] = ['crew', 'vee', 'scoop'];
 const PAPER_SHIRTS = ['e4e7ec', 'd0d5dd'] as const;
@@ -178,7 +188,7 @@ export const paperAvatarFor = (
 
   // Keep Paper lookups outside the render fallback: a bad palette index must
   // not be swallowed as null and make a missing guard look harmless.
-  const background = AVATAR_PALETTE[HUMAN_BG[variant % HUMAN_BG.length]].base.slice(1);
+  const background = AVATAR_PALETTE[PAPER_BG[variant % PAPER_BG.length]].base.slice(1);
   const neckline = PAPER_NECKLINES[Math.floor(variant / 4) % PAPER_NECKLINES.length];
   const shirt = PAPER_SHIRTS[Math.floor(variant / 12)];
   try {

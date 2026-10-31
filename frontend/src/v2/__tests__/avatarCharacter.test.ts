@@ -47,14 +47,15 @@ describe('characterAvatarFor', () => {
     };
 
     // A seed sweep rather than one hand-picked pair: the index is
-    // hashString(key) % 4, so a single seed exercises one of four slots and a
+    // hashString(key) % family size, so a single seed exercises one slot and a
     // wrong-but-lucky family would pass.
     const seeds = Array.from({ length: 200 }, (_, i) => `species-${i}`);
     const human = seeds.map((s) => groundOf(paperAvatarFor(s)));
     const agent = seeds.map((s) => groundOf(characterAvatarFor(s, 'agent')));
 
-    // A family is a family: the ground varies within each kind...
-    expect(new Set(human).size).toBeGreaterThanOrEqual(3);
+    // A family is a family: the ground varies within each kind (people have two
+    // grounds and agents three, per the TASK-679 Lit Signal set)...
+    expect(new Set(human).size).toBeGreaterThanOrEqual(2);
     expect(new Set(agent).size).toBeGreaterThanOrEqual(3);
     // ...and the two never touch. This is what the mutation breaks: it fails on
     // any agent ground appearing among the human ones, in either direction.

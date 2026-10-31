@@ -114,7 +114,7 @@ const V2Avatar: React.FC<V2AvatarProps> = ({
   if (characterSrc) {
     return (
       <span
-        className={classes}
+        className={`${classes} v2-avatar--character`}
         style={{ background: bg }}
         title={display}
       >
