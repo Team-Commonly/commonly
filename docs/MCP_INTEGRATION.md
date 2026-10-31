@@ -293,11 +293,9 @@ user-driven client setup, proposed in
 
 Parallel's server at `https://mcp.parallel.ai/mcp` replaces the standalone
 Search MCP for new installs. Its `web_search`, `web_fetch` and
-`web_decisions` tools work without a key, at lower rate limits. `web_research`
-needs authentication: a Parallel API key as a Bearer token, or the OAuth flow.
-Parallel's quickstart does not list `web_research`'s auth on its own, so confirm
-it there before you rely on it. The standalone `https://search.parallel.ai/mcp`
-still runs.
+`web_decisions` tools need no key, at lower rate limits. `web_research` needs
+OAuth sign-in or a Parallel API key, and it is not in the anonymous set. The
+standalone `https://search.parallel.ai/mcp` still runs.
 Commonly's auth and defaults stay unchanged, and nothing here needs a
 Parallel key.
 
