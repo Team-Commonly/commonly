@@ -22,6 +22,7 @@ import axios from '../../utils/axiosConfig';
 import { recordByoStep, type ByoStep } from '../utils/byoTelemetry';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { daemonSetupCommand } from '../utils/daemonSetupCommand';
+import { defaultMachine, machineDisplayName } from '../utils/machineLabel';
 import V2FeaturePage from './V2FeaturePage';
 import V2Avatar from './V2Avatar';
 import V2Hint from './V2Hint';
@@ -61,6 +62,7 @@ type MachineRow = {
   id: string;
   machineId: string;
   name: string;
+  createdAt?: string | null;
   status: 'online' | 'offline';
   agentStates?: { agentName: string; instanceId: string; state: string }[];
 };
@@ -119,7 +121,7 @@ const sanitizeAgentName = (raw: string): string => raw
   .slice(0, 64);
 
 const V2AgentBYO: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const api = useV2Api();
   const navigate = useNavigate();
   // Deep-link prefill (?pod=&name=) — the approved connect_local_agent card
@@ -274,7 +276,10 @@ const V2AgentBYO: React.FC = () => {
   // must not open onto a page that shows no command. Elsewhere the full page
   // says why and what works instead.
   const showCompactByo = compactByo && listenerAvailable && !showCompactHosted && !personaCard && mode === 'byo';
-  const selectedMachineName = machines.find((m) => m.machineId === machineId)?.name || machineId;
+  const selectedMachine = machines.find((m) => m.machineId === machineId);
+  const selectedMachineName = selectedMachine
+    ? machineDisplayName(selectedMachine, machines, t, i18n.language)
+    : machineId;
   // Model choice for the on-my-computer path. Adapter and model travel
   // together: a Codex model slug must never be left behind if the user flips
   // back to Claude or auto-detect, and vice versa.
@@ -541,7 +546,7 @@ const V2AgentBYO: React.FC = () => {
         if (cancelled) return;
         if (Array.isArray(machineList?.machines) && machineList.machines.length > 0) {
           setMachines(machineList.machines);
-          setMachineId((prev) => prev || machineList.machines[0].machineId);
+          setMachineId((prev) => prev || defaultMachine(machineList.machines)?.machineId || '');
         }
       } catch {
         // No daemon machines — the "on my computer" card simply doesn't show.
@@ -1270,7 +1275,7 @@ const V2AgentBYO: React.FC = () => {
               >
                 {machines.map((m) => (
                   <option key={m.machineId} value={m.machineId}>
-                    {m.name} ({t(m.status === 'online' ? 'agentByo.machine.online' : 'agentByo.machine.offline')})
+                    {machineDisplayName(m, machines, t, i18n.language)} ({t(m.status === 'online' ? 'agentByo.machine.online' : 'agentByo.machine.offline')})
                   </option>
                 ))}
               </select>

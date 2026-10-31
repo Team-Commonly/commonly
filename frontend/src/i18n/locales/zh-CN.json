@@ -1828,6 +1828,7 @@
     "machine": {
       "online": "在线",
       "offline": "离线",
+      "addedOn": "添加于 {{date}}",
       "heading": "正在启动：",
       "running": "已在 {{machine}} 上运行——去 pod 里打个招呼吧。",
       "waiting": "正在等待 {{machine}} 上的守护进程接管…",
