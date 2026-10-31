@@ -85,7 +85,9 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 // the walk's own token cannot remove (Scout, the hosted agent's User). It holds
 // no password, token or email. It is named by the run stamp, not the username.
 const STATE_DIR = process.env.COMMONLY_WALK_STATE_DIR || path.join(homedir(), '.commonly', 'state', 'walk-706');
-const manifest = { userId: null, podIds: [], agentName: null, botIds: [], survivors: [], status: 'running' };
+// Signup returns no user id, so the manifest carries the exact username instead:
+// SRE finds the account by that name, not by a prefix. Never the email.
+const manifest = { userId: null, username: null, podIds: [], agentName: null, botIds: [], survivors: [], status: 'running' };
 const writeManifest = () => {
   mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
   writeFileSync(path.join(STATE_DIR, `${stamp}.json`), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
@@ -110,7 +112,7 @@ const cleanup = async (token, password) => {
   if (!session) {
     manifest.survivors = [
       ...manifest.podIds.map((id) => `pod:${id} (no sign-in for cleanup)`),
-      ...(accountMayExist ? ['account (no sign-in for cleanup)'] : []),
+      ...(accountMayExist ? [`account ${manifest.username} (no sign-in for cleanup)`] : []),
     ];
     manifest.status = manifest.survivors.length ? 'needs-admin-purge' : 'clean';
     writeManifest();
@@ -154,6 +156,8 @@ const main = async () => {
   let exitCode = 0;
   try {
     await runStep('signup', async () => {
+      manifest.username = username;
+      writeManifest();
       let r;
       try {
         r = await api('POST', '/api/auth/register', { body: { username, email, password } });

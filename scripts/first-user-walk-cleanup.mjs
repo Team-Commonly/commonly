@@ -15,6 +15,15 @@ const ids = (value) => (Array.isArray(value) ? value : value?.pods || []);
 // { _id, ... } object, depending on the route. Accept both.
 export const ownerOf = (pod) => String(pod.createdBy?._id ?? pod.createdBy ?? '');
 
+// Only the bots this run created go in the manifest: the hosted agent (its
+// username carries this run's agent name) and the per-user Scout (`scout-u…`).
+// The shared default bot is a member of every new pod and is never recorded,
+// because SRE's purge would delete an identity every pod uses.
+export const isRunBot = (member, agentName) => {
+  const name = String(member?.username || '');
+  return member?.isBot === true && (name === agentName || name.startsWith(`${agentName}-`) || name.startsWith('scout-u'));
+};
+
 // `api` is the walk's request helper: (method, path, { token, body }) => { status, data }.
 // `podIds` are the pods the walk recorded as created in its manifest. They are
 // removed and verified even when the owner match misses them, so a filter
@@ -52,7 +61,7 @@ export const cleanupRun = async ({ api, token, password, email, userId, agentNam
       survivors.push(`pod:${id} (lookup ${detail.status})`);
       continue;
     }
-    const bots = (detail.data?.members || []).filter((m) => m?.isBot).map((m) => String(m._id));
+    const bots = (detail.data?.members || []).filter((m) => isRunBot(m, agentName)).map((m) => String(m._id));
     bots.forEach((bot) => botIds.add(bot));
     onBotIds(id, bots);
 

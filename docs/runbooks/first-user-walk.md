@@ -52,9 +52,12 @@ member of those pods, read before each pod is deleted (the hosted agent's User
 and the per-run Scout bot). SRE purges what the walk's token cannot reach from
 that manifest, by id, never by name prefix.
 
-If a run dies before login, the account has no id and no manifest, and it is left
-behind. Find it by the `walk-` prefix and delete it through the admin path. The
-password is random and not stored, so the script cannot recover it.
+Signup returns no user id, so the manifest records the run's exact username as
+soon as signup starts. If signup created the account and login then failed,
+cleanup reports `account <username>` as a survivor and the manifest is
+`needs-admin-purge`: SRE looks the account up by that exact name. The manifest
+never holds the email. Only a run that dies before its manifest write (before
+signup starts) leaves nothing to find, and that case needs no purge.
 
 ## Daily schedule
 

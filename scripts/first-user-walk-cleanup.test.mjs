@@ -66,7 +66,7 @@ const run = (backend, opts = {}) => cleanupRun({
 });
 
 test('reports the bot members of each pod before the pod goes', async () => {
-  const members = [{ _id: 'bot-agent', isBot: true }, { _id: USER, isBot: false }];
+  const members = [{ _id: 'bot-agent', isBot: true, username: 'walk-x-agent' }, { _id: USER, isBot: false, username: 'walk' }];
   const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER, members }] });
   const result = await run(backend);
   assert.equal(result.ok, true);
@@ -170,7 +170,7 @@ test('a refused deprovision is a survivor', async () => {
 });
 
 test('bot ids are reported before each pod is deleted, so a later throw keeps them', async () => {
-  const members = [{ _id: 'bot-scout', isBot: true }];
+  const members = [{ _id: 'bot-scout', isBot: true, username: 'scout-uabc123' }];
   const backend = fakeBackend({
     pods: [{ _id: 'p1', createdBy: USER, members }, { _id: 'p2', createdBy: USER, members }],
     throwOn: '/api/pods/p2',
@@ -179,4 +179,18 @@ test('bot ids are reported before each pod is deleted, so a later throw keeps th
   await assert.rejects(run(backend, { onBotIds: (podId, bots) => reported.push([podId, bots]) }), /socket hang up/);
   assert.deepEqual(reported[0], ['p1', ['bot-scout']]);
   assert.ok(backend.state.calls.indexOf('DELETE /api/pods/p1') > backend.state.calls.indexOf('GET /api/pods/p1'));
+});
+
+test('the shared default bot is never recorded, even though it is a pod member', async () => {
+  const members = [
+    { _id: 'shared-bot', isBot: true, username: 'commonly-bot' },
+    { _id: 'scout', isBot: true, username: 'scout-uabc123' },
+    { _id: 'agent', isBot: true, username: 'walk-x-agent' },
+    { _id: USER, isBot: false, username: 'walk' },
+  ];
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER, members }] });
+  const result = await run(backend);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.botIds, ['scout', 'agent']);
+  assert.ok(!result.botIds.includes('shared-bot'));
 });
