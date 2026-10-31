@@ -2146,6 +2146,14 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
               {showDirectAgentLiveness && directAgent && (
                 <div className="v2-chat__agent-room-status" data-testid="agent-room-liveness" role="status">
                   {t(directAgentLivenessKey, { agentName: directAgent.displayName })}
+                  {directAgentReach === 'never-connected' && directAgent.state?.isOwner && directAgent.state?.fixCommand && (
+                    <>
+                      {' '}{t('podChat.agentRoomLiveness.runCommand')}
+                      <code className="v2-chat__agent-room-command" data-testid="agent-room-fix-command">
+                        {directAgent.state.fixCommand}
+                      </code>
+                    </>
+                  )}
                 </div>
               )}
               {podAgentLiveness.map((row) => (
