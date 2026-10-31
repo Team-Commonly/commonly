@@ -28,6 +28,11 @@
  * between the two writes leaves the Mongo label unrepaired; the next run plans
  * the row again and rewrites both.
  *
+ * A PG error (a thrown query) aborts the run before that row's Mongo write. A
+ * re-run plans from current rows and picks up there. A PG mirror that updates no
+ * row means the bot has never posted, so it has no users row yet: its Mongo label
+ * is still written, and its first post creates the row from that label.
+ *
  * Run:  cd backend && npx ts-node scripts/repair-first-party-labels.ts [--apply]
  */
 import mongoose from 'mongoose';
@@ -58,8 +63,21 @@ export interface LabelRepair {
   heldBy?: string[];
 }
 
-// Pure, so the rules are pinned without a database. `takenBy` maps a label to
-// the instanceIds of every bot already displaying it.
+// Each bot's label, trimmed and lowercased, to the row ids displaying it. A blank
+// label holds nothing. Row ids, not instanceIds, so the planner can leave a
+// repaired row out of its own holders.
+export function takenByLabel(rows: LabelRow[]): Map<string, string[]> {
+  const takenBy = new Map<string, string[]>();
+  for (const row of rows) {
+    const label = (row.displayName || '').trim().toLowerCase();
+    if (!label) continue;
+    takenBy.set(label, [...(takenBy.get(label) || []), row.id]);
+  }
+  return takenBy;
+}
+
+// Pure, so the rules are pinned without a database. `takenBy` is takenByLabel's
+// map, so a holder is found whatever the case of its label.
 export function planLabelRepairs(
   rows: LabelRow[],
   takenBy: ReadonlyMap<string, readonly string[]> = new Map(),
@@ -96,11 +114,14 @@ export function planLabelRepairs(
   );
   const shared = repairs.filter((r) => !isPerUser(instanceOf.get(r.id)));
   for (const r of shared) {
-    const holders = (takenBy.get(r.to) || [])
-      .filter((id) => !isPerUser(id))
-      .map((id) => id || '(none)');
+    // Compared without case, as the rename path does: `scout` holds `Scout`. The
+    // repaired row is never its own holder, or a bare `scout` would hold itself.
+    const key = r.to.toLowerCase();
+    const holders = (takenBy.get(key) || [])
+      .filter((id) => id !== r.id && !isPerUser(instanceOf.get(id)))
+      .map((id) => instanceOf.get(id) || '(none)');
     const others = shared
-      .filter((o) => o.id !== r.id && o.to === r.to)
+      .filter((o) => o.id !== r.id && o.to.toLowerCase() === key)
       .map((o) => instanceOf.get(o.id) || '(none)');
     const heldBy = [...holders, ...others];
     if (heldBy.length > 0) r.heldBy = heldBy;
@@ -125,7 +146,7 @@ interface PgPool {
 
 // Sets the chat-facing PG label to the value the Mongo write sets.
 // syncUserToPostgreSQL writes the same column (chatUsernameFor: a bot's
-// displayName). Returns false when PG is not configured.
+// displayName). Returns false when PG is not configured or no row took the label.
 export async function mirrorLabel(pool: PgPool | null, id: string, label: string): Promise<boolean> {
   if (!pool) return false;
   const result = await pool.query(
@@ -133,6 +154,20 @@ export async function mirrorLabel(pool: PgPool | null, id: string, label: string
     [id, label, new Date()],
   );
   return (result.rowCount || 0) > 0;
+}
+
+// The --apply write for one repair: PG first, then Mongo. A mirror that updates no
+// row means the bot has no users row yet, so there is no PG label to disagree
+// with: the Mongo write still happens, and the bot's first post copies it. Returns
+// false in that case. A PG error throws before the Mongo write.
+export async function writeRepair(
+  pool: PgPool | null,
+  repair: LabelRepair,
+  writeMongo: (id: string, label: string) => Promise<void>,
+): Promise<boolean> {
+  const mirrored = pool ? await mirrorLabel(pool, repair.id, repair.to) : true;
+  await writeMongo(repair.id, repair.to);
+  return mirrored;
 }
 
 interface LabelUser {
@@ -167,14 +202,7 @@ async function main() {
     instanceId: u.botMetadata?.instanceId,
     displayName: u.botMetadata?.displayName,
   }));
-  const takenBy = new Map<string, string[]>();
-  for (const row of rows) {
-    const label = (row.displayName || '').trim();
-    if (!label) continue;
-    takenBy.set(label, [...(takenBy.get(label) || []), row.instanceId || '']);
-  }
-
-  const { writable, skipped } = splitRepairs(planLabelRepairs(rows, takenBy));
+  const { writable, skipped } = splitRepairs(planLabelRepairs(rows, takenByLabel(rows)));
   for (const r of skipped) {
     const holders = (r.heldBy || []).join(', ');
     console.log(
@@ -186,15 +214,21 @@ async function main() {
   if (APPLY && !pgPool) {
     console.log('  PG_HOST is not set: users.username is not mirrored; the next agent sync writes it.');
   }
+  const writeMongo = async (id: string, label: string): Promise<void> => {
+    await User.updateOne({ _id: id }, { $set: { 'botMetadata.displayName': label } });
+  };
+  let noPgRow = 0;
   for (const r of writable) {
     console.log(`${APPLY ? '' : '[dry] '}${r.username}: "${r.from}" → "${r.to}" (${r.reason})`);
-    if (APPLY) {
-      await mirrorLabel(pgPool, r.id, r.to);
-      await User.updateOne({ _id: r.id }, { $set: { 'botMetadata.displayName': r.to } });
+    if (APPLY && !(await writeRepair(pgPool, r, writeMongo))) {
+      console.log(`  - ${r.username || r.id}: no PG users row yet; its first post copies this label`);
+      noPgRow += 1;
     }
   }
   const verb = APPLY ? 'repaired' : 'would be repaired (dry run; pass --apply to write)';
-  console.log(`\nDone — ${writable.length} label(s) ${verb}, ${skipped.length} skipped for an operator decision.`);
+  const note = noPgRow > 0 ? `, ${noPgRow} with no PG users row yet` : '';
+  const count = writable.length;
+  console.log(`\nDone — ${count} label(s) ${verb}, ${skipped.length} skipped for an operator decision${note}.`);
   if (pgPool) await pgPool.end();
   await mongoose.disconnect();
 }
