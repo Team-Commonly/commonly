@@ -14,12 +14,13 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { useRelativeNow } from '../hooks/useRelativeNow';
-import { localizeRelativeTime, localizeWindow } from '../utils/localizeRelativeTime';
+import { localizeRelativeTime, localizeWindow, relativeParts } from '../utils/localizeRelativeTime';
 import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
 import { ActGlyph } from '../icons/glyphs';
 import { hostedMcpErrorNotice } from './hostedMcpErrorNotice';
+import { catalogDescription } from '../utils/connectorCatalogDescription';
 import V2InactiveFold from './V2InactiveFold';
 
 export type GrantWriteMode = 'read' | 'write' | 'write-with-confirm';
@@ -132,23 +133,23 @@ interface GithubAppIntegrationResponse {
 }
 
 const USED_RECENTLY_MS = 10 * 60 * 1000;
-const MAX_PODS = 20;
 const MODE_RANK: Record<GrantWriteMode, number> = { read: 0, 'write-with-confirm': 1, write: 2 };
 // The two option sets the aside renders as buttons. They live here, not inline in the
 // JSX, because eslint's i18next/no-literal-string (jsx-only) reads an array literal in
 // a JSX expression as copy — and these are ids, not words (TASK-164).
 const WRITE_MODES: GrantWriteMode[] = ['read', 'write-with-confirm', 'write'];
 
-/** The age as a unit-suffixed number ("23d", "5m", "just now"), from the timestamp and keys. */
+/**
+ * The age as a unit-suffixed number ("23d", "5m", "just now"). Rounds through
+ * relativeParts, the same rule as the "revoked … ago" line, so one timestamp
+ * pair never reads "1d" in one place and "2d" in the other (TASK-649).
+ */
 export const shortAge = (date: string | null | undefined, now: number, t: (key: string, options?: Record<string, unknown>) => string): string => {
-  const timestamp = date ? new Date(date).getTime() : NaN;
-  if (!Number.isFinite(timestamp)) return t('time.age.justNow', { defaultValue: 'just now' });
-  const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000));
-  if (minutes < 1) return t('time.age.justNow', { defaultValue: 'just now' });
-  if (minutes < 60) return t('time.age.minutes', { defaultValue: '{{n}}m', n: minutes });
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return t('time.age.hours', { defaultValue: '{{n}}h', n: hours });
-  return t('time.age.days', { defaultValue: '{{n}}d', n: Math.floor(hours / 24) });
+  const parts = relativeParts(date, { includeFuture: false, now });
+  if (parts.kind !== 'rel') return t('time.age.justNow', { defaultValue: 'just now' });
+  if (parts.unit === 'minute') return t('time.age.minutes', { defaultValue: '{{n}}m', n: parts.count });
+  if (parts.unit === 'hour') return t('time.age.hours', { defaultValue: '{{n}}h', n: parts.count });
+  return t('time.age.days', { defaultValue: '{{n}}d', n: parts.count });
 };
 
 // Both surfaces used to carry their own copy of this grammar; the locale family
@@ -199,8 +200,10 @@ const ModeGlyph: React.FC<{ mode: GrantWriteMode }> = ({ mode }) => {
   return <G><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6z" /><path d="m9 12 2 2 4-4" /></G>;
 };
 
+const PER_ENTRY_REVOKE_COPY = new Set(['supabase', 'linear', 'sentry']);
+
 const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const api = useV2Api();
   // Revoke and Change access are the granter's: the route 403s anyone else.
   const { currentUser } = useAuth();
@@ -232,36 +235,24 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
 
   const isAdmin = currentUser?.role === 'admin';
 
-  const podIds = useMemo(() => pods.slice(0, MAX_PODS).map((pod) => String(pod._id)), [pods]);
+  const podIds = useMemo(() => pods.map((pod) => String(pod._id)), [pods]);
 
   const load = useCallback(async () => {
     const catalogRes = await api.get<{ installables?: ToolCatalogEntry[]; hiddenToolConnections?: HiddenToolConnection[] }>('/api/installables').catch(() => null);
     setCatalog((catalogRes?.installables || []).filter((entry) => entry.list === 'tools'));
     setHiddenConnections(catalogRes?.hiddenToolConnections || []);
-    if (podIds.length === 0) { setGrants([]); return; }
-    const results = await Promise.all(podIds.map(async (podId) => {
-      const [grantsRes, seatsRes] = await Promise.all([
-        api.get<{ grants: ToolGrant[] }>(`/api/pods/${podId}/grants`).catch(() => null),
-        api.get<{ agents?: PodSeat[] }>(`/api/registry/pods/${podId}/agents`).catch(() => null),
-      ]);
-      return { podId, grants: grantsRes?.grants ?? [], seats: (seatsRes?.agents ?? []).filter((seat) => !seat.internal) };
-    }));
-    const seen = new Set<string>();
-    const merged: ToolGrant[] = [];
-    const seatMap: Record<string, PodSeat[]> = {};
-    for (const result of results) {
-      seatMap[result.podId] = result.seats;
-      for (const grant of result.grants) {
-        if (seen.has(grant.grantId)) continue; // a seat grant can surface from two pods
-        seen.add(grant.grantId);
-        merged.push(grant);
-      }
-    }
-    merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    setGrants(merged);
-    setSeats(seatMap);
+    const [grantRes, seatResults] = await Promise.all([
+      api.get<{ grants: ToolGrant[] }>('/api/grants', { params: { connectionOwner: 'me' } }).catch(() => null),
+      Promise.all(podIds.map(async (podId) => {
+        const res = await api.get<{ agents?: PodSeat[] }>(`/api/registry/pods/${podId}/agents`).catch(() => null);
+        return [podId, (res?.agents ?? []).filter((seat) => !seat.internal)] as const;
+      })),
+    ]);
+    const ownedGrants = grantRes?.grants || [];
+    setGrants(ownedGrants);
+    setSeats(Object.fromEntries(seatResults));
     // "used in the last 10 min" reads the newest trail row's `at` (§6).
-    const uses = await Promise.all(merged.filter((grant) => !isDead(grant)).map(async (grant) => {
+    const uses = await Promise.all(ownedGrants.filter((grant) => !isDead(grant)).map(async (grant) => {
       const res = await api.get<ToolTrail>(`/api/grants/${grant.grantId}/calls`, { params: { limit: 1 } }).catch(() => null);
       return [grant.grantId, res?.calls?.[0]?.at ?? null] as const;
     }));
@@ -300,15 +291,19 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   );
   const renderManualRevokeNotice = (entry: ToolCatalogEntry | null) => {
     if (!manualRevokeNotice || !noticeMatchesEntry(entry)) return null;
+    // Per-entry copy names only what that vendor's page lists; entries without it fall back to the generic line.
+    const context = PER_ENTRY_REVOKE_COPY.has(manualRevokeNotice.entryId) ? manualRevokeNotice.entryId : undefined;
     return (
       <p className="v2-connector-row__refusal" role="status">
         {t('connectors.hostedMcpManualRevoke', {
           defaultValue: 'Your previous {{provider}} account may still have Commonly connected. Switch to it on {{provider}}, then remove Commonly there.',
+          context,
           provider: manualRevokeNotice.provider,
         })}{' '}
         <a href={manualRevokeNotice.revokePage} target="_blank" rel="noopener noreferrer">
           {t('connectors.hostedMcpReviewAuthorization', {
             defaultValue: "Open {{provider}}'s connected apps",
+            context,
             provider: manualRevokeNotice.provider,
           })}
         </a>
@@ -319,11 +314,19 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     || t('tools.unknownConnector', { defaultValue: 'Unknown connector' });
 
   const podName = (podId: string): string => pods.find((pod) => String(pod._id) === podId)?.name || t('tools.aPod', { defaultValue: 'a pod' });
+  // A bot member takes its curated displayName, then a non-default instanceId, then its
+  // username. This client does not screen leaked runtime labels the way the server's
+  // resolveAgentDisplayLabel does, so a bot whose displayName is a runtime name shows it.
   const memberName = (userId: string | null): string | null => {
     if (!userId) return null;
     for (const pod of pods) {
       for (const member of pod.members || []) {
-        if (typeof member === 'object' && member && String(member._id) === userId && member.username) return member.username;
+        if (typeof member !== 'object' || !member || String(member._id) !== userId) continue;
+        const instanceId = member.botMetadata?.instanceId;
+        const botLabel = member.botMetadata?.displayName?.trim()
+          || (instanceId && instanceId !== 'default' ? instanceId : '');
+        if (botLabel) return botLabel;
+        if (member.username) return member.username;
       }
     }
     return null;
@@ -794,7 +797,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
             {t('tools.notGranted', { defaultValue: 'not granted' })}
             {entry.entryId === 'atlassian' && <span> · {t('tools.readInTesting', { defaultValue: 'read in testing' })}</span>}
           </span>
-          <strong>{entry.description}</strong>
+          <strong>{catalogDescription(i18n, entry.installableId, entry.description)}</strong>
           <span className="v2-connector-row__detail">
             {entry.available && (entry.connections.length === 0
                 ? (isHosted
@@ -902,7 +905,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
         <section className="v2-connector-aside__card">
           <p className="v2-connector-aside__eyebrow">{draft.replaces ? t('tools.changeAccess', { defaultValue: 'Change access' }) : t('tools.grant', { defaultValue: 'grant' })}</p>
           <h2>{draftEntry.label} · {podName(draft.podId)}</h2>
-          <p>{draftEntry.description}</p>
+          <p>{catalogDescription(i18n, draftEntry.installableId, draftEntry.description)}</p>
           <div className="v2-tools__form">
             {!draft.replaces && podIds.length > 1 && (
               <label className="v2-tools__field">
@@ -1107,7 +1110,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
         {error && !draft && !selected && !githubAppSetup && (
           <p className="v2-connector-aside__note" role="alert">{error}</p>
         )}
-        {removedHiddenNotice && <p className="v2-connector-aside__note" role="status">{t('tools.removedReviewProvider', { defaultValue: 'Connection removed. Review Commonly access at {{label}}.', label: removedHiddenNotice.label })} <a href={removedHiddenNotice.revokePage} target="_blank" rel="noopener noreferrer">{t('tools.openProviderSettings', { defaultValue: 'Open provider settings' })}</a></p>}
+        {removedHiddenNotice && <p className="v2-connector-aside__note" role="status">{t('tools.removedReviewProvider', { defaultValue: 'Connection removed. Review its access at {{label}}.', label: removedHiddenNotice.label })} <a href={removedHiddenNotice.revokePage} target="_blank" rel="noopener noreferrer">{t('tools.openProviderSettings', { defaultValue: 'Open provider settings' })}</a></p>}
         <div className="v2-connectors__rows">
           {liveRows.map(renderRow)}
           {notYet.map(renderNotYet)}

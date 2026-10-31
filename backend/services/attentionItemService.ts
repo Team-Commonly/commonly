@@ -401,6 +401,59 @@ export const sweepMissedAgentMentions = async (
   return { scanned: rows.length, eligible: ids.length, missed: Number(result.modifiedCount || 0) };
 };
 
+/**
+ * Audit rows already stamped `resolvedBy: 'replied'`. Before the narrow
+ * resolver landed, any post by the recipient in the pod closed every open
+ * mention they held there, so a row can assert a reply that was never
+ * written. This re-reads each row's source with the same evidence the sweep
+ * uses and reopens only the ones the source contradicts.
+ *
+ * Three outcomes, not two. `undecidable` exists because Mongo-fallback
+ * sources persist no reply or thread edges: absence of evidence there is not
+ * evidence the recipient stayed silent, and reopening those would re-raise
+ * attention a user has already dealt with. They are counted and left alone.
+ */
+export const auditRepliedMentionAttention = async (
+  { apply = false, resolvedBefore }: { apply?: boolean; resolvedBefore?: Date } = {},
+) => {
+  const before = validDate(resolvedBefore);
+  const rows = await AttentionItem.find({
+    kind: 'mention',
+    status: 'resolved',
+    resolvedBy: 'replied',
+    ...(before ? { resolvedAt: { $lt: before } } : {}),
+  }).sort({ createdAt: 1 }).lean();
+  let kept = 0;
+  let contradicted = 0;
+  let reopened = 0;
+  let undecidable = 0;
+  let unavailable = 0;
+  for (const row of rows) {
+    try {
+      const sourceId = String(row?.source?.id || '');
+      // Only a PostgreSQL source carries the reply and thread edges this
+      // audit needs; see recipientRepliedAfterMention.
+      if (!/^\d+$/.test(sourceId)) { undecidable += 1; continue; }
+      const sourceCreatedAt = await sourceTimeForMention(row);
+      if (!sourceCreatedAt) { undecidable += 1; continue; }
+      if (await recipientRepliedAfterMention(row, sourceCreatedAt)) { kept += 1; continue; }
+      contradicted += 1;
+      if (!apply) continue;
+      // Repeat the stamp in the filter so a row an operator acknowledged
+      // between the read and the write is not reopened underneath them.
+      const result = await AttentionItem.updateOne(
+        { _id: row._id, kind: 'mention', status: 'resolved', resolvedBy: 'replied' },
+        { $set: { status: 'open' }, $unset: { resolvedAt: '', resolvedBy: '' } },
+      );
+      reopened += Number(result.modifiedCount || 0);
+    } catch (error) {
+      unavailable += 1;
+      console.warn('[attention] replied-stamp audit skipped an unreadable source:', (error as Error).message);
+    }
+  }
+  return { scanned: rows.length, kept, contradicted, reopened, undecidable, unavailable };
+};
+
 export const recordApproval = async (approval: any, options: RecordOptions = {}): Promise<void> => {
   try {
     const podId = approval?.podId;
@@ -962,6 +1015,6 @@ export const hasEverHadAttention = async (recipientUserId: unknown): Promise<boo
 // excluding true decisions and approvals.
 export const acknowledgeMention = acknowledgeAttention;
 
-export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepMissedAgentMentions, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordInitiativeStall, resolveInitiativeStalls, initiativeStallSourceId, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
+export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, auditRepliedMentionAttention, sweepMissedAgentMentions, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordInitiativeStall, resolveInitiativeStalls, initiativeStallSourceId, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepMissedAgentMentions, AGENT_MENTION_MISSED_DAYS, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordInitiativeStall, resolveInitiativeStalls, initiativeStallSourceId, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_CANDIDATE_RE, isHandoffRequest, handoffRecipients };
+module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, auditRepliedMentionAttention, sweepMissedAgentMentions, AGENT_MENTION_MISSED_DAYS, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordInitiativeStall, resolveInitiativeStalls, initiativeStallSourceId, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_CANDIDATE_RE, isHandoffRequest, handoffRecipients };

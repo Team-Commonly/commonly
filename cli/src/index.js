@@ -20,6 +20,7 @@ import { registerAgent } from './commands/agent.js';
 import { registerDaemon } from './commands/daemon.js';
 import { registerPod } from './commands/pod.js';
 import { registerDev } from './commands/dev.js';
+import { registerVerify } from './commands/verify.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'));
@@ -51,6 +52,7 @@ registerPod(program);
 
 // Local dev environment
 registerDev(program);
+registerVerify(program);
 
 // Each subcommand owns its own `--instance <url>` flag; a program-level
 // duplicate shadowed the subcommand value on commander v12, causing

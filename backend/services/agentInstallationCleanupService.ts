@@ -312,8 +312,15 @@ export async function pruneStaleInstallations(
         await Pod.updateOne({ _id: inst.podId }, { $pull: { members: agentUser._id } });
       }
 
-      await AgentInstallation.deleteOne({ _id: inst._id });
-      deleted += 1;
+      // A pruned install is an uninstall: once none is active, the agent's
+      // runtime token stops authenticating too. A stale row is not active, so
+      // revoke first; if it throws, the row survives for the next run.
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const { revokeRuntimeTokensAfterLastUninstall } = require('../routes/registry/tokens');
+      await revokeRuntimeTokensAfterLastUninstall(inst.agentName, inst.instanceId || 'default');
+      // Only if still stale: a reinstall may have reactivated the row meanwhile.
+      const removed = await AgentInstallation.deleteOne({ _id: inst._id, status: 'stale' });
+      if (removed?.deletedCount) deleted += 1;
     } catch (err) {
       console.error(
         '[installation-cleanup] failed to prune install %s (%s/%s): %s',

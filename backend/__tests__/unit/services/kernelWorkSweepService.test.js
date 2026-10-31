@@ -278,6 +278,7 @@ describe('#1080 part 3 — provenance survives the clearing', () => {
     // as unclaimed work. lapsedFrom is the record that outlives it.
     expect(update.$set.assignee).toBeNull();
     expect(update.$set.claimedBy).toBeNull();
+    expect(update.$set.claimedByUserId).toBeNull();
     expect(update.$set.lapsedFrom).toBe('sprint-impl');
     expect(update.$push.updates.text).toContain('was: sprint-impl');
   });

@@ -198,7 +198,7 @@
   background: var(--v2-accent-deep); border-radius: var(--v2-radius-lg);
   color: rgba(255, 255, 255, 0.85); font-size: 15px;
 }
-.v2-root .v2-aprofile__footer-cta .v2-aprofile__btn--primary { background: #fff; color: var(--v2-accent); border-color: #fff; }
+.v2-root .v2-aprofile__footer-cta .v2-aprofile__btn--primary { background: var(--v2-on-accent, #fff); color: var(--v2-accent-fill, var(--v2-accent)); border-color: var(--v2-on-accent, #fff); }
 .v2-root .v2-aprofile__footer-cta .v2-aprofile__btn--primary:hover { background: rgba(255,255,255,0.9); }
 
 @media (max-width: 760px) {
@@ -265,31 +265,40 @@
 @media (hover: none), (pointer: coarse) {
   .v2-aprofile__avatar-hint { opacity: 0.75; }
 }
-.v2-aprofile__avatar-dialog {
-  position: absolute;
-  z-index: 30;
-  margin-top: 8px;
-  padding: 14px;
+/* The picker opens in the page flow, under the hero card it edits, so it
+   never covers the profile and fits a phone without a sideways scroll. */
+.v2-aprofile__avatar-picker {
+  margin-bottom: 20px;
+  padding: 16px;
   background: var(--v2-surface);
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-lg);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
 }
-/* 6 columns so each row of the archetype table reads as one ethnic group. */
-.v2-aprofile__avatar-grid { display: grid; grid-template-columns: repeat(6, 56px); gap: 10px; }
-.v2-aprofile__avatar-choice {
+.v2-aprofile__avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: 8px;
+  max-width: 560px;
+}
+.v2-root button.v2-aprofile__avatar-choice {
   padding: 2px;
   background: none;
   border: 2px solid transparent;
   border-radius: 50%;
   cursor: pointer;
   line-height: 0;
+  aspect-ratio: 1;
 }
-.v2-aprofile__avatar-choice:hover, .v2-aprofile__avatar-choice:focus-visible { border-color: var(--v2-accent); }
-.v2-aprofile__avatar-choice:disabled { opacity: 0.5; cursor: wait; }
-.v2-aprofile__avatar-cancel {
+.v2-aprofile__avatar-choice img { width: 100%; height: 100%; border-radius: 50%; }
+.v2-root button.v2-aprofile__avatar-choice:hover,
+.v2-root button.v2-aprofile__avatar-choice:focus-visible { border-color: var(--v2-border-strong); outline: none; }
+/* The current avatar wears the accent ring, so the picker says what is set. */
+.v2-root button.v2-aprofile__avatar-choice.is-current { border-color: var(--v2-accent); cursor: default; }
+.v2-root button.v2-aprofile__avatar-choice:disabled { opacity: 0.5; cursor: wait; }
+.v2-aprofile__avatar-error { margin: 10px 0 0; font-size: 12px; color: var(--v2-danger); }
+.v2-root button.v2-aprofile__avatar-cancel {
   display: block;
-  margin: 10px auto 0;
+  margin: 12px 0 0;
   padding: 4px 12px;
   font-size: 12px;
   color: var(--v2-text-secondary);
@@ -298,10 +307,8 @@
   border-radius: var(--v2-radius-lg);
   cursor: pointer;
 }
-/* The picker dialog anchors to the hero card. */
-.v2-aprofile__hero { position: relative; }
 .v2-aprofile__avatar-title {
-  margin-bottom: 10px;
+  margin: 0 0 12px;
   font-size: var(--v2-fs-label);
   line-height: var(--v2-lh-label);
   font-weight: 600;

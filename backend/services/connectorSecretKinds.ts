@@ -141,6 +141,20 @@ export const INSTAGRAM_FEED_ACCESS_TOKEN: ConnectorSecretKindSpec = {
   unavailableReason: 'Instagram feed credential is unavailable',
 };
 
+/**
+ * The GroupMe access token (TASK-539). GroupMe's bot posts with `botId` alone,
+ * but an agent that reads a group's history (`agentsRuntime` integration
+ * messages) calls the GroupMe API with a member's access token, so the token is
+ * a bearer credential and is stored like the feed pair: the row keeps only the
+ * ref (`services/chatConnectorTokens`). GroupMe issues no refresh token.
+ */
+export const GROUPME_ACCESS_TOKEN: ConnectorSecretKindSpec = {
+  kind: 'groupme-access-token',
+  provider: 'groupme',
+  refPaths: ['config.accessTokenRef'],
+  unavailableReason: 'GroupMe access token is unavailable',
+};
+
 export const CONNECTOR_SECRET_KINDS: readonly ConnectorSecretKindSpec[] = [
   AGENT_PROVIDER_KEY,
   SLACK_BOT_TOKEN,
@@ -151,6 +165,7 @@ export const CONNECTOR_SECRET_KINDS: readonly ConnectorSecretKindSpec[] = [
   X_FEED_ACCESS_TOKEN,
   X_FEED_REFRESH_TOKEN,
   INSTAGRAM_FEED_ACCESS_TOKEN,
+  GROUPME_ACCESS_TOKEN,
 ];
 
 /** Whether a kind's ref lives on an Integration row (the default owner). */

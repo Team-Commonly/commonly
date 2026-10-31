@@ -75,6 +75,9 @@ jest.mock('../../../services/outboundUrlGuard', () => ({
   getFromPublicAddress: (...args) => mockGetPage(...args),
 }));
 const mockRecentRows = jest.fn();
+// The pod-message read follows PG_HOST (TASK-503) and the unit setup unsets
+// it, so name a host for the mocked PG model below to answer.
+process.env.PG_HOST = 'pg.test';
 jest.mock('../../../models/pg/Message', () => ({ findByPodId: (...args) => mockRecentRows(...args) }));
 // The Mongo fallback, read when the PG mirror is down.
 const mockMongoDocs = jest.fn();
@@ -427,8 +430,8 @@ describe('native turn with commonly_fetch_url', () => {
     expect(toolMessages(1)[1].content).toMatch(/does not appear in this conversation/);
   });
 
-  test('on the Mongo fallback, a human\'s post gives a link and an agent\'s does not', async () => {
-    mockRecentRows.mockRejectedValue(new Error('pg down'));
+  test('on the Mongo store (no PG_HOST), a human\'s post gives a link and an agent\'s does not', async () => {
+    delete process.env.PG_HOST;
     mockMongoDocs.mockResolvedValue([
       { _id: 'm6', userId: { _id: '507f1f77bcf86cd7994390bb', username: 'scout', isBot: true }, content: 'https://attacker.example/y', createdAt: new Date() },
       { _id: 'm5', userId: { _id: SAM_ID, username: 'sam', isBot: false }, content: 'https://github.com/acme/other', createdAt: new Date() },
@@ -444,6 +447,8 @@ describe('native turn with commonly_fetch_url', () => {
     await runAgent(install(), mention('@analyst summarize'));
 
     expect(mockGetPage.mock.calls).toEqual([['https://github.com/acme/other']]);
+    expect(mockRecentRows).not.toHaveBeenCalled();
+    process.env.PG_HOST = 'pg.test';
   });
 
   // The message a turn answers gave

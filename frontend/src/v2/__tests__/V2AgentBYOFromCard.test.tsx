@@ -240,8 +240,53 @@ describe('the command page puts only what the paste needs above the copy', () =>
     fireEvent.click(act);
     await screen.findByTestId('byo-listen');
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Connect your Claude Code');
-    fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
+    // After issue there is no runner switch; the way back to the start is the only control.
+    expect(screen.queryByTestId('byo-runner')).toBeNull();
+    fireEvent.click(screen.getByTestId('byo-use-different-runner'));
+    // Back from a card lands on the plain page: the picker is there, and the card's name is not carried over.
+    fireEvent.click(screen.getByTestId('byo-runner-codex'));
+    expect(screen.getByDisplayValue('sam-codex')).toBeInTheDocument();
+    // The second issue needs its own install and token responses; the beforeEach ones are spent.
+    axios.post
+      .mockResolvedValueOnce({ data: { ok: true } })
+      .mockResolvedValueOnce({ data: { token: 'cm_agent_test_token_codex' } });
+    const again = await screen.findByRole('button', { name: /get my connect command/i });
+    await waitFor(() => expect(again).toBeEnabled());
+    fireEvent.click(again);
+    await screen.findByTestId('byo-listen');
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Connect your Codex');
+  });
+
+  test('a card shows no runner picker before the install either', async () => {
+    renderAt(CARD);
+    await screen.findByRole('button', { name: /get my connect command/i });
+    expect(screen.queryByTestId('byo-runner')).toBeNull();
+    expect(screen.queryByTestId('byo-runner-codex')).toBeNull();
+  });
+
+  // CodeRabbit r4428846350: the lookup kept the card's name as its base, so
+  // the server's answer overwrote the Codex name the person had just picked.
+  test('a card, then a different adapter: the second install is named for the runner, not the card', async () => {
+    renderAt(CARD);
+    const act = await screen.findByRole('button', { name: /get my connect command/i });
+    await waitFor(() => expect(act).toBeEnabled());
+    fireEvent.click(act);
+    await screen.findByTestId('byo-listen');
+    fireEvent.click(screen.getByTestId('byo-use-different-runner'));
+    axios.post
+      .mockResolvedValueOnce({ data: { ok: true } })
+      .mockResolvedValueOnce({ data: { token: 'cm_agent_test_token_codex' } });
+    fireEvent.click(screen.getByTestId('byo-runner-codex'));
+    await waitFor(() => expect(screen.getByDisplayValue('sam-codex')).toBeInTheDocument());
+    const again = await screen.findByRole('button', { name: /get my connect command/i });
+    await waitFor(() => expect(again).toBeEnabled());
+    fireEvent.click(again);
+    await screen.findByTestId('byo-listen');
+    const installs = axios.post.mock.calls.filter(([url]) => url === '/api/registry/install');
+    expect(installs[installs.length - 1][1].agentName).toBe('sam-codex');
+    const command = Array.from(document.querySelectorAll('.v2-byo__pre'))
+      .find((el) => /commonly agent run /.test(el.textContent || '')).textContent || '';
+    expect(command.split('\n')[3]).toBe('commonly agent run sam-codex --adapter codex');
   });
 
   test('the key-once and keep-running warnings follow the command', async () => {

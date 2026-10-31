@@ -80,7 +80,7 @@ describe('pgMessageController', () => {
     AgentMentionService.enqueueMentions.mockResolvedValue({
       enqueued: [{ installationId: 'i1' }],
       implicit: ['recorder'],
-      woken: [{ installationId: 'i2' }],
+      woken: ['guide'],
     });
     AgentInstallation.countDocuments.mockResolvedValue(2);
     const req = {
@@ -103,6 +103,7 @@ describe('pgMessageController', () => {
         implicit: ['recorder'],
         agentsInPod: 2,
         woken: 1,
+        wokenAgents: ['guide'],
       },
     });
   });

@@ -95,6 +95,7 @@ export interface IIntegration extends Document {
     accessToken?: string;
     refreshToken?: string;
     feedAccessTokenRef?: string;
+    accessTokenRef?: string;
     feedRefreshTokenRef?: string;
     tokenType?: string;
     tokenExpiresAt?: Date;
@@ -271,6 +272,9 @@ const IntegrationSchema = new Schema<IIntegration>(
       // drops an undeclared `$set` in silence.
       feedAccessTokenRef: String,
       feedRefreshTokenRef: String,
+      // The GroupMe access token's ConnectorSecret ref (`services/chatConnectorTokens`),
+      // declared for the same reason.
+      accessTokenRef: String,
       tokenType: String,
       tokenExpiresAt: Date,
       oauthScopes: [String],

@@ -1,4 +1,6 @@
 import { createOwnKeyResolver, createMachineReportClient } from '../lib/own-key-launch.js';
+import { foregroundDaemonHint } from '../lib/daemon-hint.js';
+import { loadDaemonRecord } from '../lib/daemon-store.js';
 import { WALKED_HARNESSES } from '../lib/runtime-inventory.js';
 import { createRuntimeReporter } from '../lib/runtime-observation.js';
 /**
@@ -80,6 +82,7 @@ import {
   readPodFocus,
 } from '../lib/pod-focus.js';
 import { claimReleaseFor, ackResultFor, EMPTY_OUTPUT } from '../lib/claim-outcome.js';
+import { createClaimedWorkGate } from '../lib/claimed-work-gate.js';
 import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
@@ -1536,6 +1539,7 @@ export const performRun = ({
     warn: (message) => log(`cascade config: ${message}`),
   });
   const cascadeGovernor = createCascadeGovernor(cascadeSettings);
+  const claimedWorkGate = createClaimedWorkGate({ client });
   // Unconditional, because the only other cascade line on this path is the
   // warn callback above — which fires only when a value is BAD. Without this,
   // a seat running COMMONLY_CASCADE_CAP=8 logs exactly what a seat on the
@@ -1691,6 +1695,13 @@ export const performRun = ({
     // Recording a human trigger sets the streak to 0, so this call and the
     // completion-time one are idempotent with each other.
     if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
+    // Defer-while-claimed (TASK-640), before the cascade check so a deferred
+    // broadcast spends none of the addressed grace.
+    if (await claimedWorkGate.shouldDefer(eventPodId, [{ event, trigger }])) {
+      log(`[${event.type}] holding a claimed row in pod ${eventPodId} — broadcast`
+        + (event?.payload?.messageId ? ` ${event.payload.messageId}` : '') + ' acked without a spawn');
+      return { outcome: 'no_action', reason: 'claimed-work', details: { messageId: event?.payload?.messageId || null } };
+    }
     const admission = cascadeGovernor.admit(eventPodId, trigger, event.type, event.payload);
     if (!admission.allowed) {
       // Name the MESSAGE, not just the pod. Without this the refusal is silent at
@@ -2743,6 +2754,17 @@ export const performRun = ({
     const trigger = triggers.includes('human') ? 'human'
       : (triggers.includes('agent') ? 'agent' : 'unknown');
     if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
+    if (await claimedWorkGate.shouldDefer(eventPodId, wakingEntries.map((entry, index) => ({
+      event: entry.event, trigger: triggers[index],
+    })))) {
+      log(`[inbox.batch] holding a claimed row in pod ${eventPodId} — ${wakingEntries.length} broadcast`
+        + `${wakingEntries.length === 1 ? '' : 's'} acked without a spawn`);
+      // Digests are left as the cascade refusal leaves them: unread.
+      for (const entry of wakingEntries) {
+        entry.result = { outcome: 'no_action', reason: 'claimed-work', details: { messageId: entry.event.payload?.messageId || null } };
+      }
+      return { entries };
+    }
     const admissionEvent = wakingEntries.find((entry) => (
       ADDRESSED_EVENT_TYPES.has(entry.event.type) || entry.event.payload?.addressed === true
     ))
@@ -3354,7 +3376,11 @@ const SDK_SOURCES = {
     botSrc: () => sdkAsset('python/bot.py', join('hello-world-python', 'bot.py')),
     sdkOut: 'commonly.py',
     botOut: (name) => `${name}.py`,
-    runHint: (name) => `COMMONLY_TOKEN=$(cat .commonly-env) python3 ${name}.py`,
+    // .commonly-env is already KEY=VALUE. Sourcing it under `set -a` exports
+    // the key as written and keeps the token out of argv (`env $(cat …)` would
+    // put it on the command line). `COMMONLY_TOKEN=$(cat …)` would set the
+    // variable to the literal `COMMONLY_TOKEN=cm_agent_…` and the bot would 401.
+    runHint: (name) => `(set -a; . ./.commonly-env; exec python3 ${name}.py)`,
   },
 };
 
@@ -3409,6 +3435,9 @@ export const performInit = async ({
   });
   const installation = installResult.installation || installResult;
   const instanceId = installation.instanceId || 'default';
+  // Same rule as `attach`: the mention handle is the instanceId when there is
+  // one, otherwise the registry agentName.
+  const mentionHandle = instanceId !== 'default' ? instanceId : (installation.agentName || agentName);
 
   let runtimeToken = installResult.runtimeToken;
   if (!runtimeToken) {
@@ -3434,6 +3463,7 @@ export const performInit = async ({
   return {
     installation,
     instanceId,
+    mentionHandle,
     runtimeToken,
     files: {
       sdk: sdkOutPath,
@@ -3523,6 +3553,9 @@ export const performDetach = async ({
  * kernel's own timestamps without conversion.
  */
 const stamp = () => new Date().toISOString();
+// An unreadable daemon record still means a daemon was registered here; the
+// hint only chooses between the two steps, so it must not throw on it.
+const hasDaemonRecord = () => { try { return Boolean(loadDaemonRecord()); } catch { return true; } };
 
 /**
  * Map `agent run`'s cascade flags onto resolveCascadeSettings' override keys.
@@ -3680,6 +3713,7 @@ Docs:
         agentName: opts.name,
         instanceId: opts.instanceId,
         intervalMs: parseInt(opts.interval, 10),
+        loginInstance: opts.instance,
         onEvent: async (event) => {
           const ts = new Date().toTimeString().slice(0, 8);
           process.stdout.write(`[${ts}] ${event.type.padEnd(18)}`);
@@ -4016,7 +4050,7 @@ Docs:
       });
 
       console.log(`${stamp()} [${name}] polling ${record.instanceUrl} for events (ctrl+c to stop)`);
-      console.log(`${stamp()} [${name}] foreground mode; to background and keep it across logins, run: commonly daemon install`);
+      console.log(`${stamp()} [${name}] ${foregroundDaemonHint({ daemonRegistered: hasDaemonRecord() })}`);
 
       const { stop } = performRun({
         instanceUrl: record.instanceUrl,
@@ -4171,6 +4205,7 @@ Docs:
         console.log('\nNext:');
         console.log(`  1. Edit ${opts.name}.py to handle events.`);
         console.log(`  2. Run: ${result.runHint}`);
+        console.log(`  3. In pod ${opts.pod}, @mention ${result.mentionHandle} to talk to it.`);
       } catch (err) {
         console.error(`Init failed: ${err.message}`);
         process.exit(1);

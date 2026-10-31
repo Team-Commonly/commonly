@@ -28,6 +28,7 @@ const {
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 const { ownsRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
+const { webhookUrlRegistrationRefusal } = require('../../services/outboundUrlGuard');
 const { configWriteRefusal, runtimeKeepingType } = require('../../services/configWriteGuard');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 const { runtimeControlRefusal } = require('../../services/runtimeControlValidation');
@@ -309,6 +310,18 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
     const installationsToUpdate: any[] = isInstanceAdmin
       ? accessibleInstallations
       : accessibleInstallations.filter(ownsInstallation);
+    // A new or changed URL must be https, admins included. A row already
+    // holding this exact URL is exempt so one registered over http stays
+    // patchable until TASK-303's census decides those rows. Checked against
+    // every row the write reaches, not only this pod's: resending this row's
+    // http URL would otherwise copy it onto a peer row that holds an https one.
+    const webhookUrlChangesARow = requestedWebhookUrl && installationsToUpdate.some(
+      (entry: any) => normalizeConfigMap(entry.config)?.runtime?.webhookUrl !== requestedWebhookUrl,
+    );
+    if (webhookUrlChangesARow) {
+      const schemeRefusal = webhookUrlRegistrationRefusal(requestedWebhookUrl);
+      if (schemeRefusal) return res.status(400).json({ code: 'webhook_url_refused', error: schemeRefusal });
+    }
     // A rename changes the portable User label seen in every pod. Refuse it
     // unless the same request will update every non-uninstalled projection.
     if (displayName !== undefined && installationsToUpdate.length !== peerByPod.size) {
@@ -336,16 +349,18 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       const { status: refusalStatus, ...refusalBody } = writeRefusal;
       return res.status(refusalStatus).json(refusalBody);
     }
-    // An installation can show a different label from its bot User. Guard
-    // every affected installer's active cards, including when an admin edits
-    // someone else's agent, before renaming the shared identity.
+    // An installation can show a different label from its bot User, and a pod
+    // lists every installer's card side by side. Guard every active card in
+    // each pod the rename reaches, whoever installed it, plus every card the
+    // affected installers hold elsewhere, before renaming the shared identity.
     if (displayName !== undefined) {
       const requestedName = displayName.trim().toLowerCase();
       const installerIds = Array.from(new Set(installationsToUpdate
         .map((entry: any) => entry.installedBy?.toString?.())
         .filter(Boolean)));
       const ownerInstallations = await AgentInstallation.find({
-        installedBy: { $in: installerIds }, status: 'active',
+        $or: [{ podId: { $in: writablePodIds } }, { installedBy: { $in: installerIds } }],
+        status: 'active',
       });
       const nameTaken = ownerInstallations.some((entry: any) => (
         !(entry.agentName === name.toLowerCase()

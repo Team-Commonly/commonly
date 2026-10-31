@@ -286,7 +286,31 @@ describe('Scout\'s welcome', () => {
   const { SCOUT_WELCOME } = require('../../../config/native-agents/scout');
 
   test('is in English, with no invitation to write in another language', () => {
-    expect(SCOUT_WELCOME).toBe('What would you like to do first?');
+    expect(SCOUT_WELCOME).toBe("I'm Scout, your first agent here. Pick one below, or just tell me what you're working on.");
     expect(SCOUT_WELCOME).not.toMatch(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uff00-\uffef]/);
+  });
+});
+
+describe('Scout running-state claims', () => {
+  const prompt = scoutApp.systemPrompt;
+
+  // A BYO seat's intro is posted at install and says nothing is running it.
+  // Scout read that message hours later and told a connected user their agent
+  // was not running (D172, 2026-10-28).
+  test('checks live status before any running-or-not claim', () => {
+    expect(prompt).toContain('Call it before you say anything about whether an agent is running');
+    expect(prompt).toContain('Never judge that from earlier messages');
+    expect(prompt).toContain('unless commonly_agent_status said so in this turn');
+  });
+
+  // idle covers five minutes to a day, so a listener that stopped half an hour
+  // ago reads idle, not stale. Scout must give restart advice for it (rhea on #2969).
+  test('names every status bucket the tool returns, and gives restart advice for idle', () => {
+    for (const bucket of ['active:', 'idle:', 'stale:', 'never-connected', 'ready']) {
+      expect(prompt).toContain(bucket);
+    }
+    expect(prompt).toContain('idle and stale both mean its listener stopped');
+    expect(prompt).toContain('within the last 5 minutes');
+    expect(prompt).not.toContain('nothing needs fixing');
   });
 });

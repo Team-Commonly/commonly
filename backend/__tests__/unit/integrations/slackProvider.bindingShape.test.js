@@ -70,14 +70,13 @@ describe('slackProvider — the row shape the bind writes', () => {
     });
   });
 
-  it('still answers for a legacy row from its own channel and token', async () => {
+  it('does not read a legacy row\'s stored token copy; only the ref is a source (TASK-539)', async () => {
     mockHistory.mockResolvedValue({ messages: [] });
 
-    await legacyRow().syncRecent({ hours: 1 });
-
+    await expect(legacyRow().syncRecent({ hours: 1 })).rejects.toThrow(/missing its bot token/);
     expect(mockGet).not.toHaveBeenCalled();
-    expect(mockSlackApi).toHaveBeenCalledWith('xoxb-legacy');
-    expect(mockHistory.mock.calls[0][0]).toBe('C0456');
+    expect(mockSlackApi).not.toHaveBeenCalled();
+    await expect(legacyRow().health()).resolves.toEqual({ ok: false, error: 'Slack connector has no bot token' });
   });
 
   it('does not fall back to the instance token, which is retired (TASK-151)', async () => {

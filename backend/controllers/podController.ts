@@ -251,7 +251,7 @@ exports.getAllPods = async (req: any, res: any) => {
 
     let pods = await Pod.find(listedQuery)
       .populate('createdBy', 'username profilePicture')
-      .populate(podMemberPopulate('username profilePicture isBot'))
+      .populate(podMemberPopulate('username profilePicture isBot botMetadata.displayName botMetadata.instanceId'))
       .populate('parentPod', 'name _id')
       .sort({ updatedAt: -1 });
 

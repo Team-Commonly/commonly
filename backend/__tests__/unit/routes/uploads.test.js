@@ -85,6 +85,7 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
       })
       .expect(200);
     expect(res.headers['content-type']).toMatch(/image\/png/);
+    expect(res.headers['cache-control']).toBe('private, no-store');
     expect(Buffer.isBuffer(res.body) ? res.body : Buffer.from(res.body)).toEqual(
       Buffer.from('hello'),
     );
@@ -195,6 +196,7 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
 
     const res = await request(app).get('/api/uploads/legacy.jpg').expect(200);
     expect(res.headers['content-type']).toMatch(/image\/jpeg/);
+    expect(res.headers['cache-control']).toBe('private, no-store');
     expect(res.body.toString()).toBe('legacy-bytes');
     expect(File.findByFileName).toHaveBeenCalledWith('legacy.jpg');
   });

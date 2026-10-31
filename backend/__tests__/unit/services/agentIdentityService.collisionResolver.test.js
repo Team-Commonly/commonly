@@ -1,6 +1,6 @@
 // Tests for the inline displayName collision resolver in
 // getOrCreateAgentUser. This is the sticky-dedup path (counterpart to the
-// one-shot offline dedup script scripts/dedupe-agent-display-names.ts) —
+// one-shot offline dedup script backend/scripts/dedupe-agent-display-names.ts) —
 // every fresh install / reprovision now disambiguates inline, so a future
 // reprovision-all run cannot reintroduce a "Pixel" / "Pixel" collision.
 //
@@ -83,6 +83,8 @@ jest.mock('../../../models/User', () => {
 });
 
 const { default: AgentIdentityService } = require('../../../services/agentIdentityService');
+const { FIRST_PARTY_DISPLAY_NAMES } = require('../../../constants/firstPartyDisplayNames');
+const { FIRST_PARTY_APPS } = require('../../../config/native-agents/apps');
 
 const reset = () => {
   mockPeers = [];
@@ -502,6 +504,148 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
     });
     expect(mockSaved.length).toBe(1);
     expect(mockSaved[0].botMetadata.displayName).toBe('Pixel');
+  });
+
+  test('the default instance keeps its bare name when a shorter named peer shares it', async () => {
+    // 'scout' is shorter than 'default', so it used to outrank the official
+    // agent and turn its label into "Scout (Default)" in every invite line.
+    mockPeers = [
+      {
+        _id: 'named-scout',
+        botMetadata: { displayName: 'Scout', instanceId: 'scout' },
+      },
+    ];
+    await AgentIdentityService.getOrCreateAgentUser('scout', { displayName: 'Scout' });
+    expect(mockSaved.length).toBe(1);
+    expect(mockSaved[0].botMetadata.displayName).toBe('Scout');
+  });
+
+  test('a named instance that collides with the default agent takes the suffix', async () => {
+    mockPeers = [
+      {
+        _id: 'default-scout',
+        botMetadata: { displayName: 'Scout', instanceId: 'default', agentName: 'scout' },
+      },
+    ];
+    await AgentIdentityService.getOrCreateAgentUser('scout', {
+      instanceId: 'scout-demo',
+      displayName: 'Scout',
+    });
+    expect(mockSaved.length).toBe(1);
+    expect(mockSaved[0].botMetadata.displayName).toBe('Scout (Scout-Demo)');
+  });
+
+  test('a non-first-party default does not outrank a shorter named peer', async () => {
+    // Only a first-party agent's default takes the default-first rule. A
+    // community agent keeps the shortest-instanceId rule it has on main, so
+    // 'bot' keeps "Helper".
+    mockPeers = [
+      { _id: 'default-helper', botMetadata: { displayName: 'Helper', instanceId: 'default', agentName: 'helper' } },
+    ];
+    await AgentIdentityService.getOrCreateAgentUser('helper', {
+      instanceId: 'bot',
+      displayName: 'Helper',
+    });
+    expect(mockSaved.length).toBe(1);
+    expect(mockSaved[0].botMetadata.displayName).toBe('Helper');
+  });
+
+  test('a non-first-party default instance takes the suffix when a shorter named peer holds the label', async () => {
+    mockPeers = [
+      { _id: 'bot-helper', botMetadata: { displayName: 'Helper', instanceId: 'bot', agentName: 'helper' } },
+    ];
+    await AgentIdentityService.getOrCreateAgentUser('helper', {
+      instanceId: 'default',
+      displayName: 'Helper',
+    });
+    expect(mockSaved.length).toBe(1);
+    expect(mockSaved[0].botMetadata.displayName).toBe('Helper (Default)');
+  });
+
+  test('a first-party default keeps the bare name over a community default on the same label', async () => {
+    // Both claimants sit on 'default'. Only the first-party one keeps the bare
+    // name; the community agent's row takes the suffix.
+    mockPeers = [
+      { _id: 'default-scout', botMetadata: { displayName: 'Scout', instanceId: 'default', agentName: 'scout' } },
+    ];
+    await AgentIdentityService.getOrCreateAgentUser('helper', {
+      instanceId: 'default',
+      displayName: 'Scout',
+    });
+    expect(mockSaved.length).toBe(1);
+    expect(mockSaved[0].botMetadata.displayName).toBe('Scout (Default)');
+  });
+
+  test('two agents on one instanceId do not both keep the bare name', async () => {
+    mockPeers = [
+      { _id: 'bot-lab', botMetadata: { displayName: 'Helper', instanceId: 'lab', agentName: 'bot' } },
+    ];
+    await AgentIdentityService.getOrCreateAgentUser('helper', {
+      instanceId: 'lab',
+      displayName: 'Helper',
+    });
+    expect(mockSaved.length).toBe(1);
+    expect(mockSaved[0].botMetadata.displayName).toBe('Helper (Lab)');
+  });
+
+  test('a first-party agent with no displayName is stored under its curated label, not its agentName', async () => {
+    await AgentIdentityService.getOrCreateAgentUser('scout', {});
+    expect(mockSaved.length).toBe(1);
+    expect(mockSaved[0].botMetadata.displayName).toBe('Scout');
+  });
+
+  test('upgrade of a legacy agent row stores the curated label, not the username (TASK-551)', async () => {
+    mockExisting = {
+      _id: 'legacy-scout-row',
+      username: 'scout',
+      email: 'scout@agents.commonly.local',
+      isBot: false,
+    };
+    await AgentIdentityService.getOrCreateAgentUser('scout', {});
+    expect(mockSaved).toHaveLength(1);
+    expect(mockSaved[0].isBot).toBe(true);
+    expect(mockSaved[0].botMetadata.displayName).toBe('Scout');
+  });
+
+  test('refresh of a first-party row with no stored label stores the curated label (TASK-551)', async () => {
+    mockExisting = {
+      _id: 'blank-scout-bot',
+      username: 'scout',
+      isBot: true,
+      botMetadata: {
+        agentName: 'scout',
+        instanceId: 'default',
+        displayName: '',
+      },
+    };
+    await AgentIdentityService.getOrCreateAgentUser('scout', {});
+    expect(mockSaved).toHaveLength(1);
+    expect(mockSaved[0].botMetadata.displayName).toBe('Scout');
+  });
+
+  test('refresh keeps a user-set label ("My Scout") over the displayName a routine post sends (TASK-551)', async () => {
+    // No runtime on the stored row, so the refresh arm runs. A routine post
+    // sends the curated "Scout"; the label the user set must survive it.
+    mockExisting = {
+      _id: 'my-scout-bot',
+      username: 'scout',
+      isBot: true,
+      botMetadata: {
+        agentName: 'scout',
+        instanceId: 'default',
+        displayName: 'My Scout',
+      },
+    };
+    await AgentIdentityService.getOrCreateAgentUser('scout', { displayName: 'Scout' });
+    expect(mockSaved).toHaveLength(1);
+    expect(mockSaved[0].botMetadata.displayName).toBe('My Scout');
+  });
+
+  test('the first-party label map agrees with every native first-party app config', () => {
+    expect(FIRST_PARTY_DISPLAY_NAMES.size).toBe(FIRST_PARTY_APPS.length);
+    FIRST_PARTY_APPS.forEach((app) => {
+      expect(FIRST_PARTY_DISPLAY_NAMES.get(app.agentName.toLowerCase())).toBe(app.displayName);
+    });
   });
 
   test('refresh (reprovision) on existing collision-suffixed name does NOT double-suffix', async () => {

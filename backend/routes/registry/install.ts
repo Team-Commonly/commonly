@@ -24,6 +24,7 @@ const {
   AGENT_USERNAME_CONFLICT_CODE?: string;
   AGENT_IDENTITY_CONFLICT_CODE?: string;
 };
+const GlobalModelConfigService = require('../../services/globalModelConfigService');
 const AgentMessageService = require('../../services/agentMessageService');
 const { deriveAgentState, runInstructionFor } = require('../../services/agentStateService');
 const FirstContactService = require('../../services/firstContactService');
@@ -31,6 +32,7 @@ const HostedRuntime = require('../../services/hostedRuntimeService');
 const HostedEngine = require('../../services/hostedEngine');
 const { reservedAgentNameRefusal } = require('../../services/agentNameReservation');
 const { normalizeAvatarUrl } = require('../../services/avatarService');
+const { isPersonalPodType } = require('../../services/podTypePolicyService');
 const {
   getUserId,
   resolveUsername,
@@ -43,12 +45,14 @@ const {
   buildAgentProfileId,
   composeInstallIntro,
 } = require('./helpers');
+const { isDevTierGitHubIssueWriter } = require('../../services/githubIssueWriteCapability');
 const {
   AUTO_GRANTED_INTEGRATION_SCOPES,
   revokeRuntimeTokensAfterLastUninstall,
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 const { willSolelyInstallRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
+const { webhookUrlRegistrationRefusal } = require('../../services/outboundUrlGuard');
 const { personAgentWakeDefault } = require('../../services/wakeDefaultService');
 const { logAgentInstallRefusal } = require('../../middleware/logAgentInstallRefusal');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
@@ -502,6 +506,12 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         return res.status(403).json({ code: ownership.failure, error: webhookUrlRefusal[ownership.failure] });
       }
     }
+    // A URL supplied at install is a new registration, so it must be https,
+    // admins included.
+    if (requestedWebhookUrl) {
+      const schemeRefusal = webhookUrlRegistrationRefusal(requestedWebhookUrl);
+      if (schemeRefusal) return res.status(400).json({ code: 'webhook_url_refused', error: schemeRefusal });
+    }
     const runtimeConfig = typeof installConfig.runtime === 'object' && installConfig.runtime
       ? { ...installConfig.runtime }
       : {};
@@ -626,6 +636,23 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       if (newHostedEngine === HostedEngine.HOSTED_ENGINE_NATIVE) {
         installConfig.hosted = HostedEngine.nativeHostedConfigForInstall(explicitDescription || undefined);
       }
+    }
+
+    // GitHub issue writes spend a server-held credential, so this is a
+    // server-owned per-installation capability rather than a caller-provided
+    // scope. The configured OpenClaw dev seats are its only initial grant.
+    // If configuration cannot be read, fail closed: the install still works,
+    // but it receives no GitHub write authority.
+    let githubIssueWrite = false;
+    try {
+      const modelConfig = await GlobalModelConfigService.getConfig();
+      githubIssueWrite = isDevTierGitHubIssueWriter({
+        instanceId: normalizedInstanceId,
+        runtimeType: effectiveRuntimeType,
+        devAgentIds: modelConfig?.openclaw?.devAgentIds,
+      });
+    } catch (err) {
+      console.warn('[install] could not resolve dev-tier GitHub issue capability:', (err as Error).message);
     }
 
     const grantedScopes = Array.from(new Set([
@@ -803,6 +830,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       version: version || agent.latestVersion,
       config: installConfig,
       scopes: grantedScopes,
+      githubIssueWrite,
       installedBy: userId,
       instanceId: normalizedInstanceId,
       displayName: effectiveDisplayName,
@@ -871,7 +899,10 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         podId,
         installedByUserId: userId,
         installerIsAgent: installerUser?.isBot === true,
-        ...(greetsItself ? { mentionHandle: handle } : {}),
+        // A personal pod (agent-room, agent-dm, agent-admin) auto-routes every
+        // plain reply to the agent, so the greeting must not tell the person to
+        // @mention it there. Only a team pod needs the handle.
+        ...(greetsItself && !isPersonalPodType(pod?.type) ? { mentionHandle: handle } : {}),
         ...(greetsItself ? { hostedAgentUserId: String(agentUser._id) } : {}),
       });
     } catch (firstContactError: unknown) {

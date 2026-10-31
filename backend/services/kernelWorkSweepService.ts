@@ -263,6 +263,7 @@ class KernelWorkSweepService {
             status: 'pending',
             assignee: null,
             claimedBy: null,
+            claimedByUserId: null,
             claimedAt: null,
             claimExpiresAt: null,
             rescueDeferrals: 0,

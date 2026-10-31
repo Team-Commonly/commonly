@@ -174,6 +174,34 @@ export const put = async (
   return String(secret._id);
 };
 
+/**
+ * Store `material` only if `(integrationId, kind)` has no secret yet. Returns
+ * the ref and whether this call created it. A migration that imports an old
+ * plaintext copy uses this, so it never overwrites a secret a live writer stored
+ * after the migration read the row (TASK-539, CodeRabbit on #3004). On a
+ * conflict the existing secret wins and its ref is returned unchanged.
+ */
+export const putIfAbsent = async (
+  integrationId: string,
+  spec: ConnectorSecretKindSpec,
+  material: string,
+): Promise<{ ref: string; created: boolean }> => {
+  if (!material) throw new ConnectorSecretConfigurationError('Connector secret material must not be empty.');
+  const id = asObjectId(integrationId);
+  const encrypted = encrypt(material, parseKeyRing());
+  try {
+    const secret = await ConnectorSecret.create({
+      integrationId: id, kind: spec.kind, provider: spec.provider, ...encrypted,
+    }) as IConnectorSecret;
+    return { ref: String(secret._id), created: true };
+  } catch (error) {
+    if ((error as { code?: number }).code !== 11000) throw error;
+    const existing = await ConnectorSecret.findOne({ integrationId: id, kind: spec.kind }) as IConnectorSecret | null;
+    if (!existing) throw error;
+    return { ref: String(existing._id), created: false };
+  }
+};
+
 export const get = async (ref: string): Promise<string> => {
   const secret = await ConnectorSecret.findById(ref) as IConnectorSecret | null;
   if (!secret) throw new ConnectorSecretNotFoundError(ref);
@@ -206,6 +234,7 @@ module.exports = {
   ConnectorSecretNotFoundError,
   ConnectorSecretStaleWrite,
   put,
+  putIfAbsent,
   get,
   revoke,
   rewrap,

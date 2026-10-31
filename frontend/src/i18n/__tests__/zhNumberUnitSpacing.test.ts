@@ -24,7 +24,7 @@ import path from 'path';
 const NUMERAL_PLACEHOLDERS = [
   // bare numbers, or numbers formatted with grouping separators (Intl.NumberFormat)
   'count', 'formattedCount', 'uses', 'maxUses', 'complete', 'total', 'attempt',
-  'revision', 'position', 'cap', 'turns', 'notes', 'days', 'signups', 'active',
+  'revision', 'position', 'cap', 'used', 'turns', 'notes', 'days', 'signups', 'active',
   'working', 'needsYou', 'minutes', 'calls', 'number', 'tokens',
   // a formatted duration, closed because the ruling names this key explicitly:
   // tools.budgetWindow renders 「每1小时可调用5次」
@@ -50,6 +50,8 @@ const OPAQUE_PLACEHOLDERS = [
   'requested', 'served',
   // runTrace.call inserts the opaque PG call ID, not a number.
   'id',
+  // podChat.deliveryHintOthers names the agent that was woken.
+  'woken',
 ];
 
 // The exception runs the safe way: a name that is usually opaque and is a number

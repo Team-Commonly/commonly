@@ -98,7 +98,7 @@ backend:
     tolerations: []
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend
-    tag: latest
+    tag: "20260417214615-r4"
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
@@ -207,7 +207,7 @@ frontend:
   replicaCount: 1
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-frontend
-    tag: latest
+    tag: "20260412125218"
     pullPolicy: Always
   service:
     type: ClusterIP
@@ -231,7 +231,7 @@ mongodb:
   enabled: false
   image:
     repository: mongo
-    tag: latest
+    tag: "9.0.4"
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
@@ -334,7 +334,7 @@ agents:
       type: Recreate
     image:
       repository: gcr.io/YOUR_GCP_PROJECT_ID/clawdbot-gateway
-      tag: latest
+      tag: "20260414192025"
       pullPolicy: IfNotPresent
     # ADR-005 Stage 2 — codex + @commonly/cli installed by an init
     # container into a shared /tools volume. codexVersion pins the
@@ -377,7 +377,7 @@ agents:
     enabled: false
     image:
       repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-bot
-      tag: latest
+      tag: "20260411055334"
       pullPolicy: IfNotPresent
     env:
       pollIntervalMs: 5000

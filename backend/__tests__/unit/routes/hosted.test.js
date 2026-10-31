@@ -405,6 +405,10 @@ describe('/api/hosted', () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ deprovisioned: true });
     expect(installation.config.get('hosted').provisionedAt).toBeNull();
+    // The stopped worker held the only copy; nothing else may keep using it.
+    expect(mockRevokeRuntimeTokens).toHaveBeenCalledWith(expect.objectContaining({
+      agentName: 'scout', instanceId: 'default', installation,
+    }));
   });
 
   // TASK-265: a migration that marks the row native while the

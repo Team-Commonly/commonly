@@ -6,6 +6,7 @@ const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
+const { nextFreeByoName } = require('../../services/byoNameAllocator');
 const { listOpenClawBundledSkills } = require('../../services/agentProvisionerService');
 const {
   getUserId,
@@ -50,27 +51,14 @@ catalogRouter.get('/agents/next-free-name', catalogRateLimit, auth, async (req: 
     }
     const memberId = new mongoose.Types.ObjectId(String(userId));
     const base = req.query.base;
+    const selectedPodId = typeof req.query.podId === 'string' ? req.query.podId : '';
     if (typeof base !== 'string' || base.length < 1 || base.length > 64
         || !/^[a-z0-9-]+$/.test(base)) {
       return res.status(400).json({ error: 'Invalid agent name' });
     }
 
-    // Match the BYO picker: member pods, excluding personal agent rooms and
-    // publicly readable pods. The roster endpoint counts active installs only.
-    const pods = await Pod.find({
-      members: memberId,
-      type: { $nin: ['agent-room', 'agent-dm', 'agent-admin'] },
-      publicRead: { $ne: true },
-    }).select('_id').lean();
-    const installations = pods.length ? await AgentInstallation.find({
-      podId: { $in: pods.map((pod: any) => pod._id) },
-      status: 'active',
-    }).select('agentName').lean() : [];
-    const taken = new Set(installations.map((row: any) => String(row.agentName).toLowerCase()));
-    let name = base;
-    for (let suffix = 2; taken.has(name); suffix += 1) {
-      name = `${base.slice(0, 64 - String(suffix).length - 1)}-${suffix}`;
-    }
+    // The shared rule: the connect card proposes the same name (TASK-329).
+    const name = await nextFreeByoName(memberId, base, { podId: selectedPodId });
     return res.json({ name });
   } catch (error) {
     console.error('Error suggesting BYO agent name:', error);

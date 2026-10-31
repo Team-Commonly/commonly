@@ -87,7 +87,13 @@ export interface NativeRunResult {
 // --- tuning constants ------------------------------------------------------
 
 const MAX_TURNS = 10;
-const MAX_TOKENS = 50_000;
+// Usage summed over every model call in the run, and each call re-sends the
+// context, so the sum grows much faster than any one prompt. 50k failed
+// ordinary hosted research turns: five calls whose prompts grow from ~3k to
+// ~19k sum to 55-76k (43 of one outside user's 73 assigned-task wakes,
+// 10-24 to 10-26; no prompt over 28k in any of the 48 cap failures from
+// 2026-10-01 to 10-29). 200k fits MAX_TURNS calls at that late-turn size.
+const MAX_TOKENS = 200_000;
 const MAX_WALL_CLOCK_MS = 60_000;
 // Free-tier default for the native runtime. Per-installation config can
 // override (`installation.config.model`) for dev agents that legitimately
@@ -382,9 +388,10 @@ export const TOOLS = [
     function: {
       name: 'commonly_agent_status',
       description:
-        'Check the connection status of every agent installed in this pod. '
+        'Check the connection status of every agent installed in this pod, and of '
+        + 'the asker\'s own agents in other pods (inThisPod: false). '
         + 'Returns each agent\'s runtime kind and state: active (seen in the last '
-        + '10 minutes), idle (last day), stale (silent for over a day), '
+        + '5 minutes), idle (last day), stale (silent for over a day), '
         + 'never-connected (a local/BYO seat whose runtime has never '
         + 'authenticated — the user still needs to link it from the connect '
         + 'page), or ready (a native agent; it runs when addressed and has no '
@@ -1191,12 +1198,41 @@ export async function dispatchTool(
         // Raft-comparison P4 rule: never fork status vocabulary per surface.
         const { AgentInstallation } = require('../models/AgentRegistry');
         const { collectPodAgentActivity, deriveActivityBucket } = require('./agentStateService');
-        const installations = await AgentInstallation.find({
-          podId: ctx.podId,
-          status: 'active',
-        }).select('agentName instanceId displayName config').lean();
-        const activity = await collectPodAgentActivity(String(ctx.podId), installations);
-        const agents = (installations as Array<Record<string, any>>).map((i) => {
+        const mongoose = require('mongoose');
+        // This pod's agents, plus the ones the person asking installed in
+        // other pods: someone who connected an agent from another pod still
+        // asks Scout here whether it is running. Only their own installs, and
+        // only name and state, never the other pod. This pod is read uncapped,
+        // as the roster reads it; only the asker's installs elsewhere are
+        // capped, so a busy asker never pushes an agent here out of the answer.
+        const requesterId = ctx.computerRequesterId;
+        const fields = 'agentName instanceId displayName config podId runtimeTokens.lastUsedAt';
+        const podRows = await AgentInstallation.find({ status: 'active', podId: ctx.podId }).select(fields).lean();
+        const otherRows = requesterId && mongoose.Types.ObjectId.isValid(requesterId)
+          ? await AgentInstallation.find({ status: 'active', installedBy: requesterId, podId: { $ne: ctx.podId } })
+            .select(fields).sort({ _id: 1 }).limit(100).lean()
+          : [];
+        const seen = new Set<string>();
+        // This pod's rows come first, so a duplicate keeps its in-pod copy.
+        const installations = ([...podRows, ...otherRows] as Array<Record<string, any>>)
+          .filter((i) => {
+            const key = `${i.agentName}:${i.instanceId || 'default'}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+        const byPod = new Map<string, Array<Record<string, any>>>();
+        for (const i of installations) {
+          const podKey = String(i.podId);
+          byPod.set(podKey, [...(byPod.get(podKey) || []), i]);
+        }
+        const activity = new Map<string, Date | null>();
+        for (const [podKey, group] of byPod) {
+          // eslint-disable-next-line no-await-in-loop
+          const podActivity = await collectPodAgentActivity(podKey, group as never);
+          for (const [key, value] of podActivity) activity.set(key, value);
+        }
+        const agents = installations.map((i) => {
           const key = `${i.agentName}:${i.instanceId || 'default'}`;
           const lastActiveAt = activity.get(key) || null;
           const runtimeType = String(i.config?.runtime?.runtimeType || '') || 'unknown';
@@ -1207,6 +1243,7 @@ export async function dispatchTool(
             // A hosted agent on the native engine is ready in the same sense.
             state: deriveActivityBucket(lastActiveAt, hostedRunsNative(i) ? 'native' : runtimeType),
             lastActiveAt: lastActiveAt ? new Date(lastActiveAt).toISOString() : null,
+            inThisPod: String(i.podId) === String(ctx.podId),
           };
         });
         return { content: { agents } };
@@ -1592,7 +1629,7 @@ export const resolveSeatUserId = async (
 };
 
 /**
- * The pod's most recent messages, oldest first. PG first, Mongo fallback — the
+ * The pod's most recent messages, oldest first, from the one configured store — the
  * single read behind both `commonly_read_context` and the inline recent-messages
  * block, so the two can never disagree about what the room said.
  */
@@ -2072,6 +2109,9 @@ export async function runAgent(
   const webResults: Array<{ round: number; index: number }> = [];
   const roundEnds: number[] = [];
   let webSetAside = false;
+  // Set when the recovery round was stopped too, and every web result left
+  // was set aside for one last round.
+  let webSetAsideAll = false;
   // Returns how many results were set aside, and how many web results the
   // turn lost in all (those plus the ones in the dropped rounds).
   const setAsideStoppedWebResult = async (): Promise<{ setAside: number; removed: number }> => {
@@ -2187,6 +2227,25 @@ export async function runAgent(
                 run.webSetAside = removed;
                 continue;
               }
+            } else if (webSetAside && !webSetAsideAll && !postedViaTool && webResults.length > 0) {
+              // The recovery round was stopped too, though every result it
+              // kept passed the check on its own: the guard stops on them
+              // together. One outside user's research turns failed this way 6
+              // times in a day (10-25). Set aside the rest of the web results
+              // and give the same single round once more.
+              webResults.forEach(({ index }) => {
+                messages[index] = { ...messages[index], content: JSON.stringify({ ok: false, error: WEB_SET_ASIDE_NOTICE }) };
+              });
+              // The model's own text after the first web result may quote it.
+              // Keep its tool calls, so every tool result still has its call.
+              const firstWeb = Math.min(...webResults.map(({ index }) => index));
+              for (let i = firstWeb + 1; i < messages.length; i += 1) {
+                if (messages[i]?.role === 'assistant' && messages[i].content) messages[i] = { ...messages[i], content: null };
+              }
+              run.webSetAside = Number(run.webSetAside || 0) + webResults.length;
+              webResults.splice(0, webResults.length);
+              webSetAsideAll = true;
+              continue;
             }
             run.status = 'failed';
             run.errorKind = 'guardrail_blocked';

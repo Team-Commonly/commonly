@@ -1621,7 +1621,9 @@ router.post(
       return res.json(result);
     } catch (error: any) {
       const err = error as Error & { code?: string; statusCode?: number };
-      if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+      // A message-store outage is retryable (TASK-503): 503, not 500.
+      if (err.statusCode && ((err.statusCode >= 400 && err.statusCode < 500)
+        || err.code === 'MESSAGE_STORE_UNAVAILABLE')) {
         console.warn('Bot message refused:', { code: err.code, status: err.statusCode, message: err.message });
         return res.status(err.statusCode).json({
           message: err.message,
@@ -2102,6 +2104,8 @@ router.get('/pods/:podId/files/:fileName/content', phase4RateLimit, agentRuntime
     if (!buffer) {
       return res.status(404).json({ message: 'File content not found' });
     }
+    // Set explicitly on every response that carries file bytes, so the header never depends on a default.
+    res.set('Cache-Control', 'private, no-store');
 
     const ct = String(file.contentType || '');
     const isText = isTextualContentType(ct);
@@ -2382,7 +2386,9 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
     // from "pod truly missing" (404) and unexpected failures (500). Without
     // this, the post-message route 500'd on every legitimate guard refusal,
     // and the gateway logged "Failed to post message: 500" floods.
-    if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+    // A message-store outage is retryable (TASK-503): 503, not 500.
+    if (err.statusCode && ((err.statusCode >= 400 && err.statusCode < 500)
+      || err.code === 'MESSAGE_STORE_UNAVAILABLE')) {
       console.warn('Agent message refused:', { code: err.code, status: err.statusCode, message: err.message });
       return res.status(err.statusCode).json({
         message: err.message,
@@ -3741,13 +3747,24 @@ router.get('/pods/:podId/integrations/:integrationId/messages', phase4RateLimit,
         after,
       });
     } else if (integration.type === 'groupme') {
-      if (!integration.config?.accessToken || !integration.config?.groupId) {
+      // The token lives in connectorSecrets; the row's own `accessToken` is not
+      // read (TASK-539). A ref whose secret is gone answers like a missing token.
+      // Any other failure (key ring, decryption, database) is a 500.
+      const { readGroupmeAccessToken } = require('../services/chatConnectorTokens');
+      const { ConnectorSecretNotFoundError } = require('../services/connectorSecrets');
+      let accessToken: string | undefined;
+      try {
+        accessToken = await readGroupmeAccessToken(integration.config);
+      } catch (error) {
+        if (!(error instanceof ConnectorSecretNotFoundError)) throw error;
+      }
+      if (!accessToken || !integration.config?.groupId) {
         return res.status(400).json({ message: 'GroupMe integration missing accessToken or groupId' });
       }
       const GroupMeService = require('../services/groupmeService');
       messages = await GroupMeService.fetchMessages({
         groupId: integration.config.groupId,
-        accessToken: integration.config.accessToken,
+        accessToken,
         limit,
         before,
         after,
@@ -3760,7 +3777,9 @@ router.get('/pods/:podId/integrations/:integrationId/messages', phase4RateLimit,
 
     return res.json({ messages });
   } catch (error: any) {
-    console.error('Error fetching messages for agent:', error);
+    // The message only: a provider's HTTP error object carries its request
+    // config, which holds the credential (a query param or an auth header).
+    console.error('Error fetching messages for agent:', (error as Error)?.message);
     return res.status(500).json({ message: (error as Error).message || 'Failed to fetch messages' });
   }
 });
