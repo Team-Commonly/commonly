@@ -110,6 +110,9 @@ cd frontend && npm run dev:live    # localhost:3000, /api and /socket.io proxied
   origin and every pod list shows "Network Error".
 - Prod is read-only through the same command with `DEV_LIVE_TARGET=prod`. Use it only
   with a test account, and sign in by injecting the token, never by POST.
+- Both targets share one origin, so one `localStorage` `token` serves staging and prod.
+  Before switching `DEV_LIVE_TARGET`, run `localStorage.removeItem('token')` in the page
+  and sign in again. A prod token left behind would make a staging run hit prod.
 
 - Layout, overflow and scroll need a real browser (CLAUDE.md design rule 9).
   Sign in as `d215-seat`, open the D215 sample pod, and check at 1440 and 390 wide,
