@@ -1386,6 +1386,15 @@ const extractPrompt = (event) => {
 // cancel grace, and the wall-clock backstop past the adapter's own timeout.
 export { supervisedRunPolicy };
 
+// Codex turns are supervised by default (D211): a turn that stops making
+// progress is named and killed instead of holding the seat. COMMONLY_SUPERVISE_RUNS=0
+// opts out. Every other adapter stays off unless COMMONLY_SUPERVISE_RUNS=1.
+export const superviseRunsByDefault = (adapterName, env = process.env) => {
+  if (env.COMMONLY_SUPERVISE_RUNS === '0') return false;
+  if (adapterName === 'codex') return true;
+  return env.COMMONLY_SUPERVISE_RUNS === '1';
+};
+
 /**
  * Start the run loop. Polls /events, spawns the adapter per event, posts the
  * result into the pod, acks.
@@ -1414,15 +1423,6 @@ export { supervisedRunPolicy };
  * Every enforcement failure fails OPEN — a kernel without the claim route or
  * an unreachable upload endpoint must never produce a silent agent (#887).
  */
-// Codex turns are supervised by default (D211): a turn that stops making
-// progress is named and killed instead of holding the seat. COMMONLY_SUPERVISE_RUNS=0
-// opts out. Every other adapter stays off unless COMMONLY_SUPERVISE_RUNS=1.
-export const superviseRunsByDefault = (adapterName, env = process.env) => {
-  if (env.COMMONLY_SUPERVISE_RUNS === '0') return false;
-  if (adapterName === 'codex') return true;
-  return env.COMMONLY_SUPERVISE_RUNS === '1';
-};
-
 export const performRun = ({
   instanceUrl,
   token,
