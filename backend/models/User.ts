@@ -210,6 +210,8 @@ export interface IUser extends Document {
     firstStartId?: string;
     firstStartAt?: Date;
     byoOpenedAt?: Date;
+    /** OS the page detected on that first open, written with byoOpenedAt. */
+    byoOpenedOs?: 'mac' | 'linux' | 'windows' | 'other';
     /** First BYO setup command copied in the browser, never overwritten. */
     byoCommandCopiedAt?: Date;
     /** Fixed kind only; command contents and tokens are never stored. */
@@ -465,6 +467,7 @@ const userSchema = new Schema<IUser>({
     firstStartId: { type: String },
     firstStartAt: { type: Date },
     byoOpenedAt: { type: Date },
+    byoOpenedOs: { type: String, enum: ['mac', 'linux', 'windows', 'other'] },
     byoCommandCopiedAt: { type: Date },
     byoCommandType: { type: String, enum: ['mcp', 'cli'] },
     byoFirstConnectionAttemptAt: { type: Date },

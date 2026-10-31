@@ -94,6 +94,19 @@ const browserOs = (): SetupOs => {
   if (/X11|CrOS|Linux (x86_64|aarch64|armv|i686)|^Linux$/.test(platform) && !/Android/.test(platform)) return 'linux';
   return 'mac';
 };
+// What the page saw, for the first-open mark only (byoOpenedOs). Unlike
+// browserOs it does not default to mac: a browser it can't place is 'other'.
+type OpenedOs = SetupOs | 'other';
+const openedOs = (): OpenedOs => {
+  if (typeof navigator === 'undefined') return 'other';
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const platform = nav.userAgentData?.platform || nav.userAgent || '';
+  if (/iPhone|iPad|Android/.test(platform)) return 'other';
+  // iPadOS Safari in desktop mode reports a Mac user agent; touch gives it away.
+  if (/Mac|macOS/.test(platform)) return (nav.maxTouchPoints || 0) > 1 ? 'other' : 'mac';
+  const os = browserOs();
+  return os === 'mac' ? 'other' : os;
+};
 const SETUP_OS_OPTIONS: Array<{ os: SetupOs; labelKey: string }> = [
   { os: 'mac', labelKey: 'agentByo.listen.osMac' },
   { os: 'linux', labelKey: 'agentByo.listen.osLinux' },
@@ -544,8 +557,9 @@ const V2AgentBYO: React.FC = () => {
       }
       try {
         // This request also records the person's first visit to this page on
-        // the server (User.onboarding.byoOpenedAt). Keep it on page load.
-        const availability = await api.get<HostedAvailability>('/api/hosted/availability');
+        // the server (User.onboarding.byoOpenedAt, and byoOpenedOs from ?os).
+        // Keep it on page load.
+        const availability = await api.get<HostedAvailability>(`/api/hosted/availability?os=${openedOs()}`);
         if (cancelled) return;
         if (availability && typeof availability.configured === 'boolean') {
           // Sets no mode. This effect re-runs on every pod change (podId is a
