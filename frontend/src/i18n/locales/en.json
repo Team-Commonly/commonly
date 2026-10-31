@@ -651,6 +651,11 @@
     },
     "header": {
       "aboutPod": "About this pod",
+      "rename": "Rename",
+      "renameLabel": "Pod name",
+      "renameSave": "Save",
+      "renameCancel": "Cancel",
+      "renameFailed": "Couldn't rename this pod. Try again.",
       "agentsWorking_one": "{{count}} agent working",
       "agentsWorking_other": "{{count}} agents working",
       "members_one": "{{count}} member",

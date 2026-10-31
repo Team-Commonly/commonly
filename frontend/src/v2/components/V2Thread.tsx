@@ -254,6 +254,12 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const { currentUser } = useAuth();
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  // Owner-only pod rename (TASK-419). The draft lives here so the header
+  // can swap the title for an input without touching the message state.
+  const [renaming, setRenaming] = useState(false);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [renameSaving, setRenameSaving] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [composerError, setComposerError] = useState<string | null>(null);
   const [addedFirstTaskMessages, setAddedFirstTaskMessages] = useState<Set<string>>(new Set());
@@ -386,6 +392,28 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const podCreator = pod?.createdBy as { _id?: string } | string | undefined;
   const podCreatorId = typeof podCreator === 'string' ? podCreator : podCreator?._id;
   const viewerOwnsPod = Boolean(viewerId) && String(podCreatorId || '') === String(viewerId);
+  const startRename = useCallback(() => {
+    setRenameDraft(pod?.name || '');
+    setRenameError(null);
+    setRenaming(true);
+  }, [pod?.name]);
+  const saveRename = useCallback(async () => {
+    const name = renameDraft.trim();
+    if (!pod?._id || !name || renameSaving) return;
+    setRenameSaving(true);
+    setRenameError(null);
+    try {
+      await api.patch(`/api/pods/${pod._id}/name`, { name });
+      setRenaming(false);
+      await detail.refresh();
+    } catch {
+      // The server's 403 means the viewer is not the creator; the button is
+      // hidden for them, so this only fires on a stale client or a race.
+      setRenameError(t('podChat.header.renameFailed'));
+    } finally {
+      setRenameSaving(false);
+    }
+  }, [api, detail, pod?._id, renameDraft, renameSaving, t]);
   const onHostedLive = useCallback(() => setAgentStatesReload((n) => n + 1), []);
   const hostedStart = useWelcomeHostedStart(api, { onLive: onHostedLive, onOpenPage: navigate });
   // Walk 4 (2026-10-16): "Run an agent here" stayed under the welcome after
@@ -1840,7 +1868,38 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             {mobileNavButton}
             <div className="v2-thread__title">
               <div className="v2-thread__title-line">
-                <h1>{pod.name}</h1>
+                {renaming ? (
+                  <form
+                    className="v2-pod-header__rename"
+                    onSubmit={(event) => { event.preventDefault(); void saveRename(); }}
+                  >
+                    <input
+                      aria-label={t('podChat.header.renameLabel')}
+                      value={renameDraft}
+                      maxLength={80}
+                      autoFocus
+                      disabled={renameSaving}
+                      onChange={(event) => setRenameDraft(event.target.value)}
+                      onKeyDown={(event) => { if (event.key === 'Escape') setRenaming(false); }}
+                    />
+                    <button type="submit" disabled={renameSaving || !renameDraft.trim()}>
+                      {t('podChat.header.renameSave')}
+                    </button>
+                    <button type="button" onClick={() => setRenaming(false)} disabled={renameSaving}>
+                      {t('podChat.header.renameCancel')}
+                    </button>
+                    {renameError && <span role="alert" className="v2-pod-header__rename-error">{renameError}</span>}
+                  </form>
+                ) : (
+                  <>
+                    <h1>{pod.name}</h1>
+                    {viewerOwnsPod && (
+                      <button type="button" className="v2-pod-header__rename-open" onClick={startRename}>
+                        {t('podChat.header.rename')}
+                      </button>
+                    )}
+                  </>
+                )}
                 {pod.description && <V2Hint label={t('podChat.header.aboutPod')}>{pod.description}</V2Hint>}
               </div>
             </div>

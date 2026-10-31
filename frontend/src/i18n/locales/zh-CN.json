@@ -651,6 +651,11 @@
     },
     "header": {
       "aboutPod": "关于这个 Pod",
+      "rename": "重命名",
+      "renameLabel": "Pod 名称",
+      "renameSave": "保存",
+      "renameCancel": "取消",
+      "renameFailed": "无法重命名这个 Pod，请再试一次。",
       "agentsWorking_other": "{{count}}个智能体正在工作",
       "members_one": "{{count}}名成员",
       "members_other": "{{count}}名成员",
