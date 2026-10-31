@@ -17,19 +17,33 @@ const axios = jest.requireMock('axios').default;
 const section = (key, notes = 1) => ({
   key, label: key, kind: 'x', notes: Array.from({ length: notes }, (_, i) => ({ header: `${key} ${i}`, snippet: '' })),
 });
+const named = (key, headers) => ({
+  key, label: key, kind: 'doc', notes: headers.map((h) => ({ header: h, snippet: '' })),
+});
+const headersOf = (groups, id) => groups.find((g) => g.id === id).sections.flatMap((s) => s.notes.map((n) => n.header));
 
 describe('groupSections', () => {
-  it('puts each known section in its group', () => {
-    const groups = groupSections([section('soul'), section('long_term'), section('shared'), section('daily')]);
-    const byId = Object.fromEntries(groups.map((g) => [g.id, g.sections.map((s) => s.key)]));
-    expect(byId.rules).toEqual(['soul', 'long_term']);
-    expect(byId.how).toEqual(['shared']);
-    expect(byId.journal).toEqual(['daily']);
+  it('puts soul first in Rules and journal sections in Journal', () => {
+    const groups = groupSections([section('daily'), section('soul'), section('cycles')]);
+    expect(headersOf(groups, 'rules')).toEqual(['soul 0']);
+    expect(headersOf(groups, 'journal')).toEqual(['daily 0', 'cycles 0']);
+  });
+
+  it('splits long_term by heading: rule-named headings go to Rules, the rest to How I work', () => {
+    const groups = groupSections([named('long_term', ['Overview', 'Rules', 'Never force-push', 'Host notes', 'Don\'t run find /'])]);
+    expect(headersOf(groups, 'rules')).toEqual(['Rules', 'Never force-push', 'Don\'t run find /']);
+    expect(headersOf(groups, 'how')).toEqual(['Overview', 'Host notes']);
+  });
+
+  it('shows a single untitled long_term note under How I work with no empty Rules group', () => {
+    const groups = groupSections([named('long_term', ['Overview'])]);
+    expect(groups.find((g) => g.id === 'rules').sections).toEqual([]);
+    expect(headersOf(groups, 'how')).toEqual(['Overview']);
   });
 
   it('falls back to How I work for an unknown section so nothing is hidden', () => {
     const groups = groupSections([section('brand_new_key')]);
-    expect(groups.find((g) => g.id === 'how').sections.map((s) => s.key)).toEqual(['brand_new_key']);
+    expect(headersOf(groups, 'how')).toEqual(['brand_new_key 0']);
   });
 });
 
@@ -37,7 +51,7 @@ describe('V2AgentMemory', () => {
   it('renders the three groups from the owner index', async () => {
     axios.get.mockResolvedValue({ data: {
       viewerRole: 'owner', totalEntries: 3,
-      sections: [section('long_term', 2), section('daily', 1)],
+      sections: [named('long_term', ['Rules', 'Host notes']), section('daily', 1)],
     } });
     render(
       <MemoryRouter initialEntries={['/v2/agents/maya-claude/default/memory']}>
