@@ -1,7 +1,8 @@
 # Docs claim table
 
 One row per factual claim on a customer-facing page, each with one verdict and its evidence. Evidence is a walk on
-prod with a 390 and a 1440 screenshot, or a `file:line` on `main`. It is no older than 14 days. A
+prod with a 390 and a 1440 screenshot, or a `file:line` on `main`. A `TRUE; walked` row carries a
+`file:line` and a walk cited by ID and date, with no screenshots. It is no older than 14 days. A
 claim past 14 days is re-walked in the next release batch, or it comes out. The first-touch pages
 (quickstart, bring your own agent, connectors, self-host, pricing) are re-walked every week.
 
@@ -11,6 +12,8 @@ claim past 14 days is re-walked in the next release batch, or it comes out. The 
   1440 screenshot.
 - **TRUE**: code on `main` does what the claim says. The evidence is a `file:line` on `main`, not
   another doc.
+- **TRUE; walked**: the `file:line` on `main` is the evidence, and a walk on commonly.me by someone
+  who did not write the claim is cited by walk ID and date. Screenshots are required only for WALKED.
 - **STALE**: the feature or fact is gone. The same PR removes the claim.
 - **FALSE**: the claim is wrong. The same PR fixes it or removes it.
 - **CUT**: the claim was not walked in time. The same PR removes it, and it can come back with
@@ -36,6 +39,7 @@ Owner: TASK-010. Source: `README.md`.
 | README | Agents claim work on the pod's board and post what they tried (L36) | TRUE | backend/routes/tasksApi.ts:616 (`POST /:podId/:taskId/claim`); backend/routes/tasksApi.ts:809 (`POST /:podId/:taskId/updates`) | 2026-10-26 |
 | README | Activity shows what needs you across every pod (L38) | TRUE | frontend/src/i18n/locales/en.json:160 ("what needs you, then what moved"), :175 ("All pods" filter), :811 ("Every open question, from every pod, lands in one place") | 2026-10-25 |
 | README | On commonly.me, with nothing to install (L60) | TRUE | Takes the verdict of the hosted-agent row above (en.json:619, V2AgentBYO.tsx:137). | 2026-10-26 |
+| README | Create an account and a pod, then press "Run it here" (L54) | TRUE | `backend/controllers/authController.ts:365–368` (signup creates the "My Workspace" pod); `frontend/src/v2/components/V2ThreadStarter.tsx:63` (the "Run it here" button, `podChat.newPod.runHere`) | 2026-10-28 |
 | README | Sign up with GitHub, Google or email (L62) | CUT | backend/controllers/authController.ts:615–625 (`registrationOpen`); backend/routes/auth.ts:237 (`/registration-policy`); live `https://api.commonly.me/api/auth/registration-policy` on 10-25 returned `inviteOnly:false, registrationOpen:true`. Invite-only is the production default when `REGISTRATION_INVITE_ONLY` is unset (authController.ts:36–40), so this depends on that env var being off. Providers: frontend/src/i18n/locales/en.json:116–117, :380 (Google, GitHub). Removed in this PR: not walked in time, cut by Lily's ruling (10-28 05:50Z). | 2026-10-28 |
 | README | Install the CLI with `npm i -g @commonlyai/cli@latest` (L71) | TRUE | cli/package.json:2 (name), :9 (bin `commonly`) | 2026-10-25 |
 | README | `commonly agent run <name> --adapter claude` (L74) | TRUE | cli/src/commands/agent.js:295 (`agent run --adapter`), :361 | 2026-10-25 |
@@ -64,16 +68,18 @@ Owner: TASK-011. Source: `docs-site/quickstart.mdx` and `docs-site/introduction.
 
 | Page | Claim | Verdict | Evidence | Date |
 |---|---|---|---|---|
-| quickstart | Create an account at commonly.me/v2/register | TRUE | `frontend/src/v2/V2App.tsx:215` (`register` route) | 2026-10-26 |
+| quickstart | Create an account at commonly.me/v2/register | TRUE; walked | G2 walk 101083, 2026-10-28. `frontend/src/v2/V2App.tsx:215` (`register` route, under `/v2/*` at `frontend/src/App.tsx:315`) | 2026-10-28 |
+| quickstart | Create a pod | TRUE | `frontend/src/v2/components/V2PodsSidebar.tsx:307–314` (`handleCreatePod` calls `createPod`). Signup also creates "My Workspace" (`backend/controllers/authController.ts:368`) | 2026-10-28 |
 | quickstart | Create a pod; it opens with a "Your pod is ready" card | CUT | `frontend/src/i18n/locales/en.json:617` (`newPod.title`), rendered by `V2ThreadStarter.tsx`. GTM walk with 390 and 1440 shots still owed Removed in this PR: not walked in time, cut by Lily's ruling (10-28 05:50Z). | 2026-10-28 |
 | quickstart | On that card, "Run it here" starts a hosted agent | CUT | `en.json:619` (`runHere`); starter states "Adding agent…", "Starting agent…", "Agent running" at `en.json:622-624`. Timing (about 8 s) is not on the page and needs a walk Removed in this PR: not walked in time, cut by Lily's ruling (10-28 05:50Z). | 2026-10-28 |
+| quickstart | Choose "Run it here" | TRUE | `frontend/src/v2/components/V2ThreadStarter.tsx:63` (`podChat.newPod.runHere`), `frontend/src/v2/components/V2AgentBYO.tsx:1052` (`agentByo.actions.runHere`); `frontend/src/i18n/locales/en.json:622` | 2026-10-28 |
 | quickstart | Type `@` in the pod's message box to pick the agent | CUT | `en.json:612` ("Use @ to mention an agent or teammate") Removed in this PR: not walked in time, cut by Lily's ruling (10-28 05:50Z). | 2026-10-28 |
 | quickstart | Commonly runs a hosted agent on DeepSeek V4 Flash | TRUE | `backend/services/nativeRuntimeService.ts:101` (`DEFAULT_MODEL`), `:224` (display name). Overridable by `LITELLM_CHAT_MODEL`, so re-check on prod | 2026-10-26 |
-| quickstart | The Run it here setup shows the free plan's agent and daily turn limits | TRUE | `frontend/src/v2/components/V2AgentBYO.tsx:1136-1139` renders `hosting.caps.turnsPerDay`; caps from `backend/services/hostedRuntimeService.ts:55-60`. No numbers are stated on the page | 2026-10-26 |
+| quickstart | The Run it here setup shows the free plan's agent and daily turn limits | TRUE | `frontend/src/v2/components/V2AgentBYO.tsx:1054-1057` renders `hosting.caps.agentsPerUser` and `hosting.caps.turnsPerDay` directly under the Run it here button; caps from `backend/services/hostedRuntimeService.ts:57-61`. No numbers are stated on the page | 2026-10-28 |
 | quickstart | "About a minute" (frontmatter description) | CUT | No walk of the full sign-up-to-answer time. Removed from the description | 2026-10-26 |
 | quickstart | Links: `/bring-your-own/`, `/bring-your-own/claude-code`, `/codex`, `/work-in-your-repo`, `/concepts/pods` | TRUE | Targets exist: `docs-site/bring-your-own/*.mdx`, `docs-site/concepts/pods.mdx` | 2026-10-26 |
 | introduction | Commonly can host an agent for you ("Run it here") | TRUE | `en.json:1621` (`hosted`: "Run it here") | 2026-10-26 |
-| introduction | Agents run on your own machine and connect with a runtime token | TRUE | `backend/middleware/agentRuntimeAuth.ts:52` (`cm_agent_` token); `cli/src/index.js:62` (`commonly agent attach`) | 2026-10-26 |
+| introduction | Agents run on your own machine and connect with a runtime token | TRUE | `backend/middleware/agentRuntimeAuth.ts:51` (`cm_agent_` token); `cli/src/index.js:62` (`commonly agent attach`) | 2026-10-26 |
 | introduction | A pod holds conversation, files, tasks and context | TRUE | Conversation: `backend/models/Message.ts:43` (`podId`). Files: `backend/models/PodAsset.ts:40` (`podId`). Tasks: `backend/routes/tasksApi.ts:226-253` (`GET /:podId` filters `Task.find` by `podId`; mounted at `backend/server.ts:257`). Context: `backend/routes/contextApi.ts:80-91` (`/context/:podId`) | 2026-10-26 |
 | introduction | Each agent keeps its own identity and memory | TRUE | Agent memory routes: `backend/routes/agentMemoryView.ts`, `backend/routes/agentProfile.ts` | 2026-10-26 |
 | introduction | In the web app: Agents → Bring your own → On my computer, pick a computer you've added, name the agent and its pod, choose Add to this computer | TRUE | Walked on prod 2026-10-30 by Launch, read-only: Agents → "Bring your own" opens `/v2/agents/byo`; "On my computer" shows Computer, Adapter, Model, Agent name, Pod and the button "Add to this computer" (`en.json:1643`). Not submitted, because a submit starts a real seat; adoption after a request is walked in the supervision row. The old text named a "seat" picker that does not exist. | 2026-10-30 |
