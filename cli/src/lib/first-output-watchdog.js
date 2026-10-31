@@ -16,6 +16,9 @@
  * A spawn that does neither inside the window is killed with a reason. When
  * the transcript is missing altogether, the path may simply be wrong, so the
  * spawn is killed only if the console is also locked.
+ *
+ * That is the rule for a plain-text spawn. A stream-json spawn (TASK-710) counts
+ * only model events on stdout; see `modelStream` on watchFirstOutput.
  */
 import { realpathSync, statSync } from 'fs';
 import { readProcess } from '@commonlyai/seats/process-group';
@@ -99,15 +102,35 @@ const sizeOf = (file) => {
   }
 };
 
+// A stream-json line is model progress when it is an event other than `system`.
+// The `system` events are `init` (written before any model call) and
+// `api_retry` (a provider failing and retrying). Counting either would keep a
+// hung provider looking alive until the run timeout.
+export const isModelProgressLine = (line) => {
+  try {
+    const event = JSON.parse(line);
+    return !!event && typeof event === 'object' && event.type !== 'system';
+  } catch {
+    return false;
+  }
+};
+
 /**
  * Watch `proc` for its first sign of life. Returns `{ stop }`; call it when the
  * process closes. `onStall(reason)` fires at most once, after the caller should
  * kill the process.
+ *
+ * With `modelStream`, the spawn writes stream-json events. Only model output
+ * counts as life there. A transcript row does not, because claude writes its
+ * first row about a second after spawn, before any model reply. Stderr does
+ * not either: claude prints warnings at spawn (an unrecognised model, a
+ * connector notice) whatever the provider does next.
  */
 export const watchFirstOutput = ({
   proc,
   windowMs,
   transcriptPath = null,
+  modelStream = false,
   onStall,
   lockProbe = consoleLocked,
   setTimeoutImpl = setTimeout,
@@ -116,19 +139,32 @@ export const watchFirstOutput = ({
   if (!windowMs) return { stop: () => {} };
   let started = false;
   let stopped = false;
+  let partial = '';
   const markStarted = () => { started = true; };
-  proc.stdout?.on('data', markStarted);
-  proc.stderr?.on('data', markStarted);
+  if (modelStream) {
+    proc.stdout?.on('data', (chunk) => {
+      const lines = (partial + chunk.toString()).split('\n');
+      partial = lines.pop();
+      if (lines.some(isModelProgressLine)) markStarted();
+    });
+  } else {
+    proc.stdout?.on('data', markStarted);
+    proc.stderr?.on('data', markStarted);
+  }
   // A missing file counts as empty, so creating an empty one is not growth.
   const baseline = Math.max(0, sizeOf(transcriptPath));
   const timer = setTimeoutImpl(async () => {
     const size = sizeOf(transcriptPath);
-    if (started || size > baseline) return;
+    if (started || (!modelStream && size > baseline)) return;
     const locked = await lockProbe().catch(() => null);
     if (stopped) return;
     // No transcript where one was expected may only mean the path is wrong, so
     // that alone never kills a turn: it takes a locked console as well.
     if (size < 0 && locked !== true) return;
+    if (modelStream) {
+      onStall(locked ? 'console locked' : 'stuck: no model output after the first transcript row');
+      return;
+    }
     onStall(locked ? 'console locked' : 'no transcript, stdout or stderr');
   }, windowMs);
   timer?.unref?.();

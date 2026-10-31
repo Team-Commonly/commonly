@@ -120,7 +120,7 @@ describe('claude adapter — spawn()', () => {
     expect(calls[0].args[0]).toBe('-p');
     expect(calls[0].args[1]).toContain('hello world');
     expect(calls[0].args.slice(2)).toEqual(
-      ['--output-format', 'text', '--resume', 'sid-123', '--model', 'test-model'],
+      ['--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--resume', 'sid-123', '--model', 'test-model'],
     );
     // Explicit: must NOT use --session-id on resume path — the whole point.
     expect(calls[0].args).not.toContain('--session-id');

@@ -494,10 +494,29 @@ const publicSkillPromptArgs = async (skillSources) => {
 
 // `ownGroup` is set only under the run supervisor, which kills the child's
 // whole group; unsupervised, the spawn options are exactly what they were.
+// Stream-json so each model event is a sign of life for the watchdog. The
+// partial messages put thinking deltas on the stream too, so a long think is
+// visible while it runs. A hung provider writes only `system` retry events,
+// and the watchdog does not count those.
+const STREAM_ARGS = ['--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
+
+// The reply is the `result` event's text. Output with no result event is
+// returned as it arrived, so a turn that never reaches one still gets its text.
+export const claudeResultText = (stdout) => {
+  const lines = String(stdout || '').split('\n');
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    try {
+      const event = JSON.parse(lines[i]);
+      if (event?.type === 'result') return String(event.result ?? '').trim();
+    } catch { /* not an event line */ }
+  }
+  return String(stdout || '').trim();
+};
+
 const runClaude = ({
   cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
   transcriptPath = null, firstOutputMs = firstOutputWindowMs(), lockProbe, stallKillGraceMs = STALL_KILL_GRACE_MS,
-  processTable = readProcessTable, survivorIo,
+  processTable = readProcessTable, survivorIo, modelStream = true,
 }) => new Promise((resolve, reject) => {
   const proc = spawnInOwnGroup(spawnImpl, cmd, args, {
     cwd,
@@ -529,6 +548,7 @@ const runClaude = ({
     proc,
     windowMs: firstOutputMs,
     transcriptPath,
+    modelStream,
     lockProbe,
     onStall: (reason) => {
       stalled = spawnStalledError({ label: 'claude', windowMs: firstOutputMs, reason });
@@ -1161,7 +1181,7 @@ export default {
       ...(seatModel ? ['--model', seatModel] : []),
       ...(ctx.environment?.effort ? ['--effort', String(ctx.environment.effort)] : []),
     ];
-    const baseArgs = ['-p', fullPrompt, '--output-format', 'text', sessionFlag, sessionId, ...modelArgs];
+    const baseArgs = ['-p', fullPrompt, ...STREAM_ARGS, sessionFlag, sessionId, ...modelArgs];
 
     let mountedSkills = [];
     let skillMount = { mounted: [], conflicted: [] };
@@ -1274,7 +1294,7 @@ export default {
       const contextTokens = claudeContextTokens({
         cwd: physicalPath(ctx.cwd), sessionId, configDir: claudeConfigDirFor({ ...env, HOME: childHome || env?.HOME }),
       });
-      return { text: stdout.trim(), newSessionId: sessionId, contextTokens };
+      return { text: claudeResultText(stdout), newSessionId: sessionId, contextTokens };
     } catch (err) {
       // A public seat's refusal is not a session-store failure, whatever its
       // message happens to contain: it must reach the run loop, never the
@@ -1295,7 +1315,7 @@ export default {
           memoryWithheld: ctx.memoryWithheld === true,
         });
         const retryBase = ['-p', freshPrompt,
-        '--output-format', 'text', '--session-id', freshId, ...modelArgs];
+        ...STREAM_ARGS, '--session-id', freshId, ...modelArgs];
         const retryCtx = {
           ...ctx,
           mcpConfigPath: mcpConfig?.file || null,
@@ -1337,7 +1357,7 @@ export default {
           cwd: physicalPath(ctx.cwd), sessionId: freshId,
           configDir: claudeConfigDirFor({ ...retry.env, HOME: retry.childHome || retry.env?.HOME }),
         });
-        return { text: stdout.trim(), newSessionId: freshId, contextTokens };
+        return { text: claudeResultText(stdout), newSessionId: freshId, contextTokens };
       }
       throw err;
     } finally {
