@@ -2235,7 +2235,8 @@ test('a compare page renders GTM markdown and refuses to build while a HOLD is o
   assert.doesNotThrow(() => assertNoOpenHolds('/compare/example/', 'See [the alternatives](/guides/example-alternative/).'));
   assert.throws(() => assertNoOpenHolds('/compare/example/', 'Claim. [HOLD](pending)'), /1 open bracketed marker/);
   assert.match(renderMarkdown('[Alternatives](/guides/example-alternative/)'), /<a href="\/guides\/example-alternative\/" rel="noreferrer">Alternatives<\/a>/);
-  assert.doesNotMatch(renderMarkdown('<!<!--x-->--> visible'), /<!--/);
+  assert.throws(() => renderMarkdown('a <!-- open note'), /unclosed HTML comment/);
+  assert.throws(() => renderMarkdown('<!<!--x-->--> visible'), /unclosed HTML comment/);
 });
 
 test('buildPageDefinitions refuses a held compare page, not only the helper', async () => {
@@ -2277,4 +2278,10 @@ test('every guide page carries the header link the restyle scopes on (TASK-594)'
   } finally {
     await rm(outputDir, { recursive: true, force: true });
   }
+});
+
+test('page content with $ patterns is inserted literally', () => {
+  const template = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><!-- SEO_NAVIGATION_RUNTIME_START --><script>window.addEventListener(\'popstate\', () => {});</script><!-- SEO_NAVIGATION_RUNTIME_END --><script type="module" src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
+  const page = { path: '/compare/x/', outputPath: 'compare/x/index.html', staticOnly: true, title: 'X', description: 'X', content: "<p>cost $& and $' and $`</p>", schema: [] };
+  assert.ok(renderStaticPage(template, page).includes("<p>cost $& and $' and $`</p>"));
 });

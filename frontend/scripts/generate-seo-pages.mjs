@@ -443,7 +443,7 @@ const comparePageSources = {
     description: "OpenAgents and Commonly are both Apache-2.0 workspaces where people and coding agents work together. Commonly is one pod for a team where each person brings their own agent. A factual comparison of agents, self-hosting, how people take part and outside tools.",
     markdown: `# Commonly vs OpenAgents
 
-*Updated 2026-10-27. Facts about other products were checked on their own sites on 2026-10-25.*
+*Updated 2026-10-31. Facts about other products were checked on their own sites on 2026-10-25 and re-checked on 2026-10-31.*
 
 **Short answer.** OpenAgents (openagents.org) and Commonly are both open-source, Apache-2.0 workspaces where people and coding agents work together. Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. OpenAgents lists more agent CLIs, adds shared threads, files and a live browser, and ships desktop and mobile apps.
 
@@ -462,7 +462,7 @@ const comparePageSources = {
 | **How people take part** | Threads with @mentions, a shared browser you can take over, and Issues. People are invited to collaborate from the workspace, and access is granted to "members, agents, or groups". [2] | Teammates join a pod by invite link, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions. Your own connected agent claims tasks on the pod's board (the claim holds a lease), posts what it tried, and asks a person on a decision card when a call is theirs. |
 | **Access to outside tools** | Workspaces have "roles, membership, and access control", and you choose which threads each participant can join. For local agents, model keys go "directly between your machine and the model provider". [3] | The owner of a Linear connection grants one agent read access. The agent sees the read tools and no write tools. Calls made through a grant are logged. |
 | **Apps** | Web, desktop (macOS and Windows on the homepage; the README adds a Linux AppImage), iOS and Android. [1][8] | Web. |
-| **Pricing, as stated** | Hosted: "Free to start". FAQ: "Workspaces are open source and available at no cost." Enterprise: a "Talk to us" button that links to Discord. openagents.org/pricing returned 404 on 10-25. [1][4][5] | Not listed on this page. |
+| **Pricing, as stated** | Hosted: "Free to start". FAQ: "Workspaces are open source and available at no cost." Enterprise: a "Talk to us" button that links to Discord. openagents.org/pricing returned a 404 on 2026-10-25. [1][4][5] | Not listed on this page. |
 
 ## When to pick OpenAgents
 
@@ -496,7 +496,7 @@ Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you 
 
 ## Sources
 
-Competitor facts fetched 2026-10-25 between about 09:50 and 10:05 UTC and re-checked against each source on 2026-10-31:
+Competitor facts checked on each vendor's site on 2026-10-25 and re-checked on 2026-10-31:
 
 1. OpenAgents homepage: https://openagents.org/ (headline, agent list, apps, "Free to start", Apache 2.0)
 2. OpenAgents Workspace: https://openagents.org/workspace (threads, browser, Issues, access)
@@ -517,7 +517,7 @@ Commonly facts come from the Commonly README and from using the product on commo
     description: "GitHub Agent HQ runs Copilot, Claude and Codex agents inside GitHub. Commonly is one pod where each teammate brings their own agent and the team shares the same conversations and one task board. A factual comparison with preview and GA status.",
     markdown: `# Commonly vs GitHub Agent HQ
 
-*Updated 2026-10-27. Facts about other products were checked on their own sites on 2026-10-25.*
+*Updated 2026-10-31. Facts about other products were checked on their own sites on 2026-10-25 and re-checked on 2026-10-31.*
 
 **Short answer.** If your team lives in GitHub and pays for Copilot, GitHub Agent HQ is the natural choice: you assign issues to Copilot, Claude or Codex agents and review their pull requests in GitHub, under your organization's policies and audit log. Commonly fits a different setup: a team where each person brings their own agent. Teammates join one pod by invite link, and people and agents share the same conversations and one task board, so everyone can see who has what. Claude and Codex on Agent HQ are in public preview as of 2026-10-25.
 
@@ -572,7 +572,7 @@ No. Your own Claude Code in a Commonly pod runs on your machine with your own gi
 
 ## Sources
 
-Competitor facts fetched 2026-10-25 between about 09:55 and 10:05 UTC and re-checked against each source on 2026-10-31:
+Competitor facts checked on each vendor's site on 2026-10-25 and re-checked on 2026-10-31:
 
 1. GitHub blog, "Welcome home, agents" (2025-10-28): https://github.blog/news-insights/company-news/welcome-home-agents/
 2. GitHub Docs, About third-party agents: https://docs.github.com/en/copilot/concepts/agents/about-third-party-agents
@@ -638,13 +638,9 @@ const renderMarkdownTable = (lines) => {
 // The subset of markdown the compare drafts use: headings, paragraphs, bullet
 // and numbered lists, pipe tables, and inline code, bold, italic and links.
 export const renderMarkdown = (markdown) => {
-  // Strip until stable, so a nested comment cannot leave a live "<!--" behind.
-  let text = markdown;
-  let previous;
-  do {
-    previous = text;
-    text = text.replace(/<!--[\s\S]*?-->/g, '');
-  } while (text !== previous);
+  // Internal notes live in HTML comments; one left open or nested would ship as visible text.
+  const text = markdown.replace(/<!--[\s\S]*?-->/g, '');
+  if (/<!--|-->/.test(text)) throw new Error('unclosed HTML comment in compare markdown');
   const lines = text.split('\n');
   const html = [];
   let i = 0;
@@ -851,7 +847,8 @@ export const renderStaticPage = (template, page) => {
   if (!withMetadata.includes(pageContentMarker)) {
     throw new Error('Missing SEO page-content marker in the Vite output.');
   }
-  return withMetadata.replace(pageContentMarker, page.content);
+  // A function replacement, so "$&" or "$'" in pasted markdown stays literal.
+  return withMetadata.replace(pageContentMarker, () => page.content);
 };
 
 export const generateSeoPages = async ({ outputDir = buildDir } = {}) => {
