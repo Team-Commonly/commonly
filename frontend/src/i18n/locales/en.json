@@ -1751,7 +1751,15 @@
       "unavailableClaudeLinux": "On Linux, Claude Code answers @mentions only in an invite-only pod, and this one isn’t. Its owner can switch it to Invite-only under “Who can join” in pod settings. Or connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
       "unavailableClaude": "Claude Code can’t answer @mentions from {{os}} yet: Commonly runs it in a sandbox, and on {{os}} that sandbox can’t run it. Connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
       "unavailableCodex": "The Codex CLI can’t answer @mentions from {{os}} yet. Choose “Run it here” for a hosted agent, or run the command on a Mac. Linux is not tested yet.",
-      "useDifferentRunner": "Use a different adapter"
+      "useDifferentRunner": "Use a different adapter",
+      "repo": {
+        "label": "Work in my repo",
+        "hint": "Runs in the folder you start it from, confined to that folder. Every pod this agent is in must be private and invite-only; if one is not, it will not read your folder. It uses its own scratch folder, or refuses to start if you ticked an option below. Without write, it reads only that folder and nothing else on this computer. With write, the commands it runs can read beyond the folder.",
+        "write": "Let it edit files and run commands (--allow write)",
+        "web": "Let it fetch web pages (--allow web)",
+        "folder": "Open your terminal in your project's folder (not your home folder) before you paste the command. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
+        "saved": "Write and web are saved when the agent first starts, and unticking a box here does not remove them later. Stop the running listener first. Then change them with: commonly agent detach <name> --force, followed by a new run with the new choice."
+      }
     },
     "mode": {
       "label": "Where should it run?",
