@@ -22,9 +22,12 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { cleanupRun } from './first-user-walk-cleanup.mjs';
+import { cleanupRun, ownerOf } from './first-user-walk-cleanup.mjs';
 
 const WALK_PREFIX = 'walk-';
+// Every request is bounded, cleanup included, so one stalled socket cannot
+// hold the run or the report open.
+const REQUEST_TIMEOUT_MS = 20_000;
 
 const args = process.argv.slice(2);
 const flag = (name, dflt) => {
@@ -40,6 +43,8 @@ const email = `${username}@example.invalid`;
 const agentName = `${username}-agent`;
 const results = [];
 let step = 'init';
+// True once signup may have created the account, so cleanup knows to look for it.
+let accountMayExist = false;
 
 const api = async (method, path, { token, body } = {}) => {
   const res = await fetch(`${BASE}${path}`, {
@@ -50,6 +55,7 @@ const api = async (method, path, { token, body } = {}) => {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   let data = null;
   try { data = await res.json(); } catch { /* non-json */ }
@@ -85,24 +91,59 @@ const writeManifest = () => {
   writeFileSync(path.join(STATE_DIR, `${stamp}.json`), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
 };
 
-// Returns false when anything survives, so the run fails loudly. With no token
-// (the human is already gone) the walk cannot remove pods or the seat, so it
-// reports the manifest's pods as survivors rather than claiming a clean run.
+// Returns false when anything survives, so the run fails loudly. Signup can
+// create the account before the walk has a token, so cleanup signs in once
+// more; if that fails the account is a survivor, not a silent gap.
 const cleanup = async (token, password) => {
-  if (!token) {
-    manifest.survivors = manifest.podIds.map((id) => `pod:${id} (no token; human already gone)`);
+  let session = token;
+  if (!session && accountMayExist) {
+    try {
+      const r = await api('POST', '/api/auth/login', { body: { email, password } });
+      if (r.status === 200 && r.data?.token) {
+        session = r.data.token;
+        manifest.userId = manifest.userId || String(r.data.user?._id || r.data.user?.id || '');
+      }
+    } catch {
+      // A network failure here leaves no session: it is reported below as a survivor.
+    }
+  }
+  if (!session) {
+    manifest.survivors = [
+      ...manifest.podIds.map((id) => `pod:${id} (no sign-in for cleanup)`),
+      ...(accountMayExist ? ['account (no sign-in for cleanup)'] : []),
+    ];
     manifest.status = manifest.survivors.length ? 'needs-admin-purge' : 'clean';
     writeManifest();
+    if (manifest.survivors.length) console.error(`cleanup: ${username} survives; sign-in failed`);
     return manifest.survivors.length === 0;
   }
-  const result = await cleanupRun({ api, token, password, email, userId: manifest.userId, agentName, podIds: manifest.podIds });
-  manifest.survivors = result.survivors;
-  manifest.botIds = result.botIds;
-  manifest.status = result.ok ? 'clean' : 'needs-admin-purge';
+  try {
+    const result = await cleanupRun({
+      api,
+      token: session,
+      password,
+      email,
+      userId: manifest.userId,
+      agentName,
+      podIds: manifest.podIds,
+      // Persist each pod's bot ids before that pod is deleted, so a throw
+      // later in the loop still leaves the ids SRE needs.
+      onBotIds: (podId, bots) => {
+        manifest.botIds = [...new Set([...manifest.botIds, ...bots])];
+        writeManifest();
+      },
+    });
+    manifest.survivors = result.survivors;
+    manifest.botIds = [...new Set([...manifest.botIds, ...result.botIds])];
+    manifest.status = result.ok ? 'clean' : 'needs-admin-purge';
+  } catch (error) {
+    manifest.survivors = [`cleanup error: ${error.message}`];
+    manifest.status = 'needs-admin-purge';
+  }
   writeManifest();
-  if (result.ok) console.log(`cleanup: removed ${username}`);
-  else console.error(`cleanup: survivors: ${result.survivors.join('; ')}`);
-  return result.ok;
+  if (manifest.status === 'clean') console.log(`cleanup: removed ${username}`);
+  else console.error(`cleanup: survivors: ${manifest.survivors.join('; ')}`);
+  return manifest.status === 'clean';
 };
 
 const main = async () => {
@@ -113,7 +154,14 @@ const main = async () => {
   let exitCode = 0;
   try {
     await runStep('signup', async () => {
-      const r = await api('POST', '/api/auth/register', { body: { username, email, password } });
+      let r;
+      try {
+        r = await api('POST', '/api/auth/register', { body: { username, email, password } });
+      } catch (error) {
+        accountMayExist = true; // the request may have landed before the failure
+        throw error;
+      }
+      if (r.status === 201) accountMayExist = true;
       expect(r.status === 201, `register ${r.status}: ${JSON.stringify(r.data)}`);
     });
 
@@ -125,6 +173,19 @@ const main = async () => {
       expect(manifest.userId, 'login returned no user id');
       writeManifest();
       return r.data.token;
+    });
+
+    // Signup creates a workspace pod. Check it exists before the walk makes its
+    // own pod, so a failed signup workspace cannot be hidden by the second pod.
+    await runStep('signup-workspace', async () => {
+      const list = await api('GET', '/api/pods', { token });
+      const pods = Array.isArray(list.data) ? list.data : (list.data?.pods || []);
+      const owned = list.status === 200 ? pods.filter((p) => ownerOf(p) === manifest.userId) : [];
+      expect(owned.length > 0, `no signup workspace pod (list ${list.status}, owned ${owned.length})`);
+      for (const p of owned) {
+        if (!manifest.podIds.includes(String(p._id))) manifest.podIds.push(String(p._id));
+      }
+      writeManifest();
     });
 
     const pod = await runStep('first-pod', async () => {

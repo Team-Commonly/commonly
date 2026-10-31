@@ -37,8 +37,11 @@ The walk deletes its own account in a `finally` block, sending the password and
 run exits `1` and prints the error. A surviving account is a failed run, not a
 warning.
 
-The walk's token removes the hosted seat, every pod the account created (matched
-by `createdBy`, never a pod it did not make), and the account. The cleanup then
+The walk's token stops the hosted runtime, removes the hosted seat, every pod the
+account created (matched by `createdBy`, never a pod it did not make), and the
+account. If signup created the account but login failed, cleanup signs in once
+more; if that also fails, the account is reported as a survivor. Every request
+has a 20-second timeout, cleanup included. The cleanup then
 checks each one is gone: a pod still listed, or an account whose password still
 logs in, is a survivor. A run with survivors exits 1 and names them.
 

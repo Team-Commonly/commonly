@@ -6,28 +6,47 @@ import { cleanupRun } from './first-user-walk-cleanup.mjs';
 const USER = 'user-walk';
 const OTHER = 'user-other';
 
-// A fake backend holding pods and one account. `stuck` names pods whose
-// delete returns 200 but leaves them listed; `accountFails` makes the account
-// delete return 500. Calls are recorded so the test can check the order.
-const fakeBackend = ({ pods, stuck = new Set(), accountFails = false, deleteIgnored = false }) => {
+// A fake backend holding pods and one account. Options:
+//   stuck            pods whose delete returns 200 but leaves them listed
+//   accountFails     the account delete returns 500
+//   deleteIgnored    the account delete returns 200 but the account still logs in
+//   lookupFails      pods whose GET /api/pods/:id returns 500
+//   listFails        GET /api/pods returns 500
+//   seatFails        the registry seat uninstall returns 500
+//   deprovisionFails POST /api/hosted/deprovision returns 500
+//   throwOn          a DELETE to this pod path throws (network error)
+// Calls are recorded so the test can check the order.
+const fakeBackend = ({
+  pods, stuck = new Set(), accountFails = false, deleteIgnored = false,
+  lookupFails = new Set(), listFails = false, seatFails = false, deprovisionFails = false, throwOn = null,
+}) => {
   const state = { pods: [...pods], accountGone: false, calls: [] };
   const api = async (method, path) => {
-    state.calls.push(`${method} ${path.split('?')[0]}`);
+    const bare = path.split('?')[0];
+    state.calls.push(`${method} ${bare}`);
     if (method === 'GET' && path === '/api/pods') {
+      if (listFails) return { status: 500, data: {} };
       return { status: 200, data: state.pods.map((p) => ({ ...p })) };
     }
     const podMatch = path.match(/^\/api\/pods\/([^/?]+)$/);
     if (method === 'GET' && podMatch) {
+      if (lookupFails.has(podMatch[1])) return { status: 500, data: { error: 'boom' } };
       const pod = state.pods.find((p) => String(p._id) === podMatch[1]);
       return pod ? { status: 200, data: pod } : { status: 404, data: {} };
     }
     if (method === 'DELETE' && podMatch) {
       const id = podMatch[1];
+      if (throwOn === `/api/pods/${id}`) throw new Error('socket hang up');
       if (!stuck.has(id)) state.pods = state.pods.filter((p) => String(p._id) !== id);
       return { status: 200, data: {} };
     }
     if (method === 'DELETE' && path.startsWith('/api/registry/agents/')) {
+      if (seatFails) return { status: 500, data: {} };
       return { status: 200, data: {} };
+    }
+    if (method === 'POST' && bare === '/api/hosted/deprovision') {
+      if (deprovisionFails) return { status: 500, data: {} };
+      return { status: 200, data: { deprovisioned: true } };
     }
     if (method === 'DELETE' && path === '/api/users/me') {
       if (accountFails) return { status: 500, data: { error: 'boom' } };
@@ -112,4 +131,52 @@ test('fails and names a recorded pod that is still readable after delete', async
   const result = await run(backend, { podIds: ['p1'] });
   assert.equal(result.ok, false);
   assert.ok(result.survivors.includes('pod:p1 (still readable)'), `survivors: ${result.survivors}`);
+});
+
+test('a failed pod lookup is a survivor, and the pod is not deleted', async () => {
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER }], lookupFails: new Set(['p1']) });
+  const result = await run(backend);
+  assert.equal(result.ok, false);
+  assert.ok(result.survivors.includes('pod:p1 (lookup 500)'), `survivors: ${result.survivors}`);
+  assert.ok(!backend.state.calls.includes('DELETE /api/pods/p1'), 'a pod whose members are unknown must not be deleted');
+});
+
+test('a failed pod list is a survivor, not an empty list of pods', async () => {
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER }], listFails: true });
+  const result = await run(backend);
+  assert.equal(result.ok, false);
+  assert.ok(result.survivors.includes('pods (list failed)'), `survivors: ${result.survivors}`);
+});
+
+test('a refused seat uninstall is a survivor', async () => {
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER }], seatFails: true });
+  const result = await run(backend);
+  assert.equal(result.ok, false);
+  assert.ok(result.survivors.some((s) => s.startsWith('seat:p1 (uninstall 500)')), `survivors: ${result.survivors}`);
+});
+
+test('the hosted runtime is stopped before the seat and pods go', async () => {
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER }] });
+  await run(backend);
+  const calls = backend.state.calls;
+  assert.ok(calls.indexOf('POST /api/hosted/deprovision') < calls.indexOf('DELETE /api/pods/p1'));
+});
+
+test('a refused deprovision is a survivor', async () => {
+  const backend = fakeBackend({ pods: [], deprovisionFails: true });
+  const result = await run(backend);
+  assert.equal(result.ok, false);
+  assert.ok(result.survivors.includes('hosted:walk-x-agent (deprovision 500)'), `survivors: ${result.survivors}`);
+});
+
+test('bot ids are reported before each pod is deleted, so a later throw keeps them', async () => {
+  const members = [{ _id: 'bot-scout', isBot: true }];
+  const backend = fakeBackend({
+    pods: [{ _id: 'p1', createdBy: USER, members }, { _id: 'p2', createdBy: USER, members }],
+    throwOn: '/api/pods/p2',
+  });
+  const reported = [];
+  await assert.rejects(run(backend, { onBotIds: (podId, bots) => reported.push([podId, bots]) }), /socket hang up/);
+  assert.deepEqual(reported[0], ['p1', ['bot-scout']]);
+  assert.ok(backend.state.calls.indexOf('DELETE /api/pods/p1') > backend.state.calls.indexOf('GET /api/pods/p1'));
 });
