@@ -1301,7 +1301,8 @@ export const runMemoryImport = async ({
 // is. Every prompt whose final text the wrapper posts to the pod carries it.
 // agent.ask does not: its final text goes only to the asking agent.
 const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
-  + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary.';
+  + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary. '
+  + 'When an acknowledgement is all you\'d post, react with `commonly_react_to_message` instead of posting or staying silent; never instead of a reply someone asked for.';
 
 const extractPrompt = (event) => {
   const p = event.payload || {};
