@@ -8469,6 +8469,32 @@ body.modern-ui.v2-canvas {
   background: var(--v2-bg-subtle);
 }
 
+/* TASK-698: the board fills the pane and the columns scroll inside it. The feature
+   body was the scroller and its legacy wrapper had auto height, so `height: 100%`
+   and the column `max-height: 100%` resolved to nothing and the page grew to
+   ~77,000px (85.5× at 1440, 97.9× at 390, measured by ux-lead at 12f608b71).
+   Scoped to the board route so other feature pages keep their scroll. */
+.v2-feature--board .v2-feature__body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* margin auto stops a flex item stretching, so the board sized to its 1240px
+   max-content width and ran off a 390px phone. An explicit width keeps it full
+   width on a phone, and the auto margin still centres it on desktop. */
+.v2-feature--board .v2-feature__legacy {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+.v2-feature--board .v2-board {
+  flex: 1 1 auto;
+  height: auto;
+}
+
 .v2-board__head {
   display: flex;
   align-items: center;
@@ -8548,6 +8574,11 @@ body.modern-ui.v2-canvas {
   border-radius: 12px;
   background: var(--v2-bg);
   flex: 0 0 auto;
+  /* A long focus list scrolls inside its own box, so the columns keep room below
+     it on a short viewport (1440x560, 390x560). vh, not %: the board's height is
+     auto, so a percentage would not resolve. */
+  max-height: min(35vh, 260px);
+  overflow-y: auto;
 }
 
 .v2-board__focus-head {
