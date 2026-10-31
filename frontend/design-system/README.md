@@ -98,7 +98,7 @@ Reply/Open/Mark handled controls are bordered secondary controls.
 
 - **IBM Plex Sans first, self-hosted**: `"IBM Plex Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif` via `@fontsource/ibm-plex-sans` (OFL, bundled, no Google Fonts request). SF Pro is the fallback only while the woff2 loads or if it fails. Body and controls use this one face; display uses Bricolage Grotesque, not a second weight of the body face. Mono is `"IBM Plex Mono"` first (`@fontsource/ibm-plex-mono`).
 - **Tight letter-spacing on big text**: feature titles `-0.03em`, h2 `-0.025em`, h3 `-0.02em`. Body stays at 0.
-- **Heavy weights at large sizes**: feature titles use `700` in Inter (`850` was tuned for SF Pro Display), headers `700`, section titles `650`. Body is `400`/`500`. Buttons are `600`.
+- **Heavy weights at large sizes**: feature titles use `700` in Bricolage Grotesque (`850` was tuned for SF Pro Display), headers `700`, section titles `650`. Body is `400`/`500`. Buttons are `600`.
 - **Sizes hover small**: body `14/20`, meta `12/16`, labels `11/14`. Secondary copy keeps body size and carries hierarchy by colour. The biggest type in normal product UI is the 24px feature title.
 
 ### Spacing, radii, layout
