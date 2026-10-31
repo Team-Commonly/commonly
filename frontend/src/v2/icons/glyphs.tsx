@@ -1,4 +1,4 @@
-// Glyphs — categories are marks (Sam, 2026-09-11, "Signal, quieter" direction A).
+// Glyphs — categories are marks ("Signal, quieter" direction A).
 // Anything with a fixed set of values renders as one of these, 16px, 2px stroke,
 // currentColor, never a unicode character. The rail's icons set the style.
 import React from 'react';
@@ -58,5 +58,33 @@ export const MarkGlyph: React.FC<{ name: MarkName; size?: number }> = ({ name, s
       return <G size={size}><path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3" /></G>;
     default:
       return <G size={size}><path d="M8.6 8.6A6 6 0 0 0 6 8c0 7-3 9-3 9h14M18 8a6 6 0 0 0-9.3-5M13.7 21a2 2 0 0 1-3.4 0M3 3l18 18" /></G>;
+  }
+};
+
+export type ShellGlyphName = 'pencil' | 'people' | 'gear' | 'board' | 'pin' | 'inbox' | 'agents' | 'file' | 'lock' | 'chevron';
+
+/** D215 sidebar controls (TASK-691): the icon carries the act, aria-label and title carry the word. */
+export const ShellGlyph: React.FC<{ name: ShellGlyphName; size?: number }> = ({ name, size }) => {
+  switch (name) {
+    case 'pencil':
+      return <G size={size}><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z" /></G>;
+    case 'people':
+      return <G size={size}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8" /></G>;
+    case 'gear':
+      return <ActGlyph name="manage" size={size} />;
+    case 'board':
+      return <G size={size}><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M8 7v7M12 7v4M16 7v9" /></G>;
+    case 'pin':
+      return <G size={size}><path d="M12 17v5M8 3h8l-1 6 3 4H6l3-4z" /></G>;
+    case 'inbox':
+      return <G size={size}><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z" /></G>;
+    case 'agents':
+      return <G size={size}><path d="M12 3.5v5M12 15.5v5M3.5 12h5M15.5 12h5M6 6l3.5 3.5M14.5 14.5 18 18M18 6l-3.5 3.5M9.5 14.5 6 18" /></G>;
+    case 'file':
+      return <G size={size}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M16 13H8M16 17H8" /></G>;
+    case 'lock':
+      return <G size={size}><rect x="4" y="11" width="16" height="10" rx="2.5" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></G>;
+    default:
+      return <G size={size}><path d="m6 9 6 6 6-6" /></G>;
   }
 };

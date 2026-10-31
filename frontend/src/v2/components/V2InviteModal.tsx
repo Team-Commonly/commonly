@@ -264,9 +264,6 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({
                       {copiedToken === 'new' ? t('common.copied') : t('common.copy')}
                     </button>
                   </div>
-                  <p className="v2-modal__hint v2-modal__hint--muted">
-                    {t('inviteModal.newLinkHint')}
-                  </p>
                 </>
               )}
               {error && <div className="v2-modal__error">{error}</div>}

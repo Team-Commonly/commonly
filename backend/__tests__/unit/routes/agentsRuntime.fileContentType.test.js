@@ -192,3 +192,29 @@ describe('pod file read — content type classification', () => {
     },
   );
 });
+
+// Both byte sources return the bytes in this JSON body, so both must send the
+// same Cache-Control header.
+describe('pod file read — Cache-Control', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  test('object-store bytes are sent private, no-store', async () => {
+    serveFile({ contentType: 'text/plain', bytes: Buffer.from('STORE_SENTINEL_DELTA\n') });
+    const res = await read();
+
+    expect(res.status).toBe(200);
+    expect(res.body.content).toBe('STORE_SENTINEL_DELTA\n');
+    expect(res.headers['cache-control']).toBe('private, no-store');
+  });
+
+  test('legacy inline bytes are sent private, no-store', async () => {
+    serveFile({ contentType: 'text/plain', bytes: Buffer.from('unused') });
+    getObjectStore().get.mockResolvedValue(null);
+    File.findByFileName.mockResolvedValue({ data: Buffer.from('LEGACY_SENTINEL_EPSILON\n') });
+    const res = await read();
+
+    expect(res.status).toBe(200);
+    expect(res.body.content).toBe('LEGACY_SENTINEL_EPSILON\n');
+    expect(res.headers['cache-control']).toBe('private, no-store');
+  });
+});

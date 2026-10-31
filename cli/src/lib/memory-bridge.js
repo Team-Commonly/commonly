@@ -23,7 +23,7 @@
 export const SOURCE_RUNTIME = 'local-cli';
 
 /**
- * Row slicing, the runtime-agnostic half of D48 (TASK-545). A row too large
+ * Row slicing, the runtime-agnostic half of TASK-545. A row too large
  * for one turn drifts when one seat carries it whole, so the seat splits it on
  * the board before any code. It names the exact call and field for the reason
  * the memory cue below names `long_term`: a seat adopts a habit through a

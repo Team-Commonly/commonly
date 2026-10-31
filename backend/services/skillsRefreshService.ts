@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import GitHubAppService from './githubAppService';
+import { resolveSkillsCatalogPath } from './skillsCatalogPath';
 
 /**
  * skillsRefreshService
@@ -47,16 +48,6 @@ interface RefreshResult {
 // via `getLastRefreshedAt()` and the catalog endpoint.
 let lastRefreshAt: Date | null = null;
 
-const resolveLocalCatalogPath = (): string => {
-  if (process.env.SKILLS_CATALOG_PATH) {
-    return process.env.SKILLS_CATALOG_PATH;
-  }
-  if (process.env.SKILLS_CATALOG_DIR) {
-    return path.join(process.env.SKILLS_CATALOG_DIR, 'awesome-agent-skills-index.json');
-  }
-  // Matches the read path in skillsCatalogService.ts#resolveCatalogPath.
-  return path.resolve(__dirname, '../../docs/skills/awesome-agent-skills-index.json');
-};
 
 // One credential per refresh run. The App installation token is the default
 // (an hour is longer than a run); GitHubAppService falls back to GITHUB_PAT only
@@ -187,7 +178,7 @@ export const refreshSkillsIndex = async (): Promise<RefreshResult> => {
     // Fall back: read the local file and still run the star-count refresh on
     // its entries. This is the common dev case when the upstream URL is wrong
     // or the mirror has moved.
-    const localPath = resolveLocalCatalogPath();
+    const localPath = resolveSkillsCatalogPath();
     const localCatalog = readLocalCatalog(localPath);
     if (!localCatalog) {
       console.warn('[skills-refresh] No local catalog available; nothing to refresh.');
@@ -302,7 +293,7 @@ export const refreshSkillsIndex = async (): Promise<RefreshResult> => {
     items,
   };
 
-  const targetPath = resolveLocalCatalogPath();
+  const targetPath = resolveSkillsCatalogPath();
   try {
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     fs.writeFileSync(targetPath, `${JSON.stringify(output, null, 2)}\n`, 'utf8');

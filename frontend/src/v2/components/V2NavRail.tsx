@@ -1,7 +1,6 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import V2FeedbackMenu from './V2FeedbackMenu';
-import V2LangSwitch from './V2LangSwitch';
 import V2AccountMenu from './V2AccountMenu';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from 'react-i18next';
@@ -28,7 +27,7 @@ const Icon = ({ d }: { d: string }) => (
 const NAV_ITEMS: NavItem[] = [
   { key: 'pods', label: 'Pods', path: '/v2', icon: <Icon d="M3 7l9-4 9 4-9 4-9-4zM3 12l9 4 9-4M3 17l9 4 9-4" /> },
   { key: 'agents', label: 'Agents', path: '/v2/agents', icon: <Icon d="M12 1v6m0 8v6M5 5l4 4M15 15l4 4M1 12h6m8 0h6M5 19l4-4M15 9l4-4" /> },
-  // Rebase resolution (commander, 2026-08-26): Sam ruled Activity replaces
+  // Rebase resolution (2026-08-26): Activity replaces
   // the THIRD rail slot — Community's. Connectors arrived on main after this
   // branch cut and keeps its slot; Community's surface remains reachable via
   // /browse.
@@ -122,12 +121,10 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav, needsYouCount })
         </nav>
 
         <div className="v2-rail__foot">
-          {/* Help & preferences — language switch + the help/feedback menu
-              (Sam 2026-07-23: the guide moved into the feedback menu next to
-              report-a-bug / request-a-feature; language switch lives here too,
-              off its old cramped above-the-logo slot). */}
+          {/* Help: the guide, report-a-bug and request-a-feature (2026-07-23).
+              The language switch left the rail for Settings › Look (D215,
+              TASK-691): language is not a daily act. */}
           <div className="v2-rail__utility">
-            <V2LangSwitch />
             <V2FeedbackMenu />
           </div>
           <span className="v2-rail__foot-sep" aria-hidden="true" />

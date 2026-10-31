@@ -56,6 +56,11 @@ const mockGet = ({ configured, status }) => {
   });
 };
 
+// The hosted mode card is titled "Run it here" too, so the act button is the
+// "Run it here" button that is not a mode toggle (no aria-pressed).
+const actButton = () => screen.queryAllByRole('button', { name: /^run it here$/i })
+  .find((b) => !b.hasAttribute('aria-pressed')) ?? null;
+
 const renderPage = () => render(
   <AuthContext.Provider value={authValue}>
     <MemoryRouter>
@@ -79,12 +84,12 @@ describe('V2AgentBYO — Run it here', () => {
 
     await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
     expect(screen.getByRole('group', { name: 'Where should it run?' })).toBeInTheDocument();
-    expect(screen.getByText('Live in a few seconds · Beta: 200 turns a day')).toBeInTheDocument();
+    expect(screen.getByText('Nothing to install. Live in a few seconds. Beta: 200 turns a day.')).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('{{');
     expect(screen.getByTestId('byo-mode-hosted')).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByTestId('byo-mode-byo')).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByTestId('byo-mode-unchosen')).toHaveTextContent('Choose where it runs first');
-    expect(screen.queryByRole('button', { name: /^run it here$/i })).not.toBeInTheDocument();
+    expect(actButton()).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /get my connect command/i })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('byo-mode-byo'));
@@ -96,6 +101,22 @@ describe('V2AgentBYO — Run it here', () => {
   // instance has said whether it can host, the page must not offer an act at
   // all: an enabled "Install + generate token" there chose a runtime for the
   // person (Sprint Review's measurement on #2190).
+  // Only a BYO install may be handed back its own unkeyed webhook name. A
+  // hosted install given that name would hit "already installed".
+  test('asks for a name in the pod only once bring-your-own is chosen', async () => {
+    mockGet({ configured: true });
+    renderPage();
+    const lookups = () => axios.get.mock.calls.map(([url]) => url)
+      .filter((url) => url.startsWith('/api/registry/agents/next-free-name?'));
+
+    fireEvent.click(await screen.findByTestId('byo-mode-hosted'));
+    await waitFor(() => expect(lookups().length).toBeGreaterThan(0));
+    expect(lookups().some((url) => url.includes('podId='))).toBe(false);
+
+    fireEvent.click(screen.getByTestId('byo-mode-byo'));
+    await waitFor(() => expect(lookups().some((url) => url.includes('podId=p1'))).toBe(true));
+  });
+
   test('offers no act while it is not yet known whether there is a choice', async () => {
     let answerAvailability;
     let answerMachines;
@@ -132,9 +153,9 @@ describe('V2AgentBYO — Run it here', () => {
     renderPage();
 
     await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
-    expect(screen.getAllByText(/beta: 200 turns a day/i)).toHaveLength(2);
+    expect(screen.getAllByText(/beta: 200 turns a day/i)).toHaveLength(1);
     fireEvent.click(screen.getByTestId('byo-mode-hosted'));
-    fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
+    fireEvent.click(actButton());
 
     await screen.findByTestId('byo-hosted-result');
     const installCall = axios.post.mock.calls.find(([url]) => url === '/api/registry/install');
@@ -156,7 +177,7 @@ describe('V2AgentBYO — Run it here', () => {
 
     await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('byo-mode-hosted'));
-    const act = screen.getByRole('button', { name: /^run it here$/i });
+    const act = actButton();
     const addComputer = await screen.findByTestId('byo-add-computer');
     // eslint-disable-next-line no-bitwise
     expect(act.compareDocumentPosition(addComputer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -207,17 +228,30 @@ describe('V2AgentBYO — Run it here', () => {
     const compact = await screen.findByTestId('byo-hosted-compact');
     expect(screen.getByRole('heading', { name: 'Run an agent here' })).toBeInTheDocument();
     await waitFor(() => expect(compact).toHaveTextContent('It joins Workspace as sam-agent.'));
-    await waitFor(() => expect(compact).toHaveTextContent('Beta: 1 hosted agent per account, 200 turns a day.'));
+    // The beta cap lives in the page-head (i), not in the body.
+    expect(screen.getByText(/Beta: 1 hosted agent per account, 200 turns a day\./)).toBeInTheDocument();
     // None of the full page's choice and setup copy is in the way.
     expect(screen.queryByTestId('byo-mode-hosted')).not.toBeInTheDocument();
     expect(screen.queryByTestId('byo-add-computer')).not.toBeInTheDocument();
 
-    const act = screen.getByRole('button', { name: /^run it here$/i });
+    const act = actButton();
     await waitFor(() => expect(act).toBeEnabled());
     fireEvent.click(act);
     await screen.findByTestId('byo-hosted-result');
     const installCall = axios.post.mock.calls.find(([url]) => url === '/api/registry/install');
     expect(installCall[1]).toMatchObject({ agentName: 'sam-agent', podId: 'p1', config: { runtime: { runtimeType: 'hosted' } } });
+    window.history.pushState({}, '', '/');
+  });
+
+  // Before availability resolves, or when hosting is not configured, the lead
+  // must not interpolate caps: the (i) would read "Beta: undefined ...".
+  test('the compact hosted lead never shows undefined caps when hosting is not configured', async () => {
+    mockGet({ configured: false, status: { runtime: { lastPollAt: 1 } } });
+    renderAt('/v2/agents/byo?pod=p1&mode=hosted');
+
+    await screen.findByTestId('byo-hosted-compact');
+    expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Beta:/)).not.toBeInTheDocument();
     window.history.pushState({}, '', '/');
   });
 
@@ -250,7 +284,8 @@ describe('V2AgentBYO — Run it here', () => {
         </MemoryRouter>
       </AuthContext.Provider>,
     );
-    const act = await screen.findByRole('button', { name: /^run it here$/i });
+    await waitFor(() => expect(actButton()).not.toBeNull());
+    const act = actButton();
     await waitFor(() => expect(act).toBeEnabled());
     fireEvent.click(act);
     fireEvent.click(await screen.findByRole('button', { name: /go to your pod/i }));
@@ -274,10 +309,10 @@ describe('V2AgentBYO — Run it here', () => {
     // The compact page shows at once, with the act disabled until the
     // instance answers that it can host.
     expect(await screen.findByTestId('byo-hosted-compact')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^run it here$/i })).toBeDisabled();
+    expect(actButton()).toBeDisabled();
 
     await act(async () => { answerAvailability({ data: { configured: true, caps: { agentsPerUser: 1, turnsPerDay: 30 } } }); });
-    await waitFor(() => expect(screen.getByRole('button', { name: /^run it here$/i })).toBeEnabled());
+    await waitFor(() => expect(actButton()).toBeEnabled());
     window.history.pushState({}, '', '/');
   });
 
@@ -287,7 +322,7 @@ describe('V2AgentBYO — Run it here', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
     expect(screen.queryByTestId('byo-mode-hosted')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^run it here$/i })).not.toBeInTheDocument();
+    expect(actButton()).not.toBeInTheDocument();
     window.history.pushState({}, '', '/');
   });
 
@@ -307,7 +342,7 @@ describe('V2AgentBYO — Run it here', () => {
     // A persona link says what to hire, not where it runs.
     expect(screen.getByTestId('byo-mode-hosted')).toHaveAttribute('aria-pressed', 'false');
     fireEvent.click(screen.getByTestId('byo-mode-hosted'));
-    fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
+    fireEvent.click(actButton());
     await screen.findByTestId('byo-hosted-result');
     const installCall = axios.post.mock.calls.find(([url]) => url === '/api/registry/install');
     expect(installCall[1]).toMatchObject({
@@ -325,7 +360,7 @@ describe('V2AgentBYO — Run it here', () => {
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('byo-mode-hosted'));
-    fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
+    fireEvent.click(actButton());
     await screen.findByTestId('byo-hosted-starting');
 
     await act(async () => { jest.advanceTimersByTime(4000); });
@@ -345,7 +380,7 @@ describe('V2AgentBYO — Run it here', () => {
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('byo-mode-hosted'));
-    fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
+    fireEvent.click(actButton());
 
     expect(await screen.findByTestId('byo-hosted-running')).toBeInTheDocument();
     expect(screen.queryByTestId('byo-hosted-starting')).not.toBeInTheDocument();
@@ -359,7 +394,7 @@ describe('V2AgentBYO — Run it here', () => {
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('byo-mode-hosted'));
-    fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
+    fireEvent.click(actButton());
 
     // No timer advanced: the first check runs on its own.
     expect(await screen.findByTestId('byo-hosted-running')).toBeInTheDocument();
@@ -373,7 +408,7 @@ describe('V2AgentBYO — Run it here', () => {
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('byo-mode-hosted'));
-    fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
+    fireEvent.click(actButton());
     await screen.findByTestId('byo-hosted-starting');
 
     await act(async () => { jest.advanceTimersByTime(4000); });
@@ -395,7 +430,7 @@ describe('V2AgentBYO — Run it here', () => {
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('byo-mode-hosted'));
-    fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
+    fireEvent.click(actButton());
     await screen.findByText(/already have a hosted agent \(beta allows 1\)/i);
     expect(axios.post.mock.calls.some(([url]) => url === '/api/hosted/provision')).toBe(false);
   });
@@ -411,7 +446,7 @@ describe('V2AgentBYO — Run it here', () => {
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('byo-mode-hosted'));
-    fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
+    fireEvent.click(actButton());
     await screen.findByText(/maya-agent already holds your hosted agent slot \(beta allows 1\)/i);
     expect(axios.post.mock.calls.some(([url]) => url === '/api/hosted/provision')).toBe(false);
   });

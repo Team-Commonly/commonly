@@ -3,7 +3,7 @@
 // AUTHORED as (pod row, socket payload, agent wake). The route derives it from
 // the authenticated caller when liveRelay flips on and rejects any
 // client-supplied value: without this, any caller passing canDeleteIntegration
-// could name someone else as the bridge author (sprint-review on #1290).
+// could name someone else as the bridge author.
 const request = require('supertest');
 const express = require('express');
 
@@ -102,7 +102,7 @@ describe('PATCH /api/integrations/:id — server-owned config keys are not writa
     // it. `revokePage` is what the entry-gone finish hands a person as
     // `revokeAt` (connectionRemovalService), so a body that could write it would
     // send someone to a page that revokes nothing while the live token stays
-    // live. Measured by vera on #2047: the `providerRevokedAt` arm one test above
+    // live. Measured on #2047: the `providerRevokedAt` arm one test above
     // pins its key, and this key had no arm — deleting `'revokePage',` from
     // `SERVER_OWNED_CONFIG_KEYS` left the whole route suite green.
     const res = await request(app)

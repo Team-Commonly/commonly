@@ -1,4 +1,6 @@
 import { createOwnKeyResolver, createMachineReportClient } from '../lib/own-key-launch.js';
+import { foregroundDaemonHint } from '../lib/daemon-hint.js';
+import { loadDaemonRecord } from '../lib/daemon-store.js';
 import { WALKED_HARNESSES } from '../lib/runtime-inventory.js';
 import { createRuntimeReporter } from '../lib/runtime-observation.js';
 /**
@@ -80,14 +82,17 @@ import {
   readPodFocus,
 } from '../lib/pod-focus.js';
 import { claimReleaseFor, ackResultFor, EMPTY_OUTPUT } from '../lib/claim-outcome.js';
+import { createClaimedWorkGate } from '../lib/claimed-work-gate.js';
 import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
+import { installedCliVersion, startUpdateNotice } from '../lib/update-check.js';
 import { createSeatStop } from '../lib/seat-stop.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import { describeUpstreamRefusal } from '../lib/upstream-refusal.js';
+import { createTurnRunner, supervisedRunPolicy } from '../lib/supervised-turn.js';
 import {
   DEFAULT_HOOK_TIMEOUT_MS,
   clampHookTimeoutMs,
@@ -178,8 +183,7 @@ export const NO_AGENT_CLI_CODE = 'no_agent_cli';
  * workspace, and an environment that is absent or enforces nothing (a record
  * from before bootstrap applied the default, or one attached without an
  * environment file). Such a record is told how to pick the default up; it is
- * not rewritten here (Cofounder, 2026-10-16: none were found outside our own
- * tests).
+ * not rewritten here.
  */
 export const savedSeatLacksDefaultSandbox = (record) => Boolean(record)
   && ADAPTERS_WITH_DEFAULT_SANDBOX.has(record.adapter)
@@ -532,6 +536,29 @@ export const listLocalAgents = () => {
     .filter(Boolean);
 };
 
+/**
+ * The token files listLocalAgents drops: present, but not readable JSON.
+ * `commonly doctor` reports them, because a dropped file otherwise reads as
+ * "no agent here" and lets doctor pass on a seat that cannot start.
+ * Throws when the directory exists but cannot be read, for doctor to report.
+ */
+export const listUnreadableAgentTokens = () => {
+  let files;
+  try {
+    files = readdirSync(tokensDir());
+  } catch (error) {
+    // Only a missing directory means no agents. existsSync also answers false
+    // for EACCES on an ancestor, which is why this reads instead of checking.
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return [];
+    throw error;
+  }
+  return files
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => f.slice(0, -'.json'.length))
+    .filter((name) => !loadAgentToken(name))
+    .sort();
+};
+
 // Chat event types whose payload already contains the prompt the wrapper
 // should forward verbatim. Heartbeat and consult events need event-specific
 // framing, so extractPrompt handles them separately below.
@@ -717,7 +744,7 @@ export const assertSandboxDeclaredForPublicPod = async ({
     );
   }
 
-  // Normalized FIRST (Vera 71715, Wren 71718): the predicate below reads a
+  // Normalized FIRST: the predicate below reads a
   // legacy `internal` record as the `public` it means, the same mapping the
   // attach gate and both adapters use. Reading it raw refused a record that
   // means public one call before the gate #1840 fixes — TASK-113 claims
@@ -904,7 +931,7 @@ export const updateAgentConfiguration = async ({
  * The sandbox an attach will actually run under — derived, then gated.
  *
  * The trust is normalized ONCE, before it is used for anything. A stored
- * `internal` means `public` (environment.js, Wren 69585), and resolving the mode
+ * `internal` means `public` (environment.js), and resolving the mode
  * off the raw value made this gate disagree with the adapters in BOTH
  * directions: `{ trust: 'internal' }` with no declared mode left the attach-time
  * mode at `'none'` and refused nothing here, and `internal` beside
@@ -917,8 +944,7 @@ export const updateAgentConfiguration = async ({
  * either way; what was wrong is that this gate's verdict contradicted theirs, and
  * its refusal for the `mode: 'none'` shape landed later, at adapter spawn, after
  * attach had already published and minted. Normalizing here makes the two agree
- * and puts the refusal where the user can see it (Kai, TASK-113; re-measured at
- * source after Vera 71664).
+ * and puts the refusal where the user can see it (TASK-113).
  *
  * Whether the resolved mode is AVAILABLE here — bwrap installed, macOS for
  * Seatbelt, the codex permission-profile version — is deliberately not this
@@ -932,7 +958,7 @@ export const updateAgentConfiguration = async ({
  * codex.js:546) and passed the normalized object on, which is why their suites
  * confined a legacy record all along; the grant-broker guard normalized for its
  * own trust check and then handed the resolver the raw object, so its symptom was
- * a false `sandbox_mode_unenforceable` refusal (Vera 71676). Both are settled on
+ * a false `sandbox_mode_unenforceable` refusal. Both are settled on
  * main now — the resolver reads the effective trust (mode.js:38) and the guard
  * imports the same reader from environment.js (grant-broker-guard.js:186) — so
  * this helper needs no coupling to them: it normalizes once, here, before its own
@@ -944,7 +970,7 @@ export const resolveAttachSandbox = ({
   // An adapter that enforces one confined shape of its own (dsh: Seatbelt with a
   // restricted network and NO trust) says so here, and its check is the one that
   // decides: the trust-keyed gates below cannot express that shape, so before
-  // this they refused the only environment dsh accepts (D106). The adapter's
+  // this they refused the only environment dsh accepts. The adapter's
   // check throws on every other shape, so this admits nothing it would refuse.
   if (typeof adapter?.confinesOwnSandbox === 'function' && adapter.confinesOwnSandbox(environment)) {
     return { mode: environment.sandbox.mode, trust: environment.sandbox.trust };
@@ -967,7 +993,7 @@ export const resolveAttachSandbox = ({
       `sandbox.trust=${trust} requires an enforced sandbox mode; refusing to attach unsandboxed`,
     );
   }
-  // Moved in from the call site (Vera 71675): this is the check the raw compare
+  // Moved in from the call site: this is the check the raw compare
   // used to fail closed on, refusing `internal` beside `mode: 'workspace'`. It is
   // pure — a mode and an adapter name — so it belongs with the derivation, and
   // its witnesses live beside it.
@@ -1355,6 +1381,11 @@ const extractPrompt = (event) => {
   return null;
 };
 
+// The supervisor's policy for a run-loop spawn: lib/supervised-turn.js has the
+// stall windows per adapter (codex 15 min, claude off) and their evidence, the
+// cancel grace, and the wall-clock backstop past the adapter's own timeout.
+export { supervisedRunPolicy };
+
 /**
  * Start the run loop. Polls /events, spawns the adapter per event, posts the
  * result into the pod, acks.
@@ -1430,6 +1461,13 @@ export const performRun = ({
   resolveOwnProviderKey = null,
   runtimeReportClient = null,
   refusalHandoff = null,
+  // Off unless COMMONLY_SUPERVISE_RUNS=1: each spawn runs under the seats
+  // supervisor (stall window, wall-clock backstop, a named failure on every
+  // settle). The CLI still talks to its provider directly, and one metadata
+  // line per turn goes to ~/.commonly/state/turns/<agent>.jsonl once
+  // delivery settles. Off, the spawn path is the plain adapter call it has
+  // always been, and nothing is written.
+  superviseRuns = process.env.COMMONLY_SUPERVISE_RUNS === '1',
 }) => {
   reportRuntime = reportRuntime && WALKED_HARNESSES.includes(adapter?.name);
   if (environment?.provider !== undefined && !adapter?.supportsProvider) {
@@ -1439,6 +1477,12 @@ export const performRun = ({
   const effectiveTurnTimeoutMs = Number.isFinite(requestedTurnTimeout) && requestedTurnTimeout > 0
     ? Math.min(requestedTurnTimeout, 2_147_483_647) : 15 * 60 * 1000;
   const client = createClient({ instance: instanceUrl, token });
+  // The supervised run keeps its trace in memory, metadata only; no record of
+  // a run is written to disk (lib/supervised-turn.js).
+  const turnRunner = createTurnRunner({
+    seat: agentName, turnTimeoutMs: effectiveTurnTimeoutMs, supervise: superviseRuns, log,
+  });
+  if (superviseRuns) log(turnRunner.describe(adapter?.name));
   const runtimeReporter = createRuntimeReporter({
     client: runtimeReportClient || { post: async () => {} },
     harness: adapter.name, detect: () => adapter.detect(),
@@ -1490,7 +1534,7 @@ export const performRun = ({
   // (`daemon-supervisor.js`); this is the same predicate at the only other site
   // that can see the record — same code, so one refusal with two emitters.
   //
-  // IN MEMORY, RECORD UNTOUCHED (wren 71641): the withheld environment is what
+  // IN MEMORY, RECORD UNTOUCHED: the withheld environment is what
   // the adapter spawns with, and the stored record keeps its broker, so the
   // daemon stays the layer that judges a host it knows. Applied once for the
   // run rather than per turn: `agent run` reads its record once at boot.
@@ -1538,6 +1582,7 @@ export const performRun = ({
     warn: (message) => log(`cascade config: ${message}`),
   });
   const cascadeGovernor = createCascadeGovernor(cascadeSettings);
+  const claimedWorkGate = createClaimedWorkGate({ client });
   // Unconditional, because the only other cascade line on this path is the
   // warn callback above — which fires only when a value is BAD. Without this,
   // a seat running COMMONLY_CASCADE_CAP=8 logs exactly what a seat on the
@@ -1693,6 +1738,13 @@ export const performRun = ({
     // Recording a human trigger sets the streak to 0, so this call and the
     // completion-time one are idempotent with each other.
     if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
+    // Defer-while-claimed (TASK-640), before the cascade check so a deferred
+    // broadcast spends none of the addressed grace.
+    if (await claimedWorkGate.shouldDefer(eventPodId, [{ event, trigger }])) {
+      log(`[${event.type}] holding a claimed row in pod ${eventPodId} — broadcast`
+        + (event?.payload?.messageId ? ` ${event.payload.messageId}` : '') + ' acked without a spawn');
+      return { outcome: 'no_action', reason: 'claimed-work', details: { messageId: event?.payload?.messageId || null } };
+    }
     const admission = cascadeGovernor.admit(eventPodId, trigger, event.type, event.payload);
     if (!admission.allowed) {
       // Name the MESSAGE, not just the pod. Without this the refusal is silent at
@@ -1843,8 +1895,21 @@ export const performRun = ({
 
   // The spawn → post-decision half of a turn, split out so the claim release
   // above is a plain finally instead of threading through every return path.
-  const runTurn = async ({
-    event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger,
+  // With superviseRuns, the turn's log line is written once delivery has
+  // settled; anything thrown after a spawn that resolved means the reply never
+  // reached the pod. Off, `turn` writes nothing.
+  const runTurn = async (args) => {
+    const turn = turnRunner.begin({ eventType: args.event.type });
+    try {
+      return await runTurnBody({ ...args, turn });
+    } catch (error) {
+      turn.finish('reply_lost');
+      throw error;
+    }
+  };
+
+  const runTurnBody = async ({
+    event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger, turn,
   }) => {
     const placement = await placeTurn();
     // A workspace turn placed public (its pod turned public, or its pods could
@@ -1903,7 +1968,7 @@ export const performRun = ({
     const memoryWithheld = Boolean(placement.reason);
     const memoryLongTerm = memoryWithheld ? undefined : await readLongTerm(client, { onError });
 
-    // Sharpen TASK-129: focus is a turn-start read, not an enqueue-time
+    // TASK-129: focus is a turn-start read, not an enqueue-time
     // snapshot. Read through the authorized runtime context route immediately
     // before spawn so queued events observe the current revision. The helper
     // disables pod-skill synthesis and throws on failure; the surrounding
@@ -1997,8 +2062,8 @@ export const performRun = ({
     try {
       opened = await lease.open();
     } catch (err) {
-      // A VERDICT IS NOT A CRASH, AND IT IS NOT A NO-OP (wren 72153, vera
-      // 72157). Letting it escape as a bare throw left `turnResult` undefined,
+      // A VERDICT IS NOT A CRASH, AND IT IS NOT A NO-OP.
+      // Letting it escape as a bare throw left `turnResult` undefined,
       // so `claimReleaseFor` returned the legacy holder-only DELETE — right for
       // a transient failure, wrong for a refusal that recurs on every
       // redelivery: the wake loops forever with one local log line as its only
@@ -2067,7 +2132,8 @@ export const performRun = ({
             reason: 'own-key-requires-scoped-spawn' };
         }
       }
-      result = await adapter.spawn(frameDecisionForkRule(promptForSpawn), {
+      const spawnPrompt = frameDecisionForkRule(promptForSpawn);
+      const spawnCtx = {
         onSpawn: reportRuntime ? (controls) => {
           observedSpawn = true;
           return runtimeReporter.spawn(controls);
@@ -2099,7 +2165,10 @@ export const performRun = ({
         instanceUrl,
         agentName,
         metadata: { event },
-      });
+      };
+      // Supervised or plain, a failure is thrown exactly as the adapter's own
+      // would be, so the run loop's classification and retry apply unchanged.
+      result = await turn.run(adapter, spawnPrompt, spawnCtx);
       spawnCompleted = true;
     } finally {
       try {
@@ -2182,6 +2251,9 @@ export const performRun = ({
     const upstream = result.upstream || null;
     let delivered = agentPostedItself;
     let deliveryRefusal = null;
+    // What became of the reply, for the turn line (lib/supervised-turn.js
+    // TURN_OUTCOMES). A throw below is reply_lost, finished by runTurn.
+    let turnOutcome;
 
     if (event.type === 'agent.ask') {
       if (silentReply) {
@@ -2191,6 +2263,7 @@ export const performRun = ({
         // having nothing to say.
         if (upstream) log(`[${event.type}] ${describeUpstreamRefusal(upstream)} — no private response`);
         else log(`[${event.type}] no private response (${reason})`);
+        turnOutcome = upstream ? 'upstream_refused' : 'silent';
       } else {
         try {
           await client.post(
@@ -2198,6 +2271,7 @@ export const performRun = ({
             { content: replyText },
           );
           delivered = true;
+          turnOutcome = 'delivered';
           log(`[${event.type}] routed private response (${Buffer.byteLength(replyText)} bytes)`);
         } catch (err) {
           // A tool-capable agent may have called commonly_respond_to_ask
@@ -2206,6 +2280,7 @@ export const performRun = ({
           // the model forever.
           if (err?.status === 409 && err?.body?.code === 'already_responded') {
             delivered = true;
+            turnOutcome = 'delivered';
             log(`[${event.type}] response already routed by agent tool`);
           } else {
             throw err;
@@ -2233,6 +2308,7 @@ export const performRun = ({
       // Report the two cases distinctly. `posted` is the load-bearing word: a
       // reader scanning for whether a seat is contributing must not have to
       // infer it from the absence of a different line.
+      turnOutcome = agentPostedItself ? 'delivered' : upstream ? 'upstream_refused' : 'silent';
       if (agentPostedItself) {
         log(
           `[${event.type}] posted via tool, then ${reason} — no echo needed `
@@ -2251,6 +2327,7 @@ export const performRun = ({
       // Name the message that caused the suppression. A silently dropped reply
       // is invisible to everyone; #757 went unnoticed precisely because this
       // line said only "posted via tool" with no way to tell whose post it saw.
+      turnOutcome = 'delivered';
       log(
         `[${event.type}] agent posted via tool this turn — not echoing CLI output `
         + `(avoids double-post; matched message ${suppressedBy.id} by ${suppressedBy.author} `
@@ -2260,6 +2337,7 @@ export const performRun = ({
       // ADR-018 D3: the lease lapsed mid-turn and a peer re-won the message —
       // that peer owns the conversation now, so posting would recreate the
       // two-agents-one-message crossing the claim exists to prevent.
+      turnOutcome = 'claim_lost';
       log(
         `[${event.type}] stood down — claim lost mid-turn to ${claimKeeper.getHolder()}; `
         + `reply suppressed (${Buffer.byteLength(replyText)} bytes not posted)`,
@@ -2302,6 +2380,7 @@ export const performRun = ({
         // it like a refusal: re-posting the same text inside the window would
         // only be skipped again.
         deliveryRefusal = delivery;
+        turnOutcome = 'server_skipped';
         const windowMinutes = delivery.duplicate?.dedupeWindowMinutes;
         const detail = [
           windowMinutes ? `${windowMinutes} min window` : null,
@@ -2327,6 +2406,7 @@ export const performRun = ({
         // guidance expressly says not to retry unchanged), while preserving
         // the refusal and its partial-post count for the seat and event ledger.
         deliveryRefusal = delivery;
+        turnOutcome = 'server_refused';
         const guidance = delivery.guidance || 'The server refused this message; do not retry it unchanged.';
         const detail = `after ${delivery.messages}/${delivery.attemptedMessages} message${delivery.attemptedMessages === 1 ? '' : 's'}`;
         log(`[${event.type}] wrapper delivery refused ${detail} (${delivery.reason}): ${guidance}`);
@@ -2342,12 +2422,14 @@ export const performRun = ({
         ));
       } else {
         delivered = true;
+        turnOutcome = 'delivered';
         log(
           `[${event.type}] posted ${Buffer.byteLength(replyText)} bytes as `
           + `${delivery.messages} message${delivery.messages === 1 ? '' : 's'} (${delivery.mode})`,
         );
       }
     }
+    turn.finish(turnOutcome);
     if (result.memorySummary && !memoryWithheld) {
       try {
         await syncBack(client, { summary: result.memorySummary });
@@ -2409,7 +2491,7 @@ export const performRun = ({
     // its batch and chose silence; one that printed nothing may have crashed,
     // timed out or lost its route without saying so. The bare `no_action`
     // stays the sentinel's alone, because a digest counts as read only on
-    // that (sable, #2753). Release, hand-off and spawn counting treat
+    // that (#2753). Release, hand-off and spawn counting treat
     // `empty-output` exactly as they treat a bare decline.
     if (!delivered && !replyText) return { outcome: 'no_action', reason: EMPTY_OUTPUT };
     return { outcome: delivered ? 'posted' : 'no_action' };
@@ -2745,6 +2827,17 @@ export const performRun = ({
     const trigger = triggers.includes('human') ? 'human'
       : (triggers.includes('agent') ? 'agent' : 'unknown');
     if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
+    if (await claimedWorkGate.shouldDefer(eventPodId, wakingEntries.map((entry, index) => ({
+      event: entry.event, trigger: triggers[index],
+    })))) {
+      log(`[inbox.batch] holding a claimed row in pod ${eventPodId} — ${wakingEntries.length} broadcast`
+        + `${wakingEntries.length === 1 ? '' : 's'} acked without a spawn`);
+      // Digests are left as the cascade refusal leaves them: unread.
+      for (const entry of wakingEntries) {
+        entry.result = { outcome: 'no_action', reason: 'claimed-work', details: { messageId: entry.event.payload?.messageId || null } };
+      }
+      return { entries };
+    }
     const admissionEvent = wakingEntries.find((entry) => (
       ADDRESSED_EVENT_TYPES.has(entry.event.type) || entry.event.payload?.addressed === true
     ))
@@ -3356,7 +3449,11 @@ const SDK_SOURCES = {
     botSrc: () => sdkAsset('python/bot.py', join('hello-world-python', 'bot.py')),
     sdkOut: 'commonly.py',
     botOut: (name) => `${name}.py`,
-    runHint: (name) => `COMMONLY_TOKEN=$(cat .commonly-env) python3 ${name}.py`,
+    // .commonly-env is already KEY=VALUE. Sourcing it under `set -a` exports
+    // the key as written and keeps the token out of argv (`env $(cat …)` would
+    // put it on the command line). `COMMONLY_TOKEN=$(cat …)` would set the
+    // variable to the literal `COMMONLY_TOKEN=cm_agent_…` and the bot would 401.
+    runHint: (name) => `(set -a; . ./.commonly-env; exec python3 ${name}.py)`,
   },
 };
 
@@ -3411,6 +3508,9 @@ export const performInit = async ({
   });
   const installation = installResult.installation || installResult;
   const instanceId = installation.instanceId || 'default';
+  // Same rule as `attach`: the mention handle is the instanceId when there is
+  // one, otherwise the registry agentName.
+  const mentionHandle = instanceId !== 'default' ? instanceId : (installation.agentName || agentName);
 
   let runtimeToken = installResult.runtimeToken;
   if (!runtimeToken) {
@@ -3436,6 +3536,7 @@ export const performInit = async ({
   return {
     installation,
     instanceId,
+    mentionHandle,
     runtimeToken,
     files: {
       sdk: sdkOutPath,
@@ -3525,6 +3626,9 @@ export const performDetach = async ({
  * kernel's own timestamps without conversion.
  */
 const stamp = () => new Date().toISOString();
+// An unreadable daemon record still means a daemon was registered here; the
+// hint only chooses between the two steps, so it must not throw on it.
+const hasDaemonRecord = () => { try { return Boolean(loadDaemonRecord()); } catch { return true; } };
 
 /**
  * Map `agent run`'s cascade flags onto resolveCascadeSettings' override keys.
@@ -3682,6 +3786,7 @@ Docs:
         agentName: opts.name,
         instanceId: opts.instanceId,
         intervalMs: parseInt(opts.interval, 10),
+        loginInstance: opts.instance,
         onEvent: async (event) => {
           const ts = new Date().toTimeString().slice(0, 8);
           process.stdout.write(`[${ts}] ${event.type.padEnd(18)}`);
@@ -4018,7 +4123,13 @@ Docs:
       });
 
       console.log(`${stamp()} [${name}] polling ${record.instanceUrl} for events (ctrl+c to stop)`);
-      console.log(`${stamp()} [${name}] foreground mode; to background and keep it across logins, run: commonly daemon install`);
+      console.log(`${stamp()} [${name}] ${foregroundDaemonHint({ daemonRegistered: hasDaemonRecord() })}`);
+      // TASK-660: one line when this CLI is stale. Fired, not awaited, so a
+      // slow registry never delays the first poll.
+      startUpdateNotice({
+        installedVersion: installedCliVersion(),
+        log: (line) => console.log(`${stamp()} [${name}] ${line}`),
+      });
 
       const { stop } = performRun({
         instanceUrl: record.instanceUrl,
@@ -4173,6 +4284,7 @@ Docs:
         console.log('\nNext:');
         console.log(`  1. Edit ${opts.name}.py to handle events.`);
         console.log(`  2. Run: ${result.runHint}`);
+        console.log(`  3. In pod ${opts.pod}, @mention ${result.mentionHandle} to talk to it.`);
       } catch (err) {
         console.error(`Init failed: ${err.message}`);
         process.exit(1);

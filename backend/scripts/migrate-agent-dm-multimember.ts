@@ -47,8 +47,8 @@
  *     CLAUDE.md "Identity is separate from package."
  *
  * Usage:
- *   ts-node backend/scripts/migrate-agent-dm-multimember.ts          # apply
- *   ts-node backend/scripts/migrate-agent-dm-multimember.ts --dry    # report
+ *   cd backend && node dist/scripts/migrate-agent-dm-multimember.js          # apply
+ *   cd backend && node dist/scripts/migrate-agent-dm-multimember.js --dry    # report
  */
 
 import mongoose from 'mongoose';

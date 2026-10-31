@@ -7,7 +7,7 @@ import { useAuth } from '../../../context/AuthContext';
 import V2LandingPage from '../V2LandingPage';
 
 /**
- * D139. The repo star ask appears in the nav and the open-source section as well
+ * The repo star ask appears in the nav and the open-source section as well
  * as the final CTA, and each one opens the repository.
  */
 

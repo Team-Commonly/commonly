@@ -1,4 +1,4 @@
-// D111 (2026-10-27): we have no GPT model access, and LiteLLM serves the internal
+// We have no GPT model access, and LiteLLM serves the internal
 // openai-codex/* and gpt-* aliases with DeepSeek V4 Flash. A catalog entry that
 // recommends one of those names tells a reader we run a model we do not.
 const fs = require('fs');
@@ -7,7 +7,7 @@ const { PRESET_DEFINITIONS } = require('../../../routes/registry/presets');
 
 const GPT_NAME = /(^|\/)(gpt-|codex-mini|o4-mini)|^openai-codex\//;
 
-describe('catalog model names (D111)', () => {
+describe('catalog model names', () => {
   it('no preset recommends a GPT or openai-codex model', () => {
     const offenders = PRESET_DEFINITIONS
       .filter((p) => typeof p.recommendedModel === 'string' && GPT_NAME.test(p.recommendedModel))

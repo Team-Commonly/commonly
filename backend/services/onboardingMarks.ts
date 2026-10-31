@@ -28,11 +28,12 @@
  *
  * byoOpenedOs is written with it, in the same write-once update: the OS the
  * page detected from the browser, one of BYO_OPENED_OS. The listener runs only
- * on Mac and Linux today, so this splits "left" by whether setup could have worked at
- * all. An unknown or missing value records the visit without an OS.
+ * on Mac (listenerRunsOn in V2AgentBYO.tsx is os === 'mac'), so this splits
+ * "left" by whether the listener path could have worked. An unknown or
+ * missing value records the visit without an OS.
  *
  * Three surface marks come from the browser through POST /api/stats/byo-step,
- * as fixed step names (D139): inviteCardShownAt and inviteCardDismissedAt for
+ * as fixed step names: inviteCardShownAt and inviteCardDismissedAt for
  * the "invite a teammate" card, and byoOfferShownAt the first time the thread
  * shows a start that links to Bring your own. "Shown" is the card or start
  * mounting in the transcript, not proof it was scrolled into view.
@@ -210,7 +211,7 @@ export function markByoConnectionAttempt(
   }
 }
 
-/** Record the first time a person met one of the D139 surfaces. */
+/** Record the first time a person met one of the onboarding surfaces. */
 export function markSurface(userId: unknown, mark: SurfaceMark): void {
   const id = String(userId || '');
   if (!id || !SURFACE_MARKS.includes(mark)) return;

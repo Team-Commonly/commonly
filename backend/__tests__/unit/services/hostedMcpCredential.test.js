@@ -232,7 +232,7 @@ describe('the fast path', () => {
     expect(h.deps.clientIdFor).not.toHaveBeenCalled();
   });
 
-  test('a DCR confidential client refreshes with the method it registered (TASK-248, Vera #2377)', async () => {
+  test('a DCR confidential client refreshes with the method it registered (TASK-248)', async () => {
     const dcrEntry = { ...ENTRY, client: 'dcr' };
     const row = stale({ clientId: 'conf-1' });
     const h = harness({ row, entryFor: () => dcrEntry });
@@ -247,7 +247,7 @@ describe('the fast path', () => {
 
   test('the vendor refresh sends a DCR client\'s recorded method, whatever the vendor lists', async () => {
     // Discovery lists basic first, so a list lookup would pick Basic; the
-    // registration said post, and post is what must go out (Vera, #2377).
+    // registration said post, and post is what must go out (#2377).
     const dcrEntry = { ...ENTRY, client: 'dcr' };
     const metadata = {
       issuer: dcrEntry.issuer,

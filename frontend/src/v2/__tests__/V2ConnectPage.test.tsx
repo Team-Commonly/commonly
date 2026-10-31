@@ -99,7 +99,7 @@ describe('V2ConnectPage', () => {
     await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith(expect.stringMatching(/^npm install -g @commonlyai\/cli\ncommonly login --instance https?:\/\//)));
   });
 
-  test('shows global integrations to admins and no gateway setup to anyone (D135)', async () => {
+  test('shows global integrations to admins and no gateway setup to anyone', async () => {
     renderConnect({
       ...auth,
       currentUser: { ...auth.currentUser, role: 'admin' },

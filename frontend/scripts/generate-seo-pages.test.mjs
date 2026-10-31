@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildPageDefinitions, generateSeoPages, renderStaticPage } from './generate-seo-pages.mjs';
+import { assertNoOpenHolds, buildPageDefinitions, generateSeoPages, renderMarkdown, renderStaticPage } from './generate-seo-pages.mjs';
 
 const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -20,10 +20,12 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 99);
+  assert.equal(pages.length, 103);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
+    '/compare/openagents/',
+    '/compare/github-agent-hq/',
     '/use-cases/team-chat/',
     '/use-cases/agent-collab/',
     '/use-cases/research-desk/',
@@ -117,10 +119,12 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-data-boundaries/',
     '/guides/ai-agent-disagreement-resolution/',
     '/guides/ai-agent-task-prioritization/',
+    '/guides/ai-agent-stale-context/',
     '/guides/ai-agent-collaboration-platforms/',
     '/guides/control-what-coding-agents-can-access/',
     '/guides/github-agent-hq-alternative/',
     '/guides/run-claude-code-and-codex-together/',
+    '/guides/claude-code-team-chat-mentions/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -158,7 +162,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 89);
+  assert.equal(guidePages.length, 91);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -806,6 +810,48 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.equal((prioritizationHtml.match(/<h2>Choose the next useful contribution<\/h2>/g) || []).length, 1);
   assert.ok(prioritizationHtml.indexOf('<h2>Frequently asked questions</h2>') < prioritizationHtml.indexOf('<h2>Choose the next useful contribution</h2>'));
   assert.equal(prioritization.cta.secondary.label, 'Explore Commonly’s guides');
+  const staleGuide = guidePages.find((page) => page.path === '/guides/ai-agent-stale-context/');
+  assert.equal(staleGuide.title, 'AI Agent Stale Context: Revalidate Old Notes | Commonly');
+  const stale = guides['ai-agent-stale-context'];
+  assert.deepEqual(stale.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(stale.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(stale.sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(stale.faq.length, 6);
+  assert.equal(stale.intro.length, 4);
+  assert.match(stale.intro[0], /^AI agent stale context is remembered information that no longer answers the current task accurately/);
+  for (const section of stale.sections.filter((section) => section.links)) {
+    assert.equal(section.paragraphs.length, 2);
+  }
+  const staleExampleIndex = stale.sections.findIndex((section) => section.title === 'A worked example of a stale task state');
+  const staleExample = stale.sections[staleExampleIndex];
+  assert.equal(staleExample.paragraphs.length, 6);
+  assert.equal(staleExample.tables, undefined);
+  assert.equal(staleExample.links, undefined);
+  assert.equal(staleExample.orderedItems, undefined);
+  assert.equal(stale.sections.slice(0, staleExampleIndex).filter((section) => section.tables).length, 9);
+  assert.equal(stale.sections[staleExampleIndex - 1].title, 'State the confidence');
+  assert.equal(stale.sections[staleExampleIndex + 1].title, 'Revalidate stale context in seven steps');
+  assert.match(stale.sections.find((section) => section.title === 'Read provenance').paragraphs[1], /^The AI Agent Memory guide explains pod-shared and agent-private scope, provenance, and bounded history\./);
+  const proportional = stale.sections.find((section) => section.title === 'The process should be proportional');
+  assert.equal(proportional.paragraphs.length, 1);
+  assert.equal(proportional.links, undefined);
+  const staleHtml = renderStaticPage(guideTemplate, staleGuide);
+  assert.match(staleHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-stale-context\/"/);
+  assert.match(staleHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(staleHtml, /seo-page-dark/);
+  assert.doesNotMatch(staleHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((staleHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-context-packet/',
+    '/guides/ai-agent-memory/',
+    '/guides/ai-agent-retained-context/',
+    '/guides/ai-agent-source-of-record/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-stale-context\/"/g) || []).length, 1);
+  }
+  assert.equal((staleHtml.match(new RegExp(`<h2>${stale.cta.title}</h2>`, 'g')) || []).length, 1);
+  assert.equal(stale.cta.secondary.label, 'Explore Commonly’s guides');
   const disagreementGuide = guidePages.find((page) => page.path === '/guides/ai-agent-disagreement-resolution/');
   assert.equal(disagreementGuide.title, 'AI Agent Disagreement Resolution Guide | Commonly AI');
   const disagreement = guides['ai-agent-disagreement-resolution'];
@@ -2143,6 +2189,116 @@ test('the compare page is unlisted: noindex, out of the sitemap, and linked from
   await writeFile(resolve(outputDir, 'index.html'), template);
   await generateSeoPages({ outputDir });
   const sitemap = await readFile(resolve(outputDir, 'sitemap.xml'), 'utf8');
-  assert.doesNotMatch(sitemap, /\/compare\//);
+  assert.doesNotMatch(sitemap, /<loc>https:\/\/commonly\.me\/compare\/<\/loc>/);
+  assert.match(sitemap, /<loc>https:\/\/commonly\.me\/compare\/openagents\/<\/loc>/);
+  assert.match(sitemap, /<loc>https:\/\/commonly\.me\/compare\/github-agent-hq\/<\/loc>/);
+  for (const slug of ['openagents', 'github-agent-hq']) {
+    // No app route serves these, so the generated page must ship without the app's entry script.
+    const html = await readFile(resolve(outputDir, `compare/${slug}/index.html`), 'utf8');
+    assert.doesNotMatch(html, /index-abcd\.js/, slug);
+    assert.match(html, /<main class="seo-article">/, slug);
+  }
   assert.match(sitemap, /<loc>https:\/\/commonly\.me\/use-cases\/team-chat\/<\/loc>/);
+});
+
+test('a compare page renders GTM markdown and refuses to build while a HOLD is open', () => {
+  const html = renderMarkdown([
+    '# Title',
+    '',
+    'A **bold** claim with `code` and [a link](https://example.com/x) and https://example.org/y.',
+    '',
+    '| | Left | Right |',
+    '|---|---|---|',
+    '| **Row** | one [1] | two |',
+    '',
+    '- first',
+    '- second',
+    '',
+    '1. step one',
+    '',
+    '<!-- internal note, never rendered -->',
+  ].join('\n'));
+
+  assert.match(html, /<h1>Title<\/h1>/);
+  assert.match(html, /<p>A <strong>bold<\/strong> claim with <code>code<\/code> and <a href="https:\/\/example\.com\/x" rel="noreferrer">a link<\/a> and <a href="https:\/\/example\.org\/y" rel="noreferrer">https:\/\/example\.org\/y<\/a>\.<\/p>/);
+  assert.match(html, /<th scope="row"><strong>Row<\/strong><\/th><td>one \[1\]<\/td><td>two<\/td>/);
+  assert.match(html, /<ul><li>first<\/li><li>second<\/li><\/ul>/);
+  assert.match(html, /<ol><li>step one<\/li><\/ol>/);
+  assert.doesNotMatch(html, /internal note/);
+
+  assert.doesNotThrow(() => assertNoOpenHolds('/compare/example/', 'Walked claims only.'));
+  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Claim. [HOLD: walk pending]'), /1 open bracketed marker/);
+  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Claim. [HOLD]'), /\[HOLD\]/);
+  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Source note. [re-check at publish and update this date]'), /re-check at publish/);
+  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Claim. [TODO: confirm the price]'), /TODO/);
+  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Empty [] marker'), /\[\]/);
+  assert.doesNotThrow(() => assertNoOpenHolds('/compare/example/', 'Cited [1][5] and [a link](https://example.com/x).'));
+  assert.doesNotThrow(() => assertNoOpenHolds('/compare/example/', 'See [the alternatives](/guides/example-alternative/).'));
+  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Claim. [HOLD](pending)'), /1 open bracketed marker/);
+  assert.match(renderMarkdown('[Alternatives](/guides/example-alternative/)'), /<a href="\/guides\/example-alternative\/" rel="noreferrer">Alternatives<\/a>/);
+  assert.throws(() => renderMarkdown('a <!-- open note'), /unclosed HTML comment/);
+  assert.doesNotMatch(renderMarkdown('a <!-- note --!> visible'), /note/);
+  assert.throws(() => renderMarkdown('<!<!--x-->--> visible'), /unclosed HTML comment/);
+});
+
+test('buildPageDefinitions refuses a held compare page, not only the helper', async () => {
+  const [translationText, useCaseText, guideText] = await Promise.all([
+    readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
+  ]);
+  const translations = JSON.parse(translationText);
+  const args = { landing: translations.landing, compare: translations.compare, useCases: JSON.parse(useCaseText), guides: JSON.parse(guideText) };
+  const held = { held: { path: '/compare/held/', title: 'Held', description: 'Held', markdown: '# Held\n\nClaim. [HOLD: walk pending]' } };
+
+  assert.throws(() => buildPageDefinitions({ ...args, compareSources: held }), /1 open bracketed marker/);
+});
+
+test('a guide with no FAQ entries renders no FAQ heading', async () => {
+  const outputDir = await mkdtemp(join(tmpdir(), 'seo-nofaq-'));
+  try {
+    const source = await readFile(resolve(frontendDir, 'index.html'), 'utf8');
+    await writeFile(join(outputDir, 'index.html'), source.replace('src="/src/index.tsx"', 'src="/assets/index-test.js"'));
+    await generateSeoPages({ outputDir });
+    const empty = await readFile(join(outputDir, 'guides/claude-code-team-chat-mentions/index.html'), 'utf8');
+    assert.doesNotMatch(empty, /<h2>Frequently asked questions<\/h2>/);
+    const withFaq = await readFile(join(outputDir, 'guides/ai-agent-collaboration-platforms/index.html'), 'utf8');
+    assert.match(withFaq, /<h2>Frequently asked questions<\/h2>/);
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+// The guide restyle scopes its CSS on the header's use-cases link, so every guide
+// page and the guides index must carry it, and no other page may. (The restyle's CSS-only
+// proof, every page's markup hashed against main with <style> removed, ran once
+// on the PR; a fixture of main's hashes would break on every new page.)
+test('every guide page carries the header link the restyle scopes on (TASK-594)', async () => {
+  const source = await readFile(resolve(frontendDir, 'index.html'), 'utf8');
+  const template = source.replace('</head>', '<link rel="modulepreload" href="/assets/chunk-shim.js"><script type="module" crossorigin src="/assets/index-shim.js"></script></head>');
+  const outputDir = await mkdtemp(join(tmpdir(), 'seo-guides-'));
+  try {
+    await writeFile(resolve(outputDir, 'index.html'), template);
+    const pages = await generateSeoPages({ outputDir });
+    // index.html carries the restyle, scoped on that header link.
+    assert.match(source, /#seo-page:has\(header nav a\[href="\/use-cases\/agent-collab\/"\]\)/);
+    const nav = /<nav aria-label="Primary navigation">.*<a href="\/use-cases\/agent-collab\/">/;
+    const guides = pages.filter((page) => page.outputPath.startsWith('guides/'));
+    assert.ok(guides.length > 0);
+    for (const page of guides) {
+      assert.match(await readFile(resolve(outputDir, page.outputPath), 'utf8'), nav, page.outputPath);
+    }
+    // Every other page keeps its own look, so it must not carry the link the restyle scopes on.
+    for (const page of pages.filter((p) => !p.outputPath.startsWith('guides/') && p.outputPath.endsWith('.html'))) {
+      assert.doesNotMatch(await readFile(resolve(outputDir, page.outputPath), 'utf8'), nav, page.outputPath);
+    }
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+test('page content with $ patterns is inserted literally', () => {
+  const template = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><!-- SEO_NAVIGATION_RUNTIME_START --><script>window.addEventListener(\'popstate\', () => {});</script><!-- SEO_NAVIGATION_RUNTIME_END --><script type="module" src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
+  const page = { path: '/compare/x/', outputPath: 'compare/x/index.html', staticOnly: true, title: 'X', description: 'X', content: "<p>cost $& and $' and $`</p>", schema: [] };
+  assert.ok(renderStaticPage(template, page).includes("<p>cost $& and $' and $`</p>"));
 });

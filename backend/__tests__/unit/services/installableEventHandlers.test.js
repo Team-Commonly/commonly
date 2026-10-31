@@ -341,7 +341,7 @@ describe('installable event dispatcher', () => {
     expect(relay.mock.calls[0][0].podId).toBe(podId);
   });
 
-  // TASK-267a, Rhea on #2244: a post from a native turn that read web results
+  // TASK-267a: a post from a native turn that read web results
   // carries noOutboundRelay, and the dispatcher refuses it where bridges are
   // selected, so a live bridge (here enabled before dispatch, as if during the
   // post's storage write) sends nothing. The same pod relays an unflagged post.

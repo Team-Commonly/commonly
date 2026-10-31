@@ -225,7 +225,7 @@ describe('BYO setup marks', () => {
   });
 });
 
-describe('markSurface (D139)', () => {
+describe('markSurface', () => {
   test.each(['inviteCardShownAt', 'inviteCardDismissedAt', 'byoOfferShownAt'])('%s is write-once in the filter, never for bots', (mark) => {
     markSurface('u1', mark);
     expect(mockUpdateOne).toHaveBeenCalledTimes(1);

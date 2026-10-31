@@ -32,8 +32,8 @@
  * `--apply` to write. Run it on the operator's word, never inline in a deploy.
  *
  * Usage:
- *   ts-node backend/scripts/cleanup-ghost-pod-members.ts           # report
- *   ts-node backend/scripts/cleanup-ghost-pod-members.ts --apply   # delete
+ *   cd backend && node dist/scripts/cleanup-ghost-pod-members.js           # report
+ *   cd backend && node dist/scripts/cleanup-ghost-pod-members.js --apply   # delete
  */
 
 import mongoose from 'mongoose';

@@ -1,4 +1,4 @@
-#!/usr/bin/env ts-node
+#!/usr/bin/env node
 /**
  * Generate personality-matched AI portraits for the core team agents and
  * save them to their User records.
@@ -9,12 +9,12 @@
  * or OpenAI/LiteLLM when OPENAI_API_KEY is set.
  *
  * Usage (inside backend pod with env already set):
- *   npx ts-node scripts/generate-team-avatars.ts
- *   npx ts-node scripts/generate-team-avatars.ts --force
+ *   node dist/scripts/generate-team-avatars.js
+ *   node dist/scripts/generate-team-avatars.js --force
  *
  * Or locally:
- *   GEMINI_API_KEY=AIza... MONGO_URI=... npx ts-node backend/scripts/generate-team-avatars.ts
- *   OPENAI_API_KEY=sk-...  MONGO_URI=... npx ts-node backend/scripts/generate-team-avatars.ts
+ *   cd backend && GEMINI_API_KEY=AIza... MONGO_URI=... node dist/scripts/generate-team-avatars.js
+ *   cd backend && OPENAI_API_KEY=sk-...  MONGO_URI=... node dist/scripts/generate-team-avatars.js
  *
  * The script is idempotent: agents whose profilePicture is already set (to a
  * data URI or URL) are skipped unless --force is passed.

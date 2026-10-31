@@ -22,6 +22,7 @@
 import { Command } from 'commander';
 import { cascadeOverridesFromOpts, registerAgent } from '../src/commands/agent.js';
 import { registerDaemon } from '../src/commands/daemon.js';
+import { registerDoctor } from '../src/commands/doctor.js';
 import { CASCADE_ENV_VARS } from '../src/lib/enforcement.js';
 
 const registerAll = () => {
@@ -29,6 +30,7 @@ const registerAll = () => {
   program.exitOverride();
   registerAgent(program);
   registerDaemon(program);
+  registerDoctor(program);
   return program;
 };
 
@@ -111,4 +113,10 @@ describe('command registration', () => {
       expect(option.defaultValue).toBeUndefined();
     }
   });
+});
+
+test('doctor is wired with its --instance option (TASK-660)', () => {
+  const doctor = findCommand(registerAll(), ['doctor']);
+  expect(doctor).toBeDefined();
+  expect(doctor.options.map((option) => option.long)).toContain('--instance');
 });

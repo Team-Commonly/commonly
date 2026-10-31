@@ -90,23 +90,35 @@ data:
           model: gemini/gemini-2.5-flash
           api_key: os.environ/GEMINI_API_KEY
 
-      # --- OpenRouter (free tier, community agents) ---
+      # --- nemotron aliases (community agents / gateway) ---
       # Registered with both prefixed and un-prefixed model names:
       # - openrouter/* used when gateway calls via openai-codex/gpt-5.4 fallback path
-      # - nvidia/* / arcee-ai/* used when gateway uses openrouter:default profile
+      # - nvidia/* used when gateway uses openrouter:default profile
       #   (OpenClaw strips the "openrouter/" prefix before sending to the provider)
-      # One OpenRouter key. A second key (OPENROUTER_API_KEY_2) once doubled
-      # free-tier capacity; it expired unnoticed and was removed 2026-10-25.
-      # Both keys had expired, so every call here failed over silently.
+      # D78 (2026-10-27): the OpenRouter route is DEAD — OpenRouter retired the free
+      # tier for this model (404 "This model is unavailable for free; use slug
+      # nvidia/nemotron-3-super-120b-a12b"). The OpenRouter key authenticates, but
+      # every call to the :free slug 404s and then fell back to deepseek-v4-flash.
+      # Rather than buy the paid slug (a new spend line) or keep the 404 hop, these
+      # aliases now point STRAIGHT at the deepseek-v4-flash backend (D111 made it our
+      # default). Callers keep their nemotron model_name but get DeepSeek with no
+      # OpenRouter round-trip. Model-level $60/mo cap mirrors the deepseek-v4-flash
+      # entry: the clawdbot gateway calls LiteLLM with the uncapped MASTER key, and
+      # removing the 404-then-fallback hop also removes the cap it inherited, so the
+      # cap moves onto the alias itself.
       - model_name: openrouter/nvidia/nemotron-3-super-120b-a12b:free
         litellm_params:
-          model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
-          api_key: os.environ/OPENROUTER_API_KEY
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
+          max_budget: 60
+          budget_duration: 1mo
 
       - model_name: nvidia/nemotron-3-super-120b-a12b:free
         litellm_params:
-          model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
-          api_key: os.environ/OPENROUTER_API_KEY
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
+          max_budget: 60
+          budget_duration: 1mo
 
       # NOTE: arcee-ai/trinity-large-preview:free was deregistered at OpenRouter
       # (404 No endpoints found) on 2026-05-03. Removed from model_list and from
