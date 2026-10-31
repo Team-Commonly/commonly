@@ -33,6 +33,7 @@ jest.mock('../../../services/onboardingMarks', () => ({
 }));
 jest.mock('../../../services/byoTelemetry', () => ({
   recordByoEvent: (...args) => mockRecordByoEvent(...args),
+  seatRegisteredKey: () => `seat-registered:${'a'.repeat(64)}`,
 }));
 
 jest.mock('../../../models/User', () => {
@@ -139,7 +140,7 @@ describe('agentRuntimeAuth path 2 (install-bound token) — #66 fix', () => {
     expect(mockMarkByoConnectionAttempt).toHaveBeenCalledWith('human-a', matchedInstall);
     // Backend-side seat-registered row, written once for the first use of the token.
     expect(mockRecordByoEvent).toHaveBeenCalledTimes(1);
-    expect(mockRecordByoEvent).toHaveBeenCalledWith('human-a', 'seat-registered');
+    expect(mockRecordByoEvent).toHaveBeenCalledWith('human-a', 'seat-registered', {}, expect.stringMatching(/^seat-registered:[0-9a-f]{64}$/));
   });
 
   test('does not fire the starter hook when the token was used before (#916)', async () => {
@@ -196,7 +197,7 @@ describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#
       'human-1',
       expect.objectContaining({ podId: expect.anything(), installedBy: 'human-1' }),
     );
-    expect(mockRecordByoEvent).toHaveBeenCalledWith('human-1', 'seat-registered');
+    expect(mockRecordByoEvent).toHaveBeenCalledWith('human-1', 'seat-registered', {}, expect.stringMatching(/^seat-registered:[0-9a-f]{64}$/));
   });
 
   test('stays silent on every subsequent authentication', async () => {
