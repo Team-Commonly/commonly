@@ -14,15 +14,19 @@
  *   consoleErrors console `error` messages and uncaught page errors.
  * Clicked per interactive element (button, a[href], [role=button|tab]):
  *   navigated | changed (DOM mutations) | requested (network) | dead (none of the three)
- *   | unclickable | stale (the element at that position is no longer the one listed).
+ *   | blocked (the click's request was refused by the read/write policy) | unclickable
+ *   | stale (the element at that position is no longer the one listed).
  *   textOnly      a button-like control with transparent background and no border.
  *   skippedClicks candidates past CRAWL_MAX_CLICKS, reported so a short run cannot look complete.
  *
- * Read-only by construction: every request in the context that is not GET, HEAD or OPTIONS is
- * aborted and counted as `blockedWrites`. GET requests to GET_WRITE_PATHS are aborted too, because
- * some GET endpoints write (an email unsubscribe link). WebSockets are closed before they reach the server and
- * counted as `blockedSockets`, because a socket can carry writes (Socket.io joinPod/leavePod)
- * that no click produces. Service workers are blocked, because their requests bypass routing.
+ * Read-only by construction, fail closed:
+ *   - every request that is not GET, HEAD or OPTIONS is aborted and counted as `blockedWrites`;
+ *   - a GET or HEAD is allowed only when its path is on the SAFE_GET list (or it is a same-origin
+ *     app route or asset). Anything else is aborted and counted as `blockedReads`;
+ *   - redirects are followed by hand, one hop at a time, and every hop is checked against the same
+ *     list, so an allowed GET cannot reach a write endpoint by redirect;
+ *   - WebSockets are closed before they reach the server and counted as `blockedSockets`;
+ *   - service workers are blocked, because their requests bypass routing.
  *
  * Configuration is environment only. Nothing is hardcoded and no token is logged or written:
  *   CRAWL_BASE_URL     required, e.g. http://localhost:3000
@@ -100,9 +104,33 @@ if (env.CRAWL_CHROMIUM) launchOptions.executablePath = env.CRAWL_CHROMIUM;
 
 const CONTROL = 'button, a[href], [role=button], [role=tab]';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-// GET endpoints that write (an unsubscribe or a verify link). Denied by path, because a GET
-// link on a page is otherwise a free write for the crawler. Extend this list when one is found.
-const GET_WRITE_PATHS = ['/api/email/', '/api/auth/verify-email'];
+// GET paths the crawler may read. Fail closed: a GET not matched here is aborted. Exact entries
+// match the whole path; entries ending in '/' match a prefix. Add a path only after checking the
+// backend route is a read. Matching is on the lowercased path, because Express routes case-insensitively.
+const SAFE_GET_EXACT = [
+  '/api/auth/user', '/api/auth/registration-policy', '/api/users/me', '/api/users/me/agent-connection',
+  '/api/integrations/user/all', '/api/pods', '/api/installables', '/api/artifacts', '/api/grants',
+  '/api/machines', '/api/hosted/status', '/api/hosted/availability', '/api/posts', '/api/apps',
+  '/api/skills/catalog', '/api/activity/decision-queue', '/api/activity/decision-history', '/api/activity/recap',
+];
+const SAFE_GET_PREFIX = [
+  '/api/pods/', '/api/v1/tasks/', '/api/messages/', '/api/registry/pods/', '/api/registry/agents/',
+  '/api/uploads/', '/api/agent-memory/', '/api/stats/',
+];
+// Same-origin app routes and static assets. The SPA answers these with HTML or files, never a write.
+const APP_PREFIX = ['/v2/', '/assets/', '/static/'];
+const MAX_REDIRECT_HOPS = 5;
+
+// A path with an escape or a doubled slash could be routed differently by a proxy; fail closed on it.
+function readAllowed(url) {
+  const u = new URL(url);
+  if (u.origin !== BASE_ORIGIN) return false;
+  const path = u.pathname.toLowerCase();
+  if (/%|\/\//.test(path)) return false;
+  if (path === '/' || APP_PREFIX.some((p) => path.startsWith(p))) return true;
+  if (!path.startsWith('/api/')) return false;
+  return SAFE_GET_EXACT.includes(path) || SAFE_GET_PREFIX.some((p) => path.startsWith(p));
+}
 
 // Throws when a page did not stay on the requested route (a login redirect, say).
 function assertLanded(page, url) {
@@ -194,12 +222,30 @@ async function openPage(browser, viewport, scheme, record) {
     serviceWorkers: 'block',
   });
   // Every origin and path, not only /api: a click on a form or a link can send a write anywhere.
-  await context.route('**/*', (r) => {
-    // Express matches paths case-insensitively, so /API/EMAIL/... reaches the same handler.
-    const pathname = new URL(r.request().url()).pathname.toLowerCase();
-    const writesOnGet = GET_WRITE_PATHS.some((p) => pathname.startsWith(p));
-    if (SAFE_METHODS.has(r.request().method()) && !writesOnGet) return r.continue();
-    record.blockedWrites += 1;
+  await context.route('**/*', async (r) => {
+    const method = r.request().method();
+    if (method === 'OPTIONS') return r.continue();
+    if (!SAFE_METHODS.has(method)) {
+      record.blockedWrites += 1;
+      return r.abort();
+    }
+    // Follow redirects by hand so every hop meets the same policy; Chromium would otherwise follow
+    // a 3xx straight to a write endpoint without calling this handler.
+    let url = r.request().url();
+    for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop += 1) {
+      if (!readAllowed(url)) {
+        record.blockedReads += 1;
+        return r.abort();
+      }
+      const res = await r.fetch({ url, maxRedirects: 0 });
+      const location = res.headers().location;
+      if (res.status() >= 300 && res.status() < 400 && location) {
+        url = new URL(location, url).href;
+        continue;
+      }
+      return r.fulfill({ response: res });
+    }
+    record.blockedReads += 1;
     return r.abort();
   });
   // Without connectToServer the page's socket never reaches the server; the page just sees it closed.
@@ -234,7 +280,7 @@ async function crawlCapture(browser, route, viewport, scheme) {
   const url = BASE + path;
   const record = {
     routeId: route.id, url, viewport: viewport.label, scheme, maxClicks: MAX_CLICKS,
-    blockedWrites: 0, blockedSockets: 0, consoleErrors: [], clicks: [], candidateCount: null, skippedClicks: null,
+    blockedWrites: 0, blockedReads: 0, blockedSockets: 0, consoleErrors: [], clicks: [], candidateCount: null, skippedClicks: null,
     helperWords: null, scroll: null, target: null, error: null,
   };
   const { context, page } = await openPage(browser, viewport, scheme, record);
@@ -276,18 +322,22 @@ async function crawlCapture(browser, route, viewport, scheme) {
         outcome = 'stale';
       } else {
         let clicked = true;
+        const blockedBefore = record.blockedWrites + record.blockedReads;
         await handle.click({ timeout: 2000 }).catch(() => { clicked = false; });
         await page.waitForTimeout(400);
         const mut = await page.evaluate(() => window.__mut || 0);
-        if (!clicked) outcome = 'unclickable';
+        // A click whose request the policy refused is reported as blocked, whatever else it did.
+        if (record.blockedWrites + record.blockedReads > blockedBefore) outcome = 'blocked';
+        else if (!clicked) outcome = 'unclickable';
         else if (page.url() !== before) outcome = 'navigated';
         else if (mut > 0) outcome = 'changed';
         else if (requests > 0) outcome = 'requested';
       }
       page.off('request', onRequest);
       record.clicks.push({ label: cand.label, textOnly: cand.textOnly, outcome });
-      if (outcome === 'navigated') {
-        // The session can expire mid-capture; a later candidate must not run on the login page.
+      if (outcome === 'navigated' || outcome === 'blocked') {
+        // A refused navigation can leave an error page behind, so reload the route before the next candidate.
+        // The session can also expire mid-capture; a later candidate must not run on the login page.
         await settle(page, url);
         assertLanded(page, url);
       } else {
@@ -315,6 +365,7 @@ function gaps(records) {
       textOnly: r.clicks.filter((c) => c.textOnly).length,
       skippedClicks: r.skippedClicks,
       blockedWrites: r.blockedWrites,
+      blockedReads: r.blockedReads,
       blockedSockets: r.blockedSockets,
       // distinct messages: a reload after a navigating click repeats the same error
       consoleErrors: new Set(r.consoleErrors).size,
@@ -349,9 +400,9 @@ const summary = gaps(records);
 writeFileSync(join(OUT, 'summary.json'), JSON.stringify(summary, null, 2));
 const ranked = [...summary].sort((a, b) => (b.dead + b.consoleErrors + b.textOnly) - (a.dead + a.consoleErrors + a.textOnly));
 writeFileSync(join(OUT, 'summary.md'), [
-  '| route | viewport | scheme | dead clicks | text-only | skipped | stale | blocked writes | blocked sockets | console errors | overflow-x | helper words (target) | scroll ratio (target) | error |',
-  '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
-  ...ranked.map((r) => `| ${r.routeId} | ${r.viewport} | ${r.scheme} | ${r.dead} | ${r.textOnly} | ${r.skippedClicks} | ${r.stale} | ${r.blockedWrites} | ${r.blockedSockets} | ${r.consoleErrors} | ${r.overflowX} | ${r.helperWords} (${r.helperTarget ?? '—'}) | ${r.scrollRatio} (${r.scrollTarget ?? '—'}) | ${r.error ?? ''} |`),
+  '| route | viewport | scheme | dead clicks | text-only | skipped | stale | blocked writes | blocked reads | blocked sockets | console errors | overflow-x | helper words (target) | scroll ratio (target) | error |',
+  '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
+  ...ranked.map((r) => `| ${r.routeId} | ${r.viewport} | ${r.scheme} | ${r.dead} | ${r.textOnly} | ${r.skippedClicks} | ${r.stale} | ${r.blockedWrites} | ${r.blockedReads} | ${r.blockedSockets} | ${r.consoleErrors} | ${r.overflowX} | ${r.helperWords} (${r.helperTarget ?? '—'}) | ${r.scrollRatio} (${r.scrollTarget ?? '—'}) | ${r.error ?? ''} |`),
 ].join('\n') + '\n');
 const failed = records.filter((r) => r.error).length;
 // A run with errored captures is not evidence; exit non-zero so nobody reads it as a clean run.
