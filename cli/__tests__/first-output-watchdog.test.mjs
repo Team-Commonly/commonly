@@ -561,6 +561,11 @@ describe('claudeResultText', () => {
     expect(claudeResultText(stdout)).toBe('final answer');
   });
 
+  test('a result flagged is_error throws instead of returning its text as the reply', () => {
+    const stdout = '{"type":"result","subtype":"success","is_error":true,"result":"API Error: 500"}';
+    expect(() => claudeResultText(stdout)).toThrow(/API Error: 500/);
+  });
+
   test('returns plain text output as it arrived when there is no JSON at all', () => {
     expect(claudeResultText('  done quietly \n')).toBe('done quietly');
   });

@@ -512,13 +512,17 @@ const parseEvent = (line) => {
 // The reply is the `result` event's text. A turn that reaches no result event
 // (killed mid-stream, exit 0) gets the text of its assistant events, never the
 // raw NDJSON. Output with no JSON lines at all is plain text and returned as it
-// arrived.
-export const claudeResultText = (stdout) => {
+// arrived. A result flagged `is_error` is a failed turn, whatever its exit code,
+// so it is raised here, outside the parse guard, and never returned as a reply.
+export const claudeResultText = (stdout, { credentials = [] } = {}) => {
   const text = String(stdout || '');
   const events = text.split('\n').map(parseEvent);
   if (!events.some(Boolean)) return text.trim();
   for (let i = events.length - 1; i >= 0; i -= 1) {
-    if (events[i]?.type === 'result') return String(events[i].result ?? '').trim();
+    if (events[i]?.type !== 'result') continue;
+    const reply = String(events[i].result ?? '').trim();
+    if (events[i].is_error === true) throw adapterFailure('claude', reply, { credentials });
+    return reply;
   }
   return events
     .filter((event) => event?.type === 'assistant')
@@ -1326,7 +1330,7 @@ export default {
       const contextTokens = claudeContextTokens({
         cwd: physicalPath(ctx.cwd), sessionId, configDir: claudeConfigDirFor({ ...env, HOME: childHome || env?.HOME }),
       });
-      return { text: claudeResultText(stdout), newSessionId: sessionId, contextTokens };
+      return { text: claudeResultText(stdout, { credentials: spawnCredentials(spawnCtx) }), newSessionId: sessionId, contextTokens };
     } catch (err) {
       // A public seat's refusal is not a session-store failure, whatever its
       // message happens to contain: it must reach the run loop, never the
@@ -1389,7 +1393,7 @@ export default {
           cwd: physicalPath(ctx.cwd), sessionId: freshId,
           configDir: claudeConfigDirFor({ ...retry.env, HOME: retry.childHome || retry.env?.HOME }),
         });
-        return { text: claudeResultText(stdout), newSessionId: freshId, contextTokens };
+        return { text: claudeResultText(stdout, { credentials: spawnCredentials(retryCtx) }), newSessionId: freshId, contextTokens };
       }
       throw err;
     } finally {

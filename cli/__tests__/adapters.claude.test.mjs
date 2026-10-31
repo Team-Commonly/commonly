@@ -177,6 +177,28 @@ describe('claude adapter — spawn()', () => {
     expect(res.text).toBe('recovered');
   });
 
+  test('a first turn whose result is an error is a failure, not a reply, even at exit 0', async () => {
+    const errorResult = '{"type":"result","subtype":"success","is_error":true,"result":"API Error: 500 upstream down"}\n';
+    const { impl, calls } = makeSpawnImpl({ stdout: errorResult, code: 0 });
+    await expect(
+      claude.spawn('x', { environment: { model: 'test-model' }, sessionId: 'sid-err', _spawnImpl: impl }),
+    ).rejects.toThrow(/API Error: 500 upstream down/);
+    expect(calls).toHaveLength(1);
+  });
+
+  test('a recovery turn whose result is an error is a failure, not a reply', async () => {
+    let call = 0;
+    const impl = () => {
+      call += 1;
+      if (call === 1) return fakeChild({ stderr: 'Error: Session ID abc-123 is already in use.', code: 1 });
+      return fakeChild({ stdout: '{"type":"result","is_error":true,"result":"API Error: 529 overloaded"}\n', code: 0 });
+    };
+    await expect(
+      claude.spawn('x', { environment: { model: 'test-model' }, sessionId: 'abc-123', _spawnImpl: impl }),
+    ).rejects.toThrow(/API Error: 529 overloaded/);
+    expect(call).toBe(2);
+  });
+
   test('does NOT self-heal on generic spawn errors — only session-ID poison-pills', async () => {
     const { impl, calls } = makeSpawnImpl({ stderr: 'some other error', code: 1 });
     await expect(
