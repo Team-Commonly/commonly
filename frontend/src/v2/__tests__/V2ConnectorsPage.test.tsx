@@ -1184,6 +1184,22 @@ describe('V2ConnectorsPage', () => {
       expect(screen.getByText('Not offered on this instance.')).toBeInTheDocument();
     });
 
+    it('renders the zh-CN catalog copy for a channel row and the server text for an unmapped one', async () => {
+      mockCatalog([
+        entry({ list: 'channels' }),
+        entry({ installableId: 'acme-chat', label: 'Acme Chat', description: 'Acme chat server copy.' }),
+      ]);
+      await i18nReady;
+      await act(async () => { await i18n.changeLanguage('zh-CN'); });
+      try {
+        renderPage();
+        expect(await screen.findByText('把你的 Telegram 聊天接入 Commonly，你开启的每个 Pod 都能把消息发到这里。')).toBeInTheDocument();
+        expect(screen.getByText('Acme chat server copy.')).toBeInTheDocument();
+      } finally {
+        await act(async () => { await i18n.changeLanguage('en'); });
+      }
+    });
+
     it('describes Discord only through the catalog, never as a provider we have not built', async () => {
       mockCatalog([
         entry({ installableId: 'discord', label: 'Discord', available: false, unavailableReason: 'not_configured' }),

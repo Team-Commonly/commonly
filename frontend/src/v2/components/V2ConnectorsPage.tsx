@@ -15,6 +15,7 @@ import { ActGlyph, MarkGlyph, MarkName } from '../icons/glyphs';
 import V2ConnectorTools, { type HostedMcpManualRevokeNotice } from './V2ConnectorTools';
 import { hostedMcpErrorNotice } from './hostedMcpErrorNotice';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
+import { catalogDescription } from '../utils/connectorCatalogDescription';
 import V2PageHead from './V2PageHead';
 import V2InactiveFold from './V2InactiveFold';
 
@@ -297,7 +298,7 @@ const botMembers = (pod: V2Pod | undefined): V2PodMember[] => (
 );
 
 const V2ConnectorsPage: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const api = useV2Api();
   const navigate = useNavigate();
   const [connectors, setConnectors] = useState<Connector[]>([]);
@@ -508,17 +509,21 @@ const V2ConnectorsPage: React.FC = () => {
     return () => { cancelled = true; };
   }, [api]);
 
+  const untitledPodName = (): string => t('connectors.untitledPod', { defaultValue: 'Untitled pod' });
+
   const podNameById = (podId: string | null | undefined, fallback?: Connector | null): string => {
     const pod = podList.find((candidate) => String(candidate._id) === String(podId || ''));
-    if (pod) return pod.name || 'Untitled pod';
+    if (pod) return pod.name || untitledPodName();
     if (fallback && typeof fallback.podId === 'object' && fallback.podId?.name) return fallback.podId.name;
-    return 'Untitled pod';
+    return untitledPodName();
   };
 
   const boundPodName = (boundPodId: string | undefined): string => {
     const existing = connectors.find((connector) => connectorPodId(connector) === String(boundPodId));
     const boundPod = podList.find((pod) => String(pod._id) === String(boundPodId));
-    return existing ? podNameById(connectorPodId(existing), existing) : (boundPod?.name || 'another pod');
+    return existing
+      ? podNameById(connectorPodId(existing), existing)
+      : (boundPod?.name || t('connectors.anotherPod', { defaultValue: 'another pod' }));
   };
 
   const installInProgressMessage = (boundPodId?: string): string => (
@@ -906,8 +911,10 @@ const V2ConnectorsPage: React.FC = () => {
     }
 
     if (isSlack && connector.config?.pendingBind) {
-      const workspace = connector.config.pendingBind.teamName || 'This Slack workspace';
-      const user = connector.config.pendingBind.slackUserName ? `@${connector.config.pendingBind.slackUserName}` : 'your Slack user';
+      const workspace = connector.config.pendingBind.teamName || t('connectors.thisSlackWorkspace', { defaultValue: 'This Slack workspace' });
+      const user = connector.config.pendingBind.slackUserName
+        ? `@${connector.config.pendingBind.slackUserName}`
+        : t('connectors.yourSlackUser', { defaultValue: 'your Slack user' });
       return {
         action: 'confirm',
         actionLabel: t('connectors.slackConfirm', { defaultValue: 'Confirm' }),
@@ -996,7 +1003,7 @@ const V2ConnectorsPage: React.FC = () => {
           ? t(connectDetail.key, { defaultValue: connectDetail.defaultValue })
           : '',
         dot: 'empty',
-        line: entry.description || t('connectors.availableLine', { defaultValue: 'Connect {{label}} to a pod.', label }),
+        line: catalogDescription(i18n, entry.installableId, entry.description) || t('connectors.availableLine', { defaultValue: 'Connect {{label}} to a pod.', label }),
         pulse: false,
         when: t('connectors.notConnected', { defaultValue: 'not connected' }),
       };
@@ -1514,8 +1521,8 @@ const V2ConnectorsPage: React.FC = () => {
               <>
                 <p>{t('connectors.slackConfirmHint', {
                   defaultValue: '{{workspace}} wants to connect as {{user}}.',
-                  workspace: pendingBind.teamName || 'This Slack workspace',
-                  user: pendingBind.slackUserName ? `@${pendingBind.slackUserName}` : 'your Slack user',
+                  workspace: pendingBind.teamName || t('connectors.thisSlackWorkspace', { defaultValue: 'This Slack workspace' }),
+                  user: pendingBind.slackUserName ? `@${pendingBind.slackUserName}` : t('connectors.yourSlackUser', { defaultValue: 'your Slack user' }),
                 })}</p>
                 <div className="v2-connector-aside__actions">
                   <button type="button" className="v2-connector-aside__primary" disabled={busy} onClick={() => { void resolveSlackBind(connector, 'confirm', item.key); }}>

@@ -2392,7 +2392,21 @@
     "waitingServer": "waiting for the server",
     "linkedLine": "{{title}} · linked to {{pod}}",
     "waitingToConnect": "{{label}} is waiting to connect.",
-    "enableCommand": "/commonly-enable {{code}}"
+    "enableCommand": "/commonly-enable {{code}}",
+    "cancelError": "Could not cancel setup.",
+    "modeError": "Could not switch mode.",
+    "slackAuthorizeError": "Could not begin Slack authorization. Try again in a moment.",
+    "slackBindError": "Could not update the Slack connection. Try again in a moment.",
+    "slackAlreadyAuthorized": "Slack is already awaiting confirmation or connected.",
+    "slackAuthorizationUnavailable": "Slack authorization is no longer available.",
+    "slackInstallationNotFound": "Slack installation not found.",
+    "slackBindMissing": "There is no Slack authorization to confirm.",
+    "slackBindExpired": "Slack authorization expired. Start again.",
+    "slackPodAccessDenied": "You no longer have access to this pod.",
+    "untitledPod": "Untitled pod",
+    "anotherPod": "another pod",
+    "thisSlackWorkspace": "This Slack workspace",
+    "yourSlackUser": "your Slack user"
   },
   "artifacts": {
     "title": "Artifacts",
