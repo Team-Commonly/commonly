@@ -39,6 +39,23 @@ body.modern-ui.v2-canvas {
      Mirrors --c-shell-bg / --c-content-radius in design-system/tokens.css. */
   --v2-shell-bg: #eef0f4;
   --v2-content-radius: 6px;
+  /* Character-avatar grounds (TASK-679, Lit Signal). The fill behind each face
+     is generated in utils/avatars.ts CHARACTER_GROUNDS, which must match these
+     values; avatarGrounds.test.ts pins the two together. Agents are cool, people
+     warm, so the family still tells the species apart. Mirrors --c-avatar-* in
+     design-system/tokens.css. */
+  --v2-avatar-agent-1: #dbe5f1;
+  --v2-avatar-agent-2: #e1e6ee;
+  --v2-avatar-agent-3: #d6e7e4;
+  --v2-avatar-human-1: #f1e7df;
+  --v2-avatar-human-2: #f2e8d8;
+  --v2-avatar-human-3: #efe1dc;
+  --v2-avatar-human-4: #f4e3d7;
+  --v2-avatar-frame: rgba(16, 24, 40, 0.06);
+  /* Dark ring (TASK-679 dark note): the tile stays light on dark, so the ring
+     flips to a light hairline. No dark theme on main yet; TASK-680 points
+     --v2-avatar-frame at this value under its dark scope. */
+  --v2-avatar-frame-dark: rgba(255, 255, 255, 0.10);
   /* Ink primary — filled buttons are ink; cobalt (#1d3fd1) is a MARK inside
      the app: links, the live dot, the agent name, the one card that needs
      you. On marketing surfaces cobalt is used as blocks. Mirrors --c-ink. */
@@ -4952,6 +4969,13 @@ body.modern-ui.v2-canvas {
    top of someone's face. */
 .v2-avatar:has(img) {
   box-shadow: none;
+}
+
+/* Character tier gets a hairline ring (TASK-679). The compact transcript frame
+   (--flat) stays unframed; the :has(img) rule above outranks a plain class, so
+   the selector repeats it to win. */
+.v2-avatar:has(img).v2-avatar--character:not(.v2-avatar--flat) {
+  box-shadow: 0 0 0 1px var(--v2-avatar-frame);
 }
 
 .v2-avatar--lg {

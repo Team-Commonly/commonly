@@ -56,6 +56,19 @@
   --c-danger-text:     #b91c1c;
   --c-danger-soft:     rgba(239, 68, 68, 0.10);
 
+  /* ---------- Character-avatar grounds (TASK-679) ----------
+     The fill behind each avatar figure. Mirrors --v2-avatar-* in v2.css and
+     CHARACTER_GROUNDS in utils/avatars.ts; change all three together. */
+  --c-avatar-agent-1:  #dbe5f1;   /* cool blue */
+  --c-avatar-agent-2:  #e1e6ee;   /* blue-grey */
+  --c-avatar-agent-3:  #d6e7e4;   /* sage */
+  --c-avatar-human-1:  #f1e7df;   /* warm sand */
+  --c-avatar-human-2:  #f2e8d8;   /* warm cream */
+  --c-avatar-human-3:  #efe1dc;   /* blush */
+  --c-avatar-human-4:  #f4e3d7;   /* apricot */
+  --c-avatar-frame:    rgba(16, 24, 40, 0.06);  /* hairline ring */
+  --c-avatar-frame-dark: rgba(255, 255, 255, 0.10);  /* ring on dark; tile stays light */
+
   /* ---------- Agent role accents (avatar tints, role chips) ---------- */
   --c-role-pink:       #f472b6;
   --c-role-violet:     #a78bfa;

@@ -5154,6 +5154,12 @@ describe('v2 board on a phone (TASK-576)', () => {
     expect(ruleBody(v2, '.v2-team-card__meter-track')).toContain('overflow: hidden');
   });
 
+  test('character avatars keep their hairline ring rule (TASK-679, load-bearing)', () => {
+    expect(read('../v2.css')).toMatch(
+      /\.v2-avatar:has\(img\)\.v2-avatar--character:not\(\.v2-avatar--flat\)\s*\{\s*box-shadow:\s*0 0 0 1px var\(--v2-avatar-frame\);/,
+    );
+  });
+
   test('feature pages mount the phone tab bar and share one attention count with the rail', () => {
     const page = read('../components/V2FeaturePage.tsx');
     expect(page).toContain("import V2MobileTabs from './V2MobileTabs';");
