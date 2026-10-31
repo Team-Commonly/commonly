@@ -534,7 +534,7 @@ body.modern-ui.v2-canvas {
 .v2-pane--main {
   margin: 8px 8px 8px 0;
   height: calc(100vh - 16px);
-  background: var(--v2-bg);
+  background: #ffffff;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-content-radius);
   overflow: hidden;
@@ -656,7 +656,7 @@ body.modern-ui.v2-canvas {
   height: 32px;
   border-radius: var(--v2-radius-sm);
   background: var(--v2-accent);
-  color: var(--v2-bg);
+  color: #fff;
   display: grid;
   place-items: center;
   font-weight: 800;
@@ -1239,7 +1239,7 @@ body.modern-ui.v2-canvas {
 .v2-pods__item--active .v2-pods__item-icon--private {
   background: var(--v2-accent);
   border-color: transparent;
-  color: var(--v2-bg);
+  color: #fff;
 }
 
 .v2-pods__item-body {
@@ -2967,8 +2967,8 @@ body.modern-ui.v2-canvas {
   border-color: rgba(111, 66, 193, 0.20);
 }
 .v2-prcard__state--closed {
-  color: var(--v2-danger);
-  background: var(--v2-danger-soft);
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.10);
   border-color: rgba(239, 68, 68, 0.20);
 }
 .v2-prcard__title {
@@ -2996,7 +2996,7 @@ body.modern-ui.v2-canvas {
   font-size: 11.5px;
 }
 .v2-prcard__metric--add { color: #16a34a; }
-.v2-prcard__metric--del { color: var(--v2-danger); }
+.v2-prcard__metric--del { color: #ef4444; }
 .v2-prcard__contributors {
   display: inline-flex;
   align-items: center;
@@ -3387,7 +3387,7 @@ body.modern-ui.v2-canvas {
   border-radius: var(--v2-radius);
   overflow: hidden;
   border: 1px solid var(--v2-border);
-  background: var(--v2-bg);
+  background: #ffffff;
 }
 
 .v2-msg__image {
@@ -3420,7 +3420,7 @@ body.modern-ui.v2-canvas {
   place-items: center;
   font-size: 10px;
   font-weight: 700;
-  color: var(--v2-bg);
+  color: #fff;
 }
 
 .v2-msg__file-meta {
@@ -3456,7 +3456,7 @@ body.modern-ui.v2-canvas {
   height: 26px;
   padding: 0 9px;
   border-radius: var(--v2-radius-sm);
-  background: var(--v2-bg);
+  background: #ffffff;
   font-size: 12px;
   color: var(--v2-text-secondary);
   border: 1px solid transparent;
@@ -4078,8 +4078,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__pill--blocked {
-  background: var(--v2-danger-soft);
-  color: var(--v2-danger-text);
+  background: rgba(239, 68, 68, 0.10);
+  color: #b91c1c;
 }
 
 .v2-inspector__pill--progress {
@@ -4926,7 +4926,7 @@ body.modern-ui.v2-canvas {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  color: var(--v2-bg);
+  color: #fff;
   font-weight: 650;
   font-size: 11px;
   flex-shrink: 0;
@@ -5078,7 +5078,7 @@ body.modern-ui.v2-canvas {
   margin-top: 10px;
   padding: 8px 12px;
   border-radius: var(--v2-radius);
-  background: var(--v2-danger-soft);
+  background: rgba(239, 68, 68, 0.1);
   color: var(--v2-danger);
   font-size: 12px;
 }
@@ -5227,14 +5227,14 @@ body.modern-ui.v2-canvas {
 
 .v2-feature {
   min-width: 0;
-  background: var(--v2-bg); /* inside the card the ground is white; the card is the tint step */
+  background: #ffffff; /* inside the card the ground is white; the card is the tint step */
 }
 
 .v2-feature__header {
   flex-shrink: 0;
   padding: 22px 28px 18px;
   border-bottom: 1px solid var(--v2-border-soft);
-  background: var(--v2-bg);
+  background: #ffffff;
 }
 
 .v2-feature__title {
@@ -5368,8 +5368,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiPaper-root {
-  background: var(--v2-bg) !important;
-  background-color: var(--v2-bg) !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
   color: var(--v2-text-primary) !important;
   border: 1px solid var(--v2-border) !important;
   box-shadow: var(--v2-shadow-sm) !important;
@@ -5408,8 +5408,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiCard-root {
-  background: var(--v2-bg) !important;
-  background-color: var(--v2-bg) !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
   color: var(--v2-text-primary) !important;
   border: 1px solid var(--v2-border) !important;
   box-shadow: var(--v2-shadow-sm) !important;
@@ -5458,7 +5458,7 @@ body.modern-ui.v2-canvas {
 
 .v2-feature__legacy .MuiButton-containedPrimary {
   background: var(--v2-accent);
-  color: var(--v2-bg);
+  color: #ffffff;
   box-shadow: none;
 }
 
@@ -5487,7 +5487,7 @@ body.modern-ui.v2-canvas {
 .v2-feature__legacy .MuiInputBase-root,
 .v2-feature__legacy .MuiSelect-select,
 .v2-feature__legacy .MuiAutocomplete-inputRoot {
-  background-color: var(--v2-bg) !important;
+  background-color: #ffffff !important;
   color: var(--v2-text-primary) !important;
 }
 
@@ -5572,7 +5572,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiChip-outlined:not(.MuiChip-colorSuccess):not(.MuiChip-colorWarning):not(.MuiChip-colorError):not(.MuiChip-colorInfo) {
-  background-color: var(--v2-bg) !important;
+  background-color: #ffffff !important;
   color: var(--v2-text-secondary) !important;
 }
 
@@ -5587,7 +5587,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiTableContainer-root {
-  background: var(--v2-bg) !important;
+  background: #ffffff !important;
   border: 1px solid var(--v2-border);
   border-radius: 12px;
   box-shadow: var(--v2-shadow-sm);
@@ -5618,7 +5618,7 @@ body.modern-ui.v2-canvas {
 .v2-feature__legacy .MuiDialog-paper,
 .v2-feature__legacy .MuiPopover-paper,
 .v2-feature__legacy .MuiMenu-paper {
-  background: var(--v2-bg) !important;
+  background: #ffffff !important;
   color: var(--v2-text-primary) !important;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-lg);
@@ -5630,7 +5630,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiAvatar-root {
-  border: 2px solid var(--v2-bg);
+  border: 2px solid #ffffff;
 }
 
 /* Reset top padding for embedded dev tools so the v2 feature header is the
@@ -5660,8 +5660,8 @@ body.modern-ui.v2-canvas {
 .v2-feature__legacy [style*="background-color: rgba(30, 41, 59"],
 .v2-feature__legacy [style*="background-color: #0f172a"],
 .v2-feature__legacy [style*="background-color: #0b1220"] {
-  background: var(--v2-bg) !important;
-  background-color: var(--v2-bg) !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
   color: var(--v2-text-primary) !important;
 }
 
@@ -6036,7 +6036,7 @@ body.modern-ui.v2-canvas {
   display: flex;
   gap: 2px;
   padding: 4px;
-  background: var(--v2-surface, var(--v2-bg));
+  background: var(--v2-surface, #fff);
   border: 1px solid var(--v2-border, #e5e7eb);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
@@ -6150,7 +6150,7 @@ body.modern-ui.v2-canvas {
   padding: 10px 12px;
   border: 1px solid var(--v2-border);
   border-radius: 4px;
-  background: var(--v2-surface, var(--v2-bg));
+  background: var(--v2-surface, #fff);
   font-size: 14px;
   color: var(--v2-text-primary);
   outline: none;
@@ -6355,7 +6355,7 @@ body.modern-ui.v2-canvas {
   background: var(--v2-text-muted);
 }
 /* §3 not yet — the dashed hollow dot the Connectors not-yet state uses
-   (v2.css:9797). The text stays muted rather than placeholder: var(--v2-border-strong) at
+   (v2.css:9797). The text stays muted rather than placeholder: #98a2b3 at
    11px is 2.6:1.
    `waiting` shares the ring: a token has been issued and the agent has not
    checked in, so the state is still "not yet" — but it is no longer "not
@@ -7981,7 +7981,7 @@ body.modern-ui.v2-canvas {
   padding: 7px 10px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
-  background: var(--v2-bg);
+  background: #ffffff;
   color: var(--v2-text-primary);
   font: 400 14px/20px var(--v2-font);
 }
@@ -8045,7 +8045,7 @@ body.modern-ui.v2-canvas {
 
 .v2-settings__section .v2-billing__badge {
   border-radius: var(--v2-radius-sm);
-  background: var(--v2-bg);
+  background: #ffffff;
   border-color: var(--v2-border);
   color: var(--v2-text-primary);
   font-family: var(--v2-font-mono);
@@ -9247,7 +9247,7 @@ body.modern-ui.v2-canvas {
 
 .v2-approval__error {
   font-size: 12.5px;
-  color: var(--v2-danger-text);
+  color: #b91c1c;
 }
 
 /* Hosted-to-BYO handoff: the command is server-composed and the card copies
@@ -11505,7 +11505,7 @@ body.modern-ui.v2-canvas {
 .v2-decision-card__settled,
 .v2-decision-card__error { margin: 0; font: 500 12px/18px var(--v2-font); }
 .v2-decision-card__settled { color: var(--v2-text-secondary); }
-.v2-decision-card__error { color: var(--v2-danger-text); }
+.v2-decision-card__error { color: #b91c1c; }
 
 .v2-msg__ruled {
   color: var(--v2-text-muted);
@@ -11601,7 +11601,7 @@ body.modern-ui.v2-canvas {
 .v2-composer__error {
   margin: 0;
   padding: 0 10px 8px;
-  color: var(--v2-danger-text);
+  color: #b91c1c;
   font: 400 12px/16px var(--v2-font);
 }
 
@@ -11656,10 +11656,10 @@ body.modern-ui.v2-canvas {
     grid-template-columns: minmax(0, 1fr);
     padding: 0;
     gap: 0;
-    background: var(--v2-bg);
+    background: #fff;
   }
   .v2-pane--rail { display: none; }
-  .v2-pane--main { background: var(--v2-bg); }
+  .v2-pane--main { background: #fff; }
 
   /* The inspector becomes the artboard's bottom sheet; its header toggle is
      intentionally always present so the sheet cannot become unreachable. */
@@ -11686,7 +11686,7 @@ body.modern-ui.v2-canvas {
     height: 54px;
     padding: 5px 14px;
     border-top: 1px solid var(--v2-border);
-    background: var(--v2-bg);
+    background: #fff;
   }
   .v2-root button.v2-mobile-tabs__item {
     position: relative;
@@ -11714,10 +11714,10 @@ body.modern-ui.v2-canvas {
     height: 16px;
     padding: 0 3px;
     place-items: center;
-    border: 2px solid var(--v2-bg);
+    border: 2px solid #fff;
     border-radius: 999px;
     background: var(--v2-accent);
-    color: var(--v2-bg);
+    color: #fff;
     font: 700 11px/1 var(--v2-font-mono);
   }
 }
@@ -12023,7 +12023,7 @@ body.modern-ui.v2-canvas {
   place-items: center;
   border-radius: 8px;
   background: var(--v2-ink);
-  color: var(--v2-bg);
+  color: #fff;
   font: 700 11px/1 var(--v2-font-mono);
 }
 
@@ -13037,7 +13037,7 @@ body.modern-ui.v2-canvas {
 @media (max-width: 760px) {
   .v2-activity__controls { flex-direction: column; align-items: stretch; }
 }
-.v2-root .v2-activity__queue-row--decision .v2-activity__queue-mark { background: var(--v2-accent); color: var(--v2-bg); }
+.v2-root .v2-activity__queue-row--decision .v2-activity__queue-mark { background: var(--v2-accent); color: #fff; }
 /* Categories are marks, only the deciding act is a word (direction A). The
    mark holds a 16px glyph; a secondary act is a 32px square holding one, its word in the
    title and the accessible name. Nothing is hidden in a menu. */
@@ -13184,7 +13184,7 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-team__byo { height: 36px; padding: 0 14px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-surface); color: var(--v2-text-primary); font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team__byo:hover { background: var(--v2-surface-hover); }
 /* Ink acts (signal-identity §2): Hire is the page's one filled control. */
-.v2-root button.v2-team__hire { height: 36px; padding: 0 14px; border: 1px solid var(--v2-text-primary); border-radius: 4px; background: var(--v2-text-primary); color: var(--v2-bg); font: 600 13px/1 var(--v2-font); cursor: pointer; }
+.v2-root button.v2-team__hire { height: 36px; padding: 0 14px; border: 1px solid #101828; border-radius: 4px; background: #101828; color: #fff; font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team__hire:disabled { opacity: 0.5; cursor: default; }
 .v2-team__notice { font-size: 13px; color: var(--v2-text-secondary); }
 .v2-team__notice--ok { color: var(--v2-text-primary); }
@@ -13263,7 +13263,7 @@ body.modern-ui.v2-canvas {
 .v2-team-card__desc { margin: 0; font-size: 13px; line-height: 18px; color: var(--v2-text-secondary); }
 .v2-team-card__pods { display: flex; gap: 6px; flex-wrap: wrap; }
 .v2-team-card__pod { font: 500 11px/16px var(--v2-font-mono); padding: 2px 6px; border: 1px solid var(--v2-border); border-radius: 4px; color: var(--v2-text-secondary); }
-.v2-team-card__command { display: block; padding: 8px 10px; border-radius: 4px; background: var(--v2-text-primary); color: var(--v2-bg); font: 500 14px/20px var(--v2-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.v2-team-card__command { display: block; padding: 8px 10px; border-radius: 4px; background: #101828; color: #fff; font: 500 14px/20px var(--v2-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .v2-team-card__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
 /* Where the seat runs: a cloud (Commonly) or a laptop (your computer), top-right. */
 .v2-team-card__where { display: inline-flex; flex: none; margin-left: auto; align-self: flex-start; color: var(--v2-text-muted); }
@@ -13272,7 +13272,7 @@ body.modern-ui.v2-canvas {
 .v2-team-card__meter-track { flex: 1; min-width: 0; height: 4px; border-radius: 2px; background: var(--v2-border-soft); overflow: hidden; }
 .v2-team-card__meter-fill { display: block; height: 100%; background: var(--v2-accent); }
 .v2-team-card__meter-text { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; }
-.v2-root button.v2-team-card__answer { height: 32px; padding: 0 12px; border: 1px solid var(--v2-text-primary); border-radius: 4px; background: var(--v2-text-primary); color: var(--v2-bg); font: 600 13px/1 var(--v2-font); cursor: pointer; }
+.v2-root button.v2-team-card__answer { height: 32px; padding: 0 12px; border: 1px solid #101828; border-radius: 4px; background: #101828; color: #fff; font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team-card__talk { height: 32px; padding: 0 12px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-surface); color: var(--v2-text-primary); font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team-card__talk:hover { background: var(--v2-surface-hover); }
 .v2-root button.v2-team-card__talk:disabled { color: var(--v2-text-placeholder); cursor: default; }

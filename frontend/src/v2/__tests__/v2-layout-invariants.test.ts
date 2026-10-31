@@ -1237,7 +1237,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(billingPanel).not.toContain('free in beta');
     expect(billingPanel).not.toContain('included during beta');
     const badge = ruleBody(v2, '.v2-settings__section .v2-billing__badge');
-    expect(badge).toContain('background: var(--v2-bg)');
+    expect(badge).toContain('background: #ffffff');
     expect(badge).toContain('font-family: var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-settings__section .v2-billing__badge--pro')).toContain('background: var(--v2-accent)');
   });
@@ -1417,8 +1417,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--needsYou')).toContain('var(--v2-accent)');
     expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--working')).toContain('var(--v2-text-primary)');
     expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--idle')).toContain('var(--v2-border-soft)');
-    expect(ruleBody(v2, '.v2-root button.v2-team__hire')).toContain('background: var(--v2-text-primary)');
-    expect(ruleBody(v2, '.v2-root button.v2-team-card__answer')).toContain('background: var(--v2-text-primary)');
+    expect(ruleBody(v2, '.v2-root button.v2-team__hire')).toContain('background: #101828');
+    expect(ruleBody(v2, '.v2-root button.v2-team-card__answer')).toContain('background: #101828');
     expect(ruleBody(v2, '.v2-root button.v2-team-card__talk')).toContain('border: 1px solid var(--v2-border)');
     expect(ruleBody(v2, '.v2-team-card__status')).toContain('var(--v2-font-mono)');
     // ux-lead 66246: the ask wraps, the command wraps at mono 14, the name is display-18,
@@ -2530,7 +2530,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(ruleBody(v2, '.v2-authenticated-shell .v2-pane--main')).toContain('height: calc(100% - 16px)');
       // Phones: the card goes flush — both selectors, or the banner variant keeps the desktop height.
       expect(v2).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-pane--main,\n\s*\.v2-authenticated-shell \.v2-pane--main \{[\s\S]*?border-radius: 0/);
-      expect(ruleBody(v2, '.v2-feature')).toContain('background: var(--v2-bg)');
+      expect(ruleBody(v2, '.v2-feature')).toContain('background: #ffffff');
     });
 
     test('the radius ladder is 4 / 4 / 6 in both files (Signal: hard edges)', () => {
