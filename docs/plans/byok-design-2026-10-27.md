@@ -110,6 +110,12 @@ Total: about 8 PRs, roughly 3–4 weeks for one owner, with PR 0 deciding whethe
 
 ## Open questions
 
+Both of the first two must be decided before PR 1 ships. Neither is settled in this note.
+
+- **Persistence owner for user and team model keys (§6.1 vs §6.2):** §6.1 puts user and team rows in `AgentProviderKey`. §6.2 puts model-layer keys in a separate `ModelProviderKey` and says they never share `AgentProviderKey`. The note holds both contracts. Decide which collection owns user- and team-scoped model keys.
+- **Gateway bearer binding (§1, PR 3):** the note does not say how a gateway bearer is bound to the one user's or team's key it may resolve, or which check the gateway applies. A bearer that can resolve more than that key lets an agent spend another user's or team's vendor key within its limits.
+- **Team-admin authorization for model keys (§6.3):** the "owner or team role check" is named but not defined. Decide it together with the persistence owner.
+
 - **Scope precedence (§1a):** whether team beats user or user beats team, and whether "team" means the pod or the workspace.
 - **Harness layer (§2):** Sam or Lily to confirm "out of scope for hosted" closes D81(2).
 - **Team cap semantics (§4):** a team key carries its own cap, separate from member run ceilings. Confirm.
