@@ -23,8 +23,8 @@
  * only. Idempotent: convention-form installs are skipped.
  *
  * Usage:
- *   ts-node backend/scripts/migrate-guide-identity-convention.ts          # apply
- *   ts-node backend/scripts/migrate-guide-identity-convention.ts --dry    # report
+ *   cd backend && node dist/scripts/migrate-guide-identity-convention.js          # apply
+ *   cd backend && node dist/scripts/migrate-guide-identity-convention.js --dry    # report
  */
 
 import { createHash } from 'crypto';

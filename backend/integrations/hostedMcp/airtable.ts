@@ -55,9 +55,13 @@ export const AIRTABLE_ENTRY: HostedMcpEntry = {
   // consenting tools/list capture used /mcp as the endpoint on 2026-10-09.
   audience: 'https://mcp.airtable.com',
   issuer: 'https://airtable.com/oauth2/v1',
-  // The authorization server advertises `client_id_metadata_document_supported:
-  // true` and S256, so nothing is registered and no secret is stored.
-  client: 'cimd',
+  // Airtable advertises `client_id_metadata_document_supported: true`, but on
+  // 2026-10-27 it refused our metadata URL as a client_id without fetching it
+  // (Cloudflare logged no fetch from Airtable, TASK-318). So the client is
+  // registered at the advertised registration_endpoint instead. The metadata
+  // lists `none`, so the registry registers a public client and stores no
+  // secret. PKCE S256 is still sent.
+  client: 'dcr',
   scopes: [
     'data.records:read',
     'schema.bases:read',

@@ -253,7 +253,7 @@ describe('buildMemoryPreamble', () => {
     expect(fresh).not.toContain('commonly_save_my_memory');
   });
 
-  // D48 (TASK-545). Working habits ride the memory cues' once-per-session rule,
+  // TASK-545. Working habits ride the memory cues' once-per-session rule,
   // and only the habits an adapter passes are rendered.
   it('renders work cues on a fresh session, after the read cue and before the turn', () => {
     const fresh = buildMemoryPreamble('turn', 'mem', {

@@ -20,6 +20,7 @@ import {
   V2Start,
 } from '../hooks/useV2PodDetail';
 import { useV2Api } from '../hooks/useV2Api';
+import { recordByoStepOnce } from '../utils/byoTelemetry';
 import { useV2PodHeaderMeta } from '../hooks/useV2PodHeaderMeta';
 import { UseV2PodsResult } from '../hooks/useV2Pods';
 import { useSocket } from '../../context/SocketContext';
@@ -33,6 +34,7 @@ import { useWelcomeHostedStart, WELCOME_HOSTED_ACTION } from '../hooks/useWelcom
 import { buildThreadView, freezeOrphanReplyIds } from '../utils/threadView';
 import { agentKeyFor } from '../utils/agentKey';
 import { runtimeChipLabel } from '../utils/runtimeChip';
+import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 import {
   buildAgentUsername,
   isOpaqueInstanceToken,
@@ -78,11 +80,14 @@ interface AgentStateRow {
   displayName?: string;
   state: AgentReachState;
   isOwner: boolean;
+  /** Last time the agent's own runtime called in; null when it never has. */
+  lastUsedAt?: string | null;
   /** A Commonly-hosted agent; absent from an older backend. */
   hosted?: boolean;
   fixCommand?: string;
 }
 const REACH_IS_ACTIVE = new Set<AgentReachState>(['listening', 'reachable']);
+const POD_LIVENESS_MAX_ROWS = 3;
 
 interface DirectAgentIdentity {
   username: string;
@@ -265,6 +270,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const [agentDeliveryHint, setAgentDeliveryHint] = useState<{
     messageId: string;
     mentionHandle: string;
+    // The wake-on-message agent that did answer, when another agent did not.
+    wokenAgent?: string;
   } | null>(null);
   // A send into a pod with no installed agent: the delivery hint below is
   // deliberately gated on `agentsInPod > 0`, which is exactly the case this is
@@ -439,7 +446,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
         && !sentSince.has(start.label));
       if (open.length > 0) byMessage.set(String(message.id), open);
     });
-    // D139: under the creator's own "Connect an agent I already use", a fixed
+    // Under the creator's own "Connect an agent I already use", a fixed
     // link to Bring your own, from the moment it is sent. Scout still answers,
     // but a prompt cannot guarantee its reply links there, and one new person
     // left after three replies that never did.
@@ -457,6 +464,16 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     }
     return byMessage;
   }, [messages, viewerId, onOpenInvite, viewerHoldsHostedAgent, viewerOwnsPod, addedFirstTaskMessages, pod?._id, t]);
+  // Only rows that render with their starts count: a flat message or a thread
+  // root. A reply folded into a thread card renders without starts.
+  const byoOfferShown = useMemo(() => threadView.some((item) => {
+    const id = item.kind === 'message' ? String(item.message.id) : item.rootId;
+    return (startsByMessageId.get(id) || []).some((start) => start.id === 'open-byo');
+  }), [threadView, startsByMessageId]);
+  useEffect(() => {
+    // Write-once onboarding mark (User.onboarding.byoOfferShownAt).
+    if (byoOfferShown && viewerId) recordByoStepOnce(api, 'byo-offer-shown', viewerId);
+  }, [byoOfferShown, api, viewerId]);
 
   const [decisions, setDecisions] = useState<ThreadDecision[]>([]);
   const [settledDecisionByMessageId, setSettledDecisionByMessageId] = useState<Map<string, V2DecisionRuling>>(new Map());
@@ -1292,7 +1309,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
         : `${name}-${instance}`;
       // Shared composite key (agentKey.ts): instanceId alone collapsed every
       // 'default'-instance fleet seat onto one key, so every author click
-      // opened the same member's profile (Sam, 2026-08-26).
+      // opened the same member's profile (2026-08-26).
       const key = agentKeyFor(agent);
       if (!rawName) continue;
       if (username) map.set(username, key);
@@ -1516,6 +1533,14 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     : directAgentReach === 'gone-dark'
       ? 'podChat.agentRoomLiveness.goneDark'
       : 'podChat.agentRoomLiveness.unknown';
+  // Group pods name each agent that isn't running, so nobody waits on a reply
+  // that can't come: 5 of 7 people who heard nothing in their first pod had an
+  // agent that never connected (silence census, 10-30). Only reach states the
+  // server measured; an unknown state shows nothing.
+  const podAgentLiveness = isAgentRoom || isAgentDm ? [] : agentStates.filter((s) => (
+    typeof s?.agentName === 'string' && s.agentName
+    && (s.state === 'never-connected' || s.state === 'gone-dark')
+  )).slice(0, POD_LIVENESS_MAX_ROWS);
   const showAwaitingAgentReply = Boolean(
     isAgentRoom && awaitingAgentReply && awaitingAgentReply.podId === pod._id,
   );
@@ -1573,7 +1598,28 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           });
         }
         const delivery = created.agentDelivery;
-        const exampleAgent = agents.find((agent) => agent.status === 'active') || agents[0];
+        // A wake-on-message agent (Scout) answering does not mean the person
+        // reached the agent they came for: in a pod with Scout and their own
+        // hosted agent, an unmentioned message woke Scout alone and the hint
+        // stayed hidden (silence census, 10-20). Name an agent that wasn't woken.
+        const wokenNames = new Set((delivery?.wokenAgents || []).map((name) => String(name).toLowerCase()));
+        const isWoken = (agent: (typeof agents)[number]) => wokenNames.has(String(agent?.agentName || '').toLowerCase());
+        const anyWoken = (delivery?.woken ?? 0) > 0;
+        // Suggest only an agent that can answer: one whose reach says it is not
+        // running would contradict its own liveness row on the same screen.
+        // An agent with no reach row (older backend, failed read) keeps the
+        // install-status rule.
+        const canAnswer = (agent: (typeof agents)[number]) => {
+          if (agent?.status !== 'active') return false;
+          const reach = (agent.instanceId && agentStateByHandle.get(String(agent.instanceId).toLowerCase()))
+            || agentStateByHandle.get(String(agent.agentName || '').toLowerCase());
+          return !reach || REACH_IS_ACTIVE.has(reach.state);
+        };
+        const unwokenAgent = anyWoken && wokenNames.size > 0
+          ? agents.find((agent) => canAnswer(agent) && !isWoken(agent))
+          : undefined;
+        const wokenAgent = unwokenAgent ? agents.find(isWoken) : undefined;
+        const exampleAgent = anyWoken ? unwokenAgent : agents.find(canAnswer);
         // Same handle rule as the typeahead: human-chosen instanceId is the
         // identity and stays; an opaque per-user token must never be the
         // suggested handle ("Try @u3f9c2a1b7d") — persona displayName slug
@@ -1591,7 +1637,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           // A wake-on-message agent (the Guide in every fresh workspace) WAS
           // notified — "No agent was notified" would be false on screen while
           // it's already typing (#914).
-          && (delivery.woken ?? 0) === 0
+          // Unless another agent wasn't woken: then name that one.
+          && (!anyWoken || unwokenAgent)
           // A plain reply to an agent's message reaches it through the
           // reply-edge (implicit) path, not a mention. That agent WILL answer,
           // so "No agent was notified" would be false on screen.
@@ -1613,7 +1660,13 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             } catch {
               // sessionStorage unavailable; the in-memory guard still works.
             }
-            setAgentDeliveryHint({ messageId: created.id, mentionHandle });
+            setAgentDeliveryHint({
+              messageId: created.id,
+              mentionHandle,
+              ...(wokenAgent ? {
+                wokenAgent: wokenAgent.displayName || wokenAgent.profile?.displayName || wokenAgent.agentName,
+              } : {}),
+            });
           }
         } else if (
           delivery
@@ -1780,7 +1833,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   });
 
   return (
-    <main className="v2-pane v2-pane--main">
+    <main className="v2-pane v2-pane--main v2-nightshift">
       <div className="v2-chat v2-thread">
         <header className="v2-thread__header v2-pod-header">
           <div className="v2-thread__header-row">
@@ -1791,12 +1844,18 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                 {pod.description && <V2Hint label={t('podChat.header.aboutPod')}>{pod.description}</V2Hint>}
               </div>
             </div>
-            <span
-              className="v2-pod-header__meta v2-pod-header__meta--compact"
-              role="group"
-              aria-label={t('podChat.header.compactMetaAccessible', { members: memberCountText, agents: agentCountText })}
-            >
-              <span aria-hidden="true">{t('podChat.header.compactMeta', { members: humanMemberCount, agents: agentCountText })}</span>
+            {/* The phone line carries the board link and the member count, the
+                same two facts the desktop meta leads with (TASK-647 item 3). */}
+            <span className="v2-pod-header__meta v2-pod-header__meta--compact">
+              {headerMeta.boardOpen !== null && (
+                <>
+                  <button type="button" className="v2-pod-header__board v2-pod-header__board--compact" onClick={() => navigate(`/v2/pods/${pod._id}/board`)}>
+                    {t('podChat.header.boardOpen', { count: headerMeta.boardOpen })}
+                  </button>
+                  <span className="v2-pod-header__sep" aria-hidden="true">·</span>
+                </>
+              )}
+              <span>{memberCountText}</span>
             </span>
             <span className="v2-pod-header__meta">
               {metaParts.map((part, index) => (
@@ -1996,6 +2055,21 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                   {t(directAgentLivenessKey, { agentName: directAgent.displayName })}
                 </div>
               )}
+              {podAgentLiveness.map((row) => (
+                <div
+                  key={`${row.agentName}:${row.instanceId}`}
+                  className="v2-chat__agent-room-status"
+                  data-testid="pod-agent-liveness"
+                  role="status"
+                >
+                  {row.state === 'never-connected' || !row.lastUsedAt
+                    ? t('podChat.podAgentLiveness.notConnected', { agentName: row.displayName || row.agentName })
+                    : t('podChat.podAgentLiveness.offlineSince', {
+                      agentName: row.displayName || row.agentName,
+                      age: localizeRelativeTime(row.lastUsedAt, t),
+                    })}
+                </div>
+              ))}
               {showAwaitingAgentReply && awaitingAgentReply && (
                 <div
                   className={`v2-chat__agent-room-status v2-chat__agent-room-status--wait${awaitingAgentReply.timedOut ? ' v2-chat__agent-room-status--timeout' : ''}`}

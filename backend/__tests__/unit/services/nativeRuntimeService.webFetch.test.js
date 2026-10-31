@@ -123,7 +123,7 @@ const install = (extra = {}) => ({
     ...extra,
   },
 });
-// By default one pod message a known human (Sam) wrote.
+// By default one pod message a known human wrote.
 const mention = (
   content = `@analyst what does github.com/acme/widget do?`,
   { userId = SAM_ID, messageId = 'msg-1', type = 'chat.mention' } = {},
@@ -222,7 +222,7 @@ describe('native turn with commonly_fetch_url', () => {
     expect(savedRun.turns[0].toolCalls[0].result).toEqual({ url: REPO, status: 200, truncated: false, chars: 50 });
   });
 
-  // Cofounder's security read on #2269: the peer-claim notice was prepended
+  // The peer-claim notice was prepended
   // before the person's message entered the allowed set, so the notice's own
   // text could give an address. Unreachable today: an agent name carries no
   // address, and the notice's leading '@' spoils a bare one. The holder here
@@ -257,7 +257,7 @@ describe('native turn with commonly_fetch_url', () => {
     expect(mockGetPage).toHaveBeenCalledWith(REPO);
   });
 
-  // Cofounder's security read on #2249: the comparison ignores a trailing run,
+  // The comparison ignores a trailing run,
   // a fragment and host case, and the request used to carry the model's own
   // argument, so `<given link>!!!…` matched and the appended bytes went out.
   // The argument only selects; the request is the given address, byte for byte.
@@ -376,7 +376,7 @@ describe('native turn with commonly_fetch_url', () => {
     expect(fetchReply.content).toMatch(/does not appear in this conversation/);
   });
 
-  // Cofounder's security read on #2249: the agent's own posts were recognised
+  // The agent's own posts were recognised
   // by author NAME, and a bot's name drifts by design. Read back under a
   // drifted name, the agent's own address counted as another author's.
   test.each([
@@ -399,7 +399,7 @@ describe('native turn with commonly_fetch_url', () => {
     expect(toolMessages(1)[1].content).toMatch(/does not appear in this conversation/);
   });
 
-  // Cofounder's security read on #2249: only a human's message gives an
+  // Only a human's message gives an
   // address. Two agents steered by the same injected text could otherwise pass
   // an address between them, and another instance of this agent posts under a
   // different user.
@@ -446,7 +446,7 @@ describe('native turn with commonly_fetch_url', () => {
     expect(mockGetPage.mock.calls).toEqual([['https://github.com/acme/other']]);
   });
 
-  // Cofounder's security read on #2261: the message a turn answers gave
+  // The message a turn answers gave
   // addresses whoever wrote it, so another agent's mention carrying a URL was
   // fetched as sent. Only a message a known human wrote gives one.
   test.each([

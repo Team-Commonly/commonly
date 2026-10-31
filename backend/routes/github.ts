@@ -15,9 +15,13 @@ const githubIpRateLimit = rateLimit({
   legacyHeaders: false,
   keyGenerator: cloudflareIpRateLimitKeyGenerator,
 });
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { agentCanWriteGitHubIssues } = require('../services/githubIssueWriteCapability');
 
 interface AuthReq {
   user?: { role?: string };
+  agentUser?: { _id?: unknown };
+  agentInstallations?: Array<{ githubIssueWrite?: boolean }>;
   body?: Record<string, unknown>;
   query?: Record<string, string>;
   params?: Record<string, string>;
@@ -126,6 +130,19 @@ function mapGitHubUpstreamError(
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
+const requireGitHubIssueWriteCapability = (req: AuthReq, res: Res): boolean => {
+  // `anyAuth` also serves ordinary human JWTs. The capability is only for
+  // agent-runtime callers. `agentUser` is best-effort for legacy tokens, but
+  // both successful agent auth paths always attach the installation list.
+  const isAgentRuntimeCaller = Array.isArray(req.agentInstallations);
+  if (!isAgentRuntimeCaller || agentCanWriteGitHubIssues(req.agentInstallations)) return true;
+  res.status(403).json({
+    error: 'GitHub issue writing is not granted to this agent installation',
+    code: 'github_issue_write_not_granted',
+  });
+  return false;
+};
+
 // REMOVED — `POST /token`, which handed our GitHub credential to callers.
 //
 // It was guarded by `agentRuntimeAuth` alone, so ANY `cm_agent_*` token — held
@@ -141,14 +158,25 @@ const router: ReturnType<typeof express.Router> = express.Router();
 // per-user App install of its own, not a share of ours.
 
 router.get('/status', auth, async (req: AuthReq, res: Res) => {
-  // @github-upstream-exempt: this route touches no upstream — it reads env and
-  // signs a JWT locally — so a throw here really is our fault and 500 is the
-  // honest answer. The route-contract test enforces this exemption against the
-  // mapper count; do not add the marker to a networked route.
+  // @github-upstream-exempt: a diagnostic, not a proxy. It probes GitHub for
+  // the PAT's liveness and reports the outcome as data, so a dead credential is
+  // a successful diagnosis (200, credentialLive: false), never a 502. Mapping
+  // it would make "the credential is dead" indistinguishable from "this
+  // diagnostic is broken". A throw from our own code still gets the honest 500.
+  // The route-contract test enforces this exemption against the mapper count.
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
     if (!GitHubAppService.isConfigured()) {
-      if (GitHubAppService.isPatConfigured()) return res.json({ mode: 'pat', configured: true });
+      if (GitHubAppService.isPatConfigured()) {
+        const liveness = await GitHubAppService.checkPatLiveness();
+        return res.json({
+          mode: 'pat',
+          configured: true,
+          credentialLive: liveness.live,
+          credentialStatus: liveness.status,
+          upstreamStatus: liveness.upstreamStatus,
+        });
+      }
       return res.json({ mode: 'none', configured: false, message: 'Set GitHub App env vars' });
     }
     const appJWT = GitHubAppService.generateAppJWT();
@@ -176,6 +204,7 @@ router.get('/issues', githubIpRateLimit, dualAuth, async (req: AuthReq, res: Res
 
 router.post('/issues', githubIpRateLimit, dualAuth, async (req: AuthReq, res: Res) => {
   try {
+    if (!requireGitHubIssueWriteCapability(req, res)) return;
     if (!GitHubAppService.isPatConfigured() && !GitHubAppService.isConfigured()) {
       return res.status(503).json({ error: 'No GitHub credentials configured' });
     }
@@ -192,6 +221,7 @@ router.post('/issues', githubIpRateLimit, dualAuth, async (req: AuthReq, res: Re
 
 router.post('/issues/:number/comment', githubIpRateLimit, dualAuth, async (req: AuthReq, res: Res) => {
   try {
+    if (!requireGitHubIssueWriteCapability(req, res)) return;
     const issueNumber = Number(req.params?.number);
     const { body } = (req.body || {}) as { body?: string };
     if (!body) return res.status(400).json({ error: 'body is required' });
@@ -206,6 +236,7 @@ router.post('/issues/:number/comment', githubIpRateLimit, dualAuth, async (req: 
 
 router.post('/issues/:number/close', githubIpRateLimit, dualAuth, async (req: AuthReq, res: Res) => {
   try {
+    if (!requireGitHubIssueWriteCapability(req, res)) return;
     const issueNumber = Number(req.params?.number);
     const { comment } = (req.body || {}) as { comment?: string };
     await GitHubAppService.closeIssue({ owner: PINNED_OWNER, repo: PINNED_REPO, issueNumber, comment });

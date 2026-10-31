@@ -417,13 +417,17 @@ class Message {
     return (result.rows as Array<{ content?: unknown }>).map((row) => String(row.content || ''));
   }
 
-  /** Recent words by one person across pods, for their first greeting language. */
+  /**
+   * Recent words by one person across pods, for their first greeting language.
+   * Newest by created_at, not id: the TASK-503 history copy gives old rows high ids.
+   * created_at is nullable, and DESC puts NULL first, so an undated row sorts last.
+   */
   static async recentContentByUser(userId: unknown, limit = 10): Promise<string[]> {
     if (!userId) return [];
     const result = await (pool as PgPool).query(
       `SELECT content FROM messages
        WHERE user_id = $1 AND message_type = 'text' AND content <> ''
-       ORDER BY id DESC LIMIT $2`,
+       ORDER BY created_at DESC NULLS LAST, id DESC LIMIT $2`,
       [String(userId), limit],
     );
     return (result.rows as Array<{ content?: unknown }>).map((row) => String(row.content || ''));

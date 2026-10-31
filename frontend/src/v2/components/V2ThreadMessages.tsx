@@ -60,7 +60,7 @@ interface V2ThreadMessagesProps {
   starterPanel?: React.ReactNode;
   emptyState?: React.ReactNode;
   afterMessage?: { messageId: string; content: React.ReactNode };
-  agentDeliveryHint?: { messageId: string; mentionHandle: string } | null;
+  agentDeliveryHint?: { messageId: string; mentionHandle: string; wokenAgent?: string } | null;
   // A pod with no installed agent answers nothing by construction, so there is
   // no handle to suggest — a different row, in the same slot.
   noAgentsHint?: { messageId: string } | null;
@@ -307,12 +307,12 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                       <React.Fragment key={start.id}>
                         <button
                           type="button"
-                          className="v2-chat__start"
+                          className={`v2-chat__start${start.action === WELCOME_HOSTED_ACTION ? ' v2-chat__start--primary' : ''}`}
                           disabled={startsDisabled || starting}
                           aria-busy={starting || undefined}
                           onClick={() => onStart(start, String(message.id))}
                         >
-                          {starting ? t('agentByo.actions.starting') : start.label}
+                          {starting ? t('agentByo.actions.starting') : t(`podChat.starts.labels.${start.id}`, { defaultValue: start.label })}
                         </button>
                         {hostedHere?.status === 'failed' && (
                           <p className="v2-chat__start-note v2-chat__start-note--error" role="alert">{hostedHere.error}</p>
@@ -337,8 +337,8 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
               {agentDeliveryHint?.messageId === message.id && (
                 <div className="v2-chat__delivery-hint" role="status">
                   <Trans
-                    i18nKey="podChat.deliveryHint"
-                    values={{ handle: agentDeliveryHint.mentionHandle }}
+                    i18nKey={agentDeliveryHint.wokenAgent ? 'podChat.deliveryHintOthers' : 'podChat.deliveryHint'}
+                    values={{ handle: agentDeliveryHint.mentionHandle, woken: agentDeliveryHint.wokenAgent }}
                     components={{ handle: <strong /> }}
                   />
                 </div>

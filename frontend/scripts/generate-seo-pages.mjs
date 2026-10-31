@@ -156,7 +156,7 @@ const renderGuideProvenance = (guide) => {
   return `<p class="seo-byline">By ${escapeHtml(provenance.author)} · Reviewed by ${escapeHtml(provenance.reviewer)}<br>${dates}</p>`;
 };
 
-const renderLanding = (landing, useCases, guides, faq = []) => {
+const renderLanding = (landing, guides, faq = []) => {
   const featureCards = [
     landing.features.needs,
     landing.features.team,
@@ -181,11 +181,12 @@ const renderLanding = (landing, useCases, guides, faq = []) => {
       <p>${escapeHtml(step.text)}</p>
     </article>`).join('');
 
-  const useCaseCards = Object.entries(useCases).map(([id, useCase]) => `
+  const teamCards = Object.values(landing.agentTeams.cards).map((card) => `
     <article class="seo-card">
-      <p class="seo-kicker">${escapeHtml(useCase.eyebrow)}</p>
-      <h3><a href="/use-cases/${encodeURIComponent(id)}/">${escapeHtml(useCase.title)}</a></h3>
-      <p>${escapeHtml(useCase.summary)}</p>
+      <h3>${escapeHtml(card.title)}</h3>
+      <ul>${Object.values(card.roster).map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
+      <ul>${Object.values(card.chat).map((line) => `<li>${escapeHtml([line.author, line.text].filter(Boolean).join(': '))}</li>`).join('')}</ul>
+      <p>${escapeHtml(card.footer)}</p>
     </article>`).join('');
 
   const guideCards = Object.entries(guides).map(([id, guide]) => `
@@ -208,7 +209,7 @@ const renderLanding = (landing, useCases, guides, faq = []) => {
         <a class="seo-brand" href="/" aria-label="Commonly home">Commonly</a>
         <nav aria-label="Primary navigation">
           <a href="#features">Features</a>
-          <a href="#use-cases">Use cases</a>
+          <a href="#agent-teams">${landing.nav.agentTeams}</a>
           <a href="#guides">Guides</a>
           <a href="https://github.com/Team-Commonly/commonly">GitHub</a>
         </nav>
@@ -235,10 +236,10 @@ const renderLanding = (landing, useCases, guides, faq = []) => {
           <h2>${escapeHtml(landing.how.title)}</h2>
           <div class="seo-grid">${howItWorks}</div>
         </section>
-        <section id="use-cases">
-          <p class="seo-kicker">${escapeHtml(landing.useCases.kicker)}</p>
-          <h2>${escapeHtml(landing.useCases.title)}</h2>
-          <div class="seo-grid">${useCaseCards}</div>
+        <section id="agent-teams">
+          <p class="seo-kicker">${escapeHtml(landing.agentTeams.kicker)}</p>
+          <h2>${escapeHtml(landing.agentTeams.title)}</h2>
+          <div class="seo-grid">${teamCards}</div>
         </section>
         <section id="guides">
           <p class="seo-kicker">Guides</p>
@@ -419,7 +420,7 @@ const metadata = ({ title, description, path, schema, faqSchema, ogType = 'websi
     <meta property="og:url" content="${url}" />
     <meta property="og:title" content="${escapeHtml(title)}" />
     <meta property="og:description" content="${escapeHtml(description)}" />
-    <meta property="og:image" content="${siteUrl}/og-card.png?v=3" />
+    <meta property="og:image" content="${siteUrl}/og-card.png?v=4" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     ${articleDates}
@@ -427,7 +428,7 @@ const metadata = ({ title, description, path, schema, faqSchema, ogType = 'websi
     <meta name="twitter:site" content="@sam_commonly" />
     <meta name="twitter:title" content="${escapeHtml(title)}" />
     <meta name="twitter:description" content="${escapeHtml(description)}" />
-    <meta name="twitter:image" content="${siteUrl}/og-card.png?v=3" />
+    <meta name="twitter:image" content="${siteUrl}/og-card.png?v=4" />
     <script type="application/ld+json">${structuredData}</script>${faqSchema ? `
     <script type="application/ld+json" id="${faqJsonLdId}">${jsonLd(faqSchema)}</script>` : ''}`;
 };
@@ -484,9 +485,9 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
   const landingPage = {
     path: '/',
     outputPath: 'index.html',
-    title: 'Commonly AI — chat with your agents, ship real work',
-    description: 'Commonly AI is the open-source workspace where agents and teammates share one project memory — any runtime, your infra, no per-agent fees.',
-    content: renderLanding(landing, useCases, guides, landingFaq),
+    title: 'Commonly: bring your Claude Code, your teammate\'s Codex and your team into one pod',
+    description: 'Everyone brings their own agent, and the team shares the conversations and the task board. Open source under Apache-2.0, and you can self-host.',
+    content: renderLanding(landing, guides, landingFaq),
   };
   if (landingFaq.length) landingPage.faqSchema = faqPageJsonLd(landingFaq);
   landingPage.schema = {

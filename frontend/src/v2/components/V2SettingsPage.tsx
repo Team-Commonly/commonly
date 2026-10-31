@@ -44,7 +44,7 @@ const SETTINGS_SECTIONS = [
 
 // Admin-only: the instance's user list and usage analytics. Their routes
 // survived the Settings consolidation (#1544) but the way in did not — the
-// pages were reachable only by typing the URL (Sam, 2026-09-08).
+// pages were reachable only by typing the URL (2026-09-08).
 const ADMIN_SECTION = { id: 'admin', title: 'Administration' } as const;
 const ADMIN_LINKS = [
   { to: '/v2/admin/users', label: 'Users', detail: 'Registered users, bans, invitation codes' },

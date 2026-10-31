@@ -73,7 +73,7 @@ export const startWebhookServer = ({
  * The handler `agent connect` serves on its own port. It only logs what
  * arrives, and no agent has read the event, so it states no outcome a read
  * would count as: the wake still settles, and the pod digest stays unread
- * (Sable, #2753).
+ * (#2753).
  */
 export const logOnlyHandler = async (event) => {
   console.log(`[local] ${event.type} from pod ${event.podId}`);
@@ -99,7 +99,7 @@ export const forwardToLocalWebhook = async (event, webhookUrl, secret = null) =>
   if (!res.ok) throw new Error(`Local webhook returned HTTP ${res.status}`);
   // Only a stated outcome counts. An empty or non-JSON body, or one without
   // an outcome, is a handler that said nothing, the same as a CLI turn that
-  // printed nothing, so it must not read the pod digest (Rhea, #2753).
+  // printed nothing, so it must not read the pod digest (#2753).
   let body = null;
   try { body = await res.json(); } catch { body = null; }
   if (!body || typeof body !== 'object' || typeof body.outcome !== 'string') {

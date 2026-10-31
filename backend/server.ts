@@ -228,6 +228,7 @@ app.use('/api', attributionRoutes);
 // Before podRoutes: its `/:type/:id` catch-all would answer `/:podId/grants` as type=<podId>, id='grants' (Wren 67721).
 app.use('/api/pods', require('./routes/grants').podGrantsRouter); // tools plan §6: GET /api/pods/:podId/grants, the page's list
 app.use('/api/pods', require('./routes/runTraces'));
+app.use('/api/pods', require('./routes/podRecords')); // TASK-513: GET /api/pods/:podId/record/tasks/:taskId
 app.use('/api/pods', podRoutes);
 app.use('/api/billing', require('./routes/billing'));
 app.use('/api/messages', messageRoutes);
@@ -315,6 +316,20 @@ const mongoose = require('mongoose');
 const AgentBootstrapService = require('./services/agentBootstrapService');
 const { ensureLocalDevLogin } = require('./services/localDevLoginService');
 const { AgentInstallation } = require('./models/AgentRegistry');
+const { backfillGrantOwners } = require('./services/grantOwnerBinding');
+
+// Binds pre-existing room grants to their owner. Revoke and seat-grant read
+// refuse unbound grants. This runs at boot without holding requests, so a
+// revoke that lands while it is still scanning can be refused until it
+// finishes; the scan is idempotent and a restart re-runs it for the rest.
+mongoose.connection.once('open', () => {
+  if (process.env.NODE_ENV === 'test') return;
+  backfillGrantOwners()
+    .then((result: { scanned: number; bound: number; unbound: number }) => console.log(
+      `[grant-owner-backfill] scanned=${result.scanned} bound=${result.bound} unbound=${result.unbound}`,
+    ))
+    .catch((error: any) => console.error('[grant-owner-backfill] Error:', error.message));
+});
 
 mongoose.connection.once('open', () => {
   if (process.env.NODE_ENV !== 'test') {
@@ -630,67 +645,26 @@ io.on('connection', (socket: any) => {
           }
         }
 
-        // Use PostgreSQL for messages if available, otherwise fallback to MongoDB
-        if (pgAvailable) {
-          try {
-            // Create message in PostgreSQL
-            console.log('Creating message in PostgreSQL:', {
-              podId,
-              userId: socketUserId,
-              content,
-              messageType,
-            });
-            const newMessage = await PGMessage.create(
-              podId,
-              socketUserId,
-              content,
-              messageType,
-              replyToMessageId,
-            );
-            console.log('Message created successfully:', newMessage);
-
-            message = await PGMessage.findById(newMessage.id);
-            console.log('Message retrieved for broadcast:', message);
-          } catch (dbError) {
-            console.error(
-              'Database error with PostgreSQL, falling back to MongoDB:',
-              dbError,
-            );
-            try {
-              // Create message in MongoDB
-              const user = await User.findById(socketUserId);
-              const newMessage = new Message({
-                podId,
-                userId: socketUserId,
-                content,
-                messageType,
-              });
-
-              await newMessage.save();
-              console.log(
-                'Message saved to MongoDB after PG fallback:',
-                newMessage._id,
-              );
-
-              // Populate user info
-              message = {
-                ...newMessage.toObject(),
-                username: user.username,
-                profilePicture: user.profilePicture,
-              };
-            } catch (mongoDbError) {
-              console.error(
-                'Failed to save message in MongoDB fallback:',
-                mongoDbError,
-              );
-              socket.emit('error', {
-                message: 'Failed to save message to any database',
-              });
-              return;
-            }
+        // PostgreSQL is the only message store once it is configured
+        // (TASK-503); MongoDB is written only when no PG is configured.
+        if (process.env.PG_HOST) {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { writeSocketMessage, MESSAGE_SEND_FAILED_EVENT } = require('./services/socketMessageWrite');
+          const written = await writeSocketMessage({
+            pgReady: pgAvailable,
+            podId,
+            userId: socketUserId,
+            content,
+            messageType,
+            replyToMessageId,
+          });
+          if (!written.ok) {
+            socket.emit(MESSAGE_SEND_FAILED_EVENT, written.error);
+            return;
           }
+          message = written.message;
         } else {
-          console.log('Using MongoDB for messages (PostgreSQL not available)');
+          console.log('Using MongoDB for messages (PostgreSQL not configured)');
           try {
             // Create message in MongoDB
             const user = await User.findById(socketUserId);

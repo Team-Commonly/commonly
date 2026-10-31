@@ -129,8 +129,11 @@ d('TASK-503: local-upgrade backfill into PostgreSQL', () => {
       podId: mongoOnlyPod, userId: USER, content: `${MARKER} mongo-only pod`, messageType: 'text',
     });
     try {
+      // A live Mongo pod is not an orphan, before the mirror and after it.
+      const dry = await backfillLocalMessages(productionDeps(pool), { force: true });
+      expect(dry).toMatchObject({ dryRun: true, pending: 1, orphanedPending: 0 });
       const report = await backfillLocalMessages(productionDeps(pool), { apply: true, force: true });
-      expect(report).toMatchObject({ pending: 1, moved: 1, failed: 0 });
+      expect(report).toMatchObject({ pending: 1, moved: 1, failed: 0, orphanedPending: 0, orphaned: 0 });
       expect(await pgCopies()).toEqual([doc._id.toString()]);
       const { rows } = await pool.query('SELECT id FROM pods WHERE id = $1', [mongoOnlyPod.toHexString()]);
       expect(rows).toHaveLength(1);
@@ -138,6 +141,41 @@ d('TASK-503: local-upgrade backfill into PostgreSQL', () => {
       await pool.query('DELETE FROM messages WHERE pod_id = $1', [mongoOnlyPod.toHexString()]);
       await pool.query('DELETE FROM pods WHERE id = $1', [mongoOnlyPod.toHexString()]);
     }
+  });
+
+  test('a message whose pod is gone from both stores is skipped as orphaned and never fails the run', async () => {
+    const deletedPod = new mongoose.Types.ObjectId();
+    const orphan = await MongoMessage.create({
+      podId: deletedPod, userId: USER, content: `${MARKER} deleted pod`, messageType: 'text',
+    });
+    const live = await mongoMessage('live pod');
+    const deps = productionDeps(pool);
+
+    const dry = await backfillLocalMessages(deps, { force: true });
+    expect(dry).toMatchObject({ dryRun: true, pending: 2, orphanedPending: 1, orphaned: 0 });
+
+    const applied = await backfillLocalMessages(deps, { apply: true, force: true });
+    expect(applied).toMatchObject({ pending: 2, orphanedPending: 1, moved: 1, orphaned: 1, failed: 0 });
+    expect(await pgCopies()).toEqual([live._id.toString()]);
+    const { rows } = await pool.query('SELECT id FROM pods WHERE id = $1', [deletedPod.toHexString()]);
+    expect(rows).toHaveLength(0);
+    const left = await MongoMessage.findById(orphan._id).lean();
+    expect(left.reconciledAt).toBeUndefined();
+  });
+
+  test('since copies only Mongo rows created at or after it', async () => {
+    const since = new Date('2026-09-30T00:00:00Z');
+    await mongoMessage('older history', new Date('2026-09-29T23:59:59Z'));
+    const atSince = await mongoMessage('at since', since);
+    const after = await mongoMessage('recent tail', new Date('2026-10-20T00:00:00Z'));
+    const deps = productionDeps(pool, { since });
+
+    const dry = await backfillLocalMessages(deps, { force: true });
+    expect(dry).toMatchObject({ dryRun: true, pending: 2, moved: 0 });
+
+    const applied = await backfillLocalMessages(deps, { apply: true, force: true });
+    expect(applied).toMatchObject({ pending: 2, moved: 2, failed: 0 });
+    expect(await pgCopies()).toEqual([atSince._id.toString(), after._id.toString()].sort());
   });
 
   test('refuses when PG holds unmarked history older than the newest Mongo message', async () => {

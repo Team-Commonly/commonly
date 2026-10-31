@@ -99,10 +99,10 @@ const DIGEST_FRAME_ROWS = 8;
 // NO_REPLY (a suppressed runtime failure is `runtime_*_suppressed` instead), so
 // it is the seat's decision, not a refusal. Treating it as unread left a
 // silent seat's digest pending, and the hourly unread-digest wake re-woke it to
-// be silent again (rhea, 2026-10-25). A turn that printed nothing acks as
+// be silent again. A turn that printed nothing acks as
 // `empty-output`, which is not a read: that is what a silently failing seat
 // sends every turn, and reading on it would drain a backlog nobody saw
-// (sable, #2753).
+// (#2753).
 const digestConsumedBy = (outcome?: string, reason?: string): boolean => outcome === 'posted'
   || outcome === 'acknowledged'
   || (outcome === 'no_action' && (!reason || reason === 'silent_or_empty'));
@@ -112,7 +112,7 @@ const digestConsumedBy = (outcome?: string, reason?: string): boolean => outcome
 const STUCK_REDISPATCH_BATCH = 50;
 const ABANDONED_RUN_MINUTES = 30;
 
-// TASK-265 (Rhea on #2236): an in-process event is born 'delivered', so one
+// TASK-265: an in-process event is born 'delivered', so one
 // left 'pending' for an agent that now runs in-process was routed before the
 // agent moved in-process (the hosted migration: enqueue decides routing before
 // the insert) and nothing polls it. The sweep runs those once they are a
@@ -128,7 +128,7 @@ const STRANDED_PENDING_MAX_AGE_MS = 30 * 60 * 1000;
 // Phase A (default): a presented nonce must match; an absent one is accepted
 // and counted. Phase B: an absent nonce is refused.
 //
-// **Phase B flips PER CONSUMER, not globally** (Sam, 2026-08-30). The first
+// **Phase B flips PER CONSUMER, not globally**. The first
 // draft gated the flip on `withoutNonce` reaching zero across everything,
 // which hands a veto to whichever consumer is slowest — and one of them, the
 // openclaw extension, has been parked since 2026-08-20. A parked runtime
@@ -194,6 +194,7 @@ interface InstallationDoc {
   _id?: unknown;
   agentName?: string;
   instanceId?: string;
+  displayName?: string;
   podId?: unknown;
   status?: string;
   scopes?: string[];
@@ -315,6 +316,59 @@ const normalizeConfig = (config: unknown): Record<string, unknown> => {
   return config as Record<string, unknown>;
 };
 
+// Inline webhook replies take the same service path as the CAP post route
+// (agentsRuntime.ts): the unseen-messages freshness hold, postMessage with the
+// installation config, then the mention or agent-dm enqueue. Resolves to a
+// recorded outcome only when the reply was held or skipped; throws when the post fails.
+const postInlineReply = async (
+  installation: InstallationDoc, event: EventDoc, content: string,
+): Promise<{ outcome: string; reason: string } | null> => {
+  // eslint-disable-next-line global-require
+  const AgentMessageService = require('./agentMessageService');
+  // eslint-disable-next-line global-require
+  const AgentMentionService = require('./agentMentionService');
+  // eslint-disable-next-line global-require
+  const AgentSendFreshness = require('./agentSendFreshness');
+  // eslint-disable-next-line global-require
+  const PodModel = require('../models/Pod');
+
+  const agentUser = await AgentIdentityService.getOrCreateAgentUser(event.agentName, {
+    instanceId: event.instanceId || 'default',
+    displayName: installation.displayName,
+  });
+  // The event's own message is the one being answered, so only messages that
+  // landed after it hold the reply (see unseenMessages).
+  const hold = await AgentSendFreshness.unseenMessages(agentUser._id, event.podId, {
+    seenThroughMessageId: event.payload?.messageId,
+  });
+  if (hold) return { outcome: 'skipped', reason: 'unseen_messages' };
+
+  const result = await AgentMessageService.postMessage({
+    agentName: event.agentName,
+    instanceId: event.instanceId || 'default',
+    displayName: installation.displayName,
+    podId: event.podId,
+    content,
+    replyToMessageId: null,
+    threadRootId: null,
+    installationConfig: installation.config || null,
+  });
+  if (result?.skipped) return { outcome: 'skipped', reason: String(result.reason || 'skipped') };
+  if (!result?.success || !result.message) throw new Error('post returned no message');
+
+  PodModel.findById(event.podId).select('type').lean()
+    .then((podDoc: { type?: string } | null) => {
+      const args = {
+        podId: event.podId, message: result.message, userId: agentUser._id, username: agentUser.username,
+      };
+      return podDoc?.type === 'agent-dm'
+        ? AgentMentionService.enqueueDmEvent(args)
+        : AgentMentionService.enqueueMentions(args);
+    })
+    .catch((err: Error) => console.warn('[webhook] inline reply enqueue failed:', err.message));
+  return null;
+};
+
 const deliverEventViaWebhook = async (installation: InstallationDoc, event: EventDoc): Promise<void> => {
   const runtimeConfig = (normalizeConfig(installation.config)?.runtime || {}) as Record<string, unknown>;
   const { webhookUrl, webhookSecret } = runtimeConfig as { webhookUrl?: string; webhookSecret?: string };
@@ -366,18 +420,21 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
       outcome?: string; content?: string; reason?: string;
     };
 
+    // The endpoint's claim is only what it asked for. If the inline reply does
+    // not land, record that instead of 'posted'.
+    let recordedOutcome = outcome;
+    let recordedReason = reason;
     if (outcome === 'posted' && content) {
       try {
-        // eslint-disable-next-line global-require
-        const agentMessageService = require('./agentMessageService');
-        await agentMessageService.postAgentMessage({
-          agentName: event.agentName,
-          instanceId: event.instanceId,
-          podId: event.podId,
-          content: String(content),
-        });
+        const held = await postInlineReply(installation, event, String(content));
+        if (held) {
+          recordedOutcome = held.outcome;
+          recordedReason = held.reason;
+        }
       } catch (postErr) {
         console.warn(`[webhook] Failed to post message for ${event.agentName}:`, (postErr as Error).message);
+        recordedOutcome = 'error';
+        recordedReason = 'inline_post_failed';
       }
     }
 
@@ -394,9 +451,9 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
     await AgentEvent.findByIdAndUpdate(event._id, {
       status: 'acked',
       deliveredAt: new Date(),
-      delivery: AgentEventService.normalizeDeliveryMeta({ outcome, reason }),
+      delivery: AgentEventService.normalizeDeliveryMeta({ outcome: recordedOutcome, reason: recordedReason }),
     });
-    if (digestConsumedBy(outcome, reason)) {
+    if (digestConsumedBy(recordedOutcome, recordedReason)) {
       await AgentEventService.settleLegacyDigest(event).catch((err: Error) => {
         console.warn('[webhook] digest settle failed:', err.message);
       });
@@ -809,6 +866,11 @@ class AgentEventService {
     };
   }
 
+  // Test seam: unit tests drive the real webhook delivery, not a copy of it.
+  static deliverEventViaWebhook(installation: InstallationDoc, event: EventDoc): Promise<void> {
+    return deliverEventViaWebhook(installation, event);
+  }
+
   static normalizeDeliveryMeta(input: unknown = {}): DeliveryMeta | null {
     if (!input || typeof input !== 'object') return null;
     const allowedOutcomes = new Set(['acknowledged', 'posted', 'no_action', 'skipped', 'error']);
@@ -1154,7 +1216,7 @@ class AgentEventService {
    * identities (projections included), and keeps only the rows the routing
    * rule itself runs, with the engine in effect. An unfinished migration's
    * rows are therefore not targets, so their events can never fill the
-   * sweep's batch and starve a runnable agent's event (Rhea on #2236).
+   * sweep's batch and starve a runnable agent's event.
    */
   static async inProcessEventTargets(): Promise<{ agentName: string; instanceId: string; podId: unknown }[]> {
     const identities = await AgentInstallation.find({ status: 'active', ...IN_PROCESS_RUNTIME_FILTER })
@@ -1477,7 +1539,7 @@ class AgentEventService {
    * runtime runs for `installationDoc` (merged with `sibling`'s config when the
    * row is a projection with no runtime of its own), or null. Shared by
    * `resolveInProcessInstallation` and the stranded-event sweep, so the sweep
-   * can never select an event that enqueue would not run (Rhea on #2236).
+   * can never select an event that enqueue would not run.
    */
   static inProcessInstallationFrom(
     installationDoc: InstallationDoc,

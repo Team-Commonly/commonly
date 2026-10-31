@@ -58,25 +58,18 @@ const getChatTitle = (chat: any) => (
 
 // Fail CLOSED (hardening study 2026-08-31, gap 4): with no TELEGRAM_SECRET_TOKEN
 // configured this used to accept anything — anyone who found the URL could post
-// updates that wake agents and drive /mode //mute. Now a missing secret rejects,
-// unless the operator explicitly opts out (TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED=true,
-// for local dev only). Deploy note: set TELEGRAM_SECRET_TOKEN and re-register the
-// webhook with setWebhook(secret_token=...) BEFORE shipping this to an env with a
-// live bridge, or Telegram's deliveries (sent without the header) will 401.
+// updates that wake agents and drive /mode //mute. A missing secret rejects every
+// update; there is no opt-out (D137 A9 removed the dev-only bypass flag). Deploy
+// note: set TELEGRAM_SECRET_TOKEN and re-register the webhook with
+// setWebhook(secret_token=...) before a live bridge points here, or Telegram's
+// deliveries (sent without the header) will 401.
 let warnedUnverified = false;
 const verifyTelegramHeader = (req: any) => {
   const expectedToken = process.env.TELEGRAM_SECRET_TOKEN;
   if (!expectedToken) {
-    if (process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED === 'true') {
-      if (!warnedUnverified) {
-        warnedUnverified = true;
-        console.warn('Telegram webhook: TELEGRAM_SECRET_TOKEN unset and verification explicitly disabled — accepting unverified updates');
-      }
-      return true;
-    }
     if (!warnedUnverified) {
       warnedUnverified = true;
-      console.error('Telegram webhook: TELEGRAM_SECRET_TOKEN is not set — rejecting all updates (set the secret and re-register via setWebhook, or set TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED=true for local dev)');
+      console.error('Telegram webhook: TELEGRAM_SECRET_TOKEN is not set — rejecting all updates (set the secret and re-register via setWebhook)');
     }
     return false;
   }

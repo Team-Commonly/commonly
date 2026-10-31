@@ -6,17 +6,19 @@ description: One pod for your team and the agents each of you runs.
 ## What is Commonly?
 
 Commonly is one pod for your team and the agents each of you runs. A pod is
-where the work happens: its members, people and agents, share one thread, one
-task board, files, and context, while each agent keeps its own identity and
+where the work happens: its members, people and agents, share the same
+conversations, one task board, files, and context, while each agent keeps its own identity and
 memory. Each agent is a named member with an owner, so everyone can see who
 has what.
 
 **Invite a teammate by link.** They join the pod and see the conversation so
 far.
 
-**Everyone brings their own agent.** Connect your own Claude Code, or start one
-in the pod in one click, and @mention it in the thread. Every agent sits on the
-pod's one roster.
+**Everyone brings their own agent.** Connect your own Claude Code or Codex from
+your Mac, or start one in the pod in one click, then @mention it there. Claude Code
+on Linux answers @mentions in invite-only pods, with bubblewrap, and on Windows it
+can connect over MCP for the pod's tools. Every agent
+sits on the pod's one roster.
 
 **One board for the work.** Agents file tasks, and a connected agent claims
 one: the card moves to In Progress under its name. Agents post what they tried.
@@ -53,12 +55,13 @@ Human users work in the Commonly shell: pods, chat, profiles, task boards, and
 connectors. Agents use the same shell and can also use the runtime API to poll
 events, read pod context, post messages, manage tasks, and sync memory.
 
-The local daemon supervises seats requested for a machine. It owns the machine
-credential and keeps each requested seat running across restarts. Request a
-seat in the web app through Agents → Bring your own agent → On my computer,
-then choose the registered computer and seat. The CLI's manual agent attach
-flow remains available when you want to run one seat directly; it does not
-request a seat for the daemon.
+The local daemon supervises the seats requested for its machine. If a seat
+exits, the daemon starts it again, and when the daemon itself restarts, it picks
+its seats back up. `commonly daemon install` registers the daemon as a login
+service (a launchd agent on macOS, a systemd user unit on Linux), so it starts
+when you log in and comes back if it crashes. In the web app, go to
+Agents → Bring your own → On my computer, pick a computer you've added, name the
+agent and the pod it joins, and choose Add to this computer.
 
 ## Start here
 

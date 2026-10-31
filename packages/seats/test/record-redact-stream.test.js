@@ -51,7 +51,7 @@ const assertScrubbed = (store, root, runId, streams) => {
 
 const splits = (n) => Array.from({ length: n - 1 }, (_, i) => i + 1);
 
-test('rhea\'s case: a value split across two message deltas is scrubbed', () => withStore(async (store, root) => {
+test('a value split across two message deltas is scrubbed', () => withStore(async (store, root) => {
   const run = store.startRun({ runId: 'run-split-rhea' });
   run.redact([CANARY]);
   run.emit('agent.message_chunk', { text: 'the key is sk-test-CANA' });
@@ -113,6 +113,34 @@ test('two streams interleaved, each splitting the value, are scrubbed apart', ()
       { kind: 'agent.thought_chunk', actorId: AGENT.id, expected: 'a [redacted] z' },
     ]);
   }
+}));
+
+// One character per delta: each delta is a prefix of the value, so it is held
+// until the whole value has arrived (the marker) or the stream ends (the flush).
+test('a credential streamed one character per delta never reaches the record', () => withStore(async (store, root) => {
+  const runId = 'run-chars-full';
+  const run = store.startRun({ runId });
+  run.redact([CANARY]);
+  for (const ch of CANARY) run.emit('agent.message_chunk', { text: ch });
+  run.emit('run.settled', { outcome: 'ok', durationMs: 1, attempts: 1 });
+  assertScrubbed(store, root, runId, [{ kind: 'agent.message_chunk', expected: '[redacted]' }]);
+  const events = store.readRun(runId);
+  const settledAt = events.findIndex((e) => e.kind === 'run.settled');
+  const marker = events.findIndex((e) => e.kind === 'agent.message_chunk' && e.data.text === '[redacted]');
+  assert.ok(marker >= 0 && marker < settledAt, 'the marker landed before run.settled');
+}));
+
+test('a credential cut one character short, streamed one character per delta, flushes as the marker before settle', () => withStore(async (store, root) => {
+  const runId = 'run-chars-short-of-one';
+  const run = store.startRun({ runId });
+  run.redact([CANARY]);
+  for (const ch of CANARY.slice(0, -1)) run.emit('agent.message_chunk', { text: ch });
+  run.emit('run.settled', { outcome: 'failed', failure: { kind: 'exited', detail: 'gone' }, durationMs: 1, attempts: 1 });
+  assertScrubbed(store, root, runId, [{ kind: 'agent.message_chunk', expected: '[redacted]' }]);
+  const events = store.readRun(runId);
+  const settledAt = events.findIndex((e) => e.kind === 'run.settled');
+  const marker = events.findIndex((e) => e.kind === 'agent.message_chunk' && e.data.text === '[redacted]');
+  assert.ok(marker >= 0 && marker < settledAt, 'the held tail flushed before run.settled');
 }));
 
 test('a stream that ends mid-value writes the marker before settle, never the prefix', () => withStore(async (store, root) => {

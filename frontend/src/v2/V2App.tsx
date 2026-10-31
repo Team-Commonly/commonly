@@ -14,6 +14,9 @@ import '@fontsource/ibm-plex-sans/400.css';
 import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
 import '@fontsource/ibm-plex-mono/500.css';
+// Night Shift (D194): Recursive, all axes (CASL + MONO), self-hosted. The
+// woff2 only downloads when a .v2-nightshift surface renders a glyph.
+import '@fontsource-variable/recursive/full.css';
 import './v2.css';
 
 // TASK-145 — inside the shell, only the surfaces the composer path needs stay
@@ -187,7 +190,7 @@ const V2App: React.FC = () => {
     // Claim the page canvas while v2 is mounted. App.tsx unconditionally
     // stamps `modern-ui` (the V1 dark gradient) on <body>, and .v2-root only
     // paints its own box — so the V1 darkness showed through on load flash,
-    // overscroll, and every gap (Sam, 2026-08-24). The class must out-rank
+    // overscroll, and every gap (2026-08-24). The class must out-rank
     // body.modern-ui, not merely follow it in bundle order.
     document.body.classList.add('v2-canvas');
     return () => {

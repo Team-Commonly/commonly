@@ -58,6 +58,7 @@ import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
 import { isAnswerableToolError } from '../public-tool-error.js';
 import { startInstanceProxy } from '../instance-proxy.js';
+import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const ISOLATED_PROXY_PORT = 8765;
@@ -65,7 +66,7 @@ const ISOLATED_INSTANCE_PORT = 8766;
 const LOOPBACK_BRIDGE = fileURLToPath(new URL('../sandbox/opencode-loopback.mjs', import.meta.url));
 const TERMINATION_GRACE_MS = 5000;
 // Bump only with a passing real sandbox-exec smoke against the new version.
-const TESTED_OPENCODE_VERSIONS = Object.freeze(['1.18.35', '1.19.0']);
+const TESTED_OPENCODE_VERSIONS = Object.freeze(['1.18.35', '1.19.0', '1.19.4']);
 const ALLOW_UNTESTED_OPENCODE_VERSION_ENV = 'COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION';
 const VERSION_CHECK_TIMEOUT_MS = 5000;
 const OPENCODE_CONFIG_GITIGNORE = [
@@ -246,6 +247,10 @@ const publicPermissions = (mode, mcpNames) => {
     todoread: 'allow',
     lsp: 'allow',
     ...Object.fromEntries(mcpNames.map((name) => [`${permissionMcpName(name)}_*`, 'allow'])),
+    // After the wildcard allow, since the last matching rule wins
+    // (public-withheld-tools.js).
+    ...Object.fromEntries(mcpNames.flatMap((name) => PUBLIC_WITHHELD_TOOLS
+      .map((tool) => [`${permissionMcpName(name)}_${tool}`, 'deny']))),
   };
 };
 

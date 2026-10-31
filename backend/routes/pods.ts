@@ -52,6 +52,7 @@ interface AuthReq {
 interface Res {
   status: (n: number) => Res;
   json: (d: unknown) => void;
+  set: (field: string, value: string) => void;
   sendFile: (path: string) => void;
 }
 
@@ -324,6 +325,8 @@ router.get('/external-link/:linkId/qrcode', auth, async (req: AuthReq, res: Res)
     if (!link || link.type !== 'wechat' || !link.qrCodePath) return res.status(404).json({ message: 'QR code not found' });
     const pod = await Pod.findById(link.podId) as { members?: Array<{ toString: () => string }> } | null;
     if (!pod || !pod.members?.some((m) => m.toString() === req.user?.id)) return res.status(403).json({ message: 'Access denied' });
+    // Set explicitly: send() defaults to public, max-age=0 when no header is set.
+    res.set('Cache-Control', 'private, no-store');
     return res.sendFile(path.resolve(link.qrCodePath));
   } catch (error) {
     console.error('Error fetching QR code:', error);

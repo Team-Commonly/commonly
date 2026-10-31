@@ -20,7 +20,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 95);
+  assert.equal(pages.length, 99);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -117,6 +117,10 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-data-boundaries/',
     '/guides/ai-agent-disagreement-resolution/',
     '/guides/ai-agent-task-prioritization/',
+    '/guides/ai-agent-collaboration-platforms/',
+    '/guides/control-what-coding-agents-can-access/',
+    '/guides/github-agent-hq-alternative/',
+    '/guides/run-claude-code-and-codex-together/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -154,15 +158,15 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 85);
+  assert.equal(guidePages.length, 89);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
     const webPage = guide.schema['@graph'].find((item) => item['@type'] === 'WebPage');
     assert.equal(article.author['@type'], 'Organization');
     assert.equal(webPage.reviewedBy['@type'], 'Organization');
-    assert.match(article.datePublished, /^2026-(?:08|09)-\d{2}$/);
-    assert.match(article.dateModified, /^2026-(?:08|09)-\d{2}$/);
+    assert.match(article.datePublished, /^2026-(?:08|09|10)-\d{2}$/);
+    assert.match(article.dateModified, /^2026-(?:08|09|10)-\d{2}$/);
     if (refreshedGuidePaths.has(guide.path)) {
       assert.equal(article.dateModified, '2026-08-30');
     }
@@ -2090,7 +2094,7 @@ test('the static / carries the landing FAQ and its FAQPage JSON-LD (TASK-531)', 
     const pages = await generateSeoPages({ outputDir });
     const rendered = await readFile(join(outputDir, 'index.html'), 'utf8');
 
-    assert.equal(landingFaq.length, 6);
+    assert.equal(landingFaq.length, 13);
     assert.ok(rendered.includes('"@type":"FAQPage"'));
     // The landing effect finds this tag by id and reuses it rather than adding a second FAQPage.
     assert.ok(faqSource.includes("FAQ_JSONLD_ID = 'landing-faq-jsonld'"));

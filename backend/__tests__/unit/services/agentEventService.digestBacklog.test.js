@@ -1,7 +1,7 @@
 // A consumed wake reads its pod's whole unread digest, not only the page it
 // quoted. Pinned against mongodb-memory-server.
 //
-// The loop this exists for (rhea, 2026-10-25): a wake claimed up to 9 digest
+// The loop this exists for: a wake claimed up to 9 digest
 // companions, the seat answered NO_REPLY, the server judged the reply
 // `silent_or_empty`, and both the CLI and the ack treated that as "not read".
 // The requeue put the companions back, the unread-digest heartbeat fired an
@@ -107,7 +107,7 @@ describe('a consumed wake settles the digest backlog up to its snapshot', () => 
     [{ outcome: 'no_action', reason: 'claim-held' }],
     [{ outcome: 'no_action', reason: 'duplicate_recent' }],
     // Empty output is not the NO_REPLY sentinel: a seat failing silently every
-    // turn must leave its backlog pending, not drain it (sable, #2753).
+    // turn must leave its backlog pending, not drain it (#2753).
     [{ outcome: 'no_action', reason: 'empty-output' }],
     [{ outcome: 'error' }],
   ])('a non-consuming outcome settles nothing: %j', async (result) => {

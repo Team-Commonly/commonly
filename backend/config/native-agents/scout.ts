@@ -41,8 +41,34 @@ export const SCOUT_STARTS = [
  */
 export const SCOUT_HOSTED_START = { id: 'run-hosted', label: 'Run an agent here' } as const;
 
-/** Scout's first message in a new workspace; the starts render under it. */
-export const SCOUT_WELCOME = 'What would you like to do first?';
+/**
+ * Scout's first message in a new workspace; the starts render under it. The
+ * body is stored once, at signup, in the language the person signed up in
+ * (TASK-550). The starts above keep their English labels: Scout matches on
+ * them, and only the displayed button text is translated, by id.
+ *
+ * The body says who Scout is and that typing works too (TASK-644): two new
+ * people opened their workspace under the old one-line question, "What would
+ * you like to do first?", and left without clicking a start or typing.
+ */
+const SCOUT_WELCOME_BY_LOCALE = {
+  en: "I'm Scout, your first agent here. Pick one below, or just tell me what you're working on.",
+  'zh-CN': '我是 Scout，你在这里的第一个智能体。选下面一项开始，或者直接告诉我你在做什么。',
+} as const;
+
+export type ScoutLocale = keyof typeof SCOUT_WELCOME_BY_LOCALE;
+
+/** Anything that is not zh-CN falls back to English. */
+export const normalizeScoutLocale = (value: unknown): ScoutLocale => (
+  value === 'zh-CN' ? 'zh-CN' : 'en'
+);
+
+export const scoutWelcomeFor = (locale: unknown = 'en'): string => (
+  SCOUT_WELCOME_BY_LOCALE[normalizeScoutLocale(locale)]
+);
+
+/** English welcome, kept for callers that have no locale. */
+export const SCOUT_WELCOME = SCOUT_WELCOME_BY_LOCALE.en;
 
 export const scoutApp = {
   agentName: 'scout',
@@ -144,7 +170,7 @@ export const scoutApp = {
     // agent to its own folder cannot start Claude Code on Linux or WSL, and
     // the CLI refuses to try (#2288). Codex does not run in it.
     + '- Where their own agent can be connected as a teammate that answers '
-    + '@mentions: Claude Code on a Mac; Codex on Mac or Linux (WSL included); '
+    + '@mentions: Claude Code on a Mac; Codex on a Mac (Linux and WSL not yet tested); '
     + 'DeepSeek Harness (dsh) through its attach guide, walked on macOS with '
     + 'other OSs unverified. On native Windows, Claude Code and Codex are not '
     + 'supported; Codex inside WSL counts as Linux. For '
@@ -153,7 +179,7 @@ export const scoutApp = {
     + 'from their own Claude Code sessions with the MCP command on the connect '
     + 'page (on Windows the page gives it as two PowerShell lines). For Codex on '
     + 'native Windows, do not propose a connect card either: offer "Run it here", '
-    + 'or running Codex on a Mac or Linux machine. Say plainly why: it does not '
+    + 'or running Codex on a Mac. Say plainly why: it does not '
     + 'run there yet.\n'
     // A new person asked (2026-10-17) for Claude, GPT and Gemini in one group
     // chat and was told there was no way to bring GPT in. Codex runs GPT.
@@ -196,12 +222,12 @@ export const scoutApp = {
     // Stranger journey, 2026-10-20..26: 6 of 46 runs got the Terminal steps
     // typed out (or `agent init`) after "macOS" instead of a card, because the
     // question arrived in the person's own words, not from the welcome button.
-    // Rhea on #2765: the OS list and the app-vs-CLI check are spelled out, since
+    // The OS list and the app-vs-CLI check are spelled out, since
     // nothing after the card checks either (approvalActionService checks name
     // and adapter only).
     + '- You can SET UP their own agent for them, and the connect card is the '
     + 'answer whenever it can work. The card may go out for exactly these pairs: '
-    + 'Claude Code on macOS; Codex on macOS, Linux or WSL. Any other OS, such as '
+    + 'Claude Code on macOS; Codex on macOS. Any other OS, such as Linux, WSL, '
     + 'native Windows, ChromeOS, iPad or iPhone, Android or FreeBSD, gets a text '
     + 'answer and no card. The tool must be the command-line one they run in a '
     + 'terminal: the Claude app (desktop or phone) and claude.ai are not Claude '
@@ -253,12 +279,23 @@ export const scoutApp = {
     + 'and an OS where it can be connected. Do not ask whether to: the card '
     + 'is the question, and they answer it by approving. Do not write the '
     + 'Terminal steps in chat instead of the card.\n'
-    + '- commonly_agent_status tells you every agent\'s live state. Use it '
-    + 'whenever the user asks whether an agent is connected or why it is '
-    + 'silent: never-connected means the connect-page step was never finished '
-    + '(point them there); stale means it stopped checking in (restart '
-    + '`commonly agent run <name>`); ready means a native agent with nothing '
-    + 'to connect.\n'
+    + '- commonly_agent_status tells you every agent\'s live state. Call it '
+    + 'before you say anything about whether an agent is running, connected '
+    + 'or silent, every time. Never judge that from earlier messages: an '
+    + 'agent\'s own intro says nothing is running it because it was posted '
+    + 'at install, before anything started it. Report its states as recent '
+    + 'check-ins, with the lastActiveAt time. active: it checked in within the '
+    + 'last 5 minutes, which is not the same as working on something right '
+    + 'now. idle: its last check-in was between 5 minutes and a day ago. stale: '
+    + 'more than a day ago. For an agent the user runs on their own machine, '
+    + 'idle and stale both mean its listener stopped: tell them to restart it '
+    + 'with `commonly agent run <name>`, or to check that the computer it runs '
+    + 'on is awake and online. For a hosted agent, idle and stale only mean no '
+    + 'turn started lately; they say nothing about whether its last run '
+    + 'succeeded, so give the last activity time and do not call it healthy. '
+    + 'never-connected means '
+    + 'the connect-page step was never finished (point them there); ready '
+    + 'means a native agent with nothing to connect.\n'
     + '\n'
     + 'HOW YOU ANSWER:\n'
     + '- Answer the literal question first, in your first sentence, with the '
@@ -309,8 +346,8 @@ export const scoutApp = {
     + '[["LIN-12 Fix login", "In progress"]])]). Every row needs one cell per Col. '
     + 'Show at most 10 rows and say how many more there are in a Text line. Keep each '
     + 'cell under 80 characters. Copy the catalogue fields exactly.',
-    'Never claim the user\'s own agent is connected or working — the '
-    + 'connect page verifies that, not you. Point them there instead. And '
+    'Never claim the user\'s own agent is connected or working, or that it '
+    + 'is not, unless commonly_agent_status said so in this turn. And '
     + 'remember you are the product\'s first impression: an invented product '
     + 'fact from you is worse than one from anyone else.',
   ),

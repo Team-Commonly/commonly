@@ -91,8 +91,7 @@ test('Atlassian shows its read-in-testing state on an existing grant', async () 
 const mockTwoEntries = ({ catalog = [githubEntry, linearEntry], grants = { p1: [grantLinear], p2: [grantRevoked] } } = {}) => {
   axios.get.mockImplementation((url) => {
     if (url === '/api/installables') return Promise.resolve({ data: { installables: catalog } });
-    const pod = /^\/api\/pods\/(p\d)\/grants$/.exec(url);
-    if (pod) return Promise.resolve({ data: { podId: pod[1], grants: grants[pod[1]] || [] } });
+    if (url === '/api/grants') return Promise.resolve({ data: { grants: Object.values(grants).flat() } });
     if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [{ name: 'scout', displayName: 'Scout', userId: 'a1' }] } });
     if (url === '/api/registry/pods/p2/agents') return Promise.resolve({ data: { agents: [{ name: 'scout', displayName: 'Scout', userId: 'a1' }] } });
     if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'g', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
@@ -103,8 +102,7 @@ const mockTwoEntries = ({ catalog = [githubEntry, linearEntry], grants = { p1: [
 const mockApi = (catalog = []) => {
   axios.get.mockImplementation((url) => {
     if (url === '/api/installables') return Promise.resolve({ data: { installables: [{ installableId: 'telegram', list: 'channels' }, ...catalog] } });
-    if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { podId: 'p1', grants: [grantLive] } });
-    if (url === '/api/pods/p2/grants') return Promise.resolve({ data: { podId: 'p2', grants: [grantRevoked] } });
+    if (url === '/api/grants') return Promise.resolve({ data: { grants: [grantLive, grantRevoked] } });
     if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [{ name: 'scout', displayName: 'Scout', userId: 'a1' }] } });
     if (url === '/api/registry/pods/p2/agents') return Promise.resolve({ data: { agents: [{ name: 'scout', displayName: 'Scout', userId: 'a1' }] } });
     if (url === '/api/grants/grant_live/calls') return Promise.resolve({ data: trail });
@@ -121,6 +119,33 @@ const renderTools = (props = {}) => render(
 );
 
 beforeEach(() => { jest.clearAllMocks(); mockApi([githubEntry]); });
+
+test('one owner grant read shows the 21st pod and keeps revoked and expired labels', async () => {
+  const manyPods = Array.from({ length: 21 }, (_, index) => ({
+    _id: `p${index + 1}`, name: `Pod ${index + 1}`, members: [{ _id: 'u1', username: 'sam' }],
+  }));
+  const inLastPod = { ...grantLive, grantId: 'grant_21', target: { kind: 'pod', id: 'p21' } };
+  const revoked = { ...inLastPod, grantId: 'grant_21_revoked', revokedAt: iso(-600000), revokedBy: 'u1' };
+  const expired = { ...inLastPod, grantId: 'grant_21_expired', expiresAt: iso(-600000) };
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/installables') return Promise.resolve({ data: { installables: [githubEntry] } });
+    if (url === '/api/grants') return Promise.resolve({ data: { grants: [inLastPod, revoked, expired] } });
+    if (url.includes('/registry/pods/')) return Promise.resolve({ data: { agents: [] } });
+    if (url.includes('/calls')) return Promise.resolve({ data: { calls: [], counts: {} } });
+    return Promise.reject(new Error(`unmocked ${url}`));
+  });
+  renderTools({ pods: manyPods });
+
+  expect(await screen.findAllByRole('button', { name: 'View GitHub in Pod 21' })).toHaveLength(3);
+  expect(screen.getByText(/revoked by sam 10m/)).toBeInTheDocument();
+  expect(screen.getByText(/expired 10m/)).toBeInTheDocument();
+  fireEvent.click(screen.getAllByRole('button', { name: 'Grant again' })[0]);
+  expect(await screen.findByRole('option', { name: 'Pod 21' })).toBeInTheDocument();
+  const grantReads = axios.get.mock.calls.filter(([url]) => url === '/api/grants');
+  expect(grantReads).toHaveLength(1);
+  expect(grantReads[0][1]).toMatchObject({ params: { connectionOwner: 'me' } });
+  expect(axios.get.mock.calls.some(([url]) => /\/api\/pods\/.*\/grants/.test(url))).toBe(false);
+});
 
 test('a sole join-policy refusal offers the owner an in-place fix and then allows retry', async () => {
   axios.post.mockRejectedValueOnce({ response: { data: {
@@ -171,7 +196,7 @@ test('TASK-131: a grant age advances in place, and a returning tab re-reads, wit
     await act(async () => { jest.advanceTimersByTime(60 * 60_000); });
     expect(screen.getByText(/granted 2h$/)).toBeInTheDocument();
 
-    const reads = () => axios.get.mock.calls.filter(([url]) => url === '/api/pods/p1/grants').length;
+    const reads = () => axios.get.mock.calls.filter(([url]) => url === '/api/grants').length;
     const before = reads();
     document.dispatchEvent(new Event('visibilitychange'));
     await waitFor(() => expect(reads()).toBeGreaterThan(before));
@@ -187,7 +212,7 @@ test('TASK-131: a grant expiring with the page open moves its tool back to Not y
     const expiring = { ...grantLive, grantId: 'grant_soon', expiresAt: iso(60_000) };
     axios.get.mockImplementation((url) => {
       if (url === '/api/installables') return Promise.resolve({ data: { installables: [githubEntry] } });
-      if (url.endsWith('/grants')) return Promise.resolve({ data: { grants: url.includes('p1') ? [expiring] : [] } });
+      if (url === '/api/grants') return Promise.resolve({ data: { grants: [expiring] } });
       if (url.includes('/registry/pods/')) return Promise.resolve({ data: { agents: [] } });
       if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'grant_soon', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
       return Promise.reject(new Error(`unmocked ${url}`));
@@ -242,6 +267,33 @@ test('rows carry the states table: a live grant pulses when used in the last 10 
 
 // TASK-164: every {{rel}} in these lines used to be filled with an English
 // relative time, so a zh grant read "Granted by sam 1小时前." worst of both.
+// TASK-649: one timestamp pair, two ages. A grant made 16 minutes before its
+// revoke and read 41h later must say the same day count for both lines, not
+// "granted 1d" beside "revoked 2d ago".
+test('TASK-649: the grant age and the revoke age round the same way on one row', async () => {
+  const createdAt = iso(-(41 * 3600_000 + 24 * 60_000));
+  const revokedAt = iso(-(41 * 3600_000 + 8 * 60_000));
+  const grant = { ...grantRevoked, createdAt, revokedAt, revokedBy: 'u1' };
+  mockTwoEntries({ grants: { p1: [], p2: [grant] } });
+  renderTools();
+  const gone = await screen.findByRole('button', { name: 'View GitHub in Ops' });
+  expect(within(gone).getByText(/granted 2d$/)).toBeInTheDocument();
+  expect(within(gone).getByText('revoked by sam 2d ago')).toBeInTheDocument();
+});
+
+// TASK-649: the same rule holds below a day. A grant's own age must round the
+// way the revoke line rounds, at the minute and hour boundaries too.
+test.each([
+  [5 * 60_000 + 40_000, 'granted 6m'],
+  [100 * 60_000, 'granted 2h'],
+])('TASK-649: a grant aged %p ms reads "%s" on its row', async (ageMs, expected) => {
+  const grant = { ...grantRevoked, createdAt: iso(-ageMs), revokedAt: null, revokedBy: null };
+  mockTwoEntries({ grants: { p1: [], p2: [grant] } });
+  renderTools();
+  const row = await screen.findByRole('button', { name: 'View GitHub in Ops' });
+  expect(within(row).getByText(new RegExp(`${expected}$`))).toBeInTheDocument();
+});
+
 test('TASK-164: the grant, budget and trail times read in zh-CN, not English', async () => {
   await i18nReady;
   await act(async () => { await i18n.changeLanguage('zh-CN'); });
@@ -252,7 +304,7 @@ test('TASK-164: the grant, budget and trail times read in zh-CN, not English', a
     const aside = await screen.findByRole('complementary');
     expect(within(aside).getByText(/前由 sam 授权。/)).toBeInTheDocument();
     expect(within(aside).getByText(/后结束。/)).toBeInTheDocument();
-    // lily-shen's TASK-180 ruling names this key explicitly — 「每{{window}}可调用
+    // The TASK-180 ruling names this key explicitly — 「每{{window}}可调用
     // {{calls}}次」 — so the budget line loses both of its spaces. This assertion
     // pinned the old spacing, which is why it had to move with the ruling.
     expect(within(aside).getByText(/每1小时可调用50次/)).toBeInTheDocument();
@@ -278,8 +330,7 @@ test('TASK-179: the grant line is one sentence per language, and an empty audien
   const emptyAudience = { ...grantLive, grantId: 'grant_empty', target: { kind: 'pod', id: 'p2' }, effectiveAudience: [] };
   axios.get.mockImplementation((url) => {
     if (url === '/api/installables') return Promise.resolve({ data: { installables: [githubEntry] } });
-    if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { podId: 'p1', grants: [grantLive] } });
-    if (url === '/api/pods/p2/grants') return Promise.resolve({ data: { podId: 'p2', grants: [emptyAudience] } });
+    if (url === '/api/grants') return Promise.resolve({ data: { grants: [grantLive, emptyAudience] } });
     if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [{ name: 'scout', displayName: 'Scout', userId: 'a1' }] } });
     if (url === '/api/registry/pods/p2/agents') return Promise.resolve({ data: { agents: [] } });
     if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'g', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
@@ -325,8 +376,7 @@ test('TASK-179: a seat grant names the seat in its sentence and the pod in the r
   const seatGrant = { ...grantLive, grantId: 'grant_seat', target: { kind: 'seat', id: 'a1' }, effectiveAudience: ['a1'] };
   axios.get.mockImplementation((url) => {
     if (url === '/api/installables') return Promise.resolve({ data: { installables: [githubEntry] } });
-    if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { podId: 'p1', grants: [] } });
-    if (url === '/api/pods/p2/grants') return Promise.resolve({ data: { podId: 'p2', grants: [seatGrant] } });
+    if (url === '/api/grants') return Promise.resolve({ data: { grants: [seatGrant] } });
     if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [] } });
     if (url === '/api/registry/pods/p2/agents') return Promise.resolve({ data: { agents: [{ name: 'reed', displayName: 'Reed', userId: 'a1' }] } });
     if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'g', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
@@ -365,7 +415,7 @@ test('the aside reads the grant and the trail: agents, allow-list under its mode
   // still say 3 while the trail lists its 4 rows, and only the genuinely open
   // one is counted as awaiting a person.
   expect(lines.map((line) => line.textContent).filter((text) => text.includes('awaiting a person'))).toHaveLength(1);
-  // Wren 69819: `answered` covers a resolution that was declined or expired as
+  // `answered` covers a resolution that was declined or expired as
   // well as one that ran, so its mark must say SETTLED without saying approved —
   // the sibling row beside it is the one that carries the verdict. Shield plus a
   // short bar; the shield-and-check it shipped with read as "approved" next to a
@@ -388,7 +438,7 @@ test('TASK-050: a human member in the audience is named, not called "an agent"',
   const withPeople = { ...grantLive, effectiveAudience: ['u1', 'a1'] };
   axios.get.mockImplementation((url) => {
     if (url === '/api/installables') return Promise.resolve({ data: { installables: [githubEntry] } });
-    if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { podId: 'p1', grants: [withPeople] } });
+    if (url === '/api/grants') return Promise.resolve({ data: { grants: [withPeople] } });
     if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [{ name: 'scout', displayName: 'Scout', userId: 'a1' }] } });
     if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'grant_live', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
     return Promise.resolve({ data: {} });
@@ -404,6 +454,50 @@ test('TASK-050: a human member in the audience is named, not called "an agent"',
   expect(within(aside).getByText('agents allowed').nextElementSibling).toHaveTextContent('sam, Scout');
 });
 
+test('TASK-624: a per-user bot member with no roster row is named by its curated label, not its instance id', async () => {
+  // A per-user Scout is a pod member with no AgentInstallation row in the roster, so the
+  // audience id resolves through the pod member. Its username is the raw instance id.
+  const perUserPods = [{
+    _id: 'p1', name: 'Launch pod',
+    members: [
+      { _id: 'u1', username: 'sam' },
+      { _id: 'a1', username: 'scout-uf2554d19c9', isBot: true, botMetadata: { displayName: 'Scout', instanceId: 'uf2554d19c9' } },
+    ],
+  }];
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/installables') return Promise.resolve({ data: { installables: [githubEntry] } });
+    if (url === '/api/grants') return Promise.resolve({ data: { grants: [grantLive] } });
+    if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [] } });
+    if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'grant_live', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
+    return Promise.resolve({ data: {} });
+  });
+  renderTools({ pods: perUserPods });
+  const live = await screen.findByRole('button', { name: 'View GitHub in Launch pod' });
+  expect(within(live).getByText('Scout may use it')).toBeInTheDocument();
+  expect(screen.queryByText(/uf2554d19c9/)).not.toBeInTheDocument();
+});
+
+test('TASK-624: a bot member with a blank displayName falls back to its non-default instanceId, then to the default username', async () => {
+  const fallbackPods = [{
+    _id: 'p1', name: 'Launch pod',
+    members: [
+      { _id: 'u1', username: 'sam' },
+      { _id: 'a1', username: 'scout-uf2554d19c9', isBot: true, botMetadata: { displayName: '  ', instanceId: 'uf2554d19c9' } },
+      { _id: 'a2', username: 'guide', isBot: true, botMetadata: { displayName: '', instanceId: 'default' } },
+    ],
+  }];
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/installables') return Promise.resolve({ data: { installables: [githubEntry] } });
+    if (url === '/api/grants') return Promise.resolve({ data: { grants: [{ ...grantLive, effectiveAudience: ['a1', 'a2'] }] } });
+    if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [] } });
+    if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'grant_live', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
+    return Promise.resolve({ data: {} });
+  });
+  renderTools({ pods: fallbackPods });
+  const live = await screen.findByRole('button', { name: 'View GitHub in Launch pod' });
+  expect(within(live).getByText('uf2554d19c9, guide may use it')).toBeInTheDocument();
+});
+
 test('Revoke is two-click and posts the revoke verb, then reloads; a dead grant offers no Revoke', async () => {
   renderTools();
   fireEvent.click(await screen.findByRole('button', { name: 'View GitHub in Launch pod' }));
@@ -413,7 +507,7 @@ test('Revoke is two-click and posts the revoke verb, then reloads; a dead grant 
   expect(axios.post).not.toHaveBeenCalled();
   fireEvent.click(within(aside).getByRole('button', { name: 'Yes, revoke it' }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants/grant_live/revoke', undefined, expect.any(Object)));
-  await waitFor(() => expect(axios.get.mock.calls.filter(([url]) => url === '/api/pods/p1/grants')).toHaveLength(2));
+  await waitFor(() => expect(axios.get.mock.calls.filter(([url]) => url === '/api/grants')).toHaveLength(2));
 
   fireEvent.click(screen.getByRole('button', { name: 'View GitHub in Ops' }));
   const gone = await screen.findByRole('complementary', { name: 'Grant details' });
@@ -427,7 +521,7 @@ test('the catalogue draws the not-yet row, and Add mints the grant exactly as th
   // No live grant anywhere → a not-yet row; the two dead/live fixtures are replaced by a revoked one only.
   axios.get.mockImplementation((url) => {
     if (url === '/api/installables') return Promise.resolve({ data: { installables: [githubEntry] } });
-    if (url.endsWith('/grants')) return Promise.resolve({ data: { grants: url.includes('p2') ? [grantRevoked] : [] } });
+    if (url === '/api/grants') return Promise.resolve({ data: { grants: [grantRevoked] } });
     if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [{ name: 'scout', displayName: 'Scout', userId: 'a1' }, { name: 'hosted-smoke', userId: 'x9', internal: true }] } });
     if (url.includes('/registry/pods/')) return Promise.resolve({ data: { agents: [] } });
     if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'g', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
@@ -456,14 +550,14 @@ test('the catalogue draws the not-yet row, and Add mints the grant exactly as th
   const [url, body] = axios.post.mock.calls[0];
   expect(url).toBe('/api/grants');
   expect(body).toMatchObject({ connectionId: 'conn-1', target: { kind: 'pod', id: 'p1' }, writeMode: 'write', audience: ['a1'], tools: ['github.list_issues', 'github.comment_on_issue', 'github.close_issue'] });
-  // Both are the server's: the broker from the catalogue (Vera 67728), the installation from the Connection (#1677).
+  // Both are the server's: the broker from the catalogue, the installation from the Connection (#1677).
   expect(body).not.toHaveProperty('brokerId');
   expect(body).not.toHaveProperty('installationId');
   expect(Object.keys(body).sort()).toEqual(['audience', 'connectionId', 'expiresAt', 'target', 'tools', 'writeMode']);
   const days = (new Date(body.expiresAt).getTime() - Date.now()) / 86400000;
   expect(days).toBeGreaterThan(29.9);
   expect(days).toBeLessThan(30.1);
-  await waitFor(() => expect(axios.get.mock.calls.filter(([u]) => u === '/api/pods/p1/grants')).toHaveLength(2));
+  await waitFor(() => expect(axios.get.mock.calls.filter(([u]) => u === '/api/grants')).toHaveLength(2));
 });
 
 test('a not-yet row without a Connection or on an unconfigured instance offers no Add', async () => {
@@ -761,7 +855,7 @@ test('a hidden hosted entry has no offering while its existing connection can be
   fireEvent.click(screen.getByRole('button', { name: 'Remove connection' }));
   fireEvent.click(screen.getByRole('button', { name: 'Yes, remove' }));
   await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/integrations/conn-hidden', expect.anything()));
-  expect(await screen.findByText(/Connection removed. Review Commonly access at Airtable/)).toBeInTheDocument();
+  expect(await screen.findByText(/Connection removed. Review its access at Airtable/)).toBeInTheDocument();
 });
 
 test('a hosted connect start error uses fixed copy instead of response text', async () => {
@@ -914,4 +1008,21 @@ test.each([
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({
     target: { kind: 'pod', id: 'p2' }, audience: ['a1'],
   }), expect.anything()));
+});
+
+test('a Tools row shows the zh-CN catalog copy, and an unmapped entry keeps the server text', async () => {
+  const linear = {
+    installableId: 'linear', list: 'tools', label: 'Linear', description: 'Read Linear issues and projects.',
+    connectionType: 'hosted-mcp', entryId: 'linear', available: true, tools: [], connections: [], installation: null, integration: null,
+  };
+  mockApi([linear, { ...linear, installableId: 'acme-tools', label: 'Acme', description: 'Acme server copy.', entryId: 'acme' }]);
+  await i18nReady;
+  await act(async () => { await i18n.changeLanguage('zh-CN'); });
+  try {
+    renderTools();
+    expect(await screen.findByText('你自己的 Linear 工作空间中的议题、项目、周期和发布。')).toBeInTheDocument();
+    expect(screen.getByText('Acme server copy.')).toBeInTheDocument();
+  } finally {
+    await act(async () => { await i18n.changeLanguage('en'); });
+  }
 });

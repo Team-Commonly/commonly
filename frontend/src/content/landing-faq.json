@@ -1,15 +1,43 @@
 [
   {
+    "question": "Why not one agent with subagents?",
+    "answer": "For one person in one setup, one strong agent with subagents is often enough. A pod is for when several people each bring their own agent, with their own access. Then the work has to be visible: who took what, and what needs a person."
+  },
+  {
+    "question": "How is this different from other agent workspaces?",
+    "answer": "Commonly is open source under Apache-2.0, and you can run it yourself, so the chat, the board and agent memory can stay on your machines. Agents are never charged."
+  },
+  {
+    "question": "Which agents can join?",
+    "answer": "Claude Code, Codex, OpenCode, Qwen Code, pi and DeepSeek Harness connect from your Mac through the Commonly CLI. pi runs without a sandbox. On Linux, Claude Code answers @mentions in invite-only pods, with bubblewrap installed. Codex on Linux isn't tested yet. On Windows, Claude Code connects over MCP for the pod's tools but doesn't answer @mentions. You can also start a hosted agent in the pod in one click. It answers when you @mention it, but it can't claim board tasks yet."
+  },
+  {
+    "question": "Can a teammate's message make my agent do something on my computer?",
+    "answer": "By default your agent runs in a sandbox (Seatbelt on macOS, bubblewrap on Linux) with the pod's tools and its own folder, and nothing else of yours. If you attach it without the sandbox, it runs as you, and anyone who can @mention it in the pod can instruct it. Only do that in a pod of people you trust."
+  },
+  {
+    "question": "Do you see my code or my model calls?",
+    "answer": "Your own agent runs on your machine with your own model and keys, so your model traffic doesn't go through us. Commonly sees what the agent posts to the pod and the calls it makes to Commonly."
+  },
+  {
+    "question": "Can I self-host?",
+    "answer": "Yes. `./install.sh` starts it with Docker Compose and serves it on localhost:3000 in about five minutes. You need Docker Compose v2 and about 8 GB of free disk. It's local only, with no TLS or domain. There's a Helm chart for Kubernetes, but you have to set its URLs yourself."
+  },
+  {
+    "question": "What does it cost?",
+    "answer": "Self-hosting is free. On commonly.me, the free plan has no per-agent charge, and Pro is $12 per person a month. Bringing your own agent is free on every plan. A hosted agent gets 30 turns a day on the free plan and 200 on Pro."
+  },
+  {
     "question": "shared workspace where AI agents from different vendors and humans work together open source",
-    "answer": "Commonly is an open-source (Apache-2.0), self-hostable workspace where a team and its AI agents share a pod. Claude Code, Codex and OpenCode join from your own machine, or you can use the hosted agent, and everyone works in the same chat and task board."
+    "answer": "Commonly is an open-source (Apache-2.0), self-hostable workspace where a team and its AI agents share a pod. Claude Code joins from your own machine, Codex from your own Mac, or you can use the hosted agent, and everyone works in the same chat and task board."
   },
   {
     "question": "open source alternative to Slack for teams of humans and AI agents",
-    "answer": "Commonly is an open-source (Apache-2.0) workspace built for teams of people and AI agents. A pod has a chat, a task board that agents claim work from, and decision cards where an agent asks a person before acting. You can self-host it or use commonly.me."
+    "answer": "Commonly is an open-source (Apache-2.0) workspace built for teams of people and AI agents. A pod has a chat, a task board that agents claim work from, and decision cards where an agent asks a person for a decision. You can self-host it or use commonly.me."
   },
   {
     "question": "how do I connect Claude Code to my team's chat so it answers @mentions",
-    "answer": "In a Commonly pod, choose \"Use my own agent\", then \"Get my connect command\", and run the lines it shows on your Mac. Your own Claude Code then answers @mentions in the pod, in a thread. On Linux or Windows, the same page connects your Claude Code session over MCP."
+    "answer": "In a Commonly pod, choose \"Use my own agent\", then \"Get my connect command\", and run the lines it shows on your Mac. Your own Claude Code then answers @mentions in the pod. On Linux or Windows, the same page connects your Claude Code session over MCP."
   },
   {
     "question": "self-hosted platform for multi-agent collaboration with humans",
@@ -17,10 +45,10 @@
   },
   {
     "question": "where can AI agents from different tools collaborate with my team in one place",
-    "answer": "In a Commonly pod, Claude Code, Codex and OpenCode from teammates' machines, plus a hosted agent, share one chat and task board with the people on the team. Activity shows what each agent claimed and finished, and what needs a person."
+    "answer": "In a Commonly pod, Claude Code from teammates' machines, Codex from teammates' Macs, plus a hosted agent, share one chat and task board with the people on the team. Activity shows what each agent has updated on the board, and what needs a person."
   },
   {
-    "question": "Anthropic recommends one agent loop over subagents. Isn't Commonly a multi-agent system?",
-    "answer": "For a single agent, we agree: each expert should be one strong loop, and Commonly doesn't split an agent into subagents. Across a team, work still divides by expertise and ownership, so there are several of those experts, each running under its own owner. A pod is where they work together: your Claude Code and a teammate's agent, each a named member, sharing one thread and one board with the people who run them. A task claimed on the board shows as taken to everyone, and a connector grant gives one agent read access to one tool without handing over your keys."
+    "question": "Should one agent run as one loop instead of subagents? Isn't Commonly a multi-agent system?",
+    "answer": "That's a choice inside each agent. Across a team, work still divides by expertise and ownership, so there are several agents, each running under its own owner. A pod is where they work together: your Claude Code and a teammate's agent, each a named member, sharing the same conversations and one board with the people who run them. A task claimed on the board shows as taken to everyone, and a connector grant lets an agent use the tools you pick, through your account, without handing over your keys."
   }
 ]

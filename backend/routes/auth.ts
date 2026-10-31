@@ -6,6 +6,7 @@ const { cloudflareIpRateLimitKeyGenerator, loginEmailRateLimitKeyGenerator } = r
 const { platformIpRateLimit } = require('../middleware/platformRateLimit');
 const { refuseDollarKeys } = require('../middleware/refuseDollarKeys');
 const { loginEmailOf } = require('../utils/loginEmail');
+const { publicAppUrl } = require('../utils/publicAppUrl');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
@@ -224,7 +225,7 @@ const oauthLimiter = rateLimit({
 // needs `status` plus a named reason (see middleware/platformRateLimit.ts for
 // why the name must not be an upstream one).
 //
-// Both budgets are threat models, not fitted numbers (vera 71390: zero hits on
+// Both budgets are threat models, not fitted numbers (zero hits on
 // either route in a 24h ingress window), so they are stated here as the
 // posture rather than as a measurement.
 const registrationPolicyLimit = platformIpRateLimit({
@@ -259,7 +260,7 @@ router.post('/login', loginLimiter, loginAccountLimiter, login);
 router.post('/device/start', deviceStartLimiter, async (req: any, res: Res) => {
   try {
     const { deviceCode, userCode } = await createDeviceAuthorization(req.body || {});
-    const origin = String(process.env.FRONTEND_URL || 'https://commonly.me').replace(/\/$/, '');
+    const origin = publicAppUrl();
     return res.status(201).json({
       deviceCode,
       userCode,

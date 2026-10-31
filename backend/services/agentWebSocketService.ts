@@ -217,7 +217,7 @@ class AgentWebSocketService {
           // WS ack would take the `return null` branch, the socket would
           // report success, and the event would be requeued and redelivered.
           // 'ws' is its own consumer key: the socket transport can be flipped
-          // to Phase B independently of any HTTP client (Sam's per-consumer
+          // to Phase B independently of any HTTP client (the per-consumer
           // steer, 2026-08-30).
           if (!deliveryId && AgentEventService.isDeliveryNonceRequired('ws')) {
             socket.emit('ack:error', {
@@ -372,7 +372,7 @@ class AgentWebSocketService {
         // ADR-026 Phase 0: the credential ledger gates the WS transport with
         // the same semantics as the HTTP middleware — a revoked credential
         // (or a child of a revoked issuer) must not connect over WS either
-        // (Vera's bypass finding on #1312).
+        // (bypass finding on #1312).
         // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
         const AgentCredential = require('../models/AgentCredential');
         // The ledger is an assertion, not a filtered runtime lookup: a daemon

@@ -22,6 +22,7 @@ import axios from '../../utils/axiosConfig';
 import { recordByoStep, type ByoStep } from '../utils/byoTelemetry';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { daemonSetupCommand } from '../utils/daemonSetupCommand';
+import { defaultMachine, machineDisplayName } from '../utils/machineLabel';
 import V2FeaturePage from './V2FeaturePage';
 import V2Avatar from './V2Avatar';
 import V2Hint from './V2Hint';
@@ -61,6 +62,7 @@ type MachineRow = {
   id: string;
   machineId: string;
   name: string;
+  createdAt?: string | null;
   status: 'online' | 'offline';
   agentStates?: { agentName: string; instanceId: string; state: string }[];
 };
@@ -99,10 +101,9 @@ const SETUP_OS_OPTIONS: Array<{ os: SetupOs; labelKey: string }> = [
 // host check leaves Codex alone (it confines with its own profiles, not
 // Seatbelt or bubblewrap), but this page's command is bash `export` lines,
 // which PowerShell cannot run, and Codex on native Windows is unmeasured.
-// Not drift: the page only offers what it has seen work.
-const listenerRunsOn = (os: SetupOs, adapter: 'claude' | 'codex'): boolean => (
-  os === 'mac' || (os === 'linux' && adapter === 'codex')
-);
+// Not drift: the page only offers what it has seen work. Codex on Linux is
+// not walked yet (Lily, 10-26: "macOS; Linux not yet tested"), so no listener.
+const listenerRunsOn = (os: SetupOs): boolean => os === 'mac';
 type ModelOption = { value: string; labelKey: string };
 const CLAUDE_MODEL_OPTIONS: ModelOption[] = [
   { value: 'opus', labelKey: 'agentByo.form.modelOpus' },
@@ -120,7 +121,7 @@ const sanitizeAgentName = (raw: string): string => raw
   .slice(0, 64);
 
 const V2AgentBYO: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const api = useV2Api();
   const navigate = useNavigate();
   // Deep-link prefill (?pod=&name=) — the approved connect_local_agent card
@@ -146,7 +147,7 @@ const V2AgentBYO: React.FC = () => {
       adapter: ((a): 'claude' | 'codex' | null => (a === 'claude' || a === 'codex' ? a : null))(params.get('adapter')),
     };
   })();
-  // Sam (2026-09-01): persona deep links carry context into this otherwise
+  // 2026-09-01: persona deep links carry context into this otherwise
   // machine-first entry. The page names the agent after the selected persona
   // and records that choice on the installation; no param says so plainly.
   const personaCard = PERSONA_CARDS.find((c) => c.key === prefill.persona) || null;
@@ -199,7 +200,7 @@ const V2AgentBYO: React.FC = () => {
   // Where the person sets up, defaulted from this browser. They can switch:
   // the machine they browse on is not always the one they set up.
   const [setupOs, setSetupOs] = useState<SetupOs>(browserOs);
-  const listenerAvailable = listenerRunsOn(setupOs, listenAdapter);
+  const listenerAvailable = listenerRunsOn(setupOs);
   // Live listening verification (#887 class, second half). #888 made the
   // listening step legible; this makes it CHECKABLE — the page polls the
   // kernel until THIS agent's runtime token authenticates for the first time
@@ -240,6 +241,10 @@ const V2AgentBYO: React.FC = () => {
   // page shows the act and where it lands; the full page is one click away.
   // The key is still minted by the click, never on load: the click is consent.
   const [compactByo, setCompactByo] = useState<boolean>(prefill.fromCard && Boolean(prefill.name));
+  // A card fixes the name, and the approval already installed under it, so the
+  // runner belongs to the card too: no picker on a card. "Use a different
+  // runner" from a card opens the plain page with nothing carried over.
+  const [onCardStart, setOnCardStart] = useState<boolean>(prefill.fromCard);
   const [hostedState, setHostedState] = useState<'starting' | 'running' | 'slow'>('starting');
   // ADR-026 Phase 2: "on my computer" — install + placement request; the
   // daemon on the chosen machine adopts, provisions, and starts the agent.
@@ -271,7 +276,10 @@ const V2AgentBYO: React.FC = () => {
   // must not open onto a page that shows no command. Elsewhere the full page
   // says why and what works instead.
   const showCompactByo = compactByo && listenerAvailable && !showCompactHosted && !personaCard && mode === 'byo';
-  const selectedMachineName = machines.find((m) => m.machineId === machineId)?.name || machineId;
+  const selectedMachine = machines.find((m) => m.machineId === machineId);
+  const selectedMachineName = selectedMachine
+    ? machineDisplayName(selectedMachine, machines, t, i18n.language)
+    : machineId;
   // Model choice for the on-my-computer path. Adapter and model travel
   // together: a Codex model slug must never be left behind if the user flips
   // back to Claude or auto-detect, and vice versa.
@@ -317,6 +325,11 @@ const V2AgentBYO: React.FC = () => {
     }
   }, [defaultAgentName, nameTouched]);
 
+  // A card's name is the lookup's base only while the card is on screen.
+  // Once the person goes back to the start, the runner names the install.
+  // Any other link keeps its ?name= prefill as before.
+  const namePrefill = prefill.fromCard && !onCardStart ? '' : prefill.name;
+  const lastSuggestedName = useRef<string | null>(null);
   useEffect(() => {
     if (!choicesKnown) return undefined;
     if (prefill.reconnect && prefill.name) {
@@ -324,19 +337,33 @@ const V2AgentBYO: React.FC = () => {
       return undefined;
     }
     let cancelled = false;
-    const base = sanitizeAgentName(prefill.name || defaultAgentName);
+    const base = sanitizeAgentName(namePrefill || defaultAgentName);
     setNamesReady(false);
     setNameLookupError(false);
-    api.get<{ name?: string }>(`/api/registry/agents/next-free-name?base=${encodeURIComponent(base)}`)
+    // The pod lets the server hand back this person's own install there whose
+    // key never arrived, instead of "<name>-2". BYO only: that install is a
+    // webhook, so another mode handed its name would hit "already installed".
+    // Not with a persona: its display name derives a non-default instance,
+    // and the server only hands back installs on the default one.
+    const inPod = mode === 'byo' && podId && !personaCard ? `&podId=${encodeURIComponent(podId)}` : '';
+    api.get<{ name?: string }>(`/api/registry/agents/next-free-name?base=${encodeURIComponent(base)}${inPod}`)
       .then((result) => {
         if (cancelled) return;
         if (!result?.name) throw new Error('Empty name suggestion');
-        setName((current) => (!nameTouched || current === prefill.name ? result.name! : current));
+        // A name the page suggested earlier is still the page's to replace,
+        // e.g. "<name>-2" before the person picked the pod holding <name>.
+        // Read before the update: React runs the updater later.
+        const previous = lastSuggestedName.current;
+        lastSuggestedName.current = result.name;
+        setName((current) => (
+          !nameTouched || current === namePrefill || current === previous
+            ? result.name! : current));
         setNamesReady(true);
       })
       .catch(() => { if (!cancelled) setNameLookupError(true); });
     return () => { cancelled = true; };
-  }, [api, choicesKnown, defaultAgentName, nameLookupRetry, nameTouched, prefill.name, prefill.reconnect]);
+  }, [api, choicesKnown, defaultAgentName, mode, namePrefill, nameLookupRetry, nameTouched, personaCard, podId,
+    prefill.reconnect, prefill.name]);
   const [placed, setPlaced] = useState<{ agentName: string; machineId: string; machineName: string } | null>(null);
   const [placedState, setPlacedState] = useState<'waiting' | 'running' | 'slow'>('waiting');
   const [reconnectRequest, setReconnectRequest] = useState<{
@@ -474,19 +501,25 @@ const V2AgentBYO: React.FC = () => {
         // into (not in their list) must not survive as a phantom selection.
         const podKnown = podId && installablePods.some((p) => p._id === podId);
         if ((!podId || !podKnown) && installablePods.length > 0) {
-          // A person coming from a team pod should install there, not in the
-          // private workspace created for them at signup. V2Layout records
-          // visits when a pod opens. Only consider pods still in this safe,
-          // installable list; a stale visit to a public pod cannot select it.
+          // Default to the person's own workspace (TASK-645 item 9): the
+          // picker no longer jumps to the last pod they opened. Recent visits
+          // only decide when they own no installable pod. Signup creates
+          // My Workspace before anything the person makes, so the OLDEST
+          // owned pod is that workspace; the name is not a reliable marker
+          // (it can be renamed). V2Layout records visits when a pod opens; a
+          // stale visit to a public pod cannot select it because the list
+          // above already excludes publicRead pods.
+          const uid = currentUser?._id;
+          const owned = uid
+            ? installablePods.filter((p) => p.createdBy?._id && String(p.createdBy._id) === String(uid))
+            : [];
+          const createdMs = (p: V2Pod) => (p.createdAt ? Date.parse(p.createdAt) : Number.POSITIVE_INFINITY);
+          const own = owned.sort((a, b) => createdMs(a) - createdMs(b))[0];
           const visits = readPodVisits();
           const recent = installablePods
             .filter((p) => visits[p._id] > 0)
             .sort((a, b) => visits[b._id] - visits[a._id])[0];
-          const uid = currentUser?._id;
-          const own = uid
-            ? installablePods.find((p) => p.createdBy?._id && String(p.createdBy._id) === String(uid))
-            : undefined;
-          setPodId((recent || own || installablePods[0])._id);
+          setPodId((own || recent || installablePods[0])._id);
         }
       } catch {
         // Defensive: keep the form usable; user will see the error on submit.
@@ -513,7 +546,7 @@ const V2AgentBYO: React.FC = () => {
         if (cancelled) return;
         if (Array.isArray(machineList?.machines) && machineList.machines.length > 0) {
           setMachines(machineList.machines);
-          setMachineId((prev) => prev || machineList.machines[0].machineId);
+          setMachineId((prev) => prev || defaultMachine(machineList.machines)?.machineId || '');
         }
       } catch {
         // No daemon machines — the "on my computer" card simply doesn't show.
@@ -709,6 +742,11 @@ const V2AgentBYO: React.FC = () => {
     }
     setSubmitting(true);
     try {
+      // "Already installed" is the lost-token recovery path. The issue below
+      // never revokes a running key: an agent that holds one answers
+      // existing:true and the page asks for an explicit replacement. One that
+      // never got its key (an earlier click's issue failed or was abandoned)
+      // gets it now, instead of a second install under "<name>-2".
       try {
         await api.post('/api/registry/install', {
           agentName: cleanName,
@@ -720,13 +758,9 @@ const V2AgentBYO: React.FC = () => {
           ...(personaCard ? { description: personaCard.card } : {}),
         });
       } catch (installErr) {
-        // A repeat install is the lost-token recovery path. Stop before
-        // revoking the running key and ask for an explicit replacement.
         const msg = (installErr as { response?: { data?: { error?: string } } })
           ?.response?.data?.error || '';
         if (!/already installed/i.test(msg)) throw installErr;
-        setPendingReplacement({ agentName: cleanName, podId });
-        return;
       }
       // An agent can have a token from another pod. A nonrotating issue
       // returns existing:true in that case, so no key is revoked here.
@@ -891,6 +925,19 @@ const V2AgentBYO: React.FC = () => {
     recordByoStep(api, 'page-viewed');
   }, [api, currentUser]);
 
+  // "Run it here" is on screen from first paint whenever the instance hosts
+  // (the chooser, or the compact hosted form), so its exposure is counted
+  // here, once per page view. The post-issue fallback below counts a separate,
+  // later exposure. The compact BYO form has no hosted button, so it is out.
+  const hostedOfferOnScreen = Boolean(hosting?.configured) && !issued && !hosted && !placed
+    && !reconnectRequest && !showCompactByo;
+  const hostedShownCounted = useRef(false);
+  useEffect(() => {
+    if (!hostedOfferOnScreen || hostedShownCounted.current) return;
+    hostedShownCounted.current = true;
+    recordByoStep(api, 'hosted-offer-shown');
+  }, [api, hostedOfferOnScreen]);
+
   useEffect(() => {
     if (commandViewed.current === issued) return;
     commandViewed.current = issued;
@@ -949,7 +996,10 @@ const V2AgentBYO: React.FC = () => {
     }
   };
 
-  const chooseMode = (nextMode: 'hosted' | 'byo' | 'machine') => setMode(nextMode);
+  const chooseMode = (nextMode: 'hosted' | 'byo' | 'machine') => {
+    if (nextMode === 'hosted') recordByoStep(api, 'hosted-offer-clicked');
+    setMode(nextMode);
+  };
 
   const apiUrl = getApiBaseUrl().replace(/\/+$/, '');
   const daemonCommand = daemonSetupCommand(apiUrl);
@@ -993,6 +1043,60 @@ const V2AgentBYO: React.FC = () => {
     }, null, 2)
     : '';
   const cursorInstallHref = cursorMcpInstallLink(apiUrl);
+
+  // The runner is picked before the install and never after it: the name
+  // follows the runner, so a switch after issue would leave a claude-named
+  // install under a codex listener. Going back to the start is the way to change it.
+  const backToStart = () => {
+    if (onCardStart) {
+      setOnCardStart(false);
+      setCompactByo(false);
+      setName(defaultNameFor('byo', listenAdapter));
+      setNameTouched(false);
+    }
+    setIssued(null);
+  };
+  // The daemon block lives in Other ways to connect on both the start form and
+  // the result page, so the stop-on-close line can point to it from the result.
+  // Windows has no daemon install (systemd), so there is no block to offer.
+  const addComputerBlock = machines.length === 0 && setupOs !== 'windows' ? (
+    <div className="v2-byo__add-computer" data-testid="byo-add-computer">
+      <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
+      <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">{t('agentByo.addComputer.recommended')}</p>
+      <div className="v2-byo__add-computer-row">
+        <code>{daemonCommand}</code>
+        <button
+          type="button"
+          className="v2-byo__copy"
+          onClick={() => copy('daemon-setup', daemonCommand)}
+        >
+          {copied === 'daemon-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
+        </button>
+      </div>
+      <p className="v2-byo__hint">{t('agentByo.addComputer.after')}</p>
+    </div>
+  ) : null;
+  const runnerPicker = mode === 'byo' && !issued && !onCardStart ? (
+    <p className="v2-byo__os" data-testid="byo-runner">
+      {t('agentByo.form.adapterLabel')}{' '}
+      {(['claude', 'codex'] as const).map((runner, i) => (
+        <React.Fragment key={runner}>
+          {i > 0 && ' · '}
+          <button
+            type="button"
+            className="v2-byo__link"
+            aria-pressed={listenAdapter === runner}
+            data-testid={`byo-runner-${runner}`}
+            disabled={submitting}
+            // The name follows the runner, so a key prompt for the old name is stale.
+            onClick={() => { setPendingReplacement(null); setListenAdapter(runner); }}
+          >
+            {t(runner === 'claude' ? 'agentByo.form.adapterClaude' : 'agentByo.form.adapterCodex')}
+          </button>
+        </React.Fragment>
+      ))}
+    </p>
+  ) : null;
 
   return (
     <V2FeaturePage
@@ -1046,7 +1150,10 @@ const V2AgentBYO: React.FC = () => {
           {error && <div className="v2-byo__error">{error}</div>}
           <button
             type="button"
-            onClick={submit}
+            onClick={() => {
+              recordByoStep(api, 'hosted-offer-clicked');
+              void submit();
+            }}
             disabled={submitting || !podId || mode !== 'hosted'}
             className="v2-byo__submit"
           >
@@ -1091,6 +1198,7 @@ const V2AgentBYO: React.FC = () => {
           {/* Enabled once the pod list confirms the pod: a link's pod the person
               cannot install into is replaced by their own, and that is the line
               above the button, so the click never lands somewhere unshown. */}
+          {runnerPicker}
           {!isOtherOwner && <button
             type="button"
             onClick={() => {
@@ -1187,7 +1295,7 @@ const V2AgentBYO: React.FC = () => {
               >
                 {machines.map((m) => (
                   <option key={m.machineId} value={m.machineId}>
-                    {m.name} ({t(m.status === 'online' ? 'agentByo.machine.online' : 'agentByo.machine.offline')})
+                    {machineDisplayName(m, machines, t, i18n.language)} ({t(m.status === 'online' ? 'agentByo.machine.online' : 'agentByo.machine.offline')})
                   </option>
                 ))}
               </select>
@@ -1251,12 +1359,13 @@ const V2AgentBYO: React.FC = () => {
               </span>
             </label>
           )}
+          {runnerPicker}
           <label className={`v2-byo__field${errorField === 'name' || nameLookupError ? ' v2-byo__field--error' : ''}`}>
             <span className="v2-byo__label">{t('agentByo.form.nameLabel')}</span>
             <input
               type="text"
               value={name}
-              onChange={(e) => { setErrorField(null); setNameTouched(true); setPendingReplacement(null); setName(e.target.value); }}
+              onChange={(e) => { setErrorField(null); setNameTouched(true); setPendingReplacement(null); lastSuggestedName.current = null; setName(e.target.value); }}
               placeholder={DEFAULT_AGENT_NAME}
               className="v2-byo__input"
             />
@@ -1292,8 +1401,9 @@ const V2AgentBYO: React.FC = () => {
           )}
           {nameLookupError && mode === 'byo' && <div className="v2-byo__error">{t('agentByo.errors.nameLookupFailed')} <button type="button" className="v2-byo__link" onClick={() => setNameLookupRetry((n) => n + 1)}>{t('agentByo.actions.retry')}</button></div>}
           {mode === null ? (
-            // Signal §3 not yet: a dashed slot where the act will be, until a
-            // place to run it is chosen.
+            // Signal §3 not yet: a muted line where the act will be, until a
+            // place to run it is chosen. Plain text, not a box, so it can't
+            // read as a dead button (UX Lead, TASK-647 item 1).
             <div className="v2-byo__unchosen" data-testid="byo-mode-unchosen">
               {t('agentByo.actions.chooseFirst')}
             </div>
@@ -1322,6 +1432,11 @@ const V2AgentBYO: React.FC = () => {
               })()}
             </button>
           )}
+          {/* The run command is the quick try; it dies with its Terminal. The
+              daemon is the one that keeps the agent running (TASK-645 item 3). */}
+          {mode === 'byo' && machines.length === 0 && listenerAvailable && (
+            <p className="v2-byo__hint" data-testid="byo-quick-try">{t('agentByo.quickTry')}</p>
+          )}
           {/* One command is THE path (QA BYO walk 1): the daemon and the SDK
               are real alternatives, but shown as equals beside the button they
               read as a choice a stranger has to make before starting. */}
@@ -1330,28 +1445,14 @@ const V2AgentBYO: React.FC = () => {
               if ((event.target as Element).closest('summary, button, a')) event.preventDefault();
             }}>
             <summary>{t('agentByo.otherWays.title')}</summary>
-          {machines.length === 0 && (
-            <div className="v2-byo__add-computer" data-testid="byo-add-computer">
-              <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
-              <div className="v2-byo__add-computer-row">
-                <code>{daemonCommand}</code>
-                <button
-                  type="button"
-                  className="v2-byo__copy"
-                  onClick={() => copy('daemon-setup', daemonCommand)}
-                >
-                  {copied === 'daemon-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
-                </button>
-              </div>
-              <p className="v2-byo__hint">{t('agentByo.addComputer.after')}</p>
-            </div>
-          )}
+            {addComputerBlock}
           <p className="v2-byo__footnote">
             {t(listenerAvailable ? 'agentByo.footnote.cliRoute'
               : listenAdapter === 'claude' ? 'agentByo.footnote.cliRouteClaudeUnavailable'
                 : 'agentByo.footnote.cliRouteCodexUnavailable', {
               byo: t('agentByo.mode.byo'),
               hosted: t('agentByo.mode.hosted'),
+              os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
             })}{' '}
             {t('agentByo.footnote.notSure')}{' '}
             <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/agents/CONNECTING_LOCAL_AGENTS.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.mcpVsCli')}</a>
@@ -1509,10 +1610,10 @@ const V2AgentBYO: React.FC = () => {
               <button
                 type="button"
                 className="v2-byo__link"
-                data-testid="byo-listen-adapter-switch"
-                onClick={() => setListenAdapter((a) => (a === 'codex' ? 'claude' : 'codex'))}
+                data-testid="byo-use-different-runner"
+                onClick={backToStart}
               >
-                {listenAdapter === 'codex' ? t('agentByo.listen.switchToClaude') : t('agentByo.listen.switchToCodex')}
+                {t('agentByo.listen.useDifferentRunner')}
               </button>
             </p>
             {listenerAvailable && (
@@ -1526,6 +1627,16 @@ const V2AgentBYO: React.FC = () => {
                   {copied === 'listen' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
                 </button>
               </div>
+            )}
+            {listenerAvailable && (
+              <p className="v2-byo__listen-note" data-testid="byo-listen-npm-hint">
+                {t('agentByo.listen.npmPermission')}
+              </p>
+            )}
+            {listenerAvailable && (
+              <p className="v2-byo__listen-note" data-testid="byo-listen-stops-on-close">
+                {t(machines.length === 0 ? 'agentByo.listen.stopsOnClose' : 'agentByo.listen.stopsOnCloseWithComputer')}
+              </p>
             )}
             {!listenerAvailable ? null : listenState === 'listening' ? (
               <p className="v2-byo__live" data-testid="byo-listen-ok">
@@ -1548,6 +1659,11 @@ const V2AgentBYO: React.FC = () => {
             {listenerAvailable && listenAdapter === 'claude' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-reach">
                 {t('agentByo.listen.reachClaude', { name: issued.agentName })}
+              </p>
+            )}
+            {listenerAvailable && listenAdapter === 'codex' && (
+              <p className="v2-byo__listen-note" data-testid="byo-listen-reach-codex">
+                {t('agentByo.listen.reachCodex')}
               </p>
             )}
           </div>
@@ -1581,6 +1697,19 @@ const V2AgentBYO: React.FC = () => {
 
           <details className="v2-byo__more" data-testid="byo-result-more-ways">
             <summary>{t('agentByo.otherWays.title')}</summary>
+            {addComputerBlock}
+            {machines.length > 0 && (
+              // A computer on file: the machine choice is the start form's mode
+              // picker, which this result page does not show, so offer it here.
+              <button
+                type="button"
+                className="v2-byo__secondary"
+                data-testid="byo-result-on-my-computer"
+                onClick={() => { setIssued(null); chooseMode('machine'); }}
+              >
+                {t('agentByo.mode.machine')}
+              </button>
+            )}
             <div className="v2-byo__snippet">
               <div className="v2-byo__snippet-head">
                 <span>{t('agentByo.snippets.runtimeToken')}</span>

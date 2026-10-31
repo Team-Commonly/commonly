@@ -139,7 +139,7 @@ class FlattenRequest(unittest.TestCase):
 
 
 class UniqueNames(unittest.TestCase):
-    """otto's counterexample 2 (#2615 review 5638070599)."""
+    """Counterexample 2 (#2615 review)."""
 
     def test_namespace_and_name_splits_that_join_alike_get_distinct_names(self):
         data = codex_request()
@@ -200,7 +200,7 @@ class RestoreCalls(unittest.TestCase):
 
 
 class PerRequestState(unittest.TestCase):
-    """otto's counterexample 3: one request's names never reach another's."""
+    """Counterexample 3: one request's names never reach another's."""
 
     def test_a_later_plain_function_is_not_mistaken_for_an_earlier_flat_name(self):
         handler = shim.proxy_handler_instance
@@ -275,7 +275,7 @@ class Hooks(unittest.TestCase):
 
 
 class CoreLoadFailure(unittest.TestCase):
-    """otto's counterexample 1: a broken core must not stop the proxy."""
+    """Counterexample 1: a broken core must not stop the proxy."""
 
     def load_with_core(self, source):
         directory = tempfile.mkdtemp()

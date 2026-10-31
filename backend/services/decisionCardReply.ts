@@ -1,4 +1,5 @@
 import type { IDecisionRequest } from '../models/DecisionRequest';
+import { publicAppUrl } from '../utils/publicAppUrl';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const DecisionRequest = require('../models/DecisionRequest');
@@ -73,7 +74,7 @@ export const resolveDecisionCardReply = async (input: {
   });
   if (!row || !card) return answer('This card is no longer available. Open Commonly to check the thread.');
   const podId = String(row.podId);
-  const base = (process.env.PUBLIC_APP_URL || 'https://commonly.me').replace(/\/$/, '');
+  const base = publicAppUrl();
   const link = `${base}/v2/pods/${encodeURIComponent(podId)}?message=${encodeURIComponent(card.podMessageId)}`;
   const pod = await Pod.findById(podId).select('name members createdBy').lean();
   const caller = await User.findById(input.linkedUserId).select('isBot').lean();

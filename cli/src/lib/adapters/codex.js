@@ -71,6 +71,7 @@ import { buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
 import { resolveSkillSource, skillsAsText } from '../skill-prompt.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
+import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 
 // Default timeout for a single codex spawn (exec mode).
 //
@@ -115,7 +116,7 @@ const buildPrompt = buildMemoryPreamble;
 //     when they also carry a `command`. `auditDeclaredMcp` classifies by
 //     `transport` and never judges the command of an entry that declared an
 //     http one, so emitting it here executes a command the guard did not
-//     approve — the case Vera measured on 2026-09-18 (Connectors 69774).
+//     approve — a case measured on 2026-09-18.
 //   - Token-bearing values ride through `env_vars`, never a `-c ...env=...`
 //     argv override. Command lines are visible to other same-user processes
 //     unless the OS sandbox blocks process inspection; keeping bearer tokens
@@ -212,6 +213,10 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
       '-c',
       `mcp_servers.${server.name}.default_tools_approval_mode="approve"`,
     );
+    // ...except the tools no public seat is offered (public-withheld-tools.js).
+    if (ctx.publicSeat) {
+      flags.push('-c', `mcp_servers.${server.name}.disabled_tools=[${PUBLIC_WITHHELD_TOOLS.map(toml).join(',')}]`);
+    }
     if (rest.length) {
       flags.push('-c', `mcp_servers.${server.name}.args=[${rest.map(toml).join(',')}]`);
     }
@@ -661,7 +666,7 @@ export default {
     // undefined and '' as absence itself; it does not need a guard, it needs
     // the value.
     //
-    // Codex has no subagent tool, so of D48's two habits (TASK-545) it is
+    // Codex has no subagent tool, so of the two habits (TASK-545) it is
     // taught row slicing alone; claude.js adds parallel reads. A public seat
     // answers strangers rather than working board rows, so it is taught neither.
     const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {

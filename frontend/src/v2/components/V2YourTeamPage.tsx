@@ -18,7 +18,7 @@ import { AgentConnection, connectionLabel } from '../utils/agentConnection';
  * waiting on you, Talk alone otherwise. The card that needs you carries the
  * 2px cobalt ring — the only cobalt on the page beside the rail mark.
  *
- * Rulings carried (ux-lead, Sharpen 66163–66165):
+ * Rulings carried:
  *  - the sentence is `description` from the listing (botMetadata), else nothing;
  *  - `working · TASK-nnn` comes from the tasks API: a claimed task whose
  *    `claimedBy` is this seat's User id; `working · <pod>` when the claim has
@@ -42,7 +42,7 @@ interface AgentInstallationSummary {
   installedAt?: string;
   lastHeartbeatAt?: string | null;
   lastActiveAt?: string | null;
-  runtime?: { runtimeType?: string; provider?: string } | null;
+  runtime?: { runtimeType?: string; provider?: string; host?: string | null } | null;
   category?: string | null;
   podId?: string;
   podName?: string;
@@ -103,6 +103,38 @@ const STATE_DOT = '\u25CF';
 
 const agentKey = (a: { name: string; instanceId?: string }) => `${a.name}:${a.instanceId || 'default'}`;
 
+// Where a seat runs. A stamped host decides it: config.runtime.host is 'cloud'
+// (Commonly runs it) or 'byo' (a machine polling in). A runtime type with no BYO
+// form has only one possible location, so it reads as cloud without a stamp:
+// hosted, native, internal and moltbot (the cluster gateway). Nothing stamps host
+// on a new hosted install, so these need the type. Every other type (codex,
+// claude-code, webhook, wrapper) can run on someone's machine, so it gets no mark
+// unless its host is stamped. A laptop mark means the viewer's own machine, so a
+// byo seat another teammate installed gets no laptop mark either.
+type RunsOn = 'cloud' | 'laptop' | null;
+const CLOUD_ONLY_RUNTIME_TYPES = new Set(['hosted', 'native', 'internal', 'moltbot']);
+const runsOn = (a: AgentInstallationSummary, viewerId: string | undefined): RunsOn => {
+  const host = (a.runtime?.host || '').trim().toLowerCase();
+  const type = (a.runtime?.runtimeType || '').trim().toLowerCase();
+  if (host === 'cloud' || (!host && CLOUD_ONLY_RUNTIME_TYPES.has(type))) return 'cloud';
+  if (host === 'byo') return a.installedBy === viewerId ? 'laptop' : null;
+  return null;
+};
+
+// Outline glyphs for the location mark (artboard 360: cloud = runs on Commonly,
+// laptop = runs on your machine). Decorative: the mark's label carries the meaning.
+const CloudGlyph: React.FC = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true">
+    <path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 9.5a4 4 0 0 1-.5 8.5H7Z" />
+  </svg>
+);
+const LaptopGlyph: React.FC = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true">
+    <rect x="5" y="5" width="14" height="10" rx="1.5" />
+    <path d="M3 19h18" />
+  </svg>
+);
+
 // Pods are titled `Sharpen — pod model, attention routing, hardening`; the
 // chip and the status line carry the name before the subtitle.
 const shortPodName = (name: string): string => name.split(' — ')[0].split(' - ')[0].trim();
@@ -147,6 +179,9 @@ const V2YourTeamPage: React.FC = () => {
   // holder → the claim it holds: the task id when the row has one, else the pod it lives in.
   const [tasksByClaimer, setTasksByClaimer] = useState<Map<string, { taskId: string | null; podName: string }>>(new Map());
   const [queue, setQueue] = useState<QueueItem[]>([]);
+  // Today's hosted meter per hosted seat, read from the server's caps. A seat with
+  // no entry shows no meter: nothing here hardcodes the limit.
+  const [meters, setMeters] = useState<Map<string, { used: number; cap: number }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
@@ -285,6 +320,32 @@ const V2YourTeamPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agents, asksByActor, tasksByClaimer]);
 
+  // Hosted seats the viewer owns only: /api/hosted/status is owner-scoped, and the
+  // meter is the server's count against the server's cap.
+  useEffect(() => {
+    let cancelled = false;
+    const hosted = agents.filter((a) => a.internal !== true
+      && a.runtime?.runtimeType === 'hosted'
+      && a.installedBy === String(user?._id));
+    if (hosted.length === 0) return undefined;
+    const headers = localStorage.getItem('token') ? { Authorization: `Bearer ${localStorage.getItem('token')}` } : undefined;
+    void Promise.all(hosted.map(async (a) => {
+      try {
+        const r = await axios.get<{ meter?: { used: number; cap: number } }>('/api/hosted/status', {
+          headers,
+          params: { agentName: a.name, instanceId: a.instanceId || 'default' },
+        });
+        return r.data?.meter ? [agentKey(a), { used: r.data.meter.used, cap: r.data.meter.cap }] as const : null;
+      } catch {
+        return null;
+      }
+    })).then((rows) => {
+      if (cancelled) return;
+      setMeters(new Map(rows.filter((row): row is readonly [string, { used: number; cap: number }] => row !== null)));
+    });
+    return () => { cancelled = true; };
+  }, [agents, user?._id]);
+
   const internal = useMemo(() => agents.filter((a) => a.internal === true), [agents]);
   const counts = useMemo(() => ({
     agents: cards.length,
@@ -336,6 +397,7 @@ const V2YourTeamPage: React.FC = () => {
     const display = a.displayName || a.name;
     const description = a.description?.trim();
     const key = agentKey(a);
+    const where = runsOn(a, user?._id ? String(user._id) : undefined);
     const ask = a.userId ? asksByActor.get(a.userId)?.[0] : undefined;
     const task = claimedTaskFor(a);
     const needsReconnect = a.connection && ['revoked', 'stale'].includes(a.connection.state);
@@ -371,8 +433,30 @@ const V2YourTeamPage: React.FC = () => {
               {statusText}
             </div>
           </div>
+          {where && (
+            <span
+              className="v2-team-card__where"
+              role="img"
+              aria-label={where === 'cloud' ? t('yourTeam.card.where.hosted') : t('yourTeam.card.where.local')}
+              title={where === 'cloud' ? t('yourTeam.card.where.hosted') : t('yourTeam.card.where.local')}
+            >
+              {where === 'cloud' ? <CloudGlyph /> : <LaptopGlyph />}
+            </span>
+          )}
         </div>
         {description && !isTemplateDescription(description, display) && <p className="v2-team-card__desc">{description}</p>}
+        {a.runtime?.runtimeType === 'hosted' && meters.has(key) && (() => {
+          const meter = meters.get(key)!;
+          const fill = Math.min(100, (meter.used / Math.max(meter.cap, 1)) * 100);
+          return (
+            <div className="v2-team-card__meter" data-testid="team-card-meter">
+              <span className="v2-team-card__meter-track" aria-hidden="true">
+                <span className="v2-team-card__meter-fill" style={{ width: `${fill}%` }} />
+              </span>
+              <span className="v2-team-card__meter-text">{t('yourTeam.card.meter', { used: meter.used, cap: meter.cap })}</span>
+            </div>
+          );
+        })()}
         {(a.podNames?.length || 0) > 0 && (
           <div className="v2-team-card__pods" aria-label={t('yourTeam.card.podsAria')}>
             {(a.podNames || []).slice(0, 2).map((name) => (
@@ -475,7 +559,14 @@ const V2YourTeamPage: React.FC = () => {
       <div className="v2-team__grid">
         {cards.map(renderCard)}
         <article className="v2-team-card v2-team-card--own" data-testid="team-own-card">
-          <div className="v2-team-card__name">{t('yourTeam.own.title')}</div>
+          <div className="v2-team-card__head">
+            <div className="v2-team-card__title">
+              <div className="v2-team-card__name">{t('yourTeam.own.title')}</div>
+            </div>
+            <span className="v2-team-card__where" role="img" aria-label={t('yourTeam.card.where.local')} title={t('yourTeam.card.where.local')}>
+              <LaptopGlyph />
+            </span>
+          </div>
           <p className="v2-team-card__desc">{t('yourTeam.own.text')}</p>
           <code className="v2-team-card__command">{t('yourTeam.own.command')}</code>
           <div className="v2-team-card__actions">

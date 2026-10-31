@@ -16,8 +16,8 @@ the separate foreground path for a one-off session.
 
 The Luna code-writer seats (`kai`, `quill`, `sprint-impl`) ran `codex` on the
 operator's ChatGPT OAuth. When that quota ran out (`You've hit your usage
-limit`, circuit open every 15 min in `~/.commonly/logs/kai.log`) every code
-lane stalled. Sam's call: replace them with DeepSeek V4.1 Flash, which we
+limit`, circuit open every 15 min in the seat log) every code
+lane stalled. The call: replace them with DeepSeek V4.1 Flash, which we
 already pay for and already route — LiteLLM serves it as `deepseek-v4-flash`
 (upstream id `deepseek-flash`; `deepseek-v4-flash` is the accepted legacy
 alias) and the hosted Scout/Recorder run on it.
