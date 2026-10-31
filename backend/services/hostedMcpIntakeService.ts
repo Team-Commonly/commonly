@@ -24,7 +24,8 @@
  * mix-up (§4).
  */
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
-import type { HostedMcpEntry } from './hostedMcpEntryService';
+import { isOAuthEntry } from './hostedMcpEntryService';
+import type { HostedMcpEntry, HostedMcpOAuthEntry } from './hostedMcpEntryService';
 import { upstreamFetch } from './upstreamFetch';
 import { hostedVendorFetch } from './hostedVendorFetch';
 
@@ -106,7 +107,7 @@ export interface HostedMcpClientMetadataDocument {
 }
 
 export const buildClientMetadataDocument = (
-  entry: HostedMcpEntry,
+  entry: HostedMcpOAuthEntry,
   apiBase: string = hostedMcpApiBase(),
 ): HostedMcpClientMetadataDocument => {
   const clientId = entryPath(apiBase, entry.id, CLIENT_METADATA_LEAF);
@@ -173,7 +174,7 @@ export const hostedMcpClientConfigKeys = (entryId: string) => {
  * the authorization boundary, which is where it should be loud.
  */
 export const resolvedClientId = (
-  entry: HostedMcpEntry,
+  entry: HostedMcpOAuthEntry,
   env: NodeJS.ProcessEnv = process.env,
 ): string => {
   if (entry.client === 'cimd') return hostedMcpClientMetadataUrl(entry.id);
@@ -196,7 +197,7 @@ export const resolvedClientId = (
 
 /** A client secret exists only for the pre-registered confidential-client kind. */
 export const resolvedClientSecret = (
-  entry: HostedMcpEntry,
+  entry: HostedMcpOAuthEntry,
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined => {
   if (entry.client !== 'pre-registered') return undefined;
@@ -213,7 +214,7 @@ export const resolvedClientSecret = (
 
 /** Resolve all instance-held client material before offering or using the entry. */
 export const resolvedHostedMcpClient = (
-  entry: HostedMcpEntry,
+  entry: HostedMcpOAuthEntry,
   env: NodeJS.ProcessEnv = process.env,
 ): HostedMcpClientConfiguration => {
   const clientId = resolvedClientId(entry, env);
@@ -225,6 +226,9 @@ export const isHostedMcpClientConfigured = (
   entry: HostedMcpEntry,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean => {
+  // An operator-key entry has no instance client: its key is per agent, and is
+  // proven at connect time, so there is nothing to preconfigure here.
+  if (!isOAuthEntry(entry)) return true;
   // DCR has no instance credential to preconfigure. Vendor support is checked
   // against discovered metadata on the first start, before any pending row.
   if (entry.client === 'dcr') return true;
@@ -348,7 +352,7 @@ export const discoverAuthorizationServer = async (
  * one function pair rather than by two call sites that could drift.
  */
 export const buildAuthorizeUrl = (
-  entry: HostedMcpEntry,
+  entry: HostedMcpOAuthEntry,
   authorizationEndpoint: string,
   params: { clientId: string; redirectUri: string; state: string; codeChallenge: string },
 ): string => {
@@ -421,7 +425,7 @@ const confidentialAuthentication = (
 };
 
 const endpointAuthentication = (
-  entry: HostedMcpEntry,
+  entry: HostedMcpOAuthEntry,
   metadata: Partial<HostedMcpAuthorizationServer>,
   client: HostedMcpClientConfiguration,
   endpoint: HostedMcpEndpointKind,
@@ -470,7 +474,7 @@ const endpointAuthentication = (
 
 /** Authorization-code exchange: PKCE and resource survive every client kind. */
 export const buildTokenExchangeRequest = (
-  entry: HostedMcpEntry,
+  entry: HostedMcpOAuthEntry,
   metadata: Partial<HostedMcpAuthorizationServer>,
   client: HostedMcpClientConfiguration,
   params: { redirectUri: string; code: string; codeVerifier: string },
@@ -491,7 +495,7 @@ export const buildTokenExchangeRequest = (
 
 /** Refresh uses the same client and endpoint-authentication rule as the exchange. */
 export const buildRefreshRequest = (
-  entry: HostedMcpEntry,
+  entry: HostedMcpOAuthEntry,
   metadata: Partial<HostedMcpAuthorizationServer>,
   client: HostedMcpClientConfiguration,
   params: { refreshToken: string },
@@ -510,7 +514,7 @@ export const buildRefreshRequest = (
 
 /** RFC 7009 request: the same client must authenticate the revocation. */
 export const buildRevocationRequest = (
-  entry: HostedMcpEntry,
+  entry: HostedMcpOAuthEntry,
   metadata: Partial<HostedMcpAuthorizationServer>,
   client: HostedMcpClientConfiguration,
   params: { token: string; tokenTypeHint: 'refresh_token' | 'access_token' },

@@ -6,6 +6,8 @@ import { createHash } from 'crypto';
 import { Types } from 'mongoose';
 import Integration from '../models/Integration';
 import { isHostedMcpEntryHidden } from '../integrations/hostedMcp/visibility';
+import { HOSTED_MCP_ENTRIES, findHostedMcpEntry } from '../integrations/hostedMcp/entries';
+import { operatorKeyAudienceRefusal } from '../services/hostedMcpOperatorKey';
 import Pod from '../models/Pod';
 import RoomGrant from '../models/RoomGrant';
 import ToolCall from '../models/ToolCall';
@@ -357,6 +359,16 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       return res.status(400).json({ error: 'invalid_target', message: 'target.kind must be pod' });
     }
     const members = await ensureTargetAccess(target, userId);
+    // An operator-key connection names exactly its bound agent. This runs before
+    // the member default below, which is what would otherwise hand the key to
+    // every member (TASK-330).
+    if (hosted) {
+      const boundEntry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, String(connection.config?.entryId || ''));
+      const boundRefusal = operatorKeyAudienceRefusal(boundEntry, connection, body.audience);
+      if (boundRefusal) {
+        return res.status(400).json({ error: 'invalid_audience', message: boundRefusal });
+      }
+    }
     // Pod grants default to the current member snapshot.
     const audience = body.audience === undefined ? members : body.audience;
     const audienceValues = Array.isArray(audience) ? audience.map(String) : audience;

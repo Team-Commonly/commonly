@@ -14,7 +14,7 @@
  */
 import { Types } from 'mongoose';
 import HostedMcpDcrRegistration, { IHostedMcpDcrRegistration } from '../models/HostedMcpDcrRegistration';
-import type { HostedMcpEntry } from './hostedMcpEntryService';
+import type { HostedMcpOAuthEntry } from './hostedMcpEntryService';
 import {
   CONFIDENTIAL_CLIENT_METHODS,
   HostedMcpClientError,
@@ -37,7 +37,7 @@ type RegistrationMethod = 'none' | ConfidentialMethod;
  */
 export const CLIENT_SECRET_RENEW_MARGIN_MS = 24 * 60 * 60 * 1000;
 
-const currentFilter = (entry: HostedMcpEntry) => ({
+const currentFilter = (entry: HostedMcpOAuthEntry) => ({
   entryId: entry.id,
   issuer: entry.issuer,
   current: true,
@@ -69,7 +69,7 @@ const clientFromRow = async (row: RegistrationRow): Promise<HostedMcpClientConfi
 };
 
 /** Which method to register with, or a refusal before any POST. */
-const registrationMethod = (entry: HostedMcpEntry, metadata: HostedMcpAuthorizationServer): RegistrationMethod => {
+const registrationMethod = (entry: HostedMcpOAuthEntry, metadata: HostedMcpAuthorizationServer): RegistrationMethod => {
   const supported = metadata.token_endpoint_auth_methods_supported;
   // RFC 8414 defaults an omitted list to client_secret_basic, but this registry
   // registers only a method the vendor names: never POST hoping it accepts one.
@@ -90,7 +90,7 @@ const registrationMethod = (entry: HostedMcpEntry, metadata: HostedMcpAuthorizat
  * client for new starts; rows already minted by it continue to use it.
  */
 export const ensureDcrClient = async (
-  entry: HostedMcpEntry,
+  entry: HostedMcpOAuthEntry,
   metadata: HostedMcpAuthorizationServer,
   redirectUri: string,
   fetchImpl: typeof fetch = hostedVendorFetch,
@@ -249,7 +249,7 @@ export const ensureDcrClient = async (
 
 /** A row may use a retired registration, but never one the vendor refused. */
 export const dcrClientForRow = async (
-  entry: HostedMcpEntry,
+  entry: HostedMcpOAuthEntry,
   recordedClientId: string | undefined,
 ): Promise<HostedMcpClientConfiguration | null> => {
   if (entry.client !== 'dcr' || !recordedClientId) return null;
@@ -263,7 +263,7 @@ export const dcrClientForRow = async (
 };
 
 /** Invalid client on token/revoke poisons this registration, not every row. */
-export const refuseDcrClient = async (entry: HostedMcpEntry, clientId: string): Promise<void> => {
+export const refuseDcrClient = async (entry: HostedMcpOAuthEntry, clientId: string): Promise<void> => {
   if (entry.client !== 'dcr') return;
   const now = new Date();
   const refused = await HostedMcpDcrRegistration.findOneAndUpdate(

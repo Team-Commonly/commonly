@@ -49,7 +49,8 @@ import {
   findHostedMcpEntry,
   hostedMcpRevokeTarget,
 } from '../integrations/hostedMcp/entries';
-import type { HostedMcpEntry } from './hostedMcpEntryService';
+import { isOAuthEntry } from './hostedMcpEntryService';
+import type { HostedMcpEntry, HostedMcpOAuthEntry } from './hostedMcpEntryService';
 import {
   buildRevocationRequest,
   discoverAuthorizationServer,
@@ -103,12 +104,12 @@ export interface RemovalDeps {
   /** Step 3b, between the provider revoke and any material going. Idempotent. */
   markProviderRevoked: (id: unknown, at: Date) => Promise<void>;
   entryFor: (connection: RemovableConnection) => HostedMcpEntry | null;
-  clientIdFor: (entry: HostedMcpEntry) => string;
-  clientSecretFor: (entry: HostedMcpEntry) => string | undefined;
+  clientIdFor: (entry: HostedMcpOAuthEntry) => string;
+  clientSecretFor: (entry: HostedMcpOAuthEntry) => string | undefined;
   dcrClientForRow: typeof dcrClientForRow;
   /** Step 3. Resolves when the authorization is gone; throws when it may still be live. */
   revokeAtVendor: (input: {
-    entry: HostedMcpEntry;
+    entry: HostedMcpOAuthEntry;
     clientId: string;
     clientSecret?: string;
     /** A DCR confidential client's registered method (TASK-248); sent as recorded. */
@@ -165,7 +166,7 @@ export type RemovalResult =
  * endpoint that refused.
  */
 export const revokeTokenAtVendor = async (input: {
-  entry: HostedMcpEntry;
+  entry: HostedMcpOAuthEntry;
   clientId: string;
   clientSecret?: string;
   tokenEndpointAuthMethod?: HostedMcpClientConfiguration['tokenEndpointAuthMethod'];
@@ -318,7 +319,9 @@ export const removeConnection = async (options: {
   // the material may be half-swept, and the token is already dead.
   const alreadyRevokedAtVendor = Boolean(connection?.config?.[PROVIDER_REVOKED_MARK]);
 
-  if (entry && target?.endpoint && !alreadyRevokedAtVendor) {
+  // Only OAuth entries have a vendor revoke. An operator key is a static bearer
+  // with no refresh token, so it is never sent to an RFC 7009 endpoint.
+  if (entry && isOAuthEntry(entry) && target?.endpoint && !alreadyRevokedAtVendor) {
     // The row records which client minted this pair; the instance's current
     // configuration remains the source for client credentials. A recorded id
     // that differs from the current one must never send a held token under the

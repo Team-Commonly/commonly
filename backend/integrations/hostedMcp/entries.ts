@@ -11,6 +11,7 @@
  * verify the URL, transport, auth mode, token lifetime, refresh and revocation,
  * and their pinned read tools claim `readOnlyHint: true` (§3, §11).
  */
+import { isOAuthEntry } from '../../services/hostedMcpEntryService';
 import type { HostedMcpEntry } from '../../services/hostedMcpEntryService';
 import { AIRTABLE_ENTRY } from './airtable';
 import { ATLASSIAN_ENTRY } from './atlassian';
@@ -168,7 +169,7 @@ export const assertHostedMcpEntries = (
     if (reservedIds.has(entry.id)) {
       throw new Error(`hosted-mcp entry id collides with a builtin tool installable: ${entry.id}`);
     }
-    if (entry.authorizationParams !== undefined) {
+    if (isOAuthEntry(entry) && entry.authorizationParams !== undefined) {
       if (!entry.authorizationParams || typeof entry.authorizationParams !== 'object'
         || Array.isArray(entry.authorizationParams)) {
         throw new Error(`hosted-mcp entry authorization parameters are not an object: ${entry.id}`);
