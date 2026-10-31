@@ -215,6 +215,11 @@ describe('staging seed', () => {
     expect(() => assertCredOutOutsideRepo(path.join(tmp, 'elsewhere', 'seat.json'))).not.toThrow();
     // A worktree's .git is a file, and the real backend dir sits in one.
     expect(() => assertCredOutOutsideRepo(path.join(__dirname, 'seat.json'))).toThrow(/inside the git checkout/);
+    // A symlinked parent that points into a checkout is resolved, not trusted.
+    const link = path.join(tmp, 'link-into-checkout');
+    fs.symlinkSync(__dirname, link);
+    expect(() => assertCredOutOutsideRepo(path.join(link, 'seat.json'))).toThrow(/inside the git checkout/);
+    expect(() => assertCredOutOutsideRepo(path.join(link, 'not-yet', 'seat.json'))).toThrow(/inside the git checkout/);
     const before = await User.findById(seedObjectId(SEAT.key)).lean();
     await expect(runStagingSeed({ pool, credOut: inside, rotate: true })).rejects.toThrow(StagingGuardError);
     expect(fs.existsSync(inside)).toBe(false);

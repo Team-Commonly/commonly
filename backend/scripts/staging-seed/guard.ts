@@ -86,15 +86,36 @@ export function assertStagingTarget(signals: StagingTargetSignals): void {
 }
 
 /**
+ * The deepest existing ancestor of `dir`, symlinks resolved, with the missing
+ * tail re-appended. A lexical walk alone passes `/tmp/out/seat.json` when
+ * `/tmp/out` is a symlink into a checkout.
+ */
+const realDir = (dir: string): string => {
+  const tail: string[] = [];
+  let probe = dir;
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync(probe), ...tail.reverse());
+    } catch {
+      const parent = path.dirname(probe);
+      if (parent === probe) return dir;
+      tail.push(path.basename(probe));
+      probe = parent;
+    }
+  }
+};
+
+/**
  * The seat password must never land where `git add` can reach it. Walks up from
- * the file's directory (which may not exist yet) and refuses at the first
- * `.git` entry, a directory in a checkout or a file in a worktree.
+ * the file's real directory (which may not exist yet; symlinked parents are
+ * resolved) and refuses at the first `.git` entry, a directory in a checkout or
+ * a file in a worktree.
  */
 export function assertCredOutOutsideRepo(
   credOut: string,
   exists: (candidate: string) => boolean = fs.existsSync,
 ): void {
-  let dir = path.dirname(path.resolve(credOut));
+  let dir = realDir(path.dirname(path.resolve(credOut)));
   for (;;) {
     if (exists(path.join(dir, '.git'))) refuse(`--cred-out ${credOut} is inside the git checkout at ${dir}`);
     const parent = path.dirname(dir);
