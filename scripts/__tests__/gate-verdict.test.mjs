@@ -93,8 +93,10 @@ test('a dot-directory markdown file is not docs: it needs a gate', () => {
 });
 
 test('a dot-directory under docs is not docs either: it needs a gate', () => {
-  assert.equal(run({ files: ['docs/.claude/skills/x/SKILL.md'] }).status, 1);
-  assert.equal(run({ files: ['docs/.hidden/notes.md'] }).status, 1);
+  // Built from parts, as docReferences.test.js builds its fixtures: a literal doc path here would
+  // be a pointer that the doc-reference scan follows to a file that is not there.
+  assert.equal(run({ files: [['docs', '.claude', 'skills', 'x', 'SKILL.md'].join('/')] }).status, 1);
+  assert.equal(run({ files: [['docs', '.hidden', 'notes.md'].join('/')] }).status, 1);
 });
 
 test('one code file among docs and tests still needs a gate', () => {
@@ -162,19 +164,28 @@ test('a PASS after a HOLD at the same head passes', () => {
   assert.equal(run({ files: CODE_FILES, reviews: [review(HOLD), review(PASS)] }).status, 0);
 });
 
-test('markup around the verdict is ignored, as the press reads it', () => {
+test('markup on the first line is ignored, but a bold last line is not the sentinel', () => {
   const body = `**GATE: PASS @ ${HEAD}**\n\nRan the tests.\n\n**GATE: PASS**`;
-  assert.equal(run({ files: CODE_FILES, reviews: [review(body)] }).status, 0);
+  const r = run({ files: CODE_FILES, reviews: [review(body)] });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /last line is '\*\*GATE: PASS\*\*'/);
 });
 
-test('a footer below the verdict does not hide it', () => {
-  const pass = `GATE: PASS @ ${HEAD}\n\nRan the focused tests.\n\nGATE: PASS\n\nWritten by Sable, a Commonly agent`;
-  assert.equal(run({ files: CODE_FILES, reviews: [review(pass)] }).status, 0);
-  // A footer under a HOLD must not let the PASS before it stand.
-  const hold = 'The rollback path needs a test.\n\nGATE: HOLD\n\nPod thread: https://commonly.me/v2/pods/6a692a1be833c668acdb84cf';
-  const r = run({ files: CODE_FILES, reviews: [review(PASS), review(hold)] });
+test('a credit line below the sentinel fails the PASS; the same line above it passes', () => {
+  const below = `GATE: PASS @ ${HEAD}\n\nRan the focused tests.\n\nGATE: PASS\n\nWritten by Sable, a Commonly agent`;
+  const r = run({ files: CODE_FILES, reviews: [review(below)] });
   assert.equal(r.status, 1);
-  assert.match(r.stdout, /last line is 'GATE: HOLD'/);
+  assert.match(r.stdout, /last line is 'Written by Sable, a Commonly agent'/);
+  const above = `GATE: PASS @ ${HEAD}\n\nRan the focused tests.\n\nWritten by Sable, a Commonly agent\n\nGATE: PASS`;
+  assert.equal(run({ files: CODE_FILES, reviews: [review(above)] }).status, 0);
+});
+
+test('a footer under a HOLD does not hide it from the PASS before it', () => {
+  const pass = review(PASS);
+  const hold = review('The rollback path needs a test.\n\nGATE: HOLD\n\nPod thread: https://commonly.me/v2/pods/6a692a1be833c668acdb84cf');
+  const r = run({ files: CODE_FILES, reviews: [pass, hold] });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, new RegExp(`review ${hold.id}\\)`));
 });
 
 test('only the exact last line GATE: PASS passes, so near-misses block', () => {
@@ -229,7 +240,8 @@ test('a PASS that names only an older SHA does not count', () => {
 });
 
 test('a rename out of a code path into docs is not Tier 0', () => {
-  const r = run({ files: [{ filename: 'docs/old-service.md', previous_filename: 'backend/services/foo.ts' }] });
+  const doc = ['docs', 'old-service.md'].join('/');
+  const r = run({ files: [{ filename: doc, previous_filename: 'backend/services/foo.ts' }] });
   assert.equal(r.status, 1);
   assert.match(r.stdout, /no GATE verdict/);
 });
@@ -240,7 +252,8 @@ test('a rename out of a code path into a test directory is not Tier 0', () => {
 });
 
 test('a rename within docs stays Tier 0', () => {
-  assert.equal(run({ files: [{ filename: 'docs/new.md', previous_filename: 'docs/old.md' }] }).status, 0);
+  const [oldDoc, newDoc] = [['docs', 'old.md'], ['docs', 'new.md']].map((parts) => parts.join('/'));
+  assert.equal(run({ files: [{ filename: newDoc, previous_filename: oldDoc }] }).status, 0);
 });
 
 test('skill and config markdown is behaviour, not docs', () => {

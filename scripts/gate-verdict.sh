@@ -3,8 +3,8 @@
 #
 # Passes when every changed file is docs or test code (Tier 0), or when the latest verdict
 # from the gate account at the exact head opens `GATE: PASS` and names the head SHA on its first
-# line, and its last line is `GATE: PASS`. Anything else fails, including an API error or a file
-# list shorter than the PR's changed_files.
+# line, and its final line as stored is `GATE: PASS`. Anything else fails, including an API error
+# or a file list shorter than the PR's changed_files.
 #
 # This script runs from the PR checkout, so a PR that edits it grades itself until it is
 # pinned to main's copy. Do not make the check required before then.
@@ -37,9 +37,12 @@ if [ "$listed" -gt 0 ] && [ "$listed" -eq "$expected" ] &&
   exit 0
 fi
 
-# One line per review by the gate account at this head: "<id>\t<submitted_at>\t<first line>\t<last line>".
-# Both ends are read the way the press reads them: footers and markup removed, blank lines skipped.
-# Pending and dismissed reviews don't count. The text decides the verdict, not the review state.
+# One line per review by the gate account at this head:
+# "<id>\t<submitted_at>\t<first line>\t<last line>\t<stored last line>".
+# A verdict is found with footers and markup removed, at either end, so a footer under a HOLD cannot
+# hide it. The first line of a PASS is read the same way, because rule 51 places the head name there.
+# The last line of a PASS is read as stored: the press parses the final non-blank line, so a bold
+# sentinel or a credit line below it is not a PASS. Pending and dismissed reviews don't count.
 verdicts="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/reviews" --jq '
   def clean_lines:
     split("\n")
@@ -48,8 +51,10 @@ verdicts="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/reviews" --jq '
   .[]
   | select((.user.login | ascii_downcase) == ($ENV.GATE_REVIEWER | ascii_downcase))
   | select(.commit_id == $ENV.HEAD_SHA and .state != "PENDING" and .state != "DISMISSED")
-  | (.body // "" | clean_lines) as $lines
-  | [.id, .submitted_at, ($lines | .[0] // ""), ($lines | .[-1] // "")]
+  | (.body // "") as $body
+  | ($body | clean_lines) as $lines
+  | ($body | split("\n") | map(sub("\\s+$"; "")) | map(select(length > 0)) | .[-1] // "") as $stored_last
+  | [.id, .submitted_at, ($lines | .[0] // ""), ($lines | .[-1] // ""), $stored_last]
   | @tsv')"
 
 # Review ids rise with creation, so the highest id is the latest verdict. A review is a verdict when
@@ -62,13 +67,13 @@ fi
 
 review_id="$(printf '%s\n' "$latest" | cut -f 1)"
 first="$(printf '%s\n' "$latest" | cut -f 3)"
-last="$(printf '%s\n' "$latest" | cut -f 4)"
-# A PASS opens with the words GATE: PASS and names the head's first seven characters, and its last
-# line is exactly GATE: PASS. Both ends are needed, as review-checklist rules 44 and 51 require.
+last="$(printf '%s\n' "$latest" | cut -f 5)"
+# A PASS opens with the words GATE: PASS and names the head's first seven characters, and its stored
+# last line is exactly GATE: PASS, with any credit line above it. Both ends are needed (rules 44 and 51).
 opens_pass=no
 case "$first" in "GATE: PASS "*"${HEAD_SHA:0:7}"*) opens_pass=yes ;; esac
 if [ "$opens_pass" != yes ] || [ "$last" != "GATE: PASS" ]; then
-  echo "::error::the latest verdict from $GATE_REVIEWER at $HEAD_SHA (review $review_id) is not a PASS at this head. Its first line is '$first' and its last line is '$last'. A PASS needs a first line that opens 'GATE: PASS' and names ${HEAD_SHA:0:7}, and a last line of exactly 'GATE: PASS'."
+  echo "::error::the latest verdict from $GATE_REVIEWER at $HEAD_SHA (review $review_id) is not a PASS at this head. Its first line is '$first' and its last line is '$last'. A PASS needs a first line that opens 'GATE: PASS' and names ${HEAD_SHA:0:7}, and a last line of exactly 'GATE: PASS' as stored, with any credit line above it."
   exit 1
 fi
 echo "✓ $GATE_REVIEWER: GATE: PASS at $HEAD_SHA (review $review_id)"
