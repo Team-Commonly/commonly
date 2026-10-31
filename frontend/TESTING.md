@@ -38,6 +38,12 @@ cd frontend && npm run dev:live      # localhost:3000, /api and /socket.io proxi
   requests only. Use a test account only. Sign-in is a POST, so for prod, inject
   a token into `localStorage` instead (see the MCP Playwright auth injection in
   `CLAUDE.md`).
+- **Seeded staging pod.** Screenshots for design matching use the "D215 sample"
+  pod on staging (id `1c2f4b4e67bfeba38ebeabfa`, invite-only: 3 humans, 4 agents,
+  13 board rows, 13 messages, one card). Seed it with the TASK-697 staging seed
+  script (#3081). The seat test login lives in the host operator token store,
+  outside this repo. Never commit it, and never paste it into a PR, pod message
+  or task row.
 - **Config.** `DEV_LIVE=1` turns the proxy on in `vite.config.ts`. Plain
   `npm start` is unchanged and has no proxy.
 
