@@ -77,6 +77,30 @@ describe('safeLogLine', () => {
   });
 });
 
+describe('safeLogLine terminal and credential boundary', () => {
+  test('strips OSC, CSI and bare escape sequences and C0 controls, and keeps the text', () => {
+    expect(safeLogLine('\x1b]52;c;SGVsbG8=\x07ok\x1b[2Jend', 80)).toBe('okend');
+    expect(safeLogLine('a\x1bMb\x07c', 80)).toBe('abc');
+    expect(safeLogLine('a\tb\rc', 80)).toBe('a  bc');
+  });
+
+  test('redacts Authorization headers and quoted or bare credential fields', () => {
+    expect(safeLogLine('req Authorization: Basic dXNlcjpwYXNz ok', 80)).toBe('req Authorization: [redacted] ok');
+    expect(safeLogLine('{"token": "abc123", "x":1}', 80)).toBe('{"token": "[redacted]", "x":1}');
+    expect(safeLogLine('password=hunter2 done', 80)).toBe('password=[redacted] done');
+  });
+
+  test('applies the same boundary to the seat error and the note', () => {
+    const text = renderDaemonWatch({
+      machine: { name: 'm', status: 'online', lastSeenAt: null },
+      seats: [{ agentName: 'dart', instanceId: 'dart', state: 'crashed', lastError: '\x1b[31mtoken=zzz' }],
+      stateNote: 'Note \x1b]0;title\x07 here', now: NOW, width: 80,
+    });
+    expect(text).not.toContain('\x1b');
+    expect(text).not.toContain('zzz');
+  });
+});
+
 describe('shouldRedraw', () => {
   test('redraws only on a terminal without NO_COLOR', () => {
     expect(shouldRedraw({ isTTY: true, env: {} })).toBe(true);

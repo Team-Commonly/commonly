@@ -81,10 +81,19 @@ const watchDaemonStatus = async () => {
   const frame = async () => {
     try {
       const record = requireDaemonRecord();
-      const machine = await getDaemonMachineStatus({
-        client: createClient({ instance: record.instanceUrl, token: record.daemonToken }),
-        record,
-      });
+      // A failed machine read still shows the local seats and logs, with the
+      // machine marked unreachable, so the operator can see what is running here.
+      let machine;
+      let machineNote = '';
+      try {
+        machine = await getDaemonMachineStatus({
+          client: createClient({ instance: record.instanceUrl, token: record.daemonToken }),
+          record,
+        });
+      } catch (error) {
+        machine = { name: record.machineName, status: 'unreachable', lastSeenAt: null };
+        machineNote = `Machine status unavailable (${error.message}): showing local seats only.`;
+      }
       const seats = (loadDaemonState()?.seats || []).map((seat) => ({
         ...seat,
         // The supervisor stamps spawn time; the session store holds real turns.
@@ -108,7 +117,7 @@ const watchDaemonStatus = async () => {
         }
       }
       return renderDaemonWatch({
-        machine, seats, logTails, states, stateNote, now: Date.now(), width: process.stdout.columns || 80, color: redraw,
+        machine, seats, logTails, states, stateNote: [machineNote, stateNote].filter(Boolean).join(' '), now: Date.now(), width: process.stdout.columns || 80, color: redraw,
       });
     } catch (error) {
       return daemonStatusErrorMessage(error);

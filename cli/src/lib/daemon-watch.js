@@ -31,16 +31,43 @@ const relative = (iso, now) => {
   return `${Math.round(ms / 3_600_000)}h ago`;
 };
 
+// Terminal control sequences in a log or state field would reach the operator's
+// terminal: a line could clear the watch, set the title, or write the clipboard.
+// Strip OSC and CSI sequences, bare escapes, and C0/C1 controls before anything
+// else. Tabs become spaces so the column count stays honest.
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
+const OSC = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g;
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
+const CSI = /\x1b\[[0-?]*[ -/]*[@-~]/g;
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
+const ESC = /\x1b[@-Z\\-_]/g;
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
+const CONTROL = /[\x00-\x08\x0a-\x1f\x7f-\x9f]/g;
+export const stripControls = (text) => String(text ?? '')
+  .replace(OSC, '').replace(CSI, '').replace(ESC, '').replace(CONTROL, '').replace(/\t/g, '  ');
+
+// Credential shapes the CLI knows, plus the forms that carry a credential in a
+// log without a known prefix: `Authorization: Basic …`, and a quoted or bare
+// `token`/`password`/`secret`/`api_key` field. Generic key/value redaction can
+// over-match, which is the cheaper error for a watch that prints logs.
+const CREDENTIAL = [
+  [/cm_(?:daemon|agent|user)_[A-Za-z0-9_-]+/g, '[redacted]'],
+  [/\bBearer\s+\S+/gi, '[redacted]'],
+  [/\bBasic\s+[A-Za-z0-9+/=._-]+/g, '[redacted]'],
+  [/(\bauthorization\s*[:=]\s*)(?:(?:basic|bearer|digest|token)\s+)?\S+/gi, '$1[redacted]'],
+  [/(["']?\b(?:token|password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token)\b["']?\s*[:=]\s*)(["']?)[^\s"',}&]+\2/gi, '$1$2[redacted]$2'],
+];
+const redact = (text) => CREDENTIAL.reduce((value, [shape, replacement]) => value.replace(shape, replacement), text);
+
+// Every field the watch prints goes through here: control sequences out,
+// credentials redacted, then clipped to the width.
 const clip = (text, width) => {
-  const value = String(text ?? '');
+  const value = redact(stripControls(text));
   return value.length <= width ? value : `${value.slice(0, Math.max(0, width - 1))}…`;
 };
 
-// A log line can carry a credential or a whole prompt. Redact the token shapes
-// this CLI knows, and clip the rest to the width, so the view never prints
-// either in full.
-const TOKEN_SHAPE = /(cm_(?:daemon|agent|user)_[A-Za-z0-9_-]+|Bearer\s+\S+)/g;
-export const safeLogLine = (line, width) => clip(String(line).replace(TOKEN_SHAPE, '[redacted]'), width);
+// A log line can carry a credential or a whole prompt; the same boundary covers it.
+export const safeLogLine = (line, width) => clip(line, width);
 
 // The state is the server's verdict, read by daemon-agent-states. `states` is
 // that Map. Without it (no login, or the read failed) the seat shows its local

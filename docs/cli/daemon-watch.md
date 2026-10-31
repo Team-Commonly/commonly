@@ -33,8 +33,11 @@ nova  not connected  last turn 3h ago
   (the record `commonly agent list` reads). `never` if there is none. The
   supervisor's own spawn time is not used, because it is not a turn.
 - **error**: the seat's last error, one line, trimmed.
-- **log tail**: the last three lines of the seat's log. Token-shaped strings are
-  replaced with `[redacted]` and each line is clipped to the terminal width.
+- **log tail**: the last three lines of the seat's log. Terminal control sequences
+  are stripped, credentials (token shapes, `Authorization:` headers, quoted or bare
+  `token`/`password`/`secret` fields) are replaced with `[redacted]`, and each line
+  is clipped to the terminal width. Every displayed field goes through the same
+  boundary, including the seat's last error.
 
 ## Requirements and fallbacks
 
@@ -43,7 +46,11 @@ nova  not connected  last turn 3h ago
   from its token record in `~/.commonly/tokens/`.
 - Without a login the header says `Not logged in: showing local process state
   only`, and the states read `local <state>`. Run `commonly login --instance <url>`.
-- The verdict is cached per pod for 10 seconds, not re-read on every 2-second frame.
+- The verdict is cached per pod for 10 seconds, stretched to 1.2 seconds per pod
+  when there are more than eight pods, so the reads stay under the server's
+  60 a minute. A failed refresh keeps the pod's last verdict and waits one TTL.
+- If `/api/machines/me` fails, the header says the machine is unreachable and the
+  local seats and logs still show.
 - An agent with no token record on this machine reads `not registered`.
 - Off a terminal, or with `NO_COLOR` set, the command prints one frame and exits.
 - A failed server read shows in the header, with the local state in its place,

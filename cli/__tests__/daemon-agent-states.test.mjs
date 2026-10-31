@@ -98,6 +98,49 @@ describe('createReachCache', () => {
   });
 });
 
+describe('createReachCache under the rate limit', () => {
+  test('keeps the last verdict for a pod whose refresh fails, and waits a ttl before retrying', async () => {
+    let clock = 0;
+    let fail = false;
+    let loads = 0;
+    const reachFor = createReachCache({
+      load: async () => {
+        loads += 1;
+        if (fail) throw new Error('429');
+        return new Map([['a:default', 'running']]);
+      },
+      ttlMs: 10_000,
+      now: () => clock,
+    });
+    expect((await reachFor(['p1'])).get('a:default')).toBe('running');
+    fail = true;
+    clock = 10_000;
+    expect((await reachFor(['p1'])).get('a:default')).toBe('running');
+    expect(loads).toBe(2);
+    clock = 15_000;
+    expect((await reachFor(['p1'])).get('a:default')).toBe('running');
+    expect(loads).toBe(2);
+  });
+
+  test('stretches the refresh so 11 pods stay under 60 reads a minute', async () => {
+    let clock = 0;
+    let loads = 0;
+    const pods = Array.from({ length: 11 }, (_, i) => `p${i}`);
+    const reachFor = createReachCache({
+      load: async () => { loads += 1; return new Map(); },
+      ttlMs: 10_000,
+      now: () => clock,
+    });
+    await reachFor(pods);
+    clock = 13_100;
+    await reachFor(pods);
+    expect(loads).toBe(11);
+    clock = 13_200;
+    await reachFor(pods);
+    expect(loads).toBe(22);
+  });
+});
+
 describe('readSessionLastTurn', () => {
   test('returns the most recent turn across pods, or null when there is no store', () => {
     const home = mkdtempSync(join(tmpdir(), 'dart-sessions-'));

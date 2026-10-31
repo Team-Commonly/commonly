@@ -40,22 +40,35 @@ export const loadPodReach = async ({ client, podId }) => {
   return byAgent;
 };
 
-// Caches each pod's verdict for `ttlMs`, so the 2 s watch frame does not re-read
-// every pod. A failed read is thrown and not cached, so the next frame retries.
-// `load(podId)` returns Map<seatKey, label>. Returns `reachFor(podIds)`, which
-// merges the pods' maps into one.
+// The server allows 60 agent-states reads a minute per IP. Each pod is refreshed
+// once per TTL, and the TTL stretches with the pod count, so N pods cost about 50
+// reads a minute whatever N is: 1.2 s per pod at least, and never below `ttlMs`.
+const PER_POD_SPACING_MS = 1_200;
+
+// Caches each pod's verdict, so the 2 s watch frame does not re-read every pod.
+// A failed refresh keeps the pod's last verdict and waits one TTL before trying
+// again, so a 429 is neither discarded nor retried every frame. A pod with no
+// earlier verdict throws, and the next call retries it. `load(podId)` returns
+// Map<seatKey, label>. Returns `reachFor(podIds)`, which merges the pods' maps.
 export const createReachCache = ({ load, ttlMs = 10_000, now = Date.now }) => {
   const cached = new Map();
   const reachFor = async (podIds) => {
+    const ttl = Math.max(ttlMs, podIds.length * PER_POD_SPACING_MS);
     const merged = new Map();
     for (const podId of podIds) {
       const hit = cached.get(podId);
-      const agents = hit && now() - hit.loadedAt < ttlMs
-        ? hit.agents
-        : await load(podId).then((loaded) => {
-          cached.set(podId, { agents: loaded, loadedAt: now() });
-          return loaded;
-        });
+      let agents;
+      if (hit && now() - hit.loadedAt < ttl) {
+        agents = hit.agents;
+      } else {
+        try {
+          agents = await load(podId);
+        } catch (error) {
+          if (!hit) throw error;
+          agents = hit.agents;
+        }
+        cached.set(podId, { agents, loadedAt: now() });
+      }
       for (const [key, label] of agents) {
         merged.set(key, merged.has(key) ? moreAlive(merged.get(key), label) : label);
       }
