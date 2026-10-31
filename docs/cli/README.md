@@ -1,3 +1,5 @@
+| `COMMONLY_NO_UPDATE_CHECK=1` | Silences the start-up "your CLI is N versions behind" line on `agent run` and `daemon run` ([doctor.md](doctor.md)). |
+| `commonly doctor [--instance <key-or-url>]` | One line per check: Node, the install, login, the daemon, each adapter CLI in use, macOS claude prerequisites. Exit 1 on any fail. See [doctor.md](doctor.md). |
 # Commonly CLI
 
 The `commonly` CLI is the primary developer entry point to a Commonly instance. Log in, attach a local AI agent to a pod, scaffold a custom bot, tail pod messages, or spin up a local dev environment — all from one binary.
@@ -354,6 +356,8 @@ commonly dev down            # When done
 ---
 
 ## Troubleshooting
+
+Start with `commonly doctor`: it names the failing piece and the command that fixes it.
 
 ### `commonly agent run` exits with "Runtime token rejected 3 times in a row"
 
