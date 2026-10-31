@@ -1,12 +1,63 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type ProxyOptions } from 'vite';
 import react from '@vitejs/plugin-react';
+
+// `npm run dev:live` (TASK-686): serve the branch on localhost and proxy
+// /api and /socket.io to a real backend. The browser's Origin header is
+// dropped on the way out, because prod refuses http://localhost:<port> and the
+// backend accepts no-Origin requests. Target defaults to staging, where writes
+// are safe; DEV_LIVE_TARGET=prod points at prod, read-only, see TESTING.md.
+// Each target gets its own port, so the two never share localStorage: a prod
+// token saved on one origin cannot reach a staging run.
+// DEV_LIVE_UPSTREAM replaces the target URL; the proxy tests use it to stand
+// in a local stub backend, so no test request leaves the machine.
+const DEV_LIVE = process.env.DEV_LIVE === '1';
+const LIVE_TARGETS: Record<string, { url: string; port: number }> = {
+  staging: { url: 'https://api-staging.commonly.me', port: 3102 },
+  prod: { url: 'https://api.commonly.me', port: 3101 },
+};
+const liveName = process.env.DEV_LIVE_TARGET || 'staging';
+const liveEntry = LIVE_TARGETS[liveName];
+if (DEV_LIVE && !liveEntry) {
+  throw new Error(`DEV_LIVE_TARGET must be one of: ${Object.keys(LIVE_TARGETS).join(', ')}`);
+}
+const livePort = DEV_LIVE ? liveEntry.port : 3000;
+const liveTarget = DEV_LIVE ? process.env.DEV_LIVE_UPSTREAM || liveEntry.url : undefined;
+const dropOrigin: NonNullable<ProxyOptions['configure']> = (proxy) => {
+  proxy.on('proxyReq', (req) => req.removeHeader('origin'));
+  proxy.on('proxyReqWs', (req) => req.removeHeader('origin'));
+};
+// Prod is read-only for the browser: HTTP writes are refused at the proxy and
+// the socket is not proxied, so the page renders from REST GETs only.
+const readOnlyProd = liveName === 'prod';
 
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 3000,
+    port: livePort,
     host: true,
     open: false,
+    proxy: DEV_LIVE
+      ? {
+          '/api': {
+            target: liveTarget,
+            changeOrigin: true,
+            secure: true,
+            configure: dropOrigin,
+            bypass: (req) => (readOnlyProd && req.method !== 'GET' && req.method !== 'HEAD' ? '/__dev-live-read-only' : undefined),
+          },
+          ...(readOnlyProd
+            ? {}
+            : {
+                '/socket.io': {
+                  target: liveTarget,
+                  changeOrigin: true,
+                  secure: true,
+                  ws: true,
+                  configure: dropOrigin,
+                },
+              }),
+        }
+      : undefined,
   },
   build: {
     outDir: 'build', // match CRA output dir for deployment compatibility
@@ -23,7 +74,11 @@ export default defineConfig({
     // pass it through explicitly (a longer define key wins over `process.env`)
     // so the app actually reads it. Empty string when unset keeps self-hosted
     // same-origin builds on their existing fallback path.
-    'process.env.REACT_APP_API_URL': JSON.stringify(process.env.REACT_APP_API_URL || ''),
+    // dev:live serves on its own port, so the API base is that same origin:
+    // the proxy answers /api there and forwards it to the target.
+    'process.env.REACT_APP_API_URL': JSON.stringify(
+      DEV_LIVE ? `http://localhost:${livePort}` : process.env.REACT_APP_API_URL || '',
+    ),
     'process.env.REACT_APP_TELEGRAM_BOT_HANDLE': JSON.stringify(process.env.REACT_APP_TELEGRAM_BOT_HANDLE || ''),
     // Same `process.env: {}` clobber trap as REACT_APP_API_URL above: without an
     // explicit define, the showcase pod id fell back to the literal
