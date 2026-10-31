@@ -19,7 +19,8 @@
  *   skippedClicks candidates past CRAWL_MAX_CLICKS, reported so a short run cannot look complete.
  *
  * Read-only by construction: every request in the context that is not GET, HEAD or OPTIONS is
- * aborted and counted as `blockedWrites`. WebSockets are closed before they reach the server and
+ * aborted and counted as `blockedWrites`. GET requests to GET_WRITE_PATHS are aborted too, because
+ * some GET endpoints write (an email unsubscribe link). WebSockets are closed before they reach the server and
  * counted as `blockedSockets`, because a socket can carry writes (Socket.io joinPod/leavePod)
  * that no click produces. Service workers are blocked, because their requests bypass routing.
  *
@@ -99,6 +100,16 @@ if (env.CRAWL_CHROMIUM) launchOptions.executablePath = env.CRAWL_CHROMIUM;
 
 const CONTROL = 'button, a[href], [role=button], [role=tab]';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+// GET endpoints that write (an unsubscribe or a verify link). Denied by path, because a GET
+// link on a page is otherwise a free write for the crawler. Extend this list when one is found.
+const GET_WRITE_PATHS = ['/api/email/', '/api/auth/verify-email'];
+
+// Throws when a page did not stay on the requested route (a login redirect, say).
+function assertLanded(page, url) {
+  const landed = new URL(page.url()).pathname;
+  const want = new URL(url).pathname;
+  if (landed !== want) throw new Error(`redirected to ${landed}; route ${want} not measured`);
+}
 
 // The same word rule as cap/measure_after.js: visible, not inside a control, grey band.
 const HELPER_WORDS = () => {
@@ -184,7 +195,9 @@ async function openPage(browser, viewport, scheme, record) {
   });
   // Every origin and path, not only /api: a click on a form or a link can send a write anywhere.
   await context.route('**/*', (r) => {
-    if (SAFE_METHODS.has(r.request().method())) return r.continue();
+    const { pathname } = new URL(r.request().url());
+    const writesOnGet = GET_WRITE_PATHS.some((p) => pathname.startsWith(p));
+    if (SAFE_METHODS.has(r.request().method()) && !writesOnGet) return r.continue();
     record.blockedWrites += 1;
     return r.abort();
   });
@@ -227,8 +240,7 @@ async function crawlCapture(browser, route, viewport, scheme) {
   try {
     await settle(page, url);
     // A protected route that redirects (to /v2/login, say) must not be measured as the route.
-    const landed = new URL(page.url()).pathname;
-    if (landed !== new URL(url).pathname) throw new Error(`redirected to ${landed}; route ${path} not measured`);
+    assertLanded(page, url);
 
     const measured = await page.evaluate(HELPER_WORDS);
     record.helperWords = measured.words;
@@ -274,7 +286,9 @@ async function crawlCapture(browser, route, viewport, scheme) {
       page.off('request', onRequest);
       record.clicks.push({ label: cand.label, textOnly: cand.textOnly, outcome });
       if (outcome === 'navigated') {
+        // The session can expire mid-capture; a later candidate must not run on the login page.
         await settle(page, url);
+        assertLanded(page, url);
       } else {
         await page.keyboard.press('Escape').catch(() => {});
       }
@@ -338,4 +352,7 @@ writeFileSync(join(OUT, 'summary.md'), [
   '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
   ...ranked.map((r) => `| ${r.routeId} | ${r.viewport} | ${r.scheme} | ${r.dead} | ${r.textOnly} | ${r.skippedClicks} | ${r.stale} | ${r.blockedWrites} | ${r.blockedSockets} | ${r.consoleErrors} | ${r.overflowX} | ${r.helperWords} (${r.helperTarget ?? '—'}) | ${r.scrollRatio} (${r.scrollTarget ?? '—'}) | ${r.error ?? ''} |`),
 ].join('\n') + '\n');
-console.log(`wrote ${records.length} captures to ${resolve(OUT)}`);
+const failed = records.filter((r) => r.error).length;
+// A run with errored captures is not evidence; exit non-zero so nobody reads it as a clean run.
+if (failed) process.exitCode = 1;
+console.log(`wrote ${records.length} captures to ${resolve(OUT)}; ${failed} with errors`);
