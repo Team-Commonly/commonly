@@ -19,8 +19,9 @@
  *   skippedClicks candidates past CRAWL_MAX_CLICKS, reported so a short run cannot look complete.
  *
  * Read-only by construction: every request in the context that is not GET, HEAD or OPTIONS is
- * aborted and counted as `blockedWrites`. Service workers are blocked, because their requests
- * bypass context routing.
+ * aborted and counted as `blockedWrites`. WebSockets are closed before they reach the server and
+ * counted as `blockedSockets`, because a socket can carry writes (Socket.io joinPod/leavePod)
+ * that no click produces. Service workers are blocked, because their requests bypass routing.
  *
  * Configuration is environment only. Nothing is hardcoded and no token is logged or written:
  *   CRAWL_BASE_URL     required, e.g. http://localhost:3000
@@ -187,6 +188,11 @@ async function openPage(browser, viewport, scheme, record) {
     record.blockedWrites += 1;
     return r.abort();
   });
+  // Without connectToServer the page's socket never reaches the server; the page just sees it closed.
+  await context.routeWebSocket(/.*/, (ws) => {
+    record.blockedSockets += 1;
+    ws.close();
+  });
   if (TOKEN) {
     // addInitScript also runs in cross-origin child frames, so the token goes to the configured origin only.
     await context.addInitScript(({ t, origin }) => {
@@ -214,7 +220,7 @@ async function crawlCapture(browser, route, viewport, scheme) {
   const url = BASE + path;
   const record = {
     routeId: route.id, url, viewport: viewport.label, scheme, maxClicks: MAX_CLICKS,
-    blockedWrites: 0, consoleErrors: [], clicks: [], candidateCount: null, skippedClicks: null,
+    blockedWrites: 0, blockedSockets: 0, consoleErrors: [], clicks: [], candidateCount: null, skippedClicks: null,
     helperWords: null, scroll: null, target: null, error: null,
   };
   const { context, page } = await openPage(browser, viewport, scheme, record);
@@ -294,6 +300,7 @@ function gaps(records) {
       textOnly: r.clicks.filter((c) => c.textOnly).length,
       skippedClicks: r.skippedClicks,
       blockedWrites: r.blockedWrites,
+      blockedSockets: r.blockedSockets,
       // distinct messages: a reload after a navigating click repeats the same error
       consoleErrors: new Set(r.consoleErrors).size,
       overflowX: r.scroll ? r.scroll.overflowX : null,
@@ -327,8 +334,8 @@ const summary = gaps(records);
 writeFileSync(join(OUT, 'summary.json'), JSON.stringify(summary, null, 2));
 const ranked = [...summary].sort((a, b) => (b.dead + b.consoleErrors + b.textOnly) - (a.dead + a.consoleErrors + a.textOnly));
 writeFileSync(join(OUT, 'summary.md'), [
-  '| route | viewport | scheme | dead clicks | text-only | skipped | stale | blocked writes | console errors | overflow-x | helper words (target) | scroll ratio (target) | error |',
-  '|---|---|---|---|---|---|---|---|---|---|---|---|---|',
-  ...ranked.map((r) => `| ${r.routeId} | ${r.viewport} | ${r.scheme} | ${r.dead} | ${r.textOnly} | ${r.skippedClicks} | ${r.stale} | ${r.blockedWrites} | ${r.consoleErrors} | ${r.overflowX} | ${r.helperWords} (${r.helperTarget ?? '—'}) | ${r.scrollRatio} (${r.scrollTarget ?? '—'}) | ${r.error ?? ''} |`),
+  '| route | viewport | scheme | dead clicks | text-only | skipped | stale | blocked writes | blocked sockets | console errors | overflow-x | helper words (target) | scroll ratio (target) | error |',
+  '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
+  ...ranked.map((r) => `| ${r.routeId} | ${r.viewport} | ${r.scheme} | ${r.dead} | ${r.textOnly} | ${r.skippedClicks} | ${r.stale} | ${r.blockedWrites} | ${r.blockedSockets} | ${r.consoleErrors} | ${r.overflowX} | ${r.helperWords} (${r.helperTarget ?? '—'}) | ${r.scrollRatio} (${r.scrollTarget ?? '—'}) | ${r.error ?? ''} |`),
 ].join('\n') + '\n');
 console.log(`wrote ${records.length} captures to ${resolve(OUT)}`);
