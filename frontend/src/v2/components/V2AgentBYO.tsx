@@ -1641,6 +1641,26 @@ const V2AgentBYO: React.FC = () => {
                 </React.Fragment>
               ))}
             </p>
+            {!listenerAvailable && (
+              <p className="v2-byo__needs" data-testid="byo-listen-wont-answer">
+                <strong>{t('agentByo.listen.wontAnswer', { name: issued.agentName })}</strong>
+                {hosting?.configured && (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      className="v2-byo__secondary"
+                      data-testid="byo-listen-run-here"
+                      disabled={submitting}
+                      onClick={startHostedInstead}
+                    >
+                      {t('agentByo.mode.hosted')}
+                    </button>
+                  </>
+                )}
+                {error && <span className="v2-byo__error" role="alert"> {error}</span>}
+              </p>
+            )}
             <p className="v2-byo__needs" data-testid={listenerAvailable ? 'byo-listen-needs' : 'byo-listen-unavailable'}>
               {listenerAvailable
                 ? `${t('agentByo.listen.needs', {
@@ -1751,31 +1771,43 @@ const V2AgentBYO: React.FC = () => {
           </div>
           <p data-testid="byo-key-once">{t('agentByo.result.keyOnce')}</p>
 
-          {listenAdapter === 'claude' && (
-            <div className="v2-byo__snippet" data-testid="byo-mcp-claude">
-              <div className="v2-byo__snippet-head">
-                {/* Where no listener runs, this is the way in, not an extra. */}
-                <span>{t(listenerAvailable ? 'agentByo.snippets.claudeCode' : 'agentByo.snippets.claudeCodeMain')}</span>
+          {listenAdapter === 'claude' && (() => {
+            const mcpBlock = (
+  <div className="v2-byo__snippet" data-testid="byo-mcp-claude">
+                <div className="v2-byo__snippet-head">
+                  {/* Where no listener runs, this is the way in, not an extra. */}
+                  <span>{t(listenerAvailable ? 'agentByo.snippets.claudeCode' : 'agentByo.snippets.claudeCodeMain')}</span>
+                </div>
+                <p className="v2-byo__hint">
+                  {t(
+                    setupOs === 'windows' ? 'agentByo.snippets.claudeCodeBodyWindows'
+                      : listenerAvailable ? 'agentByo.snippets.claudeCodeBody' : 'agentByo.snippets.claudeCodeBodyOwn',
+                    { name: issued.agentName },
+                  )}
+                </p>
+                <div className="v2-byo__command" onCopy={copiedIssuedContent}>
+                  <pre className="v2-byo__pre">{setupOs === 'windows' ? claudeSnippetWindows : claudeSnippet}</pre>
+                  <button
+                    type="button"
+                    onClick={() => copy('claude', setupOs === 'windows' ? claudeSnippetWindows : claudeSnippet)}
+                    className="v2-byo__copy"
+                  >
+                    {copied === 'claude' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
+                  </button>
+                </div>
               </div>
-              <p className="v2-byo__hint">
-                {t(
-                  setupOs === 'windows' ? 'agentByo.snippets.claudeCodeBodyWindows'
-                    : listenerAvailable ? 'agentByo.snippets.claudeCodeBody' : 'agentByo.snippets.claudeCodeBodyOwn',
-                  { name: issued.agentName },
-                )}
-              </p>
-              <div className="v2-byo__command" onCopy={copiedIssuedContent}>
-                <pre className="v2-byo__pre">{setupOs === 'windows' ? claudeSnippetWindows : claudeSnippet}</pre>
-                <button
-                  type="button"
-                  onClick={() => copy('claude', setupOs === 'windows' ? claudeSnippetWindows : claudeSnippet)}
-                  className="v2-byo__copy"
-                >
-                  {copied === 'claude' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
-                </button>
-              </div>
-            </div>
-          )}
+            );
+            // With a listener, the MCP command is the extra: folded away and
+            // labelled, because a stranger copied it three times, never ran the
+            // listener, and the agent never answered (walk 2026-10-31). Without a
+            // listener it is the only way in, so it stays open.
+            return listenerAvailable ? (
+              <details className="v2-byo__more" data-testid="byo-mcp-details">
+                <summary>{t('agentByo.snippets.mcpSummary')}</summary>
+                {mcpBlock}
+              </details>
+            ) : mcpBlock;
+          })()}
 
           <details className="v2-byo__more" data-testid="byo-result-more-ways">
             <summary>{t('agentByo.otherWays.title')}</summary>
@@ -1911,7 +1943,7 @@ const V2AgentBYO: React.FC = () => {
         </div>
       </aside>
       </div>
-          {issued && showHostedOffer && !hasCopied && hosting?.configured && listenState !== 'listening' && (
+          {issued && listenerAvailable && showHostedOffer && !hasCopied && hosting?.configured && listenState !== 'listening' && (
             <section role="status" className="v2-byo__hosted-offer" aria-label={t('agentByo.hosted.offerAction')}>
               <p>{t('agentByo.hosted.offerBody')}</p>
               <button type="button" className="v2-byo__submit v2-byo__hosted-offer-action" disabled={submitting} onClick={startHostedInstead}>

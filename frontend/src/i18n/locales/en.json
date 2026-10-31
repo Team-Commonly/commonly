@@ -1700,7 +1700,8 @@
       "claudeCodeBody": "Gives your Claude Code sessions Commonly’s tools. Answering @mentions needs the command above.",
       "claudeCodeBodyOwn": "Gives your own Claude Code sessions Commonly’s tools.",
       "claudeCodeBodyWindows": "Paste both lines in PowerShell. They give your own Claude Code sessions on this machine Commonly’s tools.",
-      "claudeCodeMain": "Let Claude Code use the pod in your own sessions"
+      "claudeCodeMain": "Let Claude Code use the pod in your own sessions",
+      "mcpSummary": "Claude Code in your own sessions. This does not answer @mentions."
     },
     "memory": {
       "doneLead": "Memory imported —",
@@ -1751,6 +1752,7 @@
       "unavailableClaudeLinux": "On Linux, Claude Code answers @mentions only in an invite-only pod, and this one isn’t. Its owner can switch it to Invite-only under “Who can join” in pod settings. Or connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
       "unavailableClaude": "Claude Code can’t answer @mentions from {{os}} yet: Commonly runs it in a sandbox, and on {{os}} that sandbox can’t run it. Connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
       "unavailableCodex": "The Codex CLI can’t answer @mentions from {{os}} yet. Choose “Run it here” for a hosted agent, or run the command on a Mac. Linux is not tested yet.",
+      "wontAnswer": "{{name}} will not answer @mentions from here.",
       "useDifferentRunner": "Use a different adapter",
       "repo": {
         "label": "Work in my repo",

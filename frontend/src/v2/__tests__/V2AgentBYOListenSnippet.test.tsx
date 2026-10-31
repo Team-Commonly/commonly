@@ -7,7 +7,7 @@ jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // CLI skipped the install and failed on the last line with "command not found"
 // (the #887 class the snippet was moved here to prevent).
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
@@ -47,9 +47,12 @@ const authValue = {
   updateProfile: jest.fn(),
 };
 
+let hostedConfigured = false;
+
 const issueToken = async (runner?: 'codex', pod = {}) => {
   axios.get.mockImplementation((url) => {
     if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat', ...pod }] });
+    if (url.startsWith('/api/hosted/availability')) return Promise.resolve({ data: { configured: hostedConfigured, caps: { agentsPerUser: 3, turnsPerDay: 20 } } });
     if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
     return Promise.resolve({ data: {} });
   });
@@ -64,6 +67,7 @@ const issueToken = async (runner?: 'codex', pod = {}) => {
     </AuthContext.Provider>,
   );
   await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
+  if (hostedConfigured) fireEvent.click(await screen.findByTestId('byo-mode-byo'));
   await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
   if (runner) fireEvent.click(screen.getByTestId(`byo-runner-${runner}`));
   // The runner sets the default name, which re-checks it, so wait for the button again.
@@ -129,6 +133,16 @@ describe('BYO listener snippet', () => {
   // "Claude Code" was the MCP line, which does not make the agent answer. The
   // command that does is THE box: first, and the only one not marked optional
   // or folded away.
+  test('with a listener the MCP block is folded under it and says it does not answer @mentions', async () => {
+    await issueToken();
+    const details = screen.getByTestId('byo-mcp-details');
+    expect(details.tagName).toBe('DETAILS');
+    expect(details).not.toHaveAttribute('open');
+    expect(details.querySelector('summary')).toHaveTextContent(/does not answer @mentions/);
+    expect(details).toContainElement(screen.getByTestId('byo-mcp-claude'));
+    expect(screen.queryByTestId('byo-listen-wont-answer')).toBeNull();
+  });
+
   test('the connect command is the first box; the MCP line is optional; the bare key is folded away', async () => {
     await issueToken();
     const pres = Array.from(document.querySelectorAll('.v2-byo__pre')).map((el) => el.textContent || '');
@@ -419,6 +433,35 @@ describe('BYO listener snippet', () => {
       expect(screen.queryByTestId('byo-listen-npm-hint')).toBeNull();
       expect(screen.queryByTestId('byo-listen-reach-codex')).toBeNull();
       expect(screen.queryByTestId('byo-mcp-claude')).toBeNull();
+    });
+
+    test('no listener: the first line says it will not answer @mentions, MCP stays open, no Run it here without hosting', async () => {
+      setUserAgent(WINDOWS);
+      await issueToken();
+      const wont = screen.getByTestId('byo-listen-wont-answer');
+      expect(wont).toHaveTextContent(/will not answer @mentions from here/);
+      expect(wont.compareDocumentPosition(screen.getByTestId('byo-listen-unavailable')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(screen.queryByTestId('byo-listen-run-here')).toBeNull();
+      expect(screen.queryByTestId('byo-mcp-details')).toBeNull();
+      expect(screen.getByTestId('byo-mcp-claude')).toBeInTheDocument();
+    });
+
+    test('no listener with hosting on: the first line carries a Run it here button', async () => {
+      setUserAgent(WINDOWS);
+      hostedConfigured = true;
+      try {
+        await issueToken();
+        expect(within(screen.getByTestId('byo-listen-wont-answer')).getByRole('button', { name: 'Run it here' })).toBeInTheDocument();
+        // The hosted offer section would repeat the same action: one button only.
+        expect(screen.getAllByRole('button', { name: /Run it here/ })).toHaveLength(1);
+        // A failed start shows its error beside the button, even after a copy.
+        axios.get.mockImplementation((url) => (url.startsWith('/api/registry/agents/next-free-name')
+          ? Promise.reject(new Error('boom')) : Promise.resolve({ data: { configured: true, caps: { agentsPerUser: 3, turnsPerDay: 20 } } })));
+        fireEvent.click(screen.getByTestId('byo-listen-run-here'));
+        await waitFor(() => expect(within(screen.getByTestId('byo-listen-wont-answer')).getByRole('alert')).toBeInTheDocument());
+      } finally {
+        hostedConfigured = false;
+      }
     });
 
     test('the switch overrides the browser: Windows to Mac brings the listener back', async () => {
