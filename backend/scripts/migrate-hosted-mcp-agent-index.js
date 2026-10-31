@@ -6,10 +6,15 @@
  * index in place, so the old one must go first, or the second agent's key
  * still fails with E11000.
  *
- * Read-only by default. --apply drops the old index if present and then builds
- * the declared one. It deletes no rows, so it cannot change which person holds
- * which connection. If the old index is still present after --apply, stop: the
- * new key is not safe to use yet.
+ * Read-only by default. --apply builds the declared index first, then drops the
+ * old one. The order matters: dropping first would leave the collection with no
+ * uniqueness at all if the build then failed. It deletes no rows, so it cannot
+ * change which person holds which connection. If the old index is still present
+ * after --apply, stop: the new key is not safe to use yet.
+ *
+ * Run from the compiled output, like the other backend scripts:
+ *   cd backend && node dist/scripts/migrate-hosted-mcp-agent-index.js          # dry run
+ *   cd backend && node dist/scripts/migrate-hosted-mcp-agent-index.js --apply
  */
 const mongoose = require('mongoose');
 
@@ -37,13 +42,14 @@ async function run({ apply }) {
   console.log(JSON.stringify({ oldIndexPresent: oldPresent, newIndexPresent: newPresent, apply }));
   if (!apply) return;
 
-  if (oldPresent) {
-    await Integration.collection.dropIndex(OLD_INDEX);
-    console.log(`dropped ${OLD_INDEX}`);
-  }
+  // Build first: if the build fails, the old index still enforces uniqueness.
   if (!newPresent) {
     await Integration.collection.createIndex(keys, { ...options });
     console.log('created the agent-scoped hosted-mcp index');
+  }
+  if (oldPresent) {
+    await Integration.collection.dropIndex(OLD_INDEX);
+    console.log(`dropped ${OLD_INDEX}`);
   }
   const after = await listIndexes();
   const stillOld = after.some((index) => index.name === OLD_INDEX);
