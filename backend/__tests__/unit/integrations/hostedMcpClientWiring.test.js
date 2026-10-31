@@ -46,7 +46,7 @@ test('api-keys defaults the SM key prefix to commonly-dev-', () => {
 
 // A non-empty table even when the list empties, so the guard above is what
 // fails, by name, rather than jest refusing an empty `.each` at load time
-// (Vera, #2111). The placeholder id is mapped nowhere, so its arms fail too.
+// (#2111). The placeholder id is mapped nowhere, so its arms fail too.
 const wiringTable = preRegistered.length
   ? preRegistered.map((entry) => [entry.id])
   : [['no-pre-registered-entry']];

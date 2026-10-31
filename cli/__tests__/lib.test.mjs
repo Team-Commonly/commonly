@@ -524,6 +524,60 @@ describe('poller.js', () => {
     jest.clearAllMocks();
   });
 
+  test('a rejected token stops the poller with a message that says to check the token, not that it is revoked', async () => {
+    const authError = Object.assign(new Error('unauthorized'), { status: 401 });
+    const mockGet = jest.fn().mockRejectedValue(authError);
+    createClient.mockReturnValue({ get: mockGet, post: jest.fn() });
+
+    const errors = [];
+    startPoller({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_test',
+      agentName: 'my-agent',
+      intervalMs: 1,
+      onEvent: async () => ({ outcome: 'acknowledged' }),
+      onError: (err) => errors.push(err),
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+    const stopMsg = errors.map((e) => e.message).find((m) => /stopping poller/.test(m));
+    // The three sources `agent connect` reads, in order: --token, COMMONLY_TOKEN, saved login.
+    expect(stopMsg).toMatch(/--token, then COMMONLY_TOKEN, then your saved login/);
+    expect(stopMsg).toMatch(/commonly login/);
+    // connect never reads the token file or detach: naming them would send the reader to the wrong place.
+    expect(stopMsg).not.toMatch(/detach/);
+    expect(stopMsg).not.toMatch(/tokens\//);
+    expect(stopMsg).not.toMatch(/likely revoked/);
+  });
+
+  const rejectedMessage = async (loginInstance) => {
+    const authError = Object.assign(new Error('unauthorized'), { status: 401 });
+    createClient.mockReturnValue({ get: jest.fn().mockRejectedValue(authError), post: jest.fn() });
+    const errors = [];
+    startPoller({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_test',
+      agentName: 'my-agent',
+      intervalMs: 1,
+      loginInstance,
+      onEvent: async () => ({ outcome: 'acknowledged' }),
+      onError: (err) => errors.push(err),
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    return errors.map((e) => e.message).find((m) => /stopping poller/.test(m));
+  };
+
+  test('the login hint names the --instance connect ran with, so it refreshes that profile', async () => {
+    const stopMsg = await rejectedMessage('dev');
+    expect(stopMsg).toMatch(/run commonly login --instance dev\./);
+  });
+
+  test('with no --instance, the login hint is the bare commonly login', async () => {
+    const stopMsg = await rejectedMessage(undefined);
+    expect(stopMsg).toMatch(/run commonly login\./);
+    expect(stopMsg).not.toMatch(/--instance/);
+  });
+
   const makeEvent = (id = 'evt-1') => ({
     _id: id,
     type: 'heartbeat',

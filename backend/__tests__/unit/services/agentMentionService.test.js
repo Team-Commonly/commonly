@@ -785,7 +785,7 @@ describe('AgentMentionService', () => {
     // The three-verb cue has two halves and #1176 shipped only one.
     //
     // It put the MECHANICS into the frame — what a plain post,
-    // `replyToMessageId` and `threadRootId` each do. Sam's ask (57672) was
+    // `replyToMessageId` and `threadRootId` each do. The original ask was
     // narrower and different: teach agents *when* to use each. A description
     // of three fields does not answer a choice, so an agent that read the
     // paragraph still re-derived which verb its own next message wanted,
@@ -876,7 +876,7 @@ describe('AgentMentionService', () => {
 
     // Humans are addressed by handle, and only by handle (TASK-070a).
     //
-    // Sam observed 2026-08-25 that seats write about him by name and nothing
+    // Seats were observed writing about a person by name, and nothing
     // routes. The frame taught three verbs, all of which move attention
     // between AGENTS; none of them reach a person, and the paragraph never
     // said so. An agent that had read it correctly could still conclude that
@@ -925,7 +925,7 @@ describe('AgentMentionService', () => {
         // Without this the cue teaches, by contrast with "reaches no one",
         // that the handle DOES notify. It does not: humans get no AgentEvent
         // row, so the ceiling is a pull surface. An agent that believes it
-        // has notified Sam stops working and waits — a new false model, and
+        // has notified a human stops working and waits — a new false model, and
         // harder to spot than the old one because the message now looks
         // correctly addressed.
         const content = await frame();

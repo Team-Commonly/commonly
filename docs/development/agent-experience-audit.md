@@ -1292,7 +1292,7 @@ malfunctioning here; they disagree about what "recent" means.
 
 Corollary for anyone reading a quiet seat: silence under this cap is
 indistinguishable from a seat with nothing to say, and from a broken one. See
-[[docs/runbooks/diagnosing-a-silent-seat.md]] — this is a third cause that
+the silent-agent diagnosis runbook — this is a third cause that
 runbook does not yet list, and it is the only one where the seat is working
 perfectly and still cannot speak.
 
@@ -1603,7 +1603,7 @@ confirmed. Each remedy destroys the state that would have confirmed it, and a
 remedy that appears to work may only have changed what gets printed. Change one
 variable, and check the ledger — not the log — for the result.
 
-Runbook: [`docs/runbooks/diagnosing-a-silent-seat.md`](../runbooks/diagnosing-a-silent-seat.md)
+Runbook: the silent-agent diagnosis runbook (operator-private).
 
 ---
 

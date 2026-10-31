@@ -50,7 +50,7 @@ describe('page head copy budget', () => {
     expect(css).toContain('.v2-thread__title-line { display: flex; flex-wrap: wrap; align-items: center; }');
     expect(css).toContain('.v2-thread__title-line .v2-hint__content { width: 100%; flex-basis: 100%; order: 1; }');
     expect(css).toMatch(/\.v2-pod-header \.v2-thread__header-row \{[^}]*padding: 11px 0;[^}]*align-items: flex-start;/);
-    expect(css).toContain('.v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; min-height: 28px; }');
+    expect(css).toContain('.v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; min-height: 28px; flex: 0 0 auto; white-space: nowrap; }');
     expect(css).toContain('box-shadow: var(--v2-focus-ring);');
   });
 });

@@ -96,6 +96,22 @@ describe('V2AgentBYO — Run it here', () => {
   // instance has said whether it can host, the page must not offer an act at
   // all: an enabled "Install + generate token" there chose a runtime for the
   // person (Sprint Review's measurement on #2190).
+  // Only a BYO install may be handed back its own unkeyed webhook name. A
+  // hosted install given that name would hit "already installed".
+  test('asks for a name in the pod only once bring-your-own is chosen', async () => {
+    mockGet({ configured: true });
+    renderPage();
+    const lookups = () => axios.get.mock.calls.map(([url]) => url)
+      .filter((url) => url.startsWith('/api/registry/agents/next-free-name?'));
+
+    fireEvent.click(await screen.findByTestId('byo-mode-hosted'));
+    await waitFor(() => expect(lookups().length).toBeGreaterThan(0));
+    expect(lookups().some((url) => url.includes('podId='))).toBe(false);
+
+    fireEvent.click(screen.getByTestId('byo-mode-byo'));
+    await waitFor(() => expect(lookups().some((url) => url.includes('podId=p1'))).toBe(true));
+  });
+
   test('offers no act while it is not yet known whether there is a choice', async () => {
     let answerAvailability;
     let answerMachines;

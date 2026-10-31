@@ -58,6 +58,7 @@ import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
 import { isAnswerableToolError } from '../public-tool-error.js';
 import { startInstanceProxy } from '../instance-proxy.js';
+import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const ISOLATED_PROXY_PORT = 8765;
@@ -246,6 +247,10 @@ const publicPermissions = (mode, mcpNames) => {
     todoread: 'allow',
     lsp: 'allow',
     ...Object.fromEntries(mcpNames.map((name) => [`${permissionMcpName(name)}_*`, 'allow'])),
+    // After the wildcard allow, since the last matching rule wins
+    // (public-withheld-tools.js).
+    ...Object.fromEntries(mcpNames.flatMap((name) => PUBLIC_WITHHELD_TOOLS
+      .map((tool) => [`${permissionMcpName(name)}_${tool}`, 'deny']))),
   };
 };
 

@@ -135,6 +135,8 @@ const setServedHeaders = (res: Res, fileName: string): void => {
   res.set('Content-Type', served.type);
   res.set('X-Content-Type-Options', 'nosniff');
   res.set('Content-Disposition', served.inline ? 'inline' : 'attachment');
+  // Set explicitly on every response that carries file bytes, so the header never depends on a default.
+  res.set('Cache-Control', 'private, no-store');
 };
 
 // Size cap is driven by the driver's declared max. multer returns 413 itself

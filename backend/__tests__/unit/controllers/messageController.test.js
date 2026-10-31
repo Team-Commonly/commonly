@@ -63,6 +63,14 @@ describe('messageController', () => {
   });
 
   describe('getMessages', () => {
+    // Reads follow PG_HOST like the writes; the unit setup unsets it.
+    const OLD_PG_HOST = process.env.PG_HOST;
+    beforeEach(() => { process.env.PG_HOST = 'localhost'; });
+    afterEach(() => {
+      if (OLD_PG_HOST === undefined) delete process.env.PG_HOST;
+      else process.env.PG_HOST = OLD_PG_HOST;
+    });
+
     it('returns 400 if podId is missing', async () => {
       const req = { params: {}, query: {}, user: { id: 'u1' } };
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
@@ -136,8 +144,8 @@ describe('messageController', () => {
       expect(gateWelcomeHostedActions).toHaveBeenCalledWith(page, 'p1', 'u1');
       expect(res.json).toHaveBeenCalledWith(gated);
 
-      // The Mongo fallback serves through the same gate.
-      PGMessage.findByPodId.mockRejectedValue(new Error('pg down'));
+      // The Mongo store (no PG_HOST) serves through the same gate.
+      delete process.env.PG_HOST;
       MongoMessage.find.mockReturnValue({
         populate: () => ({ sort: () => ({ limit: () => ({ lean: async () => [] }) }) }),
       });
@@ -172,6 +180,60 @@ describe('messageController', () => {
   });
 
   describe('createMessage', () => {
+    // The write follows PG_HOST like the socket and agent paths; the unit
+    // setup unsets it, so the PostgreSQL cases opt in here.
+    const OLD_PG_HOST = process.env.PG_HOST;
+    beforeEach(() => { process.env.PG_HOST = 'localhost'; });
+    afterEach(() => {
+      if (OLD_PG_HOST === undefined) delete process.env.PG_HOST;
+      else process.env.PG_HOST = OLD_PG_HOST;
+    });
+
+    describe('with no PostgreSQL configured (no PG_HOST)', () => {
+      beforeEach(() => { delete process.env.PG_HOST; });
+
+      it('writes the send to MongoDB, the only store, instead of failing it with 503', async () => {
+        const row = {
+          _id: { toString: () => 'mongo-1' },
+          podId: { toString: () => 'p1' },
+          userId: { toString: () => 'u1' },
+          content: 'hello',
+          messageType: 'text',
+        };
+        Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
+        MongoMessage.create.mockResolvedValueOnce(row);
+        MongoMessage.findById.mockReturnValueOnce({ populate: jest.fn().mockResolvedValue(row) });
+        const req = { params: { podId: 'p1' }, body: { content: 'hello' }, user: { id: 'u1' } };
+        const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+        await messageController.createMessage(req, res);
+
+        expect(PGMessage.create).not.toHaveBeenCalled();
+        expect(MongoMessage.create).toHaveBeenCalledWith({
+          podId: 'p1', userId: 'u1', content: 'hello', messageType: 'text',
+        });
+        expect(res.status).not.toHaveBeenCalledWith(503);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ id: 'mongo-1', content: 'hello' }));
+      });
+
+      it('refuses a reply, which a MongoDB row cannot carry', async () => {
+        Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
+        const req = {
+          params: { podId: 'p1' },
+          body: { content: 'a reply', replyToMessageId: 'parent-1' },
+          user: { id: 'u1' },
+        };
+        const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+        await messageController.createMessage(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(503);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'REPLY_REQUIRES_POSTGRES' }));
+        expect(MongoMessage.create).not.toHaveBeenCalled();
+        expect(PGMessage.create).not.toHaveBeenCalled();
+      });
+    });
+
     it('turns the creator\'s first answer into one proposal while preserving explicit delivery', async () => {
       Pod.findById.mockResolvedValue({
         members: ['u1'], type: 'chat', createdBy: 'u1',
@@ -254,7 +316,7 @@ describe('messageController', () => {
       expect(res.json).toHaveBeenCalledWith({
         ...mockMessage,
         agentDelivery: {
-          enqueued: 0, implicit: [], agentsInPod: 2, woken: 0,
+          enqueued: 0, implicit: [], agentsInPod: 2, woken: 0, wokenAgents: [],
         },
       });
       expect(AgentMentionService.enqueueMentions).toHaveBeenCalled();
@@ -287,12 +349,12 @@ describe('messageController', () => {
       expect(res.json).toHaveBeenCalledWith({
         ...mockMessage,
         agentDelivery: {
-          enqueued: 1, implicit: [], agentsInPod: 2, woken: 0,
+          enqueued: 1, implicit: [], agentsInPod: 2, woken: 0, wokenAgents: [],
         },
       });
     });
 
-    // TASK-278 (Cofounder's security read): a reply's target must be in the
+    // TASK-278: a reply's target must be in the
     // reply's pod, or this pod's preview shows another pod's message.
     it('refuses a reply whose target is in another pod, before anything is written', async () => {
       Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
@@ -356,8 +418,8 @@ describe('messageController', () => {
 
       expect(res.status).toHaveBeenCalledWith(503);
       expect(res.json).toHaveBeenCalledWith({
-        error: 'Replies are temporarily unavailable. Please try again shortly.',
-        code: 'REPLY_REQUIRES_POSTGRES',
+        error: 'Messages are temporarily unavailable. Please try again shortly.',
+        code: 'MESSAGE_STORE_UNAVAILABLE',
       });
       expect(MongoMessage.create).not.toHaveBeenCalled();
       expect(AgentMentionService.enqueueMentions).not.toHaveBeenCalled();
@@ -398,38 +460,25 @@ describe('messageController', () => {
       }));
     });
 
-    it('keeps the Mongo availability fallback for a non-reply when PostgreSQL is unavailable', async () => {
-      const mongoFallbackRow = {
-        _id: { toString: () => 'mongo-message' },
-        podId: { toString: () => 'p1' },
-        userId: {
-          _id: { toString: () => 'u1' }, username: 'alice', profilePicture: 'default',
-        },
-        content: 'ordinary message',
-        messageType: 'text',
-      };
+    it('fails a non-reply with 503 when PostgreSQL is unavailable, writing nothing to MongoDB (TASK-503)', async () => {
       Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
       PGMessage.create.mockRejectedValueOnce(new Error('PostgreSQL unavailable'));
-      MongoMessage.create.mockResolvedValueOnce(mongoFallbackRow);
-      MongoMessage.findById.mockReturnValueOnce({
-        populate: jest.fn().mockResolvedValue(mongoFallbackRow),
-      });
       const req = {
         params: { podId: 'p1' },
-        body: { content: mongoFallbackRow.content },
+        body: { content: 'ordinary message' },
         user: { id: 'u1' },
       };
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
 
       await messageController.createMessage(req, res);
 
-      expect(MongoMessage.create).toHaveBeenCalledWith({
-        pgFallback: true, podId: 'p1', userId: 'u1', content: mongoFallbackRow.content, messageType: 'text',
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith({
+        error: 'Messages are temporarily unavailable. Please try again shortly.',
+        code: 'MESSAGE_STORE_UNAVAILABLE',
       });
-      expect(res.status).not.toHaveBeenCalled();
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        id: 'mongo-message', content: mongoFallbackRow.content,
-      }));
+      expect(MongoMessage.create).not.toHaveBeenCalled();
+      expect(AgentMentionService.enqueueMentions).not.toHaveBeenCalled();
     });
 
     it('uses the joined PG author for a JWT-posted chat wake', async () => {
@@ -502,7 +551,7 @@ describe('messageController', () => {
       expect(res.json).toHaveBeenCalledWith({
         ...mockMessage,
         agentDelivery: {
-          enqueued: 0, implicit: [], agentsInPod: 1, woken: 1,
+          enqueued: 0, implicit: [], agentsInPod: 1, woken: 1, wokenAgents: ['guide'],
         },
       });
     });
@@ -597,7 +646,7 @@ describe('messageController', () => {
       expect(emit).toHaveBeenCalledWith('newMessage', expect.objectContaining({ replyTo }));
     });
 
-    // #646's lesson one field over (Sam's live repro 2026-08-24): without
+    // #646's lesson one field over: without
     // thread_root_id on the broadcast, every live viewer rendered an
     // in-thread reply as a TOP-LEVEL message until refresh, and open
     // threads never updated live. The agent path (#1175) carries it; the
@@ -627,6 +676,13 @@ describe('messageController', () => {
   });
 
   describe('deleteMessage', () => {
+    const OLD_PG_HOST = process.env.PG_HOST;
+    beforeEach(() => { process.env.PG_HOST = 'localhost'; });
+    afterEach(() => {
+      if (OLD_PG_HOST === undefined) delete process.env.PG_HOST;
+      else process.env.PG_HOST = OLD_PG_HOST;
+    });
+
     it('returns 404 when message not found', async () => {
       PGMessage.resolveId.mockResolvedValue(null);
       PGMessage.findById.mockResolvedValue(null);
@@ -636,7 +692,7 @@ describe('messageController', () => {
       expect(res.status).toHaveBeenCalledWith(404);
     });
 
-    it('deletes the resolved PG row and availability copy for a reconciled Mongo id', async () => {
+    it('deletes the resolved PG row and the legacy copy for a copied Mongo id', async () => {
       PGMessage.resolveId.mockResolvedValue('41');
       PGMessage.findById.mockResolvedValue({ user_id: 'u1', pod_id: 'p1' });
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
@@ -649,23 +705,36 @@ describe('messageController', () => {
       expect(res.json).toHaveBeenCalledWith({ msg: 'Message deleted' });
     });
 
-    it('refuses deletion of a reconciled row while PG is down without deleting either copy', async () => {
+    it('with PG down, answers a retryable 503 and touches neither store', async () => {
       PGMessage.resolveId.mockRejectedValue(new Error('PG unavailable'));
-      MongoMessage.findById.mockResolvedValue({ reconciledAt: new Date(), userId: 'u1', podId: 'p1' });
+      MongoMessage.findById.mockResolvedValue({ _id: 'm1', userId: 'u1', podId: 'p1' });
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       await messageController.deleteMessage({ params: { id: '123456789012345678901234' }, userId: 'u1' }, res);
       expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'MESSAGE_STORE_UNAVAILABLE' }));
+      expect(MongoMessage.findById).not.toHaveBeenCalled();
       expect(PGMessage.delete).not.toHaveBeenCalled();
       expect(MongoMessage.deleteOne).not.toHaveBeenCalled();
       expect(MongoMessage.findByIdAndDelete).not.toHaveBeenCalled();
     });
 
-    it('deletes an unreconciled Mongo-only row', async () => {
+    it('with PG configured, a Mongo-only row PG never had is not found', async () => {
       PGMessage.resolveId.mockResolvedValue(null);
       MongoMessage.findById.mockResolvedValue({ _id: 'mongo-only', userId: 'u1', podId: 'p1' });
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       await messageController.deleteMessage({ params: { id: 'mongo-only' }, userId: 'u1' }, res);
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(MongoMessage.findById).not.toHaveBeenCalled();
+      expect(MongoMessage.findByIdAndDelete).not.toHaveBeenCalled();
+    });
+
+    it('without PG configured, deletes the Mongo row and never asks PG', async () => {
+      delete process.env.PG_HOST;
+      MongoMessage.findById.mockResolvedValue({ _id: 'mongo-only', userId: 'u1', podId: 'p1' });
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await messageController.deleteMessage({ params: { id: 'mongo-only' }, userId: 'u1' }, res);
       expect(MongoMessage.findByIdAndDelete).toHaveBeenCalledWith('mongo-only');
+      expect(PGMessage.resolveId).not.toHaveBeenCalled();
       expect(PGMessage.delete).not.toHaveBeenCalled();
     });
 

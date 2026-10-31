@@ -238,7 +238,7 @@ export const createDaemonSupervisor = ({
     // seat RUNS under, and `withholdGrantBroker` asks the same question the
     // server asks (`can this seat confine a granter's authority?`) for the cases
     // the server cannot see — a row naming no adapter, a backend older than the
-    // refusal, a record written by hand. Entry-level per wren 69829: the broker
+    // refusal, a record written by hand. Entry-level: the broker
     // entry is withheld and the seat still starts, because it was never promised
     // confinement. `record.instanceUrl` is what makes the injected url
     // identifiable at all — the record holds the UNRESOLVED

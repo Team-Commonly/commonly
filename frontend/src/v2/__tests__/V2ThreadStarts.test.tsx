@@ -7,11 +7,15 @@
 // can take the offer away before it is seen.
 import React, { useState } from 'react';
 import {
+  cleanup,
   fireEvent, render, screen, waitFor, within,
 } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
+import axios from 'axios';
 import V2Thread from '../components/V2Thread';
+import { resetByoStepsForTest } from '../utils/byoTelemetry';
 import { AuthContext } from '../../context/AuthContext';
+import i18n, { i18nReady } from '../../i18n';
 
 jest.mock('../../context/SocketContext', () => ({
   useSocket: () => ({ socket: null, connected: false }),
@@ -204,7 +208,7 @@ describe("V2Thread — Scout's starts", () => {
   });
 });
 
-// D139: Scout's reply to the connect start is a prompt and cannot be relied on
+// Scout's reply to the connect start is a prompt and cannot be relied on
 // to link Bring your own, so the thread links it under the person's own
 // message, from the moment it is sent.
 const OPEN_BYO = 'Open Bring your own';
@@ -240,6 +244,45 @@ describe('V2Thread — the connect start links Bring your own', () => {
       pod: { ...OWN_POD, createdBy: 'someone-else' },
     });
     expect(screen.queryByRole('button', { name: OPEN_BYO })).not.toBeInTheDocument();
+  });
+
+  test('the link pings byo-offer-shown once; a thread without it does not', async () => {
+    resetByoStepsForTest();
+    const pings = () => axios.post.mock.calls.filter(([url, body]) => String(url).endsWith('/api/stats/byo-step')
+      && body?.step === 'byo-offer-shown').length;
+    axios.post.mockClear();
+    renderThread([welcome]);
+    expect(pings()).toBe(0);
+    cleanup();
+    renderThread([welcome, message('mine', 'u1', 'maya', CONNECT, 4)]);
+    await screen.findByRole('button', { name: OPEN_BYO });
+    expect(pings()).toBe(1);
+  });
+
+  test('a matching reply folded into a thread card renders no link and records no offer', () => {
+    resetByoStepsForTest();
+    axios.post.mockClear();
+    renderThread([
+      welcome,
+      message('root', 'u1', 'maya', 'Where do I start?', 4),
+      message('reply', 'u1', 'maya', CONNECT, 5, { thread_root_id: 'root' }),
+    ]);
+    expect(screen.queryByRole('button', { name: OPEN_BYO })).not.toBeInTheDocument();
+    expect(axios.post.mock.calls.filter(([url, body]) => String(url).endsWith('/api/stats/byo-step')
+      && body?.step === 'byo-offer-shown')).toHaveLength(0);
+  });
+
+  test('a matching thread root renders the link and records the offer', async () => {
+    resetByoStepsForTest();
+    axios.post.mockClear();
+    renderThread([
+      welcome,
+      message('root', 'u1', 'maya', CONNECT, 4),
+      message('reply', 'scout-1', 'scout', 'Which one do you use?', 5, { thread_root_id: 'root', user: { username: 'scout', isBot: true } }),
+    ]);
+    await screen.findByRole('button', { name: OPEN_BYO });
+    await waitFor(() => expect(axios.post.mock.calls.filter(([url, body]) => String(url).endsWith('/api/stats/byo-step')
+      && body?.step === 'byo-offer-shown')).toHaveLength(1));
   });
 
   test('a message from Scout with that text gets no link', () => {
@@ -586,5 +629,31 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
     expect(await screen.findByRole('alert')).toHaveTextContent("Hosting isn't available on this instance yet.");
     expect(screen.getByRole('button', { name: HOSTED })).toBeEnabled();
     expect(calls('/api/hosted/provision')).toHaveLength(0);
+  });
+});
+
+// TASK-550: the start buttons show zh-CN labels by id, while the click still
+// sends the English label Scout matches on. This pins both halves.
+describe("V2Thread — Scout's starts under zh-CN", () => {
+  beforeAll(async () => {
+    await i18nReady;
+  });
+
+  afterEach(async () => {
+    await i18n.changeLanguage('en');
+  });
+
+  test('the button shows the zh-CN label, and a click sends the English label', async () => {
+    await i18n.changeLanguage('zh-CN');
+    const sendSpy = renderThread([welcome]);
+
+    // The group's own label is translated too, so find it by its zh-CN name.
+    const group = screen.getByRole('group', { name: '开始方式' });
+    expect(within(group).getByRole('button', { name: '接入我在用的智能体' })).toBeInTheDocument();
+    expect(within(group).queryByRole('button', { name: CONNECT })).not.toBeInTheDocument();
+
+    fireEvent.click(within(group).getByRole('button', { name: '接入我在用的智能体' }));
+
+    await waitFor(() => expect(sendSpy).toHaveBeenCalledWith(CONNECT, 'text', undefined, undefined));
   });
 });

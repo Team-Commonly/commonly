@@ -8,8 +8,8 @@
  * leaves rows already under the active key untouched.
  *
  * Usage:
- *   npx ts-node backend/scripts/rewrap-connector-secrets.ts          # dry run
- *   npx ts-node backend/scripts/rewrap-connector-secrets.ts --apply
+ *   cd backend && node dist/scripts/rewrap-connector-secrets.js          # dry run
+ *   cd backend && node dist/scripts/rewrap-connector-secrets.js --apply
  */
 
 /* eslint-disable no-console */

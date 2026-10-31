@@ -92,7 +92,20 @@ describe('V2Avatar', () => {
     fireEvent.error(screen.getByRole('img', { name: 'Ada' }));
 
     const svg = svgFromDataUri(screen.getByRole('img', { name: 'Ada' }).getAttribute('src'));
-    expect(svg).toContain('<ellipse cx="32" cy="29" rx="13" ry="15" fill="#f9fafb"/>');
+    expect(svg).toContain('<ellipse cx="32" cy="29" rx="13" ry="15" fill="#8f99aa"/>');
     expect(svg).not.toMatch(/fill="#(?:ffe4c0|f5d7b1|efcc9f|e2ba87|c99c62|a47539|8c5a2b|643d19)"/);
+  });
+
+  test('a picked face preset takes the character frame; a photo does not (TASK-679)', () => {
+    const picked = render(<V2Avatar name="Ada" src="bigsmile:ada-v1" />);
+    expect(picked.container.querySelector('.v2-avatar')).toHaveClass('v2-avatar--character');
+    picked.unmount();
+
+    const robot = render(<V2Avatar name="Ada" src="bottts:ada-v1" />);
+    expect(robot.container.querySelector('.v2-avatar')).toHaveClass('v2-avatar--character');
+    robot.unmount();
+
+    const photo = render(<V2Avatar name="Ada" src="/api/uploads/avatar.png" />);
+    expect(photo.container.querySelector('.v2-avatar')).not.toHaveClass('v2-avatar--character');
   });
 });

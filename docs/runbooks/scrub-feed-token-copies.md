@@ -7,7 +7,8 @@ run it while an older backend can still write the legacy fields.
 This migration **redacts**, rather than imports, `config.accessToken` and
 `config.refreshToken` on X and Instagram Integration rows, including disabled
 rows and blank/null residue. Existing encrypted feed refs remain authoritative
-and unchanged. Other connector types (including GroupMe) are untouched.
+and unchanged. Other connector types are untouched; GroupMe and Slack have
+their own migration, [migrate-chat-token-copies](migrate-chat-token-copies.md).
 A feed with only legacy plaintext already has no usable credential under #2692;
 reconnect it to supply a fresh token. Do not reuse an older plaintext copy over a
 newer encrypted credential.
@@ -16,10 +17,10 @@ From the deployed backend directory, with `MONGO_URI` supplied by the existing
 ops-runner secret environment (never paste it into a command):
 
 ```sh
-npx ts-node scripts/scrub-feed-token-copies.ts
+node dist/scripts/scrub-feed-token-copies.js
 # Review DRY-RUN counts by type, then explicitly apply:
-npx ts-node scripts/scrub-feed-token-copies.ts --apply
-npx ts-node scripts/scrub-feed-token-copies.ts
+node dist/scripts/scrub-feed-token-copies.js --apply
+node dist/scripts/scrub-feed-token-copies.js
 ```
 
 The final dry run should report zero candidates for both types. Reports contain

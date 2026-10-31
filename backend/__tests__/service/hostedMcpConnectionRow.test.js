@@ -23,7 +23,7 @@ const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils
 //      index over the same keys would refuse a second Slack row for one
 //      person, which is the direction this type cannot fail. Required, so a
 //      hosted row with no entry is refused by name rather than indexed as
-//      `null` and refused as a duplicate entry (Vera, #1976 gate).
+//      `null` and refused as a duplicate entry (#1976 gate).
 
 const OWNER_A = new mongoose.Types.ObjectId();
 const OWNER_B = new mongoose.Types.ObjectId();
@@ -181,7 +181,7 @@ describe('the hosted-mcp connection row', () => {
     // row for one person arrived as an E11000 naming `config.entryId`: a
     // refusal that reports a duplicate entry to a writer whose two rows share
     // no entry at all, in the one direction this type was said not to fail in
-    // (Vera, #1976 gate). It is refused at validation instead, so the failure
+    // (#1976 gate). It is refused at validation instead, so the failure
     // names the missing field. Nothing can create such a row today — the create
     // route refuses the type by name — which is why the declaration, and not a
     // caller nobody has written yet, is where it is closed.

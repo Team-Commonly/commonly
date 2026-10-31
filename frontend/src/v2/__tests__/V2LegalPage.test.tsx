@@ -11,6 +11,12 @@ describe('public legal pages (TASK-530)', () => {
     expect(screen.queryByText(/Draft for review/)).not.toBeInTheDocument();
   });
 
+  it('names the providers that process hosted-agent data', () => {
+    render(<V2PrivacyPage />);
+    expect(screen.getByText(/DeepSeek is the default model/)).toBeInTheDocument();
+    expect(screen.getByText(/^Code sandbox: E2B\./)).toBeInTheDocument();
+  });
+
   it('links the addresses by mailto and links home', () => {
     render(<V2PrivacyPage />);
     expect(screen.getByRole('link', { name: 'privacy@commonly.me' })).toHaveAttribute('href', 'mailto:privacy@commonly.me');

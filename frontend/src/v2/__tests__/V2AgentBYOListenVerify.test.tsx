@@ -157,6 +157,7 @@ describe('V2AgentBYO listening verification', () => {
   test('the listen snippet carries the CLI install line for first-time machines', async () => {
     jest.useFakeTimers();
     await issueToken();
-    expect(screen.getByText(/npm i -g @commonlyai\/cli/)).toBeInTheDocument();
+    // Scoped to the listen snippet: the result page's Other ways block also shows an npm line.
+    expect(screen.getByText(/commonly agent run sam-claude/)).toHaveTextContent(/npm i -g @commonlyai\/cli/);
   });
 });

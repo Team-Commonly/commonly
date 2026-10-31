@@ -1,26 +1,24 @@
 # CodeRabbit threads: every review thread CodeRabbit opens gets an answer
 # before a gate ask (Sam, 2026-10-24, #2605). An answer is a reply inside the
-# thread, or a PR comment that quotes the thread's `discussion_r<id>` link
-# (seats reply that way when they cannot reply in-thread). A review body
-# never counts, because a HOLD cites the unanswered link. Resolved and
-# outdated threads don't count. Fork PRs are skipped entirely.
+# thread from anyone but CodeRabbit, the only form CodeRabbit reads. A PR
+# comment never counts, not even one quoting the thread's link (D199,
+# 2026-10-30): seats had turned those into letters CodeRabbit never sees. A
+# review body never counts either. Resolved and outdated threads don't count.
+# Fork PRs are skipped entirely.
 #
 # Reported as the commit status `coderabbit-threads` on the PR head, not as
-# this workflow's own check: a run started by a comment attaches to the
-# default branch and would never show on the PR. NOT a required check. It
-# never checks out PR code, so the write token on comment events only reaches
-# the statuses API.
+# this workflow's own check, so the result always lands on the head commit.
+# NOT a required check. It never checks out PR code, so the write token only
+# reaches the statuses API.
 name: CodeRabbit threads
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   pull_request_review:
-  # `deleted` too: removing the only reply or quoting comment must re-fail
-  # the status rather than leave a stale success on the head.
+  # `deleted` too: removing the only reply must re-fail the status rather
+  # than leave a stale success on the head.
   pull_request_review_comment:
-    types: [created, edited, deleted]
-  issue_comment:
     types: [created, edited, deleted]
 
 permissions:
@@ -38,12 +36,11 @@ permissions:
 
 jobs:
   count:
-    if: github.event_name != 'issue_comment' || github.event.issue.pull_request
     runs-on: ubuntu-latest
     timeout-minutes: 3
     env:
       GH_TOKEN: ${{ github.token }}
-      PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+      PR: ${{ github.event.pull_request.number }}
       REPO: ${{ github.repository }}
     steps:
       - name: Count unanswered CodeRabbit threads
@@ -51,8 +48,7 @@ jobs:
           set -euo pipefail
           owner="${REPO%/*}"; name="${REPO#*/}"
           gh api "repos/$REPO/pulls/$PR" > pr.json
-          # Fork PRs get no action at all (a comment event runs with a write
-          # token on the default branch, so don't rely on a token error).
+          # Fork PRs get no action at all (don't rely on a token error).
           if [ "$(jq -r .head.repo.full_name pr.json)" != "$REPO" ]; then
             echo "Fork PR: not counted, no status posted."; exit 0
           fi
@@ -65,23 +61,22 @@ jobs:
               reviewThreads(first:100,after:$endCursor){pageInfo{hasNextPage endCursor} nodes{isResolved isOutdated
                 comments(first:100){pageInfo{hasNextPage} nodes{author{login} databaseId url}}}}}}}' \
             | jq '[.[].data.repository.pullRequest.reviewThreads.nodes[]]' > threads.json
-          # An answer is an in-thread reply or a PR COMMENT quoting the link.
-          # Review bodies don't count: a HOLD citing an unanswered thread
-          # quotes its link, and that must leave it unanswered.
-          gh api --paginate "repos/$REPO/issues/$PR/comments" -q '.[].body' > said.txt
+          # An answer is an in-thread reply from anyone but CodeRabbit. PR
+          # comments and review bodies are not read at all. A deleted account
+          # comes back as `author: null`; `// ""` keeps jq from exiting before
+          # the status posts, and counts that reply as an answer.
           jq -r '.[]
             | select(.isResolved|not) | select(.isOutdated|not)
-            | select(.comments.nodes[0].author.login | test("^coderabbitai"))
-            | select([.comments.nodes[1:][] | select(.author.login | test("^coderabbitai")|not)] | length == 0)
+            | select((.comments.nodes[0].author.login // "") | test("^coderabbitai"))
+            | select([.comments.nodes[1:][] | select((.author.login // "") | test("^coderabbitai")|not)] | length == 0)
             | "\(.comments.nodes[0].databaseId) \(.comments.pageInfo.hasNextPage) \(.comments.nodes[0].url)"' threads.json > open.txt
           : > unanswered.txt; : > incomplete.txt
-          while read -r id more url; do
-            grep -q "discussion_r$id" said.txt && continue
+          while read -r _id more url; do
             if [ "$more" = true ]; then echo "$url" >> incomplete.txt; else echo "$url" >> unanswered.txt; fi
           done < open.txt
           n=$(wc -l < unanswered.txt | tr -d ' '); m=$(wc -l < incomplete.txt | tr -d ' ')
-          if [ "$n" != 0 ]; then state=failure; desc="$n unanswered CodeRabbit thread(s): reply in-thread or quote the link in a PR comment"
-          elif [ "$m" != 0 ]; then state=failure; desc="$m CodeRabbit thread(s) too long to read fully: answer them in a PR comment"
+          if [ "$n" != 0 ]; then state=failure; desc="$n unanswered CodeRabbit thread(s): reply inside each thread"
+          elif [ "$m" != 0 ]; then state=failure; desc="$m CodeRabbit thread(s) too long to read fully: check them by hand"
           else state=success; desc="All CodeRabbit threads answered"; fi
           echo "### $desc" >> "$GITHUB_STEP_SUMMARY"
           sed 's/^/- /' unanswered.txt incomplete.txt >> "$GITHUB_STEP_SUMMARY"

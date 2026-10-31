@@ -2,7 +2,7 @@ import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import V2Lightbox, { type V2LightboxImage } from './V2Lightbox';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type ExtraProps } from 'react-markdown';
 import V2Avatar from './V2Avatar';
 import V2GithubPrCard, { parseGithubPrUrls } from './V2GithubPrCard';
 import V2ApprovalCard from './V2ApprovalCard';
@@ -75,9 +75,11 @@ export const MessageMarkdownImage = ({ src, alt }: React.ImgHTMLAttributes<HTMLI
   return <span>{alt || src}</span>;
 };
 
-const messageMarkdownComponents = {
+export const messageMarkdownComponents = {
   img: MessageMarkdownImage,
-  a: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+  // react-markdown passes its mdast `node` to every component; spreading it
+  // onto the DOM element renders node="[object Object]".
+  a: ({ children, node: _node, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & ExtraProps) => (
     <a {...props} target="_blank" rel="noopener noreferrer">{renderWithMentions(children)}</a>
   ),
   p: ({ children }: React.HTMLAttributes<HTMLParagraphElement>) => (
@@ -90,7 +92,7 @@ const messageMarkdownComponents = {
   // `<pre>`. Both fall through to v2.css selectors `.v2-msg__content code`
   // and `.v2-msg__content pre`. Mentions inside code are NOT transformed.
   // Fenced code past six lines collapses (direction C).
-  pre: (props: React.HTMLAttributes<HTMLPreElement>) => <CollapsiblePre {...props} />,
+  pre: ({ node: _node, ...props }: React.HTMLAttributes<HTMLPreElement> & ExtraProps) => <CollapsiblePre {...props} />,
 };
 
 interface V2MessageRowProps {
@@ -418,7 +420,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   // Picker state per message. Open via "+ react"; close on first click
   // (no need for outside-click handling — the picker hides after action).
   const [pickerOpen, setPickerOpen] = useState(false);
-  // Touch reveal (Sam, 2026-08-23): on hoverless devices the action cluster
+  // Touch reveal (2026-08-23): on hoverless devices the action cluster
   // must NOT sit on every message by default — that is chrome over content.
   // A tap on the message reveals it (CSS shows .v2-msg--reveal only inside
   // the hover:none media block); a second tap or the picker closing hides
@@ -731,7 +733,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
           if (!quoteContent) return null;
 
           // Suppress the quote IFF it points at the root of the rail we are
-          // already inside (Sam 57491, ruling constraint 5). Both halves are
+          // already inside (ruling constraint 5). Both halves are
           // required and neither is sufficient:
           //
           //   - inside a rail, quoting SOMEONE ELSE in the thread  -> show.

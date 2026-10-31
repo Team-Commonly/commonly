@@ -83,4 +83,53 @@ describe('byoHandoffService', () => {
     expect(defaultByoHandoffName('Sam Xu', 'claude')).toBe('sam-xu-claude');
     expect(defaultByoHandoffName(undefined, 'codex')).toBe('my-codex');
   });
+
+  describe('login line', () => {
+    const ENV_KEYS = ['PUBLIC_API_URL', 'BACKEND_URL'];
+    let saved;
+
+    beforeEach(() => {
+      saved = ENV_KEYS.map((key) => [key, process.env[key]]);
+      ENV_KEYS.forEach((key) => { delete process.env[key]; });
+    });
+
+    afterEach(() => {
+      saved.forEach(([key, value]) => {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      });
+    });
+
+    const loginLineFor = (os) => {
+      const payload = buildByoHandoffPayload({
+        adapter: 'codex', os, podId: 'pod-1', agentName: 'my-codex',
+      });
+      if ('error' in payload) throw new Error(payload.error);
+      return payload.commands[os].split('\n')[1];
+    };
+
+    it('stays a bare login when the server has no public origin configured', () => {
+      expect(loginLineFor('linux')).toBe('commonly login');
+    });
+
+    it('names the server origin on every OS when BACKEND_URL is set', () => {
+      process.env.BACKEND_URL = 'http://localhost:5000';
+      for (const os of ['mac', 'linux', 'windows']) {
+        expect(loginLineFor(os)).toBe('commonly login --instance http://localhost:5000');
+      }
+    });
+
+    it('prefers PUBLIC_API_URL and reduces it to the bare origin', () => {
+      process.env.BACKEND_URL = 'http://backend.internal:5000';
+      process.env.PUBLIC_API_URL = 'https://api.commonly.me/api?token=x#frag';
+      expect(loginLineFor('mac')).toBe('commonly login --instance https://api.commonly.me');
+    });
+
+    it('drops a configured value that is not a plain http(s) origin', () => {
+      for (const unsafe of ['file:///etc/passwd', 'ftp://api.commonly.me', 'http://$(id)', 'not a url']) {
+        process.env.PUBLIC_API_URL = unsafe;
+        expect(loginLineFor('mac')).toBe('commonly login');
+      }
+    });
+  });
 });

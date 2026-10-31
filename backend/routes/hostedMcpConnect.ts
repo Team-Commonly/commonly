@@ -25,6 +25,7 @@ import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { upstreamFetch } from '../services/upstreamFetch';
 import { dcrClientForRow, ensureDcrClient, refuseDcrClient } from '../services/hostedMcpDcrRegistry';
 import { forgetHostedMcpDrift } from '../services/hostedMcpToolDefinitions';
+import { publicAppUrl } from '../utils/publicAppUrl';
 // eslint-disable-next-line global-require
 const Integration = require('../models/Integration');
 // eslint-disable-next-line global-require
@@ -71,12 +72,6 @@ const vendorFailureStatus = (code?: string): number => (
  * a person who refused consent has to land on the page that can offer Connect
  * again. Mirrors the Slack callback's `?slack=` contract in shape.
  */
-const publicAppUrl = (): string => {
-  const configured = String(process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || 'https://commonly.me')
-    .split(',')[0]
-    .trim();
-  return (configured || 'https://commonly.me').replace(/\/+$/, '');
-};
 
 const callbackRedirect = (
   res: Response,

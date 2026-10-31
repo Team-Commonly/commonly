@@ -35,6 +35,8 @@ interface AgentDelivery {
   implicit: string[];
   agentsInPod: number;
   woken: number;
+  // Who was woken, so the client can name an agent that was not.
+  wokenAgents: string[];
 }
 
 type DeliveredMessage<T> = T | (T & { mentionNotices?: unknown[]; agentDelivery?: AgentDelivery });
@@ -116,6 +118,7 @@ export const deliverMessageToAgents = async <T extends MessageForAgentDelivery>(
       implicit: mentionResult.implicit || [],
       agentsInPod,
       woken: mentionResult.woken?.length ?? 0,
+      wokenAgents: mentionResult.woken || [],
     },
   };
 };

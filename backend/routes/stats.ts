@@ -11,7 +11,7 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
 const { platformIpRateLimit } = require('../middleware/platformRateLimit');
 
-// TASK-108 (triage doc §6, ruled wren 71392): `GET /public` is NOT a probe
+// TASK-108 (triage doc §6): `GET /public` is NOT a probe
 // exemption, and the rule is why — "does an anonymous hit do database work".
 // This one runs three countDocuments (Mongo) plus a Postgres COUNT per hit,
 // uncached, so it takes the IP tier beside the OAuth callback at the same
@@ -78,18 +78,25 @@ router.get('/public', statsPublicLimit, async (_req: unknown, res: { json: (d: u
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
-const { markByoCommandCopied } = require('../services/onboardingMarks');
+const { markByoCommandCopied, markSurface } = require('../services/onboardingMarks');
 // eslint-disable-next-line global-require
 const { rateLimit } = require('express-rate-limit');
 // eslint-disable-next-line global-require
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 // eslint-disable-next-line global-require
-const mongoose = require('mongoose');
+const { recordByoEvent } = require('../services/byoTelemetry');
 
 const BYO_STEPS = new Set([
-  'page-viewed', 'seat-created', 'mcp-command-copied', 'cli-command-copied',
+  'page-viewed', 'seat-created', 'mcp-command-copied', 'cli-command-copied', 'daemon-command-copied',
   'token-copied', 'listen-confirmed', 'listen-timeout', 'hosted-offer-shown', 'hosted-offer-clicked',
+  'invite-card-shown', 'invite-card-dismissed', 'byo-offer-shown',
 ]);
+// Onboarding surfaces: each step also sets its write-once onboarding mark.
+const SURFACE_STEPS: Record<string, string> = {
+  'invite-card-shown': 'inviteCardShownAt',
+  'invite-card-dismissed': 'inviteCardDismissedAt',
+  'byo-offer-shown': 'byoOfferShownAt',
+};
 
 router.post('/byo-step', rateLimit({
   windowMs: 60_000,
@@ -107,18 +114,11 @@ router.post('/byo-step', rateLimit({
     // the copied command, which contains a runtime token.
     markByoCommandCopied(req.userId, step === 'mcp-command-copied' ? 'mcp' : 'cli');
   }
-  try {
-    await mongoose.connection.db.collection('byo_telemetry').insertOne({
-      userId: req.userId,
-      step,
-      ...(step === 'mcp-command-copied' ? { commandType: 'mcp' } : {}),
-      ...(step === 'cli-command-copied' ? { commandType: 'cli' } : {}),
-      at: new Date(),
-    });
-  } catch (err: any) {
-    // Telemetry must never fail the caller's flow.
-    console.warn('[byo-telemetry] write failed:', err?.message);
-  }
+  if (SURFACE_STEPS[step]) markSurface(req.userId, SURFACE_STEPS[step]);
+  await recordByoEvent(req.userId, step as any, {
+    ...(step === 'mcp-command-copied' ? { commandType: 'mcp' } : {}),
+    ...(step === 'cli-command-copied' ? { commandType: 'cli' } : {}),
+  });
   return res.json({ ok: true });
 });
 

@@ -779,7 +779,7 @@ describe('the sweep re-runs a stuck in-process event', () => {
   });
 });
 
-// TASK-265, Rhea on #2236: enqueue decides routing before the insert, so an
+// TASK-265: enqueue decides routing before the insert, so an
 // event enqueued while the hosted migration runs can persist 'pending' after
 // the agent became in-process, and nothing polls it. The recurring sweep runs
 // it. Real installation rows, so the routing decision is the production one.
@@ -885,7 +885,7 @@ describe('the sweep runs a pending event stranded by a move in-process', () => {
     expect(closed.error).toMatch(/not run within 30 minutes/);
   });
 
-  // Rhea on #2236: the batch cap used to apply before runnability, so 50
+  // The batch cap used to apply before runnability, so 50
   // pending events of an unfinished migration filled every pass and a
   // completed agent's event aged out unrun. Only runnable targets are
   // selected now, so it runs on the first pass and the backlog is untouched.

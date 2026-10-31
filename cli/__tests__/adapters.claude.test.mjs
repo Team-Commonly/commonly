@@ -216,7 +216,7 @@ describe('claude adapter — spawn()', () => {
     expect(promptArg).toContain("section: 'long_term'");
   });
 
-  // D48 (TASK-545) is done when a live seat's spawn argv shows these habits, so
+  // TASK-545 is done when a live seat's spawn argv shows these habits, so
   // they are pinned on the argv here, not only on the shared helper.
   test('a fresh private Claude seat is taught parallel reads and row slicing', async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: 'ok' });
