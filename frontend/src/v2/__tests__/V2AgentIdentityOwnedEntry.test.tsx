@@ -54,8 +54,9 @@ describe('V2AgentIdentitySection — registry entry owner controls (TASK-419)', 
   test('the publisher sees the listing controls; another user does not', async () => {
     axios.get.mockResolvedValue(entry('owner-1'));
     renderSection('someone-else');
-    await waitFor(() => expect(axios.get).toHaveBeenCalled());
-    await screen.findByText('Publishing a listing is managed separately from Settings.');
+    // The listing status flips to "Published" only after the GET resolves, so
+    // waiting for it makes the absence check run after the owner data lands.
+    await screen.findByText('Published');
     expect(retireButton()).toBeNull();
     cleanup();
 
@@ -75,6 +76,20 @@ describe('V2AgentIdentitySection — registry entry owner controls (TASK-419)', 
     expect(String(url)).toContain('/api/registry/agents/scout/owned-entry');
     expect(body).toEqual({ retired: true });
     expect(await screen.findByRole('button', { name: 'Restore listing' })).toBeInTheDocument();
+  });
+
+  test('saving the listing name PATCHes displayName to the owned-entry route', async () => {
+    axios.get.mockResolvedValue(entry('owner-1'));
+    axios.patch.mockResolvedValue({ data: {} });
+    renderSection('owner-1');
+    const input = await screen.findByDisplayValue('Scout Agent');
+    fireEvent.change(input, { target: { value: '  Scout Pro  ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save listing name' }));
+
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledTimes(1));
+    const [url, body] = axios.patch.mock.calls[0];
+    expect(String(url)).toContain('/api/registry/agents/scout/owned-entry');
+    expect(body).toEqual({ displayName: 'Scout Pro' });
   });
 
   test('a failed save shows the alert and leaves the entry as it was', async () => {

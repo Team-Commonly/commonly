@@ -6,12 +6,26 @@ const auth = require('../../middleware/auth');
 const { AgentRegistry } = require('../../models/AgentRegistry');
 const User = require('../../models/User');
 const { getUserId } = require('./helpers');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { rateLimit } = require('express-rate-limit');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 
 const router = express.Router();
 
 const DISPLAY_NAME_MAX = 80;
 
-router.patch('/agents/:name/owned-entry', auth, async (req: any, res: any) => {
+// The limiter runs before auth: auth does a Mongo lookup, so a limiter behind it protects nothing.
+const ownedEntryRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: (req: any) => cloudflareIpRateLimitKeyGenerator(req),
+});
+
+router.patch('/agents/:name/owned-entry', ownedEntryRateLimit, auth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: 'unauthorized' });

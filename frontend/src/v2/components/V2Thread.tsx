@@ -392,6 +392,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const podCreator = pod?.createdBy as { _id?: string } | string | undefined;
   const podCreatorId = typeof podCreator === 'string' ? podCreator : podCreator?._id;
   const viewerOwnsPod = Boolean(viewerId) && String(podCreatorId || '') === String(viewerId);
+  // A rename draft belongs to the pod it was typed for.
+  useEffect(() => { setRenaming(false); }, [pod?._id]);
   const startRename = useCallback(() => {
     setRenameDraft(pod?.name || '');
     setRenameError(null);
