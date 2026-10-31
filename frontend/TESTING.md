@@ -20,6 +20,35 @@ npm test -- --testPathPattern=WhatsHappening.test.js
 npm test -- --watchAll=false
 ```
 
+## Live UI check against a real backend (`npm run dev:live`)
+
+For a quick UI check of this branch against real data, run the dev server with a
+proxy to a backend instead of building against localhost:5000.
+
+```bash
+cd frontend && npm run dev:live      # localhost:3102 (staging), /api and /socket.io proxied
+```
+
+- **Target.** Defaults to `https://api-staging.commonly.me`, where writes are safe.
+  The proxy drops the browser `Origin` header, because prod refuses
+  `http://localhost:3102`. Do not change prod CORS for this.
+- **Ports.** Each target has its own port: staging 3102, prod 3101. Two origins never
+  share `localStorage`, so a prod token cannot reach a staging run.
+- **Prod, read-only.** `DEV_LIVE_TARGET=prod npm run dev:live` serves on localhost:3101
+  and points at `https://api.commonly.me`. HTTP writes are refused at the proxy (the response is
+  a Vite 404), and `/socket.io` is not proxied, so the page renders from GET
+  requests only. Use a test account only. Sign-in is a POST, so for prod, inject
+  a token into `localStorage` instead (see the MCP Playwright auth injection in
+  `CLAUDE.md`).
+- **Seeded staging pod.** Screenshots for design matching use the "D215 sample"
+  pod on staging (id `1c2f4b4e67bfeba38ebeabfa`, invite-only: 3 humans, 4 agents,
+  13 board rows, 13 messages, one card). Seed it with the TASK-697 staging seed
+  script (#3081). The seat test login lives in the host operator token store,
+  outside this repo. Never commit it, and never paste it into a PR, pod message
+  or task row.
+- **Config.** `DEV_LIVE=1` turns the proxy on in `vite.config.ts`. Plain
+  `npm start` is unchanged and has no proxy.
+
 ## Test Setup and Configuration
 
 ### Jest Configuration (`package.json`)
