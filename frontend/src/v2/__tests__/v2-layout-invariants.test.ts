@@ -147,6 +147,19 @@ const bareElementSelectors = (css: string): string[] => {
 };
 
 describe('v2 layout invariants (CSS rule presence)', () => {
+  test('/cli/authorize scrolls inside the .v2-root shell on a short viewport (TASK-682)', () => {
+    // .v2-root is height 100vh + overflow hidden; the page must override it or
+    // the lower controls (Deny / Authorize) are unreachable on a short screen.
+    const cli = fs.readFileSync(path.join(__dirname, '../components/V2CliAuthorize.css'), 'utf8');
+    const root = /^\.v2-root\.v2-cli-authorize \{([^}]*)\}/m.exec(cli)?.[1] ?? '';
+    expect(root).toContain('overflow-y: auto');
+    expect(root).toContain('display: grid');
+    expect(root).not.toContain('place-items: center');
+    expect(/^\.v2-cli-authorize__card \{([^}]*)\}/m.exec(cli)?.[1]).toContain('margin: auto');
+    // The legacy V1 form rule (0,2,2) would paint the form #111827.
+    expect(cli).toContain('.v2-root.v2-cli-authorize .v2-cli-authorize__card form {');
+  });
+
   const v2 = read('../v2.css');
   const tokens = read('../../../design-system/tokens.css');
   const aprofile = read('../agents/v2-agent-profile.css');
@@ -1013,8 +1026,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // The footer CTA sits on the accent-deep band, so it keeps main's white fill.
     // An ink fill there reads as a dark hole (review 5673841827).
     const footerPrimary = ruleBody(aprofile, '.v2-root .v2-aprofile__footer-cta .v2-aprofile__btn--primary');
-    expect(footerPrimary).toContain('background: #fff');
-    expect(footerPrimary).toContain('color: var(--v2-accent)');
+    expect(footerPrimary).toContain('background: var(--v2-on-accent, #fff)');
+    expect(footerPrimary).toContain('color: var(--v2-accent-fill, var(--v2-accent))');
 
     const avatarFocus = ruleBody(aprofile, '.v2-root button.v2-aprofile__avatar-button:focus-visible');
     expect(avatarFocus).toContain('outline: none');
@@ -4159,18 +4172,18 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
     expect(bar).not.toContain('<Mark');
     // The lang trigger is a v2.css <button>; the override has to carry the
     // .v2-root prefix plus the band class to outrank the rail pin.
-    expect(landing).toContain('.v2-root .v2-landing__bar--band button.v2-lang-switch__trigger { color: #ffffff; }');
+    expect(landing).toContain('.v2-root .v2-landing__bar--band button.v2-lang-switch__trigger { color: var(--v2-on-accent, #ffffff); }');
   });
 
   test('the rotator is white on the band — the accent is cobalt and would vanish', () => {
     const rotator = selectorRuleBody(landing, '.v2-landing__rotator {');
-    expect(rotator).toContain('color: #ffffff');
+    expect(rotator).toContain('color: var(--v2-on-accent, #ffffff)');
     expect(rotator).not.toContain('var(--v2-accent)');
   });
 
   test('the demo caption is on the band, above the frame, and the old lift is gone', () => {
     const cap = selectorRuleBody(landing, '.v2-landing__demo-cap {');
-    expect(cap).toContain('color: #ffffff');
+    expect(cap).toContain('color: var(--v2-on-accent, #ffffff)');
     expect(cap).toContain('margin: 44px 0 0');
     expect(cap).not.toContain('var(--v2-font-mono)');
     expect(mediaAt(landing, '@media (max-width: 760px) {')).toContain('.v2-landing__demo-cap { margin: 28px 0 0; }');
@@ -4434,8 +4447,24 @@ describe('TASK-167 row C — How it works, Why open source and What you get onto
     expect(adapter).not.toContain('background');
     expect(adapter).not.toContain('border');
     const code = topLevelRuleBody(landing, '.v2-landing__code');
-    expect(code).toContain('background: var(--v2-text-primary)');
-    expect(code).toContain('color: #ffffff');
+    // Code tokens, not text-primary or ink: both flip light in dark (TASK-682).
+    expect(code).toContain('background: var(--v2-code-bg)');
+    expect(code).toContain('color: var(--v2-code-text)');
+    expect(code).toContain('outline: 1px solid var(--v2-code-edge)');
+    expect(code).toContain('outline-offset: -1px');
+    expect(topLevelRuleBody(landing, '.v2-landing__code-comment')).toContain('color: var(--v2-code-muted)');
+    // Light keeps today's slab exactly; dark is a dark slab with an edge.
+    const lightCode = /^\.v2-landing \{([^}]*--v2-code-bg[^}]*)\}/m.exec(landing)?.[1] ?? '';
+    expect(lightCode).toContain('--v2-code-bg: #101828');
+    expect(lightCode).toContain('--v2-code-text: #ffffff');
+    expect(lightCode).toContain('--v2-code-muted: #98a2b3');
+    expect(lightCode).toContain('--v2-code-edge: var(--v2-code-bg)');
+    const darkCode = topLevelRuleBody(landing, ':root[data-v2-theme="dark"] .v2-landing');
+    expect(darkCode).toContain('--v2-code-bg: #0b0e13');
+    expect(darkCode).toContain('--v2-code-text: #e8ebf1');
+    expect(darkCode).toContain('--v2-code-muted: #8b94a5');
+    expect(darkCode).toContain('--v2-code-edge: #364051');
+    expect(landing).toContain(':root:not([data-v2-theme="light"]) .v2-landing {');
     expect(code).toContain('font-size: 14px');
     expect(code).toContain('line-height: 22px');
     // 1 1 auto, so the three blocks share the row's height instead of each
@@ -4445,7 +4474,7 @@ describe('TASK-167 row C — How it works, Why open source and What you get onto
     expect(code).toContain('overflow-x: auto');
     // The comment line is still the same text; it is a span now so the copied
     // bytes stay identical while the colour can differ.
-    expect(topLevelRuleBody(landing, '.v2-landing__code-comment')).toContain('#98a2b3');
+    expect(topLevelRuleBody(landing, '.v2-landing__code-comment')).toContain('var(--v2-code-muted)');
     expect(landingTsx).toContain('v2-landing__code-comment');
     expect(landingTsx).toContain('commonly agent run my-agent');
     expect(landingTsx).toContain('# joins pods, replies to @mentions');

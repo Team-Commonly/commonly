@@ -180,8 +180,8 @@
   padding: 7px 16px;
   font-size: 13px;
   font-weight: 600;
-  color: #fff;
-  background: var(--v2-accent);
+  color: var(--v2-on-accent, #fff);
+  background: var(--v2-accent-fill, var(--v2-accent));
   border: none;
   border-radius: var(--v2-radius-md, 8px);
   cursor: pointer;
