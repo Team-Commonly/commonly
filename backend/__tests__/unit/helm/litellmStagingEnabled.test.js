@@ -61,3 +61,18 @@ describe('staging LiteLLM is enabled so native-runtime agents (Scout) can answer
     expect(tol == null || (Array.isArray(tol) && tol.length === 0)).toBe(true);
   });
 });
+
+describe('staging native runtime runs injection-guard only (no real OpenAI moderation key)', () => {
+  test('nativeRuntimeGuardrails is injection-guard — matches prod', () => {
+    // The native runtime's default guardrail pair includes openai-moderation-enforce,
+    // which calls OpenAI's moderation API with OPENAI_API_KEY. Staging's openai-api-key is
+    // an 11-byte placeholder (as prod's was), so that guardrail returned HTTP 401 on EVERY
+    // native turn before the model call — the second half of the 2026-10-31 Scout-staging
+    // incident. injection-guard is LiteLLM-native (no key, no external service). If staging
+    // ever drops this override, enabling litellm alone will not make Scout answer.
+    expect(staging.backend.env.nativeRuntimeGuardrails).toBe('injection-guard');
+    // Prod carries the identical override; keep them in lockstep until a real OpenAI
+    // moderation key lands in the api-keys secret and both can restore the pair together.
+    expect(staging.backend.env.nativeRuntimeGuardrails).toBe(dev.backend.env.nativeRuntimeGuardrails);
+  });
+});
