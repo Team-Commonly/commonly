@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import V2Lightbox, { type V2LightboxImage } from './V2Lightbox';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -370,6 +370,54 @@ export const CollapsiblePre: React.FC<React.HTMLAttributes<HTMLPreElement>> = ({
         {open ? t('podChat.attachment.showLess') : t('podChat.attachment.showMore', { count: lines - COLLAPSE_AFTER_LINES })}
       </button>
     </div>
+  );
+};
+
+// Agent prose past six lines (6 × 22px) folds in place; Show more expands it, Show less folds it.
+// Only the fold is measured, so a short reply renders exactly as before.
+const PROSE_COLLAPSE_PX = 132;
+export const CollapsibleProse: React.FC<{ collapsible: boolean; children: React.ReactNode }> = ({ collapsible, children }) => {
+  const { t } = useTranslation();
+  const ref = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!collapsible || !el) return undefined;
+    const measure = () => setOverflows(el.scrollHeight > PROSE_COLLAPSE_PX + 1);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [collapsible]);
+  const folded = overflows && !open;
+  if (!collapsible) return <>{children}</>;
+  return (
+    <>
+      {/* Focus reaching a link below the fold opens the message, so the hidden link is never focused blind. */}
+      <div
+        ref={ref}
+        className={`v2-msg__prose${folded ? ' v2-msg__prose--closed' : ''}`}
+        onFocus={(event) => {
+          if (!folded) return;
+          setOpen(true);
+          // The link is still clipped until the message re-lays out, so scroll it in once the open frame has painted.
+          const target = event.target as HTMLElement;
+          requestAnimationFrame(() => target.scrollIntoView?.({ block: 'nearest' }));
+        }}
+      >
+        {children}
+      </div>
+      {overflows && (
+        <button type="button" className="v2-msg__showmore" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+          <span>{open ? t('podChat.longMessage.showLess') : t('podChat.longMessage.showMore')}</span>
+        </button>
+      )}
+    </>
   );
 };
 
@@ -775,11 +823,13 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
           );
         })()}
         {!imageUrl && stripped && (
-          <div className="v2-msg__content">
-            {externalBareImage
-              ? <a href={externalBareImage} target="_blank" rel="noopener noreferrer">{externalBareImage}</a>
-              : <ReactMarkdown components={messageMarkdownComponents}>{stripped}</ReactMarkdown>}
-          </div>
+          <CollapsibleProse collapsible={message.user?.isBot === true}>
+            <div className="v2-msg__content">
+              {externalBareImage
+                ? <a href={externalBareImage} target="_blank" rel="noopener noreferrer">{externalBareImage}</a>
+                : <ReactMarkdown components={messageMarkdownComponents}>{stripped}</ReactMarkdown>}
+            </div>
+          </CollapsibleProse>
         )}
         {message.mentionNotices?.map((notice) => (
           <div className="v2-msg__sender-notice" role="status" key={notice.handle}>

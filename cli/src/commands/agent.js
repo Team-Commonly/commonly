@@ -88,9 +88,11 @@ import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
+import { installedCliVersion, startUpdateNotice } from '../lib/update-check.js';
 import { createSeatStop } from '../lib/seat-stop.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import { describeUpstreamRefusal } from '../lib/upstream-refusal.js';
+import { createTurnRunner, supervisedRunPolicy } from '../lib/supervised-turn.js';
 import {
   DEFAULT_HOOK_TIMEOUT_MS,
   clampHookTimeoutMs,
@@ -532,6 +534,29 @@ export const listLocalAgents = () => {
       };
     })
     .filter(Boolean);
+};
+
+/**
+ * The token files listLocalAgents drops: present, but not readable JSON.
+ * `commonly doctor` reports them, because a dropped file otherwise reads as
+ * "no agent here" and lets doctor pass on a seat that cannot start.
+ * Throws when the directory exists but cannot be read, for doctor to report.
+ */
+export const listUnreadableAgentTokens = () => {
+  let files;
+  try {
+    files = readdirSync(tokensDir());
+  } catch (error) {
+    // Only a missing directory means no agents. existsSync also answers false
+    // for EACCES on an ancestor, which is why this reads instead of checking.
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return [];
+    throw error;
+  }
+  return files
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => f.slice(0, -'.json'.length))
+    .filter((name) => !loadAgentToken(name))
+    .sort();
 };
 
 // Chat event types whose payload already contains the prompt the wrapper
@@ -1356,6 +1381,11 @@ const extractPrompt = (event) => {
   return null;
 };
 
+// The supervisor's policy for a run-loop spawn: lib/supervised-turn.js has the
+// stall windows per adapter (codex 15 min, claude off) and their evidence, the
+// cancel grace, and the wall-clock backstop past the adapter's own timeout.
+export { supervisedRunPolicy };
+
 /**
  * Start the run loop. Polls /events, spawns the adapter per event, posts the
  * result into the pod, acks.
@@ -1431,6 +1461,13 @@ export const performRun = ({
   resolveOwnProviderKey = null,
   runtimeReportClient = null,
   refusalHandoff = null,
+  // Off unless COMMONLY_SUPERVISE_RUNS=1: each spawn runs under the seats
+  // supervisor (stall window, wall-clock backstop, a named failure on every
+  // settle). The CLI still talks to its provider directly, and one metadata
+  // line per turn goes to ~/.commonly/state/turns/<agent>.jsonl once
+  // delivery settles. Off, the spawn path is the plain adapter call it has
+  // always been, and nothing is written.
+  superviseRuns = process.env.COMMONLY_SUPERVISE_RUNS === '1',
 }) => {
   reportRuntime = reportRuntime && WALKED_HARNESSES.includes(adapter?.name);
   if (environment?.provider !== undefined && !adapter?.supportsProvider) {
@@ -1440,6 +1477,12 @@ export const performRun = ({
   const effectiveTurnTimeoutMs = Number.isFinite(requestedTurnTimeout) && requestedTurnTimeout > 0
     ? Math.min(requestedTurnTimeout, 2_147_483_647) : 15 * 60 * 1000;
   const client = createClient({ instance: instanceUrl, token });
+  // The supervised run keeps its trace in memory, metadata only; no record of
+  // a run is written to disk (lib/supervised-turn.js).
+  const turnRunner = createTurnRunner({
+    seat: agentName, turnTimeoutMs: effectiveTurnTimeoutMs, supervise: superviseRuns, log,
+  });
+  if (superviseRuns) log(turnRunner.describe(adapter?.name));
   const runtimeReporter = createRuntimeReporter({
     client: runtimeReportClient || { post: async () => {} },
     harness: adapter.name, detect: () => adapter.detect(),
@@ -1852,8 +1895,21 @@ export const performRun = ({
 
   // The spawn → post-decision half of a turn, split out so the claim release
   // above is a plain finally instead of threading through every return path.
-  const runTurn = async ({
-    event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger,
+  // With superviseRuns, the turn's log line is written once delivery has
+  // settled; anything thrown after a spawn that resolved means the reply never
+  // reached the pod. Off, `turn` writes nothing.
+  const runTurn = async (args) => {
+    const turn = turnRunner.begin({ eventType: args.event.type });
+    try {
+      return await runTurnBody({ ...args, turn });
+    } catch (error) {
+      turn.finish('reply_lost');
+      throw error;
+    }
+  };
+
+  const runTurnBody = async ({
+    event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger, turn,
   }) => {
     const placement = await placeTurn();
     // A workspace turn placed public (its pod turned public, or its pods could
@@ -2076,7 +2132,8 @@ export const performRun = ({
             reason: 'own-key-requires-scoped-spawn' };
         }
       }
-      result = await adapter.spawn(frameDecisionForkRule(promptForSpawn), {
+      const spawnPrompt = frameDecisionForkRule(promptForSpawn);
+      const spawnCtx = {
         onSpawn: reportRuntime ? (controls) => {
           observedSpawn = true;
           return runtimeReporter.spawn(controls);
@@ -2108,7 +2165,10 @@ export const performRun = ({
         instanceUrl,
         agentName,
         metadata: { event },
-      });
+      };
+      // Supervised or plain, a failure is thrown exactly as the adapter's own
+      // would be, so the run loop's classification and retry apply unchanged.
+      result = await turn.run(adapter, spawnPrompt, spawnCtx);
       spawnCompleted = true;
     } finally {
       try {
@@ -2191,6 +2251,9 @@ export const performRun = ({
     const upstream = result.upstream || null;
     let delivered = agentPostedItself;
     let deliveryRefusal = null;
+    // What became of the reply, for the turn line (lib/supervised-turn.js
+    // TURN_OUTCOMES). A throw below is reply_lost, finished by runTurn.
+    let turnOutcome;
 
     if (event.type === 'agent.ask') {
       if (silentReply) {
@@ -2200,6 +2263,7 @@ export const performRun = ({
         // having nothing to say.
         if (upstream) log(`[${event.type}] ${describeUpstreamRefusal(upstream)} — no private response`);
         else log(`[${event.type}] no private response (${reason})`);
+        turnOutcome = upstream ? 'upstream_refused' : 'silent';
       } else {
         try {
           await client.post(
@@ -2207,6 +2271,7 @@ export const performRun = ({
             { content: replyText },
           );
           delivered = true;
+          turnOutcome = 'delivered';
           log(`[${event.type}] routed private response (${Buffer.byteLength(replyText)} bytes)`);
         } catch (err) {
           // A tool-capable agent may have called commonly_respond_to_ask
@@ -2215,6 +2280,7 @@ export const performRun = ({
           // the model forever.
           if (err?.status === 409 && err?.body?.code === 'already_responded') {
             delivered = true;
+            turnOutcome = 'delivered';
             log(`[${event.type}] response already routed by agent tool`);
           } else {
             throw err;
@@ -2242,6 +2308,7 @@ export const performRun = ({
       // Report the two cases distinctly. `posted` is the load-bearing word: a
       // reader scanning for whether a seat is contributing must not have to
       // infer it from the absence of a different line.
+      turnOutcome = agentPostedItself ? 'delivered' : upstream ? 'upstream_refused' : 'silent';
       if (agentPostedItself) {
         log(
           `[${event.type}] posted via tool, then ${reason} — no echo needed `
@@ -2260,6 +2327,7 @@ export const performRun = ({
       // Name the message that caused the suppression. A silently dropped reply
       // is invisible to everyone; #757 went unnoticed precisely because this
       // line said only "posted via tool" with no way to tell whose post it saw.
+      turnOutcome = 'delivered';
       log(
         `[${event.type}] agent posted via tool this turn — not echoing CLI output `
         + `(avoids double-post; matched message ${suppressedBy.id} by ${suppressedBy.author} `
@@ -2269,6 +2337,7 @@ export const performRun = ({
       // ADR-018 D3: the lease lapsed mid-turn and a peer re-won the message —
       // that peer owns the conversation now, so posting would recreate the
       // two-agents-one-message crossing the claim exists to prevent.
+      turnOutcome = 'claim_lost';
       log(
         `[${event.type}] stood down — claim lost mid-turn to ${claimKeeper.getHolder()}; `
         + `reply suppressed (${Buffer.byteLength(replyText)} bytes not posted)`,
@@ -2311,6 +2380,7 @@ export const performRun = ({
         // it like a refusal: re-posting the same text inside the window would
         // only be skipped again.
         deliveryRefusal = delivery;
+        turnOutcome = 'server_skipped';
         const windowMinutes = delivery.duplicate?.dedupeWindowMinutes;
         const detail = [
           windowMinutes ? `${windowMinutes} min window` : null,
@@ -2336,6 +2406,7 @@ export const performRun = ({
         // guidance expressly says not to retry unchanged), while preserving
         // the refusal and its partial-post count for the seat and event ledger.
         deliveryRefusal = delivery;
+        turnOutcome = 'server_refused';
         const guidance = delivery.guidance || 'The server refused this message; do not retry it unchanged.';
         const detail = `after ${delivery.messages}/${delivery.attemptedMessages} message${delivery.attemptedMessages === 1 ? '' : 's'}`;
         log(`[${event.type}] wrapper delivery refused ${detail} (${delivery.reason}): ${guidance}`);
@@ -2351,12 +2422,14 @@ export const performRun = ({
         ));
       } else {
         delivered = true;
+        turnOutcome = 'delivered';
         log(
           `[${event.type}] posted ${Buffer.byteLength(replyText)} bytes as `
           + `${delivery.messages} message${delivery.messages === 1 ? '' : 's'} (${delivery.mode})`,
         );
       }
     }
+    turn.finish(turnOutcome);
     if (result.memorySummary && !memoryWithheld) {
       try {
         await syncBack(client, { summary: result.memorySummary });
@@ -4051,6 +4124,12 @@ Docs:
 
       console.log(`${stamp()} [${name}] polling ${record.instanceUrl} for events (ctrl+c to stop)`);
       console.log(`${stamp()} [${name}] ${foregroundDaemonHint({ daemonRegistered: hasDaemonRecord() })}`);
+      // TASK-660: one line when this CLI is stale. Fired, not awaited, so a
+      // slow registry never delays the first poll.
+      startUpdateNotice({
+        installedVersion: installedCliVersion(),
+        log: (line) => console.log(`${stamp()} [${name}] ${line}`),
+      });
 
       const { stop } = performRun({
         instanceUrl: record.instanceUrl,

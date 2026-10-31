@@ -1,54 +1,80 @@
-.v2-cli-authorize {
-  min-height: 100vh;
+/* Mounted inside .v2-root (TASK-682), so every value below is a token and
+   follows the dark theme. Two sets of resets compete with these rules:
+   .v2-root's button/link/input resets at (0,1,0)-(0,1,1), and App.css's
+   legacy `body.modern-ui:not(.v2-canvas) input` (0,2,2) and
+   `...:not(.guide-canvas) button` (0,3,2) with :hover at (0,4,2). The
+   controls carry .v2-root and .v2-cli-authorize (plus __card on buttons and
+   the hover rules) so they win on specificity, not on stylesheet order.
+   No fallbacks inside var(): this file merges strictly after #3058, which
+   defines --v2-accent-fill and --v2-on-accent (UX Lead, msg 120679). */
+/* Warning ink (UX Lead, pod msg 120615): #7c4a03 vanishes on dark
+   warning-soft. Scoped here with the same dark selectors as v2.css until the
+   token has a second consumer. */
+.v2-cli-authorize { --v2-warning-ink: #7c4a03; }
+:root[data-v2-theme="dark"] .v2-cli-authorize { --v2-warning-ink: #f4c27a; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-v2-theme="light"]) .v2-cli-authorize { --v2-warning-ink: #f4c27a; }
+}
+
+/* .v2-root is the app shell: height 100vh, overflow hidden, flex column.
+   This route is a page, not a shell, so it scrolls itself; the card centres
+   with margin:auto, which never pushes it past the top edge on a short
+   viewport the way place-items:center would. */
+.v2-root.v2-cli-authorize {
+  height: 100vh;
+  overflow-y: auto;
   display: grid;
-  place-items: center;
   padding: 24px;
-  background: #f8f8fb;
-  color: #111827;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-primary);
+  font-family: var(--v2-font);
 }
 
 .v2-cli-authorize__card {
   width: min(100%, 460px);
+  margin: auto;
   padding: 32px;
-  border: 1px solid #e5e7eb;
-  border-radius: 18px;
-  background: #fff;
-  box-shadow: 0 12px 32px rgba(17, 24, 39, 0.08);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-surface);
 }
 
-.v2-cli-authorize__card form { margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; }
+/* Outranks App.css's legacy `body.modern-ui:not(.v2-canvas) form` (0,2,2). */
+.v2-root.v2-cli-authorize .v2-cli-authorize__card form { max-width: none; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 
 .v2-cli-authorize__mark {
   display: grid;
   width: 36px;
   height: 36px;
   place-items: center;
-  border-radius: 10px;
-  background: var(--v2-accent, #1d3fd1);
-  color: #fff;
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
   font-weight: 800;
 }
 
-.v2-cli-authorize__eyebrow { margin: 16px 0 0 !important; color: var(--v2-accent, #1d3fd1) !important; font-size: 11px; font-weight: 800; letter-spacing: .11em; }
+.v2-cli-authorize__eyebrow { margin: 16px 0 0 !important; color: var(--v2-accent-text) !important; font-size: 11px; font-weight: 800; letter-spacing: .11em; }
 .v2-cli-authorize__card h1 { margin: 18px 0 8px; font-size: 24px; }
-.v2-cli-authorize__card p { margin: 0 0 20px; color: #4b5563; line-height: 1.5; }
+.v2-cli-authorize__card p { margin: 0 0 20px; color: var(--v2-text-secondary); line-height: 1.5; }
 .v2-cli-authorize__field { display: grid; gap: 7px; margin-bottom: 18px; font-size: 13px; font-weight: 700; }
-.v2-cli-authorize__field input { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid #d7dce7; border-radius: 9px; font: 600 18px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
-.v2-cli-authorize__field input:focus { outline: none; border-color: var(--v2-accent, #1d3fd1); box-shadow: var(--v2-focus-ring, 0 0 0 3px rgba(29, 63, 209, .18)); }
-.v2-cli-authorize__primary, .v2-cli-authorize__secondary { display: inline-flex; justify-content: center; align-items: center; min-height: 42px; padding: 0 16px; border-radius: 9px; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
-.v2-cli-authorize__primary { border: 1px solid var(--v2-accent, #1d3fd1); background: var(--v2-accent, #1d3fd1); color: #fff; }
-.v2-cli-authorize__primary:disabled { cursor: wait; opacity: .65; }
-.v2-cli-authorize__secondary { border: 1px solid #d7dce7; background: #fff; color: #374151; }
-.v2-cli-authorize__facts { margin: 0 0 18px; padding: 14px; border-radius: 10px; background: #f7f7fa; }
+.v2-root.v2-cli-authorize .v2-cli-authorize__field input { width: 100%; box-sizing: border-box; margin: 0; padding: 12px; border: 1px solid var(--v2-border-strong); border-radius: var(--v2-radius); background: var(--v2-surface); color: var(--v2-text-primary); font: 600 18px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
+.v2-root.v2-cli-authorize .v2-cli-authorize__field input:focus { outline: none; border-color: var(--v2-accent); box-shadow: var(--v2-focus-ring); }
+.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__primary, .v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__secondary { display: inline-flex; justify-content: center; align-items: center; min-height: 42px; padding: 0 16px; border-radius: var(--v2-radius); font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
+.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__primary { border: 1px solid var(--v2-accent-fill); background: var(--v2-accent-fill); color: var(--v2-on-accent); }
+.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__primary:disabled { cursor: wait; opacity: .65; }
+.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__secondary { border: 1px solid var(--v2-border-strong); background: var(--v2-surface); color: var(--v2-text-secondary); }
+.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__primary:hover, .v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__primary:active { background: var(--v2-accent-fill); transform: none; }
+.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__secondary:hover, .v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__secondary:active { background: var(--v2-surface-hover); transform: none; }
+.v2-cli-authorize__facts { margin: 0 0 18px; padding: 14px; border-radius: var(--v2-radius-lg); background: var(--v2-bg-subtle); }
 .v2-cli-authorize__facts div { display: flex; justify-content: space-between; gap: 18px; padding: 5px 0; }
-.v2-cli-authorize__facts dt { color: #6b7280; }
+.v2-cli-authorize__facts dt { color: var(--v2-text-muted); }
 .v2-cli-authorize__facts dd { margin: 0; font-weight: 600; text-align: right; }
-.v2-cli-authorize__warning { padding: 10px 12px; border-radius: 8px; background: #fdefdc; color: #7c4a03 !important; font-size: 13px; }
+.v2-cli-authorize__warning { padding: 10px 12px; border-radius: var(--v2-radius); background: var(--v2-warning-soft); color: var(--v2-warning-ink) !important; font-size: 13px; }
 .v2-cli-authorize__actions { display: flex; justify-content: flex-end; gap: 10px; }
 
 @media (max-width: 480px) {
-  .v2-cli-authorize { padding: 16px; align-items: start; }
+  .v2-root.v2-cli-authorize { padding: 16px; }
+  .v2-cli-authorize__card { margin: 0 auto auto; }
   .v2-cli-authorize__card { padding: 24px 20px; }
   .v2-cli-authorize__facts div { display: grid; gap: 2px; }
   .v2-cli-authorize__facts dd { text-align: left; }

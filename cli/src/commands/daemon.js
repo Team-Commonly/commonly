@@ -38,6 +38,7 @@ import {
 } from '../lib/daemon-service.js';
 import { daemonLogsDir, daemonSeatLogPath, readLogTail } from '../lib/daemon-logs.js';
 import { loadDaemonState, saveDaemonState } from '../lib/daemon-state.js';
+import { installedCliVersion, startUpdateNotice, UPDATE_CHECK_OPT_OUT_ENV } from '../lib/update-check.js';
 
 // One supervised seat, as `commonly daemon status --verbose` names it. Two of these
 // fields are worth reading closely: the seat's `instanceId` (the identity the
@@ -351,7 +352,11 @@ Examples:
         // adapter. The keys are captured here because this is the only moment
         // the operator's shell is in reach; the ones that are missing are named
         // by installDaemonService rather than left to be discovered per seat.
-        await installDaemonService({ ...serviceDeps(), providerKeyEnvNames: providerKeyEnvNames() });
+        await installDaemonService({
+          ...serviceDeps(),
+          providerKeyEnvNames: providerKeyEnvNames(),
+          optionalEnvNames: [UPDATE_CHECK_OPT_OUT_ENV],
+        });
         console.log('The daemon now starts at login and is kept alive. Uninstall with: commonly daemon uninstall');
       } catch (error) {
         console.error(`Daemon install failed: ${error.message}`);
@@ -451,6 +456,9 @@ Examples:
         for (const name of missingProviderKeys({ names: providerKeyEnvNames() })) {
           stampLog(`WARNING: ${name} is not set in this environment — a seat whose adapter needs it will fail to start. Export it and re-run: commonly daemon install (docs/agents/daemon-service-environment.md)`);
         }
+        // TASK-660: the daemon outlives many publishes, so say once at start-up
+        // when it is stale. Not awaited: supervision never waits on the registry.
+        startUpdateNotice({ installedVersion: installedCliVersion(), log: stampLog });
 
         let pollTimer;
         let heartbeatTimer;

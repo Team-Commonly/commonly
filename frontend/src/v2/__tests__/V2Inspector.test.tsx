@@ -4,7 +4,7 @@ import {
   fireEvent, render, screen, waitFor,
 } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import V2Inspector from '../components/V2Inspector';
+import V2Inspector, { INSPECTOR_OPEN_KEY } from '../components/V2Inspector';
 import V2Avatar from '../components/V2Avatar';
 
 const mockNavigate = jest.fn();
@@ -48,6 +48,9 @@ const renderInspector = (props: Partial<React.ComponentProps<typeof V2Inspector>
 describe('V2Inspector', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Most cases read a group's content, so they start with every group open.
+    // The fold itself is covered by the 'D215 panel fold' cases below.
+    sessionStorage.setItem(INSPECTOR_OPEN_KEY, JSON.stringify(['needs-you', 'agents', 'files', 'join']));
     mockPatch.mockResolvedValue({ id: 'pod-1', joinPolicy: 'invite-only' });
     mockGet.mockImplementation((url: string) => {
       if (url === '/api/v1/tasks/pod-1') {
@@ -67,6 +70,68 @@ describe('V2Inspector', () => {
     });
   });
 
+  test('D215 panel fold: every group is one closed row at rest and opens on demand', async () => {
+    sessionStorage.removeItem(INSPECTOR_OPEN_KEY);
+    renderInspector({
+      currentUserId: 'owner-1',
+      detail: { ...detail, pod: { ...detail.pod, createdBy: { _id: 'owner-1' }, joinPolicy: 'open' } } as any,
+    });
+    const folds = ['Needs you', 'Agents', 'Files', 'Who can join']
+      .map((name) => screen.getByRole('button', { name: new RegExp(`^${name}`) }));
+    folds.forEach((fold) => expect(fold).toHaveAttribute('aria-expanded', 'false'));
+    // Counts ride the rows; the content stays out of the DOM until opened.
+    expect(folds[0]).toHaveAccessibleName('Needs you 1');
+    expect(folds[1]).toHaveAccessibleName('Agents 2');
+    expect(await screen.findByRole('button', { name: 'Files 7' })).toBeInTheDocument();
+    expect(screen.queryByText('Slack default mode')).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: 'Invite-only' })).not.toBeInTheDocument();
+
+    fireEvent.click(folds[3]);
+    expect(folds[3]).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('radio', { name: 'Invite-only' })).toBeInTheDocument();
+    fireEvent.click(folds[0]);
+    expect(await screen.findByText('Slack default mode')).toBeInTheDocument();
+    expect(JSON.parse(sessionStorage.getItem(INSPECTOR_OPEN_KEY) || '[]')).toEqual(['join', 'needs-you']);
+    fireEvent.click(folds[0]);
+    expect(screen.queryByText('Slack default mode')).not.toBeInTheDocument();
+  });
+
+  test('section titles carry no mono captions', () => {
+    renderInspector();
+    expect(screen.queryByText(/agents in/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/files in/)).not.toBeInTheDocument();
+    expect(screen.queryByText('pod settings')).not.toBeInTheDocument();
+  });
+
+  test('members and manage are icon buttons in the panel head', () => {
+    const onOpenInvite = jest.fn();
+    renderInspector({ onOpenInvite });
+    const members = screen.getByRole('button', { name: 'Members' });
+    const manage = screen.getByRole('button', { name: 'Manage agents' });
+    expect(members).toHaveAttribute('title', 'Members');
+    expect(manage).toHaveAttribute('title', 'Manage agents');
+    expect(members.querySelector('svg')).toBeTruthy();
+    expect(members.closest('.v2-workspace-inspector__head')).toBeTruthy();
+    expect(document.querySelector('.v2-workspace-inspector__foot')).toBeNull();
+  });
+
+  test('Who can join is a segment that calls the same join-policy API the radios did', async () => {
+    const refresh = jest.fn().mockResolvedValue(undefined);
+    renderInspector({
+      currentUserId: 'owner-1',
+      detail: { ...detail, pod: { ...detail.pod, createdBy: { _id: 'owner-1' }, joinPolicy: 'invite-only' }, refresh } as any,
+    });
+    const group = screen.getByRole('radiogroup', { name: 'Who can join' });
+    expect(group).toHaveClass('v2-seg');
+    const open = screen.getByRole('radio', { name: 'Open to join' });
+    expect(open).toHaveTextContent('Open');
+    expect(screen.getByRole('radio', { name: 'Invite-only' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(open);
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/api/pods/pod-1/join-policy', { joinPolicy: 'open' }));
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(screen.getByRole('radio', { name: 'Open to join' })).toHaveAttribute('aria-checked', 'true');
+  });
+
   test('owner can make an open pod invite-only in pod settings', async () => {
     const refresh = jest.fn().mockResolvedValue(undefined);
     renderInspector({
@@ -83,7 +148,7 @@ describe('V2Inspector', () => {
       currentUserId: 'owner-1',
       detail: { ...detail, pod: { ...detail.pod, createdBy: { _id: 'owner-1' }, joinPolicy: 'open' } } as any,
     });
-    expect(screen.getAllByRole('radio').map((radio) => radio.getAttribute('aria-label') || radio.parentElement?.textContent)).toEqual([
+    expect(screen.getAllByRole('radio').map((radio) => radio.getAttribute('aria-label') || radio.textContent)).toEqual([
       'Open to join',
       'Invite-only',
     ]);
@@ -99,7 +164,7 @@ describe('V2Inspector', () => {
 
   test('renders the files pane from the same artifacts query with podId fixed, and links to all of them', async () => {
     renderInspector();
-    expect(screen.getByRole('heading', { name: 'files in sharpen' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Files 7' })).toBeInTheDocument();
     const row = await screen.findByRole('button', { name: 'walk-1440.png 5m' });
     expect(row).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'plan.md 3h' })).toBeInTheDocument();
@@ -131,8 +196,8 @@ describe('V2Inspector', () => {
   test('renders the two artboard cards from the pod’s existing data', async () => {
     renderInspector();
 
-    expect(screen.getByRole('heading', { name: 'agents in sharpen' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'needs you' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Agents 2' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Needs you 1' })).toBeInTheDocument();
     // board · today left the inspector (ruling 66311): the board has its own tab.
     expect(screen.queryByRole('heading', { name: 'board · today' })).not.toBeInTheDocument();
     expect(await screen.findByText('Slack default mode')).toBeInTheDocument();
@@ -241,11 +306,11 @@ describe('V2Inspector', () => {
     expect(screen.getByRole('button', { name: /Scout idle/ })).toBeInTheDocument();
   });
 
-  test('uses the short lowercase room name in the single-line agents label', () => {
+  test('the agents label is a word and a count, never the room name', () => {
     renderInspector({ detail: { ...detail, pod: { ...detail.pod, name: 'Sharpen · decision loop' } } as any });
 
-    expect(screen.getByRole('heading', { name: 'agents in sharpen' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: /decision loop/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Agents 2' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /decision loop|sharpen/i })).not.toBeInTheDocument();
   });
 
   test('links attention, profile, invite, and manage exits without legacy tabs', async () => {
@@ -258,9 +323,9 @@ describe('V2Inspector', () => {
     fireEvent.click(screen.getByRole('button', { name: /Wren needs you/ }));
     expect(mockNavigate).toHaveBeenCalledWith('/v2/agent/wren/default');
 
-    fireEvent.click(screen.getByRole('button', { name: 'members' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Members' }));
     expect(onOpenInvite).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: 'manage' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Manage agents' }));
     expect(mockNavigate).toHaveBeenCalledWith('/v2/agents');
   });
 

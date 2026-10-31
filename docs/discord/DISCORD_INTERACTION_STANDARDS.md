@@ -182,11 +182,10 @@ We provide comprehensive testing to verify standards compliance:
 ### Automated Tests
 
 ```bash
-# Test interaction structure
-node backend/test-discord-interactions.js
-
-# Test command functionality  
-node backend/test-discord-commands.js
+# Run the maintained Discord service/command suites in CI:
+# backend/__tests__/unit/services/discordService.test.js
+# backend/__tests__/unit/services/discordCommandService.test.js
+# backend/__tests__/unit/services/discordMultiCommandService.test.js
 ```
 
 ### Manual Testing

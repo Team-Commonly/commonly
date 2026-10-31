@@ -1114,8 +1114,15 @@ const V2ConnectorsPage: React.FC = () => {
   };
 
   const catalogTypes = new Set((catalog || []).map((entry) => entry.installableId));
+  // D215: a provider this instance does not offer is not listed, so a connector
+  // nobody here has walked is never shown. The API still reports it (the
+  // offerability contract), and someone who already installed it keeps their
+  // row, which renders in the not-connectable state below.
+  const listedCatalog = (catalog || []).filter((entry) => (
+    entry.offered !== false || Boolean(entry.installation) || Boolean(entry.integration)
+  ));
   const allItems: ListItem[] = [
-    ...(catalog || []).map((entry): ListItem => ({
+    ...listedCatalog.map((entry): ListItem => ({
       kind: 'catalog',
       key: `catalog:${entry.installableId}`,
       entry,
@@ -1690,7 +1697,6 @@ const V2ConnectorsPage: React.FC = () => {
                 <button type="button" className="v2-connectors__connect" onClick={() => setAddingType((current) => current ? null : availableProviders[0]?.type || null)}>
                   {t('connectors.connectChannel', { defaultValue: 'Connect a channel' })}
                 </button>
-                {(pods === null || pods.length > 0) && <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>}
               </div>
             )}
           </section>
@@ -1707,7 +1713,6 @@ const V2ConnectorsPage: React.FC = () => {
             <aside className="v2-connectors__aside" aria-label={t('connectors.connectChannel', { defaultValue: 'Connect a channel' })}>
               <section className="v2-connector-aside__step">
                 <p className="v2-connector-aside__eyebrow">{t('connectors.nextStep', { defaultValue: 'Next step' })}</p>
-                {(pods === null || pods.length > 0) && <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>}
                 {renderAddForm(true)}
               </section>
             </aside>

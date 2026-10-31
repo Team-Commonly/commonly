@@ -136,8 +136,8 @@ describe('i18n configuration', () => {
   });
 
   it('uses a Chinese comma in the BYO machine hint', () => {
-    const hint = i18n.t('agentByo.mode.machineHint', { lng: 'zh-CN' });
-    expect(hint).toBe('在你已添加的电脑上运行，你的文件、你的 CLI');
+    const hint = i18n.t('agentByo.mode.machineMeta', { lng: 'zh-CN' });
+    expect(hint).toBe('在你已添加的电脑上运行，用你的文件和 CLI。需要那台电脑运行 Commonly 守护进程。');
     expect(hint).not.toContain('—');
   });
 });
