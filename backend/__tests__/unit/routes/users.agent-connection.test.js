@@ -71,6 +71,7 @@ describe('GET /api/users/me/agent-connection', () => {
       issued: false,
       connected: false,
       lastUsedAt: null,
+      lastToolUseAt: null,
       connectedAgent: null,
     });
     expect(res.headers).toHaveProperty('ratelimit-policy');
@@ -95,6 +96,7 @@ describe('GET /api/users/me/agent-connection', () => {
       issued: true,
       connected: false,
       lastUsedAt: null,
+      lastToolUseAt: null,
       connectedAgent: null,
     });
     expect(mockUserFind).toHaveBeenCalledWith({
@@ -123,6 +125,7 @@ describe('GET /api/users/me/agent-connection', () => {
       issued: false,
       connected: false,
       lastUsedAt: null,
+      lastToolUseAt: null,
       connectedAgent: null,
     });
     expect(mockUserFind).not.toHaveBeenCalled();
@@ -144,6 +147,7 @@ describe('GET /api/users/me/agent-connection', () => {
       issued: true,
       connected: false,
       lastUsedAt: null,
+      lastToolUseAt: null,
       connectedAgent: null,
     });
     expect(mockUserFind).toHaveBeenCalledWith({
@@ -155,7 +159,7 @@ describe('GET /api/users/me/agent-connection', () => {
     });
   });
 
-  it('reports the most recent connection without returning token material', async () => {
+  it('reports the most recent listener check-in without returning token material', async () => {
     mockInstallationFind.mockReturnValue(query([
       { agentName: 'openclaw', instanceId: 'aria', podId: 'workspace-1' },
       { agentName: 'codex', instanceId: 'default', podId: 'workspace-2' },
@@ -163,15 +167,19 @@ describe('GET /api/users/me/agent-connection', () => {
     mockUserFind.mockReturnValue(query([
       {
         botMetadata: { agentName: 'openclaw', instanceId: 'aria' },
-        agentRuntimeTokens: [
-          { tokenHash: 'never-return-this', lastUsedAt: new Date('2026-07-21T10:00:00.000Z') },
-        ],
+        agentRuntimeTokens: [{
+          tokenHash: 'never-return-this',
+          lastUsedAt: new Date('2026-07-21T10:00:00.000Z'),
+          lastListenedAt: new Date('2026-07-21T10:00:00.000Z'),
+        }],
       },
       {
         botMetadata: { agentName: 'codex', instanceId: 'default' },
-        agentRuntimeTokens: [
-          { tokenHash: 'or-this', lastUsedAt: new Date('2026-07-21T12:00:00.000Z') },
-        ],
+        agentRuntimeTokens: [{
+          tokenHash: 'or-this',
+          lastUsedAt: new Date('2026-07-21T12:30:00.000Z'),
+          lastListenedAt: new Date('2026-07-21T12:00:00.000Z'),
+        }],
       },
     ]));
 
@@ -184,6 +192,7 @@ describe('GET /api/users/me/agent-connection', () => {
       issued: true,
       connected: true,
       lastUsedAt: '2026-07-21T12:00:00.000Z',
+      lastToolUseAt: '2026-07-21T12:30:00.000Z',
       connectedAgent: {
         agentName: 'codex',
         instanceId: 'default',
@@ -192,5 +201,45 @@ describe('GET /api/users/me/agent-connection', () => {
     });
     expect(JSON.stringify(res.body)).not.toContain('token');
     expect(JSON.stringify(res.body)).not.toContain('hash');
+  });
+
+  // TASK-719: a stranger walk copied the MCP snippet, never ran a listener, and
+  // saw "is listening". An authenticated MCP call stamps lastUsedAt only.
+  it('leaves the listener on waiting when the token has only been used by MCP tool calls', async () => {
+    mockInstallationFind.mockReturnValue(query([
+      { agentName: 'webhook-agent', instanceId: 'default', podId: 'workspace-1' },
+    ]));
+    mockUserFind.mockReturnValue(query([
+      {
+        botMetadata: { agentName: 'webhook-agent', instanceId: 'default' },
+        agentRuntimeTokens: [{ lastUsedAt: new Date('2026-07-21T12:00:00.000Z') }],
+      },
+    ]));
+
+    const res = await request(app)
+      .get('/api/users/me/agent-connection')
+      .set('Authorization', 'Bearer human-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      issued: true,
+      connected: false,
+      lastUsedAt: null,
+      lastToolUseAt: '2026-07-21T12:00:00.000Z',
+      connectedAgent: null,
+    });
+  });
+
+  it('asks the database for the listener field, not only the usage field', async () => {
+    mockInstallationFind.mockReturnValue(query([
+      { agentName: 'codex', instanceId: 'default', podId: 'workspace-1' },
+    ]));
+    const select = jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+    mockUserFind.mockReturnValue({ select });
+
+    await request(app).get('/api/users/me/agent-connection').set('Authorization', 'Bearer human-token');
+
+    expect(select.mock.calls[0][0]).toContain('agentRuntimeTokens.lastListenedAt');
+    expect(select.mock.calls[0][0]).toContain('agentRuntimeTokens.lastUsedAt');
   });
 });

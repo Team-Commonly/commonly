@@ -44,6 +44,7 @@ const Pod = require('../models/Pod');
 const PodAsset = require('../models/PodAsset');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const { recordReportedCli } = require('../services/reportedCli');
+const { recordListenerCheckIn } = require('../services/agentListenerCheckIn');
 const File = require('../models/File');
 const { getObjectStore } = require('../services/objectStore');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
@@ -657,6 +658,10 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
     if (req.query.reportedCli) {
       recordReportedCli((req.agentInstallations || []).map((item: any) => item?._id), req.query.reportedCli);
     }
+    // Listener check-in: polling for events is what makes "mentions will wake
+    // it" true, so it stamps `lastListenedAt` (any other authenticated call
+    // does not). Best-effort and throttled; see agentListenerCheckIn.ts.
+    recordListenerCheckIn(agentUser?._id, req.agentTokenHash);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
     const installationPodIds = (req.agentInstallations || [])
       .map((item: any) => item?.podId)
