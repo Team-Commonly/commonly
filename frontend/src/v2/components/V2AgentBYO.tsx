@@ -1056,6 +1056,26 @@ const V2AgentBYO: React.FC = () => {
     }
     setIssued(null);
   };
+  // The daemon block lives in Other ways to connect on both the start form and
+  // the result page, so the stop-on-close line can point to it from the result.
+  // Windows has no daemon install (systemd), so there is no block to offer.
+  const addComputerBlock = machines.length === 0 && setupOs !== 'windows' ? (
+    <div className="v2-byo__add-computer" data-testid="byo-add-computer">
+      <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
+      <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">{t('agentByo.addComputer.recommended')}</p>
+      <div className="v2-byo__add-computer-row">
+        <code>{daemonCommand}</code>
+        <button
+          type="button"
+          className="v2-byo__copy"
+          onClick={() => copy('daemon-setup', daemonCommand)}
+        >
+          {copied === 'daemon-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
+        </button>
+      </div>
+      <p className="v2-byo__hint">{t('agentByo.addComputer.after')}</p>
+    </div>
+  ) : null;
   const runnerPicker = mode === 'byo' && !issued && !onCardStart ? (
     <p className="v2-byo__os" data-testid="byo-runner">
       {t('agentByo.form.adapterLabel')}{' '}
@@ -1412,6 +1432,11 @@ const V2AgentBYO: React.FC = () => {
               })()}
             </button>
           )}
+          {/* The run command is the quick try; it dies with its Terminal. The
+              daemon is the one that keeps the agent running (TASK-645 item 3). */}
+          {mode === 'byo' && machines.length === 0 && listenerAvailable && (
+            <p className="v2-byo__hint" data-testid="byo-quick-try">{t('agentByo.quickTry')}</p>
+          )}
           {/* One command is THE path (QA BYO walk 1): the daemon and the SDK
               are real alternatives, but shown as equals beside the button they
               read as a choice a stranger has to make before starting. */}
@@ -1420,22 +1445,7 @@ const V2AgentBYO: React.FC = () => {
               if ((event.target as Element).closest('summary, button, a')) event.preventDefault();
             }}>
             <summary>{t('agentByo.otherWays.title')}</summary>
-          {machines.length === 0 && (
-            <div className="v2-byo__add-computer" data-testid="byo-add-computer">
-              <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
-              <div className="v2-byo__add-computer-row">
-                <code>{daemonCommand}</code>
-                <button
-                  type="button"
-                  className="v2-byo__copy"
-                  onClick={() => copy('daemon-setup', daemonCommand)}
-                >
-                  {copied === 'daemon-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
-                </button>
-              </div>
-              <p className="v2-byo__hint">{t('agentByo.addComputer.after')}</p>
-            </div>
-          )}
+            {addComputerBlock}
           <p className="v2-byo__footnote">
             {t(listenerAvailable ? 'agentByo.footnote.cliRoute'
               : listenAdapter === 'claude' ? 'agentByo.footnote.cliRouteClaudeUnavailable'
@@ -1623,6 +1633,11 @@ const V2AgentBYO: React.FC = () => {
                 {t('agentByo.listen.npmPermission')}
               </p>
             )}
+            {listenerAvailable && (
+              <p className="v2-byo__listen-note" data-testid="byo-listen-stops-on-close">
+                {t(machines.length === 0 ? 'agentByo.listen.stopsOnClose' : 'agentByo.listen.stopsOnCloseWithComputer')}
+              </p>
+            )}
             {!listenerAvailable ? null : listenState === 'listening' ? (
               <p className="v2-byo__live" data-testid="byo-listen-ok">
                 {t('agentByo.listen.verified', { name: issued.agentName })}
@@ -1682,6 +1697,19 @@ const V2AgentBYO: React.FC = () => {
 
           <details className="v2-byo__more" data-testid="byo-result-more-ways">
             <summary>{t('agentByo.otherWays.title')}</summary>
+            {addComputerBlock}
+            {machines.length > 0 && (
+              // A computer on file: the machine choice is the start form's mode
+              // picker, which this result page does not show, so offer it here.
+              <button
+                type="button"
+                className="v2-byo__secondary"
+                data-testid="byo-result-on-my-computer"
+                onClick={() => { setIssued(null); chooseMode('machine'); }}
+              >
+                {t('agentByo.mode.machine')}
+              </button>
+            )}
             <div className="v2-byo__snippet">
               <div className="v2-byo__snippet-head">
                 <span>{t('agentByo.snippets.runtimeToken')}</span>
