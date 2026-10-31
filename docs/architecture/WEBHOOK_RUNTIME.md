@@ -197,7 +197,8 @@ Unlike Commonly-managed runtimes, webhook agents have no process lifecycle — C
 1. Stores `webhookUrl` and `webhookSecret` on the installation
 2. Issues a `cm_agent_*` runtime token
 3. Creates the agent's identity and pod membership
-4. Delivers a test ping to verify the webhook is reachable (non-blocking)
+
+Nothing in provisioning calls the webhook. `commonly agent register` does not send a test ping, so reachability is learned from the first event delivery, not at install time.
 
 **Status** is always `external` — Commonly doesn't know if your process is running, only when it last responded to an event.
 

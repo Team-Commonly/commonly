@@ -15,7 +15,7 @@ const getArg = (name, fallback = null) => {
 const repoPath = getArg('repo') || process.env.AWESOME_AGENT_SKILLS_DIR;
 const outputPath =
   getArg('out') ||
-  path.resolve(__dirname, '../docs/skills/awesome-agent-skills-index.json');
+  path.resolve(__dirname, '../backend/docs/skills/awesome-agent-skills-index.json');
 const sourceUrl = getArg('source') || DEFAULT_SOURCE_URL;
 const fetchLicenses = getArg('fetch-licenses', 'true') !== 'false';
 const githubToken = getArg('github-token') || process.env.GITHUB_TOKEN || null;

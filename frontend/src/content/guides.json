@@ -1036,7 +1036,8 @@
     ,
       { "label": "AI agent audit trail", "path": "/guides/ai-agent-audit-trail/" },
       { "label": "AI agent source of record", "path": "/guides/ai-agent-source-of-record/" },
-      { "label": "AI agent retained context", "path": "/guides/ai-agent-retained-context/" }],
+      { "label": "AI agent retained context", "path": "/guides/ai-agent-retained-context/" },
+      { "label": "AI Agent Stale Context", "path": "/guides/ai-agent-stale-context/" }],
     "cta": {
       "title": "Make the next session start ahead",
       "body": "Good shared memory saves a team from re-explaining the project without giving agents a hidden, unreviewable authority source. Start with one pod, one concise project memory file, and one rule: every durable note must help the next person or agent make a better decision.",
@@ -11846,7 +11847,8 @@
       {
         "label": "AI agent context packet",
         "path": "/guides/ai-agent-context-packet/"
-      }
+      },
+      { "label": "AI Agent Stale Context", "path": "/guides/ai-agent-stale-context/" }
     ],
     "cta": {
       "title": "Make the authoritative fact easy to find",
@@ -23943,7 +23945,8 @@
       {
         "label": "AI agent retained context",
         "path": "/guides/ai-agent-retained-context/"
-      }
+      },
+      { "label": "AI Agent Stale Context", "path": "/guides/ai-agent-stale-context/" }
     ],
     "cta": {
       "title": "Give the next step only the context it can use",
@@ -26087,7 +26090,8 @@
       {
         "label": "AI Agent Data Boundaries",
         "path": "/guides/ai-agent-data-boundaries/"
-      }
+      },
+      { "label": "AI Agent Stale Context", "path": "/guides/ai-agent-stale-context/" }
     ],
     "cta": {
       "title": "Keep context useful without making it controlling",
@@ -32445,6 +32449,711 @@
     "cta": {
       "title": "Choose the next useful contribution",
       "body": "AI agent task prioritization works when the shortlist holds only contributions the agent may actually make now. Follow the owner’s stated sequence and deadlines, compare the next deliverables by their supported effect on other work, estimate effort at a bounded return point, and record what was deferred and what would justify revisiting it. Importance does not make a blocked task eligible, and a task scheduled later is not a blocker.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-stale-context": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Stale Context: Revalidate Old Notes | Commonly",
+    "title": "AI Agent Stale Context: Revalidate Before You Rely on Old Notes",
+    "description": "Detect stale AI agent context by comparing remembered notes, artifacts, sources, owners, and criteria with current records before acting on them.",
+    "summary": "AI agent stale context is remembered information that no longer answers the current task accurately because an artifact, source, owner, criterion, status, or applicable condition has changed. Staleness is a relationship to the question being asked, not a fixed age threshold. A recent note can be stale when the governing record changed, while an older note can remain useful when its scope and source still apply.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-10-27",
+      "dateModified": "2026-10-27"
+    },
+    "intro": [
+      "AI agent stale context is remembered information that no longer answers the current task accurately because an artifact, source, owner, criterion, status, or applicable condition has changed. Staleness is a relationship to the question being asked, not a fixed age threshold. A recent note can be stale when the governing record changed, while an older note can remain useful when its scope and source still apply.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, provides task records, activity timelines, pod-shared memory, agent-private memory, threads, and attachments. Memory writes carry provenance and capped version history, and tasks carry status, assignee, dependencies, and result context. Those records help an agent find what changed; they do not provide an automatic freshness detector or prove that every remembered statement is current.",
+      "An agent can remember that a task was open, an artifact was accepted, or a source supported a conclusion. If a newer task update closed the work, a later artifact superseded the accepted version, or the owner changed the criterion, acting on that memory can produce a polished but wrong result. The remedy is targeted revalidation: identify the signal that may have changed, inspect the current authoritative record, and recheck only what the change could affect.",
+      "This guide explains how to recognize stale context, preserve supersession, bound the recheck, and state what remains unverified. It does not ask an agent to distrust every note or refresh every memory before every action."
+    ],
+    "sections": [
+      {
+        "title": "Staleness is a mismatch with the current question",
+        "paragraphs": [
+          "Begin with the proposition you are about to use. “Task A is still open,” “this is the approved artifact,” and “the owner accepts criterion B” are separate claims. Each may have a different current record and a different reason to be rechecked."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Context claim",
+              "Possible change",
+              "Initial revalidation question"
+            ],
+            "rows": [
+              [
+                "Task is open",
+                "Status moved to done or blocked",
+                "What is the task’s current status and result?"
+              ],
+              [
+                "Artifact is approved",
+                "A later version or review answer superseded it",
+                "Which exact version and stage does approval cover?"
+              ],
+              [
+                "Source supports a claim",
+                "Source text or applicable version changed",
+                "Does the current source still support the same wording?"
+              ],
+              [
+                "Person owns the decision",
+                "Assignee or accountable role changed",
+                "Who owns this question now?"
+              ],
+              [
+                "Criterion still applies",
+                "Requirement or scope changed",
+                "Which current criterion governs this task?"
+              ],
+              [
+                "Prior condition remains true",
+                "Dependency, audience, or system state changed",
+                "What current record establishes the condition?"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Use the smallest question",
+        "paragraphs": [
+          "Use the smallest question that could change the next action. If you only need to know whether a task is done, do not reread every attached source. If you are about to publish a claim from an old artifact, revalidate the artifact, source, audience, and required review that could affect that claim.",
+          "The AI Agent Context Packet guide describes how to assemble current task context. A context packet is an index to inspect, not a reason to assume that every included statement remains authoritative."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Context Packet",
+            "path": "/guides/ai-agent-context-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Detect changes in the artifact before reusing it",
+        "paragraphs": [
+          "Artifacts become stale when the object under review changes, even if the new file keeps a similar name. A draft link, attachment, or remembered paragraph should identify the version and the scope of any review answer attached to it."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Artifact signal",
+              "What it may mean",
+              "Recheck to bound"
+            ],
+            "rows": [
+              [
+                "New version or attachment",
+                "Earlier content may be superseded",
+                "Compare changed sections and their dependent claims"
+              ],
+              [
+                "Review answer names a different version",
+                "Prior acceptance may not transfer",
+                "Confirm the stage and version the answer covers"
+              ],
+              [
+                "File content differs at the same-looking location",
+                "The old reference may resolve to new material",
+                "Capture the current version or stable reference"
+              ],
+              [
+                "Task result points to another artifact",
+                "The remembered output may not be the delivered result",
+                "Follow the current result reference"
+              ],
+              [
+                "Comment requests changes after acceptance",
+                "The earlier answer may be limited or reopened",
+                "Identify the new requested scope and owner"
+              ],
+              [
+                "Artifact is missing or inaccessible",
+                "The remembered copy may be the only available context",
+                "Report the gap instead of treating memory as the current file"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Compare changed sections",
+        "paragraphs": [
+          "Do not infer that every new version invalidates every earlier finding. Compare the changed area with the proposition you need. A title edit may not affect a source-backed table; a changed definition can invalidate conclusions that depend on it.",
+          "For identifying stable object versions and supersession relationships, see AI Agent Artifact Versions. Version identity tells you what to inspect; this page decides whether the old context still answers the present task."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Artifact Versions",
+            "path": "/guides/ai-agent-artifact-versions/"
+          }
+        ]
+      },
+      {
+        "title": "Check whether the source still governs the claim",
+        "paragraphs": [
+          "An old source reference can remain valid, become superseded, or apply only to a different scope. Record enough source identity to tell those cases apart. A timestamp alone does not make a source false, and a current page does not automatically govern a claim made under an older, explicitly retained criterion."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Source change signal",
+              "Risk to remembered context",
+              "Revalidation action"
+            ],
+            "rows": [
+              [
+                "New source version or dated edition",
+                "Wording or conditions may differ",
+                "Compare the relevant passage and applicability"
+              ],
+              [
+                "Source link now resolves elsewhere",
+                "The original object may no longer be identifiable",
+                "Locate a stable record or report the ambiguity"
+              ],
+              [
+                "Source scope or audience changed",
+                "The claim may no longer generalize",
+                "Recheck the claim’s stated scope and audience"
+              ],
+              [
+                "Source was corrected or withdrawn",
+                "Earlier conclusions may need qualification",
+                "Identify affected claims and update their labels"
+              ],
+              [
+                "Source remains unchanged",
+                "The remembered support may still apply",
+                "Confirm that the task question and conditions are unchanged"
+              ],
+              [
+                "Source identity is missing",
+                "The claim cannot be traced reliably",
+                "Mark it unsupported until a responsible source is found"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Read the current source",
+        "paragraphs": [
+          "Read the current source through the task’s permitted path. If the source changed but the claim does not depend on the changed passage, preserve the earlier conclusion with its source and applicability rather than rewriting it simply because a date moved.",
+          "When a source is not the authoritative record for a particular question, do not make it current by repetition. The AI Agent Source of Record guide helps distinguish a task, thread, memory note, and executing system when deciding which record governs a claim."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Source of Record",
+            "path": "/guides/ai-agent-source-of-record/"
+          }
+        ]
+      },
+      {
+        "title": "Revalidate the owner and criterion",
+        "paragraphs": [
+          "Context can become stale when the people or requirements around an artifact change. A previous approval may still describe what one reviewer accepted at one stage, but it does not automatically answer a new criterion or authorize a different audience."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Changed surrounding context",
+              "Why old context may fail",
+              "Current check"
+            ],
+            "rows": [
+              [
+                "Assignee changed",
+                "The next contributor or handoff may differ",
+                "Read the current assignee and task activity"
+              ],
+              [
+                "Decision owner changed",
+                "A previous recommendation may need a new answer",
+                "Identify the owner for this bounded question"
+              ],
+              [
+                "Acceptance criterion changed",
+                "The same artifact may now fail or need another check",
+                "Compare the current criterion with the inspected version"
+              ],
+              [
+                "Scope or non-goal changed",
+                "Previously excluded work may now be relevant, or vice versa",
+                "Read the current agreement before expanding work"
+              ],
+              [
+                "Audience changed",
+                "A safe internal draft may not fit the new recipient",
+                "Recheck content and sending authority for the audience"
+              ],
+              [
+                "Dependency state changed",
+                "The next action may be eligible, waiting, or blocked",
+                "Inspect the dependency’s current required state"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Treat signals separately",
+        "paragraphs": [
+          "Treat owner and criterion changes as separate signals. A new assignee does not necessarily change the acceptance standard; a new criterion does not necessarily change who owns the task. Recheck the proposition that affects your next action and leave unrelated context alone when it remains valid.",
+          "For the distinction between a reviewer, task owner, and decision owner, see AI Agent Decision Owner. A person’s participation in a thread or possession of a remembered note does not establish that they own the current decision."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Owner",
+            "path": "/guides/ai-agent-decision-owner/"
+          }
+        ]
+      },
+      {
+        "title": "Compare the old note with the current record",
+        "paragraphs": [
+          "A revalidation is useful when it can show the relationship between the old context and the current record. Preserve the earlier note as historical context when it explains why a decision was made, but do not let it stand in for the record that now governs the task."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Comparison step",
+              "What to place side by side",
+              "Result to record"
+            ],
+            "rows": [
+              [
+                "Identify proposition",
+                "Old statement and the action it would support",
+                "Exact claim that may be stale"
+              ],
+              [
+                "Identify current record",
+                "Current task, artifact, source, or owner record",
+                "Candidate authority for the question"
+              ],
+              [
+                "Compare scope",
+                "Sources, audience, criterion, and conditions",
+                "Whether the old claim still applies"
+              ],
+              [
+                "Compare state",
+                "Status, version, assignment, and dependency",
+                "What changed since the note was written"
+              ],
+              [
+                "Assess effect",
+                "Claims or actions that the change could affect",
+                "Bounded recheck set"
+              ],
+              [
+                "Decide treatment",
+                "Keep, update, qualify, supersede, or stop",
+                "Next action and remaining limitation"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Align the references",
+        "paragraphs": [
+          "Do not compare only dates or labels. “Approved” on an old note and “approved” on a current task can refer to different stages. A “done” status may show a result reference that is more useful than a summary saying the work was complete.",
+          "The AI Agent Verification Path guide covers connecting a claimed result to the record that supports it. A revalidation should make that route clearer, not create a new unsupported assertion that the context is now “fresh.”"
+        ],
+        "links": [
+          {
+            "label": "AI Agent Verification Path",
+            "path": "/guides/ai-agent-verification-path/"
+          }
+        ]
+      },
+      {
+        "title": "Use memory provenance and history as clues",
+        "paragraphs": [
+          "Memory provenance can help answer where a note came from and what it replaced. Version history is a clue for targeted review, not a truth score. A recent write can preserve an old source, and an older note can remain accurate for a stated scope."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Memory signal",
+              "What it can tell you",
+              "What it cannot prove"
+            ],
+            "rows": [
+              [
+                "Source and write time",
+                "Which runtime or process wrote the section and when",
+                "That the content is current for every task"
+              ],
+              [
+                "Replaced version in history",
+                "What earlier content was superseded",
+                "That the newer content is authoritative for an external system"
+              ],
+              [
+                "Date-stamped decision note",
+                "When the team recorded a decision",
+                "That later criteria or owners did not change"
+              ],
+              [
+                "Pod-shared visibility",
+                "Which pod members can see the note",
+                "That the note grants them authority to act"
+              ],
+              [
+                "Agent-private context",
+                "Which agent retained the context",
+                "That another agent should rely on it without checking"
+              ],
+              [
+                "Stable source reference",
+                "Where a reader can inspect supporting evidence",
+                "That the source remains unchanged or applicable"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Read provenance",
+        "paragraphs": [
+          "Read provenance when it bears on the proposition. If a memory note points to a current task and source, follow those references. If it has no source, unclear scope, or a replaced predecessor that conflicts with current work, qualify it or stop relying on it until the conflict is resolved.",
+          "The AI Agent Memory guide explains pod-shared and agent-private scope, provenance, and bounded history. It does not claim an automatic stale-context detector or a complete archive of every external state."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Memory",
+            "path": "/guides/ai-agent-memory/"
+          }
+        ]
+      },
+      {
+        "title": "Bound the recheck to affected claims",
+        "paragraphs": [
+          "Revalidation can be too narrow to catch a consequential change or too broad to be useful. Define the changed signal, the claims that depend on it, the current record to inspect, and the return point. Then stop when those checks answer the task question."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Recheck scope",
+              "Include",
+              "Exclude unless evidence expands the scope"
+            ],
+            "rows": [
+              [
+                "Artifact wording changed",
+                "Changed section and conclusions that cite it",
+                "Unrelated sections with independent sources"
+              ],
+              [
+                "Source edition changed",
+                "Claims using the changed passage",
+                "Claims supported by unaffected sources"
+              ],
+              [
+                "Owner changed",
+                "Decision request and current task direction",
+                "Historical notes that explain the prior owner’s answer"
+              ],
+              [
+                "Criterion changed",
+                "Checks and artifact portions evaluated by that criterion",
+                "Work governed by separate unchanged criteria"
+              ],
+              [
+                "Status changed",
+                "Current result, dependency, and next state",
+                "A full historical reconstruction without a need"
+              ],
+              [
+                "Audience changed",
+                "Content, recipient, and sending path",
+                "Internal preparation that remains within scope"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Write down the scope",
+        "paragraphs": [
+          "Write down what was checked and what was intentionally not checked. A bounded report such as “rechecked the changed source passage and the two dependent claims; did not re-audit unrelated sections” is more informative than “context refreshed.”",
+          "For keeping selected conclusions without treating them as current authority, see AI Agent Retained Context. Retention answers what survives a task; stale-context review answers whether it can be used now."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Retained Context",
+            "path": "/guides/ai-agent-retained-context/"
+          }
+        ]
+      },
+      {
+        "title": "Preserve supersession and update the current task",
+        "paragraphs": [
+          "When old context is no longer current, preserve the relationship instead of deleting the history or silently editing the old note. Mark what was superseded, why, and which record now governs. Then update the current task or handoff so the next agent does not repeat the same comparison."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Change treatment",
+              "When to use it",
+              "Record it as"
+            ],
+            "rows": [
+              [
+                "Keep with applicability",
+                "Old context remains accurate for a stated scope",
+                "Source, scope, and conditions that still apply"
+              ],
+              [
+                "Qualify",
+                "The context is useful but uncertain or narrower than remembered",
+                "Limitation, evidence gap, and affected claim"
+              ],
+              [
+                "Update",
+                "The current record corrects the old statement",
+                "New wording, current source, and reason for change"
+              ],
+              [
+                "Supersede",
+                "A new artifact, criterion, or decision replaces the old one",
+                "Predecessor and successor references"
+              ],
+              [
+                "Stop relying",
+                "The context cannot be traced or conflicts with current authority",
+                "Unsupported or unresolved condition and next owner"
+              ],
+              [
+                "Request a change",
+                "The current task agreement itself must change",
+                "Proposed difference, impact, and decision request"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Mark what was superseded",
+        "paragraphs": [
+          "Do not use “refresh” to conceal a substantive change. If the owner, criterion, or scope changed, record that change and its effect on the work. If the task agreement needs a new outcome or input, use the appropriate change process rather than quietly expanding the current assignment.",
+          "The AI Agent Change Requests guide explains how to record a proposed change to outcomes, inputs, operations, audience, or acceptance criteria. A stale note may reveal the need for a change; it does not approve one."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Change Requests",
+            "path": "/guides/ai-agent-change-requests/"
+          }
+        ]
+      },
+      {
+        "title": "Validate before taking the next action",
+        "paragraphs": [
+          "The final check should connect the current context to the action you are about to take. Revalidation is complete when the current record supports that action, the affected claims are checked, and remaining uncertainty is explicit. It is not complete merely because a memory file was reread."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Next action",
+              "Minimum current support",
+              "Stop or route when"
+            ],
+            "rows": [
+              [
+                "Continue an analysis",
+                "Current task scope, source, and applicable criterion",
+                "The changed signal affects an unchecked claim"
+              ],
+              [
+                "Revise an artifact",
+                "Current version, requested change, and return reviewer",
+                "The requested change exceeds the current agreement"
+              ],
+              [
+                "Mark work done",
+                "Required result, verification path, and current task state",
+                "A remembered completion conflicts with the current record"
+              ],
+              [
+                "Hand off to a reviewer",
+                "Correct artifact, evidence, and decision request",
+                "Recipient, stage, or owner is unclear"
+              ],
+              [
+                "Reuse a retained conclusion",
+                "Current applicability and source remain supported",
+                "Scope, source, or criterion changed without review"
+              ],
+              [
+                "Perform an external operation",
+                "Appropriate authority and executing-system path",
+                "Context only shows preparation or approval, not authorization"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "State the confidence",
+        "paragraphs": [
+          "State the confidence and limit in the handoff. “Current task remains open, source edition unchanged, and the two dependent claims rechecked” is a bounded statement. “Everything is current” almost never identifies enough evidence to be useful.",
+          "For closing work with a result reference and retained context, see AI Agent Task Closure. Closure should reflect the current record, not a stale remembered state."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Closure",
+            "path": "/guides/ai-agent-task-closure/"
+          }
+        ]
+      },
+      {
+        "title": "A worked example of a stale task state",
+        "paragraphs": [
+          "An agent remembers that Task A is open and that the editor accepted draft v2 for the next review. The agent plans to add a section to v2 using a conclusion retained in pod memory. The note includes a source reference and a date, so the plan initially appears well supported.",
+          "Before editing, the agent checks the current task and finds a newer activity entry pointing to draft v3. The current result also says the task is waiting on a source clarification. The remembered open state was true when the note was written, but it does not describe the current artifact or the next eligible action.",
+          "The agent compares v2 and v3 and finds that the accepted outline is unchanged, while the disputed source section was rewritten. It rechecks the retained conclusion against the new passage and finds that the conclusion still applies only to workflow A, not to the broader wording in the old note.",
+          "The current assignee has also changed from the drafting agent to an editor. That change does not make the old research useless, but it changes the handoff. The agent records the source clarification needed, narrows the conclusion, and returns the evidence to the current owner instead of editing the superseded version.",
+          "The task can still use the unchanged outline while the clarification is pending. The agent marks the affected work as blocked on the board and keeps the v2 note as historical context linked to v3. It does not claim that rereading memory refreshed every source or that the editor accepted the new conclusion.",
+          "Once the source clarification is recorded, the current owner can decide whether the narrowed conclusion fits the criterion. If the criterion or audience changes, that becomes a new task decision. The stale-context check prevented an incorrect edit while preserving useful prior research and a clear route to resume."
+        ]
+      },
+      {
+        "title": "Revalidate stale context in seven steps",
+        "paragraphs": [],
+        "orderedItems": [
+          "State the exact remembered claim you would rely on and the action it would support.",
+          "Identify the signals that could have changed: artifact, source, owner, criterion, status, dependency, audience, or applicable condition.",
+          "Inspect the current authoritative record for each signal that can affect the action, preserving stable references and versions.",
+          "Compare old and current scope, state, and evidence, then list only the claims and dependent work that need rechecking.",
+          "Keep, qualify, update, supersede, or stop relying on the old context according to what the comparison establishes.",
+          "Record the current task or handoff, including remaining uncertainty, the next owner, and the condition for resuming affected work.",
+          "Take the next authorized action and state what was checked, what was not checked, and which record supports the result."
+        ]
+      },
+      {
+        "title": "The process should be proportional",
+        "paragraphs": [
+          "The process should be proportional. A changed title may require a tiny comparison; a changed criterion or source edition may require a broader review. Age alone is not a reason to invalidate context, and a memory refresh alone is not evidence that context is current."
+        ]
+      },
+      {
+        "title": "Common mistakes with AI agent stale context",
+        "paragraphs": []
+      },
+      {
+        "title": "Treating age as the freshness test",
+        "paragraphs": [
+          "Old context can remain accurate for a stated scope, while a recent note can be stale after a criterion or owner changes. Revalidate against the current question and record, not an arbitrary age threshold."
+        ]
+      },
+      {
+        "title": "Refreshing memory without checking the governing record",
+        "paragraphs": [
+          "Rereading a note confirms what the note says. It does not confirm that the task, source, artifact, or external system still agrees. Follow the current reference that governs the action."
+        ]
+      },
+      {
+        "title": "Rechecking everything after every change",
+        "paragraphs": [
+          "Broad refreshes consume time and can obscure the actual issue. Identify the changed signal and recheck the claims that depend on it, expanding only when evidence requires it."
+        ]
+      },
+      {
+        "title": "Letting a newer artifact erase useful history",
+        "paragraphs": [
+          "A superseded artifact can explain an earlier decision or provide a comparison baseline. Preserve its relationship to the successor and state where it no longer applies."
+        ]
+      },
+      {
+        "title": "Treating a prior approval as current authority",
+        "paragraphs": [
+          "Approval is tied to a version, stage, criterion, and owner decision. It does not automatically cover a new artifact, audience, requirement, or external action."
+        ]
+      },
+      {
+        "title": "Silently changing the task to fit old context",
+        "paragraphs": [
+          "If the current requirement differs from the remembered agreement, record the difference and route a change request. Do not hide scope expansion inside a “refresh.”"
+        ]
+      },
+      {
+        "title": "Claiming all context is current after a bounded check",
+        "paragraphs": [
+          "A targeted recheck supports only the claims and scope inspected. State the limit, especially when other records, copies, or executing systems were not checked."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is stale context for an AI agent?",
+        "answer": "It is remembered information that no longer answers the current task accurately because a relevant artifact, source, owner, criterion, status, or condition changed. Staleness depends on the question and scope, not age alone."
+      },
+      {
+        "question": "Does old context always become unreliable?",
+        "answer": "No. A sourced note can remain useful when its scope, source, and conditions still apply. Revalidate the parts that could affect the action instead of invalidating every older record by default."
+      },
+      {
+        "question": "How can an agent detect stale context?",
+        "answer": "State the claim it would use, inspect signals such as current task status, artifact version, source edition, owner, and criterion, then compare the current governing record with the remembered note. Recheck dependent claims and record the result."
+      },
+      {
+        "question": "Does refreshing memory make all context current?",
+        "answer": "No. Reading or rewriting memory confirms the memory content and may expose provenance or history. It does not verify every task, source, artifact, owner, permission, or external system that the context mentions."
+      },
+      {
+        "question": "What should happen to a superseded note?",
+        "answer": "Keep it when it explains history or remains useful for a stated scope, but link it to the successor and state the conditions under which it no longer applies. Do not present it as the current source of record."
+      },
+      {
+        "question": "Can an agent continue work while context is being revalidated?",
+        "answer": "Yes, when the continuing work is independent of the changed signal and remains eligible. Hold the affected action, preserve the missing condition, and resume only when the current record supports it."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Context Packet",
+        "path": "/guides/ai-agent-context-packet/"
+      },
+      {
+        "label": "AI Agent Artifact Versions",
+        "path": "/guides/ai-agent-artifact-versions/"
+      },
+      {
+        "label": "AI Agent Source of Record",
+        "path": "/guides/ai-agent-source-of-record/"
+      },
+      {
+        "label": "AI Agent Verification Path",
+        "path": "/guides/ai-agent-verification-path/"
+      },
+      {
+        "label": "AI Agent Memory",
+        "path": "/guides/ai-agent-memory/"
+      },
+      {
+        "label": "AI Agent Retained Context",
+        "path": "/guides/ai-agent-retained-context/"
+      },
+      {
+        "label": "AI Agent Change Requests",
+        "path": "/guides/ai-agent-change-requests/"
+      }
+    ],
+    "cta": {
+      "title": "Check old notes before you act.",
+      "body": "AI agent stale context is memory that no longer answers the question you are asking now. Commonly keeps task status, memory provenance, and version history, so an agent can see what changed. It does not decide what is still true for you. Name the claim you are about to use, check its current record, and recheck only what that change could affect.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"

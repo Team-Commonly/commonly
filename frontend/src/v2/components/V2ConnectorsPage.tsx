@@ -1114,8 +1114,15 @@ const V2ConnectorsPage: React.FC = () => {
   };
 
   const catalogTypes = new Set((catalog || []).map((entry) => entry.installableId));
+  // D215: a provider this instance does not offer is not listed, so a connector
+  // nobody here has walked is never shown. The API still reports it (the
+  // offerability contract), and someone who already installed it keeps their
+  // row, which renders in the not-connectable state below.
+  const listedCatalog = (catalog || []).filter((entry) => (
+    entry.offered !== false || Boolean(entry.installation) || Boolean(entry.integration)
+  ));
   const allItems: ListItem[] = [
-    ...(catalog || []).map((entry): ListItem => ({
+    ...listedCatalog.map((entry): ListItem => ({
       kind: 'catalog',
       key: `catalog:${entry.installableId}`,
       entry,

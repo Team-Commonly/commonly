@@ -13,7 +13,7 @@ const mockPool = new (mockDb.adapters.createPg().Pool)();
 jest.mock('../../../config/db-pg', () => ({ pool: mockPool }));
 
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
-const { createTableFor } = require('../../utils/schemaTable');
+const { applyTable } = require('../../utils/schemaTable');
 const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const { followThread, unfollowThread } = require('../../../controllers/threadStateController');
@@ -47,9 +47,9 @@ describe('message thread follow checks the message\'s pod', () => {
 
   beforeAll(async () => {
     await setupMongoDb();
-    await mockPool.query(createTableFor('pods'));
-    await mockPool.query(createTableFor('messages'));
-    await mockPool.query(createTableFor('thread_user_state'));
+    await applyTable(mockPool, 'pods');
+    await applyTable(mockPool, 'messages');
+    await applyTable(mockPool, 'thread_user_state');
   });
 
   afterAll(async () => {
