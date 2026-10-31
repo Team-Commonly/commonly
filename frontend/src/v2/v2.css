@@ -28,6 +28,7 @@ body.modern-ui.v2-canvas {
   --v2-border-soft: #e4e7ec;
   --v2-border-strong: #98a2b3;
   --v2-text-primary: #101828;
+  --v2-message-text: #1f2937;
   --v2-text-secondary: #475467;
   --v2-text-tertiary: #667085;
   --v2-text-muted: #667085;
@@ -62,6 +63,8 @@ body.modern-ui.v2-canvas {
   --v2-ink: #101828;
   --v2-ink-hover: #1d2939;
   --v2-on-ink: #ffffff;
+  --v2-on-accent: #ffffff;
+  --v2-accent-fill: #1d3fd1;
 
   /* BEND-1 (spec 2026-08-30): the featured-tier name
      needs a step between 16 and 20. Mirrors --c-fs-feature in
@@ -177,6 +180,105 @@ body.modern-ui.v2-canvas {
   font-size: var(--v2-fs-body);
   line-height: var(--v2-lh-body);
   min-width: 0;
+}
+
+/* D216 dark set. Values are the artboard's dark :root (index.html, the
+   @media + :root[data-theme="dark"] pair), mapped onto v2 token names. Scoped
+   to .v2-root under the html attribute set by utils/theme.ts: explicit dark,
+   or auto when the OS asks for dark. The light set is the block above.
+   Not from the artboard, pending ux-lead: --v2-focus-ring, the success and
+   danger text lifts, and the soft fills. Avatar and persona tints stay literal. */
+:root[data-v2-theme="dark"] .v2-root {
+    --v2-bg: #141922;
+    --v2-page-bg: #0b0e13;
+    --v2-bg-subtle: #181e28;
+    --v2-surface: #141922;
+    --v2-surface-tint: #1e2531;
+    --v2-surface-hover: #1e2531;
+    --v2-border: #364051;
+    --v2-border-soft: #262d3a;
+    --v2-border-strong: #5f6979;
+    --v2-text-primary: #e8ebf1;
+    --v2-message-text: #e8ebf1;
+    --v2-text-secondary: #aeb6c4;
+    --v2-text-tertiary: #8b94a5;
+    --v2-text-muted: #8b94a5;
+    --v2-text-placeholder: #5f6979;
+    --v2-shell-bg: #0b0e13;
+    --v2-ink: #f4f5f8;
+    --v2-ink-hover: #dce0e8;
+    --v2-on-ink: #0b0e13;
+    --v2-accent: #6680ff;
+    --v2-accent-strong: #3d5ef2;
+    --v2-accent-soft: #1b2546;
+    --v2-accent-text: #8aa2ff;
+    --v2-accent-deep: #2948d8;
+    --v2-focus-ring: 0 0 0 2px var(--v2-bg), 0 0 0 4px #8aa2ff;
+    --v2-success-text: #3ccf95;
+    --v2-success-soft: rgba(16, 185, 129, 0.16);
+    --v2-danger-text: #ff8a8a;
+    --v2-danger-soft: rgba(239, 68, 68, 0.16);
+    --v2-on-accent: #ffffff;
+    --v2-accent-fill: #3d5ef2;
+    --v2-warning-soft: rgba(244, 162, 58, 0.16);
+    --v2-info-soft: rgba(8, 145, 178, 0.16);
+    --v2-platform-x: #e8ebf1;
+    --v2-platform-x-soft: rgba(17, 24, 39, 0.16);
+    --v2-platform-telegram-soft: rgba(42, 171, 238, 0.16);
+    --v2-platform-slack-soft: rgba(97, 31, 105, 0.16);
+    --v2-platform-discord-soft: rgba(88, 101, 242, 0.16);
+    --v2-platform-whatsapp-soft: rgba(31, 168, 85, 0.16);
+    --v2-platform-instagram-soft: rgba(214, 41, 118, 0.16);
+    --v2-platform-messenger-soft: rgba(0, 132, 255, 0.16);
+    --v2-platform-groupme-soft: rgba(0, 175, 240, 0.16);
+    color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-v2-theme="light"]) .v2-root {
+      --v2-bg: #141922;
+      --v2-page-bg: #0b0e13;
+      --v2-bg-subtle: #181e28;
+      --v2-surface: #141922;
+      --v2-surface-tint: #1e2531;
+      --v2-surface-hover: #1e2531;
+      --v2-border: #364051;
+      --v2-border-soft: #262d3a;
+      --v2-border-strong: #5f6979;
+      --v2-text-primary: #e8ebf1;
+      --v2-message-text: #e8ebf1;
+      --v2-text-secondary: #aeb6c4;
+      --v2-text-tertiary: #8b94a5;
+      --v2-text-muted: #8b94a5;
+      --v2-text-placeholder: #5f6979;
+      --v2-shell-bg: #0b0e13;
+      --v2-ink: #f4f5f8;
+      --v2-ink-hover: #dce0e8;
+      --v2-on-ink: #0b0e13;
+      --v2-accent: #6680ff;
+      --v2-accent-strong: #3d5ef2;
+      --v2-accent-soft: #1b2546;
+      --v2-accent-text: #8aa2ff;
+      --v2-accent-deep: #2948d8;
+      --v2-focus-ring: 0 0 0 2px var(--v2-bg), 0 0 0 4px #8aa2ff;
+      --v2-success-text: #3ccf95;
+      --v2-success-soft: rgba(16, 185, 129, 0.16);
+      --v2-danger-text: #ff8a8a;
+      --v2-danger-soft: rgba(239, 68, 68, 0.16);
+      --v2-on-accent: #ffffff;
+      --v2-accent-fill: #3d5ef2;
+      --v2-warning-soft: rgba(244, 162, 58, 0.16);
+      --v2-info-soft: rgba(8, 145, 178, 0.16);
+      --v2-platform-x: #e8ebf1;
+      --v2-platform-x-soft: rgba(17, 24, 39, 0.16);
+      --v2-platform-telegram-soft: rgba(42, 171, 238, 0.16);
+      --v2-platform-slack-soft: rgba(97, 31, 105, 0.16);
+      --v2-platform-discord-soft: rgba(88, 101, 242, 0.16);
+      --v2-platform-whatsapp-soft: rgba(31, 168, 85, 0.16);
+      --v2-platform-instagram-soft: rgba(214, 41, 118, 0.16);
+      --v2-platform-messenger-soft: rgba(0, 132, 255, 0.16);
+      --v2-platform-groupme-soft: rgba(0, 175, 240, 0.16);
+      color-scheme: dark;
+  }
 }
 
 .v2-root *,
@@ -551,7 +653,7 @@ body.modern-ui.v2-canvas {
 .v2-pane--main {
   margin: 8px 8px 8px 0;
   height: calc(100vh - 16px);
-  background: #ffffff;
+  background: var(--v2-surface);
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-content-radius);
   overflow: hidden;
@@ -977,8 +1079,8 @@ body.modern-ui.v2-canvas {
   justify-content: center;
   height: 40px;
   gap: 8px;
-  background: var(--v2-accent);
-  color: var(--v2-bg);
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
   font-weight: 600;
   font-size: 14px;
   padding: 0 14px;
@@ -1090,7 +1192,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pods__create-submit {
   background: var(--v2-ink);
-  color: var(--v2-bg);
+  color: var(--v2-on-ink);
 }
 
 .v2-root button.v2-pods__create-submit:disabled {
@@ -3283,7 +3385,7 @@ body.modern-ui.v2-canvas {
 .v2-msg__content {
   font-size: 14px;
   line-height: 1.55;
-  color: #1f2937;
+  color: var(--v2-message-text);
   margin-top: 3px;
   word-break: break-word;
   /* NO measure cap — the THIRD ruling on this (2026-08-24 full-width Slack
@@ -3404,7 +3506,7 @@ body.modern-ui.v2-canvas {
   border-radius: var(--v2-radius);
   overflow: hidden;
   border: 1px solid var(--v2-border);
-  background: #ffffff;
+  background: var(--v2-surface);
 }
 
 .v2-msg__image {
@@ -3473,7 +3575,7 @@ body.modern-ui.v2-canvas {
   height: 26px;
   padding: 0 9px;
   border-radius: var(--v2-radius-sm);
-  background: #ffffff;
+  background: var(--v2-surface);
   font-size: 12px;
   color: var(--v2-text-secondary);
   border: 1px solid transparent;
@@ -3748,7 +3850,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-inspector__btn--danger:hover {
   background: var(--v2-danger);
-  color: var(--v2-bg);
+  color: var(--v2-on-accent);
   border-color: var(--v2-danger);
 }
 
@@ -4904,8 +5006,8 @@ body.modern-ui.v2-canvas {
   height: 38px;
   border: none;
   border-radius: var(--v2-radius-sm);
-  background: var(--v2-accent);
-  color: var(--v2-bg);
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -5081,8 +5183,8 @@ body.modern-ui.v2-canvas {
   width: 100%;
   margin-top: 8px;
   padding: 10px 14px;
-  background: var(--v2-accent);
-  color: var(--v2-bg);
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
   font-weight: 700;
   font-size: 14px;
   border-radius: var(--v2-radius);
@@ -5251,14 +5353,14 @@ body.modern-ui.v2-canvas {
 
 .v2-feature {
   min-width: 0;
-  background: #ffffff; /* inside the card the ground is white; the card is the tint step */
+  background: var(--v2-surface); /* inside the card the ground is white; the card is the tint step */
 }
 
 .v2-feature__header {
   flex-shrink: 0;
   padding: 22px 28px 18px;
   border-bottom: 1px solid var(--v2-border-soft);
-  background: #ffffff;
+  background: var(--v2-surface);
 }
 
 .v2-feature__title {
@@ -5392,8 +5494,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiPaper-root {
-  background: #ffffff !important;
-  background-color: #ffffff !important;
+  background: var(--v2-surface) !important;
+  background-color: var(--v2-surface) !important;
   color: var(--v2-text-primary) !important;
   border: 1px solid var(--v2-border) !important;
   box-shadow: var(--v2-shadow-sm) !important;
@@ -5432,8 +5534,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiCard-root {
-  background: #ffffff !important;
-  background-color: #ffffff !important;
+  background: var(--v2-surface) !important;
+  background-color: var(--v2-surface) !important;
   color: var(--v2-text-primary) !important;
   border: 1px solid var(--v2-border) !important;
   box-shadow: var(--v2-shadow-sm) !important;
@@ -5511,7 +5613,7 @@ body.modern-ui.v2-canvas {
 .v2-feature__legacy .MuiInputBase-root,
 .v2-feature__legacy .MuiSelect-select,
 .v2-feature__legacy .MuiAutocomplete-inputRoot {
-  background-color: #ffffff !important;
+  background-color: var(--v2-surface) !important;
   color: var(--v2-text-primary) !important;
 }
 
@@ -5596,7 +5698,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiChip-outlined:not(.MuiChip-colorSuccess):not(.MuiChip-colorWarning):not(.MuiChip-colorError):not(.MuiChip-colorInfo) {
-  background-color: #ffffff !important;
+  background-color: var(--v2-surface) !important;
   color: var(--v2-text-secondary) !important;
 }
 
@@ -5611,7 +5713,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiTableContainer-root {
-  background: #ffffff !important;
+  background: var(--v2-surface) !important;
   border: 1px solid var(--v2-border);
   border-radius: 12px;
   box-shadow: var(--v2-shadow-sm);
@@ -5642,7 +5744,7 @@ body.modern-ui.v2-canvas {
 .v2-feature__legacy .MuiDialog-paper,
 .v2-feature__legacy .MuiPopover-paper,
 .v2-feature__legacy .MuiMenu-paper {
-  background: #ffffff !important;
+  background: var(--v2-surface) !important;
   color: var(--v2-text-primary) !important;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-lg);
@@ -5654,7 +5756,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiAvatar-root {
-  border: 2px solid #ffffff;
+  border: 2px solid var(--v2-surface);
 }
 
 /* Reset top padding for embedded dev tools so the v2 feature header is the
@@ -5684,8 +5786,8 @@ body.modern-ui.v2-canvas {
 .v2-feature__legacy [style*="background-color: rgba(30, 41, 59"],
 .v2-feature__legacy [style*="background-color: #0f172a"],
 .v2-feature__legacy [style*="background-color: #0b1220"] {
-  background: #ffffff !important;
-  background-color: #ffffff !important;
+  background: var(--v2-surface) !important;
+  background-color: var(--v2-surface) !important;
   color: var(--v2-text-primary) !important;
 }
 
@@ -7141,9 +7243,9 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-admin-users__btn--primary {
-  background: var(--v2-accent);
+  background: var(--v2-accent-fill);
   border-color: var(--v2-accent);
-  color: var(--v2-bg);
+  color: var(--v2-on-accent);
 }
 
 .v2-root button.v2-admin-users__btn--primary:hover:not(:disabled) {
@@ -8005,7 +8107,7 @@ body.modern-ui.v2-canvas {
   padding: 7px 10px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
-  background: #ffffff;
+  background: var(--v2-surface);
   color: var(--v2-text-primary);
   font: 400 14px/20px var(--v2-font);
 }
@@ -8069,7 +8171,7 @@ body.modern-ui.v2-canvas {
 
 .v2-settings__section .v2-billing__badge {
   border-radius: var(--v2-radius-sm);
-  background: #ffffff;
+  background: var(--v2-surface);
   border-color: var(--v2-border);
   color: var(--v2-text-primary);
   font-family: var(--v2-font-mono);
@@ -8706,7 +8808,7 @@ body.modern-ui.v2-canvas {
   border: none;
   border-radius: 8px;
   padding: 9px 16px;
-  color: var(--v2-bg);
+  color: var(--v2-on-ink);
   background: var(--v2-ink);
   cursor: pointer;
   font-size: 13.5px;
@@ -8951,8 +9053,8 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-board__create-submit {
   border: none;
-  background: var(--v2-accent);
-  color: var(--v2-bg);
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
   font-size: 13.5px;
   font-weight: 600;
   padding: 9px 16px;
@@ -11680,10 +11782,10 @@ body.modern-ui.v2-canvas {
     grid-template-columns: minmax(0, 1fr);
     padding: 0;
     gap: 0;
-    background: #fff;
+    background: var(--v2-surface);
   }
   .v2-pane--rail { display: none; }
-  .v2-pane--main { background: #fff; }
+  .v2-pane--main { background: var(--v2-surface); }
 
   /* The inspector becomes the artboard's bottom sheet; its header toggle is
      intentionally always present so the sheet cannot become unreachable. */
@@ -11710,7 +11812,7 @@ body.modern-ui.v2-canvas {
     height: 54px;
     padding: 5px 14px;
     border-top: 1px solid var(--v2-border);
-    background: #fff;
+    background: var(--v2-surface);
   }
   .v2-root button.v2-mobile-tabs__item {
     position: relative;
@@ -11988,8 +12090,8 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pods__row--selected,
 .v2-root button.v2-pods__row--selected:hover {
-  background: var(--v2-accent);
-  color: var(--v2-bg);
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
   font-weight: 600;
 }
 
@@ -12016,7 +12118,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pods__row--selected .v2-pods__row-mark {
   background: rgba(255, 255, 255, 0.22);
-  color: var(--v2-bg);
+  color: var(--v2-on-accent);
 }
 
 .v2-pods__row-name {
@@ -12932,7 +13034,7 @@ body.modern-ui.v2-canvas {
 /* Transcript avatars are two-tone squares (ux-lead 64476 (1)): human tint +
    #4f5c6e initials, agent cobalt + white initials; a photo still wins. */
 .v2-thread .v2-avatar--flat { border: 0; box-shadow: none; border-radius: 4px; font: 650 12px/1 var(--v2-font); letter-spacing: 0.02em; }
-.v2-thread .v2-avatar--flat-human { background: var(--v2-surface-tint); color: #4f5c6e; }
+.v2-thread .v2-avatar--flat-human { background: #f2f4f7; color: #4f5c6e; }
 .v2-thread .v2-avatar--flat-agent { background: var(--v2-accent); color: var(--v2-bg); }
 .v2-thread .v2-thread-replies .v2-msg .v2-avatar--flat { font: 650 12px/1 var(--v2-font); }
 .v2-thread .v2-thread-card__faces .v2-avatar--flat { font: 650 11px/1 var(--v2-font-mono); }

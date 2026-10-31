@@ -12,6 +12,7 @@ import V2Avatar from './V2Avatar';
 import V2AvatarCropDialog from './V2AvatarCropDialog';
 import { nextPaperAvatarPreset } from '../utils/avatarPresets';
 import { LANGUAGE_REGISTRY } from '../../i18n';
+import { V2_THEMES, V2ThemePref, getV2Theme, setV2Theme } from '../utils/theme';
 
 type TokenStatus = {
   hasToken?: boolean;
@@ -474,22 +475,43 @@ const V2ApiTokenSection: React.FC = () => {
 const V2LanguageSection: React.FC = () => {
   const { i18n, t } = useTranslation();
   const active = i18n.resolvedLanguage || i18n.language || 'en';
+  const [theme, setTheme] = useState<V2ThemePref>(() => getV2Theme());
+  const chooseTheme = (pref: V2ThemePref) => {
+    setTheme(pref);
+    setV2Theme(pref);
+  };
 
   return (
-    <div className="v2-settings__language" role="radiogroup" aria-label={t('common.language.label')}>
-      {LANGUAGE_REGISTRY.map((language) => (
-        <button
-          key={language.code}
-          type="button"
-          className={`v2-settings__language-option${active === language.code ? ' v2-settings__language-option--active' : ''}`}
-          role="radio"
-          aria-checked={active === language.code}
-          onClick={() => void i18n.changeLanguage(language.code)}
-        >
-          {language.label}
-        </button>
-      ))}
-    </div>
+    <>
+      <div className="v2-settings__language" role="radiogroup" aria-label={t('common.language.label')}>
+        {LANGUAGE_REGISTRY.map((language) => (
+          <button
+            key={language.code}
+            type="button"
+            className={`v2-settings__language-option${active === language.code ? ' v2-settings__language-option--active' : ''}`}
+            role="radio"
+            aria-checked={active === language.code}
+            onClick={() => void i18n.changeLanguage(language.code)}
+          >
+            {language.label}
+          </button>
+        ))}
+      </div>
+      <div className="v2-settings__language" role="radiogroup" aria-label={t('common.theme.label')}>
+        {V2_THEMES.map((pref) => (
+          <button
+            key={pref}
+            type="button"
+            className={`v2-settings__language-option${theme === pref ? ' v2-settings__language-option--active' : ''}`}
+            role="radio"
+            aria-checked={theme === pref}
+            onClick={() => chooseTheme(pref)}
+          >
+            {t(`common.theme.${pref}`)}
+          </button>
+        ))}
+      </div>
+    </>
   );
 };
 

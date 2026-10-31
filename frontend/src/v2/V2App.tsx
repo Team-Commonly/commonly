@@ -15,6 +15,7 @@ import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
 import '@fontsource/ibm-plex-mono/500.css';
 import './v2.css';
+import { applyV2Theme, getV2Theme } from './utils/theme';
 
 // TASK-145 — inside the shell, only the surfaces the composer path needs stay
 // in this chunk (V2Layout, the auth gate, the feature frame). Everything else
@@ -178,6 +179,10 @@ const V2LegacyChatRedirect: React.FC = () => {
 const V2App: React.FC = () => {
   // The daily digest's 08:00 is the person's own (TASK-257 Phase 2b).
   useTimeZoneCapture();
+  React.useEffect(() => {
+    applyV2Theme(getV2Theme());
+  }, []);
+
   React.useEffect(() => {
     try {
       sessionStorage.setItem('commonly.v2.active', '1');
