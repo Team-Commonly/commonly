@@ -5267,7 +5267,7 @@ describe('pod board column scroll (TASK-698)', () => {
   // the pod name's width and the title truncates to a few characters.
   test('the header Invite hides its label on a phone, keeping it for screen readers', () => {
     const block = mediaBlockContaining(read('../v2.css'), '.v2-pod-header__invite span');
-    expect(block).toMatch(/\.v2-pod-header__invite span\s*\{[^}]*clip:\s*rect\(0 0 0 0\)/);
+    expect(block).toMatch(/\.v2-pod-header__invite span\s*\{[^}]*clip-path:\s*inset\(50%\)/);
     expect(block).toMatch(/\.v2-pod-header__invite\s*\{[^}]*width:\s*28px/);
   });
 });
