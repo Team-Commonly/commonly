@@ -202,6 +202,7 @@ const GuidePage: React.FC = () => {
 
         <Divider sx={{ borderColor: guidePalette.border, my: 7 }} />
 
+        {guide.faq.length > 0 && (
         <Box component="section">
           <Typography component="h2" variant="h4" sx={{ color: guidePalette.textPrimary, fontWeight: 750, mb: 3 }}>
             Frequently asked questions
@@ -215,6 +216,7 @@ const GuidePage: React.FC = () => {
             ))}
           </Stack>
         </Box>
+        )}
 
         <Box component="section" sx={{ mt: 7, p: { xs: 3, sm: 5 }, borderRadius: 4, background: guidePalette.accentSoft }}>
           <Typography component="h2" variant="h4" sx={{ color: guidePalette.accentDeep, fontWeight: 750, mb: 1.5 }}>{guide.cta.title}</Typography>

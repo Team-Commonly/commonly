@@ -1131,7 +1131,7 @@ const V2AgentBYO: React.FC = () => {
       })()}
       hint={(() => {
         if (issued) return undefined;
-        if (showCompactHosted && !hosted) return t('agentByo.compact.lead');
+        if (showCompactHosted && !hosted && hosting?.configured) return t('agentByo.compact.lead',{ agents: hosting?.caps.agentsPerUser, turns: hosting?.caps.turnsPerDay });
         if (showCompactByo) return t('agentByo.compactByo.lead');
         return t('agentByo.description');
       })()}
@@ -1178,11 +1178,6 @@ const V2AgentBYO: React.FC = () => {
           >
             {submitting ? t('agentByo.actions.starting') : t('agentByo.actions.runHere')}
           </button>
-          {hosting?.configured && (
-            <p className="v2-byo__hint">
-              {t('agentByo.compact.limits', { agents: hosting.caps.agentsPerUser, turns: hosting.caps.turnsPerDay })}
-            </p>
-          )}
           <button
             type="button"
             className="v2-byo__link"
@@ -1256,11 +1251,7 @@ const V2AgentBYO: React.FC = () => {
                   onClick={() => chooseMode('hosted')}
                   data-testid="byo-mode-hosted"
                 >
-                  {/* A fact, not advice: nothing on this page steers the first
-                      choice (ruled 2026-10-15). */}
-                  <span className="v2-byo__mode-kicker v2-byo__mode-kicker--quiet">{t('agentByo.mode.onCommonly')}</span>
                   <span className="v2-byo__mode-title">{t('agentByo.mode.hosted')}</span>
-                  <span className="v2-byo__hint">{t('agentByo.mode.hostedHint', { turns: hosting.caps.turnsPerDay })}</span>
                 </button>
                 <V2Hint label={t('agentByo.mode.moreAbout', { mode: t('agentByo.mode.hosted') })}>
                   {t('agentByo.mode.hostedMeta', { turns: hosting.caps.turnsPerDay })}
@@ -1275,9 +1266,7 @@ const V2AgentBYO: React.FC = () => {
                     onClick={() => chooseMode('machine')}
                     data-testid="byo-mode-machine"
                   >
-                    <span className="v2-byo__mode-kicker v2-byo__mode-kicker--quiet">{t('agentByo.mode.yours')}</span>
                     <span className="v2-byo__mode-title">{t('agentByo.mode.machine')}</span>
-                    <span className="v2-byo__hint">{t('agentByo.mode.machineHint')}</span>
                   </button>
                   <V2Hint label={t('agentByo.mode.moreAbout', { mode: t('agentByo.mode.machine') })}>
                     {t('agentByo.mode.machineMeta')}
@@ -1292,9 +1281,7 @@ const V2AgentBYO: React.FC = () => {
                   onClick={() => chooseMode('byo')}
                   data-testid="byo-mode-byo"
                 >
-                  <span className="v2-byo__mode-kicker v2-byo__mode-kicker--quiet">{t('agentByo.mode.yours')}</span>
                   <span className="v2-byo__mode-title">{t('agentByo.mode.byo')}</span>
-                  <span className="v2-byo__hint">{t('agentByo.mode.byoHint')}</span>
                 </button>
                 <V2Hint label={t('agentByo.mode.moreAbout', { mode: t('agentByo.mode.byo') })}>
                   {t('agentByo.mode.byoMeta')}

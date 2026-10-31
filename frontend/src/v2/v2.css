@@ -29,6 +29,16 @@ body.modern-ui.v2-canvas {
   --v2-border-strong: #98a2b3;
   --v2-text-primary: #101828;
   --v2-message-text: #1f2937;
+  /* TASK-701: inactive rail glyphs, join-radio outlines (3:1 on white and
+     #f2f4f7) and the neutral selected pod row. Dark values sit in both dark
+     sets below. */
+  --v2-rail-icon: #374151;
+  --v2-control-outline: #667085;
+  /* Light keeps the cobalt block; dark swaps it for a neutral row. */
+  --v2-row-active: var(--v2-accent-fill);
+  --v2-row-active-text: var(--v2-on-accent);
+  --v2-row-active-mute: rgba(255, 255, 255, 0.85);
+  --v2-row-active-mark: rgba(255, 255, 255, 0.22);
   --v2-text-secondary: #475467;
   --v2-text-tertiary: #667085;
   --v2-text-muted: #667085;
@@ -112,6 +122,20 @@ body.modern-ui.v2-canvas {
   --v2-danger: #ef4444;
   --v2-danger-text: #b91c1c;
   --v2-danger-soft: rgba(239, 68, 68, 0.10);
+  /* TASK-687/698: board status and priority colour, the D215 B-lite choice (Sam,
+     10-31). Blocked and P0 are red; in progress stays cobalt; P1, P2, pending and
+     done stay grey, with no green. Each state keeps its shape. Dark values are in
+     both dark blocks below. */
+  --v2-prio-p0-bg: #b42318;
+  --v2-prio-p0-fg: #ffffff;
+  --v2-prio-ink: var(--v2-text-secondary);
+  --v2-prio-p2-fg: #667085;
+  --v2-prio-edge: var(--v2-border);
+  --v2-status-live: var(--v2-accent);
+  --v2-status-idle: var(--v2-border-strong);
+  --v2-status-pending: #667085;
+  --v2-status-blocked: #d92d20;
+  --v2-status-blocked-edge: #d92d20;
 
   /* Agent role colors */
   --v2-pink: #f472b6;
@@ -198,8 +222,20 @@ body.modern-ui.v2-canvas {
     --v2-border: #364051;
     --v2-border-soft: #262d3a;
     --v2-border-strong: #5f6979;
+    --v2-prio-p0-bg: #f97066;
+    --v2-prio-p0-fg: #0b0e13;
+    --v2-prio-p2-fg: #8b94a5;
+    --v2-status-pending: var(--v2-border-strong);
+    --v2-status-blocked: #f97066;
+    --v2-status-blocked-edge: #f97066;
     --v2-text-primary: #e8ebf1;
     --v2-message-text: #e8ebf1;
+    --v2-rail-icon: #aeb6c4;
+    --v2-control-outline: #737e92;
+    --v2-row-active: #1e2531;
+    --v2-row-active-text: #e8ebf1;
+    --v2-row-active-mute: #aeb6c4;
+    --v2-row-active-mark: #2a3342;
     --v2-text-secondary: #aeb6c4;
     --v2-text-tertiary: #8b94a5;
     --v2-text-muted: #8b94a5;
@@ -244,8 +280,20 @@ body.modern-ui.v2-canvas {
       --v2-border: #364051;
       --v2-border-soft: #262d3a;
       --v2-border-strong: #5f6979;
+      --v2-prio-p0-bg: #f97066;
+      --v2-prio-p0-fg: #0b0e13;
+      --v2-prio-p2-fg: #8b94a5;
+      --v2-status-pending: var(--v2-border-strong);
+      --v2-status-blocked: #f97066;
+      --v2-status-blocked-edge: #f97066;
       --v2-text-primary: #e8ebf1;
       --v2-message-text: #e8ebf1;
+      --v2-rail-icon: #aeb6c4;
+      --v2-control-outline: #737e92;
+      --v2-row-active: #1e2531;
+      --v2-row-active-text: #e8ebf1;
+      --v2-row-active-mute: #aeb6c4;
+      --v2-row-active-mark: #2a3342;
       --v2-text-secondary: #aeb6c4;
       --v2-text-tertiary: #8b94a5;
       --v2-text-muted: #8b94a5;
@@ -725,32 +773,7 @@ body.modern-ui.v2-canvas {
   background: var(--v2-border);
 }
 
-.v2-root .v2-rail__utility button.v2-lang-switch__trigger {
-  min-height: 24px;
-  padding: 2px 6px;
-  gap: 3px;
-  font: 700 11px/16px var(--v2-font-mono);
-  color: var(--v2-text-tertiary);
-  border-radius: var(--v2-radius-sm);
-}
-
-.v2-rail__utility .v2-lang-switch__trigger:hover {
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-}
-
-/* At the foot of the rail the menu must open upward + toward content,
-   not downward off the bottom of the viewport. */
-/* Opens upward from the foot and floats rightward over the pods sidebar as a
-   clean popover (the pane is overflow:visible so it isn't clipped). */
-.v2-rail__utility .v2-lang-switch__menu {
-  top: auto;
-  bottom: calc(100% + 8px);
-  right: auto;
-  left: 0;
-  z-index: 200;
-  min-width: 152px;
-}
+/* The language switch left the rail for Settings › Look (D215, TASK-691). */
 
 .v2-rail__brand {
   display: flex;
@@ -815,7 +838,7 @@ body.modern-ui.v2-canvas {
   border-radius: var(--v2-radius);
   font-size: 14px;
   font-weight: 600;
-  color: #374151;
+  color: var(--v2-rail-icon);
   background: var(--v2-surface-hover);
   text-align: left;
   transition: background 80ms ease;
@@ -1138,12 +1161,29 @@ body.modern-ui.v2-canvas {
   cursor: pointer;
 }
 
+/* Native radios ignore border tokens, so draw the outline from one. Checked, the
+   border thickens into the accent dot, so no cobalt background is added. */
 .v2-pods__join-policy input,
-.v2-pod-join-settings input { accent-color: var(--v2-accent); }
+.v2-pod-join-settings input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  flex-shrink: 0;
+  border: 1.5px solid var(--v2-control-outline);
+  border-radius: 50%;
+  background: var(--v2-surface);
+  cursor: pointer;
+}
+
+.v2-pods__join-policy input:checked,
+.v2-pod-join-settings input:checked {
+  border: 4px solid var(--v2-accent);
+}
 
 .v2-pods__join-policy-hint {
   margin: 0;
-  color: var(--v2-text-tertiary);
+  color: var(--v2-text-secondary);
   font: 400 var(--v2-fs-meta)/16px var(--v2-font);
 }
 
@@ -6606,6 +6646,7 @@ body.modern-ui.v2-canvas {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  align-self: stretch;
   gap: 5px;
   text-align: left;
   padding: 16px 18px 14px;
@@ -6615,21 +6656,6 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
   cursor: pointer;
   transition: border-color 0.08s ease, background 0.08s ease;
-}
-/* Signal rule 3 — meta is mono 500 at 11px and lowercase; the caps lived in
-   en.json, which now carries lowercase strings, so no transform is needed
-   (and a transform over zh-CN copy would be wrong). */
-.v2-byo__mode-kicker {
-  color: var(--v2-text-muted);
-  font: 500 11px/16px var(--v2-font-mono);
-  letter-spacing: 0;
-}
-.v2-byo__mode-kicker--quiet { color: var(--v2-text-muted); }
-
-/* The chosen card is the row's one cobalt mark (Signal rule 1); the modifier
-   above is what the untouched cards wear. */
-.v2-root button.v2-byo__mode[aria-pressed="true"] .v2-byo__mode-kicker {
-  color: var(--v2-accent-text);
 }
 .v2-byo__mode-option > .v2-hint { margin-top: 0; }
 .v2-root button.v2-byo__mode:hover {
@@ -8234,8 +8260,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-settings__primary,
-.v2-root button.v2-settings__secondary,
-.v2-root button.v2-settings__language-option {
+.v2-root button.v2-settings__secondary {
   min-height: 36px;
   padding: 0 12px;
   border: 1px solid var(--v2-border);
@@ -8257,14 +8282,12 @@ body.modern-ui.v2-canvas {
   background: var(--v2-ink-hover);
 }
 
-.v2-root button.v2-settings__secondary:hover:not(:disabled):not([aria-disabled="true"]),
-.v2-root button.v2-settings__language-option:hover:not(:disabled) {
+.v2-root button.v2-settings__secondary:hover:not(:disabled):not([aria-disabled="true"]) {
   border-color: var(--v2-border-strong);
 }
 
 .v2-root button.v2-settings__primary:focus-visible,
-.v2-root button.v2-settings__secondary:focus-visible,
-.v2-root button.v2-settings__language-option:focus-visible {
+.v2-root button.v2-settings__secondary:focus-visible {
   outline: none;
   border-color: var(--v2-accent);
   box-shadow: var(--v2-focus-ring);
@@ -8289,17 +8312,20 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 
-.v2-settings__language {
+/* D215 Settings › Look: a label and a segment per row. Language moved here
+   from the rail (TASK-691). */
+.v2-settings__look { display: flex; flex-direction: column; }
+.v2-settings__look-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--v2-border-soft);
 }
+.v2-settings__look-row:last-child { border-bottom: 0; }
+.v2-settings__look-label { color: var(--v2-text-primary); font: 500 13px/18px var(--v2-font); }
 
-.v2-root button.v2-settings__language-option--active {
-  border: 2px solid var(--v2-accent);
-  padding: 0 11px;
-  color: var(--v2-text-primary);
-}
 
 /* Settings owns the connected-apps controls without inheriting the legacy
  * page chrome: its section label is the only page-level heading. */
@@ -8443,6 +8469,32 @@ body.modern-ui.v2-canvas {
   background: var(--v2-bg-subtle);
 }
 
+/* TASK-698: the board fills the pane and the columns scroll inside it. The feature
+   body was the scroller and its legacy wrapper had auto height, so `height: 100%`
+   and the column `max-height: 100%` resolved to nothing and the page grew to
+   ~77,000px (85.5× at 1440, 97.9× at 390, measured by ux-lead at 12f608b71).
+   Scoped to the board route so other feature pages keep their scroll. */
+.v2-feature--board .v2-feature__body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* margin auto stops a flex item stretching, so the board sized to its 1240px
+   max-content width and ran off a 390px phone. An explicit width keeps it full
+   width on a phone, and the auto margin still centres it on desktop. */
+.v2-feature--board .v2-feature__legacy {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+.v2-feature--board .v2-board {
+  flex: 1 1 auto;
+  height: auto;
+}
+
 .v2-board__head {
   display: flex;
   align-items: center;
@@ -8522,6 +8574,11 @@ body.modern-ui.v2-canvas {
   border-radius: 12px;
   background: var(--v2-bg);
   flex: 0 0 auto;
+  /* A long focus list scrolls inside its own box, so the columns keep room below
+     it on a short viewport (1440x560, 390x560). vh, not %: the board's height is
+     auto, so a percentage would not resolve. */
+  max-height: min(35vh, 260px);
+  overflow-y: auto;
 }
 
 .v2-board__focus-head {
@@ -11322,15 +11379,76 @@ body.modern-ui.v2-canvas {
 
 .v2-workspace-inspector__label {
   display: block;
-  margin: 0 0 10px;
-  overflow: hidden;
-  color: var(--v2-text-muted);
-  font: 500 11px/14px var(--v2-font-mono);
-  letter-spacing: 0.02em;
-  text-overflow: clip;
-  text-transform: lowercase;
+  margin: 0;
+  color: var(--v2-text-primary);
+  font: 600 13px/18px var(--v2-font);
   white-space: nowrap;
 }
+
+/* ---------- D215 panel fold (TASK-691) ----------
+   Needs you, Agents, Files and Who can join are each one 44px row at rest and
+   open on demand. The section titles lost their mono captions; an icon and a
+   count say the same thing. Members and manage are icon buttons in the head. */
+.v2-workspace-inspector__head {
+  display: flex;
+  min-height: 32px;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.v2-workspace-inspector__card.v2-workspace-inspector__group { flex: none; padding: 0; overflow: hidden; }
+
+.v2-root button.v2-workspace-inspector__fold {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 44px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px 0 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: 600 13px/18px var(--v2-font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.v2-root button.v2-workspace-inspector__fold:hover { background: var(--v2-surface-hover); }
+.v2-root button.v2-workspace-inspector__fold:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--v2-accent); }
+
+.v2-workspace-inspector__fold-icon { display: grid; flex: none; place-items: center; color: var(--v2-text-secondary); }
+.v2-workspace-inspector__fold-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.v2-workspace-inspector__fold-count { color: var(--v2-text-muted); font: 500 11px/1 var(--v2-font-mono); }
+
+.v2-workspace-inspector__fold-stack { display: flex; margin-left: auto; padding-left: 6px; }
+.v2-workspace-inspector__fold-avatar.v2-avatar {
+  width: 22px;
+  height: 22px;
+  margin-left: -5px;
+  border: 2px solid var(--v2-surface);
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.v2-workspace-inspector__fold-chevron {
+  display: grid;
+  flex: none;
+  margin-left: auto;
+  place-items: center;
+  color: var(--v2-text-placeholder);
+  transition: transform 160ms;
+}
+
+.v2-workspace-inspector__fold-stack + .v2-workspace-inspector__fold-chevron { margin-left: 0; }
+.v2-workspace-inspector__fold[aria-expanded="true"] .v2-workspace-inspector__fold-chevron { transform: rotate(180deg); }
+
+.v2-workspace-inspector__group-body { padding: 0 12px 12px; }
+
+.v2-workspace-inspector__group-body .v2-pod-join-settings { margin: 0; padding: 0; border: 0; }
 
 .v2-workspace-inspector__rows {
   display: flex;
@@ -11454,30 +11572,7 @@ body.modern-ui.v2-canvas {
   font: 400 12px/16px var(--v2-font);
 }
 
-.v2-workspace-inspector__foot {
-  display: flex;
-  gap: 12px;
-  padding: 0 12px 12px;
-}
-
-.v2-root .v2-workspace-inspector__foot button {
-  min-height: auto;
-  padding: 2px 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--v2-text-secondary);
-  font: 500 11px/16px var(--v2-font-mono);
-  text-transform: lowercase;
-}
-
-.v2-root button.v2-workspace-inspector__foot button:hover { color: var(--v2-text-primary); }
-
 .v2-root button.v2-workspace-inspector__close {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  z-index: 1;
   display: none;
   width: 28px;
   height: 28px;
@@ -11490,10 +11585,10 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-workspace-inspector__close:hover { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+.v2-root button.v2-workspace-inspector__close:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
 
 @media (max-width: 760px) {
   .v2-workspace-inspector { padding: 12px 14px 0; }
-  .v2-workspace-inspector__foot { padding-inline: 0; }
   .v2-root button.v2-workspace-inspector__close { display: inline-grid; }
 }
 
@@ -11501,8 +11596,7 @@ body.modern-ui.v2-canvas {
    floor. These rows are the artboard's compact mono labels, not body prose. */
 .v2-root:lang(zh) .v2-workspace-inspector__empty { line-height: 1.6; }
 .v2-root:lang(zh) .v2-workspace-inspector__actor,
-.v2-root:lang(zh) .v2-workspace-inspector__task-meta,
-.v2-root:lang(zh) .v2-workspace-inspector__foot button { font-size: 12px; }
+.v2-root:lang(zh) .v2-workspace-inspector__task-meta { font-size: 12px; }
 
 /* ---------- Workspace decision card (TASK-129 PR 3) ----------
    A DecisionRequest is an in-thread fork, not prose the human must parse.
@@ -11964,6 +12058,90 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 
+/* ---------- D215 sidebar controls (TASK-691) ----------
+   Controls look like controls: an icon button, a chip or a segment, never grey
+   words that click. The segment is shared by the pod list (Recent · All ·
+   Pinned), the panel's Who can join and Settings › Look. */
+.v2-seg {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--v2-surface-tint);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+}
+
+.v2-root button.v2-seg__option {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--v2-text-secondary);
+  font: 500 13px/1 var(--v2-font);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.v2-root .v2-seg--sm button.v2-seg__option {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.v2-root button.v2-seg__option:hover:not(:disabled) { color: var(--v2-text-primary); }
+
+.v2-root button.v2-seg__option--on,
+.v2-root button.v2-seg__option--on:hover:not(:disabled) {
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font-weight: 600;
+  box-shadow: 0 0 0 1px var(--v2-border);
+}
+
+.v2-root button.v2-seg__option:focus-visible {
+  outline: none;
+  box-shadow: var(--v2-focus-ring);
+}
+
+.v2-root button.v2-seg__option:disabled { cursor: default; opacity: 0.55; }
+
+.v2-seg__count {
+  color: var(--v2-text-muted);
+  font: 500 11px/1 var(--v2-font-mono);
+}
+
+/* A square ghost icon button; the word lives in aria-label and title. */
+.v2-root button.v2-icon-button {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--v2-text-secondary);
+  cursor: pointer;
+}
+
+.v2-root button.v2-icon-button:hover:not(:disabled) {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+.v2-root button.v2-icon-button:focus-visible {
+  outline: none;
+  box-shadow: var(--v2-focus-ring);
+}
+
+.v2-pods__view { padding: 2px 10px 8px; }
+
 .v2-pods__list {
   display: flex;
   min-height: 0;
@@ -12048,38 +12226,48 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pods__row--in-fold { padding-left: 24px; }
 
-/* A row and its pin control are siblings (a button cannot nest a button).
-   The pin shows on hover, focus, or when the pod is pinned; the meta column
-   yields to it so nothing overlaps. */
+/* A row and its pin control are siblings (a button cannot nest a button). */
 .v2-pods__rowwrap { position: relative; }
 
 .v2-root button.v2-pods__pin {
   position: absolute;
   top: 50%;
   right: 8px;
-  width: 22px;
-  height: 22px;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
   padding: 0;
   transform: translateY(-50%);
-  border: 1px solid var(--v2-border);
-  border-radius: 4px;
-  background: var(--v2-surface);
+  border: 0;
+  border-radius: 6px;
+  background: var(--v2-surface-tint);
   color: var(--v2-text-secondary);
-  opacity: 0;
+  visibility: hidden;
 }
 
-.v2-root button.v2-pods__pin::before { content: '⌖'; font: 500 12px/1 var(--v2-font-mono); }
-
+/* D215: the pin is an icon on row hover that takes the time's slot. Out of
+   sight at rest, pinned or not; the Pinned segment lists the pinned pods.
+   visibility (not opacity) so a hidden pin cannot catch a tap. Keyboard focus
+   anywhere in the row shows it, so Tab reaches it; a mouse click does not set
+   :focus-visible, so a clicked row keeps its time. Touch screens have no hover,
+   so they show the pin at rest in place of the time. */
 .v2-pods__rowwrap:hover .v2-pods__pin,
-.v2-root button.v2-pods__pin:focus-visible,
-.v2-root button.v2-pods__pin--active { opacity: 1; }
+.v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin { visibility: visible; }
 
-.v2-root button.v2-pods__pin--active { color: var(--v2-accent-text); border-color: var(--v2-accent); }
+.v2-root button.v2-pods__pin:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
+.v2-root button.v2-pods__pin--active { color: var(--v2-accent-text); }
 .v2-root button.v2-pods__pin:hover { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
 
-.v2-pods__rowwrap:hover .v2-pods__row-meta,
-.v2-pods__rowwrap:focus-within .v2-pods__row-meta,
-.v2-pods__rowwrap--pinned .v2-pods__row-meta { padding-right: 30px; }
+.v2-pods__row-time { display: inline-block; min-width: 24px; text-align: right; }
+
+.v2-pods__rowwrap:hover .v2-pods__row-time,
+.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time { visibility: hidden; }
+
+@media (hover: none) and (pointer: coarse) {
+  .v2-root button.v2-pods__pin { visibility: visible; }
+  .v2-pods__row-time { visibility: hidden; }
+}
 
 .v2-root button.v2-pods__row:hover { background: var(--v2-surface-hover); }
 
@@ -12088,10 +12276,13 @@ body.modern-ui.v2-canvas {
   box-shadow: inset 0 0 0 2px var(--v2-accent);
 }
 
+/* Dark swaps the cobalt block for a neutral row. The accent bar on the leading
+   edge carries "selected" when the fill alone is too close to the pane. */
 .v2-root button.v2-pods__row--selected,
 .v2-root button.v2-pods__row--selected:hover {
-  background: var(--v2-accent-fill);
-  color: var(--v2-on-accent);
+  background: var(--v2-row-active);
+  color: var(--v2-row-active-text);
+  box-shadow: inset 3px 0 0 var(--v2-accent);
   font-weight: 600;
 }
 
@@ -12117,8 +12308,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-pods__row--selected .v2-pods__row-mark {
-  background: rgba(255, 255, 255, 0.22);
-  color: var(--v2-on-accent);
+  background: var(--v2-row-active-mark);
+  color: var(--v2-row-active-text);
 }
 
 .v2-pods__row-name {
@@ -12139,7 +12330,12 @@ body.modern-ui.v2-canvas {
   font: 400 11px/16px var(--v2-font-mono);
 }
 
-.v2-root button.v2-pods__row--selected .v2-pods__row-meta { color: rgba(255, 255, 255, 0.85); }
+.v2-root button.v2-pods__row--selected .v2-pods__row-meta { color: var(--v2-row-active-mute); }
+
+/* Keyboard focus on the selected row keeps its accent edge beside the ring. */
+.v2-root button.v2-pods__row--selected:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--v2-accent), inset 3px 0 0 var(--v2-accent);
+}
 
 .v2-pods__row-pill {
   display: grid;
@@ -12149,7 +12345,7 @@ body.modern-ui.v2-canvas {
   place-items: center;
   border-radius: 8px;
   background: var(--v2-ink);
-  color: #fff;
+  color: var(--v2-on-ink);
   font: 700 11px/1 var(--v2-font-mono);
 }
 
@@ -12174,13 +12370,9 @@ body.modern-ui.v2-canvas {
   .v2-pods__row-name { font-size: 16px; }
 
   .v2-root button.v2-pods__pin {
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
   }
-
-  .v2-pods__rowwrap:hover .v2-pods__row-meta,
-  .v2-pods__rowwrap:focus-within .v2-pods__row-meta,
-  .v2-pods__rowwrap--pinned .v2-pods__row-meta { padding-right: 32px; }
 }
 
 .v2-root button.v2-pods__row--selected .v2-pods__row-pill {
@@ -12214,16 +12406,24 @@ body.modern-ui.v2-canvas {
    compact rule must out-rank the base `display: flex` above it. */
 .v2-pod-header__meta.v2-pod-header__meta--compact { display: none; }
 
+/* D215: the board is a chip, a board glyph and the count. */
 .v2-root button.v2-pod-header__board {
-  padding: 0;
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
   border: 0;
-  background: transparent;
-  color: var(--v2-accent-text);
-  font: 500 11px/16px var(--v2-font-mono);
+  border-radius: 7px;
+  background: var(--v2-surface);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+  color: var(--v2-text-secondary);
+  font: 500 11px/1 var(--v2-font-mono);
   cursor: pointer;
 }
 
-.v2-root button.v2-pod-header__board:hover { text-decoration: underline; }
+.v2-root button.v2-pod-header__board:hover { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+.v2-root button.v2-pod-header__board:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
 
 /* Owner rename (TASK-419): an inline form in the title line. It wraps at phone
    width; the input takes the spare room and the buttons keep their content width. */
@@ -12264,15 +12464,14 @@ body.modern-ui.v2-canvas {
 .v2-root .v2-pod-header__rename button:disabled { opacity: .55; cursor: default; }
 .v2-root .v2-pod-header__rename button:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
 .v2-pod-header__rename-error { flex: 1 0 100%; color: var(--v2-danger); font: 400 12px/16px var(--v2-font); }
-.v2-root button.v2-pod-header__rename-open {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--v2-accent-text);
-  font: 500 11px/16px var(--v2-font-mono);
-  cursor: pointer;
+/* D215: rename is a pencil on the title, out of sight until the title line is
+   hovered or the pencil has keyboard focus. Touch screens show it at rest. */
+.v2-root button.v2-pod-header__rename-open { opacity: 0; }
+.v2-thread__title-line:hover button.v2-pod-header__rename-open,
+.v2-root button.v2-pod-header__rename-open:focus-visible { opacity: 1; }
+@media (hover: none) and (pointer: coarse) {
+  .v2-root button.v2-pod-header__rename-open { opacity: 1; }
 }
-.v2-root button.v2-pod-header__rename-open:hover { text-decoration: underline; }
 
 
 
@@ -12408,6 +12607,23 @@ body.modern-ui.v2-canvas {
   }
 
   .v2-root button.v2-mobile-tabs__item--active .v2-mobile-tabs__label { font-weight: 700; }
+
+  /* D215: the needs-you count is a cobalt badge on the icon, not a sentence
+     in the label. */
+  .v2-mobile-tabs__icon { position: relative; }
+  .v2-mobile-tabs__count {
+    position: absolute;
+    top: -6px;
+    left: calc(50% + 4px);
+    min-width: 16px;
+    height: 15px;
+    padding: 0 3px;
+    border-radius: 8px;
+    background: var(--v2-accent);
+    color: var(--v2-on-accent);
+    font: 600 11px/15px var(--v2-font-mono);
+    text-align: center;
+  }
 }
 
 /* ---------- Workspace at scale · direction C · PR 2a (composer, attachments, history) ----------
@@ -12672,6 +12888,36 @@ body.modern-ui.v2-canvas {
 /* Long code collapses after six lines; expands in place. */
 .v2-msg__collapse { position: relative; }
 .v2-msg__collapse--closed pre { max-height: calc(6 * 1.5 * 12.5px + 20px); overflow: hidden; }
+
+/* Long agent prose folds after six lines (6 × 22px). The fade masks the prose itself, so a hovered row keeps its own surface. */
+.v2-msg__prose { position: relative; }
+.v2-msg__prose--closed {
+  max-height: 132px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 44px), transparent);
+}
+
+.v2-root button.v2-msg__showmore {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  margin: 6px 0 0;
+  padding: 0 8px 0 6px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  box-shadow: inset 0 0 0 1px var(--v2-border);
+  font: 500 12px/1 var(--v2-font);
+  cursor: pointer;
+}
+
+.v2-root button.v2-msg__showmore:hover { background: var(--v2-surface-hover); }
+.v2-root button.v2-msg__showmore:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--v2-accent-text); }
+.v2-msg__showmore svg { width: 14px; height: 14px; flex: none; transition: transform 160ms; }
+.v2-msg__showmore[aria-expanded='true'] svg { transform: rotate(180deg); }
 
 .v2-root button.v2-msg__more {
   display: inline-block;
@@ -13492,19 +13738,22 @@ body.modern-ui.v2-canvas {
 .v2-board__priority {
   display: inline-block;
   padding: 0 5px;
-  border: 1px solid var(--v2-border);
+  border: 1px solid var(--v2-prio-edge);
   border-radius: 4px;
   font: 500 11px/16px var(--v2-font-mono);
-  color: var(--v2-text-secondary);
+  color: var(--v2-prio-ink);
   background: none;
 }
-.v2-board__priority--p0 { border-color: var(--v2-text-primary); color: var(--v2-text-primary); }
+.v2-board__priority--p0 { background: var(--v2-prio-p0-bg); border-color: var(--v2-prio-p0-bg); color: var(--v2-prio-p0-fg); }
+.v2-board__priority--p2 { color: var(--v2-prio-p2-fg); }
+.v2-board__col--blocked .v2-board__col-name { color: var(--v2-status-blocked); }
+.v2-board__card--blocked { box-shadow: inset 3px 0 0 var(--v2-status-blocked-edge); }
 .v2-board__card-title { font-size: 14px; line-height: 20px; }
 .v2-board__owner-line { display: flex; align-items: center; gap: 6px; font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-secondary); }
 .v2-board__owner-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
-.v2-board__owner-dot--live { background: var(--v2-accent); }
-.v2-board__owner-dot--not-claimed { border: 1px dashed var(--v2-border-strong); }
-.v2-board__owner-dot--expired { border: 1px solid var(--v2-border-strong); background: none; }
+.v2-board__owner-dot--live { background: var(--v2-status-live); }
+.v2-board__owner-dot--not-claimed { border: 1px dashed var(--v2-status-pending); }
+.v2-board__owner-dot--expired { border: 1px solid var(--v2-status-idle); background: none; }
 .v2-board__card--done { border-color: var(--v2-border-soft); }
 .v2-board__card--done .v2-board__card-title { color: var(--v2-text-secondary); }
 .v2-root button.v2-board__card-move { min-height: 32px; padding: 0 10px; border-radius: 4px; }

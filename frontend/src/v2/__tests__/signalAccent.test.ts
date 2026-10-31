@@ -106,10 +106,29 @@ describe('Signal accent on standalone and bridged surfaces', () => {
     expect(guidePage).toContain('sx={guideTextButtonSx} onClick={() => navigate(link.path)}>');
   });
 
-  test('the CLI authorize surface uses shared tokens with standalone fallbacks', () => {
+  test('the CLI authorize surface mounts in .v2-root and reads tokens only', () => {
+    // TASK-682: wrapped in .v2-root so the tokens resolve and the dark theme reaches it.
+    const tsx = read('src/v2/components/V2CliAuthorize.tsx');
+    expect(tsx).toContain('<main className="v2-root v2-cli-authorize">');
     const css = read('src/v2/components/V2CliAuthorize.css');
-    expect(css).toContain('var(--v2-accent, #1d3fd1)');
-    expect(css).toContain('var(--v2-focus-ring, 0 0 0 3px rgba(29, 63, 209, .18))');
+    expect(css).toContain('background: var(--v2-accent-fill)');
+    expect(css).toContain('box-shadow: var(--v2-focus-ring)');
+    // No fallbacks inside var() (it merges after #3058), and no card shadow.
+    expect(css).not.toMatch(/var\(--v2-[a-z-]+,/);
+    expect(css).not.toContain('0 12px 32px');
+    // The only hexes are the warning-ink token's light and dark values.
+    expect(css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/var\(--v2-[a-z-]+, #[0-9a-f]+\)/gi, '').match(/#[0-9a-f]{3,8}\b/gi)).toEqual(['#7c4a03', '#f4c27a', '#f4c27a']);
+    // The input must outrank `body.modern-ui:not(.v2-canvas) input` (0,2,2).
+    expect(css).toContain('.v2-root.v2-cli-authorize .v2-cli-authorize__field input {');
+    expect(css).toContain('color: var(--v2-warning-ink) !important');
+    expect(css).toContain(':root[data-v2-theme="dark"] .v2-cli-authorize { --v2-warning-ink: #f4c27a; }');
+    expect(css).toContain(':root:not([data-v2-theme="light"]) .v2-cli-authorize { --v2-warning-ink: #f4c27a; }');
+    // App.css's legacy button rule is (0,3,2), its :hover (0,4,2): the controls must out-specify both.
+    expect(css).toContain('.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__primary {');
+    expect(css).toContain('.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__primary:hover');
+    expect(css).toContain('.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__secondary {');
+    // Inputs set their own ground, or dark leaves them browser white.
+    expect(css).toMatch(/\.v2-cli-authorize__field input \{[^}]*background: var\(--v2-surface\)/);
   });
 
   test.each([

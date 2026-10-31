@@ -4,6 +4,7 @@ import React, {
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useLocation, useNavigate } from 'react-router-dom';
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
+import { ShellGlyph } from '../icons/glyphs';
 import V2Avatar from './V2Avatar';
 import V2Hint from './V2Hint';
 import V2CatchUpStrip from './V2CatchUpStrip';
@@ -1851,12 +1852,23 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     <span key="members">{memberCountText}</span>,
     <span key="agents">{agentCountText}</span>,
   ];
+  // D215: the board is a chip with a glyph and the count, a status and a door at once.
+  const boardLabel = headerMeta.boardOpen !== null ? t('podChat.header.boardOpen', { count: headerMeta.boardOpen }) : '';
+  const boardChip = (compact: boolean) => (
+    <button
+      key="board"
+      type="button"
+      className={`v2-pod-header__board${compact ? ' v2-pod-header__board--compact' : ''}`}
+      onClick={() => navigate(`/v2/pods/${pod._id}/board`)}
+      aria-label={boardLabel}
+      title={boardLabel}
+    >
+      <ShellGlyph name="board" size={13} />
+      <span>{headerMeta.boardOpen}</span>
+    </button>
+  );
   if (headerMeta.boardOpen !== null) {
-    metaParts.push(
-      <button key="board" type="button" className="v2-pod-header__board" onClick={() => navigate(`/v2/pods/${pod._id}/board`)}>
-        {t('podChat.header.boardOpen', { count: headerMeta.boardOpen })}
-      </button>,
-    );
+    metaParts.push(boardChip(false));
   }
   headerMeta.channels.forEach((channel) => {
     metaParts.push(<span key={`channel-${channel}`} className="v2-pod-header__channel">{channel}</span>);
@@ -1895,9 +1907,16 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                 ) : (
                   <>
                     <h1>{pod.name}</h1>
+                    {/* D215: a pencil on the title, shown on hover or focus. */}
                     {viewerOwnsPod && (
-                      <button type="button" className="v2-pod-header__rename-open" onClick={startRename}>
-                        {t('podChat.header.rename')}
+                      <button
+                        type="button"
+                        className="v2-icon-button v2-pod-header__rename-open"
+                        onClick={startRename}
+                        aria-label={t('podChat.header.rename')}
+                        title={t('podChat.header.rename')}
+                      >
+                        <ShellGlyph name="pencil" size={15} />
                       </button>
                     )}
                   </>
@@ -1910,9 +1929,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             <span className="v2-pod-header__meta v2-pod-header__meta--compact">
               {headerMeta.boardOpen !== null && (
                 <>
-                  <button type="button" className="v2-pod-header__board v2-pod-header__board--compact" onClick={() => navigate(`/v2/pods/${pod._id}/board`)}>
-                    {t('podChat.header.boardOpen', { count: headerMeta.boardOpen })}
-                  </button>
+                  {boardChip(true)}
                   <span className="v2-pod-header__sep" aria-hidden="true">·</span>
                 </>
               )}

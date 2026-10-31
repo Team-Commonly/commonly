@@ -106,14 +106,17 @@ describe('language surfaces derive from the registry', () => {
     }
   });
 
-  it('keeps the language menu on the rail', () => {
+  // D215 (TASK-691): language is not a daily act, so the switch left the rail
+  // for Settings › Look (covered in V2SettingsPage.test).
+  it('keeps the language menu off the rail', () => {
     render(
       <MemoryRouter>
         <V2NavRail needsYouCount={0} />
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('button', { name: 'Language' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Language' })).not.toBeInTheDocument();
+    expect(screen.getByText('feedback menu')).toBeInTheDocument();
   });
 
   it('keeps the language menu on the landing nav', () => {
