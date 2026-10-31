@@ -56,6 +56,7 @@ describe('CollapsibleProse', () => {
     expect(screen.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
     // Once open, the focused link is scrolled into the visible scroller, not left clipped below it.
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+    expect(scrollIntoView.mock.instances[0]).toBe(link);
     raf.mockRestore();
     delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;
   });
