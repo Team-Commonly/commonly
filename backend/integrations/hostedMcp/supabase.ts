@@ -2,6 +2,9 @@
  * Supabase hosted-MCP entry (TASK-242). Its OAuth server requires the full
  * scope set for the MCP proxy, including writes. The pin excludes
  * spend-bearing tools, caller-directed SQL/GraphQL, and credential reads.
+ * Known limit: the grant carries all 13 scopes, writes included, because
+ * Supabase requires the full set. Read and write access is enforced only by
+ * the pins in this file, so a tool missing from the pins is not callable.
  *
  * Resource and authorization-server metadata were fetched from Supabase on
  * 2026-10-19. Pins come from connector-ops's consenting tools/list capture
