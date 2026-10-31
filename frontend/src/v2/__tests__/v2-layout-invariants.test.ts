@@ -387,11 +387,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // time's slot, out of sight at rest even when pinned.
     expect(podsSidebar).toContain('togglePin(pod._id)');
     expect(podsSidebar).toContain('<ShellGlyph name="pin"');
-    expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).toContain('opacity: 0');
-    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__pin');
+    // visibility, not opacity: an opacity-0 pin still catches a tap on the time.
+    expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).toContain('visibility: hidden');
+    expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).not.toContain('opacity: 0');
+    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__pin,\n.v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin { visibility: visible; }');
+    // Touch has no hover: the pin shows at rest there, or a phone cannot pin.
+    expect(v2).toMatch(/@media \(hover: none\) and \(pointer: coarse\) \{\n  \.v2-root button\.v2-pods__pin \{ visibility: visible; \}\n  \.v2-pods__row-time \{ visibility: hidden; \}/);
     expect(v2).not.toContain('.v2-root button.v2-pods__pin--active { opacity: 1; }');
     expect(v2).not.toContain("button.v2-pods__pin::before { content: '⌖'");
-    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__row-time,\n.v2-pods__rowwrap:focus-within .v2-pods__row-time { visibility: hidden; }');
+    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__row-time,\n.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time { visibility: hidden; }');
     expect(ruleBody(v2, '.v2-pods__row-time')).toContain('min-width: 24px');
     // The shared segment: a tinted track with the checked option raised.
     expect(ruleBody(v2, '.v2-seg')).toContain('display: inline-flex');

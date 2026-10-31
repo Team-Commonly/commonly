@@ -166,6 +166,16 @@ describe('V2PodsSidebar — direction C', () => {
     fireEvent.keyDown(recent, { key: 'ArrowRight' });
     expect(within(viewSwitch()).getByRole('radio', { name: /^All/ })).toHaveAttribute('aria-checked', 'true');
     expect(document.activeElement).toBe(within(viewSwitch()).getByRole('radio', { name: /^All/ }));
+    // Roving tabindex: only the checked option is in the Tab order.
+    expect(within(viewSwitch()).getAllByRole('radio').map((radio) => radio.getAttribute('tabindex')))
+      .toEqual(['-1', '0', '-1']);
+  });
+
+  test('a stored view this build does not know falls back to Recent', () => {
+    sessionStorage.setItem('v2:pods.view', 'everything');
+    renderSidebar(fleet);
+    expect(within(viewSwitch()).getByRole('radio', { name: 'Recent' })).toHaveAttribute('aria-checked', 'true');
+    expect(listRows()).toHaveLength(8);
   });
 
   test('every row carries a mark, the needs-you pill when there is a count, and the last-message time', () => {

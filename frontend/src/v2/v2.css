@@ -12018,7 +12018,7 @@ body.modern-ui.v2-canvas {
   background: var(--v2-surface);
   color: var(--v2-text-primary);
   font-weight: 600;
-  box-shadow: 0 0 0 1px var(--v2-border), 0 1px 2px rgba(16, 24, 40, 0.08);
+  box-shadow: 0 0 0 1px var(--v2-border);
 }
 
 .v2-root button.v2-seg__option:focus-visible {
@@ -12144,9 +12144,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pods__row--in-fold { padding-left: 24px; }
 
-/* A row and its pin control are siblings (a button cannot nest a button).
-   The pin shows on hover, focus, or when the pod is pinned; the meta column
-   yields to it so nothing overlaps. */
+/* A row and its pin control are siblings (a button cannot nest a button). */
 .v2-pods__rowwrap { position: relative; }
 
 .v2-root button.v2-pods__pin {
@@ -12163,13 +12161,17 @@ body.modern-ui.v2-canvas {
   border-radius: 6px;
   background: var(--v2-surface-tint);
   color: var(--v2-text-secondary);
-  opacity: 0;
+  visibility: hidden;
 }
 
 /* D215: the pin is an icon on row hover that takes the time's slot. Out of
-   sight at rest, pinned or not; the Pinned segment lists the pinned pods. */
+   sight at rest, pinned or not; the Pinned segment lists the pinned pods.
+   visibility (not opacity) so a hidden pin cannot catch a tap. Keyboard focus
+   anywhere in the row shows it, so Tab reaches it; a mouse click does not set
+   :focus-visible, so a clicked row keeps its time. Touch screens have no hover,
+   so they show the pin at rest in place of the time. */
 .v2-pods__rowwrap:hover .v2-pods__pin,
-.v2-root button.v2-pods__pin:focus-visible { opacity: 1; }
+.v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin { visibility: visible; }
 
 .v2-root button.v2-pods__pin:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
 .v2-root button.v2-pods__pin--active { color: var(--v2-accent-text); }
@@ -12178,7 +12180,12 @@ body.modern-ui.v2-canvas {
 .v2-pods__row-time { display: inline-block; min-width: 24px; text-align: right; }
 
 .v2-pods__rowwrap:hover .v2-pods__row-time,
-.v2-pods__rowwrap:focus-within .v2-pods__row-time { visibility: hidden; }
+.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time { visibility: hidden; }
+
+@media (hover: none) and (pointer: coarse) {
+  .v2-root button.v2-pods__pin { visibility: visible; }
+  .v2-pods__row-time { visibility: hidden; }
+}
 
 .v2-root button.v2-pods__row:hover { background: var(--v2-surface-hover); }
 
