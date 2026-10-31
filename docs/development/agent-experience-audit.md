@@ -4230,3 +4230,23 @@ After #3077 brought litellm up healthy in staging, Scout turns still failed. The
 **Repair:** per env without a real OpenAI moderation key, set `backend.env.nativeRuntimeGuardrails: "injection-guard"` (LiteLLM-native, no external key). Prod (`values-dev.yaml`) already carried this; staging was simply missing it — the same omission class as the missing litellm stanza. Root-cause follow-up (tracked, not in these PRs): flip the service default in `nativeRuntimeService.ts` to `injection-guard` so a new/unconfigured env does not inherit the keyless 401. The sibling `llmService` path is only safe via a Helm-env hardcode (`LLMSERVICE_GUARDRAILS: "injection-guard"`, `backend-deployment.yaml:573`) — `llmService.ts`'s own *code* default is the same unsafe pair, so the thing to copy is the deployment override, not the sibling's code default. Guard test: `backend/__tests__/unit/helm/litellmStagingEnabled.test.js`.
 
 **Lesson:** a native-runtime error names the model it was trying to reach, not the dependency that actually failed. A `"Model <X>: HTTP 401"` can be a pre-call guardrail's upstream 401 (a different vendor, a different key) — read litellm's own pod logs for the failing URL before concluding the model's key is wrong. And "litellm is up" is necessary, not sufficient, for a native agent to reply: the guardrail is an independent failure surface on the same turn.
+
+## 87. `codex exec` ignores SIGTERM, so a polite stop never ends a stalled turn (2026-10-31, swe)
+
+*Origin: the walk that unblocked turning supervised runs on by default for codex (#2769 follow-up). A real `codex exec` (codex-cli 0.162.1) under cli 0.1.211 ran with `COMMONLY_SUPERVISE_RUNS=1`, a 30 s stall window, and a local provider that accepts the connection and never answers.*
+
+Every turn was named `stuck`, and every turn took the full window plus the cancel grace: 30 s of silence, then 15 s waiting for codex to exit after SIGTERM, then a process-group SIGKILL. The supervisor says so in the failure detail: `the adapter did not settle within 15000ms of cancellation`. In 3 of 3 turns the turn line read `signal: "SIGKILL"`, `childLeftRunning: false`, and no codex process remained after the agent stopped. One more detail: once the provider went away mid-turn, codex's reconnect attempts wrote progress events, so that turn ran 111 s before it was named. A retrying CLI looks alive to a stdout-progress check.
+
+**Repair:** none needed. The supervisor's group SIGKILL is what ends a stalled codex turn, and it works. This entry is here so nobody shortens or removes that step thinking SIGTERM was enough.
+
+**Lesson:** a cancel path is proven by what ends the process, not by which signal is sent first. For codex, SIGTERM is a request it does not honour mid-request. Keep the cancel grace bounded and the group SIGKILL after it, and when you read a stall's duration, expect window + grace, not window.
+
+## 88. The claude first-output watchdog catches a turn that never starts, not a turn whose provider never answers (2026-10-31, swe)
+
+*Origin: the G6 "no silent hang" proof. `spawn_stalled` (cli 0.1.199+, on by default, 180 s) reads like a liveness check for claude seats.*
+
+It is not one. The watchdog counts a spawn as started when it writes any stdout or stderr byte, or when its session transcript grows. `claude -p` writes the transcript's first row about a second after it spawns, before it has heard anything from the model. Walked on the seats' build (cli 0.1.200) with `COMMONLY_FIRST_OUTPUT_WINDOW_MS=20000` and a provider that accepts the connection and never answers: claude connected twice, wrote its transcript, and was never named `spawn_stalled`. It ran to the run timeout and failed as `claude timed out after 150000ms`, the unnamed failure the watchdog was written to replace. The watchdog's own header says what it was built for: the locked-console hang, where `claude -p` writes no transcript row at all.
+
+**Repair:** none in this entry. A claude turn whose provider hangs is bounded only by `COMMONLY_AGENT_RUN_TIMEOUT_MS` (45 min on seats), and the supervised path keeps claude's stall window off because its stdout is silent until the reply is done.
+
+**Lesson:** "first output" and "still making progress" are different signals. Before citing a watchdog as hang coverage, name the exact signal it reads and check which hang shapes produce that signal. A transcript row written before the first network round trip proves the process started, not that the model is answering.
