@@ -81,6 +81,12 @@
     "communityRedirect": {
       "title": "Opening Community",
       "text": "Checking your access…"
+    },
+    "theme": {
+      "label": "Appearance",
+      "auto": "Auto",
+      "light": "Light",
+      "dark": "Dark"
     }
   },
   "agentSkills": {

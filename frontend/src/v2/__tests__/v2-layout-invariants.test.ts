@@ -119,7 +119,7 @@ const cssVariable = (css: string, name: string): string | undefined => (
 
 const activeAccentBackgroundSelectors = (css: string, classNames: Set<string>): string[] => (
   [...new Set(Array.from(css.matchAll(/([^{}]+)\{([^{}]*)\}/g)).flatMap(([, rawSelector, body]) => {
-    if (!/background\s*:\s*var\(--v2-accent\)/.test(body)) return [];
+    if (!/background\s*:\s*var\(--v2-accent(?:-fill)?\)/.test(body)) return [];
     return rawSelector
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .split(',')
@@ -435,7 +435,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(shared).toContain('font-size: 12px');
     expect(cancel).toContain('color: var(--v2-text-tertiary)');
     expect(submit).toContain('background: var(--v2-ink)');
-    expect(submit).toContain('color: var(--v2-bg)');
+    expect(submit).toContain('color: var(--v2-on-ink)');
     expect(disabled).toContain('background: var(--v2-border-strong)');
     expect(phone).not.toBe('');
     expect(ruleBody(v2, '.v2-root button.v2-pods__create-submit', { within: phone })).toContain('min-height: 40px');
@@ -443,7 +443,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('the selected pod keeps the sidebar’s one cobalt block treatment', () => {
     const selected = selectorRuleBody(v2, '.v2-root button.v2-pods__row--selected');
-    expect(selected).toContain('background: var(--v2-accent)');
+    expect(selected).toContain('background: var(--v2-accent-fill)');
     expect(selected).toContain('font-weight: 600');
     expect(podsSidebar).not.toContain('v2-pods__item--active');
     expect(podsSidebar).not.toContain('v2-pods__item-dot');
@@ -1237,7 +1237,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(billingPanel).not.toContain('free in beta');
     expect(billingPanel).not.toContain('included during beta');
     const badge = ruleBody(v2, '.v2-settings__section .v2-billing__badge');
-    expect(badge).toContain('background: #ffffff');
+    expect(badge).toContain('background: var(--v2-surface)');
     expect(badge).toContain('font-family: var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-settings__section .v2-billing__badge--pro')).toContain('background: var(--v2-accent)');
   });
@@ -1406,7 +1406,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('.v2-thread-card__reply');
     expect(ruleBody(v2, '.v2-thread .v2-msg__mention')).toContain('background: #e8ecfb');
     expect(ruleBody(v2, '.v2-thread .v2-avatar--flat-agent')).toContain('var(--v2-accent)');
-    expect(ruleBody(v2, '.v2-thread .v2-avatar--flat-human')).toContain('var(--v2-surface-tint)');
+    expect(ruleBody(v2, '.v2-thread .v2-avatar--flat-human')).toContain('background: #f2f4f7');
   });
 
   test('Your Team (direction C): three-column card grid, state-coloured marks, cobalt ring for needs-you, ink Hire, no green, old tiers gone', () => {
@@ -2530,7 +2530,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(ruleBody(v2, '.v2-authenticated-shell .v2-pane--main')).toContain('height: calc(100% - 16px)');
       // Phones: the card goes flush — both selectors, or the banner variant keeps the desktop height.
       expect(v2).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-pane--main,\n\s*\.v2-authenticated-shell \.v2-pane--main \{[\s\S]*?border-radius: 0/);
-      expect(ruleBody(v2, '.v2-feature')).toContain('background: #ffffff');
+      expect(ruleBody(v2, '.v2-feature')).toContain('background: var(--v2-surface)');
     });
 
     test('the radius ladder is 4 / 4 / 6 in both files (Signal: hard edges)', () => {

@@ -81,6 +81,12 @@
     "communityRedirect": {
       "title": "正在打开社区",
       "text": "正在检查你的访问权限…"
+    },
+    "theme": {
+      "label": "外观",
+      "auto": "自动",
+      "light": "浅色",
+      "dark": "深色"
     }
   },
   "agentSkills": {
