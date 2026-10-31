@@ -339,11 +339,11 @@ describe('V2SettingsPage', () => {
     expect(regenerateButton).toHaveFocus();
   });
 
-  test('keeps the no-face explanation for Paper and shortens it for a picked face or photo', () => {
+  test('shows the same short avatar hint for Paper and for a picked face', () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     const { rerender } = renderSettings({ ...auth.currentUser, profilePicture: 'default' });
 
-    expect(screen.getByText('No face and no skin tone until you choose one. Regenerate for another, or upload a photo.'))
+    expect(screen.getByText('Regenerate for another, or upload a photo.'))
       .toBeInTheDocument();
 
     rerender(
@@ -351,7 +351,7 @@ describe('V2SettingsPage', () => {
         <MemoryRouter><div className="v2-root"><V2SettingsPage /></div></MemoryRouter>
       </AuthContext.Provider>,
     );
-    expect(screen.getByText('No face and no skin tone until you choose one. Regenerate for another, or upload a photo.'))
+    expect(screen.getByText('Regenerate for another, or upload a photo.'))
       .toBeInTheDocument();
 
     rerender(
@@ -360,8 +360,6 @@ describe('V2SettingsPage', () => {
       </AuthContext.Provider>,
     );
     expect(screen.getByText('Regenerate for another, or upload a photo.')).toBeInTheDocument();
-    expect(screen.queryByText('No face and no skin tone until you choose one. Regenerate for another, or upload a photo.'))
-      .not.toBeInTheDocument();
   });
 
   test('Regenerate reports a profile save error without losing the current avatar', async () => {

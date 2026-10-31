@@ -3221,6 +3221,9 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
     // The 1px-per-side compensation is derived from the base shorthand, so it is
     // pinned to it rather than restated as a magic number.
     expect(base.padding).toBe('16px 18px 14px');
+    // With only the title left, a card sizes to its text unless it stretches
+    // across its cell (the chooser collapsed at 1440, 720 and 390 without this).
+    expect(base['align-self']).toBe('stretch');
 
     const pressed = cssDeclarations(
       ruleBody(v2, '.v2-root button.v2-byo__mode[aria-pressed="true"]'),
@@ -3234,21 +3237,6 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
     expect(
       selectorRuleBody(v2, '.v2-root button:focus-visible'),
     ).toContain('box-shadow: var(--v2-focus-ring)');
-  });
-
-  test('the mode kicker is mono 500 at 11px, lowercase, cobalt only when chosen (item 3)', () => {
-    const kicker = cssDeclarations(ruleBody(v2, '.v2-byo__mode-kicker'));
-    expect(kicker.font).toBe('500 11px/16px var(--v2-font-mono)');
-    expect(kicker['text-transform']).toBeUndefined();
-    expect(kicker.color).toBe('var(--v2-text-muted)');
-    const chosen = cssDeclarations(
-      ruleBody(v2, '.v2-root button.v2-byo__mode[aria-pressed="true"] .v2-byo__mode-kicker'),
-    );
-    expect(chosen.color).toBe('var(--v2-accent-text)');
-    // The caps were data, not only CSS, so the data is where they must not come
-    // back from: a lowercase transform over zh-CN copy would be the wrong fix.
-    expect(en).toContain('"onCommonly": "on Commonly"');
-    expect(en).toContain('"yours": "your machine"');
   });
 
   test('the preview label is mono 500 at 11px with no caps transform (item 4)', () => {
