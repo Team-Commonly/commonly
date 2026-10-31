@@ -12556,7 +12556,7 @@ body.modern-ui.v2-canvas {
   left: 0;
   right: 0;
   bottom: 0;
-  height: 48px;
+  height: 44px;
   background: linear-gradient(to bottom, transparent, var(--v2-surface, #fff));
   pointer-events: none;
 }
