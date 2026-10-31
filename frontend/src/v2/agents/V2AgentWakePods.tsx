@@ -44,7 +44,7 @@ const V2AgentWakePods: React.FC<{
   const [activePodCount, setActivePodCount] = useState(0);
   const [podCount, setPodCount] = useState(0);
   const [turnCap, setTurnCap] = useState<number | null>(null);
-  const [draftMinutes, setDraftMinutes] = useState<Record<string, number>>({});
+  const [openMenuPod, setOpenMenuPod] = useState<string | null>(null);
   const [loadedIdentity, setLoadedIdentity] = useState<string | null>(null);
   const query = `instanceId=${encodeURIComponent(instanceId)}`;
   const base = `/api/registry/agents/${encodeURIComponent(agentName)}/manage-settings`;
@@ -62,7 +62,7 @@ const V2AgentWakePods: React.FC<{
     setInstallations([]);
     setBusyPod(null);
     setError(null);
-    setDraftMinutes({});
+    setOpenMenuPod(null);
     committedRef.current = {};
     queuedRef.current = {};
     sendingRef.current = {};
@@ -77,7 +77,6 @@ const V2AgentWakePods: React.FC<{
         committedRef.current = Object.fromEntries(rows.map((row) => [row.podId, row]));
         setActivePodCount(settingsResult.data.activePodCount ?? rows.filter((row) => row.status === 'active').length);
         setPodCount(settingsResult.data.podCount ?? rows.length);
-        setDraftMinutes(Object.fromEntries(rows.map((row) => [row.podId, row.heartbeatMinutes])));
         setTurnCap(settingsResult.data.turnCap ?? null);
       } catch (requestError) {
         if (active) setError((requestError as { response?: { status?: number } })?.response?.status === 403
@@ -185,71 +184,93 @@ const V2AgentWakePods: React.FC<{
       <section className="v2-agent-wake-pods__section" aria-labelledby="agent-wake-title">
         <h2 id="agent-wake-title">{t('agentSettings.wakeTitle')}</h2>
         <p className="v2-agent-wake-pods__hint">{t('agentSettings.mentionsAlwaysWake')}</p>
-        {installations.map((entry) => (
-          <div className="v2-agent-wake-pods__pod" key={entry.podId}>
-            <Link to={`/v2/pods/${entry.podId}`}>{entry.podName}</Link>
-            <fieldset className="v2-agent-wake-pods__choice" aria-busy={busyPod === entry.podId}>
-              <legend>{t('agentSettings.messageWake')}</legend>
-              {MESSAGE_WAKE_CHOICES.map((choice) => (
-                <label className="v2-agent-wake-pods__row v2-agent-wake-pods__subrow" key={choice}>
-                  <span>{t(`agentSettings.messageWake_${choice}`)}</span>
-                  <input type="radio" name={`message-wake-${entry.podId}`} value={choice}
-                    checked={messageWakeChoice(entry) === choice}
-                    onChange={() => { void save(entry, MESSAGE_WAKE_SETTINGS[choice]); }} />
-                </label>
-              ))}
-            </fieldset>
-            <label className="v2-agent-wake-pods__row">
-              <span>{t('agentSettings.boardWake')}</span>
-              <input type="checkbox" checked={entry.boardWake} disabled={busyPod === entry.podId}
-                onChange={(event) => { void save(entry, { boardWake: event.target.checked }); }} />
-            </label>
-            <label className="v2-agent-wake-pods__row">
-              <span>{t('agentSettings.heartbeat')}</span>
-              <input type="checkbox" checked={entry.heartbeatEnabled} disabled={busyPod === entry.podId}
-                onChange={(event) => { void save(entry, { heartbeatEnabled: event.target.checked,
-                  heartbeatMinutes: draftMinutes[entry.podId] ?? entry.heartbeatMinutes }); }} />
-            </label>
-            <label className="v2-agent-wake-pods__row v2-agent-wake-pods__subrow">
-              <span>{t('agentSettings.heartbeatInterval')}</span>
-              <select value={draftMinutes[entry.podId] ?? entry.heartbeatMinutes} disabled={busyPod === entry.podId}
-                onChange={(event) => { setDraftMinutes((current) => ({ ...current,
-                  [entry.podId]: Number(event.target.value) })); }}>
-                {[...new Set([15, 30, 60, 120, 360, 720, 1440, entry.heartbeatMinutes])]
-                  .sort((a, b) => a - b).map((minutes) => (
-                    <option value={minutes} key={minutes}>{t('agentSettings.everyMinutes', { count: minutes })}</option>
-                  ))}
-              </select>
-            </label>
-            <p className="v2-agent-wake-pods__hint">
-              {turnCap === null
-                ? t('agentSettings.capUnavailable', {
-                  count: Math.ceil(1440 / (draftMinutes[entry.podId] ?? entry.heartbeatMinutes)),
-                })
-                : t('agentSettings.turnsPerDay', {
-                  count: Math.ceil(1440 / (draftMinutes[entry.podId] ?? entry.heartbeatMinutes)), cap: turnCap,
-                })}
-              {turnCap !== null && Math.ceil(1440 / (draftMinutes[entry.podId] ?? entry.heartbeatMinutes)) > turnCap
-                && ` ${t('agentSettings.overCap')}`}
-            </p>
-            {entry.heartbeatEnabled && draftMinutes[entry.podId] !== entry.heartbeatMinutes
-              && <button type="button" disabled={busyPod === entry.podId}
-                onClick={() => { void save(entry, { heartbeatMinutes: draftMinutes[entry.podId] }); }}>
-                {t('agentSettings.saveInterval')}
-              </button>}
-          </div>
-        ))}
-      </section>
-      <section className="v2-agent-wake-pods__section" aria-labelledby="agent-pods-title">
-        <h2 id="agent-pods-title">{t('agentSettings.podsTitle')}</h2>
-        {installations.length ? installations.map((entry) => (
-          <div className="v2-agent-wake-pods__pod-row" key={entry.podId}>
-            <Link to={`/v2/pods/${entry.podId}`}>{entry.podName}</Link>
-            <button type="button" disabled={busyPod === entry.podId} onClick={() => { void remove(entry); }}>
-              {t('agentSettings.remove')}
-            </button>
-          </div>
-        )) : <p className="v2-agent-wake-pods__empty">{t('agentSettings.noPods')}</p>}
+        {installations.length ? (
+          <table className="v2-agent-wake-pods__table">
+            <thead>
+              <tr>
+                <th scope="col">{t('agentSettings.podColumn')}</th>
+                <th scope="col">{t('agentSettings.messageWake')}</th>
+                <th scope="col">{t('agentSettings.boardWake')}</th>
+                <th scope="col">{t('agentSettings.heartbeat')}</th>
+                <th scope="col"><span className="v2-agent-wake-pods__sr">{t('agentSettings.podActions')}</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {installations.map((entry) => {
+                const minutes = entry.heartbeatMinutes;
+                const turns = Math.ceil(1440 / minutes);
+                return (
+                  <tr className="v2-agent-wake-pods__pod" key={entry.podId} aria-busy={busyPod === entry.podId}>
+                    <td data-label={t('agentSettings.podColumn')}>
+                      <Link to={`/v2/pods/${entry.podId}`}>{entry.podName}</Link>
+                    </td>
+                    <td data-label={t('agentSettings.messageWake')}>
+                      <fieldset className="v2-agent-wake-pods__choice">
+                        <legend className="v2-agent-wake-pods__sr">{t('agentSettings.messageWake')}</legend>
+                        {MESSAGE_WAKE_CHOICES.map((choice) => (
+                          <label className="v2-agent-wake-pods__radio" key={choice}>
+                            <input type="radio" name={`message-wake-${entry.podId}`} value={choice}
+                              checked={messageWakeChoice(entry) === choice}
+                              onChange={() => { void save(entry, MESSAGE_WAKE_SETTINGS[choice]); }} />
+                            <span>{t(`agentSettings.messageWake_${choice}`)}</span>
+                          </label>
+                        ))}
+                      </fieldset>
+                    </td>
+                    <td data-label={t('agentSettings.boardWake')}>
+                      <input type="checkbox" aria-label={t('agentSettings.boardWake')} checked={entry.boardWake}
+                        disabled={busyPod === entry.podId}
+                        onChange={(event) => { void save(entry, { boardWake: event.target.checked }); }} />
+                    </td>
+                    <td data-label={t('agentSettings.heartbeat')}>
+                      <label className="v2-agent-wake-pods__radio">
+                        <input type="checkbox" checked={entry.heartbeatEnabled} disabled={busyPod === entry.podId}
+                          onChange={(event) => { void save(entry, { heartbeatEnabled: event.target.checked,
+                            heartbeatMinutes: minutes }); }} />
+                        <span>{t('agentSettings.heartbeat')}</span>
+                      </label>
+                      <label className="v2-agent-wake-pods__interval">
+                        <span className="v2-agent-wake-pods__sr">{t('agentSettings.heartbeatInterval')}</span>
+                        <select value={minutes} disabled={busyPod === entry.podId}
+                          onChange={(event) => { void save(entry, { heartbeatMinutes: Number(event.target.value) }); }}>
+                          {[...new Set([15, 30, 60, 120, 360, 720, 1440, entry.heartbeatMinutes])]
+                            .sort((a, b) => a - b).map((option) => (
+                              <option value={option} key={option}>{t('agentSettings.everyMinutes', { count: option })}</option>
+                            ))}
+                        </select>
+                      </label>
+                      <p className="v2-agent-wake-pods__hint">
+                        {turnCap === null
+                          ? t('agentSettings.capUnavailable', { count: turns })
+                          : t('agentSettings.turnsPerDay', { count: turns, cap: turnCap })}
+                        {turnCap !== null && turns > turnCap && ` ${t('agentSettings.overCap')}`}
+                      </p>
+                    </td>
+                    <td className="v2-agent-wake-pods__actions">
+                      <button type="button" className="v2-agent-wake-pods__more" aria-haspopup="menu"
+                        aria-expanded={openMenuPod === entry.podId}
+                        aria-label={t('agentSettings.podActions')} title={t('agentSettings.podActions')}
+                        disabled={busyPod === entry.podId}
+                        onClick={() => setOpenMenuPod((current) => (current === entry.podId ? null : entry.podId))}>
+                        ⋯
+                      </button>
+                      {openMenuPod === entry.podId && (
+                        <div className="v2-agent-wake-pods__menu" role="menu">
+                          <button type="button" role="menuitem" onClick={() => {
+                            setOpenMenuPod(null);
+                            void remove(entry);
+                          }}>
+                            {t('agentSettings.remove')}
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : <p className="v2-agent-wake-pods__empty">{t('agentSettings.noPods')}</p>}
       </section>
     </div>
   );
