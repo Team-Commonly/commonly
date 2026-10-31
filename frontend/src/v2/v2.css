@@ -2503,7 +2503,7 @@ body.modern-ui.v2-canvas {
   user-select: all;
 }
 
-.v2-team-card__command {
+.v2-team-card__fix {
   display: block;
   margin-top: 4px;
   font-family: var(--v2-font-mono, ui-monospace, monospace);

@@ -434,7 +434,7 @@ const V2YourTeamPage: React.FC = () => {
               {statusText}
             </div>
             {a.connection?.state === 'never' && a.fixCommand && (
-              <code className="v2-team-card__command" data-testid="team-card-fix-command">{a.fixCommand}</code>
+              <code className="v2-team-card__fix" data-testid="team-card-fix-command">{a.fixCommand}</code>
             )}
           </div>
           {where && (
