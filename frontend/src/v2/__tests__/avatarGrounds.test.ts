@@ -134,8 +134,11 @@ describe('character avatar grounds', () => {
   });
 
   // Lumen's HOLD on 63722f8e: the Paper figure washed out on the warm grounds
-  // (1.01 to 1.22:1). Every figure fill must clear 2:1 against its own ground.
-  test('every Paper fill clears 2:1 against the ground it sits on', () => {
+  // (1.01 to 1.22:1). Paper paints, in order: ground, shirt, head rect, head
+  // ellipse, then an optional neckline cutout. Each part is checked against what
+  // it sits on: head against the ground, shirt against the ground, and the
+  // neckline against the shirt (Sable 5722118100: the neckline must show on both shirts).
+  test('every Paper part clears 2:1 against what it sits on, necklines included', () => {
     const luminance = (hex: string): number => {
       const lin = [0, 2, 4].map((i) => {
         const c = parseInt(hex.slice(i, i + 2), 16) / 255;
@@ -151,12 +154,15 @@ describe('character avatar grounds', () => {
     for (let i = 0; i < 240; i += 1) {
       const uri = String(paperAvatarFor(`paper-contrast-${i}`));
       const ground = groundOf(uri);
-      const fills = Array.from(
+      const [bg, shirt, headRect, headEllipse, neckline] = Array.from(
         groundSvg(uri).matchAll(/fill="#([0-9a-fA-F]{6})"/g),
         (m) => m[1].toLowerCase(),
-      ).filter((f) => f !== ground.slice(1));
-      expect(fills.length).toBeGreaterThan(0);
-      fills.forEach((f) => expect(ratio(f, ground.slice(1))).toBeGreaterThanOrEqual(2));
+      );
+      expect(bg).toBe(ground.slice(1));
+      expect(ratio(shirt, bg)).toBeGreaterThanOrEqual(2);
+      expect(ratio(headRect, bg)).toBeGreaterThanOrEqual(2);
+      expect(ratio(headEllipse, bg)).toBeGreaterThanOrEqual(2);
+      if (neckline !== undefined) expect(ratio(neckline, shirt)).toBeGreaterThanOrEqual(2);
     }
   });
 });

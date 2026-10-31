@@ -210,10 +210,12 @@ export const PAPER_HEAD = '8f99aa';
 
 /** The unpicked human default: a paper figure with no facial or skin cues. */
 export const renderPaper = (t: PaperTraits): string => {
+  // The neckline is a cutout that shows the ground, so it reads on both shirts
+  // (the head colour vanished against the grey shirt; TASK-683, Sable 5722118100).
   const neckline = t.neckline === 'vee'
-    ? `<path d="${PAPER_VEE}" fill="#${PAPER_HEAD}"/>`
+    ? `<path d="${PAPER_VEE}" fill="#${t.background}"/>`
     : t.neckline === 'scoop'
-      ? `<ellipse cx="32" cy="47.2" rx="5.4" ry="3.4" fill="#${PAPER_HEAD}"/>`
+      ? `<ellipse cx="32" cy="47.2" rx="5.4" ry="3.4" fill="#${t.background}"/>`
       : '';
   return [
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">',
