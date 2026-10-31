@@ -10,7 +10,10 @@ type V2InactiveFoldProps = {
 const V2InactiveFold: React.FC<V2InactiveFoldProps> = ({ count, children }) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  // A closing fold stays mounted until its close animation ends, then unmounts. It is inert while it closes.
+  const [closing, setClosing] = useState(false);
   if (count === 0) return null;
+  const showBody = open || closing;
 
   return (
     <div className="v2-connectors__inactive-fold">
@@ -18,12 +21,30 @@ const V2InactiveFold: React.FC<V2InactiveFoldProps> = ({ count, children }) => {
         type="button"
         className="v2-connectors__inactive-toggle"
         aria-expanded={open}
-        onClick={() => setOpen((wasOpen) => !wasOpen)}
+        onClick={() => {
+          if (open) {
+            setOpen(false);
+            setClosing(true);
+          } else {
+            setClosing(false);
+            setOpen(true);
+          }
+        }}
       >
         <span className="v2-connectors__inactive-caret" aria-hidden="true" />
         {t('connectors.inactiveFold', { defaultValue: 'inactive · {{n}}', n: count })}
       </button>
-      {open && <div className="v2-connectors__inactive-rows">{children}</div>}
+      {showBody && (
+        <div
+          className={`v2-connectors__inactive-fold-body${closing ? ' v2-connectors__inactive-fold-body--closing' : ''}`}
+          {...(closing ? { inert: '' } : {})}
+          onAnimationEnd={(event) => {
+            if (event.target === event.currentTarget && closing) setClosing(false);
+          }}
+        >
+          <div className="v2-connectors__inactive-rows">{children}</div>
+        </div>
+      )}
     </div>
   );
 };
