@@ -36,10 +36,10 @@ key ring (`CONNECTOR_SECRET_KEYS`, `CONNECTOR_SECRET_ACTIVE_KEY`) supplied by th
 existing ops-runner secret environment (never paste them into a command):
 
 ```sh
-npx ts-node scripts/migrate-chat-token-copies.ts
+node dist/scripts/migrate-chat-token-copies.js
 # Review the DRY-RUN counts by type, then explicitly apply:
-npx ts-node scripts/migrate-chat-token-copies.ts --apply
-npx ts-node scripts/migrate-chat-token-copies.ts
+node dist/scripts/migrate-chat-token-copies.js --apply
+node dist/scripts/migrate-chat-token-copies.js
 ```
 
 **What the counts mean.** The final dry run should report zero candidates and
