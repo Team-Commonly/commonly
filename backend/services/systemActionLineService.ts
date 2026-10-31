@@ -130,3 +130,53 @@ export async function emitUnansweredMentionLine(line: UnansweredMentionLine): Pr
     attempts: line.attempts,
   }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
 }
+
+/**
+ * TASK-655. A person mentioned a Bring your own agent that has never polled.
+ * Without this line the mention waits in a queue nobody reads and the person
+ * sees silence. Placed as a reply to their mention, like the line above.
+ * Callers dedupe with `hasNotConnectedLineToday`: one per agent per UTC day.
+ */
+export interface NotConnectedLine extends SystemLineActor {
+  agentLabel: string;
+  agentKey: string;
+  messageId: string | number | null;
+  threadRootId?: string | number | null;
+}
+
+export async function emitNotConnectedLine(line: NotConnectedLine): Promise<void> {
+  const content = `${line.agentLabel} isn't connected yet, so it won't see this until it runs. `
+    + 'Run the connect command shown on its page.';
+  await insertSystemLine(line, content, {
+    kind: 'system-action',
+    action: 'agent-not-connected',
+    actorName: line.agentLabel,
+    agentKey: line.agentKey,
+  }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
+}
+
+/**
+ * Whether a not-connected line for this agent already sits in the pod since
+ * UTC midnight. A missing pool reads as "already posted": no line is better
+ * than a second line the person did not need.
+ */
+export async function hasNotConnectedLineToday(
+  podId: string,
+  agentKey: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { pool } = require('../config/db-pg') as {
+    pool: { query: (sql: string, params: unknown[]) => Promise<{ rows: unknown[] }> } | null;
+  };
+  if (!pool) return true;
+  const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const { rows } = await pool.query(
+    `SELECT 1 FROM messages
+     WHERE pod_id = $1 AND message_type = 'system' AND created_at >= $2
+       AND payload->>'action' = 'agent-not-connected' AND payload->>'agentKey' = $3
+     LIMIT 1`,
+    [podId, startOfDay, agentKey],
+  );
+  return rows.length > 0;
+}
