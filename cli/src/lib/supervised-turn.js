@@ -1,6 +1,6 @@
 /**
  * One model turn of `commonly agent run`, on one of two paths. The supervised
- * path also writes one metadata line per turn (the seats canary), once the
+ * path also writes one metadata line per turn (the turn log), once the
  * turn's outcome has reached the pod or failed to.
  *
  *   COMMONLY_SUPERVISE_RUNS=1  (read by performRun as `superviseRuns`)
@@ -14,17 +14,15 @@
  *
  * A turn is ok only when its outcome reached the pod: the reply was delivered
  * or the agent chose silence. The run loop names the outcome after delivery
- * settles (turn.finish); a spawn that threw is `failed` at once. The
- * seat-log baseline (scripts/seat-log-baseline.mjs) maps a log to the same
- * outcomes, so the two can be compared event for event.
+ * settles (turn.finish); a spawn that threw is `failed` at once.
  *
  * NO RECORD WRITER. The supervisor needs a trace store. The one here
  * (createMetadataStore) is in memory, lives for one turn, and keeps event type
  * names, times and the recovery action word. It drops every event's data, so
  * no agent text, prompt, reply, failure detail or credential is kept, and
- * nothing is written to disk (CTO's redact blocker on #2701).
+ * nothing is written to disk (a redaction review on #2701).
  *
- * Metrics: ~/.commonly/state/seats-canary/<seat>.jsonl (COMMONLY_SEATS_CANARY_DIR
+ * Metrics: ~/.commonly/state/turns/<seat>.jsonl (COMMONLY_TURN_LOG_DIR
  * overrides the directory). Whitelisted fields only; see metricLine.
  */
 import { appendFileSync, mkdirSync } from 'fs';
@@ -43,13 +41,13 @@ const MAX_TIMER_MS = 2_147_483_647;
  * codex: `codex exec --json` writes a JSONL event per item, so its stdout is a
  *   real progress signal, and the quiet stretch is the longest single item (a
  *   reasoning step or one shell command). Measured 2026-10-25 from per-turn
- *   timestamp gaps in this host's October codex rollouts (~/.codex/sessions):
+ *   timestamp gaps in October codex rollouts on one host (~/.codex/sessions):
  *   9,703 turns, max quiet gap 162 s, p99 53 s; 9 turns would have tripped the
  *   package default of 120 s. 15 min is 5.5x the worst gap seen and still
  *   30 min inside the seats' 45 min turn budget.
  * claude: the adapter runs `claude -p --output-format text`, which writes
- *   nothing to stdout until the reply is done. A healthy 14-minute quire turn
- *   (in its log) is 14 minutes of silence to the supervisor, so any window
+ *   nothing to stdout until the reply is done. A healthy 14-minute claude turn
+ *   is 14 minutes of silence to the supervisor, so any window
  *   under the turn budget would be a turn-length cap, not a liveness check.
  *   Off; claude is guarded by the wall-clock backstop and the cancel ladder.
  */
@@ -134,7 +132,7 @@ export const createMetadataStore = ({ now = Date.now } = {}) => {
 };
 
 export const metricsPathFor = (seat, env = process.env) => {
-  const dir = env?.COMMONLY_SEATS_CANARY_DIR || join(homedir(), '.commonly', 'state', 'seats-canary');
+  const dir = env?.COMMONLY_TURN_LOG_DIR || join(homedir(), '.commonly', 'state', 'turns');
   const safe = String(seat || 'unknown').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 64) || 'unknown';
   return join(dir, `${safe}.jsonl`);
 };

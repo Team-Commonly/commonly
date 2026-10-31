@@ -1,11 +1,11 @@
 /**
- * The seats canary's turn runner (lib/supervised-turn.js) and its place in the
+ * The supervised turn runner (lib/supervised-turn.js) and its place in the
  * run loop.
  *
  *  - flag off: adapter.spawn gets the caller's prompt and ctx object, unchanged,
  *    and superviseRun is never called (the golden in supervise-runs-flag.test
  *    pins the whole run loop byte for byte);
- *  - flag on: the turn goes through superviseRun with the canary policy;
+ *  - flag on: the turn goes through superviseRun with the turn log policy;
  *  - a stalled turn is named `stuck`, its child killed, its event left unacked,
  *    and the run loop goes on to the next event;
  *  - flag on, one metric line per turn, written once delivery settles, and no
@@ -33,7 +33,6 @@ await jest.unstable_mockModule('../src/lib/pod-focus.js', () => ({
 }));
 
 const { createClient } = await import('../src/lib/api.js');
-const { baseline } = await import('../scripts/seat-log-baseline.mjs');
 const { performRun } = await import('../src/commands/agent.js');
 const {
   createTurnRunner, createMetadataStore, supervisedRunPolicy, metricLine, STALL_DEFAULTS_MS, TURN_OUTCOMES,
@@ -46,7 +45,7 @@ afterAll(() => fs.rmSync(home, { recursive: true, force: true }));
 const PROMPT = 'PROMPT-TEXT-7f3a1c do the docs wash';
 const REPLY = 'REPLY-TEXT-b29e40 done';
 const ERROR_TEXT = 'ERROR-TEXT-55c0de upstream said no';
-const metricsFile = (seat) => path.join(home, '.commonly', 'state', 'seats-canary', `${seat}.jsonl`);
+const metricsFile = (seat) => path.join(home, '.commonly', 'state', 'turns', `${seat}.jsonl`);
 const readMetrics = (seat) => (fs.existsSync(metricsFile(seat))
   ? fs.readFileSync(metricsFile(seat), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 const reset = () => fs.rmSync(path.join(home, '.commonly'), { recursive: true, force: true });
@@ -124,7 +123,7 @@ describe('the turn runner', () => {
     const superviseRun = jest.fn();
     const spawn = jest.fn(async () => ({ text: REPLY }));
     const ctx = { cwd: '/w', env: process.env, timeoutMs: 5 };
-    const runner = createTurnRunner({ seat: 'quire', turnTimeoutMs: 5, supervise: false, superviseRun, env: {} });
+    const runner = createTurnRunner({ seat: 'delta', turnTimeoutMs: 5, supervise: false, superviseRun, env: {} });
     await expect(turnOf(runner, { name: 'claude', spawn }, ctx)).resolves.toEqual({ text: REPLY });
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(spawn.mock.calls[0][0]).toBe(PROMPT);
@@ -135,13 +134,13 @@ describe('the turn runner', () => {
     expect(fs.existsSync(path.join(home, '.commonly'))).toBe(false);
   });
 
-  test('flag on: the turn goes through superviseRun with the canary policy and a no-record store, and no relay', async () => {
+  test('flag on: the turn goes through superviseRun with the turn log policy and a no-record store, and no relay', async () => {
     const superviseRun = jest.fn(async ({ store }) => {
       store.startRun({}).emit('run.settled', { outcome: 'ok' });
       return { outcome: 'ok', attempts: 1, result: { text: REPLY } };
     });
     const spawn = jest.fn();
-    const runner = createTurnRunner({ seat: 'nib', turnTimeoutMs: 2_700_000, supervise: true, superviseRun, env: {} });
+    const runner = createTurnRunner({ seat: 'delta', turnTimeoutMs: 2_700_000, supervise: true, superviseRun, env: {} });
     await expect(turnOf(runner, { name: 'codex', spawn }, { cwd: '/w' }, { eventType: 'inbox.batch' }))
       .resolves.toEqual({ text: REPLY });
     expect(spawn).not.toHaveBeenCalled();
@@ -172,18 +171,18 @@ describe('the turn runner', () => {
         child.once('spawn', () => ctx.onSpawn({}, child));
       }),
     };
-    const runner = createTurnRunner({ seat: 'nib', turnTimeoutMs: 60_000, supervise: true, env, log: (l) => logs.push(l) });
+    const runner = createTurnRunner({ seat: 'delta', turnTimeoutMs: 60_000, supervise: true, env, log: (l) => logs.push(l) });
     const error = await within(turnOf(runner, adapter), 5000).catch((e) => e);
     expect(error.kind).toBe('stuck');
     expect(isRunning(pid)).toBe(false);
     expect(logs).toEqual([expect.stringMatching(/^\[chat\.mention\] supervised turn failed: stuck \(child killed\)$/)]);
-    expect(readMetrics('nib')).toEqual([expect.objectContaining({
+    expect(readMetrics('delta')).toEqual([expect.objectContaining({
       path: 'supervised', outcome: 'failed', ok: false, failure: 'stuck', failureSource: 'supervisor', stalled: true,
       cancelled: true, killed: true, signal: 'SIGKILL', exitObserved: true, childLeftRunning: false, stallMs: 300,
     })]);
   });
 
-  test('a stalled child in its own group is killed with its grandchild (group kill on the canary path)', async () => {
+  test('a stalled child in its own group is killed with its grandchild (group kill on the turn log path)', async () => {
     const env = { COMMONLY_SUPERVISE_STALL_MS: '500', COMMONLY_SUPERVISE_CANCEL_GRACE_MS: '40' };
     // The CLI stand-in starts a grandchild in a group of its own (as codex does
     // for MCP servers), reports its pid on stderr, then goes quiet.
@@ -205,7 +204,7 @@ describe('the turn runner', () => {
         child.once('spawn', () => ctx.onSpawn({}, child));
       }),
     };
-    const runner = createTurnRunner({ seat: 'nib', turnTimeoutMs: 60_000, supervise: true, env });
+    const runner = createTurnRunner({ seat: 'delta', turnTimeoutMs: 60_000, supervise: true, env });
     const error = await turnOf(runner, adapter).catch((e) => e);
     expect(error.kind).toBe('stuck');
     expect(ownGroup).toBe(process.platform !== 'win32');
@@ -224,17 +223,17 @@ describe('the turn runner', () => {
     const ok = { name: 'codex', spawn: async () => ({ text: REPLY }) };
     const bad = { name: 'codex', spawn: async () => { throw new Error(`codex exited with code 3: ${ERROR_TEXT}`); } };
     const named = { name: 'codex', spawn: async () => { throw runFailure('exited', ERROR_TEXT); } };
-    const plain = createTurnRunner({ seat: 'nib', turnTimeoutMs: 1000, supervise: false, env });
-    const supervised = createTurnRunner({ seat: 'nib', turnTimeoutMs: 1000, supervise: true, env });
+    const plain = createTurnRunner({ seat: 'delta', turnTimeoutMs: 1000, supervise: false, env });
+    const supervised = createTurnRunner({ seat: 'delta', turnTimeoutMs: 1000, supervise: true, env });
     await turnOf(plain, ok);
     await turnOf(plain, bad).catch(() => {});
-    expect(readMetrics('nib')).toEqual([]);
+    expect(readMetrics('delta')).toEqual([]);
 
     // A spawn that resolved writes nothing until the run loop says what
     // became of the reply, and only the first finish counts.
     const held = supervised.begin({ eventType: 'inbox.batch' });
     await held.run(ok, PROMPT, {});
-    expect(readMetrics('nib')).toEqual([]);
+    expect(readMetrics('delta')).toEqual([]);
     held.finish('reply_lost');
     held.finish('delivered');
     for (const outcome of ['delivered', 'silent', 'claim_lost']) {
@@ -248,7 +247,7 @@ describe('the turn runner', () => {
       await turn.run(adapter, PROMPT, {}).catch(() => turn.finish('reply_lost'));
     }
 
-    const lines = readMetrics('nib');
+    const lines = readMetrics('delta');
     expect(lines.map((l) => [l.path, l.outcome, l.ok, l.failure])).toEqual([
       ['supervised', 'reply_lost', false, null],
       ['supervised', 'delivered', true, null],
@@ -263,16 +262,16 @@ describe('the turn runner', () => {
         expect(['string', 'number', 'boolean'].includes(typeof value) || value === null).toBe(true);
       }
     }
-    const raw = fs.readFileSync(metricsFile('nib'), 'utf8');
+    const raw = fs.readFileSync(metricsFile('delta'), 'utf8');
     for (const text of [PROMPT, REPLY, ERROR_TEXT, 'PROMPT-TEXT', 'REPLY-TEXT', 'ERROR-TEXT']) expect(raw).not.toContain(text);
   });
 
-  test('the seat name cannot leave the canary directory, and a bad event label is dropped', async () => {
-    const dir = path.join(home, 'canary');
+  test('the seat name cannot leave the turn log directory, and a bad event label is dropped', async () => {
+    const dir = path.join(home, 'turn-log');
     const ok = { name: 'codex', spawn: async () => ({ text: REPLY }) };
     for (const seat of ['../../etc/x', 'a'.repeat(200)]) {
       const runner = createTurnRunner({
-        seat, turnTimeoutMs: 1000, supervise: true, env: { COMMONLY_SUPERVISE_STALL_MS: '0', COMMONLY_SEATS_CANARY_DIR: dir },
+        seat, turnTimeoutMs: 1000, supervise: true, env: { COMMONLY_SUPERVISE_STALL_MS: '0', COMMONLY_TURN_LOG_DIR: dir },
       });
       expect(path.dirname(runner.metricsPath)).toBe(dir);
       // eslint-disable-next-line no-await-in-loop
@@ -291,7 +290,7 @@ describe('the turn runner', () => {
 
   test('metricLine drops anything it does not list, and an outcome it does not know is unknown, not ok', () => {
     const line = metricLine({
-      seat: 'nib', adapter: 'codex', path: 'supervised', startMs: 0, endMs: 5, outcome: 'delivered', text: REPLY, prompt: PROMPT, detail: ERROR_TEXT,
+      seat: 'delta', adapter: 'codex', path: 'supervised', startMs: 0, endMs: 5, outcome: 'delivered', text: REPLY, prompt: PROMPT, detail: ERROR_TEXT,
     });
     expect(Object.keys(line).sort()).toEqual(METRIC_KEYS);
     expect(line).toMatchObject({ outcome: 'delivered', ok: true });
@@ -306,10 +305,10 @@ describe('the turn runner', () => {
     fs.writeFileSync(blocker, '');
     const logs = [];
     const runner = createTurnRunner({
-      seat: 'nib',
+      seat: 'delta',
       turnTimeoutMs: 1000,
       supervise: true,
-      env: { COMMONLY_SUPERVISE_STALL_MS: '0', COMMONLY_SEATS_CANARY_DIR: path.join(blocker, 'x') },
+      env: { COMMONLY_SUPERVISE_STALL_MS: '0', COMMONLY_TURN_LOG_DIR: path.join(blocker, 'x') },
       log: (l) => logs.push(l),
     });
     const adapter = { name: 'codex', spawn: async () => ({ text: REPLY }) };
@@ -337,8 +336,8 @@ describe('the metadata store', () => {
 
 const POD = '6a8f6dc7a1dccf2e02f31015';
 const event = (id) => ({
-  _id: id, type: 'chat.mention', podId: POD, agentName: 'nib', instanceId: 'default',
-  payload: { content: `@nib ${PROMPT} (${id})`, messageId: id.replace(/\D/g, '') || '1', username: 'growth-ops' },
+  _id: id, type: 'chat.mention', podId: POD, agentName: 'delta', instanceId: 'default',
+  payload: { content: `@delta ${PROMPT} (${id})`, messageId: id.replace(/\D/g, '') || '1', username: 'growth-ops' },
 });
 
 const CLAIM_RENEW_MS = 45_000; // the default 90 s lease renews at half-life
@@ -362,20 +361,19 @@ const loop = ({
   const errors = [];
   const scheduled = [];
   const intervals = [];
-  const seatLines = [];
   const handle = performRun({
     instanceUrl: 'http://localhost:5000',
     token: 'cm_agent_test',
     adapter,
-    agentName: 'nib',
+    agentName: 'delta',
     environment: { model: 'gpt-test' },
     retryJitterRatio: 0,
     claimYieldDelayMs: 0,
     sleepImpl: async () => {},
     superviseRuns,
-    log: (line) => { logs.push(String(line)); seatLines.push(String(line)); },
+    log: (line) => { logs.push(String(line)); },
     // `commonly agent run` stamps onError into the same seat log as log().
-    onError: (err) => { errors.push(err); seatLines.push(err.message); },
+    onError: (err) => { errors.push(err); },
     setTimeoutImpl: (callback, delayMs) => { scheduled.push({ callback, delayMs }); return 0; },
     setIntervalImpl: (callback, delayMs) => { intervals.push({ callback, delayMs }); return intervals.length; },
     clearIntervalImpl: () => {},
@@ -384,9 +382,7 @@ const loop = ({
   const acks = () => post.mock.calls.filter(([r]) => String(r).endsWith('/ack')).map(([r, b]) => ({ id: String(r).split('/').at(-2), result: b.result }));
   // The claim keeper's renewal ticks, fired by hand (mid-turn, from a spawn).
   const renewClaims = () => Promise.all(intervals.filter((i) => i.delayMs === CLAIM_RENEW_MS).map((i) => i.callback()));
-  // The run's log as the seat log has it, for the baseline.
-  const seatLog = () => seatLines.map((line, i) => `2026-10-26T00:00:${String(i).padStart(2, '0')}.000Z [nib] ${line}`).join('\n');
-  return { handle, logs, errors, scheduled, acks, restore, post, renewClaims, seatLog };
+  return { handle, logs, errors, scheduled, acks, restore, post, renewClaims };
 };
 
 const until = async (predicate, ms = 10_000) => {
@@ -412,9 +408,9 @@ describe('the run loop', () => {
     // Only superviseRun hands an adapter a cancel signal and a trace hook.
     expect('signal' in ctxs[0]).toBe(superviseRuns);
     expect('trace' in ctxs[0]).toBe(superviseRuns);
-    // Flag off writes no canary line at all; flag on writes one once the reply is posted.
-    expect(readMetrics('nib').map((l) => [l.path, l.outcome, l.ok])).toEqual(superviseRuns ? [[pathName, 'delivered', true]] : []);
-    expect(fs.existsSync(path.join(home, '.commonly', 'state', 'seats-canary'))).toBe(superviseRuns);
+    // Flag off writes no turn line at all; flag on writes one once the reply is posted.
+    expect(readMetrics('delta').map((l) => [l.path, l.outcome, l.ok])).toEqual(superviseRuns ? [[pathName, 'delivered', true]] : []);
+    expect(fs.existsSync(path.join(home, '.commonly', 'state', 'turns'))).toBe(superviseRuns);
     expect(fs.existsSync(path.join(home, '.commonly', 'traces'))).toBe(false);
   });
 
@@ -457,18 +453,16 @@ describe('the run loop', () => {
       await until(() => ['evt-a', 'evt-b'].every((id) => run.acks().some((a) => a.id === id)));
       expect(run.acks().filter((a) => a.id === 'evt-a')).toEqual([{ id: 'evt-a', result: { outcome: 'posted' } }]);
     } finally { run.handle.stop(); run.restore(); }
-    const turns = readMetrics('nib').map((l) => [l.path, l.outcome, l.failure, l.killed]);
+    const turns = readMetrics('delta').map((l) => [l.path, l.outcome, l.failure, l.killed]);
     expect(turns[0]).toEqual(['supervised', 'failed', 'stuck', true]);
     expect(turns.slice(1).length).toBeGreaterThan(0);
     for (const turn of turns.slice(1)) expect(turn).toEqual(['supervised', 'delivered', null, false]);
   });
 
   // A turn is ok only once its outcome reached the pod. Each case below runs
-  // the real run loop with the flag on, then reads the same turn back two
-  // ways: the canary line, and the seat-log baseline over the run's own log.
-  const baselineOf = (run) => baseline(run.seatLog(), { seat: 'nib', untilMs: Date.parse('2026-10-26T01:00:00Z'), hours: 2 });
+  // the real run loop with the flag on, then reads the turn back from its turn line.
 
-  test('a lease lost mid-turn is claim_lost, not ok: the reply is not posted, in the canary and the baseline alike', async () => {
+  test('a lease lost mid-turn is claim_lost, not ok: the reply is not posted', async () => {
     const renewals = { n: 0 };
     let run;
     const adapter = {
@@ -489,16 +483,15 @@ describe('the run loop', () => {
       },
     });
     try {
-      await until(() => readMetrics('nib').length === 1);
+      await until(() => readMetrics('delta').length === 1);
     } finally { run.handle.stop(); run.restore(); }
     expect(renewals.n).toBeGreaterThan(1);
     expect(run.logs).toEqual(expect.arrayContaining([expect.stringMatching(/stood down — claim lost mid-turn to peer; reply suppressed/)]));
     expect(run.post.mock.calls.filter(([r]) => String(r).endsWith('/messages'))).toEqual([]);
-    expect(readMetrics('nib')).toEqual([expect.objectContaining({ path: 'supervised', outcome: 'claim_lost', ok: false, failure: null })]);
-    expect(baselineOf(run).byAdapter.codex).toMatchObject({ turns: 1, ok: 0, failed: 0, outcomes: { claim_lost: 1 } });
+    expect(readMetrics('delta')).toEqual([expect.objectContaining({ path: 'supervised', outcome: 'claim_lost', ok: false, failure: null })]);
   });
 
-  test('a reply every delivery rung refused is reply_lost, not ok: the event stays unacked, in the canary and the baseline alike', async () => {
+  test('a reply every delivery rung refused is reply_lost, not ok: the event stays unacked', async () => {
     const adapter = { name: 'codex', detect: async () => null, spawn: async () => ({ text: REPLY }) };
     const rungs = [];
     const run = loop({
@@ -517,12 +510,11 @@ describe('the run loop', () => {
       },
     });
     try {
-      await until(() => readMetrics('nib').length === 1 && run.errors.length === 1);
+      await until(() => readMetrics('delta').length === 1 && run.errors.length === 1);
     } finally { run.handle.stop(); run.restore(); }
     expect(rungs.length).toBeGreaterThan(0);
     expect(run.logs).toEqual(expect.arrayContaining([expect.stringMatching(/ERROR reply NOT delivered to pod/)]));
     expect(run.acks()).toEqual([]);
-    expect(readMetrics('nib')).toEqual([expect.objectContaining({ path: 'supervised', outcome: 'reply_lost', ok: false, failure: null })]);
-    expect(baselineOf(run).byAdapter.codex).toMatchObject({ turns: 1, ok: 0, failed: 0, errors: 0, outcomes: { reply_lost: 1 } });
+    expect(readMetrics('delta')).toEqual([expect.objectContaining({ path: 'supervised', outcome: 'reply_lost', ok: false, failure: null })]);
   });
 });

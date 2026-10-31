@@ -1440,7 +1440,7 @@ export const performRun = ({
   // Off unless COMMONLY_SUPERVISE_RUNS=1: each spawn runs under the seats
   // supervisor (stall window, wall-clock backstop, a named failure on every
   // settle). The CLI still talks to its provider directly, and one metadata
-  // line per turn goes to ~/.commonly/state/seats-canary/<agent>.jsonl once
+  // line per turn goes to ~/.commonly/state/turns/<agent>.jsonl once
   // delivery settles. Off, the spawn path is the plain adapter call it has
   // always been, and nothing is written.
   superviseRuns = process.env.COMMONLY_SUPERVISE_RUNS === '1',
@@ -1871,7 +1871,7 @@ export const performRun = ({
 
   // The spawn → post-decision half of a turn, split out so the claim release
   // above is a plain finally instead of threading through every return path.
-  // With superviseRuns, the turn's canary line is written once delivery has
+  // With superviseRuns, the turn's log line is written once delivery has
   // settled; anything thrown after a spawn that resolved means the reply never
   // reached the pod. Off, `turn` writes nothing.
   const runTurn = async (args) => {
@@ -2227,7 +2227,7 @@ export const performRun = ({
     const upstream = result.upstream || null;
     let delivered = agentPostedItself;
     let deliveryRefusal = null;
-    // What became of the reply, for the canary line (lib/supervised-turn.js
+    // What became of the reply, for the turn line (lib/supervised-turn.js
     // TURN_OUTCOMES). A throw below is reply_lost, finished by runTurn.
     let turnOutcome;
 

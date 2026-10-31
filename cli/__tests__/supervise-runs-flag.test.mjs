@@ -59,7 +59,7 @@ const event = (id, content, over = {}) => ({
   _id: id,
   type: 'chat.mention',
   podId: POD_ID,
-  agentName: 'rhea',
+  agentName: 'echo',
   instanceId: 'default',
   payload: { content, messageId: id.replace(/\D/g, '') || '1', username: 'growth-ops' },
   ...over,
@@ -93,7 +93,7 @@ const harness = ({ events, adapter, env = {}, extra = {} }) => {
       instanceUrl: 'http://localhost:5000',
       token: 'cm_agent_test',
       adapter,
-      agentName: 'rhea',
+      agentName: 'echo',
       retryJitterRatio: 0,
       claimYieldDelayMs: 0,
       sleepImpl: async () => {},
@@ -136,13 +136,13 @@ const normalise = (value) => JSON.parse(JSON.stringify(value, (_key, v) => (
 
 const SCENARIOS = {
   success: {
-    events: [event('evt-1', '@rhea docs gate: #2250, wording only')],
+    events: [event('evt-1', '@echo docs gate: #0050, wording only')],
     spawn: async () => ({ text: 'docs gate: PASS' }),
   },
   refusalInMixedBatch: {
     events: [
-      event('evt-2', '@rhea security gate: #2249, flagged-content-here'),
-      event('evt-3', '@rhea docs gate: #2251, typo fix'),
+      event('evt-2', '@echo security gate: #0049, flagged-content-here'),
+      event('evt-3', '@echo docs gate: #0051, typo fix'),
     ],
     spawn: async (prompt) => {
       if (prompt.includes('flagged-content-here')) {
@@ -152,7 +152,7 @@ const SCENARIOS = {
     },
   },
   runtimeFailure: {
-    events: [event('evt-4', '@rhea docs gate: #2252')],
+    events: [event('evt-4', '@echo docs gate: #0052')],
     spawn: async () => { throw new Error('runtime unavailable'); },
   },
 };
@@ -205,9 +205,9 @@ describe('COMMONLY_SUPERVISE_RUNS off', () => {
     }
     const golden = JSON.parse(fs.readFileSync(GOLDEN, 'utf8'));
     expect(got).toEqual(golden);
-    // Off, nothing is written: no trace store, and no canary line.
+    // Off, nothing is written: no trace store, and no turn line.
     expect(fs.existsSync(path.join(home, '.commonly', 'traces'))).toBe(false);
-    expect(fs.existsSync(path.join(home, '.commonly', 'state', 'seats-canary'))).toBe(false);
+    expect(fs.existsSync(path.join(home, '.commonly', 'state', 'turns'))).toBe(false);
   });
 
   if (!WRITE_GOLDEN) {
@@ -228,14 +228,14 @@ describe('COMMONLY_SUPERVISE_RUNS off', () => {
       };
       fs.rmSync(path.join(home, '.commonly'), { recursive: true, force: true });
       const run = harness({
-        events: [event('evt-5', '@rhea hi')], adapter, env: { COMMONLY_SUPERVISE_RUNS: '1' }, extra: { superviseRuns: false },
+        events: [event('evt-5', '@echo hi')], adapter, env: { COMMONLY_SUPERVISE_RUNS: '1' }, extra: { superviseRuns: false },
       });
       await drain();
       run.handle.stop();
       expect(spawns).toHaveLength(1);
       expect(spawns[0]).not.toHaveProperty('signal');
       expect(fs.existsSync(path.join(home, '.commonly', 'traces'))).toBe(false);
-      expect(fs.existsSync(path.join(home, '.commonly', 'state', 'seats-canary'))).toBe(false);
+      expect(fs.existsSync(path.join(home, '.commonly', 'state', 'turns'))).toBe(false);
     });
   }
 });
@@ -278,7 +278,7 @@ describe('COMMONLY_SUPERVISE_RUNS=1 with the real codex adapter', () => {
   // Each turn spawns a real child and makes real loopback calls; under a
   // parallel suite on a loaded host that takes longer than jest's 5 s default.
   jest.setTimeout(60_000);
-  const CANARY_KEY = 'sk-canary-run-loop-4c1d9e7a';
+  const TURN_KEY = 'sk-turn-run-loop-4c1d9e7a';
 
   test('a clean reply is posted, the metric line says supervised and delivered, and nothing else reaches disk', async () => {
     const { startFakeProvider } = await import('../../packages/seats/test-support/fake-provider.js');
@@ -296,7 +296,7 @@ describe('COMMONLY_SUPERVISE_RUNS=1 with the real codex adapter', () => {
     const env = {
       COMMONLY_SUPERVISE_RUNS: '1',
       CODEX_HOME: codexHome,
-      FAKE_PROVIDER_KEY: CANARY_KEY,
+      FAKE_PROVIDER_KEY: TURN_KEY,
       STUB_CODEX_DIRECT_BASE: provider.baseURL,
       PATH: `${bin}${path.delimiter}${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH}`,
     };
@@ -305,7 +305,7 @@ describe('COMMONLY_SUPERVISE_RUNS=1 with the real codex adapter', () => {
     Object.assign(process.env, env);
     try {
       const run = harness({
-        events: [event('evt-9', '@rhea review #2249')],
+        events: [event('evt-9', '@echo review #0049')],
         adapter: codex,
         extra: { environment: { model: 'gpt-test' }, workspacePath: workspace },
       });
@@ -323,7 +323,7 @@ describe('COMMONLY_SUPERVISE_RUNS=1 with the real codex adapter', () => {
       expect(run.posts().map((p) => p.content)).toContain('review: PASS');
       expect(provider.requests.map((r) => r.authorization)).toEqual(['present']);
       expect(fs.existsSync(path.join(home, '.commonly', 'traces'))).toBe(false);
-      const lines = fs.readFileSync(path.join(home, '.commonly', 'state', 'seats-canary', 'rhea.jsonl'), 'utf8')
+      const lines = fs.readFileSync(path.join(home, '.commonly', 'state', 'turns', 'echo.jsonl'), 'utf8')
         .split('\n').filter(Boolean).map((line) => JSON.parse(line));
       expect(lines).toEqual([expect.objectContaining({
         path: 'supervised', adapter: 'codex', outcome: 'delivered', ok: true, failure: null,
@@ -332,7 +332,7 @@ describe('COMMONLY_SUPERVISE_RUNS=1 with the real codex adapter', () => {
       // The reply was posted, and is in no file the run left: no record writer.
       for (const file of filesUnder(home)) {
         const text = fs.readFileSync(file, 'utf8');
-        expect({ file, reply: text.includes('review: PASS'), auth: text.includes(CANARY_KEY) })
+        expect({ file, reply: text.includes('review: PASS'), auth: text.includes(TURN_KEY) })
           .toEqual({ file, reply: false, auth: false });
       }
     } finally {
