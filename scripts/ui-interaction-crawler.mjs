@@ -115,7 +115,7 @@ const SAFE_GET_EXACT = [
 ];
 const SAFE_GET_PREFIX = [
   '/api/pods/', '/api/v1/tasks/', '/api/messages/', '/api/registry/pods/', '/api/registry/agents/',
-  '/api/uploads/', '/api/agent-memory/', '/api/stats/',
+  '/api/agent-memory/', '/api/stats/',
 ];
 // Same-origin app routes and static assets. The SPA answers these with HTML or files, never a write.
 const APP_PREFIX = ['/v2/', '/assets/', '/static/'];
@@ -224,7 +224,7 @@ async function openPage(browser, viewport, scheme, record) {
   // Every origin and path, not only /api: a click on a form or a link can send a write anywhere.
   await context.route('**/*', async (r) => {
     const method = r.request().method();
-    if (method === 'OPTIONS') return r.continue();
+    if (method === 'OPTIONS') return readAllowed(r.request().url()) ? r.continue() : r.abort();
     if (!SAFE_METHODS.has(method)) {
       record.blockedWrites += 1;
       return r.abort();
@@ -237,7 +237,14 @@ async function openPage(browser, viewport, scheme, record) {
         record.blockedReads += 1;
         return r.abort();
       }
-      const res = await r.fetch({ url, maxRedirects: 0 });
+      let res;
+      try {
+        res = await r.fetch({ url, maxRedirects: 0 });
+      } catch {
+        // A failed fetch must still settle the route, or the page hangs on it.
+        record.blockedReads += 1;
+        return r.abort().catch(() => {});
+      }
       const location = res.headers().location;
       if (res.status() >= 300 && res.status() < 400 && location) {
         url = new URL(location, url).href;
