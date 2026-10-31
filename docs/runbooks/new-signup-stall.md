@@ -7,23 +7,31 @@ on it?** The account already records the answer.
 ## Read the onboarding marks first
 
 `User.onboarding` carries write-once first-session marks, each set
-server-side (`services/onboardingMarks.ts`). Accounts created before a mark
-shipped don't have it; nothing is backfilled.
+server-side (`services/onboardingMarks.ts`).
+
+**A missing mark means "no mark recorded", not proof the step didn't happen.**
+The writes are fire-and-forget: `markPodOpened` calls `User.updateOne(...)`
+without awaiting it, and a failed write leaves the mark unset after a real
+visit. The marks are recorded only for a pod the person created, and only on
+accounts created after the mark shipped; nothing is backfilled. Treat a gap as
+a lead to confirm, for example against `lastActive` or the person's messages.
 
 | mark | set when | tells you |
 |---|---|---|
-| `podOpenedAt` | the person first loads the messages of a pod they created, such as My Workspace | they reached the workspace and its welcome |
+| `podOpenedAt` | the first authorized fetch of the messages of a pod they created, such as My Workspace. It is set before the messages are read, so it records the request, not a render | their client asked for the workspace's messages, so the welcome was very likely on its way to the screen |
 | `firstStartAt` + `firstStartId` | their first message in a pod they created matches a start's label, or the server resolves a click on their own "Run an agent here" | they acted, and which choice |
 | `byoOpenedAt` | they first load Bring your own (`GET /api/hosted/availability`) | they looked at setup |
 
 Read them together with the person's first own message in their workspace.
 
-- **No `podOpenedAt`**: they never reached the screen. Look at the signup and
-  redirect path.
+- **No `podOpenedAt`**: no messages fetch was recorded for their own pod. They
+  may never have reached the workspace, or the write may have failed. Check
+  `lastActive` first, then look at the signup and redirect path.
 - **`podOpenedAt` but no `firstStartAt`, no `byoOpenedAt` and no message**:
-  they saw the welcome and did nothing. That is a copy or comprehension
-  question, not a render bug. Compare against people who did act: how soon
-  after `podOpenedAt` did they click?
+  most likely they saw the welcome and did nothing. If a staging walk shows the
+  render is clean, treat it as a copy or comprehension question, not a render
+  bug. Compare against people who did act: how soon after `podOpenedAt` did
+  they click?
 - **`firstStartAt` but nothing after it**: the click is the place to look,
   above all `run-hosted`. It sends no message, and the mark is set when the
   server resolves the click, before the install and provision run. So a
