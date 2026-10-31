@@ -1130,6 +1130,17 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     // (TASK-669), and the edit names the claim it overrode.
     const lease = await leaseCheckForWrite(podId || '', taskId || '', req, userId, { creatorOverride: true });
     if (lease.refusal) return res.status(409).json(lease.refusal);
+    // A PATCH to done on a row that is already done is not a second completion. It keeps
+    // the original completedAt and fires no close side effects; the other fields in the
+    // same PATCH still apply. The write filter below makes the transition itself atomic.
+    if (fieldUpdates.status === 'done') {
+      const current = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId });
+      if (current?.status === 'done') {
+        delete fieldUpdates.status;
+        delete fieldUpdates.claimedByUserId;
+        if (Object.keys(fieldUpdates).length === 0) return res.json({ task: current });
+      }
+    }
     const author = await resolveAuthor(req);
     const needsPriorOwner = fieldUpdates.assignee !== undefined || fieldUpdates.status !== undefined;
     const changeParts: string[] = [];
@@ -1154,6 +1165,9 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
       podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
       taskId,
       ...writableLeaseCondition(req, userId, new Date(), { creatorOverride: true }),
+      // Only a row that is not done yet can move into done, so completedAt, the grant
+      // epoch and the close hooks fire once even when two PATCHes race.
+      ...(fieldUpdates.status === 'done' ? { status: { $ne: 'done' } } : {}),
     };
     let task = null;
     let racedRevision = false;

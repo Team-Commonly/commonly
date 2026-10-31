@@ -56,6 +56,13 @@ describe('registry presets', () => {
     process.env.GEMINI_API_KEY = originalGemini;
   });
 
+  it('no preset PATCHes a task to claimed, because a claim takes a lease', () => {
+    const { PRESET_DEFINITIONS } = require('../../../routes/registry/presets');
+    const serialized = JSON.stringify(PRESET_DEFINITIONS);
+    expect(serialized).toContain('commonly_claim_task');
+    expect(serialized).not.toMatch(/status: \\?["'](claimed|in_progress|in-progress|inprogress)\\?["']/);
+  });
+
   it('returns preset catalog with tool and api readiness', async () => {
     const handler = getRouteHandler('/presets', 'get');
     const req = { userId: 'user-1', user: { id: 'user-1' } };

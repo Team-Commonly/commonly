@@ -88,6 +88,17 @@ test.each(['complete', 'patch', 'github', 'onboarding'])('%s close revokes the b
   ]);
 });
 
+test('a repeated PATCH to done keeps its completion time, closes once, and still applies its note', async () => {
+  expect((await request(app).patch(`/tasks/${POD}/TASK-1`).send({ status: 'done' })).status).toBe(200);
+  const first = await Task.findOne({ podId: POD, taskId: 'TASK-1' });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  expect((await request(app).patch(`/tasks/${POD}/TASK-1`).send({ status: 'done', notes: 'closed again' })).status).toBe(200);
+  const second = await Task.findOne({ podId: POD, taskId: 'TASK-1' });
+  expect(second.completedAt.getTime()).toBe(first.completedAt.getTime());
+  expect(second.grantEpoch).toBe(1);
+  expect(second.notes).toBe('closed again');
+});
+
 test('a failed revocation write leaves the close committed and the grant refused by its epoch', async () => {
   const spy = jest.spyOn(RoomGrant, 'findOneAndUpdate').mockRejectedValueOnce(new Error('revocation write failed'));
   expect((await request(app).post(`/tasks/${POD}/TASK-1/complete`).send({})).status).toBe(200);

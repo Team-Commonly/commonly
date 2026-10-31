@@ -86,6 +86,8 @@ beforeEach(() => {
   mockFindOneAndUpdate.mockResolvedValue({ taskId: 'TASK-001', status: 'claimed' });
   mockEmitTaskUpdated.mockReset();
   mockNotifyPodAgents.mockReset();
+  // mockReset clears a queued mockResolvedValueOnce, so one test's read cannot leak into the next.
+  Task.findOne.mockReset();
   Task.findOne.mockReturnValue({ select: () => ({ lean: async () => null }) });
   mockRecordTaskAttention.mockReset();
   mockRecordTaskAttention.mockResolvedValue(undefined);
@@ -93,6 +95,34 @@ beforeEach(() => {
   mockResolveTaskAttention.mockResolvedValue(undefined);
   mockOnTaskClosed.mockClear();
   mockRecordTaskCompleted.mockClear();
+});
+
+describe('PATCH to done is one transition', () => {
+  test('writes only a row that is not done yet, and stamps its completion time', async () => {
+    const res = await request(app)
+      .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
+      .send({ status: 'done' });
+
+    expect(res.status).toBe(200);
+    const [filter, update] = mockFindOneAndUpdate.mock.calls[0];
+    expect(filter.status).toEqual({ $ne: 'done' });
+    expect(update.$set.completedAt).toBeInstanceOf(Date);
+    expect(update.$inc).toEqual({ grantEpoch: 1 });
+  });
+
+  test('a repeated PATCH to done writes nothing and fires no close side effects', async () => {
+    Task.findOne.mockResolvedValueOnce({ taskId: 'TASK-001', status: 'done' });
+
+    const res = await request(app)
+      .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
+      .send({ status: 'done' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.task.status).toBe('done');
+    expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+    expect(mockOnTaskClosed).not.toHaveBeenCalled();
+    expect(mockRecordTaskCompleted).not.toHaveBeenCalled();
+  });
 });
 
 describe('PATCH /:podId/:taskId status vocabulary', () => {
