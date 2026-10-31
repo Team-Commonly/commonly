@@ -9,7 +9,7 @@ claim past 14 days is re-walked in the next release batch, or it comes out. The 
 ## Verdicts
 
 - **WALKED**: someone who did not write the claim did it on commonly.me. The evidence is a 390 and a
-  1440 screenshot.
+  1440 screenshot posted to the Docs wash pod, cited by message id and date. Screenshots are not kept in git.
 - **TRUE**: code on `main` does what the claim says. The evidence is a `file:line` on `main`, not
   another doc.
 - **TRUE; walked**: the `file:line` on `main` is the evidence, and a walk on commonly.me by someone
@@ -77,7 +77,7 @@ Owner: TASK-011. Source: `docs-site/quickstart.mdx` and `docs-site/introduction.
 | quickstart | Commonly runs a hosted agent on DeepSeek V4 Flash | TRUE | `backend/services/nativeRuntimeService.ts:101` (`DEFAULT_MODEL`), `:224` (display name). Overridable by `LITELLM_CHAT_MODEL`, so re-check on prod | 2026-10-26 |
 | quickstart | The Run it here setup shows the free plan's agent and daily turn limits | TRUE | `frontend/src/v2/components/V2AgentBYO.tsx:1054-1057` renders `hosting.caps.agentsPerUser` and `hosting.caps.turnsPerDay` directly under the Run it here button; caps from `backend/services/hostedRuntimeService.ts:57-61`. No numbers are stated on the page | 2026-10-28 |
 | quickstart | "About a minute" (frontmatter description) | CUT | No walk of the full sign-up-to-answer time. Removed from the description | 2026-10-26 |
-| quickstart | Links: `/bring-your-own/`, `/bring-your-own/claude-code`, `/codex`, `/work-in-your-repo`, `/concepts/pods` | TRUE | Targets exist: `docs-site/bring-your-own/*.mdx`, `docs-site/concepts/pods.mdx` | 2026-10-26 |
+| quickstart | Links: `/bring-your-own`, `/bring-your-own/claude-code`, `/bring-your-own/codex`, `/bring-your-own/work-in-your-repo`, `/concepts/pods` | TRUE | `docs-site/quickstart.mdx:16-18` (link text and targets); the targets are `docs-site/bring-your-own/index.mdx`, `claude-code.mdx`, `codex.mdx`, `work-in-your-repo.mdx` and `docs-site/concepts/pods.mdx`. The quickstart link to `/bring-your-own/` now points at `/bring-your-own` (`docs-site/quickstart.mdx:12`), because the trailing slash 308s (curl on docs.commonly.me, 10-28; not a walk). | 2026-10-28 |
 | introduction | Commonly can host an agent for you ("Run it here") | TRUE | `en.json:1621` (`hosted`: "Run it here") | 2026-10-26 |
 | introduction | Agents run on your own machine and connect with a runtime token | TRUE | `backend/middleware/agentRuntimeAuth.ts:51` (`cm_agent_` token); `cli/src/index.js:62` (`commonly agent attach`) | 2026-10-26 |
 | introduction | A pod holds conversation, files, tasks and context | TRUE | Conversation: `backend/models/Message.ts:43` (`podId`). Files: `backend/models/PodAsset.ts:40` (`podId`). Tasks: `backend/routes/tasksApi.ts:226-253` (`GET /:podId` filters `Task.find` by `podId`; mounted at `backend/server.ts:257`). Context: `backend/routes/contextApi.ts:80-91` (`/context/:podId`) | 2026-10-26 |
