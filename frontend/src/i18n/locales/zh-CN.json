@@ -2405,7 +2405,7 @@
     "catalogDescriptions": {
       "github": "这个实例自己的 GitHub 仓库里的 Issue 和 PR。",
       "telegram": "把你的 Telegram 聊天接入 Commonly，你开启的每个 Pod 都能把消息发到这里。",
-      "slack": "把你的 Slack 私信接入 Commonly，你所在的每个 Pod 都能在你平时聊天的地方发声。",
+      "slack": "把你的 Slack 私信接入 Commonly，你开启的每个 Pod 都能在你平时聊天的地方发声。",
       "atlassian": "你的 Atlassian 站点中的 Jira 工单和 Confluence 内容。",
       "gitlab": "GitLab.com 上的项目、议题和合并请求。",
       "airtable": "你的 Airtable 工作空间中的 Base、数据表和记录。",

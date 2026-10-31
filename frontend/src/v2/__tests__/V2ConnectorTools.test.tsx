@@ -1026,3 +1026,28 @@ test('a Tools row shows the zh-CN catalog copy, and an unmapped entry keeps the 
     await act(async () => { await i18n.changeLanguage('en'); });
   }
 });
+
+test('the open grant form reads in zh-CN, not English', async () => {
+  await i18nReady;
+  await act(async () => { await i18n.changeLanguage('zh-CN'); });
+  try {
+    axios.get.mockImplementation((url) => {
+      if (url === '/api/installables') return Promise.resolve({ data: { installables: [githubEntry] } });
+      if (url === '/api/grants') return Promise.resolve({ data: { grants: [grantRevoked] } });
+      if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [{ name: 'scout', displayName: 'Scout', userId: 'a1' }] } });
+      if (url.includes('/registry/pods/')) return Promise.resolve({ data: { agents: [] } });
+      if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'g', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
+      return Promise.reject(new Error(`unmocked ${url}`));
+    });
+    renderTools();
+    fireEvent.click(await screen.findByRole('button', { name: /^添加$|^Add$/ }));
+    const form = await screen.findByRole('complementary');
+    expect(within(form).getByText('无需确认')).toBeInTheDocument();
+    expect(within(form).queryByText('nothing asks first')).toBeNull();
+    expect(within(form).queryByText('read and write, ask first')).toBeNull();
+    // No English button left in the zh-CN form.
+    expect(within(form).queryByRole('button', { name: 'Grant' })).toBeNull();
+  } finally {
+    await act(async () => { await i18n.changeLanguage('en'); });
+  }
+});
