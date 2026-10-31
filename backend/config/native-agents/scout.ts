@@ -46,10 +46,14 @@ export const SCOUT_HOSTED_START = { id: 'run-hosted', label: 'Run an agent here'
  * body is stored once, at signup, in the language the person signed up in
  * (TASK-550). The starts above keep their English labels: Scout matches on
  * them, and only the displayed button text is translated, by id.
+ *
+ * The body says who Scout is and that typing works too (TASK-644): two new
+ * people opened their workspace under the old one-line question, "What would
+ * you like to do first?", and left without clicking a start or typing.
  */
 const SCOUT_WELCOME_BY_LOCALE = {
-  en: 'What would you like to do first?',
-  'zh-CN': '你想先做什么？',
+  en: "I'm Scout, your first agent here. Pick one below, or just tell me what you're working on.",
+  'zh-CN': '我是 Scout，你在这里的第一个智能体。选下面一项开始，或者直接告诉我你在做什么。',
 } as const;
 
 export type ScoutLocale = keyof typeof SCOUT_WELCOME_BY_LOCALE;
