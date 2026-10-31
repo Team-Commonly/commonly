@@ -94,6 +94,7 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     expect(stops).toHaveTextContent(/stops when this Terminal window closes/);
     expect(stops).toHaveTextContent(/Other ways to connect/);
     expect(stops).toHaveTextContent(/On my computer/);
+    expect(stops).toHaveTextContent(/Install another/);
     expect(stops).not.toHaveTextContent(/daemon install/);
   });
 
@@ -113,6 +114,15 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     expect(screen.getByTestId('byo-add-computer-recommended')).toHaveTextContent(/Recommended for an agent that keeps running/);
     expect(add).toHaveTextContent(/appears in the list by its name, marked online/);
     expect(add).toHaveTextContent('commonly daemon register && commonly daemon install');
+  });
+
+  test('on Windows: no quick-try line, and the daemon is not marked recommended (systemd cannot install there)', async () => {
+    setUserAgent(WINDOWS);
+    mockPage({ machines: [] });
+    renderPage();
+    await screen.findByTestId('byo-add-computer');
+    expect(screen.queryByTestId('byo-quick-try')).toBeNull();
+    expect(screen.queryByTestId('byo-add-computer-recommended')).toBeNull();
   });
 
   test('with a computer already added, the quick-try line and the daemon block are both gone', async () => {

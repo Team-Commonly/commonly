@@ -1409,7 +1409,7 @@ const V2AgentBYO: React.FC = () => {
           )}
           {/* The run command is the quick try; it dies with its Terminal. The
               daemon is the one that keeps the agent running (TASK-645 item 3). */}
-          {mode === 'byo' && machines.length === 0 && (
+          {mode === 'byo' && machines.length === 0 && listenerAvailable && (
             <p className="v2-byo__hint" data-testid="byo-quick-try">{t('agentByo.quickTry')}</p>
           )}
           {/* One command is THE path (QA BYO walk 1): the daemon and the SDK
@@ -1423,7 +1423,9 @@ const V2AgentBYO: React.FC = () => {
           {machines.length === 0 && (
             <div className="v2-byo__add-computer" data-testid="byo-add-computer">
               <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
-              <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">{t('agentByo.addComputer.recommended')}</p>
+              {setupOs !== 'windows' && (
+                <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">{t('agentByo.addComputer.recommended')}</p>
+              )}
               <div className="v2-byo__add-computer-row">
                 <code>{daemonCommand}</code>
                 <button
