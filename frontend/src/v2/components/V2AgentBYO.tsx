@@ -1658,6 +1658,7 @@ const V2AgentBYO: React.FC = () => {
                     </button>
                   </>
                 )}
+                {error && <span className="v2-byo__error" role="alert"> {error}</span>}
               </p>
             )}
             <p className="v2-byo__needs" data-testid={listenerAvailable ? 'byo-listen-needs' : 'byo-listen-unavailable'}>
@@ -1942,7 +1943,7 @@ const V2AgentBYO: React.FC = () => {
         </div>
       </aside>
       </div>
-          {issued && showHostedOffer && !hasCopied && hosting?.configured && listenState !== 'listening' && (
+          {issued && listenerAvailable && showHostedOffer && !hasCopied && hosting?.configured && listenState !== 'listening' && (
             <section role="status" className="v2-byo__hosted-offer" aria-label={t('agentByo.hosted.offerAction')}>
               <p>{t('agentByo.hosted.offerBody')}</p>
               <button type="button" className="v2-byo__submit v2-byo__hosted-offer-action" disabled={submitting} onClick={startHostedInstead}>

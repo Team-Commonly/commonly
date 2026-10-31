@@ -452,6 +452,13 @@ describe('BYO listener snippet', () => {
       try {
         await issueToken();
         expect(within(screen.getByTestId('byo-listen-wont-answer')).getByRole('button', { name: 'Run it here' })).toBeInTheDocument();
+        // The hosted offer section would repeat the same action: one button only.
+        expect(screen.getAllByRole('button', { name: /Run it here/ })).toHaveLength(1);
+        // A failed start shows its error beside the button, even after a copy.
+        axios.get.mockImplementation((url) => (url.startsWith('/api/registry/agents/next-free-name')
+          ? Promise.reject(new Error('boom')) : Promise.resolve({ data: { configured: true, caps: { agentsPerUser: 3, turnsPerDay: 20 } } })));
+        fireEvent.click(screen.getByTestId('byo-listen-run-here'));
+        await waitFor(() => expect(within(screen.getByTestId('byo-listen-wont-answer')).getByRole('alert')).toBeInTheDocument());
       } finally {
         hostedConfigured = false;
       }
