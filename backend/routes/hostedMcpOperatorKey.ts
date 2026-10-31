@@ -41,8 +41,11 @@ export const submitOperatorKey = async (req: OperatorKeyRequest, res: Response) 
     return res.status(400).json({ error: 'invalid_agent', message: 'agentId must name an agent' });
   }
   const agent = await User.findOne({ _id: agentId, isBot: true }).select('_id botMetadata').lean();
-  const agentName = agent?.botMetadata?.agentName;
-  const instanceId = agent?.botMetadata?.instanceId;
+  // The identity comes from the bot's own row, never the body, and is lowercased
+  // as credentials.ts does. Refused before the probe, so a refused caller's key
+  // never reaches the vendor.
+  const agentName = String(agent?.botMetadata?.agentName || '').toLowerCase();
+  const instanceId = String(agent?.botMetadata?.instanceId || '');
   if (!agent || !agentName || !instanceId) {
     return res.status(400).json({ error: 'invalid_agent', message: 'agentId must name an agent' });
   }
@@ -50,7 +53,11 @@ export const submitOperatorKey = async (req: OperatorKeyRequest, res: Response) 
   // rule as a runtime token. Admins are not exempt.
   const ownership = await ownsRuntimeIdentity(userId, agentName, instanceId);
   if (!ownership.owned) {
-    return res.status(403).json({ error: 'agent_not_owned', message: 'you must be the sole installer of this agent' });
+    return res.status(403).json({
+      error: 'agent_not_owned',
+      failure: ownership.failure,
+      message: 'you must be the sole installer of this agent',
+    });
   }
 
   const picks = Array.isArray(body.scopePicks) ? body.scopePicks.map(String) : [];

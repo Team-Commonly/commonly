@@ -1,8 +1,9 @@
 /**
- * TASK-330 paste-key intake route. The row, the agent check, the secret store
- * and the vendor probe are mocked at their module edges; the handler, the
- * scope refusal and the intake probe are real. The key must never come back in
- * a response or reach the row, and the scope the route reports must be a
+ * TASK-330 paste-key intake route. The row, the secret store, the vendor probe
+ * and the installation data are mocked at their module edges; the handler, the
+ * scope refusal, the intake probe and the sole-installer rule
+ * (services/runtimeIdentityOwnership.ts) are real. The key must never come back
+ * in a response or reach the row, and the scope the route reports must be a
  * self-report whatever the body claims (Vera's review of 2d4e37fc7).
  */
 const express = require('express');
@@ -10,24 +11,30 @@ const request = require('supertest');
 
 jest.mock('../../../models/Integration', () => ({ findOneAndUpdate: jest.fn(), updateOne: jest.fn() }));
 jest.mock('../../../models/User', () => ({ findOne: jest.fn() }));
+jest.mock('../../../models/AgentRegistry', () => ({ AgentInstallation: { find: jest.fn() } }));
+jest.mock('../../../models/Pod', () => ({ find: jest.fn() }));
 jest.mock('../../../services/connectorSecrets', () => ({ put: jest.fn() }));
 jest.mock('../../../services/hostedMcpToolDefinitions', () => ({
   guardedFetch: jest.fn(),
   listHostedMcpTools: jest.fn(),
 }));
-jest.mock('../../../services/runtimeIdentityOwnership', () => ({ ownsRuntimeIdentity: jest.fn() }));
 
 const Integration = require('../../../models/Integration');
 const User = require('../../../models/User');
+const { AgentInstallation } = require('../../../models/AgentRegistry');
+const Pod = require('../../../models/Pod');
 const connectorSecrets = require('../../../services/connectorSecrets');
 const { listHostedMcpTools } = require('../../../services/hostedMcpToolDefinitions');
-const { ownsRuntimeIdentity } = require('../../../services/runtimeIdentityOwnership');
 const { HOSTED_MCP_ENTRIES } = require('../../../integrations/hostedMcp/entries');
 const { submitOperatorKey } = require('../../../routes/hostedMcpOperatorKey');
 
 const OWNER = 'bbbbbbbbbbbbbbbbbbbbbb01';
+const OTHER = 'bbbbbbbbbbbbbbbbbbbbbb02';
 const AGENT = 'cccccccccccccccccccccc01';
 const ROW_ID = 'eeeeeeeeeeeeeeeeeeeeee02';
+const POD = 'aaaaaaaaaaaaaaaaaaaaaa01';
+const OTHER_POD = 'aaaaaaaaaaaaaaaaaaaaaa03';
+const DM_POD = 'aaaaaaaaaaaaaaaaaaaaaa02';
 const KEY = 'lk_live_SECRET_VALUE_DO_NOT_ECHO';
 
 const KEY_ENTRY = {
@@ -60,14 +67,23 @@ const submit = (body = {}) => request(app)
   .set('x-test-user', OWNER)
   .send({ agentId: AGENT, key: KEY, ...body });
 
+// The installations of the agent identity, and which of their pods are agent-dm.
+let installations;
+let dmPods;
+
 let shipped;
 beforeEach(() => {
   jest.clearAllMocks();
   shipped = HOSTED_MCP_ENTRIES.splice(0, HOSTED_MCP_ENTRIES.length, KEY_ENTRY);
   User.findOne.mockReturnValue({
-    select: () => ({ lean: async () => ({ _id: AGENT, botMetadata: { agentName: 'openclaw', instanceId: 'latch' } }) }),
+    select: () => ({ lean: async () => ({ _id: AGENT, botMetadata: { agentName: 'OpenClaw', instanceId: 'latch' } }) }),
   });
-  ownsRuntimeIdentity.mockResolvedValue({ owned: true });
+  installations = [{ installedBy: OWNER, podId: POD }];
+  dmPods = [];
+  AgentInstallation.find.mockImplementation(() => ({
+    collation: () => ({ select: () => ({ lean: async () => installations }) }),
+  }));
+  Pod.find.mockImplementation(() => ({ select: () => ({ lean: async () => dmPods }) }));
   listHostedMcpTools.mockResolvedValue([{ name: 'list_jobs' }]);
   Integration.findOneAndUpdate.mockResolvedValue({ _id: ROW_ID, config: { authGeneration: 1 } });
   Integration.updateOne.mockResolvedValue({ acknowledged: true });
@@ -116,37 +132,66 @@ describe('POST /connect/hosted-mcp/:entryId/operator-key', () => {
     const res = await submit();
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ error: 'invalid_agent' });
-    expect(ownsRuntimeIdentity).not.toHaveBeenCalled();
+    expect(AgentInstallation.find).not.toHaveBeenCalled();
     expect(listHostedMcpTools).not.toHaveBeenCalled();
   });
 
-  test('an agent the caller did not solely install is refused, and nothing is probed or written', async () => {
-    ownsRuntimeIdentity.mockResolvedValue({ owned: false, failure: 'another_installer' });
+  test('the sole owner of the agent passes, and the identity is read from the bot row, lowercased', async () => {
+    const res = await submit();
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({
+      integrationId: ROW_ID, status: 'connected', scopeCheck: 'self_report', toolCount: 1,
+    });
+    expect(AgentInstallation.find).toHaveBeenCalledWith(expect.objectContaining({ agentName: 'openclaw', instanceId: 'latch' }));
+  });
+
+  test('a caller with no installation of the agent is refused 403 before any probe or write', async () => {
+    installations = [];
     const res = await submit();
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: 'agent_not_owned', message: 'you must be the sole installer of this agent' });
-    expect(ownsRuntimeIdentity).toHaveBeenCalledWith(OWNER, 'openclaw', 'latch');
+    expect(res.body).toEqual({
+      error: 'agent_not_owned',
+      failure: 'owner_installation_missing',
+      message: 'you must be the sole installer of this agent',
+    });
     expect(listHostedMcpTools).not.toHaveBeenCalled();
     expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
     expect(connectorSecrets.put).not.toHaveBeenCalled();
   });
 
-  test('the sole-installer rule has no admin exemption: the check runs whatever the caller role', async () => {
-    ownsRuntimeIdentity.mockResolvedValue({ owned: false, failure: 'owner_installation_missing' });
+  test('an agent with a second installer is refused 403, even when the caller also installed it', async () => {
+    installations = [
+      { installedBy: OWNER, podId: POD },
+      { installedBy: OTHER, podId: OTHER_POD },
+    ];
     const res = await submit();
     expect(res.status).toBe(403);
-    expect(ownsRuntimeIdentity).toHaveBeenCalledTimes(1);
+    expect(res.body).toMatchObject({ error: 'agent_not_owned', failure: 'another_installer' });
+    expect(listHostedMcpTools).not.toHaveBeenCalled();
+    expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('an agent-dm installation is a conversation, not ownership: the caller is refused', async () => {
+    installations = [{ installedBy: OWNER, podId: DM_POD }];
+    dmPods = [{ _id: DM_POD }];
+    const res = await submit();
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: 'agent_not_owned', failure: 'owner_installation_missing' });
+    expect(listHostedMcpTools).not.toHaveBeenCalled();
+  });
+
+  test('scopeCheck is a self-report even when the body claims a readback', async () => {
+    const res = await submit({ scopeCheck: 'read', reportedScopes: ['read'] });
+    expect(res.status).toBe(201);
+    expect(res.body.scopeCheck).toBe('self_report');
   });
 
   test('a valid key writes a pending row, stores the secret on it, then connects it', async () => {
     const res = await submit();
     expect(res.status).toBe(201);
-    expect(res.body).toEqual({
-      integrationId: ROW_ID, status: 'connected', scopeCheck: 'self_report', toolCount: 1, 
-    });
     expect(Integration.findOneAndUpdate).toHaveBeenCalledWith(
       {
-        type: 'hosted-mcp', createdBy: OWNER, 'config.entryId': 'latchkey', 'config.agentId': AGENT, 
+        type: 'hosted-mcp', createdBy: OWNER, 'config.entryId': 'latchkey', 'config.agentId': AGENT,
       },
       expect.objectContaining({ $set: expect.objectContaining({ status: 'pending' }) }),
       expect.objectContaining({ upsert: true }),
@@ -156,12 +201,6 @@ describe('POST /connect/hosted-mcp/:entryId/operator-key', () => {
       { _id: ROW_ID },
       { $set: { status: 'connected', 'config.credentialRef': 'secret-ref-1' } },
     );
-  });
-
-  test('scopeCheck is a self-report even when the body claims a readback', async () => {
-    const res = await submit({ scopeCheck: 'read', reportedScopes: ['read'] });
-    expect(res.status).toBe(201);
-    expect(res.body.scopeCheck).toBe('self_report');
   });
 
   test('the key appears in no response, no row write, and no thrown error text', async () => {
