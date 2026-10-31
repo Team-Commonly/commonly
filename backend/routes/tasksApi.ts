@@ -561,37 +561,64 @@ const liveLeaseHolder = (
 // sets neither — so either signal means "a seat is calling".
 const isSeatCaller = (req: AuthReq): boolean => Boolean(req.agentUser || req.user?.isBot);
 
-// The refusal both conflicting write paths share, so the two cannot drift into
+// The creator opened the row, so it may close, release or edit a row a seat holds
+// under a live lease (TASK-669). The override is recorded on the row, so the holder
+// sees it on its next renewal. Only the creator: every other seat still stands down.
+// The creator is the author of the "Created by" update the create route writes
+// first, the same field assignedTaskWakeService reads to tell a self-made row apart.
+const creatorIdOf = (task: { updates?: { authorId?: string | null }[] } | null): string | null => (
+  task?.updates?.[0]?.authorId || null
+);
+
+type LeaseCheck = { refusal: Record<string, unknown> | null; overridesHolder: string | null };
+
+// The refusal every conflicting write path shares, so the two cannot drift into
 // disagreeing about what a live lease is, and so the body has one shape: the fields
 // `claim` already returns on a lost race, which is what tells a refused writer who
-// holds the row and when it frees. Returns null when the write may proceed.
-const leaseRefusalForWrite = async (
+// holds the row and when it frees. `refusal` is null when the write may proceed;
+// `overridesHolder` names the holder a creator is writing over, for the update note.
+const leaseCheckForWrite = async (
   podId: string,
   taskId: string,
   req: AuthReq,
   userId: unknown,
-): Promise<Record<string, unknown> | null> => {
-  if (!isSeatCaller(req)) return null;
+  { creatorOverride = false }: { creatorOverride?: boolean } = {},
+): Promise<LeaseCheck> => {
+  if (!isSeatCaller(req)) return { refusal: null, overridesHolder: null };
   const claimKey = resolveAgentInstanceId(req) || userId?.toString() || '';
   const current = await Task.findOne({
     podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
     taskId,
-  }).select('status claimedBy claimedAt claimExpiresAt').lean() as {
+  }).select('status claimedBy claimedAt claimExpiresAt').slice('updates', 1).lean() as {
     status?: string; claimedBy?: string | null; claimedAt?: Date | null; claimExpiresAt?: Date | null;
+    updates?: { authorId?: string | null }[];
   } | null;
   const holder = current ? liveLeaseHolder(current, new Date(), claimKey) : null;
-  if (!holder) return null;
+  if (!holder) return { refusal: null, overridesHolder: null };
+  if (creatorOverride && userId && creatorIdOf(current) === String(userId)) {
+    return { refusal: null, overridesHolder: holder.claimedBy };
+  }
   return {
-    error: 'Task is claimed by another seat',
-    status: current?.status || 'claimed',
-    claimedBy: holder.claimedBy,
-    claimExpiresAt: holder.claimExpiresAt,
+    refusal: {
+      error: 'Task is claimed by another seat',
+      status: current?.status || 'claimed',
+      claimedBy: holder.claimedBy,
+      claimExpiresAt: holder.claimExpiresAt,
+    },
+    overridesHolder: null,
   };
 };
 
 // Recheck the same lease at the Mongo write boundary. A read-only refusal
 // above can race with a peer claiming the row before findOneAndUpdate runs.
-const writableLeaseCondition = (req: AuthReq, userId: unknown, now: Date): Record<string, unknown> => {
+// The creator clause is the write-side twin of the override above, so a race
+// cannot refuse the creator a write its read allowed.
+const writableLeaseCondition = (
+  req: AuthReq,
+  userId: unknown,
+  now: Date,
+  { creatorOverride = false }: { creatorOverride?: boolean } = {},
+): Record<string, unknown> => {
   if (!isSeatCaller(req)) return {};
   const claimKey = resolveAgentInstanceId(req) || userId?.toString() || '';
   return { $or: [
@@ -600,6 +627,7 @@ const writableLeaseCondition = (req: AuthReq, userId: unknown, now: Date): Recor
     { claimedBy: { $in: [null, ''] } },
     { claimExpiresAt: { $lt: now } },
     { claimExpiresAt: null, claimedAt: { $lt: new Date(now.getTime() - TASK_CLAIM_LEASE_MS) } },
+    ...(creatorOverride && userId ? [{ 'updates.0.authorId': String(userId) }] : []),
   ] };
 };
 
@@ -737,21 +765,23 @@ router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     // AX entry 61 (2026-09-19): the write below filters on `status` alone, so this
     // route reported `done` through a peer's live lease. A seat must stand down; a
-    // person never is.
-    const refusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
-    if (refusal) return res.status(409).json(refusal);
-    const updateText = prUrl ? `Completed by ${author} · PR: ${prUrl}` : `Completed by ${author}`;
+    // person never is. TASK-669: the row's creator may close over a live claim, and
+    // the close names the claim it overrode.
+    const lease = await leaseCheckForWrite(podId || '', taskId || '', req, userId, { creatorOverride: true });
+    if (lease.refusal) return res.status(409).json(lease.refusal);
+    const overNote = lease.overridesHolder ? ` (overrode ${lease.overridesHolder}'s live claim)` : '';
+    const updateText = `${prUrl ? `Completed by ${author} · PR: ${prUrl}` : `Completed by ${author}`}${overNote}`;
     const now = new Date();
     const update = { $inc: { grantEpoch: 1 }, $set: { status: 'done', claimedByUserId: null, completedAt: now, ...(prUrl && { prUrl }), ...(notes && { notes }) }, $push: { updates: { text: updateText, author, authorId: userId?.toString() || null, createdAt: now } } };
     const task = await updateTaskWithRevision({
       podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
       taskId,
       status: { $in: ['claimed', 'pending'] },
-      ...writableLeaseCondition(req, userId, now),
+      ...writableLeaseCondition(req, userId, now, { creatorOverride: true }),
     }, update) as { podId?: unknown; taskId?: string; status?: string; grantEpoch?: number; updates?: unknown[] } | null;
     if (!task) {
-      const racedRefusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
-      if (racedRefusal) return res.status(409).json(racedRefusal);
+      const racedLease = await leaseCheckForWrite(podId || '', taskId || '', req, userId, { creatorOverride: true });
+      if (racedLease.refusal) return res.status(409).json(racedLease.refusal);
       const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }).lean() as { status?: string } | null;
       if (!existing) return res.status(404).json({ error: 'Task not found' });
       const error = existing.status === 'done'
@@ -841,7 +871,9 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
       if (hold) return res.status(409).json(hold);
     }
     if (priority !== undefined) {
-      const refusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
+      // Not creator-overridable: a priority change is a PATCH field, and the
+      // override is recorded there (TASK-669).
+      const refusal = (await leaseCheckForWrite(podId || '', taskId || '', req, userId)).refusal;
       if (refusal) return res.status(409).json(refusal);
     }
     const priorityUpdate = priority === undefined ? {} : { priority };
@@ -1091,9 +1123,10 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     // board editor and the openclaw `commonly_update_task` retitle or reassign a
     // row. The note-append route above is deliberately NOT gated — a note on
     // someone else's row is the coordination a claim exists to enable, and posting
-    // one is also how a holder renews.
-    const refusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
-    if (refusal) return res.status(409).json(refusal);
+    // one is also how a holder renews. The row's creator may edit over a live claim
+    // (TASK-669), and the edit names the claim it overrode.
+    const lease = await leaseCheckForWrite(podId || '', taskId || '', req, userId, { creatorOverride: true });
+    if (lease.refusal) return res.status(409).json(lease.refusal);
     const author = await resolveAuthor(req);
     const needsPriorOwner = fieldUpdates.assignee !== undefined || fieldUpdates.status !== undefined;
     const changeParts: string[] = [];
@@ -1105,6 +1138,7 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     if (fieldUpdates.notes !== undefined) changeParts.push('notes updated');
     if (fieldUpdates.priority !== undefined) changeParts.push(`priority → ${fieldUpdates.priority}`);
     if (fieldUpdates.title !== undefined) changeParts.push('title updated');
+    if (lease.overridesHolder) changeParts.push(`overrode ${lease.overridesHolder}'s live claim`);
     let writeTime = needsPriorOwner ? new Date() : null;
     const update: Record<string, unknown> = {
       $set: writeTime ? { ...fieldUpdates, updatedAt: writeTime } : fieldUpdates,
@@ -1114,7 +1148,7 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     const taskFilter = {
       podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
       taskId,
-      ...writableLeaseCondition(req, userId, new Date()),
+      ...writableLeaseCondition(req, userId, new Date(), { creatorOverride: true }),
     };
     let task = null;
     let racedRevision = false;
@@ -1140,8 +1174,8 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
       (update.$set as Record<string, unknown>).updatedAt = writeTime;
     }
     if (!task) {
-      const racedRefusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
-      if (racedRefusal) return res.status(409).json(racedRefusal);
+      const racedLease = await leaseCheckForWrite(podId || '', taskId || '', req, userId, { creatorOverride: true });
+      if (racedLease.refusal) return res.status(409).json(racedLease.refusal);
       if (racedRevision) return res.status(409).json({ error: 'Task changed concurrently; retry' });
       if (!needsPriorOwner) {
         const existing = await Task.findOne({ podId: taskFilter.podId, taskId }).select('_id').lean();
