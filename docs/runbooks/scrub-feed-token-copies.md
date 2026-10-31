@@ -17,10 +17,10 @@ From the deployed backend directory, with `MONGO_URI` supplied by the existing
 ops-runner secret environment (never paste it into a command):
 
 ```sh
-npx ts-node scripts/scrub-feed-token-copies.ts
+node dist/scripts/scrub-feed-token-copies.js
 # Review DRY-RUN counts by type, then explicitly apply:
-npx ts-node scripts/scrub-feed-token-copies.ts --apply
-npx ts-node scripts/scrub-feed-token-copies.ts
+node dist/scripts/scrub-feed-token-copies.js --apply
+node dist/scripts/scrub-feed-token-copies.js
 ```
 
 The final dry run should report zero candidates for both types. Reports contain
