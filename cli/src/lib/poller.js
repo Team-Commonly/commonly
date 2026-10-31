@@ -139,10 +139,9 @@ export const startPoller = ({
         if (consecutiveAuthErrors >= MAX_AUTH_ERRORS) {
           onError?.(new Error(
             `Runtime token rejected ${consecutiveAuthErrors} times in a row — stopping poller. `
-            + `This run takes its key from ~/.commonly/tokens/${agentName}.json when that file exists, `
-            + `and only from COMMONLY_AGENT_TOKEN when it does not. `
-            + `If the key was rotated or revoked, run commonly agent detach ${agentName} --force, `
-            + `then re-run with the Connect-page env exports.`,
+            + `This connection takes its key from --token, then COMMONLY_TOKEN, then your saved login. `
+            + `If the key was rotated or revoked, re-run with the new key in --token or COMMONLY_TOKEN; `
+            + `with neither set, run commonly login.`,
           ));
           running = false;
           return;

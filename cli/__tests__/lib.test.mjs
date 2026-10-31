@@ -541,12 +541,12 @@ describe('poller.js', () => {
 
     await new Promise((r) => setTimeout(r, 50));
     const stopMsg = errors.map((e) => e.message).find((m) => /stopping poller/.test(m));
-    // The names this process reads: the saved token file, then COMMONLY_AGENT_TOKEN.
-    expect(stopMsg).toMatch(/~\/\.commonly\/tokens\/my-agent\.json/);
-    expect(stopMsg).toMatch(/COMMONLY_AGENT_TOKEN/);
-    expect(stopMsg).not.toMatch(/COMMONLY_TOKEN/);
-    // The reset verb the sibling messages use, which also clears the session store.
-    expect(stopMsg).toMatch(/detach .* --force/);
+    // The three sources `agent connect` reads, in order: --token, COMMONLY_TOKEN, saved login.
+    expect(stopMsg).toMatch(/--token, then COMMONLY_TOKEN, then your saved login/);
+    expect(stopMsg).toMatch(/commonly login/);
+    // connect never reads the token file or detach: naming them would send the reader to the wrong place.
+    expect(stopMsg).not.toMatch(/detach/);
+    expect(stopMsg).not.toMatch(/tokens\//);
     expect(stopMsg).not.toMatch(/likely revoked/);
   });
 
