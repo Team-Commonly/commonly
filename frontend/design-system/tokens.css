@@ -190,7 +190,7 @@ html, body {
 h1, .c-h1 {
   font-family: var(--c-font-sans);
   font-size: var(--c-fs-3xl);
-  font-weight: 700;            /* 850 was tuned for SF Pro Display */
+  font-weight: 700;
   line-height: var(--c-lh-tight);
   letter-spacing: -0.03em;
   margin: 0;
