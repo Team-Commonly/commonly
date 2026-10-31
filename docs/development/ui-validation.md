@@ -93,6 +93,24 @@ the seat's address `d215-seat@seed.staging.commonly.me` must be allowed, or the 
 
 ## Then: check the screens
 
+### Run the branch against staging (`npm run dev:live`)
+
+```bash
+cd frontend && npm run dev:live    # localhost:3000, /api and /socket.io proxied to staging
+```
+
+- The default target is staging, where writes are safe. The proxy drops the browser
+  `Origin` header, because prod refuses `http://localhost:3000`.
+- Sign in with the seat account, not your own: POST `/api/auth/login` with the
+  `email` and `password` from the credentials file, then put the returned token in
+  `localStorage` under `token` and reload. Login goes through the proxy as a POST,
+  which is allowed on staging.
+- Keep the port at 3000. The npm script sets `REACT_APP_API_URL=http://localhost:3000`,
+  so a different `--port` also needs that variable changed, or the app calls the wrong
+  origin and every pod list shows "Network Error".
+- Prod is read-only through the same command with `DEV_LIVE_TARGET=prod`. Use it only
+  with a test account, and sign in by injecting the token, never by POST.
+
 - Layout, overflow and scroll need a real browser (CLAUDE.md design rule 9).
   Sign in as `d215-seat`, open the D215 sample pod, and check at 1440 and 390 wide,
   in light and in dark.
