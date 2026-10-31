@@ -211,6 +211,7 @@ describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#
     await agentRuntimeAuth(buildReq('cm_agent_test'), buildRes(), jest.fn());
 
     expect(mockCompleteStarterTask).not.toHaveBeenCalled();
+    expect(mockRecordByoEvent).not.toHaveBeenCalled();
   });
 
   test('returns 401 when token doesnt match any install OR user', async () => {
