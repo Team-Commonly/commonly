@@ -5041,16 +5041,21 @@ describe('task priority and lease signals (TASK-443)', () => {
     expect(badge).toContain('var(--v2-font-mono)');
     expect(badge).toContain('border-radius: 4px');
     expect(badge).toContain('background: none');
+    expect(badge).toContain('color: var(--v2-prio-ink)');
+    expect(badge).toContain('border: 1px solid var(--v2-prio-edge)');
     const urgent = ruleBody(css, '.v2-board__priority--p0');
-    expect(urgent).toContain('border-color: var(--v2-text-primary)');
-    expect(urgent).toContain('color: var(--v2-text-primary)');
+    expect(urgent).toContain('border-color: var(--v2-prio-p0-ink)');
+    expect(urgent).toContain('color: var(--v2-prio-p0-ink)');
+    // Status and priority colour are tokens, so the D215 colour choice is a value swap.
+    expect(css).toMatch(/--v2-prio-p0-ink:\s*var\(--v2-text-primary\)/);
+    expect(css).toMatch(/--v2-status-live:\s*var\(--v2-accent\)/);
     expect(urgent).not.toMatch(/background/);
   });
   test('live, unclaimed and expired ownership retain distinct dots', () => {
-    expect(ruleBody(css, '.v2-board__owner-dot--live')).toContain('background: var(--v2-accent)');
-    expect(ruleBody(css, '.v2-board__owner-dot--not-claimed')).toContain('border: 1px dashed var(--v2-border-strong)');
+    expect(ruleBody(css, '.v2-board__owner-dot--live')).toContain('background: var(--v2-status-live)');
+    expect(ruleBody(css, '.v2-board__owner-dot--not-claimed')).toContain('border: 1px dashed var(--v2-status-idle)');
     const expired = ruleBody(css, '.v2-board__owner-dot--expired');
-    expect(expired).toContain('border: 1px solid var(--v2-border-strong)');
+    expect(expired).toContain('border: 1px solid var(--v2-status-idle)');
     expect(expired).toContain('background: none');
   });
 });
