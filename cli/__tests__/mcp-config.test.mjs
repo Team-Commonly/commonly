@@ -28,7 +28,7 @@ describe('commonly mcp config', () => {
     expect(JSON.stringify(config)).not.toContain(TOKEN);
     expect(env.COMMONLY_API_URL).toBe('https://api.example.test');
     expect(fs.readFileSync(env.COMMONLY_TOKEN_FILE, 'utf8').trim()).toBe(TOKEN);
-    expect(fs.statSync(env.COMMONLY_TOKEN_FILE).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') expect(fs.statSync(env.COMMONLY_TOKEN_FILE).mode & 0o777).toBe(0o600);
   });
 
   it('keeps 0600 when the file already exists with a looser mode', () => {
@@ -36,7 +36,7 @@ describe('commonly mcp config', () => {
     const first = buildMcpConfig({}).mcpServers.commonly.env.COMMONLY_TOKEN_FILE;
     fs.chmodSync(first, 0o644);
     buildMcpConfig({ agent: 'lead' });
-    expect(fs.statSync(first).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') expect(fs.statSync(first).mode & 0o777).toBe(0o600);
   });
 
   it('does not write through a symlink at the token path', () => {
@@ -55,7 +55,7 @@ describe('commonly mcp config', () => {
     const dir = path.join(tmp, '.commonly', 'mcp');
     fs.mkdirSync(dir, { recursive: true, mode: 0o755 });
     buildMcpConfig({ agent: 'lead' });
-    expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
+    if (process.platform !== 'win32') expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
     seed('user', { runtimeToken: 'eyJuser.jwt' });
     expect(() => buildMcpConfig({ agent: 'user' })).toThrow(/cm_agent_/);
   });
@@ -74,7 +74,7 @@ describe('commonly mcp config', () => {
     const copy = buildMcpConfig({}).mcpServers.commonly.env.COMMONLY_TOKEN_FILE;
     saveAgentToken('lead', { runtimeToken: 'cm_agent_after', instanceUrl: 'https://api.example.test' });
     expect(fs.readFileSync(copy, 'utf8').trim()).toBe('cm_agent_after');
-    expect(fs.statSync(copy).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') expect(fs.statSync(copy).mode & 0o777).toBe(0o600);
   });
 
   it('a traversal name cannot make remove or refresh touch anything, and does not block detach', async () => {
