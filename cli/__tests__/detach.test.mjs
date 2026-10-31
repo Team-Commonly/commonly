@@ -250,4 +250,22 @@ describe('listLocalAgents', () => {
   test('no tokens dir means nothing unreadable', () => {
     expect(listUnreadableAgentTokens()).toEqual([]);
   });
+
+  test('a tokens path that is a file means nothing unreadable', () => {
+    fs.mkdirSync(path.join(tmp, '.commonly'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.commonly', 'tokens'), '', 'utf8');
+    expect(listUnreadableAgentTokens()).toEqual([]);
+  });
+
+  // root reads through mode 000, so the denial cannot be staged there.
+  (process.getuid?.() === 0 ? test.skip : test)('a tokens dir it cannot traverse throws instead of reading as empty', () => {
+    const state = path.join(tmp, '.commonly');
+    fs.mkdirSync(path.join(state, 'tokens'), { recursive: true });
+    fs.chmodSync(state, 0o000);
+    try {
+      expect(() => listUnreadableAgentTokens()).toThrow(/EACCES/);
+    } finally {
+      fs.chmodSync(state, 0o700);
+    }
+  });
 });

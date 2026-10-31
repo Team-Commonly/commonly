@@ -540,11 +540,19 @@ export const listLocalAgents = () => {
  * The token files listLocalAgents drops: present, but not readable JSON.
  * `commonly doctor` reports them, because a dropped file otherwise reads as
  * "no agent here" and lets doctor pass on a seat that cannot start.
+ * Throws when the directory exists but cannot be read, for doctor to report.
  */
 export const listUnreadableAgentTokens = () => {
-  const dir = tokensDir();
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
+  let files;
+  try {
+    files = readdirSync(tokensDir());
+  } catch (error) {
+    // Only a missing directory means no agents. existsSync also answers false
+    // for EACCES on an ancestor, which is why this reads instead of checking.
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return [];
+    throw error;
+  }
+  return files
     .filter((f) => f.endsWith('.json'))
     .map((f) => f.slice(0, -'.json'.length))
     .filter((name) => !loadAgentToken(name))
