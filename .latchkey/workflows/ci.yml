@@ -1,0 +1,111 @@
+# Latchkey CI — ADVISORY mirror of GitHub Actions (D206).
+#
+# These jobs re-run a subset of .github/workflows/tests.yml on Latchkey CI,
+# BESIDE GitHub Actions, so the two can be compared commit by commit before any
+# job is switched over. The repository runs in advisory mode: a failure here is
+# reported to GitHub as a NEUTRAL check titled "Advisory: failed" and never
+# blocks a merge. Do NOT add any "Latchkey" context to branch-protection
+# required checks while this is advisory — a neutral check satisfies a required
+# one, which would let a failing commit merge.
+#
+# Ported here (no secrets, no service containers, no submodules):
+#   backend tests, frontend tests (+ frontend typecheck), backend typecheck +
+#   TS lint, CLI lint, frontend build.
+#
+# NOT ported (stay on GitHub Actions) and why:
+#   - service-test            — service `options:` (the mongo nofile ulimit) are refused by Latchkey CI
+#   - tool-tests (full)       — needs `submodules: recursive` + `fetch-depth: 0` for the tool-contract guard
+#   - chart-lint              — downloads helm / kubeconform / yq binaries
+#   - latchkey-probe/route/backstop, test-gate — GitHub-specific runner-route plumbing
+#   - deploy-dev, deploy-staging, cve-scan, npm-publish, smoke-test, playwright,
+#     and the macOS + privileged-docker jobs — secret / WIF / OIDC / kind bound
+#
+# Latchkey dialect vs the GitHub file:
+#   - checkout is automatic (no actions/checkout step)
+#   - runs-on: names a Latchkey size (small|medium|large|xlarge), not a GH label
+#   - actions/setup-node becomes latchkey/setup-node@1.0.1 (the fork-safe
+#     version; 1.0.0 fails on fork PRs)
+#   - the backend env values below are the SAME fake test literals the GitHub
+#     file uses — not secrets
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend-tests:
+    name: Backend tests (${{ matrix.shard }}/3)
+    runs-on: medium
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        shard: [1, 2, 3]
+    env:
+      JWT_SECRET: test-jwt-secret
+      SENDGRID_API_KEY: fake-api-key
+      SENDGRID_FROM_EMAIL: test@example.com
+      FRONTEND_URL: http://localhost:3000
+    steps:
+      - uses: latchkey/setup-node@1.0.1
+        with:
+          node-version: '22'
+      - run: cd backend && npm ci --include=dev
+      # Backend service suites exercise the real CLI in a subprocess.
+      - run: cd cli && npm ci --include=dev
+      - run: cd backend && npx jest --forceExit --shard=${{ matrix.shard }}/3
+
+  frontend-tests:
+    name: Frontend tests
+    runs-on: small
+    timeout-minutes: 20
+    steps:
+      - uses: latchkey/setup-node@1.0.1
+        with:
+          node-version: '22'
+      # Frontend typecheck follows shared imports into backend TypeScript.
+      - run: cd backend && npm ci --include=dev
+      - run: cd frontend && OPENUI_TELEMETRY_DISABLED=1 npm install --legacy-peer-deps
+      - run: cd frontend && npm run typecheck
+      - run: cd frontend && npx jest --watchAll=false --forceExit
+      - run: cd frontend && node --test scripts/generate-seo-pages.test.mjs scripts/nginx-routing.test.mjs scripts/ui-card-catalogue.test.mjs
+
+  backend-checks:
+    name: Backend typecheck and lint
+    runs-on: small
+    timeout-minutes: 12
+    steps:
+      - uses: latchkey/setup-node@1.0.1
+        with:
+          node-version: '22'
+      - run: cd backend && npm ci --include=dev
+      - run: cd backend && npm run tsc:check
+      - run: cd packages/types && ../../backend/node_modules/.bin/tsc --noEmit -p tsconfig.json
+      - run: cd backend && npm run lint:ts
+
+  cli-lint:
+    name: CLI lint
+    runs-on: small
+    timeout-minutes: 10
+    steps:
+      - uses: latchkey/setup-node@1.0.1
+        with:
+          node-version: '22'
+      - run: cd cli && npm ci --include=dev
+      - run: cd cli && npm run lint
+
+  frontend-build:
+    name: Frontend build
+    runs-on: small
+    timeout-minutes: 15
+    steps:
+      - uses: latchkey/setup-node@1.0.1
+        with:
+          node-version: '22'
+      # Frontend sources import shared backend TypeScript, so backend deps must
+      # be installed for the vite build to resolve them.
+      - run: cd backend && npm ci --include=dev
+      - run: cd frontend && OPENUI_TELEMETRY_DISABLED=1 npm install --legacy-peer-deps
+      - run: cd frontend && npm run build
