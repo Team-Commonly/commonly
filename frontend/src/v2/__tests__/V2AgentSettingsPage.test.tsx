@@ -611,3 +611,49 @@ test('key polling stops on unmount', async () => {
     expect(axios.get.mock.calls.filter(([url]) => url === '/api/credentials').length).toBe(calls);
   } finally { jest.useRealTimers(); }
 });
+
+test('a revoke from outside moves the header off Connected without a remount', async () => {
+  jest.useFakeTimers();
+  let state = 'connected';
+  axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
+      displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } });
+    if (url === '/api/registry/pods/pod-1/agents') return Promise.resolve({ data: { agents: [{
+      name: 'maya-claude', instanceId: 'default', runtime: { runtimeType: 'webhook' },
+      connection: { state, lastSeenAt: null },
+    }] } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'webhook' },
+    } } });
+    return Promise.resolve({ data: [] });
+  });
+  const view = renderPage();
+  try {
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.queryByRole('link', { name: 'Reconnect' })).toBeNull();
+    state = 'revoked';
+    await act(async () => { jest.advanceTimersByTime(30_000); });
+    expect(await screen.findByRole('link', { name: 'Reconnect' })).toBeInTheDocument();
+  } finally { view.unmount(); jest.useRealTimers(); }
+});
+
+test('key polling pauses while hidden and re-reads on focus', async () => {
+  jest.useFakeTimers();
+  const view = renderPage();
+  const keyReads = () => axios.get.mock.calls.filter(([url]) => url === '/api/credentials').length;
+  try {
+    await screen.findByText(/last used/i);
+    const hidden = jest.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    const before = keyReads();
+    await act(async () => { jest.advanceTimersByTime(45_000); });
+    expect(keyReads()).toBe(before);
+    hidden.mockReturnValue(false);
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    expect(keyReads()).toBe(before + 1);
+    hidden.mockRestore();
+  } finally { view.unmount(); jest.useRealTimers(); }
+});
