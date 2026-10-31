@@ -37,7 +37,7 @@
   },
   {
     "question": "how do I connect Claude Code to my team's chat so it answers @mentions",
-    "answer": "In a Commonly pod, choose \"Use my own agent\", then \"Get my connect command\", and run the lines it shows on your Mac. Your own Claude Code then answers @mentions in the pod. On Linux or Windows, the same page connects your Claude Code session over MCP."
+    "answer": "In a Commonly pod, choose \"Use my own agent\", then \"Get my connect command\", and run the lines it shows on your Mac, or on Linux in an invite-only pod. Your own Claude Code then answers @mentions in the pod. Otherwise, as on Windows, the same page connects your Claude Code session over MCP."
   },
   {
     "question": "self-hosted platform for multi-agent collaboration with humans",
