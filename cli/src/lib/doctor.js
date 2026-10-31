@@ -139,21 +139,32 @@ export const checkDaemon = async ({
 
 const MAX_NAMED_AGENTS = 5;
 
+const nameList = (names) => {
+  const sorted = [...names].sort();
+  const shown = sorted.slice(0, MAX_NAMED_AGENTS).join(', ');
+  return `${shown}${sorted.length > MAX_NAMED_AGENTS ? ` and ${sorted.length - MAX_NAMED_AGENTS} more` : ''}`;
+};
+
 // (e) Every adapter CLI a configured agent uses, found and answering --version.
-export const checkAdapters = async ({ agents, getAdapter }) => {
+// `unreadable` names token files that exist but are not readable JSON: the
+// agent listing drops them, so without this line they would read as no agent.
+export const checkAdapters = async ({ agents, getAdapter, unreadable = [] }) => {
   const byAdapter = new Map();
   for (const agent of agents) {
     const adapter = agent?.adapter || '?';
     if (!byAdapter.has(adapter)) byAdapter.set(adapter, []);
     byAdapter.get(adapter).push(agent.name);
   }
-  if (!byAdapter.size) return [result('adapters', SKIP, 'no agents are attached on this computer')];
+  const unreadableLine = unreadable.length
+    ? [result('adapters', FAIL, `the token file of ${nameList(unreadable)} is not readable JSON (~/.commonly/tokens)`, 'commonly agent detach <name> --force, then attach it again')]
+    : [];
+  if (!byAdapter.size) {
+    return unreadableLine.length ? unreadableLine : [result('adapters', SKIP, 'no agents are attached on this computer')];
+  }
   const results = [];
   for (const [name, agentNames] of [...byAdapter.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     const id = `adapter:${name}`;
-    const sorted = agentNames.sort();
-    const shown = sorted.slice(0, MAX_NAMED_AGENTS).join(', ');
-    const used = `used by ${shown}${sorted.length > MAX_NAMED_AGENTS ? ` and ${sorted.length - MAX_NAMED_AGENTS} more` : ''}`;
+    const used = `used by ${nameList(agentNames)}`;
     if (name === '?') {
       results.push(result(id, FAIL, `no adapter recorded in the token file, ${used}`, 'commonly agent detach <name> --force, then attach it again'));
       continue;
@@ -186,7 +197,7 @@ export const checkAdapters = async ({ agents, getAdapter }) => {
     const at = found.path ? ` at ${found.path}` : '';
     results.push(result(id, PASS, `${name} ${found.version || 'unknown version'}${at}, ${used}`));
   }
-  return results;
+  return [...results, ...unreadableLine];
 };
 
 // (f) macOS: what the claude adapter's confined spawn needs, by file stat only.
@@ -225,9 +236,11 @@ export const checkMacClaude = ({
 export const runDoctor = async (deps) => {
   // An unreadable tokens dir is one fail line, not a doctor that prints nothing.
   let agents = null;
+  let unreadable = [];
   let listError = null;
   try {
     agents = deps.listAgents();
+    unreadable = deps.listUnreadable ? deps.listUnreadable() : [];
   } catch (error) {
     listError = error?.message || String(error);
   }
@@ -242,7 +255,7 @@ export const runDoctor = async (deps) => {
         result('macos-claude', SKIP, 'the attached agents could not be listed'),
       ]
       : [
-        ...(await checkAdapters({ agents, getAdapter: deps.getAdapter })),
+        ...(await checkAdapters({ agents, getAdapter: deps.getAdapter, unreadable })),
         checkMacClaude({ ...deps.macos, agents }),
       ]),
   ];

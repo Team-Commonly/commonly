@@ -29,6 +29,7 @@ const {
   saveAgentToken,
   loadAgentToken,
   listLocalAgents,
+  listUnreadableAgentTokens,
 } = await import('../src/commands/agent.js');
 const { setSession, getSession } = await import('../src/lib/session-store.js');
 
@@ -232,5 +233,21 @@ describe('listLocalAgents', () => {
     const [agent] = listLocalAgents();
     expect(agent.name).toBe('corrupt');
     expect(agent.lastTurn).toBeNull();
+  });
+
+  test('a token file that is not JSON is dropped from the listing and named as unreadable', () => {
+    saveAgentToken('fine', {
+      agentName: 'fine', instanceId: 'default', podId: 'pod-f',
+      instanceUrl: 'http://localhost:5000', runtimeToken: 'cm_agent_f',
+      adapter: 'claude',
+    });
+    fs.writeFileSync(path.join(tmp, '.commonly', 'tokens', 'broken.json'), '{"agentName": ', 'utf8');
+
+    expect(listLocalAgents().map((a) => a.name)).toEqual(['fine']);
+    expect(listUnreadableAgentTokens()).toEqual(['broken']);
+  });
+
+  test('no tokens dir means nothing unreadable', () => {
+    expect(listUnreadableAgentTokens()).toEqual([]);
   });
 });

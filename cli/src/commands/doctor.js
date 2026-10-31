@@ -13,7 +13,7 @@ import { servicePaths } from '../lib/daemon-service.js';
 import { getAdapter } from '../lib/adapters/index.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import { daemonStatusErrorMessage, getDaemonMachineStatus } from './daemon.js';
-import { listLocalAgents } from './agent.js';
+import { listLocalAgents, listUnreadableAgentTokens } from './agent.js';
 import { doctorExitCode, formatDoctorLine, runDoctor } from '../lib/doctor.js';
 
 const REQUEST_TIMEOUT_MS = 5000;
@@ -84,6 +84,7 @@ export const loginTarget = ({
 
 export const hostDoctorDeps = ({ instance: instanceArg = null } = {}) => ({
   listAgents: () => listLocalAgents(),
+  listUnreadable: () => listUnreadableAgentTokens(),
   getAdapter,
   node: { nodeVersion: process.versions.node, enginesRange: pkg.engines?.node },
   install: {

@@ -337,6 +337,27 @@ describe('runDoctor', () => {
     expect(doctorExitCode(await runDoctor(deps))).toBe(1);
   });
 
+  test('a token file that is not readable JSON fails doctor, even with no other agent', async () => {
+    const deps = healthy();
+    deps.listAgents = () => [];
+    deps.listUnreadable = () => ['broken'];
+    const results = await runDoctor(deps);
+    const line = results.find((r) => r.id === 'adapters');
+    expect(line).toMatchObject({ status: FAIL, fix: 'commonly agent detach <name> --force, then attach it again' });
+    expect(line.detail).toContain('broken');
+    expect(doctorExitCode(results)).toBe(1);
+  });
+
+  test('an unreadable token file is reported beside the agents that did load', async () => {
+    const deps = healthy();
+    deps.listUnreadable = () => ['broken'];
+    const results = await runDoctor(deps);
+    expect(results.map((r) => [r.id, r.status])).toEqual([
+      ['node', PASS], ['install', PASS], ['login', PASS], ['daemon', PASS],
+      ['adapter:claude', PASS], ['adapters', FAIL], ['macos-claude', PASS],
+    ]);
+  });
+
   test('an agent listing that throws is one fail line, and every other check still runs', async () => {
     const deps = healthy();
     deps.listAgents = () => { throw Object.assign(new Error("EACCES: permission denied, scandir '/h/.commonly/tokens'"), { code: 'EACCES' }); };

@@ -536,6 +536,21 @@ export const listLocalAgents = () => {
     .filter(Boolean);
 };
 
+/**
+ * The token files listLocalAgents drops: present, but not readable JSON.
+ * `commonly doctor` reports them, because a dropped file otherwise reads as
+ * "no agent here" and lets doctor pass on a seat that cannot start.
+ */
+export const listUnreadableAgentTokens = () => {
+  const dir = tokensDir();
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => f.slice(0, -'.json'.length))
+    .filter((name) => !loadAgentToken(name))
+    .sort();
+};
+
 // Chat event types whose payload already contains the prompt the wrapper
 // should forward verbatim. Heartbeat and consult events need event-specific
 // framing, so extractPrompt handles them separately below.
