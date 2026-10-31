@@ -12547,6 +12547,20 @@ body.modern-ui.v2-canvas {
 .v2-msg__collapse { position: relative; }
 .v2-msg__collapse--closed pre { max-height: calc(6 * 1.5 * 12.5px + 20px); overflow: hidden; }
 
+/* Long agent prose folds past 360px; the fade hints there is more. */
+.v2-msg__prose { position: relative; }
+.v2-msg__prose--closed { max-height: 360px; overflow: hidden; }
+.v2-msg__prose--closed::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 48px;
+  background: linear-gradient(to bottom, transparent, var(--v2-surface, #fff));
+  pointer-events: none;
+}
+
 .v2-root button.v2-msg__more {
   display: inline-block;
   margin: 2px 0 6px;
