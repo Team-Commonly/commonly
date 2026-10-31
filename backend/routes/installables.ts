@@ -474,6 +474,7 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
       {
         _id: owned.integration._id,
         type: 'slack',
+        podId: owned.integration.podId,
         isActive: true,
         'config.pendingBind.botTokenRef': pending.botTokenRef,
         'config.pendingBind.expiresAt': { $gt: new Date() },

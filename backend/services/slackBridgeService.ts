@@ -464,7 +464,9 @@ export const relaySlackMessageToPod = async (opts: {
   const { extractMentions } = require('./agentMentionService');
   const lead = config.gates?.[podId]?.lead;
   const plainMessage = !routed.routedAgent && !event.thread_ts && !cardReply.lateReply
-    && extractMentions(rawText).length === 0;
+    // Slack wraps emails (<mailto:a@b.com|a@b.com>) and user mentions (<@U123>) in <...>;
+    // neither addresses an agent, so they must not turn a plain DM into a mention.
+    && extractMentions(String(rawText).replace(/<[^>]*>/g, ' ')).length === 0;
   const replyToMessageId = cardReply.lateReply?.messageId || null;
   const linkedUserId = String(config.linkedUserId);
   const senderName = event.user_profile?.display_name || event.user_profile?.real_name;

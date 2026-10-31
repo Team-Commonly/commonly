@@ -82,6 +82,7 @@ describe('Slack lead confirmation gate race', () => {
       installationId, type: 'slack', scope: 'user', status: 'pending',
       podId: pod._id, createdBy: ownerId, isActive: true,
       config: {
+        liveRelay: true,
         pendingBind: {
           teamId: 'T1', chatId: 'D1', slackUserId: 'U1',
           botTokenRef: 'secret-ref', expiresAt: new Date(Date.now() + 60_000),

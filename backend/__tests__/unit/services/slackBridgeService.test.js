@@ -241,6 +241,29 @@ describe('Slack installable bridge', () => {
     expect(SlackApi).not.toHaveBeenCalled();
   });
 
+  test('still addresses the lead when a plain message contains an email or a Slack user mention', async () => {
+    Pod.findById.mockReturnValue(podWithMembers('Alpha', ['user-1', 'bot-1']));
+    User.findOne.mockResolvedValue({ _id: 'bot-1', username: 'kai', isBot: true });
+    PGMessage.create.mockImplementation((_podId, _userId, content) => Promise.resolve({ id: 'pg-1', content }));
+    PGMessage.findById.mockResolvedValue(null);
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ username: 'sam' }) }),
+    });
+    deliverMessageToAgents.mockResolvedValue(undefined);
+
+    const result = await relaySlackMessageToPod({
+      integration: {
+        ...integration,
+        scope: 'user',
+        config: { ...integration.config, linkedUserId: 'user-1', slackUserId: 'U1', gates: { 'pod-1': { enabled: true, lead: 'kai' } } },
+      },
+      event: { text: 'send the deck to <mailto:bob@acme.com|bob@acme.com> cc <@U024BE7LH>', user: 'U1' },
+    });
+
+    expect(result).toEqual({ relayed: true, routedAgent: 'kai' });
+    expect(PGMessage.create.mock.calls[0][2]).toMatch(/^💬 \(via Slack\): @kai /);
+  });
+
   test('keeps an explicit mention instead of substituting the selected lead', async () => {
     Pod.findById.mockReturnValue(podWithMembers('Alpha'));
     PGMessage.create.mockResolvedValue({ id: 'pg-1' });
