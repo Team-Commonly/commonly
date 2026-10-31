@@ -17,7 +17,15 @@ const { sessionRefusal } = require('../../../services/sessionAccountService');
 
 const secret = 'allowlist-secret';
 const row = (value) => ({ select: () => ({ lean: async () => value }) });
-const selectable = (value) => ({ select: async () => value });
+// The cm_ reads must project the fields the term reads; a mock that ignores
+// `select` would hide a dropped `email` or `verified`.
+const selectable = (value) => ({
+  select: async (fields) => {
+    expect(fields).toEqual(expect.stringMatching(/\bemail\b/));
+    expect(fields).toEqual(expect.stringMatching(/\bverified\b/));
+    return value;
+  },
+});
 
 const reqWith = (token) => ({
   method: 'GET',
@@ -50,7 +58,9 @@ describe('instance allowlist on session verifiers', () => {
   });
 
   describe('sessionRefusal truth table', () => {
-    const human = (email) => ({ banned: false, isBot: false, email });
+    const human = (email, verified = true) => ({
+      banned: false, isBot: false, email, verified, 
+    });
 
     it('is unchanged when no list is set, whatever the email', () => {
       expect(sessionRefusal(human('anyone@elsewhere.com'))).toBeNull();
@@ -72,6 +82,16 @@ describe('instance allowlist on session verifiers', () => {
     it('fails shut on a row with no email once the list is on', () => {
       process.env.AUTH_ALLOWED_DOMAINS = 'corp.example';
       expect(sessionRefusal(human(undefined))).toBe('restricted');
+    });
+
+    it('refuses an unverified row on an allowlisted address, mirroring login', () => {
+      process.env.AUTH_ALLOWED_EMAILS = 'ok@team.com';
+      expect(sessionRefusal(human('ok@team.com', false))).toBe('restricted');
+      expect(sessionRefusal({ banned: false, email: 'ok@team.com' })).toBe('restricted');
+    });
+
+    it('ignores verified when the instance is unrestricted', () => {
+      expect(sessionRefusal(human('ok@team.com', false))).toBeNull();
     });
 
     it('keeps ban and bot ahead of the allowlist term', () => {
@@ -96,13 +116,28 @@ describe('instance allowlist on session verifiers', () => {
 
     it('still serves an allowlisted JWT', async () => {
       const token = jwt.sign({ id: 'u2' }, secret);
-      User.findById.mockReturnValue(row({ banned: false, email: 'ok@team.com' }));
+      User.findById.mockReturnValue(row({ banned: false, email: 'ok@team.com', verified: true }));
       process.env.AUTH_ALLOWED_EMAILS = 'ok@team.com';
 
       const { req, next } = await runAuth(token);
 
       expect(next).toHaveBeenCalled();
       expect(req.userId).toBe('u2');
+    });
+
+    it('refuses a JWT for an allowlisted but unverified account, and a cm_ token too', async () => {
+      process.env.AUTH_ALLOWED_EMAILS = 'ok@team.com';
+      User.findById.mockReturnValue(row({ banned: false, email: 'ok@team.com', verified: false }));
+      const jwtRun = await runAuth(jwt.sign({ id: 'u9' }, secret));
+      expect(jwtRun.next).not.toHaveBeenCalled();
+      expect(jwtRun.res.status).toHaveBeenCalledWith(403);
+
+      User.findOne.mockReturnValueOnce(selectable({
+        _id: { toString: () => 'u10' }, username: 'u10', email: 'ok@team.com', verified: false, role: 'user',
+      }));
+      const cmRun = await runAuth('cm_unverified');
+      expect(cmRun.next).not.toHaveBeenCalled();
+      expect(cmRun.res.status).toHaveBeenCalledWith(403);
     });
 
     it('serves the same non-allowlisted JWT when the instance is unrestricted', async () => {
@@ -143,7 +178,7 @@ describe('instance allowlist on session verifiers', () => {
 
     it('serves a cm_ API token for an allowlisted email, and any email when unrestricted', async () => {
       const owner = {
-        _id: { toString: () => 'u6' }, username: 'u6', email: 'ok@team.com', role: 'user', 
+        _id: { toString: () => 'u6' }, username: 'u6', email: 'ok@team.com', verified: true, role: 'user', 
       };
       process.env.AUTH_ALLOWED_EMAILS = 'ok@team.com';
       User.findOne.mockReturnValueOnce(selectable(owner));
@@ -174,7 +209,7 @@ describe('instance allowlist on session verifiers', () => {
         message: 'Authentication error: Invalid token',
       }));
 
-      const accepted = await handshake(token, { banned: false, email: 'ok@team.com' });
+      const accepted = await handshake(token, { banned: false, email: 'ok@team.com', verified: true });
       expect(accepted.socket.userId).toBe('u7');
       expect(accepted.next).toHaveBeenCalledWith();
     });

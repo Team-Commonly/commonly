@@ -32,6 +32,7 @@ export interface SessionAccount {
   _id?: unknown;
   banned?: boolean;
   isBot?: boolean;
+  verified?: boolean;
   username?: string;
   email?: string;
   role?: string;
@@ -40,15 +41,15 @@ export interface SessionAccount {
 }
 
 /** Same term for the cm_ bearer branch, which reads its own user row. */
-export const isAccountInstanceRestricted = (email: unknown): boolean => (
-  isInstanceAccessRestricted() && !isInstanceEmailAllowed(email)
-);
+export function isAccountInstanceRestricted(email: unknown, verified: unknown): boolean {
+  return isInstanceAccessRestricted() && (!isInstanceEmailAllowed(email) || !verified);
+}
 
 export const loadSessionAccount = async (userId: string): Promise<SessionAccount | null> => {
   // Express auth also needs identity fields for the same req.user shape as
   // API-token auth. Keep one live-row read for all session verifiers.
   const account = await User.findById(userId)
-    .select('banned isBot username email role tokenVersion accountDeletionRequestedAt').lean();
+    .select('banned isBot verified username email role tokenVersion accountDeletionRequestedAt').lean();
   return (account as SessionAccount | null) || null;
 };
 
@@ -69,8 +70,10 @@ export function sessionRefusal(
   // The sign-in allowlist gates register and login only; without this term a
   // session minted before the list existed (or for a since-removed address)
   // stays valid until it expires. Unrestricted instances skip the term, and a
-  // row with no email fails shut once the list is on.
-  if (isInstanceAccessRestricted() && !isInstanceEmailAllowed(account.email)) return 'restricted';
+  // row with no email fails shut once the list is on. `verified` mirrors login:
+  // an account that registered an allowlisted spelling while the instance was
+  // open, and never proved it, must not keep a session the list now refuses.
+  if (isAccountInstanceRestricted(account.email, account.verified)) return 'restricted';
   // Pre-deploy JWTs have no claim. They represent version zero and remain
   // usable only until the first revoke. A malformed explicit claim fails shut.
   if (claims && (claims.tokenVersion === undefined ? 0 : claims.tokenVersion) !== (account.tokenVersion ?? 0)) {

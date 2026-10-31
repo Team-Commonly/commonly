@@ -52,7 +52,7 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
       // bearers share its public cm_ prefix but are stored only as a hash so a
       // database read cannot impersonate a CLI session.
       let user: any = await User.findOne({ apiToken: token }).select(
-        '_id username email role apiTokenScopes apiTokenCreatedAt banned accountDeletionRequestedAt',
+        '_id username email role verified apiTokenScopes apiTokenCreatedAt banned accountDeletionRequestedAt',
       );
 
       let isDeviceToken = false;
@@ -67,7 +67,7 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
               revokedAt: { $in: [null] },
             },
           },
-        }).select('_id username email role banned accountDeletionRequestedAt');
+        }).select('_id username email role verified banned accountDeletionRequestedAt');
         isDeviceToken = Boolean(user);
       }
 
@@ -76,7 +76,7 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
         return res.status(403).json({ msg: 'This account has been suspended.' });
       }
 
-      if (isAccountInstanceRestricted(user.email)) {
+      if (isAccountInstanceRestricted(user.email, user.verified)) {
         return res.status(403).json({ code: 'INSTANCE_ACCESS_RESTRICTED', msg: INSTANCE_ACCESS_ERROR });
       }
 
