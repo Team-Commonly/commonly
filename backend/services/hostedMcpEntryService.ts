@@ -64,6 +64,13 @@ export interface HostedMcpPinnedTool {
 export interface HostedMcpEntry {
   /** Namespaces every tool name (`<id>.<tool>`) and names the row's app. */
   id: string;
+  /**
+   * How the row's credential is obtained. Absent means OAuth, which every
+   * shipped entry uses. `operator_key` is a static bearer the operator pastes
+   * for one agent (Latchkey, TASK-330): it has no refresh, so `credentialFor`
+   * serves it without the freshness rule or the fence.
+   */
+  credentialMode?: 'oauth' | 'operator_key';
   title: string;
   /**
    * The line the Tools page draws under the title. Ours, like a tool's

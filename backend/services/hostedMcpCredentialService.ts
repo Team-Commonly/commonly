@@ -394,6 +394,17 @@ export const credentialFor = async (
 
   const id = rowId(row);
   const entry = deps.entryFor(row);
+  if (entry.credentialMode === 'operator_key') {
+    // A pasted key does not expire by a lifetime and cannot be refreshed, so
+    // the mode decides here, never a missing `expiresAt` (which would make an
+    // OAuth row with a lost lifetime serve a dead token). No fence, no lease.
+    assertUsable(row);
+    const keyRef = row.config?.credentialRef;
+    if (!keyRef) {
+      throw new HostedMcpCredentialError('reconnect_required', 'no key is stored for this connection');
+    }
+    return { token: await deps.secrets.get(keyRef), expiresAt: '' };
+  }
   const recordedClientId = row.config?.clientId;
   let clientId: string;
   let clientSecret: string | undefined;
