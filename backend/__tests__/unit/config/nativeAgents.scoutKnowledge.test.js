@@ -124,7 +124,10 @@ describe('Scout onboarding knowledge', () => {
   // Codex stays Mac only until a Linux walk (#2783).
   test('offers a connect card for Claude Code on a Mac, or on Linux in an invite-only pod, and says what works elsewhere', () => {
     expect(prompt).toMatch(/Claude Code on a Mac, or on Linux \(WSL included\) in an invite-only pod; Codex on a Mac \(Linux and WSL not yet tested\)/);
-    expect(prompt).toMatch(/For Claude Code on Linux or WSL, say it answers only in invite-only pods/);
+    // CodeRabbit on #2823: the CLI checks the whole seat, so one open pod stops
+    // replies in every pod, not just that one.
+    expect(prompt).toMatch(/For Claude Code on Linux or WSL, say it answers only while every pod it is in is invite-only: if any one of them opens up, it stops answering in all of them until that pod is invite-only again\./);
+    expect(prompt).not.toMatch(/say it answers only in invite-only pods/);
     expect(prompt).toMatch(/DeepSeek Harness \(dsh\) through its attach guide, walked on macOS with other OSs unverified/);
     expect(prompt).not.toMatch(/On Linux \(WSL included\), Codex only/);
     expect(prompt).toMatch(/For Claude Code on native Windows, do not propose a connect card/);
