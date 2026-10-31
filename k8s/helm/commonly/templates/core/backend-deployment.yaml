@@ -119,6 +119,20 @@ spec:
         - name: REGISTRATION_INVITE_ONLY
           value: {{ .Values.backend.env.registrationInviteOnly | quote }}
         {{- end }}
+        {{- if .Values.backend.env.authAllowedDomains }}
+        # Instance access allowlist (D43). Any value here flips
+        # isInstanceAccessRestricted() true and gates BOTH register and login.
+        # Unset (prod/values-dev) = public. Staging scopes sign-in to the team.
+        - name: AUTH_ALLOWED_DOMAINS
+          value: {{ .Values.backend.env.authAllowedDomains | quote }}
+        {{- end }}
+        {{- if .Values.backend.env.authAllowedEmailsFromSecret }}
+        - name: AUTH_ALLOWED_EMAILS
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: auth-allowed-emails
+        {{- end }}
 
         # Database Connections
         - name: MONGO_URI
