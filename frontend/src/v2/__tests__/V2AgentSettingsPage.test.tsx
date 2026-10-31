@@ -579,3 +579,35 @@ test('runner facts refresh without resetting unsaved controls, and a failed read
     expect(input).toHaveValue('unsaved-draft');
   } finally { view.unmount(); jest.useRealTimers(); }
 });
+
+test('the key list re-reads while visible, so an outside call updates Last used', async () => {
+  jest.useFakeTimers();
+  let used = false;
+  const defaultGet = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url, options) => (
+    url === '/api/credentials'
+      ? Promise.resolve({ data: [{ _id: 'tok-1', label: 'Laptop', createdAt: '2026-10-01T00:00:00Z',
+        lastUsedAt: used ? '2026-10-31T09:15:00Z' : null, revokedAt: null, status: 'active' }] })
+      : defaultGet(url, options)
+  ));
+  const view = renderPage();
+  try {
+    const before = await screen.findByText(/last used/i);
+    const beforeText = before.textContent;
+    used = true;
+    await act(async () => { jest.advanceTimersByTime(15_000); });
+    expect(screen.getByText(/last used/i).textContent).not.toEqual(beforeText);
+  } finally { view.unmount(); jest.useRealTimers(); }
+});
+
+test('key polling stops on unmount', async () => {
+  jest.useFakeTimers();
+  const view = renderPage();
+  try {
+    await screen.findByText(/last used/i);
+    view.unmount();
+    const calls = axios.get.mock.calls.filter(([url]) => url === '/api/credentials').length;
+    await act(async () => { jest.advanceTimersByTime(60_000); });
+    expect(axios.get.mock.calls.filter(([url]) => url === '/api/credentials').length).toBe(calls);
+  } finally { jest.useRealTimers(); }
+});
