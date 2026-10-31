@@ -195,7 +195,8 @@ async function openPage(browser, viewport, scheme, record) {
   });
   // Every origin and path, not only /api: a click on a form or a link can send a write anywhere.
   await context.route('**/*', (r) => {
-    const { pathname } = new URL(r.request().url());
+    // Express matches paths case-insensitively, so /API/EMAIL/... reaches the same handler.
+    const pathname = new URL(r.request().url()).pathname.toLowerCase();
     const writesOnGet = GET_WRITE_PATHS.some((p) => pathname.startsWith(p));
     if (SAFE_METHODS.has(r.request().method()) && !writesOnGet) return r.continue();
     record.blockedWrites += 1;
