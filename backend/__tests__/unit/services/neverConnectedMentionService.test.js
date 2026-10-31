@@ -96,3 +96,12 @@ it('stays silent when there is no active install', async () => {
   expect(await noteNeverConnectedMention(args)).toBe(false);
   expect(mockEmitNotConnected).not.toHaveBeenCalled();
 });
+
+it('posts one line when the same agent is mentioned twice at once', async () => {
+  const [a, b] = await Promise.all([
+    noteNeverConnectedMention(args),
+    noteNeverConnectedMention(args),
+  ]);
+  expect([a, b].filter(Boolean)).toHaveLength(1);
+  expect(mockEmitNotConnected).toHaveBeenCalledTimes(1);
+});

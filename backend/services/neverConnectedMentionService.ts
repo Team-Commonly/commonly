@@ -67,6 +67,30 @@ export async function noteNeverConnectedMention({
   if (derived.state !== 'never-connected') return false;
 
   const agentKey = `${agentName}:${instanceId}`;
+  // The day check is read-then-insert, so two mentions racing in one process
+  // (`@nova @nova`) would both pass it. An in-flight key closes that window;
+  // across replicas the worst case stays one extra line, never a dropped mention.
+  const flightKey = `${podId}:${agentKey}`;
+  if (inFlight.has(flightKey)) return false;
+  inFlight.add(flightKey);
+  try {
+    return await postOnce(podId, agentKey, agent, agentName, messageId, threadRootId, now);
+  } finally {
+    inFlight.delete(flightKey);
+  }
+}
+
+const inFlight = new Set<string>();
+
+async function postOnce(
+  podId: string,
+  agentKey: string,
+  agent: { _id: unknown; username?: string; profilePicture?: string | null; botMetadata?: { displayName?: string; instanceId?: string } },
+  agentName: string,
+  messageId: string | number | null,
+  threadRootId: string | number | null | undefined,
+  now: Date,
+): Promise<boolean> {
   if (await hasNotConnectedLineToday(podId, agentKey, now)) return false;
 
   await emitNotConnectedLine({
