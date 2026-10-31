@@ -29,7 +29,7 @@ describe('migrateGitHubIssueWriteCapability', () => {
 
   test('exposes the migration through the backend package scripts for deploy operators', () => {
     expect(backendPackage.scripts['migrate:github-issue-write-capability'])
-      .toContain('migrate-github-issue-write-capability.ts');
+      .toBe('node dist/scripts/migrate-github-issue-write-capability.js');
   });
 
   test('grants every legacy install for a configured dev identity once, while leaving other identities ungranted', async () => {
