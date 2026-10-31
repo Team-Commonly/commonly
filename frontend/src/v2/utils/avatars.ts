@@ -170,7 +170,9 @@ const backgroundFor = (key: string, kind: AvatarKind): string => {
 // tier. Its 24 looks are 4 grounds x 3 necklines x 2 shirts, so every stored
 // paper:<seed>-v<n> id keeps resolving (TASK-683).
 const PAPER_NECKLINES: readonly PaperNeckline[] = ['crew', 'vee', 'scoop'];
-const PAPER_SHIRTS = ['e4e7ec', 'd0d5dd'] as const;
+// Shirts sit on the same Signal grey ramp as the head: both clear 2:1 on every
+// warm ground and stay far lighter than agent ink #101828 (TASK-683).
+const PAPER_SHIRTS = ['98a2b3', '8a94a6'] as const;
 export const PAPER_AVATAR_LOOK_COUNT = 24;
 
 /** Seeded Paper default, or one exact 0-based look from the 24-look set. */

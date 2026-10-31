@@ -132,4 +132,31 @@ describe('character avatar grounds', () => {
     expect(all.size).toBe(24);
     looksByGround.forEach((looks) => expect(looks.size).toBe(6));
   });
+
+  // Lumen's HOLD on 63722f8e: the Paper figure washed out on the warm grounds
+  // (1.01 to 1.22:1). Every figure fill must clear 2:1 against its own ground.
+  test('every Paper fill clears 2:1 against the ground it sits on', () => {
+    const luminance = (hex: string): number => {
+      const lin = [0, 2, 4].map((i) => {
+        const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+    };
+    const ratio = (a: string, b: string): number => {
+      const x = luminance(a);
+      const y = luminance(b);
+      return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+    };
+    for (let i = 0; i < 240; i += 1) {
+      const uri = String(paperAvatarFor(`paper-contrast-${i}`));
+      const ground = groundOf(uri);
+      const fills = Array.from(
+        groundSvg(uri).matchAll(/fill="#([0-9a-fA-F]{6})"/g),
+        (m) => m[1].toLowerCase(),
+      ).filter((f) => f !== ground.slice(1));
+      expect(fills.length).toBeGreaterThan(0);
+      fills.forEach((f) => expect(ratio(f, ground.slice(1))).toBeGreaterThanOrEqual(2));
+    }
+  });
 });

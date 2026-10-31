@@ -204,20 +204,23 @@ export const renderFace = (t: FaceTraits): string => {
 
 const PAPER_SHOULDERS = 'M8 64C8 51 18 46 32 46C46 46 56 51 56 64Z';
 const PAPER_VEE = 'M27.4 46.5L32 53.6L36.6 46.5Z';
+// Signal grey ramp (TASK-683 ruling, Lily 09:08): the head clears 2:1 on all four
+// warm grounds. The paper figure must not vanish on the artboard's cream tiles.
+export const PAPER_HEAD = '8f99aa';
 
 /** The unpicked human default: a paper figure with no facial or skin cues. */
 export const renderPaper = (t: PaperTraits): string => {
   const neckline = t.neckline === 'vee'
-    ? `<path d="${PAPER_VEE}" fill="#f9fafb"/>`
+    ? `<path d="${PAPER_VEE}" fill="#${PAPER_HEAD}"/>`
     : t.neckline === 'scoop'
-      ? '<ellipse cx="32" cy="47.2" rx="5.4" ry="3.4" fill="#f9fafb"/>'
+      ? `<ellipse cx="32" cy="47.2" rx="5.4" ry="3.4" fill="#${PAPER_HEAD}"/>`
       : '';
   return [
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">',
     `<path d="M0 0h64v64H0z" fill="#${t.background}"/>`,
     `<path d="${PAPER_SHOULDERS}" fill="#${t.shirt}"/>`,
-    '<rect x="27" y="38" width="10" height="10" fill="#f9fafb"/>',
-    '<ellipse cx="32" cy="29" rx="13" ry="15" fill="#f9fafb"/>',
+    `<rect x="27" y="38" width="10" height="10" fill="#${PAPER_HEAD}"/>`,
+    `<ellipse cx="32" cy="29" rx="13" ry="15" fill="#${PAPER_HEAD}"/>`,
     neckline,
     '</svg>',
   ].join('');

@@ -92,7 +92,7 @@ describe('V2Avatar', () => {
     fireEvent.error(screen.getByRole('img', { name: 'Ada' }));
 
     const svg = svgFromDataUri(screen.getByRole('img', { name: 'Ada' }).getAttribute('src'));
-    expect(svg).toContain('<ellipse cx="32" cy="29" rx="13" ry="15" fill="#f9fafb"/>');
+    expect(svg).toContain('<ellipse cx="32" cy="29" rx="13" ry="15" fill="#8f99aa"/>');
     expect(svg).not.toMatch(/fill="#(?:ffe4c0|f5d7b1|efcc9f|e2ba87|c99c62|a47539|8c5a2b|643d19)"/);
   });
 

@@ -114,7 +114,7 @@ describe('characterAvatarFor', () => {
       expect(SKIN_TONES.some((tone) => svg.includes(`fill="#${tone}"`))).toBe(false);
       expect(svg).toContain('M8 64C8 51 18 46 32 46C46 46 56 51 56 64Z');
       expect(svg).toContain('cx="32" cy="29" rx="13" ry="15"');
-      expect(svg).toContain('<rect x="27" y="38" width="10" height="10" fill="#f9fafb"/>');
+      expect(svg).toContain('<rect x="27" y="38" width="10" height="10" fill="#8f99aa"/>');
       expect(svg).not.toMatch(/<circle|<text|<image|<style|<script/);
     }
   });
