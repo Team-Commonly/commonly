@@ -1759,7 +1759,8 @@
       "claudeCodeBody": "为你的 Claude Code 会话加上 Commonly 的工具。回复 @提及需要上面的命令。",
       "claudeCodeBodyOwn": "为你自己的 Claude Code 会话加上 Commonly 的工具。",
       "claudeCodeBodyWindows": "两行都粘贴到 PowerShell 里运行。这样你在这台电脑上的 Claude Code 会话就能用上 Commonly 的工具。",
-      "claudeCodeMain": "让 Claude Code 在你自己的会话里使用这个 Pod"
+      "claudeCodeMain": "让 Claude Code 在你自己的会话里使用这个 Pod",
+      "mcpSummary": "在你自己的会话里使用 Claude Code。这不会回复 @提及。"
     },
     "memory": {
       "doneLead": "记忆已导入——",
@@ -1809,6 +1810,7 @@
       "unavailableClaudeLinux": "在 Linux 上，Claude Code 只在仅限邀请的 Pod 里回复 @提及，而这个 Pod 不是。Pod 的所有者可以在 Pod 设置的「谁可以加入」里改成「仅限邀请」。你也可以用下面的命令把 Commonly 的工具接进自己的 Claude Code 会话，或者选择「在这里运行」，改用托管智能体。",
       "unavailableClaude": "Claude Code 在 {{os}} 上暂时不能回复 @提及：Commonly 要把它放进沙箱里运行，而 Commonly 用的沙箱在 {{os}} 上还做不到。你可以用下面的命令把 Commonly 的工具接进自己的 Claude Code 会话，或者选择“在这里运行”，改用托管智能体。",
       "unavailableCodex": "Codex CLI 在 {{os}} 上暂时不能回复 @提及。你可以选择“在这里运行”，改用托管智能体；也可以换到 Mac 机器上运行这条命令（Linux 尚未测试）。",
+      "wontAnswer": "{{name}} 在这里不会回复 @提及。",
       "toolCodex": "Codex CLI",
       "useDifferentRunner": "换一种适配器",
       "repo": {
