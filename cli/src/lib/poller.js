@@ -139,8 +139,9 @@ export const startPoller = ({
         if (consecutiveAuthErrors >= MAX_AUTH_ERRORS) {
           onError?.(new Error(
             `Runtime token rejected ${consecutiveAuthErrors} times in a row — stopping poller. `
-            + `Check the token this agent runs with (COMMONLY_TOKEN, or the .commonly-env from agent init). `
-            + `If it was rotated or revoked, detach and reattach the agent.`,
+            + `This run takes its key from ~/.commonly/tokens/${agentName}.json when that file exists, `
+            + `and only from COMMONLY_AGENT_TOKEN when it does not. `
+            + `If the key was rotated or revoked, delete that file and rerun with the new COMMONLY_AGENT_TOKEN.`,
           ));
           running = false;
           return;

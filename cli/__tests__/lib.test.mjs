@@ -541,7 +541,10 @@ describe('poller.js', () => {
 
     await new Promise((r) => setTimeout(r, 50));
     const stopMsg = errors.map((e) => e.message).find((m) => /stopping poller/.test(m));
-    expect(stopMsg).toMatch(/Check the token this agent runs with \(COMMONLY_TOKEN/);
+    // The names this process reads: the saved token file, then COMMONLY_AGENT_TOKEN.
+    expect(stopMsg).toMatch(/~\/\.commonly\/tokens\/my-agent\.json/);
+    expect(stopMsg).toMatch(/COMMONLY_AGENT_TOKEN/);
+    expect(stopMsg).not.toMatch(/COMMONLY_TOKEN/);
     expect(stopMsg).not.toMatch(/likely revoked/);
   });
 
