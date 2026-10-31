@@ -635,12 +635,31 @@ const renderMarkdownTable = (lines) => {
   </table></div>`;
 };
 
+// Internal notes live in HTML comments. Drop each one, and refuse the build when a
+// comment is left open or nested, since its tail would ship as visible text.
+const stripHtmlComments = (markdown) => {
+  let out = '';
+  let i = 0;
+  for (;;) {
+    const open = markdown.indexOf('<!--', i);
+    if (open === -1) break;
+    out += markdown.slice(i, open);
+    const ends = ['-->', '--!>'].map((end) => [markdown.indexOf(end, open + 4), end.length]).filter(([at]) => at !== -1);
+    if (!ends.length) throw new Error('unclosed HTML comment in compare markdown');
+    const [at, length] = ends.reduce((first, next) => (next[0] < first[0] ? next : first));
+    i = at + length;
+  }
+  out += markdown.slice(i);
+  if (out.includes('<!--') || out.includes('-->') || out.includes('--!>')) {
+    throw new Error('unclosed HTML comment in compare markdown');
+  }
+  return out;
+};
+
 // The subset of markdown the compare drafts use: headings, paragraphs, bullet
 // and numbered lists, pipe tables, and inline code, bold, italic and links.
 export const renderMarkdown = (markdown) => {
-  // Internal notes live in HTML comments; one left open or nested would ship as visible text.
-  const text = markdown.replace(/<!--[\s\S]*?-->/g, '');
-  if (/<!--|-->/.test(text)) throw new Error('unclosed HTML comment in compare markdown');
+  const text = stripHtmlComments(markdown);
   const lines = text.split('\n');
   const html = [];
   let i = 0;

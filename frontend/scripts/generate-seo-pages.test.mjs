@@ -2236,6 +2236,7 @@ test('a compare page renders GTM markdown and refuses to build while a HOLD is o
   assert.throws(() => assertNoOpenHolds('/compare/example/', 'Claim. [HOLD](pending)'), /1 open bracketed marker/);
   assert.match(renderMarkdown('[Alternatives](/guides/example-alternative/)'), /<a href="\/guides\/example-alternative\/" rel="noreferrer">Alternatives<\/a>/);
   assert.throws(() => renderMarkdown('a <!-- open note'), /unclosed HTML comment/);
+  assert.doesNotMatch(renderMarkdown('a <!-- note --!> visible'), /note/);
   assert.throws(() => renderMarkdown('<!<!--x-->--> visible'), /unclosed HTML comment/);
 });
 
