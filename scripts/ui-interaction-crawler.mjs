@@ -13,19 +13,22 @@
  *   overflowX     document scrollWidth beyond the viewport width.
  *   consoleErrors console `error` messages and uncaught page errors.
  * Clicked per interactive element (button, a[href], [role=button|tab]):
- *   navigated | changed (DOM mutations) | requested (network) | dead (none of the three).
+ *   navigated | changed (DOM mutations) | requested (network) | dead (none of the three)
+ *   | unclickable | stale (the element at that position is no longer the one listed).
  *   textOnly      a button-like control with transparent background and no border.
+ *   skippedClicks candidates past CRAWL_MAX_CLICKS, reported so a short run cannot look complete.
  *
- * Read-only by construction: every non-GET /api request is aborted and counted as
- * `blockedWrites`, so a click that would write is visible in the report but never lands.
+ * Read-only by construction: every request in the context that is not GET, HEAD or OPTIONS is
+ * aborted and counted as `blockedWrites`. Service workers are blocked, because their requests
+ * bypass context routing.
  *
  * Configuration is environment only. Nothing is hardcoded and no token is logged or written:
  *   CRAWL_BASE_URL     required, e.g. http://localhost:3000
- *   CRAWL_TOKEN        optional JWT, set as localStorage.token before each load
- *   CRAWL_ROUTES       optional path to a JSON list of {id, path}; default scripts/ui-crawl-routes.json
- *   CRAWL_POD_ID       optional, substituted for :podId in route paths
- *   CRAWL_TARGETS      optional path to metrics.json, keyed "<routeId>-<width>" with helperWords,
+ *   CRAWL_TARGETS      required, path to metrics.json keyed "<routeId>-<width>" with helperWords,
  *                      innerRatio and an optional scroller selector (the D215 artboard format)
+ *   CRAWL_TOKEN        optional JWT, set as localStorage.token on the configured origin only
+ *   CRAWL_POD_ID       required when a route path contains :podId
+ *   CRAWL_ROUTES       optional path to a JSON list of {id, path}; default scripts/ui-crawl-routes.json
  *   CRAWL_VIEWPORTS    optional, default "1440x900,390x844"
  *   CRAWL_SCHEMES      optional, default "light,dark"
  *   CRAWL_OUT          optional output dir, default a fresh temp directory
@@ -33,7 +36,8 @@
  *   CRAWL_MAX_CLICKS   optional, default 60 per capture
  *
  * Usage:
- *   CRAWL_BASE_URL=http://localhost:3000 CRAWL_TOKEN="$TOKEN" node scripts/ui-interaction-crawler.mjs
+ *   CRAWL_BASE_URL=http://localhost:3000 CRAWL_TARGETS=metrics.json CRAWL_TOKEN="$TOKEN" \
+ *     node scripts/ui-interaction-crawler.mjs
  */
 import { chromium } from '@playwright/test';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -53,6 +57,7 @@ function need(name) {
 }
 
 const BASE = need('CRAWL_BASE_URL').replace(/\/$/, '');
+const BASE_ORIGIN = new URL(BASE).origin;
 const TOKEN = env.CRAWL_TOKEN || '';
 const POD_ID = env.CRAWL_POD_ID || '';
 const MAX_CLICKS = Number(env.CRAWL_MAX_CLICKS || 60);
@@ -61,11 +66,26 @@ mkdirSync(OUT, { recursive: true });
 
 const routesFile = env.CRAWL_ROUTES || join(here, 'ui-crawl-routes.json');
 const routes = JSON.parse(readFileSync(routesFile, 'utf8'));
-const targets = env.CRAWL_TARGETS && existsSync(env.CRAWL_TARGETS)
-  ? JSON.parse(readFileSync(env.CRAWL_TARGETS, 'utf8'))
-  : {};
-if (env.CRAWL_TARGETS && Object.keys(targets).length === 0) {
-  console.error(`CRAWL_TARGETS=${env.CRAWL_TARGETS} is missing or empty; reporting without targets`);
+if (!POD_ID && routes.some((r) => r.path.includes(':podId'))) {
+  console.error('CRAWL_POD_ID is required: a route in the list has a :podId segment');
+  process.exit(2);
+}
+
+// Targets are the measurement; a run without them would report numbers with nothing to judge them by.
+const targetsFile = need('CRAWL_TARGETS');
+if (!existsSync(targetsFile)) {
+  console.error(`CRAWL_TARGETS=${targetsFile} does not exist`);
+  process.exit(2);
+}
+const targets = JSON.parse(readFileSync(targetsFile, 'utf8'));
+if (!targets || Object.keys(targets).length === 0) {
+  console.error(`CRAWL_TARGETS=${targetsFile} is empty; refusing to report without targets`);
+  process.exit(2);
+}
+for (const route of routes) {
+  for (const width of (env.CRAWL_VIEWPORTS || '1440x900,390x844').split(',').map((v) => v.split('x')[0])) {
+    if (!targets[`${route.id}-${width}`]) console.warn(`no target for ${route.id}-${width}; its gaps show as —`);
+  }
 }
 const viewports = (env.CRAWL_VIEWPORTS || '1440x900,390x844').split(',').map((v) => {
   const [width, height] = v.split('x').map(Number);
@@ -75,6 +95,9 @@ const schemes = (env.CRAWL_SCHEMES || 'light,dark').split(',');
 
 const launchOptions = { headless: true };
 if (env.CRAWL_CHROMIUM) launchOptions.executablePath = env.CRAWL_CHROMIUM;
+
+const CONTROL = 'button, a[href], [role=button], [role=tab]';
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 // The same word rule as cap/measure_after.js: visible, not inside a control, grey band.
 const HELPER_WORDS = () => {
@@ -125,14 +148,17 @@ const PANE = (selector) => {
   };
 };
 
+// Each candidate keeps its position in the unfiltered querySelectorAll list, which is the list
+// page.$$(CONTROL) returns, so the index still points at the same element after filtering.
 const CANDIDATES = () => {
   const els = [...document.querySelectorAll('button, a[href], [role=button], [role=tab]')];
   return els
-    .filter((el) => {
+    .map((el, index) => ({ el, index }))
+    .filter(({ el }) => {
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0 && !el.disabled;
     })
-    .map((el, index) => {
+    .map(({ el, index }) => {
       const cs = getComputedStyle(el);
       const textOnly = el.tagName === 'BUTTON' || el.getAttribute('role') === 'button'
         ? cs.backgroundColor === 'rgba(0, 0, 0, 0)' && cs.borderTopWidth === '0px'
@@ -145,22 +171,28 @@ const CANDIDATES = () => {
     });
 };
 
+// Same text as the label in CANDIDATES. Passed to handle.evaluate, so it must stand alone.
+const LABEL_OF = (el) => (el.innerText || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+
 async function openPage(browser, viewport, scheme, record) {
   const context = await browser.newContext({
     viewport: { width: viewport.width, height: viewport.height },
     colorScheme: scheme,
     deviceScaleFactor: 1,
+    serviceWorkers: 'block',
   });
-  await context.route('**/api/**', (r) => {
-    const m = r.request().method();
-    if (m === 'GET' || m === 'OPTIONS') return r.continue();
+  // Every origin and path, not only /api: a click on a form or a link can send a write anywhere.
+  await context.route('**/*', (r) => {
+    if (SAFE_METHODS.has(r.request().method())) return r.continue();
     record.blockedWrites += 1;
     return r.abort();
   });
   if (TOKEN) {
-    await context.addInitScript((t) => {
+    // addInitScript also runs in cross-origin child frames, so the token goes to the configured origin only.
+    await context.addInitScript(({ t, origin }) => {
+      if (location.origin !== origin) return;
       if (!localStorage.getItem('token')) localStorage.setItem('token', t);
-    }, TOKEN);
+    }, { t: TOKEN, origin: BASE_ORIGIN });
   }
   const page = await context.newPage();
   page.on('console', (m) => { if (m.type() === 'error') record.consoleErrors.push(m.text().slice(0, 200)); });
@@ -169,19 +201,29 @@ async function openPage(browser, viewport, scheme, record) {
 }
 
 async function settle(page, url) {
-  await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+  // A failed or 4xx navigation throws, so the capture records it instead of measuring a broken page.
+  const res = await page.goto(url, { waitUntil: 'load', timeout: 30000 });
+  if (res && res.status() >= 400) throw new Error(`HTTP ${res.status()} for ${url}`);
+  // Idle is best effort: a page that polls never goes idle, and that is not a failed navigation.
+  await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
   await page.waitForTimeout(1500);
 }
 
 async function crawlCapture(browser, route, viewport, scheme) {
-  const url = BASE + route.path.replace(':podId', POD_ID);
+  const path = route.path.replace(':podId', POD_ID);
+  const url = BASE + path;
   const record = {
-    routeId: route.id, url, viewport: viewport.label, scheme,
-    blockedWrites: 0, consoleErrors: [], clicks: [], helperWords: null, scroll: null, target: null, error: null,
+    routeId: route.id, url, viewport: viewport.label, scheme, maxClicks: MAX_CLICKS,
+    blockedWrites: 0, consoleErrors: [], clicks: [], candidateCount: null, skippedClicks: null,
+    helperWords: null, scroll: null, target: null, error: null,
   };
   const { context, page } = await openPage(browser, viewport, scheme, record);
   try {
     await settle(page, url);
+    // A protected route that redirects (to /v2/login, say) must not be measured as the route.
+    const landed = new URL(page.url()).pathname;
+    if (landed !== new URL(url).pathname) throw new Error(`redirected to ${landed}; route ${path} not measured`);
+
     const measured = await page.evaluate(HELPER_WORDS);
     record.helperWords = measured.words;
     record.helperSample = measured.sample;
@@ -192,6 +234,8 @@ async function crawlCapture(browser, route, viewport, scheme) {
 
     const candidates = await page.evaluate(CANDIDATES);
     const slice = candidates.slice(0, MAX_CLICKS);
+    record.candidateCount = candidates.length;
+    record.skippedClicks = candidates.length - slice.length;
     for (const cand of slice) {
       const before = page.url();
       await page.evaluate(() => {
@@ -204,14 +248,20 @@ async function crawlCapture(browser, route, viewport, scheme) {
       let requests = 0;
       const onRequest = () => { requests += 1; };
       page.on('request', onRequest);
-      const handles = await page.$$('button, a[href], [role=button], [role=tab]');
+      const handles = await page.$$(CONTROL);
       const handle = handles[cand.index];
+      const current = handle ? await handle.evaluate(LABEL_OF).catch(() => null) : null;
       let outcome = 'dead';
-      if (handle) {
-        await handle.click({ timeout: 2000, trial: false }).catch(() => { outcome = 'unclickable'; });
+      if (!handle || current !== cand.label) {
+        // The DOM moved since the candidate list was read; clicking now would hit the wrong control.
+        outcome = 'stale';
+      } else {
+        let clicked = true;
+        await handle.click({ timeout: 2000 }).catch(() => { clicked = false; });
         await page.waitForTimeout(400);
         const mut = await page.evaluate(() => window.__mut || 0);
-        if (page.url() !== before) outcome = 'navigated';
+        if (!clicked) outcome = 'unclickable';
+        else if (page.url() !== before) outcome = 'navigated';
         else if (mut > 0) outcome = 'changed';
         else if (requests > 0) outcome = 'requested';
       }
@@ -223,7 +273,6 @@ async function crawlCapture(browser, route, viewport, scheme) {
         await page.keyboard.press('Escape').catch(() => {});
       }
     }
-    record.candidateCount = candidates.length;
   } catch (err) {
     record.error = String(err && err.message ? err.message : err).slice(0, 200);
   } finally {
@@ -238,11 +287,13 @@ function gaps(records) {
   const rows = [];
   for (const r of records) {
     const t = r.target || {};
-    const dead = r.clicks.filter((c) => c.outcome === 'dead').length;
-    const textOnly = r.clicks.filter((c) => c.textOnly).length;
+    const count = (outcome) => r.clicks.filter((c) => c.outcome === outcome).length;
     rows.push({
       routeId: r.routeId, viewport: r.viewport, scheme: r.scheme,
-      dead, textOnly,
+      dead: count('dead'), stale: count('stale'),
+      textOnly: r.clicks.filter((c) => c.textOnly).length,
+      skippedClicks: r.skippedClicks,
+      blockedWrites: r.blockedWrites,
       // distinct messages: a reload after a navigating click repeats the same error
       consoleErrors: new Set(r.consoleErrors).size,
       overflowX: r.scroll ? r.scroll.overflowX : null,
@@ -276,8 +327,8 @@ const summary = gaps(records);
 writeFileSync(join(OUT, 'summary.json'), JSON.stringify(summary, null, 2));
 const ranked = [...summary].sort((a, b) => (b.dead + b.consoleErrors + b.textOnly) - (a.dead + a.consoleErrors + a.textOnly));
 writeFileSync(join(OUT, 'summary.md'), [
-  '| route | viewport | scheme | dead clicks | text-only | console errors | overflow-x | helper words (target) | scroll ratio (target) | error |',
-  '|---|---|---|---|---|---|---|---|---|---|',
-  ...ranked.map((r) => `| ${r.routeId} | ${r.viewport} | ${r.scheme} | ${r.dead} | ${r.textOnly} | ${r.consoleErrors} | ${r.overflowX} | ${r.helperWords} (${r.helperTarget ?? '—'}) | ${r.scrollRatio} (${r.scrollTarget ?? '—'}) | ${r.error ?? ''} |`),
+  '| route | viewport | scheme | dead clicks | text-only | skipped | stale | blocked writes | console errors | overflow-x | helper words (target) | scroll ratio (target) | error |',
+  '|---|---|---|---|---|---|---|---|---|---|---|---|---|',
+  ...ranked.map((r) => `| ${r.routeId} | ${r.viewport} | ${r.scheme} | ${r.dead} | ${r.textOnly} | ${r.skippedClicks} | ${r.stale} | ${r.blockedWrites} | ${r.consoleErrors} | ${r.overflowX} | ${r.helperWords} (${r.helperTarget ?? '—'}) | ${r.scrollRatio} (${r.scrollTarget ?? '—'}) | ${r.error ?? ''} |`),
 ].join('\n') + '\n');
 console.log(`wrote ${records.length} captures to ${resolve(OUT)}`);
