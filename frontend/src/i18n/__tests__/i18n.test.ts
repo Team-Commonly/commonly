@@ -55,6 +55,20 @@ describe('i18n configuration', () => {
     expect(meta('zh-CN', 1)).toBe('1个智能体 · 0个工作中 · 0个等你');
   });
 
+  it('translates the Connectors page strings and the catalog description maps', () => {
+    const uiKeys = [
+      'connectors.untitledPod', 'connectors.anotherPod', 'connectors.thisSlackWorkspace', 'connectors.yourSlackUser',
+      'connectors.cancelError', 'connectors.modeError', 'connectors.slackAuthorizeError', 'connectors.slackBindError',
+    ];
+    const catalogKeys = [
+      'github', 'telegram', 'slack', 'atlassian', 'gitlab', 'airtable', 'google-calendar', 'sentry', 'linear', 'supabase', 'notion',
+    ].map((id) => `connectors.catalogDescriptions.${id}`);
+    [...uiKeys, ...catalogKeys].forEach((key) => {
+      expect(i18n.exists(key, { lng: 'zh-CN' })).toBe(true);
+      expect(i18n.t(key, { lng: 'zh-CN' })).not.toBe(i18n.t(key, { lng: 'en' }));
+    });
+  });
+
   it('defaults to English when no stored supported language exists', async () => {
     const languages = jest.spyOn(window.navigator, 'languages', 'get').mockReturnValue(['en-US']);
     const language = jest.spyOn(window.navigator, 'language', 'get').mockReturnValue('en-US');
