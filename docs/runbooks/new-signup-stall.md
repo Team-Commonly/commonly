@@ -2,28 +2,44 @@
 
 A new person signs up and sends nothing. Before you walk the flow or change
 copy, settle one question: **did they reach the first screen, and did they act
-on it?** The account already records the answer.
+on it?** The account usually records evidence of both.
 
 ## Read the onboarding marks first
 
 `User.onboarding` carries write-once first-session marks, each set
-server-side (`services/onboardingMarks.ts`). Accounts created before a mark
-shipped don't have it; nothing is backfilled.
+server-side (`services/onboardingMarks.ts`).
+
+**A missing mark means "no mark recorded", not proof the step didn't happen.**
+The writes are fire-and-forget: `markPodOpened` calls `User.updateOne(...)`
+without awaiting it, and a failed write leaves the mark unset after a real
+visit. `podOpenedAt` and a typed `firstStartAt` count only in a pod the
+person created; `byoOpenedAt` has no pod check. Nothing is backfilled, and
+nothing checks when the account was created: an account created before that
+mark's deploy gets it on its first eligible request afterwards, so its
+timestamp can be later than the real first visit. Treat a gap as a lead to
+confirm, for example against `lastActive` or whether they sent a message
+(timestamps and ids).
 
 | mark | set when | tells you |
 |---|---|---|
-| `podOpenedAt` | the person first loads the messages of a pod they created, such as My Workspace | they reached the workspace and its welcome |
+| `podOpenedAt` | the first authorized first-page fetch (no `before` cursor) of the messages of any pod they created; for a new signup that is normally My Workspace. It is set before the messages are read, so it records the request, not a render | their client asked for a pod's messages; for a new signup, very likely the welcome |
 | `firstStartAt` + `firstStartId` | their first message in a pod they created matches a start's label, or the server resolves a click on their own "Run an agent here" | they acted, and which choice |
 | `byoOpenedAt` | they first load Bring your own (`GET /api/hosted/availability`) | they looked at setup |
 
-Read them together with the person's first own message in their workspace.
+Read them together with whether the person sent a message in their workspace,
+and when (timestamps and ids).
 
-- **No `podOpenedAt`**: they never reached the screen. Look at the signup and
-  redirect path.
+- **No `podOpenedAt`**: no messages fetch was recorded for their own pod. They
+  may never have reached the workspace, or the write may have failed. Check
+  `lastActive` first, then look at the signup and redirect path.
 - **`podOpenedAt` but no `firstStartAt`, no `byoOpenedAt` and no message**:
-  they saw the welcome and did nothing. That is a copy or comprehension
-  question, not a render bug. Compare against people who did act: how soon
-  after `podOpenedAt` did they click?
+  a first-page fetch of a pod they created was made (for a new signup,
+  normally My Workspace, where the welcome is). The mark is written before the
+  messages are listed, so it doesn't prove the welcome showed. First rule out
+  a failed fetch or render: walk it on staging, and check the backend error
+  logs around `podOpenedAt`. Only then treat it as a copy or comprehension
+  question. Compare against people who did act: how soon after `podOpenedAt`
+  did they click?
 - **`firstStartAt` but nothing after it**: the click is the place to look,
   above all `run-hosted`. It sends no message, and the mark is set when the
   server resolves the click, before the install and provision run. So a
