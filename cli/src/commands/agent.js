@@ -17,7 +17,7 @@ import { createRuntimeReporter } from '../lib/runtime-observation.js';
  * heartbeat  — manually trigger an agent's heartbeat
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync, watch } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync } from 'fs';
 import { join, dirname, basename, resolve as pathResolve } from 'path';
 import { homedir, tmpdir } from 'os';
 import { fileURLToPath } from 'url';
@@ -4357,10 +4357,10 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
     });
 
   // ── logs ──────────────────────────────────────────────────────────────────
-  // A seat the daemon supervises on this machine reads its local log. Any
-  // other seat needs --pod: the owner login reads recent events and runs from
-  // the member-gated seat-activity route. The owner login is never sent to the
-  // agent-runtime routes, which only accept a seat's own token.
+  // Without --pod, the seat's local daemon log is read. With --pod, the owner
+  // login reads recent events and runs from the member-gated seat-activity
+  // route, whichever machine the seat runs on. The owner login is never sent to
+  // the agent-runtime routes, which only accept a seat's own token.
   agent
     .command('logs <name>')
     .description("Show a seat's recent log: local daemon log, or server activity with --pod")
@@ -4370,24 +4370,46 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
     .option('--lines <n>', 'Number of trailing local lines to show', '50')
     .option('--instance <url>', 'Target Commonly instance (with --pod)')
     .action(async (name, opts) => {
-      const path = daemonSeatLogPath(name);
-      const localLog = readLogTail(path, opts.lines) !== null;
-      if (localLog || !opts.pod) {
-        if (!localLog) {
+      if (opts.follow && opts.pod) {
+        console.error('--follow needs a local seat log; server activity is a snapshot. Re-run without --follow.');
+        process.exit(1);
+      }
+      const lines = Number(opts.lines);
+      if (!Number.isInteger(lines) || lines < 1) {
+        console.error(`--lines must be a positive integer, got '${opts.lines}'`);
+        process.exit(1);
+      }
+      if (!opts.pod) {
+        const path = daemonSeatLogPath(name);
+        let output;
+        try {
+          output = readLogTail(path, lines);
+        } catch (err) {
+          console.error(`Cannot read ${path}: ${err.message}`);
+          process.exit(1);
+        }
+        if (output === null) {
           console.error(`No local log for '${name}' at ${path}. Pass --pod <podId> to read its server-side activity.`);
           process.exit(1);
         }
-        const output = readLogTail(path, opts.lines);
         if (output) console.log(output);
         if (!opts.follow) return;
-        // Follow prints only what the daemon appends after the tail above.
+        // Poll rather than fs.watch: a rename-rotated log would leave a watch
+        // on the old inode silent. Only appended bytes are printed.
         let offset = logSize(path);
-        const watcher = watch(path, () => {
-          const next = readAppended(path, offset);
-          offset = next.offset;
-          if (next.text) process.stdout.write(next.text);
-        });
-        const close = () => { watcher.close(); process.exit(0); };
+        const timer = setInterval(() => {
+          try {
+            const next = readAppended(path, offset);
+            offset = next.offset;
+            if (next.text) process.stdout.write(next.text);
+          } catch (err) {
+            // Rotation can leave a gap with no file; wait for it to come back.
+            if (err?.code === 'ENOENT') return;
+            console.error(`Cannot follow ${path}: ${err.message}`);
+            process.exit(1);
+          }
+        }, 1000);
+        const close = () => { clearInterval(timer); process.exit(0); };
         process.once('SIGINT', close);
         process.once('SIGTERM', close);
         return;
@@ -4412,10 +4434,6 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
         });
         if (events.length === 0 && runs.length === 0) console.log(`No recent activity for '${name}' in this pod.`);
       };
-      if (opts.follow) {
-        console.error('--follow needs a local seat log; server activity is a snapshot. Re-run without --follow.');
-        process.exit(1);
-      }
       try {
         await printActivity();
       } catch (err) {

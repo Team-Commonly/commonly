@@ -45,3 +45,28 @@ test('agent logs without a local log or --pod names the flag that reads server a
   const result = runLogs(home, ['ghost']);
   expect(result.stderr).toContain('Pass --pod <podId>');
 });
+
+test('agent logs --pod takes the server path even when a local log exists', () => {
+  const home = mkdtempSync(join(tmpdir(), 'commonly-agent-logs-'));
+  const path = daemonSeatLogPath('forge', home);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, 'local line\n');
+  const result = runLogs(home, ['forge', '--pod', '6a692a1be833c668acdb84cf']);
+  expect(result.stdout).not.toContain('local line');
+  expect(result.stderr).toContain('Not logged in. Run: commonly login');
+});
+
+test('agent logs rejects a non-numeric --lines with one line', () => {
+  const home = mkdtempSync(join(tmpdir(), 'commonly-agent-logs-'));
+  const result = runLogs(home, ['forge', '--lines', 'abc']);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain("--lines must be a positive integer, got 'abc'");
+});
+
+test('agent logs --follow with --pod is refused before any network call', () => {
+  const home = mkdtempSync(join(tmpdir(), 'commonly-agent-logs-'));
+  const result = runLogs(home, ['forge', '--pod', '6a692a1be833c668acdb84cf', '--follow']);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain('--follow needs a local seat log');
+  expect(result.stderr).not.toContain('Not logged in');
+});

@@ -9,7 +9,6 @@
  */
 import express from 'express';
 import rateLimit from 'express-rate-limit';
-import mongoose from 'mongoose';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 
 const auth = require('../middleware/auth');
@@ -31,7 +30,7 @@ router.get('/', auth, async (req: any, res: express.Response) => {
   const podId = String(req.query.podId || '');
   const agentName = String(req.query.agentName || '').trim().toLowerCase();
   const instanceId = String(req.query.instanceId || 'default');
-  if (!mongoose.isValidObjectId(podId) || !agentName) {
+  if (!/^[a-f\d]{24}$/i.test(podId) || !agentName) {
     return res.status(400).json({ message: 'podId and agentName are required' });
   }
   try {
