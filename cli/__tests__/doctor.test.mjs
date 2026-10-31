@@ -73,40 +73,67 @@ describe('(b) install', () => {
     })).toMatchObject({ status: FAIL });
   });
 
-  test('looks for the .cmd shim on Windows', () => {
+  test('looks for the .cmd shim on Windows, and does not count npm\'s bare sh shim beside it', () => {
     expect(findOnPath({
       command: 'commonly', pathValue: 'C:\\npm;C:\\other', platform: 'win32', isExecutable: (p) => p.endsWith('commonly.cmd'),
     })).toHaveLength(2);
+    expect(findOnPath({
+      command: 'commonly', pathValue: 'C:\\npm', platform: 'win32', isExecutable: () => true,
+    })).toHaveLength(2); // commonly.cmd and commonly.exe, never the bare `commonly`
   });
 });
 
 describe('(c) login', () => {
-  const instance = { key: 'default', url: 'https://api.commonly.me', hasToken: true };
+  const saved = {
+    key: 'default', url: 'https://api.commonly.me', tokenSource: 'saved', loginHint: 'commonly login',
+  };
 
   test('passes with the token\'s user, and never prints the token', async () => {
-    const r = await checkLogin({ instance, fetchUser: async () => ({ username: 'lily-shen', token: 'cm_secret' }) });
+    const r = await checkLogin({ target: saved, fetchUser: async () => ({ username: 'lily-shen', token: 'cm_secret' }) });
     expect(r).toMatchObject({ status: PASS, detail: '@lily-shen on default (https://api.commonly.me)' });
     expect(JSON.stringify(r)).not.toContain('cm_secret');
   });
 
-  test('fails when not logged in', async () => {
-    expect(await checkLogin({ instance: null, fetchUser: async () => ({}) })).toMatchObject({ status: FAIL, fix: 'commonly login' });
+  test('says when the token it sent came from COMMONLY_TOKEN', async () => {
+    const r = await checkLogin({ target: { ...saved, tokenSource: 'env' }, fetchUser: async () => ({ username: 'ci' }) });
+    expect(r.detail).toBe('@ci on default (https://api.commonly.me) (token from COMMONLY_TOKEN)');
   });
 
-  test('fails when the saved instance has no token, without calling the server', async () => {
+  test('fails when not logged in, without calling the server', async () => {
     let called = false;
-    const r = await checkLogin({ instance: { ...instance, hasToken: false }, fetchUser: async () => { called = true; } });
-    expect(r).toMatchObject({ status: FAIL, fix: 'commonly login --instance default' });
+    const r = await checkLogin({
+      target: { key: null, url: 'https://api.commonly.me', tokenSource: null, loginHint: 'commonly login' },
+      fetchUser: async () => { called = true; },
+    });
+    expect(r).toMatchObject({ status: FAIL, detail: 'not logged in', fix: 'commonly login' });
     expect(called).toBe(false);
   });
 
-  test('fails when the server rejects the token', async () => {
-    const r = await checkLogin({ instance, fetchUser: async () => { throw Object.assign(new Error('Session expired'), { status: 401 }); } });
-    expect(r).toMatchObject({ status: FAIL, detail: 'default (https://api.commonly.me) rejected the saved token' });
+  test('fails when a saved instance has no token, keeping the --instance the user gave', async () => {
+    const r = await checkLogin({
+      target: { ...saved, key: 'dev', tokenSource: null, loginHint: 'commonly login --instance dev' },
+      fetchUser: async () => ({}),
+    });
+    expect(r).toMatchObject({ status: FAIL, fix: 'commonly login --instance dev' });
+    expect(r.detail).toContain('has no saved token');
+  });
+
+  test('fails when the server rejects the saved token', async () => {
+    const r = await checkLogin({ target: saved, fetchUser: async () => { throw Object.assign(new Error('Session expired'), { status: 401 }); } });
+    expect(r).toMatchObject({ status: FAIL, detail: 'default (https://api.commonly.me) rejected the saved token', fix: 'commonly login' });
+  });
+
+  test('a rejected COMMONLY_TOKEN is named, and the fix is the env var, not a login', async () => {
+    const r = await checkLogin({
+      target: { ...saved, tokenSource: 'env' },
+      fetchUser: async () => { throw Object.assign(new Error('nope'), { status: 401 }); },
+    });
+    expect(r).toMatchObject({ status: FAIL, fix: 'replace or unset COMMONLY_TOKEN' });
+    expect(r.detail).toContain('the token in COMMONLY_TOKEN');
   });
 
   test('fails when the server cannot be reached', async () => {
-    const r = await checkLogin({ instance, fetchUser: async () => { throw new TypeError('fetch failed'); } });
+    const r = await checkLogin({ target: saved, fetchUser: async () => { throw new TypeError('fetch failed'); } });
     expect(r.status).toBe(FAIL);
     expect(r.detail).toContain('could not reach https://api.commonly.me');
   });
@@ -180,12 +207,14 @@ describe('(e) adapters', () => {
     expect(r).toMatchObject({ id: 'adapter:codex', status: FAIL });
   });
 
-  test('fails an adapter whose detect throws', async () => {
+  test('fails an adapter whose detect throws, keeping the reason instead of calling it missing', async () => {
     const [r] = await checkAdapters({
-      agents: [{ name: 'a', adapter: 'claude' }],
-      getAdapter: () => ({ detect: async () => { throw new Error('ENOENT'); } }),
+      agents: [{ name: 'a', adapter: 'dsh' }],
+      getAdapter: () => ({ detect: async () => { throw new Error('EACCES: mkdtemp'); } }),
     });
     expect(r.status).toBe(FAIL);
+    expect(r.detail).toContain('could not be checked (EACCES: mkdtemp)');
+    expect(r.detail).not.toContain('not on PATH');
   });
 
   test('fails an adapter name this CLI does not know', async () => {
@@ -236,6 +265,18 @@ describe('(f) macOS claude prerequisites', () => {
     expect(r.detail).toContain('Seatbelt (sandbox-exec preflight failed: exit 71)');
     expect(r.detail).toContain(`login keychain (${keychain})`);
     expect(r.detail).toContain('/usr/bin/security');
+    expect(r.fix).toContain('normal Terminal');
+    expect(r.fix).toContain('run claude once');
+  });
+
+  test('a failed Seatbelt preflight alone points at running outside a sandbox', () => {
+    const r = checkMacClaude(deps({ detectSeatbelt: () => ({ available: false, error: 'exit 71' }) }));
+    expect(r.fix).toBe('run commonly doctor from a normal Terminal, not from inside an agent\'s sandbox');
+  });
+
+  test('missing files alone point at signing in', () => {
+    const r = checkMacClaude(deps({ isFile: () => false }));
+    expect(r.fix).toBe('sign in to this Mac as the user the agent runs as, and run claude once to log in');
   });
 
   test('fails when the Seatbelt probe throws', () => {
@@ -260,7 +301,10 @@ describe('runDoctor', () => {
     getAdapter: () => ({ detect: async () => ({ path: '/bin/claude', version: '2.5.1' }) }),
     node: { nodeVersion: '22.0.0', enginesRange: '>=20.0.0' },
     install: { pathValue: '/bin', platform: 'darwin', isExecutable: () => true, runVersion: () => '0.1.210', runningVersion: '0.1.210' },
-    login: { instance: { key: 'default', url: 'https://api.commonly.me', hasToken: true }, fetchUser: async () => ({ username: 'otto' }) },
+    login: {
+      target: { key: 'default', url: 'https://api.commonly.me', tokenSource: 'saved', loginHint: 'commonly login' },
+      fetchUser: async () => ({ username: 'otto' }),
+    },
     daemon: {
       loadRecord: () => ({ machineName: 'Mac' }),
       serviceFile: '/s',
@@ -283,9 +327,15 @@ describe('runDoctor', () => {
     const deps = healthy();
     deps.daemon.loadRecord = () => null;
     expect(doctorExitCode(await runDoctor(deps))).toBe(0);
-    deps.login.instance = null;
+    deps.login.target = { ...deps.login.target, tokenSource: null };
     expect(doctorExitCode(await runDoctor(deps))).toBe(1);
   });
+});
+
+test('formatDoctorLine keeps a multi-line or ANSI server error on one line', () => {
+  const line = formatDoctorLine({ id: 'login', status: FAIL, detail: 'could not reach x: bad\n\u001b[31mgateway\u001b[0m', fix: 'retry' });
+  expect(line).not.toMatch(/[\n\u001b]/);
+  expect(line).toContain('bad [31mgateway [0m');
 });
 
 test('formatDoctorLine shows the fix only on a fail', () => {

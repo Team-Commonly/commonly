@@ -41,7 +41,9 @@ export const checkNode = ({ nodeVersion, enginesRange }) => {
 
 /** Every `commonly` on PATH, first one first (the one a shell runs). */
 export const findOnPath = ({ command, pathValue, platform, isExecutable }) => {
-  const names = platform === 'win32' ? [`${command}.cmd`, `${command}.exe`, command] : [command];
+  // npm also drops a bare sh shim beside the .cmd on Windows; cmd.exe cannot run
+  // it, so counting it would report a second install that is not one.
+  const names = platform === 'win32' ? [`${command}.cmd`, `${command}.exe`] : [command];
   const found = [];
   for (const dir of String(pathValue || '').split(platform === 'win32' ? ';' : delimiter)) {
     if (!dir) continue;
@@ -71,24 +73,29 @@ export const checkInstall = ({
   return result('install', PASS, `commonly ${version} at ${binary}${notes.length ? ` (${notes.join('; ')})` : ''}`);
 };
 
-// (c) The saved instance and whose token it holds. The token is sent, never shown.
-export const checkLogin = async ({ instance, fetchUser }) => {
-  if (!instance) return result('login', FAIL, 'not logged in', 'commonly login');
-  const where = `${instance.key || 'unsaved'} (${instance.url})`;
-  const relogin = `commonly login --instance ${instance.key || instance.url}`;
-  if (!instance.hasToken) return result('login', FAIL, `${where} has no saved token`, relogin);
+// (c) The instance every other command would use, and whose token it sends.
+// The token is sent, never shown. `target` comes from loginTarget (commands/
+// doctor.js), which resolves it the way createClient does, COMMONLY_TOKEN first.
+export const checkLogin = async ({ target, fetchUser }) => {
+  const where = target.key ? `${target.key} (${target.url})` : target.url;
+  if (!target.tokenSource) {
+    return result('login', FAIL, target.key ? `${where} has no saved token` : 'not logged in', target.loginHint);
+  }
+  const fromEnv = target.tokenSource === 'env';
+  const tokenName = fromEnv ? 'the token in COMMONLY_TOKEN' : 'the saved token';
+  const refix = fromEnv ? 'replace or unset COMMONLY_TOKEN' : target.loginHint;
   let user;
   try {
-    user = await fetchUser(instance);
+    user = await fetchUser();
   } catch (error) {
     if ([401, 403].includes(error?.status)) {
-      return result('login', FAIL, `${where} rejected the saved token`, relogin);
+      return result('login', FAIL, `${where} rejected ${tokenName}`, refix);
     }
-    return result('login', FAIL, `could not reach ${instance.url}: ${error?.message || error}`, 'check the network, then re-run commonly doctor');
+    return result('login', FAIL, `could not reach ${target.url}: ${error?.message || error}`, 'check the network, then re-run commonly doctor');
   }
   const who = user?.username || user?.email || user?._id;
-  if (!who) return result('login', FAIL, `${where} answered without a user`, relogin);
-  return result('login', PASS, `@${who} on ${where}`);
+  if (!who) return result('login', FAIL, `${where} answered without a user`, refix);
+  return result('login', PASS, `@${who} on ${where}${fromEnv ? ' (token from COMMONLY_TOKEN)' : ''}`);
 };
 
 const ago = (iso, now) => {
@@ -161,11 +168,16 @@ export const checkAdapters = async ({ agents, getAdapter }) => {
       continue;
     }
     let found = null;
+    let detectError = null;
     try {
       // eslint-disable-next-line no-await-in-loop
       found = await adapter.detect();
-    } catch {
-      found = null;
+    } catch (error) {
+      detectError = error?.message || String(error);
+    }
+    if (detectError) {
+      results.push(result(id, FAIL, `${name} could not be checked (${detectError}), ${used}`, `run the ${name} CLI with --version by hand`));
+      continue;
     }
     if (!found) {
       results.push(result(id, FAIL, `${name} is not on PATH or its --version failed, ${used}`, `install the ${name} CLI, or put it on PATH`));
@@ -196,7 +208,15 @@ export const checkMacClaude = ({
   if (!isFile(loginKeychainPath)) missing.push(`login keychain (${loginKeychainPath})`);
   if (!isFile(securityPath)) missing.push(`${securityPath}`);
   if (missing.length) {
-    return result('macos-claude', FAIL, `missing: ${missing.join('; ')}`, 'sign in to this Mac as the user the agent runs as, and run claude once to log in');
+    // A failed preflight most often means doctor itself is inside a sandbox
+    // (an agent's turn), where a nested sandbox-exec is refused.
+    const fixes = [];
+    if (!seatbelt?.available) fixes.push('run commonly doctor from a normal Terminal, not from inside an agent\'s sandbox');
+    if (missing.length > (seatbelt?.available ? 0 : 1)) {
+      fixes.push('sign in to this Mac as the user the agent runs as, and run claude once to log in');
+    }
+    const fix = fixes.join('; ');
+    return result('macos-claude', FAIL, `missing: ${missing.join('; ')}`, fix);
   }
   return result('macos-claude', PASS, 'Seatbelt runs, the login keychain and /usr/bin/security are present');
 };
@@ -214,8 +234,12 @@ export const runDoctor = async (deps) => {
   ];
 };
 
+// One line each, whatever a server or a CLI put in its error text.
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
+const oneLine = (text) => String(text ?? '').replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').trim();
+
 export const formatDoctorLine = ({ id, status, detail, fix }) => (
-  `${status.padEnd(4)}  ${id.padEnd(16)} ${detail}${status === FAIL && fix ? ` — fix: ${fix}` : ''}`
+  `${status.padEnd(4)}  ${id.padEnd(16)} ${oneLine(detail)}${status === FAIL && fix ? ` — fix: ${oneLine(fix)}` : ''}`
 );
 
 export const doctorExitCode = (results) => (results.some((r) => r.status === FAIL) ? 1 : 0);

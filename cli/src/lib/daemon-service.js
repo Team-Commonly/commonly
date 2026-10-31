@@ -203,6 +203,10 @@ export const installDaemonService = async ({
   cliPath = resolve(process.argv[1]),
   // The provider keys the seats' adapters declare (adapters/index.js).
   providerKeyEnvNames = [],
+  // Settings carried only when set, never warned about when absent: the
+  // operator's opt-outs (COMMONLY_NO_UPDATE_CHECK), which reach the seats the
+  // daemon spawns only through this file.
+  optionalEnvNames = [],
   env = process.env,
   writeFile = writeServiceFile,
   mkdirp,
@@ -221,7 +225,7 @@ export const installDaemonService = async ({
     chmod(daemonLogPath(home), 0o600);
   }
 
-  const providerEnv = providerEnvPairs({ names: providerKeyEnvNames, env });
+  const providerEnv = providerEnvPairs({ names: [...new Set([...providerKeyEnvNames, ...optionalEnvNames])], env });
   const missing = missingProviderKeys({ names: providerKeyEnvNames, env });
 
   if (target.kind === 'launchd') {

@@ -188,6 +188,12 @@ describe('startUpdateNotice', () => {
     expect(logged[0]).toMatch(/^your CLI is 3 versions behind/);
   });
 
+  test('a throw while reading its own arguments resolves null instead of rejecting', async () => {
+    const params = { log: () => {} };
+    Object.defineProperty(params, 'installedVersion', { enumerable: true, get() { throw new Error('boom'); } });
+    await expect(startUpdateNotice(params)).resolves.toBeNull();
+  });
+
   test('a throwing log sink does not reject', async () => {
     await expect(startUpdateNotice({
       ...base({ fetchImpl: registry('0.1.168') }),

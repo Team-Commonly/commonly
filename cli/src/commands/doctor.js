@@ -7,7 +7,7 @@ import { spawnSync } from 'child_process';
 import { homedir } from 'os';
 import { join } from 'path';
 import { createClient } from '../lib/api.js';
-import { getToken, resolveInstance } from '../lib/config.js';
+import { getToken, resolveInstance, resolveInstanceUrl } from '../lib/config.js';
 import { loadDaemonRecord } from '../lib/daemon-store.js';
 import { servicePaths } from '../lib/daemon-service.js';
 import { getAdapter } from '../lib/adapters/index.js';
@@ -44,49 +44,77 @@ const isFile = (path) => {
   }
 };
 
+// Node refuses to spawn a .cmd without a shell (CVE-2024-27980), and npm's
+// Windows shim is a .cmd, so that one case goes through cmd.exe, quoted.
+export const versionCommand = (binary, platform = process.platform) => (
+  platform === 'win32' && /\.(cmd|bat)$/i.test(binary)
+    ? { command: `"${binary}" --version`, args: [], shell: true }
+    : { command: binary, args: ['--version'], shell: false }
+);
+
 const runVersion = (binary) => {
-  const res = spawnSync(binary, ['--version'], { encoding: 'utf8', timeout: REQUEST_TIMEOUT_MS });
+  const { command, args, shell } = versionCommand(binary);
+  const res = spawnSync(command, args, { encoding: 'utf8', timeout: REQUEST_TIMEOUT_MS, shell });
   if (res.error || res.status !== 0) return null;
   return (res.stdout || '').trim().split(/\s+/)[0] || null;
 };
 
-export const hostDoctorDeps = ({ instance: instanceArg = null } = {}) => {
-  const saved = resolveInstance(instanceArg);
-  const tokenKey = saved?.key || saved?.url || instanceArg;
+/**
+ * The instance and token every other command would use for `instanceArg`:
+ * createClient's own resolution (api.js), so doctor cannot pass a login that
+ * `agent attach` then fails, or fail one that works. COMMONLY_TOKEN wins over
+ * the saved token there, so it wins here, and the line says which one it sent.
+ */
+export const loginTarget = ({
+  instanceArg = null,
+  env = process.env,
+  resolve = resolveInstance,
+  resolveUrl = resolveInstanceUrl,
+  tokenFor = getToken,
+} = {}) => {
+  const saved = resolve(instanceArg);
+  const token = tokenFor(instanceArg);
   return {
-    listAgents: () => listLocalAgents(),
-    getAdapter,
-    node: { nodeVersion: process.versions.node, enginesRange: pkg.engines?.node },
-    install: {
-      pathValue: process.env.PATH,
-      platform: process.platform,
-      isExecutable,
-      runVersion,
-      runningVersion: pkg.version,
-    },
-    login: {
-      instance: saved ? { key: saved.key, url: saved.url, hasToken: Boolean(getToken(tokenKey)) } : null,
-      fetchUser: () => timedClient(createClient({ instance: tokenKey })).get('/api/auth/user'),
-    },
-    daemon: {
-      loadRecord: loadDaemonRecord,
-      serviceFile: servicePaths().file,
-      fileExists: existsSync,
-      fetchMachine: (record) => getDaemonMachineStatus({
-        client: timedClient(createClient({ instance: record.instanceUrl, token: record.daemonToken })),
-        record,
-      }),
-      describeError: daemonStatusErrorMessage,
-      now: Date.now(),
-    },
-    macos: {
-      platform: process.platform,
-      detectSeatbelt,
-      isFile,
-      loginKeychainPath: join(homedir(), 'Library', 'Keychains', 'login.keychain-db'),
-    },
+    key: saved?.key || null,
+    url: resolveUrl(instanceArg),
+    tokenSource: !token ? null : (env.COMMONLY_TOKEN ? 'env' : 'saved'),
+    loginHint: instanceArg ? `commonly login --instance ${instanceArg}` : 'commonly login',
   };
 };
+
+export const hostDoctorDeps = ({ instance: instanceArg = null } = {}) => ({
+  listAgents: () => listLocalAgents(),
+  getAdapter,
+  node: { nodeVersion: process.versions.node, enginesRange: pkg.engines?.node },
+  install: {
+    pathValue: process.env.PATH,
+    platform: process.platform,
+    isExecutable,
+    runVersion,
+    runningVersion: pkg.version,
+  },
+  login: {
+    target: loginTarget({ instanceArg }),
+    fetchUser: () => timedClient(createClient({ instance: instanceArg })).get('/api/auth/user'),
+  },
+  daemon: {
+    loadRecord: loadDaemonRecord,
+    serviceFile: servicePaths().file,
+    fileExists: existsSync,
+    fetchMachine: (record) => getDaemonMachineStatus({
+      client: timedClient(createClient({ instance: record.instanceUrl, token: record.daemonToken })),
+      record,
+    }),
+    describeError: daemonStatusErrorMessage,
+    now: Date.now(),
+  },
+  macos: {
+    platform: process.platform,
+    detectSeatbelt,
+    isFile,
+    loginKeychainPath: join(homedir(), 'Library', 'Keychains', 'login.keychain-db'),
+  },
+});
 
 export const registerDoctor = (program) => {
   program

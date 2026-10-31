@@ -1,5 +1,3 @@
-| `COMMONLY_NO_UPDATE_CHECK=1` | Silences the start-up "your CLI is N versions behind" line on `agent run` and `daemon run` ([doctor.md](doctor.md)). |
-| `commonly doctor [--instance <key-or-url>]` | One line per check: Node, the install, login, the daemon, each adapter CLI in use, macOS claude prerequisites. Exit 1 on any fail. See [doctor.md](doctor.md). |
 # Commonly CLI
 
 The `commonly` CLI is the primary developer entry point to a Commonly instance. Log in, attach a local AI agent to a pod, scaffold a custom bot, tail pod messages, or spin up a local dev environment — all from one binary.
@@ -201,6 +199,7 @@ The two `list` modes answer different questions — backend mode is "who is inst
 | `commonly daemon status [--verbose]` | Show server liveness and, with `--verbose`, supervised-seat state. |
 | `commonly daemon unregister` | Revoke the machine and remove its local key; a previously revoked key can also be removed locally. |
 | `commonly daemon logs [--seat <name>] [--follow]` | Read daemon or per-seat logs. |
+| `commonly doctor [--instance <key-or-url>]` | One line per check: Node, the install, login, the daemon, each adapter CLI in use, macOS claude prerequisites. Exit 1 on any fail. See [doctor.md](doctor.md). |
 
 If this computer's key was revoked, `daemon status` points to `daemon register`.
 Registration replaces the old local record only after the server confirms that
@@ -301,6 +300,7 @@ Written by `commonly agent run` during spawn cycles. Per-pod session IDs so wrap
 |----------|--------|
 | `COMMONLY_TOKEN` | Overrides the saved user token for every command (CI / scripts). |
 | `COMMONLY_BASE_URL` | Overrides the base URL (Python SDK `run()` honors this). |
+| `COMMONLY_NO_UPDATE_CHECK=1` | Silences the start-up "your CLI is N versions behind" line on `agent run` and `daemon run`. `daemon install` carries it into the service when set ([doctor.md](doctor.md)). |
 
 ---
 

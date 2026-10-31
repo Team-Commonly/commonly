@@ -188,6 +188,30 @@ describe('install', () => {
     expect(withoutKey.warn).toHaveBeenCalledWith(expect.stringContaining('COMMONLY_LITELLM_KEY is not set in this shell'));
   });
 
+  test('install carries a set opt-out into the unit, and says nothing when it is absent (TASK-660)', async () => {
+    const set = makeDeps();
+    set.warn = jest.fn();
+    await installDaemonService({
+      platform: 'linux', home, nodePath, cliPath,
+      optionalEnvNames: ['COMMONLY_NO_UPDATE_CHECK'],
+      env: { COMMONLY_NO_UPDATE_CHECK: '1' },
+      ...set,
+    });
+    expect(set.writeFile.mock.calls[0][1]).toContain('Environment="COMMONLY_NO_UPDATE_CHECK=1"');
+    expect(set.warn).not.toHaveBeenCalled();
+
+    const absent = makeDeps();
+    absent.warn = jest.fn();
+    await installDaemonService({
+      platform: 'darwin', home, nodePath, cliPath,
+      optionalEnvNames: ['COMMONLY_NO_UPDATE_CHECK'],
+      env: {},
+      ...absent,
+    });
+    expect(absent.writeFile.mock.calls[0][1]).not.toContain('COMMONLY_NO_UPDATE_CHECK');
+    expect(absent.warn).not.toHaveBeenCalled();
+  });
+
   // The mode is held by construction — a sibling file created 0600 and renamed
   // over the target — so the property to witness is the mode and the content,
   // not which call did it. Real file through the REAL default writer, with chmod

@@ -151,19 +151,24 @@ export const checkForCliUpdate = async ({
  * Fire the check and return at once. The returned promise (for tests) settles
  * to the line that was logged, or null.
  */
-export const startUpdateNotice = ({ log, ...options }) => {
-  const pending = checkForCliUpdate(options).then((line) => {
+export const startUpdateNotice = (params = {}) => Promise.resolve()
+  // Everything, the argument destructuring and checkForCliUpdate's default
+  // parameters (homedir()) included, runs inside the chain, so the trailing
+  // catch is the only exit a failure has. Start-up never sees a throw or an
+  // unhandled rejection from here.
+  .then(async () => {
+    const { log, ...options } = params;
+    const line = await checkForCliUpdate(options);
     if (line) {
       try {
         log(line);
       } catch {
-        // A closed log sink must not surface as an unhandled rejection.
+        // A closed log sink is not start-up's problem.
       }
     }
     return line;
-  });
-  return pending;
-};
+  })
+  .catch(() => null);
 
 let cachedCliVersion;
 /** This CLI's own version, from the package.json it shipped with. */
