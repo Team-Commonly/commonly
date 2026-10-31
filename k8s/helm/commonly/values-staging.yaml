@@ -176,6 +176,15 @@ backend:
     agentComputerSteelApiUrlTemplate: "http://steel-{userId}.commonly-staging.svc.cluster.local:3000"
     agentComputerSteelCdpUrlTemplate: "http://steel-{userId}.commonly-staging.svc.cluster.local:9223"
     agentComputerAllowedHosts: "linkedin.com,www.linkedin.com"
+    # Team-only staging sign-in. Any value flips isInstanceAccessRestricted()
+    # true and gates BOTH register and login; prod (values-dev) sets neither and
+    # stays public. Domains cover the seed accounts (@seed.staging.commonly.me) and
+    # both CI smoke accounts (@ops.commonly.invalid) so staging-smoke stays green.
+    # Individual team emails are PII and live in the GCP SM secret
+    # commonly-staging-auth-allowed-emails (NOT in this repo), surfaced via the
+    # api-keys ExternalSecret → AUTH_ALLOWED_EMAILS when the flag below is true.
+    authAllowedDomains: "seed.staging.commonly.me,ops.commonly.invalid"
+    authAllowedEmailsFromSecret: true
     # Smaller Postgres pool for staging's Aiven db (fewer connections than prod).
     pgPoolMax: 5
     # Non-secret db name; host/user/password come from the private values +
