@@ -257,8 +257,9 @@ describe('listLocalAgents', () => {
     expect(listUnreadableAgentTokens()).toEqual([]);
   });
 
-  // root reads through mode 000, so the denial cannot be staged there.
-  (process.getuid?.() === 0 ? test.skip : test)('a tokens dir it cannot traverse throws instead of reading as empty', () => {
+  // Mode 000 stages the denial only on POSIX as a non-root user: root reads
+  // through it, and Windows chmod cannot remove a directory's read permission.
+  (process.platform === 'win32' || process.getuid?.() === 0 ? test.skip : test)('a tokens dir it cannot traverse throws instead of reading as empty', () => {
     const state = path.join(tmp, '.commonly');
     fs.mkdirSync(path.join(state, 'tokens'), { recursive: true });
     fs.chmodSync(state, 0o000);
