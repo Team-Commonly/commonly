@@ -73,6 +73,14 @@ it('posts one not-connected line when a person mentions a BYO agent that never p
   });
 });
 
+it('posts the line when the owner is the one who mentions it (TASK-722)', async () => {
+  const posted = await noteNeverConnectedMention({ ...args, senderId: byoInstall.installedBy });
+
+  expect(posted).toBe(true);
+  expect(mockEmitNotConnected).toHaveBeenCalledTimes(1);
+  expect(mockEmitNotConnected.mock.calls[0][0]).toMatchObject({ agentKey: 'nova:default', messageId: '555' });
+});
+
 it('stays silent for a bot sender', async () => {
   mockFindUser.mockReturnValue(chain({ isBot: true }));
   expect(await noteNeverConnectedMention(args)).toBe(false);
