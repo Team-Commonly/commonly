@@ -270,6 +270,7 @@ app.use('/api/agent-computer', require('./routes/agentComputer')); // Staging-on
 // TASK-094: per-spawn scoped credentials (mint / renew / revoke / boot sweep).
 // Mounted before the runtime router so the path is unambiguous.
 app.use('/api/agents/runtime/spawn-credentials', require('./routes/spawnCredentials'));
+app.use('/api/agents/seat-activity', require('./routes/agentSeatActivity')); // Member-gated seat logs for `agent logs`
 app.use('/api/agents/runtime', agentsRuntimeRoutes); // Runtime endpoints for external agents
 app.use('/api/federation', federationRoutes); // Cross-pod federation
 app.use('/api/providers/moltbot', moltbotProviderRoutes); // Moltbot provider integration
