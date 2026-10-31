@@ -50,11 +50,16 @@ describe('CollapsibleProse', () => {
     const link = screen.getByRole('link', { name: 'long link' });
     const scrollIntoView = jest.fn();
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView });
-    const raf = jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => { cb(0); return 0; });
+    // Defer the frame so the test can tell a scroll that waits for the expand from one that runs during focus.
+    const frames: FrameRequestCallback[] = [];
+    const raf = jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => { frames.push(cb); return frames.length; });
     act(() => link.focus());
     expect(wrapper).not.toHaveClass('v2-msg__prose--closed');
     expect(screen.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
-    // Once open, the focused link is scrolled into the visible scroller, not left clipped below it.
+    // Nothing scrolls during focus: the scroll waits for the open frame to paint.
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    act(() => frames.forEach((cb) => cb(0)));
+    // Once open, the focused link itself is scrolled into the visible scroller, not left clipped below it.
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
     expect(scrollIntoView.mock.instances[0]).toBe(link);
     raf.mockRestore();
