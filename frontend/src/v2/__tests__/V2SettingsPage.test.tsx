@@ -152,6 +152,24 @@ describe('V2SettingsPage', () => {
     expect(screen.getByRole('radio', { name: '中文' })).toBeInTheDocument();
   });
 
+  test('shows Developer apps only when REACT_APP_DEVELOPER_APPS is exactly true', () => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    const previous = process.env.REACT_APP_DEVELOPER_APPS;
+    try {
+      process.env.REACT_APP_DEVELOPER_APPS = 'yes';
+      const off = renderSettings();
+      expect(screen.queryByText('Developer apps')).not.toBeInTheDocument();
+      off.unmount();
+
+      process.env.REACT_APP_DEVELOPER_APPS = 'true';
+      renderSettings();
+      expect(screen.getByText('Developer apps')).toBeInTheDocument();
+    } finally {
+      if (previous === undefined) delete process.env.REACT_APP_DEVELOPER_APPS;
+      else process.env.REACT_APP_DEVELOPER_APPS = previous;
+    }
+  });
+
   test('uses a left navigation column to target Settings sections', () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     renderSettings();
