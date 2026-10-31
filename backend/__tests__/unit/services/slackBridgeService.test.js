@@ -1,6 +1,6 @@
 jest.mock('../../../models/Integration', () => ({ findOne: jest.fn(), findByIdAndUpdate: jest.fn() }));
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
-jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
+jest.mock('../../../models/User', () => ({ findById: jest.fn(), findOne: jest.fn() }));
 jest.mock('../../../models/pg/Message', () => ({ create: jest.fn(), findById: jest.fn() }));
 jest.mock('../../../services/messageAgentDeliveryService', () => ({ deliverMessageToAgents: jest.fn() }));
 jest.mock('../../../config/socket', () => ({ getIO: jest.fn(() => null) }));
@@ -142,9 +142,9 @@ describe('Slack installable bridge', () => {
 
   // Two fixture shapes, because the routed pod and the active pod are different
   // documents: the first names the pod that may not be reachable any more.
-  const podWithMembers = (name) => ({
+  const podWithMembers = (name, members = ['user-1']) => ({
     select: jest.fn().mockReturnValue({
-      lean: jest.fn().mockResolvedValue({ name, type: 'team', members: ['user-1'] }),
+      lean: jest.fn().mockResolvedValue({ name, type: 'team', members }),
     }),
   });
   const podsById = (gatedPodName) => (id) => ({
@@ -209,6 +209,155 @@ describe('Slack installable bridge', () => {
     });
 
     expect(PGMessage.create.mock.calls[0][0]).toBe('pod-1');
+  });
+
+  test('addresses an unquoted plain message to the active pod lead', async () => {
+    Pod.findById.mockReturnValue(podWithMembers('Alpha', ['user-1', 'bot-1']));
+    User.findOne.mockResolvedValue({ _id: 'bot-1', username: 'kai', isBot: true });
+    PGMessage.create.mockImplementation((_podId, _userId, content) => Promise.resolve({ id: 'pg-1', content }));
+    PGMessage.findById.mockResolvedValue(null);
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ username: 'sam' }) }),
+    });
+    deliverMessageToAgents.mockResolvedValue(undefined);
+
+    const result = await relaySlackMessageToPod({
+      integration: {
+        ...integration,
+        scope: 'user',
+        config: { ...integration.config, linkedUserId: 'user-1', slackUserId: 'U1', gates: { 'pod-1': { enabled: true, lead: 'kai' } } },
+      },
+      event: { text: 'hello', user: 'U1' },
+    });
+
+    expect(result).toEqual({ relayed: true, routedAgent: 'kai' });
+    expect(PGMessage.create.mock.calls[0][2]).toBe('💬 (via Slack): @kai hello');
+    expect(User.findOne).toHaveBeenCalledWith({
+      _id: { $in: ['user-1', 'bot-1'] }, username: 'kai', isBot: true,
+    });
+    expect(deliverMessageToAgents.mock.calls[0][0].message).toEqual(expect.objectContaining({
+      id: 'pg-1', content: '💬 (via Slack): @kai hello',
+    }));
+    expect(SlackApi).not.toHaveBeenCalled();
+  });
+
+  test('still addresses the lead when a plain message contains an email or a Slack user mention', async () => {
+    Pod.findById.mockReturnValue(podWithMembers('Alpha', ['user-1', 'bot-1']));
+    User.findOne.mockResolvedValue({ _id: 'bot-1', username: 'kai', isBot: true });
+    PGMessage.create.mockImplementation((_podId, _userId, content) => Promise.resolve({ id: 'pg-1', content }));
+    PGMessage.findById.mockResolvedValue(null);
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ username: 'sam' }) }),
+    });
+    deliverMessageToAgents.mockResolvedValue(undefined);
+
+    const result = await relaySlackMessageToPod({
+      integration: {
+        ...integration,
+        scope: 'user',
+        config: { ...integration.config, linkedUserId: 'user-1', slackUserId: 'U1', gates: { 'pod-1': { enabled: true, lead: 'kai' } } },
+      },
+      event: { text: 'send the deck to <mailto:bob@acme.com|bob@acme.com> cc <@U024BE7LH>', user: 'U1' },
+    });
+
+    expect(result).toEqual({ relayed: true, routedAgent: 'kai' });
+    expect(PGMessage.create.mock.calls[0][2]).toMatch(/^💬 \(via Slack\): @kai /);
+  });
+
+  test('keeps an explicit mention instead of substituting the selected lead', async () => {
+    Pod.findById.mockReturnValue(podWithMembers('Alpha'));
+    PGMessage.create.mockResolvedValue({ id: 'pg-1' });
+    PGMessage.findById.mockResolvedValue({ id: 'pg-1', content: 'relayed' });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ username: 'sam' }) }),
+    });
+    deliverMessageToAgents.mockResolvedValue(undefined);
+
+    await relaySlackMessageToPod({
+      integration: {
+        ...integration,
+        scope: 'user',
+        config: { ...integration.config, linkedUserId: 'user-1', slackUserId: 'U1', gates: { 'pod-1': { enabled: true, lead: 'kai' } } },
+      },
+      event: { text: '@vera please review', user: 'U1' },
+    });
+
+    expect(PGMessage.create.mock.calls[0][2]).toBe('💬 (via Slack): @vera please review');
+    expect(SlackApi).not.toHaveBeenCalled();
+  });
+
+  test('acknowledges an unaddressed message when the active pod has no lead', async () => {
+    Pod.findById.mockReturnValue(podWithMembers('Alpha'));
+    PGMessage.create.mockResolvedValue({ id: 'pg-1' });
+    PGMessage.findById.mockResolvedValue({ id: 'pg-1', content: 'relayed' });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ username: 'sam' }) }),
+    });
+    deliverMessageToAgents.mockResolvedValue(undefined);
+
+    await relaySlackMessageToPod({
+      integration: {
+        ...integration,
+        scope: 'user',
+        config: { ...integration.config, linkedUserId: 'user-1', slackUserId: 'U1', gates: {} },
+      },
+      event: { text: 'hello', user: 'U1' },
+    });
+
+    expect(PGMessage.create.mock.calls[0][2]).toBe('💬 (via Slack): hello');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(SlackApi.mock.results[0].value.postMessage).toHaveBeenCalledWith(
+      'D1', expect.stringContaining('no lead agent is selected'),
+    );
+  });
+
+  test('a stalled no-lead Slack notice cannot hold pod delivery', async () => {
+    Pod.findById.mockReturnValue(podWithMembers('Alpha'));
+    PGMessage.create.mockResolvedValue({ id: 'pg-1' });
+    PGMessage.findById.mockResolvedValue({ id: 'pg-1', content: 'relayed' });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ username: 'sam' }) }),
+    });
+    deliverMessageToAgents.mockResolvedValue(undefined);
+    SlackApi.mockImplementationOnce(() => ({ postMessage: jest.fn(() => new Promise(() => {})) }));
+
+    const result = await relaySlackMessageToPod({
+      integration: {
+        ...integration,
+        scope: 'user',
+        config: { ...integration.config, linkedUserId: 'user-1', slackUserId: 'U1', gates: {} },
+      },
+      event: { text: 'hello', user: 'U1' },
+    });
+
+    expect(result.relayed).toBe(true);
+    expect(deliverMessageToAgents).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not wake a selected lead after that bot leaves the pod', async () => {
+    Pod.findById.mockReturnValue(podWithMembers('Alpha'));
+    User.findOne.mockResolvedValue(null);
+    PGMessage.create.mockResolvedValue({ id: 'pg-1' });
+    PGMessage.findById.mockResolvedValue({ id: 'pg-1', content: 'relayed' });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ username: 'sam' }) }),
+    });
+    deliverMessageToAgents.mockResolvedValue(undefined);
+
+    await relaySlackMessageToPod({
+      integration: {
+        ...integration,
+        scope: 'user',
+        config: { ...integration.config, linkedUserId: 'user-1', slackUserId: 'U1', gates: { 'pod-1': { enabled: true, lead: 'kai' } } },
+      },
+      event: { text: 'hello', user: 'U1' },
+    });
+
+    expect(PGMessage.create.mock.calls[0][2]).toBe('💬 (via Slack): hello');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(SlackApi.mock.results[0].value.postMessage).toHaveBeenCalledWith(
+      'D1', expect.stringContaining('no lead agent is selected'),
+    );
   });
 
   test('refuses a thread reply into a pod whose gate is off, naming it, posting nothing', async () => {
