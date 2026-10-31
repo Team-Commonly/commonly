@@ -253,9 +253,13 @@ test('a reject that lands between the close\'s read and its write keeps its revo
     );
     return realFindOneAndUpdate(...args);
   });
+  const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
   await close();
   expect(spy).toHaveBeenCalledTimes(1);
   spy.mockRestore();
+  // onTaskClosed only logs a failed close, so an empty record needs a clean close.
+  expect(logged).not.toHaveBeenCalled();
+  logged.mockRestore();
   expect((await model.findOne({ grantId: grant.grantId }).lean()).revokedAt).toEqual(rejectedAt);
   expect((await chainLines()).filter((l) => l.kind === 'grant.revoked')).toEqual([]);
 });
