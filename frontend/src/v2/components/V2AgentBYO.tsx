@@ -1051,6 +1051,27 @@ const V2AgentBYO: React.FC = () => {
     }
     setIssued(null);
   };
+  // The daemon block lives in Other ways to connect on both the start form and
+  // the result page, so the stop-on-close line can point to it from the result.
+  const addComputerBlock = machines.length === 0 ? (
+    <div className="v2-byo__add-computer" data-testid="byo-add-computer">
+      <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
+      {setupOs !== 'windows' && (
+        <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">{t('agentByo.addComputer.recommended')}</p>
+      )}
+      <div className="v2-byo__add-computer-row">
+        <code>{daemonCommand}</code>
+        <button
+          type="button"
+          className="v2-byo__copy"
+          onClick={() => copy('daemon-setup', daemonCommand)}
+        >
+          {copied === 'daemon-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
+        </button>
+      </div>
+      <p className="v2-byo__hint">{t('agentByo.addComputer.after')}</p>
+    </div>
+  ) : null;
   const runnerPicker = mode === 'byo' && !issued && !onCardStart ? (
     <p className="v2-byo__os" data-testid="byo-runner">
       {t('agentByo.form.adapterLabel')}{' '}
@@ -1420,25 +1441,7 @@ const V2AgentBYO: React.FC = () => {
               if ((event.target as Element).closest('summary, button, a')) event.preventDefault();
             }}>
             <summary>{t('agentByo.otherWays.title')}</summary>
-          {machines.length === 0 && (
-            <div className="v2-byo__add-computer" data-testid="byo-add-computer">
-              <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
-              {setupOs !== 'windows' && (
-                <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">{t('agentByo.addComputer.recommended')}</p>
-              )}
-              <div className="v2-byo__add-computer-row">
-                <code>{daemonCommand}</code>
-                <button
-                  type="button"
-                  className="v2-byo__copy"
-                  onClick={() => copy('daemon-setup', daemonCommand)}
-                >
-                  {copied === 'daemon-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
-                </button>
-              </div>
-              <p className="v2-byo__hint">{t('agentByo.addComputer.after')}</p>
-            </div>
-          )}
+            {addComputerBlock}
           <p className="v2-byo__footnote">
             {t(listenerAvailable ? 'agentByo.footnote.cliRoute'
               : listenAdapter === 'claude' ? 'agentByo.footnote.cliRouteClaudeUnavailable'
@@ -1685,6 +1688,7 @@ const V2AgentBYO: React.FC = () => {
 
           <details className="v2-byo__more" data-testid="byo-result-more-ways">
             <summary>{t('agentByo.otherWays.title')}</summary>
+            {addComputerBlock}
             <div className="v2-byo__snippet">
               <div className="v2-byo__snippet-head">
                 <span>{t('agentByo.snippets.runtimeToken')}</span>

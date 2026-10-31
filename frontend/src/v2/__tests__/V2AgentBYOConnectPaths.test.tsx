@@ -94,8 +94,20 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     expect(stops).toHaveTextContent(/stops when this Terminal window closes/);
     expect(stops).toHaveTextContent(/Other ways to connect/);
     expect(stops).toHaveTextContent(/On my computer/);
-    expect(stops).toHaveTextContent(/Install another/);
     expect(stops).not.toHaveTextContent(/daemon install/);
+    // The line points at a block that is actually on this page.
+    expect(screen.getByTestId('byo-result-more-ways')).toContainElement(screen.getByTestId('byo-add-computer'));
+  });
+
+  test('result page with a computer on file: the add-computer block is not offered again', async () => {
+    setUserAgent(MAC);
+    mockPage({ machines: [{ machineId: 'm1', name: 'Sams-MacBook', status: 'online', lastSeenAt: new Date().toISOString() }] });
+    renderPage();
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/machines', expect.anything()));
+    fireEvent.click(await screen.findByTestId('byo-mode-byo'));
+    await issueRun();
+    expect(screen.getByTestId('byo-result-more-ways')).toBeInTheDocument();
+    expect(screen.queryByTestId('byo-add-computer')).toBeNull();
   });
 
   test('run path on Windows: no listener command, so no stop-on-close line', async () => {
