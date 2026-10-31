@@ -1757,7 +1757,7 @@
         "write": "Let it edit files and run commands (--allow write)",
         "web": "Let it fetch web pages (--allow web)",
         "folder": "Open your terminal in your project's folder (not your home folder) before you paste the command. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
-        "saved": "Write and web are saved when the agent first starts, and unticking a box here does not remove them later. To change them: commonly agent detach <name> --force, then run it again with the new choice."
+        "saved": "Write and web are saved when the agent first starts, and unticking a box here does not remove them later. Stop the running listener first. Then change them with: commonly agent detach <name> --force, followed by a new run with the new choice."
       }
     },
     "mode": {
