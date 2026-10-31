@@ -8574,6 +8574,11 @@ body.modern-ui.v2-canvas {
   border-radius: 12px;
   background: var(--v2-bg);
   flex: 0 0 auto;
+  /* A long focus list scrolls inside its own box, so the columns keep room below
+     it on a short viewport (1440x560, 390x560). vh, not %: the board's height is
+     auto, so a percentage would not resolve. */
+  max-height: min(35vh, 260px);
+  overflow-y: auto;
 }
 
 .v2-board__focus-head {
