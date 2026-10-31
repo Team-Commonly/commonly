@@ -21,7 +21,15 @@ export interface IRoomGrantTarget {
   id: string;
 }
 
+// record-v1 §2 / ADR-033 §5.1. Only `task.done` is accepted in v1: a bound
+// grant always ends when its task closes, with `expiresAt` as a ceiling.
+export type RoomGrantBindingEndsOn = 'task.done';
+export interface RoomGrantTaskBinding { taskId: string; podId: string; endsOn: RoomGrantBindingEndsOn }
+
 export interface IRoomGrant extends Document {
+  binding?: RoomGrantTaskBinding;
+  taskEpoch?: number;
+  revocationReason?: 'task.done';
   grantId: string;
   connectionId: string;
   installationId: string;
@@ -82,6 +90,16 @@ const RoomGrantSchema = new Schema<IRoomGrant>(
     // `grantId` is the public, opaque identifier used by the MCP endpoint;
     // Mongo's _id remains an implementation detail.
     grantId: { type: String, required: true, unique: true, trim: true },
+    binding: {
+      type: new Schema({
+        taskId: { type: String, required: true },
+        podId: { type: String, required: true },
+        endsOn: { type: String, enum: ['task.done'], required: true, default: 'task.done' },
+      }, { _id: false }),
+      default: undefined,
+    },
+    taskEpoch: { type: Number, min: 0 },
+    revocationReason: { type: String, enum: ['task.done'] },
     connectionId: { type: String, required: true, trim: true },
     installationId: { type: String, required: true, trim: true },
     target: { type: GrantTargetSchema, required: true },
@@ -108,6 +126,7 @@ const RoomGrantSchema = new Schema<IRoomGrant>(
 );
 
 RoomGrantSchema.index({ target: 1, revokedAt: 1, expiresAt: 1 });
+RoomGrantSchema.index({ 'binding.podId': 1, 'binding.taskId': 1, taskEpoch: 1, revokedAt: 1 });
 RoomGrantSchema.index({ parentGrantId: 1 });
 RoomGrantSchema.index({ rootGrantId: 1 });
 RoomGrantSchema.index({ connectionId: 1, installationId: 1 });

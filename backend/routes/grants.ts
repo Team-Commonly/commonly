@@ -16,6 +16,7 @@ import {
   attenuateGrant,
   createGrant,
   effectiveAudience,
+  normalizeTaskBinding,
   revokeGrant,
   RoomGrantError,
 } from '../services/roomGrantService';
@@ -25,6 +26,7 @@ import { grantBrokerRefusal } from '../services/grantBrokerConfinement';
 import type { GrantBrokerRefusal } from '../services/grantBrokerConfinement';
 import { projectSeatEnvironments, seatEnvironmentKey } from '../services/seatEnvironmentProjection';
 import { outsiderGrantPodRefusal, outsiderGrantRefusalMessage } from '../services/outsiderGrantPodEligibility';
+import { agentActor, requestActor } from '../services/recordService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -82,7 +84,7 @@ interface AuthenticatedRequest extends express.Request {
  * broker's business; the raw `audience` snapshot still names agents who have
  * left, so only the effective audience goes out.
  */
-type GrantRow = Pick<IRoomGrant, 'grantId' | 'installationId' | 'target' | 'tools' | 'writeMode' | 'budget'
+type GrantRow = Pick<IRoomGrant, 'binding' | 'revocationReason' | 'grantId' | 'installationId' | 'target' | 'tools' | 'writeMode' | 'budget'
   | 'expiresAt' | 'revokedAt' | 'revokedBy' | 'parentGrantId' | 'rootGrantId' | 'createdAt'> & { audience?: string[]; connectionId?: string };
 
 const projectGrant = (
@@ -99,6 +101,8 @@ const projectGrant = (
   budget: grant.budget ? { calls: grant.budget.calls, windowMs: grant.budget.windowMs } : null,
   effectiveAudience: effectiveAudience(grant, currentMembers),
   expiresAt: grant.expiresAt,
+  ...(grant.binding ? { binding: grant.binding } : {}),
+  ...(grant.revocationReason ? { revocationReason: grant.revocationReason } : {}),
   revokedAt: grant.revokedAt ?? null,
   revokedBy: grant.revokedBy ?? null,
   parentGrantId: grant.parentGrantId ?? null,
@@ -405,7 +409,12 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       });
     }
 
+    const binding = normalizeTaskBinding(body.binding);
+    if (binding && target.kind === 'seat') {
+      await ensureTargetAccess({ kind: 'pod', id: binding.podId }, userId);
+    }
     const grantInput: RoomGrantCreateInput = {
+      binding,
       connectionId,
       installationId,
       target,
@@ -418,6 +427,7 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       // Bound here, at mint, to the row the caller just proved they own.
       connectionRowId,
       ownerId: connectionOwnerId(connection),
+      issuer: requestActor(req as Parameters<typeof requestActor>[0]),
     };
     const grant = await createGrant(grantInput);
     return res.status(201).json(grant);
@@ -454,13 +464,19 @@ router.post(
       });
     }
     const body = (req.body || {}) as Record<string, unknown>;
+    const binding = body.binding === null ? null : normalizeTaskBinding(body.binding);
+    if (binding && parent.target.kind === 'seat') {
+      await ensureTargetAccess({ kind: 'pod', id: binding.podId }, agentId);
+    }
     const child = await attenuateGrant({
       parentGrantId: parent.grantId,
+      binding,
       tools: body.tools as string[] | undefined,
       writeMode: body.writeMode as any,
       budget: body.budget as any,
       audience: body.audience as string[] | undefined,
       expiresAt: body.expiresAt as string | undefined,
+      issuer: agentActor(req.agentUser as Parameters<typeof agentActor>[0]),
     });
     return res.status(201).json(child);
   } catch (error) {

@@ -58,6 +58,13 @@ jest.mock('../../../services/attentionItemService', () => ({
   resolveTaskAttention: (...args) => mockResolveTaskAttention(...args),
 }));
 
+// The close hook writes RoomGrant, which this file's mocked Task cannot back.
+// Its real-Mongo behaviour is covered in tasksApi.taskGrantClose.test.js.
+const mockOnTaskClosed = jest.fn(async () => {});
+jest.mock('../../../services/roomGrantService', () => ({
+  onTaskClosed: (...args) => mockOnTaskClosed(...args),
+}));
+
 const tasksApi = require('../../../routes/tasksApi');
 const Task = require('../../../models/Task');
 
@@ -77,6 +84,7 @@ beforeEach(() => {
   mockRecordTaskAttention.mockResolvedValue(undefined);
   mockResolveTaskAttention.mockReset();
   mockResolveTaskAttention.mockResolvedValue(undefined);
+  mockOnTaskClosed.mockClear();
 });
 
 describe('PATCH /:podId/:taskId status vocabulary', () => {
@@ -129,6 +137,7 @@ describe('PATCH /:podId/:taskId status vocabulary', () => {
 
     expect(res.status).toBe(200);
     expect(mockResolveTaskAttention).toHaveBeenCalledWith(task);
+    expect(mockOnTaskClosed).toHaveBeenCalledWith(expect.objectContaining({ taskId: 'TASK-001', status: 'done' }));
   });
 
   test('POST /complete resolves the task\'s outstanding handoffs, like a PATCH out of blocked does', async () => {
@@ -143,6 +152,7 @@ describe('PATCH /:podId/:taskId status vocabulary', () => {
       .send({ prUrl: 'https://github.com/Team-Commonly/commonly/pull/1' });
     expect(res.status).toBe(200);
     expect(mockResolveTaskAttention).toHaveBeenCalledWith(expect.objectContaining({ _id: 'task-1' }));
+    expect(mockOnTaskClosed).toHaveBeenCalledWith(expect.objectContaining({ _id: 'task-1', status: 'done' }));
     expect(mockNotifyPodAgents).toHaveBeenCalledWith(
       POD_ID, task, 'updated', expect.any(Object), { status: 'claimed' },
     );
