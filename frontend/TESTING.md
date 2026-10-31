@@ -20,6 +20,27 @@ npm test -- --testPathPattern=WhatsHappening.test.js
 npm test -- --watchAll=false
 ```
 
+## Live UI check against a real backend (`npm run dev:live`)
+
+For a quick UI check of this branch against real data, run the dev server with a
+proxy to a backend instead of building against localhost:5000.
+
+```bash
+cd frontend && npm run dev:live      # localhost:3000, /api and /socket.io proxied to staging
+```
+
+- **Target.** Defaults to `https://api-staging.commonly.me`, where writes are safe.
+  The proxy drops the browser `Origin` header, because prod refuses
+  `http://localhost:3000`. Do not change prod CORS for this.
+- **Prod, read-only.** `DEV_LIVE_TARGET=prod npm run dev:live` points at
+  `https://api.commonly.me`. HTTP writes are refused at the proxy (the response is
+  a Vite 404), and `/socket.io` is not proxied, so the page renders from GET
+  requests only. Use a test account only. Sign-in is a POST, so for prod, inject
+  a token into `localStorage` instead (see the MCP Playwright auth injection in
+  `CLAUDE.md`).
+- **Config.** `DEV_LIVE=1` turns the proxy on in `vite.config.ts`. Plain
+  `npm start` is unchanged and has no proxy.
+
 ## Test Setup and Configuration
 
 ### Jest Configuration (`package.json`)

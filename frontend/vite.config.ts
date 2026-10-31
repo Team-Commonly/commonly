@@ -1,5 +1,28 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type ProxyOptions } from 'vite';
 import react from '@vitejs/plugin-react';
+
+// `npm run dev:live` (TASK-686): serve the branch on localhost:3000 and proxy
+// /api and /socket.io to a real backend. The browser's Origin header is
+// dropped on the way out, because prod refuses http://localhost:3000 and the
+// backend accepts no-Origin requests. Target defaults to staging, where writes
+// are safe; DEV_LIVE_TARGET=prod points at prod, read-only, see TESTING.md.
+const DEV_LIVE = process.env.DEV_LIVE === '1';
+const LIVE_TARGETS: Record<string, string> = {
+  staging: 'https://api-staging.commonly.me',
+  prod: 'https://api.commonly.me',
+};
+const liveName = process.env.DEV_LIVE_TARGET || 'staging';
+const liveTarget = LIVE_TARGETS[liveName];
+if (DEV_LIVE && !liveTarget) {
+  throw new Error(`DEV_LIVE_TARGET must be one of: ${Object.keys(LIVE_TARGETS).join(', ')}`);
+}
+const dropOrigin: NonNullable<ProxyOptions['configure']> = (proxy) => {
+  proxy.on('proxyReq', (req) => req.removeHeader('origin'));
+  proxy.on('proxyReqWs', (req) => req.removeHeader('origin'));
+};
+// Prod is read-only for the browser: HTTP writes are refused at the proxy and
+// the socket is not proxied, so the page renders from REST GETs only.
+const readOnlyProd = liveName === 'prod';
 
 export default defineConfig({
   plugins: [react()],
@@ -7,6 +30,28 @@ export default defineConfig({
     port: 3000,
     host: true,
     open: false,
+    proxy: DEV_LIVE
+      ? {
+          '/api': {
+            target: liveTarget,
+            changeOrigin: true,
+            secure: true,
+            configure: dropOrigin,
+            bypass: (req) => (readOnlyProd && req.method !== 'GET' && req.method !== 'HEAD' ? '/__dev-live-read-only' : undefined),
+          },
+          ...(readOnlyProd
+            ? {}
+            : {
+                '/socket.io': {
+                  target: liveTarget,
+                  changeOrigin: true,
+                  secure: true,
+                  ws: true,
+                  configure: dropOrigin,
+                },
+              }),
+        }
+      : undefined,
   },
   build: {
     outDir: 'build', // match CRA output dir for deployment compatibility

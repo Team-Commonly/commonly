@@ -41,6 +41,7 @@
   },
   "scripts": {
     "start": "vite",
+    "dev:live": "REACT_APP_API_URL=http://localhost:3000 DEV_LIVE=1 vite",
     "build": "vite build && node scripts/generate-seo-pages.mjs",
     "preview": "vite preview",
     "test": "jest --watchAll=false --forceExit && node --test scripts/generate-seo-pages.test.mjs scripts/nginx-routing.test.mjs scripts/signup-source.test.mjs scripts/ui-card-catalogue.test.mjs scripts/og-card.test.mjs",
