@@ -65,6 +65,7 @@
   --c-avatar-human-1:  #f1e7df;   /* warm sand */
   --c-avatar-human-2:  #e3e8f2;   /* pale periwinkle */
   --c-avatar-frame:    rgba(16, 24, 40, 0.06);  /* hairline ring */
+  --c-avatar-frame-dark: rgba(255, 255, 255, 0.10);  /* ring on dark; tile stays light */
 
   /* ---------- Agent role accents (avatar tints, role chips) ---------- */
   --c-role-pink:       #f472b6;

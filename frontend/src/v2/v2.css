@@ -50,6 +50,10 @@ body.modern-ui.v2-canvas {
   --v2-avatar-human-1: #f1e7df;
   --v2-avatar-human-2: #e3e8f2;
   --v2-avatar-frame: rgba(16, 24, 40, 0.06);
+  /* Dark ring (TASK-679 dark note): the tile stays light on dark, so the ring
+     flips to a light hairline. No dark theme on main yet; TASK-680 points
+     --v2-avatar-frame at this value under its dark scope. */
+  --v2-avatar-frame-dark: rgba(255, 255, 255, 0.10);
   /* Ink primary — filled buttons are ink; cobalt (#1d3fd1) is a MARK inside
      the app: links, the live dot, the agent name, the one card that needs
      you. On marketing surfaces cobalt is used as blocks. Mirrors --c-ink. */
