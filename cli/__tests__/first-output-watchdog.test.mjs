@@ -38,8 +38,10 @@ const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
 const claude = (await import('../src/lib/adapters/claude.js')).default;
 const {
   consoleLocked, spawnStalledError, watchFirstOutput, firstOutputWindowMs, DEFAULT_FIRST_OUTPUT_WINDOW_MS, physicalPath,
-  killStallSurvivors,
+  killStallSurvivors, isModelProgressLine,
 } = await import('../src/lib/first-output-watchdog.js');
+const { claudeResultText, claudeFailureTail } = await import('../src/lib/adapters/claude.js');
+const watchStream = (args) => watchFirstOutput({ ...args, modelStream: true });
 const { classifySpawnFailure, spawnRetryPolicy, SPAWN_FAILURE_CLASS } = await import('../src/lib/spawn-retry.js');
 
 afterAll(() => fs.rmSync(sessionsTmpDir, { recursive: true, force: true }));
@@ -86,10 +88,11 @@ describe('the claude adapter under the first-output watchdog', () => {
     expect(classifySpawnFailure(error)).toBe(SPAWN_FAILURE_CLASS.STALLED);
   });
 
-  test('a missing transcript alone does not kill: the path may be wrong, so it takes a locked console', async () => {
+  test('a model reply is not killed when the transcript path is wrong', async () => {
     const { value, error, child } = await spawnClaude((proc) => {
+      proc.stdout.emit('data', Buffer.from('{"type":"assistant","message":{}}\n'));
       setTimeout(() => {
-        proc.stdout.emit('data', Buffer.from('done quietly'));
+        proc.stdout.emit('data', Buffer.from('{"type":"result","result":"done quietly"}\n'));
         proc.emit('close', 0);
       }, 150);
     }, { windowMs: 50, locked: false });
@@ -247,8 +250,9 @@ describe('the claude adapter under the first-output watchdog', () => {
   test('a slow spawn that is talking is not killed', async () => {
     const { value, error, child } = await spawnClaude((proc) => {
       proc.stderr.emit('data', Buffer.from('warming up'));
+      proc.stdout.emit('data', Buffer.from('{"type":"assistant","message":{}}\n'));
       setTimeout(() => {
-        proc.stdout.emit('data', Buffer.from('the answer'));
+        proc.stdout.emit('data', Buffer.from('{"type":"result","result":"the answer"}\n'));
         proc.emit('close', 0);
       }, 150);
     }, { windowMs: 50 });
@@ -455,5 +459,141 @@ describe('performRun — a stalled turn', () => {
     } finally {
       handle.stop?.();
     }
+  });
+});
+
+describe('the model-stream watchdog (stream-json, TASK-710)', () => {
+  const transcriptWithFirstRow = () => {
+    const file = path.join(sessionsTmpDir, `transcript-${Math.random().toString(36).slice(2)}.jsonl`);
+    fs.writeFileSync(file, '{"type":"user"}\n');
+    return file;
+  };
+  const streamProc = () => {
+    const proc = new EventEmitter();
+    proc.stdout = new EventEmitter();
+    proc.stderr = new EventEmitter();
+    return proc;
+  };
+
+  test('isModelProgressLine counts model events and not system events or non-JSON', () => {
+    expect(isModelProgressLine('{"type":"assistant","message":{}}')).toBe(true);
+    expect(isModelProgressLine('{"type":"stream_event","event":{}}')).toBe(true);
+    expect(isModelProgressLine('{"type":"system","subtype":"init"}')).toBe(false);
+    expect(isModelProgressLine('{"type":"system","subtype":"api_retry","attempt":1}')).toBe(false);
+    expect(isModelProgressLine('not json')).toBe(false);
+  });
+
+  test('a provider that only retries is named stuck after the first transcript row, not left to the run timeout', async () => {
+    const proc = streamProc();
+    const transcriptPath = transcriptWithFirstRow();
+    const onStall = jest.fn();
+    watchStream({ proc, windowMs: 50, transcriptPath, modelStream: true, onStall, lockProbe: async () => false });
+    proc.stdout.emit('data', Buffer.from('{"type":"system","subtype":"init"}\n'));
+    proc.stdout.emit('data', Buffer.from('{"type":"system","subtype":"api_retry","attempt":1}\n'));
+    // Transcript growth alone must not count as life in stream mode.
+    fs.appendFileSync(transcriptPath, '{"type":"user","retry":true}\n');
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(onStall).toHaveBeenCalledTimes(1);
+    expect(onStall.mock.calls[0][0]).toBe('stuck: no model output inside the window');
+  });
+
+  test('a stderr warning at spawn is not life in stream mode', async () => {
+    const proc = streamProc();
+    const transcriptPath = transcriptWithFirstRow();
+    const onStall = jest.fn();
+    watchStream({ proc, windowMs: 50, transcriptPath, onStall, lockProbe: async () => false });
+    proc.stderr.emit('data', Buffer.from('[claude-code:unrecognized_model] {"model":"x"}\n'));
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(onStall).toHaveBeenCalledWith('stuck: no model output inside the window');
+  });
+
+  test('a model event split across chunks still counts as life', async () => {
+    const proc = streamProc();
+    const transcriptPath = transcriptWithFirstRow();
+    const onStall = jest.fn();
+    const w = watchStream({ proc, windowMs: 50, transcriptPath, modelStream: true, onStall, lockProbe: async () => false });
+    proc.stdout.emit('data', Buffer.from('{"type":"assi'));
+    proc.stdout.emit('data', Buffer.from('stant","message":{}}\n'));
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    w.stop();
+    expect(onStall).not.toHaveBeenCalled();
+  });
+
+  test('a locked console is still named as such in stream mode', async () => {
+    const proc = streamProc();
+    const transcriptPath = transcriptWithFirstRow();
+    const onStall = jest.fn();
+    watchStream({ proc, windowMs: 50, transcriptPath, modelStream: true, onStall, lockProbe: async () => true });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(onStall).toHaveBeenCalledWith('console locked');
+  });
+
+  test('a missing transcript does not hide a silent provider in stream mode', async () => {
+    const proc = streamProc();
+    const onStall = jest.fn();
+    watchStream({ proc, windowMs: 50, transcriptPath: path.join(sessionsTmpDir, 'absent.jsonl'), onStall, lockProbe: async () => false });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(onStall).toHaveBeenCalledWith('stuck: no model output inside the window');
+  });
+
+  test('model output that arrives while the lock probe runs still counts as life', async () => {
+    const proc = streamProc();
+    const transcriptPath = transcriptWithFirstRow();
+    const onStall = jest.fn();
+    let releaseProbe;
+    const lockProbe = () => new Promise((resolve) => { releaseProbe = () => resolve(false); });
+    watchStream({ proc, windowMs: 50, transcriptPath, onStall, lockProbe });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    proc.stdout.emit('data', Buffer.from('{"type":"assistant","message":{}}\n'));
+    releaseProbe();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(onStall).not.toHaveBeenCalled();
+  });
+});
+
+describe('claudeResultText', () => {
+  test('returns the result event text from stream-json output', () => {
+    const stdout = [
+      '{"type":"system","subtype":"init"}',
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}',
+      '{"type":"result","subtype":"success","result":"final answer\\n","is_error":false}',
+    ].join('\n');
+    expect(claudeResultText(stdout)).toBe('final answer');
+  });
+
+  test('a result flagged is_error throws instead of returning its text as the reply', () => {
+    const stdout = '{"type":"result","subtype":"success","is_error":true,"result":"API Error: 500"}';
+    expect(() => claudeResultText(stdout)).toThrow(/API Error: 500/);
+  });
+
+  test('returns plain text output as it arrived when there is no JSON at all', () => {
+    expect(claudeResultText('  done quietly \n')).toBe('done quietly');
+  });
+
+  test('a turn with no result event returns its assistant text, never the raw NDJSON', () => {
+    const stdout = [
+      '{"type":"system","subtype":"init"}',
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"half "}]}}',
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"an answer"}]}}',
+    ].join('\n');
+    expect(claudeResultText(stdout)).toBe('half an answer');
+    expect(claudeResultText('{"type":"system","subtype":"init"}')).toBe('');
+  });
+});
+
+describe('claudeFailureTail', () => {
+  test('keeps the terminal error past the init events that precede it', () => {
+    const init = `{"type":"system","subtype":"init","tools":["${'x'.repeat(5000)}"]}`;
+    const stdout = [init, '{"type":"stream_event","event":{}}', '{"type":"result","is_error":true,"result":"Claude AI usage limit reached"}'].join('\n');
+    expect(claudeFailureTail(stdout)).toBe('Claude AI usage limit reached');
+  });
+
+  test('without a result event, keeps the non-system lines and drops init and stream deltas', () => {
+    const stdout = [
+      '{"type":"system","subtype":"init"}',
+      '{"type":"stream_event","event":{}}',
+      'Error: usage limit reached',
+    ].join('\n');
+    expect(claudeFailureTail(stdout)).toBe('Error: usage limit reached');
   });
 });
