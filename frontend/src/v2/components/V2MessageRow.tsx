@@ -654,7 +654,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
       data-source-message-id={sourceMessageId != null ? String(sourceMessageId) : undefined}
       tabIndex={-1}
       data-testid={isDecisionRuling ? 'decision-ruling-row' : undefined}
-      className={`v2-msg v2-message-row${mentionsMe ? ' v2-msg--mention' : ''}${grouped ? ' v2-msg--grouped' : ''}${actionsRevealed ? ' v2-msg--reveal' : ''}${runtimeTag ? ' v2-msg--agent' : ''}${message.user?.isBot ? ' v2-msg--bot' : ''}`}
+      className={`v2-msg v2-message-row${mentionsMe ? ' v2-msg--mention' : ''}${grouped ? ' v2-msg--grouped' : ''}${actionsRevealed ? ' v2-msg--reveal' : ''}${runtimeTag ? ' v2-msg--agent' : ''}`}
       onClick={onBubbleTap}
       onPointerDown={onPressStart}
       onPointerUp={onPressEnd}
