@@ -3713,6 +3713,7 @@ Docs:
         agentName: opts.name,
         instanceId: opts.instanceId,
         intervalMs: parseInt(opts.interval, 10),
+        loginInstance: opts.instance,
         onEvent: async (event) => {
           const ts = new Date().toTimeString().slice(0, 8);
           process.stdout.write(`[${ts}] ${event.type.padEnd(18)}`);
