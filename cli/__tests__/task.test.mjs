@@ -14,7 +14,7 @@ import {
 } from '../src/commands/task.js';
 import { TaskRefusal, checkTaskId, checkUpdateStatus, resolveTaskToken } from '../src/lib/task.js';
 
-const POD = '6a692a1be833c668acdb84cf';
+const POD = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const ENV = { COMMONLY_AGENT_TOKEN: 'cm_agent_test', COMMONLY_API_URL: 'https://api.example.test' };
 
 // `handler(method, path, body)` answers each request with { status, json }. Every request is recorded.
@@ -168,7 +168,7 @@ describe('claim', () => {
       status: 409,
       json: {
         error: 'Task already claimed',
-        claimedBy: 'pod-architect',
+        claimedBy: 'alpha',
         status: 'claimed',
         claimExpiresAt: '2026-10-31T22:04:00.000Z',
       },
@@ -178,7 +178,7 @@ describe('claim', () => {
 
     expect(code).toBe(1);
     expect(out.errors).toEqual([
-      'Failed (HTTP 409): Task already claimed (held by pod-architect, lease until 22:04Z)',
+      'Failed (HTTP 409): Task already claimed (held by alpha, lease until 22:04Z)',
     ]);
   });
 
@@ -279,7 +279,7 @@ describe('close', () => {
       json: {
         error: 'Task is claimed by another seat',
         status: 'claimed',
-        claimedBy: 'pod-architect',
+        claimedBy: 'alpha',
         claimExpiresAt: '2026-10-31T22:04:00.000Z',
       },
     }));
@@ -288,7 +288,7 @@ describe('close', () => {
 
     expect(code).toBe(1);
     expect(out.errors).toEqual([
-      'Failed (HTTP 409): Task is claimed by another seat (held by pod-architect, lease until 22:04Z)',
+      'Failed (HTTP 409): Task is claimed by another seat (held by alpha, lease until 22:04Z)',
     ]);
   });
 
