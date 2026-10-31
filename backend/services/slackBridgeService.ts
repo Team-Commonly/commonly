@@ -1,4 +1,5 @@
 import SlackApi = require('./slackApi');
+import { publicAppUrl } from '../utils/publicAppUrl';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Integration = require('../models/Integration');
@@ -134,9 +135,10 @@ const NO_ACTIVE_POD_REPLY = 'This connector has no active pod. Choose one in Com
 // ADR-025 D11: a quote-reply whose pod is no longer reachable is refused in the
 // chat and posted nowhere. Naming the pod is the whole point — "your reply did
 // not go through" is unactionable, while "that line came from Launch" tells the
-// user which pod the fix is in.
+// user which pod the fix is in. The label is escaped because postMessage sends
+// mrkdwn as-is and a pod name is agent-choosable.
 const routedPodRefusal = (podLabel: string): string => (
-  `⚠️ That line came from “${podLabel}”, which this chat no longer reaches. `
+  `⚠️ That line came from “${escapeSlackMrkdwn(podLabel)}”, which this chat no longer reaches. `
   + 'Nothing was posted — open Commonly to reply there.'
 );
 
@@ -254,7 +256,7 @@ export const relayAgentMessageToSlack = async (opts: {
       connectorSecrets.get(String(integration.config!.botTokenRef)),
     ]);
     const podName = String(pod?.name || 'Commonly');
-    const base = (process.env.PUBLIC_APP_URL || 'https://commonly.me').replace(/\/$/, '');
+    const base = publicAppUrl();
     const link = opts.card && podMessageId
       ? `${base}/v2/pods/${encodeURIComponent(podId)}?message=${encodeURIComponent(podMessageId)}`
       : `${base}/v2/pods/${podId}`;

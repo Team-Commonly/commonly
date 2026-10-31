@@ -22,6 +22,27 @@ if (process.env.PG_HOST) {
 }
 
 export const deletePodCascade = async (podId: string): Promise<void> => {
+  // An agent whose last install was in this pod loses its runtime token, as
+  // on uninstall. Uninstall the rows and revoke before deleting anything:
+  // if a revoke throws, the rows are still here and a retried delete finds
+  // them again. The helper counts active installs, so an agent installed in
+  // another pod keeps its token.
+  const installedAgents = await AgentInstallation.find({ podId })
+    .select('agentName instanceId').lean();
+  await AgentInstallation.updateMany({ podId }, { $set: { status: 'uninstalled' } });
+  const identities = new Map<string, { agentName: string; instanceId: string }>();
+  for (const row of installedAgents || []) {
+    const instanceId = row.instanceId || 'default';
+    identities.set(`${row.agentName}:${instanceId}`, { agentName: row.agentName, instanceId });
+  }
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { revokeRuntimeTokensAfterLastUninstall } = require('../routes/registry/tokens');
+  for (const { agentName, instanceId } of identities.values()) {
+    await revokeRuntimeTokensAfterLastUninstall(agentName, instanceId);
+  }
+
+  // Nothing irreversible runs before the revoke above, so a failure there
+  // leaves the pod and its content for the retry.
   // A hierarchy link is not ownership. Keep children and their contents.
   await Pod.updateMany({ parentPod: podId }, { $unset: { parentPod: 1 } });
   await Message.deleteMany({ podId });

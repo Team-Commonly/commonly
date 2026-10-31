@@ -54,3 +54,8 @@ const mcpHome = originalMkdtempSync(join(tmpdir(), 'commonly-mcp-home-jest-'));
 process.env.COMMONLY_MCP_HOME = mcpHome;
 globalThis.__commonlyMcpHomeForCleanup = mcpHome;
 fs.writeFileSync(join(mcpHome, '.warm.lock'), 'warming\n');
+
+// A test that reaches `agent run` or `daemon run` start-up must not ask the
+// real npm registry whether this CLI is stale (TASK-660). The update-check
+// suite passes its own env, so it is unaffected.
+process.env.COMMONLY_NO_UPDATE_CHECK = '1';

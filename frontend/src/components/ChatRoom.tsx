@@ -518,6 +518,9 @@ const ChatRoom = () => {
     const [message, setMessage] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    // A send the server refused (TASK-503). Shown in the composer, not through
+    // `error`, which replaces the whole room and stops listening to it.
+    const [sendError, setSendError] = useState('');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [showMembers, setShowMembers] = useState(false); // Default to collapsed sidebar
     const messagesEndRef = useRef(null);
@@ -1918,10 +1921,31 @@ const ChatRoom = () => {
                 });
             });
             
+            // The server refused a send (message store unavailable): drop the
+            // optimistic copy so it doesn't look delivered, and say so.
+            const handleSendFailed = (failure) => {
+                if (!failure || String(failure.podId) !== String(roomId)) return;
+                setMessages(prevMessages => {
+                    const i = prevMessages.findIndex(msg =>
+                        !msg._id && msg.content === failure.content && msg.messageType === failure.messageType
+                    );
+                    if (i < 0) return prevMessages;
+                    return [...prevMessages.slice(0, i), ...prevMessages.slice(i + 1)];
+                });
+                // Give the refused text back so a retry is one keystroke, unless
+                // the person has already started typing something else.
+                if (failure.messageType === 'text' && failure.content) {
+                    setMessage(current => current || failure.content);
+                }
+                setSendError(failure.message || 'Failed to send message. Please try again.');
+            };
+            socket.on('messageSendFailed', handleSendFailed);
+
             // Clean up
             return () => {
                 leavePod(roomId);
                 socket.off('newMessage');
+                socket.off('messageSendFailed', handleSendFailed);
             };
         }
     }, [connected, roomId, socket, joinPod, leavePod, error]);
@@ -2227,6 +2251,7 @@ const ChatRoom = () => {
                 }]);
 
                 // Send text message via socket
+                setSendError('');
                 sendMessage(roomId, message, 'text', replyingTo?._id || replyingTo?.id || null);
 
                 // Clear the message input and reply state
@@ -4787,6 +4812,22 @@ const ChatRoom = () => {
                     onSubmit={handleSendMessage}
                     className={`message-input-container ${showMembers ? 'sidebar-visible' : 'sidebar-hidden'}`}
                 >
+                    {sendError && (
+                        <Box
+                            role="alert"
+                            sx={{ display: 'flex', alignItems: 'center', px: 1, py: 0.5, color: '#ff4040', fontSize: '12px' }}
+                        >
+                            <span>{sendError}</span>
+                            <IconButton
+                                size="small"
+                                aria-label="Dismiss"
+                                sx={{ ml: 'auto', color: '#ff4040', p: '2px' }}
+                                onClick={() => setSendError('')}
+                            >
+                                <CloseIcon fontSize="small" />
+                            </IconButton>
+                        </Box>
+                    )}
                     {replyingTo && (
                         <Box className="reply-preview-bar">
                             <div className="reply-preview-content">

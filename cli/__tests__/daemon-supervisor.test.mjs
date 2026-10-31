@@ -198,7 +198,7 @@ describe('tick', () => {
   // The union is deliberately OUT OF ORDER. In an alphabetical fixture
   // `podIds[0]` and `[...podIds].sort()[0]` agree, so a client-side sort would
   // pass while making a second ordering decision the daemon has no business
-  // making (VERA, 2026-09-18: the sort mutation survived until this fixture
+  // making (the sort mutation survived until this fixture
   // was reordered). The daemon takes the first element it is given.
   test('binds the local record to the first pod of the server-side union, not the smallest id (TASK-019)', async () => {
     const { supervisor, saveToken } = makeHarness({
@@ -415,7 +415,7 @@ describe('tick', () => {
     await supervisor.tick();
     expect(children).toHaveLength(1);
     // This record carries no mcp[] and the row declares no model, so the first
-    // tick heals it (Vera 69468). That write is not the subject here — clear it
+    // tick heals it. That write is not the subject here — clear it
     // so the assertions below are about the adapter change alone.
     expect(saveToken).toHaveBeenCalledTimes(1);
     expect(saveToken.mock.calls[0][1].adapter).toBe('claude');
@@ -706,7 +706,7 @@ describe('tick', () => {
     expect(children).toHaveLength(1);
   });
 
-  // TASK-063, the daemon half of wren's refuse-not-derive ruling. The broker is
+  // TASK-063, the daemon half of the refuse-not-derive ruling. The broker is
   // withheld at the DERIVE, because the derived environment is what the record
   // holds and what `agent run` spawns from — and because this is the layer that
   // knows the host, resolved the adapter locally, and sees records the server's
@@ -803,7 +803,7 @@ describe('tick', () => {
     expect(saveToken).not.toHaveBeenCalled();
   });
 
-  // Vera's probe (69468) on the first version of TASK-048: the repair above
+  // A probe on the first version of TASK-048: the repair above
   // lived only inside the `wanted` branch, so a record minted before the default
   // existed — no mcp[], a row that declares no model or effort either — reached
   // `return 'ready'` untouched and stayed tool-less after the upgrade. This is

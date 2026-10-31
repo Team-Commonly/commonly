@@ -511,7 +511,7 @@ test('a retryable failure keeps the lease, and the expiry is what releases it', 
   expect(after.config.refreshingUntil).toBeNull();
 });
 
-// TASK-405 (rhea, #2534): two refreshes inside ONE authorization share the same
+// TASK-405 (#2534): two refreshes inside ONE authorization share the same
 // authGeneration. The store's fence used to order writes by authGeneration alone,
 // so a superseded refresh could replace a newer refresh's pair behind the same
 // stable refs. The write generation now orders refreshes too, and the real
@@ -603,7 +603,7 @@ test('a superseded refresh cannot overwrite a newer refresh inside the same auth
   }
 });
 
-// TASK-405 (sable, #2534 c850750c): a NON-rotating refresh B advanced only the
+// TASK-405 (#2534 c850750c): a NON-rotating refresh B advanced only the
 // access secret, so a superseded refresh A could still write its refresh token
 // after B committed. Both secrets now advance on every refresh.
 test('a superseded refresh cannot write its refresh token after a non-rotating newer refresh', async () => {
@@ -692,7 +692,7 @@ test('a superseded refresh cannot write its refresh token after a non-rotating n
   }
 });
 
-// TASK-405 (sable, #2534 28c6a7c1): the non-rotating B must write back the token
+// TASK-405 (#2534 28c6a7c1): the non-rotating B must write back the token
 // it refreshed WITH, read before its vendor call. A superseded A whose refresh
 // write lands while B's vendor call is in flight must not be sealed into B's pair.
 test('a non-rotating refresh seals the token it refreshed with, not one a superseded refresh wrote mid-flight', async () => {
@@ -786,7 +786,7 @@ test('a non-rotating refresh seals the token it refreshed with, not one a supers
   }
 });
 
-// TASK-405 (sable, #2534 3f63c78f): a superseded refresh whose row commit matches
+// TASK-405 (#2534 3f63c78f): a superseded refresh whose row commit matches
 // nothing must not hand back its own token after the newer one won the fence. It
 // serves the winner's live pair instead.
 test('a refresh that loses its commit serves the newer winner, not its own token', async () => {

@@ -81,6 +81,12 @@
     "communityRedirect": {
       "title": "正在打开社区",
       "text": "正在检查你的访问权限…"
+    },
+    "theme": {
+      "label": "外观",
+      "auto": "自动",
+      "light": "浅色",
+      "dark": "深色"
     }
   },
   "agentSkills": {
@@ -134,7 +140,7 @@
     "avatar": {
       "regenerate": "换一个",
       "uploadPhoto": "上传照片",
-      "description": "选择前不会显示面部或肤色。你可以换一个造型，或上传照片。",
+      "description": "你可以换一个造型，或上传照片。",
       "descriptionAfterChoice": "你可以换一个造型，或上传照片。",
       "uploadTitle": "上传照片",
       "cropPreview": "头像裁剪预览",
@@ -495,7 +501,7 @@
       "people": "邀请成员",
       "agent": "添加智能体"
     },
-    "peopleHint": "创建邀请链接，拥有 Commonly 账号的人都能用它加入这个 Pod。",
+    "peopleHint": "拿到链接的人都能加入。",
     "podMember": "Pod 成员",
     "options": {
       "expiresAfter": "有效期",
@@ -513,7 +519,6 @@
     "generate": "生成邀请链接",
     "generating": "正在生成…",
     "newLinkLabel": "新邀请链接",
-    "newLinkHint": "新链接也会出现在下方的有效链接中。",
     "activeLinks": "有效链接",
     "loadingLinks": "正在加载链接…",
     "noActiveLinks": "暂无有效邀请链接。",
@@ -541,7 +546,7 @@
       "unavailable": "无法查看有效期",
       "expiresOn": "{{date}} 到期"
     },
-    "agentHint": "添加一个智能体 —— Claude Code 或 Codex，或在这里运行一个 —— 它就会加入这个 Pod。大约需要两分钟。",
+    "agentHint": "Claude Code、Codex，或在这里运行一个。",
     "connectOwnAgent": "连接你自己的智能体 →",
     "errors": {
       "loadFailed": "邀请链接加载失败。",
@@ -558,7 +563,12 @@
     },
     "starts": {
       "label": "开始方式",
-      "openByo": "去接入自己的智能体"
+      "openByo": "去接入自己的智能体",
+      "labels": {
+        "connect-agent": "接入我在用的智能体",
+        "start-pod": "新建项目 Pod",
+        "run-hosted": "在这里运行智能体"
+      }
     },
     "dmMark": "私信",
     "invite": "邀请成员加入这个 Pod",
@@ -566,6 +576,7 @@
     "cancelReply": "取消回复",
     "replyingTo": "回复 <author>{{author}}</author>：",
     "deliveryHint": "尚未通知任何智能体。@提及一个智能体即可让它回复，例如 <handle>@{{handle}}</handle>。",
+    "deliveryHintOthers": "{{woken}} 会回复这条消息。这里的其他智能体只在你 @提及 时回复，试试 <handle>@{{handle}}</handle>。",
     "mentionNotInPod": "{{handle}} 不在这个 Pod 中。请邀请对方加入，或到对方已加入的 Pod 中提问。",
     "mentionNotInPodWithPods": "{{handle}} 不在这个 Pod 中。可前往这些 Pod 提问：",
     "noAgentsInPod": {
@@ -579,6 +590,10 @@
       "unknown": "{{agentName}} 的可用状态未知，回复可能需要更长时间。",
       "waiting": "正在等待 {{agentName}} 回复…",
       "timedOut": "{{agentName}} 还没有回复。你的消息仍在此对话中。"
+    },
+    "podAgentLiveness": {
+      "notConnected": "{{agentName}} 还没有连接，运行起来之前不会在这里回复。",
+      "offlineSince": "{{agentName}} 上次连接是{{age}}，恢复连接后会回复。"
     },
     "typing": {
       "one": "{{name}} 正在思考…",
@@ -641,15 +656,18 @@
     },
     "header": {
       "aboutPod": "关于这个 Pod",
+      "rename": "重命名",
+      "renameLabel": "Pod 名称",
+      "renameSave": "保存",
+      "renameCancel": "取消",
+      "renameFailed": "无法重命名这个 Pod，请再试一次。",
       "agentsWorking_other": "{{count}}个智能体正在工作",
       "members_one": "{{count}}名成员",
       "members_other": "{{count}}名成员",
       "agents_one": "{{count}}个智能体",
       "agents_other": "{{count}}个智能体",
       "boardOpen": "看板{{count}}项待办",
-      "backToPods": "返回 Pod 列表",
-      "compactMeta": "{{members}} · {{agents}}",
-      "compactMetaAccessible": "{{members}}，{{agents}}"
+      "backToPods": "返回 Pod 列表"
     },
     "team": {
       "view": "查看 Pod 团队",
@@ -735,6 +753,10 @@
       "showMore": "展开另外{{count}}行",
       "showLess": "收起",
       "image": "图片"
+    },
+    "longMessage": {
+      "showMore": "展开",
+      "showLess": "收起"
     },
     "history": {
       "loadingEarlier": "正在加载更早的消息…",
@@ -1317,15 +1339,13 @@
     "workspace": {
       "ariaLabel": "Pod 检视器",
       "close": "关闭检视器",
-      "agentsIn": "{{pod}} 中的智能体",
       "noAgents": "暂无智能体",
       "needsYou": "需要你处理",
       "nothingOpen": "没有待处理项。",
       "nothingWorking_other": "没有需要你处理的事项。{{agents}} 正在工作。",
       "wip": "进行中",
       "members": "成员",
-      "manage": "管理",
-      "podSettings": "Pod 设置",
+      "manage": "管理智能体",
       "joinPolicyError": "无法更改加入方式，请重试。",
       "agentStatus": {
         "needsYou": "需要你处理 · {{title}}",
@@ -1333,9 +1353,11 @@
         "working": "进行中",
         "idle": "空闲"
       },
-      "filesIn": "{{pod}} 中的文件",
       "noFiles": "暂无文件",
-      "allFiles": "全部{{count}}个文件"
+      "allFiles": "全部{{count}}个文件",
+      "agents": "智能体",
+      "files": "文件",
+      "joinOpen": "开放"
     },
     "goal": {
       "title": "目标",
@@ -1657,6 +1679,8 @@
     "available": "可在 Commonly 使用",
     "revoked": "密钥已撤销，连接已断开",
     "stale": "已{{count}}分钟未连接",
+    "staleHours": "已{{count}}小时未连接",
+    "staleDays_other": "已{{count}}天未连接",
     "never": "尚未连接",
     "reconnect": "重新连接",
     "reconnectWaiting": "正在等待电脑重新连接此智能体。",
@@ -1671,7 +1695,7 @@
     "description": "智能体运行期间会在所在 Pod 回复 @提及。",
     "form": {
       "nameLabel": "智能体名称",
-      "nameHint": "仅支持小写字母、数字和连字符。它会用这个名字发言。",
+      "nameHint": "仅支持小写字母、数字和连字符。",
       "podLabel": "要加入的 Pod",
       "loadingPods": "正在加载 Pod…",
       "machineLabel": "电脑",
@@ -1726,7 +1750,7 @@
       "cursorInstall": "添加到 Cursor",
       "cursorInstallHint": "该链接会以占位密钥添加 Commonly。请在 Cursor 的 MCP 设置中将其替换为上面的密钥。",
       "memory": "导入它的记忆（可选）",
-      "claudeCodeBody": "为你自己的 Claude Code 会话加上 Commonly 的工具。它不会让 {{name}} 回复 @提及，上面那条命令才会。",
+      "claudeCodeBody": "为你的 Claude Code 会话加上 Commonly 的工具。回复 @提及需要上面的命令。",
       "claudeCodeBodyOwn": "为你自己的 Claude Code 会话加上 Commonly 的工具。",
       "claudeCodeBodyWindows": "两行都粘贴到 PowerShell 里运行。这样你在这台电脑上的 Claude Code 会话就能用上 Commonly 的工具。",
       "claudeCodeMain": "让 Claude Code 在你自己的会话里使用这个 Pod"
@@ -1760,11 +1784,15 @@
       "title": "在终端里运行这段命令",
       "note": "仅连接 MCP 不会唤醒 {{name}} 回复 @提及。请保持终端窗口开启。",
       "reachClaude": "默认情况下，如果你用的是 macOS，并且 {{name}} 所在的每个 Pod 都是私密、仅限邀请且未列入「社区」的，它只能读取你运行这段命令时所在的文件夹。不满足这些条件，或者你在个人文件夹里运行这段命令，它都会在自己的临时文件夹里工作。想让它编辑文件、运行命令，就在最后一行加上 --allow write。它运行的命令能读取文件夹以外的内容。想让它抓取网页，就加上 --allow web。无论加哪一个，它都能把读到的内容传出这台电脑，所以只在你信任的 Pod 里授予这两项权限。",
+      "reachCodex": "Codex 会在系统临时目录里用自己的暂存文件夹工作，不在你运行命令的这个文件夹。--allow 对 Codex 无效，所以最后一行不带 --allow。",
       "waiting": "正在等待 {{name}} 接入…命令一接通，这里就会变绿。",
       "verified": "{{name}} 已在监听 —— @提及 会唤醒它。",
       "stillWaiting": "{{name}} 还没接入。请在你电脑的终端里运行上面的命令，这里会自动确认。",
+      "stopsOnClose": "关闭这个终端窗口后就会停止。如果希望智能体持续运行，请在「其他接入方式」里添加这台电脑，然后选择「在我的电脑上」。",
+      "stopsOnCloseWithComputer": "关闭这个终端窗口后就会停止。如果希望智能体持续运行，请再添加一个智能体，然后选择「在我的电脑上」。",
+      "npmPermission": "如果 npm 报 EACCES（权限被拒绝），不要加 sudo。请用版本管理工具（如 nvm）重新安装 Node，然后重新运行这四行。",
       "ctaWarning": "{{name}} 尚未监听：上面的命令运行起来之前，它不会回复 @提及。",
-      "needs": "需要 Node 18+（含 npm）和已登录的 {{tool}}。四行都要在同一个窗口里运行，换了窗口 export 就失效。",
+      "needs": "需要 Node 20+（含 npm）和已登录的 {{tool}}。四行都要在同一个窗口里运行，换了窗口 export 就失效。",
       "osLabel": "你的系统：",
       "osLinux": "Linux",
       "osMac": "Mac",
@@ -1773,23 +1801,17 @@
       "unavailableClaude": "Claude Code 在 {{os}} 上暂时不能回复 @提及：Commonly 要把它放进沙箱里运行，而 Commonly 用的沙箱在 {{os}} 上还做不到。你可以用下面的命令把 Commonly 的工具接进自己的 Claude Code 会话，或者选择“在这里运行”，改用托管智能体。",
       "unavailableCodex": "Codex CLI 在 {{os}} 上暂时不能回复 @提及。你可以选择“在这里运行”，改用托管智能体；也可以换到 Mac 机器上运行这条命令（Linux 尚未测试）。",
       "toolCodex": "Codex CLI",
-      "switchToCodex": "我用的是 Codex",
-      "switchToClaude": "我用的是 Claude Code"
+      "useDifferentRunner": "换一种适配器"
     },
     "mode": {
       "label": "在哪里运行？",
       "hosted": "在这里运行",
-      "hostedHint": "由 Commonly 代为运行，无需安装。测试期：每天{{turns}}轮。",
       "byo": "用我自己的智能体",
-      "byoHint": "你电脑上的 Claude Code 或 Codex。",
-      "onCommonly": "在 Commonly 上",
-      "yours": "你的电脑",
-      "hostedMeta": "几秒即可上线 · 测试期每天{{turns}}轮",
-      "byoMeta": "只需一条终端命令",
+      "hostedMeta": "无需安装，几秒即可上线。测试期每天{{turns}}轮。",
+      "byoMeta": "你电脑上的 Claude Code 或 Codex，只需一条终端命令。",
       "moreAbout": "更多关于{{mode}}的信息",
       "machine": "在我的电脑上",
-      "machineHint": "在你已添加的电脑上运行，你的文件、你的 CLI",
-      "machineMeta": "需要那台电脑运行 Commonly 守护进程"
+      "machineMeta": "在你已添加的电脑上运行，用你的文件和 CLI。需要那台电脑运行 Commonly 守护进程。"
     },
     "hosted": {
       "offerAction": "改为在这里运行",
@@ -1817,15 +1839,18 @@
     "machine": {
       "online": "在线",
       "offline": "离线",
+      "addedOn": "添加于 {{date}}",
       "heading": "正在启动：",
       "running": "已在 {{machine}} 上运行——去 pod 里打个招呼吧。",
       "waiting": "正在等待 {{machine}} 上的守护进程接管…",
       "slow": "仍在等待——请确认 {{machine}} 上正在运行 commonly daemon run，恢复后会立即启动该智能体。",
       "openPod": "打开 pod"
     },
+    "quickTry": "快速试用：这条命令在终端里运行，关闭那个窗口就会停止。如果希望智能体持续运行，请在下方「其他接入方式」里用守护进程把这台电脑添加一次。",
     "addComputer": {
       "title": "添加电脑",
-      "after": "刷新页面后即可选择这台电脑。",
+      "recommended": "推荐用于需要持续运行的智能体。把这台电脑添加一次，守护进程会在你登录时启动，智能体停止后也会自动恢复。",
+      "after": "连接完成后刷新页面，这台电脑会以名称出现在列表中，并标记为在线。",
       "copy": "复制",
       "copied": "已复制"
     },
@@ -1836,7 +1861,7 @@
     },
     "compact": {
       "title": "在这里运行智能体",
-      "lead": "几秒后即可上线。",
+      "lead": "几秒后即可上线。测试期：每个账号{{agents}}个托管智能体，每天{{turns}}轮。",
       "joins": "它会以 {{name}} 的身份加入 {{pod}}。",
       "change": "更改",
       "limits": "测试期：每个账号{{agents}}个托管智能体，每天{{turns}}轮。",
@@ -1870,6 +1895,15 @@
       "talkTo": "与 {{name}} 对话",
       "opening": "正在打开…",
       "openRoomFailed": "无法打开与该智能体的一对一对话。"
+    },
+    "avatar": {
+      "change": "更换头像",
+      "edit": "编辑",
+      "title": "选择头像",
+      "defaultOption": "默认头像",
+      "option": "头像{{number}}",
+      "cancel": "关闭",
+      "saveFailed": "无法更换头像，请重试。"
     },
     "pods": {
       "title": "Pod",
@@ -2072,7 +2106,10 @@
       "noMatch": "没有匹配的 Pod",
       "pinnedTitle": "置顶",
       "recent": "最近",
-      "everything": "全部"
+      "everything": "全部",
+      "viewLabel": "Pod 列表",
+      "all": "全部",
+      "noPinned": "在 Pod 行上点置顶，它就会留在这里。"
     }
   },
   "feedbackMenu": {
@@ -2108,7 +2145,7 @@
       "placeholder": "邀请码",
       "unlock": "解锁",
       "unlocking": "解锁中…",
-      "gated": "内测期间，从应用市场雇用智能体需要邀请码。",
+      "gated": "内测期间，从应用市场雇用智能体需要邀请码。接入你自己的智能体不需要。",
       "haveCode": "有邀请码？",
       "success": "已解锁应用市场——去雇用你的第一个智能体吧。"
     },
@@ -2142,7 +2179,12 @@
         "minutes": "{{count}}分",
         "hours": "{{count}}时",
         "days": "{{count}}天"
-      }
+      },
+      "where": {
+        "hosted": "在 Commonly 上运行",
+        "local": "在你的电脑上运行"
+      },
+      "meter": "今日{{used}}/{{cap}}"
     },
     "activity": {
       "noRecent": "近期无活动",
@@ -2179,7 +2221,7 @@
     },
     "own": {
       "title": "你自己的智能体",
-      "text": "Claude Code、Codex，或任何支持该协议的工具。在你的机器上运行一条命令，它的身份保留在这里。",
+      "text": "你自己电脑上的 Claude Code 或 Codex。",
       "command": "npx @commonlyai/cli agent attach claude",
       "setup": "开始设置"
     }
@@ -2261,7 +2303,6 @@
     "codeExpired": "启用码已过期。",
     "connect": "连接",
     "connectChannel": "连接频道",
-    "connectChannelHint": "选择频道，以及它要加入的 Pod。",
     "copied": "已复制",
     "copyCommand": "复制命令",
     "description": "每个频道从一个 Pod 接入一个智能体。它会在那里以自己的名义回复，其余团队成员都在幕后。",
@@ -2273,7 +2314,11 @@
     "gateSwitch": "转发 {{pod}}",
     "gatesTitle": "接入此频道的 Pod",
     "hostedMcpManualRevoke": "你之前的 {{provider}} 账号可能仍保留对 Commonly 的授权。请在 {{provider}} 切换到那个账号，再在那里移除 Commonly。",
+    "hostedMcpManualRevoke_linear": "你之前的 Linear 账号可能仍连着一个 MCP 授权。请在 Linear 切换到那个账号，再在其已连接应用中撤销该 MCP 授权。",
+    "hostedMcpManualRevoke_sentry": "你之前的 Sentry 账号可能仍连着 Sentry 的 MCP 服务器应用。请在 Sentry 切换到那个账号，再在那里撤销该应用。撤销后，此账号下该服务器的所有客户端都会断开，不只是 Commonly。",
+    "hostedMcpManualRevoke_supabase": "Commonly 可能仍在你之前连接的 Supabase 组织中获得授权。在“已授权应用”中移除 Commonly，会断开所有连接该组织的成员。",
     "hostedMcpReviewAuthorization": "打开 {{provider}} 的已连接应用",
+    "hostedMcpReviewAuthorization_supabase": "打开 Supabase 已授权应用",
     "hostedMcpAuthenticationRequired": "请先登录 Commonly，再重新连接。",
     "hostedMcpClientSetup": "此连接器的登录配置有问题，请联系管理员检查。",
     "hostedMcpConsentDenied": "你没有同意此次授权。连接未保存。",
@@ -2348,7 +2393,34 @@
     "waitingServer": "等待服务器响应",
     "linkedLine": "{{title}} · 已连接到 {{pod}}",
     "waitingToConnect": "{{label}} 正在等待连接。",
-    "enableCommand": "/commonly-enable {{code}}"
+    "enableCommand": "/commonly-enable {{code}}",
+    "cancelError": "无法取消设置。",
+    "modeError": "无法切换模式。",
+    "slackAuthorizeError": "无法发起 Slack 授权，请稍后再试。",
+    "slackBindError": "无法更新 Slack 连接，请稍后再试。",
+    "slackAlreadyAuthorized": "Slack 已连接，或正在等待确认。",
+    "slackAuthorizationUnavailable": "这次 Slack 授权已失效。",
+    "slackInstallationNotFound": "找不到这个 Slack 安装。",
+    "slackBindMissing": "没有需要确认的 Slack 授权。",
+    "slackBindExpired": "Slack 授权已过期，请重新开始。",
+    "slackPodAccessDenied": "你已无权访问此 Pod。",
+    "untitledPod": "未命名 Pod",
+    "anotherPod": "另一个 Pod",
+    "thisSlackWorkspace": "这个 Slack 工作空间",
+    "yourSlackUser": "你的 Slack 账号",
+    "catalogDescriptions": {
+      "github": "这个实例自己的 GitHub 仓库里的 Issue 和 PR。",
+      "telegram": "把你的 Telegram 聊天接入 Commonly，你开启的每个 Pod 都能把消息发到这里。",
+      "slack": "把你的 Slack 私信接入 Commonly，你开启的每个 Pod 都能在你平时聊天的地方发声。",
+      "atlassian": "你的 Atlassian 站点中的 Jira 工单和 Confluence 内容。",
+      "gitlab": "GitLab.com 上的项目、议题和合并请求。",
+      "airtable": "你的 Airtable 工作空间中的 Base、数据表和记录。",
+      "google-calendar": "读取你 Google 账户中的日历、事件和空闲时间。",
+      "sentry": "你的 Sentry 组织中的错误、项目和问题分诊。",
+      "linear": "你自己的 Linear 工作空间中的议题、项目、周期和发布。",
+      "supabase": "项目、数据库结构、Edge Functions 和分支。断开连接会删除 Commonly 的令牌，但在有人到 OAuth Apps 里移除之前，Commonly 在该组织里的授权仍然有效。",
+      "notion": "你的 Notion 工作空间中的页面、评论和数据库。"
+    }
   },
   "artifacts": {
     "title": "产物",
@@ -2456,7 +2528,7 @@
     "confirmRemoveConnection": "确认移除",
     "removeConnectionError": "无法移除连接。",
     "reviewProviderAccess": "查看 {{label}} 的授权",
-    "removedReviewProvider": "连接已移除。请检查 {{label}} 中 Commonly 的授权。",
+    "removedReviewProvider": "连接已移除。请检查 {{label}} 中的授权。",
     "openProviderSettings": "打开服务提供方设置",
     "noConnection": "请先安装 GitHub App · 管理员只需安装一次",
     "noSeats": "此 Pod 中还没有智能体",
@@ -2633,10 +2705,18 @@
     "listingUnavailable": "暂时无法查看条目状态",
     "viewPublicProfile": "查看公开主页",
     "listingSeparate": "发布市场条目需在设置页之外完成。",
+    "ownedTitle": "你的市场条目",
+    "ownedName": "条目名称",
+    "ownedSave": "保存条目名称",
+    "ownedRetire": "下架条目",
+    "ownedRestore": "重新上架条目",
+    "ownedFailed": "无法更新这个条目，请再试一次。",
     "wakeTitle": "唤醒",
     "mentionsAlwaysWake": "提及始终会唤醒此智能体。",
-    "wakeOnMessage": "收到消息时唤醒",
-    "humanOnly": "仅限真人消息",
+    "messageWake": "哪些消息会唤醒它",
+    "messageWake_mentions": "仅 @提及",
+    "messageWake_human": "来自真人的消息",
+    "messageWake_all": "所有消息",
     "boardWake": "看板变更时唤醒",
     "heartbeat": "心跳间隔",
     "heartbeatInterval": "间隔",

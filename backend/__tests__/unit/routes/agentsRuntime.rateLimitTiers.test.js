@@ -56,7 +56,14 @@ app.use('/api/agents/runtime', router);
 // One of the 11 registrations this shrink moved ahead of auth.
 const ROUTE = '/api/agents/runtime/messages/m1/claim';
 
-const hit = (ip, authorization) => request(app)
+// One listening socket for the whole file. supertest's request(app) binds a
+// fresh ephemeral port per call, and a 3000-request loop can land on a port
+// another local process holds: it answers "provider relay: 404" (text/plain),
+// which is not this router at all. Holding one server removes the race.
+const server = app.listen(0);
+afterAll(() => new Promise((resolve) => server.close(resolve)));
+
+const hit = (ip, authorization) => request(server)
   .post(ROUTE)
   .set('cf-connecting-ip', ip)
   .set('Authorization', authorization);

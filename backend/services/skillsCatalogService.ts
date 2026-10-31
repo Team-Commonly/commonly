@@ -1,7 +1,7 @@
 import fs from 'fs';
-import path from 'path';
 
 import { fetchBytesFromAllowedHost, fetchTextFromAllowedHost, isOutboundUrlRefused } from './outboundUrlGuard';
+import { resolveSkillsCatalogPath } from './skillsCatalogPath';
 
 const DEFAULT_SOURCE = 'awesome';
 
@@ -94,13 +94,7 @@ interface GitHubSourceInfo {
 
 const resolveCatalogPath = (source: string): string | null => {
   if (source === DEFAULT_SOURCE) {
-    if (process.env.SKILLS_CATALOG_PATH) {
-      return process.env.SKILLS_CATALOG_PATH;
-    }
-    if (process.env.SKILLS_CATALOG_DIR) {
-      return path.join(process.env.SKILLS_CATALOG_DIR, 'awesome-agent-skills-index.json');
-    }
-    return path.resolve(__dirname, '../../docs/skills/awesome-agent-skills-index.json');
+    return resolveSkillsCatalogPath();
   }
   return null;
 };

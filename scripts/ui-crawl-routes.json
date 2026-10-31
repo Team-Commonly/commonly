@@ -1,0 +1,62 @@
+[
+  {
+    "id": "login",
+    "path": "/v2/login"
+  },
+  {
+    "id": "register",
+    "path": "/v2/register"
+  },
+  {
+    "id": "forgot-password",
+    "path": "/v2/forgot-password"
+  },
+  {
+    "id": "board",
+    "path": "/v2/pods/:podId/board"
+  },
+  {
+    "id": "chat",
+    "path": "/v2/chat/:podId"
+  },
+  {
+    "id": "agents",
+    "path": "/v2/agents"
+  },
+  {
+    "id": "agents-manage",
+    "path": "/v2/agents/manage"
+  },
+  {
+    "id": "agents-byo",
+    "path": "/v2/agents/byo"
+  },
+  {
+    "id": "connect",
+    "path": "/v2/connect"
+  },
+  {
+    "id": "connectors",
+    "path": "/v2/connectors"
+  },
+  {
+    "id": "artifacts",
+    "path": "/v2/artifacts"
+  },
+  {
+    "id": "activity",
+    "path": "/v2/activity"
+  },
+  {
+    "id": "settings",
+    "path": "/v2/settings"
+  },
+  {
+    "id": "settings-devices",
+    "path": "/v2/settings/devices"
+  },
+  {
+    "id": "profile",
+    "path": "/v2/profile"
+  }
+]

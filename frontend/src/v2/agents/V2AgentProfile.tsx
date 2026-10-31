@@ -5,6 +5,7 @@ import axios from 'axios';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import V2Avatar from '../components/V2Avatar';
 import { presetCharacterOptions } from '../../utils/avatarUtils';
+import { characterAvatarFor } from '../utils/avatars';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import '../v2.css';
 import './v2-agent-profile.css';
@@ -32,6 +33,8 @@ interface AgentProfile {
     agentName: string;
     instanceId: string;
     displayName: string;
+    /** The bot user's id: chat and Your Team seed the unpicked face on it. */
+    userId?: string;
     profilePicture: string;
     runtime: string | null;
     officialAgent: boolean;
@@ -217,12 +220,13 @@ const V2AgentProfile: React.FC = () => {
     return () => { cancelled = true; };
   }, [agentName, instanceId, memIndex]);
 
-  // Owner-editable avatar (Sam, 2026-08-20): visible only when the caller is
+  // Owner-editable avatar (2026-08-20): visible only when the caller is
   // the agent's installer or an admin — the backend is the real gate; this
   // check only decides whether to show the affordance.
   const [canEditAvatar, setCanEditAvatar] = useState(false);
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
   const [savingAvatar, setSavingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token || !agentName) return;
@@ -238,6 +242,7 @@ const V2AgentProfile: React.FC = () => {
     const token = localStorage.getItem('token');
     if (!token || !agentName) return;
     setSavingAvatar(true);
+    setAvatarError(false);
     try {
       await getClient().put(
         `/api/agent-profile/${agentName}/${instanceId || 'default'}/avatar`,
@@ -247,6 +252,7 @@ const V2AgentProfile: React.FC = () => {
       window.location.reload();
     } catch {
       setSavingAvatar(false);
+      setAvatarError(true);
     }
   };
 
@@ -306,6 +312,16 @@ const V2AgentProfile: React.FC = () => {
   }
 
   const { agent, skills, pods, memory, activity } = data;
+  const identity = `${agent.agentName}:${agent.instanceId || 'default'}`;
+  // The same seed chat and Your Team use, so the unpicked face matches them.
+  const faceSeed = agent.userId || identity;
+  const currentAvatar = agent.profilePicture && agent.profilePicture !== 'default' ? agent.profilePicture : 'default';
+  // 'default' first, then the stored picks, which stay seeded on the identity
+  // so a pick made before this change is still in the grid.
+  const avatarOptions = [
+    { id: 'default', src: characterAvatarFor(faceSeed, 'agent') },
+    ...presetCharacterOptions(identity, 'agent'),
+  ];
   const runtimeLabel = (agent.runtime || '').toUpperCase();
   const authed = isAuthed();
   const firstName = agent.displayName.split(' ')[0];
@@ -324,7 +340,7 @@ const V2AgentProfile: React.FC = () => {
       <main className="v2-aprofile__main">
         {/* Identity header */}
         <section className="v2-aprofile__hero">
-          {/* The avatar IS the edit control (Sam, 2026-09-01: "a button called
+          {/* The avatar IS the edit control (2026-09-01: "a button called
               change avatar … should be enough just clicking the avatar").
               Non-owners get the plain avatar; owners get the same avatar as a
               button with a hover hint, no separate text button. */}
@@ -332,18 +348,20 @@ const V2AgentProfile: React.FC = () => {
             <button
               type="button"
               className="v2-aprofile__avatar-button"
-              onClick={() => setAvatarDialogOpen(true)}
-              aria-label="Change avatar"
-              title="Change avatar"
+              onClick={() => setAvatarDialogOpen((open) => !open)}
+              aria-label={t('agentProfile.avatar.change')}
+              aria-expanded={avatarDialogOpen}
+              aria-controls="agent-avatar-picker"
+              title={t('agentProfile.avatar.change')}
             >
               <V2Avatar
                 name={agent.displayName}
                 src={agent.profilePicture}
                 size="lg"
                 kind="agent"
-                seed={`${agent.agentName}:${agent.instanceId || 'default'}`}
+                seed={faceSeed}
               />
-              <span className="v2-aprofile__avatar-hint" aria-hidden="true">Edit</span>
+              <span className="v2-aprofile__avatar-hint" aria-hidden="true">{t('agentProfile.avatar.edit')}</span>
             </button>
           ) : (
             <V2Avatar
@@ -351,34 +369,8 @@ const V2AgentProfile: React.FC = () => {
               src={agent.profilePicture}
               size="lg"
               kind="agent"
-              seed={`${agent.agentName}:${agent.instanceId || 'default'}`}
+              seed={faceSeed}
             />
-          )}
-          {avatarDialogOpen && (
-            <div className="v2-aprofile__avatar-dialog" role="dialog" aria-label="Choose an avatar">
-              {/* Eight deterministic characters seeded off this agent's
-                  identity — same grid every visit, and the pick is stored as a
-                  seed so every surface regenerates it locally. Uploads keep
-                  working through the existing profile-picture path; AI
-                  generation is deprecated and deliberately absent here. */}
-              <div className="v2-aprofile__avatar-title">Choose an avatar</div>
-              <div className="v2-aprofile__avatar-grid">
-                {presetCharacterOptions(`${agent.agentName}:${agent.instanceId || 'default'}`, 'agent').map((option) => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    className="v2-aprofile__avatar-choice"
-                    disabled={savingAvatar}
-                    onClick={() => saveAvatar(option.id)}
-                  >
-                    <img src={option.src || ''} alt="avatar option" width={56} height={56} style={{ borderRadius: '50%' }} />
-                  </button>
-                ))}
-              </div>
-              <button type="button" className="v2-aprofile__avatar-cancel" onClick={() => setAvatarDialogOpen(false)}>
-                Cancel
-              </button>
-            </div>
           )}
           <div className="v2-aprofile__hero-text">
             <div className="v2-aprofile__name-row">
@@ -422,6 +414,38 @@ const V2AgentProfile: React.FC = () => {
             <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">{t('agentProfile.hero.talkTo', { name: firstName })}</Link>
           )}
         </section>
+        {avatarDialogOpen && (
+          <section id="agent-avatar-picker" className="v2-aprofile__avatar-picker" aria-labelledby="agent-avatar-picker-title">
+            <h2 id="agent-avatar-picker-title" className="v2-aprofile__avatar-title">{t('agentProfile.avatar.title')}</h2>
+            <div className="v2-aprofile__avatar-grid" role="group" aria-labelledby="agent-avatar-picker-title">
+              {avatarOptions.map((option, index) => {
+                const current = option.id === currentAvatar;
+                const label = option.id === 'default'
+                  ? t('agentProfile.avatar.defaultOption')
+                  : t('agentProfile.avatar.option', { number: index });
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className={`v2-aprofile__avatar-choice${current ? ' is-current' : ''}`}
+                    // aria-pressed already announces the current avatar.
+                    aria-pressed={current}
+                    aria-label={label}
+                    title={label}
+                    disabled={savingAvatar}
+                    onClick={() => { if (!current) void saveAvatar(option.id); }}
+                  >
+                    <img src={option.src || ''} alt="" />
+                  </button>
+                );
+              })}
+            </div>
+            {avatarError && <p className="v2-aprofile__avatar-error" role="alert">{t('agentProfile.avatar.saveFailed')}</p>}
+            <button type="button" className="v2-aprofile__avatar-cancel" onClick={() => setAvatarDialogOpen(false)}>
+              {t('agentProfile.avatar.cancel')}
+            </button>
+          </section>
+        )}
         {roomError && <div className="v2-aprofile__room-error" role="alert">{roomError}</div>}
 
         {memIndex?.viewerRole && (

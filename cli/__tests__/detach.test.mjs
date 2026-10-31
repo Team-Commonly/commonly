@@ -29,6 +29,7 @@ const {
   saveAgentToken,
   loadAgentToken,
   listLocalAgents,
+  listUnreadableAgentTokens,
 } = await import('../src/commands/agent.js');
 const { setSession, getSession } = await import('../src/lib/session-store.js');
 
@@ -232,5 +233,40 @@ describe('listLocalAgents', () => {
     const [agent] = listLocalAgents();
     expect(agent.name).toBe('corrupt');
     expect(agent.lastTurn).toBeNull();
+  });
+
+  test('a token file that is not JSON is dropped from the listing and named as unreadable', () => {
+    saveAgentToken('fine', {
+      agentName: 'fine', instanceId: 'default', podId: 'pod-f',
+      instanceUrl: 'http://localhost:5000', runtimeToken: 'cm_agent_f',
+      adapter: 'claude',
+    });
+    fs.writeFileSync(path.join(tmp, '.commonly', 'tokens', 'broken.json'), '{"agentName": ', 'utf8');
+
+    expect(listLocalAgents().map((a) => a.name)).toEqual(['fine']);
+    expect(listUnreadableAgentTokens()).toEqual(['broken']);
+  });
+
+  test('no tokens dir means nothing unreadable', () => {
+    expect(listUnreadableAgentTokens()).toEqual([]);
+  });
+
+  test('a tokens path that is a file means nothing unreadable', () => {
+    fs.mkdirSync(path.join(tmp, '.commonly'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.commonly', 'tokens'), '', 'utf8');
+    expect(listUnreadableAgentTokens()).toEqual([]);
+  });
+
+  // Mode 000 stages the denial only on POSIX as a non-root user: root reads
+  // through it, and Windows chmod cannot remove a directory's read permission.
+  (process.platform === 'win32' || process.getuid?.() === 0 ? test.skip : test)('a tokens dir it cannot traverse throws instead of reading as empty', () => {
+    const state = path.join(tmp, '.commonly');
+    fs.mkdirSync(path.join(state, 'tokens'), { recursive: true });
+    fs.chmodSync(state, 0o000);
+    try {
+      expect(() => listUnreadableAgentTokens()).toThrow(/EACCES/);
+    } finally {
+      fs.chmodSync(state, 0o700);
+    }
   });
 });

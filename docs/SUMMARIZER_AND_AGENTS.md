@@ -85,7 +85,7 @@ requests from proxy loopback can also be operator probes.
 
 ---
 
-### Direct Anthropic removal (D76)
+### Direct Anthropic removal
 
 Direct `anthropic/*` LiteLLM routes and cluster-key consumers are removed.
 Claude on BYO agents still runs on the owner's machine. Hosted Claude routing

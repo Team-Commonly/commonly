@@ -1,5 +1,6 @@
 import { isValidObjectId } from 'mongoose';
 import { AdminUserMutationError, withAdminUserMutation } from '../../services/adminUserMutationService';
+import { publicAppUrl } from '../../utils/publicAppUrl';
 export {};
 const express = require('express');
 const crypto = require('crypto');
@@ -93,11 +94,7 @@ const sanitizeWaitlist = (request: any) => ({
 
 const generateInvitationCode = () => `CM-${(crypto as any).randomBytes(4).toString('hex').toUpperCase()}`;
 
-const getPrimaryFrontendUrl = () => {
-  const raw = String(process.env.FRONTEND_URL || '').trim();
-  if (!raw) return 'https://app.commonly.me';
-  return raw.split(',').map((value) => value.trim()).filter(Boolean)[0] || 'https://app.commonly.me';
-};
+const getPrimaryFrontendUrl = () => publicAppUrl();
 
 const parsePositiveInt = (value: any, fallback: any) => {
   const parsed = Number.parseInt(String(value || ''), 10);

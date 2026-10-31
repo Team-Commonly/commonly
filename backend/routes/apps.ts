@@ -15,6 +15,8 @@ const AppService = require('../services/appService');
 const { hash, randomSecret } = require('../utils/secret');
 // eslint-disable-next-line global-require
 const { platformIpRateLimit } = require('../middleware/platformRateLimit');
+// eslint-disable-next-line global-require
+const { webhookUrlRegistrationRefusal } = require('../services/outboundUrlGuard');
 
 interface AuthReq {
   user?: { id: string; role?: string };
@@ -162,6 +164,8 @@ router.post('/', auth, async (req: AuthReq, res: Res) => {
   try {
     const { name, description, homepage, callbackUrl, webhookUrl, allowedRedirects = [], defaultScopes = [], allowedEvents = [] } = (req.body || {}) as { name?: string; description?: string; homepage?: string; callbackUrl?: string; webhookUrl?: string; allowedRedirects?: unknown[]; defaultScopes?: unknown[]; allowedEvents?: unknown[] };
     if (!name || !webhookUrl) return res.status(400).json({ error: 'name and webhookUrl are required' });
+    const webhookRefusal = webhookUrlRegistrationRefusal(webhookUrl);
+    if (webhookRefusal) return res.status(400).json({ code: 'webhook_url_refused', error: webhookRefusal });
     const clientId = randomSecret(16);
     const clientSecret = randomSecret();
     const webhookSecret = randomSecret();

@@ -151,7 +151,7 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/Do not type out the Terminal steps, and do not ask whether they want it set up, in its place/);
   });
 
-  // Rhea on #2765: the prompt is the only guard before the card, so the pairs
+  // The prompt is the only guard before the card, so the pairs
   // it may go out for are listed, not inferred.
   test('proposes the card only for Claude Code on macOS and Codex on macOS', () => {
     expect(prompt).toMatch(/The card may go out for exactly these pairs: Claude Code on macOS; Codex on macOS\./);
@@ -229,7 +229,7 @@ describe('Scout onboarding knowledge', () => {
   // QA 2026-10-16: Scout said "200 turns a day" while the card and the meter
   // said 30, because the prompt kept its own copy of the plan line. The limits
   // now reach Scout only through the hosted offer's description.
-  // Vera on #2297: the welcome's hosted start runs in place on the person's own
+  // The welcome's hosted start runs in place on the person's own
   // welcome (services/welcomeHostedStart.ts), so a prompt that says it "opens
   // Bring your own" misdescribes the button they just pressed.
   test('says the welcome\'s hosted start runs in place, with the page only as the fallback', () => {
@@ -279,14 +279,38 @@ describe('the hosted offer names the model a hosted turn runs on', () => {
   });
 });
 
-// Sam, 2026-10-21: Scout's welcome is in English and doesn't advertise another
+// Scout's welcome is in English and doesn't advertise another
 // language. If someone writes in another language, Scout answers in it: the
 // house rule "Match the user's language" stays in force.
 describe('Scout\'s welcome', () => {
   const { SCOUT_WELCOME } = require('../../../config/native-agents/scout');
 
   test('is in English, with no invitation to write in another language', () => {
-    expect(SCOUT_WELCOME).toBe('What would you like to do first?');
+    expect(SCOUT_WELCOME).toBe("I'm Scout, your first agent here. Pick one below, or just tell me what you're working on.");
     expect(SCOUT_WELCOME).not.toMatch(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uff00-\uffef]/);
+  });
+});
+
+describe('Scout running-state claims', () => {
+  const prompt = scoutApp.systemPrompt;
+
+  // A BYO seat's intro is posted at install and says nothing is running it.
+  // Scout read that message hours later and told a connected user their agent
+  // was not running (D172, 2026-10-28).
+  test('checks live status before any running-or-not claim', () => {
+    expect(prompt).toContain('Call it before you say anything about whether an agent is running');
+    expect(prompt).toContain('Never judge that from earlier messages');
+    expect(prompt).toContain('unless commonly_agent_status said so in this turn');
+  });
+
+  // idle covers five minutes to a day, so a listener that stopped half an hour
+  // ago reads idle, not stale. Scout must give restart advice for it (rhea on #2969).
+  test('names every status bucket the tool returns, and gives restart advice for idle', () => {
+    for (const bucket of ['active:', 'idle:', 'stale:', 'never-connected', 'ready']) {
+      expect(prompt).toContain(bucket);
+    }
+    expect(prompt).toContain('idle and stale both mean its listener stopped');
+    expect(prompt).toContain('within the last 5 minutes');
+    expect(prompt).not.toContain('nothing needs fixing');
   });
 });

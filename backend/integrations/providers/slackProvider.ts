@@ -61,11 +61,10 @@ function createSlackProvider(integration: { _id: unknown; config?: Record<string
 
   const tokenFor = async (): Promise<string | undefined> => {
     const ref = config.botTokenRef;
-    if (ref) return connectorSecrets.get(String(ref));
-    // The row's own stored copy is still honoured (a pre-TASK-139 row may carry
-    // one); the process environment is not read (TASK-151).
-    const legacy = String(config.botToken || '').trim();
-    return legacy || undefined;
+    // The ref is the only source (TASK-539). A pre-TASK-139 row's own
+    // `config.botToken` copy is not read, and neither is the process
+    // environment (TASK-151); the bind writes a ref for every live row.
+    return ref ? connectorSecrets.get(String(ref)) : undefined;
   };
 
   return {

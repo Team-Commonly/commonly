@@ -27,7 +27,7 @@ const mockHosted = {
 
 // The route's limiter (30 a minute, module-level) is passed through here: this
 // file makes more requests than one minute's budget, and a shared bucket made
-// unrelated arms 429 on a full-file run (sprint-review on #2256). The limiter
+// unrelated arms 429 on a full-file run. The limiter
 // and its key are tested on their own in hosted.rateLimit.test.js.
 jest.mock('express-rate-limit', () => ({ __esModule: true, default: () => (_req, _res, next) => next() }));
 
@@ -269,7 +269,7 @@ describe('/api/hosted', () => {
     expect(amb.body).toMatchObject({ code: 'ambiguous_instance', instanceIds: ['scout', 'demo'] });
   });
 
-  it('prefers the hosted row over a non-hosted "default" when no instanceId is sent (sprint-review on #1644)', async () => {
+  it('prefers the hosted row over a non-hosted "default" when no instanceId is sent', async () => {
     const hosted = makeInstallation({ instanceId: 'scout' });
     const byo = makeInstallation({ instanceId: 'default', config: new Map([['runtime', { runtimeType: 'byo' }]]) });
     mockHosted.isHostedInstallation.mockImplementation((row) => row.config.get('runtime').runtimeType === 'hosted');
@@ -405,9 +405,13 @@ describe('/api/hosted', () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ deprovisioned: true });
     expect(installation.config.get('hosted').provisionedAt).toBeNull();
+    // The stopped worker held the only copy; nothing else may keep using it.
+    expect(mockRevokeRuntimeTokens).toHaveBeenCalledWith(expect.objectContaining({
+      agentName: 'scout', instanceId: 'default', installation,
+    }));
   });
 
-  // TASK-265, Rhea on #2236: a migration that marks the row native while the
+  // TASK-265: a migration that marks the row native while the
   // worker call is in flight must win. Before the fence, the route saved the
   // Durable Object record it read at the start over the migration's, and the
   // next provision minted a fresh token.
@@ -611,7 +615,7 @@ describe('/api/hosted on the native engine', () => {
     expect(status.body.runtime).toMatchObject({ engine: 'native', ready: false });
   });
 
-  // Rhea on #2236: the native branches write only their own fields, so a
+  // The native branches write only their own fields, so a
   // migration that advances while the request is in flight is not reverted to
   // the record read at the start.
   it.each([

@@ -10,6 +10,10 @@ jest.mock('../../../models/Pod', () => ({
   findById: (...args) => mockPodFindById(...args),
 }));
 jest.mock('../../../models/AgentRun', () => ({ create: jest.fn(), countDocuments: jest.fn() }));
+const mockRegistryExists = jest.fn();
+jest.mock('../../../models/AgentRegistry', () => ({
+  AgentRegistry: { exists: (...args) => mockRegistryExists(...args) },
+}));
 const mockUserFindOne = jest.fn();
 const mockUserFindById = jest.fn();
 jest.mock('../../../models/User', () => ({
@@ -84,6 +88,7 @@ describe('commonly_offer_local_agent', () => {
   const savedEnv = { ...process.env };
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRegistryExists.mockResolvedValue(null);
     process.env.LITELLM_BASE_URL = 'http://litellm.test';
     process.env.LITELLM_MASTER_KEY = 'test-key';
     process.env.HOSTED_ENGINE = 'native';
@@ -122,6 +127,66 @@ describe('commonly_offer_local_agent', () => {
     expect(posted.content).not.toContain('commonly agent attach');
     expect(posted.answeringMessageId).toBeUndefined();
     expect(posted.authorKind).toBe('kernel');
+  });
+
+  test('suggests a free name when the returning owner already has their default agent', async () => {
+    mockRegistryExists.mockImplementation(async ({ agentName }) => (
+      ['sam-xu-claude', 'sam-xu-claude-2'].includes(agentName) ? { _id: agentName } : null
+    ));
+    axios.post
+      .mockResolvedValueOnce(callsTool('commonly_offer_local_agent', { adapter: 'claude', os: 'mac' }))
+      .mockResolvedValueOnce(says('Run the card.'));
+    await runAgent(install, ask);
+    const posted = AgentMessageService.postMessage.mock.calls[0][0];
+    expect(posted.payload.agentName).toBe('sam-xu-claude-3');
+    for (const command of Object.values(posted.payload.commands)) {
+      expect(command).toContain('--name sam-xu-claude-3 --memory-from scout');
+      expect(command).toContain('commonly agent run sam-xu-claude-3');
+    }
+    expect(mockRegistryExists.mock.calls.map(([query]) => query)).toEqual([
+      { agentName: 'sam-xu-claude' }, { agentName: 'sam-xu-claude-2' }, { agentName: 'sam-xu-claude-3' },
+    ]);
+  });
+
+  test('still posts the handoff card with the default name when the registry lookup fails', async () => {
+    mockRegistryExists.mockRejectedValue(new Error('registry unavailable'));
+    axios.post
+      .mockResolvedValueOnce(callsTool('commonly_offer_local_agent', { adapter: 'claude', os: 'mac' }))
+      .mockResolvedValueOnce(says('Run the card.'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await runAgent(install, ask);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+    const posted = AgentMessageService.postMessage.mock.calls[0][0];
+    expect(posted.messageType).toBe('card');
+    expect(posted.payload.agentName).toBe('sam-xu-claude');
+  });
+
+  test('posts the handoff card with the default name when a registry lookup never settles', async () => {
+    mockRegistryExists.mockReturnValue(new Promise(() => {}));
+    axios.post
+      .mockResolvedValueOnce(callsTool('commonly_offer_local_agent', { adapter: 'claude', os: 'mac' }))
+      .mockResolvedValueOnce(says('Run the card.'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await runAgent(install, ask);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+    expect(AgentMessageService.postMessage.mock.calls[0][0].payload.agentName).toBe('sam-xu-claude');
+  }, 15000);
+
+  test('keeps an explicitly chosen name and leaves ownership decisions to attach', async () => {
+    axios.post
+      .mockResolvedValueOnce(callsTool('commonly_offer_local_agent', { adapter: 'claude', os: 'mac', name: 'chosen-local' }))
+      .mockResolvedValueOnce(says('Run the card.'));
+    await runAgent(install, ask);
+    expect(AgentMessageService.postMessage.mock.calls[0][0].payload.agentName).toBe('chosen-local');
+    expect(mockRegistryExists).not.toHaveBeenCalled();
   });
 
   test('keeps a broker result from crossing a bridge before the handoff card', async () => {

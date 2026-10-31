@@ -58,7 +58,7 @@ if (!slackCatalog) {
 const SLACK_CONNECTOR = {
   installableId: 'slack',
   name: slackCatalog.label,
-  description: 'Link your Slack DM to Commonly — every pod you\'re in gets a voice where you already talk.',
+  description: 'Link your Slack DM to Commonly — every pod you turn on gets a voice where you already talk.',
   version: '1.0.0',
   kind: 'app',
   source: 'builtin',

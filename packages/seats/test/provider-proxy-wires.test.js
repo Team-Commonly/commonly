@@ -91,7 +91,7 @@ test('each wire refuses the routes it does not list', () => withProxy('anthropic
   assert.equal(upstream.seen.length, 0);
 }));
 
-// Rhea on #2766: a refusal answered before the body was read left the socket
+// #2766: a refusal answered before the body was read left the socket
 // reusable, and the next request on it was reset (ECONNRESET in CI). One
 // keep-alive socket, a body larger than one read, every wire.
 test('a keep-alive client gets a 403 on each refused request, never a reset, on every wire', async () => {

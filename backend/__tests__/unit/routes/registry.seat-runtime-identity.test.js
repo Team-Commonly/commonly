@@ -1,9 +1,9 @@
-// TASK-569 (D55): attach writes a seat's runtime identity only onto the install
+// TASK-569: attach writes a seat's runtime identity only onto the install
 // where it ran, so the same seat showed a chip in one pod and none in another.
 // Every pod now reads the seat's identity from its most recently attached
 // install, never the first match, so a harness swap shows everywhere. "Most
 // recent" is runtimeIdentityAt, which only identity writes move: updatedAt
-// moved on a skill-load report and revived a stale harness (Sable on #2795).
+// moved on a skill-load report and revived a stale harness.
 const mongoose = require('mongoose');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
 const { AgentInstallation } = require('../../../models/AgentRegistry');

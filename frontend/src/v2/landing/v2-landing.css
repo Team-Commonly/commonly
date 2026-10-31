@@ -94,6 +94,9 @@
    V2LandingPage), and the class starts ON so first paint is the band state and
    there is no white flash before the observer runs. */
 .v2-landing__bar--band {
+  /* Brand block, fixed cobalt in both themes (Lumen, #3063 HOLD): the band's
+     translucent white text is tuned on #1d3fd1 and drops below AA on dark
+     --v2-accent-fill (#3d5ef2). */
   background: #1d3fd1;
   backdrop-filter: none;
   border-bottom-color: rgba(255, 255, 255, 0.22);
@@ -117,14 +120,14 @@
   transition: color 80ms ease;
 }
 .v2-landing__navlink:hover { color: var(--v2-text-primary); }
-.v2-landing__bar--band .v2-landing__brand-name { color: #ffffff; }
+.v2-landing__bar--band .v2-landing__brand-name { color: var(--v2-on-accent, #ffffff); }
 .v2-landing__bar--band .v2-landing__navlink { color: rgba(255, 255, 255, 0.86); }
-.v2-landing__bar--band .v2-landing__navlink:hover { color: #ffffff; }
+.v2-landing__bar--band .v2-landing__navlink:hover { color: var(--v2-on-accent, #ffffff); }
 /* The language trigger is a <button> owned by v2.css (.v2-lang-switch__trigger,
    (0,1,0)) and already re-pinned at the rail by a (0,2,0) override in the
    layout invariants. The band override has to outrank both, so it carries the
    same .v2-root prefix plus the band class. The dropdown menu keeps v2.css. */
-.v2-root .v2-landing__bar--band button.v2-lang-switch__trigger { color: #ffffff; }
+.v2-root .v2-landing__bar--band button.v2-lang-switch__trigger { color: var(--v2-on-accent, #ffffff); }
 .v2-root .v2-landing__bar--band button.v2-lang-switch__trigger:hover {
   background: rgba(255, 255, 255, 0.12);
 }
@@ -132,9 +135,9 @@
    text while the band is under it. */
 .v2-landing__bar .v2-landing__btn--sm { height: 40px; padding: 0 16px; font-size: 15px; font-weight: 600; }
 .v2-root .v2-landing__bar--band .v2-landing__btn--primary {
-  color: #1d3fd1;
-  background: #ffffff;
-  border-color: #ffffff;
+  color: #1d3fd1; /* follows the fixed band (UX Lead, msg 120679) */
+  background: var(--v2-on-accent, #ffffff);
+  border-color: var(--v2-on-accent, #ffffff);
 }
 .v2-root .v2-landing__bar--band .v2-landing__btn--primary:hover {
   background: rgba(255, 255, 255, 0.9);
@@ -158,9 +161,9 @@
 }
 .v2-landing__btn--sm { height: 36px; padding: 0 16px; font-size: 14px; }
 .v2-landing__btn--primary {
-  color: #ffffff;
-  background: var(--v2-accent);
-  border: 1px solid var(--v2-accent);
+  color: var(--v2-on-accent, #ffffff);
+  background: var(--v2-accent-fill, var(--v2-accent));
+  border: 1px solid var(--v2-accent-fill, var(--v2-accent));
 }
 .v2-landing__btn--primary:hover { background: var(--v2-accent-strong); border-color: var(--v2-accent-strong); }
 .v2-landing__btn--ghost {
@@ -170,13 +173,13 @@
 }
 .v2-landing__btn--ghost:hover { background: var(--v2-surface-hover); border-color: var(--v2-border-strong, var(--v2-border)); }
 .v2-landing__btn--onaccent {
-  color: var(--v2-accent);
-  background: #ffffff;
-  border: 1px solid #ffffff;
+  color: #1d3fd1; /* on-band CTA text follows the fixed band */
+  background: var(--v2-on-accent, #ffffff);
+  border: 1px solid var(--v2-on-accent, #ffffff);
 }
 .v2-landing__btn--onaccent:hover { background: rgba(255, 255, 255, 0.9); }
 .v2-landing__btn--onaccent-ghost {
-  color: #ffffff;
+  color: var(--v2-on-accent, #ffffff);
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.5);
 }
@@ -187,10 +190,10 @@
    dark body text and render dark-on-navy on the deep bands (unreadable). Re-assert
    the intended colors with a `.v2-root` prefix (0,2,0 beats 0,1,1). Same trap the
    login link documents in v2.css. */
-.v2-root .v2-landing__btn--primary { color: #ffffff; }
+.v2-root .v2-landing__btn--primary { color: var(--v2-on-accent, #ffffff); }
 .v2-root .v2-landing__btn--ghost { color: var(--v2-text-primary); }
-.v2-root .v2-landing__btn--onaccent { color: var(--v2-accent); }
-.v2-root .v2-landing__btn--onaccent-ghost { color: #ffffff; }
+.v2-root .v2-landing__btn--onaccent { color: #1d3fd1; }
+.v2-root .v2-landing__btn--onaccent-ghost { color: var(--v2-on-accent, #ffffff); }
 
 .v2-landing__cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
 /* The hero's two CTAs are one group and the install box follows them in the
@@ -235,8 +238,11 @@
   align-items: start;
   padding-top: 72px;
   padding-bottom: 376px;
+  /* Brand block, fixed cobalt in both themes (Lumen, #3063 HOLD): the band's
+     translucent white text is tuned on #1d3fd1 and drops below AA on dark
+     --v2-accent-fill (#3d5ef2). */
   background: #1d3fd1;
-  color: #ffffff;
+  color: var(--v2-on-accent, #ffffff);
 }
 /* No width cap here: the copy column and the actions row share this box, and a
    1000px cap wrapped the install box onto its own line at 1440 and 1200
@@ -264,7 +270,7 @@
   line-height: 1;
   font-weight: 850;
   letter-spacing: -0.03em;
-  color: #ffffff;
+  color: var(--v2-on-accent, #ffffff);
 }
 .v2-landing__lede {
   margin: 0;
@@ -349,7 +355,7 @@
   border-radius: 6px;
   background: transparent;
   border: 1px solid transparent;
-  color: #ffffff;
+  color: var(--v2-on-accent, #ffffff);
   font-family: var(--v2-font-mono);
   font-size: 12px;
   line-height: 18px;
@@ -358,10 +364,10 @@
 .v2-root button.v2-landing__install-copy:hover {
   background: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+  color: var(--v2-on-accent, #ffffff);
 }
 .v2-root button.v2-landing__install-copy:focus-visible {
-  outline: 2px solid #ffffff;
+  outline: 2px solid var(--v2-on-accent, #ffffff);
   outline-offset: 2px;
 }
 /* The Copied state is announced by a live region, not read from the button's own
@@ -370,7 +376,7 @@
    the wedge copy's required set is DERIVED from — a declaration missing here is
    a declaration nothing requires of the copy (TASK-218). */
 .v2-landing__install-status {
-  color: #ffffff;
+  color: var(--v2-on-accent, #ffffff);
   position: absolute;
   width: 1px;
   height: 1px;
@@ -434,7 +440,7 @@
   margin: 44px 0 0;
   font-size: 14px;
   line-height: 20px;
-  color: #ffffff;
+  color: var(--v2-on-accent, #ffffff);
   text-align: left;
 }
 
@@ -816,23 +822,50 @@
   color: var(--v2-text-primary);
 }
 .v2-landing__adapter-sub { margin: 2px 0 0; font-size: 14px; line-height: 20px; color: var(--v2-text-secondary); }
+/* Code-block tokens (UX Lead's #3063 ruling). The block stays a dark slab in
+   both themes, so it can't ride --v2-text-primary or --v2-ink, which both flip
+   light in dark. Dark's fill sits close to page-bg, so an inset edge carries
+   the boundary; in light the edge equals the fill and nothing shifts. The dark
+   selectors mirror the theme blocks in v2.css. */
+.v2-landing {
+  --v2-code-bg: #101828;
+  --v2-code-text: #ffffff;
+  --v2-code-muted: #98a2b3;
+  --v2-code-edge: var(--v2-code-bg);
+}
+:root[data-v2-theme="dark"] .v2-landing {
+  --v2-code-bg: #0b0e13;
+  --v2-code-text: #e8ebf1;
+  --v2-code-muted: #8b94a5;
+  --v2-code-edge: #364051;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-v2-theme="light"]) .v2-landing {
+    --v2-code-bg: #0b0e13;
+    --v2-code-text: #e8ebf1;
+    --v2-code-muted: #8b94a5;
+    --v2-code-edge: #364051;
+  }
+}
 .v2-landing__code {
   /* 1 1 auto, not auto 0 0: the three blocks sit on one line and must share a
      height, so the tallest command is what the row agrees on. */
   margin: 12px 0 0;
   flex: 1 1 auto;
   padding: 16px 18px;
-  background: var(--v2-text-primary);
+  background: var(--v2-code-bg);
   border: none;
+  outline: 1px solid var(--v2-code-edge);
+  outline-offset: -1px;
   border-radius: 4px;
   font-family: var(--v2-font-mono);
   font-size: 14px;
   line-height: 22px;
-  color: #ffffff;
+  color: var(--v2-code-text);
   overflow-x: auto;
   white-space: pre;
 }
-.v2-landing__code-comment { color: #98a2b3; }
+.v2-landing__code-comment { color: var(--v2-code-muted); }
 
 /* Why open-source */
 .v2-landing__open-grid { display: grid; grid-template-columns: minmax(0, 608fr) minmax(0, 640fr); gap: 64px; align-items: start; }
@@ -1351,7 +1384,7 @@
   .v2-landing__footer { padding-top: 32px; }
   .v2-landing__footer-legal { padding: 16px 0 20px; }
   .v2-landing__title { font-size: 44px; line-height: 46px; }
-  /* TASK-213 (lily-shen's ruling, option 1): on a phone the suffix takes its own
+  /* TASK-213 (option 1): on a phone the suffix takes its own
      line, so the title is 「与你的 / <term> / 对话」 at every width and only the
      term rotates. Without this the h1 is 94.6px under three of the four terms
      and 140.6px under the fourth at 320–414, so the lede, the CTAs and every
@@ -1557,7 +1590,7 @@
   display: inline-block;
   overflow: hidden;
   vertical-align: bottom;
-  color: #ffffff;
+  color: var(--v2-on-accent, #ffffff);
   padding-bottom: 0.06em; /* keep descenders (y, p) out of the clip */
 }
 
@@ -1657,7 +1690,7 @@
 .v2-landing__faq-item dt::first-letter { text-transform: uppercase; }
 .v2-landing__faq-item dd { margin: 0; }
 
-/* D129 phone hero (ux-lead's ruling): at 320 and 390 the rotator's widest terms
+/* Phone hero: at 320 and 390 the rotator's widest terms
    run 362–566px against a 272–342px column at the 44px title, so the term
    clipped in both locales. At ≤760 the title is 32/36 and the rotator may wrap
    onto two lines. The sizer stacks every term in one grid cell, so the h1 holds

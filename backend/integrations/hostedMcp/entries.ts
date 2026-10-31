@@ -19,11 +19,13 @@ import { GITLAB_ENTRY } from './gitlab';
 import { LINEAR_ENTRY } from './linear';
 import { NOTION_ENTRY } from './notion';
 import { SENTRY_ENTRY } from './sentry';
+import { SUPABASE_ENTRY } from './supabase';
 
 export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [
   LINEAR_ENTRY, GOOGLE_CALENDAR_ENTRY, ATLASSIAN_ENTRY, AIRTABLE_ENTRY, SENTRY_ENTRY,
   NOTION_ENTRY,
   GITLAB_ENTRY,
+  SUPABASE_ENTRY,
 ];
 
 /**

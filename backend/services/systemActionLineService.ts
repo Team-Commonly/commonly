@@ -17,26 +17,52 @@ interface PgMessageRow {
   created_at: Date | string;
 }
 
-export async function emitSystemActionLine(line: SystemActionLine): Promise<void> {
+interface SystemLineActor {
+  podId: string;
+  actorUserId: string;
+  actorUsername: string;
+  actorAvatarUrl: string | null;
+  actorIsBot: boolean;
+}
+
+// What a kernel line places it next to: the thread a person asked in, and the
+// message it is about. Both are PG message ids; anything else is dropped.
+interface SystemLinePlacement {
+  threadRootId?: string | number | null;
+  replyToMessageId?: string | number | null;
+}
+
+const pgMessageId = (value: unknown): number | null => (
+  /^\d+$/.test(String(value ?? '')) ? Number(value) : null
+);
+
+async function insertSystemLine(
+  line: SystemLineActor,
+  content: string,
+  payload: Record<string, unknown>,
+  placement: SystemLinePlacement = {},
+): Promise<void> {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { pool } = require('../config/db-pg') as {
     pool: { query: (sql: string, params: unknown[]) => Promise<{ rows: PgMessageRow[] }> } | null;
   };
   if (!pool) throw new Error('System action lines require PostgreSQL');
 
-  const content = `${line.actorName} claimed ${line.taskId}`;
-  const payload = {
-    kind: 'system-action',
-    action: line.action,
-    actorName: line.actorName,
-    taskId: line.taskId,
-  };
-  const { rows } = await pool.query(
-    `INSERT INTO messages (pod_id, user_id, content, message_type, payload)
-     VALUES ($1, $2, $3, 'system', $4::jsonb)
-     RETURNING id, created_at`,
-    [line.podId, line.actorUserId, content, JSON.stringify(payload)],
-  );
+  const threadRootId = pgMessageId(placement.threadRootId);
+  const replyToMessageId = pgMessageId(placement.replyToMessageId);
+  const { rows } = threadRootId === null && replyToMessageId === null
+    ? await pool.query(
+      `INSERT INTO messages (pod_id, user_id, content, message_type, payload)
+       VALUES ($1, $2, $3, 'system', $4::jsonb)
+       RETURNING id, created_at`,
+      [line.podId, line.actorUserId, content, JSON.stringify(payload)],
+    )
+    : await pool.query(
+      `INSERT INTO messages (pod_id, user_id, content, message_type, payload, thread_root_id, reply_to_message_id)
+       VALUES ($1, $2, $3, 'system', $4::jsonb, $5, $6)
+       RETURNING id, created_at`,
+      [line.podId, line.actorUserId, content, JSON.stringify(payload), threadRootId, replyToMessageId],
+    );
   const row = rows[0];
   if (!row) throw new Error('System action line was not persisted');
 
@@ -62,12 +88,45 @@ export async function emitSystemActionLine(line: SystemActionLine): Promise<void
         profile_picture: line.actorAvatarUrl,
         isBot: line.actorIsBot,
       },
-      thread_root_id: null,
-      reply_to_message_id: null,
+      thread_root_id: threadRootId,
+      reply_to_message_id: replyToMessageId,
     });
   } catch (error) {
     // The row is already durable; reconnect fetches it. A socket failure
     // cannot turn a successful claim into an HTTP error or a duplicate line.
     console.warn('[system-action] socket emit failed:', (error as Error).message);
   }
+}
+
+export async function emitSystemActionLine(line: SystemActionLine): Promise<void> {
+  await insertSystemLine(line, `${line.actorName} claimed ${line.taskId}`, {
+    kind: 'system-action',
+    action: line.action,
+    actorName: line.actorName,
+    taskId: line.taskId,
+  });
+}
+
+/**
+ * TASK-656. A person's message to an agent that never answered: delivered up
+ * to the requeue cap and never acknowledged, or a webhook POST that failed.
+ * Without this line the person waits on silence. It is placed in the thread they asked in, as a reply to their
+ * message, and like every system line it wakes no agent.
+ */
+export interface UnansweredMentionLine extends SystemLineActor {
+  agentLabel: string;
+  attempts: number;
+  messageId: string | number | null;
+  threadRootId?: string | number | null;
+}
+
+export async function emitUnansweredMentionLine(line: UnansweredMentionLine): Promise<void> {
+  const content = `${line.agentLabel} didn't answer this and may be offline. `
+    + 'Ask again later, or ask someone else in the pod.';
+  await insertSystemLine(line, content, {
+    kind: 'system-action',
+    action: 'mention-unanswered',
+    actorName: line.agentLabel,
+    attempts: line.attempts,
+  }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
 }

@@ -80,7 +80,7 @@ module.exports = {
       // `--ext .js`, every backend `lint-staged` glob had gone stale to zero
       // as its files were converted, and no CI job ran backend lint at all.
       //
-      // Sam ruled STAGED: enforce on NEW and CHANGED files now, burn the
+      // Ruled STAGED: enforce on NEW and CHANGED files now, burn the
       // existing 286 down separately. So this override has to be clean on a
       // typical changed file TODAY, or the gate blocks every backend PR on
       // pre-existing debt the author did not create. Each disable below is

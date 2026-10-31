@@ -735,7 +735,7 @@ const V2PodBoard: React.FC = () => {
           {COLUMNS.map((col) => {
             const items = columnTasks.get(col.key) || [];
             return (
-              <section key={col.key} className="v2-board__col" aria-label={t(col.labelKey)}>
+              <section key={col.key} className={`v2-board__col${col.key === 'blocked' ? ' v2-board__col--blocked' : ''}`} aria-label={t(col.labelKey)}>
                 <div className="v2-board__col-head">
                   <span className="v2-board__col-name">{t(col.labelKey)}</span>
                   <span className="v2-board__col-count">{items.length}</span>
@@ -744,7 +744,7 @@ const V2PodBoard: React.FC = () => {
                   <div className="v2-board__col-empty">{t(col.emptyKey)}</div>
                 )}
                 {items.map((task) => (
-                  <article key={task.taskId} className={`v2-board__card${col.key === 'done' ? ' v2-board__card--done' : ''}`}>
+                  <article key={task.taskId} className={`v2-board__card${col.key === 'done' ? ' v2-board__card--done' : ''}${col.key === 'blocked' ? ' v2-board__card--blocked' : ''}`}>
                     <button
                       type="button"
                       className="v2-board__card-main"
@@ -753,7 +753,7 @@ const V2PodBoard: React.FC = () => {
                     >
                       <span className="v2-board__card-kicker">
                         <span className="v2-board__card-id">{task.taskId}</span>
-                        <span className={`v2-board__priority${task.priority === 'P0' ? ' v2-board__priority--p0' : ''}`}>{task.priority || 'P2'}</span>
+                        <span className={`v2-board__priority${task.priority === 'P0' ? ' v2-board__priority--p0' : ''}${(task.priority || 'P2') === 'P2' ? ' v2-board__priority--p2' : ''}`}>{task.priority || 'P2'}</span>
                       </span>
                       <span className="v2-board__card-title">{task.title}</span>
                       {ownerLine(task)}

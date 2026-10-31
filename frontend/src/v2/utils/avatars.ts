@@ -151,18 +151,28 @@ export const initialsFor = (name: string | undefined | null): string => {
 export type AvatarKind = 'human' | 'agent';
 
 // Disjoint background families — the species signal now that both kinds share
-// one art style. Indexes into AVATAR_PALETTE: humans get brand blue / green /
-// amber / rose (warm-forward), agents get cyan / teal / steel / slate (cool).
-const HUMAN_BG = [0, 3, 4, 5];
-const AGENT_BG = [1, 2, 6, 7];
-
-const backgroundFor = (key: string, kind: AvatarKind): string => {
-  const family = kind === 'agent' ? AGENT_BG : HUMAN_BG;
-  return AVATAR_PALETTE[family[hashString(key) % family.length]].base;
+// one art style. Agents get cool grounds, people warm ones (TASK-679, Lit Signal;
+// the people set is four of the artboard's warm grounds, TASK-683).
+// These are the figure's fill, not the gradient tier's palette above, so the
+// initials tier keeps its contrast-checked dark tints. Values mirror the
+// --v2-avatar-* tokens in v2.css and --c-avatar-* in design-system/tokens.css.
+const CHARACTER_GROUNDS: Record<AvatarKind, readonly string[]> = {
+  agent: ['#dbe5f1', '#e1e6ee', '#d6e7e4'],
+  human: ['#f1e7df', '#f2e8d8', '#efe1dc', '#f4e3d7'],
 };
 
+const backgroundFor = (key: string, kind: AvatarKind): string => {
+  const family = CHARACTER_GROUNDS[kind];
+  return family[hashString(key) % family.length];
+};
+
+// Paper (unpicked humans) draws from the same four people grounds as the Cut
+// tier. Its 24 looks are 4 grounds x 3 necklines x 2 shirts, so every stored
+// paper:<seed>-v<n> id keeps resolving (TASK-683).
 const PAPER_NECKLINES: readonly PaperNeckline[] = ['crew', 'vee', 'scoop'];
-const PAPER_SHIRTS = ['e4e7ec', 'd0d5dd'] as const;
+// Shirts sit on the same Signal grey ramp as the head: both clear 2:1 on every
+// warm ground and stay far lighter than agent ink #101828 (TASK-683).
+const PAPER_SHIRTS = ['98a2b3', '8a94a6'] as const;
 export const PAPER_AVATAR_LOOK_COUNT = 24;
 
 /** Seeded Paper default, or one exact 0-based look from the 24-look set. */
@@ -178,7 +188,8 @@ export const paperAvatarFor = (
 
   // Keep Paper lookups outside the render fallback: a bad palette index must
   // not be swallowed as null and make a missing guard look harmless.
-  const background = AVATAR_PALETTE[HUMAN_BG[variant % HUMAN_BG.length]].base.slice(1);
+  const grounds = CHARACTER_GROUNDS.human;
+  const background = grounds[variant % grounds.length].slice(1);
   const neckline = PAPER_NECKLINES[Math.floor(variant / 4) % PAPER_NECKLINES.length];
   const shirt = PAPER_SHIRTS[Math.floor(variant / 12)];
   try {

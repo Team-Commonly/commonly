@@ -37,7 +37,7 @@ const offers = ['GitHub', 'Linear', 'Atlassian', 'Airtable', 'Sentry'].map((labe
 const mockTools = (entries: typeof catalog, grants: ReturnType<typeof grant>[]) => {
   axios.get.mockImplementation((url: string) => {
     if (url === '/api/installables') return Promise.resolve({ data: { installables: entries } });
-    if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { grants } });
+    if (url === '/api/grants') return Promise.resolve({ data: { grants } });
     if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [] } });
     if (url.includes('/calls')) return Promise.resolve({ data: { calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
     return Promise.reject(new Error(`unmocked ${url}`));
@@ -85,7 +85,7 @@ test('two live grants stay visible and nine revoked or expired grants start in o
     ...Array.from({ length: 5 }, (_, i) => ({ ...grant(`expired-${i}`, null), expiresAt: yesterday }))];
   axios.get.mockImplementation((url: string) => {
     if (url === '/api/installables') return Promise.resolve({ data: { installables: catalog } });
-    if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { grants } });
+    if (url === '/api/grants') return Promise.resolve({ data: { grants } });
     if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [] } });
     if (url.includes('/calls')) return Promise.resolve({ data: { calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
     return Promise.reject(new Error(`unmocked ${url}`));
@@ -112,7 +112,7 @@ test('search keeps a matching catalogue offer visible and folds only ended conne
     if (url === '/api/installables') return Promise.resolve({ data: { installables: entries, hiddenToolConnections: [
       { connectionId: 'hidden-1', entryId: 'atlassian', label: 'Atlassian', status: 'inactive', revokePage: null },
     ] } });
-    if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { grants: [grant('live', null), grant('revoked', yesterday)] } });
+    if (url === '/api/grants') return Promise.resolve({ data: { grants: [grant('live', null), grant('revoked', yesterday)] } });
     if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [] } });
     if (url.includes('/calls')) return Promise.resolve({ data: { calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
     return Promise.reject(new Error(`unmocked ${url}`));

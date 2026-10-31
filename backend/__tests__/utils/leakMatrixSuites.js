@@ -374,6 +374,8 @@ const grants = {
       budget: { calls: 10, windowMs: 60000 },
       expiresAt: FUTURE,
       brokerId: s('GRANT_BROKERID'),
+      // Minted by the connection's owner. Unbound grants are refused by the seat read.
+      ownerId: String(owner),
     };
     await RoomGrant.create({
       ...shared,

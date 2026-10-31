@@ -66,8 +66,8 @@ Three surfaces now say so, in this order:
 
 ```bash
 export COMMONLY_LITELLM_KEY=...      # the shell matters: install reads THIS one
-commonly daemon install              # rewrites the unit/plist with the key
-commonly daemon restart              # the running daemon still holds the old env
+commonly daemon install              # rewrites the unit/plist with the key and reloads it
+                                     # (launchd unload/load; systemd restart, since #3082)
 ```
 
 Read back what the installed service actually carries rather than assuming:

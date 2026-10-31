@@ -54,6 +54,20 @@ describe('Apps Platform Routes', () => {
     expect(saved.name).toBe('Test App');
   });
 
+  test('refuses an http webhook URL and creates nothing', async () => {
+    const before = await App.countDocuments({});
+
+    const res = await request(app)
+      .post('/api/apps')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ name: 'Plain App', webhookUrl: 'http://example.com/webhook' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('webhook_url_refused');
+    expect(await App.countDocuments({})).toBe(before);
+    expect(await App.findOne({ name: 'Plain App' })).toBeNull();
+  });
+
   test('lists apps for current user without secrets', async () => {
     // app created above should be visible
     const res = await request(app)

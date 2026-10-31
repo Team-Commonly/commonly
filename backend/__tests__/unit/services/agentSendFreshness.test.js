@@ -97,6 +97,18 @@ describe('agent send-time freshness', () => {
     expect(Message.countDocuments).not.toHaveBeenCalled();
   });
 
+  it('bounds the PostgreSQL unseen query by the trigger id, and only a numeric id', async () => {
+    process.env.PG_HOST = 'configured';
+    pool.query.mockResolvedValue({ rows: [] });
+    await Freshness.unseenMessages('agent-id', 'pod-id', { seenThroughMessageId: '22' });
+    expect(pool.query.mock.calls[0][1]).toEqual(['pod-id', -1, 'agent-id', 22]);
+    expect(pool.query.mock.calls[0][0]).toContain('($4::integer IS NULL OR m.id > $4)');
+    await Freshness.unseenMessages('agent-id', 'pod-id', { seenThroughMessageId: 'abc' });
+    expect(pool.query.mock.calls[1][1][3]).toBeNull();
+    await Freshness.unseenMessages('agent-id', 'pod-id');
+    expect(pool.query.mock.calls[2][1][3]).toBeNull();
+  });
+
   it('captures the PostgreSQL revision before the read and advances it with the cursor', async () => {
     process.env.PG_HOST = 'configured';
     pool.query.mockResolvedValueOnce({ rows: [{ revision: '7' }] }).mockResolvedValueOnce({ rows: [] });
@@ -138,4 +150,42 @@ describe('agent send-time freshness', () => {
   }
 });
 
+});
+
+describe('a delivered trigger is seen through its own message (TASK-015 inline reply)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete process.env.PG_HOST;
+    Cursor.getReadWatermark.mockResolvedValue({ readAt: new Date('2026-10-24T00:00:00Z') });
+    Message.find.mockReturnValue({ sort: () => ({ limit: () => ({ populate: () => ({ lean: async () => [] }) }) }) });
+  });
+
+  it('does not hold on the trigger itself: the query excludes it by id', async () => {
+    Message.countDocuments.mockResolvedValue(0);
+    const triggerId = '6adfeccc58eabb3645d76520';
+
+    const hold = await Freshness.unseenMessages('agent-id', 'pod-id', { seenThroughMessageId: triggerId });
+    expect(hold).toBeNull();
+    expect(Message.countDocuments.mock.calls[0][0]._id).toEqual({ $gt: triggerId });
+  });
+
+  it('still holds on a message that landed after the trigger', async () => {
+    Message.countDocuments.mockResolvedValue(1);
+    const hold = await Freshness.unseenMessages('agent-id', 'pod-id', {
+      seenThroughMessageId: '6adfeccc58eabb3645d76520',
+    });
+    expect(hold.unseenCount).toBe(1);
+  });
+
+  it('without a trigger the query has no id bound, so the old behaviour is unchanged', async () => {
+    Message.countDocuments.mockResolvedValue(0);
+    await Freshness.unseenMessages('agent-id', 'pod-id');
+    expect(Message.countDocuments.mock.calls[0][0]).not.toHaveProperty('_id');
+  });
+
+  it('a non-ObjectId trigger is ignored rather than becoming an unbounded filter', async () => {
+    Message.countDocuments.mockResolvedValue(0);
+    await Freshness.unseenMessages('agent-id', 'pod-id', { seenThroughMessageId: { $ne: 1 } });
+    expect(Message.countDocuments.mock.calls[0][0]).not.toHaveProperty('_id');
+  });
 });

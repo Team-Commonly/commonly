@@ -320,7 +320,7 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
   // A lease timestamp is not an event. Renewals fanned a wake to every seat
   // in the pod, each burning a model turn to conclude "nothing new" — 4 wakes
   // for one task in one session, with seats meta-discussing the noise
-  // (measured in Sharpen, 2026-08-25). The board UI still updates via the
+  // (measured in a pod, 2026-08-25). The board UI still updates via the
   // socket emit; only the agent fan-out is gated.
   describe('renewal wakes nobody — the fan-out fires only on news', () => {
     beforeEach(() => {
