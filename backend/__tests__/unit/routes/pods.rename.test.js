@@ -59,11 +59,26 @@ describe('PATCH /api/pods/:id/name (TASK-419)', () => {
     expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({ action: 'pod.renamed', target: 'p1' }));
   });
 
-  it('lets a global admin rename a pod they did not create', async () => {
-    Pod.findById.mockResolvedValue(pod({ createdBy: { toString: () => 'someone-else' } }));
+  it('lets a global admin rename a pod they did not create, and records it', async () => {
+    const p = pod({ createdBy: { toString: () => 'someone-else' } });
+    Pod.findById.mockResolvedValue(p);
     User.findById.mockReturnValue(actorWithRole('admin'));
 
     await request(app).patch('/api/pods/p1/name').send({ name: 'Renamed by admin' }).expect(200);
+
+    expect(p.name).toBe('Renamed by admin');
+    expect(p.save).toHaveBeenCalledTimes(1);
+    expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({ action: 'pod.renamed', target: 'p1' }));
+  });
+
+  it('saves nothing and writes no audit row when the trimmed name is unchanged', async () => {
+    const p = pod();
+    Pod.findById.mockResolvedValue(p);
+
+    await request(app).patch('/api/pods/p1/name').send({ name: '  Old name  ' }).expect(200);
+
+    expect(p.save).toHaveBeenCalledTimes(1);
+    expect(AuditLog.create).not.toHaveBeenCalled();
   });
 
   it('refuses a member who is neither the creator nor an admin, and does not save', async () => {
