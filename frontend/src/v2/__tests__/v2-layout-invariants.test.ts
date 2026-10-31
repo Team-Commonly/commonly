@@ -341,6 +341,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(item).toContain('height: 32px');
     expect(item).toContain('border-radius: var(--v2-radius)');
     expect(active).toContain('background: var(--v2-ink)');
+    // TASK-701: inactive glyphs read a token, so the dark set can lift them.
+    expect(item).toContain('color: var(--v2-rail-icon)');
   });
 
   test('the rail account avatar matches the nav-mark axis as a 32px hard-edged square', () => {
@@ -473,9 +475,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root button.v2-pods__create-submit', { within: phone })).toContain('min-height: 40px');
   });
 
-  test('the selected pod keeps the sidebar’s one cobalt block treatment', () => {
+  test('the selected pod fills from the row token, so dark can go neutral (TASK-701)', () => {
     const selected = selectorRuleBody(v2, '.v2-root button.v2-pods__row--selected');
-    expect(selected).toContain('background: var(--v2-accent-fill)');
+    expect(selected).toContain('background: var(--v2-row-active)');
+    expect(selected).toContain('box-shadow: inset 3px 0 0 var(--v2-accent)');
     expect(selected).toContain('font-weight: 600');
     expect(podsSidebar).not.toContain('v2-pods__item--active');
     expect(podsSidebar).not.toContain('v2-pods__item-dot');
@@ -2047,7 +2050,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(cobalt).toEqual([
         '.v2-rail__brand-icon',
         '.v2-root button.v2-decision-card__choice--primary',
-        '.v2-root button.v2-pods__row--selected',
         // Direction C (walk-3 miss 62, ux-lead 64476 (1)): an agent's transcript
         // avatar is a flat cobalt square with white initials — the mark that
         // says "agent" on a row. A photo never gets the class.
@@ -5055,16 +5057,28 @@ describe('task priority and lease signals (TASK-443)', () => {
     expect(badge).toContain('var(--v2-font-mono)');
     expect(badge).toContain('border-radius: 4px');
     expect(badge).toContain('background: none');
+    expect(badge).toContain('color: var(--v2-prio-ink)');
+    expect(badge).toContain('border: 1px solid var(--v2-prio-edge)');
+    // P0 is the only filled badge: red fill, white label (B-lite, Sam 10-31).
     const urgent = ruleBody(css, '.v2-board__priority--p0');
-    expect(urgent).toContain('border-color: var(--v2-text-primary)');
-    expect(urgent).toContain('color: var(--v2-text-primary)');
-    expect(urgent).not.toMatch(/background/);
+    expect(urgent).toContain('background: var(--v2-prio-p0-bg)');
+    expect(urgent).toContain('color: var(--v2-prio-p0-fg)');
+    // Status and priority colour are tokens, so the D215 colour choice is a value swap.
+    expect(css).toMatch(/--v2-prio-p0-bg:\s*#b42318/);
+    expect(css).toMatch(/--v2-prio-p2-fg:\s*#667085/);
+    expect(css).toMatch(/--v2-status-live:\s*var\(--v2-accent\)/);
+    expect(ruleBody(css, '.v2-board__priority--p2')).toContain('color: var(--v2-prio-p2-fg)');
+  });
+  test('blocked is red with a thin edge on blocked cards only', () => {
+    expect(css).toMatch(/--v2-status-blocked:\s*#d92d20/);
+    expect(ruleBody(css, '.v2-board__card--blocked')).toContain('box-shadow: inset 3px 0 0 var(--v2-status-blocked-edge)');
+    expect(ruleBody(css, '.v2-board__col--blocked .v2-board__col-name')).toContain('color: var(--v2-status-blocked)');
   });
   test('live, unclaimed and expired ownership retain distinct dots', () => {
-    expect(ruleBody(css, '.v2-board__owner-dot--live')).toContain('background: var(--v2-accent)');
-    expect(ruleBody(css, '.v2-board__owner-dot--not-claimed')).toContain('border: 1px dashed var(--v2-border-strong)');
+    expect(ruleBody(css, '.v2-board__owner-dot--live')).toContain('background: var(--v2-status-live)');
+    expect(ruleBody(css, '.v2-board__owner-dot--not-claimed')).toContain('border: 1px dashed var(--v2-status-pending)');
     const expired = ruleBody(css, '.v2-board__owner-dot--expired');
-    expect(expired).toContain('border: 1px solid var(--v2-border-strong)');
+    expect(expired).toContain('border: 1px solid var(--v2-status-idle)');
     expect(expired).toContain('background: none');
   });
 });
@@ -5078,7 +5092,14 @@ test('TASK-443 phone ownership sheet keeps its inset and scroll containment', ()
   expect(modal).toContain('overflow: auto');
   expect(modal).toContain('display: flex');
   expect(modal).toContain('flex-direction: column');
-  expect(read('../components/V2PodBoard.tsx')).toContain('className="v2-modal v2-board__detail"');
+  expect(read('../components/V2PodBoard.tsx')).toContain('className="v2-modal v2-board__detail v2-board__drawer"');
+});
+
+test('TASK-699 task detail is a 400px right drawer on desktop and a sheet on phones', () => {
+  const css = read('../v2.css');
+  expect(ruleBody(css, '.v2-board .v2-board__drawer')).toContain('width: 400px');
+  expect(ruleBody(css, '.v2-board .v2-board__overlay--drawer')).toContain('justify-content: flex-end');
+  expect(read('../components/V2PodBoard.tsx')).toContain('className="v2-modal v2-board__detail v2-board__drawer"');
 });
 
 
@@ -5234,5 +5255,36 @@ describe('claim run summary (TASK-692)', () => {
     expect(toggle).not.toBeNull();
     expect(toggle![0]).toMatch(/box-shadow: inset 0 0 0 1px var\(--v2-border\)/);
     expect(css).toMatch(/\.v2-claim-run__toggle\[aria-expanded='true'\]::after/);
+  });
+});
+
+describe('pod board column scroll (TASK-698)', () => {
+  const css = read('../v2.css');
+  test('the board route scrolls inside its columns, not the page', () => {
+    // The feature body was the scroller and its legacy wrapper had auto height, so the
+    // columns' max-height:100% resolved to nothing (85.5x at 1440, measured 12f608b71).
+    const body = ruleBody(css, '.v2-feature--board .v2-feature__body');
+    expect(body).toContain('display: flex');
+    expect(body).toContain('overflow: hidden');
+    const legacy = ruleBody(css, '.v2-feature--board .v2-feature__legacy');
+    expect(legacy).toContain('width: 100%');
+    expect(legacy).toContain('min-height: 0');
+    expect(legacy).toContain('display: flex');
+    expect(ruleBody(css, '.v2-feature--board .v2-board')).toContain('flex: 1 1 auto');
+    expect(ruleBody(css, '.v2-board__col')).toContain('overflow-y: auto');
+    expect(ruleBody(css, '.v2-board__col')).toContain('max-height: 100%');
+  });
+  test('a long focus list is bounded so the columns keep room below it', () => {
+    const focus = ruleBody(css, '.v2-board__focus');
+    expect(focus).toContain('max-height: min(35vh, 260px)');
+    expect(focus).toContain('overflow-y: auto');
+  });
+
+  // TASK-702: on a phone the header Invite is glyph-only, or its label takes
+  // the pod name's width and the title truncates to a few characters.
+  test('the header Invite hides its label on a phone, keeping it for screen readers', () => {
+    const block = mediaBlockContaining(read('../v2.css'), '.v2-pod-header__invite span');
+    expect(block).toMatch(/\.v2-pod-header__invite span\s*\{[^}]*clip-path:\s*inset\(50%\)/);
+    expect(block).toMatch(/\.v2-pod-header__invite\s*\{[^}]*width:\s*28px/);
   });
 });

@@ -41,7 +41,7 @@ await jest.unstable_mockModule('../src/lib/pod-focus.js', () => ({
 }));
 
 const { createClient } = await import('../src/lib/api.js');
-const { performRun } = await import('../src/commands/agent.js');
+const { performRun, superviseRunsByDefault } = await import('../src/commands/agent.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
 
 const drain = async (depth = 40) => {
@@ -274,13 +274,34 @@ const filesUnder = (dir) => {
   return found;
 };
 
-describe('COMMONLY_SUPERVISE_RUNS=1 with the real codex adapter', () => {
+describe('superviseRunsByDefault: codex on by default, others only on =1', () => {
+  test.each([
+    ['codex', undefined, true],
+    ['codex', '1', true],
+    ['codex', '0', false],
+    ['codex', 'true', true],
+    ['claude', undefined, false],
+    ['claude', '1', true],
+    ['claude', '0', false],
+    ['stub', undefined, false],
+    ['stub', '', false],
+    [undefined, undefined, false],
+  ])('adapter %s with COMMONLY_SUPERVISE_RUNS=%s -> %s', (adapterName, value, expected) => {
+    const env = value === undefined ? {} : { COMMONLY_SUPERVISE_RUNS: value };
+    expect(superviseRunsByDefault(adapterName, env)).toBe(expected);
+  });
+});
+
+describe('COMMONLY_SUPERVISE_RUNS with the real codex adapter', () => {
   // Each turn spawns a real child and makes real loopback calls; under a
   // parallel suite on a loaded host that takes longer than jest's 5 s default.
   jest.setTimeout(60_000);
   const TURN_KEY = 'sk-turn-run-loop-4c1d9e7a';
 
-  test('a clean reply is posted, the metric line says supervised and delivered, and nothing else reaches disk', async () => {
+  test.each([
+    ['unset (codex default)', undefined],
+    ['=1', '1'],
+  ])('flag %s: a clean reply is posted, the metric line says supervised and delivered, and nothing else reaches disk', async (_label, flag) => {
     const { startFakeProvider } = await import('../../packages/seats/test-support/fake-provider.js');
     const codex = (await import('../src/lib/adapters/codex.js')).default;
     const provider = await startFakeProvider({ defaultReply: 'review: PASS' });
@@ -294,14 +315,15 @@ describe('COMMONLY_SUPERVISE_RUNS=1 with the real codex adapter', () => {
     fs.writeFileSync(path.join(bin, 'codex'), STUB_CODEX, { mode: 0o755 });
     const workspace = fs.mkdtempSync(path.join(home, 'ws-'));
     const env = {
-      COMMONLY_SUPERVISE_RUNS: '1',
       CODEX_HOME: codexHome,
       FAKE_PROVIDER_KEY: TURN_KEY,
       STUB_CODEX_DIRECT_BASE: provider.baseURL,
       PATH: `${bin}${path.delimiter}${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH}`,
     };
     // The env must stay set while the turn runs: the adapter reads it at spawn.
-    const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+    const saved = Object.fromEntries(['COMMONLY_SUPERVISE_RUNS', ...Object.keys(env)].map((k) => [k, process.env[k]]));
+    delete process.env.COMMONLY_SUPERVISE_RUNS;
+    if (flag !== undefined) process.env.COMMONLY_SUPERVISE_RUNS = flag;
     Object.assign(process.env, env);
     try {
       const run = harness({

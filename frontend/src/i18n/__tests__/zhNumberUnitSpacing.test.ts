@@ -38,7 +38,7 @@ const NUMERAL_PLACEHOLDERS = [
 // shell proves either way.
 const OPAQUE_PLACEHOLDERS = [
   'age', 'by', 'pod', 'email', 'provider', 'podName', 'creator', 'date', 'agentName',
-  'name', 'second', 'first', 'handle', 'author', 'affiliations', 'username', 'code',
+  'name', 'second', 'first', 'last', 'handle', 'author', 'affiliations', 'username', 'code',
   'label', 'taskId', 'agent', 'machine', 'time', 'section', 'platform', 'projects',
   'connector', 'user', 'workspace', 'channel', 'tool', 'tools', 'member', 'agents', 'os',
   // common.aboutPage receives a page title, currently Latin, not a count.

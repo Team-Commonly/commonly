@@ -106,12 +106,85 @@ agents:
       workspace:
         enabled: false
 
+# LiteLLM — ENABLED for staging (SRE 2026-10-31). Staging native agents answer through
+# the native runtime -> LiteLLM, exactly as prod does; the values-staging comment above
+# ("Hosted agents answer through litellm") assumed this but the stanza was missing, so
+# litellm inherited the base default (enabled:false). The staging backend still pointed
+# native-runtime turns at http://litellm:4000 — nonexistent in this namespace — so every
+# Scout ONBOARDING-REPLY turn failed ("native runtime failed: turn failed", model
+# undefined, no cost) while the scripted welcome still posted. That was the 2026-10-31
+# staging-walk incident (Sam: "is scout not working? I saw it not responding in staging").
+#
+# Kept deliberately small (spend approved by Cofounder for Sam's checks + dev:live
+# screenshots):
+#   - MASTER KEY ONLY (serviceKeys.fromSecret:false): no budgeted virtual keys to mint
+#     in Secret Manager. The cost ceiling is the shared litellm-config's deepseek-v4-flash
+#     group max_budget ($60/1mo), metered in THIS instance's router cache, independent of
+#     prod's litellm instance.
+#   - CODEX OFF (codexAuthRotator.enabled:false): staging carries no Codex traffic. Scout
+#     runs on deepseek-v4-flash (backend LITELLM_CHAT_MODEL), the cheapest route it works
+#     on. The codex-cli sidecar + codex-auth-seed init still render (ungated in the
+#     template) but idle harmlessly — the seed writes an empty auth.json and exits 0.
+#   - NO chatgpt-auth PVC (emptyDir): nothing to persist without Codex.
+#   - default-pool (untainted, NOT prod's dev-pool, NOT spot): Scout must stay up for
+#     Sam's checks, so it must not be reclaimed mid-walk the way the spot-pool (which the
+#     rest of staging rides) can be. It is NOT pinned to the shared cluster's dev-pool
+#     either: that is a SINGLE node already running prod litellm + clawdbot + cloud-codex,
+#     and pinning the reckless staging lane there would let it pressure the one node
+#     serving PROD agent runtimes (the staging->prod blast-radius this whole file avoids).
+#     The default-pool is two untainted nodes with headroom for this small pod (requests
+#     120m CPU / 576Mi; a default-pool node had ~377m CPU free when measured), isolated
+#     from prod and stable. (The codex-cli sidecar + codex-auth-seed init still render
+#     ungated in the shared template but do not gate litellm readiness or block Scout;
+#     gating them on codex-enabled is a follow-up — TASK filed.)
+#
+# No new secret and no new database: every key litellm needs already exists in the
+# staging api-keys ring (deepseek-api-key, cloudflare-account-id/-workers-ai-token,
+# gemini/openrouter/openai-api-key, litellm-master-key — all unconditional in the
+# ExternalSecret), and DATABASE_URL reuses staging's own Aiven Postgres via
+# ?schema=litellm. Guard test: backend/__tests__/unit/helm/litellmStagingEnabled.test.js.
+litellm:
+  enabled: true
+  serviceKeys:
+    fromSecret: false
+  codexAuthRotator:
+    enabled: false
+  chatgptAuth:
+    persistence:
+      enabled: false
+  # No tolerations + pool=default => the untainted default-pool ONLY (both dev-pool and
+  # spot-pool are tainted, so an untolerated pod cannot land on either). See the
+  # default-pool rationale in the block comment above.
+  nodeSelector:
+    pool: default
+
 backend:
   env:
+    # injection-guard ONLY — matches prod (values-dev.yaml). The native runtime's
+    # default guardrail pair (nativeRuntimeService.ts) includes openai-moderation-enforce,
+    # which calls OpenAI's moderation API with OPENAI_API_KEY. Staging's api-keys
+    # openai-api-key is an 11-byte placeholder (prod's is the literal "placeholder" too),
+    # so that guardrail 401'd on EVERY native turn BEFORE the model call — litellm logged
+    # 401 from https://api.openai.com/v1/moderations and returned HTTP 401 for
+    # deepseek-v4-flash. This was the second half of the 2026-10-31 Scout-staging incident:
+    # enabling litellm (above) fixed the missing-backend 401, this fixes the guardrail 401.
+    # injection-guard is LiteLLM-native (no key, no external service) and keeps the
+    # prompt-injection block. Restore the pair only after a real OpenAI moderation key
+    # lands in the staging api-keys secret. Guard test: litellmStagingEnabled.test.js.
+    nativeRuntimeGuardrails: "injection-guard"
     agentComputerEnabled: "true"
     agentComputerSteelApiUrlTemplate: "http://steel-{userId}.commonly-staging.svc.cluster.local:3000"
     agentComputerSteelCdpUrlTemplate: "http://steel-{userId}.commonly-staging.svc.cluster.local:9223"
     agentComputerAllowedHosts: "linkedin.com,www.linkedin.com"
+    # Team-only staging sign-in. Any value flips isInstanceAccessRestricted()
+    # true and gates BOTH register and login; prod (values-dev) sets neither and
+    # stays public. Domains cover the seed accounts (@seed.staging.commonly.me) and
+    # both CI smoke accounts (@ops.commonly.invalid) so staging-smoke stays green.
+    # Individual team emails are PII and live in the GCP SM secret
+    # commonly-staging-auth-allowed-emails (NOT in this repo), surfaced via the
+    # api-keys ExternalSecret → AUTH_ALLOWED_EMAILS when the flag below is true.
+    authAllowedDomains: "seed.staging.commonly.me,ops.commonly.invalid"
+    authAllowedEmailsFromSecret: true
     # Smaller Postgres pool for staging's Aiven db (fewer connections than prod).
     pgPoolMax: 5
     # Non-secret db name; host/user/password come from the private values +

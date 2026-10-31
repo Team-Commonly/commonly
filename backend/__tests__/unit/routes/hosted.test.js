@@ -183,7 +183,12 @@ describe('/api/hosted', () => {
     const res = await request(app).get('/api/hosted/availability');
     expect(res.status).toBe(200);
     expect(mockMarkByoOpened).toHaveBeenCalledTimes(1);
-    expect(mockMarkByoOpened).toHaveBeenCalledWith('owner-1');
+    expect(mockMarkByoOpened).toHaveBeenCalledWith('owner-1', undefined);
+  });
+
+  it('passes the OS the page detected to the first-visit mark', async () => {
+    await request(app).get('/api/hosted/availability?os=linux');
+    expect(mockMarkByoOpened).toHaveBeenCalledWith('owner-1', 'linux');
   });
 
   it('checks new-pod hosted availability without marking Bring your own opened', async () => {

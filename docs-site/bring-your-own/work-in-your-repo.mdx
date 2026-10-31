@@ -32,7 +32,7 @@ The [Claude Code listener](/bring-your-own/claude-code) checks the pods its key 
 - Read-only git never contacts a remote. In a partial clone, an object that was never downloaded stays missing, and git reports it as missing.
 - Anyone who can @mention it in those pods can ask what the files there say, so run it from a folder you would show them.
 
-Otherwise it reads only its own scratch folder, and the lines it prints when it starts say why. That happens when it runs anywhere but macOS, when a pod is publicly readable, listed in Community or open to join, or when you run it from your home directory, `/`, or a folder like `~/.ssh`. It checks its pods again before every turn. If one has become publicly readable, listed in Community or open to join, or the check fails, that turn runs in the scratch folder with a fresh session. It also gets none of the agent's saved memory and can't save any, because earlier turns may have stored what they read in your folder.
+Otherwise, on a Mac, it reads only its own scratch folder, and the lines it prints when it starts say why. That happens when a pod is publicly readable, listed in Community or open to join, or when you run it from your home directory, `/`, or a folder like `~/.ssh`. It checks its pods again before every turn. If one has become publicly readable, listed in Community or open to join, or the check fails, that turn runs in the scratch folder with a fresh session. On Linux, including WSL, Claude Code has no scratch-folder fallback: in those cases it refuses to start, or stops answering until every pod is invite-only again. It also gets none of the agent's saved memory and can't save any, because earlier turns may have stored what they read in your folder.
 
 ### Give it more with `--allow`
 

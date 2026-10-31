@@ -75,9 +75,11 @@ const CLAUDE_FILE_NAME = 'CLAUDE.md';
 type MachineAdapter = '' | 'claude' | 'codex';
 
 // Where the listener runs (cli 0.1.106 stops elsewhere, with directions):
-// Commonly runs it in a sandbox. Seatbelt runs Claude Code and Codex on a Mac;
-// on Linux (WSL included) the bubblewrap namespace cannot start Claude Code
-// yet (ubuntu run 38982219348), and native Windows has no sandbox for either.
+// Commonly runs it in a sandbox. Seatbelt runs Claude Code and Codex on a Mac.
+// On Linux (WSL included) bubblewrap runs Codex, and Claude Code only as a
+// workspace seat, which the CLI allows only while every pod it answers in is
+// invite-only (TASK-027); a public Claude Code seat there is refused. Native
+// Windows has no sandbox for either.
 // PowerShell also has no `export`, so a Windows visitor gets PowerShell lines
 // for the MCP connection instead (windows-latest, 2026-10-16).
 type SetupOs = 'mac' | 'linux' | 'windows';
@@ -92,6 +94,19 @@ const browserOs = (): SetupOs => {
   if (/X11|CrOS|Linux (x86_64|aarch64|armv|i686)|^Linux$/.test(platform) && !/Android/.test(platform)) return 'linux';
   return 'mac';
 };
+// What the page saw, for the first-open mark only (byoOpenedOs). Unlike
+// browserOs it does not default to mac: a browser it can't place is 'other'.
+type OpenedOs = SetupOs | 'other';
+const openedOs = (): OpenedOs => {
+  if (typeof navigator === 'undefined') return 'other';
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const platform = nav.userAgentData?.platform || nav.userAgent || '';
+  if (/iPhone|iPad|Android/.test(platform)) return 'other';
+  // iPadOS Safari in desktop mode reports a Mac user agent; touch gives it away.
+  if (/Mac|macOS/.test(platform)) return (nav.maxTouchPoints || 0) > 1 ? 'other' : 'mac';
+  const os = browserOs();
+  return os === 'mac' ? 'other' : os;
+};
 const SETUP_OS_OPTIONS: Array<{ os: SetupOs; labelKey: string }> = [
   { os: 'mac', labelKey: 'agentByo.listen.osMac' },
   { os: 'linux', labelKey: 'agentByo.listen.osLinux' },
@@ -103,7 +118,19 @@ const SETUP_OS_OPTIONS: Array<{ os: SetupOs; labelKey: string }> = [
 // which PowerShell cannot run, and Codex on native Windows is unmeasured.
 // Not drift: the page only offers what it has seen work. Codex on Linux is
 // not walked yet (Lily, 10-26: "macOS; Linux not yet tested"), so no listener.
-const listenerRunsOn = (os: SetupOs): boolean => os === 'mac';
+// Claude Code on Linux runs only in a pod that passes the CLI's own test
+// (workspace-trust.js podIsConfirmedPrivate): both flags reported and false,
+// and invite-only. A pod that omits a flag is not private.
+const podIsConfirmedPrivate = (pod?: V2Pod): boolean => (
+  typeof pod?.publicRead === 'boolean'
+  && typeof pod?.communityListed === 'boolean'
+  && !pod.publicRead
+  && !pod.communityListed
+  && pod.joinPolicy === 'invite-only'
+);
+const listenerRunsOn = (os: SetupOs, adapter: 'claude' | 'codex', pod?: V2Pod): boolean => (
+  os === 'mac' || (os === 'linux' && adapter === 'claude' && podIsConfirmedPrivate(pod))
+);
 type ModelOption = { value: string; labelKey: string };
 const CLAUDE_MODEL_OPTIONS: ModelOption[] = [
   { value: 'opus', labelKey: 'agentByo.form.modelOpus' },
@@ -200,7 +227,11 @@ const V2AgentBYO: React.FC = () => {
   // Where the person sets up, defaulted from this browser. They can switch:
   // the machine they browse on is not always the one they set up.
   const [setupOs, setSetupOs] = useState<SetupOs>(browserOs);
-  const listenerAvailable = listenerRunsOn(setupOs);
+  const listenerAvailable = listenerRunsOn(
+    setupOs,
+    listenAdapter,
+    pods.find((p) => p._id === (issued?.podId || podId)),
+  );
   // Live listening verification (#887 class, second half). #888 made the
   // listening step legible; this makes it CHECKABLE — the page polls the
   // kernel until THIS agent's runtime token authenticates for the first time
@@ -526,8 +557,9 @@ const V2AgentBYO: React.FC = () => {
       }
       try {
         // This request also records the person's first visit to this page on
-        // the server (User.onboarding.byoOpenedAt). Keep it on page load.
-        const availability = await api.get<HostedAvailability>('/api/hosted/availability');
+        // the server (User.onboarding.byoOpenedAt, and byoOpenedOs from ?os).
+        // Keep it on page load.
+        const availability = await api.get<HostedAvailability>(`/api/hosted/availability?os=${openedOs()}`);
         if (cancelled) return;
         if (availability && typeof availability.configured === 'boolean') {
           // Sets no mode. This effect re-runs on every pod change (podId is a
@@ -1436,7 +1468,8 @@ const V2AgentBYO: React.FC = () => {
             {addComputerBlock}
           <p className="v2-byo__footnote">
             {t(listenerAvailable ? 'agentByo.footnote.cliRoute'
-              : listenAdapter === 'claude' ? 'agentByo.footnote.cliRouteClaudeUnavailable'
+              : listenAdapter === 'claude'
+                ? (setupOs === 'linux' ? 'agentByo.footnote.cliRouteClaudeLinuxUnavailable' : 'agentByo.footnote.cliRouteClaudeUnavailable')
                 : 'agentByo.footnote.cliRouteCodexUnavailable', {
               byo: t('agentByo.mode.byo'),
               hosted: t('agentByo.mode.hosted'),
@@ -1589,10 +1622,12 @@ const V2AgentBYO: React.FC = () => {
             </p>
             <p className="v2-byo__needs" data-testid={listenerAvailable ? 'byo-listen-needs' : 'byo-listen-unavailable'}>
               {listenerAvailable
-                ? t('agentByo.listen.needs', {
+                ? `${t('agentByo.listen.needs', {
                   tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex') : t('agentByo.listen.toolClaude'),
-                })
-                : t(listenAdapter === 'claude' ? 'agentByo.listen.unavailableClaude' : 'agentByo.listen.unavailableCodex', {
+                })}${setupOs === 'linux' ? ` ${t('agentByo.listen.needsLinuxFolder')}` : ''}`
+                : t(listenAdapter === 'claude'
+                  ? (setupOs === 'linux' ? 'agentByo.listen.unavailableClaudeLinux' : 'agentByo.listen.unavailableClaude')
+                  : 'agentByo.listen.unavailableCodex', {
                   os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
                 })}{' '}
               <button
@@ -1646,7 +1681,7 @@ const V2AgentBYO: React.FC = () => {
             )}
             {listenerAvailable && listenAdapter === 'claude' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-reach">
-                {t('agentByo.listen.reachClaude', { name: issued.agentName })}
+                {t(setupOs === 'linux' ? 'agentByo.listen.reachClaudeLinux' : 'agentByo.listen.reachClaude', { name: issued.agentName })}
               </p>
             )}
             {listenerAvailable && listenAdapter === 'codex' && (

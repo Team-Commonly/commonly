@@ -19,6 +19,13 @@ const { assertAgentRuntimeMayJoinPod } = require('./outsiderGrantAgentJoinPolicy
 // eslint-disable-next-line global-require
 const chatSummarizerService = require('./chatSummarizerService');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { noteNeverConnectedMention } = require('./neverConnectedMentionService') as {
+  noteNeverConnectedMention: (args: {
+    podId: string; agentName: string; instanceId: string; senderId: string;
+    messageId: string | null; threadRootId?: string | number | null;
+  }) => Promise<boolean>;
+};
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { maybeFireWelcomeWake } = require('./welcomeWakeService') as {
   maybeFireWelcomeWake: (opts: Record<string, unknown>) => Promise<unknown>;
 };
@@ -1950,6 +1957,24 @@ const enqueueMentions = async ({
         if (await isLoopDampened(directMatch)) {
           skipped.push(`${directMatch.agentName}:loop-dampened`);
           return;
+        }
+        // TASK-655: a person mentioning a never-connected BYO agent is told
+        // once a day, in the room. The mention still queues below.
+        if (sender?.isBot === false) {
+          try {
+            await noteNeverConnectedMention({
+              podId,
+              agentName: directMatch.agentName,
+              instanceId: directMatch.instanceId,
+              senderId: String(userId),
+              messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
+              threadRootId,
+            });
+          } catch (error) {
+            // The mention is already persisted and still queues; a failed
+            // notice must never drop or block the delivery.
+            console.warn('[not-connected] notice failed:', (error as Error).message);
+          }
         }
         try {
           if (directMatch.agentName === 'commonly-bot') {

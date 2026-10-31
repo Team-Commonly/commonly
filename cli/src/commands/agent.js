@@ -16,6 +16,7 @@ import { createRuntimeReporter } from '../lib/runtime-observation.js';
  * heartbeat  — manually trigger an agent's heartbeat
  */
 
+import { refreshMcpTokenCopy, removeMcpTokenCopy } from '../lib/mcp-token.js';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync } from 'fs';
 import { join, dirname, basename, resolve as pathResolve } from 'path';
 import { homedir, tmpdir } from 'os';
@@ -88,6 +89,7 @@ import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
+import { installedCliVersion, startUpdateNotice } from '../lib/update-check.js';
 import { createSeatStop } from '../lib/seat-stop.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import { describeUpstreamRefusal } from '../lib/upstream-refusal.js';
@@ -146,6 +148,12 @@ export const saveAgentToken = (name, record) => {
     JSON.stringify({ ...record, savedAt: new Date().toISOString() }, null, 2),
     { encoding: 'utf8', mode: 0o600 },
   );
+  // After the record is durable, so a failed refresh never loses a freshly minted token.
+  try {
+    refreshMcpTokenCopy(name, record?.runtimeToken);
+  } catch (err) {
+    console.warn(`Could not refresh the MCP token copy for '${name}': ${err.message}. Run: commonly mcp config --agent ${name}`);
+  }
 };
 
 export const loadAgentToken = (name) => {
@@ -161,6 +169,7 @@ export const loadAgentToken = (name) => {
 export const deleteAgentToken = (name) => {
   const file = tokenFile(name);
   if (existsSync(file)) rmSync(file);
+  removeMcpTokenCopy(name);
 };
 
 // ── env-var bootstrap for `agent run` (#913) ────────────────────────────────
@@ -533,6 +542,29 @@ export const listLocalAgents = () => {
       };
     })
     .filter(Boolean);
+};
+
+/**
+ * The token files listLocalAgents drops: present, but not readable JSON.
+ * `commonly doctor` reports them, because a dropped file otherwise reads as
+ * "no agent here" and lets doctor pass on a seat that cannot start.
+ * Throws when the directory exists but cannot be read, for doctor to report.
+ */
+export const listUnreadableAgentTokens = () => {
+  let files;
+  try {
+    files = readdirSync(tokensDir());
+  } catch (error) {
+    // Only a missing directory means no agents. existsSync also answers false
+    // for EACCES on an ancestor, which is why this reads instead of checking.
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return [];
+    throw error;
+  }
+  return files
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => f.slice(0, -'.json'.length))
+    .filter((name) => !loadAgentToken(name))
+    .sort();
 };
 
 // Chat event types whose payload already contains the prompt the wrapper
@@ -1362,6 +1394,15 @@ const extractPrompt = (event) => {
 // cancel grace, and the wall-clock backstop past the adapter's own timeout.
 export { supervisedRunPolicy };
 
+// Codex turns are supervised by default (D211): a turn that stops making
+// progress is named and killed instead of holding the seat. COMMONLY_SUPERVISE_RUNS=0
+// opts out. Every other adapter stays off unless COMMONLY_SUPERVISE_RUNS=1.
+export const superviseRunsByDefault = (adapterName, env = process.env) => {
+  if (env.COMMONLY_SUPERVISE_RUNS === '0') return false;
+  if (adapterName === 'codex') return true;
+  return env.COMMONLY_SUPERVISE_RUNS === '1';
+};
+
 /**
  * Start the run loop. Polls /events, spawns the adapter per event, posts the
  * result into the pod, acks.
@@ -1437,14 +1478,15 @@ export const performRun = ({
   resolveOwnProviderKey = null,
   runtimeReportClient = null,
   refusalHandoff = null,
-  // Off unless COMMONLY_SUPERVISE_RUNS=1: each spawn runs under the seats
-  // supervisor (stall window, wall-clock backstop, a named failure on every
-  // settle). The CLI still talks to its provider directly, and one metadata
-  // line per turn goes to ~/.commonly/state/turns/<agent>.jsonl once
-  // delivery settles. Off, the spawn path is the plain adapter call it has
-  // always been, and nothing is written.
-  superviseRuns = process.env.COMMONLY_SUPERVISE_RUNS === '1',
+  // Each spawn runs under the seats supervisor (stall window, wall-clock
+  // backstop, a named failure on every settle) when superviseRuns is true.
+  // Unset, the default comes from superviseRunsByDefault. The CLI still talks
+  // to its provider directly, and one metadata line per turn goes to
+  // ~/.commonly/state/turns/<agent>.jsonl once delivery settles. Off, the spawn
+  // path is the plain adapter call it has always been, and nothing is written.
+  superviseRuns,
 }) => {
+  const supervising = superviseRuns ?? superviseRunsByDefault(adapter?.name);
   reportRuntime = reportRuntime && WALKED_HARNESSES.includes(adapter?.name);
   if (environment?.provider !== undefined && !adapter?.supportsProvider) {
     throw new Error('environment.provider requires a provider-capable adapter');
@@ -1456,9 +1498,9 @@ export const performRun = ({
   // The supervised run keeps its trace in memory, metadata only; no record of
   // a run is written to disk (lib/supervised-turn.js).
   const turnRunner = createTurnRunner({
-    seat: agentName, turnTimeoutMs: effectiveTurnTimeoutMs, supervise: superviseRuns, log,
+    seat: agentName, turnTimeoutMs: effectiveTurnTimeoutMs, supervise: supervising, log,
   });
-  if (superviseRuns) log(turnRunner.describe(adapter?.name));
+  if (supervising) log(turnRunner.describe(adapter?.name));
   const runtimeReporter = createRuntimeReporter({
     client: runtimeReportClient || { post: async () => {} },
     harness: adapter.name, detect: () => adapter.detect(),
@@ -1871,7 +1913,7 @@ export const performRun = ({
 
   // The spawn → post-decision half of a turn, split out so the claim release
   // above is a plain finally instead of threading through every return path.
-  // With superviseRuns, the turn's log line is written once delivery has
+  // With supervising, the turn's log line is written once delivery has
   // settled; anything thrown after a spawn that resolved means the reply never
   // reached the pod. Off, `turn` writes nothing.
   const runTurn = async (args) => {
@@ -4100,6 +4142,12 @@ Docs:
 
       console.log(`${stamp()} [${name}] polling ${record.instanceUrl} for events (ctrl+c to stop)`);
       console.log(`${stamp()} [${name}] ${foregroundDaemonHint({ daemonRegistered: hasDaemonRecord() })}`);
+      // TASK-660: one line when this CLI is stale. Fired, not awaited, so a
+      // slow registry never delays the first poll.
+      startUpdateNotice({
+        installedVersion: installedCliVersion(),
+        log: (line) => console.log(`${stamp()} [${name}] ${line}`),
+      });
 
       const { stop } = performRun({
         instanceUrl: record.instanceUrl,

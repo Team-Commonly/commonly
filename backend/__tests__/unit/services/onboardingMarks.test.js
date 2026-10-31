@@ -139,6 +139,28 @@ describe('markByoOpened', () => {
     expect(update.$set['onboarding.byoOpenedAt']).toBeInstanceOf(Date);
   });
 
+  test('records the OS the page detected in the same write-once update', () => {
+    markByoOpened('u1', 'windows');
+    const [filter, update] = mockUpdateOne.mock.calls[0];
+    expect(filter).toEqual({ _id: 'u1', isBot: { $ne: true }, 'onboarding.byoOpenedAt': { $exists: false } });
+    expect(Object.keys(update.$set)).toEqual(['onboarding.byoOpenedAt', 'onboarding.byoOpenedOs']);
+    expect(update.$set['onboarding.byoOpenedOs']).toBe('windows');
+  });
+
+  test.each(['mac', 'linux', 'windows', 'other'])('keeps os=%s', (os) => {
+    markByoOpened('u1', os);
+    expect(mockUpdateOne.mock.calls[0][1].$set['onboarding.byoOpenedOs']).toBe(os);
+  });
+
+  test.each([['ios'], ['Mac'], [''], [['mac']], [{ os: 'mac' }], [42]])(
+    'any other os value (%p) records the visit without an OS',
+    (os) => {
+      markByoOpened('u1', os);
+      expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+      expect(Object.keys(mockUpdateOne.mock.calls[0][1].$set)).toEqual(['onboarding.byoOpenedAt']);
+    },
+  );
+
   test('no person, no write', () => {
     markByoOpened('');
     markByoOpened(undefined);

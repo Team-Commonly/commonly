@@ -29,6 +29,16 @@ body.modern-ui.v2-canvas {
   --v2-border-strong: #98a2b3;
   --v2-text-primary: #101828;
   --v2-message-text: #1f2937;
+  /* TASK-701: inactive rail glyphs, join-radio outlines (3:1 on white and
+     #f2f4f7) and the neutral selected pod row. Dark values sit in both dark
+     sets below. */
+  --v2-rail-icon: #374151;
+  --v2-control-outline: #667085;
+  /* Light keeps the cobalt block; dark swaps it for a neutral row. */
+  --v2-row-active: var(--v2-accent-fill);
+  --v2-row-active-text: var(--v2-on-accent);
+  --v2-row-active-mute: rgba(255, 255, 255, 0.85);
+  --v2-row-active-mark: rgba(255, 255, 255, 0.22);
   --v2-text-secondary: #475467;
   --v2-text-tertiary: #667085;
   --v2-text-muted: #667085;
@@ -112,6 +122,20 @@ body.modern-ui.v2-canvas {
   --v2-danger: #ef4444;
   --v2-danger-text: #b91c1c;
   --v2-danger-soft: rgba(239, 68, 68, 0.10);
+  /* TASK-687/698: board status and priority colour, the D215 B-lite choice (Sam,
+     10-31). Blocked and P0 are red; in progress stays cobalt; P1, P2, pending and
+     done stay grey, with no green. Each state keeps its shape. Dark values are in
+     both dark blocks below. */
+  --v2-prio-p0-bg: #b42318;
+  --v2-prio-p0-fg: #ffffff;
+  --v2-prio-ink: var(--v2-text-secondary);
+  --v2-prio-p2-fg: #667085;
+  --v2-prio-edge: var(--v2-border);
+  --v2-status-live: var(--v2-accent);
+  --v2-status-idle: var(--v2-border-strong);
+  --v2-status-pending: #667085;
+  --v2-status-blocked: #d92d20;
+  --v2-status-blocked-edge: #d92d20;
 
   /* Agent role colors */
   --v2-pink: #f472b6;
@@ -198,8 +222,20 @@ body.modern-ui.v2-canvas {
     --v2-border: #364051;
     --v2-border-soft: #262d3a;
     --v2-border-strong: #5f6979;
+    --v2-prio-p0-bg: #f97066;
+    --v2-prio-p0-fg: #0b0e13;
+    --v2-prio-p2-fg: #8b94a5;
+    --v2-status-pending: var(--v2-border-strong);
+    --v2-status-blocked: #f97066;
+    --v2-status-blocked-edge: #f97066;
     --v2-text-primary: #e8ebf1;
     --v2-message-text: #e8ebf1;
+    --v2-rail-icon: #aeb6c4;
+    --v2-control-outline: #737e92;
+    --v2-row-active: #1e2531;
+    --v2-row-active-text: #e8ebf1;
+    --v2-row-active-mute: #aeb6c4;
+    --v2-row-active-mark: #2a3342;
     --v2-text-secondary: #aeb6c4;
     --v2-text-tertiary: #8b94a5;
     --v2-text-muted: #8b94a5;
@@ -244,8 +280,20 @@ body.modern-ui.v2-canvas {
       --v2-border: #364051;
       --v2-border-soft: #262d3a;
       --v2-border-strong: #5f6979;
+      --v2-prio-p0-bg: #f97066;
+      --v2-prio-p0-fg: #0b0e13;
+      --v2-prio-p2-fg: #8b94a5;
+      --v2-status-pending: var(--v2-border-strong);
+      --v2-status-blocked: #f97066;
+      --v2-status-blocked-edge: #f97066;
       --v2-text-primary: #e8ebf1;
       --v2-message-text: #e8ebf1;
+      --v2-rail-icon: #aeb6c4;
+      --v2-control-outline: #737e92;
+      --v2-row-active: #1e2531;
+      --v2-row-active-text: #e8ebf1;
+      --v2-row-active-mute: #aeb6c4;
+      --v2-row-active-mark: #2a3342;
       --v2-text-secondary: #aeb6c4;
       --v2-text-tertiary: #8b94a5;
       --v2-text-muted: #8b94a5;
@@ -790,7 +838,7 @@ body.modern-ui.v2-canvas {
   border-radius: var(--v2-radius);
   font-size: 14px;
   font-weight: 600;
-  color: #374151;
+  color: var(--v2-rail-icon);
   background: var(--v2-surface-hover);
   text-align: left;
   transition: background 80ms ease;
@@ -1113,12 +1161,29 @@ body.modern-ui.v2-canvas {
   cursor: pointer;
 }
 
+/* Native radios ignore border tokens, so draw the outline from one. Checked, the
+   border thickens into the accent dot, so no cobalt background is added. */
 .v2-pods__join-policy input,
-.v2-pod-join-settings input { accent-color: var(--v2-accent); }
+.v2-pod-join-settings input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  flex-shrink: 0;
+  border: 1.5px solid var(--v2-control-outline);
+  border-radius: 50%;
+  background: var(--v2-surface);
+  cursor: pointer;
+}
+
+.v2-pods__join-policy input:checked,
+.v2-pod-join-settings input:checked {
+  border: 4px solid var(--v2-accent);
+}
 
 .v2-pods__join-policy-hint {
   margin: 0;
-  color: var(--v2-text-tertiary);
+  color: var(--v2-text-secondary);
   font: 400 var(--v2-fs-meta)/16px var(--v2-font);
 }
 
@@ -8435,6 +8500,32 @@ body.modern-ui.v2-canvas {
   background: var(--v2-bg-subtle);
 }
 
+/* TASK-698: the board fills the pane and the columns scroll inside it. The feature
+   body was the scroller and its legacy wrapper had auto height, so `height: 100%`
+   and the column `max-height: 100%` resolved to nothing and the page grew to
+   ~77,000px (85.5× at 1440, 97.9× at 390, measured by ux-lead at 12f608b71).
+   Scoped to the board route so other feature pages keep their scroll. */
+.v2-feature--board .v2-feature__body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* margin auto stops a flex item stretching, so the board sized to its 1240px
+   max-content width and ran off a 390px phone. An explicit width keeps it full
+   width on a phone, and the auto margin still centres it on desktop. */
+.v2-feature--board .v2-feature__legacy {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+.v2-feature--board .v2-board {
+  flex: 1 1 auto;
+  height: auto;
+}
+
 .v2-board__head {
   display: flex;
   align-items: center;
@@ -8514,6 +8605,11 @@ body.modern-ui.v2-canvas {
   border-radius: 12px;
   background: var(--v2-bg);
   flex: 0 0 auto;
+  /* A long focus list scrolls inside its own box, so the columns keep room below
+     it on a short viewport (1440x560, 390x560). vh, not %: the board's height is
+     auto, so a percentage would not resolve. */
+  max-height: min(35vh, 260px);
+  overflow-y: auto;
 }
 
 .v2-board__focus-head {
@@ -8977,12 +9073,6 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-secondary);
   margin: 0 0 12px;
   white-space: pre-wrap;
-}
-
-.v2-board__detail-moves {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 14px;
 }
 
 .v2-board__detail-updates {
@@ -11729,6 +11819,52 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-thread__inspector-toggle:hover,
 .v2-root button.v2-thread__inspector-toggle--active { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
 
+/* TASK-702: the header Invite. Same height and frame as the inspector
+   toggle beside it, with a label so it reads as an action, not decoration. */
+.v2-root button.v2-pod-header__invite {
+  display: inline-flex;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.v2-root button.v2-pod-header__invite:hover { background: var(--v2-surface-hover); }
+
+/* On a phone the label would take the pod name's width, so the button keeps
+   only its glyph, square like the inspector toggle. The label stays in the
+   accessibility tree as the button's name. */
+@media (max-width: 760px) {
+  .v2-root button.v2-pod-header__invite {
+    width: 28px;
+    flex: 0 0 28px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .v2-root button.v2-pod-header__invite span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
 .v2-thread .v2-msg {
   grid-template-columns: 28px minmax(0, 1fr);
   gap: 8px;
@@ -12211,10 +12347,13 @@ body.modern-ui.v2-canvas {
   box-shadow: inset 0 0 0 2px var(--v2-accent);
 }
 
+/* Dark swaps the cobalt block for a neutral row. The accent bar on the leading
+   edge carries "selected" when the fill alone is too close to the pane. */
 .v2-root button.v2-pods__row--selected,
 .v2-root button.v2-pods__row--selected:hover {
-  background: var(--v2-accent-fill);
-  color: var(--v2-on-accent);
+  background: var(--v2-row-active);
+  color: var(--v2-row-active-text);
+  box-shadow: inset 3px 0 0 var(--v2-accent);
   font-weight: 600;
 }
 
@@ -12240,8 +12379,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-pods__row--selected .v2-pods__row-mark {
-  background: rgba(255, 255, 255, 0.22);
-  color: var(--v2-on-accent);
+  background: var(--v2-row-active-mark);
+  color: var(--v2-row-active-text);
 }
 
 .v2-pods__row-name {
@@ -12262,7 +12401,12 @@ body.modern-ui.v2-canvas {
   font: 400 11px/16px var(--v2-font-mono);
 }
 
-.v2-root button.v2-pods__row--selected .v2-pods__row-meta { color: rgba(255, 255, 255, 0.85); }
+.v2-root button.v2-pods__row--selected .v2-pods__row-meta { color: var(--v2-row-active-mute); }
+
+/* Keyboard focus on the selected row keeps its accent edge beside the ring. */
+.v2-root button.v2-pods__row--selected:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--v2-accent), inset 3px 0 0 var(--v2-accent);
+}
 
 .v2-pods__row-pill {
   display: grid;
@@ -13665,19 +13809,22 @@ body.modern-ui.v2-canvas {
 .v2-board__priority {
   display: inline-block;
   padding: 0 5px;
-  border: 1px solid var(--v2-border);
+  border: 1px solid var(--v2-prio-edge);
   border-radius: 4px;
   font: 500 11px/16px var(--v2-font-mono);
-  color: var(--v2-text-secondary);
+  color: var(--v2-prio-ink);
   background: none;
 }
-.v2-board__priority--p0 { border-color: var(--v2-text-primary); color: var(--v2-text-primary); }
+.v2-board__priority--p0 { background: var(--v2-prio-p0-bg); border-color: var(--v2-prio-p0-bg); color: var(--v2-prio-p0-fg); }
+.v2-board__priority--p2 { color: var(--v2-prio-p2-fg); }
+.v2-board__col--blocked .v2-board__col-name { color: var(--v2-status-blocked); }
+.v2-board__card--blocked { box-shadow: inset 3px 0 0 var(--v2-status-blocked-edge); }
 .v2-board__card-title { font-size: 14px; line-height: 20px; }
 .v2-board__owner-line { display: flex; align-items: center; gap: 6px; font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-secondary); }
 .v2-board__owner-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
-.v2-board__owner-dot--live { background: var(--v2-accent); }
-.v2-board__owner-dot--not-claimed { border: 1px dashed var(--v2-border-strong); }
-.v2-board__owner-dot--expired { border: 1px solid var(--v2-border-strong); background: none; }
+.v2-board__owner-dot--live { background: var(--v2-status-live); }
+.v2-board__owner-dot--not-claimed { border: 1px dashed var(--v2-status-pending); }
+.v2-board__owner-dot--expired { border: 1px solid var(--v2-status-idle); background: none; }
 .v2-board__card--done { border-color: var(--v2-border-soft); }
 .v2-board__card--done .v2-board__card-title { color: var(--v2-text-secondary); }
 .v2-root button.v2-board__card-move { min-height: 32px; padding: 0 10px; border-radius: 4px; }
@@ -13689,6 +13836,15 @@ body.modern-ui.v2-canvas {
 .v2-board__detail .v2-modal__body { padding: 16px 24px 24px; display: grid; gap: 20px; }
 .v2-root .v2-board__detail button.v2-modal__close { width: 32px; height: 32px; border: 1px solid var(--v2-border); border-radius: 4px; flex-shrink: 0; }
 .v2-board__grab { display: none; }
+/* D215 task board: details open in a 400px right drawer, not a centred modal. */
+.v2-board .v2-board__overlay--drawer { align-items: stretch; justify-content: flex-end; padding-top: 0; }
+.v2-board .v2-board__drawer { width: 400px; max-width: 100%; height: 100%; max-height: none; border-radius: 14px 0 0 14px; box-shadow: var(--v2-shadow-lg); }
+.v2-board__status-segment { display: inline-flex; max-width: 100%; border: 1px solid var(--v2-border); border-radius: 6px; overflow: hidden; }
+.v2-root button.v2-board__status-option { min-height: 32px; padding: 0 12px; border: 0; border-radius: 0; background: var(--v2-bg); color: var(--v2-text-secondary); font-size: 13px; font-weight: 600; }
+.v2-root button.v2-board__status-option + button.v2-board__status-option { border-left: 1px solid var(--v2-border-soft); }
+.v2-root button.v2-board__status-option[aria-checked="true"] { background: var(--v2-surface); color: var(--v2-text-primary); }
+.v2-root button.v2-board__status-option:disabled { cursor: default; }
+.v2-root button.v2-board__updates-toggle { justify-self: start; min-height: 32px; padding: 0; border: 0; background: none; color: var(--v2-text-secondary); font-size: 13px; font-weight: 600; text-decoration: underline; }
 .v2-board__ownership { margin: 0; display: grid; grid-template-columns: 112px minmax(0, 1fr); border: 1px solid var(--v2-border-soft); border-radius: 4px; }
 .v2-board__ownership dt, .v2-board__ownership dd { margin: 0; padding: 10px 12px; min-height: 44px; display: flex; align-items: center; border-top: 1px solid var(--v2-border-soft); }
 .v2-board__ownership dt:first-of-type, .v2-board__ownership dd:first-of-type { border-top: 0; }
@@ -13713,6 +13869,9 @@ body.modern-ui.v2-canvas {
   .v2-board__col { flex: 0 0 78%; min-width: 250px; }
   .v2-root button.v2-board__card-move { min-height: 44px; padding: 0 14px; font-size: 13px; }
   .v2-board .v2-board__detail { position: absolute; inset: 44px 0 0; width: 100%; max-height: none; border-radius: 6px 6px 0 0; }
+  .v2-board .v2-board__drawer { width: 100%; height: auto; border-radius: 6px 6px 0 0; }
+  .v2-root button.v2-board__status-option { min-height: 44px; padding: 0 14px; }
+  .v2-root button.v2-board__updates-toggle { min-height: 44px; }
   .v2-board__grab { display: block; width: 36px; height: 4px; border-radius: 2px; background: var(--v2-border-soft); margin: 8px auto 0; flex-shrink: 0; }
   .v2-board__detail .v2-modal__head { padding: 12px 16px 14px; }
   .v2-board__detail .v2-modal__body { padding: 14px 16px 24px; gap: 18px; }
