@@ -34,6 +34,16 @@ describe('staging LiteLLM is enabled so native-runtime agents (Scout) can answer
     expect(staging.litellm.serviceKeys && staging.litellm.serviceKeys.fromSecret).toBe(false);
   });
 
+  test('staging keeps chatgpt-auth storage as emptyDir (no PVC) — nothing to persist without Codex', () => {
+    // CodeRabbit #3077: a silent flip to persistence.enabled:true would make Helm render a
+    // LiteLLM auth PVC in the reckless, resettable staging namespace. Guard the effective
+    // false value at this test's altitude (values); the rendered emptyDir/PVC-absence is
+    // exercised by the Chart Lint CI tier, which templates the chart.
+    expect(staging.litellm.chatgptAuth
+      && staging.litellm.chatgptAuth.persistence
+      && staging.litellm.chatgptAuth.persistence.enabled).toBe(false);
+  });
+
   test('staging runs no Codex rotator — it carries no Codex traffic', () => {
     // Base default is true (prod rotates Codex accounts); staging must override to false
     // so the rotator sidecar is not rendered. Scout runs on deepseek-v4-flash.
