@@ -41,7 +41,9 @@ import { loadDaemonState, saveDaemonState } from '../lib/daemon-state.js';
 import {
   CLEAR_SCREEN, renderDaemonWatch, shouldRedraw, WATCH_INTERVAL_MS,
 } from '../lib/daemon-watch.js';
-import { createReachCache, loadReachByAgent } from '../lib/daemon-agent-states.js';
+import {
+  createReachCache, loadPodReach, readSessionLastTurn,
+} from '../lib/daemon-agent-states.js';
 import { installedCliVersion, startUpdateNotice, UPDATE_CHECK_OPT_OUT_ENV } from '../lib/update-check.js';
 
 // One supervised seat, as `commonly daemon status --verbose` names it. Two of these
@@ -67,10 +69,14 @@ export const formatSeatLine = (seat = {}) => {
 // fetch is shown in the frame, so the loop keeps running through a brief outage.
 const watchDaemonStatus = async () => {
   const redraw = shouldRedraw({ isTTY: process.stdout.isTTY });
-  // The agent verdict is read through the operator's login, every 10 s, not on
-  // every 2 s frame. A load that fails is thrown, so the next tick retries.
-  const reach = createReachCache({
-    load: () => loadReachByAgent({ client: createClient({ instance: requireDaemonRecord().instanceUrl }) }),
+  // Each agent's pod comes from its token record. The verdict for a pod is read
+  // through the operator's login and cached for 10 s, so the 2 s frame does not
+  // re-read it. A failed read is thrown, so the next frame retries.
+  const reachFor = createReachCache({
+    load: (podId) => loadPodReach({
+      client: createClient({ instance: requireDaemonRecord().instanceUrl }),
+      podId,
+    }),
   });
   const frame = async () => {
     try {
@@ -79,7 +85,11 @@ const watchDaemonStatus = async () => {
         client: createClient({ instance: record.instanceUrl, token: record.daemonToken }),
         record,
       });
-      const seats = loadDaemonState()?.seats || [];
+      const seats = (loadDaemonState()?.seats || []).map((seat) => ({
+        ...seat,
+        // The supervisor stamps spawn time; the session store holds real turns.
+        lastTurnAt: readSessionLastTurn(seat.agentName),
+      }));
       const logTails = {};
       for (const seat of seats) {
         const tail = readLogTail(daemonSeatLogPath(seat.agentName), 3);
@@ -88,12 +98,13 @@ const watchDaemonStatus = async () => {
       let states = null;
       let stateNote = '';
       if (!getToken(record.instanceUrl)) {
-        stateNote = `Agent states need a login. Run: commonly login --instance ${record.instanceUrl}`;
+        stateNote = `Not logged in: showing local process state only. Run: commonly login --instance ${record.instanceUrl}`;
       } else {
+        const podIds = [...new Set(seats.map((seat) => loadAgentToken(seat.agentName)?.podId).filter(Boolean))];
         try {
-          states = await reach();
+          states = await reachFor(podIds);
         } catch (error) {
-          stateNote = `Agent states unavailable: ${error.message}`;
+          stateNote = `Agent states unavailable (${error.message}): showing local process state only`;
         }
       }
       return renderDaemonWatch({

@@ -28,14 +28,15 @@ describe('renderDaemonWatch', () => {
     expect(text).toContain('  turn one done');
   });
 
-  test('an agent the verdict does not list reads not registered, and no states reads unknown', () => {
+  test('an agent the verdict does not list reads not registered; with no verdict it reads local', () => {
     const text = renderDaemonWatch({ machine, seats: [seats[0]], states: new Map(), now: NOW });
     expect(text).toContain('dart  not registered');
     const noLogin = renderDaemonWatch({
-      machine, seats: [seats[0]], states: null, stateNote: 'Agent states need a login.', now: NOW,
+      machine, seats: [seats[0]], states: null, stateNote: 'Not logged in: showing local process state only.', now: NOW,
     });
-    expect(noLogin).toContain('dart  unknown');
-    expect(noLogin).toContain('Agent states need a login.');
+    expect(noLogin).toContain('dart  local running  last turn 2m ago');
+    expect(noLogin).toContain('Not logged in: showing local process state only.');
+    expect(noLogin).not.toMatch(/dart  (running|stalled|not connected)/);
   });
 
   test('a narrow 80-column layout clips long lines to the width', () => {

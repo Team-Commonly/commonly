@@ -1,5 +1,9 @@
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import {
-  createReachCache, loadReachByAgent, reachLabel, seatKey,
+  createReachCache, loadPodReach, readSessionLastTurn, reachLabel, seatKey,
 } from '../src/lib/daemon-agent-states.js';
 
 // A user-token client stub: `routes` maps a path to its JSON body, or to an Error.
@@ -30,53 +34,79 @@ describe('seatKey', () => {
   });
 });
 
-describe('loadReachByAgent', () => {
-  test('reads every member pod and keys each installation by agent and instance', async () => {
+describe('loadPodReach', () => {
+  test('reads one pod and keys each installation by agent and instance', async () => {
+    const calls = [];
     const client = fakeClient({
-      '/api/pods': [{ _id: 'p1' }, { _id: 'p2' }],
-      '/api/pods/p1/agent-states': { agents: [{ agentName: 'dart', instanceId: 'dart', state: 'listening' }] },
-      '/api/pods/p2/agent-states': { agents: [{ agentName: 'nova', instanceId: 'default', state: 'gone-dark' }] },
-    });
-    const map = await loadReachByAgent({ client });
+      '/api/pods/p1/agent-states': {
+        agents: [
+          { agentName: 'dart', instanceId: 'dart', state: 'listening' },
+          { agentName: 'nova', instanceId: 'default', state: 'gone-dark' },
+        ],
+      },
+    }, calls);
+    const map = await loadPodReach({ client, podId: 'p1' });
+    expect(calls).toEqual(['/api/pods/p1/agent-states']);
     expect(map.get(seatKey('dart', 'dart'))).toBe('running');
     expect(map.get(seatKey('nova', 'default'))).toBe('stalled');
   });
 
-  test('an agent installed in two pods takes its most alive verdict', async () => {
-    const client = fakeClient({
-      '/api/pods': { pods: [{ id: 'p1' }, { id: 'p2' }] },
-      '/api/pods/p1/agent-states': { agents: [{ agentName: 'dart', instanceId: 'dart', state: 'gone-dark' }] },
-      '/api/pods/p2/agent-states': { agents: [{ agentName: 'dart', instanceId: 'dart', state: 'listening' }] },
-    });
-    const map = await loadReachByAgent({ client });
-    expect(map.get(seatKey('dart', 'dart'))).toBe('running');
-  });
-
-  test('a pod with no agents adds nothing; a failed pod read fails the whole load', async () => {
-    const quiet = fakeClient({ '/api/pods': [{ _id: 'p1' }], '/api/pods/p1/agent-states': { agents: [] } });
-    expect((await loadReachByAgent({ client: quiet })).size).toBe(0);
-    const broken = fakeClient({ '/api/pods': [{ _id: 'p1' }], '/api/pods/p1/agent-states': new Error('503') });
-    await expect(loadReachByAgent({ client: broken })).rejects.toThrow('503');
+  test('a pod read that fails throws, so the caller can say why', async () => {
+    const client = fakeClient({ '/api/pods/p1/agent-states': new Error('503') });
+    await expect(loadPodReach({ client, podId: 'p1' })).rejects.toThrow('503');
   });
 });
 
 describe('createReachCache', () => {
-  test('reuses the verdict inside the ttl and reloads after it', async () => {
-    let clock = 0;
-    let loads = 0;
-    const cache = createReachCache({ load: async () => { loads += 1; return new Map([['a', loads]]); }, ttlMs: 10_000, now: () => clock });
-    expect((await cache()).get('a')).toBe(1);
-    clock = 9_000;
-    expect((await cache()).get('a')).toBe(1);
-    clock = 10_000;
-    expect((await cache()).get('a')).toBe(2);
+  test('merges pods, and an agent in two pods takes its most alive verdict', async () => {
+    const pods = {
+      p1: new Map([[seatKey('dart', 'dart'), 'stalled']]),
+      p2: new Map([[seatKey('dart', 'dart'), 'running'], [seatKey('nova', 'default'), 'not connected']]),
+    };
+    const reachFor = createReachCache({ load: async (podId) => pods[podId] });
+    const merged = await reachFor(['p1', 'p2']);
+    expect(merged.get(seatKey('dart', 'dart'))).toBe('running');
+    expect(merged.get(seatKey('nova', 'default'))).toBe('not connected');
   });
 
-  test('a failed load is not cached, so the next call retries', async () => {
+  test('reuses a pod inside the ttl and reloads it after', async () => {
+    let clock = 0;
+    let loads = 0;
+    const reachFor = createReachCache({
+      load: async () => { loads += 1; return new Map([['a:default', loads === 1 ? 'running' : 'stalled']]); },
+      ttlMs: 10_000,
+      now: () => clock,
+    });
+    expect((await reachFor(['p1'])).get('a:default')).toBe('running');
+    clock = 9_000;
+    expect((await reachFor(['p1'])).get('a:default')).toBe('running');
+    expect(loads).toBe(1);
+    clock = 10_000;
+    expect((await reachFor(['p1'])).get('a:default')).toBe('stalled');
+    expect(loads).toBe(2);
+  });
+
+  test('a failed pod read is not cached, so the next call retries it', async () => {
     let fail = true;
-    const cache = createReachCache({ load: async () => { if (fail) throw new Error('down'); return new Map(); }, now: () => 0 });
-    await expect(cache()).rejects.toThrow('down');
+    const reachFor = createReachCache({
+      load: async () => { if (fail) throw new Error('down'); return new Map(); },
+      now: () => 0,
+    });
+    await expect(reachFor(['p1'])).rejects.toThrow('down');
     fail = false;
-    await expect(cache()).resolves.toBeInstanceOf(Map);
+    await expect(reachFor(['p1'])).resolves.toBeInstanceOf(Map);
+  });
+});
+
+describe('readSessionLastTurn', () => {
+  test('returns the most recent turn across pods, or null when there is no store', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dart-sessions-'));
+    mkdirSync(join(home, '.commonly', 'sessions'), { recursive: true });
+    writeFileSync(join(home, '.commonly', 'sessions', 'dart.json'), JSON.stringify({
+      p1: { lastTurn: '2026-10-31T22:00:00Z' },
+      p2: { lastTurn: '2026-10-31T22:58:00Z' },
+    }));
+    expect(readSessionLastTurn('dart', { home })).toBe('2026-10-31T22:58:00Z');
+    expect(readSessionLastTurn('nova', { home })).toBeNull();
   });
 });

@@ -43,10 +43,11 @@ const TOKEN_SHAPE = /(cm_(?:daemon|agent|user)_[A-Za-z0-9_-]+|Bearer\s+\S+)/g;
 export const safeLogLine = (line, width) => clip(String(line).replace(TOKEN_SHAPE, '[redacted]'), width);
 
 // The state is the server's verdict, read by daemon-agent-states. `states` is
-// that Map; without it the state is unknown, and the frame says why. An agent
-// the verdict does not list has no installation on any pod this login can see.
+// that Map. Without it (no login, or the read failed) the seat shows its local
+// process state, labelled `local`, and never a server word. An agent the verdict
+// does not list has no installation on its pod.
 export const agentStateLabel = (seat = {}, states = null) => {
-  if (!states) return 'unknown';
+  if (!states) return `local ${seat.state || 'unknown'}`;
   return states.get(seatKey(seat.agentName, seat.instanceId)) || 'not registered';
 };
 
