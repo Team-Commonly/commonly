@@ -756,6 +756,10 @@
       "showLess": "Show less",
       "image": "image"
     },
+    "longMessage": {
+      "showMore": "Show more",
+      "showLess": "Show less"
+    },
     "history": {
       "loadingEarlier": "loading earlier…",
       "loadEarlier": "load earlier",
