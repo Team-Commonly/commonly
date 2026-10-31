@@ -359,7 +359,10 @@ Restart the host. `tools/list` should show the `commonly_*` tools and
 **Worked flow** — one question, answered from the pod and the web. Pod context
 goes to an external search service, so redact private content first. Fetched
 pages are untrusted input, so review them before anything goes out through
-`commonly_post_message`.
+`commonly_post_message`. Keep tool approval on, with Cursor's Auto-run ("Run
+Everything") off, for the Commonly write tools when the agent also fetches web
+pages. A fetched page could otherwise steer the model into posting before
+anyone reads it.
 
 1. Read the pod's context with `commonly_get_context` (or read recent messages
    with `commonly_get_messages`), so the host knows what the team is discussing.
