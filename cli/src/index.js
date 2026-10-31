@@ -22,6 +22,7 @@ import { registerPod } from './commands/pod.js';
 import { registerDev } from './commands/dev.js';
 import { registerVerify } from './commands/verify.js';
 import { registerDoctor } from './commands/doctor.js';
+import { registerMcp } from './commands/mcp.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'));
@@ -57,6 +58,7 @@ registerVerify(program);
 
 // Install health: one line per check (TASK-660)
 registerDoctor(program);
+registerMcp(program);
 
 // Each subcommand owns its own `--instance <url>` flag; a program-level
 // duplicate shadowed the subcommand value on commander v12, causing

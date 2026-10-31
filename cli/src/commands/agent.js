@@ -16,6 +16,7 @@ import { createRuntimeReporter } from '../lib/runtime-observation.js';
  * heartbeat  — manually trigger an agent's heartbeat
  */
 
+import { refreshMcpTokenCopy, removeMcpTokenCopy } from '../lib/mcp-token.js';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync } from 'fs';
 import { join, dirname, basename, resolve as pathResolve } from 'path';
 import { homedir, tmpdir } from 'os';
@@ -147,6 +148,12 @@ export const saveAgentToken = (name, record) => {
     JSON.stringify({ ...record, savedAt: new Date().toISOString() }, null, 2),
     { encoding: 'utf8', mode: 0o600 },
   );
+  // After the record is durable, so a failed refresh never loses a freshly minted token.
+  try {
+    refreshMcpTokenCopy(name, record?.runtimeToken);
+  } catch (err) {
+    console.warn(`Could not refresh the MCP token copy for '${name}': ${err.message}. Run: commonly mcp config --agent ${name}`);
+  }
 };
 
 export const loadAgentToken = (name) => {
@@ -162,6 +169,7 @@ export const loadAgentToken = (name) => {
 export const deleteAgentToken = (name) => {
   const file = tokenFile(name);
   if (existsSync(file)) rmSync(file);
+  removeMcpTokenCopy(name);
 };
 
 // ── env-var bootstrap for `agent run` (#913) ────────────────────────────────
