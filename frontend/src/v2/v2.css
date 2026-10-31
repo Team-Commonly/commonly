@@ -112,6 +112,20 @@ body.modern-ui.v2-canvas {
   --v2-danger: #ef4444;
   --v2-danger-text: #b91c1c;
   --v2-danger-soft: rgba(239, 68, 68, 0.10);
+  /* TASK-687/698: board status and priority colour, the D215 B-lite choice (Sam,
+     10-31). Blocked and P0 are red; in progress stays cobalt; P1, P2, pending and
+     done stay grey, with no green. Each state keeps its shape. Dark values are in
+     both dark blocks below. */
+  --v2-prio-p0-bg: #b42318;
+  --v2-prio-p0-fg: #ffffff;
+  --v2-prio-ink: var(--v2-text-secondary);
+  --v2-prio-p2-fg: #667085;
+  --v2-prio-edge: var(--v2-border);
+  --v2-status-live: var(--v2-accent);
+  --v2-status-idle: var(--v2-border-strong);
+  --v2-status-pending: #667085;
+  --v2-status-blocked: #d92d20;
+  --v2-status-blocked-edge: #d92d20;
 
   /* Agent role colors */
   --v2-pink: #f472b6;
@@ -198,6 +212,12 @@ body.modern-ui.v2-canvas {
     --v2-border: #364051;
     --v2-border-soft: #262d3a;
     --v2-border-strong: #5f6979;
+    --v2-prio-p0-bg: #f97066;
+    --v2-prio-p0-fg: #0b0e13;
+    --v2-prio-p2-fg: #8b94a5;
+    --v2-status-pending: var(--v2-border-strong);
+    --v2-status-blocked: #f97066;
+    --v2-status-blocked-edge: #f97066;
     --v2-text-primary: #e8ebf1;
     --v2-message-text: #e8ebf1;
     --v2-text-secondary: #aeb6c4;
@@ -244,6 +264,12 @@ body.modern-ui.v2-canvas {
       --v2-border: #364051;
       --v2-border-soft: #262d3a;
       --v2-border-strong: #5f6979;
+      --v2-prio-p0-bg: #f97066;
+      --v2-prio-p0-fg: #0b0e13;
+      --v2-prio-p2-fg: #8b94a5;
+      --v2-status-pending: var(--v2-border-strong);
+      --v2-status-blocked: #f97066;
+      --v2-status-blocked-edge: #f97066;
       --v2-text-primary: #e8ebf1;
       --v2-message-text: #e8ebf1;
       --v2-text-secondary: #aeb6c4;
@@ -13634,19 +13660,22 @@ body.modern-ui.v2-canvas {
 .v2-board__priority {
   display: inline-block;
   padding: 0 5px;
-  border: 1px solid var(--v2-border);
+  border: 1px solid var(--v2-prio-edge);
   border-radius: 4px;
   font: 500 11px/16px var(--v2-font-mono);
-  color: var(--v2-text-secondary);
+  color: var(--v2-prio-ink);
   background: none;
 }
-.v2-board__priority--p0 { border-color: var(--v2-text-primary); color: var(--v2-text-primary); }
+.v2-board__priority--p0 { background: var(--v2-prio-p0-bg); border-color: var(--v2-prio-p0-bg); color: var(--v2-prio-p0-fg); }
+.v2-board__priority--p2 { color: var(--v2-prio-p2-fg); }
+.v2-board__col--blocked .v2-board__col-name { color: var(--v2-status-blocked); }
+.v2-board__card--blocked { box-shadow: inset 3px 0 0 var(--v2-status-blocked-edge); }
 .v2-board__card-title { font-size: 14px; line-height: 20px; }
 .v2-board__owner-line { display: flex; align-items: center; gap: 6px; font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-secondary); }
 .v2-board__owner-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
-.v2-board__owner-dot--live { background: var(--v2-accent); }
-.v2-board__owner-dot--not-claimed { border: 1px dashed var(--v2-border-strong); }
-.v2-board__owner-dot--expired { border: 1px solid var(--v2-border-strong); background: none; }
+.v2-board__owner-dot--live { background: var(--v2-status-live); }
+.v2-board__owner-dot--not-claimed { border: 1px dashed var(--v2-status-pending); }
+.v2-board__owner-dot--expired { border: 1px solid var(--v2-status-idle); background: none; }
 .v2-board__card--done { border-color: var(--v2-border-soft); }
 .v2-board__card--done .v2-board__card-title { color: var(--v2-text-secondary); }
 .v2-root button.v2-board__card-move { min-height: 32px; padding: 0 10px; border-radius: 4px; }
