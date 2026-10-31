@@ -12127,11 +12127,6 @@ body.modern-ui.v2-canvas {
   box-shadow: inset 0 0 0 2px var(--v2-accent);
 }
 
-/* Keyboard focus on the selected row keeps its accent edge beside the ring. */
-.v2-root button.v2-pods__row--selected:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--v2-accent), inset 3px 0 0 var(--v2-accent);
-}
-
 /* Dark swaps the cobalt block for a neutral row. The accent bar on the leading
    edge carries "selected" when the fill alone is too close to the pane. */
 .v2-root button.v2-pods__row--selected,
@@ -12187,6 +12182,11 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-pods__row--selected .v2-pods__row-meta { color: var(--v2-row-active-mute); }
+
+/* Keyboard focus on the selected row keeps its accent edge beside the ring. */
+.v2-root button.v2-pods__row--selected:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--v2-accent), inset 3px 0 0 var(--v2-accent);
+}
 
 .v2-pods__row-pill {
   display: grid;
