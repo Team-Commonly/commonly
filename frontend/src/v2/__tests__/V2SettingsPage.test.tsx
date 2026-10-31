@@ -116,6 +116,27 @@ describe('V2SettingsPage', () => {
     expect(languageRadioLabels()).toEqual(LANGUAGE_REGISTRY.map(({ label }) => label));
   });
 
+  test('Look carries the language as a segment that switches the app language', async () => {
+    await i18nReady;
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    renderSettings();
+
+    const look = screen.getByRole('region', { name: 'Look' });
+    const language = within(look).getByRole('radiogroup', { name: 'Language' });
+    expect(language).toHaveClass('v2-seg');
+    expect(within(language).getByRole('radio', { name: 'English' })).toHaveAttribute('aria-checked', 'true');
+    expect(within(look).getByRole('radiogroup', { name: 'Appearance' })).toHaveClass('v2-seg');
+
+    await act(async () => { fireEvent.click(within(language).getByRole('radio', { name: '中文' })); });
+    expect(i18n.resolvedLanguage).toBe('zh-CN');
+    // The labels follow the new language, and the segment shows the choice.
+    const zhLanguage = within(screen.getByRole('region', { name: 'Look' })).getByRole('radiogroup', { name: '语言' });
+    expect(within(zhLanguage).getByRole('radio', { name: '中文' })).toHaveAttribute('aria-checked', 'true');
+
+    await act(async () => { fireEvent.click(within(zhLanguage).getByRole('radio', { name: 'English' })); });
+    expect(i18n.resolvedLanguage).toBe('en');
+  });
+
   test('keeps every folded settings concern visible on one page', () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     renderSettings();
@@ -128,7 +149,7 @@ describe('V2SettingsPage', () => {
       { id: 'devices', title: 'Devices' },
       { id: 'api-token', title: 'API token' },
       { id: 'connected-apps', title: 'Connected apps' },
-      { id: 'language', title: 'Language' },
+      { id: 'look', title: 'Look' },
     ]) {
       expect(screen.getByRole('heading', { name: section.title })).toBeInTheDocument();
       expect(screen.getByRole('link', { name: section.title })).toHaveAttribute('href', `#v2-settings-${section.id}`);

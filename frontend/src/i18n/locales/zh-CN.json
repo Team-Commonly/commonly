@@ -1336,15 +1336,13 @@
     "workspace": {
       "ariaLabel": "Pod 检视器",
       "close": "关闭检视器",
-      "agentsIn": "{{pod}} 中的智能体",
       "noAgents": "暂无智能体",
       "needsYou": "需要你处理",
       "nothingOpen": "没有待处理项。",
       "nothingWorking_other": "没有需要你处理的事项。{{agents}} 正在工作。",
       "wip": "进行中",
       "members": "成员",
-      "manage": "管理",
-      "podSettings": "Pod 设置",
+      "manage": "管理智能体",
       "joinPolicyError": "无法更改加入方式，请重试。",
       "agentStatus": {
         "needsYou": "需要你处理 · {{title}}",
@@ -1352,9 +1350,11 @@
         "working": "进行中",
         "idle": "空闲"
       },
-      "filesIn": "{{pod}} 中的文件",
       "noFiles": "暂无文件",
-      "allFiles": "全部{{count}}个文件"
+      "allFiles": "全部{{count}}个文件",
+      "agents": "智能体",
+      "files": "文件",
+      "joinOpen": "开放"
     },
     "goal": {
       "title": "目标",
@@ -2108,7 +2108,10 @@
       "noMatch": "没有匹配的 Pod",
       "pinnedTitle": "置顶",
       "recent": "最近",
-      "everything": "全部"
+      "everything": "全部",
+      "viewLabel": "Pod 列表",
+      "all": "全部",
+      "noPinned": "在 Pod 行上点置顶，它就会留在这里。"
     }
   },
   "feedbackMenu": {

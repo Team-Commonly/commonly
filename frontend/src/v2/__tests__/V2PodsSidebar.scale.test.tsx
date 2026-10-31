@@ -100,6 +100,11 @@ const section = (name) => (
   || screen.getByRole('heading', { name: new RegExp(`^${name}`) })
 ).closest('section');
 
+// The rows the current segment shows, in order.
+const listRows = () => [...document.querySelectorAll('.v2-pods__list button.v2-pods__row')];
+const viewSwitch = () => screen.getByRole('radiogroup', { name: 'Pod list' });
+const chooseView = (name) => fireEvent.click(within(viewSwitch()).getByRole('radio', { name: new RegExp(`^${name}`) }));
+
 describe('V2PodsSidebar — direction C', () => {
   beforeAll(async () => { await i18nReady; });
 
@@ -114,30 +119,53 @@ describe('V2PodsSidebar — direction C', () => {
 
   afterEach(() => { jest.useRealTimers(); });
 
-  test('Pinned, Recent (eight) and Everything (folded, with the total) in that order; no pods/team/channels/direct labels', () => {
+  test('a Recent · All · Pinned segment replaces the headings; Recent (eight, pinned included) is the default', () => {
     mockPinned.add('sharpen');
     mockPinned.add('connectors');
     renderSidebar(fleet);
 
-    const heads = screen.getAllByRole('button', { name: /^(Pinned|Recent|Everything)/ }).map((h) => h.textContent.replace(/[▾▸\s]+$/, '').trim());
-    expect(heads).toEqual(['Pinned', 'Recent', 'Everything 12']);
-    expect(screen.getByRole('button', { name: /^Pinned/ })).toHaveAttribute('aria-expanded', 'true');
-    const everything = screen.getByRole('button', { name: /^Everything/ });
-    expect(everything).toHaveAttribute('aria-expanded', 'false');
-    expect(everything).toHaveTextContent('12');
+    const radios = within(viewSwitch()).getAllByRole('radio');
+    expect(radios.map((radio) => radio.textContent)).toEqual(['Recent', 'All12', 'Pinned']);
+    expect(radios[0]).toHaveAttribute('aria-checked', 'true');
+    expect(radios[1]).toHaveAttribute('aria-checked', 'false');
+    // The old headings and the "Everything ▸" fold are gone.
+    expect(screen.queryByRole('button', { name: /^(Pinned|Recent|Everything)/ })).not.toBeInTheDocument();
 
-    expect(within(section('Pinned')).getAllByRole('button').filter((b) => b.className.includes('v2-pods__row')).map((b) => b.textContent)).toEqual(
-      expect.arrayContaining([expect.stringContaining('Sharpen'), expect.stringContaining('Connectors v2')]),
-    );
-    const recentRows = within(section('Recent')).getAllByRole('button').filter((b) => b.className.includes('v2-pods__row'));
+    const recentRows = listRows();
     expect(recentRows).toHaveLength(8);
-    expect(recentRows.map((row) => row.textContent)).not.toEqual(expect.arrayContaining([expect.stringContaining('Sharpen')]));
-    // The 10th non-pinned pod (Study, 14 days) falls off Recent.
+    // With no Pinned heading above it, Recent carries pinned pods in message order.
+    expect(recentRows[0]).toHaveTextContent('Sharpen');
+    expect(recentRows[1]).toHaveTextContent('Connectors v2');
+    // The 9th pod by message time (DM, 1 day) and older fall off Recent.
     expect(recentRows.map((row) => row.textContent).join(' ')).not.toContain('Study — agents lit');
 
     ['pods', 'team', 'chat', 'channels', 'direct', 'Connect Slack'].forEach((label) => {
       expect(screen.queryByText(new RegExp(`^${label}$`))).not.toBeInTheDocument();
     });
+  });
+
+  test('the Pinned segment lists only pinned pods, and teaches when there are none', () => {
+    mockPinned.add('naming');
+    const { unmount } = renderSidebar(fleet);
+    chooseView('Pinned');
+    expect(listRows().map((row) => row.textContent)).toEqual([expect.stringContaining('Naming huddle')]);
+    expect(sessionStorage.getItem('v2:pods.view')).toBe('pinned');
+    unmount();
+
+    mockPinned.clear();
+    renderSidebar(fleet);
+    // The choice is remembered for the session.
+    expect(within(viewSwitch()).getByRole('radio', { name: 'Pinned' })).toHaveAttribute('aria-checked', 'true');
+    expect(listRows()).toHaveLength(0);
+    expect(screen.getByText('Pin a pod from its row to keep it here.')).toBeInTheDocument();
+  });
+
+  test('arrow keys move the segment like a radiogroup', () => {
+    renderSidebar(fleet);
+    const recent = within(viewSwitch()).getByRole('radio', { name: 'Recent' });
+    fireEvent.keyDown(recent, { key: 'ArrowRight' });
+    expect(within(viewSwitch()).getByRole('radio', { name: /^All/ })).toHaveAttribute('aria-checked', 'true');
+    expect(document.activeElement).toBe(within(viewSwitch()).getByRole('radio', { name: /^All/ }));
   });
 
   test('every row carries a mark, the needs-you pill when there is a count, and the last-message time', () => {
@@ -206,7 +234,7 @@ describe('V2PodsSidebar — direction C', () => {
   test('Recent and search use message order even when the other pod was visited last', () => {
     localStorage.setItem(POD_VISITS_KEY, JSON.stringify({ sprint: NOW - 500, files: NOW - 1000, sharpen: NOW - 2000 }));
     renderSidebar(fleet, null);
-    const rows = within(section('Recent')).getAllByRole('button').filter((b) => b.className.includes('v2-pods__row')).map((row) => row.textContent);
+    const rows = listRows().map((row) => row.textContent);
     expect(rows[0]).toContain('Sharpen');
     expect(rows[0]).toContain('9m');
     expect(rows).not.toEqual(expect.arrayContaining([expect.stringContaining('File access test')]));
@@ -230,7 +258,7 @@ describe('V2PodsSidebar — direction C', () => {
     });
     localStorage.setItem(POD_VISITS_KEY, JSON.stringify({ empty: NOW - 1000 }));
     renderSidebar([emptyPod, messagePod], null);
-    const rows = within(section('Recent')).getAllByRole('button').filter((b) => b.className.includes('v2-pods__row'));
+    const rows = listRows();
     expect(rows.map((row) => row.textContent)).toEqual([
       expect.stringContaining('Order with message'),
       expect.stringContaining('Order empty'),
@@ -246,11 +274,11 @@ describe('V2PodsSidebar — direction C', () => {
     ]);
   });
 
-  test('Everything unfolds into kinds with counts, each closed, and remembers its open state for the session', () => {
+  test('All unfolds into kinds with counts, each closed, and remembers the view for the session', () => {
     mockPinned.add('sharpen');
     renderSidebar(fleet);
-    fireEvent.click(screen.getByRole('button', { name: /^Everything/ }));
-    expect(screen.getByRole('button', { name: /^Everything/ })).toHaveAttribute('aria-expanded', 'true');
+    chooseView('All');
+    expect(within(viewSwitch()).getByRole('radio', { name: /^All/ })).toHaveAttribute('aria-checked', 'true');
     const kinds = screen.getAllByRole('button', { name: /^(team|community|chat|study|admin|direct)\s+\d+/ });
     expect(kinds.map((k) => k.textContent.replace(/[▾▸]/g, '').replace(/\s+/g, ' ').trim())).toEqual([
       'team 5', 'community 1', 'chat 3', 'study 1', 'admin 1', 'direct 1',
@@ -259,7 +287,7 @@ describe('V2PodsSidebar — direction C', () => {
     // Pinned pods are in the inventory too.
     fireEvent.click(screen.getByRole('button', { name: /^team\s+5/ }));
     expect(within(section('team')).getByRole('button', { name: /Sharpen/ })).toHaveClass('v2-pods__row--in-fold');
-    expect(sessionStorage.getItem('v2:pods.everythingOpen')).toBe('1');
+    expect(sessionStorage.getItem('v2:pods.view')).toBe('all');
     expect(JSON.parse(sessionStorage.getItem('v2:pods.kindsOpen'))).toEqual(['team']);
   });
 
@@ -267,14 +295,14 @@ describe('V2PodsSidebar — direction C', () => {
     renderSidebar(fleet);
     const input = screen.getByRole('searchbox', { name: 'Search pods' });
     fireEvent.change(input, { target: { value: 'rewire' } });
-    expect(screen.queryByRole('button', { name: /^Recent/ })).not.toBeInTheDocument();
+    expect(listRows().map((row) => row.textContent).join(' ')).not.toContain('Sharpen');
     expect(screen.getAllByRole('button', { name: /Rewire/ }).map((b) => b.textContent)).toEqual([
       expect.stringContaining('Rewire Live Demo'), expect.stringContaining('Rewire Demo Sprint'),
     ]);
     fireEvent.change(input, { target: { value: 'zzz' } });
     expect(screen.getByText('no pods match')).toBeInTheDocument();
     fireEvent.keyDown(input, { key: 'Escape' });
-    expect(screen.getByRole('button', { name: /^Recent/ })).toBeInTheDocument();
+    expect(listRows()).toHaveLength(8);
   });
 
   test('⌘K focuses the search box from anywhere', () => {
@@ -345,33 +373,38 @@ describe('V2PodsSidebar — direction C', () => {
     expect(groups.flatMap((g) => g.pods).length).toBe(fleet.length);
   });
 
-  test('42 pods: Everything counts every kind, Recent stays eight, pinned rows show the pin, search finds a generated pod', () => {
+  test('42 pods: All counts every kind, Recent stays eight, search finds a generated pod', () => {
     mockPinned.add('sharpen');
     renderSidebar(fleet42);
-    const everything = screen.getByRole('button', { name: /^Everything/ });
-    expect(everything).toHaveTextContent('42');
-    expect(within(section('Recent')).getAllByRole('button', { name: /^(?!Pin|Unpin)/ }).filter((b) => b.className.includes('v2-pods__row'))).toHaveLength(8);
-    fireEvent.click(everything);
+    expect(within(viewSwitch()).getByRole('radio', { name: /^All/ })).toHaveTextContent('42');
+    expect(listRows()).toHaveLength(8);
+    chooseView('All');
     const kinds = screen.getAllByRole('button', { name: /^(team|community|chat|study|games|admin|direct)\s+\d+/ });
     const counts = Object.fromEntries(kinds.map((k) => k.textContent.replace(/[▾▸]/g, '').replace(/\s+/g, ' ').trim().split(' ')));
     expect(Object.values(counts).reduce((a, n) => a + Number(n), 0)).toBe(42);
     expect(counts.games).toBe('4');
-    // The pinned row carries an active pin; an unpinned row's pin toggles the store.
-    expect(screen.getByRole('button', { name: 'Unpin pod' })).toHaveClass('v2-pods__pin--active');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Pin pod' })[0]);
-    expect(mockTogglePin).toHaveBeenCalledTimes(1);
     const input = screen.getByRole('searchbox', { name: 'Search pods' });
     fireEvent.change(input, { target: { value: 'Generated pod 30' } });
     expect(screen.getAllByRole('button', { name: /Generated pod 30/ })).toHaveLength(1);
   });
 
-  test('Pinned and Recent collapse and remember it for the session', () => {
+  test('every row carries a pin icon button that toggles the store without opening the pod', () => {
     mockPinned.add('sharpen');
-    renderSidebar(fleet);
-    fireEvent.click(screen.getByRole('button', { name: /^Recent/ }));
-    expect(screen.getByRole('button', { name: /^Recent/ })).toHaveAttribute('aria-expanded', 'false');
-    expect(within(section('Recent')).queryByRole('button', { name: /Commonly HQ/ })).not.toBeInTheDocument();
-    expect(JSON.parse(sessionStorage.getItem('v2:pods.closedSections'))).toEqual(['recent']);
+    renderSidebar(fleet, null);
+    const unpin = screen.getByRole('button', { name: 'Unpin pod' });
+    expect(unpin).toHaveClass('v2-pods__pin--active');
+    expect(unpin).toHaveAttribute('aria-pressed', 'true');
+    expect(unpin).toHaveAttribute('title', 'Unpin');
+    expect(unpin.querySelector('svg')).toBeTruthy();
+    const pins = screen.getAllByRole('button', { name: 'Pin pod' });
+    expect(pins).toHaveLength(7);
+    // The pin sits beside the row (a button cannot nest a button) and shares
+    // its hover wrapper, which hides the time while the pin shows.
+    expect(pins[0].parentElement).toHaveClass('v2-pods__rowwrap');
+    expect(pins[0].parentElement.querySelector('.v2-pods__row-time')).toBeTruthy();
+    fireEvent.click(pins[0]);
+    expect(mockTogglePin).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/sharpen');
   });
 
   test('recentPods excludes pinned pods and caps at the limit', () => {

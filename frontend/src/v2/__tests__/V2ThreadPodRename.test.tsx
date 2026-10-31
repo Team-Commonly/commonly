@@ -4,7 +4,7 @@
 // only offers the control to the creator, then re-reads the pod on success.
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import V2Thread from '../components/V2Thread';
 import { AuthContext } from '../../context/AuthContext';
@@ -53,6 +53,8 @@ const authValue = (id) => ({
   updateProfile: jest.fn(),
 });
 
+const Location = () => <output data-testid="location">{useLocation().pathname}</output>;
+
 const pod = (createdBy) => ({ _id: 'pod-1', name: 'Launch notes', type: 'chat', createdBy });
 
 const renderHeader = ({ viewerId = 'u1', createdBy = 'u1', refresh = jest.fn() } = {}) => {
@@ -70,6 +72,7 @@ const renderHeader = ({ viewerId = 'u1', createdBy = 'u1', refresh = jest.fn() }
     <AuthContext.Provider value={authValue(viewerId)}>
       <MemoryRouter>
         <V2Thread detail={detail} />
+        <Location />
       </MemoryRouter>
     </AuthContext.Provider>,
   );
@@ -91,6 +94,33 @@ describe('V2Thread — owner-only pod rename (TASK-419)', () => {
 
     renderHeader({ viewerId: 'u1', createdBy: 'u1' });
     expect(renameButton()).toBeInTheDocument();
+  });
+
+  test('D215: Rename is a pencil icon button on the title, named by aria-label and title', () => {
+    renderHeader();
+    const pencil = renameButton();
+    expect(pencil).toHaveAttribute('title', 'Rename');
+    expect(pencil).toHaveTextContent('');
+    expect(pencil.querySelector('svg')).toBeTruthy();
+    expect(pencil.closest('.v2-thread__title-line')).toBeTruthy();
+  });
+
+  test('D215: the board count is a chip with a glyph, and it still opens the board', async () => {
+    axios.get.mockImplementation((url) => Promise.resolve({
+      data: url.includes('/api/v1/tasks/') ? { tasks: [{ status: 'pending' }, { status: 'claimed' }, { status: 'done' }] } : {},
+    }));
+    renderHeader();
+    const chips = await screen.findAllByRole('button', { name: 'board 2 open' });
+    // The desktop meta and the phone line each carry one; CSS shows one.
+    expect(chips).toHaveLength(2);
+    chips.forEach((chip) => {
+      expect(chip).toHaveAttribute('title', 'board 2 open');
+      expect(chip).toHaveTextContent(/^2$/);
+      expect(chip.querySelector('svg')).toBeTruthy();
+    });
+    fireEvent.click(chips[0]);
+    expect(await screen.findByTestId('location')).toHaveTextContent('/v2/pods/pod-1/board');
+    axios.get.mockImplementation(() => Promise.resolve({ data: {} }));
   });
 
   test('saving sends the trimmed name, then re-reads the pod', async () => {
