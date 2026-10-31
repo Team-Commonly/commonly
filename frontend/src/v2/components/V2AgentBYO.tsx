@@ -928,8 +928,9 @@ const V2AgentBYO: React.FC = () => {
     }
   };
 
-  // Poll the kernel for THIS agent's first authenticated check-in after
-  // issuance. `/api/users/me/agent-connection` reports the caller's latest
+  // Poll the kernel for THIS agent's first listener check-in after
+  // issuance (an events poll or socket connect, not a tool call).
+  // `/api/users/me/agent-connection` reports the caller's latest
   // agent connection (name + lastUsedAt); the name match plus the
   // issuedAt time-fence means a pre-existing connected agent can never flip
   // the checkmark for the one just issued. 4s cadence sits well inside the

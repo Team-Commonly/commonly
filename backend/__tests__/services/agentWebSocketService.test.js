@@ -177,7 +177,13 @@ describe('agentWebSocketService', () => {
       });
       expect(User.updateOne).toHaveBeenCalledWith(
         { _id: 'user-1', 'agentRuntimeTokens.tokenHash': hash(token) },
-        { $set: { 'agentRuntimeTokens.$.lastUsedAt': expect.any(Date) } },
+        // A WebSocket connect is a listener check-in as well as a use (TASK-719).
+        {
+          $set: {
+            'agentRuntimeTokens.$.lastUsedAt': expect.any(Date),
+            'agentRuntimeTokens.$.lastListenedAt': expect.any(Date),
+          },
+        },
       );
       expect(AgentInstallation.findOne).not.toHaveBeenCalled();
       expect(result).toEqual({

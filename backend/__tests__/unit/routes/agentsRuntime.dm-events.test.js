@@ -19,6 +19,9 @@ jest.mock('../../../services/agentIdentityService', () => ({
   )),
   getOrCreateAgentUser: jest.fn(),
 }));
+jest.mock('../../../services/agentListenerCheckIn', () => ({
+  recordListenerCheckIn: jest.fn(),
+}));
 jest.mock('../../../services/agentMessageService', () => ({}));
 jest.mock('../../../services/agentThreadService', () => ({}));
 jest.mock('../../../services/podContextService', () => ({}));
@@ -44,6 +47,7 @@ jest.mock('../../../models/AgentRegistry', () => ({
 
 const AgentEventService = require('../../../services/agentEventService');
 const AgentIdentityService = require('../../../services/agentIdentityService');
+const { recordListenerCheckIn } = require('../../../services/agentListenerCheckIn');
 const DMService = require('../../../services/dmService');
 const Pod = require('../../../models/Pod');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
@@ -92,6 +96,26 @@ describe('agentsRuntime DM and event pod coverage', () => {
       podIds: ['pod-1', 'dm-pod-1'],
     }));
     expect(res.json).toHaveBeenCalledWith({ events: [], inboxCount: 0 });
+  });
+
+  it('stamps a listener check-in for the polling token on GET /events', async () => {
+    const handler = getRouteHandler('/events', 'get');
+    Pod.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([]),
+    });
+    AgentEventService.listInboxPage.mockResolvedValue({ events: [], inboxCount: 0 });
+
+    const req = {
+      query: {},
+      agentInstallation: { agentName: 'openclaw', instanceId: 'liz', podId: 'pod-1' },
+      agentInstallations: [{ podId: 'pod-1' }],
+      agentUser: { _id: 'bot-user-1', username: 'openclaw-liz' },
+      agentTokenHash: 'hashed-token',
+    };
+    await handler(req, { status: jest.fn().mockReturnThis(), json: jest.fn() });
+
+    expect(recordListenerCheckIn).toHaveBeenCalledWith('bot-user-1', 'hashed-token');
   });
 
   it('creates or returns DM pod via POST /dm', async () => {
