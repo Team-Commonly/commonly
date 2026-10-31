@@ -1,7 +1,8 @@
 import type { V2ApiClient } from '../hooks/useV2Api';
 
 export type ByoStep = 'page-viewed' | 'seat-created' | 'mcp-command-copied' | 'cli-command-copied'
-  | 'token-copied' | 'listen-confirmed' | 'listen-timeout' | 'hosted-offer-shown' | 'hosted-offer-clicked'
+  | 'daemon-command-copied' | 'token-copied' | 'listen-confirmed' | 'listen-timeout'
+  | 'hosted-offer-shown' | 'hosted-offer-clicked'
   | 'invite-card-shown' | 'invite-card-dismissed' | 'byo-offer-shown';
 
 // Fixed event names only. Commands and credentials must never enter telemetry.

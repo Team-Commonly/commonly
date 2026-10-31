@@ -12,6 +12,7 @@ As of TASK-483 and TASK-493 (2026-10-24), the browser sends:
 | `seat-created` | A runtime key was issued and its command rendered. Once per issued command. This is the command-exposure denominator. |
 | `mcp-command-copied` | The Claude or Cursor copy button successfully wrote the command. |
 | `cli-command-copied` | The listener copy button successfully wrote the command. |
+| `daemon-command-copied` | The "Add a computer" daemon command copy button successfully wrote the command. Telemetry only: it sets no onboarding copy mark, so stalled-connect messaging is unchanged. Before TASK-653 this copy posted nothing, so a user who used this path was invisible to the copy count. |
 | `token-copied` | The token copy button successfully wrote the key. |
 | `listen-confirmed` | The connection poll observed this agent using its key after issuance (with existing clock-skew allowance). |
 | `hosted-offer-shown` | The timer or desktop exit-intent path displayed the hosted offer. The shared session guard records it once, including when both triggers run. |

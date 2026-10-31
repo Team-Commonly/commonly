@@ -87,7 +87,7 @@ const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit
 const { recordByoEvent } = require('../services/byoTelemetry');
 
 const BYO_STEPS = new Set([
-  'page-viewed', 'seat-created', 'mcp-command-copied', 'cli-command-copied',
+  'page-viewed', 'seat-created', 'mcp-command-copied', 'cli-command-copied', 'daemon-command-copied',
   'token-copied', 'listen-confirmed', 'listen-timeout', 'hosted-offer-shown', 'hosted-offer-clicked',
   'invite-card-shown', 'invite-card-dismissed', 'byo-offer-shown',
 ]);

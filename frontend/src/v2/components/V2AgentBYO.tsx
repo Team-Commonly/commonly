@@ -990,6 +990,7 @@ const V2AgentBYO: React.FC = () => {
       setTimeout(() => setCopied((c) => (c === key ? null : c)), 1500);
       if (key === 'claude' || key === 'cursor') byoStep('mcp-command-copied');
       else if (key === 'listen') byoStep('cli-command-copied');
+      else if (key === 'daemon-setup') byoStep('daemon-command-copied');
       else if (key === 'tok') byoStep('token-copied');
     } catch {
       // Clipboard may be unavailable (non-HTTPS, sandbox); user can select manually.

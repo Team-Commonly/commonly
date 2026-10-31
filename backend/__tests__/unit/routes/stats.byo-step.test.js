@@ -60,6 +60,20 @@ describe('POST /api/stats/byo-step', () => {
     expect(JSON.stringify(mockInsertOne.mock.calls[0][0])).not.toContain('cm_agent_secret');
   });
 
+  it('records the daemon copy as telemetry only, with no onboarding copy mark', async () => {
+    const res = await request(app)
+      .post('/api/stats/byo-step')
+      .send({ step: 'daemon-command-copied', command: 'commonly daemon register' });
+
+    expect(res.status).toBe(200);
+    expect(mockMarkByoCommandCopied).not.toHaveBeenCalled();
+    expect(mockInsertOne).toHaveBeenCalledWith({
+      userId: 'human-1',
+      step: 'daemon-command-copied',
+      at: expect.any(Date),
+    });
+  });
+
   it.each(['hosted-offer-shown', 'hosted-offer-clicked'])('accepts %s without copied-command marks or extra payload', async (step) => {
     const res = await request(app).post('/api/stats/byo-step')
       .send({ step, command: 'fixture-only-secret', agentName: 'private-agent' });
