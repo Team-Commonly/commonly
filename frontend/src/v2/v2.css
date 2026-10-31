@@ -10755,7 +10755,7 @@ body.modern-ui.v2-canvas {
    spanning placements sized the name, detail and act past a 150px tile. Inside a
    tile the content stacks in one track and wraps within the tile. */
 .v2-root .v2-connectors__rows button.v2-connector-row__selection { grid-column: 1; grid-template-columns: minmax(0, 1fr); row-gap: 6px; }
-.v2-connectors__rows .v2-connector-row__name { min-width: 0; overflow-wrap: normal; }
+.v2-connectors__rows .v2-connector-row__name { min-width: 0; overflow-wrap: normal; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
 .v2-connectors__rows .v2-connector-row__details { min-width: 0; overflow-wrap: anywhere; padding-right: 0; }
 /* The 760px rule reserved 52px beside the icon act (column 2). The act now sits
    in row 2 inside a tile, so the reserve only narrowed the text. */
