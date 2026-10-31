@@ -49,12 +49,12 @@ export type StalledConnectCopyEvidence = {
 };
 
 /**
- * The listener answers @mentions only on a Mac for now: Commonly runs Claude
- * Code and Codex in a sandbox, and neither sandbox runs them on Linux or
- * Windows (V2AgentBYO's listenerRunsOn). The page says so with
- * agentByo.listen.unavailableClaude / unavailableCodex; this is the same
- * sentence after the fact. The server never learns which adapter the copied
- * command named, so the copy names the listener, not the CLI.
+ * The listener answers @mentions only on a Mac for now (V2AgentBYO's
+ * listenerRunsOn), for a different reason per adapter: Commonly's sandbox
+ * cannot run Claude Code on Linux or Windows, and Codex there is not yet
+ * tested (agentByo.listen.unavailableClaude / unavailableCodex). The server
+ * never learns which adapter the copied command named, so the copy names the
+ * listener, not the CLI, and states only what is true for both: Mac only.
  *
  * It hedges, unlike the rest of this file. The page shows the listener command
  * only on its Mac tab, so a copy from a Linux or Windows browser means the
@@ -106,8 +106,8 @@ export const composeStalledConnectNudge = ({
     if (unavailableOs) {
       return `@${installerName} — you copied the listener command `
         + `${copiedAtDescription(offsetSeconds)}; no connection arrived. `
-        + `If you ran it on ${unavailableOs}, that's why: the listener can't answer @mentions from `
-        + `${unavailableOs} yet, because Commonly runs it in a sandbox that can't run there. `
+        + `If you ran it on ${unavailableOs}, that's likely why: the listener answers @mentions `
+        + `only from a Mac for now. `
         + `Run \`${fixCommand}\` on a Mac, or choose “Run it here” on the Bring your own page for a hosted agent. `
         + `I'll post here the moment I connect.`;
     }
