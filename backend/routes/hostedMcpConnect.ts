@@ -39,7 +39,14 @@ const { revokeConnectionGrants } = require('../services/roomGrantService');
 // eslint-disable-next-line global-require
 const { revokeTokenAtVendor } = require('../services/connectionRemovalService');
 // eslint-disable-next-line global-require
-const { HOSTED_MCP_ENTRIES, findHostedMcpEntry, hostedMcpRevokeTarget } = require('../integrations/hostedMcp/entries');
+// Typed requires: tsc checks this route against the real module shapes, so an
+// OAuth-only field read on the HostedMcpEntry union fails the build.
+const {
+  HOSTED_MCP_ENTRIES, findHostedMcpEntry, hostedMcpRevokeTarget,
+}: typeof import('../integrations/hostedMcp/entries') = require('../integrations/hostedMcp/entries');
+const {
+  isOAuthEntry,
+}: typeof import('../services/hostedMcpEntryService') = require('../services/hostedMcpEntryService');
 const { isHostedMcpEntryHidden } = require('../integrations/hostedMcp/visibility');
 // eslint-disable-next-line global-require
 const {
@@ -57,7 +64,7 @@ const {
   hostedMcpNonceCookiePath,
   readCookie,
   resolvedHostedMcpClient,
-} = require('../services/hostedMcpIntakeService');
+}: typeof import('../services/hostedMcpIntakeService') = require('../services/hostedMcpIntakeService');
 
 type AuthedRequest = Request & { user?: { id?: string; role?: string } };
 
@@ -218,7 +225,7 @@ router.get('/:entryId/client-metadata', clientMetadataRateLimit, (req: Request, 
     // still accept as a client with nowhere to send a code.
     return res.status(404).json({ error: 'unknown_entry' });
   }
-  if (entry.client !== 'cimd') {
+  if (!isOAuthEntry(entry) || entry.client !== 'cimd') {
     return res.status(404).json({ error: 'client_metadata_not_used' });
   }
   return res.json(buildClientMetadataDocument(entry));
@@ -241,7 +248,8 @@ const startConnect = async (req: AuthedRequest, res: Response) => {
     return res.status(401).json({ error: 'authentication_required' });
   }
   const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, req.params.entryId);
-  if (!entry) {
+  // An operator-key entry connects through its own paste route, never this flow.
+  if (!entry || !isOAuthEntry(entry)) {
     return res.status(404).json({ error: 'unknown_entry' });
   }
   if (isHostedMcpEntryHidden(entry.id, process.env, userId)) return res.status(404).json({ error: 'unknown_entry' });
@@ -382,7 +390,7 @@ interface CallbackFlow {
 
 const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) => {
   const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, req.params.entryId);
-  if (!entry) {
+  if (!entry || !isOAuthEntry(entry)) {
     return callbackRedirect(res, 'error', 'unknown_entry');
   }
   const state = typeof req.query.state === 'string' ? req.query.state : '';
