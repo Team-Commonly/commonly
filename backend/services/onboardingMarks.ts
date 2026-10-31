@@ -28,8 +28,9 @@
  *
  * byoOpenedOs is written with it, in the same write-once update: the OS the
  * page detected from the browser, one of BYO_OPENED_OS. The listener runs only
- * on Mac and Linux today, so this splits "left" by whether setup could have worked at
- * all. An unknown or missing value records the visit without an OS.
+ * on Mac (listenerRunsOn in V2AgentBYO.tsx is os === 'mac'), so this splits
+ * "left" by whether setup could have worked at all. An unknown or missing value
+ * records the visit without an OS.
  *
  * Three surface marks come from the browser through POST /api/stats/byo-step,
  * as fixed step names (D139): inviteCardShownAt and inviteCardDismissedAt for
