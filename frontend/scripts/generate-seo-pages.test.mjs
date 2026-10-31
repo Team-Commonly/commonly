@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildPageDefinitions, generateSeoPages, renderStaticPage } from './generate-seo-pages.mjs';
+import { assertNoOpenHolds, buildPageDefinitions, generateSeoPages, renderMarkdown, renderStaticPage } from './generate-seo-pages.mjs';
 
 const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -20,10 +20,12 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 101);
+  assert.equal(pages.length, 103);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
+    '/compare/openagents/',
+    '/compare/github-agent-hq/',
     '/use-cases/team-chat/',
     '/use-cases/agent-collab/',
     '/use-cases/research-desk/',
@@ -2187,8 +2189,69 @@ test('the compare page is unlisted: noindex, out of the sitemap, and linked from
   await writeFile(resolve(outputDir, 'index.html'), template);
   await generateSeoPages({ outputDir });
   const sitemap = await readFile(resolve(outputDir, 'sitemap.xml'), 'utf8');
-  assert.doesNotMatch(sitemap, /\/compare\//);
+  assert.doesNotMatch(sitemap, /<loc>https:\/\/commonly\.me\/compare\/<\/loc>/);
+  assert.match(sitemap, /<loc>https:\/\/commonly\.me\/compare\/openagents\/<\/loc>/);
+  assert.match(sitemap, /<loc>https:\/\/commonly\.me\/compare\/github-agent-hq\/<\/loc>/);
+  for (const slug of ['openagents', 'github-agent-hq']) {
+    // No app route serves these, so the generated page must ship without the app's entry script.
+    const html = await readFile(resolve(outputDir, `compare/${slug}/index.html`), 'utf8');
+    assert.doesNotMatch(html, /index-abcd\.js/, slug);
+    assert.match(html, /<main class="seo-article">/, slug);
+  }
   assert.match(sitemap, /<loc>https:\/\/commonly\.me\/use-cases\/team-chat\/<\/loc>/);
+});
+
+test('a compare page renders GTM markdown and refuses to build while a HOLD is open', () => {
+  const html = renderMarkdown([
+    '# Title',
+    '',
+    'A **bold** claim with `code` and [a link](https://example.com/x) and https://example.org/y.',
+    '',
+    '| | Left | Right |',
+    '|---|---|---|',
+    '| **Row** | one [1] | two |',
+    '',
+    '- first',
+    '- second',
+    '',
+    '1. step one',
+    '',
+    '<!-- internal note, never rendered -->',
+  ].join('\n'));
+
+  assert.match(html, /<h1>Title<\/h1>/);
+  assert.match(html, /<p>A <strong>bold<\/strong> claim with <code>code<\/code> and <a href="https:\/\/example\.com\/x" rel="noreferrer">a link<\/a> and <a href="https:\/\/example\.org\/y" rel="noreferrer">https:\/\/example\.org\/y<\/a>\.<\/p>/);
+  assert.match(html, /<th scope="row"><strong>Row<\/strong><\/th><td>one \[1\]<\/td><td>two<\/td>/);
+  assert.match(html, /<ul><li>first<\/li><li>second<\/li><\/ul>/);
+  assert.match(html, /<ol><li>step one<\/li><\/ol>/);
+  assert.doesNotMatch(html, /internal note/);
+
+  assert.doesNotThrow(() => assertNoOpenHolds('/compare/example/', 'Walked claims only.'));
+  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Claim. [HOLD: walk pending]'), /1 open bracketed marker/);
+  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Claim. [HOLD]'), /\[HOLD\]/);
+  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Source note. [re-check at publish and update this date]'), /re-check at publish/);
+  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Claim. [TODO: confirm the price]'), /TODO/);
+  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Empty [] marker'), /\[\]/);
+  assert.doesNotThrow(() => assertNoOpenHolds('/compare/example/', 'Cited [1][5] and [a link](https://example.com/x).'));
+  assert.doesNotThrow(() => assertNoOpenHolds('/compare/example/', 'See [the alternatives](/guides/example-alternative/).'));
+  assert.throws(() => assertNoOpenHolds('/compare/example/', 'Claim. [HOLD](pending)'), /1 open bracketed marker/);
+  assert.match(renderMarkdown('[Alternatives](/guides/example-alternative/)'), /<a href="\/guides\/example-alternative\/" rel="noreferrer">Alternatives<\/a>/);
+  assert.throws(() => renderMarkdown('a <!-- open note'), /unclosed HTML comment/);
+  assert.doesNotMatch(renderMarkdown('a <!-- note --!> visible'), /note/);
+  assert.throws(() => renderMarkdown('<!<!--x-->--> visible'), /unclosed HTML comment/);
+});
+
+test('buildPageDefinitions refuses a held compare page, not only the helper', async () => {
+  const [translationText, useCaseText, guideText] = await Promise.all([
+    readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
+  ]);
+  const translations = JSON.parse(translationText);
+  const args = { landing: translations.landing, compare: translations.compare, useCases: JSON.parse(useCaseText), guides: JSON.parse(guideText) };
+  const held = { held: { path: '/compare/held/', title: 'Held', description: 'Held', markdown: '# Held\n\nClaim. [HOLD: walk pending]' } };
+
+  assert.throws(() => buildPageDefinitions({ ...args, compareSources: held }), /1 open bracketed marker/);
 });
 
 test('a guide with no FAQ entries renders no FAQ heading', async () => {
@@ -2232,4 +2295,10 @@ test('every guide page carries the header link the restyle scopes on (TASK-594)'
   } finally {
     await rm(outputDir, { recursive: true, force: true });
   }
+});
+
+test('page content with $ patterns is inserted literally', () => {
+  const template = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><!-- SEO_NAVIGATION_RUNTIME_START --><script>window.addEventListener(\'popstate\', () => {});</script><!-- SEO_NAVIGATION_RUNTIME_END --><script type="module" src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
+  const page = { path: '/compare/x/', outputPath: 'compare/x/index.html', staticOnly: true, title: 'X', description: 'X', content: "<p>cost $& and $' and $`</p>", schema: [] };
+  assert.ok(renderStaticPage(template, page).includes("<p>cost $& and $' and $`</p>"));
 });
