@@ -117,7 +117,7 @@
   font: inherit; font-weight: 400;
 }
 .v2-root .v2-agent-settings .v2-agent-settings__owned input:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
-.v2-agent-settings__owned .v2-agent-settings__error { flex: 0 0 100%; margin: 0; font-size: 13px; }
+.v2-agent-settings__owned .v2-agent-settings__error { flex: 0 0 100%; margin: 0; color: var(--v2-danger); font-size: 13px; }
 .v2-root .v2-agent-settings .v2-agent-settings__listing a { justify-self: start; color: var(--v2-accent); font-size: 13px; font-weight: 600; }
 .v2-root .v2-agent-settings .v2-agent-settings__listing a:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
 

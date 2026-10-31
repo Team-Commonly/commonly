@@ -12134,8 +12134,8 @@ body.modern-ui.v2-canvas {
   cursor: pointer;
 }
 .v2-root .v2-pod-header__rename button[type="submit"] { background: var(--v2-ink); color: var(--v2-on-ink); border-color: var(--v2-ink); }
-.v2-root .v2-pod-header__rename button[type="submit"]:hover { background: var(--v2-ink-hover); }
-.v2-root .v2-pod-header__rename button:hover:not(:disabled) { background: var(--v2-surface-hover); }
+.v2-root .v2-pod-header__rename button:not([type="submit"]):hover:not(:disabled) { background: var(--v2-surface-hover); }
+.v2-root .v2-pod-header__rename button[type="submit"]:hover:not(:disabled) { background: var(--v2-ink-hover); color: var(--v2-on-ink); }
 .v2-root .v2-pod-header__rename button:disabled { opacity: .55; cursor: default; }
 .v2-root .v2-pod-header__rename button:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
 .v2-pod-header__rename-error { flex: 1 0 100%; color: var(--v2-danger); font: 400 12px/16px var(--v2-font); }
