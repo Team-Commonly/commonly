@@ -358,6 +358,26 @@ const isAllowedAddress = (address: string, allowPrivate: boolean): boolean => {
   return kind === 'public' || (kind === 'private' && allowPrivate);
 };
 
+/**
+ * Why a webhook URL may not be registered, or null when it may. A new or
+ * changed URL must be https; OUTBOUND_WEBHOOK_ALLOW_HTTP=true also lets an
+ * operator register http receivers. This runs where a URL is written, never
+ * where one is delivered: URLs already stored as http keep being delivered
+ * until the census of them is in (TASK-303 F2).
+ */
+export const webhookUrlRegistrationRefusal = (raw: unknown): string | null => {
+  if (typeof raw !== 'string') return 'webhookUrl must be a string';
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return 'webhookUrl is not a valid URL';
+  }
+  if (url.protocol === 'https:') return null;
+  if (url.protocol === 'http:' && process.env.OUTBOUND_WEBHOOK_ALLOW_HTTP === 'true') return null;
+  return 'webhookUrl must be an https URL';
+};
+
 interface DestinationPolicy {
   /** Allow only https, refusing http as well as everything else. */
   httpsOnly: boolean;

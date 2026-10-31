@@ -60,6 +60,8 @@ router.use(require('./registry/manage-settings'));
 router.use(require('./registry/provider-key'));
 // eslint-disable-next-line global-require
 router.use(require('./registry/publish'));
+// eslint-disable-next-line global-require
+router.use(require('./registry/owned-entry'));
 
 module.exports = router;
 

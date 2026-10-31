@@ -32,6 +32,7 @@ const HostedRuntime = require('../../services/hostedRuntimeService');
 const HostedEngine = require('../../services/hostedEngine');
 const { reservedAgentNameRefusal } = require('../../services/agentNameReservation');
 const { normalizeAvatarUrl } = require('../../services/avatarService');
+const { isPersonalPodType } = require('../../services/podTypePolicyService');
 const {
   getUserId,
   resolveUsername,
@@ -51,6 +52,7 @@ const {
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 const { willSolelyInstallRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
+const { webhookUrlRegistrationRefusal } = require('../../services/outboundUrlGuard');
 const { personAgentWakeDefault } = require('../../services/wakeDefaultService');
 const { logAgentInstallRefusal } = require('../../middleware/logAgentInstallRefusal');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
@@ -504,6 +506,12 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         return res.status(403).json({ code: ownership.failure, error: webhookUrlRefusal[ownership.failure] });
       }
     }
+    // A URL supplied at install is a new registration, so it must be https,
+    // admins included.
+    if (requestedWebhookUrl) {
+      const schemeRefusal = webhookUrlRegistrationRefusal(requestedWebhookUrl);
+      if (schemeRefusal) return res.status(400).json({ code: 'webhook_url_refused', error: schemeRefusal });
+    }
     const runtimeConfig = typeof installConfig.runtime === 'object' && installConfig.runtime
       ? { ...installConfig.runtime }
       : {};
@@ -891,7 +899,10 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         podId,
         installedByUserId: userId,
         installerIsAgent: installerUser?.isBot === true,
-        ...(greetsItself ? { mentionHandle: handle } : {}),
+        // A personal pod (agent-room, agent-dm, agent-admin) auto-routes every
+        // plain reply to the agent, so the greeting must not tell the person to
+        // @mention it there. Only a team pod needs the handle.
+        ...(greetsItself && !isPersonalPodType(pod?.type) ? { mentionHandle: handle } : {}),
         ...(greetsItself ? { hostedAgentUserId: String(agentUser._id) } : {}),
       });
     } catch (firstContactError: unknown) {

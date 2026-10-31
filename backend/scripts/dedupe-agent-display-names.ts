@@ -11,9 +11,10 @@
  *
  * What the script does:
  *   1. Group every bot User by botMetadata.displayName.
- *   2. For each group with >1 user, pick ONE canonical to keep as-is
- *      (preference: shortest instanceId, then alphabetically first
- *       instanceId — deterministic across re-runs).
+ *   2. For each group with >1 user, pick ONE canonical to keep as-is. If the
+ *      group's default instance is a first-party agent (isFirstPartyAgentName)
+ *      it goes first; otherwise the shortest instanceId wins. Ties on instanceId:
+ *      alphabetically first agentName, then _id. Deterministic across re-runs.
  *   3. For every other user in the group, rewrite displayName to
  *      `<originalDisplayName> (<instanceId>)`. instanceId is humanized:
  *      `pixel-demo` → "Pixel-demo", `inst-315667` → "inst-315667".
@@ -25,8 +26,8 @@
  *     keys; only displayName (the human-facing label) is rewritten.
  *   - `username` — DB-unique already; collisions there are impossible.
  *
- * Run with: `node --import tsx scripts/dedupe-agent-display-names.ts`
- * or via `kubectl exec ... node /app/scripts/dedupe-agent-display-names.js`.
+ * Run with: `cd backend && node dist/scripts/dedupe-agent-display-names.js`
+ * (from backend/, so the compiled script and mongoose resolve from backend/node_modules).
  *
  * Idempotent: safe to re-run. New duplicates introduced later can be
  * cleaned up by re-running.
@@ -34,6 +35,7 @@
 
 /* eslint-disable no-console */
 import mongoose from 'mongoose';
+import { isFirstPartyAgentName } from '../constants/firstPartyDisplayNames';
 
 interface BotMeta {
   displayName?: string;
@@ -68,16 +70,23 @@ const isOpaquePerUserToken = (instanceId: string): boolean => (
   /^u[a-f0-9]{10}([a-f0-9]{14})?$/.test((instanceId || '').toLowerCase())
 );
 
-const pickCanonical = (users: BotUser[]): BotUser => {
-  // Deterministic preference: shortest instanceId wins (so "pixel" beats
-  // "pixel-demo"); ties resolved alphabetically. Stable across re-runs.
-  return [...users].sort((a, b) => {
-    const ai = a.botMetadata?.instanceId || '';
-    const bi = b.botMetadata?.instanceId || '';
-    if (ai.length !== bi.length) return ai.length - bi.length;
-    return ai.localeCompare(bi);
-  })[0];
-};
+// Deterministic pick. A first-party agent's default instance keeps the bare
+// name over any peer, as in the inline resolver (TASK-551). Every other
+// claimant: the shortest instanceId wins (so "pixel" beats "pixel-demo"). An
+// instanceId tie falls to agentName, then _id, so the pick never depends on
+// the order Mongo returns rows.
+const isFirstPartyDefault = (u: BotUser): boolean => (u.botMetadata?.instanceId || '') === 'default'
+  && isFirstPartyAgentName(u.botMetadata?.agentName || '');
+
+export const pickCanonical = (users: BotUser[]): BotUser => [...users].sort((a, b) => {
+  if (isFirstPartyDefault(a) !== isFirstPartyDefault(b)) return isFirstPartyDefault(a) ? -1 : 1;
+  const ai = a.botMetadata?.instanceId || '';
+  const bi = b.botMetadata?.instanceId || '';
+  if (ai.length !== bi.length) return ai.length - bi.length;
+  return ai.localeCompare(bi)
+    || (a.botMetadata?.agentName || '').localeCompare(b.botMetadata?.agentName || '')
+    || String(a._id).localeCompare(String(b._id));
+})[0];
 
 async function main() {
   const uri = process.env.MONGO_URI;
@@ -130,7 +139,9 @@ async function main() {
   await mongoose.disconnect();
 }
 
-main().catch((err) => {
-  console.error('Migration failed:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('Migration failed:', err);
+    process.exit(1);
+  });
+}

@@ -30,6 +30,9 @@ jest.mock('../../../models/AgentRegistry', () => ({
     isInstalled: jest.fn(),
     install: jest.fn(),
     deleteMany: jest.fn(),
+    // deletePodCascade reads the pod's agents before deleting them.
+    find: jest.fn(() => ({ select: () => ({ lean: async () => [] }) })),
+    updateMany: jest.fn(),
   },
 }));
 jest.mock('../../../models/AgentProfile', () => ({

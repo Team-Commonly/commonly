@@ -181,15 +181,17 @@ router.get('/placement', bindingRateLimit, auth, async (req: express.Request & {
       isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId,
     }).select('botMetadata.machineId botMetadata.requestedMachineId').lean();
     if (!identity) return res.status(404).json({ message: 'Agent identity not found' });
-    const machines = await Machine.find({ ownerUserId: req.user?.id }).select('machineId name').lean();
-    const activeMachines = (await Promise.all(machines.map(async (machine: { machineId: string; name: string }) => ({
+    const machines = await Machine.find({ ownerUserId: req.user?.id }).select('machineId name createdAt').lean();
+    type PlacementMachine = { machineId: string; name: string; createdAt: Date };
+    const activeMachines = (await Promise.all(machines.map(async (machine: PlacementMachine) => ({
       machineId: machine.machineId,
       name: machine.name,
+      createdAt: machine.createdAt,
       active: Boolean(await AgentCredential.exists({ kind: 'daemon', ownerUserId: req.user?.id,
         machineId: machine.machineId, status: 'active',
         $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] }))
         && await machineHasLiveAuthorization(machine.machineId, req.user!.id!),
-    })))).filter((machine) => machine.active).map(({ machineId, name }) => ({ machineId, name }));
+    })))).filter((machine) => machine.active).map(({ machineId, name, createdAt }) => ({ machineId, name, createdAt }));
     const boundMachineId = identity.botMetadata?.machineId || null;
     return res.json({
       boundMachineId,

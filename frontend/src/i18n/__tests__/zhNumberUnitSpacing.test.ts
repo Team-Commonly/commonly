@@ -50,6 +50,8 @@ const OPAQUE_PLACEHOLDERS = [
   'requested', 'served',
   // runTrace.call inserts the opaque PG call ID, not a number.
   'id',
+  // podChat.deliveryHintOthers names the agent that was woken.
+  'woken',
 ];
 
 // The exception runs the safe way: a name that is usually opaque and is a number

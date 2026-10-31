@@ -23,6 +23,7 @@
  */
 import mongoose from 'mongoose';
 import Task from '../models/Task';
+import { onTaskClosed } from './roomGrantService';
 import { humansAnsweredBy } from './agentAnswerService';
 import { recordTaskTransition } from './taskRecordService';
 
@@ -45,7 +46,7 @@ const completeStarterTask = async (podId: string, sourceRef: string, text: strin
   const task = await Task.findOneAndUpdate(
     { podId: mongoose.Types.ObjectId.createFromHexString(podId), sourceRef, status: OPEN },
     {
-      $set: { status: 'done', completedAt: new Date() },
+      $inc: { grantEpoch: 1 }, $set: { status: 'done', claimedByUserId: null, completedAt: new Date() },
       $push: {
         updates: {
           text, author: 'system', authorId: null, createdAt: new Date(),
@@ -55,8 +56,9 @@ const completeStarterTask = async (podId: string, sourceRef: string, text: strin
     { new: true },
   );
   if (task) {
-    emitTaskUpdated(podId, task, 'updated');
     recordTaskTransition({ podId, task, from: null, to: 'done', at: task.completedAt || new Date() });
+    await onTaskClosed(task);
+    emitTaskUpdated(podId, task, 'updated');
   }
 };
 

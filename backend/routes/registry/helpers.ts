@@ -477,15 +477,18 @@ const buildAgentInstallationPayload = (installation: any, {
   }
   // Chat attributes this seat through the User principal. Use that same
   // resolver for the listing; scoped names are only a fallback for installs
-  // that have no User row yet.
+  // that have no User row yet. A scoped name equal to the agentName is the
+  // runtime or type label, not a name, so the listing never carries it (TASK-551).
   const profileDisplayName = typeof profile?.name === 'string' ? profile.name.trim() : '';
   const installationDisplayName = typeof installation.displayName === 'string'
     ? installation.displayName.trim()
     : '';
   const identityFallback = installation.agentName || '';
+  const scopedDisplayName = [profileDisplayName, installationDisplayName]
+    .find((name) => name && name !== identityFallback) || '';
   const displayName = user
     ? resolveAgentDisplayLabel(user, identityFallback)
-    : profileDisplayName || installationDisplayName || identityFallback;
+    : scopedDisplayName;
   return {
     name: installation.agentName,
     instanceId: installation.instanceId || 'default',

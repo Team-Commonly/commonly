@@ -4,6 +4,7 @@ import Pod from '../models/Pod';
 import { AgentRegistry } from '../models/AgentRegistry';
 import { normalizeAvatarUrl } from './avatarService';
 import { assertAgentRuntimeMayJoinPod, assertInstalledAgentMayJoinPod } from './outsiderGrantAgentJoinPolicy';
+import { FIRST_PARTY_DISPLAY_NAMES, isFirstPartyAgentName } from '../constants/firstPartyDisplayNames';
 
 let dbPg: { pool: { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }> } } | null;
 try {
@@ -352,14 +353,18 @@ interface GetOrCreateOptions {
 /**
  * Disambiguate an agent's displayName at WRITE time so it doesn't collide
  * with another bot User row's displayName. Mirrors the offline dedup
- * script's logic (scripts/dedupe-agent-display-names.ts) but runs inline
+ * script's logic (backend/scripts/dedupe-agent-display-names.ts) but runs inline
  * during getOrCreateAgentUser so a fresh install / reprovision can never
  * (re-)introduce a "Pixel" / "Pixel" collision.
  *
  * Canonical rule (matches the one-shot script — keep these aligned):
  *   - Group claimants by displayName.
- *   - Canonical = shortest instanceId; alphabetical tiebreak.
- *   - Non-canonical entries get suffixed `"<base> (<HumanizedInstanceId>)"`.
+ *   - First-party agents only (isFirstPartyAgentName, keyed on agentName): the
+ *     default instance keeps the bare name when it claims one, so a named
+ *     instance gets suffixed.
+ *   - Every other agent: the shortest instanceId keeps the bare name.
+ *   - Alphabetical tiebreak. Non-canonical entries get suffixed
+ *     `"<base> (<HumanizedInstanceId>)"`.
  *
  * This call returns the disambiguated name the CURRENT caller should use.
  * It does NOT rewrite peers — for the "new shorter instanceId arrives
@@ -397,6 +402,7 @@ export const endsWithParenthetical = (trimmed: string): boolean => {
 async function resolveCollisionFreeDisplayName(
   desiredName: string,
   instanceId: string,
+  agentName: string,
   selfUserId?: unknown,
 ): Promise<string> {
   const trimmed = (desiredName || '').trim();
@@ -422,20 +428,35 @@ async function resolveCollisionFreeDisplayName(
   }
   const peers = await User.find(peerQuery)
     .select('botMetadata')
-    .lean<Array<{ botMetadata?: { instanceId?: string } }>>();
+    .lean<Array<{ botMetadata?: { instanceId?: string; agentName?: string } }>>();
   if (peers.length === 0) return trimmed;
 
-  // Include `self` in the canonical-pick comparison so the rule is stable
-  // regardless of which row writes first.
+  // Include `current` in the canonical-pick comparison so the rule is stable
+  // regardless of which row writes first. It sits first, so an exact tie (the
+  // same agent on the same instance) still keeps the bare name.
+  const current = { instanceId, agentName };
   const all = [
-    ...peers.map((p) => p.botMetadata?.instanceId || ''),
-    instanceId,
+    current,
+    ...peers.map((p) => ({
+      instanceId: p.botMetadata?.instanceId || '',
+      agentName: p.botMetadata?.agentName || '',
+    })),
   ];
-  const canonical = [...all].sort((a, b) => {
-    if (a.length !== b.length) return a.length - b.length;
-    return a.localeCompare(b);
+  // A first-party agent's default instance keeps the bare name over any peer
+  // (TASK-551). Length alone let a shorter named peer ('scout') win and turned
+  // the default row into "Scout (Default)". Every other claimant keeps the
+  // shortest-instanceId rule it has on main. The pick is a claimant, not an
+  // instanceId: a first-party and a community agent can both sit on 'default',
+  // and an instanceId tie falls to agentName, so row order never decides it.
+  const firstPartyDefault = (c: { instanceId: string; agentName: string }): boolean => (
+    c.instanceId === 'default' && isFirstPartyAgentName(c.agentName)
+  );
+  const canonical = all.sort((a, b) => {
+    if (firstPartyDefault(a) !== firstPartyDefault(b)) return firstPartyDefault(a) ? -1 : 1;
+    if (a.instanceId.length !== b.instanceId.length) return a.instanceId.length - b.instanceId.length;
+    return a.instanceId.localeCompare(b.instanceId) || a.agentName.localeCompare(b.agentName);
   })[0];
-  if (canonical === instanceId) {
+  if (canonical === current) {
     // Caller is the canonical; let them keep the bare name. Peers may
     // need rewriting via the offline sweep — see comment above.
     return trimmed;
@@ -473,7 +494,7 @@ class AgentIdentityService {
     if (peers.length) {
       throw new AgentDisplayNameTakenError();
     }
-    const displayName = await resolveCollisionFreeDisplayName(desiredName, instanceId, user._id);
+    const displayName = await resolveCollisionFreeDisplayName(desiredName, instanceId, resolvedType, user._id);
     user.botMetadata = { ...user.botMetadata, displayName };
     await user.save();
     const mirrorSynced = await AgentIdentityService.syncUserToPostgreSQL(user);
@@ -515,9 +536,10 @@ class AgentIdentityService {
     const isOfficial = instanceId === 'default' && !!typeConfig;
 
     if (!agentUser) {
-      const rawDisplayName = options.displayName || typeConfig?.officialDisplayName || resolvedType;
+      const rawDisplayName = options.displayName || typeConfig?.officialDisplayName
+        || FIRST_PARTY_DISPLAY_NAMES.get(resolvedType) || resolvedType;
       const botMetadata = {
-        displayName: await resolveCollisionFreeDisplayName(rawDisplayName, instanceId),
+        displayName: await resolveCollisionFreeDisplayName(rawDisplayName, instanceId, resolvedType),
         // No invented sentence (#1649): a seat without a description shows no line on
         // Your Team, never "<name> agent". The hire flow supplies the persona's sentence.
         description: options.description || typeConfig?.officialDescription || '',
@@ -577,9 +599,12 @@ class AgentIdentityService {
       // Upgrade existing user to bot if not already marked
       agentUser.isBot = true;
       agentUser.botType = (typeConfig?.botType || options.botType || 'agent') as typeof agentUser.botType;
-      const upgradeRawDisplayName = options.displayName || typeConfig?.officialDisplayName || agentUser.username;
+      const upgradeRawDisplayName = options.displayName || typeConfig?.officialDisplayName
+        || FIRST_PARTY_DISPLAY_NAMES.get(resolvedType) || agentUser.username;
       agentUser.botMetadata = {
-        displayName: await resolveCollisionFreeDisplayName(upgradeRawDisplayName, instanceId, agentUser._id),
+        displayName: await resolveCollisionFreeDisplayName(
+          upgradeRawDisplayName, instanceId, resolvedType, agentUser._id,
+        ),
         description: options.description || typeConfig?.officialDescription || '',
         icon: typeConfig?.icon || '🤖',
         runtimeId: options.runtimeId || agentUser.botMetadata?.runtimeId || undefined,
@@ -614,10 +639,13 @@ class AgentIdentityService {
       if (needsUpdate) {
         const refreshRawDisplayName = hasStoredDisplayName
           ? String(existingMeta.displayName)
-          : (options.displayName || typeConfig?.officialDisplayName || resolvedType);
+          : (options.displayName || typeConfig?.officialDisplayName
+            || FIRST_PARTY_DISPLAY_NAMES.get(resolvedType) || resolvedType);
         agentUser.botMetadata = {
           ...existingMeta,
-          displayName: await resolveCollisionFreeDisplayName(refreshRawDisplayName, instanceId, agentUser._id),
+          displayName: await resolveCollisionFreeDisplayName(
+            refreshRawDisplayName, instanceId, resolvedType, agentUser._id,
+          ),
           description: options.description || existingMeta.description || typeConfig?.officialDescription || '',
           icon: existingMeta.icon || typeConfig?.icon || '🤖',
           runtimeId: options.runtimeId || existingMeta.runtimeId || undefined,

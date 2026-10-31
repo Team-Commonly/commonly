@@ -45,16 +45,6 @@ interface NormalizedMessage {
   user?: { username: string; profile_picture?: string };
 }
 
-const pgAvailable = (): boolean => {
-  try {
-    // eslint-disable-next-line global-require
-    const { pool } = require('../config/db-pg');
-    return !!pool;
-  } catch {
-    return false;
-  }
-};
-
 const normalizeMongo = (m: Record<string, unknown>): NormalizedMessage => {
   // When .populate('userId') ran, m.userId is a populated User document. Calling
   // .toString() on a Mongoose document returns util.inspect output
@@ -245,11 +235,9 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     // Best-effort backfill: pods created via the Mongo-only POST /api/pods
     // path (podController) have no row in the PG `pods` table, so the
     // subsequent PGMessage.create fails the messages.pod_id foreign key
-    // and the message lands in the Mongo fallback indefinitely.
-    // pgMessageController already does this; mirror it here so the dual-DB
-    // path stays consistent with the PG-primary path. Swallow errors —
-    // if PG is unreachable, PGMessage.create below will throw and the
-    // existing Mongo fallback handles it.
+    // and the send fails. pgMessageController already does this; mirror it
+    // here. Swallow errors: if PG is unreachable, PGMessage.create below
+    // throws and the send returns 503.
     try {
       const pgPodExists = await PGPod.findById(podId);
       if (!pgPodExists) {
@@ -299,38 +287,10 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       throw err;
     }
 
-    try {
-      const created = await PGMessage.create(
-        podId,
-        userId,
-        messageContent || '',
-        'text',
-        replyToMessageId || null,
-        null,
-        resolvedThreadRootId,
-      );
-      // create() returns the raw INSERT row with no users JOIN, so the
-      // response would lack username/profile_picture and the v2 chat would
-      // render the author as "Unknown" until a refresh pulled the joined
-      // row. findById re-fetches with the JOIN so the optimistic render
-      // already has the right author identity. A JOIN failure is not a write
-      // failure: falling into the Mongo fallback after INSERT would duplicate
-      // the message (or falsely reject an already-persisted reply).
-      let populated = null;
-      try {
-        populated = created?.id ? await PGMessage.findById(created.id) : null;
-      } catch (readErr) {
-        console.warn('[messageController] PG post-write read failed:', (readErr as Error).message);
-      }
-      message = (populated || created) as NormalizedMessage;
-    } catch (pgErr) {
-      const e = pgErr as { message?: string };
-      console.warn('PG unavailable for createMessage, falling back to MongoDB:', e.message);
-      // Mongo rows have no reply_to_message_id column, and the reconciler
-      // (services/pgMessageReconcileService, TASK-313 part 2) copies them into
-      // PG without a reply edge. A reply written here would look successful
-      // while losing its parent edge, so replies still wait for Postgres.
-      // Non-replies take this fallback and are moved once PG is back.
+    if (!process.env.PG_HOST) {
+      // No PostgreSQL configured: MongoDB is this instance's only message
+      // store, as on the socket and agent paths and in the readers. Mongo
+      // rows have no reply edge, so replies still need PostgreSQL.
       if (replyToMessageId) {
         res.status(503).json({
           error: 'Replies are temporarily unavailable. Please try again shortly.',
@@ -339,7 +299,6 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
         return;
       }
       const mongoMsg = await MongoMessage.create({
-        pgFallback: true,
         podId,
         userId,
         content: messageContent || '',
@@ -348,6 +307,43 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       const populated = await MongoMessage.findById(mongoMsg._id)
         .populate('userId', 'username profilePicture');
       message = normalizeMongo(populated || mongoMsg);
+    } else {
+      try {
+        const created = await PGMessage.create(
+          podId,
+          userId,
+          messageContent || '',
+          'text',
+          replyToMessageId || null,
+          null,
+          resolvedThreadRootId,
+        );
+        // create() returns the raw INSERT row with no users JOIN, so the
+        // response would lack username/profile_picture and the v2 chat would
+        // render the author as "Unknown" until a refresh pulled the joined
+        // row. findById re-fetches with the JOIN so the optimistic render
+        // already has the right author identity. A JOIN failure is not a write
+        // failure: falling into the Mongo fallback after INSERT would duplicate
+        // the message (or falsely reject an already-persisted reply).
+        let populated = null;
+        try {
+          populated = created?.id ? await PGMessage.findById(created.id) : null;
+        } catch (readErr) {
+          console.warn('[messageController] PG post-write read failed:', (readErr as Error).message);
+        }
+        message = (populated || created) as NormalizedMessage;
+      } catch (pgErr) {
+        // PostgreSQL is the only message store (TASK-503). A failed write is
+        // a failed send the client can retry, never a silent MongoDB row that
+        // pod chat (which reads PG) cannot show.
+        const e = pgErr as { message?: string };
+        console.error('[messageController] PG message write failed:', e.message);
+        res.status(503).json({
+          error: 'Messages are temporarily unavailable. Please try again shortly.',
+          code: 'MESSAGE_STORE_UNAVAILABLE',
+        });
+        return;
+      }
     }
 
     // Scout's first-task proposal is a deterministic handoff tied to the pod
@@ -454,30 +450,27 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
 
 exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    // A message the reconciler moved answers to its Mongo id, and the PG row
-    // is the one to delete. Deleting only the Mongo copy would leave the
-    // message visible in PG.
+    // With PG_HOST set, PostgreSQL is the only message store (TASK-503). A
+    // copied legacy message answers to its Mongo id through resolveId, and the
+    // PG row is the one to delete. PG unreachable is a retryable 503, never a
+    // delete of the Mongo copy that would leave the message visible in PG.
     const messageId = req.params.id;
     let message: NormalizedMessage | null = null;
     let pgId: string | null = null;
-    let pgUnavailable = false;
-    try {
-      pgId = await PGMessage.resolveId(messageId);
-      if (pgId) message = await PGMessage.findById(pgId) as NormalizedMessage | null;
-    } catch {
-      pgUnavailable = true;
-    }
-    if (!pgId) {
-      const mongoMsg = await MongoMessage.findById(messageId) as Record<string, unknown> | null;
-      if (mongoMsg?.reconciledAt && pgUnavailable) {
-        // The PG row exists and cannot be reached. Deleting the Mongo copy
-        // now would leave it visible once PG returns.
+    if (process.env.PG_HOST) {
+      try {
+        pgId = await PGMessage.resolveId(messageId);
+        if (pgId) message = await PGMessage.findById(pgId) as NormalizedMessage | null;
+      } catch (pgError) {
+        console.warn('[messageController] PG delete lookup failed:', (pgError as Error).message);
         res.status(503).json({
-          error: 'Message is temporarily unavailable. Please try again shortly.',
-          code: 'MESSAGE_REQUIRES_POSTGRES',
+          error: 'Messages are temporarily unavailable. Please try again shortly.',
+          code: 'MESSAGE_STORE_UNAVAILABLE',
         });
         return;
       }
+    } else {
+      const mongoMsg = await MongoMessage.findById(messageId) as Record<string, unknown> | null;
       if (mongoMsg) message = normalizeMongo(mongoMsg);
     }
 
@@ -502,8 +495,8 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
 
     if (pgId) {
       await PGMessage.delete(pgId);
-      // Keep the availability copy from resurrecting a deleted message during
-      // the next PG outage. Cleanup cannot turn a committed delete into a 500.
+      // Remove the legacy Mongo copy too, so the Mongo-only readers (stats,
+      // activity) stop counting it. Cleanup cannot turn a committed delete into a 500.
       try {
         const copyKeys: Array<Record<string, unknown>> = [{ reconciledPgId: Number(pgId) }];
         // PG can commit before its Mongo stamp. The stable legacy ID still
@@ -514,7 +507,7 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
         }
         await MongoMessage.deleteOne({ $or: copyKeys });
       } catch (cleanupError) {
-        console.warn('[messageController] fallback delete cleanup failed:', (cleanupError as Error).message);
+        console.warn('[messageController] legacy copy delete cleanup failed:', (cleanupError as Error).message);
       }
     } else {
       await MongoMessage.findByIdAndDelete(messageId);

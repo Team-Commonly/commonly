@@ -12,11 +12,16 @@ As of TASK-483 and TASK-493 (2026-10-24), the browser sends:
 | `seat-created` | A runtime key was issued and its command rendered. Once per issued command. This is the command-exposure denominator. |
 | `mcp-command-copied` | The Claude or Cursor copy button successfully wrote the command. |
 | `cli-command-copied` | The listener copy button successfully wrote the command. |
+| `daemon-command-copied` | The "Add a computer" daemon command copy button successfully wrote the command. Telemetry only: it sets no onboarding copy mark, so stalled-connect messaging is unchanged. Before TASK-653 this copy posted nothing, so a user who used this path was invisible to the copy count. |
 | `token-copied` | The token copy button successfully wrote the key. |
 | `listen-confirmed` | The connection poll observed this agent using its key after issuance (with existing clock-skew allowance). |
 | `hosted-offer-shown` | The timer or desktop exit-intent path displayed the hosted offer. The shared session guard records it once, including when both triggers run. |
 | `hosted-offer-clicked` | The user activated the offer to start hosted setup. Recorded before name lookup, including failed attempts; concurrent duplicate activations are suppressed. A retry records another activation. This is separate from choosing the initial hosted mode. |
 | `listen-timeout` | The page's connection polling window expired. |
+
+The backend writes one more row, `seat-registered`, itself; the browser cannot post it (the route answers 400). It is written once per runtime token, on the token's first authenticated call (`middleware/agentRuntimeAuth.ts`), with the installing user as `userId`. It fires whether or not the user is still on the page, so it measures registration when `listen-confirmed` is missing. It is not limited to BYO: a hosted seat's first call also writes it. Its `_id` is `seat-registered:<sha256 of the token record hash>`, so a racing second first call is a duplicate-key no-op and the row is never written twice.
+
+Read back `step`, `userId` and `at` (server time). The field is `at`, not `createdAt`; a count on `createdAt` sees nothing. Rows from the browser have a Mongo-generated `_id`.
 
 Before TASK-483, the client never emitted `page-viewed` or `seat-created`.
 Historical counts of those events cannot measure page or command exposure.

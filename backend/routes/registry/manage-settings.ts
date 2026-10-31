@@ -5,6 +5,8 @@ import { hostedCapsForOwner, userRunCeilingForOwner } from '../../services/hoste
 import { projectSeatEnvironments, seatEnvironmentKey } from '../../services/seatEnvironmentProjection';
 const { ownKeyCapability } = require('../../services/agentProviderKey');
 const Machine = require('../../models/Machine');
+const AgentCredential = require('../../models/AgentCredential');
+const { deriveAgentConnection } = require('../../services/agentConnectionStateService');
 const AgentRuntimeObservation = require('../../models/AgentRuntimeObservation');
 const express = require('express');
 const auth = require('../../middleware/auth');
@@ -89,13 +91,19 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       isBot: true,
       'botMetadata.agentName': String(req.params.name).toLowerCase(),
       'botMetadata.instanceId': normalizeInstanceId(req.query.instanceId),
-    }).select('botMetadata.machineId').lean();
+    }).select('botMetadata.machineId agentRuntimeTokens.tokenHash agentRuntimeTokens.lastUsedAt '
+      + 'agentRuntimeTokens.expiresAt').lean();
     const machine = binding?.botMetadata?.machineId ? await Machine.findOne({
       machineId: binding.botMetadata.machineId, ownerUserId: quotaOwner,
-    }).select('runtimeInventory inventoryAt lastSeenAt agentStates').lean() : null;
+    }).select('runtimeInventory inventoryAt lastSeenAt').lean() : null;
     const observation = binding && machine ? await AgentRuntimeObservation.findOne({
       agentUserId: binding._id, machineId: binding.botMetadata.machineId,
     }).select('connectedAt lastSeenAt lastSpawn lastSpawnOutcome turnRunning lastTurnAt -_id').lean() : null;
+    // The process line follows the agent's own credential use, as the roster
+    // does. The machine heartbeat says the computer is online, not that this
+    // agent's listener is.
+    const credentials = binding && machine ? await AgentCredential.find({ kind: 'runtime', agentUserId: binding._id })
+      .select('tokenHash status lastUsedAt expiresAt').lean() : [];
     const runtimeManaged = Boolean(binding?.botMetadata?.machineId);
     if (runtimeManaged && !runtimeControls.runtimeType) runtimeControls.runtimeType = 'wrapper';
     const runtimeSavedControls = { ...runtimeControls };
@@ -120,9 +128,8 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       runtimeSavedControls,
       ownKeyCapability: runtimeManaged ? ownKeyCapability(runtime, environment) : { available: false, provider: null },
       runtimeObservation: observation ? { ...observation, confirmed: null } : null,
-      processConnected: machine ? Boolean(machine.lastSeenAt && Date.now() - new Date(machine.lastSeenAt).getTime() < 90_000
-        && machine.agentStates?.some((entry: any) => entry.agentName === String(req.params.name).toLowerCase()
-          && entry.instanceId === normalizeInstanceId(req.query.instanceId) && entry.state === 'running')) : null,
+      processConnected: machine ? deriveAgentConnection({ runtimeType: 'wrapper', credentials,
+        embeddedTokens: binding?.agentRuntimeTokens || [] }).state === 'connected' : null,
       runtimeInventory: machine?.runtimeInventory || [],
       runtimeInventoryAt: machine?.inventoryAt || null,
       machineLastSeenAt: machine?.lastSeenAt || null,

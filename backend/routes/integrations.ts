@@ -24,6 +24,7 @@ const connectorSecrets = require('../services/connectorSecrets');
 const { DISCORD_WEBHOOK_URL } = require('../services/connectorSecretKinds');
 // eslint-disable-next-line global-require
 const { isFeedType, takeFeedTokens, storeFeedTokens } = require('../services/feedCredentials');
+const { isChatTokenType, takeChatTokens, storeGroupmeAccessToken } = require('../services/chatConnectorTokens');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
@@ -517,6 +518,12 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
       const { rest, tokens } = takeFeedTokens(nextConfig);
       rowConfig = { ...rest, ...await storeFeedTokens(String(integrationId), type, tokens) };
     }
+    if (isChatTokenType(type)) {
+      // GroupMe's token is stored through connectorSecrets; Slack's copy has no
+      // reader and is dropped (TASK-539).
+      const { rest, accessToken } = takeChatTokens(type, nextConfig);
+      rowConfig = { ...rest, ...await storeGroupmeAccessToken(String(integrationId), accessToken) };
+    }
     const integration = new Integration({
       _id: integrationId, podId, type, config: rowConfig, createdBy: req.user?.id, status: 'pending',
     });
@@ -862,6 +869,10 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
       const { rest, tokens } = takeFeedTokens(incoming);
       written = { ...rest, ...await storeFeedTokens(String(integrationId), integration.type || '', tokens) };
     }
+    if (incoming && isChatTokenType(integration.type)) {
+      const { rest, accessToken } = takeChatTokens(integration.type, incoming);
+      written = { ...rest, ...await storeGroupmeAccessToken(String(integrationId), accessToken) };
+    }
     if (incoming && written) {
       Object.keys(written).forEach((key) => {
         update[`config.${key}`] = key in incoming ? nextConfig[key] : written[key];
@@ -931,11 +942,10 @@ router.delete('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res
         ...(result.revokeAt ? { revokeAt: result.revokeAt } : {}),
       });
     }
-    // §10.5's grants step, and it has to run here: the deletion below removes
-    // the row, and the granter's own revoke route resolves ownership through
-    // `findConnection` (routes/grants.ts:421) — after the row is gone every
-    // grant on this connection answers 403 `access_denied`, so the removal
-    // would orphan them un-revoked (TASK-145).
+    // §10.5's grants step, and it runs before the row is deleted below. Revoke
+    // reads the owner bound on each grant at mint, not the row, so the order no
+    // longer decides who may revoke. It still matters: removal ends these grants
+    // here, while the row they were minted against is still present (TASK-145).
     await revokeConnectionGrants({ connection: integration, revokedBy: deletedBy });
     const service = integration.type === 'discord' ? new DiscordService(id) : null;
     try { if (service) await service.disconnect(); } catch (error) { console.warn('Error disconnecting service during deletion:', error); }

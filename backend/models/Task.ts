@@ -14,6 +14,8 @@ export interface ITaskUpdate {
 export interface ITask extends Document {
   podId: Types.ObjectId;
   taskNum: number;
+  /** Monotonic close revision; reopening never restores prior grants. */
+  grantEpoch?: number;
   taskId: string;
   title: string;
   priority: TaskPriority;
@@ -25,6 +27,8 @@ export interface ITask extends Document {
   parentTask?: string | null;
   status: TaskStatus;
   claimedBy?: string | null;
+  /** Authenticated principal, separate from the display/lease-holder key. */
+  claimedByUserId?: string | null;
   claimedAt?: Date | null;
   // ADR-018 D4: a claim is a lease, never permanent. Null on legacy claims —
   // readers derive their effective expiry from claimedAt + the route's lease.
@@ -55,6 +59,7 @@ const TaskSchema = new Schema<ITask>(
   {
     podId: { type: Schema.Types.ObjectId, required: true, ref: 'Pod' },
     taskNum: { type: Number, required: true },
+    grantEpoch: { type: Number, default: 0, min: 0 },
     taskId: { type: String, required: true },
     title: { type: String, required: true },
     priority: { type: String, enum: ['P0', 'P1', 'P2', 'P3'], default: 'P2' },
@@ -71,6 +76,8 @@ const TaskSchema = new Schema<ITask>(
       default: 'pending',
     },
     claimedBy: { type: String, default: null },
+    // Missing identifies pre-authenticated-principal claims; null explicitly clears authority.
+    claimedByUserId: { type: String },
     claimedAt: { type: Date, default: null },
     claimExpiresAt: { type: Date, default: null },
     // No default: missing means this revision has not been offered.

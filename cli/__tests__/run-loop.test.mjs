@@ -3708,6 +3708,62 @@ describe('performRun — ADR-018 enforcement', () => {
     );
   });
 
+  // TASK-640 done-when: holding a claimed row, a broadcast no person sent
+  // spawns nothing; a human post in the same pod still spawns at once.
+  describe('defer-while-claimed', () => {
+    const holdingRow = (opts) => {
+      const client = makeClient(opts);
+      const fallback = client.get.getMockImplementation();
+      client.get.mockImplementation(async (route, params) => (route === '/api/v1/tasks/pod-abc'
+        ? { tasks: [{ taskId: 'TASK-642', claimedByMe: true, leaseState: 'held' }] }
+        : fallback(route, params)));
+      return client;
+    };
+
+    test('an agent broadcast spawns no turn and is acked', async () => {
+      const { post, get } = holdingRow({
+        events: [makeClaimEvent({ type: 'message.posted' })],
+        messages: [{ _id: 'msg-1', isBot: true, self: false }],
+      });
+      const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+      const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+      await drainMicrotasks();
+      stop();
+
+      expect(spawn).not.toHaveBeenCalled();
+      expect(get).toHaveBeenCalledWith('/api/v1/tasks/pod-abc', { status: 'claimed' });
+      expect(callsTo(post, '/claim')).toHaveLength(0);
+      expect(ackPosts(post)).toHaveLength(1);
+      expect(ackPosts(post)[0][0]).toBe('/api/agents/runtime/events/evt-1/ack');
+    });
+
+    test('a human post still spawns', async () => {
+      holdingRow({
+        events: [makeClaimEvent({ type: 'message.posted' })],
+        messages: [{ _id: 'msg-1', isBot: false, self: false }],
+      });
+      const spawn = jest.fn(async () => ({ text: 'on it' }));
+      const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+      await drainMicrotasks();
+      stop();
+
+      expect(spawn).toHaveBeenCalledTimes(1);
+    });
+
+    test('a mention still spawns', async () => {
+      holdingRow({
+        events: [makeClaimEvent()],
+        messages: [{ _id: 'msg-1', isBot: true, self: false }],
+      });
+      const spawn = jest.fn(async () => ({ text: 'on it' }));
+      const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+      await drainMicrotasks();
+      stop();
+
+      expect(spawn).toHaveBeenCalledTimes(1);
+    });
+  });
+
   test('an enforcement stand-down does not reset the spawn-failure streak (#782 invariant)', async () => {
     // Failure → stand-down (claim held) → failure. The stand-down never
     // exercised the model, so the second failure must report streak 2, not 1.

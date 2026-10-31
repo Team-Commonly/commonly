@@ -387,6 +387,13 @@ Items are ranked by measured cost removed per day of effort.
 
 **Moves:** message stores, from two to one, and files with a MongoDB message fallback, from 7 to 0.
 
+**Status (2026-10-30, TASK-503):** the trigger fired. SRE counted 13 MongoDB message rows created in the 30 days to 10-30, so this moved to Do now.
+- *Writes, done in the TASK-503 write PR:* once `PG_HOST` is set, the HTTP send, the socket send (`services/socketMessageWrite.ts`) and agent posts write PostgreSQL only. A failed write returns `MESSAGE_STORE_UNAVAILABLE` (503, or a socket `error`) instead of writing MongoDB.
+- *Where the rows came from (not yet confirmed per row):* there are three MongoDB writers. The socket wrote MongoDB whenever PostgreSQL was configured but had not finished booting, which happens on every rollout until `onMounted`. It set no `pgFallback` flag, so the reconciler never moved those rows and pod chat, which reads PostgreSQL, never showed them. The controller and agent fallbacks set `pgFallback: true`, and agent rows also carry `metadata`. Grouping the 13 rows by `pgFallback`, `metadata` and `reconciledAt` will tell the writers apart.
+- *The 13 rows:* 4 carry `pgFallback`, none was reconciled. The reconciler moved only flagged rows, so the 9 socket rows would never have drained. An operator copies all 13 with `backfill-local-messages-to-pg --since` (dry run, then `--apply --force`).
+- *Reads, delete and the reconciler, done in the TASK-503 reconciler-removal PR (merged after that copy):* once `PG_HOST` is set, the pod read (`repositories/messageRepository.ts`), the agent recent-message and author reads, and delete use PostgreSQL only, and a PG failure is an error or a 503, never a MongoDB read. `pgMessageReconcileService` is gone; its `copyOne` lives in `services/legacyMessageCopy.ts` for the backfill script. A Mongo id still resolves to its copied PG row through `legacy_mongo_id`.
+- *Still open:* the MongoDB path used when no PostgreSQL is configured (the unit harness runs that way), and the MongoDB-only message readers (stats, activity, attention, approvals). Those go with the v4 data-model design.
+
 ### D. Remove OpenClaw, per ADR-021 Phases 3–4 (3–5 days, plus 1 for docs)
 
 **Removes:** code and agent context that a parked runtime still costs.

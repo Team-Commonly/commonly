@@ -9,6 +9,7 @@ import { touchLastActive } from './auth';
 import Pod from '../models/Pod';
 import AgentCredential from '../models/AgentCredential';
 import { markByoConnectionAttempt } from '../services/onboardingMarks';
+import { recordByoEvent, seatRegisteredKey } from '../services/byoTelemetry';
 import { isSpawnCredential } from '../services/spawnCredentialService';
 import { embeddedRuntimeTokenExpired, runtimeCredentialRefusalReason } from '../services/runtimeCredentialGate';
 
@@ -148,6 +149,8 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
         for (const installationRow of installations) {
           markByoConnectionAttempt(installationRow.installedBy, installationRow);
         }
+        // One row per token, not per installation: the seat is the token.
+        void recordByoEvent(installations[0]?.installedBy, 'seat-registered', {}, seatRegisteredKey(tokenHash));
         // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
         const { completeConnectAgentStarterTask } = require('../services/starterTaskService');
         void completeConnectAgentStarterTask({
@@ -205,6 +208,7 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
 
     if (isFirstLegacyTokenUse) {
       markByoConnectionAttempt(installation.installedBy, installation);
+      void recordByoEvent(installation.installedBy, 'seat-registered', {}, seatRegisteredKey(tokenHash));
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const { completeConnectAgentStarterTask } = require('../services/starterTaskService');
       void completeConnectAgentStarterTask({

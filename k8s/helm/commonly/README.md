@@ -151,8 +151,8 @@ gcloud filestore instances create commonly-agent-workspaces \
 helm install commonly . \
   --namespace commonly --create-namespace \
   --values values-dev.yaml \
-  --set backend.image.tag=latest \
-  --set frontend.image.tag=latest
+  --set backend.image.tag="$BUILD_SHA" \
+  --set frontend.image.tag="$BUILD_SHA"
 ```
 
 ## Configuration
@@ -170,7 +170,7 @@ backend:
   replicaCount: 2  # Number of backend pods
   image:
     repository: gcr.io/PROJECT_ID/commonly-backend
-    tag: latest
+    tag: "YOUR_BUILD_SHA"
   env:
     nodeEnv: development
     agentProvisionerK8s: "1"  # Enable K8s-based agent provisioning

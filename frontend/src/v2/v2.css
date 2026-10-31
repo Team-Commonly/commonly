@@ -28,6 +28,7 @@ body.modern-ui.v2-canvas {
   --v2-border-soft: #e4e7ec;
   --v2-border-strong: #98a2b3;
   --v2-text-primary: #101828;
+  --v2-message-text: #1f2937;
   --v2-text-secondary: #475467;
   --v2-text-tertiary: #667085;
   --v2-text-muted: #667085;
@@ -39,12 +40,31 @@ body.modern-ui.v2-canvas {
      Mirrors --c-shell-bg / --c-content-radius in design-system/tokens.css. */
   --v2-shell-bg: #eef0f4;
   --v2-content-radius: 6px;
+  /* Character-avatar grounds (TASK-679, Lit Signal). The fill behind each face
+     is generated in utils/avatars.ts CHARACTER_GROUNDS, which must match these
+     values; avatarGrounds.test.ts pins the two together. Agents are cool, people
+     warm, so the family still tells the species apart. Mirrors --c-avatar-* in
+     design-system/tokens.css. */
+  --v2-avatar-agent-1: #dbe5f1;
+  --v2-avatar-agent-2: #e1e6ee;
+  --v2-avatar-agent-3: #d6e7e4;
+  --v2-avatar-human-1: #f1e7df;
+  --v2-avatar-human-2: #f2e8d8;
+  --v2-avatar-human-3: #efe1dc;
+  --v2-avatar-human-4: #f4e3d7;
+  --v2-avatar-frame: rgba(16, 24, 40, 0.06);
+  /* Dark ring (TASK-679 dark note): the tile stays light on dark, so the ring
+     flips to a light hairline. No dark theme on main yet; TASK-680 points
+     --v2-avatar-frame at this value under its dark scope. */
+  --v2-avatar-frame-dark: rgba(255, 255, 255, 0.10);
   /* Ink primary — filled buttons are ink; cobalt (#1d3fd1) is a MARK inside
      the app: links, the live dot, the agent name, the one card that needs
      you. On marketing surfaces cobalt is used as blocks. Mirrors --c-ink. */
   --v2-ink: #101828;
   --v2-ink-hover: #1d2939;
   --v2-on-ink: #ffffff;
+  --v2-on-accent: #ffffff;
+  --v2-accent-fill: #1d3fd1;
 
   /* BEND-1 (spec 2026-08-30): the featured-tier name
      needs a step between 16 and 20. Mirrors --c-fs-feature in
@@ -160,6 +180,105 @@ body.modern-ui.v2-canvas {
   font-size: var(--v2-fs-body);
   line-height: var(--v2-lh-body);
   min-width: 0;
+}
+
+/* D216 dark set. Values are the artboard's dark :root (index.html, the
+   @media + :root[data-theme="dark"] pair), mapped onto v2 token names. Scoped
+   to .v2-root under the html attribute set by utils/theme.ts: explicit dark,
+   or auto when the OS asks for dark. The light set is the block above.
+   Not from the artboard, pending ux-lead: --v2-focus-ring, the success and
+   danger text lifts, and the soft fills. Avatar and persona tints stay literal. */
+:root[data-v2-theme="dark"] .v2-root {
+    --v2-bg: #141922;
+    --v2-page-bg: #0b0e13;
+    --v2-bg-subtle: #181e28;
+    --v2-surface: #141922;
+    --v2-surface-tint: #1e2531;
+    --v2-surface-hover: #1e2531;
+    --v2-border: #364051;
+    --v2-border-soft: #262d3a;
+    --v2-border-strong: #5f6979;
+    --v2-text-primary: #e8ebf1;
+    --v2-message-text: #e8ebf1;
+    --v2-text-secondary: #aeb6c4;
+    --v2-text-tertiary: #8b94a5;
+    --v2-text-muted: #8b94a5;
+    --v2-text-placeholder: #5f6979;
+    --v2-shell-bg: #0b0e13;
+    --v2-ink: #f4f5f8;
+    --v2-ink-hover: #dce0e8;
+    --v2-on-ink: #0b0e13;
+    --v2-accent: #6680ff;
+    --v2-accent-strong: #3d5ef2;
+    --v2-accent-soft: #1b2546;
+    --v2-accent-text: #8aa2ff;
+    --v2-accent-deep: #2948d8;
+    --v2-focus-ring: 0 0 0 2px var(--v2-bg), 0 0 0 4px #8aa2ff;
+    --v2-success-text: #3ccf95;
+    --v2-success-soft: rgba(16, 185, 129, 0.16);
+    --v2-danger-text: #ff8a8a;
+    --v2-danger-soft: rgba(239, 68, 68, 0.16);
+    --v2-on-accent: #ffffff;
+    --v2-accent-fill: #3d5ef2;
+    --v2-warning-soft: rgba(244, 162, 58, 0.16);
+    --v2-info-soft: rgba(8, 145, 178, 0.16);
+    --v2-platform-x: #e8ebf1;
+    --v2-platform-x-soft: rgba(17, 24, 39, 0.16);
+    --v2-platform-telegram-soft: rgba(42, 171, 238, 0.16);
+    --v2-platform-slack-soft: rgba(97, 31, 105, 0.16);
+    --v2-platform-discord-soft: rgba(88, 101, 242, 0.16);
+    --v2-platform-whatsapp-soft: rgba(31, 168, 85, 0.16);
+    --v2-platform-instagram-soft: rgba(214, 41, 118, 0.16);
+    --v2-platform-messenger-soft: rgba(0, 132, 255, 0.16);
+    --v2-platform-groupme-soft: rgba(0, 175, 240, 0.16);
+    color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-v2-theme="light"]) .v2-root {
+      --v2-bg: #141922;
+      --v2-page-bg: #0b0e13;
+      --v2-bg-subtle: #181e28;
+      --v2-surface: #141922;
+      --v2-surface-tint: #1e2531;
+      --v2-surface-hover: #1e2531;
+      --v2-border: #364051;
+      --v2-border-soft: #262d3a;
+      --v2-border-strong: #5f6979;
+      --v2-text-primary: #e8ebf1;
+      --v2-message-text: #e8ebf1;
+      --v2-text-secondary: #aeb6c4;
+      --v2-text-tertiary: #8b94a5;
+      --v2-text-muted: #8b94a5;
+      --v2-text-placeholder: #5f6979;
+      --v2-shell-bg: #0b0e13;
+      --v2-ink: #f4f5f8;
+      --v2-ink-hover: #dce0e8;
+      --v2-on-ink: #0b0e13;
+      --v2-accent: #6680ff;
+      --v2-accent-strong: #3d5ef2;
+      --v2-accent-soft: #1b2546;
+      --v2-accent-text: #8aa2ff;
+      --v2-accent-deep: #2948d8;
+      --v2-focus-ring: 0 0 0 2px var(--v2-bg), 0 0 0 4px #8aa2ff;
+      --v2-success-text: #3ccf95;
+      --v2-success-soft: rgba(16, 185, 129, 0.16);
+      --v2-danger-text: #ff8a8a;
+      --v2-danger-soft: rgba(239, 68, 68, 0.16);
+      --v2-on-accent: #ffffff;
+      --v2-accent-fill: #3d5ef2;
+      --v2-warning-soft: rgba(244, 162, 58, 0.16);
+      --v2-info-soft: rgba(8, 145, 178, 0.16);
+      --v2-platform-x: #e8ebf1;
+      --v2-platform-x-soft: rgba(17, 24, 39, 0.16);
+      --v2-platform-telegram-soft: rgba(42, 171, 238, 0.16);
+      --v2-platform-slack-soft: rgba(97, 31, 105, 0.16);
+      --v2-platform-discord-soft: rgba(88, 101, 242, 0.16);
+      --v2-platform-whatsapp-soft: rgba(31, 168, 85, 0.16);
+      --v2-platform-instagram-soft: rgba(214, 41, 118, 0.16);
+      --v2-platform-messenger-soft: rgba(0, 132, 255, 0.16);
+      --v2-platform-groupme-soft: rgba(0, 175, 240, 0.16);
+      color-scheme: dark;
+  }
 }
 
 .v2-root *,
@@ -534,7 +653,7 @@ body.modern-ui.v2-canvas {
 .v2-pane--main {
   margin: 8px 8px 8px 0;
   height: calc(100vh - 16px);
-  background: #ffffff;
+  background: var(--v2-surface);
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-content-radius);
   overflow: hidden;
@@ -960,8 +1079,8 @@ body.modern-ui.v2-canvas {
   justify-content: center;
   height: 40px;
   gap: 8px;
-  background: var(--v2-accent);
-  color: #fff;
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
   font-weight: 600;
   font-size: 14px;
   padding: 0 14px;
@@ -1073,7 +1192,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pods__create-submit {
   background: var(--v2-ink);
-  color: #fff;
+  color: var(--v2-on-ink);
 }
 
 .v2-root button.v2-pods__create-submit:disabled {
@@ -2013,6 +2132,19 @@ body.modern-ui.v2-canvas {
   cursor: default;
 }
 
+/* TASK-647 item 4: the run-hosted start is the screen's one filled action.
+   Keyed on the action in the component, not on its position. */
+.v2-root button.v2-chat__start.v2-chat__start--primary {
+  background: var(--v2-ink);
+  border-color: var(--v2-ink);
+  color: var(--v2-on-ink);
+  font-weight: 600;
+}
+.v2-root button.v2-chat__start.v2-chat__start--primary:hover:not(:disabled) {
+  background: var(--v2-ink-hover);
+  border-color: var(--v2-ink-hover);
+}
+
 /* A line that belongs to the start above it: the hosted start's beta limits,
    or why it could not start. Same slot and size as the delivery hint. */
 .v2-chat__start-note {
@@ -2180,7 +2312,16 @@ body.modern-ui.v2-canvas {
   text-decoration: none;
 }
 
-.v2-root a.v2-first-run__setup:hover,
+.v2-root a.v2-first-run__setup {
+  /* Bordered, not ink: the first-run card keeps one ink action (TASK-647 item 4). */
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  color: var(--v2-text-primary);
+}
+.v2-root a.v2-first-run__setup:hover {
+  background: var(--v2-surface-hover);
+  border-color: var(--v2-border-strong);
+}
 .v2-root button.v2-first-run__hello:hover:not(:disabled) {
   background: var(--v2-ink-hover);
   color: var(--v2-on-ink);
@@ -3244,7 +3385,7 @@ body.modern-ui.v2-canvas {
 .v2-msg__content {
   font-size: 14px;
   line-height: 1.55;
-  color: #1f2937;
+  color: var(--v2-message-text);
   margin-top: 3px;
   word-break: break-word;
   /* NO measure cap — the THIRD ruling on this (2026-08-24 full-width Slack
@@ -3365,7 +3506,7 @@ body.modern-ui.v2-canvas {
   border-radius: var(--v2-radius);
   overflow: hidden;
   border: 1px solid var(--v2-border);
-  background: #ffffff;
+  background: var(--v2-surface);
 }
 
 .v2-msg__image {
@@ -3434,7 +3575,7 @@ body.modern-ui.v2-canvas {
   height: 26px;
   padding: 0 9px;
   border-radius: var(--v2-radius-sm);
-  background: #ffffff;
+  background: var(--v2-surface);
   font-size: 12px;
   color: var(--v2-text-secondary);
   border: 1px solid transparent;
@@ -3709,7 +3850,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-inspector__btn--danger:hover {
   background: var(--v2-danger);
-  color: #fff;
+  color: var(--v2-on-accent);
   border-color: var(--v2-danger);
 }
 
@@ -4865,8 +5006,8 @@ body.modern-ui.v2-canvas {
   height: 38px;
   border: none;
   border-radius: var(--v2-radius-sm);
-  background: var(--v2-accent);
-  color: #fff;
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -4930,6 +5071,13 @@ body.modern-ui.v2-canvas {
    top of someone's face. */
 .v2-avatar:has(img) {
   box-shadow: none;
+}
+
+/* Character tier gets a hairline ring (TASK-679). The compact transcript frame
+   (--flat) stays unframed; the :has(img) rule above outranks a plain class, so
+   the selector repeats it to win. */
+.v2-avatar:has(img).v2-avatar--character:not(.v2-avatar--flat) {
+  box-shadow: 0 0 0 1px var(--v2-avatar-frame);
 }
 
 .v2-avatar--lg {
@@ -5035,8 +5183,8 @@ body.modern-ui.v2-canvas {
   width: 100%;
   margin-top: 8px;
   padding: 10px 14px;
-  background: var(--v2-accent);
-  color: #fff;
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
   font-weight: 700;
   font-size: 14px;
   border-radius: var(--v2-radius);
@@ -5205,14 +5353,14 @@ body.modern-ui.v2-canvas {
 
 .v2-feature {
   min-width: 0;
-  background: #ffffff; /* inside the card the ground is white; the card is the tint step */
+  background: var(--v2-surface); /* inside the card the ground is white; the card is the tint step */
 }
 
 .v2-feature__header {
   flex-shrink: 0;
   padding: 22px 28px 18px;
   border-bottom: 1px solid var(--v2-border-soft);
-  background: #ffffff;
+  background: var(--v2-surface);
 }
 
 .v2-feature__title {
@@ -5346,8 +5494,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiPaper-root {
-  background: #ffffff !important;
-  background-color: #ffffff !important;
+  background: var(--v2-surface) !important;
+  background-color: var(--v2-surface) !important;
   color: var(--v2-text-primary) !important;
   border: 1px solid var(--v2-border) !important;
   box-shadow: var(--v2-shadow-sm) !important;
@@ -5386,8 +5534,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiCard-root {
-  background: #ffffff !important;
-  background-color: #ffffff !important;
+  background: var(--v2-surface) !important;
+  background-color: var(--v2-surface) !important;
   color: var(--v2-text-primary) !important;
   border: 1px solid var(--v2-border) !important;
   box-shadow: var(--v2-shadow-sm) !important;
@@ -5465,7 +5613,7 @@ body.modern-ui.v2-canvas {
 .v2-feature__legacy .MuiInputBase-root,
 .v2-feature__legacy .MuiSelect-select,
 .v2-feature__legacy .MuiAutocomplete-inputRoot {
-  background-color: #ffffff !important;
+  background-color: var(--v2-surface) !important;
   color: var(--v2-text-primary) !important;
 }
 
@@ -5550,7 +5698,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiChip-outlined:not(.MuiChip-colorSuccess):not(.MuiChip-colorWarning):not(.MuiChip-colorError):not(.MuiChip-colorInfo) {
-  background-color: #ffffff !important;
+  background-color: var(--v2-surface) !important;
   color: var(--v2-text-secondary) !important;
 }
 
@@ -5565,7 +5713,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiTableContainer-root {
-  background: #ffffff !important;
+  background: var(--v2-surface) !important;
   border: 1px solid var(--v2-border);
   border-radius: 12px;
   box-shadow: var(--v2-shadow-sm);
@@ -5596,7 +5744,7 @@ body.modern-ui.v2-canvas {
 .v2-feature__legacy .MuiDialog-paper,
 .v2-feature__legacy .MuiPopover-paper,
 .v2-feature__legacy .MuiMenu-paper {
-  background: #ffffff !important;
+  background: var(--v2-surface) !important;
   color: var(--v2-text-primary) !important;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-lg);
@@ -5608,7 +5756,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiAvatar-root {
-  border: 2px solid #ffffff;
+  border: 2px solid var(--v2-surface);
 }
 
 /* Reset top padding for embedded dev tools so the v2 feature header is the
@@ -5638,8 +5786,8 @@ body.modern-ui.v2-canvas {
 .v2-feature__legacy [style*="background-color: rgba(30, 41, 59"],
 .v2-feature__legacy [style*="background-color: #0f172a"],
 .v2-feature__legacy [style*="background-color: #0b1220"] {
-  background: #ffffff !important;
-  background-color: #ffffff !important;
+  background: var(--v2-surface) !important;
+  background-color: var(--v2-surface) !important;
   color: var(--v2-text-primary) !important;
 }
 
@@ -6463,7 +6611,7 @@ body.modern-ui.v2-canvas {
   padding: 16px 18px 14px;
   border: 1px solid var(--v2-border);
   border-radius: 4px;
-  background: var(--v2-surface, #fff);
+  background: var(--v2-surface, var(--v2-bg));
   color: var(--v2-text-primary);
   cursor: pointer;
   transition: border-color 0.08s ease, background 0.08s ease;
@@ -6536,14 +6684,15 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 /* Signal §3 not yet: where the act will be, until a place to run it is
-   chosen. Sized like the submit button it stands in for. */
+   chosen. A muted hint line, not a box: a dashed slot read as a dead button
+   (TASK-647 item 1). */
 .v2-byo__unchosen {
   align-self: flex-start;
-  padding: 10px 18px;
-  border: 1px dashed var(--v2-border-strong);
-  border-radius: var(--v2-radius);
+  padding: 0;
+  border: 0;
   color: var(--v2-text-muted);
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 20px;
 }
 .v2-root button.v2-byo__link {
   /* A text action beside or under a line of copy ("Change", "Other ways to
@@ -7094,9 +7243,9 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-admin-users__btn--primary {
-  background: var(--v2-accent);
+  background: var(--v2-accent-fill);
   border-color: var(--v2-accent);
-  color: #fff;
+  color: var(--v2-on-accent);
 }
 
 .v2-root button.v2-admin-users__btn--primary:hover:not(:disabled) {
@@ -7409,7 +7558,7 @@ body.modern-ui.v2-canvas {
   border-radius: var(--v2-radius-md);
   padding: 16px;
   margin-bottom: 16px;
-  background: #ffffff;
+  background: var(--v2-bg);
 }
 .v2-billing__head {
   display: flex;
@@ -7464,7 +7613,7 @@ body.modern-ui.v2-canvas {
   padding: 0 14px;
   border-radius: var(--v2-radius-sm);
   border: 1px solid var(--v2-border);
-  background: #ffffff;
+  background: var(--v2-bg);
   color: var(--v2-text-primary);
   font-size: 13px;
   font-weight: 600;
@@ -7958,7 +8107,7 @@ body.modern-ui.v2-canvas {
   padding: 7px 10px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
-  background: #ffffff;
+  background: var(--v2-surface);
   color: var(--v2-text-primary);
   font: 400 14px/20px var(--v2-font);
 }
@@ -8022,7 +8171,7 @@ body.modern-ui.v2-canvas {
 
 .v2-settings__section .v2-billing__badge {
   border-radius: var(--v2-radius-sm);
-  background: #ffffff;
+  background: var(--v2-surface);
   border-color: var(--v2-border);
   color: var(--v2-text-primary);
   font-family: var(--v2-font-mono);
@@ -8091,7 +8240,7 @@ body.modern-ui.v2-canvas {
   padding: 0 12px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
-  background: #ffffff;
+  background: var(--v2-bg);
   color: var(--v2-text-primary);
   font: 600 13px/20px var(--v2-font);
   cursor: pointer;
@@ -8659,7 +8808,7 @@ body.modern-ui.v2-canvas {
   border: none;
   border-radius: 8px;
   padding: 9px 16px;
-  color: #fff;
+  color: var(--v2-on-ink);
   background: var(--v2-ink);
   cursor: pointer;
   font-size: 13.5px;
@@ -8904,8 +9053,8 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-board__create-submit {
   border: none;
-  background: var(--v2-accent);
-  color: #fff;
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
   font-size: 13.5px;
   font-weight: 600;
   padding: 9px 16px;
@@ -10885,7 +11034,7 @@ body.modern-ui.v2-canvas {
 .v2-connectors__select { min-width: 0; min-height: 40px; padding: 0 10px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); color: var(--v2-ink); font: 500 13px var(--v2-font); }
 
 .v2-connectors__aside { display: flex; min-width: 0; flex-direction: column; gap: 16px; }
-.v2-connector-aside__step, .v2-connector-aside__card { padding: 18px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-md); background: var(--v2-panel, #f9fafb); }
+.v2-connector-aside__step, .v2-connector-aside__card { padding: 18px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-md); background: var(--v2-panel, var(--v2-bg-subtle)); }
 .v2-connector-aside__step p, .v2-connector-aside__card p { margin: 0; color: var(--v2-text-secondary); font-size: 13px; line-height: 20px; }
 .v2-connector-aside__eyebrow { margin-bottom: 8px !important; color: var(--v2-accent-text) !important; font-family: var(--v2-font-mono); font-size: 11px !important; font-weight: 500; text-transform: lowercase; }
 .v2-connector-aside__card h2 { margin: 0 0 8px; color: var(--v2-ink); font-family: var(--v2-font-display); font-size: 16px; font-weight: 800; letter-spacing: -0.02em; }
@@ -11599,7 +11748,10 @@ body.modern-ui.v2-canvas {
 
   .v2-thread__header-row { align-items: center; gap: 8px; }
   .v2-thread__title-line { display: flex; flex-wrap: wrap; align-items: center; }
-  .v2-thread__title h1 { font: 600 15px/20px var(--v2-font); }
+  /* The name takes the free width with a zero basis and truncates, so the
+     "i" hint keeps its place on the line instead of wrapping under it and
+     growing the header (TASK-647 item 3). */
+  .v2-thread__title h1 { font: 600 15px/20px var(--v2-font); flex: 1 1 0; min-width: 0; white-space: nowrap; text-overflow: ellipsis; }
 
   .v2-thread .v2-msg__author,
   .v2-thread .v2-msg__author-btn { font-size: 15px; }
@@ -11630,10 +11782,10 @@ body.modern-ui.v2-canvas {
     grid-template-columns: minmax(0, 1fr);
     padding: 0;
     gap: 0;
-    background: #fff;
+    background: var(--v2-surface);
   }
   .v2-pane--rail { display: none; }
-  .v2-pane--main { background: #fff; }
+  .v2-pane--main { background: var(--v2-surface); }
 
   /* The inspector becomes the artboard's bottom sheet; its header toggle is
      intentionally always present so the sheet cannot become unreachable. */
@@ -11660,7 +11812,7 @@ body.modern-ui.v2-canvas {
     height: 54px;
     padding: 5px 14px;
     border-top: 1px solid var(--v2-border);
-    background: #fff;
+    background: var(--v2-surface);
   }
   .v2-root button.v2-mobile-tabs__item {
     position: relative;
@@ -11938,8 +12090,8 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pods__row--selected,
 .v2-root button.v2-pods__row--selected:hover {
-  background: var(--v2-accent);
-  color: #fff;
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
   font-weight: 600;
 }
 
@@ -11966,7 +12118,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pods__row--selected .v2-pods__row-mark {
   background: rgba(255, 255, 255, 0.22);
-  color: #fff;
+  color: var(--v2-on-accent);
 }
 
 .v2-pods__row-name {
@@ -12032,7 +12184,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-pods__row--selected .v2-pods__row-pill {
-  background: #fff;
+  background: var(--v2-bg);
   color: var(--v2-accent);
 }
 
@@ -12072,6 +12224,57 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-pod-header__board:hover { text-decoration: underline; }
+
+/* Owner rename (TASK-419): an inline form in the title line. It wraps at phone
+   width; the input takes the spare room and the buttons keep their content width. */
+.v2-pod-header__rename {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.v2-root .v2-pod-header__rename input {
+  flex: 1 1 180px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 600 15px/20px var(--v2-font);
+}
+.v2-root .v2-pod-header__rename input:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
+.v2-root .v2-pod-header__rename button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 600 12px/16px var(--v2-font);
+  cursor: pointer;
+}
+.v2-root .v2-pod-header__rename button[type="submit"] { background: var(--v2-ink); color: var(--v2-on-ink); border-color: var(--v2-ink); }
+.v2-root .v2-pod-header__rename button:not([type="submit"]):hover:not(:disabled) { background: var(--v2-surface-hover); }
+.v2-root .v2-pod-header__rename button[type="submit"]:hover:not(:disabled) { background: var(--v2-ink-hover); color: var(--v2-on-ink); }
+.v2-root .v2-pod-header__rename button:disabled { opacity: .55; cursor: default; }
+.v2-root .v2-pod-header__rename button:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
+.v2-pod-header__rename-error { flex: 1 0 100%; color: var(--v2-danger); font: 400 12px/16px var(--v2-font); }
+.v2-root button.v2-pod-header__rename-open {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: 500 11px/16px var(--v2-font-mono);
+  cursor: pointer;
+}
+.v2-root button.v2-pod-header__rename-open:hover { text-decoration: underline; }
+
+
 
 .v2-root button.v2-thread__back { display: none; }
 
@@ -12133,7 +12336,18 @@ body.modern-ui.v2-canvas {
     align-items: flex-start;
   }
   .v2-pod-header__meta { display: none; }
-  .v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; min-height: 28px; }
+  .v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; min-height: 28px; flex: 0 0 auto; white-space: nowrap; }
+  /* TASK-647 item 3: the board link keeps a 44px tap target without growing
+     the 28px meta row (the hit area is a pseudo-element), the name keeps room
+     for the "i" hint, and the compact meta sits closer to the link. */
+  .v2-root button.v2-pod-header__board--compact { position: relative; }
+  .v2-root button.v2-pod-header__board--compact::before {
+    content: '';
+    position: absolute;
+    inset: -14px -10px;
+  }
+  .v2-thread__title-line > h1 { max-width: calc(100% - 36px); }
+  .v2-pod-header__meta--compact { gap: 4px; }
 
   .v2-root button.v2-thread__back {
     display: inline-grid;
@@ -12630,14 +12844,14 @@ body.modern-ui.v2-canvas {
 
 /* ---------- Workspace at scale · direction C · PR 2b (threading restyle, walk-3 misses 51–63) ----------
    Runtime tag on agent rows; 20px reaction chips; a two-line quote that jumps to
-   its source; the thread summary is one chip; the expanded thread is one #f9fafb
+   its source; the thread summary is one chip; the expanded thread is one var(--v2-bg-subtle)
    band with a 2px rule and a Collapse foot; the action strip is a 28px white box
    top-right on hover (inline under the body on long-press at 390); the Jump pill
    is white with a cobalt count; transcript avatars are two-tone. */
 
 /* Hover band and the expanded band share the panel colour, not the tint. */
 .v2-thread .v2-msg:hover,
-.v2-thread .v2-msg:focus-within { background: #f9fafb; }
+.v2-thread .v2-msg:focus-within { background: var(--v2-bg-subtle); }
 .v2-thread .v2-msg { border-radius: 4px; }
 .v2-thread .v2-msg--landed { background: var(--v2-accent-soft, #e8ecfb); transition: background 0.6s ease; }
 
@@ -12777,7 +12991,7 @@ body.modern-ui.v2-canvas {
    gap = 36px). */
 .v2-thread .v2-thread-block { margin: 0 0 10px; width: 100%; }
 .v2-thread .v2-thread-block__inner { margin-left: 36px; }
-.v2-thread .v2-thread-block--open { background: #f9fafb; border-radius: 4px; padding: 0 8px 6px 0; }
+.v2-thread .v2-thread-block--open { background: var(--v2-bg-subtle); border-radius: 4px; padding: 0 8px 6px 0; }
 .v2-thread .v2-thread-block--open > .v2-msg:hover,
 .v2-thread .v2-thread-block--open > .v2-msg:focus-within { background: transparent; }
 .v2-thread .v2-thread-block .v2-thread-card { margin: 2px 0 0; }
@@ -12821,7 +13035,7 @@ body.modern-ui.v2-canvas {
    #4f5c6e initials, agent cobalt + white initials; a photo still wins. */
 .v2-thread .v2-avatar--flat { border: 0; box-shadow: none; border-radius: 4px; font: 650 12px/1 var(--v2-font); letter-spacing: 0.02em; }
 .v2-thread .v2-avatar--flat-human { background: #f2f4f7; color: #4f5c6e; }
-.v2-thread .v2-avatar--flat-agent { background: var(--v2-accent); color: #fff; }
+.v2-thread .v2-avatar--flat-agent { background: var(--v2-accent); color: var(--v2-bg); }
 .v2-thread .v2-thread-replies .v2-msg .v2-avatar--flat { font: 650 12px/1 var(--v2-font); }
 .v2-thread .v2-thread-card__faces .v2-avatar--flat { font: 650 11px/1 var(--v2-font-mono); }
 .v2-root .v2-thread button.v2-thread-replies__aim { margin-left: auto; padding: 0; color: var(--v2-text-muted); font: 500 12px/16px var(--v2-font); }
@@ -12843,7 +13057,7 @@ body.modern-ui.v2-canvas {
   /* The row is a 28px | 1fr grid and the strip precedes the body in DOM: left
      to auto-place, a static strip takes the body's cell and the body drops
      into the avatar column (one word per line — 390 walk). Pin it. */
-  .v2-thread .v2-msg--reveal { background: #f9fafb; row-gap: 6px; }
+  .v2-thread .v2-msg--reveal { background: var(--v2-bg-subtle); row-gap: 6px; }
   .v2-thread .v2-msg--reveal .v2-msg__strip {
     position: static;
     grid-column: 2;
@@ -13141,9 +13355,9 @@ body.modern-ui.v2-canvas {
 }
 .v2-root button.v2-team-card__mark img { width: 100%; height: 100%; object-fit: cover; }
 .v2-root button.v2-team-card__mark .v2-avatar { width: 100%; height: 100%; border: 0; border-radius: inherit; }
-.v2-root button.v2-team-card__mark--needsYou { background: var(--v2-accent); color: #fff; }
-.v2-root button.v2-team-card__mark--working { background: #101828; color: #fff; }
-.v2-root button.v2-team-card__mark--idle { background: #e4e7ec; color: #4f5c6e; }
+.v2-root button.v2-team-card__mark--needsYou { background: var(--v2-accent); color: var(--v2-bg); }
+.v2-root button.v2-team-card__mark--working { background: var(--v2-text-primary); color: var(--v2-bg); }
+.v2-root button.v2-team-card__mark--idle { background: var(--v2-border-soft); color: #4f5c6e; }
 .v2-team-card__title { min-width: 0; }
 /* A primary identifier never one-line-ellipsizes (craft audit rule 1, #568):
    two lines, then clamp; min-width 0 so the grid column can shrink under it. */

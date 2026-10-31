@@ -32,8 +32,8 @@
  * the action plan without writing.
  *
  * Usage:
- *   ts-node backend/scripts/migrate-agent-room-multimember.ts          # apply
- *   ts-node backend/scripts/migrate-agent-room-multimember.ts --dry    # report
+ *   cd backend && node dist/scripts/migrate-agent-room-multimember.js          # apply
+ *   cd backend && node dist/scripts/migrate-agent-room-multimember.js --dry    # report
  */
 
 import mongoose from 'mongoose';

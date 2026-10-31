@@ -1,6 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <script>
+      // Apply a stored Light or Dark v2 choice before first paint, so it never
+      // flashes the OS theme. Keep the key in step with src/v2/utils/theme.ts.
+      try {
+        var v2Theme = window.localStorage.getItem('v2.theme');
+        if (v2Theme === 'light' || v2Theme === 'dark') {
+          document.documentElement.setAttribute('data-v2-theme', v2Theme);
+        }
+      } catch (e) {
+        // Storage can be blocked; the OS theme then applies.
+      }
+    </script>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <script src="/signup-source.js"></script>
