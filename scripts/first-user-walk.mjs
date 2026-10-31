@@ -68,11 +68,16 @@ const runStep = async (name, fn) => {
 
 const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 
-const cleanup = async (token) => {
-  if (!token) return;
-  const del = await api('DELETE', '/api/users/me', { token, body: { confirmation: 'DELETE' } });
-  if (del.status >= 300) console.error(`cleanup: account delete ${del.status}: ${JSON.stringify(del.data)}`);
-  else console.log(`cleanup: deleted ${username}`);
+// Returns false when the account survives, so the run can fail loudly.
+const cleanup = async (token, password) => {
+  if (!token) return true;
+  const del = await api('DELETE', '/api/users/me', { token, body: { password, confirmation: 'DELETE' } });
+  if (del.status >= 300) {
+    console.error(`cleanup: account delete ${del.status}: ${JSON.stringify(del.data)}`);
+    return false;
+  }
+  console.log(`cleanup: deleted ${username}`);
+  return true;
 };
 
 const main = async () => {
@@ -141,7 +146,7 @@ const main = async () => {
   } catch {
     exitCode = 1;
   } finally {
-    await cleanup(token);
+    if (!await cleanup(token, password)) exitCode = 1;
   }
 
   console.log(JSON.stringify({ walk: username, steps: results }, null, 2));
