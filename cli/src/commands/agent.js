@@ -88,6 +88,7 @@ import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
+import { installedCliVersion, startUpdateNotice } from '../lib/update-check.js';
 import { createSeatStop } from '../lib/seat-stop.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import { describeUpstreamRefusal } from '../lib/upstream-refusal.js';
@@ -533,6 +534,29 @@ export const listLocalAgents = () => {
       };
     })
     .filter(Boolean);
+};
+
+/**
+ * The token files listLocalAgents drops: present, but not readable JSON.
+ * `commonly doctor` reports them, because a dropped file otherwise reads as
+ * "no agent here" and lets doctor pass on a seat that cannot start.
+ * Throws when the directory exists but cannot be read, for doctor to report.
+ */
+export const listUnreadableAgentTokens = () => {
+  let files;
+  try {
+    files = readdirSync(tokensDir());
+  } catch (error) {
+    // Only a missing directory means no agents. existsSync also answers false
+    // for EACCES on an ancestor, which is why this reads instead of checking.
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return [];
+    throw error;
+  }
+  return files
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => f.slice(0, -'.json'.length))
+    .filter((name) => !loadAgentToken(name))
+    .sort();
 };
 
 // Chat event types whose payload already contains the prompt the wrapper
@@ -4100,6 +4124,12 @@ Docs:
 
       console.log(`${stamp()} [${name}] polling ${record.instanceUrl} for events (ctrl+c to stop)`);
       console.log(`${stamp()} [${name}] ${foregroundDaemonHint({ daemonRegistered: hasDaemonRecord() })}`);
+      // TASK-660: one line when this CLI is stale. Fired, not awaited, so a
+      // slow registry never delays the first poll.
+      startUpdateNotice({
+        installedVersion: installedCliVersion(),
+        log: (line) => console.log(`${stamp()} [${name}] ${line}`),
+      });
 
       const { stop } = performRun({
         instanceUrl: record.instanceUrl,
