@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import i18n from '../../i18n';
 import V2MessageRow, { CollapsibleProse } from '../components/V2MessageRow';
@@ -36,7 +36,7 @@ describe('CollapsibleProse', () => {
     expect(screen.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
   });
 
-  it('makes the folded prose inert so hidden links cannot take focus, and releases it on expand', () => {
+  it('expands a folded message when focus reaches a link below the fold, and keeps the preview readable', () => {
     setScrollHeight(900);
     const { container } = render(
       <CollapsibleProse collapsible>
@@ -44,9 +44,13 @@ describe('CollapsibleProse', () => {
       </CollapsibleProse>,
     );
     const wrapper = container.querySelector('.v2-msg__prose');
-    expect(wrapper).toHaveAttribute('inert');
-    fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
+    expect(wrapper).toHaveClass('v2-msg__prose--closed');
     expect(wrapper).not.toHaveAttribute('inert');
+    // The preview stays in the accessibility tree and is not hidden from assistive tech.
+    const link = screen.getByRole('link', { name: 'long link' });
+    act(() => link.focus());
+    expect(wrapper).not.toHaveClass('v2-msg__prose--closed');
+    expect(screen.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('does not fold at 133px and folds at 134px', () => {

@@ -392,14 +392,15 @@ export const CollapsibleProse: React.FC<{ collapsible: boolean; children: React.
     return () => observer.disconnect();
   }, [collapsible]);
   const folded = overflows && !open;
-  // Hidden links and buttons must not take focus; React 18 can't set a boolean inert attribute.
-  useLayoutEffect(() => {
-    ref.current?.toggleAttribute('inert', folded);
-  }, [folded]);
   if (!collapsible) return <>{children}</>;
   return (
     <>
-      <div ref={ref} className={`v2-msg__prose${folded ? ' v2-msg__prose--closed' : ''}`}>
+      {/* Focus reaching a link below the fold opens the message, so the hidden link is never focused blind. */}
+      <div
+        ref={ref}
+        className={`v2-msg__prose${folded ? ' v2-msg__prose--closed' : ''}`}
+        onFocus={() => { if (folded) setOpen(true); }}
+      >
         {children}
       </div>
       {overflows && (
