@@ -116,8 +116,11 @@ describe('Signal accent on standalone and bridged surfaces', () => {
     // No standalone fallbacks inside var(), and no card shadow (Signal has none).
     expect(css).not.toMatch(/var\(--v2-[a-z-]+,/);
     expect(css).not.toContain('0 12px 32px');
-    // The only hex left is the warning ink, which has no token yet.
-    expect(css.replace(/\/\*[\s\S]*?\*\//g, '').match(/#[0-9a-f]{3,8}\b/gi)).toEqual(['#7c4a03']);
+    // The only hexes are the warning-ink token's light and dark values.
+    expect(css.replace(/\/\*[\s\S]*?\*\//g, '').match(/#[0-9a-f]{3,8}\b/gi)).toEqual(['#7c4a03', '#f4c27a', '#f4c27a']);
+    expect(css).toContain('color: var(--v2-warning-ink) !important');
+    expect(css).toContain(':root[data-v2-theme="dark"] .v2-cli-authorize { --v2-warning-ink: #f4c27a; }');
+    expect(css).toContain(':root:not([data-v2-theme="light"]) .v2-cli-authorize { --v2-warning-ink: #f4c27a; }');
     // .v2-root resets button chrome at (0,1,0): the controls must out-specify it.
     expect(css).toContain('.v2-cli-authorize .v2-cli-authorize__primary {');
     expect(css).toContain('.v2-cli-authorize .v2-cli-authorize__secondary {');

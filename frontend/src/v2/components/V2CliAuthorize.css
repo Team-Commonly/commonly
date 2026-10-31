@@ -2,6 +2,15 @@
    follows the dark theme. .v2-root resets button chrome and link/input
    colour at (0,1,0)–(0,1,1); the controls here are prefixed with
    .v2-cli-authorize so they win on specificity, not on stylesheet order. */
+/* Warning ink (UX Lead, pod msg 120615): #7c4a03 vanishes on dark
+   warning-soft. Scoped here with the same dark selectors as v2.css until the
+   token has a second consumer. */
+.v2-cli-authorize { --v2-warning-ink: #7c4a03; }
+:root[data-v2-theme="dark"] .v2-cli-authorize { --v2-warning-ink: #f4c27a; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-v2-theme="light"]) .v2-cli-authorize { --v2-warning-ink: #f4c27a; }
+}
+
 .v2-cli-authorize {
   min-height: 100vh;
   display: grid;
@@ -47,8 +56,7 @@
 .v2-cli-authorize__facts div { display: flex; justify-content: space-between; gap: 18px; padding: 5px 0; }
 .v2-cli-authorize__facts dt { color: var(--v2-text-muted); }
 .v2-cli-authorize__facts dd { margin: 0; font-weight: 600; text-align: right; }
-/* #7c4a03 stays literal: no warning-ink token exists on main or #3058 yet. */
-.v2-cli-authorize__warning { padding: 10px 12px; border-radius: var(--v2-radius); background: var(--v2-warning-soft); color: #7c4a03 !important; font-size: 13px; }
+.v2-cli-authorize__warning { padding: 10px 12px; border-radius: var(--v2-radius); background: var(--v2-warning-soft); color: var(--v2-warning-ink) !important; font-size: 13px; }
 .v2-cli-authorize__actions { display: flex; justify-content: flex-end; gap: 10px; }
 
 @media (max-width: 480px) {
