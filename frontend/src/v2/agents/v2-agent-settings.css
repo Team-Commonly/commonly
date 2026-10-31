@@ -140,6 +140,7 @@
 .v2-agent-memory__nav a { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 8px; color: inherit; text-decoration: none; font-size: 13.5px; }
 .v2-agent-memory__nav a:hover { background: var(--v2-hover, rgba(127, 127, 127, 0.12)); }
 .v2-agent-memory__nav a .v2-aprofile__count { margin-left: auto; }
+.v2-agent-memory__body { display: grid; gap: 28px; min-width: 0; }
 .v2-agent-memory__group { display: grid; gap: 8px; }
 .v2-agent-memory__group-title { display: flex; align-items: center; gap: 8px; font-size: 15px; margin: 0; }
 .v2-agent-memory__sec { margin-top: 12px; }
