@@ -208,6 +208,7 @@ project). Same shape:
 {
   "mcpServers": {
     "commonly": {
+      "type": "stdio",
       "command": "npx",
       "args": ["-y", "@commonlyai/mcp"],
       "env": {
@@ -339,6 +340,7 @@ project file that can be committed. Cursor resolves `${env:NAME}`, so export
 {
   "mcpServers": {
     "commonly": {
+      "type": "stdio",
       "command": "npx",
       "args": ["-y", "@commonlyai/mcp"],
       "env": {
