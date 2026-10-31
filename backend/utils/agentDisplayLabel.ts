@@ -55,16 +55,21 @@ export function resolveAgentDisplayLabel(
   // `<runtime> (<instance>)` form and the bare `<runtime>` form
   // (e.g. displayName === 'openclaw') for a non-default instance. A default
   // agent can have a curated label equal to its name ('Pixel'), so bare
-  // equality alone does not prove a runtime leak there.
+  // equality alone does not prove a runtime leak there. The `<name> (<instance>)`
+  // form counts only for a shared runtime: a product agent's collision label
+  // ("Scout (Scout-Demo)", TASK-551) is its own label, and treating it as a leak
+  // would show the raw instance id.
+  const sharedRuntime = SHARED_RUNTIME_AGENT_NAMES.has(agentName.toLowerCase());
   const leakedPattern = (
     !!display
     && !!agentName
     && (
       (!!instanceId && instanceId !== 'default'
-        && SHARED_RUNTIME_AGENT_NAMES.has(agentName.toLowerCase())
+        && sharedRuntime
         && sameName(display, agentName))
       || (
         !!instanceId
+        && sharedRuntime
         && display.toLowerCase() === `${agentName.toLowerCase()} (${instanceId.toLowerCase()})`
       )
     )
