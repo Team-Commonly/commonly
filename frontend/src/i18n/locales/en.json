@@ -2765,6 +2765,7 @@
     "tabs": "Agent tabs",
     "profile": "Profile",
     "settings": "Settings",
+    "memory": "Memory",
     "key": "Key",
     "regenerate": "Regenerate key",
     "wrapperReconnect": "Replace this computer's key from Control.",
