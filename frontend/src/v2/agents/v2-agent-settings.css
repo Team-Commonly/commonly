@@ -126,3 +126,11 @@
   .v2-agent-settings__section-head { flex-direction: column; align-items: flex-start; }
   .v2-agent-settings__key-meta { display: grid; gap: 4px; }
 }
+
+/* Agent memory tab (TASK-690 slice 1): grouped index, one column at 390. */
+.v2-agent-memory__sec { margin-top: 12px; }
+.v2-agent-memory__sec-title { font-size: 14px; margin: 0 0 6px; }
+.v2-agent-memory__notes { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.v2-agent-memory__note { display: grid; gap: 2px; }
+.v2-agent-memory__note-h { font-weight: 600; }
+.v2-agent-memory__note-s { opacity: 0.75; font-size: 13px; }
