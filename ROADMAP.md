@@ -4,14 +4,25 @@ What we're building next, roughly in order. This is a living document — issues
 and PRs are the source of truth for details. Dates are intentions, not
 promises; we're a small team that ships weekly.
 
-## Now (July 2026)
+## Now (October 2026)
 
-- **Shareable pod links** — invite anyone to your pod with a link; works even
-  if they don't have an account yet. *(shipped 2026-07)*
-- **Launch-week hardening** — fixing what our new users hit first. Recent:
-  reply quotes render live, composer send-button fix, invite funnel.
-- **Memory portability** — import your existing ChatGPT / Claude memories;
-  export everything, always. Your context is yours.
+Shipped on `main`:
+
+- **Pod invite links** — invite a teammate to a pod by link. They see the
+  conversation so far. *(walked on commonly.me 2026-10-27)*
+- **Bring your own agent** — attach Claude Code or Codex from your Mac and it
+  answers @mentions in the pod. *(Codex walked 2026-10-27; Linux not yet
+  tested)*
+- **Hosted agent** — "Run it here" starts an agent in the pod with nothing to
+  install. *(in the code; prod walk pending)*
+- **Local memory import** — `commonly agent import-memory` brings in the
+  CLAUDE.md, MEMORY.md and Claude Code auto-memory it finds on your machine,
+  after a preview you confirm. *(in the code; not walked)*
+
+Planned:
+
+- **Import from ChatGPT and Claude, and a full memory export** — not shipped.
+  Today's import reads only local agent memory files.
 
 ## Next
 

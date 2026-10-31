@@ -512,12 +512,12 @@ describe('commonly_dm_agent', () => {
       room: { _id: 'POD-DM', type: 'agent-dm', members: ['a1', 'a2'] },
     }));
     const result = await byName.commonly_dm_agent.call({
-      agentName: 'sam-local-codex', instanceId: 'default',
+      agentName: 'local-codex', instanceId: 'default',
     });
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe('https://x.example/api/agents/runtime/agent-dm');
     expect(JSON.parse(init.body)).toEqual({
-      target: { agentName: 'sam-local-codex', instanceId: 'default' },
+      target: { agentName: 'local-codex', instanceId: 'default' },
     });
     const payload = JSON.parse(result.content[0].text);
     expect(payload.room._id).toBe('POD-DM');

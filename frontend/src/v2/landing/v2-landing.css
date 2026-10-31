@@ -888,32 +888,51 @@
 }
 .v2-landing__card-text { margin: 0; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
 
-/* Use cases: one bordered list, a row per case, price-list-shaped. The frame
-   carries the radius and clips the hover fill, so a row's own corners never
-   round. */
-.v2-landing__usecases {
+/* Works with: walked agents and apps as name chips, each with its one-line
+   requirement beside it. Chips wrap; there is no logo to size. */
+.v2-landing__works { display: grid; gap: 20px; }
+.v2-landing__works-label {
+  margin-bottom: 10px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--v2-text-tertiary);
+}
+.v2-landing__works-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v2-landing__works-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 12px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius);
-  overflow: hidden;
 }
-.v2-landing__usecase {
+.v2-landing__works-name { font-size: 15px; line-height: 22px; font-weight: 600; color: var(--v2-text-primary); }
+.v2-landing__works-note { font-size: 13px; line-height: 20px; color: var(--v2-text-secondary); }
+
+/* Agent teams: three cards, each a roster, a few pod messages and one footer.
+   The messages are styled as the pod's own rows, so a card reads as a chat. */
+.v2-landing__team-cards {
   display: grid;
-  grid-template-columns: 340px minmax(0, 1fr) 16px;
-  grid-template-areas: 'title text arrow';
-  gap: 32px;
-  align-items: baseline;
-  padding: 22px 28px;
-  text-decoration: none;
-  transition: background 120ms ease;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
 }
-.v2-landing__usecase + .v2-landing__usecase { border-top: 1px solid var(--v2-border-soft); }
-.v2-landing__usecase:hover { background: var(--v2-surface-hover); }
-/* v2.css's focus ring is an OUTER box-shadow, which the frame's overflow:hidden
-   clips — the ring would simply not appear on these rows. The inset form draws
-   it inside the row; (0,3,0) outranks the shared (0,2,1) `.v2-root a` rule. */
-.v2-root .v2-landing__usecase:focus-visible { box-shadow: inset var(--v2-focus-ring); }
-.v2-landing__usecase-title {
-  grid-area: title;
+.v2-landing__team-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 24px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+}
+.v2-landing__team-title {
   margin: 0;
   font-family: var(--v2-font-display, var(--v2-font));
   font-size: 18px;
@@ -922,8 +941,62 @@
   letter-spacing: -0.03em;
   color: var(--v2-text-primary);
 }
-.v2-landing__usecase-text { grid-area: text; margin: 0; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
-.v2-landing__usecase-arrow { grid-area: arrow; align-self: center; display: block; color: var(--v2-text-tertiary); }
+.v2-landing__team-roster {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--v2-text-secondary);
+}
+.v2-landing__team-chat {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface-hover);
+}
+.v2-landing__team-msg { margin: 0; font-size: 15px; line-height: 22px; color: var(--v2-text-primary); }
+.v2-landing__team-msg--system { font-size: 13px; color: var(--v2-text-tertiary); }
+.v2-landing__team-author { margin-right: 6px; font-weight: 700; }
+.v2-landing__team-chip {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--v2-surface);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--v2-text-secondary);
+}
+.v2-landing__team-options { display: inline-flex; gap: 6px; margin-left: 6px; }
+.v2-landing__team-option {
+  padding: 0 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--v2-text-primary);
+}
+.v2-landing__team-footer {
+  margin: auto 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--v2-border-soft);
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--v2-text-secondary);
+}
+/* The live star count sits beside the star link and stays quiet. It is absent
+   until GitHub answers, so the link never waits on it. */
+.v2-landing__star-count {
+  align-self: center;
+  font-size: 13px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+  color: var(--v2-text-tertiary);
+}
 
 /* Architecture: shell over kernel over drivers, drawn as one bordered stack.
    A layer is not a step, so the 01/02/03 are gone with the cards. */
@@ -1196,20 +1269,13 @@
      its bottom padding and the demo's negative margin change together, so
      splitting them across a third breakpoint is how they drift apart. */
   .v2-landing__open-grid { grid-template-columns: 1fr; gap: 32px; }
+  .v2-landing__team-cards { grid-template-columns: minmax(0, 1fr); }
   .v2-landing__adapters,
   .v2-landing__steps,
   .v2-landing__cards,
   .v2-landing__tiers { grid-template-columns: 1fr; }
   .v2-landing__steps { row-gap: 28px; }
   .v2-landing__adapters { row-gap: 24px; }
-  /* A use-case row keeps its frame and drops to two tracks: title beside the
-     arrow, and the text under both of them. */
-  .v2-landing__usecase {
-    grid-template-columns: minmax(0, 1fr) 16px;
-    grid-template-areas: 'title arrow' 'text text';
-    align-items: center;
-    gap: 4px 12px;
-  }
   /* The stack stays ONE bordered box, so it is deliberately not in the
      one-column group above; its rows become a column instead — a layer's title
      sits over its own text rather than in a track beside it. */
@@ -1285,7 +1351,7 @@
   .v2-landing__footer { padding-top: 32px; }
   .v2-landing__footer-legal { padding: 16px 0 20px; }
   .v2-landing__title { font-size: 44px; line-height: 46px; }
-  /* TASK-213 (lily-shen's ruling, option 1): on a phone the suffix takes its own
+  /* TASK-213 (option 1): on a phone the suffix takes its own
      line, so the title is 「与你的 / <term> / 对话」 at every width and only the
      term rotates. Without this the h1 is 94.6px under three of the four terms
      and 140.6px under the fourth at 320–414, so the lede, the CTAs and every
@@ -1330,10 +1396,8 @@
   .v2-landing__open-item { padding: 16px 18px; }
   .v2-landing__card { padding: 20px 22px; }
   .v2-landing__card-title { font-size: 22px; line-height: 26px; }
-  /* Row D: the same rows, tighter. The use-case frame keeps its 18px side
-     padding, and the proof panel's stats spread the full width under the copy
-     rather than sitting beside it. */
-  .v2-landing__usecase { padding: 16px 18px; }
+  /* Row D: the same rows, tighter. The proof panel's stats spread the full
+     width under the copy rather than sitting beside it. */
   .v2-landing__tile { padding: 18px 20px; }
   .v2-landing__tile-title { font-size: 22px; line-height: 26px; }
   .v2-landing__sub { margin-top: 16px; font-size: 16px; line-height: 26px; }
@@ -1495,15 +1559,18 @@
   vertical-align: bottom;
   color: #ffffff;
   padding-bottom: 0.06em; /* keep descenders (y, p) out of the clip */
-  /* Width tracks the active term (via the sizer) — smooth the resize so the
-     suffix glides rather than jumps when a shorter/longer term rotates in. */
-  transition: width 350ms ease-out;
 }
 
-/* In-flow, invisible: defines the slot's width + height from the active term. */
+/* In-flow, invisible: every term stacked in one grid cell, so the slot's width
+   and height are the widest term's and do not change as the term rotates. */
 .v2-landing__rotator-sizer {
+  display: grid;
   visibility: hidden;
   white-space: nowrap;
+}
+
+.v2-landing__rotator-sizer > span {
+  grid-area: 1 / 1;
 }
 
 /* Animated terms sit on top of the sizer, filling it. */
@@ -1553,7 +1620,7 @@
 :lang(zh) .v2-landing__adapter-title,
 :lang(zh) .v2-landing__open-item strong,
 :lang(zh) .v2-landing__card-title,
-:lang(zh) .v2-landing__usecase-title,
+:lang(zh) .v2-landing__team-title,
 :lang(zh) .v2-landing__tile-title,
 :lang(zh) .v2-landing__proof-num,
 :lang(zh) .v2-landing__tier-price,
@@ -1590,16 +1657,16 @@
 .v2-landing__faq-item dt::first-letter { text-transform: uppercase; }
 .v2-landing__faq-item dd { margin: 0; }
 
-/* D129 phone hero (ux-lead's ruling): at 320 and 390 the rotator's widest terms
+/* Phone hero: at 320 and 390 the rotator's widest terms
    run 362–566px against a 272–342px column at the 44px title, so the term
    clipped in both locales. At ≤760 the title is 32/36 and the rotator may wrap
-   onto two lines; min-height reserves those two lines so the h1 holds one
-   height under every term. text-wrap: balance keeps the last line from
-   holding one word ("runs"). Placed last so it wins over the ≤680 title size by
-   order. 1440 and up are untouched. */
+   onto two lines. The sizer stacks every term in one grid cell, so the h1 holds
+   one height under every term without a min-height. text-wrap: balance keeps
+   the last line from holding one word ("runs"). Placed last so it wins over the
+   ≤680 title size by order. 1440 and up are untouched. */
 @media (max-width: 760px) {
   .v2-landing__title { font-size: 32px; line-height: 36px; }
-  .v2-landing__rotator { max-width: 100%; min-height: calc(72px + 0.06em); text-wrap: balance; }
+  .v2-landing__rotator { max-width: 100%; text-wrap: balance; }
   .v2-landing__rotator-sizer,
   .v2-landing__rotator-term { white-space: normal; }
 }
@@ -1613,3 +1680,6 @@
 @media (min-width: 761px) and (max-width: 1359px) {
   .v2-landing__title-suffix { display: block; margin-left: 0; }
 }
+/* Hero option 1 (short line, rotating term): the suffix always takes its own
+   line, so the h1 keeps one height under every term at 320, 390 and 1440. */
+.v2-landing__title-suffix--own-line { display: block; margin-left: 0; }

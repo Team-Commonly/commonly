@@ -343,7 +343,7 @@ prices that day's `AgentRun` turns per model (`backend/services/spendAlarmServic
 and logs one `{"alarm":"user_spend", ...}` line per user per day, naming the
 user, the amount and the token split.
 
-**Where it lands.** Sam gets the email from this policy. SRE gets a second
+**Where it lands.** The account owner gets the email from this policy. SRE gets a second
 copy as a system message in the private "SRE alerts" pod
 (`backend.env.spendAlarmPodId`). That message is posted by the
 `commonly-bot`/`spend-alarm` identity and names `@sre-ops`
@@ -352,7 +352,7 @@ The pod is invite-only and has no agent members, so the post wakes no seat.
 Read it with:
 
 ```bash
-COMMONLY_TOKEN_FILE=~/.commonly/bin/sre-ops-token commonly inbox list
+COMMONLY_TOKEN_FILE=<ops-token-file> commonly inbox list
 ```
 
 or open the pod. **Limit:** nothing wakes an SRE session. If none is running,
@@ -372,7 +372,7 @@ When it fires:
 2. Open that user's runs for the day (`AgentRun` by `userId`, newest first)
    and check whether one install is looping or many are each doing a little.
 3. A loop is the install's problem: uninstall it or lower its cap.
-4. Steady real use that keeps crossing the line is a plan question for Sam,
+4. Steady real use that keeps crossing the line is a plan question for the owner,
    not an ops fix.
 
 A model the price table does not know is charged at an Opus-class rate, so a

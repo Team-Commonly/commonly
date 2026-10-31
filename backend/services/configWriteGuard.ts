@@ -1,6 +1,6 @@
 /**
  * What a config write may not change on an installed agent
- * (security, 2026-10-15; found by Rhea reviewing #2224).
+ * (security, 2026-10-15; found reviewing #2224).
  *
  * PATCH /api/registry/pods/:podId/agents/:name lets an agent's installer
  * shallow-merge any `config` key. Three kinds of key are not theirs to write
@@ -82,7 +82,7 @@ export const configWriteRefusal = ({
   const body = asObject(requested);
   // A shallow merge spreads whatever it is given: a string becomes indexed
   // keys, and `runtime: null` erases the stored runtime and with it the type
-  // every rule below reads (Rhea on #2229). Neither shape is a valid write.
+  // every rule below reads. Neither shape is a valid write.
   if (!body) {
     return {
       code: 'invalid_config', status: 400, error: 'config must be an object.', fields: ['config'],
@@ -150,8 +150,8 @@ export const configWriteRefusal = ({
  * The runtime block a write leaves behind, with a type every reader matches.
  * A caller who may not change the type gets the stored one back whatever they
  * sent (equal after normalizing, or the write was refused): saving their
- * spelling would let `HOSTED` past readers that match `hosted` exactly
- * (Rhea on #2229). An admin's type is saved normalized. A request that sends
+ * spelling would let `HOSTED` past readers that match `hosted` exactly.
+ * An admin's type is saved normalized. A request that sends
  * `runtime` without a type (the Agents Hub sends only auth profiles and skill
  * env) keeps the stored one instead of erasing it.
  */

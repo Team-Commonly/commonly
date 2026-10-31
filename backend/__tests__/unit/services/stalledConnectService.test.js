@@ -278,6 +278,18 @@ describe('stalledConnectService.scan', () => {
     expect(filter).not.toHaveProperty('runtimeTokens.0');
     expect(filter.$or).toEqual(expect.arrayContaining([{ 'config.runtime.host': 'byo' }]));
   });
+
+  it('pre-filters the legacy unstamped polling seat that classifyRuntime calls BYO (TASK-655, #1320)', async () => {
+    setup();
+    await scan({ now: NOW });
+
+    const [filter] = mockInstallFind.mock.calls[0];
+    expect(filter.$or).toEqual(expect.arrayContaining([{
+      'config.runtime.runtimeType': 'webhook',
+      'config.runtime.host': { $in: [null, ''] },
+      'config.runtime.webhookUrl': { $in: [null, ''] },
+    }]));
+  });
 });
 
 describe('keeping the forward promise', () => {

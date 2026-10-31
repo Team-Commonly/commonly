@@ -225,6 +225,25 @@ describe('pod agents lastActiveAt derivation (#915)', () => {
     expect(res.body.agents[0].connection.lastSeenAt).toEqual(expect.any(String));
   });
 
+  it('shows a daemon-bound seat stale when its listener stopped, even with a live machine', async () => {
+    AgentInstallation.getInstalledAgents.mockResolvedValue([baseInstallation({
+      agentName: 'local', config: new Map([['runtime', { runtimeType: 'wrapper' }]]),
+    })]);
+    User.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
+      _id: 'bot-1', username: 'local-default', botMetadata: { machineId: 'machine-1' }, agentRuntimeTokens: [],
+    }]) }) });
+    AgentCredential.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([
+      { kind: 'runtime', agentUserId: 'bot-1', status: 'active', lastUsedAt: new Date(Date.now() - 10 * 60 * 1000) },
+      { kind: 'daemon', machineId: 'machine-1', status: 'active' },
+    ]) }) });
+    Machine.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
+      machineId: 'machine-1', lastSeenAt: new Date(),
+    }]) }) });
+    const res = await request(app).get(`/api/registry/pods/${POD_ID}/agents`);
+    expect(res.status).toBe(200);
+    expect(res.body.agents[0].connection.state).toBe('stale');
+  });
+
   it('projects a daemon-bound seat as a wrapper even when its install label is not wrapper', async () => {
     AgentInstallation.getInstalledAgents.mockResolvedValue([baseInstallation({
       agentName: 'local', config: new Map([['runtime', { runtimeType: 'claude-code' }]]),
@@ -232,9 +251,9 @@ describe('pod agents lastActiveAt derivation (#915)', () => {
     User.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
       _id: 'bot-1', username: 'local-default', botMetadata: { machineId: 'machine-1' }, agentRuntimeTokens: [],
     }]) }) });
-    // The runtime key is aged past the 5-minute window, so only the live machine can make this seat connected.
+    // The agent's own listener polled seconds ago. The live machine alone would not make it connected.
     AgentCredential.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([
-      { kind: 'runtime', agentUserId: 'bot-1', status: 'active', lastUsedAt: new Date(Date.now() - 10 * 60 * 1000) },
+      { kind: 'runtime', agentUserId: 'bot-1', status: 'active', lastUsedAt: new Date() },
       { kind: 'daemon', machineId: 'machine-1', status: 'active' },
     ]) }) });
     Machine.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{

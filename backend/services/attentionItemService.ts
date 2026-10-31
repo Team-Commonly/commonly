@@ -23,7 +23,7 @@ const { humansAnsweredBy } = require('./agentAnswerService');
 // eslint-disable-next-line global-require
 const { isListedPodMember } = require('../utils/isPodMember');
 
-type SourceType = 'message' | 'approval' | 'approval_action' | 'decision_request' | 'task';
+type SourceType = 'message' | 'approval' | 'approval_action' | 'decision_request' | 'task' | 'initiative';
 type Kind = 'mention' | 'approval' | 'decision' | 'handoff' | 'blocked';
 type MentionOptions = {
   isAlreadyAcknowledged?: (recipientUserId: unknown, legacyMentionId: string) => boolean;
@@ -46,22 +46,30 @@ const currentHumanMembers = async (podId: unknown): Promise<Array<{ _id: unknown
   return users.filter((user: any) => isListedPodMember(pod, user._id));
 };
 
+// Throws on a failed lookup. Use it where the installer is the required
+// recipient, so a read error is reported as a failure and not as "no human".
+const lookupInstaller = async (
+  agentUserId: unknown, podId: unknown, declaredName?: unknown, declaredInstanceId?: unknown,
+): Promise<string | null> => {
+  const agent = agentUserId
+    ? await User.findById(agentUserId).select('isBot username botMetadata').lean() : null;
+  const name = String(declaredName || (agent?.isBot && (agent.botMetadata?.agentName || agent.username)) || '').toLowerCase();
+  if (name) {
+    const instanceId = String(declaredInstanceId || agent?.botMetadata?.instanceId || 'default');
+    const installation = await AgentInstallation.findOne({
+      podId, agentName: name, instanceId, status: { $ne: 'uninstalled' },
+    }).select('installedBy').lean();
+    if (installation?.installedBy) return String(installation.installedBy);
+  }
+  return agent?.isBot && agent.botMetadata?.ownerUserId
+    ? String(agent.botMetadata.ownerUserId) : null;
+};
+
 const installerForAgent = async (
   agentUserId: unknown, podId: unknown, declaredName?: unknown, declaredInstanceId?: unknown,
 ): Promise<string | null> => {
   try {
-    const agent = agentUserId
-      ? await User.findById(agentUserId).select('isBot username botMetadata').lean() : null;
-    const name = String(declaredName || (agent?.isBot && (agent.botMetadata?.agentName || agent.username)) || '').toLowerCase();
-    if (name) {
-      const instanceId = String(declaredInstanceId || agent?.botMetadata?.instanceId || 'default');
-      const installation = await AgentInstallation.findOne({
-        podId, agentName: name, instanceId, status: { $ne: 'uninstalled' },
-      }).select('installedBy').lean();
-      if (installation?.installedBy) return String(installation.installedBy);
-    }
-    return agent?.isBot && agent.botMetadata?.ownerUserId
-      ? String(agent.botMetadata.ownerUserId) : null;
+    return await lookupInstaller(agentUserId, podId, declaredName, declaredInstanceId);
   } catch (error) {
     // The attention row still matters if its optional email owner cannot be
     // resolved. Never send to the pod creator as a fallback.
@@ -121,8 +129,8 @@ const resolveAuthorName = async (authorId: unknown): Promise<string> => {
 };
 
 /**
- * The people an agent's message is ANSWERING (stickiness Phase 1b; shape ruled
- * by ux-lead, Sharpen 78222-78224, 2026-10-16). An answer you asked for is not
+ * The people an agent's message is ANSWERING (stickiness Phase 1b).
+ * An answer you asked for is not
  * waiting on you: you see it where you asked. So it opens no needs-you row;
  * the message and its @mention stay. Before this, almost every agent-mention
  * row was bulk-acknowledged or left open, and well under 1% was answered.
@@ -229,7 +237,7 @@ const validDate = (value: unknown): Date | null => {
 };
 
 /**
- * Sam's 2026-09-06 ruling: only a later post in the mention's thread or an
+ * Ruling (2026-09-06): only a later post in the mention's thread or an
  * explicit reply to its message is a reply. An unrelated pod post is not.
  */
 export const resolveMentionAttentionForReply = async ({
@@ -350,7 +358,7 @@ export const sweepResolvedMentionAttention = async ({ apply = false }: { apply?:
 };
 
 /**
- * A thread reply is the only reply (Sam, 2026-09-06), so an agent's mention
+ * A thread reply is the only reply, so an agent's mention
  * nobody answers in its thread stays open for good. Seats post status and gate
  * notes that name a person, and the 2026-10-20 audit found one founder's queue
  * holding 113 of them, the oldest five weeks old. After
@@ -393,6 +401,59 @@ export const sweepMissedAgentMentions = async (
   return { scanned: rows.length, eligible: ids.length, missed: Number(result.modifiedCount || 0) };
 };
 
+/**
+ * Audit rows already stamped `resolvedBy: 'replied'`. Before the narrow
+ * resolver landed, any post by the recipient in the pod closed every open
+ * mention they held there, so a row can assert a reply that was never
+ * written. This re-reads each row's source with the same evidence the sweep
+ * uses and reopens only the ones the source contradicts.
+ *
+ * Three outcomes, not two. `undecidable` exists because Mongo-fallback
+ * sources persist no reply or thread edges: absence of evidence there is not
+ * evidence the recipient stayed silent, and reopening those would re-raise
+ * attention a user has already dealt with. They are counted and left alone.
+ */
+export const auditRepliedMentionAttention = async (
+  { apply = false, resolvedBefore }: { apply?: boolean; resolvedBefore?: Date } = {},
+) => {
+  const before = validDate(resolvedBefore);
+  const rows = await AttentionItem.find({
+    kind: 'mention',
+    status: 'resolved',
+    resolvedBy: 'replied',
+    ...(before ? { resolvedAt: { $lt: before } } : {}),
+  }).sort({ createdAt: 1 }).lean();
+  let kept = 0;
+  let contradicted = 0;
+  let reopened = 0;
+  let undecidable = 0;
+  let unavailable = 0;
+  for (const row of rows) {
+    try {
+      const sourceId = String(row?.source?.id || '');
+      // Only a PostgreSQL source carries the reply and thread edges this
+      // audit needs; see recipientRepliedAfterMention.
+      if (!/^\d+$/.test(sourceId)) { undecidable += 1; continue; }
+      const sourceCreatedAt = await sourceTimeForMention(row);
+      if (!sourceCreatedAt) { undecidable += 1; continue; }
+      if (await recipientRepliedAfterMention(row, sourceCreatedAt)) { kept += 1; continue; }
+      contradicted += 1;
+      if (!apply) continue;
+      // Repeat the stamp in the filter so a row an operator acknowledged
+      // between the read and the write is not reopened underneath them.
+      const result = await AttentionItem.updateOne(
+        { _id: row._id, kind: 'mention', status: 'resolved', resolvedBy: 'replied' },
+        { $set: { status: 'open' }, $unset: { resolvedAt: '', resolvedBy: '' } },
+      );
+      reopened += Number(result.modifiedCount || 0);
+    } catch (error) {
+      unavailable += 1;
+      console.warn('[attention] replied-stamp audit skipped an unreadable source:', (error as Error).message);
+    }
+  }
+  return { scanned: rows.length, kept, contradicted, reopened, undecidable, unavailable };
+};
+
 export const recordApproval = async (approval: any, options: RecordOptions = {}): Promise<void> => {
   try {
     const podId = approval?.podId;
@@ -419,8 +480,8 @@ export const recordApproval = async (approval: any, options: RecordOptions = {})
 };
 
 // An agent's action proposal (approvalActionService, the runtime `propose-action`
-// path) is an ask like any other: it rings, counts and badges in the inbox
-// (ux-lead ruling on #1650). It is its own source type because it resolves
+// path) is an ask like any other: it rings, counts and badges in the inbox.
+// It is its own source type because it resolves
 // through /api/approvals/:id/resolve, not the Activity approve/reject verbs —
 // the page branches on `sourceType`, never on a guess about the id.
 export const recordActionApproval = async (row: any, displayName?: string | null, options: RecordOptions = {}): Promise<void> => {
@@ -430,7 +491,7 @@ export const recordActionApproval = async (row: any, displayName?: string | null
     if (!podId || !id) return;
     // Only the owner can decide an action proposal (resolveApproval 403s
     // anyone else), so only the owner is asked — a member whose Approve would
-    // fail must not carry it on their badge (sprint-review on #1652).
+    // fail must not carry it on their badge.
     const owner = row?.ownerUserId ? String(row.ownerUserId) : '';
     const members = await currentHumanMembers(podId);
     const recipients = members.filter((member: any) => String(member?._id ?? member) === owner);
@@ -483,7 +544,7 @@ export const recordDecision = async (decision: any, options: RecordOptions = {})
 // human members, or "human (merge) press". A report of a ruling already made
 // ("X's ruling, 10-19: ...") asks nothing, and no instance's names live here:
 // the previous pattern spelled one person's name, and one report beginning
-// "Sam's ruling" opened 40 rows across a pod's four humans (2026-10-19).
+// with a member's name opened 40 rows across a pod's four humans (2026-10-19).
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const HANDOFF_LEAD = String.raw`(?:awaiting|waiting\s+(?:on|for)|ready\s+for|needs?)`;
 const HUMAN_PRESS_RE = /\bhuman\s+(?:merge\s+)?press\b/i;
@@ -546,6 +607,75 @@ export const recordTaskAttention = async (task: any, options: TaskAttentionOptio
     });
   } catch (error) {
     console.warn('[attention] task materialization failed:', (error as Error).message);
+  }
+};
+
+// Initiative v1 design (#2788) §4: one nudge per stall
+// episode. The episode start is part of the source id, so every run inside one
+// episode upserts onto the same row and the next episode opens a new one. The
+// row goes to one current human member of the pod: the owner when the owner is
+// a person, otherwise the agent's installer. No agent is woken. The unique
+// index includes the recipient, so an owner change mid-episode would open a
+// second card; the episode's existing row, to anyone, is checked first. It
+// only counts while its recipient is still a human member of its pod: a row
+// the queue hides is no nudge, so the guard fails toward a second card.
+const INITIATIVE_STALL = 'stall';
+export const initiativeStallSourceId = (initiativeId: unknown, episodeStart: Date): string => (
+  `initiative:${String(initiativeId)}:${INITIATIVE_STALL}:${episodeStart.toISOString()}`
+);
+
+export const recordInitiativeStall = async (stall: {
+  initiativeId: unknown; title: string; podId: unknown; episodeStart: Date;
+  ownerUserId?: unknown; ownerAgentUserId?: unknown;
+}, options: RecordOptions = {}): Promise<{ recipientUserId: string | null; failed?: true }> => {
+  try {
+    const { podId } = stall;
+    if (!podId || !stall.initiativeId) return { recipientUserId: null };
+    const sourceId = initiativeStallSourceId(stall.initiativeId, stall.episodeStart);
+    const existing = await AttentionItem.find({ 'source.type': 'initiative', 'source.id': sourceId })
+      .select('recipientUserId podId').lean();
+    for (const row of existing) {
+      // eslint-disable-next-line no-await-in-loop
+      const members = await currentHumanMembers(row.podId);
+      if (members.some((member) => String(member._id) === String(row.recipientUserId))) {
+        return { recipientUserId: String(row.recipientUserId) };
+      }
+    }
+    const target = stall.ownerUserId ? String(stall.ownerUserId)
+      : stall.ownerAgentUserId ? await lookupInstaller(stall.ownerAgentUserId, podId) : null;
+    if (!target) return { recipientUserId: null };
+    const recipient = (await currentHumanMembers(podId)).find((member) => String(member._id) === target);
+    if (!recipient) return { recipientUserId: null };
+    const pod = await Pod.findById(podId).select('name').lean();
+    await recordForRecipients([recipient], {
+      podId, kind: 'blocked' as Kind, sourceType: 'initiative' as SourceType,
+      sourceId,
+      title: `Stalled: ${compact(stall.title, 200)}`,
+      detail: `No merge or ruling since ${stall.episodeStart.toISOString().slice(0, 10)}.`,
+      podName: pod?.name || 'Pod', emailRecipientId: target, suppressEmail: options.suppressEmail,
+    });
+    return { recipientUserId: target };
+  } catch (error) {
+    console.warn('[attention] initiative stall materialization failed:', (error as Error).message);
+    return { recipientUserId: null, failed: true };
+  }
+};
+
+// Closes this initiative's open stall rows, except the current episode's. A
+// card for a stall that has ended would otherwise sit in the queue forever.
+export const resolveInitiativeStalls = async (initiativeId: unknown, keepSourceId?: string): Promise<void> => {
+  const prefix = escapeRegExp(`initiative:${String(initiativeId)}:${INITIATIVE_STALL}:`);
+  try {
+    await AttentionItem.updateMany(
+      {
+        'source.type': 'initiative',
+        'source.id': keepSourceId ? { $regex: `^${prefix}`, $ne: keepSourceId } : { $regex: `^${prefix}` },
+        status: 'open',
+      },
+      { $set: { status: 'resolved', resolvedAt: new Date() } },
+    );
+  } catch (error) {
+    console.warn('[attention] initiative stall resolution failed; leaving items visible:', (error as Error).message);
   }
 };
 
@@ -885,6 +1015,6 @@ export const hasEverHadAttention = async (recipientUserId: unknown): Promise<boo
 // excluding true decisions and approvals.
 export const acknowledgeMention = acknowledgeAttention;
 
-export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepMissedAgentMentions, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
+export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, auditRepliedMentionAttention, sweepMissedAgentMentions, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordInitiativeStall, resolveInitiativeStalls, initiativeStallSourceId, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepMissedAgentMentions, AGENT_MENTION_MISSED_DAYS, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_CANDIDATE_RE, isHandoffRequest, handoffRecipients };
+module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, auditRepliedMentionAttention, sweepMissedAgentMentions, AGENT_MENTION_MISSED_DAYS, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordInitiativeStall, resolveInitiativeStalls, initiativeStallSourceId, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_CANDIDATE_RE, isHandoffRequest, handoffRecipients };

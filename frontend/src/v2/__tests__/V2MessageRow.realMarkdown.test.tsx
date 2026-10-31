@@ -5,7 +5,7 @@
 // asserted here is the one a reader would click.
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { linkifyBareUrls, prUrlsToRefLinks } from '../components/V2MessageRow';
+import { linkifyBareUrls, messageMarkdownComponents, prUrlsToRefLinks } from '../components/V2MessageRow';
 import V2GithubPrCard from '../components/V2GithubPrCard';
 
 const RealReactMarkdown = jest.requireActual('../../../node_modules/react-markdown/index.js').default;
@@ -70,6 +70,19 @@ describe('bare URL linkification through the real react-markdown', () => {
     expect(links[0].textContent).toBe('the PR');
     expect(links[0]).toHaveAttribute('href', 'https://github.com/Team-Commonly/commonly/pull/12');
     expect(text).toBe('see the PR now');
+  });
+
+  // TASK-306. react-markdown hands every component its mdast `node`; the
+  // renderers must not spread it onto the DOM as node="[object Object]".
+  it('rendered links and fenced code carry no node attribute', () => {
+    const { container, unmount } = render(
+      <RealReactMarkdown components={messageMarkdownComponents}>
+        {'see [docs](https://example.com/docs)\n\n```\nconst x = 1;\n```'}
+      </RealReactMarkdown>,
+    );
+    expect(container.querySelector('a')).not.toHaveAttribute('node');
+    expect(container.querySelector('pre')).not.toHaveAttribute('node');
+    unmount();
   });
 
   it('a PR URL in a sentence reads as a short ref, with its punctuation intact', () => {

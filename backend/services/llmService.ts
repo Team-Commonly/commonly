@@ -2,6 +2,7 @@ import axios from 'axios';
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 import GlobalModelConfigService from './globalModelConfigService';
 import { allowedFromEnv, selectAllowedBaseUrl } from '../utils/allowedBaseUrl';
+import { publicAppUrl } from '../utils/publicAppUrl';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
@@ -219,7 +220,7 @@ const generateViaOpenRouter = async (
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': process.env.OPENROUTER_HTTP_REFERER || process.env.FRONTEND_URL || 'https://commonly.me',
+        'HTTP-Referer': process.env.OPENROUTER_HTTP_REFERER || publicAppUrl(),
         'X-Title': process.env.OPENROUTER_APP_TITLE || 'Commonly',
       },
       timeout: options.timeout || DEFAULT_LLM_TIMEOUT_MS,

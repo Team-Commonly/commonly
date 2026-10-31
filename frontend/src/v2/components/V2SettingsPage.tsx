@@ -12,6 +12,7 @@ import V2Avatar from './V2Avatar';
 import V2AvatarCropDialog from './V2AvatarCropDialog';
 import { nextPaperAvatarPreset } from '../utils/avatarPresets';
 import { LANGUAGE_REGISTRY } from '../../i18n';
+import { V2_THEMES, V2ThemePref, getV2Theme, setV2Theme } from '../utils/theme';
 
 type TokenStatus = {
   hasToken?: boolean;
@@ -42,9 +43,13 @@ const SETTINGS_SECTIONS = [
   { id: 'language', title: 'Language' },
 ] as const;
 
+// Custom "Developer apps" (AppsManagement) stays hidden until every path
+// (create, edit, delete, use) is walked live. Default off (TASK-674, D215).
+const developerAppsEnabled = () => process.env.REACT_APP_DEVELOPER_APPS === 'true';
+
 // Admin-only: the instance's user list and usage analytics. Their routes
 // survived the Settings consolidation (#1544) but the way in did not — the
-// pages were reachable only by typing the URL (Sam, 2026-09-08).
+// pages were reachable only by typing the URL (2026-09-08).
 const ADMIN_SECTION = { id: 'admin', title: 'Administration' } as const;
 const ADMIN_LINKS = [
   { to: '/v2/admin/users', label: 'Users', detail: 'Registered users, bans, invitation codes' },
@@ -474,22 +479,43 @@ const V2ApiTokenSection: React.FC = () => {
 const V2LanguageSection: React.FC = () => {
   const { i18n, t } = useTranslation();
   const active = i18n.resolvedLanguage || i18n.language || 'en';
+  const [theme, setTheme] = useState<V2ThemePref>(() => getV2Theme());
+  const chooseTheme = (pref: V2ThemePref) => {
+    setTheme(pref);
+    setV2Theme(pref);
+  };
 
   return (
-    <div className="v2-settings__language" role="radiogroup" aria-label={t('common.language.label')}>
-      {LANGUAGE_REGISTRY.map((language) => (
-        <button
-          key={language.code}
-          type="button"
-          className={`v2-settings__language-option${active === language.code ? ' v2-settings__language-option--active' : ''}`}
-          role="radio"
-          aria-checked={active === language.code}
-          onClick={() => void i18n.changeLanguage(language.code)}
-        >
-          {language.label}
-        </button>
-      ))}
-    </div>
+    <>
+      <div className="v2-settings__language" role="radiogroup" aria-label={t('common.language.label')}>
+        {LANGUAGE_REGISTRY.map((language) => (
+          <button
+            key={language.code}
+            type="button"
+            className={`v2-settings__language-option${active === language.code ? ' v2-settings__language-option--active' : ''}`}
+            role="radio"
+            aria-checked={active === language.code}
+            onClick={() => void i18n.changeLanguage(language.code)}
+          >
+            {language.label}
+          </button>
+        ))}
+      </div>
+      <div className="v2-settings__language" role="radiogroup" aria-label={t('common.theme.label')}>
+        {V2_THEMES.map((pref) => (
+          <button
+            key={pref}
+            type="button"
+            className={`v2-settings__language-option${theme === pref ? ' v2-settings__language-option--active' : ''}`}
+            role="radio"
+            aria-checked={theme === pref}
+            onClick={() => chooseTheme(pref)}
+          >
+            {t(`common.theme.${pref}`)}
+          </button>
+        ))}
+      </div>
+    </>
   );
 };
 
@@ -554,10 +580,12 @@ const V2SettingsPage: React.FC = () => {
               label="Connectors"
               detail="Manage connected services and channels"
             />
-            <details className="v2-settings__developer-disclosure">
-              <summary>Developer apps</summary>
-              <AppsManagement variant="settings" showIntegrations={false} />
-            </details>
+            {developerAppsEnabled() && (
+              <details className="v2-settings__developer-disclosure">
+                <summary>Developer apps</summary>
+                <AppsManagement variant="settings" showIntegrations={false} />
+              </details>
+            )}
           </SettingsSection>
           <SettingsSection id="language" title="Language"><V2LanguageSection /></SettingsSection>
           {isAdmin && (

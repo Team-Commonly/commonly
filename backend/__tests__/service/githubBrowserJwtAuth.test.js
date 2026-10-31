@@ -44,6 +44,9 @@ describe('GitHub admin route with a browser JWT', () => {
 
   it('admits a real admin browser session and denies a non-admin', async () => {
     jest.spyOn(GitHubAppService, 'isPatConfigured').mockReturnValue(true);
+    // Stub the liveness probe: the fake PAT must never reach api.github.com.
+    jest.spyOn(GitHubAppService, 'checkPatLiveness')
+      .mockResolvedValue({ live: true, status: 'accepted', upstreamStatus: 200 });
     const admin = await createUser('admin');
     const member = await createUser('user');
 
@@ -51,7 +54,9 @@ describe('GitHub admin route with a browser JWT', () => {
       .get('/api/github/status')
       .set('Authorization', `Bearer ${generateTestToken(String(admin._id))}`);
     expect(adminResponse.status).toBe(200);
-    expect(adminResponse.body).toEqual({ mode: 'pat', configured: true });
+    expect(adminResponse.body).toEqual({
+      mode: 'pat', configured: true, credentialLive: true, credentialStatus: 'accepted', upstreamStatus: 200,
+    });
 
     const memberResponse = await request(app)
       .get('/api/github/status')

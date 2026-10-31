@@ -226,17 +226,8 @@ describe('Showcase (public read-only) routes', () => {
   });
 
   describe('GET /api/showcase/:podId/messages', () => {
-    it.each(['primary', 'Mongo fallback'])('returns filtered, whitelisted messages for a public pod (anon): %s', async (store) => {
-      // Fault injection exercises the real Mongo fallback, not a mocked feed.
-      const failure = store === 'Mongo fallback'
-        ? jest.spyOn(PGMessage, 'findByPodId').mockRejectedValueOnce(new Error('injected PG outage'))
-        : null;
-      let res;
-      try {
-        res = await request(app).get(`/api/showcase/${publicPod._id}/messages`);
-      } finally {
-        failure?.mockRestore();
-      }
+    it('returns filtered, whitelisted messages for a public pod (anon)', async () => {
+      const res = await request(app).get(`/api/showcase/${publicPod._id}/messages`);
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('hasMore');
       const contents = res.body.messages.map((m) => m.content);
@@ -252,6 +243,21 @@ describe('Showcase (public read-only) routes', () => {
       expect(JSON.stringify(res.body)).not.toMatch(/email|@test\.com/i);
       const botMsg = res.body.messages.find((m) => m.author.isBot);
       expect(botMsg.author.displayName).toBe('Pixel');
+    });
+
+    (REAL_DATABASES ? it : it.skip)('surfaces a PG outage instead of serving Mongo history', async () => {
+      const failure = jest.spyOn(PGMessage, 'findByPodId').mockRejectedValueOnce(new Error('injected PG outage'));
+      const mongoRead = jest.spyOn(Message, 'find');
+      let res;
+      try {
+        res = await request(app).get(`/api/showcase/${publicPod._id}/messages`);
+      } finally {
+        failure.mockRestore();
+      }
+      expect(res.status).toBe(500);
+      expect(res.body.messages).toBeUndefined();
+      expect(mongoRead).not.toHaveBeenCalled();
+      mongoRead.mockRestore();
     });
 
     (REAL_DATABASES ? it : it.skip)('does not substitute Mongo history for a successful empty PG read', async () => {

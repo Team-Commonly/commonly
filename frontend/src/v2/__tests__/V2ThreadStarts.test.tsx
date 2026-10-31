@@ -15,6 +15,7 @@ import axios from 'axios';
 import V2Thread from '../components/V2Thread';
 import { resetByoStepsForTest } from '../utils/byoTelemetry';
 import { AuthContext } from '../../context/AuthContext';
+import i18n, { i18nReady } from '../../i18n';
 
 jest.mock('../../context/SocketContext', () => ({
   useSocket: () => ({ socket: null, connected: false }),
@@ -207,7 +208,7 @@ describe("V2Thread — Scout's starts", () => {
   });
 });
 
-// D139: Scout's reply to the connect start is a prompt and cannot be relied on
+// Scout's reply to the connect start is a prompt and cannot be relied on
 // to link Bring your own, so the thread links it under the person's own
 // message, from the moment it is sent.
 const OPEN_BYO = 'Open Bring your own';
@@ -628,5 +629,31 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
     expect(await screen.findByRole('alert')).toHaveTextContent("Hosting isn't available on this instance yet.");
     expect(screen.getByRole('button', { name: HOSTED })).toBeEnabled();
     expect(calls('/api/hosted/provision')).toHaveLength(0);
+  });
+});
+
+// TASK-550: the start buttons show zh-CN labels by id, while the click still
+// sends the English label Scout matches on. This pins both halves.
+describe("V2Thread — Scout's starts under zh-CN", () => {
+  beforeAll(async () => {
+    await i18nReady;
+  });
+
+  afterEach(async () => {
+    await i18n.changeLanguage('en');
+  });
+
+  test('the button shows the zh-CN label, and a click sends the English label', async () => {
+    await i18n.changeLanguage('zh-CN');
+    const sendSpy = renderThread([welcome]);
+
+    // The group's own label is translated too, so find it by its zh-CN name.
+    const group = screen.getByRole('group', { name: '开始方式' });
+    expect(within(group).getByRole('button', { name: '接入我在用的智能体' })).toBeInTheDocument();
+    expect(within(group).queryByRole('button', { name: CONNECT })).not.toBeInTheDocument();
+
+    fireEvent.click(within(group).getByRole('button', { name: '接入我在用的智能体' }));
+
+    await waitFor(() => expect(sendSpy).toHaveBeenCalledWith(CONNECT, 'text', undefined, undefined));
   });
 });

@@ -37,14 +37,18 @@ const app = express();
 app.use(express.json());
 app.use('/api/webhooks/telegram', telegramRoutes);
 
+// Verification always runs (D137 A9 removed the unverified bypass), so every
+// request in this file carries the secret Telegram would send.
+const SECRET = 'test-secret';
+const telegramPost = () => request(app)
+  .post('/api/webhooks/telegram')
+  .set('x-telegram-bot-api-secret-token', SECRET);
+
 describe('Telegram webhook routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.TELEGRAM_BOT_TOKEN = 'bot-token';
-    delete process.env.TELEGRAM_SECRET_TOKEN;
-    // Verification is fail-closed now; the pre-existing tests exercise
-    // handlers, not auth, so they run with the explicit dev override.
-    process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED = 'true';
+    process.env.TELEGRAM_SECRET_TOKEN = SECRET;
     const WebhookDelivery = require('../../../models/WebhookDelivery');
     WebhookDelivery.create.mockResolvedValue({});
     WebhookDelivery.deleteOne.mockResolvedValue({});
@@ -65,8 +69,7 @@ describe('Telegram webhook routes', () => {
       lean: jest.fn().mockResolvedValue({ name: 'Test Pod' }),
     });
 
-    const res = await request(app)
-      .post('/api/webhooks/telegram')
+    const res = await telegramPost()
       .send({
         message: {
           text: '/commonly-enable abc12300000000000000000000000000',
@@ -118,8 +121,7 @@ describe('Telegram webhook routes', () => {
       lean: jest.fn().mockResolvedValue({ name: 'R&D <b>ops</b>' }),
     });
 
-    const res = await request(app)
-      .post('/api/webhooks/telegram')
+    const res = await telegramPost()
       .send({
         message: {
           text: '/commonly-enable abc12300000000000000000000000000',
@@ -157,8 +159,7 @@ describe('Telegram webhook routes', () => {
 
     AgentEventService.enqueue.mockResolvedValue({ _id: 'event-1' });
 
-    const res = await request(app)
-      .post('/api/webhooks/telegram')
+    const res = await telegramPost()
       .send({
         message: {
           text: '/summary',
@@ -191,8 +192,7 @@ describe('Telegram webhook routes', () => {
     };
     Integration.findOne.mockResolvedValue(integration);
 
-    const res = await request(app)
-      .post('/api/webhooks/telegram')
+    const res = await telegramPost()
       .send({
         message: {
           text: command,
@@ -222,8 +222,7 @@ describe('Telegram webhook routes', () => {
       getWebhookHandlers: () => ({ events }),
     });
 
-    const res = await request(app)
-      .post('/api/webhooks/telegram')
+    const res = await telegramPost()
       .send({
         message: {
           text: 'hello',
@@ -245,8 +244,7 @@ describe('Telegram webhook routes', () => {
       },
     };
 
-    const post = () => request(app)
-      .post('/api/webhooks/telegram')
+    const post = () => telegramPost()
       .send({
         message: {
           text: 'hello',
@@ -296,8 +294,7 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
     config: { chatId: '42', chatType: 'private', liveRelay: true, relayAllAgentMessages: true },
   });
 
-  const post = (text) => request(app)
-    .post('/api/webhooks/telegram')
+  const post = (text) => telegramPost()
     .send({ message: { text, message_id: 900, chat: { id: 42, type: 'private' }, from: { id: 7, first_name: 'Sam' } } });
 
   beforeEach(() => {
@@ -409,10 +406,9 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
     const WebhookDelivery = require('../../../models/WebhookDelivery');
 
     beforeEach(() => {
-      // Env leaks between tests in this file (the reject-test deletes the
-      // override, the secret-test sets a secret) — pin the default state.
-      process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED = 'true';
-      delete process.env.TELEGRAM_SECRET_TOKEN;
+      // Env leaks between tests in this file (the reject-tests delete or
+      // change the secret) — pin the default state.
+      process.env.TELEGRAM_SECRET_TOKEN = SECRET;
       WebhookDelivery.create.mockResolvedValue({});
       WebhookDelivery.deleteOne.mockResolvedValue({});
     });
@@ -426,8 +422,14 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
       },
     });
 
-    it('rejects when TELEGRAM_SECRET_TOKEN is unset and no explicit override', async () => {
-      delete process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED;
+    it('rejects every update while TELEGRAM_SECRET_TOKEN is unset', async () => {
+      delete process.env.TELEGRAM_SECRET_TOKEN;
+      const res = await telegramPost().send(liveUpdate(1));
+      expect(res.status).toBe(401);
+      expect(WebhookDelivery.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects an update without the secret header', async () => {
       const res = await request(app)
         .post('/api/webhooks/telegram')
         .send(liveUpdate(1));
@@ -435,8 +437,28 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
       expect(WebhookDelivery.create).not.toHaveBeenCalled();
     });
 
-    it('still accepts a correct secret header when the secret is set', async () => {
+    it('rejects an update with the wrong secret header', async () => {
+      const res = await request(app)
+        .post('/api/webhooks/telegram')
+        .set('x-telegram-bot-api-secret-token', 'not-the-secret')
+        .send(liveUpdate(1));
+      expect(res.status).toBe(401);
+      expect(WebhookDelivery.create).not.toHaveBeenCalled();
+    });
+
+    // The removed bypass flag must not reopen the route if an old env still sets it.
+    it('ignores TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED', async () => {
+      delete process.env.TELEGRAM_SECRET_TOKEN;
+      process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED = 'true';
+      const res = await request(app)
+        .post('/api/webhooks/telegram')
+        .send(liveUpdate(1));
       delete process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED;
+      expect(res.status).toBe(401);
+      expect(WebhookDelivery.create).not.toHaveBeenCalled();
+    });
+
+    it('accepts a correct secret header', async () => {
       process.env.TELEGRAM_SECRET_TOKEN = 's3cret';
       Integration.findOne = jest.fn().mockResolvedValue(null);
       const res = await request(app)
@@ -444,6 +466,7 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
         .set('x-telegram-bot-api-secret-token', 's3cret')
         .send(liveUpdate(2));
       expect(res.status).toBe(200);
+      expect(WebhookDelivery.create).toHaveBeenCalled();
     });
 
     it('acks a duplicate update_id without processing it', async () => {
@@ -451,8 +474,7 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
       dup.code = 11000;
       WebhookDelivery.create.mockRejectedValueOnce(dup);
       Integration.findOne = jest.fn();
-      const res = await request(app)
-        .post('/api/webhooks/telegram')
+      const res = await telegramPost()
         .send(liveUpdate(3));
       expect(res.status).toBe(200);
       expect(Integration.findOne).not.toHaveBeenCalled();
@@ -487,7 +509,6 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
           : Promise.resolve(resumedIntegration)
       ));
       bridge.relayTelegramMessageToPod.mockResolvedValue({ relayed: true });
-      delete process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED;
       process.env.TELEGRAM_SECRET_TOKEN = 'pause-secret';
 
       const first = await request(app)
@@ -528,8 +549,7 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
       };
       Integration.findOne = jest.fn().mockResolvedValue(integration);
       bridge.relayTelegramMessageToPod.mockRejectedValueOnce(new Error('pod write failed'));
-      const res = await request(app)
-        .post('/api/webhooks/telegram')
+      const res = await telegramPost()
         .send(liveUpdate(4));
       expect(res.status).toBe(500);
       expect(WebhookDelivery.create).toHaveBeenCalledWith(
@@ -556,8 +576,7 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
         throw new Error('provider write failed');
       });
       registry.get.mockReturnValue({ getWebhookHandlers: () => ({ events }) });
-      const res = await request(app)
-        .post('/api/webhooks/telegram')
+      const res = await telegramPost()
         .send(liveUpdate(6));
       expect(res.status).toBe(500);
       expect(events).toHaveBeenCalled();
@@ -581,8 +600,8 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
       const noIdUpdate = liveUpdate(undefined);
       delete noIdUpdate.update_id;
 
-      const first = await request(app).post('/api/webhooks/telegram').send(noIdUpdate);
-      const second = await request(app).post('/api/webhooks/telegram').send(noIdUpdate);
+      const first = await telegramPost().send(noIdUpdate);
+      const second = await telegramPost().send(noIdUpdate);
 
       expect(first.status).toBe(200);
       expect(second.status).toBe(200);
@@ -600,8 +619,7 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
       };
       Integration.findOne = jest.fn().mockResolvedValue(integration);
       bridge.relayTelegramMessageToPod.mockResolvedValueOnce({});
-      const res = await request(app)
-        .post('/api/webhooks/telegram')
+      const res = await telegramPost()
         .send(liveUpdate(5));
       expect(res.status).toBe(200);
       expect(bridge.relayTelegramMessageToPod).toHaveBeenCalled();

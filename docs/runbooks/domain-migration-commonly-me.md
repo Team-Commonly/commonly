@@ -11,7 +11,7 @@
 > `cloudflared.hostnames` is ignored); historical ADRs/memories keep their old
 > URLs (they describe the past accurately). Operator-side: laptop
 > `~/.commonly` saved `dev` profiles created pre-flip still store the dead
-> `api-dev` URL — re-`commonly login` (affects `sam-local-codex` revival).
+> `api-dev` URL — re-`commonly login` (affects local wrapper revival).
 > Lesson: a migration isn't done at "new host serves traffic" — it's done when
 > the runbook's own cleanup step is executed or explicitly descoped.
 

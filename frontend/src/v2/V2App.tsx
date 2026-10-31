@@ -15,6 +15,7 @@ import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
 import '@fontsource/ibm-plex-mono/500.css';
 import './v2.css';
+import { applyV2Theme, getV2Theme } from './utils/theme';
 
 // TASK-145 — inside the shell, only the surfaces the composer path needs stay
 // in this chunk (V2Layout, the auth gate, the feature frame). Everything else
@@ -179,6 +180,10 @@ const V2App: React.FC = () => {
   // The daily digest's 08:00 is the person's own (TASK-257 Phase 2b).
   useTimeZoneCapture();
   React.useEffect(() => {
+    applyV2Theme(getV2Theme());
+  }, []);
+
+  React.useEffect(() => {
     try {
       sessionStorage.setItem('commonly.v2.active', '1');
     } catch {
@@ -187,7 +192,7 @@ const V2App: React.FC = () => {
     // Claim the page canvas while v2 is mounted. App.tsx unconditionally
     // stamps `modern-ui` (the V1 dark gradient) on <body>, and .v2-root only
     // paints its own box — so the V1 darkness showed through on load flash,
-    // overscroll, and every gap (Sam, 2026-08-24). The class must out-rank
+    // overscroll, and every gap (2026-08-24). The class must out-rank
     // body.modern-ui, not merely follow it in bundle order.
     document.body.classList.add('v2-canvas');
     return () => {

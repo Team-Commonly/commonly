@@ -17,6 +17,24 @@ const app = express();
 app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf.toString(); } }));
 app.use('/api/webhooks/discord', routes);
 
+const keyPair = nacl.sign.keyPair();
+const PUBLIC_KEY = Buffer.from(keyPair.publicKey).toString('hex');
+
+// Discord's own signing: Ed25519 over timestamp + raw body. Every accepted
+// request in this file goes through it; there is no unverified path (D137 A9).
+const signed = (body, secretKey = keyPair.secretKey) => {
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = Buffer.from(nacl.sign.detached(
+    Buffer.from(`${timestamp}${JSON.stringify(body)}`),
+    secretKey,
+  )).toString('hex');
+  return request(app)
+    .post('/api/webhooks/discord?webhook_id=webhook-1')
+    .set('X-Signature-Timestamp', timestamp)
+    .set('X-Signature-Ed25519', signature)
+    .send(body);
+};
+
 const event = (overrides = {}) => ({
   id: 'event-1',
   type: 2,
@@ -28,13 +46,13 @@ describe('Discord webhook hardening', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env.DISCORD_WEBHOOK_ALLOW_UNVERIFIED;
-    delete process.env.DISCORD_PUBLIC_KEY;
+    process.env.DISCORD_PUBLIC_KEY = PUBLIC_KEY;
     DiscordIntegration.findOne.mockResolvedValue({ integrationId: 'integration-1' });
     deliveries.create.mockResolvedValue({});
     deliveries.deleteOne.mockResolvedValue({});
   });
 
-  test('rejects unsigned events by default', async () => {
+  test('rejects unsigned events', async () => {
     const response = await request(app)
       .post('/api/webhooks/discord?webhook_id=webhook-1')
       .send(event());
@@ -43,27 +61,17 @@ describe('Discord webhook hardening', () => {
     expect(deliveries.create).not.toHaveBeenCalled();
   });
 
-  test('claims a verified-by-escape-hatch event before dispatch', async () => {
-    process.env.DISCORD_WEBHOOK_ALLOW_UNVERIFIED = 'true';
-    const response = await request(app)
-      .post('/api/webhooks/discord?webhook_id=webhook-1')
-      .send(event());
+  test('rejects a signature from another key', async () => {
+    const response = await signed(event(), nacl.sign.keyPair().secretKey);
 
-    expect(response.status).toBe(200);
-    expect(deliveries.create).toHaveBeenCalledWith(expect.objectContaining({
-      provider: 'discord', deliveryId: 'webhook-1:event-1',
-    }));
-    expect(DiscordService).toHaveBeenCalledWith('integration-1');
+    expect(response.status).toBe(401);
+    expect(deliveries.create).not.toHaveBeenCalled();
   });
 
-  test('accepts a valid Ed25519 signature over the raw body', async () => {
-    const keyPair = nacl.sign.keyPair();
-    process.env.DISCORD_PUBLIC_KEY = Buffer.from(keyPair.publicKey).toString('hex');
-    const body = event({ id: 'event-signed' });
-    const rawBody = JSON.stringify(body);
+  test('rejects a signature over a different body', async () => {
     const timestamp = String(Math.floor(Date.now() / 1000));
     const signature = Buffer.from(nacl.sign.detached(
-      Buffer.from(`${timestamp}${rawBody}`),
+      Buffer.from(`${timestamp}${JSON.stringify(event({ content: 'original' }))}`),
       keyPair.secretKey,
     )).toString('hex');
 
@@ -71,47 +79,70 @@ describe('Discord webhook hardening', () => {
       .post('/api/webhooks/discord?webhook_id=webhook-1')
       .set('X-Signature-Timestamp', timestamp)
       .set('X-Signature-Ed25519', signature)
-      .send(body);
+      .send(event({ content: 'tampered' }));
+
+    expect(response.status).toBe(401);
+    expect(deliveries.create).not.toHaveBeenCalled();
+  });
+
+  test('rejects every request while DISCORD_PUBLIC_KEY is unset', async () => {
+    delete process.env.DISCORD_PUBLIC_KEY;
+    const response = await signed(event());
+
+    expect(response.status).toBe(401);
+    expect(deliveries.create).not.toHaveBeenCalled();
+  });
+
+  // The removed bypass flag must not reopen the route if an old env still sets it.
+  test('ignores DISCORD_WEBHOOK_ALLOW_UNVERIFIED', async () => {
+    process.env.DISCORD_WEBHOOK_ALLOW_UNVERIFIED = 'true';
+    const unsigned = await request(app)
+      .post('/api/webhooks/discord?webhook_id=webhook-1')
+      .send(event());
+    const ping = await request(app)
+      .post('/api/webhooks/discord?webhook_id=webhook-1')
+      .send({ type: 1, id: 'ping-1' });
+
+    expect(unsigned.status).toBe(401);
+    expect(ping.status).toBe(401);
+    expect(deliveries.create).not.toHaveBeenCalled();
+    delete process.env.DISCORD_WEBHOOK_ALLOW_UNVERIFIED;
+  });
+
+  test('accepts a valid Ed25519 signature and claims the event before dispatch', async () => {
+    const response = await signed(event({ id: 'event-signed' }));
 
     expect(response.status).toBe(200);
     expect(deliveries.create).toHaveBeenCalledWith(expect.objectContaining({
-      deliveryId: 'webhook-1:event-signed',
+      provider: 'discord', deliveryId: 'webhook-1:event-signed',
     }));
+    expect(DiscordService).toHaveBeenCalledWith('integration-1');
+  });
+
+  test('answers a signed PING with PONG and claims nothing', async () => {
+    const response = await signed({ type: 1, id: 'ping-1' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ type: 1 });
+    expect(deliveries.create).not.toHaveBeenCalled();
   });
 
   test('acknowledges duplicate events without dispatch', async () => {
-    process.env.DISCORD_WEBHOOK_ALLOW_UNVERIFIED = 'true';
     deliveries.create.mockRejectedValueOnce(Object.assign(new Error('duplicate'), { code: 11000 }));
 
-    const response = await request(app)
-      .post('/api/webhooks/discord?webhook_id=webhook-1')
-      .send(event());
+    const response = await signed(event());
 
     expect(response.status).toBe(200);
     expect(DiscordService).not.toHaveBeenCalled();
   });
 
   test('returns 503 when the delivery claim store is unavailable', async () => {
-    process.env.DISCORD_WEBHOOK_ALLOW_UNVERIFIED = 'true';
     deliveries.create.mockRejectedValueOnce(new Error('mongo unavailable'));
 
-    const response = await request(app)
-      .post('/api/webhooks/discord?webhook_id=webhook-1')
-      .send(event({ id: 'event-unavailable' }));
+    const response = await signed(event({ id: 'event-unavailable' }));
 
     expect(response.status).toBe(503);
     expect(DiscordService).not.toHaveBeenCalled();
-  });
-
-  test('allows unsigned events only with the explicit escape hatch', async () => {
-    process.env.DISCORD_WEBHOOK_ALLOW_UNVERIFIED = 'true';
-    const response = await request(app)
-      .post('/api/webhooks/discord?webhook_id=webhook-1')
-      .send({ type: 1, id: 'ping-1' });
-
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({ type: 1 });
-    expect(deliveries.create).not.toHaveBeenCalled();
   });
 
   test('does not expose unused unauthenticated Discord routes', async () => {

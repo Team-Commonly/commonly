@@ -23,8 +23,11 @@ const LINEAR_FIRST_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list
 const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-14.json');
 const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-19.json');
 const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
+const AIRTABLE_AS_CAPTURE = require('../../fixtures/hostedMcp/airtable-authorization-server-2026-10-28.json');
 const SENTRY_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-10-19.json');
 const NOTION_CAPTURE = require('../../fixtures/hostedMcp/notion-tools-list-2026-10-19.json');
+const GITLAB_CAPTURE = require('../../fixtures/hostedMcp/gitlab-tools-list-2026-10-19.json');
+const SUPABASE_CAPTURE = require('../../fixtures/hostedMcp/supabase-tools-list-2026-10-19.json');
 
 const ENTRY_TEXT = 'ENTRY TEXT the pin agreed to.';
 const VENDOR_TEXT = 'VENDOR TEXT nobody reviewed.';
@@ -580,7 +583,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
     // The catalogue is the one place that says what an instance offers before
     // any member has connected anything. Its ordering follows the build plan.
     expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual([
-      'linear', 'google-calendar', 'atlassian', 'airtable', 'sentry', 'notion',
+      'linear', 'google-calendar', 'atlassian', 'airtable', 'sentry', 'notion', 'gitlab', 'supabase',
     ]);
     const catalogue = [linear(), linear({ id: 'notion', title: 'Notion' })];
     expect(findHostedMcpEntry(catalogue, 'notion').title).toBe('Notion');
@@ -733,13 +736,12 @@ describe('the shipped catalogue cannot land half-wired', () => {
 
   test('the Airtable pin is every measured read minus three credential- or payload-bearing ones', () => {
     // Capture taken by connector-ops on 2026-10-09 with the four :read scopes
-    // only. Wren 76761: list_secrets and list_external_accounts are
+    // only. list_secrets and list_external_accounts are
     // credential-adjacent reconnaissance and fetch_automation_input_data carries
     // externally injected payloads, so all three stay out although annotated
     // read-only. Every writer stays out by class.
     const capture = AIRTABLE_CAPTURE;
     const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'airtable');
-    expect(entry.client).toBe('cimd');
     expect(capture.server).toBe(entry.resource);
     // Root PRM metadata fetched 2026-10-14 names the bare origin, while the
     // consenting 2026-10-09 tools/list capture used /mcp as its endpoint.
@@ -769,6 +771,22 @@ describe('the shipped catalogue cannot land half-wired', () => {
       expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
     }
     expect(capture.tools).toHaveLength(46);
+  });
+
+  test('Airtable registers a public client at the registration endpoint its issuer advertises', () => {
+    // TASK-318: Airtable refused our metadata URL as a client_id without
+    // fetching it, so the entry registers by DCR. The registry reads the
+    // endpoint from discovery; this capture of that document (2026-10-28) pins
+    // where it points and that a public client is on offer.
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'airtable');
+    const { url, metadata } = AIRTABLE_AS_CAPTURE;
+    expect(entry.client).toBe('dcr');
+    expect(url).toBe('https://airtable.com/.well-known/oauth-authorization-server/oauth2/v1');
+    expect(metadata.issuer).toBe(entry.issuer);
+    expect(metadata.registration_endpoint).toBe('https://airtable.com/oauth2/v1/register');
+    expect(metadata.token_endpoint_auth_methods_supported).toContain('none');
+    expect(metadata.code_challenge_methods_supported).toEqual(['S256']);
+    expect([...entry.scopes].every((scope) => metadata.scopes_supported.includes(scope))).toBe(true);
   });
 
   test('the Sentry pin restricts resource lookup to type and ID and parks its destructive writer', () => {
@@ -811,6 +829,49 @@ describe('the shipped catalogue cannot land half-wired', () => {
       expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
       expect(tool.class).toBe(tool.name === 'update_issue' ? 'write' : 'read');
     }
+  });
+
+  test('the Supabase pin follows the capture and excludes spend, code, and credential tools', () => {
+    const capture = SUPABASE_CAPTURE;
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'supabase');
+    expect(entry.client).toBe('dcr');
+    expect(entry.resource).toBe(capture.server);
+    expect([...entry.scopes].sort()).toEqual(capture.scopeRequested.split(' ').sort());
+    expect(entry.revoke.endpoint).toBeUndefined();
+    expect(entry.revoke.page).toBe('https://supabase.com/dashboard/org/_/apps');
+    expect(capture.tokenShape.grantedScope).toBeNull();
+    expect(capture.tokenShape.hasRefreshToken).toBe(true);
+
+    const excluded = [
+      'get_cost', 'confirm_cost', 'create_project', 'pause_project',
+      'restore_project', 'deploy_edge_function', 'create_branch',
+      'execute_sql', 'apply_migration', 'query_logs', 'search_docs', 'get_publishable_keys',
+    ];
+    expect(capture.tools).toHaveLength(29);
+    expect(entry.tools).toHaveLength(17);
+    expect(capture.tools.filter((tool) => !entry.tools.some((pin) => pin.upstreamName === tool.name))
+      .map((tool) => tool.name).sort()).toEqual(excluded.sort());
+    const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
+    for (const tool of entry.tools) {
+      const found = measured.get(tool.upstreamName);
+      expect(found).toBeDefined();
+      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
+      expect(tool.annotations.readOnlyHint).toBe(found.annotations.readOnlyHint);
+      expect(tool.annotations.destructiveHint).toBe(found.annotations.destructiveHint);
+      expect(tool.class).toBe(found.annotations.readOnlyHint ? 'read' : 'write');
+    }
+    const branchWrites = ['delete_branch', 'merge_branch', 'reset_branch', 'rebase_branch'];
+    expect(entry.tools.filter((tool) => tool.class === 'write').map((tool) => tool.name).sort())
+      .toEqual([...branchWrites].sort());
+    for (const name of branchWrites) {
+      const tool = entry.tools.find((pin) => pin.name === name);
+      expect(tool.annotations.destructiveHint).toBe(true);
+      expect(tool.irreversible).toBe(true);
+    }
+    expect(entry.tools.find((tool) => tool.name === 'merge_branch').description)
+      .toContain('migrations and Edge Functions to production');
+    expect(entry.tools.find((tool) => tool.name === 'reset_branch').description)
+      .toContain('untracked data and schema changes');
   });
 
   test('the Linear pin is the measured list minus caller-chosen fetch paths', () => {
@@ -1024,10 +1085,58 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(entryToolProjections(entry).find((tool) => tool.name === 'notion.notion_update_view'))
       .toMatchObject({ requiredWriteMode: 'write-with-confirm', irreversible: true });
   });
+
+  test('the GitLab.com pin keeps 21 measured project, work-item, MR and CI operations', () => {
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'gitlab');
+    expect(entry).toMatchObject({
+      resource: GITLAB_CAPTURE.server,
+      issuer: 'https://gitlab.com',
+      client: 'dcr',
+      scopes: ['mcp'],
+      revoke: {
+        page: 'https://gitlab.com/-/user_settings/applications',
+        endpoint: 'https://gitlab.com/oauth/revoke',
+      },
+    });
+    expect(GITLAB_CAPTURE.scopeRequested).toBe('mcp');
+    expect(GITLAB_CAPTURE.toolCount).toBe(36);
+    expect(GITLAB_CAPTURE.tools).toHaveLength(36);
+    expect(entry.tools).toHaveLength(21);
+    expect(entry.tools.map((tool) => tool.name).sort()).toEqual([
+      'accept_merge_request', 'add_branch', 'add_commit', 'get_commit', 'get_job',
+      'get_merge_request', 'get_pipeline', 'get_project', 'get_repository_file', 'get_user',
+      'get_work_item', 'list_branches', 'list_commits', 'list_merge_requests', 'list_pipelines',
+      'list_projects', 'list_repository_tree', 'list_work_items', 'save_note', 'save_pipeline',
+      'save_work_item',
+    ]);
+    const writes = [
+      'accept_merge_request', 'add_branch', 'add_commit',
+      'save_note', 'save_pipeline', 'save_work_item',
+    ];
+    expect(entry.tools.filter((tool) => tool.class === 'write').map((tool) => tool.name).sort())
+      .toEqual(writes.sort());
+    expect(entry.tools.find((tool) => tool.name === 'accept_merge_request').irreversible).toBe(true);
+    expect(entry.tools.find((tool) => tool.name === 'add_commit').irreversible).toBe(true);
+    expect(entry.tools.find((tool) => tool.name === 'save_pipeline').irreversible).toBe(true);
+    const measured = new Map(GITLAB_CAPTURE.tools.map((tool) => [tool.name, tool]));
+    for (const tool of entry.tools) {
+      const found = measured.get(tool.upstreamName);
+      expect(found).toBeDefined();
+      expect(tool.name).toBe(tool.upstreamName);
+      expect(tool.class).toBe(found.annotations.readOnlyHint ? 'read' : 'write');
+      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
+      expect(canonicalJson(tool.annotations)).toBe(canonicalJson(found.annotations));
+    }
+    expect(entry.tools.map((tool) => tool.name)).not.toContain('save_merge_request');
+    expect(entry.tools.find((tool) => tool.name === 'add_commit').description).toMatch(/start.*pipeline/);
+    expect(entry.tools.find((tool) => tool.name === 'save_pipeline').description).toMatch(/Variables.*override/);
+    expect(entry.tools.map((tool) => tool.name)).not.toContain('semantic_search');
+    expect(entry.tools.map((tool) => tool.name)).not.toContain('search');
+  });
 });
 
 // The three preconditions a vendor entry has to satisfy before the first one is
-// pinned (TASK-172, the row's notes from Vera). Each guard is measured by its
+// pinned (TASK-172, the row's notes). Each guard is measured by its
 // own refusal beside a control, and the refusals are asserted separately
 // because they are separate messages: one could keep working while another
 // stops, and an arm that accepts any of them would not say which.
@@ -1097,7 +1206,7 @@ describe('a pin cannot contradict the class or the namespace it is filed under',
   });
 });
 
-// Vera's third arm: the two guards above refuse a read pin that CONTRADICTS an
+// Third arm: the two guards above refuse a read pin that CONTRADICTS an
 // annotation. This one refuses a read pin that never made the claim, which is
 // the state an author writes by default.
 describe('a read pin has to claim the class, not just avoid denying it', () => {

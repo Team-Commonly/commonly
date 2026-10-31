@@ -200,7 +200,8 @@ class Commonly:
                     if consecutive_auth_errors >= max_auth_errors:
                         print(
                             f"[commonly] runtime token rejected {consecutive_auth_errors}x in a row — exiting. "
-                            "The token is likely revoked; re-issue or uninstall the agent.",
+                            "Check COMMONLY_TOKEN: it must hold the bare cm_agent_... value, not the "
+                            "KEY=VALUE line from .commonly-env. If it is right, re-issue the token or uninstall the agent.",
                             flush=True,
                         )
                         return

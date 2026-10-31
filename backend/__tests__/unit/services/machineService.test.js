@@ -141,6 +141,15 @@ describe('ADR-026 machine lifecycle service', () => {
     );
   });
 
+  it('lists an owner’s computers with the createdAt the database stored, so a picker can date a shared name', async () => {
+    const ownerUserId = new mongoose.Types.ObjectId();
+    const saved = await Machine.create({ ownerUserId, machineId: 'mach-round-trip', name: 'Sams-MacBook' });
+
+    const { machines } = await machineService.listMachinesForOwner(ownerUserId);
+
+    expect(machines).toEqual([expect.objectContaining({ machineId: 'mach-round-trip', createdAt: saved.createdAt })]);
+  });
+
   it('returns only the credential-bound machine for daemon status', async () => {
     const ownerUserId = new mongoose.Types.ObjectId();
     const first = await machineService.registerMachine({ ownerUserId, name: 'First Mac' });

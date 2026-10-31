@@ -15,6 +15,7 @@ import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
+import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 
 // Add a version only with a passing real clean-box sandbox smoke that names it.
 const TESTED_QWEN_VERSIONS = Object.freeze(['0.25.1', '0.26.2']);
@@ -38,6 +39,9 @@ const EXCLUDED_TOOLS = [
 // per-spawn MCP credential file, so public turns cannot expose OS read tools.
 const PUBLIC_READ_TOOLS = [
   'read_file', 'grep_search', 'search_file_content', 'glob', 'list_directory', 'lsp',
+  // Both spellings of a Commonly MCP tool, as with the aliases above
+  // (public-withheld-tools.js).
+  ...PUBLIC_WITHHELD_TOOLS.flatMap((tool) => [tool, `mcp__commonly__${tool}`]),
 ];
 
 const parseVersion = (output) => {

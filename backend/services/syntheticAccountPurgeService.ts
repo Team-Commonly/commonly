@@ -27,8 +27,12 @@ import { withAdminUserMutationLock } from './adminUserMutationService';
  * Registration is open and accepts .invalid, so ANYONE can create an account
  * this selects; the purge must therefore never reach an identity such an
  * account merely names. A pod H created that another HUMAN has joined refuses
- * the whole account. A seat H published is cleaned only if all of these hold,
- * and is otherwise skipped and reported with its reason:
+ * the whole account. A seat H published is cleaned only if all of these hold;
+ * otherwise it is skipped, reported with its reason, and the whole account is
+ * refused, because deleting H would orphan the seat: install refuses an
+ * ephemeral registry row to anyone but its publisher (routes/registry/
+ * install.ts), so the name would be dead for everyone, permanently. A leftover
+ * test account is harmless; a dead name is not.
  *   - its name starts with the journey prefix (the BYO link derives seat names
  *     from the account's username, so journey seats always carry it);
  *   - no one else has an installation of that name;
@@ -193,6 +197,11 @@ const purgeSyntheticAccountsUnlocked = async (
       preservedDms: preservedDms.map((pod: any) => String(pod._id)),
     };
     report.accounts.push(account);
+    if (skippedSeats.length) {
+      const seats = skippedSeats.map((seat) => `${seat.name} (${seat.reason})`).join(', ');
+      account.refused = `deleting this account would orphan its skipped seat(s): ${seats}`;
+      continue;
+    }
     // A disposable bot can acquire a life outside this throwaway footprint.
     // Refuse rather than deleting an identity another DM still depends on.
     if (scoutBot && await AgentInstallation.exists({
