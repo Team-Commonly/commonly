@@ -1,7 +1,7 @@
 import { createOwnKeyResolver, createMachineReportClient } from '../lib/own-key-launch.js';
 import { foregroundDaemonHint } from '../lib/daemon-hint.js';
 import { loadDaemonRecord } from '../lib/daemon-store.js';
-import { daemonSeatLogPath, readLogTail } from '../lib/daemon-logs.js';
+import { daemonSeatLogPath, logSize, readAppended, readLogTail } from '../lib/daemon-logs.js';
 import { WALKED_HARNESSES } from '../lib/runtime-inventory.js';
 import { createRuntimeReporter } from '../lib/runtime-observation.js';
 /**
@@ -4377,13 +4377,16 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
           console.error(`No local log for '${name}' at ${path}. Pass --pod <podId> to read its server-side activity.`);
           process.exit(1);
         }
-        const printTail = () => {
-          const output = readLogTail(path, opts.lines);
-          if (output) console.log(output);
-        };
-        printTail();
+        const output = readLogTail(path, opts.lines);
+        if (output) console.log(output);
         if (!opts.follow) return;
-        const watcher = watch(path, printTail);
+        // Follow prints only what the daemon appends after the tail above.
+        let offset = logSize(path);
+        const watcher = watch(path, () => {
+          const next = readAppended(path, offset);
+          offset = next.offset;
+          if (next.text) process.stdout.write(next.text);
+        });
         const close = () => { watcher.close(); process.exit(0); };
         process.once('SIGINT', close);
         process.once('SIGTERM', close);
