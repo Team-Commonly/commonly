@@ -50,4 +50,4 @@ async function go(p, route) {
   assertLanded(route, p.url());
 }
 
-module.exports = { open, go, assertLanded, BASE };
+module.exports = { open, go, assertLanded, pathOf, BASE };

@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { parseArgs, validateTargets, checkSurface, EXPECTED } = require('./measure_after');
+const { parseArgs, validateTargets, checkSurface, EXPECTED, SIDEBAR_390 } = require('./measure_after');
 const { assertLanded, BASE } = require('./lib');
 
 const argv = (...a) => ['node', 'measure_after.js', ...a];
@@ -59,6 +59,54 @@ test('a client-side redirect to sign-in cannot produce a HIT', async () => {
   // Positive control: the same page left on its route does score, so the refusal above is the check.
   const hit = await checkSurface(fakePage('/v2/settings'), settings, '1440', t);
   assert.strictEqual(hit.ok, true);
+});
+
+// A phone page for the sidebar check. `landsOn` is where goto('/v2') ends (a pod, on a first
+// visit); `backTo` is where the back control's click lands, or null for no control; `listShown`
+// is whether the pods list is on screen. `measured` counts metric runs, so a test can prove the
+// refusal came before any measuring.
+const fakePhone = ({ landsOn, backTo, listShown = true }) => {
+  let url = 'about:blank';
+  const page = {
+    measured: 0,
+    goto: async () => { url = BASE + landsOn; return { ok: () => true, status: () => 200 }; },
+    waitForTimeout: async () => {},
+    url: () => url,
+    evaluate: async () => { page.measured++; return { helperWords: 0, innerRatio: 1 }; },
+    locator: sel => {
+      const back = sel === SIDEBAR_390.back, list = sel === SIDEBAR_390.list;
+      if (!back && !list) throw new Error(`unexpected locator ${sel}`);
+      const n = back ? (backTo === null ? 0 : 1) : 1;
+      const el = { click: async () => { url = BASE + backTo; }, isVisible: async () => list && listShown && new URL(url).pathname === '/v2' };
+      return { count: async () => n, first: () => el };
+    },
+  };
+  return page;
+};
+const sidebar = ['sidebar', vp => (vp === '1440' ? '/v2/pods/abc' : '/v2'), { list390: SIDEBAR_390 }];
+
+test('a back control that lands on sign-in is refused before any metric runs', async () => {
+  const t = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'targets.json'), 'utf8'));
+  // goto lands on the auto-selected pod, which assertLanded allows for /v2; only the click redirects.
+  const p = fakePhone({ landsOn: '/v2/pods/abc', backTo: '/v2/login' });
+  await assert.rejects(checkSurface(p, sidebar, '390', t), /ended signed out on \/v2\/login/);
+  assert.strictEqual(p.measured, 0);
+});
+
+test('the phone sidebar never scores a pod', async () => {
+  const t = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'targets.json'), 'utf8'));
+  const noBack = fakePhone({ landsOn: '/v2/pods/abc', backTo: null });
+  await assert.rejects(checkSurface(noBack, sidebar, '390', t), /has no \.v2-thread__back control/);
+  const stays = fakePhone({ landsOn: '/v2/pods/abc', backTo: '/v2/pods/abc' });
+  await assert.rejects(checkSurface(stays, sidebar, '390', t), /left the page on \/v2\/pods\/abc, not \/v2/);
+  const hidden = fakePhone({ landsOn: '/v2', backTo: null, listShown: false });
+  await assert.rejects(checkSurface(hidden, sidebar, '390', t), /pods list .* is not visible/);
+  assert.strictEqual(noBack.measured + stays.measured + hidden.measured, 0);
+  // Positive controls: an auto-selected pod whose back control reaches the list, and /v2 shown directly.
+  const back = fakePhone({ landsOn: '/v2/pods/abc', backTo: '/v2' });
+  assert.strictEqual((await checkSurface(back, sidebar, '390', t)).ok, true);
+  assert.strictEqual(back.measured, 1);
+  assert.strictEqual((await checkSurface(fakePhone({ landsOn: '/v2', backTo: null }), sidebar, '390', t)).ok, true);
 });
 
 test('only the /v2 pod auto-select counts as landing', () => {

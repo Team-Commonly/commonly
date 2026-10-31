@@ -111,7 +111,7 @@ const METRICS = () => {
 // Navigates, opens the tab or panel a surface needs, and measures it. The URL is checked again
 // just before measuring, so a redirect that lands after a click cannot be scored either.
 async function checkSurface(p, [name, route, opt = {}], vp, targets) {
-  const { go, assertLanded } = require('./lib');
+  const { go, assertLanded, pathOf } = require('./lib');
   const url = route(vp);
   await go(p, url);
   if (opt.tab) {
@@ -119,12 +119,26 @@ async function checkSurface(p, [name, route, opt = {}], vp, targets) {
     if (!(await t.count())) throw new Error(`${name}-${vp}: no "${opt.tab}" tab on ${url}`);
     await t.first().click(); await p.waitForTimeout(2000);
   }
-  if (opt.click390 && vp === '390') { const c = p.getByRole('button', { name: opt.click390 }); if (await c.count()) { await c.first().click(); await p.waitForTimeout(1500); } }
+  if (opt.list390 && vp === '390') {
+    // /v2 may auto-select a pod on a first phone visit. The back control is found by class, not
+    // by its translated name, and the pods list itself must be on screen before anything counts.
+    if (pathOf(p.url()) !== '/v2') {
+      const back = p.locator(opt.list390.back);
+      if (!(await back.count())) throw new Error(`${name}-${vp}: /v2 opened a pod and has no ${opt.list390.back} control`);
+      await back.first().click(); await p.waitForTimeout(1500);
+    }
+    assertLanded(url, p.url());
+    if (pathOf(p.url()) !== '/v2') throw new Error(`${name}-${vp}: back control left the page on ${pathOf(p.url())}, not /v2`);
+    if (!(await p.locator(opt.list390.list).first().isVisible())) throw new Error(`${name}-${vp}: pods list ${opt.list390.list} is not visible`);
+  }
   assertLanded(url, p.url());
   const m = await p.evaluate(METRICS);
   const key = `${name}-${vp}`, t = targets[key];
   return { key, m, t, ok: m.helperWords <= t.helperWords && m.innerRatio <= t.innerRatio };
 }
+
+// The phone sidebar is the pods list page (V2Layout `.v2-shell--list`); V2Thread's back arrow leads there.
+const SIDEBAR_390 = { back: '.v2-thread__back', list: '.v2-shell--list .v2-pods' };
 
 async function prod(only) {
   const { open } = require('./lib');
@@ -139,7 +153,7 @@ async function prod(only) {
     ['board', () => `/v2/pods/${pod}/board`],
     ['connectors', () => '/v2/connectors'],
     ['chat', () => `/v2/pods/${pod}`],
-    ['sidebar', vp => (vp === '1440' ? `/v2/pods/${side}` : '/v2'), { click390: 'Back to pods' }],
+    ['sidebar', vp => (vp === '1440' ? `/v2/pods/${side}` : '/v2'), { list390: SIDEBAR_390 }],
   ];
   let miss = 0;
   for (const [vw, vh, mob, vp] of [[1440, 900, false, '1440'], [390, 844, true, '390']]) {
@@ -155,7 +169,7 @@ async function prod(only) {
   process.exit(miss ? 1 : 0);
 }
 
-module.exports = { parseArgs, validateTargets, checkSurface, EXPECTED, SURFACES };
+module.exports = { parseArgs, validateTargets, checkSurface, EXPECTED, SURFACES, SIDEBAR_390 };
 
 if (require.main === module) {
   let args;
