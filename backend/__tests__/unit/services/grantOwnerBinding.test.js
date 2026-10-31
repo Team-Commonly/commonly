@@ -70,6 +70,14 @@ describe('resolveGrantBinding (pure)', () => {
     expect(resolveGrantBinding({ connectionId: 'install-1', createdAt: T_MINT }, [])).toBeNull();
   });
 
+  test('a missing row timestamp fails closed rather than binding', () => {
+    const binding = resolveGrantBinding(
+      { connectionId: 'install-1', createdAt: T_MINT },
+      [row({ createdAt: undefined })],
+    );
+    expect(binding).toBeNull();
+  });
+
   test('a row with no owner cannot bind an owner', () => {
     const binding = resolveGrantBinding(
       { connectionId: 'install-1', createdAt: T_MINT },
@@ -142,7 +150,7 @@ describe('backfillGrantOwners (memory Mongo)', () => {
     expect(stored.connectionRowId).toBeNull();
   });
 
-  test('a grant minted before its row existed binds to the row owner, once', async () => {
+  test('a grant minted after its row was created binds to the row owner, once', async () => {
     await insertRow({ _id: new mongoose.Types.ObjectId(ROW_A), createdBy: new mongoose.Types.ObjectId(OWNER), createdAt: BEFORE });
     const grantId = 'grant_bindable';
     await insertGrant({ grantId });
@@ -175,6 +183,26 @@ describe('backfillGrantOwners (memory Mongo)', () => {
     await insertGrant({ revokedAt: AFTER });
 
     expect(await backfillGrantOwners()).toEqual({ scanned: 0, bound: 0, unbound: 0 });
+  });
+
+  // Delegation copies the parent's binding. A child minted from a bound parent
+  // stays bound to the same row and owner; dropping either field would leave it
+  // unbound or bound to whoever is asked. Only the parent is read, never the body.
+  test('an attenuated child carries the parent binding', async () => {
+    const { attenuateGrant } = require('../../../services/roomGrantService');
+    await insertGrant({
+      grantId: 'grant_parent',
+      tools: ['github.list_issues'],
+      writeMode: 'read',
+      budget: { calls: 10, windowMs: 60000 },
+      ownerId: OWNER,
+      connectionRowId: ROW_A,
+    });
+
+    const child = await attenuateGrant({ parentGrantId: 'grant_parent', tools: ['github.list_issues'] });
+
+    expect(child.ownerId).toBe(OWNER);
+    expect(child.connectionRowId).toBe(ROW_A);
   });
 
   test('a grant naming a row _id whose row is gone stays unbound; the installation id is not a fallback', async () => {

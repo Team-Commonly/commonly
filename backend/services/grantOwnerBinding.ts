@@ -63,7 +63,8 @@ export const resolveGrantBinding = (
   const matches = rows.filter((row) => carriesInstallationId(row, connectionId));
   if (matches.length !== 1) return null;
   const [row] = matches;
-  if (new Date(row.createdAt).getTime() > new Date(grant.createdAt).getTime()) return null;
+  // Written as "not provably before" so a missing or unparseable timestamp (NaN) stays unbound.
+  if (!(new Date(row.createdAt).getTime() <= new Date(grant.createdAt).getTime())) return null;
   const ownerId = connectionOwnerOf(row);
   return ownerId ? { connectionRowId: String(row._id), ownerId } : null;
 };

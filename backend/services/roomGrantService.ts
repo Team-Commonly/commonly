@@ -458,10 +458,10 @@ export const assertGrantUsable = async (
 
 /**
  * Removal's grants step (tools plan §10.5), the one place a connection's own
- * grants are ended. It has to run while the connection row still exists: the
- * granter's revoke route resolves ownership through `findConnection`
- * (`routes/grants.ts:421`), so once removal has deleted the row every grant on
- * it answers 403 `access_denied` and can never be revoked (TASK-145).
+ * grants are ended. It runs while the connection row still exists, so the
+ * grants are ended against the row they were minted for. Revoke takes the
+ * owner from each grant's binding, not from the row, so this ordering no longer
+ * decides who may revoke (TASK-145).
  *
  * A connection is addressed in three ways and a grant stores whichever
  * identifier it was minted with, so all three are matched: the row's `_id`,

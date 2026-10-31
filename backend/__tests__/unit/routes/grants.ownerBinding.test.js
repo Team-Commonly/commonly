@@ -152,6 +152,26 @@ describe('revoke refuses an unbound grant', () => {
   });
 });
 
+describe('revoke follows the binding, not the connection row', () => {
+  // The connection id now names a row another user holds. Revoke reads the
+  // bound owner from the grant, so the new holder gets nothing and the owner
+  // still revokes.
+  test('after the id changed hands, the new holder is refused and the bound owner revokes', async () => {
+    const grant = await seatGrant({ ownerId: OWNER, connectionRowId: CONN_ROW });
+    Integration.findOne.mockImplementation(async () => ({
+      _id: 'aaaaaaaaaaaaaaaaaaaaaa78', type: 'github-app', status: 'connected', createdBy: STRANGER,
+      installationId: 'install-1',
+    }));
+    const holder = await request(app).delete(`/api/grants/${grant.grantId}`).set('x-test-user', STRANGER);
+    expect(holder.status).toBe(403);
+    expect(holder.body).toMatchObject({ error: 'access_denied' });
+
+    const owner = await request(app).delete(`/api/grants/${grant.grantId}`).set('x-test-user', OWNER);
+    expect(owner.status).toBe(200);
+    expect(owner.body).toMatchObject({ revoked: 1 });
+  });
+});
+
 describe('the seat-grant read refuses an unbound grant', () => {
   test('neither the owner nor the seat reads an unbound seat grant', async () => {
     const grant = await seatGrant({ ownerId: null, connectionRowId: null });
