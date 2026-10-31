@@ -4,6 +4,7 @@ import Task from '../models/Task';
 import { foldExpiredDigests, readFoldedDigest, settleFoldedDigest } from './agentDigestFoldService';
 import { postToPublicAddress } from './outboundUrlGuard';
 import { hostedRunsNative, IN_PROCESS_RUNTIME_FILTER } from './hostedEngine';
+import { noteUnansweredMention, PERSON_WAITING_EVENT_TYPES } from './unansweredMentionService';
 
 // eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
@@ -110,6 +111,10 @@ const digestConsumedBy = (outcome?: string, reason?: string): boolean => outcome
 // TASK-264: how many stuck in-process events one sweep re-runs, and how long a
 // 'queued'/'running' AgentRun may sit before it counts as abandoned.
 const STUCK_REDISPATCH_BATCH = 50;
+// A person's messages retired per pass, one at a time with a line each
+// (TASK-656). 686 retirements of every type took 7 days, so 50 per 10-minute
+// pass keeps up with any realistic backlog.
+const UNANSWERED_MENTION_BATCH = 50;
 const ABANDONED_RUN_MINUTES = 30;
 
 // TASK-265: an in-process event is born 'delivered', so one
@@ -369,6 +374,26 @@ const postInlineReply = async (
   return null;
 };
 
+// TASK-656. A webhook driver never polls, so an event whose POST failed was
+// left 'pending' with nothing that would ever deliver it, until the 168h
+// retention delete. It is closed 'failed' with the reason instead, and when a
+// person is the one waiting, the pod gets the unanswered line. The reason is
+// fixed text: never the URL or transport error, which can carry credentials.
+const failWebhookDelivery = async (event: EventDoc, reason: string): Promise<void> => {
+  try {
+    const failed = await AgentEvent.findOneAndUpdate(
+      { _id: event._id, status: 'pending' },
+      { $set: { status: 'failed', error: `webhook delivery failed: ${reason}` } },
+      { new: true },
+    ).lean() as EventDoc | null;
+    if (failed && PERSON_WAITING_EVENT_TYPES.includes(String(failed.type))) {
+      await noteUnansweredMention({ ...failed, attempts: Math.max(Number(failed.attempts) || 0, 1) });
+    }
+  } catch (err) {
+    console.warn('[webhook] failed delivery not recorded:', (err as Error).message);
+  }
+};
+
 const deliverEventViaWebhook = async (installation: InstallationDoc, event: EventDoc): Promise<void> => {
   const runtimeConfig = (normalizeConfig(installation.config)?.runtime || {}) as Record<string, unknown>;
   const { webhookUrl, webhookSecret } = runtimeConfig as { webhookUrl?: string; webhookSecret?: string };
@@ -410,6 +435,7 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
 
     if (!res.ok) {
       console.warn(`[webhook] ${event.agentName} HTTP ${res.status}`);
+      await failWebhookDelivery(event, `HTTP ${res.status}`);
       return;
     }
 
@@ -461,11 +487,13 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
   } catch (err) {
     // URLs and transport error text can contain installer credentials, including
     // redirect destinations. Keep diagnostics independent of those values.
-    if ((err as Error)?.name === 'AbortError') {
+    const timedOut = (err as Error)?.name === 'AbortError';
+    if (timedOut) {
       console.warn(`[webhook] ${event.agentName} timed out after 10s`);
     } else {
       console.warn(`[webhook] ${event.agentName} delivery failed`);
     }
+    await failWebhookDelivery(event, timedOut ? 'timed out after 10s' : 'endpoint unreachable');
   }
 };
 
@@ -965,6 +993,7 @@ class AgentEventService {
     let requeuedDelivered = 0;
     let expiredDelivered = 0;
     const attemptCap = Math.max(requeueMaxAttempts, 1);
+    const retireError = `requeue cap exhausted after ${attemptCap} delivery attempts without an ack`;
 
     // TASK-264: an in-process (native) turn that died with its process — a
     // deploy, a crash — leaves its event 'delivered' with no ack. The requeue
@@ -1040,21 +1069,34 @@ class AgentEventService {
       // #67 symptom above — stuck, unretried, unsurfaced — for the full 168h
       // retention window. Disjoint from the requeue by `attempts` alone, so
       // the two passes cannot touch the same document in one run.
+      //
+      // TASK-656: a person's message is retired one row at a time, so each one
+      // this pass retires gets exactly one visible line instead of silence. A
+      // second replica's pass loses the compare-and-set and posts nothing.
+      // Its own catch: a failure here must not cost the bulk retire its pass.
+      expiredDelivered += await this.retireUnansweredMentions(requeueThreshold, attemptCap, retireError)
+        .catch((waitErr: Error) => {
+          console.warn('[agent-event] unanswered-mention retire pass failed:', waitErr.message);
+          return 0;
+        });
+      // Everything else. A person's message past the batch waits for the next
+      // pass rather than being retired here without its line.
       const expireResult = await AgentEvent.updateMany(
         {
           status: 'delivered',
           deliveredAt: { $lt: requeueThreshold },
           attempts: { $gte: attemptCap },
+          type: { $nin: PERSON_WAITING_EVENT_TYPES },
         },
         {
           $set: {
             status: 'failed',
             deliveryNonce: null,
-            error: `requeue cap exhausted after ${attemptCap} delivery attempts without an ack`,
+            error: retireError,
           },
         },
       ) as { modifiedCount?: number };
-      expiredDelivered = expireResult?.modifiedCount || 0;
+      expiredDelivered += expireResult?.modifiedCount || 0;
       if (expiredDelivered > 0) {
         console.warn(`[agent-event] retired ${expiredDelivered} 'delivered' events that exhausted the ${attemptCap}-attempt requeue cap`);
       }
@@ -1133,6 +1175,38 @@ class AgentEventService {
       rescuedPendingInProcess,
       closedPendingInProcess,
     };
+  }
+
+  /**
+   * TASK-656. Retires cap-exhausted events a person is waiting on, one row at
+   * a time, and posts one visible line for each it retires. The retire is a
+   * compare-and-set on the delivery nonce, so a second replica's pass loses
+   * it and posts nothing.
+   */
+  static async retireUnansweredMentions(threshold: Date, attemptCap: number, error: string): Promise<number> {
+    const waiting = await AgentEvent.find({
+      status: 'delivered',
+      deliveredAt: { $lt: threshold },
+      attempts: { $gte: attemptCap },
+      type: { $in: PERSON_WAITING_EVENT_TYPES },
+    }).sort({ deliveredAt: 1 }).limit(UNANSWERED_MENTION_BATCH).lean() as EventDoc[];
+    let retiredCount = 0;
+    for (const event of waiting) {
+      // eslint-disable-next-line no-await-in-loop -- bounded by UNANSWERED_MENTION_BATCH
+      const retired = await AgentEvent.findOneAndUpdate(
+        { _id: event._id, status: 'delivered', deliveryNonce: event.deliveryNonce ?? null },
+        { $set: { status: 'failed', deliveryNonce: null, error } },
+        { new: true },
+      ).lean() as EventDoc | null;
+      if (retired) {
+        retiredCount += 1;
+        // eslint-disable-next-line no-await-in-loop
+        await noteUnansweredMention(retired).catch((lineErr: Error) => {
+          console.warn('[agent-event] unanswered-mention line not posted:', lineErr.message);
+        });
+      }
+    }
+    return retiredCount;
   }
 
   /**
