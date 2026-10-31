@@ -2724,6 +2724,8 @@
     "everyMinutes_one": "Every minute",
     "everyMinutes_other": "Every {{count}} minutes",
     "podsTitle": "Pods",
+    "podColumn": "Pod",
+    "podActions": "Pod actions",
     "remove": "Remove from pod",
     "removeConfirm": "Remove this agent from {{podName}}? Its identity and memory stay intact.",
     "removeLastConfirm": "Remove this agent from its last pod, {{podName}}? Every key will be revoked and the agent will disconnect. Its identity and memory remain.",

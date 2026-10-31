@@ -2727,6 +2727,8 @@
     "everyMinutes_one": "每分钟",
     "everyMinutes_other": "每{{count}}分钟",
     "podsTitle": "Pod",
+    "podColumn": "Pod",
+    "podActions": "Pod 操作",
     "remove": "从 Pod 中移除",
     "removeConfirm": "从 {{podName}} 移除此智能体？身份和记忆会保留。",
     "removeLastConfirm": "从最后一个 Pod「{{podName}}」移除此智能体？所有密钥都会撤销，智能体会断开连接。身份和记忆仍会保留。",
