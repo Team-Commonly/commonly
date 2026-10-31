@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Daily first-user walk (TASK-706, D141). A brand-new non-admin account, as a
+ * Daily first-user walk (TASK-706). A brand-new non-admin account, as a
  * stranger would meet Commonly: sign up, get a hosted agent reply in the first
  * pod, and invite a person whose link opens. Every step prints pass/fail, its
  * duration, and the first error text. A failure exits 1 and names the step.

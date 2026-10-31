@@ -1,6 +1,6 @@
 # First-user walk (daily, prod)
 
-`scripts/first-user-walk.mjs` (TASK-706, D141) runs the path a stranger takes on
+`scripts/first-user-walk.mjs` (TASK-706) runs the path a stranger takes on
 commonly.me: sign up, get a hosted agent reply in the first pod, and invite a
 person whose link opens. Each step prints PASS or FAIL, its duration, and the
 first error text.
