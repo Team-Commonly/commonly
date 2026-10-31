@@ -81,6 +81,12 @@
     "communityRedirect": {
       "title": "Opening Community",
       "text": "Checking your access…"
+    },
+    "theme": {
+      "label": "Appearance",
+      "auto": "Auto",
+      "light": "Light",
+      "dark": "Dark"
     }
   },
   "agentSkills": {
@@ -134,7 +140,7 @@
     "avatar": {
       "regenerate": "Regenerate",
       "uploadPhoto": "Upload photo",
-      "description": "No face and no skin tone until you choose one. Regenerate for another, or upload a photo.",
+      "description": "Regenerate for another, or upload a photo.",
       "descriptionAfterChoice": "Regenerate for another, or upload a photo.",
       "uploadTitle": "Upload photo",
       "cropPreview": "Avatar crop preview",
@@ -495,7 +501,7 @@
       "people": "Invite people",
       "agent": "Add agent"
     },
-    "peopleHint": "Create a link anyone with a Commonly account can use to join this pod.",
+    "peopleHint": "Anyone with the link can join.",
     "podMember": "Pod member",
     "options": {
       "expiresAfter": "Expires after",
@@ -513,7 +519,6 @@
     "generate": "Generate invite link",
     "generating": "Generating…",
     "newLinkLabel": "New invite link",
-    "newLinkHint": "The new link also appears under Active links below.",
     "activeLinks": "Active links",
     "loadingLinks": "Loading links…",
     "noActiveLinks": "No active invite links.",
@@ -541,7 +546,7 @@
       "unavailable": "Expiry unavailable",
       "expiresOn": "Expires {{date}}"
     },
-    "agentHint": "Add an agent — Claude Code or Codex, or run one here — and it joins this pod. Takes about two minutes.",
+    "agentHint": "Claude Code, Codex, or run one here.",
     "connectOwnAgent": "Connect your own agent →",
     "errors": {
       "loadFailed": "Could not load invite links.",
@@ -749,6 +754,10 @@
       "showMore": "Show {{count}} more lines",
       "showLess": "Show less",
       "image": "image"
+    },
+    "longMessage": {
+      "showMore": "Show more",
+      "showLess": "Show less"
     },
     "history": {
       "loadingEarlier": "loading earlier…",
@@ -1334,16 +1343,14 @@
     "workspace": {
       "ariaLabel": "Pod inspector",
       "close": "Close inspector",
-      "agentsIn": "agents in {{pod}}",
       "noAgents": "no agents yet",
-      "needsYou": "needs you",
+      "needsYou": "Needs you",
       "nothingOpen": "Nothing open.",
       "nothingWorking_one": "Nothing. {{agents}} is working.",
       "nothingWorking_other": "Nothing. {{agents}} are working.",
       "wip": "wip",
-      "members": "members",
-      "manage": "manage",
-      "podSettings": "pod settings",
+      "members": "Members",
+      "manage": "Manage agents",
       "joinPolicyError": "Could not change who can join. Try again.",
       "agentStatus": {
         "needsYou": "needs you · {{title}}",
@@ -1351,9 +1358,11 @@
         "working": "working",
         "idle": "idle"
       },
-      "filesIn": "files in {{pod}}",
       "noFiles": "no files yet",
-      "allFiles": "All {{count}} files"
+      "allFiles": "All {{count}} files",
+      "agents": "Agents",
+      "files": "Files",
+      "joinOpen": "Open"
     },
     "goal": {
       "title": "Goal",
@@ -1627,7 +1636,7 @@
     "description": "A running agent answers @mentions in its pod.",
     "form": {
       "nameLabel": "Agent name",
-      "nameHint": "Lower-case letters, digits, and dashes. It posts under this name.",
+      "nameHint": "Lowercase letters, digits and dashes.",
       "podLabel": "Pod it joins",
       "loadingPods": "Loading pods…",
       "machineLabel": "Computer",
@@ -1682,7 +1691,7 @@
       "cursorInstall": "Add to Cursor",
       "cursorInstallHint": "The link adds Commonly with a placeholder key. Replace it in Cursor’s MCP settings with the key above.",
       "memory": "Bring its memory (optional)",
-      "claudeCodeBody": "Gives your own Claude Code sessions Commonly’s tools. It does not make {{name}} answer @mentions; the command above does.",
+      "claudeCodeBody": "Gives your Claude Code sessions Commonly’s tools. Answering @mentions needs the command above.",
       "claudeCodeBodyOwn": "Gives your own Claude Code sessions Commonly’s tools.",
       "claudeCodeBodyWindows": "Paste both lines in PowerShell. They give your own Claude Code sessions on this machine Commonly’s tools.",
       "claudeCodeMain": "Let Claude Code use the pod in your own sessions"
@@ -1738,17 +1747,12 @@
     "mode": {
       "label": "Where should it run?",
       "hosted": "Run it here",
-      "hostedHint": "Commonly runs it for you. Nothing to install. Beta: {{turns}} turns a day.",
       "byo": "Use my own agent",
-      "byoHint": "Your Claude Code or Codex, on your computer.",
-      "onCommonly": "on Commonly",
-      "yours": "your machine",
-      "hostedMeta": "Live in a few seconds · Beta: {{turns}} turns a day",
-      "byoMeta": "One command in Terminal",
+      "hostedMeta": "Nothing to install. Live in a few seconds. Beta: {{turns}} turns a day.",
+      "byoMeta": "Your Claude Code or Codex, on your computer. One command in Terminal.",
       "moreAbout": "More about {{mode}}",
       "machine": "On my computer",
-      "machineHint": "Runs on a computer you've added — your files, your CLIs",
-      "machineMeta": "Needs the Commonly daemon running there"
+      "machineMeta": "Runs on a computer you've added, with your files and CLIs. Needs the Commonly daemon running there."
     },
     "hosted": {
       "offerAction": "Run it here instead",
@@ -1798,7 +1802,7 @@
     },
     "compact": {
       "title": "Run an agent here",
-      "lead": "Live in a few seconds.",
+      "lead": "Live in a few seconds. Beta: {{agents}} hosted agent per account, {{turns}} turns a day.",
       "joins": "It joins {{pod}} as {{name}}.",
       "change": "Change",
       "limits": "Beta: {{agents}} hosted agent per account, {{turns}} turns a day.",
@@ -2111,7 +2115,10 @@
       "noMatch": "no pods match",
       "pinnedTitle": "Pinned",
       "recent": "Recent",
-      "everything": "Everything"
+      "everything": "Everything",
+      "viewLabel": "Pod list",
+      "all": "All",
+      "noPinned": "Pin a pod from its row to keep it here."
     }
   },
   "feedbackMenu": {
@@ -2224,7 +2231,7 @@
     },
     "own": {
       "title": "Your own agent",
-      "text": "Claude Code, Codex, or anything that speaks the protocol. One command on your machine; it keeps its identity here.",
+      "text": "Claude Code or Codex, from your own machine.",
       "command": "npx @commonlyai/cli agent attach claude",
       "setup": "Set it up"
     }
@@ -2306,7 +2313,6 @@
     "codeExpired": "The enable code expired.",
     "connect": "Connect",
     "connectChannel": "Connect a channel",
-    "connectChannelHint": "Choose a channel and the pod it should join.",
     "copied": "Copied",
     "copyCommand": "Copy command",
     "description": "Each channel gets one agent from a pod. It answers there in its own name; the rest of the team stays behind it.",

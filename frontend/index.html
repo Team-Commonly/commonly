@@ -1,6 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <script>
+      // Apply a stored Light or Dark v2 choice before first paint, so it never
+      // flashes the OS theme. Keep the key in step with src/v2/utils/theme.ts.
+      try {
+        var v2Theme = window.localStorage.getItem('v2.theme');
+        if (v2Theme === 'light' || v2Theme === 'dark') {
+          document.documentElement.setAttribute('data-v2-theme', v2Theme);
+        }
+      } catch (e) {
+        // Storage can be blocked; the OS theme then applies.
+      }
+    </script>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <script src="/signup-source.js"></script>
@@ -88,6 +100,83 @@
       #seo-page .seo-note { color: #7b8494; font-size: .875rem; }
       #seo-page .seo-footer { padding: 40px 0; color: #7b8494; border-top: 1px solid #e5e7eb; }
       @media (max-width: 640px) { #seo-page .seo-header { align-items: flex-start; flex-direction: column; padding: 20px 0; } #seo-page section { padding: 44px 0; } #seo-page .seo-hero { padding-top: 56px; padding-bottom: 56px; } }
+      /* Guide pages and the guides index take the landing's type,
+         colour and measure. Scoped to the pages whose header links Agent
+         collaboration, so compare and use-case pages keep the rules above. Tokens
+         are declared here because .v2-root does not reach the prerender. Values
+         mirror v2.css and landing/v2-landing.css. */
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) {
+        --v2-font: "IBM Plex Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        --v2-font-display: "Bricolage Grotesque Variable", "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
+        --v2-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        --v2-ink: #101828;
+        --v2-text-secondary: #475467;
+        --v2-text-tertiary: #667085;
+        --v2-border: #d0d5dd;
+        --v2-border-soft: #e4e7ec;
+        --v2-surface-tint: #f2f4f7;
+        --v2-accent: #1d3fd1;
+        --v2-accent-strong: #1633a8;
+        --v2-accent-deep: #0f2378;
+        --v2-accent-soft: #e9edfb;
+        --v2-radius: 4px;
+        background: #ffffff;
+        color: var(--v2-ink);
+        font: 16px/26px var(--v2-font);
+      }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-header,
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) main,
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-footer {
+        width: 100%;
+        margin: 0;
+        padding-right: max(24px, calc((100% - 1312px) / 2));
+        padding-left: max(24px, calc((100% - 1312px) / 2));
+      }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-header { min-height: 72px; gap: 24px; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-header nav { gap: 28px; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-header nav a { color: var(--v2-text-secondary); font-size: 15px; font-weight: 500; text-decoration: none; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-header nav a:hover { color: var(--v2-ink); }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-brand { color: var(--v2-ink); font-family: var(--v2-font-display); font-size: 24px; font-weight: 800; letter-spacing: -.03em; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) section { padding: 56px 0; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-hero { padding-top: 96px; padding-bottom: 72px; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) h1,
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) h2,
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) h3 { color: var(--v2-ink); font-family: var(--v2-font-display); letter-spacing: -.03em; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) h1 { max-width: 920px; margin: 0 0 24px; font-size: clamp(44px, 7vw, 84px); line-height: 1; font-weight: 850; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) h2 { max-width: 760px; margin: 0 0 20px; font-size: 44px; line-height: 48px; font-weight: 800; text-wrap: balance; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) h3 { margin: 0 0 12px; font-size: 24px; line-height: 30px; font-weight: 800; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) p,
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) li { color: var(--v2-text-secondary); font-size: 16px; line-height: 26px; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) p { max-width: 720px; margin: 0 0 16px; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-lede { max-width: 720px; font-size: 20px; line-height: 32px; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-byline { font-size: 13px; line-height: 20px; color: var(--v2-text-tertiary); }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-kicker { margin-bottom: 12px; color: var(--v2-accent); font-family: var(--v2-font-mono); font-size: 12px; font-weight: 500; line-height: 20px; letter-spacing: .06em; text-transform: uppercase; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-actions { gap: 12px; margin-top: 32px; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-primary { display: inline-flex; align-items: center; height: 44px; padding: 0 22px; border-radius: var(--v2-radius); background: var(--v2-accent); color: #ffffff; font-size: 15px; font-weight: 600; text-decoration: none; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-primary:hover { background: var(--v2-accent-strong); color: #ffffff; }
+      /* Full-bleed band on the same 1312 measure as the header and footer. */
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-band { width: 100cqw; max-width: none; margin-left: calc((100cqw - min(1312px, calc(100cqw - 48px))) / -2); padding-right: max(24px, calc((100cqw - 1312px) / 2)); padding-left: max(24px, calc((100cqw - 1312px) / 2)); color: var(--v2-accent-deep); background: var(--v2-accent-soft); }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-band h2,
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-band p { color: var(--v2-accent-deep); }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-grid { gap: 12px; }
+      /* Card titles on the guides index are h2; keep them at card size, not section size. */
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-card h2 { margin: 0 0 12px; font-size: 24px; line-height: 30px; font-weight: 800; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-card h2 a { color: var(--v2-ink); text-decoration: none; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-card { padding: 24px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius); background: #ffffff; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-code { margin: 20px 0; padding: 16px; border: 0; border-radius: var(--v2-radius); color: #ffffff; background: var(--v2-ink); }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-table-wrap { border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius); }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-table th,
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-table td { border-color: var(--v2-border-soft); }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-table th { background: var(--v2-surface-tint); }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-footer { padding-top: 48px; padding-bottom: 40px; border-top: 1px solid var(--v2-border-soft); color: var(--v2-text-tertiary); font-size: 13px; line-height: 20px; }
+      #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-note { color: var(--v2-text-tertiary); font-size: 13px; line-height: 20px; }
+      @media (max-width: 640px) {
+        #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-header { padding-top: 20px; padding-bottom: 20px; }
+        #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) section { padding: 44px 0; }
+        #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-hero { padding-top: 56px; padding-bottom: 48px; }
+        #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) h2 { font-size: 32px; line-height: 38px; }
+        #seo-page:has(header nav a[href="/use-cases/agent-collab/"]) .seo-lede { font-size: 18px; line-height: 28px; }
+      }
     </style>
     <!-- SEO_NAVIGATION_RUNTIME_START -->
     <script>

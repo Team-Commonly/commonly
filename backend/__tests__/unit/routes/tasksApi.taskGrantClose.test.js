@@ -89,7 +89,7 @@ test.each(['complete', 'patch', 'github', 'onboarding'])('%s close revokes the b
 });
 
 test('a failed revocation write leaves the close committed and the grant refused by its epoch', async () => {
-  const spy = jest.spyOn(RoomGrant, 'updateMany').mockRejectedValueOnce(new Error('revocation write failed'));
+  const spy = jest.spyOn(RoomGrant, 'findOneAndUpdate').mockRejectedValueOnce(new Error('revocation write failed'));
   expect((await request(app).post(`/tasks/${POD}/TASK-1/complete`).send({})).status).toBe(200);
   expect(spy).toHaveBeenCalledTimes(1);
   spy.mockRestore();

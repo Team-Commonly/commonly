@@ -59,6 +59,8 @@ test('the @ list and thread resolve the same avatar for a person and an agent', 
       message('nova-msg', 'nova-id', 'nova', true, '/api/uploads/nova-account.png')],
     sendMessage: jest.fn(), loading: false, error: null, sendError: null, refresh: jest.fn(),
   };
+  // The inspector's Agents group folds at rest (D215); open it for the comparison.
+  sessionStorage.setItem('v2:inspector.openGroups', JSON.stringify(['agents']));
   const { container } = render(
     <AuthContext.Provider value={auth}>
       <MemoryRouter><V2Thread detail={detail} /><V2Inspector detail={detail} /></MemoryRouter>

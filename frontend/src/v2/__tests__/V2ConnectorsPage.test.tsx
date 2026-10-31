@@ -1234,13 +1234,29 @@ describe('V2ConnectorsPage', () => {
       expect(screen.queryByText(/Tell us which channel/)).toBeNull();
     });
 
-    it('reads a usable-but-unrostered provider as not connectable, with no Add anywhere', async () => {
-      // The ruled middle state: this instance can use Discord
-      // and there is no builtin Installable row to install, so the row states the
-      // state and offers no action. Before this, the row rendered an Add whose
-      // click ended in 404 installable_not_found.
+    it('does not list a provider this instance does not offer (D215)', async () => {
+      // Discord on commonly.me: usable keys, no builtin Installable row, never
+      // walked. A stranger must not see it, not even in the inactive fold.
       mockCatalog([
+        entry(),
         entry({ installableId: 'discord', label: 'Discord', available: true, offered: false }),
+      ]);
+      renderPage();
+
+      await screen.findByText('Telegram');
+      // The fold only exists when a dead row does, so its absence is the
+      // assertion; a collapsed fold would hide a listed Discord from queryByText.
+      expect(screen.queryByRole('button', { name: /^inactive · \d+$/ })).toBeNull();
+      expect(screen.queryByText('Discord')).toBeNull();
+    });
+
+    it('keeps an installed but no-longer-offered provider as not connectable, with no Add anywhere', async () => {
+      // The ruled middle state, now reachable only by someone who installed it
+      // before the roster row went away: the row states the state and offers no
+      // action. Before #1826 the row rendered an Add whose click ended in 404
+      // installable_not_found.
+      mockCatalog([
+        entry({ installableId: 'discord', label: 'Discord', available: true, offered: false, installation: { status: 'active', boundPodId: 'p1' } }),
       ]);
       renderPage();
 
@@ -1270,6 +1286,20 @@ describe('V2ConnectorsPage', () => {
       expect(screen.queryByRole('button', { name: 'Add' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Connect a channel' })).toBeNull();
       expect(screen.queryByText(/Tell us which channel/)).toBeNull();
+    });
+
+    it('keeps a no-longer-offered provider listed when the person has only an integration row', async () => {
+      // The third arm of the D215 filter: a channel connected before the roster
+      // row went away can leave an integration with no installation. Dropping it
+      // from the list would hide a live connection from its owner.
+      mockCatalog([
+        entry({ installableId: 'discord', label: 'Discord', available: true, offered: false, integration: liveIntegration() }),
+      ]);
+      renderPage();
+
+      await openInactiveFold();
+      const row = (await screen.findByText('Unavailable here.')).closest('.v2-connector-row') as HTMLElement;
+      expect(row.textContent).toContain('Discord');
     });
 
     it('renders an unavailable provider with a state line and an available one with Add', async () => {
