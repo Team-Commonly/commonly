@@ -33,7 +33,7 @@
  * records the visit without an OS.
  *
  * Three surface marks come from the browser through POST /api/stats/byo-step,
- * as fixed step names (D139): inviteCardShownAt and inviteCardDismissedAt for
+ * as fixed step names: inviteCardShownAt and inviteCardDismissedAt for
  * the "invite a teammate" card, and byoOfferShownAt the first time the thread
  * shows a start that links to Bring your own. "Shown" is the card or start
  * mounting in the transcript, not proof it was scrolled into view.
@@ -211,7 +211,7 @@ export function markByoConnectionAttempt(
   }
 }
 
-/** Record the first time a person met one of the D139 surfaces. */
+/** Record the first time a person met one of the onboarding surfaces. */
 export function markSurface(userId: unknown, mark: SurfaceMark): void {
   const id = String(userId || '');
   if (!id || !SURFACE_MARKS.includes(mark)) return;

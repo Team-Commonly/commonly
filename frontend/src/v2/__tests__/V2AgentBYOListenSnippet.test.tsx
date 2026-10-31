@@ -12,6 +12,10 @@ import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
 
+// The page names the Node floor the CLI declares. Read it from cli/package.json
+// rather than copying the number, so a CLI engines bump fails this test.
+const CLI_NODE_FLOOR = Number(require('../../../../cli/package.json').engines.node.match(/\d+/)[0]);
+
 jest.mock('../components/V2NavRail', () => () => null);
 jest.mock('axios', () => {
   const mock = {
@@ -43,7 +47,7 @@ const authValue = {
   updateProfile: jest.fn(),
 };
 
-const issueToken = async () => {
+const issueToken = async (runner?: 'codex') => {
   axios.get.mockImplementation((url) => {
     if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat' }] });
     if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
@@ -61,6 +65,9 @@ const issueToken = async () => {
   );
   await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
   await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
+  if (runner) fireEvent.click(screen.getByTestId(`byo-runner-${runner}`));
+  // The runner sets the default name, which re-checks it, so wait for the button again.
+  if (runner) await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
   await screen.findByText(/your connect command for/i);
 };
@@ -143,34 +150,86 @@ describe('BYO listener snippet', () => {
   test('what it needs is said before the command it is about', async () => {
     await issueToken();
     const needs = screen.getByTestId('byo-listen-needs');
-    expect(needs).toHaveTextContent(/Needs Node 18\+ with npm and Claude Code signed in/);
+    expect(needs).toHaveTextContent(new RegExp(`Needs Node ${CLI_NODE_FLOOR}\\+ with npm and Claude Code signed in`));
     // eslint-disable-next-line no-bitwise
     expect(needs.compareDocumentPosition(listenCommand()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  test('"I use Codex instead" gives a Codex command and says Codex is what it needs', async () => {
-    await issueToken();
-    fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
-    expect((listenCommand().textContent || '').split('\n')[3]).toMatch(/ --adapter codex$/);
-    expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI signed in/);
+  // The page renders in English here, so the English test above never reads the
+  // zh-CN copy. Read the zh-CN string straight from the locale file.
+  test('the zh-CN "needs" line names the same Node floor', () => {
+    const zhNeeds: string = require('../../i18n/locales/zh-CN.json').agentByo.listen.needs;
+    expect(zhNeeds).toMatch(new RegExp(`需要 Node ${CLI_NODE_FLOOR}\\+`));
   });
 
-  test('a Claude Code listener says what it can reach and how --allow widens it; Codex says nothing of folders', async () => {
+  test('an npm EACCES names the fix and says not to use sudo, right after the command', async () => {
+    await issueToken();
+    const hint = screen.getByTestId('byo-listen-npm-hint');
+    expect(hint).toHaveTextContent(/npm stops with EACCES/);
+    expect(hint).toHaveTextContent(/don’t add sudo/);
+    // eslint-disable-next-line no-bitwise
+    expect(listenCommand().compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test('picking Codex before the install gives a Codex command named for Codex, and no runner switch after issue', async () => {
+    await issueToken('codex');
+    expect((listenCommand().textContent || '').split('\n')[3]).toMatch(/^commonly agent run sam-codex --adapter codex$/);
+    expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI signed in/);
+    expect(screen.queryByTestId('byo-runner')).toBeNull();
+  });
+
+  test('issue as Claude, go back, pick Codex, issue again: the second install is <user>-codex on --adapter codex', async () => {
+    await issueToken();
+    expect(axios.post.mock.calls.find(([url]) => url === '/api/registry/install')[1].agentName).toBe('sam-claude');
+    fireEvent.click(screen.getByTestId('byo-use-different-runner'));
+    axios.post
+      .mockResolvedValueOnce({ data: { ok: true } })
+      .mockResolvedValueOnce({ data: { token: 'cm_agent_test_token_codex' } });
+    fireEvent.click(screen.getByTestId('byo-runner-codex'));
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
+    await screen.findByText(/your connect command for/i);
+    const installs = axios.post.mock.calls.filter(([url]) => url === '/api/registry/install');
+    expect(installs[installs.length - 1][1].agentName).toBe('sam-codex');
+    expect((listenCommand().textContent || '').split('\n')[3]).toMatch(/^commonly agent run sam-codex --adapter codex$/);
+  });
+
+  test('after issue, the way back returns to the start and leaves the install alone', async () => {
+    await issueToken();
+    const postsBefore = axios.post.mock.calls.length;
+    fireEvent.click(screen.getByTestId('byo-use-different-runner'));
+    expect(screen.getByTestId('byo-runner-claude')).toBeInTheDocument();
+    expect(screen.queryByTestId('byo-listen-needs')).toBeNull();
+    expect(axios.post.mock.calls.length).toBe(postsBefore);
+    expect(axios.delete).not.toHaveBeenCalled();
+  });
+
+  test('a Claude Code listener says what it can reach and how --allow widens it; Codex gets its own note only', async () => {
     await issueToken();
     const reach = screen.getByTestId('byo-listen-reach');
+    expect(screen.queryByTestId('byo-listen-reach-codex')).toBeNull();
     expect(reach).toHaveTextContent(/By default, on macOS, when every pod it's in is private, invite-only and not listed in Community, .+ reads only the folder you run this from\. Otherwise, or when you run it from your home folder, it works in its own scratch folder\./);
     // The folder bound is the default only: write's commands read past it.
     expect(reach).toHaveTextContent(/add --allow write to the last line\. Those commands can read beyond the folder\./);
     expect(reach).toHaveTextContent(/To let it fetch web pages, add --allow web\./);
     expect(reach).toHaveTextContent(/send what it reads off this computer/);
-    fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
+  });
+
+  test('a Codex listener shows no Claude folder note', async () => {
+    await issueToken('codex');
     expect(screen.queryByTestId('byo-listen-reach')).toBeNull();
+    // Codex gets its own note: it runs in its scratch folder, and --allow is refused for it.
+    expect(screen.getByTestId('byo-listen-reach-codex')).toHaveTextContent(/its own scratch folder under your temp directory/);
+    expect(screen.getByTestId('byo-listen-reach-codex')).toHaveTextContent(/--allow does not apply to Codex/);
   });
 
   test('the Claude Code MCP line shows for Claude Code only', async () => {
     await issueToken();
     expect(screen.getByTestId('byo-mcp-claude')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
+  });
+
+  test('a Codex install shows no Claude Code MCP line', async () => {
+    await issueToken('codex');
     expect(screen.queryByTestId('byo-mcp-claude')).toBeNull();
   });
 
@@ -243,6 +302,7 @@ describe('BYO listener snippet', () => {
       expect(notice).toHaveTextContent(/Claude Code can’t answer @mentions from Windows yet/);
       expect(notice).toHaveTextContent(/with the command below, or choose “Run it here”/);
       expect(notice).not.toHaveTextContent(/WSL/);
+      expect(screen.queryByTestId('byo-listen-npm-hint')).toBeNull();
       expect(mcpBox().split('\n')).toEqual([
         'npm i -g @commonlyai/mcp',
         expect.stringMatching(/^claude mcp add commonly -e COMMONLY_API_URL=\S+ -e COMMONLY_AGENT_TOKEN=cm_agent_test_token -- cmd \/c commonly-mcp$/),
@@ -253,27 +313,35 @@ describe('BYO listener snippet', () => {
       expect(screen.getByTestId('byo-mcp-claude')).not.toHaveTextContent(/command above/);
     });
 
-    test('Linux with Claude Code or Codex: no listener command, and the bash MCP command; Codex says it is not tested yet', async () => {
+    test('Linux with Claude Code: no listener command, and the bash MCP command', async () => {
       setUserAgent(LINUX);
       await issueToken();
       expect(screen.getByTestId('byo-setup-os-linux')).toHaveAttribute('aria-pressed', 'true');
       expect(listener()).toBeUndefined();
       expect(screen.queryByTestId('byo-listen-reach')).toBeNull();
       expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/from Linux yet/);
+      expect(screen.queryByTestId('byo-listen-npm-hint')).toBeNull();
       expect(mcpBox()).toMatch(/-- npx -y @commonlyai\/mcp$/);
       expect(screen.getByTestId('byo-mcp-claude')).not.toHaveTextContent(/command above|Optional/);
-      fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
+    });
+
+    test('Linux with Codex: no listener command, and Codex says it is not tested yet', async () => {
+      setUserAgent(LINUX);
+      await issueToken('codex');
       expect(listener()).toBeUndefined();
       expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/The Codex CLI can’t answer @mentions from Linux yet\. .*Linux is not tested yet\./);
+      expect(screen.queryByTestId('byo-listen-npm-hint')).toBeNull();
+      expect(screen.queryByTestId('byo-listen-reach-codex')).toBeNull();
     });
 
     test('Codex on Windows says so, and offers hosted or another machine', async () => {
       setUserAgent(WINDOWS);
-      await issueToken();
-      fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
+      await issueToken('codex');
       expect(listener()).toBeUndefined();
       expect(screen.getByTestId('byo-listen-unavailable'))
         .toHaveTextContent(/The Codex CLI can’t answer @mentions from Windows yet\. Choose “Run it here”/);
+      expect(screen.queryByTestId('byo-listen-npm-hint')).toBeNull();
+      expect(screen.queryByTestId('byo-listen-reach-codex')).toBeNull();
       expect(screen.queryByTestId('byo-mcp-claude')).toBeNull();
     });
 

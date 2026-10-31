@@ -22,7 +22,7 @@ const mockDb = newDb();
 const mockPool = new (mockDb.adapters.createPg().Pool)();
 jest.mock('../../../config/db-pg', () => ({ pool: mockPool }));
 
-const { createTableFor } = require('../../utils/schemaTable');
+const { applyTable } = require('../../utils/schemaTable');
 const ThreadUserState = require('../../../models/pg/ThreadUserState');
 
 const POD = 'pod-1';
@@ -49,9 +49,9 @@ beforeAll(async () => {
   // The real dependency chain. thread_user_state -> messages -> pods, and the
   // hand-written fixture had none of it — another thing building from the
   // shipped DDL surfaces rather than hides.
-  await mockPool.query(createTableFor('pods'));
-  await mockPool.query(createTableFor('messages'));
-  await mockPool.query(createTableFor('thread_user_state'));
+  await applyTable(mockPool, 'pods');
+  await applyTable(mockPool, 'messages');
+  await applyTable(mockPool, 'thread_user_state');
   await mockPool.query("INSERT INTO pods (id, name, type, created_by) VALUES ($1,'p','chat','u')", [POD]);
 });
 

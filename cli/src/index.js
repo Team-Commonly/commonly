@@ -20,6 +20,8 @@ import { registerAgent } from './commands/agent.js';
 import { registerDaemon } from './commands/daemon.js';
 import { registerPod } from './commands/pod.js';
 import { registerDev } from './commands/dev.js';
+import { registerVerify } from './commands/verify.js';
+import { registerDoctor } from './commands/doctor.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'));
@@ -51,6 +53,10 @@ registerPod(program);
 
 // Local dev environment
 registerDev(program);
+registerVerify(program);
+
+// Install health: one line per check (TASK-660)
+registerDoctor(program);
 
 // Each subcommand owns its own `--instance <url>` flag; a program-level
 // duplicate shadowed the subcommand value on commander v12, causing
@@ -64,6 +70,7 @@ Quick start:
   $ commonly agent detach my-claude                    # clean uninstall
   $ commonly daemon register --name "My MacBook"
   $ commonly daemon status
+  $ commonly doctor                                   # check Node, install, login, daemon, adapters
   $ commonly inbox list --token-file ~/.commonly/bin/ops-token   # an operator's own queue
 
 Custom Python agent:

@@ -63,7 +63,7 @@ const getUserId = (req: any) => req.userId || req.user?.id || req.user?._id;
 
 /**
  * Write a Durable Object install's `config.hosted` only if the row is still on
- * the Durable Object (TASK-265, Rhea on #2236). The migration can mark a row
+ * the Durable Object (TASK-265). The migration can mark a row
  * native while this request awaits the worker, and a blind save of the record
  * read at the start would put it back on the Durable Object, after which the
  * next provision mints again. Same spelling of native as the token issuer's
@@ -120,7 +120,7 @@ const resolveOwnedHostedInstallation = async (req: any, source: Record<string, a
       status: 'active',
       installedBy: getUserId(req),
     });
-    // Hosted rows first (sprint-review on #1644): a non-hosted "default" beside
+    // Hosted rows first: a non-hosted "default" beside
     // a hosted "scout" must resolve to the seat that can actually be
     // provisioned, not 409 not_hosted about the wrong row. Falling back to
     // every row keeps the honest not_hosted answer when nothing is hosted.
@@ -274,7 +274,7 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
       return res.status(409).json({ code: 'identity_missing', message: 'Agent identity has not been created yet; reinstall the agent' });
     }
 
-    // ROTATE, never reuse (Otto on #1355). Both runtime-auth paths must lose
+    // ROTATE, never reuse. Both runtime-auth paths must lose
     // the old bearer, including legacy installation-only copies.
     await revokeRuntimeTokensForAgent({ agentUser, agentName, instanceId, installation });
 
@@ -355,8 +355,7 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
  * POST /api/hosted/deprovision { agentName, instanceId? }
  * Stops the runtime. The installation and identity stay — ADR-001 §3 identity
  * continuity; re-provisioning finds the same memory. The token does NOT
- * survive: provision rotates on every call (Otto on #1355), so a
- * re-provision mints fresh and orphans anything still holding the old one.
+ * survive: it is revoked here, and provision mints a fresh one.
  */
 router.post('/deprovision', hostedRateLimit, auth, async (req: any, res: any) => {
   try {
@@ -376,6 +375,17 @@ router.post('/deprovision', hostedRateLimit, auth, async (req: any, res: any) =>
     }
     if (!requireConfigured(res, hostedEngineOf(installation))) return undefined;
     await hostedRuntime.deprovisionAgent(agentName, instanceId);
+    // The stopped runtime was the token's only holder. Revoke it now rather
+    // than at the next provision, which may never come.
+    // Without a bot user the installation copies are still revoked.
+    const agentUser = await User.findOne({
+      username: AgentIdentityService.buildAgentUsername(agentName, instanceId),
+      isBot: true,
+    });
+    await revokeRuntimeTokensForAgent({ agentUser, agentName, instanceId, installation });
+    // A socket authenticated with the old token stays open until told to go.
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    require('../services/agentWebSocketService').disconnectIdentity(agentName, instanceId);
     // A row migrated meanwhile keeps the migration's record; the worker is
     // stopped either way, which is what both wanted.
     await writeDurableObjectRecord(installation, { provisionedAt: null, deprovisionedAt: new Date() });

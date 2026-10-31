@@ -1,4 +1,4 @@
-// Artifacts — direction C, PR 5 (ScaleArtifacts.dc.html; Sharpen 66366 + 66376).
+// Artifacts — direction C, PR 5 (ScaleArtifacts.dc.html).
 // Every file and page shared in your pods, newest first, from one query:
 // GET /api/artifacts. The inspector's Files pane is the same query with
 // podId fixed; this page is the query with podId as a filter.

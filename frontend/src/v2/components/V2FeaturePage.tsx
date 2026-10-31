@@ -25,16 +25,18 @@ const withV2Prefix = (path: string): string => {
   return path.startsWith('/') ? `/v2${path}` : `/v2/${path}`;
 };
 
-const V2_COLORS = {
-  bg: '#f8f8fb',
+// MUI's createTheme cannot read var(), so these stay literal. Each value is the
+// light --v2-* token of the same role; V2FeaturePageColors.test pins them to v2.css.
+export const V2_COLORS = {
+  bg: '#f9fafb',
   surface: '#ffffff',
-  surfaceHover: '#f1f2f5',
-  border: '#e5e7eb',
-  borderSoft: '#eef0f6',
-  borderStrong: '#d7dce7',
-  textPrimary: '#111827',
-  textSecondary: '#4b5563',
-  textMuted: '#6b7280',
+  surfaceHover: '#f2f4f7',
+  border: '#d0d5dd',
+  borderSoft: '#e4e7ec',
+  borderStrong: '#98a2b3',
+  textPrimary: '#101828',
+  textSecondary: '#475467',
+  textMuted: '#667085',
   accent: '#1d3fd1',
   accentStrong: '#1633a8',
   accentSoft: '#e9edfb',

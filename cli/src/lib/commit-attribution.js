@@ -2,14 +2,20 @@ import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import {
   accessSync,
+  closeSync,
   constants,
+  fstatSync,
+  lstatSync,
   mkdtempSync,
+  openSync,
+  readFileSync,
+  readlinkSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const GIT_HOOKS = [
@@ -77,6 +83,145 @@ const seatAddressId = (agentName, instanceId) => {
 // resolves the original hooks itself at commit time.
 const GIT_PROBE_TIMEOUT_MS = 5000;
 
+const directoryOrNull = (path) => {
+  try {
+    return statSync(path).isDirectory() ? path : null;
+  } catch {
+    return null;
+  }
+};
+
+// A regular file's text, or null. The open does not block, so a FIFO or a
+// device where git keeps a file is refused instead of hanging the caller.
+const readRegularFile = (path) => {
+  let fd = null;
+  try {
+    fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
+    return fstatSync(fd).isFile() ? readFileSync(fd, 'utf8') : null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
+};
+
+// One git config value: quotes group, a backslash escapes the next character,
+// and an unquoted # or ; starts a comment. Whitespace around the value is
+// dropped unless it is quoted.
+const configValue = (raw) => {
+  let value = '';
+  let kept = 0;
+  let quoted = false;
+  for (let index = 0; index < raw.length; index += 1) {
+    const character = raw[index];
+    if (character === '\\' && index + 1 < raw.length) {
+      index += 1;
+      value += raw[index];
+      kept = value.length;
+    } else if (character === '"') {
+      quoted = !quoted;
+    } else if (!quoted && (character === '#' || character === ';')) {
+      break;
+    } else if (quoted || value || !/\s/.test(character)) {
+      value += character;
+      if (quoted) kept = value.length;
+    }
+  }
+  return value.slice(0, kept) + value.slice(kept).trimEnd();
+};
+
+// The last core.hooksPath in one config file, or null. `include` and
+// conditional includes are not followed.
+const configuredHooksPath = (configPath) => {
+  const text = readRegularFile(configPath);
+  if (text === null) return null;
+  let inCore = false;
+  let hooksPath = null;
+  for (const rawLine of text.split(/\r?\n/)) {
+    let line = rawLine.trim();
+    const section = /^\[\s*([A-Za-z0-9.-]+)\s*("[^"]*")?\s*\]/.exec(line);
+    if (section) {
+      inCore = section[1].toLowerCase() === 'core' && !section[2];
+      line = line.slice(section[0].length).trim();
+    }
+    const entry = inCore && /^hookspath\s*=(.*)$/i.exec(line);
+    if (entry) hooksPath = configValue(entry[1]);
+  }
+  return hooksPath || null;
+};
+
+// Git opens a git directory only if its HEAD names a ref or an object id and
+// its common directory holds objects/ and refs/.
+const isGitDirectory = (gitDir, commonDir) => {
+  if (!directoryOrNull(join(commonDir, 'objects')) || !directoryOrNull(join(commonDir, 'refs'))) {
+    return false;
+  }
+  const head = join(gitDir, 'HEAD');
+  try {
+    if (lstatSync(head).isSymbolicLink()) return readlinkSync(head).startsWith('refs/');
+    const line = (readRegularFile(head) ?? '').split('\n')[0];
+    return /^ref:\s*refs\//.test(line) || /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(line);
+  } catch {
+    return false;
+  }
+};
+
+// Git refuses a repository whose files another user owns, unless global
+// safe.directory config allows it. That config is not read here, so such a
+// repository yields no hooks, which is git's own answer without it.
+const ownedByThisUser = (path) => {
+  if (typeof process.geteuid !== 'function') return false;
+  try {
+    return lstatSync(path).uid === process.geteuid();
+  } catch {
+    return false;
+  }
+};
+
+// The hooks directory a commit in `cwd` would use, read from the repository's
+// own files without running git: core.hooksPath from the repository config,
+// else the hooks folder of the common git directory (a linked worktree shares
+// its main repository's). Global config and includes are not read. `~` expands
+// against the HOME the probe gave git, as git itself would. The nearest .git
+// must be a repository this user owns, or there are no hooks. Git would walk
+// on past a .git directory that is not a repository, and this stops there.
+const hooksPathFromGitFiles = (cwd, env) => {
+  let top = resolve(cwd);
+  let entry = join(top, '.git');
+  let entryStat = null;
+  for (;;) {
+    try {
+      entryStat = statSync(entry);
+      break;
+    } catch {
+      if (dirname(top) === top) return null;
+      top = dirname(top);
+      entry = join(top, '.git');
+    }
+  }
+  // Ownership is settled before any of the repository's files is read.
+  if (!ownedByThisUser(top) || !ownedByThisUser(entry)) return null;
+  let gitDir = entry;
+  if (entryStat.isFile()) {
+    const pointer = /^gitdir:\s*(.+?)\s*$/m.exec(readRegularFile(entry) ?? '');
+    if (!pointer) return null;
+    gitDir = resolve(top, pointer[1]);
+    if (!ownedByThisUser(gitDir)) return null;
+  }
+  // A main repository has no commondir file.
+  const commonDirFile = readRegularFile(join(gitDir, 'commondir'));
+  const commonDir = commonDirFile === null ? gitDir : resolve(gitDir, commonDirFile.trim());
+  if (!isGitDirectory(gitDir, commonDir)) return null;
+  const configured = configuredHooksPath(join(commonDir, 'config'));
+  if (!configured) return directoryOrNull(join(commonDir, 'hooks'));
+  if (configured === '~' || configured.startsWith('~/')) {
+    return env.HOME ? directoryOrNull(join(env.HOME, configured.slice(1))) : null;
+  }
+  // Git runs hooks from the top of the working tree, so a relative path
+  // resolves there.
+  return directoryOrNull(resolve(top, configured));
+};
+
 const resolveOriginalHooksPath = (cwd, env) => {
   const result = spawnSync(
     'git',
@@ -90,13 +235,31 @@ const resolveOriginalHooksPath = (cwd, env) => {
       killSignal: 'SIGKILL',
     },
   );
-  if (result.error || result.status !== 0 || !result.stdout?.trim()) return null;
-  const hooksPath = resolve(result.stdout.trim());
-  try {
-    return statSync(hooksPath).isDirectory() ? hooksPath : null;
-  } catch {
+  if (result.error?.code === 'ETIMEDOUT') {
+    // The open() that stalled git would stall this process too, and a
+    // synchronous read cannot be timed out, so nothing is read here. A git
+    // that cannot open the repository cannot commit in it either.
+    // eslint-disable-next-line no-console
+    console.warn(`[commit-attribution] git did not answer in ${GIT_PROBE_TIMEOUT_MS / 1000}s in ${cwd}, `
+      + 'so a confined seat is not granted this repository\'s hooks this turn');
     return null;
   }
+  if (result.error || result.status !== 0 || !result.stdout?.trim()) {
+    // A confined seat can only run the hooks it is granted. A hook it is not
+    // granted is skipped without a word, or refuses the commit where the jail
+    // can see the file but not run it. So read the hooks directory from the
+    // repository's files instead.
+    const fallback = hooksPathFromGitFiles(cwd, env);
+    if (fallback) {
+      const reason = result.error?.code || `exit ${result.status}`;
+      // eslint-disable-next-line no-console
+      console.warn(`[commit-attribution] git could not report the hooks directory (${reason}), `
+        + `so ${fallback} was read from the repository's files`);
+    }
+    return fallback;
+  }
+  // Only git's newline ends the line, since a path can end in a space.
+  return directoryOrNull(resolve(result.stdout.replace(/\r?\n$/, '')));
 };
 
 const resolveGitConfigCount = (env) => {
@@ -192,8 +355,8 @@ export const prepareCommitAttribution = ({
     COMMONLY_AGENT_GIT_CONFIG_BASE_COUNT: String(configIndex),
     COMMONLY_AGENT_HOOKS_PATH: hooksDirectory,
     // The sandbox adapters allow the workspace's existing hook files. The
-    // proxy resolves the target repo's path at hook time; a confined seat may
-    // fail closed if that repo's hook lies outside the workspace allowlist.
+    // proxy resolves the target repo's path at hook time, and a confined seat
+    // cannot run a hook outside what it was granted.
     ...(originalHooksPath ? { COMMONLY_AGENT_ORIGINAL_HOOKS_PATH: originalHooksPath } : {}),
     COMMONLY_AGENT_SEAT_NAME: cleanSingleLine(displayName || agentName, 'agent'),
     COMMONLY_AGENT_SEAT_ID: seatAddressId(agentName, instanceId),

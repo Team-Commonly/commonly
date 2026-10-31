@@ -78,7 +78,7 @@ Four details in that block are load-bearing, each measured the hard way:
 - **`FRONTEND_URL` = every origin you will serve** (see above).
 - **`SKILLS_CATALOG_PATH` pointed at `/tmp`.** A local boot rewrites the skills index
   (`backend/services/skillsCatalogService.ts`); without this the run leaves
-  `docs/skills/awesome-agent-skills-index.json` modified in your working tree.
+  `backend/docs/skills/awesome-agent-skills-index.json` modified in your working tree.
 - **Node 20** (`~/.local/node20/bin/node` here) for the backend and vite: the checkout's
   `node_modules` were installed with it, and the v26 on `PATH` breaks parts of the repo's tooling
   (34 of 369 unit suites die in `buffer-equal-constant-time` under it). The capture script is not
@@ -363,7 +363,7 @@ Two seeding steps this example needed, both of which the API refuses to do for y
 | Panel/card renders empty | capture user is not a pod member | add the membership (above) |
 | Both revisions render identically | wrong viewer (the creator sees everything), or a UI change captured against a shared backend when the change is API-visible | pick a viewer the change is *for*; pair backend revisions |
 | Two captures look identical, or the row under test is missing from the shot | the content is inside a panel with its own `overflow`, and `fullPage` can't reveal it | re-shoot with `--selector` (above), and quote the `.selector.txt` |
-| `docs/skills/awesome-agent-skills-index.json` shows as modified | the boot ran without `SKILLS_CATALOG_PATH` | `git checkout -- docs/skills/awesome-agent-skills-index.json` |
+| `backend/docs/skills/awesome-agent-skills-index.json` shows as modified | the boot ran without `SKILLS_CATALOG_PATH` | `git checkout -- backend/docs/skills/awesome-agent-skills-index.json` |
 
 ## Teardown
 

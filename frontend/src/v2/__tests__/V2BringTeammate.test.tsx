@@ -127,7 +127,7 @@ test('a retry shares its read across visibility changes and retains the new link
   expect(screen.getByRole('textbox')).toHaveValue(`${window.location.origin}/v2/invite/${token}`);
 });
 
-test('D139 marks: showing the card pings invite-card-shown; dismissing pings invite-card-dismissed', () => {
+test('marks: showing the card pings invite-card-shown; dismissing pings invite-card-dismissed', () => {
   const view = render(<V2BringTeammate {...props} enabled={false} />);
   expect(mockRecordOnce).not.toHaveBeenCalled();
   view.rerender(<V2BringTeammate {...props} enabled />);
@@ -137,7 +137,7 @@ test('D139 marks: showing the card pings invite-card-shown; dismissing pings inv
   expect(mockRecord).toHaveBeenCalledWith(mockApi, 'invite-card-dismissed');
 });
 
-test('D139 marks: a card dismissed earlier never pings shown', () => {
+test('marks: a card dismissed earlier never pings shown', () => {
   const view = render(<V2BringTeammate {...props} />);
   fireEvent.click(screen.getByRole('button', { name: 'teammate.dismiss' }));
   view.unmount();

@@ -1,0 +1,58 @@
+{
+ "sidebar-1440": {
+  "helperWords": 25,
+  "innerRatio": 1
+ },
+ "sidebar-390": {
+  "helperWords": 16,
+  "innerRatio": 1
+ },
+ "chat-1440": {
+  "helperWords": 35,
+  "innerRatio": 5.32
+ },
+ "chat-390": {
+  "helperWords": 5,
+  "innerRatio": 6.28
+ },
+ "board-1440": {
+  "helperWords": 71,
+  "innerRatio": 1
+ },
+ "board-390": {
+  "helperWords": 14,
+  "innerRatio": 1
+ },
+ "agent-memory-1440": {
+  "helperWords": 28,
+  "innerRatio": 1
+ },
+ "agent-memory-390": {
+  "helperWords": 9,
+  "innerRatio": 1
+ },
+ "agent-settings-1440": {
+  "helperWords": 19,
+  "innerRatio": 1
+ },
+ "agent-settings-390": {
+  "helperWords": 7,
+  "innerRatio": 1
+ },
+ "settings-1440": {
+  "helperWords": 10,
+  "innerRatio": 1
+ },
+ "settings-390": {
+  "helperWords": 5,
+  "innerRatio": 1
+ },
+ "connectors-1440": {
+  "helperWords": 29,
+  "innerRatio": 1
+ },
+ "connectors-390": {
+  "helperWords": 1,
+  "innerRatio": 1
+ }
+}

@@ -102,7 +102,7 @@ const renderPage = () => render(
 
 // The reconciler's own constant — the reason a person reads when the channel
 // record behind a connector is gone. It replaced the old 'projection missing'
-// wording in the TASK-131 copy pass (wren 73914, vera 73915).
+// wording in the TASK-131 copy pass.
 const REASON_CHANNEL_GONE = "This connector's channel is gone. Retry to rebuild it.";
 
 describe('V2ConnectorsPage', () => {
@@ -166,7 +166,7 @@ describe('V2ConnectorsPage', () => {
       if (url === '/api/integrations/user/all') return Promise.resolve({ data: [connectors[1]] });
       if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Launch pod', type: 'chat' }] });
       if (url === '/api/installables') return Promise.resolve({ data: { installables: [toolsEntry] } });
-      if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { podId: 'p1', grants: [grant] } });
+      if (url === '/api/grants') return Promise.resolve({ data: { grants: [grant] } });
       if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [] } });
       if (url.includes('/calls')) {
         return Promise.resolve({ data: { grantId: 'grant_live', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
@@ -440,7 +440,7 @@ describe('V2ConnectorsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
     const refusal = await screen.findByText(/bound to Rewire Live Demo/);
     expect(refusal).toBeInTheDocument();
-    // TASK-154 item 6 (wren): the old copy ('Remove it to bind a different
+    // TASK-154 item 6: the old copy ('Remove it to bind a different
     // pod') taught the one-pod model. The refusal is about the bind, and other
     // pods reach the channel through the switches. TASK-173: the arm used to
     // pin the word 'gate switches', which is this file's internal name and no
@@ -744,7 +744,7 @@ describe('V2ConnectorsPage', () => {
     expect(reviewLink).toHaveAttribute('rel', 'noopener noreferrer');
     const notice = screen.getByRole('status');
     expect(notice).toHaveTextContent(
-      'Your previous Linear account may still have Commonly connected. Switch to it on Linear, then remove Commonly there.',
+      'Your previous Linear account may still have an MCP grant connected. Switch to it in Linear, then revoke the MCP grant under Linear\'s connected apps.',
     );
     expect(notice.closest('.v2-connector-row')).toHaveTextContent('Linear');
     expect(window.location.search).toBe('');
@@ -770,13 +770,83 @@ describe('V2ConnectorsPage', () => {
       expect(reviewLink).toHaveAttribute('href', revokePage);
       const notice = screen.getByRole('status');
       expect(notice).toHaveTextContent(
-        '你之前的 Linear 账号可能仍保留对 Commonly 的授权。请在 Linear 切换到那个账号，再在那里移除 Commonly。',
+        '你之前的 Linear 账号可能仍连着一个 MCP 授权。请在 Linear 切换到那个账号，再在其已连接应用中撤销该 MCP 授权。',
       );
       expect(notice.closest('.v2-connector-row')).toHaveTextContent('Linear');
       expect(window.location.search).toBe('');
     } finally {
       await act(async () => { await i18n.changeLanguage('en'); });
     }
+  });
+
+  it('warns that removing Supabase authorization disconnects everyone in the organization', async () => {
+    const revokePage = 'https://supabase.com/dashboard/org/_/apps';
+    window.history.replaceState(
+      {},
+      '',
+      `/v2/connectors?hostedMcp=connected&entryId=supabase&revokeAt=${encodeURIComponent(revokePage)}`,
+    );
+    mockGets([{
+      _id: 'i-supabase', type: 'hosted-mcp', status: 'connected',
+      config: { entryId: 'supabase', revokePage },
+    }], [{
+      ...hostedLinearCatalogEntry('i-supabase'),
+      installableId: 'supabase', label: 'Supabase', entryId: 'supabase',
+    }]);
+    renderPage();
+
+    const reviewLink = await screen.findByRole('link', { name: 'Open Supabase Authorized apps' });
+    expect(reviewLink).toHaveAttribute('href', revokePage);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Removing Commonly under Authorized apps disconnects everyone who connected that organization.',
+    );
+    expect(screen.getByRole('status')).not.toHaveTextContent('remove Commonly there');
+  });
+
+  it('warns that revoking the Sentry MCP app ends every client that server holds, and does not name Commonly', async () => {
+    const revokePage = 'https://sentry.io/settings/account/api/authorizations/';
+    window.history.replaceState(
+      {},
+      '',
+      `/v2/connectors?hostedMcp=connected&entryId=sentry&revokeAt=${encodeURIComponent(revokePage)}`,
+    );
+    mockGets([{
+      _id: 'i-sentry', type: 'hosted-mcp', status: 'connected',
+      config: { entryId: 'sentry', revokePage },
+    }], [{
+      ...hostedLinearCatalogEntry('i-sentry'),
+      installableId: 'sentry', label: 'Sentry', entryId: 'sentry',
+    }]);
+    renderPage();
+
+    const reviewLink = await screen.findByRole('link', { name: "Open Sentry's connected apps" });
+    expect(reviewLink).toHaveAttribute('href', revokePage);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      "Revoking it ends every client that server holds for the account, not only Commonly.",
+    );
+    expect(screen.getByRole('status')).not.toHaveTextContent('remove Commonly there');
+  });
+
+  it('keeps the generic manual-revoke copy for an entry without its own', async () => {
+    const revokePage = 'https://airtable.com/account/security';
+    window.history.replaceState(
+      {},
+      '',
+      `/v2/connectors?hostedMcp=connected&entryId=airtable&revokeAt=${encodeURIComponent(revokePage)}`,
+    );
+    mockGets([{
+      _id: 'i-airtable', type: 'hosted-mcp', status: 'connected',
+      config: { entryId: 'airtable', revokePage },
+    }], [{
+      ...hostedLinearCatalogEntry('i-airtable'),
+      installableId: 'airtable', label: 'Airtable', entryId: 'airtable',
+    }]);
+    renderPage();
+
+    expect(await screen.findByRole('link', { name: "Open Airtable's connected apps" })).toHaveAttribute('href', revokePage);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Your previous Airtable account may still have Commonly connected. Switch to it on Airtable, then remove Commonly there.',
+    );
   });
 
   it('does not turn a callback query into a provider link unless it matches the row', async () => {
@@ -836,7 +906,7 @@ describe('V2ConnectorsPage', () => {
     expect(screen.queryByText('The connection dropped.')).toBeNull();
   });
 
-  it('does not print a provider error text in a connector row, only a message written for a person (vera 73848)', async () => {
+  it('does not print a provider error text in a connector row, only a message written for a person', async () => {
     // `Integration.errorMessage` has an older writer: externalFeedService copies
     // a provider's response, or a raw exception message, into it for the `x` and
     // `instagram` rows. Those rows reach this same error branch, so a value in
@@ -1029,7 +1099,7 @@ describe('V2ConnectorsPage', () => {
       expect(screen.queryByText('Setup didn’t finish.')).toBeNull();
     });
 
-    // Tools plan (Sam's option A, two lists): a tool Installable shares the
+    // Tools plan (option A, two lists): a tool Installable shares the
     // catalogue response but belongs to the Tools page, never to this one.
     it('a tool Installable in the catalogue never renders as a channel row', async () => {
       mockCatalog([
@@ -1114,6 +1184,22 @@ describe('V2ConnectorsPage', () => {
       expect(screen.getByText('Not offered on this instance.')).toBeInTheDocument();
     });
 
+    it('renders the zh-CN catalog copy for a channel row and the server text for an unmapped one', async () => {
+      mockCatalog([
+        entry({ list: 'channels' }),
+        entry({ installableId: 'acme-chat', label: 'Acme Chat', description: 'Acme chat server copy.' }),
+      ]);
+      await i18nReady;
+      await act(async () => { await i18n.changeLanguage('zh-CN'); });
+      try {
+        renderPage();
+        expect(await screen.findByText('把你的 Telegram 聊天接入 Commonly，你开启的每个 Pod 都能把消息发到这里。')).toBeInTheDocument();
+        expect(screen.getByText('Acme chat server copy.')).toBeInTheDocument();
+      } finally {
+        await act(async () => { await i18n.changeLanguage('en'); });
+      }
+    });
+
     it('describes Discord only through the catalog, never as a provider we have not built', async () => {
       mockCatalog([
         entry({ installableId: 'discord', label: 'Discord', available: false, unavailableReason: 'not_configured' }),
@@ -1130,7 +1216,7 @@ describe('V2ConnectorsPage', () => {
 
     it('offers a rostered provider with Add, and an unmapped one inherits no onboarding sentence', async () => {
       // Slack's line is in the map; Discord's is not. The point of the map is
-      // that Discord renders NO sentence rather than Slack's (Vera 71165).
+      // that Discord renders NO sentence rather than Slack's.
       mockCatalog([
         entry({ installableId: 'discord', label: 'Discord', available: true, offered: true }),
         entry({ installableId: 'slack', label: 'Slack', available: true, offered: true }),
@@ -1148,13 +1234,29 @@ describe('V2ConnectorsPage', () => {
       expect(screen.queryByText(/Tell us which channel/)).toBeNull();
     });
 
-    it('reads a usable-but-unrostered provider as not connectable, with no Add anywhere', async () => {
-      // The ruled middle state (Wren 71170/71174): this instance can use Discord
-      // and there is no builtin Installable row to install, so the row states the
-      // state and offers no action. Before this, the row rendered an Add whose
-      // click ended in 404 installable_not_found (Wren 71162/71163).
+    it('does not list a provider this instance does not offer (D215)', async () => {
+      // Discord on commonly.me: usable keys, no builtin Installable row, never
+      // walked. A stranger must not see it, not even in the inactive fold.
       mockCatalog([
+        entry(),
         entry({ installableId: 'discord', label: 'Discord', available: true, offered: false }),
+      ]);
+      renderPage();
+
+      await screen.findByText('Telegram');
+      // The fold only exists when a dead row does, so its absence is the
+      // assertion; a collapsed fold would hide a listed Discord from queryByText.
+      expect(screen.queryByRole('button', { name: /^inactive · \d+$/ })).toBeNull();
+      expect(screen.queryByText('Discord')).toBeNull();
+    });
+
+    it('keeps an installed but no-longer-offered provider as not connectable, with no Add anywhere', async () => {
+      // The ruled middle state, now reachable only by someone who installed it
+      // before the roster row went away: the row states the state and offers no
+      // action. Before #1826 the row rendered an Add whose click ended in 404
+      // installable_not_found.
+      mockCatalog([
+        entry({ installableId: 'discord', label: 'Discord', available: true, offered: false, installation: { status: 'active', boundPodId: 'p1' } }),
       ]);
       renderPage();
 
@@ -1174,7 +1276,7 @@ describe('V2ConnectorsPage', () => {
       // The eyebrow must not contradict the line under it. `notEnabled` drives
       // this row's class and Ask link, so it also drove the kicker: the keys-set
       // render read "not enabled" directly above "Not connectable yet." — asking
-      // an operator for credentials the instance already has (Vera, #1826).
+      // an operator for credentials the instance already has (#1826).
       // TASK-338: a dead row carries no state word in its kicker; the fold and
       // the line say it.
       expect(roster.querySelector('.v2-connector-row__kicker')).toBeEmptyDOMElement();
@@ -1184,6 +1286,20 @@ describe('V2ConnectorsPage', () => {
       expect(screen.queryByRole('button', { name: 'Add' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Connect a channel' })).toBeNull();
       expect(screen.queryByText(/Tell us which channel/)).toBeNull();
+    });
+
+    it('keeps a no-longer-offered provider listed when the person has only an integration row', async () => {
+      // The third arm of the D215 filter: a channel connected before the roster
+      // row went away can leave an integration with no installation. Dropping it
+      // from the list would hide a live connection from its owner.
+      mockCatalog([
+        entry({ installableId: 'discord', label: 'Discord', available: true, offered: false, integration: liveIntegration() }),
+      ]);
+      renderPage();
+
+      await openInactiveFold();
+      const row = (await screen.findByText('Unavailable here.')).closest('.v2-connector-row') as HTMLElement;
+      expect(row.textContent).toContain('Discord');
     });
 
     it('renders an unavailable provider with a state line and an available one with Add', async () => {
@@ -1473,7 +1589,7 @@ describe('V2ConnectorsPage', () => {
 
       expect(await screen.findByText('Rewire crew · linked to Rewire Live Demo')).toBeInTheDocument();
       expect(screen.getByText('Pods that reach this channel')).toBeInTheDocument();
-      // The anchors, measured rather than assumed (Vera's gate): the aside that
+      // The anchors, measured rather than assumed: the aside that
       // holds that section is reachable by its ACCESSIBLE NAME and never as
       // text. A copy that names it sends a sighted user hunting, which is the
       // defect TASK-173 was opened for — so the distinction is witnessed here,

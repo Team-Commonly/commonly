@@ -196,8 +196,8 @@ const sanitizeRuntimeConfig = (runtimeConfig: any, agentName?: string) => {
     : [];
   // `rest` must still carry `wrappedCli` so normalizeRuntimeIdentity can
   // read it for the legacy `local-cli` rewrite. The pre-fix version
-  // destructured wrappedCli out before this call → legacy installs (sam-
-  // local-codex et al) stayed as runtimeType:'local-cli' on the wire and
+  // destructured wrappedCli out before this call → legacy installs (local
+  // wrapper seats) stayed as runtimeType:'local-cli' on the wire and
   // the inspector showed "Local CLI · BYO" instead of "Codex · BYO".
   const { runtimeType, host } = normalizeRuntimeIdentity(rest, agentName);
   // Strip `wrappedCli` from the response only AFTER normalization so
@@ -255,7 +255,7 @@ const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
       // `process.env.TELEGRAM_BOT_TOKEN` (`routes/webhooks/telegram.ts`,
       // `services/telegramBridgeService.ts`, `decisionCardReconcileService.ts`,
       // both provisioners). This was the only reader that preferred a per-row
-      // copy (TASK-140, Wren 74155).
+      // copy (TASK-140).
       const botToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
       // The instance's, not the row's (TASK-141): `secretToken` is stripped from
       // a body like the two Slack keys above.
@@ -323,7 +323,7 @@ const composeInstallIntro = ({
   // Under the boolean, a gone-dark agent was told "Nothing is running me yet"
   // — flat-certain AND factually wrong, since it demonstrably ran. Asserting a
   // guess in the agent's own voice is the very defect this function exists to
-  // remove, so the hedge is not decoration (ux-lead, fleet review 2026-08-14).
+  // remove, so the hedge is not decoration (fleet review 2026-08-14).
   state: string;
   fixCommand: string;
 }): string => {
@@ -361,7 +361,7 @@ const composeInstallIntro = ({
   return `${lead} Mention me with @${handle} when you need me.`;
 };
 
-// Internal ops/smoke/demo seats (Wren spec §1.1, BEND-3 follow-up #1377):
+// Internal ops/smoke/demo seats (spec §1.1, BEND-3 follow-up #1377):
 // the roster hides these behind a disclosure. The classification lives HERE,
 // at the boundary, so every consumer reads one `internal: true` flag instead
 // of curating its own name list — the client-side constant this replaces was
@@ -370,10 +370,10 @@ const composeInstallIntro = ({
 // create without the flag.
 // A seat is one runtime, but attach writes its runtime identity only onto the
 // install where it ran, so the seat's installs in other pods keep an older
-// identity or none (TASK-569: Sprint Review read claude-code in Sharpen and
+// identity or none (TASK-569: Sprint Review read claude-code in one pod and
 // nothing in Core runtime). Every pod therefore reads the seat's identity from
 // its most recently written install that declares one. Most recent, never the
-// first match, so a harness swap made in one pod shows in all of them (D55).
+// first match, so a harness swap made in one pod shows in all of them.
 // The four keys move as a group: an older install's adapter must not outlive
 // a newer install's runtimeType, which would bring back the stale chip.
 const runtimeIdentityKey = (agentName: any, instanceId: any) => `${agentName}:${instanceId || 'default'}`;
@@ -477,15 +477,18 @@ const buildAgentInstallationPayload = (installation: any, {
   }
   // Chat attributes this seat through the User principal. Use that same
   // resolver for the listing; scoped names are only a fallback for installs
-  // that have no User row yet.
+  // that have no User row yet. A scoped name equal to the agentName is the
+  // runtime or type label, not a name, so the listing never carries it (TASK-551).
   const profileDisplayName = typeof profile?.name === 'string' ? profile.name.trim() : '';
   const installationDisplayName = typeof installation.displayName === 'string'
     ? installation.displayName.trim()
     : '';
   const identityFallback = installation.agentName || '';
+  const scopedDisplayName = [profileDisplayName, installationDisplayName]
+    .find((name) => name && name !== identityFallback) || '';
   const displayName = user
     ? resolveAgentDisplayLabel(user, identityFallback)
-    : profileDisplayName || installationDisplayName || identityFallback;
+    : scopedDisplayName;
   return {
     name: installation.agentName,
     instanceId: installation.instanceId || 'default',
@@ -503,7 +506,7 @@ const buildAgentInstallationPayload = (installation: any, {
     lastActiveAt: lastActiveAt || lastHeartbeatAt,
     usage: installation.usage,
     internal: isInternalSeat(installation.agentName, normalizedConfig),
-    // Wren spec §1.1 line 2: what the agent last said, pre-trimmed. Null when
+    // Spec §1.1 line 2: what the agent last said, pre-trimmed. Null when
     // it has never spoken in this pod (or the PG lookup was skipped/failed —
     // the roster never fails over a snippet).
     lastMessage: lastMessage && toSnippet(lastMessage.content)
@@ -512,14 +515,14 @@ const buildAgentInstallationPayload = (installation: any, {
     installedBy: installation.installedBy?.toString?.() || installation.installedBy,
     // The portable principal's id, so a client can key per-agent attention
     // (AttentionItem.actorUserId) on it instead of matching names — three
-    // writers store three different name shapes (ux-lead, Sharpen 66164).
+    // writers store three different name shapes.
     userId: user?._id ? String(user._id) : null,
     // Chat reads this image from the same User principal. Installation and
     // registry artwork must not stand in for an agent's account avatar.
     profilePicture: user?.profilePicture || null,
     // Direction C Your Team card, line 3: one sentence from the curated
     // `botMetadata.description`. Null when unset — the card renders no line,
-    // never a quote (ux-lead 66163).
+    // never a quote.
     description: typeof user?.botMetadata?.description === 'string' && user.botMetadata.description.trim()
       ? user.botMetadata.description.trim()
       : null,

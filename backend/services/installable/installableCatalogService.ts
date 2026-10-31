@@ -36,8 +36,8 @@ const providerReadiness = (installableId: string): ProviderReadiness | null => {
 // Declaring `readiness` is a claim about CAPABILITY; having a builtin active
 // Installable row is the claim about OFFERABILITY. They are different questions
 // and only one of them was being asked, which is how a provider could render as
-// connectable and then die on Add with `installable_not_found` (Vera 71152,
-// Wren 71169). `offeredByRoster` is the single decision; the two readers below
+// connectable and then die on Add with `installable_not_found`.
+// `offeredByRoster` is the single decision; the two readers below
 // differ only in cardinality, because the catalog has the rows in hand and the
 // route has one id.
 const offeredByRoster = (installable: unknown): boolean => Boolean(installable);
@@ -113,7 +113,7 @@ const publicConnection = (integration: any) => ({
 });
 
 /**
- * Sam's option A is two lists (tools plan): the Tools page draws these rows,
+ * Option A is two lists (tools plan): the Tools page draws these rows,
  * the Connectors page skips them by `list`. A tool row carries what its Add
  * form needs — the allow-list projected from the broker's definitions, the
  * broker it names, and the caller's own Connections — and never a credential.
@@ -232,7 +232,7 @@ const catalogFor = async (userId: string): Promise<{ installables: unknown[]; hi
         list: 'channels',
         // The row's name comes from the roster when there is one, and from the
         // manifest's own catalog block when there is not. Falling back to the
-        // raw id is what put a lowercase `discord` on the page (Wren 71162).
+        // raw id is what put a lowercase `discord` on the page.
         label: installable?.name || providerLabel(installableId),
         description: installable?.description || '',
         available: readiness.available,

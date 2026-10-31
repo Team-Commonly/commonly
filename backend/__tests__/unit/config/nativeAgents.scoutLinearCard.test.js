@@ -1,5 +1,5 @@
 /**
- * Scout posts Linear list results as a kind:'ui' card (TASK-573, D98).
+ * Scout posts Linear list results as a kind:'ui' card (TASK-573).
  *
  * The prompt is the only thing that tells Scout the card exists, so these tests
  * pin three things: the catalogue tuple it quotes is the live revision file (not

@@ -218,10 +218,10 @@ export interface IUser extends Document {
     byoCommandType?: 'mcp' | 'cli';
     /** First authenticated BYO runtime request, never overwritten. */
     byoFirstConnectionAttemptAt?: Date;
-    /** First "invite a teammate" card mounted, and first dismissed (D139). */
+    /** First "invite a teammate" card mounted, and first dismissed. */
     inviteCardShownAt?: Date;
     inviteCardDismissedAt?: Date;
-    /** First Bring your own start mounted in a thread (D139). */
+    /** First Bring your own start mounted in a thread. */
     byoOfferShownAt?: Date;
     // The first-touch ref code the signup arrived with (?ref=x), set once at
     // account creation (utils/signupRef.ts).

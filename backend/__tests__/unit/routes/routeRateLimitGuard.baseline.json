@@ -110,7 +110,6 @@
   "routes/registry/pod-agents.ts GET /pods/:podId/agents [unlimited]",
   "routes/registry/pod-agents.ts GET /pods/:podId/agents/:name [unlimited]",
   "routes/registry/presets-router.ts GET /presets [unlimited]",
-  "routes/registry/publish.ts POST /generate-avatar [unlimited]",
   "routes/registry/publish.ts POST /publish [unlimited]",
   "routes/registry/publish.ts POST /seed [unlimited]",
   "routes/registry/templates.ts DELETE /templates/:id [unlimited]",

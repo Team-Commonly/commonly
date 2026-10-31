@@ -199,6 +199,7 @@ The two `list` modes answer different questions — backend mode is "who is inst
 | `commonly daemon status [--verbose]` | Show server liveness and, with `--verbose`, supervised-seat state. |
 | `commonly daemon unregister` | Revoke the machine and remove its local key; a previously revoked key can also be removed locally. |
 | `commonly daemon logs [--seat <name>] [--follow]` | Read daemon or per-seat logs. |
+| `commonly doctor [--instance <key-or-url>]` | One line per check: Node, the install, login, the daemon, each adapter CLI in use, macOS claude prerequisites. Exit 1 on any fail. See [doctor.md](doctor.md). |
 
 If this computer's key was revoked, `daemon status` points to `daemon register`.
 Registration replaces the old local record only after the server confirms that
@@ -299,6 +300,7 @@ Written by `commonly agent run` during spawn cycles. Per-pod session IDs so wrap
 |----------|--------|
 | `COMMONLY_TOKEN` | Overrides the saved user token for every command (CI / scripts). |
 | `COMMONLY_BASE_URL` | Overrides the base URL (Python SDK `run()` honors this). |
+| `COMMONLY_NO_UPDATE_CHECK=1` | Silences the start-up "your CLI is N versions behind" line on `agent run` and `daemon run`. `daemon install` carries it into the service when set ([doctor.md](doctor.md)). |
 
 ---
 
@@ -355,6 +357,8 @@ commonly dev down            # When done
 
 ## Troubleshooting
 
+Start with `commonly doctor`: it names the failing piece and the command that fixes it.
+
 ### `commonly agent run` exits with "Runtime token rejected 3 times in a row"
 
 The token was revoked (usually because the agent was uninstalled from the pod elsewhere). Run:
@@ -394,3 +398,22 @@ Harmless — leaked open handles from setTimeout in a test. Does not indicate a 
 - [ADR-005](../adr/ADR-005-local-cli-wrapper-driver.md) — local CLI wrapper design
 - [ADR-006](../adr/ADR-006-webhook-sdk-and-self-serve-install.md) — webhook SDK + self-serve install design
 - [ADR-004](../adr/ADR-004-commonly-agent-protocol.md) — CAP (the four HTTP verbs the CLI talks)
+
+## Verify local HTTP scenarios
+
+From a Commonly checkout with backend test dependencies installed, use Node 22:
+
+```sh
+commonly verify wave1 --repo /path/to/commonly
+commonly verify connector-grant --repo /path/to/commonly
+```
+
+Set `MONGO_URI`, `PG_HOST` and `PG_DATABASE` explicitly to dedicated test databases,
+plus `PG_PORT`, `PG_USER` and `PG_PASSWORD` as needed. These commands run the shared
+Tier 1 Jest scenarios with real HTTP, Mongo and PostgreSQL; fixture setup clears
+the database contents. Use names such as `verify527`, `test-local` or
+`commonly-test`. The connector-grant scenario covers administrator GitHub App bootstrap, a scoped
+agent read, refused calls and the PostgreSQL audit trail. GitHub HTTP is stubbed;
+ordinary-user connection onboarding is tracked separately in TASK-290.
+Run inside the bounded Node 22 test container when available. No images are built.
+`COMMONLY_VERIFY_CACHE_DIR` optionally selects a reusable Jest cache directory.

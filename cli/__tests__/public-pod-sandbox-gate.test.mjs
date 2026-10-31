@@ -46,7 +46,7 @@ describe('public-pod sandbox gate', () => {
   });
 
   test('accepts a legacy `internal` record, which means public here too', async () => {
-    // Vera 71715 / Wren 71718. `internal` is read as `public` by the attach
+    // `internal` is read as `public` by the attach
     // gate and by both adapters, so a raw compare here refused a record that
     // means public one call before the gate TASK-113 fixes — the row's claim
     // would be false with this path still throwing. No pod read: a declared

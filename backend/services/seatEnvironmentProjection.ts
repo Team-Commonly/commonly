@@ -133,8 +133,8 @@ export type SeatEnvironmentQuery = {
   /**
    * Daemon-projection scope: one owner's active installations. The only scope
    * either caller uses — `/assigned` resolves through the machine's owner, and
-   * the grant read mirrors it. An identity-wide scan was deliberately dropped
-   * (Vera 69881): for a seat with no machine binding it returned whichever row
+   * the grant read mirrors it. An identity-wide scan was deliberately dropped:
+   * for a seat with no machine binding it returned whichever row
    * Mongo happened to order first, which is a guess dressed as a verdict.
    */
   installedBy?: unknown;
@@ -191,7 +191,7 @@ export const projectSeatEnvironments = async (
     const runtime = config.runtime || null;
     // "Declares" means DELIVERS. A raw `environment: {}`, or one the allow-list
     // reduces to nothing, is silent — treating it as a declaration let an older
-    // empty row shadow a newer row's real pair (Vera, on 268370c1).
+    // empty row shadow a newer row's real pair (on 268370c1).
     const environment = config.environment ? projectEnvironment(config.environment) : null;
     if (!sourced.has(key) && (runtime || environment)) {
       entry.sourcePodId = install.podId ? String(install.podId) : null;
