@@ -1059,16 +1059,18 @@ const V2AgentBYO: React.FC = () => {
       {setupOs !== 'windows' && (
         <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">{t('agentByo.addComputer.recommended')}</p>
       )}
-      <div className="v2-byo__add-computer-row">
-        <code>{daemonCommand}</code>
-        <button
-          type="button"
-          className="v2-byo__copy"
-          onClick={() => copy('daemon-setup', daemonCommand)}
-        >
-          {copied === 'daemon-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
-        </button>
-      </div>
+      {setupOs !== 'windows' && (
+        <div className="v2-byo__add-computer-row">
+          <code>{daemonCommand}</code>
+          <button
+            type="button"
+            className="v2-byo__copy"
+            onClick={() => copy('daemon-setup', daemonCommand)}
+          >
+            {copied === 'daemon-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
+          </button>
+        </div>
+      )}
       <p className="v2-byo__hint">{t('agentByo.addComputer.after')}</p>
     </div>
   ) : null;
@@ -1689,6 +1691,18 @@ const V2AgentBYO: React.FC = () => {
           <details className="v2-byo__more" data-testid="byo-result-more-ways">
             <summary>{t('agentByo.otherWays.title')}</summary>
             {addComputerBlock}
+            {machines.length > 0 && (
+              // A computer on file: the machine choice is the start form's mode
+              // picker, which this result page does not show, so offer it here.
+              <button
+                type="button"
+                className="v2-byo__secondary"
+                data-testid="byo-result-on-my-computer"
+                onClick={() => { setIssued(null); chooseMode('machine'); }}
+              >
+                {t('agentByo.mode.machine')}
+              </button>
+            )}
             <div className="v2-byo__snippet">
               <div className="v2-byo__snippet-head">
                 <span>{t('agentByo.snippets.runtimeToken')}</span>

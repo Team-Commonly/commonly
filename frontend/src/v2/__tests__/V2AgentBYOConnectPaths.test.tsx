@@ -112,6 +112,10 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     const stops = screen.getByTestId('byo-listen-stops-on-close');
     expect(stops).not.toHaveTextContent(/add this computer/);
     expect(stops).toHaveTextContent(/start another agent and choose On my computer/);
+    // The choice the line names is on this page: clicking it opens machine mode.
+    fireEvent.click(screen.getByTestId('byo-result-on-my-computer'));
+    expect(screen.getByTestId('byo-mode-machine')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByText(/your connect command for/i)).toBeNull();
   });
 
   test('run path on Windows: no listener command, so no stop-on-close line', async () => {
@@ -136,9 +140,11 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     setUserAgent(WINDOWS);
     mockPage({ machines: [] });
     renderPage();
-    await screen.findByTestId('byo-add-computer');
+    const add = await screen.findByTestId('byo-add-computer');
     expect(screen.queryByTestId('byo-quick-try')).toBeNull();
     expect(screen.queryByTestId('byo-add-computer-recommended')).toBeNull();
+    // Windows gets no daemon command row: systemd cannot install there.
+    expect(add).not.toHaveTextContent('commonly daemon register && commonly daemon install');
   });
 
   test('with a computer already added, the quick-try line and the daemon block are both gone', async () => {
