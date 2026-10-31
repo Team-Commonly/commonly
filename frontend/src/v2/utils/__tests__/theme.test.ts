@@ -52,7 +52,7 @@ describe('v2 appearance preference (D216)', () => {
   test('setV2Theme crossfades inside a view transition when the browser supports it (TASK-700)', () => {
     const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
     const startViewTransition = jest.fn((cb: () => void) => cb());
-    doc.startViewTransition = startViewTransition;
+    doc.startViewTransition = startViewTransition as unknown as Document['startViewTransition'];
     try {
       setV2Theme('dark');
       expect(startViewTransition).toHaveBeenCalledTimes(1);
@@ -65,7 +65,7 @@ describe('v2 appearance preference (D216)', () => {
   test('setV2Theme skips the crossfade under reduced motion and without the API', () => {
     const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
     const startViewTransition = jest.fn((cb: () => void) => cb());
-    doc.startViewTransition = startViewTransition;
+    doc.startViewTransition = startViewTransition as unknown as Document['startViewTransition'];
     const original = window.matchMedia;
     window.matchMedia = jest.fn().mockImplementation((q: string) => ({ matches: q.includes('reduce'), media: q })) as unknown as typeof window.matchMedia;
     try {
