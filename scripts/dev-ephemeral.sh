@@ -148,16 +148,27 @@ up_ephemeral() {
   # scheduler out of a local walk, and LOCAL_DEV_LOGIN_ENABLED exposes the fixed dev login.
   # exec makes the subshell's PID the node PID, so backend.pid names the server itself.
   # Its stdio is detached, or the pipe into this script never closes.
-  (cd "$ROOT/backend" && exec env \
+  # env -i: the server gets only what it needs, so a prod MONGO_URI, JWT secret or API key in the
+  # caller's shell never reaches a local slot.
+  local launched_backend_pid
+  (cd "$ROOT/backend" && exec env -i \
+    PATH="$PATH" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" LANG="${LANG:-en_US.UTF-8}" \
     PORT="$BACKEND_PORT" \
     MONGO_URI="mongodb://$MONGO_CREDS@127.0.0.1:27017/$DB_NAME?authSource=admin" \
     PG_HOST=127.0.0.1 PG_PORT=5432 PG_USER="$PG_APP_USER" PG_PASSWORD="$PG_APP_PASSWORD" PG_DATABASE="$DB_NAME" \
     RUN_WORKER=0 LOCAL_DEV_LOGIN_ENABLED=true \
     NODE_OPTIONS="--max-old-space-size=768" \
     node dist/server.js </dev/null >"$SLOT_DIR/backend.log" 2>&1) </dev/null >/dev/null 2>&1 &
+  launched_backend_pid=$!
   wait_http "http://127.0.0.1:$BACKEND_PORT/api/health/live" backend "$SLOT_DIR/backend.log"
+  # The health check only proves that something answers the port. Require the listener to be the
+  # process we launched, or a stale server from another slot would be recorded as this slot's.
   local backend_pid
   backend_pid="$(listening_pid "$BACKEND_PORT")"
+  if [ "$backend_pid" != "$launched_backend_pid" ]; then
+    echo "port $BACKEND_PORT answered from pid $backend_pid, not the slot server ($launched_backend_pid)" >&2
+    exit 1
+  fi
   echo "$backend_pid" >"$SLOT_DIR/backend.pid"
 
   echo "🔨 Building frontend..."
