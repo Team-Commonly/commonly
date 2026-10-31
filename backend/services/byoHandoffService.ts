@@ -35,6 +35,20 @@ const safeName = (value: unknown): string => String(value || '')
 
 const safePodId = (value: unknown): string => String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '');
 
+// The instance this server answers on. A bare `commonly login` falls back to
+// the CLI's built-in production default, so a card posted by a dev or
+// self-hosted server would register the person's computer against commonly.me.
+// Only a plain http(s) origin is composed into the shell line.
+const PLAIN_ORIGIN = /^https?:\/\/[a-z0-9.-]+(:\d{1,5})?$/i;
+const publicApiOrigin = (): string => {
+  try {
+    const { origin } = new URL(process.env.PUBLIC_API_URL || process.env.BACKEND_URL || '');
+    return PLAIN_ORIGIN.test(origin) ? origin : '';
+  } catch {
+    return '';
+  }
+};
+
 const environmentPath = (os: ByoHandoffOs): string => {
   if (os === 'windows') return 'C:\\Users\\you\\agents\\environment.json';
   if (os === 'linux') return '/home/you/agents/environment.json';
@@ -58,6 +72,7 @@ export const buildByoHandoffCommand = ({
   agentName,
   memoryFrom,
   memoryInstance = 'default',
+  apiOrigin = '',
 }: {
   adapter: ByoHandoffAdapter;
   os: ByoHandoffOs;
@@ -65,13 +80,15 @@ export const buildByoHandoffCommand = ({
   agentName: string;
   memoryFrom?: string;
   memoryInstance?: string;
+  apiOrigin?: string;
 }): string => {
   const memoryFlags = memoryFrom ? ` --memory-from ${memoryFrom} --memory-instance ${memoryInstance}` : '';
   const attach = `commonly agent attach ${adapter} --pod ${podId} --name ${agentName}${memoryFlags}`;
   const withEnvironment = adapter === 'opencode' || adapter === 'dsh'
     ? `${attach} --env ${environmentPath(os)}`
     : attach;
-  return [installCommand(adapter), 'commonly login', withEnvironment, `commonly agent run ${agentName}`].join('\n');
+  const login = apiOrigin ? `commonly login --instance ${apiOrigin}` : 'commonly login';
+  return [installCommand(adapter), login, withEnvironment, `commonly agent run ${agentName}`].join('\n');
 };
 
 export interface ByoHandoffPayload {
@@ -91,6 +108,7 @@ export const buildByoHandoffPayload = ({
   agentName,
   memoryFrom,
   memoryInstance = 'default',
+  apiOrigin = publicApiOrigin(),
 }: {
   adapter: unknown;
   os: unknown;
@@ -98,6 +116,7 @@ export const buildByoHandoffPayload = ({
   agentName: unknown;
   memoryFrom?: string;
   memoryInstance?: string;
+  apiOrigin?: string;
 }): ByoHandoffPayload | { error: string } => {
   if (!isAdapter(adapter)) return { error: 'adapter must be claude, codex, opencode, or dsh' };
   if (!isOs(os)) return { error: 'os must be mac, linux, or windows' };
@@ -120,7 +139,7 @@ export const buildByoHandoffPayload = ({
   for (const supported of supportedOs) {
     commands[supported] = buildByoHandoffCommand({
       adapter, os: supported, podId: normalizedPodId, agentName: normalizedName,
-      memoryFrom, memoryInstance,
+      memoryFrom, memoryInstance, apiOrigin,
     });
   }
   return {
