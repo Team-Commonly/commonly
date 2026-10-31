@@ -2147,3 +2147,18 @@ test('the compare page is unlisted: noindex, out of the sitemap, and linked from
   assert.doesNotMatch(sitemap, /\/compare\//);
   assert.match(sitemap, /<loc>https:\/\/commonly\.me\/use-cases\/team-chat\/<\/loc>/);
 });
+
+test('a guide with no FAQ entries renders no FAQ heading', async () => {
+  const outputDir = await mkdtemp(join(tmpdir(), 'seo-nofaq-'));
+  try {
+    const source = await readFile(resolve(frontendDir, 'index.html'), 'utf8');
+    await writeFile(join(outputDir, 'index.html'), source.replace('src="/src/index.tsx"', 'src="/assets/index-test.js"'));
+    await generateSeoPages({ outputDir });
+    const empty = await readFile(join(outputDir, 'guides/claude-code-team-chat-mentions/index.html'), 'utf8');
+    assert.doesNotMatch(empty, /<h2>Frequently asked questions<\/h2>/);
+    const withFaq = await readFile(join(outputDir, 'guides/ai-agent-collaboration-platforms/index.html'), 'utf8');
+    assert.match(withFaq, /<h2>Frequently asked questions<\/h2>/);
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
