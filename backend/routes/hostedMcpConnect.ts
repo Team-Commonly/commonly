@@ -16,7 +16,7 @@
 const express = require('express');
 import type { Request, Response } from 'express';
 import type { HostedMcpAuthorizationServer } from '../services/hostedMcpIntakeService';
-import type { HostedMcpEntry } from '../services/hostedMcpEntryService';
+import type { HostedMcpOAuthEntry } from '../services/hostedMcpEntryService';
 import rateLimit from 'express-rate-limit';
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
@@ -37,7 +37,9 @@ const { HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_REFRESH_TOKEN } = require('../servic
 // eslint-disable-next-line global-require
 const { revokeConnectionGrants } = require('../services/roomGrantService');
 // eslint-disable-next-line global-require
-const { revokeTokenAtVendor } = require('../services/connectionRemovalService');
+const {
+  revokeTokenAtVendor,
+}: typeof import('../services/connectionRemovalService') = require('../services/connectionRemovalService');
 // eslint-disable-next-line global-require
 // Typed requires: tsc checks this route against the real module shapes, so an
 // OAuth-only field read on the HostedMcpEntry union fails the build.
@@ -105,7 +107,7 @@ const parseScopeSet = (scope: string): Set<string> => new Set(
 
 /** A refused grant is never stored; revoke its refresh token when the entry can. */
 const revokeRefusedGrant = async (
-  entry: HostedMcpEntry,
+  entry: HostedMcpOAuthEntry,
   client: { clientId: string; clientSecret?: string },
   tokens: TokenResponse,
 ): Promise<void> => {
