@@ -5043,17 +5043,24 @@ describe('task priority and lease signals (TASK-443)', () => {
     expect(badge).toContain('background: none');
     expect(badge).toContain('color: var(--v2-prio-ink)');
     expect(badge).toContain('border: 1px solid var(--v2-prio-edge)');
+    // P0 is the only filled badge: red fill, white label (B-lite, Sam 10-31).
     const urgent = ruleBody(css, '.v2-board__priority--p0');
-    expect(urgent).toContain('border-color: var(--v2-prio-p0-ink)');
-    expect(urgent).toContain('color: var(--v2-prio-p0-ink)');
+    expect(urgent).toContain('background: var(--v2-prio-p0-bg)');
+    expect(urgent).toContain('color: var(--v2-prio-p0-fg)');
     // Status and priority colour are tokens, so the D215 colour choice is a value swap.
-    expect(css).toMatch(/--v2-prio-p0-ink:\s*var\(--v2-text-primary\)/);
+    expect(css).toMatch(/--v2-prio-p0-bg:\s*#b42318/);
+    expect(css).toMatch(/--v2-prio-p2-fg:\s*#667085/);
     expect(css).toMatch(/--v2-status-live:\s*var\(--v2-accent\)/);
-    expect(urgent).not.toMatch(/background/);
+    expect(ruleBody(css, '.v2-board__priority--p2')).toContain('color: var(--v2-prio-p2-fg)');
+  });
+  test('blocked is red with a thin edge on blocked cards only', () => {
+    expect(css).toMatch(/--v2-status-blocked:\s*#d92d20/);
+    expect(ruleBody(css, '.v2-board__card--blocked')).toContain('box-shadow: inset 3px 0 0 var(--v2-status-blocked-edge)');
+    expect(ruleBody(css, '.v2-board__col--blocked .v2-board__col-name')).toContain('color: var(--v2-status-blocked)');
   });
   test('live, unclaimed and expired ownership retain distinct dots', () => {
     expect(ruleBody(css, '.v2-board__owner-dot--live')).toContain('background: var(--v2-status-live)');
-    expect(ruleBody(css, '.v2-board__owner-dot--not-claimed')).toContain('border: 1px dashed var(--v2-status-idle)');
+    expect(ruleBody(css, '.v2-board__owner-dot--not-claimed')).toContain('border: 1px dashed var(--v2-status-pending)');
     const expired = ruleBody(css, '.v2-board__owner-dot--expired');
     expect(expired).toContain('border: 1px solid var(--v2-status-idle)');
     expect(expired).toContain('background: none');
