@@ -15,6 +15,7 @@ import { ActGlyph, MarkGlyph, MarkName } from '../icons/glyphs';
 import V2ConnectorTools, { type HostedMcpManualRevokeNotice } from './V2ConnectorTools';
 import { hostedMcpErrorNotice } from './hostedMcpErrorNotice';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
+import { catalogDescription } from '../utils/connectorCatalogDescription';
 import V2PageHead from './V2PageHead';
 import V2InactiveFold from './V2InactiveFold';
 
@@ -517,13 +518,6 @@ const V2ConnectorsPage: React.FC = () => {
     return untitledPodName();
   };
 
-  // The server copy is the English fallback. A locale that carries a map for
-  // this catalog entry (keyed by installable id) renders its own text instead.
-  const catalogDescription = (entry: CatalogEntry): string | undefined => {
-    const key = `connectors.catalogDescriptions.${entry.installableId}`;
-    return i18n.exists(key) ? t(key) : entry.description;
-  };
-
   const boundPodName = (boundPodId: string | undefined): string => {
     const existing = connectors.find((connector) => connectorPodId(connector) === String(boundPodId));
     const boundPod = podList.find((pod) => String(pod._id) === String(boundPodId));
@@ -1009,7 +1003,7 @@ const V2ConnectorsPage: React.FC = () => {
           ? t(connectDetail.key, { defaultValue: connectDetail.defaultValue })
           : '',
         dot: 'empty',
-        line: catalogDescription(entry) || t('connectors.availableLine', { defaultValue: 'Connect {{label}} to a pod.', label }),
+        line: catalogDescription(i18n, entry.installableId, entry.description) || t('connectors.availableLine', { defaultValue: 'Connect {{label}} to a pod.', label }),
         pulse: false,
         when: t('connectors.notConnected', { defaultValue: 'not connected' }),
       };

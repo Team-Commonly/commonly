@@ -60,12 +60,19 @@ describe('i18n configuration', () => {
       'connectors.untitledPod', 'connectors.anotherPod', 'connectors.thisSlackWorkspace', 'connectors.yourSlackUser',
       'connectors.cancelError', 'connectors.modeError', 'connectors.slackAuthorizeError', 'connectors.slackBindError',
     ];
-    const catalogKeys = [
-      'github', 'telegram', 'slack', 'atlassian', 'gitlab', 'airtable', 'google-calendar', 'sentry', 'linear', 'supabase', 'notion',
-    ].map((id) => `connectors.catalogDescriptions.${id}`);
-    [...uiKeys, ...catalogKeys].forEach((key) => {
+    uiKeys.forEach((key) => {
       expect(i18n.exists(key, { lng: 'zh-CN' })).toBe(true);
       expect(i18n.t(key, { lng: 'zh-CN' })).not.toBe(i18n.t(key, { lng: 'en' }));
+    });
+    // Catalog maps exist only in zh-CN. English has none, so the page shows the
+    // server description. The rendered tests check what the page shows.
+    const catalogIds = [
+      'github', 'telegram', 'slack', 'atlassian', 'gitlab', 'airtable', 'google-calendar', 'sentry', 'linear', 'supabase', 'notion',
+    ];
+    catalogIds.forEach((id) => {
+      const key = `connectors.catalogDescriptions.${id}`;
+      expect(i18n.exists(key, { lng: 'zh-CN' })).toBe(true);
+      expect(i18n.exists(key, { lng: 'en' })).toBe(false);
     });
   });
 

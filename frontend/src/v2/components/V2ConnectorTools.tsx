@@ -20,6 +20,7 @@ import { V2Pod } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
 import { ActGlyph } from '../icons/glyphs';
 import { hostedMcpErrorNotice } from './hostedMcpErrorNotice';
+import { catalogDescription } from '../utils/connectorCatalogDescription';
 import V2InactiveFold from './V2InactiveFold';
 
 export type GrantWriteMode = 'read' | 'write' | 'write-with-confirm';
@@ -202,7 +203,7 @@ const ModeGlyph: React.FC<{ mode: GrantWriteMode }> = ({ mode }) => {
 const PER_ENTRY_REVOKE_COPY = new Set(['supabase', 'linear', 'sentry']);
 
 const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const api = useV2Api();
   // Revoke and Change access are the granter's: the route 403s anyone else.
   const { currentUser } = useAuth();
@@ -796,7 +797,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
             {t('tools.notGranted', { defaultValue: 'not granted' })}
             {entry.entryId === 'atlassian' && <span> · {t('tools.readInTesting', { defaultValue: 'read in testing' })}</span>}
           </span>
-          <strong>{entry.description}</strong>
+          <strong>{catalogDescription(i18n, entry.installableId, entry.description)}</strong>
           <span className="v2-connector-row__detail">
             {entry.available && (entry.connections.length === 0
                 ? (isHosted
@@ -904,7 +905,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
         <section className="v2-connector-aside__card">
           <p className="v2-connector-aside__eyebrow">{draft.replaces ? t('tools.changeAccess', { defaultValue: 'Change access' }) : t('tools.grant', { defaultValue: 'grant' })}</p>
           <h2>{draftEntry.label} · {podName(draft.podId)}</h2>
-          <p>{draftEntry.description}</p>
+          <p>{catalogDescription(i18n, draftEntry.installableId, draftEntry.description)}</p>
           <div className="v2-tools__form">
             {!draft.replaces && podIds.length > 1 && (
               <label className="v2-tools__field">

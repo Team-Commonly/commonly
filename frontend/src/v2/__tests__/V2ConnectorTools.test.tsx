@@ -1009,3 +1009,20 @@ test.each([
     target: { kind: 'pod', id: 'p2' }, audience: ['a1'],
   }), expect.anything()));
 });
+
+test('a Tools row shows the zh-CN catalog copy, and an unmapped entry keeps the server text', async () => {
+  const linear = {
+    installableId: 'linear', list: 'tools', label: 'Linear', description: 'Read Linear issues and projects.',
+    connectionType: 'hosted-mcp', entryId: 'linear', available: true, tools: [], connections: [], installation: null, integration: null,
+  };
+  mockApi([linear, { ...linear, installableId: 'acme-tools', label: 'Acme', description: 'Acme server copy.', entryId: 'acme' }]);
+  await i18nReady;
+  await act(async () => { await i18n.changeLanguage('zh-CN'); });
+  try {
+    renderTools();
+    expect(await screen.findByText('你自己的 Linear 工作空间中的议题、项目、周期和发布。')).toBeInTheDocument();
+    expect(screen.getByText('Acme server copy.')).toBeInTheDocument();
+  } finally {
+    await act(async () => { await i18n.changeLanguage('en'); });
+  }
+});
