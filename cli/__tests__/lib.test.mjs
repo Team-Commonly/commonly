@@ -524,6 +524,27 @@ describe('poller.js', () => {
     jest.clearAllMocks();
   });
 
+  test('a rejected token stops the poller with a message that says to check the token, not that it is revoked', async () => {
+    const authError = Object.assign(new Error('unauthorized'), { status: 401 });
+    const mockGet = jest.fn().mockRejectedValue(authError);
+    createClient.mockReturnValue({ get: mockGet, post: jest.fn() });
+
+    const errors = [];
+    startPoller({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_test',
+      agentName: 'my-agent',
+      intervalMs: 1,
+      onEvent: async () => ({ outcome: 'acknowledged' }),
+      onError: (err) => errors.push(err),
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+    const stopMsg = errors.map((e) => e.message).find((m) => /stopping poller/.test(m));
+    expect(stopMsg).toMatch(/Check the token this agent runs with \(COMMONLY_TOKEN/);
+    expect(stopMsg).not.toMatch(/likely revoked/);
+  });
+
   const makeEvent = (id = 'evt-1') => ({
     _id: id,
     type: 'heartbeat',

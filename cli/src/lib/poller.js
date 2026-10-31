@@ -139,7 +139,8 @@ export const startPoller = ({
         if (consecutiveAuthErrors >= MAX_AUTH_ERRORS) {
           onError?.(new Error(
             `Runtime token rejected ${consecutiveAuthErrors} times in a row — stopping poller. `
-            + `The token is likely revoked.`,
+            + `Check the token this agent runs with (COMMONLY_TOKEN, or the .commonly-env from agent init). `
+            + `If it was rotated or revoked, detach and reattach the agent.`,
           ));
           running = false;
           return;
