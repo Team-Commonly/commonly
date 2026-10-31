@@ -28,9 +28,10 @@
  * between the two writes leaves the Mongo label unrepaired; the next run plans
  * the row again and rewrites both.
  *
- * With PG configured, a row whose PG mirror updates no row is named and skipped
- * before its Mongo write, so the two stores never disagree. The next run plans
- * it again.
+ * A PG error (a thrown query) aborts the run before that row's Mongo write. A
+ * re-run plans from current rows and picks up there. A PG mirror that updates no
+ * row means the bot has never posted, so it has no users row yet: its Mongo label
+ * is still written, and its first post creates the row from that label.
  *
  * Run:  cd backend && npx ts-node scripts/repair-first-party-labels.ts [--apply]
  */
@@ -155,17 +156,18 @@ export async function mirrorLabel(pool: PgPool | null, id: string, label: string
   return (result.rowCount || 0) > 0;
 }
 
-// The --apply write for one repair: PG first, then Mongo. With PG configured, a
-// mirror that updates no row stops the repair before the Mongo write, so the two
-// stores never disagree. Returns false when it stopped.
+// The --apply write for one repair: PG first, then Mongo. A mirror that updates no
+// row means the bot has no users row yet, so there is no PG label to disagree
+// with: the Mongo write still happens, and the bot's first post copies it. Returns
+// false in that case. A PG error throws before the Mongo write.
 export async function writeRepair(
   pool: PgPool | null,
   repair: LabelRepair,
   writeMongo: (id: string, label: string) => Promise<void>,
 ): Promise<boolean> {
-  if (pool && !(await mirrorLabel(pool, repair.id, repair.to))) return false;
+  const mirrored = pool ? await mirrorLabel(pool, repair.id, repair.to) : true;
   await writeMongo(repair.id, repair.to);
-  return true;
+  return mirrored;
 }
 
 interface LabelUser {
@@ -215,18 +217,18 @@ async function main() {
   const writeMongo = async (id: string, label: string): Promise<void> => {
     await User.updateOne({ _id: id }, { $set: { 'botMetadata.displayName': label } });
   };
-  let stopped = 0;
+  let noPgRow = 0;
   for (const r of writable) {
     console.log(`${APPLY ? '' : '[dry] '}${r.username}: "${r.from}" → "${r.to}" (${r.reason})`);
     if (APPLY && !(await writeRepair(pgPool, r, writeMongo))) {
-      console.log(`  ! not written ${r.username || r.id}: no PG users row took "${r.to}"; Mongo is unchanged`);
-      stopped += 1;
+      console.log(`  - ${r.username || r.id}: no PG users row yet; its first post copies this label`);
+      noPgRow += 1;
     }
   }
   const verb = APPLY ? 'repaired' : 'would be repaired (dry run; pass --apply to write)';
-  const note = stopped > 0 ? `, ${stopped} stopped before the Mongo write (no PG row)` : '';
-  const written = writable.length - stopped;
-  console.log(`\nDone — ${written} label(s) ${verb}, ${skipped.length} skipped for an operator decision${note}.`);
+  const note = noPgRow > 0 ? `, ${noPgRow} with no PG users row yet` : '';
+  const count = writable.length;
+  console.log(`\nDone — ${count} label(s) ${verb}, ${skipped.length} skipped for an operator decision${note}.`);
   if (pgPool) await pgPool.end();
   await mongoose.disconnect();
 }

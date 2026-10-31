@@ -225,10 +225,17 @@ describe('writeRepair', () => {
     id: 'u1', username: 'scout', from: 'scout', to: 'Scout', reason: 'first-party',
   };
 
-  it('stops before the Mongo write when the PG mirror updates no row', async () => {
+  it('writes Mongo and reports false when the PG mirror updates no row', async () => {
     const pool = { query: jest.fn().mockResolvedValue({ rowCount: 0 }), end: jest.fn() };
     const writeMongo = jest.fn().mockResolvedValue(undefined);
     await expect(writeRepair(pool, repair, writeMongo)).resolves.toBe(false);
+    expect(writeMongo).toHaveBeenCalledWith('u1', 'Scout');
+  });
+
+  it('throws, and writes no Mongo label, when the PG mirror errors', async () => {
+    const pool = { query: jest.fn().mockRejectedValue(new Error('pg down')), end: jest.fn() };
+    const writeMongo = jest.fn().mockResolvedValue(undefined);
+    await expect(writeRepair(pool, repair, writeMongo)).rejects.toThrow('pg down');
     expect(writeMongo).not.toHaveBeenCalled();
   });
 
