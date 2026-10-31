@@ -498,6 +498,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // Only rows that render with their starts count: a flat message or a thread
   // root. A reply folded into a thread card renders without starts.
   const byoOfferShown = useMemo(() => threadView.some((item) => {
+    // A folded claim run carries no starts, so only a flat message or a root can offer one.
+    if (item.kind === 'claims') return false;
     const id = item.kind === 'message' ? String(item.message.id) : item.rootId;
     return (startsByMessageId.get(id) || []).some((start) => start.id === 'open-byo');
   }), [threadView, startsByMessageId]);

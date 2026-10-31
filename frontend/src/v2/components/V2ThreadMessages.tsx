@@ -167,6 +167,16 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   // row is written to match on each open/close (it still drives the wake
   // path), but a fresh mount always shows chips.
   const [openRoots, setOpenRoots] = useState<Set<string>>(() => new Set());
+  // A run of claim lines folds to one summary row; this is the open ones.
+  const [openClaimRuns, setOpenClaimRuns] = useState<Set<string>>(() => new Set());
+  const toggleClaimRun = useCallback((key: string) => {
+    setOpenClaimRuns((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
   const setOpen = useCallback((rootId: string, open: boolean) => {
     setOpenRoots((current) => {
       const next = new Set(current);
@@ -361,6 +371,28 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
             </React.Fragment>
           );
         };
+
+        if (item.kind === 'claims') {
+          const open = openClaimRuns.has(item.key);
+          const first = item.messages[0].payload?.taskId ?? '';
+          const last = item.messages[item.messages.length - 1].payload?.taskId ?? '';
+          return (
+            <div className="v2-claim-run" key={`claims-${item.key}`}>
+              <button
+                type="button"
+                className="v2-claim-run__toggle"
+                aria-expanded={open}
+                onClick={() => toggleClaimRun(item.key)}
+              >
+                <span>{t('podChat.claimRun.label', { count: item.messages.length, first, last })}</span>
+              </button>
+              {open && item.messages.map((message, claimIndex) => renderMessage(
+                message,
+                claimIndex === 0 ? view[index - 1] : { kind: 'message', message: item.messages[claimIndex - 1] },
+              ))}
+            </div>
+          );
+        }
 
         if (item.kind === 'message') {
           const next = view[index + 1];

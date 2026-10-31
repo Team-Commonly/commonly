@@ -2969,6 +2969,37 @@ body.modern-ui.v2-canvas {
   font: 400 11px/16px var(--v2-font-mono);
 }
 
+/* A run of claim lines folds to one row. The toggle is a control, so it
+   carries the same chevron pattern as the long-message Show more. */
+.v2-root button.v2-claim-run__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  margin: 4px 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  box-shadow: inset 0 0 0 1px var(--v2-border);
+  font: 500 12px/1 var(--v2-font);
+  cursor: pointer;
+}
+.v2-root button.v2-claim-run__toggle:hover { background: var(--v2-surface-hover); }
+.v2-root button.v2-claim-run__toggle:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--v2-accent-text); }
+.v2-claim-run__toggle::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin-left: 2px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 160ms;
+}
+.v2-claim-run__toggle[aria-expanded='true']::after { transform: rotate(225deg) translateY(-2px); }
+
 /* §3.8 system event card — replaces the regular author/avatar bubble for
    commonly-bot announcements like "Pixel and codex started a DM". One-row,
    chrome-light, with a primary CTA that navigates internally. */
