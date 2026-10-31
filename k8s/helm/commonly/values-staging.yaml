@@ -106,6 +106,52 @@ agents:
       workspace:
         enabled: false
 
+# LiteLLM — ENABLED for staging (SRE 2026-10-31). Staging native agents answer through
+# the native runtime -> LiteLLM, exactly as prod does; the values-staging comment above
+# ("Hosted agents answer through litellm") assumed this but the stanza was missing, so
+# litellm inherited the base default (enabled:false). The staging backend still pointed
+# native-runtime turns at http://litellm:4000 — nonexistent in this namespace — so every
+# Scout ONBOARDING-REPLY turn failed ("native runtime failed: turn failed", model
+# undefined, no cost) while the scripted welcome still posted. That was the 2026-10-31
+# staging-walk incident (Sam: "is scout not working? I saw it not responding in staging").
+#
+# Kept deliberately small (spend approved by Cofounder for Sam's checks + dev:live
+# screenshots):
+#   - MASTER KEY ONLY (serviceKeys.fromSecret:false): no budgeted virtual keys to mint
+#     in Secret Manager. The cost ceiling is the shared litellm-config's deepseek-v4-flash
+#     group max_budget ($60/1mo), metered in THIS instance's router cache, independent of
+#     prod's litellm instance.
+#   - CODEX OFF (codexAuthRotator.enabled:false): staging carries no Codex traffic. Scout
+#     runs on deepseek-v4-flash (backend LITELLM_CHAT_MODEL), the cheapest route it works
+#     on. The codex-cli sidecar + codex-auth-seed init still render (ungated in the
+#     template) but idle harmlessly — the seed writes an empty auth.json and exits 0.
+#   - NO chatgpt-auth PVC (emptyDir): nothing to persist without Codex.
+#   - dev-pool (not spot): Scout must stay up for Sam's checks, so it should not be
+#     reclaimed mid-walk the way a spot node can be.
+#
+# No new secret and no new database: every key litellm needs already exists in the
+# staging api-keys ring (deepseek-api-key, cloudflare-account-id/-workers-ai-token,
+# gemini/openrouter/openai-api-key, litellm-master-key — all unconditional in the
+# ExternalSecret), and DATABASE_URL reuses staging's own Aiven Postgres via
+# ?schema=litellm. Guard test: backend/__tests__/unit/helm/litellmStagingEnabled.test.js.
+litellm:
+  enabled: true
+  serviceKeys:
+    fromSecret: false
+  codexBypassLitellm: false
+  codexAuthRotator:
+    enabled: false
+  chatgptAuth:
+    persistence:
+      enabled: false
+  nodeSelector:
+    pool: dev
+  tolerations:
+    - key: "pool"
+      operator: "Equal"
+      value: "dev"
+      effect: "NoSchedule"
+
 backend:
   env:
     agentComputerEnabled: "true"
