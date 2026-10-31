@@ -63,7 +63,9 @@
   --c-avatar-agent-2:  #e1e6ee;   /* blue-grey */
   --c-avatar-agent-3:  #d6e7e4;   /* sage */
   --c-avatar-human-1:  #f1e7df;   /* warm sand */
-  --c-avatar-human-2:  #e3e8f2;   /* pale periwinkle */
+  --c-avatar-human-2:  #f2e8d8;   /* warm cream */
+  --c-avatar-human-3:  #efe1dc;   /* blush */
+  --c-avatar-human-4:  #f4e3d7;   /* apricot */
   --c-avatar-frame:    rgba(16, 24, 40, 0.06);  /* hairline ring */
   --c-avatar-frame-dark: rgba(255, 255, 255, 0.10);  /* ring on dark; tile stays light */
 

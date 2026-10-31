@@ -151,13 +151,14 @@ export const initialsFor = (name: string | undefined | null): string => {
 export type AvatarKind = 'human' | 'agent';
 
 // Disjoint background families — the species signal now that both kinds share
-// one art style. Agents get cool grounds, people warm ones (TASK-679, Lit Signal).
+// one art style. Agents get cool grounds, people warm ones (TASK-679, Lit Signal;
+// the people set is four of the artboard's warm grounds, TASK-683).
 // These are the figure's fill, not the gradient tier's palette above, so the
 // initials tier keeps its contrast-checked dark tints. Values mirror the
 // --v2-avatar-* tokens in v2.css and --c-avatar-* in design-system/tokens.css.
 const CHARACTER_GROUNDS: Record<AvatarKind, readonly string[]> = {
   agent: ['#dbe5f1', '#e1e6ee', '#d6e7e4'],
-  human: ['#f1e7df', '#e3e8f2'],
+  human: ['#f1e7df', '#f2e8d8', '#efe1dc', '#f4e3d7'],
 };
 
 const backgroundFor = (key: string, kind: AvatarKind): string => {
@@ -165,12 +166,9 @@ const backgroundFor = (key: string, kind: AvatarKind): string => {
   return family[hashString(key) % family.length];
 };
 
-// Paper (unpicked humans) still draws from the gradient palette's warm
-// families. Its 24 looks are 4 grounds x 3 necklines x 2 shirts; the two
-// people grounds above would fold them to 12 and break stored lookIndex values.
-// Open for a ruling (TASK-679).
-const PAPER_BG = [0, 3, 4, 5];
-
+// Paper (unpicked humans) draws from the same four people grounds as the Cut
+// tier. Its 24 looks are 4 grounds x 3 necklines x 2 shirts, so every stored
+// paper:<seed>-v<n> id keeps resolving (TASK-683).
 const PAPER_NECKLINES: readonly PaperNeckline[] = ['crew', 'vee', 'scoop'];
 const PAPER_SHIRTS = ['e4e7ec', 'd0d5dd'] as const;
 export const PAPER_AVATAR_LOOK_COUNT = 24;
@@ -188,7 +186,8 @@ export const paperAvatarFor = (
 
   // Keep Paper lookups outside the render fallback: a bad palette index must
   // not be swallowed as null and make a missing guard look harmless.
-  const background = AVATAR_PALETTE[PAPER_BG[variant % PAPER_BG.length]].base.slice(1);
+  const grounds = CHARACTER_GROUNDS.human;
+  const background = grounds[variant % grounds.length].slice(1);
   const neckline = PAPER_NECKLINES[Math.floor(variant / 4) % PAPER_NECKLINES.length];
   const shirt = PAPER_SHIRTS[Math.floor(variant / 12)];
   try {

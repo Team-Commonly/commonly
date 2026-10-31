@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
-import { characterAvatarFor, PICKER_ARCHETYPES, PICKER_CELL_COUNT } from '../utils/avatars';
+import {
+  characterAvatarFor, paperAvatarFor, PICKER_ARCHETYPES, PICKER_CELL_COUNT,
+} from '../utils/avatars';
 
 // TASK-679: the character figure's ground is generated in TS, but the design
 // tokens live in v2.css and design-system/tokens.css. These tests keep the
@@ -29,8 +31,8 @@ describe('character avatar grounds', () => {
   const v2Tokens = tokensIn(read('../v2.css'), 'v2-avatar');
   const designTokens = tokensIn(read('../../../design-system/tokens.css'), 'c-avatar');
 
-  test('v2.css and design-system tokens list the same five grounds and the ring token', () => {
-    expect(v2Tokens).toHaveLength(5);
+  test('v2.css and design-system tokens list the same seven grounds (three agent, four people)', () => {
+    expect(v2Tokens).toHaveLength(7);
     expect(designTokens).toEqual(v2Tokens);
   });
 
@@ -57,7 +59,7 @@ describe('character avatar grounds', () => {
       expect(humanTokens).toContain(ground);
       expect(agentTokens).not.toContain(ground);
     }
-    expect(seen.size).toBe(2);
+    expect(seen.size).toBe(4);
   });
 
   // Lumen's HOLD on #3057: light skins lost their silhouette on the pale grounds.
@@ -82,5 +84,17 @@ describe('character avatar grounds', () => {
       const light = relativeLuminance(skin) >= 0.6;
       expect(svg.includes(`fill="#${edgeOf(skin)}"`)).toBe(light);
     }
+  });
+
+  // TASK-683: Paper (unpicked people) sits on the same four people grounds as the
+  // Cut tier, so the picker and the defaults match the artboard's warm set.
+  test('Paper tiles draw only from the people grounds', () => {
+    const humanTokens = v2Tokens.slice(3);
+    const grounds = new Set<string>();
+    for (let i = 0; i < 240; i += 1) {
+      grounds.add(groundOf(paperAvatarFor(`paper-user-${i}`)));
+    }
+    expect(grounds.size).toBe(4);
+    grounds.forEach((g) => expect(humanTokens).toContain(g));
   });
 });

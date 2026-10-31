@@ -48,7 +48,9 @@ body.modern-ui.v2-canvas {
   --v2-avatar-agent-2: #e1e6ee;
   --v2-avatar-agent-3: #d6e7e4;
   --v2-avatar-human-1: #f1e7df;
-  --v2-avatar-human-2: #e3e8f2;
+  --v2-avatar-human-2: #f2e8d8;
+  --v2-avatar-human-3: #efe1dc;
+  --v2-avatar-human-4: #f4e3d7;
   --v2-avatar-frame: rgba(16, 24, 40, 0.06);
   /* Dark ring (TASK-679 dark note): the tile stays light on dark, so the ring
      flips to a light hairline. No dark theme on main yet; TASK-680 points
