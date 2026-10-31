@@ -13,7 +13,7 @@ describe('CollapsibleProse', () => {
     return i18n.changeLanguage('en');
   });
 
-  it('folds a long agent message past 360px behind a real Show more button', () => {
+  it('folds a long agent message past six lines behind a real Show more button', () => {
     setScrollHeight(900);
     const { container } = render(
       <CollapsibleProse collapsible>
@@ -23,7 +23,7 @@ describe('CollapsibleProse', () => {
     const wrapper = container.querySelector('.v2-msg__prose');
     expect(wrapper).toHaveClass('v2-msg__prose--closed');
     const button = screen.getByRole('button', { name: 'Show more' });
-    expect(button).toHaveClass('v2-msg__more');
+    expect(button).toHaveClass('v2-msg__showmore');
     expect(button).toHaveAttribute('aria-expanded', 'false');
 
     fireEvent.click(button);
