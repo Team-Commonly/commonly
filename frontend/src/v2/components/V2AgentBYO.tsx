@@ -242,8 +242,8 @@ const V2AgentBYO: React.FC = () => {
   const [allowWeb, setAllowWeb] = useState(false);
   // Each seat is its own opt-in: starting another install clears all three.
   useEffect(() => {
-    if (!issued) { setWorkInRepo(false); setAllowWrite(false); setAllowWeb(false); }
-  }, [issued]);
+    setWorkInRepo(false); setAllowWrite(false); setAllowWeb(false);
+  }, [issued?.token]);
   const repoPod = pods.find((p) => p._id === (issued?.podId || podId));
   const repoChoiceAvailable = listenAdapter === 'claude'
     && setupOs !== 'windows'
