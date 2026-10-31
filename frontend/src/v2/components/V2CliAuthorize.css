@@ -16,10 +16,14 @@
   :root:not([data-v2-theme="light"]) .v2-cli-authorize { --v2-warning-ink: #f4c27a; }
 }
 
-.v2-cli-authorize {
-  min-height: 100vh;
+/* .v2-root is the app shell: height 100vh, overflow hidden, flex column.
+   This route is a page, not a shell, so it scrolls itself; the card centres
+   with margin:auto, which never pushes it past the top edge on a short
+   viewport the way place-items:center would. */
+.v2-root.v2-cli-authorize {
+  height: 100vh;
+  overflow-y: auto;
   display: grid;
-  place-items: center;
   padding: 24px;
   background: var(--v2-bg-subtle);
   color: var(--v2-text-primary);
@@ -28,13 +32,15 @@
 
 .v2-cli-authorize__card {
   width: min(100%, 460px);
+  margin: auto;
   padding: 32px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-lg);
   background: var(--v2-surface);
 }
 
-.v2-cli-authorize__card form { margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; }
+/* Outranks App.css's legacy `body.modern-ui:not(.v2-canvas) form` (0,2,2). */
+.v2-root.v2-cli-authorize .v2-cli-authorize__card form { max-width: none; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 
 .v2-cli-authorize__mark {
   display: grid;
@@ -67,7 +73,8 @@
 .v2-cli-authorize__actions { display: flex; justify-content: flex-end; gap: 10px; }
 
 @media (max-width: 480px) {
-  .v2-cli-authorize { padding: 16px; align-items: start; }
+  .v2-root.v2-cli-authorize { padding: 16px; }
+  .v2-cli-authorize__card { margin: 0 auto auto; }
   .v2-cli-authorize__card { padding: 24px 20px; }
   .v2-cli-authorize__facts div { display: grid; gap: 2px; }
   .v2-cli-authorize__facts dd { text-align: left; }

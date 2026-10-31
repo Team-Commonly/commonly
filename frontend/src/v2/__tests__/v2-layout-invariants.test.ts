@@ -147,6 +147,19 @@ const bareElementSelectors = (css: string): string[] => {
 };
 
 describe('v2 layout invariants (CSS rule presence)', () => {
+  test('/cli/authorize scrolls inside the .v2-root shell on a short viewport (TASK-682)', () => {
+    // .v2-root is height 100vh + overflow hidden; the page must override it or
+    // the lower controls (Deny / Authorize) are unreachable on a short screen.
+    const cli = fs.readFileSync(path.join(__dirname, '../components/V2CliAuthorize.css'), 'utf8');
+    const root = /^\.v2-root\.v2-cli-authorize \{([^}]*)\}/m.exec(cli)?.[1] ?? '';
+    expect(root).toContain('overflow-y: auto');
+    expect(root).toContain('display: grid');
+    expect(root).not.toContain('place-items: center');
+    expect(/^\.v2-cli-authorize__card \{([^}]*)\}/m.exec(cli)?.[1]).toContain('margin: auto');
+    // The legacy V1 form rule (0,2,2) would paint the form #111827.
+    expect(cli).toContain('.v2-root.v2-cli-authorize .v2-cli-authorize__card form {');
+  });
+
   const v2 = read('../v2.css');
   const tokens = read('../../../design-system/tokens.css');
   const aprofile = read('../agents/v2-agent-profile.css');
