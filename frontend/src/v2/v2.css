@@ -1,4 +1,16 @@
 /*
+ * Motion tokens (TASK-700). One ease curve and three durations, on :root so the
+ * view-transition pseudo-elements can read them. Animate transform and opacity;
+ * the height moments use grid rows, not a measured height.
+ */
+:root {
+  --v2-dur-fast: 120ms;
+  --v2-dur: 200ms;
+  --v2-dur-slow: 320ms;
+  --v2-ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/*
  * V2 design tokens + base styles. All v2 styles are scoped under .v2-root
  * so the existing app's global CSS does not bleed in (and vice versa).
  */
@@ -5983,7 +5995,7 @@ body.modern-ui.v2-canvas {
     width: min(86vw, 320px);
     height: 100vh;
     transform: translateX(-100%);
-    transition: transform 0.22s ease;
+    transition: transform var(--v2-dur-slow) var(--v2-ease);
     box-shadow: 2px 0 24px rgba(15, 17, 21, 0.18);
     border-right: 1px solid var(--v2-border-soft);
   }
@@ -13597,3 +13609,44 @@ body.modern-ui.v2-canvas {
 .v2-legal__section { margin-bottom: 28px; }
 .v2-legal__section h2 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
 .v2-legal__section p { font-size: 15px; line-height: 1.6; color: var(--v2-text-secondary); margin: 0 0 8px; }
+
+/* ---------- Motion (TASK-700) ---------- */
+
+/* Theme switch: utils/theme.ts runs the change inside document.startViewTransition, and the
+   root snapshots crossfade on the motion tokens. Browsers without the API switch at once. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--v2-dur);
+  animation-timing-function: var(--v2-ease);
+}
+
+/* Folds open by growing their grid row from 0fr to 1fr, so the height animates without a measured
+   pixel value. The rows fade in on the same curve. */
+@keyframes v2-fold-open {
+  from { grid-template-rows: 0fr; opacity: 0; }
+  to { grid-template-rows: 1fr; opacity: 1; }
+}
+.v2-connectors__inactive-fold-body {
+  display: grid;
+  animation: v2-fold-open var(--v2-dur) var(--v2-ease) both;
+}
+.v2-connectors__inactive-fold-body > .v2-connectors__inactive-rows {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* One global switch for reduced motion: every v2 animation and transition ends at once, and the
+   theme change does not crossfade. */
+@media (prefers-reduced-motion: reduce) {
+  .v2-root *,
+  .v2-root *::before,
+  .v2-root *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
+  }
+}

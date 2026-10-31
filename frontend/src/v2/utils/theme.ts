@@ -19,11 +19,21 @@ export function applyV2Theme(pref: V2ThemePref): void {
   document.documentElement.setAttribute('data-v2-theme', pref);
 }
 
+type ViewTransitionDocument = Document & { startViewTransition?: (update: () => void) => unknown };
+
 export function setV2Theme(pref: V2ThemePref): void {
   try {
     window.localStorage.setItem(V2_THEME_KEY, pref);
   } catch {
     // Storage can be blocked; the choice still applies for this page view.
+  }
+  // The switch crossfades when the browser supports view transitions and the user has not asked
+  // for reduced motion. Everywhere else it applies at once.
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const doc = document as ViewTransitionDocument;
+  if (doc.startViewTransition && !reduce) {
+    doc.startViewTransition(() => applyV2Theme(pref));
+    return;
   }
   applyV2Theme(pref);
 }

@@ -23,7 +23,11 @@ const V2InactiveFold: React.FC<V2InactiveFoldProps> = ({ count, children }) => {
         <span className="v2-connectors__inactive-caret" aria-hidden="true" />
         {t('connectors.inactiveFold', { defaultValue: 'inactive · {{n}}', n: count })}
       </button>
-      {open && <div className="v2-connectors__inactive-rows">{children}</div>}
+      {open && (
+        <div className="v2-connectors__inactive-fold-body">
+          <div className="v2-connectors__inactive-rows">{children}</div>
+        </div>
+      )}
     </div>
   );
 };
