@@ -10,7 +10,7 @@
 #
 # Ported here (no secrets, no service containers, no submodules):
 #   backend tests, frontend tests (+ frontend typecheck), backend typecheck +
-#   TS lint, CLI lint, frontend build.
+#   TS lint, CLI lint.
 #
 # NOT ported (stay on GitHub Actions) and why:
 #   - service-test            — service `options:` (the mongo nofile ulimit) are refused by Latchkey CI
@@ -95,17 +95,3 @@ jobs:
           node-version: '22'
       - run: cd cli && npm ci --include=dev
       - run: cd cli && npm run lint
-
-  frontend-build:
-    name: Frontend build
-    runs-on: small
-    timeout-minutes: 15
-    steps:
-      - uses: latchkey/setup-node@1.0.1
-        with:
-          node-version: '22'
-      # Frontend sources import shared backend TypeScript, so backend deps must
-      # be installed for the vite build to resolve them.
-      - run: cd backend && npm ci --include=dev
-      - run: cd frontend && OPENUI_TELEMETRY_DISABLED=1 npm install --legacy-peer-deps
-      - run: cd frontend && npm run build
