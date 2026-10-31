@@ -102,24 +102,49 @@ export const composeStalledConnectNudge = ({
   locale?: NudgeLocale;
   evidence?: StalledConnectCopyEvidence;
 }): string => {
-  // Per-kind copies, when recorded, say which command is missing. MCP-only
-  // means the MCP snippet was copied and the Terminal command never was.
+  // Per-kind copies say which command is missing (TASK-721). The marks are
+  // per USER, not per agent, so a kind counts only when it happened inside
+  // this token's episode. A missing per-kind time is filled from the older
+  // first-copy pair when that pair names the same kind: a copy made before the
+  // per-kind marks shipped, or one whose per-kind write failed, must not read
+  // as "never copied".
   const hasKindEvidence = Boolean(evidence.mcpCopiedAt || evidence.cliCopiedAt);
-  const mcpOnly = hasKindEvidence && Boolean(evidence.mcpCopiedAt) && !evidence.cliCopiedAt;
+  const issuedMs = evidence.tokenIssuedAt ? new Date(evidence.tokenIssuedAt).getTime() : NaN;
+  const kindTime = (kind: 'mcp' | 'cli'): Date | null => {
+    const own = kind === 'mcp' ? evidence.mcpCopiedAt : evidence.cliCopiedAt;
+    const raw = own || (evidence.commandType === kind ? evidence.commandCopiedAt : null);
+    if (!raw) return null;
+    const at = new Date(raw);
+    if (Number.isNaN(at.getTime())) return null;
+    return !Number.isNaN(issuedMs) && at.getTime() < issuedMs ? null : at;
+  };
+  const mcpAt = hasKindEvidence ? kindTime('mcp') : null;
+  const cliAt = hasKindEvidence ? kindTime('cli') : null;
+  const mcpOnly = hasKindEvidence && mcpAt !== null && cliAt === null;
   const effective: StalledConnectCopyEvidence = hasKindEvidence
     ? {
       ...evidence,
-      commandType: evidence.cliCopiedAt ? 'cli' : 'mcp',
-      commandCopiedAt: evidence.cliCopiedAt || evidence.mcpCopiedAt,
+      commandType: cliAt ? 'cli' : mcpAt ? 'mcp' : null,
+      commandCopiedAt: cliAt || mcpAt,
     }
     : evidence;
   const offsetSeconds = copiedAtOffsetSeconds(effective);
   if (mcpOnly && offsetSeconds !== null) {
-    return `@${installerName} — you copied the MCP command `
-      + `${copiedAtDescription(offsetSeconds)}, but not the Terminal command that starts me. `
+    const unavailableOs = evidence.openedOs ? LISTENER_UNAVAILABLE_OS[evidence.openedOs] : undefined;
+    const when = copiedAtDescription(offsetSeconds);
+    if (unavailableOs) {
+      // The page offers the listener command on its Mac tab only, so do not
+      // tell this person they missed a command their browser never showed.
+      return `@${installerName} — you copied the MCP command ${when}. `
+        + `MCP-only clients can call Commonly, but they do not answer @mentions. `
+        + `The listener that does runs only from a Mac for now, and you opened this page on ${unavailableOs}. `
+        + `Run \`${fixCommand}\` in a Terminal on a Mac, or choose “Run it here” on the Bring your own page for a hosted agent. `
+        + `I'll post here the moment I connect.`;
+    }
+    return `@${installerName} — you copied the MCP command ${when}, but not the listener command that starts me. `
       + `MCP-only clients can call Commonly, but they do not answer @mentions, `
       + `so nothing is listening for @${handle} yet. `
-      + `Run \`${fixCommand}\` on the machine where I should live. `
+      + `Run \`${fixCommand}\` in a Terminal on the machine where I should live. `
       + `I'll post here the moment I connect.`;
   }
   if (offsetSeconds !== null) {
