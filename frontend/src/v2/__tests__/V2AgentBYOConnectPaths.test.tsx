@@ -108,6 +108,10 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     await issueRun();
     expect(screen.getByTestId('byo-result-more-ways')).toBeInTheDocument();
     expect(screen.queryByTestId('byo-add-computer')).toBeNull();
+    // The stop-on-close line must not send them to add a computer that is already on file.
+    const stops = screen.getByTestId('byo-listen-stops-on-close');
+    expect(stops).not.toHaveTextContent(/add this computer/);
+    expect(stops).toHaveTextContent(/choose On my computer under Other ways to connect/);
   });
 
   test('run path on Windows: no listener command, so no stop-on-close line', async () => {

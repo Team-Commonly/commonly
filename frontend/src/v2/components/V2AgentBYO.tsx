@@ -1631,7 +1631,7 @@ const V2AgentBYO: React.FC = () => {
             )}
             {listenerAvailable && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-stops-on-close">
-                {t('agentByo.listen.stopsOnClose')}
+                {t(machines.length === 0 ? 'agentByo.listen.stopsOnClose' : 'agentByo.listen.stopsOnCloseWithComputer')}
               </p>
             )}
             {!listenerAvailable ? null : listenState === 'listening' ? (
