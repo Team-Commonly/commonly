@@ -48,9 +48,16 @@ describe('CollapsibleProse', () => {
     expect(wrapper).not.toHaveAttribute('inert');
     // The preview stays in the accessibility tree and is not hidden from assistive tech.
     const link = screen.getByRole('link', { name: 'long link' });
+    const scrollIntoView = jest.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView });
+    const raf = jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => { cb(0); return 0; });
     act(() => link.focus());
     expect(wrapper).not.toHaveClass('v2-msg__prose--closed');
     expect(screen.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
+    // Once open, the focused link is scrolled into the visible scroller, not left clipped below it.
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+    raf.mockRestore();
+    delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;
   });
 
   it('does not fold at 133px and folds at 134px', () => {

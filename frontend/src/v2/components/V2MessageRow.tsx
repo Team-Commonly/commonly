@@ -399,7 +399,13 @@ export const CollapsibleProse: React.FC<{ collapsible: boolean; children: React.
       <div
         ref={ref}
         className={`v2-msg__prose${folded ? ' v2-msg__prose--closed' : ''}`}
-        onFocus={() => { if (folded) setOpen(true); }}
+        onFocus={(event) => {
+          if (!folded) return;
+          setOpen(true);
+          // The link is still clipped until the message re-lays out, so scroll it in once the open frame has painted.
+          const target = event.target as HTMLElement;
+          requestAnimationFrame(() => target.scrollIntoView?.({ block: 'nearest' }));
+        }}
       >
         {children}
       </div>
