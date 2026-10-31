@@ -11,6 +11,13 @@ import User from '../models/User';
  * The events poll runs every few seconds per listener, so the write is
  * throttled per token; the process-lifetime map is bounded by the count of
  * distinct listener tokens, and a restart only costs one extra write each.
+ *
+ * Only tokens on the agent's User row are stamped. A token that exists only on
+ * `AgentInstallation.runtimeTokens` matches nothing here, and
+ * `/api/users/me/agent-connection` never read that list (it reads the User
+ * row), so such a token never showed as connected before this change either.
+ * Every issuer in use (`issueRuntimeTokenForAgent`) writes the same hash to
+ * both places; `issueRuntimeTokenForInstallation` has no callers.
  */
 const CHECK_IN_INTERVAL_MS = 60 * 1000;
 const lastWrites = new Map<string, number>();
