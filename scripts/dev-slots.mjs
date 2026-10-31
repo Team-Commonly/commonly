@@ -24,12 +24,22 @@ const TTL_MS = 24 * 60 * 60 * 1000;
 const backendPort = (n) => 5100 + 10 * n;
 const frontendPort = (n) => 5101 + 10 * n;
 
+// A missing file is an empty registry. Anything else that goes wrong (unreadable file,
+// bad JSON, a wrong shape) must stop the caller: an empty registry here would hand a live
+// slot's number to another worktree and lose the record of its processes and databases.
 function load() {
+  let raw;
   try {
-    return JSON.parse(fs.readFileSync(FILE, 'utf8'));
-  } catch {
-    return { slots: {} };
+    raw = fs.readFileSync(FILE, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return { slots: {} };
+    throw error;
   }
+  const registry = JSON.parse(raw);
+  if (!registry || typeof registry !== 'object' || !registry.slots || typeof registry.slots !== 'object' || Array.isArray(registry.slots)) {
+    throw new Error(`${FILE} is not a slot registry; move it aside and run again`);
+  }
+  return registry;
 }
 
 function save(registry) {
@@ -81,18 +91,26 @@ function claim(worktreePath, slug) {
       `DB_NAME=${entry.dbName}`,
       `BACKEND_PORT=${entry.backendPort}`,
       `FRONTEND_PORT=${entry.frontendPort}`,
+      `BACKEND_PID=${entry.pids?.backend ?? ''}`,
+      `FRONTEND_PID=${entry.pids?.frontend ?? ''}`,
       '',
     ].join('\n'),
   );
 }
 
+// An empty argument keeps that process's recorded PID. The launcher records each PID as soon as
+// it starts, so a run that fails later still leaves a PID the next run or gc can stop.
 function setPids(n, backend, frontend) {
   const registry = load();
   if (!registry.slots[n]) {
     process.stderr.write(`no slot ${n}\n`);
     process.exit(1);
   }
-  registry.slots[n].pids = { backend: Number(backend), frontend: Number(frontend) };
+  const previous = registry.slots[n].pids || {};
+  registry.slots[n].pids = {
+    backend: backend === '' ? previous.backend ?? null : Number(backend),
+    frontend: frontend === '' ? previous.frontend ?? null : Number(frontend),
+  };
   save(registry);
 }
 
