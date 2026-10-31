@@ -84,7 +84,7 @@ describe('v2 appearance preference (D216)', () => {
     expect(v2css).toContain('--v2-dur-fast: 120ms;');
     expect(v2css).toContain('--v2-dur: 200ms;');
     expect(v2css).toContain('--v2-dur-slow: 320ms;');
-    expect(v2css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\n  \.v2-root \*,[\s\S]*?animation-duration: 0\.01ms !important;/);
+    expect(v2css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\n  \*,[\s\S]*?animation-duration: 0\.01ms !important;/);
   });
 
   test('index.html applies a stored Light or Dark choice before first paint (code-gate HOLD, rhea)', () => {

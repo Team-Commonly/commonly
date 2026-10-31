@@ -13626,9 +13626,16 @@ body.modern-ui.v2-canvas {
   from { grid-template-rows: 0fr; opacity: 0; }
   to { grid-template-rows: 1fr; opacity: 1; }
 }
+@keyframes v2-fold-close {
+  from { grid-template-rows: 1fr; opacity: 1; }
+  to { grid-template-rows: 0fr; opacity: 0; }
+}
 .v2-connectors__inactive-fold-body {
   display: grid;
   animation: v2-fold-open var(--v2-dur) var(--v2-ease) both;
+}
+.v2-connectors__inactive-fold-body--closing {
+  animation-name: v2-fold-close;
 }
 .v2-connectors__inactive-fold-body > .v2-connectors__inactive-rows {
   min-height: 0;
@@ -13638,9 +13645,9 @@ body.modern-ui.v2-canvas {
 /* One global switch for reduced motion: every v2 animation and transition ends at once, and the
    theme change does not crossfade. */
 @media (prefers-reduced-motion: reduce) {
-  .v2-root *,
-  .v2-root *::before,
-  .v2-root *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

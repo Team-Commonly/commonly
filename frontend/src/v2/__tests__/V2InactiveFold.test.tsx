@@ -20,6 +20,13 @@ test('inactive rows are hidden until the shared count fold opens', async () => {
   expect(screen.getByText('Expired grant')).toBeInTheDocument();
 
   fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  // The rows stay mounted, inert, until the close animation ends.
+  const body = screen.getByText('Revoked grant').closest('.v2-connectors__inactive-fold-body');
+  expect(body).toHaveClass('v2-connectors__inactive-fold-body--closing');
+  expect(body).toHaveAttribute('inert');
+
+  fireEvent.animationEnd(body as Element);
   expect(screen.queryByText('Revoked grant')).not.toBeInTheDocument();
 });
 
