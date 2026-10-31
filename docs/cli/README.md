@@ -400,7 +400,6 @@ Harmless — leaked open handles from setTimeout in a test. Does not indicate a 
 From a Commonly checkout with backend test dependencies installed, use Node 22:
 
 ```sh
-commonly verify first-reply --repo /path/to/commonly
 commonly verify wave1 --repo /path/to/commonly
 commonly verify connector-grant --repo /path/to/commonly
 ```
@@ -409,9 +408,7 @@ Set `MONGO_URI`, `PG_HOST` and `PG_DATABASE` explicitly to dedicated test databa
 plus `PG_PORT`, `PG_USER` and `PG_PASSWORD` as needed. These commands run the shared
 Tier 1 Jest scenarios with real HTTP, Mongo and PostgreSQL; fixture setup clears
 the database contents. Use names such as `verify527`, `test-local` or
-`commonly-test`. The first-reply scenario uses a loopback model-provider fixture;
-its hosted runtime, BYO CAP client, authentication and message storage are real.
-The connector-grant scenario covers administrator GitHub App bootstrap, a scoped
+`commonly-test`. The connector-grant scenario covers administrator GitHub App bootstrap, a scoped
 agent read, refused calls and the PostgreSQL audit trail. GitHub HTTP is stubbed;
 ordinary-user connection onboarding is tracked separately in TASK-290.
 Run inside the bounded Node 22 test container when available. No images are built.

@@ -1,8 +1,8 @@
 # Connector grant verification (TASK-289)
 
-Status: draft. The scenario extends TASK-514's production app factory at
-`ede7daffd` on `test/task-514-http-scenarios`. It is not ordinary-user onboarding
-clearance and has no public activation or merge clearance.
+Status: in review (Tier 2), in #2698. The scenario runs on TASK-514's
+production app factory from #2687, which merges first. It does not clear
+ordinary-user onboarding, which is TASK-290.
 
 ## Current scenario
 
@@ -49,10 +49,12 @@ With the backend test dependencies installed and real test databases configured:
 commonly verify connector-grant --repo /path/to/commonly
 ```
 
-The CLI selector reuses Tern's isolated shared-runner commit `cecb8bc8` from
-TASK-527/#2693, including its later entrypoint and Mongo seed-list coverage,
-and adds `connector-grant` to the same scenario registry. No
-second runner is introduced. SRE's matching staging walk uses
+The CLI selector began as Tern's shared-runner commit `cecb8bc8` from
+TASK-527's #2693. That PR closed unmerged, so the selector lands here, with its
+entrypoint and Mongo seed-list coverage. It registers `wave1` and
+`connector-grant`. #2693's `first-reply` scenario is not registered, because
+its suite never reached main, and a test now requires every registered
+scenario's suite to exist in the repository. No second runner is introduced. SRE's matching staging walk uses
 the walk account and separate, non-destructive procedures.
 
 The actual CLI command passed both HTTP cases with real PostgreSQL 16 and

@@ -3,9 +3,8 @@ import { existsSync } from 'fs';
 import { resolve, join } from 'path';
 import { spawnSync } from 'child_process';
 
-const SCENARIOS = {
+export const SCENARIOS = {
   wave1: '__tests__/service/verify.wave1.test.js',
-  'first-reply': '__tests__/service/verify.firstReply.test.js',
   'connector-grant': '__tests__/service/verify.connectorGrant.test.js',
 };
 const testDatabase = (name) => /^(test|verify)([-_0-9]|$)|[-_]test$/.test(name || '');
