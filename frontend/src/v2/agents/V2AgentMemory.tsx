@@ -10,23 +10,55 @@ interface MemoryNote { header: string; snippet: string }
 interface MemorySection { key: string; label: string; kind: string; notes: MemoryNote[] }
 interface MemoryIndex { viewerRole: 'owner' | 'admin'; totalEntries: number; sections: MemorySection[] }
 
-// Which backend sections land in which group. Rules are what the agent is told
-// to do; How I work is how it runs; Journal is what happened. An unknown section
-// key falls into How I work so nothing is hidden. Change the mapping here only.
+// Which backend sections land in which group. Journal is the dated log. Soul
+// is a rule-like section and sits at the top of Rules. Long-term memory is split
+// by its own headings (see splitLongTerm). Any other section lands in How I work
+// so nothing is hidden. Change the mapping here only.
 export const MEMORY_GROUPS = [
-  { id: 'rules', label: 'Rules', keys: ['soul', 'long_term'] },
-  { id: 'how', label: 'How I work', keys: ['shared', 'runtime_meta', 'relationships'] },
-  { id: 'journal', label: 'Journal', keys: ['daily', 'cycles'] },
+  { id: 'rules', label: 'Rules' },
+  { id: 'how', label: 'How I work' },
+  { id: 'journal', label: 'Journal' },
 ] as const;
 
-const FALLBACK_GROUP = 'how';
+type GroupId = typeof MEMORY_GROUPS[number]['id'];
+interface GroupedSection { key: string; label: string; notes: MemoryNote[] }
+
+const JOURNAL_KEYS = new Set(['daily', 'cycles']);
+// A long_term heading whose first word names a rule goes under Rules.
+const RULE_HEADING = /^(rules?|never|always|don'?t)\b/i;
+
+const sectionGroup = (key: string): GroupId => (JOURNAL_KEYS.has(key) ? 'journal' : 'how');
+
+// Splits a long_term section's headings into Rules and How I work. The
+// "Overview" note (text before the first heading) is How I work.
+export const splitLongTerm = (section: MemorySection): Record<'rules' | 'how', GroupedSection | null> => {
+  const rules = section.notes.filter((n) => RULE_HEADING.test(n.header));
+  const how = section.notes.filter((n) => !RULE_HEADING.test(n.header));
+  const make = (notes: MemoryNote[]): GroupedSection | null => (
+    notes.length ? { key: section.key, label: section.label, notes } : null
+  );
+  return { rules: make(rules), how: make(how) };
+};
 
 export const groupSections = (sections: MemorySection[]) => {
-  const byKey = new Map<string, string>();
-  MEMORY_GROUPS.forEach((g) => g.keys.forEach((k) => byKey.set(k, g.id)));
+  const byGroup: Record<GroupId, GroupedSection[]> = { rules: [], how: [], journal: [] };
+  // Soul first, so it leads Rules.
+  const soul = sections.find((s) => s.key === 'soul');
+  if (soul) byGroup.rules.push({ key: soul.key, label: soul.label, notes: soul.notes });
+  for (const s of sections) {
+    if (s.key === 'soul') continue;
+    if (s.key === 'long_term') {
+      const split = splitLongTerm(s);
+      if (split.rules) byGroup.rules.push(split.rules);
+      if (split.how) byGroup.how.push(split.how);
+      continue;
+    }
+    byGroup[sectionGroup(s.key)].push({ key: s.key, label: s.label, notes: s.notes });
+  }
   return MEMORY_GROUPS.map((g) => ({
-    ...g,
-    sections: sections.filter((s) => (byKey.get(s.key) || FALLBACK_GROUP) === g.id),
+    id: g.id,
+    label: g.label,
+    sections: byGroup[g.id],
   }));
 };
 
@@ -70,15 +102,12 @@ const V2AgentMemory: React.FC = () => {
           {t('agentProfile.memory.none', { defaultValue: 'Memory is visible to the agent owner and admins.' })}
         </p>
       )}
-      {state === 'ready' && index && groupSections(index.sections).map((group) => (
+      {state === 'ready' && index && groupSections(index.sections).filter((g) => g.sections.length > 0).map((group) => (
         <section key={group.id} className="v2-agent-settings__section" aria-labelledby={`memory-group-${group.id}`}>
           <h2 id={`memory-group-${group.id}`} className="v2-agent-settings__section-title">
             {group.label}
             <span className="v2-aprofile__count">{group.sections.reduce((n, s) => n + s.notes.length, 0)}</span>
           </h2>
-          {group.sections.length === 0 && (
-            <p className="v2-agent-settings__muted">{t('agentProfile.memory.none', { defaultValue: 'Nothing here yet.' })}</p>
-          )}
           {group.sections.map((sec) => (
             <div key={sec.key} className="v2-agent-memory__sec">
               <h3 className="v2-agent-memory__sec-title">{sec.label}</h3>
