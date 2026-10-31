@@ -7,7 +7,12 @@ import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 
-export const mcpTokenPath = (name) => join(homedir(), '.commonly', 'mcp', `${name}.token`);
+export const validMcpTokenName = (name) => typeof name === 'string' && /^[A-Za-z0-9._-]+$/.test(name) && !name.startsWith('.');
+
+export const mcpTokenPath = (name) => {
+  if (!validMcpTokenName(name)) throw new Error(`Invalid agent name '${name}'`);
+  return join(homedir(), '.commonly', 'mcp', `${name}.token`);
+};
 
 // Remove first, then create exclusively at 0600: no write into a looser-mode file or through a symlink.
 export const writeMcpTokenCopy = (name, token) => {
@@ -20,9 +25,12 @@ export const writeMcpTokenCopy = (name, token) => {
   return path;
 };
 
-export const removeMcpTokenCopy = (name) => rmSync(mcpTokenPath(name), { force: true });
+// A bad name never has a copy, so remove and refresh are no-ops for it and cannot block detach or save.
+export const removeMcpTokenCopy = (name) => {
+  if (validMcpTokenName(name)) rmSync(mcpTokenPath(name), { force: true });
+};
 
 // Reattach mints a new token; a copy that already exists must follow it.
 export const refreshMcpTokenCopy = (name, token) => {
-  if (token && existsSync(mcpTokenPath(name))) writeMcpTokenCopy(name, token);
+  if (token && validMcpTokenName(name) && existsSync(mcpTokenPath(name))) writeMcpTokenCopy(name, token);
 };

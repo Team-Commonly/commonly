@@ -4,7 +4,7 @@
  * COMMONLY_TOKEN_FILE at a 0600 copy of that token and never prints the token.
  */
 import { listLocalAgents, loadAgentToken } from './agent.js';
-import { writeMcpTokenCopy } from '../lib/mcp-token.js';
+import { validMcpTokenName, writeMcpTokenCopy } from '../lib/mcp-token.js';
 
 const NO_AGENT_HINT = 'Attach one first: commonly agent attach <adapter> --pod <podId> --name <name>';
 
@@ -18,7 +18,7 @@ export const buildMcpConfig = ({ agent } = {}) => {
     }
     name = local[0].name;
   }
-  if (!/^[A-Za-z0-9._-]+$/.test(name) || name.startsWith('.')) throw new Error(`Invalid agent name '${name}'`);
+  if (!validMcpTokenName(name)) throw new Error(`Invalid agent name '${name}'`);
   const record = loadAgentToken(name);
   const token = String(record?.runtimeToken || '').trim();
   if (!token) throw new Error(`No runtime token saved for agent '${name}'. ${NO_AGENT_HINT}`);

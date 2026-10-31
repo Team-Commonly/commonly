@@ -77,6 +77,15 @@ describe('commonly mcp config', () => {
     expect(fs.statSync(copy).mode & 0o777).toBe(0o600);
   });
 
+  it('a traversal name cannot make remove or refresh touch anything, and does not block detach', async () => {
+    const outside = path.join(tmp, '.commonly', 'x.token');
+    fs.mkdirSync(path.dirname(outside), { recursive: true });
+    fs.writeFileSync(outside, 'keep');
+    saveAgentToken('../x', { runtimeToken: 'cm_agent_t', instanceUrl: 'u' });
+    await performDetach({ agentName: '../x', skipBackend: true });
+    expect(fs.readFileSync(outside, 'utf8')).toBe('keep');
+  });
+
   it('names the attach command when no agent exists', () => {
     expect(() => buildMcpConfig({})).toThrow(/commonly agent attach/);
   });

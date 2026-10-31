@@ -140,7 +140,6 @@ const tokensDir = () => join(homedir(), '.commonly', 'tokens');
 const tokenFile = (name) => join(tokensDir(), `${name}.json`);
 
 export const saveAgentToken = (name, record) => {
-  refreshMcpTokenCopy(name, record?.runtimeToken);
   if (!existsSync(tokensDir())) mkdirSync(tokensDir(), { recursive: true });
   // mode applies on create only — the record carries a live cm_agent_* secret,
   // same handling as performInit's .commonly-env.
@@ -149,6 +148,12 @@ export const saveAgentToken = (name, record) => {
     JSON.stringify({ ...record, savedAt: new Date().toISOString() }, null, 2),
     { encoding: 'utf8', mode: 0o600 },
   );
+  // After the record is durable, so a failed refresh never loses a freshly minted token.
+  try {
+    refreshMcpTokenCopy(name, record?.runtimeToken);
+  } catch (err) {
+    console.warn(`Could not refresh the MCP token copy for '${name}': ${err.message}. Run: commonly mcp config --agent ${name}`);
+  }
 };
 
 export const loadAgentToken = (name) => {
