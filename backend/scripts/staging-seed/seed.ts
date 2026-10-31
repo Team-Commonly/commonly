@@ -21,6 +21,7 @@ import Task from '../../models/Task';
 import AgentMemory from '../../models/AgentMemory';
 import Integration from '../../models/Integration';
 import { AgentInstallation } from '../../models/AgentRegistry';
+import { assertCredOutOutsideRepo } from './guard';
 import { UI_CARD_CATALOGUE, validateAgentCardPayload } from '../../services/uiCardValidation';
 import {
   AGENTS, CONNECTED_HOSTED_ENTRY, HUMANS, MEMORIES, MESSAGES, POD, SEAT, SEED_EMAIL_DOMAIN,
@@ -74,7 +75,10 @@ const unusablePasswordHash = () => bcrypt.hash(randomBytes(32).toString('hex'), 
 const writeCredFile = (file: string, body: Record<string, unknown>): void => {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
+  // Exclusive create: a leftover or planted file at the temp path is replaced,
+  // never written through (a symlink there would otherwise be followed).
+  fs.rmSync(tmp, { force: true });
+  fs.writeFileSync(tmp, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
   fs.chmodSync(tmp, 0o600);
   fs.renameSync(tmp, file);
 };
@@ -168,6 +172,9 @@ async function seedUsers(report: StagingSeedReport, options: StagingSeedOptions)
 async function seedPod(report: StagingSeedReport): Promise<Types.ObjectId[]> {
   const podId = idOf(POD.key);
   const creator = idOf(HUMANS[0].key);
+  // The seat installs the agents, so its owner-only views (agent settings,
+  // Your Team) have something to show.
+  const installer = idOf(SEAT.key);
   const members = [...HUMANS.map((h) => idOf(h.key)), idOf(SEAT.key), ...AGENTS.map((a) => idOf(a.key))];
   count(report.mongo.pods, await Pod.updateOne(
     { _id: podId },
@@ -180,8 +187,9 @@ async function seedPod(report: StagingSeedReport): Promise<Types.ObjectId[]> {
         publicRead: false,
         communityListed: false,
         createdBy: creator,
-        members,
       },
+      // $addToSet, not $set: people who joined through the UI survive a re-run.
+      $addToSet: { members: { $each: members } },
       $setOnInsert: { createdAt: SEED_EPOCH, updatedAt: SEED_EPOCH },
     },
     { upsert: true, timestamps: false },
@@ -195,7 +203,7 @@ async function seedPod(report: StagingSeedReport): Promise<Types.ObjectId[]> {
           displayName: agent.displayName,
           version: '1.0.0',
           status: 'active',
-          installedBy: creator,
+          installedBy: installer,
           scopes: [],
           // BYO identity: the seat's own machine would run it; nothing is provisioned.
           'config.runtime': { runtimeType: agent.agentName, host: 'byo' },
@@ -225,11 +233,16 @@ async function seedTasks(report: StagingSeedReport): Promise<void> {
           // The board resolves an assignee against pod member usernames.
           assignee: usernameOf(task.assignee),
           dep: task.dep || null,
-          // The board resolves a holder by member id. No expiry: a fixed past
-          // expiry would read as lapsed and the lease sweep would reclaim it.
+          // The board resolves a holder by member id. BOTH lease timestamps are
+          // null on purpose: with claimExpiresAt null the lease is derived as
+          // claimedAt + 30 min (tasksApi deriveLeaseState, kernelWorkSweepService
+          // lapsedConditions), so a fixed past claimedAt lapses at once and the
+          // sweep hands the row back to pending. A claim with neither timestamp
+          // reads `held`, and the board shows "claimed by" with no countdown
+          // (a far-future expiry would render a countdown of millions of minutes).
           claimedBy: claimed ? String(assigneeId) : null,
           ...(claimed ? { claimedByUserId: String(assigneeId) } : {}),
-          claimedAt: claimed ? SEED_EPOCH : null,
+          claimedAt: null,
           claimExpiresAt: null,
           completedAt: done ? SEED_EPOCH : null,
           prUrl: task.prUrl || null,
@@ -369,6 +382,7 @@ async function seedPostgres(report: StagingSeedReport, options: StagingSeedOptio
 }
 
 export async function runStagingSeed(options: StagingSeedOptions): Promise<StagingSeedReport> {
+  assertCredOutOutsideRepo(options.credOut);
   const report: StagingSeedReport = {
     mongo: {
       users: tally(), pods: tally(), installations: tally(), tasks: tally(), memory: tally(), connectors: tally(),

@@ -29,7 +29,11 @@ What it writes, every row under a fixed id:
   four `task-claimed` system lines, a rev-1 `commonly.ui` card (checked by
   `services/uiCardValidation` before it is written), and a four-reply thread.
 - Memory for Wren and Marlow, written once and never overwritten by later runs.
-- The seat test account **`d215-seat`**: a non-admin member of the pod. It has one
+- Claimed rows carry no lease timestamps, so they read as held. A past `claimedAt`
+  would lapse within one sweep and the rows would drop back to pending.
+- Members are added, never replaced, so people who joined through the UI stay.
+- The seat test account **`d215-seat`**: a non-admin member of the pod, and the
+  installer of the four agents, so its owner views list them. It has one
   connected hosted connector (Linear, with no credential, so any call asks to
   reconnect) and one connector that is available but not connected (Notion).
 
@@ -40,8 +44,14 @@ pass `--rotate`. It is written only to the `--cred-out` file, mode 0600, and nev
 stdout or logs. Without `--rotate`, a re-run leaves the password and the file untouched.
 If you lose the file, re-run with `--rotate`. That also ends the seat's open sessions.
 
+Sign in with the `email` from the credentials file (login is by email, not username)
+and its `password`. The file is written before the database. So if a `--rotate`
+fails on the database write, the file holds a password the account never got, and
+the fix is to rotate again.
+
 - **Where the operator keeps it:** `~/.commonly/credentials/staging-seat-test.json`
-  on the operator's machine (directory 0700). Never inside a repo.
+  on the operator's machine (directory 0700). Never inside a repo: the script refuses
+  a `--cred-out` with a `.git` anywhere above it.
 - That same path, under the process's home, is the script's default `--cred-out`.
   In the cluster, write to `/tmp` instead and copy the file out (see below).
 

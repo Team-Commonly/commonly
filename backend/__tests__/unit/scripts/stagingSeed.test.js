@@ -17,8 +17,13 @@ const AgentMemory = require('../../../models/AgentMemory');
 const Integration = require('../../../models/Integration');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const { validateAgentCardPayload } = require('../../../services/uiCardValidation');
+const KernelWorkSweepService = require('../../../services/kernelWorkSweepService');
+const { findHostedMcpEntry, HOSTED_MCP_ENTRIES } = require('../../../integrations/hostedMcp/entries');
 const { runStagingSeed } = require('../../../scripts/staging-seed/seed');
-const { assertStagingTarget, StagingGuardError } = require('../../../scripts/staging-seed/guard');
+const { main } = require('../../../scripts/staging-seed');
+const {
+  assertCredOutOutsideRepo, assertStagingTarget, StagingGuardError,
+} = require('../../../scripts/staging-seed/guard');
 const {
   AGENTS, AVAILABLE_HOSTED_ENTRY, CONNECTED_HOSTED_ENTRY, POD, SEAT, seedObjectId,
 } = require('../../../scripts/staging-seed/fixtures');
@@ -111,6 +116,31 @@ describe('staging seed', () => {
     tasks.filter((t) => t.status === 'claimed').forEach((t) => expect(t.claimedBy).toMatch(/^[0-9a-f]{24}$/));
   });
 
+  it('leaves no claimed row the lease sweep would hand back to pending', async () => {
+    const podId = seedObjectId(POD.key);
+    expect(await Task.countDocuments({ podId, status: 'claimed' })).toBeGreaterThanOrEqual(3);
+    for (const at of [new Date(), new Date(Date.now() + 24 * 3600 * 1000)]) {
+      // eslint-disable-next-line no-await-in-loop
+      expect(await Task.countDocuments({ podId, $or: KernelWorkSweepService.lapsedConditions(at) })).toBe(0);
+    }
+  });
+
+  it('keeps members who joined through the UI across a re-run, and stays idempotent', async () => {
+    const podId = seedObjectId(POD.key);
+    const joiner = seedObjectId('test:ui-joiner');
+    await Pod.updateOne({ _id: podId }, { $addToSet: { members: joiner } });
+    const rerun = await runStagingSeed({ pool, credOut });
+    expect(rerun.mongo.pods).toEqual({ upserted: 0, modified: 0 });
+    const pod = await Pod.findById(podId).lean();
+    expect(pod.members.map(String)).toContain(String(joiner));
+    await Pod.updateOne({ _id: podId }, { $pull: { members: joiner } });
+  });
+
+  it('installs the agents as the seat, so its owner views have them', async () => {
+    const installs = await AgentInstallation.find({ podId: seedObjectId(POD.key) }).lean();
+    installs.forEach((i) => expect(String(i.installedBy)).toBe(String(seedObjectId(SEAT.key))));
+  });
+
   it('writes long agent messages, a run of task-claimed lines, a valid ui card and a thread', async () => {
     const { rows } = await pool.query(
       `SELECT m.id, m.content, m.message_type, m.payload, m.thread_root_id, u.is_bot
@@ -156,6 +186,9 @@ describe('staging seed', () => {
     expect(rowsForSeat[0].config.credentialRef).toBeUndefined();
     expect(rowsForSeat[0].config.refreshTokenRef).toBeUndefined();
     expect(AVAILABLE_HOSTED_ENTRY).not.toBe(CONNECTED_HOSTED_ENTRY);
+    // Both names must be real catalogue entries, or the page shows neither.
+    expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, CONNECTED_HOSTED_ENTRY)).toBeDefined();
+    expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, AVAILABLE_HOSTED_ENTRY)).toBeDefined();
   });
 
   it('writes the seat password only to a 0600 file, and only rotates on request', async () => {
@@ -165,7 +198,6 @@ describe('staging seed', () => {
     const seat = await User.findById(seedObjectId(SEAT.key));
     expect(await seat.comparePassword(body.password)).toBe(true);
 
-    const log = jest.spyOn(console, 'log');
     const rotated = await runStagingSeed({ pool, credOut, rotate: true });
     expect(rotated.seatPassword).toBe('rotated');
     const next = JSON.parse(fs.readFileSync(credOut, 'utf8'));
@@ -173,8 +205,64 @@ describe('staging seed', () => {
     const after = await User.findById(seedObjectId(SEAT.key));
     expect(await after.comparePassword(next.password)).toBe(true);
     expect(after.tokenVersion).toBe((seat.tokenVersion || 0) + 1);
-    log.mock.calls.flat().forEach((arg) => expect(String(arg)).not.toContain(next.password));
-    log.mockRestore();
+  });
+
+  it('refuses a --cred-out inside a git checkout before writing anything', async () => {
+    const repo = path.join(tmp, 'checkout');
+    fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
+    const inside = path.join(repo, 'deep', 'seat.json');
+    expect(() => assertCredOutOutsideRepo(inside)).toThrow(StagingGuardError);
+    expect(() => assertCredOutOutsideRepo(path.join(tmp, 'elsewhere', 'seat.json'))).not.toThrow();
+    // A worktree's .git is a file, and the real backend dir sits in one.
+    expect(() => assertCredOutOutsideRepo(path.join(__dirname, 'seat.json'))).toThrow(/inside the git checkout/);
+    const before = await User.findById(seedObjectId(SEAT.key)).lean();
+    await expect(runStagingSeed({ pool, credOut: inside, rotate: true })).rejects.toThrow(StagingGuardError);
+    expect(fs.existsSync(inside)).toBe(false);
+    expect((await User.findById(seedObjectId(SEAT.key)).lean()).password).toBe(before.password);
+  });
+
+  describe('main()', () => {
+    const stagingEnv = {
+      MONGO_URI: 'mongodb://mongodb:27017/commonly',
+      PG_HOST: 'pg.example.internal',
+      PG_DATABASE: 'commonly_staging',
+    };
+    const deps = (overrides) => ({
+      argv: ['--target=commonly-staging', `--cred-out=${credOut}`],
+      env: stagingEnv,
+      readNamespace: () => 'commonly-staging',
+      connect: jest.fn(async () => {}),
+      disconnect: jest.fn(async () => {}),
+      loadPool: jest.fn(() => ({ query: (...args) => pool.query(...args) })),
+      log: jest.fn(),
+      ...overrides,
+    });
+
+    it.each([
+      ['a prod namespace', { readNamespace: () => 'commonly-dev' }],
+      ['an Atlas Mongo URI', { env: { ...stagingEnv, MONGO_URI: 'mongodb+srv://u:p@prod.example.mongodb.net/x' } }],
+      ['the prod Postgres database', { env: { ...stagingEnv, PG_DATABASE: 'defaultdb' } }],
+      ['no target', { argv: [`--cred-out=${credOut}`] }],
+      ['a cred file inside this checkout', { argv: ['--target=commonly-staging', `--cred-out=${path.join(__dirname, 'x.json')}`] }],
+    ])('refuses %s without connecting to anything', async (_name, override) => {
+      const d = deps(override);
+      await expect(main(d)).rejects.toThrow(StagingGuardError);
+      expect(d.connect).not.toHaveBeenCalled();
+      expect(d.loadPool).not.toHaveBeenCalled();
+    });
+
+    it('seeds on staging signals and never prints the password', async () => {
+      const consoleLog = jest.spyOn(console, 'log');
+      const d = deps({ argv: ['--target=commonly-staging', `--cred-out=${credOut}`, '--rotate'] });
+      const report = await main(d);
+      expect(report.seatPassword).toBe('rotated');
+      expect(d.connect).toHaveBeenCalledWith(stagingEnv.MONGO_URI);
+      const { password } = JSON.parse(fs.readFileSync(credOut, 'utf8'));
+      const printed = [...d.log.mock.calls, ...consoleLog.mock.calls].flat().map(String);
+      expect(printed.some((line) => line.includes('credentials written to'))).toBe(true);
+      printed.forEach((line) => expect(line).not.toContain(password));
+      consoleLog.mockRestore();
+    });
   });
 });
 

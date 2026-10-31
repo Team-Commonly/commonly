@@ -21,6 +21,9 @@
  *      names another namespace's in-cluster Service is refused outright.
  */
 
+import fs from 'fs';
+import path from 'path';
+
 export const STAGING_NAMESPACE = 'commonly-staging';
 export const STAGING_PG_DATABASE = 'commonly_staging';
 
@@ -79,5 +82,23 @@ export function assertStagingTarget(signals: StagingTargetSignals): void {
   const pgDatabase = (signals.pgDatabase || '').trim();
   if (pgDatabase !== STAGING_PG_DATABASE) {
     refuse(`PG_DATABASE is "${pgDatabase || '(unset)'}", not ${STAGING_PG_DATABASE}`);
+  }
+}
+
+/**
+ * The seat password must never land where `git add` can reach it. Walks up from
+ * the file's directory (which may not exist yet) and refuses at the first
+ * `.git` entry, a directory in a checkout or a file in a worktree.
+ */
+export function assertCredOutOutsideRepo(
+  credOut: string,
+  exists: (candidate: string) => boolean = fs.existsSync,
+): void {
+  let dir = path.dirname(path.resolve(credOut));
+  for (;;) {
+    if (exists(path.join(dir, '.git'))) refuse(`--cred-out ${credOut} is inside the git checkout at ${dir}`);
+    const parent = path.dirname(dir);
+    if (parent === dir) return;
+    dir = parent;
   }
 }
