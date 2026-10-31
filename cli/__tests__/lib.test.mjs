@@ -545,6 +545,8 @@ describe('poller.js', () => {
     expect(stopMsg).toMatch(/~\/\.commonly\/tokens\/my-agent\.json/);
     expect(stopMsg).toMatch(/COMMONLY_AGENT_TOKEN/);
     expect(stopMsg).not.toMatch(/COMMONLY_TOKEN/);
+    // The reset verb the sibling messages use, which also clears the session store.
+    expect(stopMsg).toMatch(/detach .* --force/);
     expect(stopMsg).not.toMatch(/likely revoked/);
   });
 

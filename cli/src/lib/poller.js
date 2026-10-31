@@ -141,7 +141,8 @@ export const startPoller = ({
             `Runtime token rejected ${consecutiveAuthErrors} times in a row — stopping poller. `
             + `This run takes its key from ~/.commonly/tokens/${agentName}.json when that file exists, `
             + `and only from COMMONLY_AGENT_TOKEN when it does not. `
-            + `If the key was rotated or revoked, delete that file and rerun with the new COMMONLY_AGENT_TOKEN.`,
+            + `If the key was rotated or revoked, run commonly agent detach ${agentName} --force, `
+            + `then re-run with the Connect-page env exports.`,
           ));
           running = false;
           return;
