@@ -63,9 +63,10 @@ test('a client-side redirect to sign-in cannot produce a HIT', async () => {
 
 // A phone page for the sidebar check. `landsOn` is where goto('/v2') ends (a pod, on a first
 // visit); `backTo` is where the back control's click lands, or null for no control; `listShown`
-// is whether the pods list is on screen. `measured` counts metric runs, so a test can prove the
-// refusal came before any measuring.
-const fakePhone = ({ landsOn, backTo, listShown = true }) => {
+// is whether the pods list is on screen; `failed` shows the error message the sidebar renders
+// when the pods request fails. `measured` counts metric runs, so a test can prove the refusal
+// came before any measuring.
+const fakePhone = ({ landsOn, backTo, listShown = true, failed = false }) => {
   let url = 'about:blank';
   const page = {
     measured: 0,
@@ -74,10 +75,11 @@ const fakePhone = ({ landsOn, backTo, listShown = true }) => {
     url: () => url,
     evaluate: async () => { page.measured++; return { helperWords: 0, innerRatio: 1 }; },
     locator: sel => {
-      const back = sel === SIDEBAR_390.back, list = sel === SIDEBAR_390.list;
-      if (!back && !list) throw new Error(`unexpected locator ${sel}`);
+      const back = sel === SIDEBAR_390.back, list = sel === SIDEBAR_390.list, err = sel === SIDEBAR_390.failed;
+      if (!back && !list && !err) throw new Error(`unexpected locator ${sel}`);
       const n = back ? (backTo === null ? 0 : 1) : 1;
-      const el = { click: async () => { url = BASE + backTo; }, isVisible: async () => list && listShown && new URL(url).pathname === '/v2' };
+      const onList = () => new URL(url).pathname === '/v2';
+      const el = { click: async () => { url = BASE + backTo; }, isVisible: async () => onList() && (list ? listShown : err && failed) };
       return { count: async () => n, first: () => el };
     },
   };
@@ -107,6 +109,19 @@ test('the phone sidebar never scores a pod', async () => {
   assert.strictEqual((await checkSurface(back, sidebar, '390', t)).ok, true);
   assert.strictEqual(back.measured, 1);
   assert.strictEqual((await checkSurface(fakePhone({ landsOn: '/v2', backTo: null }), sidebar, '390', t)).ok, true);
+});
+
+test('a failed pods request is refused before any metric runs', async () => {
+  const t = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'targets.json'), 'utf8'));
+  // The error state keeps `.v2-pods` on screen but renders no list, reached directly or via back.
+  const direct = fakePhone({ landsOn: '/v2', backTo: null, listShown: false, failed: true });
+  await assert.rejects(checkSurface(direct, sidebar, '390', t), /pods did not load/);
+  const viaBack = fakePhone({ landsOn: '/v2/pods/abc', backTo: '/v2', listShown: false, failed: true });
+  await assert.rejects(checkSurface(viaBack, sidebar, '390', t), /pods did not load/);
+  assert.strictEqual(direct.measured + viaBack.measured, 0);
+  // The check reads the loaded list, never the `.v2-pods` container the error state keeps.
+  assert.match(SIDEBAR_390.list, /\.v2-pods__list$/);
+  assert.match(SIDEBAR_390.failed, /:not\(\.v2-pods__list /);
 });
 
 test('only the /v2 pod auto-select counts as landing', () => {

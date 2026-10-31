@@ -129,6 +129,9 @@ async function checkSurface(p, [name, route, opt = {}], vp, targets) {
     }
     assertLanded(url, p.url());
     if (pathOf(p.url()) !== '/v2') throw new Error(`${name}-${vp}: back control left the page on ${pathOf(p.url())}, not /v2`);
+    // A failed or still-loading pods request leaves `.v2-pods` up with a message in place of the
+    // list, so that state is refused by name before the loaded list is required.
+    if (await p.locator(opt.list390.failed).first().isVisible()) throw new Error(`${name}-${vp}: pods did not load (error or spinner in place of ${opt.list390.list})`);
     if (!(await p.locator(opt.list390.list).first().isVisible())) throw new Error(`${name}-${vp}: pods list ${opt.list390.list} is not visible`);
   }
   assertLanded(url, p.url());
@@ -138,7 +141,13 @@ async function checkSurface(p, [name, route, opt = {}], vp, targets) {
 }
 
 // The phone sidebar is the pods list page (V2Layout `.v2-shell--list`); V2Thread's back arrow leads there.
-const SIDEBAR_390 = { back: '.v2-thread__back', list: '.v2-shell--list .v2-pods' };
+// V2PodsSidebar renders `.v2-pods__list` only once the pods request succeeds; the spinner and the
+// error message are `.v2-pods__empty` outside it (an empty list's own message sits inside it).
+const SIDEBAR_390 = {
+  back: '.v2-thread__back',
+  list: '.v2-shell--list .v2-pods__list',
+  failed: '.v2-shell--list .v2-pods__empty:not(.v2-pods__list .v2-pods__empty)',
+};
 
 async function prod(only) {
   const { open } = require('./lib');
