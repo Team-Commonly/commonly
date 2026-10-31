@@ -510,6 +510,68 @@ export const bootstrapAgentRecordFromEnv = async ({
  * Returns an array of plain records so the CLI table formatter stays simple
  * and tests can assert on shape directly.
  */
+/**
+ * `commonly agent list`. Without --pod it reads the admin installs route, which
+ * only a global admin can call. With --pod it reads the member-gated pod roster,
+ * so a pod member lists its own seats. Returns the exit code, never exits itself.
+ */
+export const runAgentList = async (opts = {}, deps = {}) => {
+  const {
+    clientFactory = createClient,
+    tokenFor = getToken,
+    instanceUrlFor = resolveInstanceUrl,
+    log = console.log,
+    error = console.error,
+  } = deps;
+  const col = (s, w) => String(s ?? '').padEnd(w).slice(0, w);
+
+  if (opts.local) {
+    const agents = listLocalAgents();
+    if (agents.length === 0) {
+      log('No agents attached locally. Run: commonly agent attach <adapter> --pod <podId> --name <n>');
+      return 0;
+    }
+    log(`${col('NAME', 20)} ${col('ADAPTER', 10)} ${col('POD', 26)} LAST TURN`);
+    log('─'.repeat(80));
+    agents.forEach((a) => {
+      const lastTurn = a.lastTurn ? new Date(a.lastTurn).toLocaleString() : 'never';
+      log(`${col(a.name, 20)} ${col(a.adapter, 10)} ${col(a.podId, 26)} ${lastTurn}`);
+    });
+    return 0;
+  }
+
+  const token = tokenFor(opts.instance);
+  if (!token) { error('Not logged in. Run: commonly login'); return 1; }
+
+  const client = clientFactory({ instance: instanceUrlFor(opts.instance), token });
+
+  try {
+    const rows = opts.pod
+      ? (await client.get(`/api/registry/pods/${encodeURIComponent(opts.pod)}/agents`)).agents || []
+      : (await client.get('/api/registry/admin/installations')).installations || [];
+
+    if (rows.length === 0) {
+      log('No agents installed.');
+      return 0;
+    }
+
+    log(`${col('NAME', 16)} ${col('INSTANCE', 10)} ${col('RUNTIME', 14)} ${col('HOST', 6)} ${col('STATUS', 10)} LAST SEEN`);
+    log('─'.repeat(80));
+    rows.forEach((inst) => {
+      const runtimeType = inst.config?.runtime?.runtimeType || inst.runtime?.runtimeType || inst.runtimeType || '?';
+      const host = inst.config?.runtime?.host || inst.runtime?.host || '';
+      const seen = inst.usage?.lastUsedAt || inst.connection?.lastSeenAt;
+      const lastSeen = seen ? new Date(seen).toLocaleString() : 'never';
+      log(`${col(inst.agentName, 16)} ${col(inst.instanceId, 10)} ${col(runtimeType, 14)} ${col(host, 6)} ${col(inst.status, 10)} ${lastSeen}`);
+    });
+    return 0;
+  } catch (err) {
+    error(`Failed: ${err.message}`);
+    if (err.status === 403 && !opts.pod) error('Listing every install needs a global admin. Pass --pod <podId> to list one pod you belong to.');
+    return 1;
+  }
+};
+
 export const listLocalAgents = () => {
   const dir = tokensDir();
   if (!existsSync(dir)) return [];
@@ -4325,54 +4387,7 @@ The two modes answer different questions:
 
 Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
 `)
-    .action(async (opts) => {
-      if (opts.local) {
-        const agents = listLocalAgents();
-        if (agents.length === 0) {
-          console.log('No agents attached locally. Run: commonly agent attach <adapter> --pod <podId> --name <n>');
-          return;
-        }
-        const col = (s, w) => String(s ?? '').padEnd(w).slice(0, w);
-        console.log(`${col('NAME', 20)} ${col('ADAPTER', 10)} ${col('POD', 26)} LAST TURN`);
-        console.log('─'.repeat(80));
-        agents.forEach((a) => {
-          const lastTurn = a.lastTurn ? new Date(a.lastTurn).toLocaleString() : 'never';
-          console.log(`${col(a.name, 20)} ${col(a.adapter, 10)} ${col(a.podId, 26)} ${lastTurn}`);
-        });
-        return;
-      }
-
-      const token = getToken(opts.instance);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
-
-      const client = createClient({ instance: resolveInstanceUrl(opts.instance), token });
-
-      try {
-        const params = opts.pod ? { podId: opts.pod } : {};
-        const data = await client.get('/api/registry/admin/installations', params);
-        const installations = data.installations || data || [];
-
-        if (installations.length === 0) {
-          console.log('No agents installed.');
-          return;
-        }
-
-        const col = (s, w) => String(s ?? '').padEnd(w).slice(0, w);
-        console.log(`${col('NAME', 16)} ${col('INSTANCE', 10)} ${col('RUNTIME', 14)} ${col('HOST', 6)} ${col('STATUS', 10)} LAST SEEN`);
-        console.log('─'.repeat(80));
-        installations.forEach((inst) => {
-          const runtimeType = inst.config?.runtime?.runtimeType || inst.runtimeType || '?';
-          const host = inst.config?.runtime?.host || '';
-          const lastSeen = inst.usage?.lastUsedAt
-            ? new Date(inst.usage.lastUsedAt).toLocaleString()
-            : 'never';
-          console.log(`${col(inst.agentName, 16)} ${col(inst.instanceId, 10)} ${col(runtimeType, 14)} ${col(host, 6)} ${col(inst.status, 10)} ${lastSeen}`);
-        });
-      } catch (err) {
-        console.error(`Failed: ${err.message}`);
-        process.exit(1);
-      }
-    });
+    .action(async (opts) => { process.exit(await runAgentList(opts)); });
 
   // ── logs ──────────────────────────────────────────────────────────────────
   // Without --pod, the seat's local daemon log is read. With --pod, the owner
