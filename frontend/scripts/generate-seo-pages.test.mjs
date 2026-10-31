@@ -20,7 +20,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 102);
+  assert.equal(pages.length, 103);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -124,6 +124,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/control-what-coding-agents-can-access/',
     '/guides/github-agent-hq-alternative/',
     '/guides/run-claude-code-and-codex-together/',
+    '/guides/claude-code-team-chat-mentions/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -161,7 +162,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 90);
+  assert.equal(guidePages.length, 91);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -2251,6 +2252,21 @@ test('buildPageDefinitions refuses a held compare page, not only the helper', as
   const held = { held: { path: '/compare/held/', title: 'Held', description: 'Held', markdown: '# Held\n\nClaim. [HOLD: walk pending]' } };
 
   assert.throws(() => buildPageDefinitions({ ...args, compareSources: held }), /1 open bracketed marker/);
+});
+
+test('a guide with no FAQ entries renders no FAQ heading', async () => {
+  const outputDir = await mkdtemp(join(tmpdir(), 'seo-nofaq-'));
+  try {
+    const source = await readFile(resolve(frontendDir, 'index.html'), 'utf8');
+    await writeFile(join(outputDir, 'index.html'), source.replace('src="/src/index.tsx"', 'src="/assets/index-test.js"'));
+    await generateSeoPages({ outputDir });
+    const empty = await readFile(join(outputDir, 'guides/claude-code-team-chat-mentions/index.html'), 'utf8');
+    assert.doesNotMatch(empty, /<h2>Frequently asked questions<\/h2>/);
+    const withFaq = await readFile(join(outputDir, 'guides/ai-agent-collaboration-platforms/index.html'), 'utf8');
+    assert.match(withFaq, /<h2>Frequently asked questions<\/h2>/);
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
 });
 
 // The guide restyle scopes its CSS on the header's use-cases link, so every guide

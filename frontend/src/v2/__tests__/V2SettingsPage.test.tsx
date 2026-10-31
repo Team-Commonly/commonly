@@ -116,6 +116,27 @@ describe('V2SettingsPage', () => {
     expect(languageRadioLabels()).toEqual(LANGUAGE_REGISTRY.map(({ label }) => label));
   });
 
+  test('Look carries the language as a segment that switches the app language', async () => {
+    await i18nReady;
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    renderSettings();
+
+    const look = screen.getByRole('region', { name: 'Look' });
+    const language = within(look).getByRole('radiogroup', { name: 'Language' });
+    expect(language).toHaveClass('v2-seg');
+    expect(within(language).getByRole('radio', { name: 'English' })).toHaveAttribute('aria-checked', 'true');
+    expect(within(look).getByRole('radiogroup', { name: 'Appearance' })).toHaveClass('v2-seg');
+
+    await act(async () => { fireEvent.click(within(language).getByRole('radio', { name: '中文' })); });
+    expect(i18n.resolvedLanguage).toBe('zh-CN');
+    // The labels follow the new language, and the segment shows the choice.
+    const zhLanguage = within(screen.getByRole('region', { name: 'Look' })).getByRole('radiogroup', { name: '语言' });
+    expect(within(zhLanguage).getByRole('radio', { name: '中文' })).toHaveAttribute('aria-checked', 'true');
+
+    await act(async () => { fireEvent.click(within(zhLanguage).getByRole('radio', { name: 'English' })); });
+    expect(i18n.resolvedLanguage).toBe('en');
+  });
+
   test('keeps every folded settings concern visible on one page', () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     renderSettings();
@@ -128,7 +149,7 @@ describe('V2SettingsPage', () => {
       { id: 'devices', title: 'Devices' },
       { id: 'api-token', title: 'API token' },
       { id: 'connected-apps', title: 'Connected apps' },
-      { id: 'language', title: 'Language' },
+      { id: 'look', title: 'Look' },
     ]) {
       expect(screen.getByRole('heading', { name: section.title })).toBeInTheDocument();
       expect(screen.getByRole('link', { name: section.title })).toHaveAttribute('href', `#v2-settings-${section.id}`);
@@ -339,11 +360,11 @@ describe('V2SettingsPage', () => {
     expect(regenerateButton).toHaveFocus();
   });
 
-  test('keeps the no-face explanation for Paper and shortens it for a picked face or photo', () => {
+  test('shows the same short avatar hint for Paper and for a picked face', () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     const { rerender } = renderSettings({ ...auth.currentUser, profilePicture: 'default' });
 
-    expect(screen.getByText('No face and no skin tone until you choose one. Regenerate for another, or upload a photo.'))
+    expect(screen.getByText('Regenerate for another, or upload a photo.'))
       .toBeInTheDocument();
 
     rerender(
@@ -351,7 +372,7 @@ describe('V2SettingsPage', () => {
         <MemoryRouter><div className="v2-root"><V2SettingsPage /></div></MemoryRouter>
       </AuthContext.Provider>,
     );
-    expect(screen.getByText('No face and no skin tone until you choose one. Regenerate for another, or upload a photo.'))
+    expect(screen.getByText('Regenerate for another, or upload a photo.'))
       .toBeInTheDocument();
 
     rerender(
@@ -360,8 +381,6 @@ describe('V2SettingsPage', () => {
       </AuthContext.Provider>,
     );
     expect(screen.getByText('Regenerate for another, or upload a photo.')).toBeInTheDocument();
-    expect(screen.queryByText('No face and no skin tone until you choose one. Regenerate for another, or upload a photo.'))
-      .not.toBeInTheDocument();
   });
 
   test('Regenerate reports a profile save error without losing the current avatar', async () => {

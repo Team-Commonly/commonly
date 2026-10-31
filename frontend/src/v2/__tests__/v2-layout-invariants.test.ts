@@ -357,7 +357,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(accountCluster).toContain('align-items: center');
   });
 
-  test('sidebar is direction C: a white panel with search, Pinned / Recent / Everything, and rows that carry mark, pill and time', () => {
+  test('sidebar is direction C: a white panel with search, a Recent · All · Pinned segment, and rows that carry mark, pill and time', () => {
     // Walk-1 rulings (2026-09-06): the six 11px mono labels are gone; two
     // 12px semibold section heads plus a folded inventory replace them.
     const panel = lastRuleBody(v2, '.v2-pods');
@@ -388,14 +388,35 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(meta).toContain('font: 400 11px/16px var(--v2-font-mono)');
     expect(pill).toContain('background: var(--v2-ink)');
     expect(podsSidebar).toContain("'podsSidebar.workspace.recent'");
-    expect(podsSidebar).toContain("'podsSidebar.workspace.everything'");
+    // D215 (TASK-691): one segment replaced the Pinned / Recent headings and the
+    // "Everything ▸" fold.
+    expect(podsSidebar).toContain("'podsSidebar.workspace.all'");
+    expect(podsSidebar).toContain('<V2Segmented');
+    expect(podsSidebar).not.toContain("'podsSidebar.workspace.everything'");
     expect(podsSidebar).toContain('v2-pods__search');
     expect(podsSidebar).toContain('RECENT_LIMIT');
     // Pinned has an entry point (ux-lead gate 2026-09-06): the pin control is a
-    // sibling of the row, shown on hover / focus / when pinned.
+    // sibling of the row. D215: an icon on row hover or focus that takes the
+    // time's slot, out of sight at rest even when pinned.
     expect(podsSidebar).toContain('togglePin(pod._id)');
-    expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).toContain('opacity: 0');
-    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__pin');
+    expect(podsSidebar).toContain('<ShellGlyph name="pin"');
+    // visibility, not opacity: an opacity-0 pin still catches a tap on the time.
+    expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).toContain('visibility: hidden');
+    expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).not.toContain('opacity: 0');
+    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__pin,\n.v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin { visibility: visible; }');
+    // Touch has no hover: the pin shows at rest there, or a phone cannot pin.
+    expect(v2).toMatch(/@media \(hover: none\) and \(pointer: coarse\) \{\n  \.v2-root button\.v2-pods__pin \{ visibility: visible; \}\n  \.v2-pods__row-time \{ visibility: hidden; \}/);
+    expect(v2).not.toContain('.v2-root button.v2-pods__pin--active { opacity: 1; }');
+    expect(v2).not.toContain("button.v2-pods__pin::before { content: '⌖'");
+    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__row-time,\n.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time { visibility: hidden; }');
+    expect(ruleBody(v2, '.v2-pods__row-time')).toContain('min-width: 24px');
+    // The shared segment: a tinted track with the checked option raised.
+    expect(ruleBody(v2, '.v2-seg')).toContain('display: inline-flex');
+    expect(ruleBody(v2, '.v2-seg')).toContain('flex: none');
+    expect(ruleBody(v2, '.v2-root button.v2-seg__option')).toContain('white-space: nowrap');
+    expect(selectorRuleBody(v2, '.v2-root button.v2-seg__option--on,')).toContain('background: var(--v2-surface)');
+    expect(ruleBody(v2, '.v2-root button.v2-seg__option:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
+    expect(ruleBody(v2, '.v2-root button.v2-icon-button:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
     expect(v2).toContain('.v2-root .v2-pods__section--kind button.v2-pods__section-head');
     expect(lastRuleBody(v2, '.v2-pods__search:focus-within')).toContain('inset 0 0 0 2px var(--v2-accent)');
     expect(podsSidebar).not.toContain("'podsSidebar.workspace.pods'");
@@ -414,7 +435,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const avatar = ruleBody(v2, '.v2-pods__row-mark.v2-avatar', { within: mobile });
     const name = ruleBody(v2, '.v2-pods__row-name', { within: mobile });
     const pin = ruleBody(v2, '.v2-root button.v2-pods__pin', { within: mobile });
-    const meta = ruleBody(v2, '.v2-pods__rowwrap--pinned .v2-pods__row-meta', { within: mobile });
 
     expect(mobile).not.toBe('');
     expect(row).toContain('min-height: 44px');
@@ -425,9 +445,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(avatar).toContain('width: 28px');
     expect(avatar).toContain('height: 28px');
     expect(name).toContain('font-size: 16px');
-    expect(pin).toContain('width: 24px');
-    expect(pin).toContain('height: 24px');
-    expect(meta).toContain('padding-right: 32px');
+    expect(pin).toContain('width: 28px');
+    expect(pin).toContain('height: 28px');
   });
 
   test('pod search shortcut hint hides on narrow and touch-only screens', () => {
@@ -782,7 +801,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(artifactsPage).toContain("if (item.kind === 'image') { setLightbox(item); return; }");
     expect(workspaceInspector).toContain("if (file.kind === 'image') { setLightbox(file); return; }");
     // Inspector Files pane: same rows, ext chip in front, All N files as cobalt text.
-    expect(workspaceInspector).toContain("'inspector.workspace.filesIn'");
+    expect(workspaceInspector).toContain("'inspector.workspace.files'");
     expect(workspaceInspector).toContain('/api/artifacts?podId=');
     expect(ruleBody(v2, '.v2-root button.v2-workspace-inspector__all-files')).toContain('color: var(--v2-accent-text)');
   });
@@ -792,12 +811,21 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // artboard cards. Keeping the old component anywhere in the route would
     // turn this back into a skin over two competing inspector models.
     expect(fs.existsSync(path.join(__dirname, '../components/V2PodInspector.tsx'))).toBe(false);
-    expect(workspaceInspector).toContain('className="v2-workspace-inspector__card"');
-    expect(workspaceInspector).toContain("'inspector.workspace.agentsIn'");
+    expect(workspaceInspector).toContain('v2-workspace-inspector__card v2-workspace-inspector__group');
+    expect(workspaceInspector).toContain("'inspector.workspace.agents'");
     expect(workspaceInspector).toContain("'inspector.workspace.needsYou'");
+    // D215: the mono captions ("agents in sharpen") are gone; each group is a
+    // 44px fold row at rest, and members / manage are head icon buttons.
+    expect(workspaceInspector).not.toContain("'inspector.workspace.agentsIn'");
+    expect(workspaceInspector).not.toContain('shortRoomName');
+    expect(workspaceInspector).not.toContain('v2-workspace-inspector__foot');
+    expect(workspaceInspector).toContain('className="v2-workspace-inspector__fold"');
+    expect(ruleBody(v2, '.v2-root button.v2-workspace-inspector__fold')).toContain('height: 44px');
+    expect(ruleBody(v2, '.v2-workspace-inspector__card.v2-workspace-inspector__group')).toContain('flex: none');
+    expect(ruleBody(v2, '.v2-workspace-inspector__fold-label')).toContain('text-overflow: ellipsis');
+    expect(ruleBody(v2, '.v2-workspace-inspector__head')).toContain('flex: none');
     // board · today left the inspector on ruling 66311; the board keeps its own tab.
     expect(workspaceInspector).not.toContain("'inspector.workspace.boardToday'");
-    expect(workspaceInspector).toContain('shortRoomName(pod.name).toLowerCase()');
     expect(workspaceInspector).toContain('v2-workspace-inspector__state--${state.kind}');
     expect(workspaceInspector).not.toContain('v2-inspector__tabs');
     expect(workspaceInspector).not.toContain('v2-inspector__progress');
@@ -814,11 +842,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(avatar).toContain('border: 0');
     expect(avatar).toContain('box-shadow: none');
     const label = ruleBody(v2, '.v2-workspace-inspector__label');
-    expect(label).toContain('font: 500 11px/14px var(--v2-font-mono)');
+    expect(label).toContain('font: 600 13px/18px var(--v2-font)');
     expect(label).toContain('white-space: nowrap');
-    expect(label).toContain('text-overflow: clip');
-    const foot = selectorRuleBody(v2, '.v2-root .v2-workspace-inspector__foot button');
-    expect(foot).toContain('var(--v2-font-mono)');
+    expect(label).not.toContain('text-transform: lowercase');
     const close = selectorRuleBody(v2, '.v2-root button.v2-workspace-inspector__close');
     expect(close).toContain('display: none');
     expect(v2).toContain('.v2-root button.v2-workspace-inspector__close { display: inline-grid; }');
@@ -1146,7 +1172,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('<SettingsSection id="devices" title="Devices">');
     expect(settingsPage).toContain('<SettingsSection id="api-token" title="API token">');
     expect(settingsPage).toContain('<SettingsSection id="connected-apps" title="Connected apps">');
-    expect(settingsPage).toContain('<SettingsSection id="language" title="Language">');
+    // D215: the language segment lives under Look, beside the theme.
+    expect(settingsPage).toContain('<SettingsSection id="look" title="Look">');
     expect(settingsPage).toContain('className="v2-settings__avatar"');
     expect(settingsPage).toContain('src={currentUser?.profilePicture || undefined}');
     expect(settingsPage).toContain('kind="human"');
@@ -2728,7 +2755,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option')).toContain('min-height: 32px');
       // The 0-state is a sentence in a dashed panel (66400 fix 5), sans 13 — not mono meta.
       expect(lastRuleBody(v2, '.v2-activity__empty--plain span')).toContain('13px/18px var(--v2-font)');
-      expect(lastRuleBody(v2, '.v2-root .v2-rail__utility button.v2-lang-switch__trigger')).toContain('font: 700 11px/16px var(--v2-font-mono)');
       expect(activityPage).not.toContain('v2-activity__footer');
       expect(activityPage.indexOf('</header>')).toBeLessThan(activityPage.indexOf('className="v2-activity__controls"'));
       expect(v2).toMatch(/@media \(max-width: 1100px\) \{[\s\S]*?\.v2-activity__controls \{[^}]*position: relative;[^}]*top: auto;[^}]*right: auto;[^}]*flex-wrap: wrap;/);
@@ -3221,6 +3247,9 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
     // The 1px-per-side compensation is derived from the base shorthand, so it is
     // pinned to it rather than restated as a magic number.
     expect(base.padding).toBe('16px 18px 14px');
+    // With only the title left, a card sizes to its text unless it stretches
+    // across its cell (the chooser collapsed at 1440, 720 and 390 without this).
+    expect(base['align-self']).toBe('stretch');
 
     const pressed = cssDeclarations(
       ruleBody(v2, '.v2-root button.v2-byo__mode[aria-pressed="true"]'),
@@ -3234,21 +3263,6 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
     expect(
       selectorRuleBody(v2, '.v2-root button:focus-visible'),
     ).toContain('box-shadow: var(--v2-focus-ring)');
-  });
-
-  test('the mode kicker is mono 500 at 11px, lowercase, cobalt only when chosen (item 3)', () => {
-    const kicker = cssDeclarations(ruleBody(v2, '.v2-byo__mode-kicker'));
-    expect(kicker.font).toBe('500 11px/16px var(--v2-font-mono)');
-    expect(kicker['text-transform']).toBeUndefined();
-    expect(kicker.color).toBe('var(--v2-text-muted)');
-    const chosen = cssDeclarations(
-      ruleBody(v2, '.v2-root button.v2-byo__mode[aria-pressed="true"] .v2-byo__mode-kicker'),
-    );
-    expect(chosen.color).toBe('var(--v2-accent-text)');
-    // The caps were data, not only CSS, so the data is where they must not come
-    // back from: a lowercase transform over zh-CN copy would be the wrong fix.
-    expect(en).toContain('"onCommonly": "on Commonly"');
-    expect(en).toContain('"yours": "your machine"');
   });
 
   test('the preview label is mono 500 at 11px with no caps transform (item 4)', () => {
