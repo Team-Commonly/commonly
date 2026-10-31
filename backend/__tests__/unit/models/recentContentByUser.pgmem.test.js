@@ -38,13 +38,20 @@ beforeAll(async () => {
   await insert(LIN, 'joined the pod', new Date('2026-10-29T11:00:00Z'), 'system');
   // Copied from MongoDB afterwards: an old row with a higher id.
   await insert(LIN, '你好，这是几个月前的', new Date('2026-06-01T10:00:00Z'));
+  // An undated row, inserted last so it also has the highest id.
+  await insert(LIN, 'bonjour, sans date', null);
 });
 
 describe('recentContentByUser', () => {
   test('an old row with a higher id loses to a newer row with a lower id', async () => {
     await expect(PGMessage.recentContentByUser(LIN, 1)).resolves.toEqual(['hello, this week in English']);
     await expect(PGMessage.recentContentByUser(LIN))
-      .resolves.toEqual(['hello, this week in English', '你好，这是几个月前的']);
+      .resolves.toEqual(['hello, this week in English', '你好，这是几个月前的', 'bonjour, sans date']);
+  });
+
+  test('an undated row loses to every dated one', async () => {
+    const rows = await PGMessage.recentContentByUser(LIN, 2);
+    expect(rows).not.toContain('bonjour, sans date');
   });
 
   test("returns only this person's text rows", async () => {
