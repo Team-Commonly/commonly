@@ -138,14 +138,13 @@ describe('V2SettingsPage', () => {
     expect(screen.getByText('Device controls')).toBeInTheDocument();
     expect(screen.getByText('Plan controls')).toHaveAttribute('data-show-heading', 'false');
     expect(screen.getByText('Device controls')).toHaveAttribute('data-show-heading', 'false');
-    expect(screen.getByText('Connected app controls')).toBeInTheDocument();
+    // Developer apps stay hidden unless REACT_APP_DEVELOPER_APPS=true (TASK-674).
+    expect(screen.queryByText('Connected app controls')).not.toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'lily avatar' })).toHaveClass('v2-settings__avatar');
     expect(screen.getByRole('img', { name: 'lily avatar' })).toHaveAttribute('src', '/uploads/lily.png');
     expect(screen.getByRole('img', { name: 'lily avatar' })).toHaveAttribute('data-kind', 'human');
-    expect(screen.getByText('Connected app controls')).toHaveAttribute('data-variant', 'settings');
-    expect(screen.getByText('Connected app controls')).toHaveAttribute('data-show-integrations', 'false');
     expect(screen.getByRole('link', { name: /Connectors/ })).toHaveAttribute('href', '/v2/connectors');
-    expect(screen.getByText('Developer apps').closest('details')).not.toHaveAttribute('open');
+    expect(screen.queryByText('Developer apps')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Regenerate' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Upload photo' })).toBeInTheDocument();
     expect(screen.getByText('Regenerate for another, or upload a photo.')).toBeInTheDocument();

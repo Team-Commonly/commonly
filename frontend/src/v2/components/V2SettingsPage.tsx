@@ -42,6 +42,10 @@ const SETTINGS_SECTIONS = [
   { id: 'language', title: 'Language' },
 ] as const;
 
+// Custom "Developer apps" (AppsManagement) stays hidden until every path
+// (create, edit, delete, use) is walked live. Default off (TASK-674, D215).
+const DEVELOPER_APPS_ENABLED = process.env.REACT_APP_DEVELOPER_APPS === 'true';
+
 // Admin-only: the instance's user list and usage analytics. Their routes
 // survived the Settings consolidation (#1544) but the way in did not — the
 // pages were reachable only by typing the URL (2026-09-08).
@@ -554,10 +558,12 @@ const V2SettingsPage: React.FC = () => {
               label="Connectors"
               detail="Manage connected services and channels"
             />
-            <details className="v2-settings__developer-disclosure">
-              <summary>Developer apps</summary>
-              <AppsManagement variant="settings" showIntegrations={false} />
-            </details>
+            {DEVELOPER_APPS_ENABLED && (
+              <details className="v2-settings__developer-disclosure">
+                <summary>Developer apps</summary>
+                <AppsManagement variant="settings" showIntegrations={false} />
+              </details>
+            )}
           </SettingsSection>
           <SettingsSection id="language" title="Language"><V2LanguageSection /></SettingsSection>
           {isAdmin && (
