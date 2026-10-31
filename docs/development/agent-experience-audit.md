@@ -4231,19 +4231,21 @@ After #3077 brought litellm up healthy in staging, Scout turns still failed. The
 
 **Lesson:** a native-runtime error names the model it was trying to reach, not the dependency that actually failed. A `"Model <X>: HTTP 401"` can be a pre-call guardrail's upstream 401 (a different vendor, a different key) — read litellm's own pod logs for the failing URL before concluding the model's key is wrong. And "litellm is up" is necessary, not sufficient, for a native agent to reply: the guardrail is an independent failure surface on the same turn.
 
-## 87. `codex exec` ignores SIGTERM, so a polite stop never ends a stalled turn (2026-10-31, swe)
+## 87. A stalled codex turn ends only at the group SIGKILL, because the adapter ignores the abort (2026-10-31, swe)
 
 *Origin: the walk that unblocked turning supervised runs on by default for codex (#2769 follow-up). A real `codex exec` (codex-cli 0.162.1) under cli 0.1.211 ran with `COMMONLY_SUPERVISE_RUNS=1`, a 30 s stall window, and a local provider that accepts the connection and never answers.*
 
-Every turn was named `stuck`, and every turn took the full window plus the cancel grace: 30 s of silence, then 15 s waiting for codex to exit after SIGTERM, then a process-group SIGKILL. The supervisor says so in the failure detail: `the adapter did not settle within 15000ms of cancellation`. In 3 of 3 turns the turn line read `signal: "SIGKILL"`, `childLeftRunning: false`, and no codex process remained after the agent stopped. One more detail: once the provider went away mid-turn, codex's reconnect attempts wrote progress events, so that turn ran 111 s before it was named. A retrying CLI looks alive to a stdout-progress check.
+Every turn was named `stuck`, and every turn took the full window plus the cancel grace. After 30 s of silence the supervisor aborts the run (`controller.abort`, which sends no signal to any process). The codex adapter does not act on the abort, so the 15 s cancel grace (`CANCEL_GRACE_MS`, `cli/src/lib/supervised-turn.js`) runs out and the supervisor SIGKILLs the process group (`packages/seats/src/supervisor.js`, `process-group.js`). The failure detail says so: `the adapter did not settle within 15000ms of cancellation`. In 3 of 3 turns the turn line read `signal: "SIGKILL"`, `childLeftRunning: false`, and no codex process remained after the agent stopped. One more detail: once the provider went away mid-turn, codex's reconnect attempts wrote progress events, so that turn ran 111 s before it was named. A retrying CLI looks alive to a stdout-progress check.
 
-**Repair:** none needed. The supervisor's group SIGKILL is what ends a stalled codex turn, and it works. This entry is here so nobody shortens or removes that step thinking SIGTERM was enough.
+An earlier draft of this entry said codex "ignores SIGTERM". The walk shows nothing of the kind: on the stall path no SIGTERM is sent at all. The only SIGTERM in the codex adapter is its own run timeout.
 
-**Lesson:** a cancel path is proven by what ends the process, not by which signal is sent first. For codex, SIGTERM is a request it does not honour mid-request. Keep the cancel grace bounded and the group SIGKILL after it, and when you read a stall's duration, expect window + grace, not window.
+**Repair:** none needed. The group SIGKILL after a bounded grace is what ends a stalled codex or claude turn, and it works. This entry is here so nobody shortens or removes that step thinking the abort is enough.
+
+**Lesson:** for the codex and claude adapters the abort is advisory, and only the group SIGKILL ends a stalled turn. Read a stall's duration as window + grace, not window. And name the mechanism you observed: "the process ignored SIGTERM" and "nothing sent SIGTERM" look identical from the outside.
 
 ## 88. The claude first-output watchdog catches a turn that never starts, not a turn whose provider never answers (2026-10-31, swe)
 
-*Origin: the G6 "no silent hang" proof. `spawn_stalled` (cli 0.1.199+, on by default, 180 s) reads like a liveness check for claude seats.*
+*Origin: proving that no seat turn hangs silently. `spawn_stalled` (cli 0.1.199+, on by default, 180 s) reads like a liveness check for claude seats.*
 
 It is not one. The watchdog counts a spawn as started when it writes any stdout or stderr byte, or when its session transcript grows. `claude -p` writes the transcript's first row about a second after it spawns, before it has heard anything from the model. Walked on the seats' build (cli 0.1.200) with `COMMONLY_FIRST_OUTPUT_WINDOW_MS=20000` and a provider that accepts the connection and never answers: claude connected twice, wrote its transcript, and was never named `spawn_stalled`. It ran to the run timeout and failed as `claude timed out after 150000ms`, the unnamed failure the watchdog was written to replace. The watchdog's own header says what it was built for: the locked-console hang, where `claude -p` writes no transcript row at all.
 
