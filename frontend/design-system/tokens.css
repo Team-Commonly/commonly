@@ -118,9 +118,9 @@
   --motion-ease-linear: linear;
 
   /* ---------- Typography ---------- */
-  /* Inter (variable, self-hosted from the bundle via @fontsource-variable/inter);
-     SF Pro is the fallback only while the woff2 loads or if it fails. One face:
-     display weight comes from font-weight, not a second family. (TASK-122) */
+  /* IBM Plex Sans (self-hosted from the bundle via @fontsource/ibm-plex-sans);
+     SF Pro is the fallback only while the woff2 loads or if it fails. Display
+     is Bricolage Grotesque (--c-font-display). (TASK-122) */
   --c-font-sans:   "IBM Plex Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont,
                    "Segoe UI", Roboto, sans-serif;
   --c-font-display: "Bricolage Grotesque Variable", "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
@@ -190,7 +190,7 @@ html, body {
 h1, .c-h1 {
   font-family: var(--c-font-sans);
   font-size: var(--c-fs-3xl);
-  font-weight: 700;            /* 850 was tuned for SF Pro Display; Inter reads right at 700 */
+  font-weight: 700;            /* 850 was tuned for SF Pro Display */
   line-height: var(--c-lh-tight);
   letter-spacing: -0.03em;
   margin: 0;
