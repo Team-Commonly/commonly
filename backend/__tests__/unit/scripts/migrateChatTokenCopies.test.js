@@ -181,7 +181,7 @@ describe('migrate CLI failure output', () => {
       ...args,
     ], {
       cwd: path.resolve(__dirname, '../../..'),
-      env: { ...process.env, MONGO_URI: secretUri },
+      env: { ...process.env, MONGO_URI: secretUri, NODE_OPTIONS: '--no-deprecation' },
       encoding: 'utf8',
       timeout: 30000,
     });
