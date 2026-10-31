@@ -1532,7 +1532,10 @@
       "watchers": "关注者",
       "digestHint": "更新会显示在你的摘要中。",
       "memberUnavailable": "成员不可用",
-      "saveError": "未能保存更改，请重试。"
+      "saveError": "未能保存更改，请重试。",
+      "statusLabel": "状态",
+      "showEarlierUpdates": "显示{{count}}条更早的更新",
+      "hideEarlierUpdates": "隐藏更早的更新"
     },
     "form": {
       "title": "标题",

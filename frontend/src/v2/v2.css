@@ -9044,12 +9044,6 @@ body.modern-ui.v2-canvas {
   white-space: pre-wrap;
 }
 
-.v2-board__detail-moves {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 14px;
-}
-
 .v2-board__detail-updates {
   list-style: none;
   margin: 0;
@@ -13811,6 +13805,15 @@ body.modern-ui.v2-canvas {
 .v2-board__detail .v2-modal__body { padding: 16px 24px 24px; display: grid; gap: 20px; }
 .v2-root .v2-board__detail button.v2-modal__close { width: 32px; height: 32px; border: 1px solid var(--v2-border); border-radius: 4px; flex-shrink: 0; }
 .v2-board__grab { display: none; }
+/* D215 task board: details open in a 400px right drawer, not a centred modal. */
+.v2-board .v2-board__overlay--drawer { align-items: stretch; justify-content: flex-end; padding-top: 0; }
+.v2-board .v2-board__drawer { width: 400px; max-width: 100%; height: 100%; max-height: none; border-radius: 14px 0 0 14px; box-shadow: var(--v2-shadow-lg); }
+.v2-board__status-segment { display: inline-flex; max-width: 100%; border: 1px solid var(--v2-border); border-radius: 6px; overflow: hidden; }
+.v2-root button.v2-board__status-option { min-height: 32px; padding: 0 12px; border: 0; border-radius: 0; background: var(--v2-bg); color: var(--v2-text-secondary); font-size: 13px; font-weight: 600; }
+.v2-root button.v2-board__status-option + button.v2-board__status-option { border-left: 1px solid var(--v2-border-soft); }
+.v2-root button.v2-board__status-option[aria-checked="true"] { background: var(--v2-surface); color: var(--v2-text-primary); }
+.v2-root button.v2-board__status-option:disabled { cursor: default; }
+.v2-root button.v2-board__updates-toggle { justify-self: start; min-height: 32px; padding: 0; border: 0; background: none; color: var(--v2-text-secondary); font-size: 13px; font-weight: 600; text-decoration: underline; }
 .v2-board__ownership { margin: 0; display: grid; grid-template-columns: 112px minmax(0, 1fr); border: 1px solid var(--v2-border-soft); border-radius: 4px; }
 .v2-board__ownership dt, .v2-board__ownership dd { margin: 0; padding: 10px 12px; min-height: 44px; display: flex; align-items: center; border-top: 1px solid var(--v2-border-soft); }
 .v2-board__ownership dt:first-of-type, .v2-board__ownership dd:first-of-type { border-top: 0; }
@@ -13835,6 +13838,9 @@ body.modern-ui.v2-canvas {
   .v2-board__col { flex: 0 0 78%; min-width: 250px; }
   .v2-root button.v2-board__card-move { min-height: 44px; padding: 0 14px; font-size: 13px; }
   .v2-board .v2-board__detail { position: absolute; inset: 44px 0 0; width: 100%; max-height: none; border-radius: 6px 6px 0 0; }
+  .v2-board .v2-board__drawer { width: 100%; height: auto; border-radius: 6px 6px 0 0; }
+  .v2-root button.v2-board__status-option { min-height: 44px; padding: 0 14px; }
+  .v2-root button.v2-board__updates-toggle { min-height: 44px; }
   .v2-board__grab { display: block; width: 36px; height: 4px; border-radius: 2px; background: var(--v2-border-soft); margin: 8px auto 0; flex-shrink: 0; }
   .v2-board__detail .v2-modal__head { padding: 12px 16px 14px; }
   .v2-board__detail .v2-modal__body { padding: 14px 16px 24px; gap: 18px; }

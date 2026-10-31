@@ -1540,7 +1540,10 @@
       "watchers": "Watchers",
       "digestHint": "Updates appear in your digest.",
       "memberUnavailable": "Member unavailable",
-      "saveError": "Could not save this change. Try again."
+      "saveError": "Could not save this change. Try again.",
+      "statusLabel": "Status",
+      "showEarlierUpdates": "Show {{count}} earlier updates",
+      "hideEarlierUpdates": "Hide earlier updates"
     },
     "form": {
       "title": "Title",
