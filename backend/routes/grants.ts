@@ -587,6 +587,43 @@ router.get('/:grantId', dualGrantCredential, grantRateLimit, dualAuth, async (re
   }
 });
 
+/** The Tools page lists the caller's own connection grants across every pod. */
+router.get('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: express.Response) => {
+  try {
+    const userId = callerId(req);
+    if (!userId) return res.status(401).json({ error: 'unauthorized' });
+    if (req.query.connectionOwner !== 'me') return res.status(400).json({ error: 'invalid_connection_owner' });
+
+    // The owner is the binding fixed at mint, not whoever holds the connection id
+    // now. An unbound grant is listed for nobody here.
+    const grants = await RoomGrant.find({ ownerId: userId })
+      .sort({ createdAt: -1 }).lean();
+    const podIds = Array.from(new Set(grants
+      .filter((grant) => grant.target.kind === 'pod' && Types.ObjectId.isValid(grant.target.id))
+      .map((grant) => grant.target.id)));
+    const [pods, confinements] = await Promise.all([
+      Promise.all(podIds.map(async (podId) => [podId, await loadPod(podId)] as const)),
+      seatGrantRefusals(grants),
+    ]);
+    // A pod grant is returned only while the caller can still view its pod: an owner
+    // who has left a private pod does not see that pod's grants.
+    const visiblePods = new Map<string, string[]>();
+    for (const [podId, pod] of pods) {
+      if (pod && await DMService.canViewPod(userId, pod)) visiblePods.set(podId, memberIdsOf(pod));
+    }
+    return res.json({ grants: grants
+      .filter((grant) => grant.target.kind !== 'pod' || visiblePods.has(grant.target.id))
+      .map((grant) => projectGrant(
+        grant,
+        grant.target.kind === 'seat' ? grant.audience : visiblePods.get(grant.target.id) || [],
+        userId,
+        confinements.get(grant.grantId),
+      )) });
+  } catch (error) {
+    return handleError(res, error);
+  }
+});
+
 /**
  * GET /api/pods/:podId/grants — every grant whose target is the pod or a seat
  * in it, gated by canViewPod, each row projected. Mounted under /api/pods by
