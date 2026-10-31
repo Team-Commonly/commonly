@@ -15,11 +15,13 @@ jest.mock('../../../services/hostedMcpToolDefinitions', () => ({
   guardedFetch: jest.fn(),
   listHostedMcpTools: jest.fn(),
 }));
+jest.mock('../../../services/runtimeIdentityOwnership', () => ({ ownsRuntimeIdentity: jest.fn() }));
 
 const Integration = require('../../../models/Integration');
 const User = require('../../../models/User');
 const connectorSecrets = require('../../../services/connectorSecrets');
 const { listHostedMcpTools } = require('../../../services/hostedMcpToolDefinitions');
+const { ownsRuntimeIdentity } = require('../../../services/runtimeIdentityOwnership');
 const { HOSTED_MCP_ENTRIES } = require('../../../integrations/hostedMcp/entries');
 const { submitOperatorKey } = require('../../../routes/hostedMcpOperatorKey');
 
@@ -62,7 +64,10 @@ let shipped;
 beforeEach(() => {
   jest.clearAllMocks();
   shipped = HOSTED_MCP_ENTRIES.splice(0, HOSTED_MCP_ENTRIES.length, KEY_ENTRY);
-  User.findOne.mockReturnValue({ select: () => ({ lean: async () => ({ _id: AGENT }) }) });
+  User.findOne.mockReturnValue({
+    select: () => ({ lean: async () => ({ _id: AGENT, botMetadata: { agentName: 'openclaw', instanceId: 'latch' } }) }),
+  });
+  ownsRuntimeIdentity.mockResolvedValue({ owned: true });
   listHostedMcpTools.mockResolvedValue([{ name: 'list_jobs' }]);
   Integration.findOneAndUpdate.mockResolvedValue({ _id: ROW_ID, config: { authGeneration: 1 } });
   Integration.updateOne.mockResolvedValue({ acknowledged: true });
@@ -104,6 +109,33 @@ describe('POST /connect/hosted-mcp/:entryId/operator-key', () => {
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ error: 'invalid_agent' });
     expect(listHostedMcpTools).not.toHaveBeenCalled();
+  });
+
+  test('a bot with no agent identity is refused before the probe', async () => {
+    User.findOne.mockReturnValue({ select: () => ({ lean: async () => ({ _id: AGENT, botMetadata: {} }) }) });
+    const res = await submit();
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_agent' });
+    expect(ownsRuntimeIdentity).not.toHaveBeenCalled();
+    expect(listHostedMcpTools).not.toHaveBeenCalled();
+  });
+
+  test('an agent the caller did not solely install is refused, and nothing is probed or written', async () => {
+    ownsRuntimeIdentity.mockResolvedValue({ owned: false, failure: 'another_installer' });
+    const res = await submit();
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: 'agent_not_owned', message: 'you must be the sole installer of this agent' });
+    expect(ownsRuntimeIdentity).toHaveBeenCalledWith(OWNER, 'openclaw', 'latch');
+    expect(listHostedMcpTools).not.toHaveBeenCalled();
+    expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(connectorSecrets.put).not.toHaveBeenCalled();
+  });
+
+  test('the sole-installer rule has no admin exemption: the check runs whatever the caller role', async () => {
+    ownsRuntimeIdentity.mockResolvedValue({ owned: false, failure: 'owner_installation_missing' });
+    const res = await submit();
+    expect(res.status).toBe(403);
+    expect(ownsRuntimeIdentity).toHaveBeenCalledTimes(1);
   });
 
   test('a valid key writes a pending row, stores the secret on it, then connects it', async () => {

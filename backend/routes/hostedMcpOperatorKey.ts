@@ -4,6 +4,7 @@ import { isHostedMcpEntryHidden } from '../integrations/hostedMcp/visibility';
 import { refusedOperatorKeyScopes, validateOperatorKey } from '../services/hostedMcpOperatorKeyIntake';
 import { guardedFetch } from '../services/hostedMcpToolDefinitions';
 import { secretWriteGeneration } from '../services/hostedMcpSecretGeneration';
+import { ownsRuntimeIdentity } from '../services/runtimeIdentityOwnership';
 
 const Integration = require('../models/Integration');
 const User = require('../models/User');
@@ -39,9 +40,17 @@ export const submitOperatorKey = async (req: OperatorKeyRequest, res: Response) 
   if (!/^[a-f\d]{24}$/i.test(agentId)) {
     return res.status(400).json({ error: 'invalid_agent', message: 'agentId must name an agent' });
   }
-  const agent = await User.findOne({ _id: agentId, isBot: true }).select('_id').lean();
-  if (!agent) {
+  const agent = await User.findOne({ _id: agentId, isBot: true }).select('_id botMetadata').lean();
+  const agentName = agent?.botMetadata?.agentName;
+  const instanceId = agent?.botMetadata?.instanceId;
+  if (!agent || !agentName || !instanceId) {
     return res.status(400).json({ error: 'invalid_agent', message: 'agentId must name an agent' });
+  }
+  // The key is a credential the agent presents, so it takes the same sole-installer
+  // rule as a runtime token. Admins are not exempt.
+  const ownership = await ownsRuntimeIdentity(userId, agentName, instanceId);
+  if (!ownership.owned) {
+    return res.status(403).json({ error: 'agent_not_owned', message: 'you must be the sole installer of this agent' });
   }
 
   const picks = Array.isArray(body.scopePicks) ? body.scopePicks.map(String) : [];
