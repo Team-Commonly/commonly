@@ -391,8 +391,12 @@ export const CollapsibleProse: React.FC<{ collapsible: boolean; children: React.
     observer.observe(el);
     return () => observer.disconnect();
   }, [collapsible]);
-  if (!collapsible) return <>{children}</>;
   const folded = overflows && !open;
+  // Hidden links and buttons must not take focus; React 18 can't set a boolean inert attribute.
+  useLayoutEffect(() => {
+    ref.current?.toggleAttribute('inert', folded);
+  }, [folded]);
+  if (!collapsible) return <>{children}</>;
   return (
     <>
       <div ref={ref} className={`v2-msg__prose${folded ? ' v2-msg__prose--closed' : ''}`}>
@@ -812,7 +816,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
           );
         })()}
         {!imageUrl && stripped && (
-          <CollapsibleProse collapsible={!!runtimeTag}>
+          <CollapsibleProse collapsible={message.user?.isBot === true}>
             <div className="v2-msg__content">
               {externalBareImage
                 ? <a href={externalBareImage} target="_blank" rel="noopener noreferrer">{externalBareImage}</a>

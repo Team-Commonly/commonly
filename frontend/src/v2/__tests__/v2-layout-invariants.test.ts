@@ -2258,6 +2258,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toMatch(/\.v2-msg__prose--closed::after/);
   });
 
+  it('the long-prose fold keeps both its max-height and overflow clip', () => {
+    const block = v2.match(/\.v2-msg__prose--closed \{[^}]*\}/);
+    expect(block).not.toBeNull();
+    expect(block![0]).toMatch(/max-height:\s*132px/);
+    expect(block![0]).toMatch(/overflow:\s*hidden/);
+  });
+
   it('the BEND-1 feature type step exists in v2.css and tokens.css together', () => {
     const ds = fs.readFileSync(path.join(__dirname, '../../../design-system/tokens.css'), 'utf8');
     expect(v2).toContain('--v2-fs-feature: 17px');
