@@ -38,6 +38,27 @@ describe('commonly mcp config', () => {
     expect(fs.statSync(first).mode & 0o777).toBe(0o600);
   });
 
+  it('does not write through a symlink at the token path', () => {
+    seed('lead');
+    const dir = path.join(tmp, '.commonly', 'mcp');
+    fs.mkdirSync(dir, { recursive: true });
+    const victim = path.join(tmp, 'victim');
+    fs.writeFileSync(victim, 'keep');
+    fs.symlinkSync(victim, path.join(dir, 'lead.token'));
+    buildMcpConfig({ agent: 'lead' });
+    expect(fs.readFileSync(victim, 'utf8')).toBe('keep');
+  });
+
+  it('tightens a pre-existing loose mcp dir and refuses a non-agent token', () => {
+    seed('lead');
+    const dir = path.join(tmp, '.commonly', 'mcp');
+    fs.mkdirSync(dir, { recursive: true, mode: 0o755 });
+    buildMcpConfig({ agent: 'lead' });
+    expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
+    seed('user', { runtimeToken: 'eyJuser.jwt' });
+    expect(() => buildMcpConfig({ agent: 'user' })).toThrow(/cm_agent_/);
+  });
+
   it('names the attach command when no agent exists', () => {
     expect(() => buildMcpConfig({})).toThrow(/commonly agent attach/);
   });

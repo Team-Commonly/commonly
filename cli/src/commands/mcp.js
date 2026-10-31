@@ -3,7 +3,7 @@
  * The MCP server only accepts a cm_agent_* runtime token, so the config points
  * COMMONLY_TOKEN_FILE at a 0600 copy of that token and never prints the token.
  */
-import { chmodSync, mkdirSync, writeFileSync } from 'fs';
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import { listLocalAgents, loadAgentToken } from './agent.js';
@@ -26,14 +26,16 @@ export const buildMcpConfig = ({ agent } = {}) => {
   const record = loadAgentToken(name);
   const token = String(record?.runtimeToken || '').trim();
   if (!token) throw new Error(`No runtime token saved for agent '${name}'. ${NO_AGENT_HINT}`);
+  if (!token.startsWith('cm_agent_')) throw new Error(`The saved token for '${name}' is not a cm_agent_* runtime token. Re-attach it: commonly agent attach`);
   if (!record.instanceUrl) throw new Error(`Agent '${name}' has no saved instance URL. Re-attach it.`);
 
   const dir = mcpTokenDir();
   mkdirSync(dir, { recursive: true, mode: 0o700 });
+  chmodSync(dir, 0o700);
   const tokenPath = join(dir, `${name}.token`);
-  // mode applies on create only; chmod keeps a pre-existing file at 0600.
-  writeFileSync(tokenPath, `${token}\n`, { encoding: 'utf8', mode: 0o600 });
-  chmodSync(tokenPath, 0o600);
+  // Remove first, then create exclusively at 0600: no write into a looser-mode file or through a symlink.
+  rmSync(tokenPath, { force: true });
+  writeFileSync(tokenPath, `${token}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
 
   return {
     mcpServers: {
