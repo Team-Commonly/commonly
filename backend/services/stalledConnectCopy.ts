@@ -42,6 +42,13 @@ export type StalledConnectCopyEvidence = {
   commandCopiedAt?: Date | string | null;
   /** Fixed enum only; command contents and tokens never enter copy. */
   commandType?: 'mcp' | 'cli' | null;
+  /**
+   * First copy of each command kind (TASK-721). When either is present they
+   * win over the first-copy pair above: only they can say a person copied the
+   * MCP snippet and never the Terminal command.
+   */
+  mcpCopiedAt?: Date | string | null;
+  cliCopiedAt?: Date | string | null;
   /** Token issue time for the current stalled episode. */
   tokenIssuedAt?: Date | string | null;
   /** OS the Bring your own page detected on the first open (byoOpenedOs). */
@@ -95,13 +102,32 @@ export const composeStalledConnectNudge = ({
   locale?: NudgeLocale;
   evidence?: StalledConnectCopyEvidence;
 }): string => {
-  const offsetSeconds = copiedAtOffsetSeconds(evidence);
+  // Per-kind copies, when recorded, say which command is missing. MCP-only
+  // means the MCP snippet was copied and the Terminal command never was.
+  const hasKindEvidence = Boolean(evidence.mcpCopiedAt || evidence.cliCopiedAt);
+  const mcpOnly = hasKindEvidence && Boolean(evidence.mcpCopiedAt) && !evidence.cliCopiedAt;
+  const effective: StalledConnectCopyEvidence = hasKindEvidence
+    ? {
+      ...evidence,
+      commandType: evidence.cliCopiedAt ? 'cli' : 'mcp',
+      commandCopiedAt: evidence.cliCopiedAt || evidence.mcpCopiedAt,
+    }
+    : evidence;
+  const offsetSeconds = copiedAtOffsetSeconds(effective);
+  if (mcpOnly && offsetSeconds !== null) {
+    return `@${installerName} — you copied the MCP command `
+      + `${copiedAtDescription(offsetSeconds)}, but not the Terminal command that starts me. `
+      + `MCP-only clients can call Commonly, but they do not answer @mentions, `
+      + `so nothing is listening for @${handle} yet. `
+      + `Run \`${fixCommand}\` on the machine where I should live. `
+      + `I'll post here the moment I connect.`;
+  }
   if (offsetSeconds !== null) {
-    const copiedThing = evidence.commandType === 'mcp'
+    const copiedThing = effective.commandType === 'mcp'
       ? 'MCP command'
-      : evidence.commandType === 'cli' ? 'listener command' : 'command';
-    const unavailableOs = evidence.commandType === 'cli' && evidence.openedOs
-      ? LISTENER_UNAVAILABLE_OS[evidence.openedOs]
+      : effective.commandType === 'cli' ? 'listener command' : 'command';
+    const unavailableOs = effective.commandType === 'cli' && effective.openedOs
+      ? LISTENER_UNAVAILABLE_OS[effective.openedOs]
       : undefined;
     if (unavailableOs) {
       return `@${installerName} — you copied the listener command `
@@ -115,7 +141,7 @@ export const composeStalledConnectNudge = ({
       + `${copiedAtDescription(offsetSeconds)}; `
       + `no connection arrived — here is the one thing to check: `
       + `run \`${fixCommand}\` on the machine where I should live.`
-      + (evidence.commandType === 'mcp'
+      + (effective.commandType === 'mcp'
         ? ' MCP-only clients can call Commonly, but they do not answer @mentions.'
         : '')
       + ` I'll post here the moment I connect.`;

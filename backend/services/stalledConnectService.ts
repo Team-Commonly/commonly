@@ -247,6 +247,8 @@ const nudgeOnce = async ({
       onboarding?: {
         byoCommandCopiedAt?: Date;
         byoCommandType?: 'mcp' | 'cli';
+        byoMcpCopiedAt?: Date;
+        byoCliCopiedAt?: Date;
         byoOpenedOs?: 'mac' | 'linux' | 'windows' | 'other';
       };
     } | null;
@@ -293,6 +295,8 @@ const nudgeOnce = async ({
     evidence: {
       commandCopiedAt: installer.onboarding?.byoCommandCopiedAt,
       commandType: installer.onboarding?.byoCommandType,
+      mcpCopiedAt: installer.onboarding?.byoMcpCopiedAt,
+      cliCopiedAt: installer.onboarding?.byoCliCopiedAt,
       openedOs: installer.onboarding?.byoOpenedOs,
       tokenIssuedAt: issuedAt,
     },

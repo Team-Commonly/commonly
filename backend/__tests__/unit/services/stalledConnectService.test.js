@@ -220,6 +220,53 @@ describe('stalledConnectService.scan', () => {
     );
   });
 
+  const copiedKinds = (onboarding) => mockUserFindById.mockReturnValue({
+    select: () => ({ lean: () => Promise.resolve({ username: 'alice', onboarding }) }),
+  });
+
+  it('names the Terminal command when only the MCP snippet was copied (TASK-721)', async () => {
+    setup();
+    copiedKinds({
+      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
+      byoCommandType: 'mcp',
+      byoMcpCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
+    });
+    await scan({ now: NOW });
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).toContain('you copied the MCP command');
+    expect(content).toContain('but not the Terminal command that starts me');
+    expect(content).toContain('MCP-only clients can call Commonly, but they do not answer @mentions');
+    expect(content).toContain('Run `commonly agent run ai1-agent` on the machine where I should live');
+    expect(content).toContain("I'll post here the moment I connect");
+  });
+
+  it('does not say the Terminal command was missed when the listener command was copied too', async () => {
+    setup();
+    copiedKinds({
+      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
+      byoCommandType: 'mcp',
+      byoMcpCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
+      byoCliCopiedAt: new Date(OLD_TOKEN.getTime() + 9 * MINUTE),
+    });
+    await scan({ now: NOW });
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).toContain('you copied the listener command');
+    expect(content).not.toContain('but not the Terminal command');
+    expect(content).not.toContain('MCP-only clients');
+  });
+
+  it('keeps the older wording for a signup that only has the first-copy pair', async () => {
+    setup();
+    copiedKinds({
+      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
+      byoCommandType: 'mcp',
+    });
+    await scan({ now: NOW });
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).toContain('here is the one thing to check');
+    expect(content).not.toContain('but not the Terminal command');
+  });
+
   it('holds fire inside the patience window', async () => {
     setup({ installs: [install({ runtimeTokens: [{ createdAt: FRESH_TOKEN }] })] });
     const r = await scan({ now: NOW });

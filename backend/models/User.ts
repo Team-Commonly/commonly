@@ -216,6 +216,9 @@ export interface IUser extends Document {
     byoCommandCopiedAt?: Date;
     /** Fixed kind only; command contents and tokens are never stored. */
     byoCommandType?: 'mcp' | 'cli';
+    /** First copy of each setup command, kept per kind (TASK-721). */
+    byoMcpCopiedAt?: Date;
+    byoCliCopiedAt?: Date;
     /** First authenticated BYO runtime request, never overwritten. */
     byoFirstConnectionAttemptAt?: Date;
     /** First "invite a teammate" card mounted, and first dismissed. */
@@ -470,6 +473,8 @@ const userSchema = new Schema<IUser>({
     byoOpenedOs: { type: String, enum: ['mac', 'linux', 'windows', 'other'] },
     byoCommandCopiedAt: { type: Date },
     byoCommandType: { type: String, enum: ['mcp', 'cli'] },
+    byoMcpCopiedAt: { type: Date },
+    byoCliCopiedAt: { type: Date },
     byoFirstConnectionAttemptAt: { type: Date },
     inviteCardShownAt: { type: Date },
     inviteCardDismissedAt: { type: Date },
