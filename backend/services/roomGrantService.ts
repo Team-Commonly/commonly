@@ -362,18 +362,25 @@ export const revokeTaskGrants = async ({ taskId, podId, closedEpoch }: Pick<Room
   };
   const candidates = await RoomGrant.find(filter).select('grantId').lean();
   const revokedAt = new Date();
-  const revoked = await Promise.all(candidates.map(({ grantId }) => RoomGrant.findOneAndUpdate(
+  // allSettled, not all: a write that committed stays revoked even when a
+  // sibling write fails, and no later close can name it (its filter needs
+  // `revokedAt: null`), so the line is written for every match before the
+  // failure is rethrown to the caller's log.
+  const settled = await Promise.allSettled(candidates.map(({ grantId }) => RoomGrant.findOneAndUpdate(
     { ...filter, grantId },
     { $set: { revokedAt, revocationReason: 'task.done' } },
     { projection: { grantId: 1 }, lean: true },
   )));
-  const grantIds = Array.from(new Set(revoked.flatMap((grant) => (grant ? [String(grant.grantId)] : []))));
+  const grantIds = Array.from(new Set(settled.flatMap((result) => (
+    result.status === 'fulfilled' && result.value ? [String(result.value.grantId)] : []))));
   // ADR-033 §4: the close's own task.done line is queued first, by the caller.
   if (grantIds.length) {
     emitRecord({ podId, taskId }, `grant.revoked/task.done/${closedEpoch}`, [
       { kind: 'grant.revoked', actor: BOARD_ACTOR, data: { grantIds, reason: 'task.done' } },
     ]);
   }
+  const failure = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+  if (failure) throw failure.reason;
   return grantIds.length;
 };
 

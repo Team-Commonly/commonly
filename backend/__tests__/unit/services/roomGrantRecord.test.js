@@ -223,3 +223,19 @@ test('a refused mint the close already revoked keeps the close\'s revocation and
   const revoked = (await chainLines()).filter((l) => l.kind === 'grant.revoked');
   expect(revoked.map((l) => l.data.grantIds)).toEqual([[grant.grantId]]);
 });
+
+test('a close whose write fails for one grant still names the grants it did revoke', async () => {
+  const grants = [await service.mintGrant(input()), await service.mintGrant(input())];
+  const spy = jest.spyOn(RoomGrant(), 'findOneAndUpdate').mockRejectedValueOnce(new Error('revocation write failed'));
+  const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+  await close();
+  expect(spy).toHaveBeenCalledTimes(2);
+  spy.mockRestore();
+  expect(logged).toHaveBeenCalledTimes(1);
+  logged.mockRestore();
+  const rows = await RoomGrant().find({ grantId: { $in: grants.map((g) => g.grantId) } }).lean();
+  const revokedIds = rows.filter((row) => row.revokedAt).map((row) => row.grantId);
+  expect(revokedIds).toHaveLength(1);
+  const revoked = (await chainLines()).filter((l) => l.kind === 'grant.revoked');
+  expect(revoked.map((l) => l.data.grantIds)).toEqual([revokedIds]);
+});
