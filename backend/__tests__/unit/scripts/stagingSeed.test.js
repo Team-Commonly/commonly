@@ -123,6 +123,12 @@ describe('staging seed', () => {
       // eslint-disable-next-line no-await-in-loop
       expect(await Task.countDocuments({ podId, $or: KernelWorkSweepService.lapsedConditions(at) })).toBe(0);
     }
+    // The real sweep, run a day later, leaves every seeded claimed row claimed.
+    const claimedBefore = await Task.find({ podId, status: 'claimed' }).select('_id').lean();
+    const { rescued, deferred } = await KernelWorkSweepService.rescueLapsed(new Date(Date.now() + 24 * 3600 * 1000));
+    const seededIds = new Set(claimedBefore.map((row) => String(row._id)));
+    expect([...rescued, ...deferred].filter((row) => seededIds.has(String(row._id)))).toHaveLength(0);
+    expect(await Task.countDocuments({ podId, status: 'claimed' })).toBe(claimedBefore.length);
   });
 
   it('keeps members who joined through the UI across a re-run, and stays idempotent', async () => {
