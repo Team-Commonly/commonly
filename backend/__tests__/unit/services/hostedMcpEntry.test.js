@@ -28,6 +28,8 @@ const SENTRY_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-
 const NOTION_CAPTURE = require('../../fixtures/hostedMcp/notion-tools-list-2026-10-19.json');
 const GITLAB_CAPTURE = require('../../fixtures/hostedMcp/gitlab-tools-list-2026-10-19.json');
 const SUPABASE_CAPTURE = require('../../fixtures/hostedMcp/supabase-tools-list-2026-10-19.json');
+const GITHUB_MCP_SOURCE = require('../../fixtures/hostedMcp/github-mcp-tools-source-2026-10-15.json');
+const GITHUB_MCP_PIN = require('../../../integrations/hostedMcp/githubMcpSchemas.json');
 
 const ENTRY_TEXT = 'ENTRY TEXT the pin agreed to.';
 const VENDOR_TEXT = 'VENDOR TEXT nobody reviewed.';
@@ -584,6 +586,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
     // any member has connected anything. Its ordering follows the build plan.
     expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual([
       'linear', 'google-calendar', 'atlassian', 'airtable', 'sentry', 'notion', 'gitlab', 'supabase',
+      'github-mcp',
     ]);
     const catalogue = [linear(), linear({ id: 'notion', title: 'Notion' })];
     expect(findHostedMcpEntry(catalogue, 'notion').title).toBe('Notion');
@@ -874,6 +877,55 @@ describe('the shipped catalogue cannot land half-wired', () => {
       .toContain('untracked data and schema changes');
   });
 
+  test('GitHub pins six read tools from one fixed upstream commit and exposes no writer', () => {
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'github-mcp');
+    expect(GITHUB_MCP_SOURCE.sourceCommit).toBe('796afb74711ddc856fe587debc49373e21c8d0f7');
+    expect(GITHUB_MCP_PIN.sourceCommit).toBe(GITHUB_MCP_SOURCE.sourceCommit);
+    expect(entry).toMatchObject({
+      resource: 'https://api.githubcopilot.com/mcp/',
+      issuer: 'https://github.com/login/oauth',
+      client: 'pre-registered',
+      scopes: ['offline_access'],
+      tokenEndpointAuthMethod: 'client_secret_post',
+      revoke: { page: 'https://github.com/settings/applications' },
+    });
+    const expected = [
+      'get_me', 'list_issues', 'issue_read', 'list_pull_requests',
+      'pull_request_read', 'get_file_contents',
+    ];
+    expect(entry.tools.map((tool) => tool.name)).toEqual(expected);
+    expect(GITHUB_MCP_SOURCE.tools.map((tool) => tool.name)).toEqual(expected);
+    const source = new Map(GITHUB_MCP_SOURCE.tools.map((tool) => [tool.name, tool]));
+    for (const tool of entry.tools) {
+      const upstream = source.get(tool.name);
+      expect(tool.upstreamName).toBe(tool.name);
+      expect(tool.class).toBe('read');
+      expect(tool.annotations.readOnlyHint).toBe(true);
+      expect(upstream.annotations.readOnlyHint).toBe(true);
+      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(upstream.inputSchema));
+      expect(tool.description).not.toBe(upstream.description);
+      const propertyNames = [];
+      const visit = (value) => {
+        if (!value || typeof value !== 'object') return;
+        if (value.properties && typeof value.properties === 'object') {
+          propertyNames.push(...Object.keys(value.properties));
+        }
+        Object.values(value).forEach(visit);
+      };
+      visit(tool.inputSchema);
+      for (const targetKey of ['url', 'uri', 'fetch_target', 'target_url', 'source_url']) {
+        expect(propertyNames).not.toContain(targetKey);
+      }
+    }
+    const offered = entryToolProjections(entry);
+    expect(offered.map((tool) => tool.name)).toEqual(expected.map((name) => `github-mcp.${name}`));
+    expect(offered.every((tool) => tool.requiredWriteMode === 'read')).toBe(true);
+    for (const name of ['create_issue', 'add_issue_comment', 'create_pull_request', 'merge_pull_request']) {
+      expect(offered.some((tool) => tool.name === `github-mcp.${name}`)).toBe(false);
+    }
+    expect(assessEntryTools(entry, GITHUB_MCP_SOURCE.tools).every((row) => row.verdict === 'ok')).toBe(true);
+  });
+
   test('the Linear pin is the measured list minus caller-chosen fetch paths', () => {
     // The latest capture `connector-ops` took (2026-10-14) is committed beside
     // this suite, so the pin's schemas are compared with the measurement rather
@@ -1021,6 +1073,53 @@ describe('the shipped catalogue cannot land half-wired', () => {
       .toEqual({ page: bothURLs.page, endpoint: bothURLs.endpoint });
     expect(hostedMcpRevokeTarget(linear({ revoke: { page: bothURLs.page } })))
       .toEqual({ page: bothURLs.page });
+  });
+
+  // TASK-290: GitHub's App user token reaches only the accounts and
+  // repositories the App is installed on, so the page where a person picks
+  // them is part of connecting. Each instance registers its own App, so the
+  // page comes from the instance's config, and a slug GitHub could not have
+  // issued offers no page at all rather than a link somewhere else.
+  test('the GitHub access page is the configured App\'s install page, or none', () => {
+    const { githubMcpAccessPage } = require('../../../integrations/hostedMcp/githubMcp');
+    expect(githubMcpAccessPage({ GITHUB_MCP_APP_SLUG: 'commonly-connect' }))
+      .toBe('https://github.com/apps/commonly-connect/installations/new');
+    expect(githubMcpAccessPage({ GITHUB_MCP_APP_SLUG: ' self-host-app ' }))
+      .toBe('https://github.com/apps/self-host-app/installations/new');
+    for (const slug of [undefined, '', 'Commonly', '../evil', 'a/b', 'app?x=1', '-lead', 'trail-', 'evil.example']) {
+      expect(githubMcpAccessPage({ GITHUB_MCP_APP_SLUG: slug })).toBeUndefined();
+    }
+    const before = process.env.GITHUB_MCP_APP_SLUG;
+    try {
+      process.env.GITHUB_MCP_APP_SLUG = 'commonly-connect';
+      jest.isolateModules(() => {
+        const { GITHUB_MCP_ENTRY } = require('../../../integrations/hostedMcp/githubMcp');
+        expect(GITHUB_MCP_ENTRY.accessPage).toBe('https://github.com/apps/commonly-connect/installations/new');
+      });
+      delete process.env.GITHUB_MCP_APP_SLUG;
+      jest.isolateModules(() => {
+        const { GITHUB_MCP_ENTRY } = require('../../../integrations/hostedMcp/githubMcp');
+        expect(GITHUB_MCP_ENTRY).not.toHaveProperty('accessPage');
+      });
+    } finally {
+      if (before === undefined) delete process.env.GITHUB_MCP_APP_SLUG;
+      else process.env.GITHUB_MCP_APP_SLUG = before;
+    }
+  });
+
+  test('an access page is an absolute https URL or absent', () => {
+    for (const accessPage of [
+      'github.com/apps/x/installations/new', 'http://github.com/apps/x', '', 'https://a b', 42,
+      // Pass the prefix check, but name no host.
+      'https://#fragment', 'https://?q',
+    ]) {
+      expect(() => assertHostedMcpEntries([linear({ accessPage })]))
+        .toThrow(/access page is not an absolute https URL: linear/);
+    }
+    // Controls: an entry with no page, and one with an https page, both load.
+    expect(() => assertHostedMcpEntries([linear()])).not.toThrow();
+    expect(() => assertHostedMcpEntries([linear({ accessPage: 'https://github.com/apps/x/installations/new' })]))
+      .not.toThrow();
   });
 
   test('a namespaced name is the entry id and the pinned name', () => {

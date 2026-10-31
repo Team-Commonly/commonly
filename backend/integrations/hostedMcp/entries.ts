@@ -15,6 +15,7 @@ import type { HostedMcpEntry } from '../../services/hostedMcpEntryService';
 import { AIRTABLE_ENTRY } from './airtable';
 import { ATLASSIAN_ENTRY } from './atlassian';
 import { GOOGLE_CALENDAR_ENTRY } from './googleCalendar';
+import { GITHUB_MCP_ENTRY } from './githubMcp';
 import { GITLAB_ENTRY } from './gitlab';
 import { LINEAR_ENTRY } from './linear';
 import { NOTION_ENTRY } from './notion';
@@ -26,6 +27,7 @@ export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [
   NOTION_ENTRY,
   GITLAB_ENTRY,
   SUPABASE_ENTRY,
+  GITHUB_MCP_ENTRY,
 ];
 
 /**
@@ -180,6 +182,21 @@ export const assertHostedMcpEntries = (
         throw new Error(
           `hosted-mcp entry authorization parameter outside the closed set: ${entry.id}.${invalidParam[0]}`,
         );
+      }
+    }
+    // The catalogue hands this page to a person as a link. The prefix check
+    // alone accepts `https://#fragment`, which has no host to open.
+    if (entry.accessPage !== undefined) {
+      let page: URL | null = null;
+      try {
+        if (typeof entry.accessPage === 'string' && /^https:\/\/[^\s]+$/.test(entry.accessPage)) {
+          page = new URL(entry.accessPage);
+        }
+      } catch {
+        page = null;
+      }
+      if (!page || page.protocol !== 'https:' || !page.hostname) {
+        throw new Error(`hosted-mcp entry access page is not an absolute https URL: ${entry.id}`);
       }
     }
     // What removal will do with this entry

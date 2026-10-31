@@ -78,6 +78,14 @@ hostedMcp:
   hiddenEntryUserAllowlist: {}
   googleCalendar:
     enabled: false
+  # Enable only after both pre-registered GitHub App client secrets exist with
+  # enabled versions in Secret Manager. A missing remoteRef stalls api-keys.
+  githubMcp:
+    enabled: false
+    # The public slug of the same App (github.com/apps/<slug>). It names the
+    # install page where a person picks the repositories the App's user token
+    # can reach. Empty: no install link is offered.
+    appSlug: ""
 
 # Agent provisioning (RBAC + PVCs)
 agentProvisioning:
