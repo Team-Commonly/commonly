@@ -12,14 +12,44 @@
 //
 // Helper words = grey text (saturation < 50, mean channel 60-200) outside controls and the
 // nav rail. Scroll = the main scroller's height / viewport height.
-const { chromium } = require('playwright');
 const path = require('path');
 const fs = require('fs');
 
 const HERE = __dirname;
 const TARGETS = path.join(HERE, '..', 'targets.json');
 
+const SURFACES = ['settings', 'agent-settings', 'agent-memory', 'board', 'connectors', 'chat', 'sidebar'];
+const VIEWPORTS = ['1440', '390'];
+const EXPECTED = SURFACES.flatMap(s => VIEWPORTS.map(v => `${s}-${v}`));
+
+// Accepts no arguments (artboard) or `prod [--only a,b]`; anything else throws before a browser opens.
+function parseArgs(argv) {
+  const args = argv.slice(2);
+  if (args.length === 0) return { mode: 'artboard', only: null };
+  if (args[0] !== 'prod') throw new Error(`unknown mode "${args[0]}"; use no argument or "prod"`);
+  if (args.length === 1) return { mode: 'prod', only: null };
+  if (args[1] !== '--only' || args.length !== 3) throw new Error('prod accepts only "--only a,b"');
+  const only = args[2].split(',').map(x => x.trim()).filter(Boolean);
+  const bad = only.filter(x => !SURFACES.includes(x));
+  if (!only.length) throw new Error('--only names no surface');
+  if (bad.length) throw new Error(`unknown surface: ${bad.join(', ')}; known: ${SURFACES.join(', ')}`);
+  return { mode: 'prod', only };
+}
+
+// Every expected surface-viewport key must carry two finite numbers before targets.json is replaced.
+function validateTargets(res) {
+  const missing = EXPECTED.filter(k => !res[k]);
+  const extra = Object.keys(res).filter(k => !EXPECTED.includes(k));
+  const invalid = EXPECTED.filter(k => res[k] && !(Number.isFinite(res[k].helperWords) && Number.isFinite(res[k].innerRatio) && res[k].innerRatio >= 1));
+  const problems = [];
+  if (missing.length) problems.push(`missing ${missing.join(', ')}`);
+  if (extra.length) problems.push(`unexpected ${extra.join(', ')}`);
+  if (invalid.length) problems.push(`invalid ${invalid.join(', ')}`);
+  if (problems.length) throw new Error(`artboard measurement incomplete (${problems.join('; ')}); targets.json left unchanged`);
+}
+
 async function artboard() {
+  const { chromium } = require('playwright');
   const launch = { headless: true };
   if (process.env.PLAYWRIGHT_CHROMIUM) launch.executablePath = process.env.PLAYWRIGHT_CHROMIUM;
   const b = await chromium.launch(launch);
@@ -49,10 +79,12 @@ async function artboard() {
   });
   // The chat mock is a short excerpt, so its scroll target was measured on prod history with
   // the six-line fold and claim-row collapse applied to the live DOM.
-  res['chat-1440'].innerRatio = 5.32; res['chat-390'].innerRatio = 6.28;
+  if (res['chat-1440']) res['chat-1440'].innerRatio = 5.32;
+  if (res['chat-390']) res['chat-390'].innerRatio = 6.28;
+  await b.close();
+  validateTargets(res);
   fs.writeFileSync(TARGETS, JSON.stringify(res, null, 1) + '\n');
   for (const [k, v] of Object.entries(res)) console.log(k.padEnd(20), String(v.helperWords).padStart(4), v.innerRatio);
-  await b.close();
 }
 
 // Same counter that produced the before numbers on prod.
@@ -76,13 +108,11 @@ const METRICS = () => {
   return { helperWords: words, innerRatio: +Math.max(innerRatio, docRatio).toFixed(2) };
 };
 
-async function prod() {
+async function prod(only) {
   const { open, go } = require('./lib');
   const pod = process.env.D215_POD, agent = process.env.D215_AGENT;
   if (!pod || !agent) throw new Error('D215_POD and D215_AGENT must be set');
   const side = process.env.D215_SIDEBAR_POD || pod;
-  const i = process.argv.indexOf('--only');
-  const only = i > 0 ? process.argv[i + 1].split(',') : null;
   const targets = JSON.parse(fs.readFileSync(TARGETS, 'utf8'));
   const SURF = [
     ['settings', () => '/v2/settings'],
@@ -99,7 +129,11 @@ async function prod() {
     for (const [name, route, opt = {}] of SURF) {
       if (only && !only.includes(name)) continue;
       await go(p, route(vp));
-      if (opt.tab) { const t = p.getByRole('tab', { name: opt.tab }); if (await t.count()) { await t.first().click(); await p.waitForTimeout(2000); } }
+      if (opt.tab) {
+        const t = p.getByRole('tab', { name: opt.tab });
+        if (!(await t.count())) throw new Error(`${name}-${vp}: no "${opt.tab}" tab on ${route(vp)}`);
+        await t.first().click(); await p.waitForTimeout(2000);
+      }
       if (opt.click390 && vp === '390') { const c = p.getByRole('button', { name: opt.click390 }); if (await c.count()) { await c.first().click(); await p.waitForTimeout(1500); } }
       const m = await p.evaluate(METRICS);
       const key = `${name}-${vp}`, t = targets[key];
@@ -112,4 +146,10 @@ async function prod() {
   process.exit(miss ? 1 : 0);
 }
 
-(process.argv[2] === 'prod' ? prod() : artboard()).catch(e => { console.error(e.message); process.exit(2); });
+module.exports = { parseArgs, validateTargets, EXPECTED, SURFACES };
+
+if (require.main === module) {
+  let args;
+  try { args = parseArgs(process.argv); } catch (e) { console.error(e.message); process.exit(2); }
+  (args.mode === 'prod' ? prod(args.only) : artboard()).catch(e => { console.error(e.message); process.exit(2); });
+}

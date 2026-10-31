@@ -21,8 +21,15 @@ async function open(w = 1440, h = 900, mobile = false) {
   return { b, p };
 }
 
+// A failed navigation throws, so a check never measures the page it was meant to leave.
 async function go(p, route) {
-  await p.goto(BASE + route, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+  let res;
+  try {
+    res = await p.goto(BASE + route, { waitUntil: 'networkidle', timeout: 30000 });
+  } catch (e) {
+    throw new Error(`navigation to ${route} failed: ${e.message.split('\n')[0]}`);
+  }
+  if (res && !res.ok()) throw new Error(`navigation to ${route} returned HTTP ${res.status()}`);
   await p.waitForTimeout(2500);
 }
 
