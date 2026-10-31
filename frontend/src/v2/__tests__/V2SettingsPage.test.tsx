@@ -138,19 +138,36 @@ describe('V2SettingsPage', () => {
     expect(screen.getByText('Device controls')).toBeInTheDocument();
     expect(screen.getByText('Plan controls')).toHaveAttribute('data-show-heading', 'false');
     expect(screen.getByText('Device controls')).toHaveAttribute('data-show-heading', 'false');
-    expect(screen.getByText('Connected app controls')).toBeInTheDocument();
+    // Developer apps stay hidden unless REACT_APP_DEVELOPER_APPS=true (TASK-674).
+    expect(screen.queryByText('Connected app controls')).not.toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'lily avatar' })).toHaveClass('v2-settings__avatar');
     expect(screen.getByRole('img', { name: 'lily avatar' })).toHaveAttribute('src', '/uploads/lily.png');
     expect(screen.getByRole('img', { name: 'lily avatar' })).toHaveAttribute('data-kind', 'human');
-    expect(screen.getByText('Connected app controls')).toHaveAttribute('data-variant', 'settings');
-    expect(screen.getByText('Connected app controls')).toHaveAttribute('data-show-integrations', 'false');
     expect(screen.getByRole('link', { name: /Connectors/ })).toHaveAttribute('href', '/v2/connectors');
-    expect(screen.getByText('Developer apps').closest('details')).not.toHaveAttribute('open');
+    expect(screen.queryByText('Developer apps')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Regenerate' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Upload photo' })).toBeInTheDocument();
     expect(screen.getByText('Regenerate for another, or upload a photo.')).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'English' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: '中文' })).toBeInTheDocument();
+  });
+
+  test('shows Developer apps only when REACT_APP_DEVELOPER_APPS is exactly true', () => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    const previous = process.env.REACT_APP_DEVELOPER_APPS;
+    try {
+      process.env.REACT_APP_DEVELOPER_APPS = 'yes';
+      const off = renderSettings();
+      expect(screen.queryByText('Developer apps')).not.toBeInTheDocument();
+      off.unmount();
+
+      process.env.REACT_APP_DEVELOPER_APPS = 'true';
+      renderSettings();
+      expect(screen.getByText('Developer apps')).toBeInTheDocument();
+    } finally {
+      if (previous === undefined) delete process.env.REACT_APP_DEVELOPER_APPS;
+      else process.env.REACT_APP_DEVELOPER_APPS = previous;
+    }
   });
 
   test('uses a left navigation column to target Settings sections', () => {
