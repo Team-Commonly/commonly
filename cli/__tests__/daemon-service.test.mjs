@@ -123,7 +123,7 @@ describe('install', () => {
     expect(deps.execCmd).toHaveBeenLastCalledWith(['launchctl', 'load', '-w', target.file]);
   });
 
-  test('linux: writes the unit, reloads, enables --now', async () => {
+  test('linux: writes the unit, reloads, enables, and restarts so a running unit takes the new env', async () => {
     const deps = makeDeps();
     const target = await installDaemonService({
       platform: 'linux', home, nodePath, cliPath, ...deps,
@@ -131,7 +131,8 @@ describe('install', () => {
     expect(target.kind).toBe('systemd');
     expect(deps.execCmd.mock.calls).toEqual([
       [['systemctl', '--user', 'daemon-reload']],
-      [['systemctl', '--user', 'enable', '--now', SYSTEMD_UNIT]],
+      [['systemctl', '--user', 'enable', SYSTEMD_UNIT]],
+      [['systemctl', '--user', 'restart', SYSTEMD_UNIT]],
     ]);
   });
 

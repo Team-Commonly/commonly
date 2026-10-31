@@ -38,7 +38,8 @@ is 3 or more patch releases behind npm latest, or behind a newer minor or major:
 - **Silent** when offline, on a registry error, or with `COMMONLY_NO_UPDATE_CHECK=1`.
   A daemon started as a login service gets only the environment in its service
   file, so export the opt-out and re-run `commonly daemon install`; install
-  carries it into the plist or unit when it is set, and its seats inherit it.
+  carries it into the plist or unit when it is set and reloads the service
+  (launchd unload/load, systemd restart), and its seats inherit it.
 - The threshold is `UPDATE_NOTICE_MIN_BEHIND` (3), the row's acceptance case.
   At the October 2026 cadence (9 publishes on 10-30) that is under a day, so a
   seat restarted daily will usually print it; raise the constant if that

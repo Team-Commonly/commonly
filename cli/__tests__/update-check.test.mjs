@@ -104,11 +104,17 @@ describe('checkForCliUpdate', () => {
   });
 
   test('a registry timeout gives none, inside the timeout, even when fetch ignores its abort signal', async () => {
-    const hanging = () => new Promise(() => {});
+    let signal;
+    const hanging = (_url, init) => {
+      signal = init.signal;
+      return new Promise(() => {});
+    };
     const started = Date.now();
     const line = await checkForCliUpdate(base({ fetchImpl: hanging, timeoutMs: 50 }));
     expect(line).toBeNull();
     expect(Date.now() - started).toBeLessThan(1000);
+    // The timer also asks fetch to stop, so a fetch that honours it frees its socket.
+    expect(signal.aborted).toBe(true);
   });
 
   test('offline (fetch rejects) gives none and writes no cache', async () => {

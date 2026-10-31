@@ -241,7 +241,10 @@ export const installDaemonService = async ({
   } else {
     writeFile(target.file, systemdUnit({ nodePath, cliPath, providerEnv }));
     await execCmd(['systemctl', '--user', 'daemon-reload']);
-    await execCmd(['systemctl', '--user', 'enable', '--now', SYSTEMD_UNIT]);
+    // restart, not `enable --now`: a unit that is already running must pick up
+    // the environment just written, the way launchd's unload/load does.
+    await execCmd(['systemctl', '--user', 'enable', SYSTEMD_UNIT]);
+    await execCmd(['systemctl', '--user', 'restart', SYSTEMD_UNIT]);
   }
   for (const name of missing) {
     warn(`${name} is not set in this shell, so it is NOT in the service file. A seat whose adapter needs it will fail to start; export it and re-run: commonly daemon install (docs/agents/daemon-service-environment.md)`);

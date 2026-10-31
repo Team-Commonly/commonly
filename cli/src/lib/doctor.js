@@ -223,14 +223,28 @@ export const checkMacClaude = ({
 
 /** Every check, in the order the lines print. */
 export const runDoctor = async (deps) => {
-  const agents = deps.listAgents();
+  // An unreadable tokens dir is one fail line, not a doctor that prints nothing.
+  let agents = null;
+  let listError = null;
+  try {
+    agents = deps.listAgents();
+  } catch (error) {
+    listError = error?.message || String(error);
+  }
   return [
     checkNode(deps.node),
     checkInstall(deps.install),
     await checkLogin(deps.login),
     await checkDaemon(deps.daemon),
-    ...(await checkAdapters({ agents, getAdapter: deps.getAdapter })),
-    checkMacClaude({ ...deps.macos, agents }),
+    ...(listError
+      ? [
+        result('adapters', FAIL, `could not list the attached agents (${listError})`, 'check that ~/.commonly/tokens is a directory you can read'),
+        result('macos-claude', SKIP, 'the attached agents could not be listed'),
+      ]
+      : [
+        ...(await checkAdapters({ agents, getAdapter: deps.getAdapter })),
+        checkMacClaude({ ...deps.macos, agents }),
+      ]),
   ];
 };
 

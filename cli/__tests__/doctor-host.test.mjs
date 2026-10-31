@@ -1,4 +1,4 @@
-import { loginTarget, versionCommand } from '../src/commands/doctor.js';
+import { loginTarget, timedClient, versionCommand } from '../src/commands/doctor.js';
 
 // The host wiring's two decisions, with config resolution faked. loginTarget
 // must agree with createClient (api.js): getToken prefers COMMONLY_TOKEN, and
@@ -55,5 +55,16 @@ describe('versionCommand', () => {
       command: '/opt/homebrew/bin/commonly', args: ['--version'], shell: false,
     });
     expect(versionCommand('C:\\npm\\commonly.exe', 'win32').shell).toBe(false);
+  });
+});
+
+describe('timedClient', () => {
+  test('every get carries a timeout signal, so a hung server is a fail line, not a hang', async () => {
+    const seen = [];
+    const client = timedClient({ get: async (path, params, options) => { seen.push({ path, params, options }); return {}; } });
+    await client.get('/api/auth/user');
+    expect(seen[0].path).toBe('/api/auth/user');
+    expect(seen[0].options.signal).toBeInstanceOf(AbortSignal);
+    expect(seen[0].options.signal.aborted).toBe(false);
   });
 });

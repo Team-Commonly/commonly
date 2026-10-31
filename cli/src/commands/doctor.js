@@ -19,7 +19,7 @@ import { doctorExitCode, formatDoctorLine, runDoctor } from '../lib/doctor.js';
 const REQUEST_TIMEOUT_MS = 5000;
 
 // Every server read doctor makes is bounded, so a hung instance is a fail line, not a hang.
-const timedClient = (client) => ({
+export const timedClient = (client) => ({
   ...client,
   get: (path, params = {}, options = {}) => client.get(path, params, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), ...options }),
 });

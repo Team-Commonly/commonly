@@ -132,6 +132,12 @@ describe('(c) login', () => {
     expect(r.detail).toContain('the token in COMMONLY_TOKEN');
   });
 
+  test('fails when the server answers the saved token without a user', async () => {
+    const r = await checkLogin({ target: saved, fetchUser: async () => ({}) });
+    expect(r).toMatchObject({ status: FAIL, fix: 'commonly login' });
+    expect(r.detail).toBe('default (https://api.commonly.me) answered without a user');
+  });
+
   test('fails when the server cannot be reached', async () => {
     const r = await checkLogin({ target: saved, fetchUser: async () => { throw new TypeError('fetch failed'); } });
     expect(r.status).toBe(FAIL);
@@ -329,6 +335,17 @@ describe('runDoctor', () => {
     expect(doctorExitCode(await runDoctor(deps))).toBe(0);
     deps.login.target = { ...deps.login.target, tokenSource: null };
     expect(doctorExitCode(await runDoctor(deps))).toBe(1);
+  });
+
+  test('an agent listing that throws is one fail line, and every other check still runs', async () => {
+    const deps = healthy();
+    deps.listAgents = () => { throw Object.assign(new Error("EACCES: permission denied, scandir '/h/.commonly/tokens'"), { code: 'EACCES' }); };
+    const results = await runDoctor(deps);
+    expect(results.map((r) => [r.id, r.status])).toEqual([
+      ['node', PASS], ['install', PASS], ['login', PASS], ['daemon', PASS], ['adapters', FAIL], ['macos-claude', SKIP],
+    ]);
+    expect(results[4].detail).toContain('EACCES');
+    expect(doctorExitCode(results)).toBe(1);
   });
 });
 
