@@ -9,6 +9,7 @@
 import { createClient } from './api.js';
 import { formatDigestFrame } from './digest-frame.js';
 import { EMPTY_OUTPUT } from './claim-outcome.js';
+import { createPollLiveness, resolvePollLivenessMs } from './poll-liveness.js';
 
 // Delivery failures that must stop a consumer rather than fall through to the
 // normal at-least-once retry path. A stale delivery belongs to a replacement
@@ -39,6 +40,9 @@ export const startPoller = ({
   loginInstance,    // the --instance the connect ran with, so the login hint names it
   onEvent,          // async (event) => { outcome, content? }
   onError,          // (err) => void
+  pollLivenessMs,   // TASK-338: see lib/poll-liveness.js
+  pollLivenessCheckMs,
+  onPollStalled,    // ({ stalledMs }) => void; the connect command exits on it
 }) => {
   const client = createClient({ instance: instanceUrl, token });
   let running = true;
@@ -49,16 +53,37 @@ export const startPoller = ({
   // reprovision-all; 5+ wastes rate-limit budget after the real-revoke case.
   let consecutiveAuthErrors = 0;
   const MAX_AUTH_ERRORS = 3;
+  let pollStalled = false;
+  const pollLiveness = createPollLiveness({
+    limitMs: resolvePollLivenessMs(pollLivenessMs),
+    checkEveryMs: pollLivenessCheckMs,
+    onStall: ({ stalledMs }) => {
+      pollStalled = true;
+      running = false;
+      pollLiveness.stop();
+      const minutes = Math.max(1, Math.round(stalledMs / 60_000));
+      onError?.(new Error(`poll stalled: no answer to the inbox poll for ${minutes} min — stopping poller`));
+      onPollStalled?.({ stalledMs });
+    },
+  });
 
   const poll = async () => {
     if (!running) return;
 
     try {
-      const { events = [] } = await client.get('/api/agents/runtime/events', {
-        agentName,
-        instanceId,
-        limit: 10,
-      });
+      pollLiveness.begin();
+      let page;
+      try {
+        page = await client.get('/api/agents/runtime/events', {
+          agentName,
+          instanceId,
+          limit: 10,
+        });
+      } finally {
+        pollLiveness.end();
+      }
+      if (pollStalled) return;
+      const { events = [] } = page;
 
       // A digest is received context, not a webhook invocation. The runtime
       // inbox claims it only alongside a wake from the same pod.
@@ -162,6 +187,9 @@ export const startPoller = ({
   poll();
 
   return {
-    stop: () => { running = false; },
+    stop: () => {
+      running = false;
+      pollLiveness.stop();
+    },
   };
 };

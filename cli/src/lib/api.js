@@ -56,7 +56,52 @@ const handleResponse = async (res, session = null) => {
   return body;
 };
 
-export const createClient = ({ instance = null, token = undefined } = {}) => {
+// TASK-338: every CAP request carries a hard timeout. Without one, a request
+// that a proxy or the network accepts and never answers leaves its promise
+// pending for good, and the run loop awaiting it is alive but wedged: nib and
+// folio each sat 8+ hours on one unanswered poll on 10-31, and their keepalives,
+// which respawn only on exit, could not see it. The poll-retry backoff
+// (TASK-025) only handles a fetch that throws, so a timeout throws: it is an
+// ordinary failed request, retried with backoff, and never an ack.
+//
+// Reads get the base timeout; writes and uploads carry a body and a server-side
+// write, so they get a multiple of it. COMMONLY_CAP_TIMEOUT_MS sets the base.
+export const CAP_TIMEOUT_DEFAULT_MS = 30_000;
+const TIMEOUT_SCALE = { read: 1, write: 2, upload: 4 };
+
+export const capTimeoutMs = (kind, { baseMs, env = process.env } = {}) => {
+  const fromEnv = Number(env.COMMONLY_CAP_TIMEOUT_MS);
+  const base = [baseMs, fromEnv].find((value) => Number.isFinite(value) && value > 0)
+    ?? CAP_TIMEOUT_DEFAULT_MS;
+  return Math.min(base * (TIMEOUT_SCALE[kind] || 1), 2_147_483_647);
+};
+
+// A caller's own signal (doctor and the boot reads pass a shorter timeout)
+// still applies; the hard timeout is added beside it, never instead of it.
+const capSignal = (ms, callerSignal) => {
+  const timeout = AbortSignal.timeout(ms);
+  if (!callerSignal) return timeout;
+  return typeof AbortSignal.any === 'function' ? AbortSignal.any([callerSignal, timeout]) : callerSignal;
+};
+
+// AbortSignal.timeout rejects with a DOMException named TimeoutError, from the
+// fetch or from the body read. Name the request and the limit instead, so the
+// log line reads as an unanswered request rather than "operation was aborted".
+// Any other error, a caller's own abort included, passes through untouched.
+const nameTimeout = (method, path, ms) => (err) => {
+  if (err?.name !== 'TimeoutError') throw err;
+  throw Object.assign(
+    new Error(`${method} ${path} got no answer in ${Math.round(ms / 1000)}s`),
+    { code: 'cap_timeout', timeoutMs: ms },
+  );
+};
+
+const timedFetch = (url, init, { method, path, ms, session }) => fetch(url, {
+  ...init,
+  signal: capSignal(ms, init.signal),
+}).then((res) => handleResponse(res, session)).catch(nameTimeout(method, path, ms));
+
+export const createClient = ({ instance = null, token = undefined, timeoutMs = undefined } = {}) => {
   const baseUrl = resolveInstanceUrl(instance);
   const resolved = resolveInstance(instance);
   const authToken = token === undefined ? getToken(instance) : token;
@@ -64,30 +109,33 @@ export const createClient = ({ instance = null, token = undefined } = {}) => {
     instanceKey: resolved?.key || (typeof instance === 'string' && instance && !/^https?:\/\//i.test(instance) ? instance : 'default'),
     baseUrl,
   };
+  const limit = (kind) => capTimeoutMs(kind, { baseMs: timeoutMs });
 
   const get = (path, params = {}, options = {}) => {
     const url = new URL(`${baseUrl}${path}`);
     Object.entries(params).forEach(([k, v]) => v != null && url.searchParams.set(k, v));
-    return fetch(url.toString(), { headers: headers(authToken), ...options }).then((res) => handleResponse(res, session));
+    return timedFetch(url.toString(), { headers: headers(authToken), ...options }, {
+      method: 'GET', path, ms: limit('read'), session,
+    });
   };
 
-  const post = (path, body = {}) => fetch(`${baseUrl}${path}`, {
+  const post = (path, body = {}) => timedFetch(`${baseUrl}${path}`, {
     method: 'POST',
     headers: headers(authToken),
     body: JSON.stringify(body),
-  }).then((res) => handleResponse(res, session));
+  }, { method: 'POST', path, ms: limit('write'), session });
 
-  const patch = (path, body = {}) => fetch(`${baseUrl}${path}`, {
+  const patch = (path, body = {}) => timedFetch(`${baseUrl}${path}`, {
     method: 'PATCH',
     headers: headers(authToken),
     body: JSON.stringify(body),
-  }).then((res) => handleResponse(res, session));
+  }, { method: 'PATCH', path, ms: limit('write'), session });
 
-  const del = (path, body) => fetch(`${baseUrl}${path}`, {
+  const del = (path, body) => timedFetch(`${baseUrl}${path}`, {
     method: 'DELETE',
     headers: headers(authToken),
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  }).then((res) => handleResponse(res, session));
+  }, { method: 'DELETE', path, ms: limit('write'), session });
 
   // Multipart upload via native FormData/Blob (Node 18+) — no runtime deps.
   // Content-Type is deliberately NOT set: fetch writes the multipart boundary.
@@ -103,11 +151,11 @@ export const createClient = ({ instance = null, token = undefined } = {}) => {
     for (const [k, v] of Object.entries(fields)) {
       if (v !== undefined && v !== null) form.append(k, String(v));
     }
-    return fetch(`${baseUrl}${path}`, {
+    return timedFetch(`${baseUrl}${path}`, {
       method: 'POST',
       headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
       body: form,
-    }).then((res) => handleResponse(res, session));
+    }, { method: 'POST', path, ms: limit('upload'), session });
   };
 
   return {
@@ -116,11 +164,11 @@ export const createClient = ({ instance = null, token = undefined } = {}) => {
 };
 
 // Convenience: login doesn't need a token
-export const login = async (instanceUrl, email, password) => {
-  const res = await fetch(`${instanceUrl}/api/auth/login`, {
+export const login = (instanceUrl, email, password) => {
+  const ms = capTimeoutMs('write');
+  return timedFetch(`${instanceUrl}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
-  });
-  return handleResponse(res);
+  }, { method: 'POST', path: '/api/auth/login', ms, session: null });
 };
