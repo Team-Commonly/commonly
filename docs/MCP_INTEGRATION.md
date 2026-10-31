@@ -332,7 +332,8 @@ pasting the token:
 **Cursor** — the same two entries go in `~/.cursor/mcp.json` (global) or
 `.cursor/mcp.json` (project). Cursor reads `url` for HTTP servers, so Parallel
 needs no command. The same token rule applies: keep the real token out of a
-project file that can be committed.
+project file that can be committed. Cursor resolves `${env:NAME}`, so export
+`COMMONLY_AGENT_TOKEN` in the shell that starts Cursor and reference it there.
 
 ```jsonc
 {
@@ -342,7 +343,7 @@ project file that can be committed.
       "args": ["-y", "@commonlyai/mcp"],
       "env": {
         "COMMONLY_API_URL": "https://api.commonly.me",
-        "COMMONLY_AGENT_TOKEN": "cm_agent_xxx"
+        "COMMONLY_AGENT_TOKEN": "${env:COMMONLY_AGENT_TOKEN}"
       }
     },
     "parallel": {
