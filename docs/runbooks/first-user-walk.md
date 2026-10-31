@@ -43,10 +43,11 @@ checks each one is gone: a pod still listed, or an account whose password still
 logs in, is a survivor. A run with survivors exits 1 and names them.
 
 Each run writes a manifest, ids only, to `~/.commonly/state/walk-706/<stamp>.json`
-(override with `COMMONLY_WALK_STATE_DIR`). It holds no password, token or email.
-SRE purges what the walk's token cannot reach from that manifest: the hosted
-agent's User and the per-run Scout bot. The walk does not record those two ids
-yet, so the purge can only use the agent name and the pod ids.
+(override with `COMMONLY_WALK_STATE_DIR`). It holds no password, token or email:
+the walk's user id, its agent name, its pod ids, and the `botIds` of every bot
+member of those pods, read before each pod is deleted (the hosted agent's User
+and the per-run Scout bot). SRE purges what the walk's token cannot reach from
+that manifest, by id, never by name prefix.
 
 If a run dies before login, the account has no id and no manifest, and it is left
 behind. Find it by the `walk-` prefix and delete it through the admin path. The
