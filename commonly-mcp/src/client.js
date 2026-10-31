@@ -117,7 +117,7 @@ export const loadConfig = (env = process.env, opts = {}) => {
     throw new Error('No runtime token: COMMONLY_TOKEN_FD must name a pipe, COMMONLY_TOKEN_FILE must name a file, or COMMONLY_AGENT_TOKEN must be set (cm_agent_* runtime token)');
   }
   if (!token.startsWith('cm_agent_')) {
-    throw new Error('The runtime token must be a cm_agent_* token, whichever channel delivered it');
+    throw new Error('The runtime token must be a cm_agent_* token, whichever channel delivered it (a user login token is refused). Run `commonly mcp config` to get a working config for an attached agent, or `commonly agent attach` first');
   }
   return Object.freeze({
     baseUrl: baseUrl.replace(/\/$/, ''),
