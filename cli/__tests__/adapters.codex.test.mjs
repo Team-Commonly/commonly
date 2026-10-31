@@ -134,6 +134,20 @@ describe('codex adapter — detect()', () => {
 });
 
 describe('codex adapter — spawn()', () => {
+  test('an aborted signal before the child is created spawns nothing', async () => {
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const controller = new AbortController();
+    const reason = new Error('stalled during preparation');
+    controller.abort(reason);
+    await expect(codex.spawn('hi', {
+      environment: { model: 'test-model' },
+      sessionId: null,
+      signal: controller.signal,
+      _spawnImpl: impl,
+    })).rejects.toBe(reason);
+    expect(calls).toHaveLength(0);
+  });
+
   test('BYO without fleet opt-in retains the CLI default on fresh and resumed turns', async () => {
     const prior = process.env.COMMONLY_REQUIRE_SEAT_MODEL;
     delete process.env.COMMONLY_REQUIRE_SEAT_MODEL;

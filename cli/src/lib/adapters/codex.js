@@ -897,6 +897,13 @@ export default {
         await writePublicCodexInstructions(childEnv.CODEX_HOME, ctx);
       }
 
+      // The awaits above can outlast a supervisor stall window. Once it has
+      // aborted, the attempt has already settled and a retry may be running,
+      // so no process is created for this one. Checked synchronously before
+      // runCodex, so the spawn itself cannot race the abort.
+      if (ctx.signal?.aborted) {
+        throw ctx.signal.reason || new Error('codex spawn cancelled before the process started');
+      }
       const { threadId } = await runCodex({
         args,
         cwd: ctx.cwd,
