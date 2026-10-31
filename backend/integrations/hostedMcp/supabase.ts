@@ -1,16 +1,16 @@
 /**
  * Supabase hosted-MCP entry (TASK-242). Its OAuth server requires the full
- * scope set for the MCP proxy, including writes. The pin is read-only: it
- * excludes every write, spend-bearing tool, caller-directed SQL/GraphQL, and
- * credential read.
+ * scope set for the MCP proxy, including writes. The pin excludes
+ * spend-bearing tools, caller-directed SQL/GraphQL, and credential reads.
+ * Known limit: the grant carries all 13 scopes, writes included, because
+ * Supabase requires the full set. Read and write access is enforced only by
+ * the pins in this file, so a tool missing from the pins is not callable.
  *
  * Resource and authorization-server metadata were fetched from Supabase on
  * 2026-10-19. Pins come from connector-ops's consenting tools/list capture
  * at 2026-10-19T07:03:03Z, with schemas copied unchanged for drift checks.
  * Project creation, pause/restore, branch creation and cost-confirmation
  * tools are excluded because approval cards do not authorize spending.
- * Branch writes (delete, merge, reset, rebase) are excluded for TASK-242's
- * read-only pin set; they can return once a write flow is approved.
  * Edge Function deployment is excluded because it runs caller-supplied code.
  * execute_sql, apply_migration, and query_logs accept caller-directed SQL;
  * search_docs accepts caller-directed GraphQL; get_publishable_keys returns
@@ -322,6 +322,96 @@ export const SUPABASE_ENTRY: HostedMcpEntry = {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
+    },
+    {
+      name: 'delete_branch',
+      upstreamName: 'delete_branch',
+      description: "Delete a development branch after member approval.",
+      class: 'write',
+      irreversible: true,
+      inputSchema: {
+        type: "object",
+        properties: {
+          branch_id: {
+            type: "string",
+          },
+        },
+        required: [
+          "branch_id",
+        ],
+        $schema: "http://json-schema.org/draft-07/schema#",
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true },
+    },
+    {
+      name: 'merge_branch',
+      upstreamName: 'merge_branch',
+      description: "Apply the branch's migrations and Edge Functions to production after member approval; "
+        + 'approval covers branch content as it stands at execution.',
+      class: 'write',
+      irreversible: true,
+      inputSchema: {
+        type: "object",
+        properties: {
+          branch_id: {
+            type: "string",
+          },
+        },
+        required: [
+          "branch_id",
+        ],
+        $schema: "http://json-schema.org/draft-07/schema#",
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true },
+    },
+    {
+      name: 'reset_branch',
+      upstreamName: 'reset_branch',
+      description: 'Reset a development branch after member approval; '
+        + 'untracked data and schema changes on the branch are lost.',
+      class: 'write',
+      irreversible: true,
+      inputSchema: {
+        type: "object",
+        properties: {
+          branch_id: {
+            type: "string",
+          },
+          migration_version: {
+            description: "Reset your development branch to a specific migration version.",
+            type: "string",
+          },
+        },
+        required: [
+          "branch_id",
+        ],
+        $schema: "http://json-schema.org/draft-07/schema#",
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true },
+    },
+    {
+      name: 'rebase_branch',
+      upstreamName: 'rebase_branch',
+      description: "Rebase a development branch after member approval.",
+      class: 'write',
+      irreversible: true,
+      inputSchema: {
+        type: "object",
+        properties: {
+          branch_id: {
+            type: "string",
+          },
+        },
+        required: [
+          "branch_id",
+        ],
+        $schema: "http://json-schema.org/draft-07/schema#",
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true },
     },
   ],
 };
