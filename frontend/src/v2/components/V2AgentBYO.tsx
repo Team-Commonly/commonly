@@ -240,6 +240,10 @@ const V2AgentBYO: React.FC = () => {
   const [workInRepo, setWorkInRepo] = useState(false);
   const [allowWrite, setAllowWrite] = useState(false);
   const [allowWeb, setAllowWeb] = useState(false);
+  // Each seat is its own opt-in: starting another install clears all three.
+  useEffect(() => {
+    if (!issued) { setWorkInRepo(false); setAllowWrite(false); setAllowWeb(false); }
+  }, [issued]);
   const repoPod = pods.find((p) => p._id === (issued?.podId || podId));
   const repoChoiceAvailable = listenAdapter === 'claude'
     && setupOs !== 'windows'
@@ -1078,7 +1082,7 @@ const V2AgentBYO: React.FC = () => {
   // EINVALIDTAGNAME "#" and installs nothing (ux-lead on #2104). The command
   // names itself; the body above the box says where to run it.
   const listenSnippet = issued
-    ? `${CLI_INSTALL_COMMAND}\nexport COMMONLY_API_URL=${apiUrl}\nexport COMMONLY_AGENT_TOKEN=${issued.token}\n${repoActive ? 'cd ~/path/to/your-repo && ' : ''}commonly agent run ${issued.agentName} --adapter ${listenAdapter}${allowFlag ? ` --allow ${allowFlag}` : ''}`
+    ? `${CLI_INSTALL_COMMAND}\nexport COMMONLY_API_URL=${apiUrl}\nexport COMMONLY_AGENT_TOKEN=${issued.token}\ncommonly agent run ${issued.agentName} --adapter ${listenAdapter}${allowFlag ? ` --allow ${allowFlag}` : ''}`
     : '';
 
   const cursorSnippet = issued
@@ -1734,6 +1738,7 @@ const V2AgentBYO: React.FC = () => {
                       {' '}{t('agentByo.listen.repo.web')}
                     </label>
                     <p data-testid="byo-repo-folder-note">{t('agentByo.listen.repo.folder')}</p>
+                    <p data-testid="byo-repo-saved-note">{t('agentByo.listen.repo.saved')}</p>
                   </>
                 )}
               </div>

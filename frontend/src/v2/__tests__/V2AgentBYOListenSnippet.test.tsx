@@ -449,18 +449,19 @@ describe('BYO listener: Work in my repo', () => {
   test('off by default: the command is unchanged and carries no --allow', async () => {
     await issueToken(undefined, PRIVATE_POD);
     expect(screen.getByTestId('byo-repo-toggle')).not.toBeChecked();
-    expect(runLine()).not.toMatch(/--allow|cd ~/);
+    expect(runLine()).not.toMatch(/--allow|cd /);
   });
 
-  test('choosing it adds the folder step, and write/web add only their own --allow', async () => {
+  test('choosing it adds no cd step (the note says to run from the project folder), and write/web add only their own --allow', async () => {
     await issueToken(undefined, PRIVATE_POD);
     fireEvent.click(screen.getByTestId('byo-repo-toggle'));
-    expect(runLine()).toMatch(/\ncd ~\/path\/to\/your-repo && commonly agent run \S+ --adapter claude$/);
+    expect(runLine()).toMatch(/commonly agent run \S+ --adapter claude$/);
     fireEvent.click(screen.getByTestId('byo-repo-write'));
     expect(runLine()).toMatch(/--adapter claude --allow write$/);
     fireEvent.click(screen.getByTestId('byo-repo-web'));
     expect(runLine()).toMatch(/--adapter claude --allow write,web$/);
-    expect(runLine()).not.toMatch(/dangerously|skip-permissions/);
+    expect(runLine()).not.toMatch(/dangerously|skip-permissions|cd /);
+    expect(screen.getByTestId('byo-repo-saved-note')).toHaveTextContent(/detach/);
   });
 
   test('not offered in a pod that is not confirmed private', async () => {
