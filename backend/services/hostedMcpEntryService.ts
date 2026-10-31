@@ -61,16 +61,10 @@ export interface HostedMcpPinnedTool {
   annotations?: HostedMcpAnnotations;
 }
 
-export interface HostedMcpEntry {
+/** Fields every hosted entry carries, whatever its credential. */
+export interface HostedMcpEntryCommon {
   /** Namespaces every tool name (`<id>.<tool>`) and names the row's app. */
   id: string;
-  /**
-   * How the row's credential is obtained. Absent means OAuth, which every
-   * shipped entry uses. `operator_key` is a static bearer the operator pastes
-   * for one agent (Latchkey, TASK-330): it has no refresh, so `credentialFor`
-   * serves it without the freshness rule or the fence.
-   */
-  credentialMode?: 'oauth' | 'operator_key';
   title: string;
   /**
    * The line the Tools page draws under the title. Ours, like a tool's
@@ -84,15 +78,6 @@ export interface HostedMcpEntry {
   resource: string;
   /** The PRM resource identifier when it differs from the tools/call endpoint. */
   audience?: string;
-  /** The authorization server the protected-resource metadata names. */
-  issuer: string;
-  client: 'pre-registered' | 'cimd' | 'dcr';
-  scopes: string[];
-  /** Only the vendor-specific authorization parameters supported by this code. */
-  authorizationParams?: {
-    access_type?: string;
-    prompt?: string;
-  };
   /**
    * Where the authorization dies, naming its kind because the URL cannot (§3).
    * Exactly one key: an `endpoint` is the RFC 7009 revocation endpoint the AS's
@@ -102,6 +87,36 @@ export interface HostedMcpEntry {
   revoke: { page: string; endpoint?: string };
   tools: HostedMcpPinnedTool[];
 }
+
+/**
+ * OAuth entries: every shipped one. The authorization server and the client
+ * shape belong to the OAuth flow, so they live only on this member.
+ */
+export interface HostedMcpOAuthEntry extends HostedMcpEntryCommon {
+  credentialMode?: 'oauth';
+  /** The authorization server the protected-resource metadata names. */
+  issuer: string;
+  client: 'pre-registered' | 'cimd' | 'dcr';
+  scopes: string[];
+  /** Only the vendor-specific authorization parameters supported by this code. */
+  authorizationParams?: {
+    access_type?: string;
+    prompt?: string;
+  };
+}
+
+/**
+ * Operator-key entries (TASK-330): a static bearer the operator pastes for one
+ * agent. It has no refresh, so `credentialFor` serves it without the freshness
+ * rule or the fence. No issuer, client or scopes exist for it, so those fields
+ * are absent from this member: reading one off the union is a compile error,
+ * which is the census check.
+ */
+export interface HostedMcpOperatorKeyEntry extends HostedMcpEntryCommon {
+  credentialMode: 'operator_key';
+}
+
+export type HostedMcpEntry = HostedMcpOAuthEntry | HostedMcpOperatorKeyEntry;
 
 /** One tool as the vendor's `tools/list` reports it. */
 export interface HostedMcpUpstreamTool {
@@ -459,3 +474,8 @@ export const createHostedMcpDriftCache = (options: HostedMcpDriftCacheOptions): 
     },
   };
 };
+
+/** True for the OAuth members of the union. The OAuth flow and its readers narrow with this, not a cast. */
+export const isOAuthEntry = (entry: HostedMcpEntry): entry is HostedMcpOAuthEntry => (
+  entry.credentialMode !== 'operator_key'
+);
