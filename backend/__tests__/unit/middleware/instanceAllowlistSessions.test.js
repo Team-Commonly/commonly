@@ -23,6 +23,7 @@ const selectable = (value) => ({
   select: async (fields) => {
     expect(fields).toEqual(expect.stringMatching(/\bemail\b/));
     expect(fields).toEqual(expect.stringMatching(/\bverified\b/));
+    expect(fields).toEqual(expect.stringMatching(/\bisBot\b/));
     return value;
   },
 });
@@ -138,6 +139,23 @@ describe('instance allowlist on session verifiers', () => {
       const cmRun = await runAuth('cm_unverified');
       expect(cmRun.next).not.toHaveBeenCalled();
       expect(cmRun.res.status).toHaveBeenCalledWith(403);
+    });
+
+    it('keeps an agent cm_ user token working on a restricted instance', async () => {
+      process.env.AUTH_ALLOWED_EMAILS = 'ok@team.com';
+      User.findOne.mockReturnValueOnce(selectable({
+        _id: { toString: () => 'bot1' },
+        username: 'openclaw-bot',
+        email: 'openclaw-bot@agents.commonly.local',
+        role: 'user',
+        isBot: true,
+        verified: false,
+      }));
+
+      const { next, res } = await runAuth('cm_agent-user-token');
+
+      expect(next).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
     });
 
     it('serves the same non-allowlisted JWT when the instance is unrestricted', async () => {
