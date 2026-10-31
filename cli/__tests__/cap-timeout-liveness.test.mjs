@@ -36,11 +36,15 @@ const GATEWAY_PAGE = '<!DOCTYPE html><html><head><title>504 Gateway Time-out</ti
 
 // `script(n)` decides what the n-th inbox poll gets: 'gateway' (504), 'hang'
 // (accepted, never answered) or a page object. Everything else answers 200 {}.
-const startStub = async (script) => {
+// `other(req)` may return 'hang' for a non-poll request (an ack, say).
+const startStub = async (script, { other = () => null, delayMs = 0 } = {}) => {
   const polls = [];
   const answered = [];
+  const others = [];
   const server = http.createServer((req, res) => {
-    if (!req.url.startsWith('/api/agents/runtime/events') || req.method !== 'GET') {
+    if (req.url.split('?')[0] !== '/api/agents/runtime/events' || req.method !== 'GET') {
+      others.push(`${req.method} ${req.url.split('?')[0]}`);
+      if (other(req) === 'hang') return;
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end('{}');
       return;
@@ -53,15 +57,19 @@ const startStub = async (script) => {
       res.end(GATEWAY_PAGE);
       return;
     }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(step));
-    answered.push(n);
+    const answer = () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(step));
+      answered.push(n);
+    };
+    if (delayMs) setTimeout(answer, delayMs); else answer();
   });
   await new Promise((resolve) => { server.listen(0, '127.0.0.1', resolve); });
   return {
     url: `http://127.0.0.1:${server.address().port}`,
     polls,
     answered,
+    others,
     close: () => new Promise((resolve) => {
       server.closeAllConnections();
       server.close(resolve);
@@ -79,14 +87,16 @@ const waitFor = async (predicate, timeoutMs = 5000) => {
 };
 
 const EMPTY = { events: [], inboxCount: 0 };
-const mention = {
-  _id: 'evt-long-turn',
+// The loop records handled event ids on disk, so each test needs its own id or
+// it reads as a duplicate delivery and skips the turn.
+const mentionFor = (id) => ({
+  _id: id,
   type: 'chat.mention',
   podId: 'pod-338',
   agentName: 'my-stub',
   instanceId: 'default',
-  payload: { content: 'take your time on this one', messageId: 'msg-338' },
-};
+  payload: { content: 'take your time on this one', messageId: `msg-${id}` },
+});
 
 let stub;
 let stopLoop;
@@ -138,7 +148,7 @@ describe('every CAP request has a hard timeout', () => {
     await expect(client.get('/api/agents/runtime/events')).rejects.toMatchObject({
       code: 'cap_timeout',
       timeoutMs: 150,
-      message: 'GET /api/agents/runtime/events got no answer in 0s',
+      message: 'GET /api/agents/runtime/events got no answer in 150ms',
     });
     expect(Date.now() - started).toBeLessThan(2000);
   });
@@ -157,8 +167,34 @@ describe('every CAP request has a hard timeout', () => {
     await expect(client.post('/api/agents/runtime/events/e1/ack', {})).rejects.toMatchObject({
       code: 'cap_timeout',
       timeoutMs: 200,
-      message: 'POST /api/agents/runtime/events/e1/ack got no answer in 0s',
+      message: 'POST /api/agents/runtime/events/e1/ack got no answer in 200ms',
     });
+  });
+});
+
+describe('the timeout covers the whole response, and only renames its own abort', () => {
+  test('headers, then silence: the body read is cut off too', async () => {
+    const trickle = http.createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.write('{"events": [');
+    });
+    await new Promise((resolve) => { trickle.listen(0, '127.0.0.1', resolve); });
+    stub = {
+      url: `http://127.0.0.1:${trickle.address().port}`,
+      close: () => new Promise((resolve) => { trickle.closeAllConnections(); trickle.close(resolve); }),
+    };
+    const client = createClient({ instance: stub.url, token: 'cm_agent_test', timeoutMs: 150 });
+    await expect(client.get('/api/agents/runtime/events')).rejects.toMatchObject({ code: 'cap_timeout' });
+  });
+
+  test("a caller's own shorter timeout keeps its own error", async () => {
+    stub = await startStub(() => 'hang');
+    const client = createClient({ instance: stub.url, token: 'cm_agent_test', timeoutMs: 5000 });
+    const err = await client.get('/api/agents/runtime/events', {}, { signal: AbortSignal.timeout(50) })
+      .catch((e) => e);
+    expect(err.name).toBe('TimeoutError');
+    expect(err.code).not.toBe('cap_timeout');
+    expect(err.timeoutMs).toBeUndefined();
   });
 });
 
@@ -183,7 +219,7 @@ describe('agent run: the inbox loop survives a hung poll', () => {
     await waitFor(() => onPollStalled.mock.calls.length === 1);
 
     expect(onPollStalled.mock.calls[0][0].stalledMs).toBeGreaterThanOrEqual(200);
-    expect(errors.at(-1).message).toMatch(/^poll stalled: no answer to the inbox poll for 1 min/);
+    expect(errors.at(-1).message).toMatch(/^poll stalled: no inbox poll settled for 1s/);
     // Stopped: no second poll is ever sent.
     await new Promise((resolve) => { setTimeout(resolve, 150); });
     expect(stub.polls).toHaveLength(1);
@@ -191,26 +227,65 @@ describe('agent run: the inbox loop survives a hung poll', () => {
 
   test('a turn longer than the liveness limit is not a stall', async () => {
     process.env.COMMONLY_CAP_TIMEOUT_MS = '1000';
-    stub = await startStub((n) => (n === 1 ? { events: [mention], inboxCount: 1 } : EMPTY));
+    stub = await startStub((n) => (n === 1 ? { events: [mentionFor('evt-long-turn')], inboxCount: 1 } : EMPTY));
     let turnEnded = 0;
     const spawn = jest.fn(async () => {
-      await new Promise((resolve) => { setTimeout(resolve, 700); });
+      await new Promise((resolve) => { setTimeout(resolve, 2500); });
       turnEnded = Date.now();
       return { text: '' };
     });
     const { onPollStalled } = run({
       adapter: { name: 'codex', detect: stubAdapter.detect, spawn },
-      pollLivenessMs: 200,
-      pollLivenessCheckMs: 20,
+      pollLivenessMs: 1000,
+      pollLivenessCheckMs: 50,
     });
 
     // The loop polls again after the 3s post-turn collection window.
-    await waitFor(() => stub.answered.length >= 2, 8000);
+    await waitFor(() => stub.answered.length >= 2, 10000);
 
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(turnEnded).toBeGreaterThan(0);
     expect(onPollStalled).not.toHaveBeenCalled();
-  }, 12000);
+  }, 15000);
+});
+
+describe('agent run: what the liveness clock covers', () => {
+  test('an ack that hangs after the turn is a stall too', async () => {
+    process.env.COMMONLY_CAP_TIMEOUT_MS = '60000';
+    stub = await startStub((n) => (n === 1 ? { events: [mentionFor('evt-hung-ack')], inboxCount: 1 } : EMPTY), {
+      other: (req) => (req.url.includes('/ack') ? 'hang' : null),
+    });
+    const spawn = jest.fn(async () => ({ text: '' }));
+    const { onPollStalled } = run({
+      adapter: { name: 'codex', detect: stubAdapter.detect, spawn },
+      pollLivenessMs: 300,
+      pollLivenessCheckMs: 20,
+    });
+
+    await waitFor(() => onPollStalled.mock.calls.length === 1);
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(stub.others.some((line) => line.endsWith('/ack'))).toBe(true);
+  });
+
+  test('stop() during an in-flight poll is a stop, not a stall', async () => {
+    process.env.COMMONLY_CAP_TIMEOUT_MS = '5000';
+    stub = await startStub(() => ({ events: [mentionFor('evt-stop-race')], inboxCount: 1 }), { delayMs: 300 });
+    const spawn = jest.fn(async () => ({ text: '' }));
+    const { onPollStalled } = run({
+      adapter: { name: 'codex', detect: stubAdapter.detect, spawn },
+      pollLivenessMs: 200,
+      pollLivenessCheckMs: 20,
+    });
+    await waitFor(() => stub.polls.length === 1);
+    stopLoop();
+
+    // Past the poll's answer and past the liveness limit.
+    await new Promise((resolve) => { setTimeout(resolve, 700); });
+    expect(onPollStalled).not.toHaveBeenCalled();
+    // The stopped loop leaves the page to requeue, as it did before this change.
+    expect(spawn).not.toHaveBeenCalled();
+    expect(stub.polls).toHaveLength(1);
+  });
 });
 
 describe('agent connect: the poller has the same liveness exit', () => {

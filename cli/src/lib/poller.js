@@ -9,7 +9,7 @@
 import { createClient } from './api.js';
 import { formatDigestFrame } from './digest-frame.js';
 import { EMPTY_OUTPUT } from './claim-outcome.js';
-import { createPollLiveness, resolvePollLivenessMs } from './poll-liveness.js';
+import { createPollLiveness, formatStall, resolvePollLivenessMs } from './poll-liveness.js';
 
 // Delivery failures that must stop a consumer rather than fall through to the
 // normal at-least-once retry path. A stale delivery belongs to a replacement
@@ -58,11 +58,11 @@ export const startPoller = ({
     limitMs: resolvePollLivenessMs(pollLivenessMs),
     checkEveryMs: pollLivenessCheckMs,
     onStall: ({ stalledMs }) => {
+      if (!running) return;
       pollStalled = true;
       running = false;
       pollLiveness.stop();
-      const minutes = Math.max(1, Math.round(stalledMs / 60_000));
-      onError?.(new Error(`poll stalled: no answer to the inbox poll for ${minutes} min — stopping poller`));
+      onError?.(new Error(`poll stalled: no inbox poll settled for ${formatStall(stalledMs)} — stopping poller`));
       onPollStalled?.({ stalledMs });
     },
   });
@@ -71,17 +71,15 @@ export const startPoller = ({
     if (!running) return;
 
     try {
-      pollLiveness.begin();
-      let page;
-      try {
-        page = await client.get('/api/agents/runtime/events', {
-          agentName,
-          instanceId,
-          limit: 10,
-        });
-      } finally {
-        pollLiveness.end();
-      }
+      // Same clock as `agent run`: running from here to the scheduled wait,
+      // paused while the local handler takes the event.
+      pollLiveness.arm();
+      const page = await client.get('/api/agents/runtime/events', {
+        agentName,
+        instanceId,
+        limit: 10,
+      });
+      pollLiveness.arm();
       if (pollStalled) return;
       const { events = [] } = page;
 
@@ -108,9 +106,12 @@ export const startPoller = ({
         let result = { outcome: 'no_action' };
         try {
           // A handler that returns nothing said nothing: not a read of the digest.
+          pollLiveness.pause();
           result = (await onEvent(forwarded)) || { outcome: 'no_action', reason: EMPTY_OUTPUT };
         } catch (handlerErr) {
           result = { outcome: 'error', reason: handlerErr.message };
+        } finally {
+          pollLiveness.arm();
         }
 
         // Acknowledge the event
@@ -175,11 +176,14 @@ export const startPoller = ({
       }
       consecutiveErrors++;
       onError?.(err);
-      // Back off on repeated errors (max 60s)
+      // Back off on repeated errors (max 60s). A wait this loop scheduled
+      // itself always ends, so the liveness clock stops for it.
       const backoff = Math.min(intervalMs * consecutiveErrors, 60_000);
+      pollLiveness.pause();
       await new Promise((r) => setTimeout(r, backoff));
     }
 
+    pollLiveness.pause();
     if (running) setTimeout(poll, intervalMs);
   };
 

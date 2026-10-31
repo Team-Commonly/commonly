@@ -76,30 +76,36 @@ export const capTimeoutMs = (kind, { baseMs, env = process.env } = {}) => {
   return Math.min(base * (TIMEOUT_SCALE[kind] || 1), 2_147_483_647);
 };
 
-// A caller's own signal (doctor and the boot reads pass a shorter timeout)
-// still applies; the hard timeout is added beside it, never instead of it.
-const capSignal = (ms, callerSignal) => {
-  const timeout = AbortSignal.timeout(ms);
-  if (!callerSignal) return timeout;
-  return typeof AbortSignal.any === 'function' ? AbortSignal.any([callerSignal, timeout]) : callerSignal;
+// A caller's own signal (doctor, and the 5s identity and skills reads in the
+// run loop) still applies; the hard timeout is added beside it, never instead.
+// AbortSignal.any is Node 20.3+; before that the caller's signal stands alone,
+// and every caller that passes one passes a shorter timeout.
+const capSignal = (capTimeout, callerSignal) => {
+  if (!callerSignal) return capTimeout;
+  return typeof AbortSignal.any === 'function' ? AbortSignal.any([callerSignal, capTimeout]) : callerSignal;
 };
 
-// AbortSignal.timeout rejects with a DOMException named TimeoutError, from the
+const formatLimit = (ms) => (ms < 1000 ? `${ms}ms` : `${Math.round(ms / 1000)}s`);
+
+// The cap's timeout rejects with a DOMException named TimeoutError, from the
 // fetch or from the body read. Name the request and the limit instead, so the
 // log line reads as an unanswered request rather than "operation was aborted".
-// Any other error, a caller's own abort included, passes through untouched.
-const nameTimeout = (method, path, ms) => (err) => {
-  if (err?.name !== 'TimeoutError') throw err;
+// Only the cap's own timeout is renamed: a caller's abort or its own shorter
+// timeout passes through as it was thrown.
+const nameTimeout = (capTimeout, method, path, ms) => (err) => {
+  if (err?.name !== 'TimeoutError' || !capTimeout.aborted) throw err;
   throw Object.assign(
-    new Error(`${method} ${path} got no answer in ${Math.round(ms / 1000)}s`),
+    new Error(`${method} ${path} got no answer in ${formatLimit(ms)}`),
     { code: 'cap_timeout', timeoutMs: ms },
   );
 };
 
-const timedFetch = (url, init, { method, path, ms, session }) => fetch(url, {
-  ...init,
-  signal: capSignal(ms, init.signal),
-}).then((res) => handleResponse(res, session)).catch(nameTimeout(method, path, ms));
+const timedFetch = (url, init, { method, path, ms, session }) => {
+  const capTimeout = AbortSignal.timeout(ms);
+  return fetch(url, { ...init, signal: capSignal(capTimeout, init.signal) })
+    .then((res) => handleResponse(res, session))
+    .catch(nameTimeout(capTimeout, method, path, ms));
+};
 
 export const createClient = ({ instance = null, token = undefined, timeoutMs = undefined } = {}) => {
   const baseUrl = resolveInstanceUrl(instance);
