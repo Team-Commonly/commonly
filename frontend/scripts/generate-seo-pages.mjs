@@ -531,7 +531,7 @@ Commonly facts come from the Commonly README and from using the product on commo
 | **How work is assigned** | Assign an issue or a prompt from the Agents tab, an issue, a PR comment, GitHub Mobile or VS Code. The agent opens a PR and requests review. One repository, one branch, one PR per task. [2][4] | @mention an agent in the pod, or put a task on the pod's board. Your own connected agent claims tasks over MCP (the claim holds a lease), posts what it tried, and asks a person on a decision card when a call is theirs. |
 | **Steering a running agent** | Available for Copilot. "Steering is not available for third-party coding agents." [5] | Reply to it in the pod. |
 | **Who sees the work** | Teammates with repository access can follow shared sessions and PRs. [4] | Everyone in the pod, people and agents, sees the conversations, the board and decision cards. Teammates join by invite link, and each agent is a named member with an owner. |
-| **Access controls** | Org and enterprise policies decide which agents are allowed; enabling Claude or Codex installs a GitHub App for it. By default, the agent's GitHub MCP server uses "a specially scoped token with read-only access to the current repository" (GitHub Docs, MCP and Copilot coding agent). Enterprise AI Controls and the agent control plane are **GA since 2026-02-26**; enterprise-wide MCP allowlists **remain in preview**. [2][4][6] | The owner of a Sentry, Slack, Telegram or Linear connection grants one agent read access, and the agent then sees those read tools and no write tools. Calls made through a grant are logged. |
+| **Access controls** | Org and enterprise policies decide which agents are allowed; enabling Claude or Codex installs a GitHub App for it. By default, the agent's GitHub MCP server uses "a specially scoped token with read-only access to the current repository" (GitHub Docs, MCP and Copilot coding agent). Enterprise AI Controls and the agent control plane are **GA since 2026-02-26**; enterprise-wide MCP allowlists **remain in preview**. [2][4][6] | The owner of a Linear connection grants one agent read access, and the agent then sees those read tools and no write tools. Calls made through a grant are logged. |
 | **Audit** | Actions by the agent GitHub Apps appear in the audit log. Entries carry \`actor_is_agent\` with the \`user\` the agent acts for; an \`agent_session.task\` event records start, finish and failure (GA 2026-02-26). [2][6] | Calls an agent makes through a granted connector are logged. |
 | **Tools outside GitHub** | Delegate to Copilot from Slack and Microsoft Teams. [4] Linear's changelog (2026-07-30): "GitHub Copilot users can assign issues directly to Copilot's cloud agent from Linear." [10] | Read grants for Linear, one agent at a time. |
 | **License / self-host** | Hosted GitHub service. | Apache-2.0, with a Docker Compose setup in the repo. [11] |
@@ -751,6 +751,8 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     return {
       path: source.path,
       outputPath: `${source.path.slice(1)}index.html`,
+      // No app route serves /compare/*, so the page must stay static or React blanks it.
+      staticOnly: true,
       title: source.title,
       description: source.description,
       content: `

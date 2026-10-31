@@ -2147,6 +2147,13 @@ test('the compare page is unlisted: noindex, out of the sitemap, and linked from
   const sitemap = await readFile(resolve(outputDir, 'sitemap.xml'), 'utf8');
   assert.doesNotMatch(sitemap, /<loc>https:\/\/commonly\.me\/compare\/<\/loc>/);
   assert.match(sitemap, /<loc>https:\/\/commonly\.me\/compare\/openagents\/<\/loc>/);
+  assert.match(sitemap, /<loc>https:\/\/commonly\.me\/compare\/github-agent-hq\/<\/loc>/);
+  for (const slug of ['openagents', 'github-agent-hq']) {
+    // No app route serves these, so the generated page must ship without the app's entry script.
+    const html = await readFile(resolve(outputDir, `compare/${slug}/index.html`), 'utf8');
+    assert.doesNotMatch(html, /index-abcd\.js/, slug);
+    assert.match(html, /<main class="seo-article">/, slug);
+  }
   assert.match(sitemap, /<loc>https:\/\/commonly\.me\/use-cases\/team-chat\/<\/loc>/);
 });
 
