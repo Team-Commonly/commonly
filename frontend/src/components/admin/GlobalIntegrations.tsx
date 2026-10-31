@@ -20,9 +20,11 @@ import {
   Switch,
   FormControlLabel,
   FormControl,
+  FormHelperText,
   InputLabel,
   Select,
-  MenuItem
+  MenuItem,
+  ListItemText
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -45,41 +47,6 @@ const XIcon = () => (
   </svg>
 );
 
-const GEMINI_MODELS = [
-  { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-  { value: 'google/gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
-  { value: 'google/gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-];
-
-const OPENAI_MODELS = [
-  { value: 'openai/gpt-5.4', label: 'GPT-5.4' },
-  { value: 'openai/gpt-4o', label: 'GPT-4o' },
-  { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
-  { value: 'openai/gpt-4.1', label: 'GPT-4.1' },
-];
-
-const ANTHROPIC_MODELS = [
-  { value: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6' },
-  { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-  { value: 'anthropic/claude-haiku-4-5', label: 'Claude Haiku 4.5' },
-];
-
-// Backend LLM service model options (provider → model list)
-const LLM_SERVICE_MODEL_OPTIONS = {
-  gemini: GEMINI_MODELS,
-};
-
-// OpenClaw gateway model options (provider → model list)
-const OPENCLAW_MODEL_OPTIONS = {
-  google: GEMINI_MODELS,
-  'openai-codex': [
-    { value: 'openai-codex/gpt-5.4', label: 'GPT-5.4 (OAuth)' },
-    { value: 'openai-codex/gpt-5.3-codex', label: 'GPT-5.3 Codex (OAuth, legacy)' },
-  ],
-  openai: OPENAI_MODELS,
-  anthropic: ANTHROPIC_MODELS,
-};
-
 // Saved tokens never come back from the API; the field is write-only once one is on file.
 const SAVED_TOKEN_PLACEHOLDER = 'Saved \u2014 leave blank to keep';
 const SAVED_TOKEN_HELPER = 'A token is on file. Paste a new one to replace it.';
@@ -88,6 +55,13 @@ const GlobalIntegrations = () => {
   const v2Embedded = useV2Embedded();
   const location = useLocation();
   const navigate = useNavigate();
+  const [models, setModels] = useState<Array<{ id: string; label: string; provider: string; available: boolean; reason: string | null }>>([]);
+  const OPENCLAW_MODEL_OPTIONS = Object.fromEntries(
+    [...new Set(models.map((model) => model.provider))].map((provider) => [provider,
+      models.filter((model) => model.provider === provider).map((model) => ({ ...model, value: model.id }))]),
+  );
+  const LLM_SERVICE_MODEL_OPTIONS = { gemini: OPENCLAW_MODEL_OPTIONS.google || [], litellm: models.map((model) => ({ ...model, value: model.id })), auto: models.map((model) => ({ ...model, value: model.id })) };
+
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [applyingModelPolicy, setApplyingModelPolicy] = useState(false);
@@ -121,6 +95,8 @@ const GlobalIntegrations = () => {
     },
   });
 
+  const selectedModel = models.find((model) => model.id === modelPolicy.openclaw.model);
+
   // X (Twitter) state
   const [xConfig, setXConfig] = useState({
     enabled: false,
@@ -152,6 +128,16 @@ const GlobalIntegrations = () => {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    const timer = setInterval(() => {
+      axios.get('/api/registry/models', { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+        .then(({ data }) => { if (!cancelled) setModels(data.models || []); })
+        .catch(() => { if (!cancelled) setModels((current) => current.map((model) => ({ ...model, available: false, reason: 'Model health could not be checked' }))); });
+    }, 60_000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, []);
+
+  useEffect(() => {
     const params = new URLSearchParams(location.search || '');
     const oauthStatus = params.get('xOAuth');
     const detail = params.get('detail');
@@ -179,6 +165,7 @@ const GlobalIntegrations = () => {
       });
 
       const { x, instagram, socialPolicy: nextPolicy, modelPolicy: nextModelPolicy } = response.data;
+      setModels(response.data.modelCatalog?.models || []);
 
       if (x) {
         setXConfig({
@@ -870,8 +857,7 @@ const GlobalIntegrations = () => {
                   label="Backend LLM Provider"
                   onChange={(event) => {
                     const nextProvider = event.target.value;
-                    const models = LLM_SERVICE_MODEL_OPTIONS[nextProvider];
-                    const nextModel = models ? models[0].value : modelPolicy.llmService.model;
+                    const nextModel = '';
                     setModelPolicy({
                       ...modelPolicy,
                       llmService: {
@@ -902,8 +888,9 @@ const GlobalIntegrations = () => {
                       llmService: { ...modelPolicy.llmService, model: event.target.value },
                     })}
                   >
+                    {modelPolicy.llmService.model && !LLM_SERVICE_MODEL_OPTIONS[modelPolicy.llmService.provider].some((option) => option.value === modelPolicy.llmService.model) && <MenuItem value={modelPolicy.llmService.model} disabled>{modelPolicy.llmService.model} (unavailable)</MenuItem>}
                     {LLM_SERVICE_MODEL_OPTIONS[modelPolicy.llmService.provider].map((opt) => (
-                      <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                      <MenuItem key={opt.value} value={opt.value} disabled={!opt.available} sx={{ whiteSpace: 'normal' }}><ListItemText primary={`${opt.label}${!opt.available ? ' (unavailable)' : ''}`} secondary={!opt.available ? opt.reason : null} /></MenuItem>
                     ))}
                   </Select>
                 </FormControl>
@@ -985,8 +972,7 @@ const GlobalIntegrations = () => {
                   label="Dev Agent Provider"
                   onChange={(event) => {
                     const nextProvider = event.target.value;
-                    const models = OPENCLAW_MODEL_OPTIONS[nextProvider];
-                    const nextModel = models ? models[0].value : '';
+                    const nextModel = ''; // A provider change never chooses a model for the user.
                     setModelPolicy({
                       ...modelPolicy,
                       openclaw: {
@@ -1007,13 +993,14 @@ const GlobalIntegrations = () => {
               </FormControl>
             </Grid>
             <Grid item xs={12} md={4}>
-              {OPENCLAW_MODEL_OPTIONS[modelPolicy.openclaw.provider] ? (
+              {(OPENCLAW_MODEL_OPTIONS[modelPolicy.openclaw.provider] || modelPolicy.openclaw.provider !== 'custom') ? (
                 <FormControl fullWidth size="small">
                   <InputLabel id="openclaw-model-label">Dev Agent Primary Model</InputLabel>
                   <Select
                     labelId="openclaw-model-label"
                     value={modelPolicy.openclaw.model}
                     label="Dev Agent Primary Model"
+                    renderValue={(value) => { const option = models.find((model) => model.id === value); return option ? `${option.label}${!option.available ? ' (unavailable)' : ''}` : String(value); }}
                     onChange={(event) => setModelPolicy({
                       ...modelPolicy,
                       openclaw: {
@@ -1022,10 +1009,19 @@ const GlobalIntegrations = () => {
                       },
                     })}
                   >
-                    {OPENCLAW_MODEL_OPTIONS[modelPolicy.openclaw.provider].map((opt) => (
-                      <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                    {modelPolicy.openclaw.model && !models.some((option) => option.id === modelPolicy.openclaw.model) && (
+                      <MenuItem value={modelPolicy.openclaw.model} disabled>{modelPolicy.openclaw.model} (unavailable)</MenuItem>
+                    )}
+                    {(OPENCLAW_MODEL_OPTIONS[modelPolicy.openclaw.provider] || []).map((opt) => (
+                      <MenuItem key={opt.value} value={opt.value}
+                        disabled={!opt.available} sx={{ whiteSpace: 'normal' }}>
+                        <ListItemText primary={`${opt.label}${!opt.available ? ' (unavailable)' : ''}`} secondary={!opt.available ? opt.reason : null} />
+                      </MenuItem>
                     ))}
                   </Select>
+                  {!selectedModel?.available && (
+                    <FormHelperText>{selectedModel?.reason || 'Choose an available model from the instance gateway.'}</FormHelperText>
+                  )}
                 </FormControl>
               ) : (
                 <TextField
@@ -1138,14 +1134,14 @@ const GlobalIntegrations = () => {
               variant="contained"
               startIcon={<SaveIcon />}
               onClick={handleSaveModelPolicy}
-              disabled={saving || applyingModelPolicy}
+              disabled={saving || applyingModelPolicy || !selectedModel?.available}
             >
               Save Model Policy
             </Button>
             <Button
               variant="outlined"
               onClick={handleSaveAndApplyModelPolicy}
-              disabled={saving || applyingModelPolicy}
+              disabled={saving || applyingModelPolicy || !selectedModel?.available}
             >
               {applyingModelPolicy ? 'Applying...' : 'Save + Apply To All Agents'}
             </Button>

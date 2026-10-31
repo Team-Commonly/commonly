@@ -433,3 +433,22 @@ describe('BYO on-my-computer mode', () => {
     expect(screen.getByTestId('byo-machine-select')).toHaveValue('mach-on');
   });
 });
+
+
+test('local Claude selection does not consult failing instance model routes', async () => {
+  mockGet();
+  const localGet = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/registry/models') return Promise.resolve({ data: { models: [{ id: 'claude-opus-4-6', available: false, reason: 'Credentials rejected' }] } });
+    return localGet(url);
+  });
+  renderPage();
+  await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+  fireEvent.click(screen.getByTestId('byo-mode-machine'));
+  fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'claude' } });
+  const model = screen.getByTestId('byo-model-select');
+  expect(model).not.toBeDisabled();
+  fireEvent.change(model, { target: { value: 'sonnet' } });
+  expect(model).toHaveValue('sonnet');
+  expect(axios.get.mock.calls.some(([url]) => url === '/api/registry/models')).toBe(false);
+});

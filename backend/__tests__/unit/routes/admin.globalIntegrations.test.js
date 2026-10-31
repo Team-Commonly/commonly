@@ -1,3 +1,4 @@
+jest.mock('../../../services/modelAvailability', () => ({ getModelCatalog: jest.fn().mockResolvedValue({ models: [], checkedAt: 'test' }), modelAvailability: jest.fn((catalog, id) => catalog.models.find((model) => model.id === id) || { id, available: false, reason: 'No configured route' }) }));
 jest.mock('../../../middleware/auth', () => (req, res, next) => next());
 jest.mock('../../../middleware/adminAuth', () => (req, res, next) => next());
 
@@ -579,4 +580,16 @@ describe('admin global integrations route', () => {
       error: 'Unsupported backend LLM provider. Use auto, gemini, litellm, or openrouter.',
     });
   });
+});
+
+
+
+test('admin receives the same shared model catalogue', async () => {
+  const snapshot = { models: [{ id: 'failed-route', available: false, reason: 'Rejected credentials' }], checkedAt: 'test' };
+  require('../../../services/modelAvailability').getModelCatalog.mockResolvedValueOnce(snapshot);
+  Pod.findOne.mockResolvedValue({ _id: 'global', members: ['admin-1'] });
+  Integration.findOne.mockResolvedValue(null);
+  const res = createRes();
+  await getRouteHandler('/', 'get')({ userId: 'admin-1' }, res);
+  expect(res.json.mock.calls[0][0].modelCatalog).toEqual(snapshot);
 });

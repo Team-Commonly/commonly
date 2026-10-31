@@ -10,8 +10,14 @@ const {
   binLooksInstalled,
 } = require('./detect');
 const { PRESET_DEFINITIONS } = require('./presets');
+const { getModelCatalog, modelAvailability } = require('../../services/modelAvailability');
 
 const presetsRouter = express.Router();
+
+// Shared hosted/native model choices. BYO inventories come from their own CLI.
+presetsRouter.get('/models', auth, async (_req: any, res: any) => {
+  res.json(await getModelCatalog());
+});
 
 const resolvePresetTool = (tool: any, capabilities: any) => {
   if (tool.type === 'core') {
@@ -81,6 +87,7 @@ presetsRouter.get('/presets', auth, async (req: any, res: any) => {
     const capabilities = await detectGatewayPresetCapabilities();
     const builtInSkills = detectBuiltInOpenClawSkills();
     const dockerCapabilities = detectDockerfileCommonlyPackages();
+    const modelCatalog = await getModelCatalog();
     const presets = PRESET_DEFINITIONS.map((preset: any) => {
       const resolvedSkills = resolvePresetSkills({
         preset,
@@ -113,6 +120,9 @@ presetsRouter.get('/presets', auth, async (req: any, res: any) => {
       });
       return {
         ...preset,
+        recommendedModelAvailability: ['claude-code', 'webhook'].includes(preset.installHints?.runtime)
+          ? { id: preset.recommendedModel, available: true, reason: null, source: 'byo' }
+          : modelAvailability(modelCatalog, preset.recommendedModel),
         requiredTools: (preset.requiredTools || []).map(
           (tool: any) => resolvePresetTool(tool, capabilities),
         ),
@@ -137,6 +147,7 @@ presetsRouter.get('/presets', auth, async (req: any, res: any) => {
 
     return res.json({
       presets,
+      modelCatalog,
       capabilities,
       runtimeSkills: builtInSkills,
       dockerCapabilities,

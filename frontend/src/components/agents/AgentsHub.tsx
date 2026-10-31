@@ -1428,15 +1428,25 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
 
   const currentPodId = selectedPodId;
 
+  const [instanceModels, setInstanceModels] = useState<Array<{ id: string; label: string; available: boolean; reason: string | null }>>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => axios.get('/api/registry/models', { headers: getAuthHeaders() })
+      .then(({ data }) => { if (!cancelled) setInstanceModels(data.models || []); })
+      .catch(() => {
+        if (!cancelled) setInstanceModels((current) => current.map((model) => ({
+          ...model, available: false, reason: 'Model health could not be checked',
+        })));
+      });
+    void refresh();
+    const timer = setInterval(refresh, 60_000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, []);
+  const configRuntime = (configAgent as any)?.config?.runtime || (configAgent as any)?.runtime || {};
+  const configIsByo = configRuntime.host === 'byo' || ['wrapper', 'webhook', 'claude-code'].includes(configRuntime.runtimeType);
   const modelOptions = [
-    { value: '', label: 'Default (global routing policy)' },
-    { value: 'openai-codex/gpt-5.4', label: 'GPT-5.4 Codex (OAuth)' },
-    { value: 'openai-codex/gpt-5.3-codex', label: 'GPT-5.3 Codex (OAuth, legacy)' },
-    { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-    { value: 'google/gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
-    { value: 'google/gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-    { value: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free', label: 'Nemotron 120B (OpenRouter free)' },
-    { value: 'openrouter/arcee-ai/trinity-large-preview:free', label: 'Trinity Large (OpenRouter free)' },
+    { value: '', label: 'Default (global routing policy)', available: true, reason: null },
+    ...instanceModels.map((model) => ({ ...model, value: model.id })),
   ];
 
   const personaToneOptions = [
@@ -3290,7 +3300,9 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
               )}
             </Stack>
           )}
-          <FormControl fullWidth>
+          {configIsByo ? <TextField fullWidth label="Model Override" value={configModel}
+            onChange={(event) => setConfigModel(event.target.value)}
+            helperText="This agent uses its own runtime. Instance gateway health does not limit its model." /> : <FormControl fullWidth>
             <InputLabel id="agent-model-label">Model Override</InputLabel>
             <Select
               labelId="agent-model-label"
@@ -3298,16 +3310,17 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
               value={configModel}
               onChange={(e) => setConfigModel(e.target.value)}
             >
+              {configModel && !modelOptions.some((option) => option.value === configModel) && <MenuItem value={configModel} disabled>{configModel} (unavailable: no configured route)</MenuItem>}
               {modelOptions.map((option) => (
-                <MenuItem key={option.value} value={option.value}>
-                  {option.label}
+                <MenuItem key={option.value} value={option.value} disabled={!option.available} sx={{ whiteSpace: 'normal' }}>
+                  {option.label}{!option.available ? ` (unavailable: ${option.reason})` : ''}
                 </MenuItem>
               ))}
             </Select>
             <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
               &quot;Default&quot; follows the global routing policy (dev vs community). Override only to pin this agent to a specific model.
             </Typography>
-          </FormControl>
+          </FormControl>}
 
           <Divider sx={{ my: 3 }} />
 
