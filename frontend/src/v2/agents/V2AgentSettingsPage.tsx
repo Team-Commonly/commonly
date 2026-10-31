@@ -258,6 +258,7 @@ const V2AgentSettingsPage: React.FC = () => {
       <nav className="v2-agent-settings__tabs" aria-label={t('agentSettings.tabs')}>
         <Link to={`/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`}>{t('agentSettings.profile')}</Link>
         <span aria-current="page">{t('agentSettings.settings')}</span>
+        <Link to={`/v2/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}/memory`}>{t('agentSettings.memory', { defaultValue: 'Memory' })}</Link>
       </nav>
       <AgentControlLoader agentName={agentName} instanceId={instanceId}
         refreshNonce={connectionRefreshNonce} onConnectionState={onConnectionState} />
