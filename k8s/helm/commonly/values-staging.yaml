@@ -160,6 +160,18 @@ litellm:
 
 backend:
   env:
+    # injection-guard ONLY — matches prod (values-dev.yaml). The native runtime's
+    # default guardrail pair (nativeRuntimeService.ts) includes openai-moderation-enforce,
+    # which calls OpenAI's moderation API with OPENAI_API_KEY. Staging's api-keys
+    # openai-api-key is an 11-byte placeholder (prod's is the literal "placeholder" too),
+    # so that guardrail 401'd on EVERY native turn BEFORE the model call — litellm logged
+    # 401 from https://api.openai.com/v1/moderations and returned HTTP 401 for
+    # deepseek-v4-flash. This was the second half of the 2026-10-31 Scout-staging incident:
+    # enabling litellm (above) fixed the missing-backend 401, this fixes the guardrail 401.
+    # injection-guard is LiteLLM-native (no key, no external service) and keeps the
+    # prompt-injection block. Restore the pair only after a real OpenAI moderation key
+    # lands in the staging api-keys secret. Guard test: litellmStagingEnabled.test.js.
+    nativeRuntimeGuardrails: "injection-guard"
     agentComputerEnabled: "true"
     agentComputerSteelApiUrlTemplate: "http://steel-{userId}.commonly-staging.svc.cluster.local:3000"
     agentComputerSteelCdpUrlTemplate: "http://steel-{userId}.commonly-staging.svc.cluster.local:9223"
