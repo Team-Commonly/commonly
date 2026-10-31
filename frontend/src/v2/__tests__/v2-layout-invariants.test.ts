@@ -456,9 +456,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root button.v2-pods__create-submit', { within: phone })).toContain('min-height: 40px');
   });
 
-  test('the selected pod keeps the sidebar’s one cobalt block treatment', () => {
+  test('the selected pod fills from the row token, so dark can go neutral (TASK-701)', () => {
     const selected = selectorRuleBody(v2, '.v2-root button.v2-pods__row--selected');
-    expect(selected).toContain('background: var(--v2-accent-fill)');
+    expect(selected).toContain('background: var(--v2-row-active)');
+    expect(selected).toContain('box-shadow: inset 3px 0 0 var(--v2-accent)');
     expect(selected).toContain('font-weight: 600');
     expect(podsSidebar).not.toContain('v2-pods__item--active');
     expect(podsSidebar).not.toContain('v2-pods__item-dot');
@@ -2022,7 +2023,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(cobalt).toEqual([
         '.v2-rail__brand-icon',
         '.v2-root button.v2-decision-card__choice--primary',
-        '.v2-root button.v2-pods__row--selected',
         // Direction C (walk-3 miss 62, ux-lead 64476 (1)): an agent's transcript
         // avatar is a flat cobalt square with white initials — the mark that
         // says "agent" on a row. A photo never gets the class.

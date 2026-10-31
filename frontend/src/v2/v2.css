@@ -34,7 +34,11 @@ body.modern-ui.v2-canvas {
      sets below. */
   --v2-rail-icon: #374151;
   --v2-control-outline: #667085;
-  --v2-row-active: #e9edfb;
+  /* Light keeps the cobalt block; dark swaps it for a neutral row. */
+  --v2-row-active: var(--v2-accent-fill);
+  --v2-row-active-text: var(--v2-on-accent);
+  --v2-row-active-mute: rgba(255, 255, 255, 0.85);
+  --v2-row-active-mark: rgba(255, 255, 255, 0.22);
   --v2-text-secondary: #475467;
   --v2-text-tertiary: #667085;
   --v2-text-muted: #667085;
@@ -209,6 +213,9 @@ body.modern-ui.v2-canvas {
     --v2-rail-icon: #aeb6c4;
     --v2-control-outline: #737e92;
     --v2-row-active: #1e2531;
+    --v2-row-active-text: #e8ebf1;
+    --v2-row-active-mute: #aeb6c4;
+    --v2-row-active-mark: #2a3342;
     --v2-text-secondary: #aeb6c4;
     --v2-text-tertiary: #8b94a5;
     --v2-text-muted: #8b94a5;
@@ -258,6 +265,9 @@ body.modern-ui.v2-canvas {
       --v2-rail-icon: #aeb6c4;
       --v2-control-outline: #737e92;
       --v2-row-active: #1e2531;
+      --v2-row-active-text: #e8ebf1;
+      --v2-row-active-mute: #aeb6c4;
+      --v2-row-active-mark: #2a3342;
       --v2-text-secondary: #aeb6c4;
       --v2-text-tertiary: #8b94a5;
       --v2-text-muted: #8b94a5;
@@ -1340,7 +1350,7 @@ body.modern-ui.v2-canvas {
    the low-specificity default reset. Source order then resolves the local
    active-row variants. */
 .v2-root button.v2-pods__item--active {
-  background: var(--v2-row-active);
+  background: var(--v2-accent-soft);
   border-color: transparent;
   position: relative;
 }
@@ -12117,10 +12127,13 @@ body.modern-ui.v2-canvas {
   box-shadow: inset 0 0 0 2px var(--v2-accent);
 }
 
+/* Dark swaps the cobalt block for a neutral row. The accent bar on the leading
+   edge carries "selected" when the fill alone is too close to the pane. */
 .v2-root button.v2-pods__row--selected,
 .v2-root button.v2-pods__row--selected:hover {
-  background: var(--v2-accent-fill);
-  color: var(--v2-on-accent);
+  background: var(--v2-row-active);
+  color: var(--v2-row-active-text);
+  box-shadow: inset 3px 0 0 var(--v2-accent);
   font-weight: 600;
 }
 
@@ -12146,8 +12159,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-pods__row--selected .v2-pods__row-mark {
-  background: rgba(255, 255, 255, 0.22);
-  color: var(--v2-on-accent);
+  background: var(--v2-row-active-mark);
+  color: var(--v2-row-active-text);
 }
 
 .v2-pods__row-name {
@@ -12168,7 +12181,7 @@ body.modern-ui.v2-canvas {
   font: 400 11px/16px var(--v2-font-mono);
 }
 
-.v2-root button.v2-pods__row--selected .v2-pods__row-meta { color: rgba(255, 255, 255, 0.85); }
+.v2-root button.v2-pods__row--selected .v2-pods__row-meta { color: var(--v2-row-active-mute); }
 
 .v2-pods__row-pill {
   display: grid;
