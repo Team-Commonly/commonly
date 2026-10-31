@@ -534,7 +534,7 @@ body.modern-ui.v2-canvas {
 .v2-pane--main {
   margin: 8px 8px 8px 0;
   height: calc(100vh - 16px);
-  background: #ffffff;
+  background: var(--v2-bg);
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-content-radius);
   overflow: hidden;
@@ -656,7 +656,7 @@ body.modern-ui.v2-canvas {
   height: 32px;
   border-radius: var(--v2-radius-sm);
   background: var(--v2-accent);
-  color: #fff;
+  color: var(--v2-bg);
   display: grid;
   place-items: center;
   font-weight: 800;
@@ -961,7 +961,7 @@ body.modern-ui.v2-canvas {
   height: 40px;
   gap: 8px;
   background: var(--v2-accent);
-  color: #fff;
+  color: var(--v2-bg);
   font-weight: 600;
   font-size: 14px;
   padding: 0 14px;
@@ -1073,7 +1073,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pods__create-submit {
   background: var(--v2-ink);
-  color: #fff;
+  color: var(--v2-bg);
 }
 
 .v2-root button.v2-pods__create-submit:disabled {
@@ -1239,7 +1239,7 @@ body.modern-ui.v2-canvas {
 .v2-pods__item--active .v2-pods__item-icon--private {
   background: var(--v2-accent);
   border-color: transparent;
-  color: #fff;
+  color: var(--v2-bg);
 }
 
 .v2-pods__item-body {
@@ -2967,8 +2967,8 @@ body.modern-ui.v2-canvas {
   border-color: rgba(111, 66, 193, 0.20);
 }
 .v2-prcard__state--closed {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.10);
+  color: var(--v2-danger);
+  background: var(--v2-danger-soft);
   border-color: rgba(239, 68, 68, 0.20);
 }
 .v2-prcard__title {
@@ -2996,7 +2996,7 @@ body.modern-ui.v2-canvas {
   font-size: 11.5px;
 }
 .v2-prcard__metric--add { color: #16a34a; }
-.v2-prcard__metric--del { color: #ef4444; }
+.v2-prcard__metric--del { color: var(--v2-danger); }
 .v2-prcard__contributors {
   display: inline-flex;
   align-items: center;
@@ -3387,7 +3387,7 @@ body.modern-ui.v2-canvas {
   border-radius: var(--v2-radius);
   overflow: hidden;
   border: 1px solid var(--v2-border);
-  background: #ffffff;
+  background: var(--v2-bg);
 }
 
 .v2-msg__image {
@@ -3420,7 +3420,7 @@ body.modern-ui.v2-canvas {
   place-items: center;
   font-size: 10px;
   font-weight: 700;
-  color: #fff;
+  color: var(--v2-bg);
 }
 
 .v2-msg__file-meta {
@@ -3456,7 +3456,7 @@ body.modern-ui.v2-canvas {
   height: 26px;
   padding: 0 9px;
   border-radius: var(--v2-radius-sm);
-  background: #ffffff;
+  background: var(--v2-bg);
   font-size: 12px;
   color: var(--v2-text-secondary);
   border: 1px solid transparent;
@@ -3731,7 +3731,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-inspector__btn--danger:hover {
   background: var(--v2-danger);
-  color: #fff;
+  color: var(--v2-bg);
   border-color: var(--v2-danger);
 }
 
@@ -4078,8 +4078,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__pill--blocked {
-  background: rgba(239, 68, 68, 0.10);
-  color: #b91c1c;
+  background: var(--v2-danger-soft);
+  color: var(--v2-danger-text);
 }
 
 .v2-inspector__pill--progress {
@@ -4888,7 +4888,7 @@ body.modern-ui.v2-canvas {
   border: none;
   border-radius: var(--v2-radius-sm);
   background: var(--v2-accent);
-  color: #fff;
+  color: var(--v2-bg);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -4926,7 +4926,7 @@ body.modern-ui.v2-canvas {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  color: #fff;
+  color: var(--v2-bg);
   font-weight: 650;
   font-size: 11px;
   flex-shrink: 0;
@@ -5058,7 +5058,7 @@ body.modern-ui.v2-canvas {
   margin-top: 8px;
   padding: 10px 14px;
   background: var(--v2-accent);
-  color: #fff;
+  color: var(--v2-bg);
   font-weight: 700;
   font-size: 14px;
   border-radius: var(--v2-radius);
@@ -5078,7 +5078,7 @@ body.modern-ui.v2-canvas {
   margin-top: 10px;
   padding: 8px 12px;
   border-radius: var(--v2-radius);
-  background: rgba(239, 68, 68, 0.1);
+  background: var(--v2-danger-soft);
   color: var(--v2-danger);
   font-size: 12px;
 }
@@ -5227,14 +5227,14 @@ body.modern-ui.v2-canvas {
 
 .v2-feature {
   min-width: 0;
-  background: #ffffff; /* inside the card the ground is white; the card is the tint step */
+  background: var(--v2-bg); /* inside the card the ground is white; the card is the tint step */
 }
 
 .v2-feature__header {
   flex-shrink: 0;
   padding: 22px 28px 18px;
   border-bottom: 1px solid var(--v2-border-soft);
-  background: #ffffff;
+  background: var(--v2-bg);
 }
 
 .v2-feature__title {
@@ -5368,8 +5368,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiPaper-root {
-  background: #ffffff !important;
-  background-color: #ffffff !important;
+  background: var(--v2-bg) !important;
+  background-color: var(--v2-bg) !important;
   color: var(--v2-text-primary) !important;
   border: 1px solid var(--v2-border) !important;
   box-shadow: var(--v2-shadow-sm) !important;
@@ -5408,8 +5408,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiCard-root {
-  background: #ffffff !important;
-  background-color: #ffffff !important;
+  background: var(--v2-bg) !important;
+  background-color: var(--v2-bg) !important;
   color: var(--v2-text-primary) !important;
   border: 1px solid var(--v2-border) !important;
   box-shadow: var(--v2-shadow-sm) !important;
@@ -5458,7 +5458,7 @@ body.modern-ui.v2-canvas {
 
 .v2-feature__legacy .MuiButton-containedPrimary {
   background: var(--v2-accent);
-  color: #ffffff;
+  color: var(--v2-bg);
   box-shadow: none;
 }
 
@@ -5487,7 +5487,7 @@ body.modern-ui.v2-canvas {
 .v2-feature__legacy .MuiInputBase-root,
 .v2-feature__legacy .MuiSelect-select,
 .v2-feature__legacy .MuiAutocomplete-inputRoot {
-  background-color: #ffffff !important;
+  background-color: var(--v2-bg) !important;
   color: var(--v2-text-primary) !important;
 }
 
@@ -5572,7 +5572,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiChip-outlined:not(.MuiChip-colorSuccess):not(.MuiChip-colorWarning):not(.MuiChip-colorError):not(.MuiChip-colorInfo) {
-  background-color: #ffffff !important;
+  background-color: var(--v2-bg) !important;
   color: var(--v2-text-secondary) !important;
 }
 
@@ -5587,7 +5587,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiTableContainer-root {
-  background: #ffffff !important;
+  background: var(--v2-bg) !important;
   border: 1px solid var(--v2-border);
   border-radius: 12px;
   box-shadow: var(--v2-shadow-sm);
@@ -5618,7 +5618,7 @@ body.modern-ui.v2-canvas {
 .v2-feature__legacy .MuiDialog-paper,
 .v2-feature__legacy .MuiPopover-paper,
 .v2-feature__legacy .MuiMenu-paper {
-  background: #ffffff !important;
+  background: var(--v2-bg) !important;
   color: var(--v2-text-primary) !important;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-lg);
@@ -5630,7 +5630,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiAvatar-root {
-  border: 2px solid #ffffff;
+  border: 2px solid var(--v2-bg);
 }
 
 /* Reset top padding for embedded dev tools so the v2 feature header is the
@@ -5660,8 +5660,8 @@ body.modern-ui.v2-canvas {
 .v2-feature__legacy [style*="background-color: rgba(30, 41, 59"],
 .v2-feature__legacy [style*="background-color: #0f172a"],
 .v2-feature__legacy [style*="background-color: #0b1220"] {
-  background: #ffffff !important;
-  background-color: #ffffff !important;
+  background: var(--v2-bg) !important;
+  background-color: var(--v2-bg) !important;
   color: var(--v2-text-primary) !important;
 }
 
@@ -6036,7 +6036,7 @@ body.modern-ui.v2-canvas {
   display: flex;
   gap: 2px;
   padding: 4px;
-  background: var(--v2-surface, #fff);
+  background: var(--v2-surface, var(--v2-bg));
   border: 1px solid var(--v2-border, #e5e7eb);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
@@ -6150,7 +6150,7 @@ body.modern-ui.v2-canvas {
   padding: 10px 12px;
   border: 1px solid var(--v2-border);
   border-radius: 4px;
-  background: var(--v2-surface, #fff);
+  background: var(--v2-surface, var(--v2-bg));
   font-size: 14px;
   color: var(--v2-text-primary);
   outline: none;
@@ -6355,7 +6355,7 @@ body.modern-ui.v2-canvas {
   background: var(--v2-text-muted);
 }
 /* §3 not yet — the dashed hollow dot the Connectors not-yet state uses
-   (v2.css:9797). The text stays muted rather than placeholder: #98a2b3 at
+   (v2.css:9797). The text stays muted rather than placeholder: var(--v2-border-strong) at
    11px is 2.6:1.
    `waiting` shares the ring: a token has been issued and the agent has not
    checked in, so the state is still "not yet" — but it is no longer "not
@@ -6485,7 +6485,7 @@ body.modern-ui.v2-canvas {
   padding: 16px 18px 14px;
   border: 1px solid var(--v2-border);
   border-radius: 4px;
-  background: var(--v2-surface, #fff);
+  background: var(--v2-surface, var(--v2-bg));
   color: var(--v2-text-primary);
   cursor: pointer;
   transition: border-color 0.08s ease, background 0.08s ease;
@@ -7119,7 +7119,7 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-admin-users__btn--primary {
   background: var(--v2-accent);
   border-color: var(--v2-accent);
-  color: #fff;
+  color: var(--v2-bg);
 }
 
 .v2-root button.v2-admin-users__btn--primary:hover:not(:disabled) {
@@ -7432,7 +7432,7 @@ body.modern-ui.v2-canvas {
   border-radius: var(--v2-radius-md);
   padding: 16px;
   margin-bottom: 16px;
-  background: #ffffff;
+  background: var(--v2-bg);
 }
 .v2-billing__head {
   display: flex;
@@ -7487,7 +7487,7 @@ body.modern-ui.v2-canvas {
   padding: 0 14px;
   border-radius: var(--v2-radius-sm);
   border: 1px solid var(--v2-border);
-  background: #ffffff;
+  background: var(--v2-bg);
   color: var(--v2-text-primary);
   font-size: 13px;
   font-weight: 600;
@@ -7981,7 +7981,7 @@ body.modern-ui.v2-canvas {
   padding: 7px 10px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
-  background: #ffffff;
+  background: var(--v2-bg);
   color: var(--v2-text-primary);
   font: 400 14px/20px var(--v2-font);
 }
@@ -8045,7 +8045,7 @@ body.modern-ui.v2-canvas {
 
 .v2-settings__section .v2-billing__badge {
   border-radius: var(--v2-radius-sm);
-  background: #ffffff;
+  background: var(--v2-bg);
   border-color: var(--v2-border);
   color: var(--v2-text-primary);
   font-family: var(--v2-font-mono);
@@ -8114,7 +8114,7 @@ body.modern-ui.v2-canvas {
   padding: 0 12px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
-  background: #ffffff;
+  background: var(--v2-bg);
   color: var(--v2-text-primary);
   font: 600 13px/20px var(--v2-font);
   cursor: pointer;
@@ -8682,7 +8682,7 @@ body.modern-ui.v2-canvas {
   border: none;
   border-radius: 8px;
   padding: 9px 16px;
-  color: #fff;
+  color: var(--v2-bg);
   background: var(--v2-ink);
   cursor: pointer;
   font-size: 13.5px;
@@ -8928,7 +8928,7 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-board__create-submit {
   border: none;
   background: var(--v2-accent);
-  color: #fff;
+  color: var(--v2-bg);
   font-size: 13.5px;
   font-weight: 600;
   padding: 9px 16px;
@@ -9247,7 +9247,7 @@ body.modern-ui.v2-canvas {
 
 .v2-approval__error {
   font-size: 12.5px;
-  color: #b91c1c;
+  color: var(--v2-danger-text);
 }
 
 /* Hosted-to-BYO handoff: the command is server-composed and the card copies
@@ -10908,7 +10908,7 @@ body.modern-ui.v2-canvas {
 .v2-connectors__select { min-width: 0; min-height: 40px; padding: 0 10px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); color: var(--v2-ink); font: 500 13px var(--v2-font); }
 
 .v2-connectors__aside { display: flex; min-width: 0; flex-direction: column; gap: 16px; }
-.v2-connector-aside__step, .v2-connector-aside__card { padding: 18px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-md); background: var(--v2-panel, #f9fafb); }
+.v2-connector-aside__step, .v2-connector-aside__card { padding: 18px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-md); background: var(--v2-panel, var(--v2-bg-subtle)); }
 .v2-connector-aside__step p, .v2-connector-aside__card p { margin: 0; color: var(--v2-text-secondary); font-size: 13px; line-height: 20px; }
 .v2-connector-aside__eyebrow { margin-bottom: 8px !important; color: var(--v2-accent-text) !important; font-family: var(--v2-font-mono); font-size: 11px !important; font-weight: 500; text-transform: lowercase; }
 .v2-connector-aside__card h2 { margin: 0 0 8px; color: var(--v2-ink); font-family: var(--v2-font-display); font-size: 16px; font-weight: 800; letter-spacing: -0.02em; }
@@ -11505,7 +11505,7 @@ body.modern-ui.v2-canvas {
 .v2-decision-card__settled,
 .v2-decision-card__error { margin: 0; font: 500 12px/18px var(--v2-font); }
 .v2-decision-card__settled { color: var(--v2-text-secondary); }
-.v2-decision-card__error { color: #b91c1c; }
+.v2-decision-card__error { color: var(--v2-danger-text); }
 
 .v2-msg__ruled {
   color: var(--v2-text-muted);
@@ -11601,7 +11601,7 @@ body.modern-ui.v2-canvas {
 .v2-composer__error {
   margin: 0;
   padding: 0 10px 8px;
-  color: #b91c1c;
+  color: var(--v2-danger-text);
   font: 400 12px/16px var(--v2-font);
 }
 
@@ -11656,10 +11656,10 @@ body.modern-ui.v2-canvas {
     grid-template-columns: minmax(0, 1fr);
     padding: 0;
     gap: 0;
-    background: #fff;
+    background: var(--v2-bg);
   }
   .v2-pane--rail { display: none; }
-  .v2-pane--main { background: #fff; }
+  .v2-pane--main { background: var(--v2-bg); }
 
   /* The inspector becomes the artboard's bottom sheet; its header toggle is
      intentionally always present so the sheet cannot become unreachable. */
@@ -11686,7 +11686,7 @@ body.modern-ui.v2-canvas {
     height: 54px;
     padding: 5px 14px;
     border-top: 1px solid var(--v2-border);
-    background: #fff;
+    background: var(--v2-bg);
   }
   .v2-root button.v2-mobile-tabs__item {
     position: relative;
@@ -11714,10 +11714,10 @@ body.modern-ui.v2-canvas {
     height: 16px;
     padding: 0 3px;
     place-items: center;
-    border: 2px solid #fff;
+    border: 2px solid var(--v2-bg);
     border-radius: 999px;
     background: var(--v2-accent);
-    color: #fff;
+    color: var(--v2-bg);
     font: 700 11px/1 var(--v2-font-mono);
   }
 }
@@ -11965,7 +11965,7 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-pods__row--selected,
 .v2-root button.v2-pods__row--selected:hover {
   background: var(--v2-accent);
-  color: #fff;
+  color: var(--v2-bg);
   font-weight: 600;
 }
 
@@ -11992,7 +11992,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pods__row--selected .v2-pods__row-mark {
   background: rgba(255, 255, 255, 0.22);
-  color: #fff;
+  color: var(--v2-bg);
 }
 
 .v2-pods__row-name {
@@ -12023,7 +12023,7 @@ body.modern-ui.v2-canvas {
   place-items: center;
   border-radius: 8px;
   background: var(--v2-ink);
-  color: #fff;
+  color: var(--v2-bg);
   font: 700 11px/1 var(--v2-font-mono);
 }
 
@@ -12058,7 +12058,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-pods__row--selected .v2-pods__row-pill {
-  background: #fff;
+  background: var(--v2-bg);
   color: var(--v2-accent);
 }
 
@@ -12718,14 +12718,14 @@ body.modern-ui.v2-canvas {
 
 /* ---------- Workspace at scale · direction C · PR 2b (threading restyle, walk-3 misses 51–63) ----------
    Runtime tag on agent rows; 20px reaction chips; a two-line quote that jumps to
-   its source; the thread summary is one chip; the expanded thread is one #f9fafb
+   its source; the thread summary is one chip; the expanded thread is one var(--v2-bg-subtle)
    band with a 2px rule and a Collapse foot; the action strip is a 28px white box
    top-right on hover (inline under the body on long-press at 390); the Jump pill
    is white with a cobalt count; transcript avatars are two-tone. */
 
 /* Hover band and the expanded band share the panel colour, not the tint. */
 .v2-thread .v2-msg:hover,
-.v2-thread .v2-msg:focus-within { background: #f9fafb; }
+.v2-thread .v2-msg:focus-within { background: var(--v2-bg-subtle); }
 .v2-thread .v2-msg { border-radius: 4px; }
 .v2-thread .v2-msg--landed { background: var(--v2-accent-soft, #e8ecfb); transition: background 0.6s ease; }
 
@@ -12865,7 +12865,7 @@ body.modern-ui.v2-canvas {
    gap = 36px). */
 .v2-thread .v2-thread-block { margin: 0 0 10px; width: 100%; }
 .v2-thread .v2-thread-block__inner { margin-left: 36px; }
-.v2-thread .v2-thread-block--open { background: #f9fafb; border-radius: 4px; padding: 0 8px 6px 0; }
+.v2-thread .v2-thread-block--open { background: var(--v2-bg-subtle); border-radius: 4px; padding: 0 8px 6px 0; }
 .v2-thread .v2-thread-block--open > .v2-msg:hover,
 .v2-thread .v2-thread-block--open > .v2-msg:focus-within { background: transparent; }
 .v2-thread .v2-thread-block .v2-thread-card { margin: 2px 0 0; }
@@ -12908,8 +12908,8 @@ body.modern-ui.v2-canvas {
 /* Transcript avatars are two-tone squares (ux-lead 64476 (1)): human tint +
    #4f5c6e initials, agent cobalt + white initials; a photo still wins. */
 .v2-thread .v2-avatar--flat { border: 0; box-shadow: none; border-radius: 4px; font: 650 12px/1 var(--v2-font); letter-spacing: 0.02em; }
-.v2-thread .v2-avatar--flat-human { background: #f2f4f7; color: #4f5c6e; }
-.v2-thread .v2-avatar--flat-agent { background: var(--v2-accent); color: #fff; }
+.v2-thread .v2-avatar--flat-human { background: var(--v2-surface-tint); color: #4f5c6e; }
+.v2-thread .v2-avatar--flat-agent { background: var(--v2-accent); color: var(--v2-bg); }
 .v2-thread .v2-thread-replies .v2-msg .v2-avatar--flat { font: 650 12px/1 var(--v2-font); }
 .v2-thread .v2-thread-card__faces .v2-avatar--flat { font: 650 11px/1 var(--v2-font-mono); }
 .v2-root .v2-thread button.v2-thread-replies__aim { margin-left: auto; padding: 0; color: var(--v2-text-muted); font: 500 12px/16px var(--v2-font); }
@@ -12931,7 +12931,7 @@ body.modern-ui.v2-canvas {
   /* The row is a 28px | 1fr grid and the strip precedes the body in DOM: left
      to auto-place, a static strip takes the body's cell and the body drops
      into the avatar column (one word per line — 390 walk). Pin it. */
-  .v2-thread .v2-msg--reveal { background: #f9fafb; row-gap: 6px; }
+  .v2-thread .v2-msg--reveal { background: var(--v2-bg-subtle); row-gap: 6px; }
   .v2-thread .v2-msg--reveal .v2-msg__strip {
     position: static;
     grid-column: 2;
@@ -13037,7 +13037,7 @@ body.modern-ui.v2-canvas {
 @media (max-width: 760px) {
   .v2-activity__controls { flex-direction: column; align-items: stretch; }
 }
-.v2-root .v2-activity__queue-row--decision .v2-activity__queue-mark { background: var(--v2-accent); color: #fff; }
+.v2-root .v2-activity__queue-row--decision .v2-activity__queue-mark { background: var(--v2-accent); color: var(--v2-bg); }
 /* Categories are marks, only the deciding act is a word (direction A). The
    mark holds a 16px glyph; a secondary act is a 32px square holding one, its word in the
    title and the accessible name. Nothing is hidden in a menu. */
@@ -13184,7 +13184,7 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-team__byo { height: 36px; padding: 0 14px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-surface); color: var(--v2-text-primary); font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team__byo:hover { background: var(--v2-surface-hover); }
 /* Ink acts (signal-identity §2): Hire is the page's one filled control. */
-.v2-root button.v2-team__hire { height: 36px; padding: 0 14px; border: 1px solid #101828; border-radius: 4px; background: #101828; color: #fff; font: 600 13px/1 var(--v2-font); cursor: pointer; }
+.v2-root button.v2-team__hire { height: 36px; padding: 0 14px; border: 1px solid var(--v2-text-primary); border-radius: 4px; background: var(--v2-text-primary); color: var(--v2-bg); font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team__hire:disabled { opacity: 0.5; cursor: default; }
 .v2-team__notice { font-size: 13px; color: var(--v2-text-secondary); }
 .v2-team__notice--ok { color: var(--v2-text-primary); }
@@ -13229,9 +13229,9 @@ body.modern-ui.v2-canvas {
 }
 .v2-root button.v2-team-card__mark img { width: 100%; height: 100%; object-fit: cover; }
 .v2-root button.v2-team-card__mark .v2-avatar { width: 100%; height: 100%; border: 0; border-radius: inherit; }
-.v2-root button.v2-team-card__mark--needsYou { background: var(--v2-accent); color: #fff; }
-.v2-root button.v2-team-card__mark--working { background: #101828; color: #fff; }
-.v2-root button.v2-team-card__mark--idle { background: #e4e7ec; color: #4f5c6e; }
+.v2-root button.v2-team-card__mark--needsYou { background: var(--v2-accent); color: var(--v2-bg); }
+.v2-root button.v2-team-card__mark--working { background: var(--v2-text-primary); color: var(--v2-bg); }
+.v2-root button.v2-team-card__mark--idle { background: var(--v2-border-soft); color: #4f5c6e; }
 .v2-team-card__title { min-width: 0; }
 /* A primary identifier never one-line-ellipsizes (craft audit rule 1, #568):
    two lines, then clamp; min-width 0 so the grid column can shrink under it. */
@@ -13263,7 +13263,7 @@ body.modern-ui.v2-canvas {
 .v2-team-card__desc { margin: 0; font-size: 13px; line-height: 18px; color: var(--v2-text-secondary); }
 .v2-team-card__pods { display: flex; gap: 6px; flex-wrap: wrap; }
 .v2-team-card__pod { font: 500 11px/16px var(--v2-font-mono); padding: 2px 6px; border: 1px solid var(--v2-border); border-radius: 4px; color: var(--v2-text-secondary); }
-.v2-team-card__command { display: block; padding: 8px 10px; border-radius: 4px; background: #101828; color: #fff; font: 500 14px/20px var(--v2-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.v2-team-card__command { display: block; padding: 8px 10px; border-radius: 4px; background: var(--v2-text-primary); color: var(--v2-bg); font: 500 14px/20px var(--v2-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .v2-team-card__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
 /* Where the seat runs: a cloud (Commonly) or a laptop (your computer), top-right. */
 .v2-team-card__where { display: inline-flex; flex: none; margin-left: auto; align-self: flex-start; color: var(--v2-text-muted); }
@@ -13272,7 +13272,7 @@ body.modern-ui.v2-canvas {
 .v2-team-card__meter-track { flex: 1; min-width: 0; height: 4px; border-radius: 2px; background: var(--v2-border-soft); overflow: hidden; }
 .v2-team-card__meter-fill { display: block; height: 100%; background: var(--v2-accent); }
 .v2-team-card__meter-text { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; }
-.v2-root button.v2-team-card__answer { height: 32px; padding: 0 12px; border: 1px solid #101828; border-radius: 4px; background: #101828; color: #fff; font: 600 13px/1 var(--v2-font); cursor: pointer; }
+.v2-root button.v2-team-card__answer { height: 32px; padding: 0 12px; border: 1px solid var(--v2-text-primary); border-radius: 4px; background: var(--v2-text-primary); color: var(--v2-bg); font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team-card__talk { height: 32px; padding: 0 12px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-surface); color: var(--v2-text-primary); font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team-card__talk:hover { background: var(--v2-surface-hover); }
 .v2-root button.v2-team-card__talk:disabled { color: var(--v2-text-placeholder); cursor: default; }
