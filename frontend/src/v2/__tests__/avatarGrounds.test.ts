@@ -29,7 +29,7 @@ describe('character avatar grounds', () => {
   const v2Tokens = tokensIn(read('../v2.css'), 'v2-avatar');
   const designTokens = tokensIn(read('../../../design-system/tokens.css'), 'c-avatar');
 
-  test('v2.css and design-system tokens list the same six grounds', () => {
+  test('v2.css and design-system tokens list the same five grounds and the ring token', () => {
     expect(v2Tokens).toHaveLength(5);
     expect(designTokens).toEqual(v2Tokens);
   });
