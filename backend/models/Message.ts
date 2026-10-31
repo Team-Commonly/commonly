@@ -25,17 +25,16 @@ export interface IMessage extends Document {
   updatedAt: Date;
   freshnessPending?: boolean;
   freshnessCommittedAt?: Date;
-  // TASK-313 part 2. Set once the reconciler has written this message into
-  // Postgres (reconciledPgId is the PG row). Set-once: the reconciler's
-  // updateOne filters on its absence, so concurrent passes cannot re-stamp.
+  // Set once `copyOne` (services/legacyMessageCopy) has written this message
+  // into Postgres (reconciledPgId is the PG row). Set-once: its updateOne
+  // filters on its absence, so concurrent copies cannot re-stamp.
   reconciledAt?: Date;
   reconciledPgId?: number;
-  // A permanent malformed-data refusal. Excluded from the
-  // reconciler's scan so one such row cannot hold back the rows behind it.
+  // Written by the removed TASK-313 reconciler; kept so existing rows load.
   reconcileFailedAt?: Date;
   reconcileError?: string;
   reconcileRetryAt?: Date;
-  /** Written only by the availability path, never inferred for legacy history. */
+  /** Written by the removed PG-outage fallback (TASK-503); history only. */
   pgFallback?: boolean;
 }
 

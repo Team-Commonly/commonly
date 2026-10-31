@@ -450,30 +450,27 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
 
 exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    // A message the reconciler moved answers to its Mongo id, and the PG row
-    // is the one to delete. Deleting only the Mongo copy would leave the
-    // message visible in PG.
+    // With PG_HOST set, PostgreSQL is the only message store (TASK-503). A
+    // copied legacy message answers to its Mongo id through resolveId, and the
+    // PG row is the one to delete. PG unreachable is a retryable 503, never a
+    // delete of the Mongo copy that would leave the message visible in PG.
     const messageId = req.params.id;
     let message: NormalizedMessage | null = null;
     let pgId: string | null = null;
-    let pgUnavailable = false;
-    try {
-      pgId = await PGMessage.resolveId(messageId);
-      if (pgId) message = await PGMessage.findById(pgId) as NormalizedMessage | null;
-    } catch {
-      pgUnavailable = true;
-    }
-    if (!pgId) {
-      const mongoMsg = await MongoMessage.findById(messageId) as Record<string, unknown> | null;
-      if (mongoMsg?.reconciledAt && pgUnavailable) {
-        // The PG row exists and cannot be reached. Deleting the Mongo copy
-        // now would leave it visible once PG returns.
+    if (process.env.PG_HOST) {
+      try {
+        pgId = await PGMessage.resolveId(messageId);
+        if (pgId) message = await PGMessage.findById(pgId) as NormalizedMessage | null;
+      } catch (pgError) {
+        console.warn('[messageController] PG delete lookup failed:', (pgError as Error).message);
         res.status(503).json({
-          error: 'Message is temporarily unavailable. Please try again shortly.',
-          code: 'MESSAGE_REQUIRES_POSTGRES',
+          error: 'Messages are temporarily unavailable. Please try again shortly.',
+          code: 'MESSAGE_STORE_UNAVAILABLE',
         });
         return;
       }
+    } else {
+      const mongoMsg = await MongoMessage.findById(messageId) as Record<string, unknown> | null;
       if (mongoMsg) message = normalizeMongo(mongoMsg);
     }
 
@@ -498,8 +495,8 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
 
     if (pgId) {
       await PGMessage.delete(pgId);
-      // Keep the availability copy from resurrecting a deleted message during
-      // the next PG outage. Cleanup cannot turn a committed delete into a 500.
+      // Remove the legacy Mongo copy too, so the Mongo-only readers (stats,
+      // activity) stop counting it. Cleanup cannot turn a committed delete into a 500.
       try {
         const copyKeys: Array<Record<string, unknown>> = [{ reconciledPgId: Number(pgId) }];
         // PG can commit before its Mongo stamp. The stable legacy ID still
@@ -510,7 +507,7 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
         }
         await MongoMessage.deleteOne({ $or: copyKeys });
       } catch (cleanupError) {
-        console.warn('[messageController] fallback delete cleanup failed:', (cleanupError as Error).message);
+        console.warn('[messageController] legacy copy delete cleanup failed:', (cleanupError as Error).message);
       }
     } else {
       await MongoMessage.findByIdAndDelete(messageId);

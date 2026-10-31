@@ -80,6 +80,9 @@ jest.mock('../../../services/agentTypingService', () => ({
 jest.mock('../../../services/agentMessageService', () => ({
   postMessage: jest.fn().mockResolvedValue({ success: true }),
 }));
+// The pod-message read follows PG_HOST (TASK-503) and the unit setup unsets
+// it, so name a host for the mocked PG model below to answer.
+process.env.PG_HOST = 'pg.test';
 jest.mock('../../../models/pg/Message', () => ({
   findByPodId: jest.fn().mockResolvedValue([]),
 }));

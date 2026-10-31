@@ -1,6 +1,6 @@
 /**
- * TASK-503: the one pod-message read. PG answers when it can; the MongoDB
- * fallback lives only here and returns the PG row shape, oldest first.
+ * TASK-503: the one pod-message read. With PG_HOST set it reads PG only; without
+ * it, MongoDB only, in the PG row shape, oldest first.
  */
 jest.mock('../../../models/pg/Message', () => ({ findByPodId: jest.fn() }));
 jest.mock('../../../models/Message', () => ({ find: jest.fn() }));
@@ -22,11 +22,15 @@ const mongoChain = (docs) => {
 };
 
 describe('listPodMessages', () => {
+  const priorPgHost = process.env.PG_HOST;
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    process.env.PG_HOST = 'pg.test';
   });
-  afterEach(() => console.warn.mockRestore());
+  afterEach(() => {
+    if (priorPgHost === undefined) delete process.env.PG_HOST;
+    else process.env.PG_HOST = priorPgHost;
+  });
 
   it('returns the PG rows as they are and never reads MongoDB', async () => {
     const rows = [{ id: '1' }, { id: '2' }];
@@ -36,25 +40,36 @@ describe('listPodMessages', () => {
     expect(MongoMessage.find).not.toHaveBeenCalled();
   });
 
+  it('with PG configured, a PG failure is an error and MongoDB is never read', async () => {
+    PGMessage.findByPodId.mockRejectedValue(new Error('connect ECONNREFUSED 10.9.8.7:5432'));
+    mongoChain([{ _id: 'm1', podId: 'p1', userId: 'u1', content: 'stale', createdAt: new Date() }]);
+    const failure = await listPodMessages('p1').catch((error) => error);
+    expect(failure).toMatchObject({ code: 'MESSAGE_STORE_UNAVAILABLE', statusCode: 503 });
+    // The driver text names the store's address; agent tool results echo err.message.
+    expect(failure.message).not.toMatch(/10\.9\.8\.7|5432|ECONNREFUSED/);
+    expect(MongoMessage.find).not.toHaveBeenCalled();
+  });
+
   it('clamps the limit to 1..200 for both stores', async () => {
     PGMessage.findByPodId.mockResolvedValue([]);
     await listPodMessages('p1', { limit: 5000 });
     expect(PGMessage.findByPodId).toHaveBeenLastCalledWith('p1', 200, null);
 
-    PGMessage.findByPodId.mockRejectedValue(new Error('pg down'));
+    delete process.env.PG_HOST;
     const calls = mongoChain([]);
     await listPodMessages('p1', { limit: 5000 });
     expect(calls.limit).toBe(200);
   });
 
-  it('on a PG failure reads MongoDB, newest page first, and returns it oldest first', async () => {
-    PGMessage.findByPodId.mockRejectedValue(new Error('pg down'));
+  it('without PG configured, reads MongoDB only, newest page first, and returns it oldest first', async () => {
+    delete process.env.PG_HOST;
     const calls = mongoChain([
       { _id: 'm2', podId: 'p1', userId: 'u2', content: 'second', createdAt: new Date('2026-01-02') },
       { _id: 'm1', podId: 'p1', userId: 'u1', content: 'first', createdAt: new Date('2026-01-01') },
     ]);
     const rows = await listPodMessages('p1', { limit: 2, before: '2026-02-01T00:00:00.000Z' });
     expect(rows.map((r) => r.id)).toEqual(['m1', 'm2']);
+    expect(PGMessage.findByPodId).not.toHaveBeenCalled();
     expect(calls.query).toEqual({ podId: 'p1', createdAt: { $lt: new Date('2026-02-01T00:00:00.000Z') } });
     expect(calls.sort).toEqual({ createdAt: -1 });
     expect(calls.populate).toEqual(['userId', 'username profilePicture isBot']);
