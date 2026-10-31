@@ -47,6 +47,15 @@ describe('task ids and status words', () => {
     expect(checkTaskId(input)).toBe('TASK-669');
   });
 
+  test.each([
+    ['1', 'TASK-001'],
+    ['001', 'TASK-001'],
+    ['task-7', 'TASK-007'],
+    ['706', 'TASK-706'],
+  ])('%s names %s, padded as the server stores it', (input, expected) => {
+    expect(checkTaskId(input)).toBe(expected);
+  });
+
   test('anything else is refused before a request', () => {
     expect(() => checkTaskId('TASK-')).toThrow(TaskRefusal);
     expect(() => checkTaskId('wren/669')).toThrow(TaskRefusal);

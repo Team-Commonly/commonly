@@ -77,7 +77,7 @@ export const checkUpdateStatus = (value) => {
 export const checkTaskId = (value) => {
   const match = String(value ?? '').trim().match(/^(?:task-)?(\d+)$/i);
   if (!match) throw new TaskRefusal(`task id must look like TASK-123 (got '${value ?? ''}').`);
-  return `TASK-${Number(match[1])}`;
+  return `TASK-${String(Number(match[1])).padStart(3, '0')}`;
 };
 
 /**
