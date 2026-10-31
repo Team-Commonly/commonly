@@ -16,6 +16,7 @@ import { createRuntimeReporter } from '../lib/runtime-observation.js';
  * heartbeat  — manually trigger an agent's heartbeat
  */
 
+import { refreshMcpTokenCopy, removeMcpTokenCopy } from '../lib/mcp-token.js';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync } from 'fs';
 import { join, dirname, basename, resolve as pathResolve } from 'path';
 import { homedir, tmpdir } from 'os';
@@ -139,6 +140,7 @@ const tokensDir = () => join(homedir(), '.commonly', 'tokens');
 const tokenFile = (name) => join(tokensDir(), `${name}.json`);
 
 export const saveAgentToken = (name, record) => {
+  refreshMcpTokenCopy(name, record?.runtimeToken);
   if (!existsSync(tokensDir())) mkdirSync(tokensDir(), { recursive: true });
   // mode applies on create only — the record carries a live cm_agent_* secret,
   // same handling as performInit's .commonly-env.
@@ -162,6 +164,7 @@ export const loadAgentToken = (name) => {
 export const deleteAgentToken = (name) => {
   const file = tokenFile(name);
   if (existsSync(file)) rmSync(file);
+  removeMcpTokenCopy(name);
 };
 
 // ── env-var bootstrap for `agent run` (#913) ────────────────────────────────

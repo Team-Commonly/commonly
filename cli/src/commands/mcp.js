@@ -3,12 +3,8 @@
  * The MCP server only accepts a cm_agent_* runtime token, so the config points
  * COMMONLY_TOKEN_FILE at a 0600 copy of that token and never prints the token.
  */
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'fs';
-import { homedir } from 'os';
-import { join } from 'path';
 import { listLocalAgents, loadAgentToken } from './agent.js';
-
-const mcpTokenDir = () => join(homedir(), '.commonly', 'mcp');
+import { writeMcpTokenCopy } from '../lib/mcp-token.js';
 
 const NO_AGENT_HINT = 'Attach one first: commonly agent attach <adapter> --pod <podId> --name <name>';
 
@@ -29,13 +25,7 @@ export const buildMcpConfig = ({ agent } = {}) => {
   if (!token.startsWith('cm_agent_')) throw new Error(`The saved token for '${name}' is not a cm_agent_* runtime token. Re-attach it: commonly agent attach`);
   if (!record.instanceUrl) throw new Error(`Agent '${name}' has no saved instance URL. Re-attach it.`);
 
-  const dir = mcpTokenDir();
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  chmodSync(dir, 0o700);
-  const tokenPath = join(dir, `${name}.token`);
-  // Remove first, then create exclusively at 0600: no write into a looser-mode file or through a symlink.
-  rmSync(tokenPath, { force: true });
-  writeFileSync(tokenPath, `${token}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+  const tokenPath = writeMcpTokenCopy(name, token);
 
   return {
     mcpServers: {

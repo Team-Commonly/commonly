@@ -7,6 +7,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-config-'));
 jest.unstable_mockModule('os', () => ({ ...os, default: { ...os, homedir: () => tmp }, homedir: () => tmp }));
 
 const { buildMcpConfig } = await import('../src/commands/mcp.js');
+const { performDetach, saveAgentToken } = await import('../src/commands/agent.js');
 
 const TOKEN = 'cm_agent_secretvalue123';
 const tokensDir = path.join(tmp, '.commonly', 'tokens');
@@ -57,6 +58,23 @@ describe('commonly mcp config', () => {
     expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
     seed('user', { runtimeToken: 'eyJuser.jwt' });
     expect(() => buildMcpConfig({ agent: 'user' })).toThrow(/cm_agent_/);
+  });
+
+  it('detach (even --force, local only) deletes the MCP copy', async () => {
+    seed('lead');
+    const copy = buildMcpConfig({}).mcpServers.commonly.env.COMMONLY_TOKEN_FILE;
+    await performDetach({ agentName: 'lead', skipBackend: true });
+    expect(fs.existsSync(copy)).toBe(false);
+  });
+
+  it('reattach (saveAgentToken) rewrites an existing MCP copy, and creates none otherwise', () => {
+    seed('lead');
+    saveAgentToken('lead', { runtimeToken: 'cm_agent_before', instanceUrl: 'https://api.example.test' });
+    expect(fs.existsSync(path.join(tmp, '.commonly', 'mcp', 'lead.token'))).toBe(false);
+    const copy = buildMcpConfig({}).mcpServers.commonly.env.COMMONLY_TOKEN_FILE;
+    saveAgentToken('lead', { runtimeToken: 'cm_agent_after', instanceUrl: 'https://api.example.test' });
+    expect(fs.readFileSync(copy, 'utf8').trim()).toBe('cm_agent_after');
+    expect(fs.statSync(copy).mode & 0o777).toBe(0o600);
   });
 
   it('names the attach command when no agent exists', () => {
