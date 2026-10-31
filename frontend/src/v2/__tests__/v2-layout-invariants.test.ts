@@ -5224,3 +5224,17 @@ describe('v2 board on a phone (TASK-576)', () => {
     expect(page).toContain('<V2MobileTabs needsYouCount={attention.count ?? 0} />');
   });
 });
+
+describe('pod board column scroll (TASK-698)', () => {
+  const css = read('../v2.css');
+  test('the board route scrolls inside its columns, not the page', () => {
+    // The feature body was the scroller and its legacy wrapper had auto height, so the
+    // columns' max-height:100% resolved to nothing (85.5x at 1440, measured 12f608b71).
+    expect(ruleBody(css, '.v2-feature--board .v2-feature__body')).toContain('overflow: hidden');
+    expect(ruleBody(css, '.v2-feature--board .v2-feature__legacy')).toContain('min-height: 0');
+    expect(ruleBody(css, '.v2-feature--board .v2-feature__legacy')).toContain('display: flex');
+    expect(ruleBody(css, '.v2-feature--board .v2-board')).toContain('flex: 1 1 auto');
+    expect(ruleBody(css, '.v2-board__col')).toContain('overflow-y: auto');
+    expect(ruleBody(css, '.v2-board__col')).toContain('max-height: 100%');
+  });
+});
