@@ -81,7 +81,9 @@ can't tell us whether it's wrong or whether we are.
   writer's own subagent review of the diff, filed before it asks for the
   press. That review also covers screenshots against the design frame, lane
   checks and the zh-CN glossary. Then CodeRabbit and CI. Nobody asks a second
-  reviewer, and nobody re-reviews after a push.
+  reviewer. A push that only answers CodeRabbit or CI keeps the PASS and needs
+  no new review. After a HOLD, the writer fixes it, pushes, and reviews its own
+  fix again; that later PASS is what the press reads.
   - *Tier 0, docs-only or test-only*: the writer's review, every CodeRabbit
     thread answered, and green CI.
   - *Tier 1* (UI, copy, anything behind a flag that is off in production): the
