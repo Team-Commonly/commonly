@@ -29,6 +29,20 @@ const asPersona = (value: unknown): PersonaFields => {
   };
 };
 
+interface ListingData {
+  status?: string; registry?: string; ephemeral?: boolean; verified?: boolean;
+  displayName?: string; publisher?: { userId?: string };
+}
+
+// One mapper for the GET and for the PATCH answer, so the status line can't drift from the entry.
+const listingStatusKey = (data: ListingData): string => {
+  if (data.ephemeral || data.registry === 'private' || data.status === 'unpublished') return 'listingNotPublished';
+  if (data.status === 'pending-review') return 'listingInReview';
+  if (data.status === 'deprecated') return 'listingDeprecated';
+  if (data.status === 'active') return data.verified ? 'listingPublished' : 'listingNotInCatalog';
+  return 'listingNotPublished';
+};
+
 const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
   const { t } = useTranslation();
   const profile = installation.profile;
@@ -44,8 +58,7 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
   // Registry owner controls (TASK-419 part 2). The GET names the publisher;
   // the server re-checks ownership on every PATCH.
   const { currentUser } = useAuth();
-  const [entryOwnerId, setEntryOwnerId] = useState<string | null>(null);
-  const [entryStatus, setEntryStatus] = useState<string | null>(null);
+  const [listing, setListing] = useState<ListingData | null>(null);
   const [listingName, setListingName] = useState('');
   const [listingBusy, setListingBusy] = useState(false);
   const [listingError, setListingError] = useState<string | null>(null);
@@ -53,26 +66,12 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
   useEffect(() => {
     let active = true;
     setListingStatus('listingLoading');
-    void axios.get<{
-      status?: string; registry?: string; ephemeral?: boolean; verified?: boolean;
-      displayName?: string; publisher?: { userId?: string };
-    }>(`/api/registry/agents/${encodeURIComponent(installation.name)}`)
+    void axios.get<ListingData>(`/api/registry/agents/${encodeURIComponent(installation.name)}`)
       .then(({ data }) => {
         if (!active) return;
-        setEntryOwnerId(data.publisher?.userId ? String(data.publisher.userId) : null);
-        setEntryStatus(data.status ?? null);
+        setListing(data);
         setListingName(data.displayName || '');
-        if (data.ephemeral || data.registry === 'private' || data.status === 'unpublished') {
-          setListingStatus('listingNotPublished');
-        } else if (data.status === 'pending-review') {
-          setListingStatus('listingInReview');
-        } else if (data.status === 'deprecated') {
-          setListingStatus('listingDeprecated');
-        } else if (data.status === 'active') {
-          setListingStatus(data.verified ? 'listingPublished' : 'listingNotInCatalog');
-        } else {
-          setListingStatus('listingNotPublished');
-        }
+        setListingStatus(listingStatusKey(data));
       }).catch((requestError) => {
         if (!active) return;
         const status = (requestError as { response?: { status?: number } })?.response?.status;
@@ -129,14 +128,19 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
     }
   };
 
+  const entryOwnerId = listing?.publisher?.userId ? String(listing.publisher.userId) : null;
   const ownsListing = Boolean(currentUser?._id) && entryOwnerId === String(currentUser._id);
-  const retired = entryStatus === 'unpublished';
+  const retired = listing?.status === 'unpublished';
   const saveListing = async (patch: { displayName?: string; retired?: boolean }) => {
     setListingBusy(true);
     setListingError(null);
     try {
-      await axios.patch(`/api/registry/agents/${encodeURIComponent(installation.name)}/owned-entry`, patch);
-      if (patch.retired !== undefined) setEntryStatus(patch.retired ? 'unpublished' : 'active');
+      const { data } = await axios.patch<ListingData>(`/api/registry/agents/${encodeURIComponent(installation.name)}/owned-entry`, patch);
+      // The PATCH answer carries the new status; verified and registry are not in it, so keep the GET's.
+      const next = { ...listing, ...data };
+      setListing(next);
+      setListingName(next.displayName || '');
+      setListingStatus(listingStatusKey(next));
     } catch {
       setListingError(t('agentSettings.ownedFailed'));
     } finally {

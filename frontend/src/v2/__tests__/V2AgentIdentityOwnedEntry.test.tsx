@@ -67,7 +67,7 @@ describe('V2AgentIdentitySection — registry entry owner controls (TASK-419)', 
 
   test('retire PATCHes the owned-entry route and flips to restore', async () => {
     axios.get.mockResolvedValue(entry('owner-1'));
-    axios.patch.mockResolvedValue({ data: {} });
+    axios.patch.mockResolvedValue({ data: { agentName: 'scout', displayName: 'Scout Agent', status: 'unpublished' } });
     renderSection('owner-1');
     fireEvent.click(await screen.findByRole('button', { name: 'Retire listing' }));
 
@@ -76,6 +76,28 @@ describe('V2AgentIdentitySection — registry entry owner controls (TASK-419)', 
     expect(String(url)).toContain('/api/registry/agents/scout/owned-entry');
     expect(body).toEqual({ retired: true });
     expect(await screen.findByRole('button', { name: 'Restore listing' })).toBeInTheDocument();
+  });
+
+  test('retire moves the status line to Not published, from the PATCH answer', async () => {
+    axios.get.mockResolvedValue(entry('owner-1'));
+    axios.patch.mockResolvedValue({ data: { agentName: 'scout', displayName: 'Scout Agent', status: 'unpublished' } });
+    renderSection('owner-1');
+    await screen.findByText('Published');
+    fireEvent.click(await screen.findByRole('button', { name: 'Retire listing' }));
+
+    // Without the fix the status line keeps "Published" after the entry is retired.
+    expect(await screen.findByText('Not published')).toBeInTheDocument();
+    expect(screen.queryByText('Published')).toBeNull();
+  });
+
+  test('restore moves the status line back to Published, using the GET verified flag', async () => {
+    axios.get.mockResolvedValue(entry('owner-1', 'unpublished'));
+    axios.patch.mockResolvedValue({ data: { agentName: 'scout', displayName: 'Scout Agent', status: 'active' } });
+    renderSection('owner-1');
+    await screen.findByText('Not published');
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore listing' }));
+
+    expect(await screen.findByText('Published')).toBeInTheDocument();
   });
 
   test('saving the listing name PATCHes displayName to the owned-entry route', async () => {
