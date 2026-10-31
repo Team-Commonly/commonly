@@ -79,7 +79,7 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 // the walk's own token cannot remove (Scout, the hosted agent's User). It holds
 // no password, token or email. It is named by the run stamp, not the username.
 const STATE_DIR = process.env.COMMONLY_WALK_STATE_DIR || path.join(homedir(), '.commonly', 'state', 'walk-706');
-const manifest = { userId: null, podIds: [], agentName: null, survivors: [], status: 'running' };
+const manifest = { userId: null, podIds: [], agentName: null, botIds: [], survivors: [], status: 'running' };
 const writeManifest = () => {
   mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
   writeFileSync(path.join(STATE_DIR, `${stamp}.json`), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
@@ -95,8 +95,9 @@ const cleanup = async (token, password) => {
     writeManifest();
     return manifest.survivors.length === 0;
   }
-  const result = await cleanupRun({ api, token, password, email, userId: manifest.userId, agentName });
+  const result = await cleanupRun({ api, token, password, email, userId: manifest.userId, agentName, podIds: manifest.podIds });
   manifest.survivors = result.survivors;
+  manifest.botIds = result.botIds;
   manifest.status = result.ok ? 'clean' : 'needs-admin-purge';
   writeManifest();
   if (result.ok) console.log(`cleanup: removed ${username}`);

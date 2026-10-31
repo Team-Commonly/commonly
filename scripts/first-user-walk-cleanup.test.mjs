@@ -17,6 +17,10 @@ const fakeBackend = ({ pods, stuck = new Set(), accountFails = false, deleteIgno
       return { status: 200, data: state.pods.map((p) => ({ ...p })) };
     }
     const podMatch = path.match(/^\/api\/pods\/([^/?]+)$/);
+    if (method === 'GET' && podMatch) {
+      const pod = state.pods.find((p) => String(p._id) === podMatch[1]);
+      return pod ? { status: 200, data: pod } : { status: 404, data: {} };
+    }
     if (method === 'DELETE' && podMatch) {
       const id = podMatch[1];
       if (!stuck.has(id)) state.pods = state.pods.filter((p) => String(p._id) !== id);
@@ -40,6 +44,14 @@ const fakeBackend = ({ pods, stuck = new Set(), accountFails = false, deleteIgno
 
 const run = (backend, opts = {}) => cleanupRun({
   api: backend.api, token: 'tok', password: 'pw', email: 'walk@example.invalid', userId: USER, agentName: 'walk-x-agent', ...opts,
+});
+
+test('reports the bot members of each pod before the pod goes', async () => {
+  const members = [{ _id: 'bot-agent', isBot: true }, { _id: USER, isBot: false }];
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER, members }] });
+  const result = await run(backend);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.botIds, ['bot-agent']);
 });
 
 test('fails when the account still logs in after a 200 delete', async () => {
@@ -79,4 +91,25 @@ test('fails and names the account when its delete is refused', async () => {
   assert.equal(result.ok, false);
   assert.ok(result.survivors.includes('account (delete 500)'), `survivors: ${result.survivors}`);
   assert.equal(backend.state.accountGone, false);
+});
+
+test('matches a populated createdBy object, not only a bare id', async () => {
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: { _id: USER, username: 'walk' } }] });
+  const result = await run(backend);
+  assert.equal(result.ok, true);
+  assert.equal(backend.state.pods.length, 0);
+});
+
+test('removes a recorded pod the owner match misses, and checks it is gone', async () => {
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: { _id: OTHER } }] });
+  const result = await run(backend, { podIds: ['p1'] });
+  assert.equal(result.ok, true);
+  assert.equal(backend.state.pods.length, 0);
+});
+
+test('fails and names a recorded pod that is still readable after delete', async () => {
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: { _id: OTHER } }], stuck: new Set(['p1']) });
+  const result = await run(backend, { podIds: ['p1'] });
+  assert.equal(result.ok, false);
+  assert.ok(result.survivors.includes('pod:p1 (still readable)'), `survivors: ${result.survivors}`);
 });
