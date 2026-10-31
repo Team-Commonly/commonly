@@ -86,6 +86,20 @@ spec:
         - name: REGISTRATION_INVITE_ONLY
           value: {{ .Values.backend.env.registrationInviteOnly | quote }}
         {{- end }}
+        {{- if .Values.backend.env.authAllowedDomains }}
+        # Mirrors backend (ops-runner env drift guard). The allowlist is read by
+        # the serving API, not the sleeping ops-runner, but the two env blocks
+        # must stay tuple-identical — see opsRunnerEnvMirror.test.js.
+        - name: AUTH_ALLOWED_DOMAINS
+          value: {{ .Values.backend.env.authAllowedDomains | quote }}
+        {{- end }}
+        {{- if .Values.backend.env.authAllowedEmailsFromSecret }}
+        - name: AUTH_ALLOWED_EMAILS
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: auth-allowed-emails
+        {{- end }}
 
         # Database Connections
         - name: MONGO_URI
