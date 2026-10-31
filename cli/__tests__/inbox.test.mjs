@@ -1095,6 +1095,12 @@ describe('item line and pure helpers', () => {
 // request, and a timeout, from the fetch or from the body read, reads as an
 // unanswered request rather than a bare DOMException.
 describe('a request that is never answered', () => {
+  // The limits below are the defaults; an operator's own override must not leak in.
+  const savedTimeout = process.env.COMMONLY_CAP_TIMEOUT_MS;
+  beforeEach(() => { delete process.env.COMMONLY_CAP_TIMEOUT_MS; });
+  afterAll(() => {
+    if (savedTimeout !== undefined) process.env.COMMONLY_CAP_TIMEOUT_MS = savedTimeout;
+  });
   const timeoutError = () => new DOMException('The operation was aborted due to timeout', 'TimeoutError');
   const request = (fetchImpl) => createInboxRequest({
     baseUrl: 'https://example.test', token: 'cm_agent_x', tokenFile: '/tmp/t', fetchImpl,
