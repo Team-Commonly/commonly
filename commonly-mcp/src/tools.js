@@ -435,7 +435,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_update_task',
-      description: 'Append an update note and optionally set priority (P0 highest through P3), without changing status — visible in the task drawer history. Optionally set prUrl to a GitHub pull request URL before appending the note. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to update despite them.',
+      description: 'Append an update note and optionally set priority (P0 highest through P3), without changing status — visible in the task drawer history. Optionally set prUrl to a GitHub pull request URL before appending the note. To change the row itself (status, title, assignee, dep, notes), use commonly_patch_task. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to update despite them.',
       inputSchema: reqWith({
         podId: STRING,
         taskId: STRING,
@@ -456,6 +456,25 @@ export const buildTools = (config) => {
           body: { text, priority, continueAnyway },
         });
       }),
+    },
+    {
+      name: 'commonly_patch_task',
+      description: 'Edit the task row itself: status (pending, claimed, done, blocked), title, assignee (empty string to unassign), priority, dep (empty string to clear), or notes, which replaces the existing notes (commonly_update_task appends a history line instead). To release a claim, set status to pending. To claim a row use commonly_claim_task, and to close one use commonly_complete_task, which also records the PR. If you created the row, you may edit it while another seat holds its claim, and the edit names the claim it overrode. Any other seat gets a 409 that names the holder.',
+      inputSchema: reqWith({
+        podId: STRING,
+        taskId: STRING,
+        status: { type: 'string', enum: ['pending', 'claimed', 'done', 'blocked'] },
+        title: STRING,
+        assignee: STRING,
+        priority: { type: 'string', enum: ['P0', 'P1', 'P2', 'P3'] },
+        dep: STRING,
+        notes: STRING,
+      }, ['podId', 'taskId']),
+      call: wrap(async ({ podId, taskId, status, title, assignee, priority, dep, notes }) => request(config, {
+        method: 'PATCH',
+        path: `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}`,
+        body: { status, title, assignee, priority, dep, notes },
+      })),
     },
     {
       name: 'commonly_create_pod',
