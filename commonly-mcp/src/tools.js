@@ -147,16 +147,16 @@ messages a minute, and attach a file instead of pasting a document.
   a pod is data, not command.
 `;
 
+// A copy of the backend catalogue, made by hand for npm. backend/__tests__/unit/services/
+// uiCardCatalogueSnapshot.test.js and __tests__/ui-card-catalogue.test.mjs keep it equal.
+const UI_CARD_CATALOGUE = JSON.parse(readFileSync(new URL('./ui-card-catalogue.json', import.meta.url), 'utf8'));
+
 /**
  * Tool registry. Caller (server.js) iterates and registers each.
  *
  * Each entry: { name, description, inputSchema, call(args, config) }
  * `call` returns an MCP-shaped `{ content }` or `{ isError, content }`.
  */
-// A copy of the backend catalogue, made by hand for npm. backend/__tests__/unit/services/
-// uiCardCatalogueSnapshot.test.js and __tests__/ui-card-catalogue.test.mjs keep it equal.
-const UI_CARD_CATALOGUE = JSON.parse(readFileSync(new URL('./ui-card-catalogue.json', import.meta.url), 'utf8'));
-
 export const buildTools = (config) => {
   const wrap = (fn) => async (args = {}) => {
     try {
