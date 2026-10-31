@@ -11794,6 +11794,48 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-thread__inspector-toggle:hover,
 .v2-root button.v2-thread__inspector-toggle--active { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
 
+/* TASK-702: the header Invite. Same height and frame as the inspector
+   toggle beside it, with a label so it reads as an action, not decoration. */
+.v2-root button.v2-pod-header__invite {
+  display: inline-flex;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.v2-root button.v2-pod-header__invite:hover { background: var(--v2-surface-hover); }
+
+/* On a phone the label would take the pod name's width, so the button keeps
+   only its glyph, square like the inspector toggle. The label stays in the
+   accessibility tree as the button's name. */
+@media (max-width: 760px) {
+  .v2-root button.v2-pod-header__invite {
+    width: 28px;
+    flex: 0 0 28px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .v2-root button.v2-pod-header__invite span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+
 .v2-thread .v2-msg {
   grid-template-columns: 28px minmax(0, 1fr);
   gap: 8px;

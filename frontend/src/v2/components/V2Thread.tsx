@@ -1943,6 +1943,21 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                 </React.Fragment>
               ))}
             </span>
+            {/* TASK-702: the invite lived only in the inspector, where nobody
+                looked. Members see it here; onOpenInvite is already absent
+                on the 1:1 pod types. */}
+            {onOpenInvite && isPodMember && !isAgentDm && !isAgentRoom && (
+              <button
+                type="button"
+                className="v2-pod-header__invite"
+                onClick={() => onOpenInvite(PEOPLE_INVITE_TAB)}
+                title={t('podChat.header.invite')}
+                data-testid="pod-header-invite"
+              >
+                <ShellGlyph name="people" size={14} />
+                <span>{t('podChat.header.invite')}</span>
+              </button>
+            )}
             {onToggleInspector && (
               <button
                 type="button"
