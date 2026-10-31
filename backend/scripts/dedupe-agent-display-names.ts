@@ -26,8 +26,8 @@
  *     keys; only displayName (the human-facing label) is rewritten.
  *   - `username` — DB-unique already; collisions there are impossible.
  *
- * Run with: `cd backend && npx ts-node scripts/dedupe-agent-display-names.ts`
- * (from backend/, so ts-node and mongoose resolve from backend/node_modules).
+ * Run with: `cd backend && node dist/scripts/dedupe-agent-display-names.js`
+ * (from backend/, so the compiled script and mongoose resolve from backend/node_modules).
  *
  * Idempotent: safe to re-run. New duplicates introduced later can be
  * cleaned up by re-running.

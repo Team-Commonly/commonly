@@ -33,7 +33,7 @@
  * row means the bot has never posted, so it has no users row yet: its Mongo label
  * is still written, and its first post creates the row from that label.
  *
- * Run:  cd backend && npx ts-node scripts/repair-first-party-labels.ts [--apply]
+ * Run:  cd backend && node dist/scripts/repair-first-party-labels.js [--apply]
  */
 import mongoose from 'mongoose';
 import { FIRST_PARTY_DISPLAY_NAMES } from '../constants/firstPartyDisplayNames';
