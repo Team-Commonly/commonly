@@ -240,8 +240,10 @@ const assertGrantLineageActive = async (
   return lineage;
 };
 
+// Guarded on `revokedAt: null`: a close that already revoked this grant keeps
+// its own timestamp and reason, so the close's record line still names it.
 const markMintedGrantRejected = async (grantId: string, error: RoomGrantError): Promise<never> => {
-  await RoomGrant.updateOne({ grantId }, { $set: { revokedAt: new Date(),
+  await RoomGrant.updateOne({ grantId, revokedAt: null }, { $set: { revokedAt: new Date(),
     ...(error.code === 'task_closed' ? { revocationReason: 'task.done' } : {}),
   } });
   throw error;
@@ -346,9 +348,11 @@ const assertTaskContext = async (grant: IRoomGrant | Record<string, unknown>, op
 
 /**
  * Hook successful close transitions. An old close never revokes new grants issued after reopen.
- * updateMany reports a count, not ids, so the record line reads back the grants
- * carrying this write's own `revokedAt`. A grant an earlier close or another
- * writer revoked keeps its own timestamp and is not named again.
+ * Each grant is revoked by its own guarded write, and the record line names
+ * exactly the grants those writes matched. Reading back by `revokedAt` instead
+ * would also name a grant a refused mint revoked in the same millisecond with
+ * the same reason. A grant an earlier close or another writer revoked keeps its
+ * own timestamp and is not named again.
  */
 export const revokeTaskGrants = async ({ taskId, podId, closedEpoch }: Pick<RoomGrantTaskBinding, 'taskId' | 'podId'>
   & { closedEpoch: number }): Promise<number> => {
@@ -356,21 +360,28 @@ export const revokeTaskGrants = async ({ taskId, podId, closedEpoch }: Pick<Room
     'binding.taskId': taskId, 'binding.podId': podId,
     taskEpoch: { $lt: closedEpoch }, revokedAt: null,
   };
+  const candidates = await RoomGrant.find(filter).select('grantId').lean();
   const revokedAt = new Date();
-  const result = await RoomGrant.updateMany(filter, { $set: { revokedAt, revocationReason: 'task.done' } });
-  if (result.modifiedCount > 0) {
-    const revoked = await RoomGrant.find({
-      'binding.taskId': taskId, 'binding.podId': podId, revokedAt, revocationReason: 'task.done',
-    }).select('grantId').lean();
-    const grantIds = Array.from(new Set(revoked.map((grant) => String(grant.grantId))));
-    // ADR-033 §4: the close's own task.done line is queued first, by the caller.
-    if (grantIds.length) {
-      emitRecord({ podId, taskId }, `grant.revoked/task.done/${closedEpoch}`, [
-        { kind: 'grant.revoked', actor: BOARD_ACTOR, data: { grantIds, reason: 'task.done' } },
-      ]);
-    }
+  // allSettled, not all: a write that committed stays revoked even when a
+  // sibling write fails, and no later close can name it (its filter needs
+  // `revokedAt: null`), so the line is written for every match before the
+  // failure is rethrown to the caller's log.
+  const settled = await Promise.allSettled(candidates.map(({ grantId }) => RoomGrant.findOneAndUpdate(
+    { ...filter, grantId },
+    { $set: { revokedAt, revocationReason: 'task.done' } },
+    { projection: { grantId: 1 }, lean: true },
+  )));
+  const grantIds = Array.from(new Set(settled.flatMap((result) => (
+    result.status === 'fulfilled' && result.value ? [String(result.value.grantId)] : []))));
+  // ADR-033 §4: the close's own task.done line is queued first, by the caller.
+  if (grantIds.length) {
+    emitRecord({ podId, taskId }, `grant.revoked/task.done/${closedEpoch}`, [
+      { kind: 'grant.revoked', actor: BOARD_ACTOR, data: { grantIds, reason: 'task.done' } },
+    ]);
   }
-  return result.modifiedCount;
+  const failure = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+  if (failure) throw failure.reason;
+  return grantIds.length;
 };
 
 /**
