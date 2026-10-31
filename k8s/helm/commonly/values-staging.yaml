@@ -126,8 +126,17 @@ agents:
 #     on. The codex-cli sidecar + codex-auth-seed init still render (ungated in the
 #     template) but idle harmlessly — the seed writes an empty auth.json and exits 0.
 #   - NO chatgpt-auth PVC (emptyDir): nothing to persist without Codex.
-#   - dev-pool (not spot): Scout must stay up for Sam's checks, so it should not be
-#     reclaimed mid-walk the way a spot node can be.
+#   - default-pool (untainted, NOT prod's dev-pool, NOT spot): Scout must stay up for
+#     Sam's checks, so it must not be reclaimed mid-walk the way the spot-pool (which the
+#     rest of staging rides) can be. It is NOT pinned to the shared cluster's dev-pool
+#     either: that is a SINGLE node already running prod litellm + clawdbot + cloud-codex,
+#     and pinning the reckless staging lane there would let it pressure the one node
+#     serving PROD agent runtimes (the staging->prod blast-radius this whole file avoids).
+#     The default-pool is two untainted nodes with headroom for this small pod (requests
+#     120m CPU / 576Mi; a default-pool node had ~377m CPU free when measured), isolated
+#     from prod and stable. (The codex-cli sidecar + codex-auth-seed init still render
+#     ungated in the shared template but do not gate litellm readiness or block Scout;
+#     gating them on codex-enabled is a follow-up — TASK filed.)
 #
 # No new secret and no new database: every key litellm needs already exists in the
 # staging api-keys ring (deepseek-api-key, cloudflare-account-id/-workers-ai-token,
@@ -138,19 +147,16 @@ litellm:
   enabled: true
   serviceKeys:
     fromSecret: false
-  codexBypassLitellm: false
   codexAuthRotator:
     enabled: false
   chatgptAuth:
     persistence:
       enabled: false
+  # No tolerations + pool=default => the untainted default-pool ONLY (both dev-pool and
+  # spot-pool are tainted, so an untolerated pod cannot land on either). See the
+  # default-pool rationale in the block comment above.
   nodeSelector:
-    pool: dev
-  tolerations:
-    - key: "pool"
-      operator: "Equal"
-      value: "dev"
-      effect: "NoSchedule"
+    pool: default
 
 backend:
   env:

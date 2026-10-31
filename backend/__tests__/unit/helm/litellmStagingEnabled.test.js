@@ -40,10 +40,14 @@ describe('staging LiteLLM is enabled so native-runtime agents (Scout) can answer
     expect(staging.litellm.codexAuthRotator.enabled).toBe(false);
   });
 
-  test('staging litellm schedules on dev-pool so Sam-check turns are not reclaimed mid-walk', () => {
-    expect(staging.litellm.nodeSelector).toEqual({ pool: 'dev' });
-    expect(staging.litellm.tolerations).toEqual([
-      { key: 'pool', operator: 'Equal', value: 'dev', effect: 'NoSchedule' },
-    ]);
+  test('staging litellm schedules on the untainted default-pool — stable (not spot), isolated from prod dev-pool', () => {
+    // It must NOT be on spot (Scout would be reclaimed mid-walk) and must NOT be pinned
+    // to prod's single dev-pool node (which runs prod litellm/clawdbot/cloud-codex — the
+    // reckless staging lane must not pressure it). Empty tolerations keep it off both
+    // tainted pools; pool=default selects the untainted one. The pod requests only
+    // 120m CPU / 576Mi, which fits default-pool's measured headroom.
+    expect(staging.litellm.nodeSelector).toEqual({ pool: 'default' });
+    const tol = staging.litellm.tolerations;
+    expect(tol == null || (Array.isArray(tol) && tol.length === 0)).toBe(true);
   });
 });
