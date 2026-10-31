@@ -374,26 +374,6 @@ const postInlineReply = async (
   return null;
 };
 
-// TASK-656. A webhook driver never polls, so an event whose POST failed was
-// left 'pending' with nothing that would ever deliver it, until the 168h
-// retention delete. It is closed 'failed' with the reason instead, and when a
-// person is the one waiting, the pod gets the unanswered line. The reason is
-// fixed text: never the URL or transport error, which can carry credentials.
-const failWebhookDelivery = async (event: EventDoc, reason: string): Promise<void> => {
-  try {
-    const failed = await AgentEvent.findOneAndUpdate(
-      { _id: event._id, status: 'pending' },
-      { $set: { status: 'failed', error: `webhook delivery failed: ${reason}` } },
-      { new: true },
-    ).lean() as EventDoc | null;
-    if (failed && PERSON_WAITING_EVENT_TYPES.includes(String(failed.type))) {
-      await noteUnansweredMention({ ...failed, attempts: Math.max(Number(failed.attempts) || 0, 1) });
-    }
-  } catch (err) {
-    console.warn('[webhook] failed delivery not recorded:', (err as Error).message);
-  }
-};
-
 const deliverEventViaWebhook = async (installation: InstallationDoc, event: EventDoc): Promise<void> => {
   const runtimeConfig = (normalizeConfig(installation.config)?.runtime || {}) as Record<string, unknown>;
   const { webhookUrl, webhookSecret } = runtimeConfig as { webhookUrl?: string; webhookSecret?: string };
@@ -435,7 +415,6 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
 
     if (!res.ok) {
       console.warn(`[webhook] ${event.agentName} HTTP ${res.status}`);
-      await failWebhookDelivery(event, `HTTP ${res.status}`);
       return;
     }
 
@@ -487,13 +466,11 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
   } catch (err) {
     // URLs and transport error text can contain installer credentials, including
     // redirect destinations. Keep diagnostics independent of those values.
-    const timedOut = (err as Error)?.name === 'AbortError';
-    if (timedOut) {
+    if ((err as Error)?.name === 'AbortError') {
       console.warn(`[webhook] ${event.agentName} timed out after 10s`);
     } else {
       console.warn(`[webhook] ${event.agentName} delivery failed`);
     }
-    await failWebhookDelivery(event, timedOut ? 'timed out after 10s' : 'endpoint unreachable');
   }
 };
 

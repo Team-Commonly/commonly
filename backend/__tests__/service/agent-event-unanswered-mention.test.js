@@ -120,7 +120,9 @@ test('stays silent for a kernel wake and for a message an agent sent', async () 
       triggerAuthor: 'kernel', boardWake: true, userId: String(person._id), content: 'TASK-1 updated', 
     },
   });
-  const fromAgent = await exhausted({ payload: { messageId: '42', userId: String(agent._id), content: '@otto gate this' } });
+  const fromAgent = await exhausted({
+    payload: { messageId: '42', userId: String(agent._id), content: '@otto gate this' },
+  });
 
   const result = await collect();
 
@@ -212,28 +214,24 @@ describe('a webhook agent whose endpoint fails', () => {
     ...overrides,
   });
 
-  test('a mention is closed failed with the reason, and the person gets the line', async () => {
+  // `agent register --webhook` hands off to `agent connect`, which polls the
+  // same install: a failed POST has to leave the event for that poller.
+  test('a failed POST leaves the event pending for a poller, with no line', async () => {
     mockPostToPublic.mockResolvedValueOnce({ ok: false, status: 503, text: '' });
-    const event = await pendingEvent();
+    mockPostToPublic.mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+    const refused = await pendingEvent();
+    const unreachable = await pendingEvent({
+      payload: { messageId: '52', userId: String(person._id), content: '@otto hi' },
+    });
 
-    await AgentEventService.deliverEventViaWebhook(install, (await AgentEvent.findById(event._id).lean()));
+    await AgentEventService.deliverEventViaWebhook(install, (await AgentEvent.findById(refused._id).lean()));
+    await AgentEventService.deliverEventViaWebhook(install, (await AgentEvent.findById(unreachable._id).lean()));
 
-    const saved = await AgentEvent.findById(event._id).lean();
-    expect(saved.status).toBe('failed');
-    expect(saved.error).toBe('webhook delivery failed: HTTP 503');
-    expect((await lines()).map((line) => line.reply_to_message_id)).toEqual([51]);
-  });
-
-  test('an ambient message that could not be delivered is closed failed, with no line', async () => {
-    mockPostToPublic.mockRejectedValueOnce(new Error('connect ECONNREFUSED https://user:secret@agent.example'));
-    const event = await pendingEvent({ type: 'message.posted' });
-
-    await AgentEventService.deliverEventViaWebhook(install, (await AgentEvent.findById(event._id).lean()));
-
-    const saved = await AgentEvent.findById(event._id).lean();
-    expect(saved.status).toBe('failed');
-    expect(saved.error).toBe('webhook delivery failed: endpoint unreachable');
-    expect(saved.error).not.toContain('secret');
+    expect((await AgentEvent.findById(refused._id).lean()).status).toBe('pending');
+    expect((await AgentEvent.findById(unreachable._id).lean()).status).toBe('pending');
+    const polled = await AgentEventService.list({ agentName: 'otto', instanceId: 'default' });
+    expect(polled.map((event) => String(event._id)).sort())
+      .toEqual([String(refused._id), String(unreachable._id)].sort());
     expect(await lines()).toHaveLength(0);
   });
 

@@ -228,14 +228,15 @@ That PR also bounded invariant 8: an unacked event now re-delivers up to
 `AGENT_EVENT_REQUEUE_MAX_ATTEMPTS` (default 3) times and then transitions to terminal
 `failed`, rather than cycling until the retention delete.
 
-TASK-656 made both terminal failures visible to the person waiting. When the cap
-retires a `chat.mention`, `thread.mention` or `dm.message` that a person sent, or a
-webhook POST for one fails, the pod gets one kernel line in the person's thread
-saying the agent didn't answer and may be offline (`unansweredMentionService`). The
-line is skipped for kernel and agent senders, and whenever the agent has posted in the
-pod since the message, because it may have answered without acking. A failed webhook
-POST closes its event `failed` with a fixed reason. Before this, webhook drivers, which
-never poll, left the event `pending` and undelivered until the retention delete.
+TASK-656 made this terminal failure visible to the person waiting. When the cap
+retires a `chat.mention`, `thread.mention` or `dm.message` that a person sent, the pod
+gets one kernel line in the person's thread saying the agent didn't answer and may be
+offline (`unansweredMentionService`). The line is skipped for kernel and agent senders,
+and whenever the agent has posted in the pod since the message, because it may have
+answered without acking. It is at most once: the event is retired before the line is
+written, so a failed write logs and posts nothing rather than risking a second line.
+A failed webhook POST still leaves its event `pending` (C4), because a webhook install
+can also poll: `commonly agent register --webhook` hands off to `agent connect`.
 
 ### C3 — "re-deliver on next poll" is a 10–20 minute sweep
 
