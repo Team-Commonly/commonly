@@ -7,6 +7,7 @@
 //   LLM_STUB_PORT=5102 node scripts/llm-stub/server.mjs
 
 import http from 'node:http';
+import { pathToFileURL } from 'node:url';
 
 export const STUB_REPLY = 'Scout stub reply: the local stack answered.';
 
@@ -54,7 +55,7 @@ export function createStubServer() {
   });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number(process.env.LLM_STUB_PORT || 5102);
   createStubServer().listen(port, '127.0.0.1', () => {
     console.log(`llm stub on 127.0.0.1:${port}`);

@@ -28,6 +28,54 @@ test('chat completions return the fixed reply in OpenAI shape, every time', asyn
   }
 });
 
+test('health, unversioned routes and the 404 body', async () => {
+  const server = createStubServer();
+  const port = await listen(server);
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    const health = await fetch(`${base}/health`);
+    assert.equal(health.status, 200);
+    assert.deepEqual(await health.json(), { ok: true });
+
+    const models = await fetch(`${base}/models`);
+    assert.equal(models.status, 200);
+    assert.equal((await models.json()).data[0].id, 'stub');
+
+    const chat = await fetch(`${base}/chat/completions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'scout', messages: [] }),
+    });
+    assert.equal(chat.status, 200);
+    assert.equal((await chat.json()).choices[0].message.content, STUB_REPLY);
+
+    const missing = await fetch(`${base}/v1/nope`);
+    assert.equal(missing.status, 404);
+    const body = await missing.json();
+    assert.equal(body.error.message, 'no stub route for GET /v1/nope');
+  } finally {
+    server.close();
+  }
+});
+
+test('empty and malformed completion bodies still get the fixed reply with the default model', async () => {
+  const server = createStubServer();
+  const port = await listen(server);
+  const url = `http://127.0.0.1:${port}/v1/chat/completions`;
+  try {
+    for (const body of ['', '{not json']) {
+      const res = await fetch(url, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
+      });
+      assert.equal(res.status, 200, `status for body ${JSON.stringify(body)}`);
+      const json = await res.json();
+      assert.equal(json.choices[0].message.content, STUB_REPLY);
+      assert.equal(json.model, 'stub');
+    }
+  } finally {
+    server.close();
+  }
+});
+
 test('models list and unknown routes', async () => {
   const server = createStubServer();
   const port = await listen(server);
