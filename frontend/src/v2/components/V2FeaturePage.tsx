@@ -6,6 +6,7 @@ import V2NavRail from './V2NavRail';
 import V2PodsSidebar from './V2PodsSidebar';
 import { V2EmbeddedProvider } from '../hooks/useV2Embedded';
 import { useV2PodAttention } from '../hooks/useV2PodAttention';
+import { useV2ResolvedDark } from '../hooks/useV2ResolvedDark';
 import V2MobileTabs from './V2MobileTabs';
 import V2PageHead from './V2PageHead';
 
@@ -26,7 +27,8 @@ const withV2Prefix = (path: string): string => {
 };
 
 // MUI's createTheme cannot read var(), so these stay literal. Each value is the
-// light --v2-* token of the same role; V2FeaturePageColors.test pins them to v2.css.
+// --v2-* token of the same role in its mode; V2FeaturePageColors.test pins both
+// sets to v2.css. The status solids have no dark override, so both sets share them.
 export const V2_COLORS = {
   bg: '#f9fafb',
   surface: '#ffffff',
@@ -40,6 +42,7 @@ export const V2_COLORS = {
   accent: '#1d3fd1',
   accentStrong: '#1633a8',
   accentSoft: '#e9edfb',
+  onAccent: '#ffffff',
   success: '#10b981',
   warning: '#f4a23a',
   danger: '#ef4444',
@@ -49,32 +52,57 @@ export const V2_COLORS = {
   shadowLg: 'none',
 };
 
-const v2FeatureTheme = createTheme({
+export const V2_DARK_COLORS: typeof V2_COLORS = {
+  bg: '#181e28',
+  surface: '#141922',
+  surfaceHover: '#1e2531',
+  border: '#364051',
+  borderSoft: '#262d3a',
+  borderStrong: '#5f6979',
+  textPrimary: '#e8ebf1',
+  textSecondary: '#aeb6c4',
+  textMuted: '#8b94a5',
+  accent: '#6680ff',
+  accentStrong: '#3d5ef2',
+  accentSoft: '#1b2546',
+  onAccent: '#ffffff',
+  success: '#10b981',
+  warning: '#f4a23a',
+  danger: '#ef4444',
+  info: '#0891b2',
+  shadowSm: 'none',
+  shadow: 'none',
+  shadowLg: 'none',
+};
+
+type V2Palette = typeof V2_COLORS;
+
+const buildV2FeatureTheme = (c: V2Palette, mode: 'light' | 'dark') => createTheme({
   palette: {
-    mode: 'light',
+    mode,
     primary: {
-      main: V2_COLORS.accent,
-      light: '#e9edfb',
-      dark: V2_COLORS.accentStrong,
-      contrastText: V2_COLORS.surface,
+      main: c.accent,
+      light: c.accentSoft,
+      dark: c.accentStrong,
+      contrastText: c.onAccent,
     },
     secondary: {
       main: '#0f2378',
-      contrastText: V2_COLORS.surface,
+      contrastText: c.surface,
     },
-    success: { main: V2_COLORS.success },
-    warning: { main: V2_COLORS.warning },
-    error: { main: V2_COLORS.danger },
-    info: { main: V2_COLORS.info },
+    success: { main: c.success },
+    warning: { main: c.warning },
+    error: { main: c.danger },
+    info: { main: c.info },
     text: {
-      primary: V2_COLORS.textPrimary,
-      secondary: V2_COLORS.textSecondary,
+      primary: c.textPrimary,
+      secondary: c.textSecondary,
     },
     background: {
-      default: V2_COLORS.bg,
-      paper: V2_COLORS.surface,
+      default: c.bg,
+      paper: c.surface,
     },
-    divider: V2_COLORS.border,
+    divider: c.border,
   },
   typography: {
     fontFamily: [
@@ -104,8 +132,8 @@ const v2FeatureTheme = createTheme({
       styleOverrides: {
         root: {
           backgroundImage: 'none',
-          borderColor: V2_COLORS.border,
-          color: V2_COLORS.textPrimary,
+          borderColor: c.border,
+          color: c.textPrimary,
         },
         rounded: {
           borderRadius: 12,
@@ -115,9 +143,9 @@ const v2FeatureTheme = createTheme({
     MuiCard: {
       styleOverrides: {
         root: {
-          border: `1px solid ${V2_COLORS.border}`,
+          border: `1px solid ${c.border}`,
           borderRadius: 12,
-          boxShadow: V2_COLORS.shadowSm,
+          boxShadow: c.shadowSm,
         },
       },
     },
@@ -131,24 +159,24 @@ const v2FeatureTheme = createTheme({
           minHeight: 34,
         },
         containedPrimary: {
-          background: V2_COLORS.accent,
+          background: c.accent,
           '&:hover': {
-            background: V2_COLORS.accentStrong,
+            background: c.accentStrong,
             boxShadow: 'none',
           },
         },
         outlined: {
-          borderColor: V2_COLORS.border,
-          color: V2_COLORS.accent,
+          borderColor: c.border,
+          color: c.accent,
           '&:hover': {
-            borderColor: V2_COLORS.borderStrong,
-            backgroundColor: V2_COLORS.surfaceHover,
+            borderColor: c.borderStrong,
+            backgroundColor: c.surfaceHover,
           },
         },
         text: {
-          color: V2_COLORS.accent,
+          color: c.accent,
           '&:hover': {
-            backgroundColor: V2_COLORS.surfaceHover,
+            backgroundColor: c.surfaceHover,
           },
         },
       },
@@ -158,8 +186,8 @@ const v2FeatureTheme = createTheme({
         root: {
           borderRadius: 999,
           fontWeight: 700,
-          backgroundColor: V2_COLORS.accentSoft,
-          color: V2_COLORS.accent,
+          backgroundColor: c.accentSoft,
+          color: c.accent,
         },
       },
     },
@@ -172,22 +200,22 @@ const v2FeatureTheme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 10,
-          backgroundColor: V2_COLORS.surface,
+          backgroundColor: c.surface,
           '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-            borderColor: V2_COLORS.accent,
+            borderColor: c.accent,
           },
         },
         notchedOutline: {
-          borderColor: V2_COLORS.border,
+          borderColor: c.border,
         },
       },
     },
     MuiInputLabel: {
       styleOverrides: {
         root: {
-          color: V2_COLORS.textSecondary,
+          color: c.textSecondary,
           '&.Mui-focused': {
-            color: V2_COLORS.accent,
+            color: c.accent,
           },
         },
       },
@@ -198,7 +226,7 @@ const v2FeatureTheme = createTheme({
           minHeight: 42,
         },
         indicator: {
-          backgroundColor: V2_COLORS.accent,
+          backgroundColor: c.accent,
           height: 2,
         },
       },
@@ -208,10 +236,10 @@ const v2FeatureTheme = createTheme({
         root: {
           textTransform: 'none',
           fontWeight: 700,
-          color: V2_COLORS.textSecondary,
+          color: c.textSecondary,
           minHeight: 42,
           '&.Mui-selected': {
-            color: V2_COLORS.accent,
+            color: c.accent,
           },
         },
       },
@@ -219,11 +247,11 @@ const v2FeatureTheme = createTheme({
     MuiIconButton: {
       styleOverrides: {
         root: {
-          color: V2_COLORS.textMuted,
+          color: c.textMuted,
           borderRadius: 8,
           '&:hover': {
-            color: V2_COLORS.textPrimary,
-            backgroundColor: V2_COLORS.surfaceHover,
+            color: c.textPrimary,
+            backgroundColor: c.surfaceHover,
           },
         },
       },
@@ -232,28 +260,28 @@ const v2FeatureTheme = createTheme({
       styleOverrides: {
         paper: {
           borderRadius: 16,
-          border: `1px solid ${V2_COLORS.border}`,
-          boxShadow: V2_COLORS.shadowLg,
+          border: `1px solid ${c.border}`,
+          boxShadow: c.shadowLg,
         },
       },
     },
     MuiMenu: {
       styleOverrides: {
         paper: {
-          border: `1px solid ${V2_COLORS.border}`,
-          boxShadow: V2_COLORS.shadow,
+          border: `1px solid ${c.border}`,
+          boxShadow: c.shadow,
         },
       },
     },
     MuiMenuItem: {
       styleOverrides: {
         root: {
-          color: V2_COLORS.textPrimary,
+          color: c.textPrimary,
           '&:hover': {
-            backgroundColor: V2_COLORS.surfaceHover,
+            backgroundColor: c.surfaceHover,
           },
           '&.Mui-selected': {
-            backgroundColor: V2_COLORS.accentSoft,
+            backgroundColor: c.accentSoft,
           },
         },
       },
@@ -261,13 +289,13 @@ const v2FeatureTheme = createTheme({
     MuiTableCell: {
       styleOverrides: {
         root: {
-          borderBottomColor: V2_COLORS.borderSoft,
-          color: V2_COLORS.textPrimary,
+          borderBottomColor: c.borderSoft,
+          color: c.textPrimary,
         },
         head: {
-          color: V2_COLORS.textSecondary,
+          color: c.textSecondary,
           fontWeight: 800,
-          backgroundColor: V2_COLORS.bg,
+          backgroundColor: c.bg,
         },
       },
     },
@@ -281,16 +309,19 @@ const v2FeatureTheme = createTheme({
     MuiListItemText: {
       styleOverrides: {
         primary: {
-          color: V2_COLORS.textPrimary,
+          color: c.textPrimary,
           fontWeight: 700,
         },
         secondary: {
-          color: V2_COLORS.textSecondary,
+          color: c.textSecondary,
         },
       },
     },
   },
 });
+
+const v2FeatureTheme = buildV2FeatureTheme(V2_COLORS, 'light');
+const v2DarkFeatureTheme = buildV2FeatureTheme(V2_DARK_COLORS, 'dark');
 
 const V2FeaturePage: React.FC<V2FeaturePageProps> = ({
   title,
@@ -303,6 +334,7 @@ const V2FeaturePage: React.FC<V2FeaturePageProps> = ({
   const navigate = useNavigate();
   const { t } = useTranslation();
   const attention = useV2PodAttention();
+  const dark = useV2ResolvedDark();
 
   useEffect(() => {
     try {
@@ -335,7 +367,7 @@ const V2FeaturePage: React.FC<V2FeaturePageProps> = ({
       <main className={`v2-pane v2-pane--main v2-feature${className ? ` ${className}` : ''}`} onClickCapture={handleClickCapture} aria-label={title}>
         {showHeader && <V2PageHead className="v2-feature__header" titleClassName="v2-feature__title" title={title} hint={hint} hintLabel={t('common.aboutPage', { title })} />}
         <section className="v2-feature__body">
-          <ThemeProvider theme={v2FeatureTheme}>
+          <ThemeProvider theme={dark ? v2DarkFeatureTheme : v2FeatureTheme}>
             <V2EmbeddedProvider>
               <div className="v2-feature__legacy">
                 {children}
