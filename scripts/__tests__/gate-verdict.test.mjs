@@ -41,7 +41,7 @@ after(() => rmSync(bin, { recursive: true, force: true }));
 let nextId = 1000;
 const review = (body, { login = 'lilyshen0722', commit = HEAD, state = 'COMMENTED' } = {}) =>
   ({ id: nextId++, user: { login }, commit_id: commit, state, submitted_at: '2026-10-31T07:30:00Z', body });
-const PASS = `Checked out ${HEAD} and ran the focused tests.\n\nGATE: PASS`;
+const PASS = `GATE: PASS @ ${HEAD}\n\nRan the focused tests.\n\nGATE: PASS`;
 const FAIL = 'Found a defect in the rollback path.\n\nGATE: FAIL';
 const HOLD = 'The rollback path needs a test.\n\nGATE: HOLD';
 
@@ -133,18 +133,19 @@ test('a PASS from another account does not count, CodeRabbit included', () => {
 });
 
 test('GATE: PASS must be the last line of the review', () => {
-  assert.equal(run({ files: CODE_FILES, reviews: [review(`GATE: PASS\n\nFollow-up: none.`)] }).status, 1);
+  const body = `GATE: PASS @ ${HEAD}\n\nRan the focused tests.\n\nGATE: PASS\n\nFollow-up: none.`;
+  assert.equal(run({ files: CODE_FILES, reviews: [review(body)] }).status, 1);
 });
 
 test('trailing spaces and CRLF on the last line are ignored', () => {
-  const body = `Checked out ${HEAD} and ran the tests\r\n\r\nGATE: PASS  \r\n`;
+  const body = `GATE: PASS @ ${HEAD}\r\n\r\nRan the tests\r\n\r\nGATE: PASS  \r\n`;
   assert.equal(run({ files: CODE_FILES, reviews: [review(body)] }).status, 0);
 });
 
 test('a FAIL after a PASS at the same head blocks it', () => {
   const r = run({ files: CODE_FILES, reviews: [review(PASS), review(FAIL)] });
   assert.equal(r.status, 1);
-  assert.match(r.stdout, /is 'GATE: FAIL'/);
+  assert.match(r.stdout, /last line is 'GATE: FAIL'/);
 });
 
 test('a PASS after a FAIL at the same head passes', () => {
@@ -154,7 +155,7 @@ test('a PASS after a FAIL at the same head passes', () => {
 test('a HOLD after a PASS at the same head blocks it', () => {
   const r = run({ files: CODE_FILES, reviews: [review(PASS), review(HOLD)] });
   assert.equal(r.status, 1);
-  assert.match(r.stdout, /is 'GATE: HOLD'/);
+  assert.match(r.stdout, /last line is 'GATE: HOLD'/);
 });
 
 test('a PASS after a HOLD at the same head passes', () => {
@@ -162,23 +163,24 @@ test('a PASS after a HOLD at the same head passes', () => {
 });
 
 test('markup around the verdict is ignored, as the press reads it', () => {
-  const body = `Checked out ${HEAD} and ran the tests.\n\n**GATE: PASS**`;
+  const body = `**GATE: PASS @ ${HEAD}**\n\nRan the tests.\n\n**GATE: PASS**`;
   assert.equal(run({ files: CODE_FILES, reviews: [review(body)] }).status, 0);
 });
 
 test('a footer below the verdict does not hide it', () => {
-  const pass = `Checked out ${HEAD} and ran the tests.\n\nGATE: PASS\n\nWritten by Sable, a Commonly agent`;
+  const pass = `GATE: PASS @ ${HEAD}\n\nRan the focused tests.\n\nGATE: PASS\n\nWritten by Sable, a Commonly agent`;
   assert.equal(run({ files: CODE_FILES, reviews: [review(pass)] }).status, 0);
   // A footer under a HOLD must not let the PASS before it stand.
   const hold = 'The rollback path needs a test.\n\nGATE: HOLD\n\nPod thread: https://commonly.me/v2/pods/6a692a1be833c668acdb84cf';
   const r = run({ files: CODE_FILES, reviews: [review(PASS), review(hold)] });
   assert.equal(r.status, 1);
-  assert.match(r.stdout, /is 'GATE: HOLD'/);
+  assert.match(r.stdout, /last line is 'GATE: HOLD'/);
 });
 
-test('only the exact GATE: PASS passes, so near-misses block', () => {
+test('only the exact last line GATE: PASS passes, so near-misses block', () => {
   for (const last of ['GATE: PASSED', 'GATE:PASS', 'gate: pass', 'GATE: PASS (with notes)']) {
-    const r = run({ files: CODE_FILES, reviews: [review(PASS), review(`Checked out ${HEAD}.\n\n${last}`)] });
+    const body = `GATE: PASS @ ${HEAD}\n\nRan the focused tests.\n\n${last}`;
+    const r = run({ files: CODE_FILES, reviews: [review(body)] });
     assert.equal(r.status, 1, last);
   }
 });
@@ -188,13 +190,41 @@ test('a dismissed PASS does not count', () => {
 });
 
 test('a bare PASS that names no head SHA does not count', () => {
-  const r = run({ files: CODE_FILES, reviews: [review('Ran the focused tests.\n\nGATE: PASS')] });
+  const r = run({ files: CODE_FILES, reviews: [review('GATE: PASS\n\nRan the focused tests.\n\nGATE: PASS')] });
   assert.equal(r.status, 1);
-  assert.match(r.stdout, /does not name the head SHA/);
+  assert.match(r.stdout, /first line is 'GATE: PASS'/);
+});
+
+test('a first line that declares HOLD blocks a PASS on the last line', () => {
+  const body = `GATE: HOLD @ ${HEAD}\n\nThe rollback path needs a test.\n\nGATE: PASS`;
+  const r = run({ files: CODE_FILES, reviews: [review(body)] });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /first line is 'GATE: HOLD @/);
+});
+
+test('a HOLD whose last line is prose still blocks a PASS before it', () => {
+  const hold = `GATE: HOLD @ ${HEAD}\n\nThe rollback path needs a test.`;
+  const r = run({ files: CODE_FILES, reviews: [review(PASS), review(hold)] });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /first line is 'GATE: HOLD @/);
+});
+
+test('a PASS whose last line is prose does not count', () => {
+  const body = `GATE: PASS @ ${HEAD}\n\nRan the focused tests.\n\nFollow-up: none.`;
+  const r = run({ files: CODE_FILES, reviews: [review(body)] });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /last line is 'Follow-up: none\.'/);
+});
+
+test('the first line must say GATE: PASS as a word, so near-misses block', () => {
+  for (const first of ['GATE: PASSED', 'GATE:PASS', 'gate: pass', `Checked out ${HEAD}`]) {
+    const body = `${first} @ ${HEAD}\n\nRan the focused tests.\n\nGATE: PASS`;
+    assert.equal(run({ files: CODE_FILES, reviews: [review(body)] }).status, 1, first);
+  }
 });
 
 test('a PASS that names only an older SHA does not count', () => {
-  const r = run({ files: CODE_FILES, reviews: [review(`Checked out ${OLD} and ran the tests.\n\nGATE: PASS`)] });
+  const r = run({ files: CODE_FILES, reviews: [review(`GATE: PASS @ ${OLD}\n\nRan the tests.\n\nGATE: PASS`)] });
   assert.equal(r.status, 1);
 });
 
