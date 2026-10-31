@@ -157,14 +157,17 @@ export const watchFirstOutput = ({
     const size = sizeOf(transcriptPath);
     if (started || (!modelStream && size > baseline)) return;
     const locked = await lockProbe().catch(() => null);
-    if (stopped) return;
+    // Output can arrive while the probe runs (ps or ioreg may take a second).
+    if (stopped || started) return;
+    if (modelStream) {
+      // The model signal does not read the transcript, so a missing path cannot
+      // hide a hung provider here.
+      onStall(locked ? 'console locked' : 'stuck: no model output inside the window');
+      return;
+    }
     // No transcript where one was expected may only mean the path is wrong, so
     // that alone never kills a turn: it takes a locked console as well.
     if (size < 0 && locked !== true) return;
-    if (modelStream) {
-      onStall(locked ? 'console locked' : 'stuck: no model output after the first transcript row');
-      return;
-    }
     onStall(locked ? 'console locked' : 'no transcript, stdout or stderr');
   }, windowMs);
   timer?.unref?.();

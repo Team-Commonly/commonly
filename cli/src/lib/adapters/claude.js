@@ -500,17 +500,49 @@ const publicSkillPromptArgs = async (skillSources) => {
 // and the watchdog does not count those.
 const STREAM_ARGS = ['--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
 
-// The reply is the `result` event's text. Output with no result event is
-// returned as it arrived, so a turn that never reaches one still gets its text.
-export const claudeResultText = (stdout) => {
-  const lines = String(stdout || '').split('\n');
-  for (let i = lines.length - 1; i >= 0; i -= 1) {
-    try {
-      const event = JSON.parse(lines[i]);
-      if (event?.type === 'result') return String(event.result ?? '').trim();
-    } catch { /* not an event line */ }
+const parseEvent = (line) => {
+  try {
+    const event = JSON.parse(line);
+    return event && typeof event === 'object' ? event : null;
+  } catch {
+    return null;
   }
-  return String(stdout || '').trim();
+};
+
+// The reply is the `result` event's text. A turn that reaches no result event
+// (killed mid-stream, exit 0) gets the text of its assistant events, never the
+// raw NDJSON. Output with no JSON lines at all is plain text and returned as it
+// arrived.
+export const claudeResultText = (stdout) => {
+  const text = String(stdout || '');
+  const events = text.split('\n').map(parseEvent);
+  if (!events.some(Boolean)) return text.trim();
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    if (events[i]?.type === 'result') return String(events[i].result ?? '').trim();
+  }
+  return events
+    .filter((event) => event?.type === 'assistant')
+    .flatMap((event) => event.message?.content || [])
+    .filter((block) => block?.type === 'text')
+    .map((block) => block.text)
+    .join('')
+    .trim();
+};
+
+// The failure tail for a non-zero exit. Stream events are mostly system init
+// and status lines, which would push the terminal error past the 2000-char cut,
+// so keep the result text, or the lines that are not system or stream events.
+export const claudeFailureTail = (stdout) => {
+  const text = String(stdout || '');
+  const lines = text.split('\n');
+  const events = lines.map(parseEvent);
+  if (!events.some(Boolean)) return text.trim();
+  const result = [...events].reverse().find((event) => event?.type === 'result');
+  if (String(result?.result ?? '').trim()) return String(result.result).trim();
+  return lines
+    .filter((_, i) => !['system', 'stream_event'].includes(events[i]?.type))
+    .join('\n')
+    .trim();
 };
 
 const runClaude = ({
@@ -604,7 +636,7 @@ const runClaude = ({
       // reduced to one named field. The status, when the tail names one, is
       // attached as `error.status` so a refusal classifies by field rather than
       // by regex.
-      const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join(' | ');
+      const detail = [stderr.trim(), claudeFailureTail(stdout)].filter(Boolean).join(' | ');
       return reject(adapterFailure('claude', detail, {
         credentials,
         exitCode: code,
