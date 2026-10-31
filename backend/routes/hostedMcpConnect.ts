@@ -26,6 +26,7 @@ import { upstreamFetch } from '../services/upstreamFetch';
 import { dcrClientForRow, ensureDcrClient, refuseDcrClient } from '../services/hostedMcpDcrRegistry';
 import { forgetHostedMcpDrift } from '../services/hostedMcpToolDefinitions';
 import { publicAppUrl } from '../utils/publicAppUrl';
+import { submitOperatorKey } from './hostedMcpOperatorKey';
 // eslint-disable-next-line global-require
 const Integration = require('../models/Integration');
 // eslint-disable-next-line global-require
@@ -342,6 +343,8 @@ const startConnect = async (req: AuthedRequest, res: Response) => {
     integrationId: row?._id,
   });
 };
+
+router.post('/:entryId/operator-key', writeIntegrationsRateLimit, auth, submitOperatorKey);
 
 router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: AuthedRequest, res: Response) => {
   try {

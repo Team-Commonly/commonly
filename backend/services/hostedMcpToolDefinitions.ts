@@ -75,7 +75,7 @@ const messageOf = (error: unknown): string => (
 // Loaded lazily, like the model and the credential service below: the frontend
 // glyph-catalogue test imports this module for its pure projection, and must
 // not pull the guard's node:dns and node:http transport in with it.
-const guardedFetch: typeof fetch = (input, init) => {
+export const guardedFetch: typeof fetch = (input, init) => {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { hostedVendorFetch } = require('./hostedVendorFetch');
   return hostedVendorFetch(input, init);
