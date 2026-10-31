@@ -1,7 +1,6 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import V2FeedbackMenu from './V2FeedbackMenu';
-import V2LangSwitch from './V2LangSwitch';
 import V2AccountMenu from './V2AccountMenu';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from 'react-i18next';
@@ -122,12 +121,10 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav, needsYouCount })
         </nav>
 
         <div className="v2-rail__foot">
-          {/* Help & preferences — language switch + the help/feedback menu
-              (2026-07-23: the guide moved into the feedback menu next to
-              report-a-bug / request-a-feature; language switch lives here too,
-              off its old cramped above-the-logo slot). */}
+          {/* Help: the guide, report-a-bug and request-a-feature (2026-07-23).
+              The language switch left the rail for Settings › Look (D215,
+              TASK-691): language is not a daily act. */}
           <div className="v2-rail__utility">
-            <V2LangSwitch />
             <V2FeedbackMenu />
           </div>
           <span className="v2-rail__foot-sep" aria-hidden="true" />

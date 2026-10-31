@@ -10,6 +10,7 @@ import V2DevicesPanel from './V2DevicesPanel';
 import V2DeleteAccount from './V2DeleteAccount';
 import V2Avatar from './V2Avatar';
 import V2AvatarCropDialog from './V2AvatarCropDialog';
+import V2Segmented from './V2Segmented';
 import { nextPaperAvatarPreset } from '../utils/avatarPresets';
 import { LANGUAGE_REGISTRY } from '../../i18n';
 import { V2_THEMES, V2ThemePref, getV2Theme, setV2Theme } from '../utils/theme';
@@ -40,7 +41,9 @@ const SETTINGS_SECTIONS = [
   { id: 'devices', title: 'Devices' },
   { id: 'api-token', title: 'API token' },
   { id: 'connected-apps', title: 'Connected apps' },
-  { id: 'language', title: 'Language' },
+  // D215 (TASK-691): Look holds the language and theme segments. The language
+  // switch moved here from the rail.
+  { id: 'look', title: 'Look' },
 ] as const;
 
 // Custom "Developer apps" (AppsManagement) stays hidden until every path
@@ -486,36 +489,28 @@ const V2LanguageSection: React.FC = () => {
   };
 
   return (
-    <>
-      <div className="v2-settings__language" role="radiogroup" aria-label={t('common.language.label')}>
-        {LANGUAGE_REGISTRY.map((language) => (
-          <button
-            key={language.code}
-            type="button"
-            className={`v2-settings__language-option${active === language.code ? ' v2-settings__language-option--active' : ''}`}
-            role="radio"
-            aria-checked={active === language.code}
-            onClick={() => void i18n.changeLanguage(language.code)}
-          >
-            {language.label}
-          </button>
-        ))}
+    <div className="v2-settings__look">
+      <div className="v2-settings__look-row">
+        <span className="v2-settings__look-label">{t('common.language.label')}</span>
+        <V2Segmented
+          size="sm"
+          ariaLabel={t('common.language.label')}
+          value={(LANGUAGE_REGISTRY.find((language) => language.code === active) || LANGUAGE_REGISTRY[0]).code}
+          onChange={(code) => { void i18n.changeLanguage(code); }}
+          options={LANGUAGE_REGISTRY.map((language) => ({ value: language.code, label: language.label }))}
+        />
       </div>
-      <div className="v2-settings__language" role="radiogroup" aria-label={t('common.theme.label')}>
-        {V2_THEMES.map((pref) => (
-          <button
-            key={pref}
-            type="button"
-            className={`v2-settings__language-option${theme === pref ? ' v2-settings__language-option--active' : ''}`}
-            role="radio"
-            aria-checked={theme === pref}
-            onClick={() => chooseTheme(pref)}
-          >
-            {t(`common.theme.${pref}`)}
-          </button>
-        ))}
+      <div className="v2-settings__look-row">
+        <span className="v2-settings__look-label">{t('common.theme.label')}</span>
+        <V2Segmented
+          size="sm"
+          ariaLabel={t('common.theme.label')}
+          value={theme}
+          onChange={chooseTheme}
+          options={V2_THEMES.map((pref) => ({ value: pref, label: t(`common.theme.${pref}`) }))}
+        />
       </div>
-    </>
+    </div>
   );
 };
 
@@ -587,7 +582,7 @@ const V2SettingsPage: React.FC = () => {
               </details>
             )}
           </SettingsSection>
-          <SettingsSection id="language" title="Language"><V2LanguageSection /></SettingsSection>
+          <SettingsSection id="look" title="Look"><V2LanguageSection /></SettingsSection>
           {isAdmin && (
             <SettingsSection id={ADMIN_SECTION.id} title={ADMIN_SECTION.title}><V2AdminSection /></SettingsSection>
           )}

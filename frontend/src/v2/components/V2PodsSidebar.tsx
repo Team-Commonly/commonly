@@ -4,6 +4,8 @@ import React, {
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import V2Avatar from './V2Avatar';
+import V2Segmented from './V2Segmented';
+import { ShellGlyph } from '../icons/glyphs';
 import { UseV2PodsResult, V2Pod, V2PodMember, useV2Pods } from '../hooks/useV2Pods';
 import { useV2Pinned } from '../hooks/useV2Pinned';
 import { useAuth } from '../../context/AuthContext';
@@ -35,7 +37,7 @@ const ROOM_POD_TYPES = new Set([
 
 export type PodKind = 'community' | 'team' | 'chat' | 'study' | 'games' | 'ensemble' | 'admin' | 'direct';
 
-// Kinds only appear inside the Everything fold (walk-1 miss 3). Order is the
+// Kinds only appear inside the All view (walk-1 miss 3). Order is the
 // order a person scans them: work first, direct last.
 export const POD_KIND_ORDER: PodKind[] = [
   'team', 'community', 'chat', 'study', 'games', 'ensemble', 'admin', 'direct',
@@ -52,12 +54,14 @@ export const ROOM_POD_TYPE_LABELS: Record<string, Exclude<PodKind, 'community' |
   'agent-admin': 'admin',
 };
 
-const SECTION_PINNED = 'pinned';
-const SECTION_RECENT = 'recent';
-const SECTION_EVERYTHING = 'everything';
-const EVERYTHING_OPEN_KEY = 'v2:pods.everythingOpen';
-const CLOSED_SECTIONS_KEY = 'v2:pods.closedSections';
+// D215 (TASK-691): one segmented switch picks the list. It replaced the
+// Pinned / Recent headings and the "Everything 64 ▸" fold, whose tiny caret
+// did not read as a switch.
+export type PodListView = 'recent' | 'all' | 'pinned';
+const POD_LIST_VIEWS: PodListView[] = ['recent', 'all', 'pinned'];
+export const POD_LIST_VIEW_KEY = 'v2:pods.view';
 const KIND_OPEN_KEY = 'v2:pods.kindsOpen';
+const NO_PINS = new Set<string>();
 
 export const searchShortcutHint = (platform: string): string => (
   /Mac|iPhone|iPad|iPod/i.test(platform) ? '⌘K' : 'Ctrl K'
@@ -69,37 +73,20 @@ const browserPlatform = (): string => {
   return nav.userAgentData?.platform || nav.userAgent || '';
 };
 
-const readSessionFlag = (key: string): boolean => {
+const readListView = (): PodListView => {
   try {
-    return sessionStorage.getItem(key) === '1';
+    const raw = sessionStorage.getItem(POD_LIST_VIEW_KEY) as PodListView | null;
+    return raw && POD_LIST_VIEWS.includes(raw) ? raw : 'recent';
   } catch {
-    return false;
+    return 'recent';
   }
 };
 
-const writeSessionFlag = (key: string, value: boolean) => {
+const writeListView = (view: PodListView) => {
   try {
-    sessionStorage.setItem(key, value ? '1' : '0');
+    sessionStorage.setItem(POD_LIST_VIEW_KEY, view);
   } catch {
-    // Session storage unavailable: the fold simply starts closed next time.
-  }
-};
-
-// Pinned and Recent start open and remember a collapse for the session.
-const readClosedSections = (): Set<string> => {
-  try {
-    const raw = sessionStorage.getItem(CLOSED_SECTIONS_KEY);
-    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
-  } catch {
-    return new Set();
-  }
-};
-
-const writeClosedSections = (sections: Set<string>) => {
-  try {
-    sessionStorage.setItem(CLOSED_SECTIONS_KEY, JSON.stringify([...sections]));
-  } catch {
-    // Same fallback as above.
+    // Session storage unavailable: the list simply opens on Recent next time.
   }
 };
 
@@ -150,7 +137,7 @@ export const podKind = (pod: V2Pod): PodKind | null => {
   return ROOM_POD_TYPE_LABELS[String(pod.type || '')] || null;
 };
 
-// Everything: every pod the person is in, grouped by kind, each group sorted by
+// All: every pod the person is in, grouped by kind, each group sorted by
 // last message (or creation for an empty pod). Pinned pods appear here too.
 export const groupPodsByKind = (pods: V2Pod[]): Array<{ kind: PodKind; pods: V2Pod[] }> => {
   const groups = new Map<PodKind, V2Pod[]>();
@@ -170,8 +157,9 @@ export const sortByMessageTime = (pods: V2Pod[]): V2Pod[] => (
   ))
 );
 
-// Recent uses the same message order on every device. Pinned pods are excluded
-// because they already sit above Recent.
+// Recent uses the same message order on every device. The sidebar passes no
+// pins since D215: with no Pinned heading above it, Recent is the whole recent
+// list, pinned pods included. Callers may still exclude a set.
 export const recentPods = (
   pods: V2Pod[],
   pinnedPodIds: Set<string>,
@@ -207,9 +195,8 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   } = podsState || ownPodsState;
   const searchRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState('');
-  const [everythingOpen, setEverythingOpen] = useState<boolean>(() => readSessionFlag(EVERYTHING_OPEN_KEY));
+  const [listView, setListView] = useState<PodListView>(() => readListView());
   const [openKinds, setOpenKinds] = useState<Set<PodKind>>(() => readOpenKinds());
-  const [closedSections, setClosedSections] = useState<Set<string>>(() => readClosedSections());
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [newPodName, setNewPodName] = useState('');
@@ -267,7 +254,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     () => sortByMessageTime(listablePods.filter((pod) => pinned.has(pod._id))),
     [listablePods, pinned],
   );
-  const recent = useMemo(() => recentPods(listablePods, pinned), [listablePods, pinned]);
+  const recent = useMemo(() => recentPods(listablePods, NO_PINS), [listablePods]);
   const everything = useMemo(() => groupPodsByKind(listablePods), [listablePods]);
   const searching = query.trim().length > 0;
   const matches = useMemo(() => {
@@ -279,20 +266,9 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     navigate(`/v2/pods/${podId}`);
   }, [navigate]);
 
-  const toggleEverything = () => {
-    setEverythingOpen((open) => {
-      writeSessionFlag(EVERYTHING_OPEN_KEY, !open);
-      return !open;
-    });
-  };
-
-  const toggleSection = (key: string) => {
-    setClosedSections((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      writeClosedSections(next);
-      return next;
-    });
+  const chooseListView = (view: PodListView) => {
+    setListView(view);
+    writeListView(view);
   };
 
   const toggleKind = (kind: PodKind) => {
@@ -378,6 +354,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
           {time && <span className="v2-pods__row-time" aria-hidden="true">{time}</span>}
         </span>
       </button>
+      {/* D215: the pin is an icon on row hover that takes the time's slot. */}
       <button
         type="button"
         className={`v2-pods__pin${isPinned ? ' v2-pods__pin--active' : ''}`}
@@ -385,7 +362,9 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
         aria-label={isPinned ? t('podsSidebar.unpinAriaLabel') : t('podsSidebar.pinAriaLabel')}
         title={isPinned ? t('podsSidebar.unpinTitle') : t('podsSidebar.pinTitle')}
         aria-pressed={isPinned}
-      />
+      >
+        <ShellGlyph name="pin" size={15} />
+      </button>
       </div>
     );
   };
@@ -513,6 +492,21 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
           </button>
         </div>
         {createForm}
+        {!loading && !error && listablePods.length > 0 && (
+          <div className="v2-pods__view">
+            <V2Segmented
+              size="sm"
+              ariaLabel={t('podsSidebar.workspace.viewLabel')}
+              value={listView}
+              onChange={chooseListView}
+              options={[
+                { value: 'recent', label: t('podsSidebar.workspace.recent') },
+                { value: 'all', label: t('podsSidebar.workspace.all'), count: listablePods.length },
+                { value: 'pinned', label: t('podsSidebar.workspace.pinnedTitle') },
+              ]}
+            />
+          </div>
+        )}
         {loading && <div className="v2-pods__empty"><span className="v2-spinner" /></div>}
         {!loading && error && <div className="v2-pods__empty">{error}</div>}
         {!loading && !error && (
@@ -523,23 +517,24 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
                 : <div className="v2-pods__empty v2-pods__empty--mono">{t('podsSidebar.workspace.noMatch')}</div>
             ) : (
               <>
-                {pinnedPods.length > 0 && renderSection(SECTION_PINNED, t('podsSidebar.workspace.pinnedTitle'), pinnedPods.map((pod) => renderRow(pod)), { open: !closedSections.has(SECTION_PINNED), onToggle: () => toggleSection(SECTION_PINNED) })}
-                {recent.length > 0 && renderSection(SECTION_RECENT, t('podsSidebar.workspace.recent'), recent.map((pod) => renderRow(pod)), { open: !closedSections.has(SECTION_RECENT), onToggle: () => toggleSection(SECTION_RECENT) })}
-                {listablePods.length > 0 && renderSection(
-                  SECTION_EVERYTHING,
-                  t('podsSidebar.workspace.everything'),
-                  everything.map((group) => renderSection(
-                    group.kind,
-                    t(`podsSidebar.workspace.${group.kind}`),
-                    group.pods.map((pod) => renderRow(pod, true)),
-                    {
-                      count: group.pods.length,
-                      open: openKinds.has(group.kind),
-                      onToggle: () => toggleKind(group.kind),
-                      nested: true,
-                    },
-                  )),
-                  { count: listablePods.length, open: everythingOpen, onToggle: toggleEverything },
+                {listablePods.length > 0 && listView === 'recent' && (
+                  <div className="v2-pods__rows">{recent.map((pod) => renderRow(pod))}</div>
+                )}
+                {listablePods.length > 0 && listView === 'all' && everything.map((group) => renderSection(
+                  group.kind,
+                  t(`podsSidebar.workspace.${group.kind}`),
+                  group.pods.map((pod) => renderRow(pod, true)),
+                  {
+                    count: group.pods.length,
+                    open: openKinds.has(group.kind),
+                    onToggle: () => toggleKind(group.kind),
+                    nested: true,
+                  },
+                ))}
+                {listablePods.length > 0 && listView === 'pinned' && (
+                  pinnedPods.length > 0
+                    ? <div className="v2-pods__rows">{pinnedPods.map((pod) => renderRow(pod))}</div>
+                    : <div className="v2-pods__empty">{t('podsSidebar.workspace.noPinned')}</div>
                 )}
                 {listablePods.length === 0 && (
                   <div className="v2-pods__empty">{t('podsSidebar.empty.noPods')}</div>

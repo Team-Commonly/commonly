@@ -1343,16 +1343,14 @@
     "workspace": {
       "ariaLabel": "Pod inspector",
       "close": "Close inspector",
-      "agentsIn": "agents in {{pod}}",
       "noAgents": "no agents yet",
-      "needsYou": "needs you",
+      "needsYou": "Needs you",
       "nothingOpen": "Nothing open.",
       "nothingWorking_one": "Nothing. {{agents}} is working.",
       "nothingWorking_other": "Nothing. {{agents}} are working.",
       "wip": "wip",
-      "members": "members",
-      "manage": "manage",
-      "podSettings": "pod settings",
+      "members": "Members",
+      "manage": "Manage agents",
       "joinPolicyError": "Could not change who can join. Try again.",
       "agentStatus": {
         "needsYou": "needs you · {{title}}",
@@ -1360,9 +1358,11 @@
         "working": "working",
         "idle": "idle"
       },
-      "filesIn": "files in {{pod}}",
       "noFiles": "no files yet",
-      "allFiles": "All {{count}} files"
+      "allFiles": "All {{count}} files",
+      "agents": "Agents",
+      "files": "Files",
+      "joinOpen": "Open"
     },
     "goal": {
       "title": "Goal",
@@ -2115,7 +2115,10 @@
       "noMatch": "no pods match",
       "pinnedTitle": "Pinned",
       "recent": "Recent",
-      "everything": "Everything"
+      "everything": "Everything",
+      "viewLabel": "Pod list",
+      "all": "All",
+      "noPinned": "Pin a pod from its row to keep it here."
     }
   },
   "feedbackMenu": {
