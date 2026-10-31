@@ -947,19 +947,22 @@ export async function dispatchTool(
           return { content: { ok: false, error: payload.error }, error: 'handoff_invalid' };
         }
         if (!args.name) {
-          const { AgentRegistry } = require('../models/AgentRegistry');
-          const availableName = await availableByoHandoffName(
-            payload.agentName,
-            async (name) => Boolean(await AgentRegistry.exists({ agentName: name })),
-          );
-          const availablePayload = buildByoHandoffPayload({
-            adapter, os: args.os, podId: ctx.podId, agentName: availableName,
-            memoryFrom: ctx.agentName, memoryInstance: ctx.instanceId || 'default',
-          });
-          if ('error' in availablePayload) {
-            return { content: { ok: false, error: availablePayload.error }, error: 'handoff_invalid' };
+          // Fail toward posting: if the lookup fails or every candidate is taken,
+          // keep the default name. Attach still enforces ownership on that name.
+          try {
+            const { AgentRegistry } = require('../models/AgentRegistry');
+            const availableName = await availableByoHandoffName(
+              payload.agentName,
+              async (name) => Boolean(await AgentRegistry.exists({ agentName: name })),
+            );
+            const availablePayload = buildByoHandoffPayload({
+              adapter, os: args.os, podId: ctx.podId, agentName: availableName,
+              memoryFrom: ctx.agentName, memoryInstance: ctx.instanceId || 'default',
+            });
+            if (!('error' in availablePayload)) payload = availablePayload;
+          } catch (err) {
+            console.warn('[byo-handoff] free-name lookup failed; posting default name', (err as Error).message);
           }
-          payload = availablePayload;
         }
         const AgentMessageService = require('./agentMessageService');
         const result = await AgentMessageService.postMessage({

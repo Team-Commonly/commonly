@@ -148,6 +148,23 @@ describe('commonly_offer_local_agent', () => {
     ]);
   });
 
+  test('still posts the handoff card with the default name when the registry lookup fails', async () => {
+    mockRegistryExists.mockRejectedValue(new Error('registry unavailable'));
+    axios.post
+      .mockResolvedValueOnce(callsTool('commonly_offer_local_agent', { adapter: 'claude', os: 'mac' }))
+      .mockResolvedValueOnce(says('Run the card.'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await runAgent(install, ask);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+    const posted = AgentMessageService.postMessage.mock.calls[0][0];
+    expect(posted.messageType).toBe('card');
+    expect(posted.payload.agentName).toBe('sam-xu-claude');
+  });
+
   test('keeps an explicitly chosen name and leaves ownership decisions to attach', async () => {
     axios.post
       .mockResolvedValueOnce(callsTool('commonly_offer_local_agent', { adapter: 'claude', os: 'mac', name: 'chosen-local' }))
