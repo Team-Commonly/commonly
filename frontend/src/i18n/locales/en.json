@@ -1667,6 +1667,7 @@
     "footnote": {
       "cliRoute": "Prefer the CLI? Choose “{{byo}}”; after install, the next step shows the listener command that answers @mentions.",
       "cliRouteClaudeUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, connect Claude Code to Commonly from your own sessions. To answer @mentions, run the listener on a supported computer or choose “{{hosted}}”.",
+      "cliRouteClaudeLinuxUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, connect Claude Code to Commonly from your own sessions. On Linux, Claude Code answers @mentions only when every pod it’s in is invite-only; otherwise choose “{{hosted}}”.",
       "cliRouteCodexUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, the next step explains how to run the listener on a Mac computer. To answer @mentions from {{os}}, choose “{{hosted}}”.",
       "notSure": "Not sure which path?",
       "mcpVsCli": "MCP vs CLI vs SDK",
@@ -1732,6 +1733,7 @@
       "npmPermission": "If npm stops with EACCES (permission denied), don’t add sudo. Reinstall Node with a version manager such as nvm, then run the four lines again.",
       "ctaWarning": "{{name}} isn’t listening yet: it won’t answer mentions until the command above is running.",
       "needs": "Needs Node 20+ with npm and {{tool}} signed in. Run all four lines in one window: the exports last only there.",
+      "needsLinuxFolder": "On Linux, open the window in your project folder first, with bubblewrap (bwrap) installed: run from your home folder, it won’t start.",
       "osLabel": "Setting up on:",
       "osLinux": "Linux",
       "osMac": "Mac",

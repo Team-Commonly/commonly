@@ -348,6 +348,46 @@ describe('BYO listener snippet', () => {
       expect(screen.getByTestId('byo-listen-reach')).toHaveTextContent(/bubblewrap \(bwrap\)/);
     });
 
+    test('Linux with Claude Code: the folder and bubblewrap requirement sits beside the command', async () => {
+      setUserAgent(LINUX);
+      await issueToken(undefined, PRIVATE_POD);
+      expect(screen.getByTestId('byo-listen-needs'))
+        .toHaveTextContent(/On Linux, open the window in your project folder first, with bubblewrap \(bwrap\) installed: run from your home folder, it won’t start\./);
+    });
+
+    test('Mac with Claude Code: no Linux folder note', async () => {
+      setUserAgent(MAC);
+      await issueToken(undefined, PRIVATE_POD);
+      expect(screen.getByTestId('byo-listen-needs')).not.toHaveTextContent(/On Linux/);
+    });
+
+    // #2783: Codex stays Mac only, even in a pod the Claude Code check accepts.
+    test('Linux with Codex in an invite-only pod: still no listener command', async () => {
+      setUserAgent(LINUX);
+      await issueToken('codex', PRIVATE_POD);
+      expect(listener()).toBeUndefined();
+      expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/The Codex CLI can’t answer @mentions from Linux yet/);
+    });
+
+    test('Linux with Claude Code in a pod that is not private: the footnote names the pod rule, not the computer', async () => {
+      setUserAgent(LINUX);
+      axios.get.mockImplementation((url) => {
+        if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat', joinPolicy: 'open', publicRead: false, communityListed: false }] });
+        if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
+        return Promise.resolve({ data: {} });
+      });
+      render(
+        <AuthContext.Provider value={authValue}>
+          <MemoryRouter>
+            <V2AgentBYO />
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
+      expect(screen.getByText(/On Linux, Claude Code answers @mentions only when every pod it’s in is invite-only/)).toBeInTheDocument();
+      expect(screen.queryByText(/run the listener on a supported computer/)).toBeNull();
+    });
+
     // The CLI treats a pod that does not report a flag as public, so the page
     // must not offer a listener the CLI would refuse.
     test.each([
@@ -355,6 +395,8 @@ describe('BYO listener snippet', () => {
       ['listed in Community', { ...PRIVATE_POD, communityListed: true }],
       ['publicRead not reported', { joinPolicy: 'invite-only', communityListed: false }],
       ['communityListed not reported', { joinPolicy: 'invite-only', publicRead: false }],
+      // The CLI treats a missing joinPolicy as open.
+      ['joinPolicy not reported', { publicRead: false, communityListed: false }],
     ])('Linux with Claude Code in a pod %s: no listener command', async (_label, pod) => {
       setUserAgent(LINUX);
       await issueToken(undefined, pod);

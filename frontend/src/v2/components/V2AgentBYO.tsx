@@ -1467,7 +1467,8 @@ const V2AgentBYO: React.FC = () => {
             {addComputerBlock}
           <p className="v2-byo__footnote">
             {t(listenerAvailable ? 'agentByo.footnote.cliRoute'
-              : listenAdapter === 'claude' ? 'agentByo.footnote.cliRouteClaudeUnavailable'
+              : listenAdapter === 'claude'
+                ? (setupOs === 'linux' ? 'agentByo.footnote.cliRouteClaudeLinuxUnavailable' : 'agentByo.footnote.cliRouteClaudeUnavailable')
                 : 'agentByo.footnote.cliRouteCodexUnavailable', {
               byo: t('agentByo.mode.byo'),
               hosted: t('agentByo.mode.hosted'),
@@ -1620,9 +1621,9 @@ const V2AgentBYO: React.FC = () => {
             </p>
             <p className="v2-byo__needs" data-testid={listenerAvailable ? 'byo-listen-needs' : 'byo-listen-unavailable'}>
               {listenerAvailable
-                ? t('agentByo.listen.needs', {
+                ? `${t('agentByo.listen.needs', {
                   tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex') : t('agentByo.listen.toolClaude'),
-                })
+                })}${setupOs === 'linux' ? ` ${t('agentByo.listen.needsLinuxFolder')}` : ''}`
                 : t(listenAdapter === 'claude'
                   ? (setupOs === 'linux' ? 'agentByo.listen.unavailableClaudeLinux' : 'agentByo.listen.unavailableClaude')
                   : 'agentByo.listen.unavailableCodex', {
