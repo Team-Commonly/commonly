@@ -55,6 +55,43 @@ export const isConfinedDsh = (environment = {}) => {
 
 export const assertPrivateDsh = (environment = {}) => { isConfinedDsh(environment); };
 
+/**
+ * The macOS developer tools a confined writer needs for git, granted read-only.
+ * /usr/bin/git is an xcrun shim: inside the sandbox it cannot read the tools it
+ * forwards to, so `git` fails with "No developer tools were found" and a writer
+ * cannot commit. Returns null when no tools are installed; the seat then
+ * runs without git rather than failing.
+ *
+ * DEVELOPER_DIR and xcode-select are both settable by whoever starts the seat,
+ * so the resolved path is granted only when it is one of the two places Apple
+ * installs developer tools. Anything else (/, a home directory) returns null
+ * rather than widening what the sandbox can read.
+ */
+const DEVELOPER_DIR_SHAPES = [
+  /^\/Library\/Developer\/CommandLineTools$/,
+  /^\/Applications\/[^/]+\.app\/Contents\/Developer$/,
+];
+
+export const developerToolsDir = ({
+  env = process.env, run = spawnSync, exists = existsSync, realpath = realpathSync,
+} = {}) => {
+  const declared = env?.DEVELOPER_DIR;
+  const dir = declared || String(run('/usr/bin/xcode-select', ['-p'], { encoding: 'utf8' })?.stdout || '').trim();
+  if (!dir || !isAbsolute(dir) || !exists(dir)) return null;
+  const resolved = realpath(dir);
+  return DEVELOPER_DIR_SHAPES.some((shape) => shape.test(resolved)) ? resolved : null;
+};
+
+/**
+ * The confined child's PATH with /usr/bin first, so bare `git` is the xcrun
+ * shim the developer-tools grant serves. Seat runners put /opt/homebrew/bin
+ * ahead of it, and Homebrew git fails inside the sandbox reading its own
+ * /opt/homebrew/etc/gitconfig. Other entries keep their order, so tools
+ * /usr/bin lacks (node, npm) still resolve as before.
+ */
+export const systemToolsFirst = (pathValue) => ['/usr/bin', ...String(pathValue || '').split(delimiter)
+  .filter((dir) => dir && dir !== '/usr/bin')].join(delimiter);
+
 const onPath = (name, env) => {
   if (isAbsolute(name)) return existsSync(name) ? name : null;
   for (const dir of String(env?.PATH || '').split(delimiter)) {
@@ -296,6 +333,9 @@ export default {
   requiresModel: true,
   name: 'dsh', runtimeType: 'dsh', supportsProvider: true,
 
+  // The attach gate defers to this for dsh's one confined shape.
+  confinesOwnSandbox: (environment) => isConfinedDsh(environment),
+
   async validateEnvironment(environment, workspacePath) {
     const validation = validateEnvironmentSpec(environment);
     if (!validation.ok) throw new Error(validation.errors.join('; '));
@@ -408,6 +448,11 @@ export default {
         for (const name of ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy']) env[name] = egress.url;
         env.NO_PROXY = '127.0.0.1,localhost';
         env.no_proxy = env.NO_PROXY;
+        const developerDir = (ctx._developerToolsDir || developerToolsDir)({ env: sourceEnv });
+        if (developerDir) {
+          env.DEVELOPER_DIR = developerDir;
+          env.PATH = systemToolsFirst(env.PATH);
+        }
         [command, ...commandArgs] = (ctx._wrapArgvWithSeatbelt || wrapArgvWithSeatbelt)([process.execPath, entry, ...args], {
           workspacePath: ctx.cwd,
           workspaceAccess: 'write',
@@ -416,7 +461,7 @@ export default {
           mcpConfigDir: tempDir,
           network: 'loopback',
           loopbackNetworkPorts: [proxy.port, relay.port, egress.port],
-          readOnlyDirectories: [packages, ...mcpDirectories],
+          readOnlyDirectories: [packages, ...mcpDirectories, ...(developerDir ? [developerDir] : [])],
         });
       }
       const credentials = [...spawnCredentials(ctx, []), bearer];

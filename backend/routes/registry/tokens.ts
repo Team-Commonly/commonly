@@ -232,7 +232,7 @@ export const revokeRuntimeTokensAfterLastUninstall = async (agentName: string, i
  * events, and take connector results through the grant routes without the
  * in-process narrowing that gates outsider-writable text (TASK-224, §12).
  * Every mint path refuses here rather than each route remembering to
- * (Rhea on #2224; Wren for plain native).
+ * (#2224).
  */
 class InProcessAgentTokenRefused extends Error {
   code = 'in_process_agent_no_token';
@@ -289,13 +289,40 @@ const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installatio
   await refuseDeletingOwner();
   if (await runsInProcess(agentUser, installation)) throw new InProcessAgentTokenRefused();
   // Check if agent already has a runtime token (reuse existing)
-  const existingToken = agentUser.agentRuntimeTokens?.[0] || installation?.runtimeTokens?.[0];
+  // A legacy key can also sit on another installation of the same identity.
+  // Minting beside it would leave two live keys, so it counts as existing and
+  // the caller must ask for an explicit (forced) replacement, which revokes
+  // every copy first.
+  const siblingLegacyToken = async () => {
+    if (!installation?.agentName) return null;
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { AgentInstallation } = require('../../models/AgentRegistry');
+    const siblings = await AgentInstallation.find({
+      agentName: installation.agentName,
+      instanceId: installation.instanceId || 'default',
+      'runtimeTokens.0': { $exists: true },
+    }).collation({ locale: 'en', strength: 2 }).select('runtimeTokens installedBy').lean();
+    const sibling = (siblings || []).find((entry: any) => entry.runtimeTokens?.length);
+    return sibling ? { token: sibling.runtimeTokens[0], installedBy: sibling.installedBy } : null;
+  };
+  let existingToken = agentUser.agentRuntimeTokens?.[0] || installation?.runtimeTokens?.[0];
+  // A sibling's key still blocks a second mint, whoever installed it. But only
+  // a sibling this issuer installed may record the issuer as the key's owner:
+  // another person's key backfilled under the caller would be revoked when the
+  // caller's account is deleted.
+  let backfillOwner = Boolean(existingToken);
+  if (!existingToken) {
+    const sibling = await siblingLegacyToken();
+    existingToken = sibling?.token || null;
+    backfillOwner = Boolean(sibling && issuer?.ownerUserId
+      && String(sibling.installedBy) === String(issuer.ownerUserId));
+  }
   if (existingToken) {
     // Backfill a credential row for the pre-substrate token so the existing
-    // fleet becomes listable and cascade-revocable (Vera on #1312: without
+    // fleet becomes listable and cascade-revocable (#1312: without
     // this the collection stays near-empty while coverage looks fine).
     // Provenance is unknown, so no parent lineage is claimed.
-    if (issuer?.ownerUserId) {
+    if (issuer?.ownerUserId && backfillOwner) {
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const AgentCredential = require('../../models/AgentCredential');
       await AgentCredential.updateOne(
@@ -330,7 +357,7 @@ const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installatio
     createdAt: new Date(),
   };
 
-  // Credential row FIRST, then the embedded record (Vera on #1312:
+  // Credential row FIRST, then the embedded record (#1312:
   // warn-and-continue after issuing would hand out a working token with no
   // row — invisible to listing, unreachable by cascade, lineage-free. If
   // the ledger write fails, the mint fails; no token exists without a row
@@ -363,7 +390,7 @@ const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installatio
 
   // The check above runs before the token exists. A migration can mark the
   // identity in-process while this mint is still saving, and its revoke may
-  // run before the save lands (Rhea on #2236). Re-check now the token is
+  // run before the save lands. Re-check now the token is
   // stored: if the identity went in-process meanwhile, take the token back
   // and refuse. A save that landed before the migration's revoke is caught
   // by that revoke, so no ordering leaves a live token.

@@ -423,6 +423,9 @@ describe('claude adapter — ctx.environment', () => {
       expect(call.args).toContain('Read(./**)');
       expect(call.args).toContain('mcp__capture__*');
       expect(call.args).toContain('Bash');
+      // TASK-287: a public seat is not offered attach_file.
+      expect(call.args.slice(call.args.indexOf('--disallowedTools')))
+        .toContain('mcp__capture__commonly_attach_file');
       expect(call.opts.env.HOME).toBe(publicState);
       expect(call.opts.env.TMPDIR).toBe(path.join(publicState, 'tmp'));
       // Without it Claude creates /tmp/claude-<uid>, which the profile denies.
@@ -548,7 +551,7 @@ describe('claude adapter — ctx.environment', () => {
     }
   });
 
-  // Rhea on #2247: the refusal must hold for every public seat, whatever
+  // #2247: the refusal must hold for every public seat, whatever
   // confines it, and must not be mistaken for a session-store failure.
   const withColdMcpHome = async (fn) => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-mcp-home-'));
@@ -676,7 +679,7 @@ describe('claude adapter — ctx.environment', () => {
     expect(calls).toHaveLength(0);
   });
 
-  // Vera 69548: a mode-less public block used to fall straight through to the
+  // A mode-less public block used to fall straight through to the
   // bare `claude` spawn — a record claiming confinement it never got. The
   // derived record stores trust only (the block is portable, the host is not),
   // so the adapter has to resolve the mode here.
@@ -749,7 +752,7 @@ describe('claude adapter — ctx.environment', () => {
       expect(inner[0]).toMatch(/claude$/);
       // The jail bounds the filesystem, the policy bounds the tools — the
       // Linux seat gets the same floor as the macOS one, not the half of it
-      // that happened to be on the other side of a branch (Vera 69578).
+      // that happened to be on the other side of a branch.
       const settingSources = inner.indexOf('--setting-sources');
       expect(settingSources).toBeGreaterThan(-1);
       expect(inner[settingSources + 1]).toBe('');
@@ -827,8 +830,7 @@ describe('claude adapter — ctx.environment', () => {
       });
 
       // It reads as "confine me" and used to mean the opposite: before this the
-      // adapter skipped Seatbelt entirely and spawned a bare, unconfined claude
-      // (Vera 69592).
+      // adapter skipped Seatbelt entirely and spawned a bare, unconfined claude.
       expect(calls).toHaveLength(1);
       expect(calls[0].cmd).toBe('/usr/bin/sandbox-exec');
       expect(calls[0].args).toContain('--setting-sources');
@@ -1072,7 +1074,7 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
     expect(args[args.indexOf('--setting-sources') + 1]).toBe('');
   });
 
-  // D48 (TASK-545). A public seat has no subagent to spawn and works no board
+  // TASK-545. A public seat has no subagent to spawn and works no board
   // rows, so its fresh session carries the memory cues and not the habits. The
   // legacy `internal` record reads as public, so it is held to the same line.
   // Seatbelt wraps argv and spends `-p` on its profile, so the prompt is found
@@ -1128,7 +1130,7 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
     expect(appended(calls[0].args)).toBeNull();
   });
 
-  // Vera on #2354: every arm above forces darwin, so dropping the bwrap
+  // #2354: every arm above forces darwin, so dropping the bwrap
   // branch's carry alone stayed green. Linux public seats are bwrap seats.
   test('a public Linux (bwrap) seat carries the skill text inside the namespace', async () => {
     Object.defineProperty(process, 'platform', { value: 'linux' });
@@ -1273,6 +1275,8 @@ describe('claude adapter — a workspace seat', () => {
       'Read(./.git/**)', 'Read(./**/.git/**)',
       'mcp__commonly__commonly_self_install_into_pod',
     ]));
+    // Workspace seats follow the same list as public ones (TASK-287).
+    expect(denied).toContain('mcp__commonly__commonly_attach_file');
     expect(opts.env.HOME).toBe(publicState);
     expect(opts.env.COMMONLY_HOST_SECRET).toBeUndefined();
   });
@@ -1526,6 +1530,28 @@ describe('claude adapter — a workspace seat on Linux', () => {
     const inner = args.slice(args.indexOf('--') + 1);
     expect(inner).toEqual(expect.arrayContaining(['--permission-mode', 'dontAsk']));
     expect(inner.join(' ')).toContain('Read(./.env)');
+  });
+
+  // TASK-284: the host env stays outside the jail. The CLAUDE_CONFIG_DIR check
+  // above covers one key; a spawn that dropped that key and kept the rest of
+  // the host env passed it. This one plants secrets and pins the whole set.
+  test('gets only the safe part of the host env, never its secrets', async () => {
+    const planted = {
+      AWS_SECRET_ACCESS_KEY: 'host-secret', GH_TOKEN: 'host-secret', OPENAI_API_KEY: 'host-secret',
+    };
+    const { impl, calls } = childImpl();
+    await linuxSpawn(impl, { trust: 'workspace' }, { ...planted, LANG: 'C.UTF-8' });
+
+    expect(calls).toHaveLength(1);
+    const { args, opts } = calls[0];
+    expect(Object.keys(opts.env).sort()).toEqual([
+      'CLAUDE_CODE_TMPDIR', 'HOME', 'LANG', 'PATH', 'TMPDIR',
+      'XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME',
+    ]);
+    expect(Object.values(opts.env)).not.toContain('host-secret');
+    // Nor through bwrap's argv: --setenv carries HOME and nothing else.
+    expect(args).not.toContain('host-secret');
+    expect(flagTriples(args, '--setenv')).toEqual([['HOME', state]]);
   });
 
   test('a write grant makes the project writable and keeps its .git read-only', async () => {

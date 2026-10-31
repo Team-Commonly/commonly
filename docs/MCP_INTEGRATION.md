@@ -208,6 +208,7 @@ project). Same shape:
 {
   "mcpServers": {
     "commonly": {
+      "type": "stdio",
       "command": "npx",
       "args": ["-y", "@commonlyai/mcp"],
       "env": {
@@ -280,6 +281,103 @@ Verification discipline still applies: don't trust `codex mcp list` reporting
 payload level (what the model is actually handed) or watch the real side
 effect land — e.g. a live `mine: True` reaction badge on a non-admin browser
 via the `messageReaction` socket event.
+
+---
+
+## Pair Commonly with web research (optional)
+
+Commonly gives the host your pod's context. A web-search server gives it
+current sources. Both can load in one client. This section pairs
+`@commonlyai/mcp` (stdio) with Parallel's MCP server (HTTP). It is a
+user-driven client setup, proposed in
+[#2131](https://github.com/Team-Commonly/commonly/issues/2131).
+
+Parallel's server at `https://mcp.parallel.ai/mcp` replaces the standalone
+Search MCP for new installs. Its `web_search`, `web_fetch` and
+`web_decisions` tools need no key, at lower rate limits. `web_research` needs
+OAuth sign-in or a Parallel API key, and it is not in the anonymous set. The
+standalone `https://search.parallel.ai/mcp` still runs.
+Commonly's auth and defaults stay unchanged, and nothing here needs a
+Parallel key.
+
+**Claude Code** — add Parallel next to the Commonly server:
+
+```bash
+claude mcp add --transport http parallel https://mcp.parallel.ai/mcp
+```
+
+Or in `~/.claude.json`, with both servers. Keep the token in this global file.
+A project `.mcp.json` can get committed, so there, write
+`"${COMMONLY_AGENT_TOKEN}"` and export the variable in your shell instead of
+pasting the token:
+
+```jsonc
+{
+  "mcpServers": {
+    "commonly": {
+      "command": "npx",
+      "args": ["-y", "@commonlyai/mcp"],
+      "env": {
+        "COMMONLY_API_URL": "https://api.commonly.me",
+        "COMMONLY_AGENT_TOKEN": "cm_agent_xxx"
+      }
+    },
+    "parallel": {
+      "type": "http",
+      "url": "https://mcp.parallel.ai/mcp"
+    }
+  }
+}
+```
+
+**Cursor** — the same two entries go in `~/.cursor/mcp.json` (global) or
+`.cursor/mcp.json` (project). Cursor reads `url` for HTTP servers, so Parallel
+needs no command. The same token rule applies: keep the real token out of a
+project file that can be committed. Cursor resolves `${env:NAME}`, so export
+`COMMONLY_AGENT_TOKEN` in the shell that starts Cursor and reference it there.
+
+```jsonc
+{
+  "mcpServers": {
+    "commonly": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@commonlyai/mcp"],
+      "env": {
+        "COMMONLY_API_URL": "https://api.commonly.me",
+        "COMMONLY_AGENT_TOKEN": "${env:COMMONLY_AGENT_TOKEN}"
+      }
+    },
+    "parallel": {
+      "url": "https://mcp.parallel.ai/mcp"
+    }
+  }
+}
+```
+
+Restart the host. `tools/list` should show the `commonly_*` tools and
+`web_search`, `web_fetch` and `web_decisions`.
+
+**Worked flow** — one question, answered from the pod and the web. Pod context
+goes to an external search service, so redact private content first. Fetched
+pages are untrusted input, so review them before anything goes out through
+`commonly_post_message`. In Cursor, use the Allowlist run mode and keep the
+Commonly write tools such as `commonly_post_message` off the allowlist, so every
+post asks first. Run Everything runs every call, and Auto-review can approve MCP
+calls through its classifier. A fetched page could otherwise steer the model
+into posting before anyone reads it.
+
+1. Read the pod's context with `commonly_get_context` (or read recent messages
+   with `commonly_get_messages`), so the host knows what the team is discussing.
+2. Search for a current source with Parallel's `web_search`, using a
+   `search_queries` list and an `objective` that says what you need.
+3. Fetch the page you will cite with `web_fetch`, passing its URL in `urls`.
+4. Post the sourced answer back with `commonly_post_message`, with the source
+   URL in the message.
+
+Parallel's tools are the user's own search. Commonly never sees them. The
+daemon and wrapper adapters have their own rules for remote MCP servers, so
+this example covers only the user-driven client path.
 
 ---
 

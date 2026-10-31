@@ -635,7 +635,7 @@ export const splitForChat = (text, { limit = 400 } = {}) => {
  *                                    text and post one message — the reply's
  *                                    own opening plus the file card.
  *
- * The thread rung is new (Sam 57691) and it replaces attachment as the answer
+ * The thread rung is new and it replaces attachment as the answer
  * for PROSE overflow. Before threads existed, a long analysis had nowhere to
  * go but a file, and that was the right workaround. It is now the wrong one:
  * an attachment is un-quotable, un-followable, and an all-or-nothing read,
@@ -678,7 +678,7 @@ export const deliverChatReply = async ({
   //
   // TASK-535 — the send-time freshness hold. The backend answers 409
   // `unseen_messages` when other members posted after this seat's last
-  // recorded tail read. A turn that ran ~43 minutes (rhea, 2026-10-25 10:01Z)
+  // recorded tail read. A turn that ran ~43 minutes
   // hit it on the thread headline, the attach card and the split fallback in
   // turn, so the reply was lost and its 10 events re-ran. A retry without an
   // override cannot succeed — every rung posts to the same guarded route.
@@ -771,7 +771,7 @@ export const deliverChatReply = async ({
   // its rendering. The tone contract's own rule covers it: over ~800 chars of
   // ONE indivisible thing is a document, not a message — attach it. Without
   // this check a 659-char fence rode the single/split branches straight past
-  // the gate (found by the fleet's implementation audit, Sharpen msg 53018).
+  // the gate (found by the fleet's implementation audit).
   const hasIndivisibleOversize = chunks.some((c) => c.length > attachThreshold);
   if (chunks.length <= 1 && !hasIndivisibleOversize) {
     const response = await postMessage({ content: chunks[0] ?? text });

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
+import { useAuth } from '../../context/AuthContext';
 import type { AgentSettingsInstallation, AgentSettingsPatch } from './useAgentSettings';
 
 interface Props {
@@ -28,6 +29,20 @@ const asPersona = (value: unknown): PersonaFields => {
   };
 };
 
+interface ListingData {
+  status?: string; registry?: string; ephemeral?: boolean; verified?: boolean;
+  displayName?: string; publisher?: { userId?: string };
+}
+
+// One mapper for the GET and for the PATCH answer, so the status line can't drift from the entry.
+const listingStatusKey = (data: ListingData): string => {
+  if (data.ephemeral || data.registry === 'private' || data.status === 'unpublished') return 'listingNotPublished';
+  if (data.status === 'pending-review') return 'listingInReview';
+  if (data.status === 'deprecated') return 'listingDeprecated';
+  if (data.status === 'active') return data.verified ? 'listingPublished' : 'listingNotInCatalog';
+  return 'listingNotPublished';
+};
+
 const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
   const { t } = useTranslation();
   const profile = installation.profile;
@@ -40,26 +55,23 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [listingStatus, setListingStatus] = useState('listingLoading');
+  // Registry owner controls (TASK-419 part 2). The GET names the publisher;
+  // the server re-checks ownership on every PATCH.
+  const { currentUser } = useAuth();
+  const [listing, setListing] = useState<ListingData | null>(null);
+  const [listingName, setListingName] = useState('');
+  const [listingBusy, setListingBusy] = useState(false);
+  const [listingError, setListingError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     setListingStatus('listingLoading');
-    void axios.get<{
-      status?: string; registry?: string; ephemeral?: boolean; verified?: boolean;
-    }>(`/api/registry/agents/${encodeURIComponent(installation.name)}`)
+    void axios.get<ListingData>(`/api/registry/agents/${encodeURIComponent(installation.name)}`)
       .then(({ data }) => {
         if (!active) return;
-        if (data.ephemeral || data.registry === 'private' || data.status === 'unpublished') {
-          setListingStatus('listingNotPublished');
-        } else if (data.status === 'pending-review') {
-          setListingStatus('listingInReview');
-        } else if (data.status === 'deprecated') {
-          setListingStatus('listingDeprecated');
-        } else if (data.status === 'active') {
-          setListingStatus(data.verified ? 'listingPublished' : 'listingNotInCatalog');
-        } else {
-          setListingStatus('listingNotPublished');
-        }
+        setListing(data);
+        setListingName(data.displayName || '');
+        setListingStatus(listingStatusKey(data));
       }).catch((requestError) => {
         if (!active) return;
         const status = (requestError as { response?: { status?: number } })?.response?.status;
@@ -116,6 +128,25 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
     }
   };
 
+  const entryOwnerId = listing?.publisher?.userId ? String(listing.publisher.userId) : null;
+  const ownsListing = Boolean(currentUser?._id) && entryOwnerId === String(currentUser._id);
+  const retired = listing?.status === 'unpublished';
+  const saveListing = async (patch: { displayName?: string; retired?: boolean }) => {
+    setListingBusy(true);
+    setListingError(null);
+    try {
+      const { data } = await axios.patch<ListingData>(`/api/registry/agents/${encodeURIComponent(installation.name)}/owned-entry`, patch);
+      // The PATCH answer carries the new status; verified and registry are not in it, so keep the GET's.
+      const next = { ...listing, ...data };
+      setListing(next);
+      setListingName(next.displayName || '');
+      setListingStatus(listingStatusKey(next));
+    } catch {
+      setListingError(t('agentSettings.ownedFailed'));
+    } finally {
+      setListingBusy(false);
+    }
+  };
   return <section className="v2-agent-settings__section" aria-labelledby="agent-identity-title">
     <h2 id="agent-identity-title">{t('agentSettings.identityTitle')}</h2>
     <form className="v2-agent-settings__identity" onSubmit={save}>
@@ -153,6 +184,19 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
         {t('agentSettings.viewPublicProfile')}
       </Link>
       <p>{t('agentSettings.listingSeparate')}</p>
+      {ownsListing && <div className="v2-agent-settings__owned">
+        <h3>{t('agentSettings.ownedTitle')}</h3>
+        <label><span>{t('agentSettings.ownedName')}</span>
+          <input value={listingName} maxLength={80} disabled={listingBusy} onChange={(event) => setListingName(event.target.value)} />
+        </label>
+        <button type="button" disabled={listingBusy || !listingName.trim()} onClick={() => saveListing({ displayName: listingName.trim() })}>
+          {t('agentSettings.ownedSave')}
+        </button>
+        <button type="button" disabled={listingBusy} onClick={() => saveListing({ retired: !retired })}>
+          {retired ? t('agentSettings.ownedRestore') : t('agentSettings.ownedRetire')}
+        </button>
+        {listingError && <p role="alert" className="v2-agent-settings__error">{listingError}</p>}
+      </div>}
     </div>
   </section>;
 };

@@ -231,6 +231,10 @@ describe('opencode MCP config', () => {
     expect(permission.external_directory).toBe('deny');
     expect(permission['commonly_*']).toBe('allow');
     expect(permission['room_grants_*']).toBe('allow');
+    // TASK-287: attach_file is denied after the wildcard allow, so the deny wins.
+    const keys = Object.keys(permission);
+    expect(permission.commonly_commonly_attach_file).toBe('deny');
+    expect(keys.indexOf('commonly_commonly_attach_file')).toBeGreaterThan(keys.indexOf('commonly_*'));
     expect(permission.edit['*']).toBe('allow');
     expect(permission.edit['**/.npmrc']).toBe('deny');
     expect(permission.edit['**/.yarnrc*']).toBe('deny');
@@ -303,7 +307,7 @@ describe('opencode MCP config', () => {
 // `list_artifacts`) is returning `fetch failed`". A public seat withholds such a
 // turn: nothing is posted and the event stays unacked. Events are the shape
 // OpenCode 1.19.0 emits, captured from that canary.
-// Vera's HOLD on #2374 (79595): matching connection failures let an API 5xx
+// A hold on #2374: matching connection failures let an API 5xx
 // through, because the shipped MCP reports it as `{ status, body, message }`.
 // The rule is now inverted: only named answerable errors leave the turn to post.
 describe('opencode public seat withholds a turn whose Commonly tools failed', () => {
@@ -1031,8 +1035,8 @@ describe('opencode external provider config', () => {
 });
 
 describe('opencode adapter — spawn()', () => {
-  test('records both smoke-tested OpenCode versions', () => {
-    expect(TESTED_OPENCODE_VERSIONS).toEqual(['1.18.35', '1.19.0']);
+  test('records every smoke-tested OpenCode version', () => {
+    expect(TESTED_OPENCODE_VERSIONS).toEqual(['1.18.35', '1.19.0', '1.19.4']);
   });
 
   test('a seat with no public sandbox declaration runs as trusted', async () => {
@@ -1077,7 +1081,7 @@ describe('opencode adapter — spawn()', () => {
     });
   });
 
-  test.each(['1.18.35', '1.19.0'])('a public seat accepts smoke-tested OpenCode %s', async (version) => {
+  test.each(['1.18.35', '1.19.0', '1.19.4'])('a public seat accepts smoke-tested OpenCode %s', async (version) => {
     await withProcessEnv(ALLOW_UNTESTED_OPENCODE_VERSION_ENV, undefined, async () => {
       await withTemp(async (root) => {
         const workspace = join(root, 'workspace');
@@ -1137,7 +1141,7 @@ describe('opencode adapter — spawn()', () => {
           });
           expect(spawn.calls).toHaveLength(1);
           expect(warning).toHaveBeenCalledWith(
-            '[opencode] installed OpenCode 1.20.0 is newer than smoke-tested versions 1.18.35, 1.19.0; trusted seat continues',
+            '[opencode] installed OpenCode 1.20.0 is newer than smoke-tested versions 1.18.35, 1.19.0, 1.19.4; trusted seat continues',
           );
         } finally {
           warning.mockRestore();
@@ -1150,22 +1154,27 @@ describe('opencode adapter — spawn()', () => {
     {
       description: 'older',
       result: { status: 0, stdout: 'OpenCode 1.18.0\n' },
-      message: /installed OpenCode 1\.18\.0 is older than smoke-tested versions 1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+      message: /installed OpenCode 1\.18\.0 is older than smoke-tested versions 1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
     },
     {
       description: 'between smoke-tested versions',
       result: { status: 0, stdout: 'OpenCode 1.18.40\n' },
-      message: /installed OpenCode 1\.18\.40 differs from smoke-tested versions 1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+      message: /installed OpenCode 1\.18\.40 differs from smoke-tested versions 1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+    },
+    {
+      description: 'untested next-patch',
+      result: { status: 0, stdout: 'OpenCode 1.19.5\n' },
+      message: /installed OpenCode 1\.19\.5 is newer than smoke-tested versions 1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
     },
     {
       description: 'newer',
       result: { status: 0, stdout: 'OpenCode 1.20.0\n' },
-      message: /installed OpenCode 1\.20\.0 is newer than smoke-tested versions 1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+      message: /installed OpenCode 1\.20\.0 is newer than smoke-tested versions 1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
     },
     {
       description: 'unavailable',
       result: { status: 1, stdout: '', stderr: 'version command failed' },
-      message: /installed OpenCode version is unknown; smoke-tested versions: 1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+      message: /installed OpenCode version is unknown; smoke-tested versions: 1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
     },
     {
       description: 'update announcement containing multiple versions',
@@ -1173,7 +1182,7 @@ describe('opencode adapter — spawn()', () => {
         status: 0,
         stdout: 'A new release is available: 1.18.35 -> 1.19.0\n',
       },
-      message: /installed OpenCode version is unknown; smoke-tested versions: 1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+      message: /installed OpenCode version is unknown; smoke-tested versions: 1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
     },
   ])('a public seat refuses an $description version before creating state or spawning', async ({
     result,
@@ -1241,7 +1250,7 @@ describe('opencode adapter — spawn()', () => {
           _binaryPath: '/usr/local/bin/opencode',
           _platform: 'darwin',
           _spawnImpl: spawn.impl,
-        })).rejects.toThrow(/refuse to run.*1\.20\.0.*1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/);
+        })).rejects.toThrow(/refuse to run.*1\.20\.0.*1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/);
         expect(spawn.calls).toHaveLength(0);
         expect(validateEnvironmentSpec({
           version: 1, [ALLOW_UNTESTED_OPENCODE_VERSION_ENV]: '1',
@@ -1292,11 +1301,11 @@ describe('opencode adapter — spawn()', () => {
             await opencode.spawn('public turn', spawnOptions);
             expect(spawn.calls).toHaveLength(1);
             expect(warning).toHaveBeenCalledWith(
-              '[opencode] installed OpenCode 1.20.0 is newer than smoke-tested versions 1.18.35, 1.19.0; continuing because the host process set COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1',
+              '[opencode] installed OpenCode 1.20.0 is newer than smoke-tested versions 1.18.35, 1.19.0, 1.19.4; continuing because the host process set COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1',
             );
           } else {
             await expect(opencode.spawn('public turn', spawnOptions)).rejects.toThrow(
-              /refuse to run.*1\.20\.0.*1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+              /refuse to run.*1\.20\.0.*1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
             );
             expect(spawn.calls).toHaveLength(0);
             expect(warning).not.toHaveBeenCalled();

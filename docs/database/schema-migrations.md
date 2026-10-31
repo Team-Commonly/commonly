@@ -27,6 +27,8 @@ its rows do not determine which SQL files the runner executes.
 ## Adding a migration
 
 1. Pick the next unused `NNNN_name.sql`. Coordinate numbers across open lanes.
+   Add its name to `SHIPPED` in `backend/__tests__/service/pgMigrations.test.js`;
+   two lanes taking the same number then conflict on that line.
 2. Write SQL that upgrades a populated previous schema. A column inside
    `CREATE TABLE IF NOT EXISTS` alone never upgrades an existing table. Keep
    rolling old/new application versions compatible with additive changes.

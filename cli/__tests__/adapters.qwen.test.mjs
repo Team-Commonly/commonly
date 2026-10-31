@@ -103,6 +103,7 @@ test('public launch isolates HOME and config, strips shadows, and never serializ
     expect(args[args.indexOf('--exclude-tools') + 1].split(','))
       .toEqual(expect.arrayContaining([
         'agent', 'workflow', 'advisor', 'replace', 'task', 'search_file_content',
+        'commonly_attach_file', 'mcp__commonly__commonly_attach_file',
       ]));
     expect(options.env.HOME).toBe(options.env.QWEN_HOME);
     expect(options.env.HOME).toContain('commonly-qwen-home-');
@@ -129,12 +130,34 @@ test('public launch isolates HOME and config, strips shadows, and never serializ
   });
 });
 
-test('public version drift refuses before launching a provider proxy or child', async () => {
+test('records every smoke-tested Qwen version', () => {
+  expect(TESTED_QWEN_VERSIONS).toEqual(['0.25.1', '0.26.2']);
+});
+
+test.each(['0.25.1', '0.26.2'])('a public seat accepts smoke-tested Qwen %s without the override', async (version) => {
   await withSeat(async (ctx) => {
-    spawnSyncMock.mockImplementation(() => ({ status: 0, stdout: '0.26.0\n' }));
+    spawnSyncMock.mockImplementation(() => ({ status: 0, stdout: `${version}\n` }));
+    const previous = process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV];
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      delete process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV];
+      await expect(qwen.spawn('hello', { environment: { model: 'test-model' }, ...ctx, _spawnImpl: () => fakeChild() }))
+        .resolves.toMatchObject({ text: 'Qwen reply' });
+      expect(warning).not.toHaveBeenCalled();
+    } finally {
+      warning.mockRestore();
+      if (previous === undefined) delete process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV];
+      else process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV] = previous;
+    }
+  });
+});
+
+test.each(['0.26.0', '0.26.3'])('public version drift to %s refuses before launching a provider proxy or child', async (version) => {
+  await withSeat(async (ctx) => {
+    spawnSyncMock.mockImplementation(() => ({ status: 0, stdout: `${version}\n` }));
     const spawn = jest.fn();
     await expect(qwen.spawn('hello', { environment: { model: 'test-model' }, ...ctx, _spawnImpl: spawn }))
-      .rejects.toThrow(/Public Qwen seats refuse version 0.26.0/);
+      .rejects.toThrow(`Public Qwen seats refuse version ${version}; smoke-tested: 0.25.1, 0.26.2.`);
     expect(spawn).not.toHaveBeenCalled();
   });
 });

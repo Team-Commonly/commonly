@@ -331,8 +331,18 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
       logSkip(install, owned, 'other-work', now);
       continue;
     }
-    // eslint-disable-next-line no-await-in-loop
-    if (await holdsFloor(install, principalId)) {
+    let floor: boolean;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      floor = await holdsFloor(install, principalId);
+    } catch (error) {
+      // Fails closed for this install only, like humanActedInPodSince: an
+      // unreadable pod skips its own wake and the sweep moves on to the rest.
+      console.warn('[assigned-task-wake] floor unreadable:', String(install.podId), (error as Error).message);
+      logSkip(install, owned, 'floor-unreadable', now);
+      continue;
+    }
+    if (floor) {
       logSkip(install, owned, 'floor', now);
       continue;
     }

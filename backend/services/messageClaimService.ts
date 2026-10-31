@@ -134,8 +134,7 @@ const MESSAGE_ID_MAX = 2147483647;
  * lease wins, the rest stand down — so refusing the shape does not fail closed,
  * it fails open: `enforcement.js:414` catches the throw and returns
  * `{failOpen: true}`, and every woken seat proceeds unguarded. That is the
- * regression this arm exists to prevent (connector-ops 71952, vera 71956,
- * wren's ruling 71961).
+ * regression this arm exists to prevent.
  *
  * THE POD CANNOT BE CHECKED HERE; THE ID NOW CAN (TASK-122). Until TASK-122
  * this arm passed the id through unverified, so a fabricated 24-hex id minted a
@@ -259,13 +258,13 @@ class MessageClaimService {
    * name a row, and answering it WITHOUT a query is the point rather than an
    * optimisation: handing 'TASK-110' to Postgres raises `invalid input syntax
    * for type integer`, which the route's catch turns into a 500 — the same
-   * wrong answer in new clothes (vera's gate, 71873).
+   * wrong answer in new clothes.
  *
  * DIGITS ALONE ARE NOT THE SHAPE — SERIAL is int4. '999999999999' passes a
  * `/^\d+$/` test and is not a syntax error either: Postgres raises `22003
  * value "999999999999" is out of range for type integer`, the catch turns that
  * into a 500, and that id is this predicate's own headline reproduction
- * (vera's gate, 71928, measured read-only against the live DB: '999999999999'
+ * (measured read-only against the live DB: '999999999999'
  * and '2147483648' throw, '5' and '00000000005' are simply absent). The bound
  * is therefore part of the shape test, not decoration — hence MESSAGE_ID_MAX
  * and the two tests pinning the first out-of-range value and this one to
@@ -273,7 +272,7 @@ class MessageClaimService {
  *
  * The LOWER bound is a different kind of clause and is not asserted as if it
  * were the same thing: '0' is merely absent, so `n >= 1` saves one pointless
- * query and changes no answer (vera 71951). It stays because it is free, and it
+ * query and changes no answer. It stays because it is free, and it
  * is deliberately NOT given a no-query test — a test named after safety that
  * actually pins an optimisation teaches the next reader the wrong reason for
  * the bound's existence. What the upper bound buys is a 500 averted; what the
@@ -359,7 +358,7 @@ class MessageClaimService {
     const lease = clampLease(options.leaseSeconds);
 
     // A re-claim is a NEW TURN, so the previous seat's refusal class does not
-    // outlive it (wren 71322). Without this, the row from A refuses 429 ->
+    // outlive it. Without this, the row from A refuses 429 ->
     // handoff re-offers -> B declines reads `state='declined'` while still
     // carrying `refusal_reason='upstream-refused'`, and that class then
     // attributes A's dead route to B's decision — the same "answered vs never

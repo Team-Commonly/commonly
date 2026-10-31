@@ -1,4 +1,4 @@
-// Glyphs — categories are marks (Sam, 2026-09-11, "Signal, quieter" direction A).
+// Glyphs — categories are marks ("Signal, quieter" direction A).
 // Anything with a fixed set of values renders as one of these, 16px, 2px stroke,
 // currentColor, never a unicode character. The rail's icons set the style.
 import React from 'react';

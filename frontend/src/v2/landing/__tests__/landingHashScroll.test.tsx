@@ -8,7 +8,7 @@ import V2LandingPage from '../V2LandingPage';
 /**
  * TASK-531. The /pricing redirect targets `/#pricing`. The browser's own
  * fragment scroll runs before React has rendered the sections, so a fresh load
- * stayed at the hero (Lumen measured scrollY 0 at 1440 and 390). The landing
+ * stayed at the hero (measured scrollY 0 at 1440 and 390). The landing
  * must scroll the hash target itself once mounted.
  *
  * Mutation: delete the effect, and the first test fails because

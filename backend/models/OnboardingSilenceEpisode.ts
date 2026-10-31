@@ -31,8 +31,9 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
  *    `noneEnqueued` in particular degrades from a fact into an inference the
  *    moment anything else is enqueued there.
  *
- * And the rows themselves are not permanent — they age out at 168h. "Outlives
- * the deletion" is the claim, not "outlives retention".
+ * And the AgentEvent rows themselves are not permanent: they age out at 168h.
+ * "Outlives the deletion" is the claim, not "outlives retention". Episodes
+ * have no TTL; only syntheticAccountPurgeService deletes them.
  *
  * So: capture at fire time, because the queue can distinguish two failures that
  * look identical afterwards and need opposite fixes:

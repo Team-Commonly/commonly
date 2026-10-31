@@ -292,7 +292,7 @@ test('the scheduled run skips someone active in the last 20 hours; an on-demand 
   spy.mockRestore();
 });
 
-// Cofounder's condition on #2210: no digest may carry another pod's activity.
+// No digest may carry another pod's activity.
 // Chat summaries are no longer an input at all, so another pod's summary (or
 // a pod-less one) cannot reach anyone's digest.
 test("a digest never carries another pod's summary: summaries are not an input", async () => {
@@ -365,7 +365,7 @@ describe('the digest hour', () => {
   });
 });
 
-// Cofounder on #2286: two real hourly runs within 20 hours never digest the
+// Two real hourly runs within 20 hours never digest the
 // same person twice, here when their zone is captured between the runs and
 // makes the second run their hour too.
 test('two scheduled runs within 20 hours never digest the same person twice', async () => {

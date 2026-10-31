@@ -142,7 +142,7 @@ describe('V2AgentBYO memory import', () => {
     const manyPods = Array.from({ length: 20 }, (_, i) => ({ _id: `p${i + 1}`, name: `Workspace ${i + 1}`, type: 'chat' }));
     axios.get.mockImplementation((url) => {
       if (url === '/api/pods') return Promise.resolve({ data: manyPods });
-      if (url === '/api/registry/agents/next-free-name?base=sam-claude') return Promise.resolve({ data: { name: 'sam-claude-3' } });
+      if (url === '/api/registry/agents/next-free-name?base=sam-claude&podId=p1') return Promise.resolve({ data: { name: 'sam-claude-3' } });
       return Promise.resolve({ data: {} });
     });
 
@@ -151,6 +151,28 @@ describe('V2AgentBYO memory import', () => {
     await waitFor(() => expect(screen.getByPlaceholderText('my-mcp-agent')).toHaveValue('sam-claude-3'));
     expect(axios.get.mock.calls.filter(([url]) => url.startsWith('/api/registry/agents/next-free-name?'))).toHaveLength(1);
     expect(axios.get.mock.calls.filter(([url]) => /\/api\/registry\/pods\/.*\/agents$/.test(url))).toHaveLength(0);
+  });
+
+  test('picking the pod that holds the unkeyed install takes back the suggested suffix', async () => {
+    // The prefill reads the real location, so a deep link needs pushState.
+    window.history.pushState({}, '', '/?name=sam-claude&pod=a1&adapter=claude');
+    try {
+      const twoPods = [{ _id: 'a1', name: 'One', type: 'chat' }, { _id: 'a2', name: 'Two', type: 'chat' }];
+      axios.get.mockImplementation((url) => {
+        if (url === '/api/pods') return Promise.resolve({ data: twoPods });
+        if (url === '/api/registry/agents/next-free-name?base=sam-claude&podId=a1') return Promise.resolve({ data: { name: 'sam-claude-2' } });
+        if (url === '/api/registry/agents/next-free-name?base=sam-claude&podId=a2') return Promise.resolve({ data: { name: 'sam-claude' } });
+        return Promise.resolve({ data: {} });
+      });
+
+      renderPage('/?name=sam-claude&pod=a1&adapter=claude');
+      const field = screen.getByPlaceholderText('my-mcp-agent');
+      await waitFor(() => expect(field).toHaveValue('sam-claude-2'));
+      fireEvent.change(await screen.findByRole('combobox', { name: /pod it joins/i }), { target: { value: 'a2' } });
+      await waitFor(() => expect(field).toHaveValue('sam-claude'));
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
   });
 
   test('a failed name lookup blocks the connect command until retry succeeds', async () => {
@@ -172,7 +194,31 @@ describe('V2AgentBYO memory import', () => {
     expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled();
   });
 
-  test('already-installed agent requires explicit key replacement for lost-token recovery', async () => {
+  test('already-installed agent that holds a key requires explicit key replacement', async () => {
+    axios.get.mockResolvedValueOnce({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat' }] });
+    axios.post
+      .mockRejectedValueOnce({ response: { data: { error: 'Agent already installed in this pod' } } })
+      .mockResolvedValueOnce({ data: { existing: true } })
+      .mockResolvedValueOnce({ data: { token: AGENT_TOKEN } });
+
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
+
+    await screen.findByText(/already has a key/i);
+    const asked = axios.post.mock.calls.filter(([url]) => /runtime-tokens/.test(url));
+    expect(asked).toHaveLength(1);
+    expect(asked[0][1].force).toBeUndefined();
+    fireEvent.click(screen.getByRole('button', { name: /replace the running agent.s key/i }));
+    await screen.findByText(/your connect command for/i);
+    expect(screen.getByText(AGENT_TOKEN)).toBeInTheDocument();
+    expect(axios.post.mock.calls.filter(([url]) => /runtime-tokens/.test(url))[1][1]).toMatchObject({ force: true });
+  });
+
+  test('already-installed agent whose key was never issued gets it, with no second install and no replacement', async () => {
+    // An earlier click installed, then its key request failed or was abandoned.
+    // next-free-name hands that name back; this click finishes the issue.
     axios.get.mockResolvedValueOnce({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat' }] });
     axios.post
       .mockRejectedValueOnce({ response: { data: { error: 'Agent already installed in this pod' } } })
@@ -183,12 +229,13 @@ describe('V2AgentBYO memory import', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
 
-    await screen.findByText(/already has a key/i);
-    expect(axios.post.mock.calls.some(([url]) => /runtime-tokens/.test(url))).toBe(false);
-    fireEvent.click(screen.getByRole('button', { name: /replace the running agent.s key/i }));
     await screen.findByText(/your connect command for/i);
     expect(screen.getByText(AGENT_TOKEN)).toBeInTheDocument();
-    expect(axios.post.mock.calls.find(([url]) => /runtime-tokens/.test(url))[1]).toMatchObject({ force: true });
+    expect(screen.queryByText(/already has a key/i)).toBeNull();
+    const asked = axios.post.mock.calls.filter(([url]) => /runtime-tokens/.test(url));
+    expect(asked).toHaveLength(1);
+    expect(asked[0][1].force).toBeUndefined();
+    expect(axios.post.mock.calls.filter(([url]) => url === '/api/registry/install')).toHaveLength(1);
   });
 
   test('a token shared from another pod is not silently replaced after install', async () => {

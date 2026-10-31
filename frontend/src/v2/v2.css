@@ -28,6 +28,7 @@ body.modern-ui.v2-canvas {
   --v2-border-soft: #e4e7ec;
   --v2-border-strong: #98a2b3;
   --v2-text-primary: #101828;
+  --v2-message-text: #1f2937;
   --v2-text-secondary: #475467;
   --v2-text-tertiary: #667085;
   --v2-text-muted: #667085;
@@ -39,14 +40,33 @@ body.modern-ui.v2-canvas {
      Mirrors --c-shell-bg / --c-content-radius in design-system/tokens.css. */
   --v2-shell-bg: #eef0f4;
   --v2-content-radius: 6px;
+  /* Character-avatar grounds (TASK-679, Lit Signal). The fill behind each face
+     is generated in utils/avatars.ts CHARACTER_GROUNDS, which must match these
+     values; avatarGrounds.test.ts pins the two together. Agents are cool, people
+     warm, so the family still tells the species apart. Mirrors --c-avatar-* in
+     design-system/tokens.css. */
+  --v2-avatar-agent-1: #dbe5f1;
+  --v2-avatar-agent-2: #e1e6ee;
+  --v2-avatar-agent-3: #d6e7e4;
+  --v2-avatar-human-1: #f1e7df;
+  --v2-avatar-human-2: #f2e8d8;
+  --v2-avatar-human-3: #efe1dc;
+  --v2-avatar-human-4: #f4e3d7;
+  --v2-avatar-frame: rgba(16, 24, 40, 0.06);
+  /* Dark ring (TASK-679 dark note): the tile stays light on dark, so the ring
+     flips to a light hairline. No dark theme on main yet; TASK-680 points
+     --v2-avatar-frame at this value under its dark scope. */
+  --v2-avatar-frame-dark: rgba(255, 255, 255, 0.10);
   /* Ink primary — filled buttons are ink; cobalt (#1d3fd1) is a MARK inside
      the app: links, the live dot, the agent name, the one card that needs
      you. On marketing surfaces cobalt is used as blocks. Mirrors --c-ink. */
   --v2-ink: #101828;
   --v2-ink-hover: #1d2939;
   --v2-on-ink: #ffffff;
+  --v2-on-accent: #ffffff;
+  --v2-accent-fill: #1d3fd1;
 
-  /* BEND-1 (Wren spec 2026-08-30, Sam-approved): the featured-tier name
+  /* BEND-1 (spec 2026-08-30): the featured-tier name
      needs a step between 16 and 20. Mirrors --c-fs-feature in
      design-system/tokens.css; the two move together. */
   --v2-fs-feature: 17px;
@@ -78,7 +98,7 @@ body.modern-ui.v2-canvas {
   --v2-platform-groupme-soft: #e3f5fd;
 
   --v2-success: #10b981;
-  /* Text-on-soft success — one canonical value (Wren on #1368: a second
+  /* Text-on-soft success — one canonical value (#1368: a second
      ad-hoc success-text hex is how a third one happens). Mirrors
      --c-success-text in design-system/tokens.css. */
   --v2-success-text: #0f7a53;
@@ -101,7 +121,7 @@ body.modern-ui.v2-canvas {
   --v2-sky: #60a5fa;
   --v2-rose: #fb7185;
 
-  /* Typography — the Signal identity (Sam chose C on the Shell Parity canvas,
+  /* Typography — the Signal identity (direction C on the Shell Parity canvas,
      2026-09-03). Three faces, each with one job: Bricolage Grotesque for
      display (headings, wordmarks — weight 700/800), IBM Plex Sans for every
      line of body and control text, IBM Plex Mono for meta (timestamps,
@@ -160,6 +180,105 @@ body.modern-ui.v2-canvas {
   font-size: var(--v2-fs-body);
   line-height: var(--v2-lh-body);
   min-width: 0;
+}
+
+/* D216 dark set. Values are the artboard's dark :root (index.html, the
+   @media + :root[data-theme="dark"] pair), mapped onto v2 token names. Scoped
+   to .v2-root under the html attribute set by utils/theme.ts: explicit dark,
+   or auto when the OS asks for dark. The light set is the block above.
+   Not from the artboard, pending ux-lead: --v2-focus-ring, the success and
+   danger text lifts, and the soft fills. Avatar and persona tints stay literal. */
+:root[data-v2-theme="dark"] .v2-root {
+    --v2-bg: #141922;
+    --v2-page-bg: #0b0e13;
+    --v2-bg-subtle: #181e28;
+    --v2-surface: #141922;
+    --v2-surface-tint: #1e2531;
+    --v2-surface-hover: #1e2531;
+    --v2-border: #364051;
+    --v2-border-soft: #262d3a;
+    --v2-border-strong: #5f6979;
+    --v2-text-primary: #e8ebf1;
+    --v2-message-text: #e8ebf1;
+    --v2-text-secondary: #aeb6c4;
+    --v2-text-tertiary: #8b94a5;
+    --v2-text-muted: #8b94a5;
+    --v2-text-placeholder: #5f6979;
+    --v2-shell-bg: #0b0e13;
+    --v2-ink: #f4f5f8;
+    --v2-ink-hover: #dce0e8;
+    --v2-on-ink: #0b0e13;
+    --v2-accent: #6680ff;
+    --v2-accent-strong: #3d5ef2;
+    --v2-accent-soft: #1b2546;
+    --v2-accent-text: #8aa2ff;
+    --v2-accent-deep: #2948d8;
+    --v2-focus-ring: 0 0 0 2px var(--v2-bg), 0 0 0 4px #8aa2ff;
+    --v2-success-text: #3ccf95;
+    --v2-success-soft: rgba(16, 185, 129, 0.16);
+    --v2-danger-text: #ff8a8a;
+    --v2-danger-soft: rgba(239, 68, 68, 0.16);
+    --v2-on-accent: #ffffff;
+    --v2-accent-fill: #3d5ef2;
+    --v2-warning-soft: rgba(244, 162, 58, 0.16);
+    --v2-info-soft: rgba(8, 145, 178, 0.16);
+    --v2-platform-x: #e8ebf1;
+    --v2-platform-x-soft: rgba(17, 24, 39, 0.16);
+    --v2-platform-telegram-soft: rgba(42, 171, 238, 0.16);
+    --v2-platform-slack-soft: rgba(97, 31, 105, 0.16);
+    --v2-platform-discord-soft: rgba(88, 101, 242, 0.16);
+    --v2-platform-whatsapp-soft: rgba(31, 168, 85, 0.16);
+    --v2-platform-instagram-soft: rgba(214, 41, 118, 0.16);
+    --v2-platform-messenger-soft: rgba(0, 132, 255, 0.16);
+    --v2-platform-groupme-soft: rgba(0, 175, 240, 0.16);
+    color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-v2-theme="light"]) .v2-root {
+      --v2-bg: #141922;
+      --v2-page-bg: #0b0e13;
+      --v2-bg-subtle: #181e28;
+      --v2-surface: #141922;
+      --v2-surface-tint: #1e2531;
+      --v2-surface-hover: #1e2531;
+      --v2-border: #364051;
+      --v2-border-soft: #262d3a;
+      --v2-border-strong: #5f6979;
+      --v2-text-primary: #e8ebf1;
+      --v2-message-text: #e8ebf1;
+      --v2-text-secondary: #aeb6c4;
+      --v2-text-tertiary: #8b94a5;
+      --v2-text-muted: #8b94a5;
+      --v2-text-placeholder: #5f6979;
+      --v2-shell-bg: #0b0e13;
+      --v2-ink: #f4f5f8;
+      --v2-ink-hover: #dce0e8;
+      --v2-on-ink: #0b0e13;
+      --v2-accent: #6680ff;
+      --v2-accent-strong: #3d5ef2;
+      --v2-accent-soft: #1b2546;
+      --v2-accent-text: #8aa2ff;
+      --v2-accent-deep: #2948d8;
+      --v2-focus-ring: 0 0 0 2px var(--v2-bg), 0 0 0 4px #8aa2ff;
+      --v2-success-text: #3ccf95;
+      --v2-success-soft: rgba(16, 185, 129, 0.16);
+      --v2-danger-text: #ff8a8a;
+      --v2-danger-soft: rgba(239, 68, 68, 0.16);
+      --v2-on-accent: #ffffff;
+      --v2-accent-fill: #3d5ef2;
+      --v2-warning-soft: rgba(244, 162, 58, 0.16);
+      --v2-info-soft: rgba(8, 145, 178, 0.16);
+      --v2-platform-x: #e8ebf1;
+      --v2-platform-x-soft: rgba(17, 24, 39, 0.16);
+      --v2-platform-telegram-soft: rgba(42, 171, 238, 0.16);
+      --v2-platform-slack-soft: rgba(97, 31, 105, 0.16);
+      --v2-platform-discord-soft: rgba(88, 101, 242, 0.16);
+      --v2-platform-whatsapp-soft: rgba(31, 168, 85, 0.16);
+      --v2-platform-instagram-soft: rgba(214, 41, 118, 0.16);
+      --v2-platform-messenger-soft: rgba(0, 132, 255, 0.16);
+      --v2-platform-groupme-soft: rgba(0, 175, 240, 0.16);
+      color-scheme: dark;
+  }
 }
 
 .v2-root *,
@@ -534,7 +653,7 @@ body.modern-ui.v2-canvas {
 .v2-pane--main {
   margin: 8px 8px 8px 0;
   height: calc(100vh - 16px);
-  background: #ffffff;
+  background: var(--v2-surface);
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-content-radius);
   overflow: hidden;
@@ -960,8 +1079,8 @@ body.modern-ui.v2-canvas {
   justify-content: center;
   height: 40px;
   gap: 8px;
-  background: var(--v2-accent);
-  color: #fff;
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
   font-weight: 600;
   font-size: 14px;
   padding: 0 14px;
@@ -1073,7 +1192,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pods__create-submit {
   background: var(--v2-ink);
-  color: #fff;
+  color: var(--v2-on-ink);
 }
 
 .v2-root button.v2-pods__create-submit:disabled {
@@ -1089,7 +1208,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-pods__filters {
-  /* Fourth mechanism for this row (Sam's ruling 2026-08-23): every chip the
+  /* Fourth mechanism for this row (2026-08-23): every chip the
      SAME size, at least as roomy as the widest label. Content-sized chips
      read ragged (EN measured 33/49/44/84px), and four equal cells cannot
      share one 239px rail — "Community" alone needs 84px. Equal therefore
@@ -1338,7 +1457,7 @@ body.modern-ui.v2-canvas {
   /* The title-row went align-items: flex-start for the 2-line name wrap
      (#1110), which parked this dot flush at the row's top-right corner —
      inside the row's border-radius + overflow:hidden clip, so the rounding
-     visibly shaved the dot (Sam, 2026-08-22). Center it on the first 20px
+     visibly shaved the dot (2026-08-22). Center it on the first 20px
      text line and inset it clear of the 10px corner curve. */
   margin-top: 6px;
   margin-right: 4px;
@@ -1758,7 +1877,7 @@ body.modern-ui.v2-canvas {
 .v2-chat__older-btn:disabled { opacity: 0.6; cursor: default; }
 
 /* Catch-up strip — the constant agents-TL;DR pinned above the transcript
-   (Sam 2026-09-01). One thin row; the expanded body is bounded so a long
+   (2026-09-01). One thin row; the expanded body is bounded so a long
    summary scrolls inside the strip, never the pane. */
 .v2-catchup {
   border-bottom: 1px solid var(--v2-border);
@@ -1835,7 +1954,7 @@ body.modern-ui.v2-canvas {
   /* The transcript never scrolls sideways — wide content (code, tables)
      manages its own overflow-x inside its message. Without this, any
      mis-sized row makes the whole pane horizontally swipeable (the
-     thread-block did exactly that; Sam's mobile report 2026-08-24). */
+     thread-block did exactly that; mobile report 2026-08-24). */
   overflow-x: hidden;
   padding: 0 24px 12px;
   display: flex;
@@ -1865,7 +1984,7 @@ body.modern-ui.v2-canvas {
   min-height: 0;
 }
 
-/* Conversation width — FIFTH revision of craft rule 2, ruled by Sam
+/* Conversation width — FIFTH revision of craft rule 2, ruled
    2026-08-23: FULL-WIDTH, the Slack/Discord model. The measure cap died
    with its last corner: v1 centered messages alone (island), v2/v4
    left-anchored the cap (dead space on the right once the inspector
@@ -1918,7 +2037,7 @@ body.modern-ui.v2-canvas {
    The width subtracts the same indent: `.v2-chat__messages > *` sets
    width: 100%, so an indent without its complement overruns the pane by exactly
    the indent. That was the #1846 defect — at 390 the full-width act ran 64→426
-   and the body line was cut (ux-lead's shot, 2026-09-23) — and Sam hit the same
+   and the body line was cut (ux-lead's shot, 2026-09-23) — and the same
    class one indent over on `.v2-thread-block` (2026-08-24): indent + width must
    sum to 100%.
 
@@ -2011,6 +2130,19 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-chat__start:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* TASK-647 item 4: the run-hosted start is the screen's one filled action.
+   Keyed on the action in the component, not on its position. */
+.v2-root button.v2-chat__start.v2-chat__start--primary {
+  background: var(--v2-ink);
+  border-color: var(--v2-ink);
+  color: var(--v2-on-ink);
+  font-weight: 600;
+}
+.v2-root button.v2-chat__start.v2-chat__start--primary:hover:not(:disabled) {
+  background: var(--v2-ink-hover);
+  border-color: var(--v2-ink-hover);
 }
 
 /* A line that belongs to the start above it: the hosted start's beta limits,
@@ -2180,7 +2312,16 @@ body.modern-ui.v2-canvas {
   text-decoration: none;
 }
 
-.v2-root a.v2-first-run__setup:hover,
+.v2-root a.v2-first-run__setup {
+  /* Bordered, not ink: the first-run card keeps one ink action (TASK-647 item 4). */
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  color: var(--v2-text-primary);
+}
+.v2-root a.v2-first-run__setup:hover {
+  background: var(--v2-surface-hover);
+  border-color: var(--v2-border-strong);
+}
 .v2-root button.v2-first-run__hello:hover:not(:disabled) {
   background: var(--v2-ink-hover);
   color: var(--v2-on-ink);
@@ -3101,7 +3242,7 @@ body.modern-ui.v2-canvas {
 .v2-msg--grouped { padding: 2px 0; }
 .v2-msg__avatar-ghost { width: 38px; }
 
-/* The message action cluster (Sam's taste rulings 2026-08-23): Reply,
+/* The message action cluster (taste rulings 2026-08-23): Reply,
    Thread, and the reaction trigger share ONE floating pill at the row's
    top-right, identical for headed and grouped rows. Absolute + hover means
    zero layout shift; icon buttons instead of text keep it quiet at rest and
@@ -3244,10 +3385,10 @@ body.modern-ui.v2-canvas {
 .v2-msg__content {
   font-size: 14px;
   line-height: 1.55;
-  color: #1f2937;
+  color: var(--v2-message-text);
   margin-top: 3px;
   word-break: break-word;
-  /* NO measure cap — Sam's THIRD ruling on this (2026-08-24 full-width Slack
+  /* NO measure cap — the THIRD ruling on this (2026-08-24 full-width Slack
      model; #1367's craft-audit 75ch reverted 2026-09-01 by explicit request:
      "I still don't like the char limit, looks really bad on desktop").
      Typographic best practice loses to the product decision here; the
@@ -3285,7 +3426,7 @@ body.modern-ui.v2-canvas {
 }
 
 /* The wash bleeds one padding past the row on BOTH sides so the mention
-   TEXT sits exactly on the shared grid like every other row (Sam,
+   TEXT sits exactly on the shared grid like every other row (
    2026-08-23 — mentions sat off-grid while messages aligned; the old
    bleed was -12px against 10px padding, 2px off). The bleed lands inside
    the pane's 24px gutter. 0-2-0 beats the `> *` width rule regardless of
@@ -3365,7 +3506,7 @@ body.modern-ui.v2-canvas {
   border-radius: var(--v2-radius);
   overflow: hidden;
   border: 1px solid var(--v2-border);
-  background: #ffffff;
+  background: var(--v2-surface);
 }
 
 .v2-msg__image {
@@ -3434,7 +3575,7 @@ body.modern-ui.v2-canvas {
   height: 26px;
   padding: 0 9px;
   border-radius: var(--v2-radius-sm);
-  background: #ffffff;
+  background: var(--v2-surface);
   font-size: 12px;
   color: var(--v2-text-secondary);
   border: 1px solid transparent;
@@ -3709,7 +3850,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-inspector__btn--danger:hover {
   background: var(--v2-danger);
-  color: #fff;
+  color: var(--v2-on-accent);
   border-color: var(--v2-danger);
 }
 
@@ -4865,8 +5006,8 @@ body.modern-ui.v2-canvas {
   height: 38px;
   border: none;
   border-radius: var(--v2-radius-sm);
-  background: var(--v2-accent);
-  color: #fff;
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -4930,6 +5071,13 @@ body.modern-ui.v2-canvas {
    top of someone's face. */
 .v2-avatar:has(img) {
   box-shadow: none;
+}
+
+/* Character tier gets a hairline ring (TASK-679). The compact transcript frame
+   (--flat) stays unframed; the :has(img) rule above outranks a plain class, so
+   the selector repeats it to win. */
+.v2-avatar:has(img).v2-avatar--character:not(.v2-avatar--flat) {
+  box-shadow: 0 0 0 1px var(--v2-avatar-frame);
 }
 
 .v2-avatar--lg {
@@ -5035,8 +5183,8 @@ body.modern-ui.v2-canvas {
   width: 100%;
   margin-top: 8px;
   padding: 10px 14px;
-  background: var(--v2-accent);
-  color: #fff;
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
   font-weight: 700;
   font-size: 14px;
   border-radius: var(--v2-radius);
@@ -5205,14 +5353,14 @@ body.modern-ui.v2-canvas {
 
 .v2-feature {
   min-width: 0;
-  background: #ffffff; /* inside the card the ground is white; the card is the tint step */
+  background: var(--v2-surface); /* inside the card the ground is white; the card is the tint step */
 }
 
 .v2-feature__header {
   flex-shrink: 0;
   padding: 22px 28px 18px;
   border-bottom: 1px solid var(--v2-border-soft);
-  background: #ffffff;
+  background: var(--v2-surface);
 }
 
 .v2-feature__title {
@@ -5346,8 +5494,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiPaper-root {
-  background: #ffffff !important;
-  background-color: #ffffff !important;
+  background: var(--v2-surface) !important;
+  background-color: var(--v2-surface) !important;
   color: var(--v2-text-primary) !important;
   border: 1px solid var(--v2-border) !important;
   box-shadow: var(--v2-shadow-sm) !important;
@@ -5386,8 +5534,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiCard-root {
-  background: #ffffff !important;
-  background-color: #ffffff !important;
+  background: var(--v2-surface) !important;
+  background-color: var(--v2-surface) !important;
   color: var(--v2-text-primary) !important;
   border: 1px solid var(--v2-border) !important;
   box-shadow: var(--v2-shadow-sm) !important;
@@ -5465,7 +5613,7 @@ body.modern-ui.v2-canvas {
 .v2-feature__legacy .MuiInputBase-root,
 .v2-feature__legacy .MuiSelect-select,
 .v2-feature__legacy .MuiAutocomplete-inputRoot {
-  background-color: #ffffff !important;
+  background-color: var(--v2-surface) !important;
   color: var(--v2-text-primary) !important;
 }
 
@@ -5550,7 +5698,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiChip-outlined:not(.MuiChip-colorSuccess):not(.MuiChip-colorWarning):not(.MuiChip-colorError):not(.MuiChip-colorInfo) {
-  background-color: #ffffff !important;
+  background-color: var(--v2-surface) !important;
   color: var(--v2-text-secondary) !important;
 }
 
@@ -5565,7 +5713,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiTableContainer-root {
-  background: #ffffff !important;
+  background: var(--v2-surface) !important;
   border: 1px solid var(--v2-border);
   border-radius: 12px;
   box-shadow: var(--v2-shadow-sm);
@@ -5596,7 +5744,7 @@ body.modern-ui.v2-canvas {
 .v2-feature__legacy .MuiDialog-paper,
 .v2-feature__legacy .MuiPopover-paper,
 .v2-feature__legacy .MuiMenu-paper {
-  background: #ffffff !important;
+  background: var(--v2-surface) !important;
   color: var(--v2-text-primary) !important;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-lg);
@@ -5608,7 +5756,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiAvatar-root {
-  border: 2px solid #ffffff;
+  border: 2px solid var(--v2-surface);
 }
 
 /* Reset top padding for embedded dev tools so the v2 feature header is the
@@ -5638,8 +5786,8 @@ body.modern-ui.v2-canvas {
 .v2-feature__legacy [style*="background-color: rgba(30, 41, 59"],
 .v2-feature__legacy [style*="background-color: #0f172a"],
 .v2-feature__legacy [style*="background-color: #0b1220"] {
-  background: #ffffff !important;
-  background-color: #ffffff !important;
+  background: var(--v2-surface) !important;
+  background-color: var(--v2-surface) !important;
   color: var(--v2-text-primary) !important;
 }
 
@@ -5760,7 +5908,7 @@ body.modern-ui.v2-canvas {
      casualty. Hiding the pane outright here made the avatar-stack button a
      no-op on phones: V2Layout mounts the pane on tap, CSS hid it, and the
      pod's members/files/artifacts were unreachable on mobile entirely
-     (Sam, 2026-08-26). The pane only exists in the DOM while open
+     (2026-08-26). The pane only exists in the DOM while open
      (V2Layout mounts it conditionally), so its presence IS the open state;
      the existing v2-inspector__close dismisses it. Shadow is allowed here:
      the design system reserves shadows for floating UI, which this now is. */
@@ -5972,7 +6120,7 @@ body.modern-ui.v2-canvas {
   display: inline-flex;
   /* Baseline, not center: box-centering aligns the spans' LAYOUT boxes,
    * but Apple Color Emoji ink extends below the baseline while digit ink
-   * does not, so on desktop the count visibly rides high (reported by Sam
+   * does not, so on desktop the count visibly rides high (reported
    * 2026-08-05, HQ screenshot; reproduced 3x-zoomed in Chromium). Digits
    * hanging on the emoji's baseline is how "\1F44D 2" renders in plain
    * inline text -- the reference that looks right on every platform. The
@@ -5998,7 +6146,7 @@ body.modern-ui.v2-canvas {
 
 /* The standalone "+" trigger, its hover wrap, and the --bare collapsed row
  * were retired 2026-08-23: the reaction trigger lives in the
- * .v2-msg__actions hover cluster (Sam's placement ruling), and a reactions
+ * .v2-msg__actions hover cluster (placement ruling), and a reactions
  * row with no chips simply does not render — the phantom-band problem the
  * --bare machinery solved cannot occur at all now. The picker below is
  * shared by the cluster (which overrides its anchor to open downward). */
@@ -6236,7 +6384,7 @@ body.modern-ui.v2-canvas {
   border-radius: 50%;
   background: var(--v2-accent);
 }
-/* BYO decision layout (Sam 2026-08-30: "cloud agent vs byoa uiux"). Form on
+/* BYO decision layout (2026-08-30). Form on
    the left, live agent preview on the right — the page shows the teammate
    being created, not a settings form. Tokens only; borders, not shadows. */
 .v2-byo__layout {
@@ -6414,7 +6562,7 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-tertiary);
 }
 
-/* Persona context (Sam 2026-09-01): who was picked and why, carried from the
+/* Persona context (2026-09-01): who was picked and why, carried from the
    catalog — or an honest "nobody yet" for the machine-first entry. */
 .v2-byo__persona {
   display: flex;
@@ -6463,7 +6611,7 @@ body.modern-ui.v2-canvas {
   padding: 16px 18px 14px;
   border: 1px solid var(--v2-border);
   border-radius: 4px;
-  background: var(--v2-surface, #fff);
+  background: var(--v2-surface, var(--v2-bg));
   color: var(--v2-text-primary);
   cursor: pointer;
   transition: border-color 0.08s ease, background 0.08s ease;
@@ -6536,14 +6684,15 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 /* Signal §3 not yet: where the act will be, until a place to run it is
-   chosen. Sized like the submit button it stands in for. */
+   chosen. A muted hint line, not a box: a dashed slot read as a dead button
+   (TASK-647 item 1). */
 .v2-byo__unchosen {
   align-self: flex-start;
-  padding: 10px 18px;
-  border: 1px dashed var(--v2-border-strong);
-  border-radius: var(--v2-radius);
+  padding: 0;
+  border: 0;
   color: var(--v2-text-muted);
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 20px;
 }
 .v2-root button.v2-byo__link {
   /* A text action beside or under a line of copy ("Change", "Other ways to
@@ -6751,8 +6900,7 @@ body.modern-ui.v2-canvas {
   font-weight: 700;
 }
 
-.v2-connect__lane h2,
-.v2-connect__gateway h3 {
+.v2-connect__lane h2 {
   margin: 0;
   color: var(--v2-text-primary);
   font-size: 16px;
@@ -6761,7 +6909,6 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-connect__lane-heading p,
-.v2-connect__gateway p,
 .v2-connect__note {
   margin: 5px 0 0;
   color: var(--v2-text-secondary);
@@ -6857,8 +7004,7 @@ body.modern-ui.v2-canvas {
   margin-top: 12px;
 }
 
-.v2-connect__note code,
-.v2-connect__gateway-token code {
+.v2-connect__note code {
   font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -6899,86 +7045,9 @@ body.modern-ui.v2-canvas {
   margin-top: 16px;
 }
 
-.v2-connect__gateway {
-  display: grid;
-  gap: 12px;
-  margin-top: 18px;
-  padding: 16px;
-  border-top: 1px solid var(--v2-border-soft);
-  background: var(--v2-bg-subtle);
-}
-
-.v2-connect__gateway-form {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
-  align-items: end;
-  gap: 10px;
-}
-
-.v2-connect__gateway-form label {
-  display: grid;
-  gap: 5px;
-  color: var(--v2-text-secondary);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.v2-connect__gateway-form em {
-  color: var(--v2-text-tertiary);
-  font-style: normal;
-  font-weight: 400;
-}
-
-.v2-connect__gateway-form input {
-  min-width: 0;
-  padding: 8px 9px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
-  color: var(--v2-text-primary);
-  font: inherit;
-  outline: none;
-}
-
-.v2-connect__gateway-form input:focus {
-  border-color: var(--v2-accent);
-  box-shadow: var(--v2-focus-ring);
-}
-
-.v2-connect__gateway-token {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--v2-success);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-success-soft);
-}
-
-.v2-connect__gateway-token p {
-  flex-basis: 100%;
-  margin: 0;
-}
-
-.v2-connect__gateway-token code {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--v2-text-primary);
-  font-size: 12px;
-}
-
-.v2-connect__error {
-  margin: 0;
-  color: var(--v2-danger);
-  font-size: 13px;
-}
-
 @media (max-width: 760px) {
   .v2-connect__lane { padding: 16px; }
   .v2-connect__code-grid { grid-template-columns: 1fr; }
-  .v2-connect__gateway-form { grid-template-columns: 1fr; }
-  .v2-connect__gateway-form .v2-connect__cta { justify-self: start; }
 }
 
 /* ---------- Admin · Users (waitlist + invitation codes) ---------- */
@@ -7174,9 +7243,9 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-admin-users__btn--primary {
-  background: var(--v2-accent);
+  background: var(--v2-accent-fill);
   border-color: var(--v2-accent);
-  color: #fff;
+  color: var(--v2-on-accent);
 }
 
 .v2-root button.v2-admin-users__btn--primary:hover:not(:disabled) {
@@ -7321,14 +7390,14 @@ body.modern-ui.v2-canvas {
    (mobile smoke 2026-07-05, worsened by the added Profile button). Wrap the
    actions onto their own full-width row instead of competing with the name. */
 
-/* Reply/Thread inline head buttons retired 2026-08-23 (Sam's taste ruling):
+/* Reply/Thread inline head buttons retired 2026-08-23 (taste ruling):
    the actions live in the .v2-msg__actions hover cluster now — one pill,
    all row variants, zero layout shift. See the cluster block near .v2-msg.
    Touch layouts keep ≥44px targets via the media block below. */
 @media (hover: none), (pointer: coarse) {
   /* iOS Safari auto-zooms on focusing any input under 16px and does not
      zoom back on blur — the shell's inputs ranged 12–15px, so every tap on
-     the composer or a search field left the page stuck zoomed (Sam,
+     the composer or a search field left the page stuck zoomed (
      2026-08-26). 16px on touch devices removes the trigger entirely; this
      is the root fix, NOT the viewport maximum-scale hack, which blocks
      pinch-zoom on Android and is an accessibility regression. !important is
@@ -7342,7 +7411,7 @@ body.modern-ui.v2-canvas {
   }
 
   /* No hover on touch — but always-on clusters over every message are
-     chrome over content (Sam, 2026-08-23). A tap on the message toggles
+     chrome over content (2026-08-23). A tap on the message toggles
      .v2-msg--reveal (V2MessageRow.onBubbleTap, gated to hoverless
      devices); only then does the cluster appear, at the 44px floor (craft
      baseline rule 9). Absolute positioning preserved — a static third
@@ -7489,7 +7558,7 @@ body.modern-ui.v2-canvas {
   border-radius: var(--v2-radius-md);
   padding: 16px;
   margin-bottom: 16px;
-  background: #ffffff;
+  background: var(--v2-bg);
 }
 .v2-billing__head {
   display: flex;
@@ -7544,7 +7613,7 @@ body.modern-ui.v2-canvas {
   padding: 0 14px;
   border-radius: var(--v2-radius-sm);
   border: 1px solid var(--v2-border);
-  background: #ffffff;
+  background: var(--v2-bg);
   color: var(--v2-text-primary);
   font-size: 13px;
   font-weight: 600;
@@ -8038,7 +8107,7 @@ body.modern-ui.v2-canvas {
   padding: 7px 10px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
-  background: #ffffff;
+  background: var(--v2-surface);
   color: var(--v2-text-primary);
   font: 400 14px/20px var(--v2-font);
 }
@@ -8102,7 +8171,7 @@ body.modern-ui.v2-canvas {
 
 .v2-settings__section .v2-billing__badge {
   border-radius: var(--v2-radius-sm);
-  background: #ffffff;
+  background: var(--v2-surface);
   border-color: var(--v2-border);
   color: var(--v2-text-primary);
   font-family: var(--v2-font-mono);
@@ -8171,7 +8240,7 @@ body.modern-ui.v2-canvas {
   padding: 0 12px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
-  background: #ffffff;
+  background: var(--v2-bg);
   color: var(--v2-text-primary);
   font: 600 13px/20px var(--v2-font);
   cursor: pointer;
@@ -8739,7 +8808,7 @@ body.modern-ui.v2-canvas {
   border: none;
   border-radius: 8px;
   padding: 9px 16px;
-  color: #fff;
+  color: var(--v2-on-ink);
   background: var(--v2-ink);
   cursor: pointer;
   font-size: 13.5px;
@@ -8984,8 +9053,8 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-board__create-submit {
   border: none;
-  background: var(--v2-accent);
-  color: #fff;
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
   font-size: 13.5px;
   font-weight: 600;
   padding: 9px 16px;
@@ -9112,7 +9181,7 @@ body.modern-ui.v2-canvas {
 /* The card sits IN the message content column, not flush with the row edge:
    38px avatar column + 12px gap, in lockstep with the .v2-msg grid. Without
    this inset the card starts 50px left of every bubble's text and reads as
-   misaligned (measured 372 vs 422; Sam, 2026-08-13). */
+   misaligned (measured 372 vs 422, 2026-08-13). */
 .v2-msg.v2-msg--card {
   padding-left: 50px;
 }
@@ -9484,7 +9553,7 @@ body.modern-ui.v2-canvas {
    dropping to 24px at 390; layout transition 300ms. */
 
 /* Card + rail travel as ONE column row, indented to the message TEXT
-   column like an attachment (Sam, 2026-08-23): 38px avatar column + 12px
+   column like an attachment (2026-08-23): 38px avatar column + 12px
    gap = 50px, so the thread visibly belongs to the message above it
    rather than starting a new row at the avatar edge. The bottom margin is
    the rail's terminator: without it the rail's last pixel abuts the next
@@ -9493,7 +9562,7 @@ body.modern-ui.v2-canvas {
   margin-left: 50px;
   /* The column's `> *` rule sets width: 100%; with the 50px indent that
      put every thread 50px past the pane's right edge — the pane became
-     horizontally swipeable, worst on phones (Sam, 2026-08-24; measured
+     horizontally swipeable, worst on phones (2026-08-24; measured
      scrollWidth 350 vs clientWidth 326 at 390px). Indent + width must sum
      to 100%. */
   width: calc(100% - 50px);
@@ -9567,7 +9636,7 @@ body.modern-ui.v2-canvas {
 /* Expanded replies hang off a left rail at the thread block's own edge.
    The rail used to aim at the root avatar's centre (margin-left 14, rev 2);
    with the whole block indented to the text column like an attachment
-   (Sam, 2026-08-23), the rail sits AT that column edge — margin 0 — so
+   (2026-08-23), the rail sits AT that column edge — margin 0 — so
    card, rail, and message text share one line. */
 .v2-thread-replies {
   position: relative;
@@ -9795,7 +9864,7 @@ body.modern-ui.v2-canvas {
   margin-top: 30px;
 }
 
-/* Composer (Sam ruled 2026-09-03 on the Shell Parity canvas, board 3): one
+/* Composer (ruled 2026-09-03 on the Shell Parity canvas, board 3): one
    card, radius-lg, the textarea borderless inside it, a small ink Send in the
    foot row. Focus is the halo on the CARD, not a harder border. */
 .v2-activity__compose {
@@ -10039,7 +10108,7 @@ body.modern-ui.v2-canvas {
   overflow: hidden;
 }
 
-/* Needs-you rows: no box, no dividers (Sam ruled 2026-09-03, TASK-122). Each
+/* Needs-you rows: no box, no dividers (TASK-122). Each
    row carries a permanent transparent 1px border and changes only its fill on
    hover, so nothing shifts by a pixel. Board rows keep their box until Phase B. */
 .v2-activity__queue {
@@ -10708,8 +10777,7 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-byo__mode-title,
 .v2-root:lang(zh) .v2-byo__preview-name,
 .v2-root:lang(zh) .v2-byo__stat-value,
-.v2-root:lang(zh) .v2-connect__lane h2,
-.v2-root:lang(zh) .v2-connect__gateway h3 {
+.v2-root:lang(zh) .v2-connect__lane h2 {
   letter-spacing: 0;
 }
 
@@ -10717,7 +10785,7 @@ body.modern-ui.v2-canvas {
  * zh-CN: mono labels drop `text-transform: lowercase` (TASK-164, rule class 3).
  * `.v2-connector-gates__title` and `.v2-tools__field > span:first-child` set
  * lowercase for Latin kickers. The zh copy for both is CJK plus one Latin
- * token — `Pod`, the product noun, which lily-shen ruled is never a synonym —
+ * token — `Pod`, the product noun, which is never a synonym —
  * and CSS lowercases it to `pod`, so a label contradicts the sentence beside
  * it. Case is not a property of CJK; the reset exists only for the Latin token
  * the copy carries. Guarded by v2-layout-invariants.test.ts.
@@ -10862,10 +10930,10 @@ body.modern-ui.v2-canvas {
   .v2-connector-row__dot--pulse { animation: none; }
 }
 .v2-connector-row__details { display: flex; min-width: 0; padding-right: 8px; flex-direction: column; gap: 2px; color: var(--v2-text-secondary); font-size: 13px; line-height: 18px; }
-/* Line 1 wraps like meta does; a sentence never ellipsises at 390 (wren, 64144). */
+/* Line 1 wraps like meta does; a sentence never ellipsises at 390. */
 .v2-connector-row__details strong { color: var(--v2-ink); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .v2-connector-row__detail, .v2-connector-row__when { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
-/* Meta wraps to a second line; it never ellipsises (lily-shen, 64026). */
+/* Meta wraps to a second line; it never ellipsises. */
 .v2-connector-row__detail { overflow-wrap: anywhere; }
 /* TASK-162 (3): line 3 used to be the bare 16px mark, its consequence words
    reachable only through the glyph's tooltip — and at ≤760 the mark is hidden,
@@ -10966,7 +11034,7 @@ body.modern-ui.v2-canvas {
 .v2-connectors__select { min-width: 0; min-height: 40px; padding: 0 10px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); color: var(--v2-ink); font: 500 13px var(--v2-font); }
 
 .v2-connectors__aside { display: flex; min-width: 0; flex-direction: column; gap: 16px; }
-.v2-connector-aside__step, .v2-connector-aside__card { padding: 18px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-md); background: var(--v2-panel, #f9fafb); }
+.v2-connector-aside__step, .v2-connector-aside__card { padding: 18px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-md); background: var(--v2-panel, var(--v2-bg-subtle)); }
 .v2-connector-aside__step p, .v2-connector-aside__card p { margin: 0; color: var(--v2-text-secondary); font-size: 13px; line-height: 20px; }
 .v2-connector-aside__eyebrow { margin-bottom: 8px !important; color: var(--v2-accent-text) !important; font-family: var(--v2-font-mono); font-size: 11px !important; font-weight: 500; text-transform: lowercase; }
 .v2-connector-aside__card h2 { margin: 0 0 8px; color: var(--v2-ink); font-family: var(--v2-font-display); font-size: 16px; font-weight: 800; letter-spacing: -0.02em; }
@@ -11012,7 +11080,7 @@ body.modern-ui.v2-canvas {
 .v2-connector-gate__row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 36px; }
 .v2-root button.v2-connector-gate__name { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 0; border: none; background: transparent; color: var(--v2-ink); font: 500 13px/18px var(--v2-font); text-align: left; cursor: pointer; }
 .v2-connector-gate__mark { width: 4px; height: 4px; flex: none; background: var(--v2-ink); }
-/* A long pod name wraps under the mark; it never ellipsises (wren, 64144). */
+/* A long pod name wraps under the mark; it never ellipsises. */
 .v2-connector-gate__pod { min-width: 0; overflow-wrap: anywhere; }
 .v2-connector-gate__tag { flex: none; color: var(--v2-ink); font-family: var(--v2-font-mono); font-size: 11px; line-height: 16px; }
 .v2-connector-gate__since { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 11px; line-height: 16px; white-space: nowrap; }
@@ -11103,7 +11171,7 @@ body.modern-ui.v2-canvas {
   .v2-tools__search { flex-basis: 100%; margin-left: 0; }
 }
 
-/* Activity queue: reply-in-place on mention rows (Sam, 2026-09-01). The
+/* Activity queue: reply-in-place on mention rows (2026-09-01). The
    textarea shares the row's action cluster; on narrow screens it takes the
    full width of the row so the thumb has something to hit. */
 .v2-activity__reply {
@@ -11680,7 +11748,10 @@ body.modern-ui.v2-canvas {
 
   .v2-thread__header-row { align-items: center; gap: 8px; }
   .v2-thread__title-line { display: flex; flex-wrap: wrap; align-items: center; }
-  .v2-thread__title h1 { font: 600 15px/20px var(--v2-font); }
+  /* The name takes the free width with a zero basis and truncates, so the
+     "i" hint keeps its place on the line instead of wrapping under it and
+     growing the header (TASK-647 item 3). */
+  .v2-thread__title h1 { font: 600 15px/20px var(--v2-font); flex: 1 1 0; min-width: 0; white-space: nowrap; text-overflow: ellipsis; }
 
   .v2-thread .v2-msg__author,
   .v2-thread .v2-msg__author-btn { font-size: 15px; }
@@ -11711,10 +11782,10 @@ body.modern-ui.v2-canvas {
     grid-template-columns: minmax(0, 1fr);
     padding: 0;
     gap: 0;
-    background: #fff;
+    background: var(--v2-surface);
   }
   .v2-pane--rail { display: none; }
-  .v2-pane--main { background: #fff; }
+  .v2-pane--main { background: var(--v2-surface); }
 
   /* The inspector becomes the artboard's bottom sheet; its header toggle is
      intentionally always present so the sheet cannot become unreachable. */
@@ -11741,7 +11812,7 @@ body.modern-ui.v2-canvas {
     height: 54px;
     padding: 5px 14px;
     border-top: 1px solid var(--v2-border);
-    background: #fff;
+    background: var(--v2-surface);
   }
   .v2-root button.v2-mobile-tabs__item {
     position: relative;
@@ -12019,8 +12090,8 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pods__row--selected,
 .v2-root button.v2-pods__row--selected:hover {
-  background: var(--v2-accent);
-  color: #fff;
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
   font-weight: 600;
 }
 
@@ -12047,7 +12118,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pods__row--selected .v2-pods__row-mark {
   background: rgba(255, 255, 255, 0.22);
-  color: #fff;
+  color: var(--v2-on-accent);
 }
 
 .v2-pods__row-name {
@@ -12113,7 +12184,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-pods__row--selected .v2-pods__row-pill {
-  background: #fff;
+  background: var(--v2-bg);
   color: var(--v2-accent);
 }
 
@@ -12153,6 +12224,57 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-pod-header__board:hover { text-decoration: underline; }
+
+/* Owner rename (TASK-419): an inline form in the title line. It wraps at phone
+   width; the input takes the spare room and the buttons keep their content width. */
+.v2-pod-header__rename {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.v2-root .v2-pod-header__rename input {
+  flex: 1 1 180px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 600 15px/20px var(--v2-font);
+}
+.v2-root .v2-pod-header__rename input:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
+.v2-root .v2-pod-header__rename button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 600 12px/16px var(--v2-font);
+  cursor: pointer;
+}
+.v2-root .v2-pod-header__rename button[type="submit"] { background: var(--v2-ink); color: var(--v2-on-ink); border-color: var(--v2-ink); }
+.v2-root .v2-pod-header__rename button:not([type="submit"]):hover:not(:disabled) { background: var(--v2-surface-hover); }
+.v2-root .v2-pod-header__rename button[type="submit"]:hover:not(:disabled) { background: var(--v2-ink-hover); color: var(--v2-on-ink); }
+.v2-root .v2-pod-header__rename button:disabled { opacity: .55; cursor: default; }
+.v2-root .v2-pod-header__rename button:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
+.v2-pod-header__rename-error { flex: 1 0 100%; color: var(--v2-danger); font: 400 12px/16px var(--v2-font); }
+.v2-root button.v2-pod-header__rename-open {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: 500 11px/16px var(--v2-font-mono);
+  cursor: pointer;
+}
+.v2-root button.v2-pod-header__rename-open:hover { text-decoration: underline; }
+
+
 
 .v2-root button.v2-thread__back { display: none; }
 
@@ -12214,7 +12336,18 @@ body.modern-ui.v2-canvas {
     align-items: flex-start;
   }
   .v2-pod-header__meta { display: none; }
-  .v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; min-height: 28px; }
+  .v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; min-height: 28px; flex: 0 0 auto; white-space: nowrap; }
+  /* TASK-647 item 3: the board link keeps a 44px tap target without growing
+     the 28px meta row (the hit area is a pseudo-element), the name keeps room
+     for the "i" hint, and the compact meta sits closer to the link. */
+  .v2-root button.v2-pod-header__board--compact { position: relative; }
+  .v2-root button.v2-pod-header__board--compact::before {
+    content: '';
+    position: absolute;
+    inset: -14px -10px;
+  }
+  .v2-thread__title-line > h1 { max-width: calc(100% - 36px); }
+  .v2-pod-header__meta--compact { gap: 4px; }
 
   .v2-root button.v2-thread__back {
     display: inline-grid;
@@ -12540,6 +12673,36 @@ body.modern-ui.v2-canvas {
 .v2-msg__collapse { position: relative; }
 .v2-msg__collapse--closed pre { max-height: calc(6 * 1.5 * 12.5px + 20px); overflow: hidden; }
 
+/* Long agent prose folds after six lines (6 × 22px). The fade masks the prose itself, so a hovered row keeps its own surface. */
+.v2-msg__prose { position: relative; }
+.v2-msg__prose--closed {
+  max-height: 132px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 44px), transparent);
+}
+
+.v2-root button.v2-msg__showmore {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  margin: 6px 0 0;
+  padding: 0 8px 0 6px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  box-shadow: inset 0 0 0 1px var(--v2-border);
+  font: 500 12px/1 var(--v2-font);
+  cursor: pointer;
+}
+
+.v2-root button.v2-msg__showmore:hover { background: var(--v2-surface-hover); }
+.v2-root button.v2-msg__showmore:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--v2-accent-text); }
+.v2-msg__showmore svg { width: 14px; height: 14px; flex: none; transition: transform 160ms; }
+.v2-msg__showmore[aria-expanded='true'] svg { transform: rotate(180deg); }
+
 .v2-root button.v2-msg__more {
   display: inline-block;
   margin: 2px 0 6px;
@@ -12711,14 +12874,14 @@ body.modern-ui.v2-canvas {
 
 /* ---------- Workspace at scale · direction C · PR 2b (threading restyle, walk-3 misses 51–63) ----------
    Runtime tag on agent rows; 20px reaction chips; a two-line quote that jumps to
-   its source; the thread summary is one chip; the expanded thread is one #f9fafb
+   its source; the thread summary is one chip; the expanded thread is one var(--v2-bg-subtle)
    band with a 2px rule and a Collapse foot; the action strip is a 28px white box
    top-right on hover (inline under the body on long-press at 390); the Jump pill
    is white with a cobalt count; transcript avatars are two-tone. */
 
 /* Hover band and the expanded band share the panel colour, not the tint. */
 .v2-thread .v2-msg:hover,
-.v2-thread .v2-msg:focus-within { background: #f9fafb; }
+.v2-thread .v2-msg:focus-within { background: var(--v2-bg-subtle); }
 .v2-thread .v2-msg { border-radius: 4px; }
 .v2-thread .v2-msg--landed { background: var(--v2-accent-soft, #e8ecfb); transition: background 0.6s ease; }
 
@@ -12858,7 +13021,7 @@ body.modern-ui.v2-canvas {
    gap = 36px). */
 .v2-thread .v2-thread-block { margin: 0 0 10px; width: 100%; }
 .v2-thread .v2-thread-block__inner { margin-left: 36px; }
-.v2-thread .v2-thread-block--open { background: #f9fafb; border-radius: 4px; padding: 0 8px 6px 0; }
+.v2-thread .v2-thread-block--open { background: var(--v2-bg-subtle); border-radius: 4px; padding: 0 8px 6px 0; }
 .v2-thread .v2-thread-block--open > .v2-msg:hover,
 .v2-thread .v2-thread-block--open > .v2-msg:focus-within { background: transparent; }
 .v2-thread .v2-thread-block .v2-thread-card { margin: 2px 0 0; }
@@ -12902,7 +13065,7 @@ body.modern-ui.v2-canvas {
    #4f5c6e initials, agent cobalt + white initials; a photo still wins. */
 .v2-thread .v2-avatar--flat { border: 0; box-shadow: none; border-radius: 4px; font: 650 12px/1 var(--v2-font); letter-spacing: 0.02em; }
 .v2-thread .v2-avatar--flat-human { background: #f2f4f7; color: #4f5c6e; }
-.v2-thread .v2-avatar--flat-agent { background: var(--v2-accent); color: #fff; }
+.v2-thread .v2-avatar--flat-agent { background: var(--v2-accent); color: var(--v2-bg); }
 .v2-thread .v2-thread-replies .v2-msg .v2-avatar--flat { font: 650 12px/1 var(--v2-font); }
 .v2-thread .v2-thread-card__faces .v2-avatar--flat { font: 650 11px/1 var(--v2-font-mono); }
 .v2-root .v2-thread button.v2-thread-replies__aim { margin-left: auto; padding: 0; color: var(--v2-text-muted); font: 500 12px/16px var(--v2-font); }
@@ -12924,7 +13087,7 @@ body.modern-ui.v2-canvas {
   /* The row is a 28px | 1fr grid and the strip precedes the body in DOM: left
      to auto-place, a static strip takes the body's cell and the body drops
      into the avatar column (one word per line — 390 walk). Pin it. */
-  .v2-thread .v2-msg--reveal { background: #f9fafb; row-gap: 6px; }
+  .v2-thread .v2-msg--reveal { background: var(--v2-bg-subtle); row-gap: 6px; }
   .v2-thread .v2-msg--reveal .v2-msg__strip {
     position: static;
     grid-column: 2;
@@ -13031,7 +13194,7 @@ body.modern-ui.v2-canvas {
   .v2-activity__controls { flex-direction: column; align-items: stretch; }
 }
 .v2-root .v2-activity__queue-row--decision .v2-activity__queue-mark { background: var(--v2-accent); color: #fff; }
-/* Categories are marks, only the deciding act is a word (Sam 2026-09-11, direction A). The
+/* Categories are marks, only the deciding act is a word (direction A). The
    mark holds a 16px glyph; a secondary act is a 32px square holding one, its word in the
    title and the accessible name. Nothing is hidden in a menu. */
 .v2-root .v2-activity__queue-mark svg { width: 16px; height: 16px; }
@@ -13222,9 +13385,9 @@ body.modern-ui.v2-canvas {
 }
 .v2-root button.v2-team-card__mark img { width: 100%; height: 100%; object-fit: cover; }
 .v2-root button.v2-team-card__mark .v2-avatar { width: 100%; height: 100%; border: 0; border-radius: inherit; }
-.v2-root button.v2-team-card__mark--needsYou { background: var(--v2-accent); color: #fff; }
-.v2-root button.v2-team-card__mark--working { background: #101828; color: #fff; }
-.v2-root button.v2-team-card__mark--idle { background: #e4e7ec; color: #4f5c6e; }
+.v2-root button.v2-team-card__mark--needsYou { background: var(--v2-accent); color: var(--v2-bg); }
+.v2-root button.v2-team-card__mark--working { background: var(--v2-text-primary); color: var(--v2-bg); }
+.v2-root button.v2-team-card__mark--idle { background: var(--v2-border-soft); color: #4f5c6e; }
 .v2-team-card__title { min-width: 0; }
 /* A primary identifier never one-line-ellipsizes (craft audit rule 1, #568):
    two lines, then clamp; min-width 0 so the grid column can shrink under it. */
@@ -13258,6 +13421,13 @@ body.modern-ui.v2-canvas {
 .v2-team-card__pod { font: 500 11px/16px var(--v2-font-mono); padding: 2px 6px; border: 1px solid var(--v2-border); border-radius: 4px; color: var(--v2-text-secondary); }
 .v2-team-card__command { display: block; padding: 8px 10px; border-radius: 4px; background: #101828; color: #fff; font: 500 14px/20px var(--v2-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .v2-team-card__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+/* Where the seat runs: a cloud (Commonly) or a laptop (your computer), top-right. */
+.v2-team-card__where { display: inline-flex; flex: none; margin-left: auto; align-self: flex-start; color: var(--v2-text-muted); }
+/* Hosted meter: the server's count against the server's cap, as a bar and a mono line. */
+.v2-team-card__meter { display: flex; align-items: center; gap: 10px; }
+.v2-team-card__meter-track { flex: 1; min-width: 0; height: 4px; border-radius: 2px; background: var(--v2-border-soft); overflow: hidden; }
+.v2-team-card__meter-fill { display: block; height: 100%; background: var(--v2-accent); }
+.v2-team-card__meter-text { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; }
 .v2-root button.v2-team-card__answer { height: 32px; padding: 0 12px; border: 1px solid #101828; border-radius: 4px; background: #101828; color: #fff; font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team-card__talk { height: 32px; padding: 0 12px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-surface); color: var(--v2-text-primary); font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team-card__talk:hover { background: var(--v2-surface-hover); }
@@ -13279,7 +13449,7 @@ body.modern-ui.v2-canvas {
 }
 
 /* ---------------------------------------------------------------------------
-   Artifacts — direction C, PR 5 (ScaleArtifacts.dc.html; Sharpen 66366/66376).
+   Artifacts — direction C, PR 5 (ScaleArtifacts.dc.html).
    Every file and page shared in your pods. Display head + muted meta; two
    segment groups on one grammar (bordered white group, active = tint + ink
    600); a bordered search; a plain table whose numbers are mono; the ext chip

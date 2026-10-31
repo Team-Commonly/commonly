@@ -43,8 +43,14 @@ describe('i18n migration manifest', () => {
     keys.has(key) || [...keys].some((candidate) => candidate.replace(PLURAL_SUFFIX, '') === key)
   );
 
+  // Catalog description maps are locale-only: English renders the server's
+  // description, and a locale without a map falls back to it. See V2ConnectorsPage.
+  const LOCALE_ONLY_PREFIX = 'connectors.catalogDescriptions.';
+
   it('keeps every registered language base key path identical', () => {
-    const normalize = (keys: Set<string>) => [...new Set([...keys].map((key) => key.replace(PLURAL_SUFFIX, '')))];
+    const normalize = (keys: Set<string>) => [...new Set([...keys]
+      .filter((key) => !key.startsWith(LOCALE_ONLY_PREFIX))
+      .map((key) => key.replace(PLURAL_SUFFIX, '')))];
     const baseKeys = normalize(languageKeys[0].keys).sort();
     for (const { keys } of languageKeys) expect(normalize(keys).sort()).toEqual(baseKeys);
   });

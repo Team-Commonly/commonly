@@ -49,6 +49,15 @@ const DOC_REF = /(?<![A-Za-z0-9_/.-])\/?docs\/[A-Za-z0-9_./-]+\.md/g;
 // A floor, not the current count: high enough that a broken extractor fails
 // loudly, low enough that retiring a few references does not trip it.
 const MIN_EXPECTED_REFERENCES = 20;
+// Vendored files are byte-identical copies of a package outside the scanned
+// dirs, and their `docs/…` pointers name that package's docs (TASK-513: the
+// record-v1 writer points at packages/seats/docs/record-v1.md). Resolve them
+// there rather than skipping them, so a dead pointer in the source still fails.
+const VENDORED_DOC_ROOTS = { 'backend/vendor/seats/': 'packages/seats' };
+const docRootOf = (file) => {
+  const vendored = Object.keys(VENDORED_DOC_ROOTS).find((prefix) => file.startsWith(prefix));
+  return vendored ? path.join(REPO_ROOT, VENDORED_DOC_ROOTS[vendored]) : REPO_ROOT;
+};
 
 // A root-relative reference (`/docs/….md`) is the repo path with a leading
 // slash; strip it, or `path.join` is handed an absolute path and resolves the
@@ -158,9 +167,17 @@ describe('code does not point at docs that are not there', () => {
     expect(docs.every((doc) => !fs.existsSync(path.join(REPO_ROOT, doc)))).toBe(true);
   });
 
+  it('resolves a vendored copy against its source package, not the repo root', () => {
+    const vendored = references.filter((ref) => ref.file.startsWith('backend/vendor/seats/'));
+    expect(vendored.length).toBeGreaterThan(0);
+    expect(new Set(vendored.map((ref) => docRootOf(ref.file)))).toEqual(new Set([path.join(REPO_ROOT, 'packages/seats')]));
+    expect(vendored.every((ref) => fs.existsSync(path.join(REPO_ROOT, 'packages/seats', ref.doc)))).toBe(true);
+    expect(docRootOf('backend/services/recordService.ts')).toBe(REPO_ROOT);
+  });
+
   it('every referenced doc exists', () => {
     const missing = [...new Set(references
-      .filter((ref) => !fs.existsSync(path.join(REPO_ROOT, ref.doc)))
+      .filter((ref) => !fs.existsSync(path.join(docRootOf(ref.file), ref.doc)))
       .map((ref) => `${ref.file} -> ${ref.doc}`))];
     expect(missing).toEqual([]);
   });

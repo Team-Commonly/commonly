@@ -26,8 +26,8 @@
  * Rows already carrying an explicit runtimeType AND host are untouched.
  *
  * Usage:
- *   npx ts-node backend/scripts/backfill-explicit-runtime-identity.ts
- *   npx ts-node backend/scripts/backfill-explicit-runtime-identity.ts --apply
+ *   cd backend && node dist/scripts/backfill-explicit-runtime-identity.js
+ *   cd backend && node dist/scripts/backfill-explicit-runtime-identity.js --apply
  *   ... --include-inactive     # default is ACTIVE only; see #949's reasoning
  */
 

@@ -45,7 +45,7 @@ export const MIGRATED_FROM_DURABLE_OBJECT = 'durable-object';
 /**
  * True while the TASK-265 migration has marked a row native but not yet
  * recorded it done: its Durable Object may still be running, or its old
- * runtime token may still be live (Rhea on #2236). A migrated row with no
+ * runtime token may still be live. A migrated row with no
  * recorded state counts as unfinished, as the migration itself reads it.
  */
 export const hostedMigrationUnfinished = (installation: any): boolean => {
@@ -154,8 +154,8 @@ export const hostedNativeDecline = (eventType: string, turnsPerDay: number): str
 /**
  * The Commonly tools a hosted agent gets. Broker grants are appended per run.
  *
- * Web search and code runs are on every plan, free included (Cofounder,
- * 2026-10-16): the out-of-box test is a stranger watching the agent do the
+ * Web search and code runs are on every plan, free included
+ * (2026-10-16): the out-of-box test is a stranger watching the agent do the
  * work in its first minute, and a tool held back fails it. The native runtime
  * still offers each only where this instance holds its key, and bounds it per
  * turn: 3 searches (nativeRuntimeService), and 5 code runs in one sandbox that

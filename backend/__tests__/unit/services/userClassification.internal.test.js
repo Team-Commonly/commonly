@@ -32,14 +32,14 @@ beforeEach(async () => {
     { username: 'fixture', email: 'x@sub.example.org', role: 'user' },
     { username: 'local-test', email: 'x@box.test', role: 'user' },
     { username: 'the-admin', email: 'admin@gmail.com', role: 'admin' },
-    { username: 'Lily-Shen', email: 'lily@gmail.com', role: 'user' },
+    { username: 'Team-Member', email: 'member@gmail.com', role: 'user' },
     { username: 'eng-smoke-abc', email: 'smoke@gmail.com', role: 'user' },
     { username: 'staff-person', email: 'me@commonly.me', role: 'user' },
     { username: 'scout', isBot: true, email: 'scout@agents.commonly.local' },
     // Look-alikes that must stay outside people.
     { username: 'invalidator', email: 'x@invalidator.io', role: 'user' },
     { username: 'example-fan', email: 'fan@notexample.com', role: 'user' },
-    { username: 'lily-shen-fan', email: 'fan@gmail.com', role: 'user' },
+    { username: 'team-member-fan', email: 'fan@gmail.com', role: 'user' },
   ]);
 });
 
@@ -50,24 +50,24 @@ const outsidePeople = async (env) => (await users
 describe('internal accounts are not outside newcomers', () => {
   test('built in: admins and reserved email domains are internal; everyone else is a person', async () => {
     expect(await outsidePeople({})).toEqual([
-      'Lily-Shen', 'another-person', 'eng-smoke-abc', 'example-fan', 'invalidator',
-      'lily-shen-fan', 'outside-person', 'staff-person',
+      'Team-Member', 'another-person', 'eng-smoke-abc', 'example-fan', 'invalidator',
+      'outside-person', 'staff-person', 'team-member-fan',
     ]);
   });
 
   test('INTERNAL_ACCOUNTS adds usernames (any case), prefix* and @domain entries', async () => {
-    expect(await outsidePeople({ INTERNAL_ACCOUNTS: ' lily-shen , eng-smoke-* , @commonly.me ' })).toEqual([
-      'another-person', 'example-fan', 'invalidator', 'lily-shen-fan', 'outside-person',
+    expect(await outsidePeople({ INTERNAL_ACCOUNTS: ' team-member , eng-smoke-* , @commonly.me ' })).toEqual([
+      'another-person', 'example-fan', 'invalidator', 'outside-person', 'team-member-fan',
     ]);
   });
 
   test('a username entry matches the whole name only, and regex characters in it are literal', async () => {
     await users.insertOne({ username: 'a.b', email: 'ab@gmail.com', role: 'user' });
     await users.insertOne({ username: 'axb', email: 'axb@gmail.com', role: 'user' });
-    const kept = await outsidePeople({ INTERNAL_ACCOUNTS: 'a.b,lily' });
+    const kept = await outsidePeople({ INTERNAL_ACCOUNTS: 'a.b,team' });
     expect(kept).toContain('axb');
     expect(kept).not.toContain('a.b');
-    expect(kept).toContain('Lily-Shen');
+    expect(kept).toContain('Team-Member');
   });
 
   test('parses entries, ignoring empty ones and a bare * or @', () => {

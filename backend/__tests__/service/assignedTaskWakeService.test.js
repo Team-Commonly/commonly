@@ -245,3 +245,33 @@ it('does not cancel a reserved continuation when a skip arrives during preflight
     spy.mockRestore();
   }
 });
+
+it('skips an install whose floor read fails and still wakes the next one (TASK-503)', async () => {
+  // eslint-disable-next-line global-require
+  const AgentMessageService = require('../../services/agentMessageService');
+  const otherPod = new mongoose.Types.ObjectId();
+  const other = await User.create({
+    username: 'loom-wake-test', email: 'loom-wake@example.test', password: 'test-password',
+    isBot: true, botType: 'agent', botMetadata: { agentName: 'codex', instanceId: 'loom' },
+  });
+  await AgentInstallation.create({
+    agentName: 'codex', instanceId: 'loom', podId: otherPod, version: '1', installedBy: other._id,
+    config: { boardWake: { enabled: false } }, status: 'active',
+  });
+  await Task.create({ podId: otherPod, taskNum: 1, taskId: 'TASK-9', title: 'Other seat', assignee: 'loom' });
+  await completed();
+  await completed({ instanceId: 'loom', podId: otherPod });
+  // Whichever install the sweep reaches first has an unreadable pod.
+  const floor = jest.spyOn(AgentMessageService, 'holdsFloor')
+    .mockRejectedValueOnce(Object.assign(new Error('Messages are temporarily unavailable.'), {
+      code: 'MESSAGE_STORE_UNAVAILABLE', statusCode: 503,
+    }))
+    .mockResolvedValue(false);
+  try {
+    expect(await dispatchAssignedTaskWakes(NOW)).toEqual({ eligible: 1, woken: 1 });
+    expect(floor).toHaveBeenCalledTimes(2);
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+  } finally {
+    floor.mockRestore();
+  }
+});

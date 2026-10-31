@@ -19,8 +19,8 @@
  * Dry run by default; pass `--apply` to delete. Run it on the operator's word.
  *
  * Usage:
- *   ts-node backend/scripts/purge-unstamped-post-summaries.ts           # report
- *   ts-node backend/scripts/purge-unstamped-post-summaries.ts --apply   # delete
+ *   cd backend && node dist/scripts/purge-unstamped-post-summaries.js           # report
+ *   cd backend && node dist/scripts/purge-unstamped-post-summaries.js --apply   # delete
  */
 
 import mongoose from 'mongoose';

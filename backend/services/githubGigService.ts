@@ -1,6 +1,7 @@
 /** GitHub App activity projected into an explicitly bound pod. */
 import { Types } from 'mongoose';
 import Task from '../models/Task';
+import { onTaskClosed } from './roomGrantService';
 import GithubGigBinding from '../models/GithubGigBinding';
 import { MERGE_EVIDENCE_TEXT } from './initiativeStatus';
 
@@ -10,6 +11,8 @@ const AgentIdentityService = require('./agentIdentityService');
 const AgentMessageService = require('./agentMessageService');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { emitTaskUpdated } = require('./taskEventService');
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { recordTaskTransition } = require('./taskRecordService');
 
 type Element =
   | { type: 'Text'; text: string }
@@ -87,12 +90,15 @@ export const completeTaskForMergedPull = async (podId: string, href: string): Pr
     // eslint-disable-next-line no-await-in-loop
     const task = await Task.findOneAndUpdate(
       { podId: new Types.ObjectId(podId), prUrl: href, status: { $in: ['pending', 'claimed'] } },
-      { $set: { status: 'done', completedAt: at }, $push: { updates: {
+      { $inc: { grantEpoch: 1 }, $set: { status: 'done', claimedByUserId: null, completedAt: at }, $push: { updates: {
         text: MERGE_EVIDENCE_TEXT, author: 'system', authorId: null, createdAt: at,
       } } },
       { new: true },
     );
     if (!task) return;
+    recordTaskTransition({ podId, task, from: null, to: 'done', at });
+    // eslint-disable-next-line no-await-in-loop
+    await onTaskClosed(task);
     emitTaskUpdated(podId, task, 'updated');
   }
 };
