@@ -101,6 +101,10 @@ describe('V2Avatar', () => {
     expect(picked.container.querySelector('.v2-avatar')).toHaveClass('v2-avatar--character');
     picked.unmount();
 
+    const robot = render(<V2Avatar name="Ada" src="bottts:ada-v1" />);
+    expect(robot.container.querySelector('.v2-avatar')).toHaveClass('v2-avatar--character');
+    robot.unmount();
+
     const photo = render(<V2Avatar name="Ada" src="/api/uploads/avatar.png" />);
     expect(photo.container.querySelector('.v2-avatar')).not.toHaveClass('v2-avatar--character');
   });

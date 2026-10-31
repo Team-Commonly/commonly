@@ -15,6 +15,18 @@ const tokensIn = (css: string, prefix: string): string[] => {
   return Array.from(css.matchAll(re), (m) => m[1].toLowerCase());
 };
 
+// The ring token pair (--<prefix>-frame and -frame-dark), read as written.
+const ringIn = (css: string, prefix: string): { frame: string; dark: string } => {
+  const valueOf = (name: string): string => {
+    const m = new RegExp(`--${name}:\\s*([^;]+);`).exec(css);
+    return m ? m[1].trim() : '';
+  };
+  return {
+    frame: valueOf(`${prefix}-frame`),
+    dark: valueOf(`${prefix}-frame-dark`),
+  };
+};
+
 const groundSvg = (uri: string | null): string => decodeURIComponent(
   String(uri).replace(/^data:image\/svg\+xml;utf8,/, ''),
 );
@@ -30,10 +42,16 @@ const groundOf = (uri: string | null): string => {
 describe('character avatar grounds', () => {
   const v2Tokens = tokensIn(read('../v2.css'), 'v2-avatar');
   const designTokens = tokensIn(read('../../../design-system/tokens.css'), 'c-avatar');
+  const v2Css = read('../v2.css');
+  const designCss = read('../../../design-system/tokens.css');
 
-  test('v2.css and design-system tokens list the same seven grounds (three agent, four people)', () => {
+  test('v2.css and design-system tokens list the same seven grounds and ring values', () => {
     expect(v2Tokens).toHaveLength(7);
     expect(designTokens).toEqual(v2Tokens);
+    // A ring edit in one file and not the other fails here, not in the screenshot.
+    expect(ringIn(designCss, 'c-avatar')).toEqual(ringIn(v2Css, 'v2-avatar'));
+    expect(ringIn(v2Css, 'v2-avatar').frame).not.toBe('');
+    expect(ringIn(v2Css, 'v2-avatar').dark).not.toBe('');
   });
 
   test('every agent ground is one of the agent tokens, and no people ground is', () => {
@@ -96,5 +114,22 @@ describe('character avatar grounds', () => {
     }
     expect(grounds.size).toBe(4);
     grounds.forEach((g) => expect(humanTokens).toContain(g));
+  });
+
+  // The 24 Paper looks (4 grounds x 3 necklines x 2 shirts) must each be distinct
+  // and spread six to a ground, so no warm ground repeats a look.
+  test('the 24 Paper looks are distinct, six on each of the four warm grounds', () => {
+    const looksByGround = new Map<string, Set<string>>();
+    for (let i = 0; i < 240; i += 1) {
+      const uri = String(paperAvatarFor(`paper-look-${i}`));
+      const ground = groundOf(uri);
+      if (!looksByGround.has(ground)) looksByGround.set(ground, new Set());
+      looksByGround.get(ground)!.add(uri);
+    }
+    expect(looksByGround.size).toBe(4);
+    const all = new Set<string>();
+    looksByGround.forEach((looks) => looks.forEach((l) => all.add(l)));
+    expect(all.size).toBe(24);
+    looksByGround.forEach((looks) => expect(looks.size).toBe(6));
   });
 });

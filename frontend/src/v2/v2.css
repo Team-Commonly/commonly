@@ -41,7 +41,7 @@ body.modern-ui.v2-canvas {
   --v2-content-radius: 6px;
   /* Character-avatar grounds (TASK-679, Lit Signal). The fill behind each face
      is generated in utils/avatars.ts CHARACTER_GROUNDS, which must match these
-     values; v2-layout-invariants pins the two together. Agents are cool, people
+     values; avatarGrounds.test.ts pins the two together. Agents are cool, people
      warm, so the family still tells the species apart. Mirrors --c-avatar-* in
      design-system/tokens.css. */
   --v2-avatar-agent-1: #dbe5f1;
