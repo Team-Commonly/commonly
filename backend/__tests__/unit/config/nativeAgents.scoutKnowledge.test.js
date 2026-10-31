@@ -14,6 +14,7 @@ const path = require('path');
 const { scoutApp } = require('../../../config/native-agents/scout');
 
 const BYO_PAGE = path.resolve(__dirname, '../../../../frontend/src/v2/components/V2AgentBYO.tsx');
+const { daemonSetupCommandTemplate } = require('../../utils/daemonSetupCommandTemplate');
 
 const constantFromPage = (name) => {
   const source = fs.readFileSync(BYO_PAGE, 'utf8');
@@ -22,12 +23,17 @@ const constantFromPage = (name) => {
   return match[1];
 };
 
+// Scout runs on every instance, so its copy names the URL placeholder, never a
+// production host (CodeRabbit on #2727).
+const SCOUT_API_PLACEHOLDER = '<API URL of this instance>';
+
 describe('Scout onboarding knowledge', () => {
   const prompt = scoutApp.systemPrompt;
 
   test('gives the exact install and machine commands the Bring-your-own page shows', () => {
     expect(prompt).toContain(constantFromPage('CLI_INSTALL_COMMAND'));
-    expect(prompt).toContain(constantFromPage('DAEMON_SETUP_COMMAND'));
+    expect(prompt).toContain(daemonSetupCommandTemplate(SCOUT_API_PLACEHOLDER));
+    expect(prompt).not.toMatch(/--instance https:\/\/api\.commonly\.me && commonly daemon register/);
     expect(prompt).toContain('export COMMONLY_API_URL=');
     expect(prompt).toContain('export COMMONLY_AGENT_TOKEN=');
     expect(prompt).toContain('commonly agent run <name>');
@@ -90,7 +96,7 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/OpenCode or dsh through their guides, and Hermes from the command line/);
     expect(prompt).toMatch(/Do not claim any other tool connects\./);
     expect(prompt).toContain('commonly agent attach hermes --pod <pod-id> --name <name>');
-    expect(prompt).toMatch(/It needs Hermes 0\.22\.2 exactly/);
+    expect(prompt).toMatch(/It needs Hermes 0\.22\.5 or newer below 0\.23/);
     // The adapter fixes --provider openrouter and reads OPENROUTER_API_KEY from the host.
     expect(prompt).toMatch(/an OpenRouter API key \(OPENROUTER_API_KEY\) in the environment/);
     expect(prompt).toMatch(/do not say OpenRouter, or any model provider, was the one it was walked on/);
@@ -116,11 +122,11 @@ describe('Scout onboarding knowledge', () => {
   // Linux run 38982219348: a Claude Code listener cannot run on Linux, WSL or
   // Windows (#2288 refuses it), so a connect card for it there is a dead end.
   test('offers a connect card for Claude Code on a Mac only, and says what works elsewhere', () => {
-    expect(prompt).toMatch(/Claude Code on a Mac; Codex on Mac or Linux \(WSL included\)/);
+    expect(prompt).toMatch(/Claude Code on a Mac; Codex on a Mac \(Linux and WSL not yet tested\)/);
     expect(prompt).toMatch(/DeepSeek Harness \(dsh\) through its attach guide, walked on macOS with other OSs unverified/);
     expect(prompt).not.toMatch(/On Linux \(WSL included\), Codex only/);
     expect(prompt).toMatch(/For Claude Code on Linux, WSL or Windows, do not propose a connect card/);
-    expect(prompt).toMatch(/commonly_offer_hosted_agent, or say they can use the pod from their own Claude Code sessions/);
+    expect(prompt).toMatch(/commonly_offer_hosted_agent, and also say they can use the pod from their own Claude Code sessions/);
     expect(prompt).not.toMatch(/Windows is not verified yet/);
   });
 
@@ -133,6 +139,73 @@ describe('Scout onboarding knowledge', () => {
   test('gives both halves when their tool can call agents: the listener and the MCP line', () => {
     expect(prompt).toMatch(/give both halves: the Terminal command/);
     expect(prompt).toMatch(/and the MCP line/);
+  });
+
+  // Stranger journey 2026-10-20..26: after "Claude Code" and "macOS" in the
+  // person's own words, Scout typed the Terminal steps out in 6 of 46 runs and
+  // the card never came.
+  test('proposes the connect card once the tool and a supported OS are known, however the person arrived', () => {
+    expect(prompt).toMatch(/Once they have named Claude Code or Codex and an OS on that list, propose the card in that same reply/);
+    expect(prompt).toMatch(/then propose the connect card when the card rule below allows it/);
+    expect(prompt).toMatch(/propose the card in that same reply, whether they came from the welcome button or asked in their own words/);
+    expect(prompt).toMatch(/Do not type out the Terminal steps, and do not ask whether they want it set up, in its place/);
+  });
+
+  // The prompt is the only guard before the card, so the pairs
+  // it may go out for are listed, not inferred.
+  test('proposes the card only for Claude Code on macOS and Codex on macOS', () => {
+    expect(prompt).toMatch(/The card may go out for exactly these pairs: Claude Code on macOS; Codex on macOS\./);
+    expect(prompt).toMatch(/Any other OS, such as Linux, WSL, native Windows, ChromeOS, iPad or iPhone, Android or FreeBSD, gets a text answer and no card/);
+    ['ChromeOS', 'iPad', 'Android'].forEach((os) => expect(prompt).toContain(os));
+  });
+
+  test('asks about Codex in ChatGPT, and takes a plain "Codex" as the CLI', () => {
+    expect(prompt).toMatch(/A plain "Codex" answers that question and counts as the CLI/);
+    expect(prompt).toMatch(/When they say Codex together with ChatGPT, the web, the cloud or an app, as in "I use Codex in ChatGPT", ask whether they run the Codex CLI in a terminal, with no card in that reply/);
+  });
+
+  test('does not take the Claude app or ChatGPT for the command-line tool', () => {
+    expect(prompt).toMatch(/the Claude app \(desktop or phone\) and claude\.ai are not Claude Code, and the ChatGPT app, chatgpt\.com and Codex in ChatGPT are not the Codex CLI/);
+    expect(prompt).toMatch(/When they say "Claude" or "ChatGPT" without saying which, ask whether they run Claude Code or the Codex CLI in a terminal, and propose no card until they say they do/);
+    expect(prompt).toMatch(/A bare "Claude" or "ChatGPT" never settles it, on macOS too, and even when you had asked "Claude Code or Codex": ask that one question first, with no card in that reply/);
+    expect(prompt).toMatch(/Before you propose the card, check their own messages, not yours: one of them must say "Claude Code" or "Codex"\. If none does, ask instead/);
+    expect(prompt).toMatch(/If they only use the app, there is nothing of theirs to connect: offer "Run it here"/);
+  });
+
+  // The answer matches what the Connect page itself offers on that OS
+  // (agentByo.listen.unavailableClaude / unavailableCodex).
+  test('never proposes the card for a tool or OS it cannot set up, and offers what the Connect page does', () => {
+    expect(prompt).toMatch(/For any other tool, or an OS where it does not run yet, never propose the card; answer in text\. OpenCode, Hermes and DeepSeek Harness have their own paths above: point them there\. Say plainly that it does not run there yet only for a tool with no path above, or an OS its path does not cover\./);
+    // CodeRabbit on #2765: the no-card rule must not deny tools that do connect.
+    expect(prompt).not.toMatch(/For any other tool, or an OS where it does not run yet, never propose the card; answer in text and say plainly that it does not run there yet/);
+    expect(prompt).toMatch(/For Claude Code on Linux, WSL or Windows, do not propose a connect card: offer "Run it here" with commonly_offer_hosted_agent, and also say they can use the pod from their own Claude Code sessions with the MCP command on the connect page \(on Windows the page gives it as two PowerShell lines\)/);
+    expect(prompt).toMatch(/For Codex on native Windows, do not propose a connect card either: offer "Run it here", or running Codex on a Mac\. Say plainly why/);
+    const en = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../../frontend/src/i18n/locales/en.json'), 'utf8'));
+    expect(en.agentByo.listen.unavailableClaude).toMatch(/Connect Claude Code from your own sessions with the command below, or choose “Run it here”/);
+    expect(en.agentByo.listen.unavailableCodex).toMatch(/Choose “Run it here” for a hosted agent, or run the command on a Mac\. Linux is not tested yet\./);
+  });
+
+  // Stranger journey 2026-10-26: Scout wrote the Terminal steps and asked
+  // "Want me to open that page?" instead of proposing, and no card came.
+  test('proposes the connect card once it knows the tool and OS, without asking first', () => {
+    expect(prompt).toMatch(
+      /Propose the connect card in the same turn you learn both what they run and an OS where it can be connected/,
+    );
+    expect(prompt).toMatch(/Do not ask whether to: the card is the question/);
+    expect(prompt).toMatch(/Do not write the Terminal steps in chat instead of the card/);
+    expect(prompt).toMatch(
+      /Where the connect card applies, the card is the Terminal half: propose it and give only the MCP line/,
+    );
+  });
+
+  // A card gets only the MCP line in text, so Codex needs a line of its own:
+  // the Claude Code one does not configure Codex.
+  test('gives an MCP line for each tool the card connects', () => {
+    expect(prompt).toContain('`claude mcp add commonly -e COMMONLY_API_URL=... '
+      + '-e COMMONLY_AGENT_TOKEN=... -- npx -y @commonlyai/mcp`');
+    expect(prompt).toContain('`codex mcp add commonly --env COMMONLY_API_URL=... '
+      + '--env COMMONLY_AGENT_TOKEN=... -- npx -y @commonlyai/mcp`');
+    expect(prompt).toMatch(/Give the line for the tool they run/);
   });
 
   test('cites developer docs that exist in the repository', () => {
@@ -156,7 +229,7 @@ describe('Scout onboarding knowledge', () => {
   // QA 2026-10-16: Scout said "200 turns a day" while the card and the meter
   // said 30, because the prompt kept its own copy of the plan line. The limits
   // now reach Scout only through the hosted offer's description.
-  // Vera on #2297: the welcome's hosted start runs in place on the person's own
+  // The welcome's hosted start runs in place on the person's own
   // welcome (services/welcomeHostedStart.ts), so a prompt that says it "opens
   // Bring your own" misdescribes the button they just pressed.
   test('says the welcome\'s hosted start runs in place, with the page only as the fallback', () => {
@@ -206,14 +279,38 @@ describe('the hosted offer names the model a hosted turn runs on', () => {
   });
 });
 
-// Sam, 2026-10-21: Scout's welcome is in English and doesn't advertise another
+// Scout's welcome is in English and doesn't advertise another
 // language. If someone writes in another language, Scout answers in it: the
 // house rule "Match the user's language" stays in force.
 describe('Scout\'s welcome', () => {
   const { SCOUT_WELCOME } = require('../../../config/native-agents/scout');
 
   test('is in English, with no invitation to write in another language', () => {
-    expect(SCOUT_WELCOME).toBe('What would you like to do first?');
+    expect(SCOUT_WELCOME).toBe("I'm Scout, your first agent here. Pick one below, or just tell me what you're working on.");
     expect(SCOUT_WELCOME).not.toMatch(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uff00-\uffef]/);
+  });
+});
+
+describe('Scout running-state claims', () => {
+  const prompt = scoutApp.systemPrompt;
+
+  // A BYO seat's intro is posted at install and says nothing is running it.
+  // Scout read that message hours later and told a connected user their agent
+  // was not running (D172, 2026-10-28).
+  test('checks live status before any running-or-not claim', () => {
+    expect(prompt).toContain('Call it before you say anything about whether an agent is running');
+    expect(prompt).toContain('Never judge that from earlier messages');
+    expect(prompt).toContain('unless commonly_agent_status said so in this turn');
+  });
+
+  // idle covers five minutes to a day, so a listener that stopped half an hour
+  // ago reads idle, not stale. Scout must give restart advice for it (rhea on #2969).
+  test('names every status bucket the tool returns, and gives restart advice for idle', () => {
+    for (const bucket of ['active:', 'idle:', 'stale:', 'never-connected', 'ready']) {
+      expect(prompt).toContain(bucket);
+    }
+    expect(prompt).toContain('idle and stale both mean its listener stopped');
+    expect(prompt).toContain('within the last 5 minutes');
+    expect(prompt).not.toContain('nothing needs fixing');
   });
 });

@@ -101,7 +101,7 @@ describe('removeConnection (a hosted-MCP row)', () => {
     expect(deps.clientIdFor).not.toHaveBeenCalled();
   });
 
-  it('revokes a DCR confidential row with the method it registered (TASK-248, Vera #2377)', async () => {
+  it('revokes a DCR confidential row with the method it registered (TASK-248)', async () => {
     const dcrEntry = { ...ENTRY, client: 'dcr' };
     const { deps, revokeGrants } = recorder({ entryFor: () => dcrEntry });
     deps.dcrClientForRow = jest.fn(async () => ({

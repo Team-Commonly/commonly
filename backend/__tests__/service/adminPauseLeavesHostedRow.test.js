@@ -1,3 +1,10 @@
+// This fixture stubs User and auth; real lock/authorization behavior is tested
+// across Mongo in service/adminRoleConcurrency.test.js.
+jest.mock('../../services/adminUserMutationService', () => ({
+  withAdminUserMutation: (_actor, operation) => operation(() => {}),
+  AdminUserMutationError: class extends Error {},
+}));
+
 // TASK-172 §10 step 6b: the admin pause/resume lever projects onto the rows an
 // InstallableInstallation owns, and it selects them by `installationId`
 // (`routes/admin/installables.ts:108` / `:145`). A hosted-MCP connection is
@@ -30,7 +37,7 @@ jest.mock('../../middleware/auth', () => (req, _res, next) => {
 });
 jest.mock('../../middleware/adminAuth', () => (_req, _res, next) => next());
 
-jest.mock('../../models/User', () => ({ findById: jest.fn(), countDocuments: jest.fn() }));
+jest.mock('../../models/User', () => ({ findById: jest.fn(), findOneAndDelete: jest.fn(), countDocuments: jest.fn() }));
 jest.mock('../../services/emailService', () => ({ sendEmail: jest.fn() }));
 
 const Integration = require('../../models/Integration');
@@ -176,7 +183,7 @@ test('the projection misses the hosted row because the key is ABSENT, not empty'
   expect('installationId' in raw).toBe(false);
 });
 
-describe('the admin user delete refuses while the user owns a hosted row (wren 75845)', () => {
+describe('the admin user delete refuses while the user owns a hosted row', () => {
   // `DELETE /api/admin/users/:userId` (`routes/admin/users.ts:267`) references
   // Integration nowhere but this guard. Deleting the person leaves their hosted
   // rows owned by an account that no longer exists — and the reason is the GAP,
@@ -194,7 +201,6 @@ describe('the admin user delete refuses while the user owns a hosted row (wren 7
     _id: new mongoose.Types.ObjectId(),
     isBot: false,
     role: 'user',
-    deleteOne: jest.fn().mockResolvedValue({}),
   });
   const hostedFor = (userId, overrides = {}) => ({
     type: 'hosted-mcp',
@@ -208,8 +214,9 @@ describe('the admin user delete refuses while the user owns a hosted row (wren 7
   it("refuses with a code and each row's id and entry, and does not delete the person", async () => {
     const target = person();
     User.findById.mockResolvedValue(target);
+    User.findOneAndDelete.mockResolvedValue(target);
     const live = await Integration.create(hostedFor(target._id));
-    // The case the predicate exists for (vera 75850): the provider step failed,
+    // The case the predicate exists for: the provider step failed,
     // so the row sits at step 2 of the removal — `disconnected`, its material
     // not yet gone. A guard keyed on `connected` waves this one through.
     const stranded = await Integration.create(hostedFor(target._id, {
@@ -232,22 +239,23 @@ describe('the admin user delete refuses while the user owns a hosted row (wren 7
     // removal route takes: an admin who gets only ids has to look each one up.
     expect(res.body.connections.map((row) => row.entryId).sort()).toEqual(['linear', 'notion']);
     // The control: the refusal is what stopped it, not a failed lookup.
-    expect(target.deleteOne).not.toHaveBeenCalled();
+    expect(User.findOneAndDelete).not.toHaveBeenCalled();
     expect(await Integration.countDocuments({ createdBy: target._id })).toBe(2);
   });
 
   it('accepts the delete for a person who owns no hosted row', async () => {
     const target = person();
     User.findById.mockResolvedValue(target);
+    User.findOneAndDelete.mockResolvedValue(target);
 
     const res = await request(app).delete(`/admin/users/${target._id}`);
 
     expect(res.status).toBe(200);
-    expect(target.deleteOne).toHaveBeenCalledTimes(1);
+    expect(User.findOneAndDelete).toHaveBeenCalledTimes(1);
   });
 
   it('refuses for a row that is mid-exchange, which carries no ref yet', async () => {
-    // Wren 75857: the costly shape, and the one a material-keyed predicate waves
+    // The costly shape, and the one a material-keyed predicate waves
     // past. The callback unsets `config.pendingAuth` at `hostedMcpConnect.ts:341`
     // and does not write `config.credentialRef` until `:427`, so for the length
     // of its upstream calls the row carries neither — and every failure branch
@@ -258,6 +266,7 @@ describe('the admin user delete refuses while the user owns a hosted row (wren 7
     // it is there, so the connect lands into an ownerless row.
     const target = person();
     User.findById.mockResolvedValue(target);
+    User.findOneAndDelete.mockResolvedValue(target);
     const midExchange = await Integration.create(hostedFor(target._id, {
       status: 'pending',
       config: { entryId: 'linear', intake: 'oauth' },
@@ -268,7 +277,7 @@ describe('the admin user delete refuses while the user owns a hosted row (wren 7
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('hosted_mcp_connection_owned');
     expect(res.body.connections).toEqual([{ id: String(midExchange._id), entryId: 'linear' }]);
-    expect(target.deleteOne).not.toHaveBeenCalled();
+    expect(User.findOneAndDelete).not.toHaveBeenCalled();
   });
 
   it('does not refuse for a row that is not a hosted one', async () => {
@@ -278,6 +287,7 @@ describe('the admin user delete refuses while the user owns a hosted row (wren 7
     // Integration turns this arm red, which is what keeps it honest.
     const target = person();
     User.findById.mockResolvedValue(target);
+    User.findOneAndDelete.mockResolvedValue(target);
     await Integration.create({
       type: 'github-app',
       scope: 'user',
@@ -289,6 +299,6 @@ describe('the admin user delete refuses while the user owns a hosted row (wren 7
     const res = await request(app).delete(`/admin/users/${target._id}`);
 
     expect(res.status).toBe(200);
-    expect(target.deleteOne).toHaveBeenCalledTimes(1);
+    expect(User.findOneAndDelete).toHaveBeenCalledTimes(1);
   });
 });

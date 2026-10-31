@@ -16,13 +16,15 @@ import path from 'path';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..', '..');
 const LANDING_ASSETS = path.join(REPO_ROOT, 'frontend/src/assets/landing');
-const README_FRAMES = path.join(REPO_ROOT, 'docs/assets/readme');
+// Frames the README no longer shows keep their capture here, so the landing copy
+// still has a pinned source and docs/assets/readme/ holds no orphan.
+const LANDING_SOURCES = path.join(REPO_ROOT, 'docs/assets/landing-source');
 const PAGE = fs.readFileSync(path.join(__dirname, '..', 'V2LandingPage.tsx'), 'utf8');
 
-const FRAMES: Array<[landing: string, readme: string]> = [
-  ['activity.png', 'activity-2x.png'],
-  ['team.png', 'team-2x.png'],
-  ['connectors.png', 'connectors-2x.png'],
+const FRAMES: Array<[landing: string, source: string, dir: string]> = [
+  ['activity.png', 'activity-2x.png', LANDING_SOURCES],
+  ['team.png', 'team-2x.png', LANDING_SOURCES],
+  ['connectors.png', 'connectors-2x.png', LANDING_SOURCES],
 ];
 
 // The README dropped its Bring-your-own frame (#2564) because the capture shows
@@ -32,10 +34,10 @@ const LANDING_ONLY = ['byo.png'];
 const LANDING_IMAGES = [...FRAMES.map(([landing]) => landing), ...LANDING_ONLY].sort();
 
 describe('landing feature frames', () => {
-  test.each(FRAMES)('%s is byte-identical to the README frame %s', (landing, readme) => {
+  test.each(FRAMES)('%s is byte-identical to its source frame %s', (landing, source, dir) => {
     const copy = fs.readFileSync(path.join(LANDING_ASSETS, landing));
-    const source = fs.readFileSync(path.join(README_FRAMES, readme));
-    expect(copy.equals(source)).toBe(true);
+    const original = fs.readFileSync(path.join(dir, source));
+    expect(copy.equals(original)).toBe(true);
   });
 
   test('the page imports exactly these four frames, and no other landing image', () => {

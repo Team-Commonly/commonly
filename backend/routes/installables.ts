@@ -41,6 +41,7 @@ const {
 } = require('../services/slackOAuthService');
 import { Types } from 'mongoose';
 import { listIntegrationsRateLimit, writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
+import { publicAppUrl } from '../utils/publicAppUrl';
 // eslint-disable-next-line global-require
 const {
   InstallLockLostError,
@@ -146,12 +147,6 @@ const slackBindConflict = async (res: Res, existing: any): Promise<void> => {
   );
 };
 
-const publicAppUrl = (): string => {
-  const configured = String(process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || 'https://commonly.me')
-    .split(',')[0]
-    .trim();
-  return (configured || 'https://commonly.me').replace(/\/+$/, '');
-};
 
 const slackCallbackRedirect = (res: Res, state: 'pending' | 'error', code?: string): Res => {
   res.clearCookie?.(SLACK_NONCE_COOKIE, {

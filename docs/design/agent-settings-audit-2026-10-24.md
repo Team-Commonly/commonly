@@ -2,10 +2,10 @@
 
 A real-browser walk of the per-agent Settings page (`/v2/agents/<agentName>/<instanceId>`)
 on production, with every control traced to what reads it. The page shipped without this
-walk (direction D44). This doc feeds the fixes (CTO) and the artboard (ux-lead).
+walk. This doc feeds the fixes (CTO) and the artboard (ux-lead).
 
 - **Where:** commonly.me on `main` at `83fe06743`, signed in as the non-admin test
-  account `hq-tester-1015`, using an ego lite profile that isn't Sam's. Walked
+  account `hq-tester-1015`, using a non-operator ego lite profile. Walked
   2026-10-24, 07:10–07:35Z.
 - **How:** every section was captured at 1440 px and 390 px. Each control was then traced
   in code on `origin/main` from its write path to its readers, and every "read by nothing"
@@ -183,7 +183,7 @@ Screens: `*-04-pods`.
   - For hosted agents, "Set by the runtime" hides a deliberate rule: `hostedEngine.ts`
     never honours a stored model, so a self-serve user can't route to a paid model. The
     page should say "Commonly picks the model" and name it.
-- **Missing:** model and effort editing for single-CLI seats (D41).
+- **Missing:** model and effort editing for single-CLI seats.
 - **Confusing:** Scout is labelled "Hosted" when it is `native`.
 
 Screens: `byo-*-05-runtime`, `claude-*-05-runtime`, `codex-*-05-runtime`,
@@ -293,10 +293,10 @@ What to take from this:
 2. **Runtime:** where it runs, harness, model, effort.
    - Editable wherever the runtime honours the change, with when it takes effect.
    - For a single CLI: read-only, plus the exact `commonly agent config` line, until
-     editing ships (D41).
+     editing ships.
    - For hosted: "Commonly picks the model: <name>".
 
-   *Both products we're compared with lead with this, and it's what D41 asked for.*
+   *Both products we're compared with lead with this.*
 3. **Reach, per pod:** one control per pod (open / mentions only / drafts for me /
    quiet), heartbeat under it, a line saying what each narrower setting misses, and
    "only you can change this". *It merges Wake and Pods, and it is the one control

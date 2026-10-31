@@ -3,6 +3,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import V2AgentRuntimeGrants, { describeRuntime } from '../components/V2AgentRuntimeGrants';
 import { AuthContext } from '../../context/AuthContext';
+import { daemonSetupCommand } from '../utils/daemonSetupCommand';
 
 jest.mock('axios', () => {
   const mock = {
@@ -72,10 +73,26 @@ test('revoked Runtime row offers an active computer and moves in one request', a
   expect(axios.post).toHaveBeenCalledTimes(1);
 });
 
+test('two computers with one name are told apart by when each was added', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true,
+      activeMachines: [
+        { machineId: 'new', name: 'Sams-MacBook', createdAt: '2026-10-24T09:00:00.000Z' },
+        { machineId: 'older', name: 'Sams-MacBook', createdAt: '2026-09-06T09:00:00.000Z' },
+        { machineId: 'solo', name: 'Studio', createdAt: '2026-09-01T09:00:00.000Z' },
+      ] } : response }));
+  renderSection();
+  const select = await screen.findByLabelText('Run on');
+  const labels = Array.from(select.querySelectorAll('option')).map((option) => option.textContent);
+  expect(labels[0]).toMatch(/^Sams-MacBook · added Oct 24, /);
+  expect(labels[1]).toMatch(/^Sams-MacBook · added Sep 6, /);
+  expect(labels[2]).toBe('Studio');
+});
+
 test('without an active computer, the setup hint includes daemon installation', async () => {
   renderSection();
   expect(await screen.findByText(/Register another computer to move this agent/)).toBeInTheDocument();
-  expect(screen.getByText('npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install')).toBeInTheDocument();
+  expect(screen.getByText(daemonSetupCommand())).toBeInTheDocument();
 });
 
 test('a changed installer refuses the move before release and explains the blocking installation', async () => {

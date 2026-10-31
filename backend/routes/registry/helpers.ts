@@ -2,6 +2,7 @@
 const User = require('../../models/User');
 const Gateway = require('../../models/Gateway');
 const { AgentInstallation } = require('../../models/AgentRegistry');
+const { RUNTIME_IDENTITY_KEYS, declaredRuntimeIdentity } = require('../../utils/runtimeIdentity');
 const { isK8sMode } = require('../../services/agentProvisionerService');
 const AgentIdentityService = require('../../services/agentIdentityService').default;
 const { resolveAgentDisplayLabel } = require('../../services/agentIdentityService');
@@ -195,8 +196,8 @@ const sanitizeRuntimeConfig = (runtimeConfig: any, agentName?: string) => {
     : [];
   // `rest` must still carry `wrappedCli` so normalizeRuntimeIdentity can
   // read it for the legacy `local-cli` rewrite. The pre-fix version
-  // destructured wrappedCli out before this call → legacy installs (sam-
-  // local-codex et al) stayed as runtimeType:'local-cli' on the wire and
+  // destructured wrappedCli out before this call → legacy installs (local
+  // wrapper seats) stayed as runtimeType:'local-cli' on the wire and
   // the inspector showed "Local CLI · BYO" instead of "Codex · BYO".
   const { runtimeType, host } = normalizeRuntimeIdentity(rest, agentName);
   // Strip `wrappedCli` from the response only AFTER normalization so
@@ -254,7 +255,7 @@ const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
       // `process.env.TELEGRAM_BOT_TOKEN` (`routes/webhooks/telegram.ts`,
       // `services/telegramBridgeService.ts`, `decisionCardReconcileService.ts`,
       // both provisioners). This was the only reader that preferred a per-row
-      // copy (TASK-140, Wren 74155).
+      // copy (TASK-140).
       const botToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
       // The instance's, not the row's (TASK-141): `secretToken` is stripped from
       // a body like the two Slack keys above.
@@ -322,7 +323,7 @@ const composeInstallIntro = ({
   // Under the boolean, a gone-dark agent was told "Nothing is running me yet"
   // — flat-certain AND factually wrong, since it demonstrably ran. Asserting a
   // guess in the agent's own voice is the very defect this function exists to
-  // remove, so the hedge is not decoration (ux-lead, fleet review 2026-08-14).
+  // remove, so the hedge is not decoration (fleet review 2026-08-14).
   state: string;
   fixCommand: string;
 }): string => {
@@ -360,13 +361,59 @@ const composeInstallIntro = ({
   return `${lead} Mention me with @${handle} when you need me.`;
 };
 
-// Internal ops/smoke/demo seats (Wren spec §1.1, BEND-3 follow-up #1377):
+// Internal ops/smoke/demo seats (spec §1.1, BEND-3 follow-up #1377):
 // the roster hides these behind a disclosure. The classification lives HERE,
 // at the boundary, so every consumer reads one `internal: true` flag instead
 // of curating its own name list — the client-side constant this replaces was
 // accepted for exactly one release. An explicit `config.internal: true` on
 // the installation wins; the name patterns cover the seats scripts already
 // create without the flag.
+// A seat is one runtime, but attach writes its runtime identity only onto the
+// install where it ran, so the seat's installs in other pods keep an older
+// identity or none (TASK-569: Sprint Review read claude-code in one pod and
+// nothing in Core runtime). Every pod therefore reads the seat's identity from
+// its most recently written install that declares one. Most recent, never the
+// first match, so a harness swap made in one pod shows in all of them.
+// The four keys move as a group: an older install's adapter must not outlive
+// a newer install's runtimeType, which would bring back the stale chip.
+const runtimeIdentityKey = (agentName: any, instanceId: any) => `${agentName}:${instanceId || 'default'}`;
+
+const resolveSeatRuntimeIdentities = async (installations: any[]): Promise<Map<string, Record<string, unknown>>> => {
+  const resolved = new Map<string, Record<string, unknown>>();
+  const seats = new Map<string, { agentName: any; instanceId: string }>();
+  for (const i of installations || []) {
+    if (!i?.agentName) continue;
+    seats.set(runtimeIdentityKey(i.agentName, i.instanceId), {
+      agentName: i.agentName, instanceId: i.instanceId || 'default',
+    });
+  }
+  if (seats.size === 0) return resolved;
+  const rows = await AgentInstallation.find({
+    status: 'active',
+    $or: Array.from(seats.values()),
+  })
+    // Newest attach wins (TASK-569). Not updatedAt: the skill-load report and
+    // every settings save move it, which revived a stale harness in other pods.
+    // Rows from before runtimeIdentityAt sort after it, by their creation.
+    .select('agentName instanceId config.runtime runtimeIdentityAt createdAt')
+    .sort({ runtimeIdentityAt: -1, createdAt: -1, _id: -1 })
+    .lean();
+  for (const row of rows as any[]) {
+    const key = runtimeIdentityKey(row.agentName, row.instanceId);
+    if (resolved.has(key)) continue;
+    const identity = declaredRuntimeIdentity(row.config);
+    if (identity) resolved.set(key, identity);
+  }
+  return resolved;
+};
+
+const withSeatRuntimeIdentity = (runtime: any, identity: Record<string, unknown> | null | undefined) => {
+  if (!identity) return runtime;
+  const base = runtime && typeof runtime === 'object' ? { ...runtime } : {};
+  RUNTIME_IDENTITY_KEYS.forEach((key: string) => { delete base[key]; });
+  return { ...base, ...identity };
+};
+
 const INTERNAL_SEAT_EXACT = new Set(['hosted-smoke', 'run-here-smoke', 'commonly-summarizer']);
 const INTERNAL_SEAT_PREFIXES = ['smoke-', 'recorder-', 'adr-', 'demo-'];
 const isInternalSeat = (agentName: any, normalizedConfig: any): boolean => {
@@ -392,6 +439,7 @@ const buildAgentInstallationPayload = (installation: any, {
   user = null,
   lastMessage = null,
   revealWebhookUrl = false,
+  runtimeIdentity = null,
 }: {
   profile?: any; iconUrl?: string; lastHeartbeatAt?: any; lastActiveAt?: any; user?: any;
   lastMessage?: { content?: any; createdAt?: any } | null;
@@ -401,11 +449,13 @@ const buildAgentInstallationPayload = (installation: any, {
    * query string (`?secret=`), so it is withheld unless the caller opts in.
    */
   revealWebhookUrl?: boolean;
+  /** The seat's identity from resolveSeatRuntimeIdentities, over this install's own. */
+  runtimeIdentity?: Record<string, unknown> | null;
 } = {}) => {
   if (!installation) return null;
   const normalizedConfig = normalizeConfigMap(installation.config);
   const sanitizedRuntime = sanitizeRuntimeConfig(
-    normalizedConfig?.runtime || installation.config?.runtime || null,
+    withSeatRuntimeIdentity(normalizedConfig?.runtime || installation.config?.runtime || null, runtimeIdentity),
     installation.agentName,
   );
   const runtimeConfig = (() => {
@@ -427,15 +477,18 @@ const buildAgentInstallationPayload = (installation: any, {
   }
   // Chat attributes this seat through the User principal. Use that same
   // resolver for the listing; scoped names are only a fallback for installs
-  // that have no User row yet.
+  // that have no User row yet. A scoped name equal to the agentName is the
+  // runtime or type label, not a name, so the listing never carries it (TASK-551).
   const profileDisplayName = typeof profile?.name === 'string' ? profile.name.trim() : '';
   const installationDisplayName = typeof installation.displayName === 'string'
     ? installation.displayName.trim()
     : '';
   const identityFallback = installation.agentName || '';
+  const scopedDisplayName = [profileDisplayName, installationDisplayName]
+    .find((name) => name && name !== identityFallback) || '';
   const displayName = user
     ? resolveAgentDisplayLabel(user, identityFallback)
-    : profileDisplayName || installationDisplayName || identityFallback;
+    : scopedDisplayName;
   return {
     name: installation.agentName,
     instanceId: installation.instanceId || 'default',
@@ -453,7 +506,7 @@ const buildAgentInstallationPayload = (installation: any, {
     lastActiveAt: lastActiveAt || lastHeartbeatAt,
     usage: installation.usage,
     internal: isInternalSeat(installation.agentName, normalizedConfig),
-    // Wren spec §1.1 line 2: what the agent last said, pre-trimmed. Null when
+    // Spec §1.1 line 2: what the agent last said, pre-trimmed. Null when
     // it has never spoken in this pod (or the PG lookup was skipped/failed —
     // the roster never fails over a snippet).
     lastMessage: lastMessage && toSnippet(lastMessage.content)
@@ -462,14 +515,14 @@ const buildAgentInstallationPayload = (installation: any, {
     installedBy: installation.installedBy?.toString?.() || installation.installedBy,
     // The portable principal's id, so a client can key per-agent attention
     // (AttentionItem.actorUserId) on it instead of matching names — three
-    // writers store three different name shapes (ux-lead, Sharpen 66164).
+    // writers store three different name shapes.
     userId: user?._id ? String(user._id) : null,
     // Chat reads this image from the same User principal. Installation and
     // registry artwork must not stand in for an agent's account avatar.
     profilePicture: user?.profilePicture || null,
     // Direction C Your Team card, line 3: one sentence from the curated
     // `botMetadata.description`. Null when unset — the card renders no line,
-    // never a quote (ux-lead 66163).
+    // never a quote.
     description: typeof user?.botMetadata?.description === 'string' && user.botMetadata.description.trim()
       ? user.botMetadata.description.trim()
       : null,
@@ -545,8 +598,7 @@ const buildRuntimeLogFilters = ({ runtimeType, agentName, instanceId }: { runtim
   const accountId = normalizedAgent === 'openclaw'
     ? normalizedInstance
     : `${normalizedAgent}-${normalizedInstance}`;
-  const tokens = [normalizedInstance, accountId, normalizedAgent].filter(Boolean);
-  return Array.from(new Set(tokens));
+  return [accountId];
 };
 
 const resolveGatewayForRequest = async ({ gatewayId, userId }: { gatewayId: any; userId: any }) => {
@@ -708,6 +760,7 @@ module.exports = {
   sanitizeRuntimeConfig,
   buildOpenClawIntegrationChannels,
   buildAgentInstallationPayload,
+  resolveSeatRuntimeIdentities,
   isInternalSeat,
   toSnippet,
   normalizePluginIdentifier,

@@ -236,6 +236,13 @@ force-sync and a LiteLLM restart (CLAUDE.md, the ESO rule). Until then,
 point the dead name's `fallbacks` entry in `litellm-config.yaml` at a live
 route.
 
+Provider keys expire without warning, and this has caught us twice. Both
+OpenRouter keys had been expired for months before anyone checked, and every
+nemotron call failed over in silence. The current OpenRouter key expires on
+**2027-10-25**, so rotate it in **September 2027**. To check any OpenRouter key's
+expiry, call `GET https://openrouter.ai/api/v1/key` with that key. It returns
+`expires_at` and `limit_remaining`. A 401 with "API key expired." is this failure.
+
 Do not test with `guardrails: ["openai-moderation-enforce"]` unless the
 moderation key is real. That guardrail's OpenAI key is still a placeholder,
 so it 401s every call on any model. Production platform calls send
@@ -293,6 +300,39 @@ as uid 65534 with a read-only root filesystem and no capabilities. The
 `/register` limit is 10 per hour per client IP, and the cluster egress IP is
 not shared with anyone's laptop.
 
+### Synthetic purge and historical DMs (TASK-005)
+
+The purge retains both historical member IDs in Mongo and PostgreSQL for
+`agent-room` and `agent-dm`. Ordinary shared pods lose the synthetic member.
+A synthetic-created DM with a participant outside the disposable footprint is
+reported in `preservedDms` and retained with its messages and installations.
+Only active installations owned by the purged human pause; their recorded credential
+ledger roots and descendants are revoked. Unrelated other-owner keys and installations,
+and independent agent identities and memory, remain. The pod/member projection
+and runtime context retain an opaque missing-user ID with a `Deleted user` label.
+This uses the same read projection as account deletion (#2721).
+
+A DM wholly within the disposable footprint can still be cascaded. If a disposable
+Scout or seat bot is used in a DM outside that footprint, or the Scout is
+installed by another owner, the whole account is
+refused rather than deleting that identity. Any pod selected for cascade with an
+installation owned outside the disposable footprint also refuses the whole account before cleanup, even when that installer
+is not a member. The existing refusal for a synthetic-created pod another human
+joined remains. Inspect `refused` and
+`preservedDms` in the dry-run report; do not force a refused candidate through.
+The global administrator mutation lock and uncertain-write recovery rules still
+apply ([runbook](admin-user-mutation-lock.md)). This change does not add a durable
+late-producer fence to synthetic purge or implement receipt retirement.
+
+The overlapping pod lifecycle handlers (create, leave and member removal) share
+60 requests/minute per presented token, preceded by a coarse 6,000/minute client-IP
+budget. The latter bounds rotating invalid credentials before authentication and
+token-store allocation. Both use process-local stores; this is not a cluster-wide
+quota or a global bound across arbitrarily many IPs. Clients sharing a public IP
+share the coarse budget. Client-IP attribution inherits the documented edge/tunnel
+assumptions in `middleware/ipRateLimit.ts`; use that deployment's configured client
+identity rather than treating the reverse proxy address as the external caller.
+
 ### User spend
 
 "One user's agent spend passed the daily line" (WARNING) fires when a user's
@@ -303,7 +343,7 @@ prices that day's `AgentRun` turns per model (`backend/services/spendAlarmServic
 and logs one `{"alarm":"user_spend", ...}` line per user per day, naming the
 user, the amount and the token split.
 
-**Where it lands.** Sam gets the email from this policy. SRE gets a second
+**Where it lands.** The account owner gets the email from this policy. SRE gets a second
 copy as a system message in the private "SRE alerts" pod
 (`backend.env.spendAlarmPodId`). That message is posted by the
 `commonly-bot`/`spend-alarm` identity and names `@sre-ops`
@@ -312,7 +352,7 @@ The pod is invite-only and has no agent members, so the post wakes no seat.
 Read it with:
 
 ```bash
-COMMONLY_TOKEN_FILE=~/.commonly/bin/sre-ops-token commonly inbox list
+COMMONLY_TOKEN_FILE=<ops-token-file> commonly inbox list
 ```
 
 or open the pod. **Limit:** nothing wakes an SRE session. If none is running,
@@ -332,10 +372,59 @@ When it fires:
 2. Open that user's runs for the day (`AgentRun` by `userId`, newest first)
    and check whether one install is looping or many are each doing a little.
 3. A loop is the install's problem: uninstall it or lower its cap.
-4. Steady real use that keeps crossing the line is a plan question for Sam,
+4. Steady real use that keeps crossing the line is a plan question for the owner,
    not an ops fix.
 
 A model the price table does not know is charged at an Opus-class rate, so a
 new route over-alarms instead of hiding. If the alert is about a model that
 is not in the table, add its price, with the source, rather than raising the
 threshold.
+
+### LiteLLM key budget
+
+"A LiteLLM key passed 80% of its budget" (WARNING) fires when a LiteLLM
+virtual key with a `max_budget` has spent 80% of it for the current
+`budget_duration`. Every 15 minutes the backend lists the keys with the master
+key (`GET /key/list`, `backend/services/litellmBudgetAlarmService.ts`) and logs
+one `{"alarm":"litellm_budget", ...}` line per key per budget period, naming
+the key alias, the spend, the budget and the reset time. The same text goes to
+the "SRE alerts" pod as described under *User spend*; a failed post is retried
+on the next sweep without a second log line. If the scan does not cover every
+key, it logs one `scanIncomplete` line on the same metric, so the alert can
+also mean "some keys were not checked". `truncated` means `/key/list` has more
+pages than the sweep reads (20 pages of 100): raise the bound in the service.
+`failed` means a page request failed: check LiteLLM's health first. Either
+way the keys already read are still checked, and the line repeats only after
+a complete scan in between.
+
+The keys that matter (TASK-555, minted 2026-10-25):
+
+| key alias | used by | budget |
+|---|---|---|
+| `svc-backend` | backend + ops-runner (`LITELLM_API_KEY`, SM `litellm-backend-key`) | $40 / 30 days |
+| `svc-commonly-bot` | commonly-bot (`LITELLM_API_KEY`, SM `litellm-commonly-bot-key`) | $20 / 30 days |
+
+Both are gated by `litellm.serviceKeys.fromSecret`. Budgets and spend live in
+LiteLLM's Postgres, so they survive a LiteLLM restart (verified 2026-10-25: a
+key exhausted before a rollout restart still answered 422 after it). The
+`max_budget` on the `deepseek-v4-flash` deployment in the LiteLLM config is a
+router-cache backstop only and resets on every LiteLLM restart.
+
+**At 100%** LiteLLM answers `422 budget_exceeded` and every call on that key
+fails: backend summaries, embeddings and native-runtime turns for
+`svc-backend`, the bot's replies for `svc-commonly-bot`. The guardrail check in
+`nativeRuntimeService` keeps using the master key (the route is admin-only), so
+it is not affected.
+
+When it fires:
+
+1. Read the log line for the key and the spend.
+2. Break the spend down by model and day: `GET /spend/logs` for that key, or
+   the LiteLLM UI. A single model or a single day carrying it is a loop or a
+   misroute; fix that, not the budget.
+3. Steady growth is real use. Raise the budget with
+   `POST /key/update {"key": ..., "max_budget": ...}` using the master key,
+   and update the table above in the same PR.
+4. If the key is already blocked and the cause is not fixed yet, unset
+   `litellm.serviceKeys.fromSecret` only as a last resort: the services fall
+   back to the master key, which has no budget.

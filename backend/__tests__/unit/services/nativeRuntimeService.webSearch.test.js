@@ -124,6 +124,63 @@ describe('native turn with commonly_web_search', () => {
     mockProposeAction.mockResolvedValue({ ok: true, approvalId: 'approval-1' });
   });
 
+  test.each([
+    [{ success: false, refused: true, reason: 'consecutive_agent_cap' }, 'failed', false],
+    [{ success: true, message: { id: 'posted-1' } }, 'ok', true],
+  ])('records the actual post result %j as %s', async (postResult, outcome, posted) => {
+    AgentMessageService.postMessage.mockResolvedValueOnce(postResult);
+    axios.post.mockResolvedValueOnce(toolCalls(call('p1', 'commonly_post_message', { content: 'Here is the update.' })))
+      .mockResolvedValueOnce(finalReply);
+    await runAgent(install, mention);
+    const recorded = savedRun.turns[0].toolCalls[0];
+    expect(recorded.name).toBe('commonly_post_message');
+    expect(recorded.outcome).toBe(outcome);
+    expect(recorded.error).toBe(posted ? undefined : 'message_post_refused');
+    expect(JSON.parse(toolMessages(1)[0].content)).toEqual(expect.objectContaining({ posted, ok: posted }));
+  });
+
+  test('a post refused because the agent holds the floor ends the run that round, as a decline', async () => {
+    const capped = { success: false, refused: true, reason: 'consecutive_run_cap', consecutive: 3, guidance: 'attach it with commonly_attach_file' };
+    AgentMessageService.postMessage.mockResolvedValue(capped);
+    const post = (id) => toolCalls(call(id, 'commonly_post_message', { content: 'Here is the update.' }));
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('s1', 'commonly_web_search', { query: 'q' })))
+      .mockResolvedValueOnce(post('p1'))
+      .mockResolvedValueOnce(post('p2'))
+      .mockResolvedValueOnce(post('p3'))
+      .mockResolvedValueOnce(finalReply);
+
+    const result = await runAgent(install, mention);
+
+    expect(axios.post).toHaveBeenCalledTimes(2);
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+    expect(result).toEqual(expect.objectContaining({ status: 'succeeded', totalTurns: 2, noActionReason: 'consecutive_run_cap' }));
+    expect(savedRun.turns[1].toolCalls[0]).toEqual(expect.objectContaining({ error: 'message_post_refused' }));
+    const refusal = JSON.stringify(savedRun.turns[1].toolCalls[0].result);
+    expect(refusal).toContain('Wait for someone else to speak');
+    expect(refusal).not.toContain('commonly_attach_file');
+    // The queued retries were never requested; drop them so they cannot answer the next test.
+    axios.post.mockReset();
+    AgentMessageService.postMessage.mockReset().mockResolvedValue({ success: true });
+  });
+
+  test('a run that posted before its capped refusal is not reported as a decline', async () => {
+    const capped = { success: false, refused: true, reason: 'consecutive_run_cap', consecutive: 3 };
+    AgentMessageService.postMessage.mockResolvedValueOnce({ success: true, message: { id: 'posted-1' } })
+      .mockResolvedValueOnce(capped);
+    axios.post.mockResolvedValueOnce(toolCalls(
+      call('p1', 'commonly_post_message', { content: 'Done.' }),
+      call('p2', 'commonly_post_message', { content: 'One more thing.' }),
+    )).mockResolvedValueOnce(finalReply);
+    const result = await runAgent(install, mention);
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(2);
+    expect(savedRun.turns[0].toolCalls[1]).toEqual(expect.objectContaining({ error: 'message_post_refused' }));
+    expect(result.status).toBe('succeeded');
+    expect(result.noActionReason).toBeUndefined();
+    axios.post.mockReset();
+    AgentMessageService.postMessage.mockReset().mockResolvedValue({ success: true });
+  });
+
   test('results reach the model marked untrusted; the run keeps the count and the addresses only', async () => {
     axios.post
       .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_web_search', { query: 'node 26 release' })))
@@ -210,7 +267,7 @@ describe('native turn with commonly_web_search', () => {
 
       expect(offeredIn(1)).toContain('linear_list_issues');
       expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
-        content: 'issue result', noOutboundRelay: true,
+        content: 'issue result', noOutboundRelay: true, runId: 'run-1', runPodId: install.podId,
       }));
     });
 
@@ -286,7 +343,7 @@ describe('native turn with commonly_web_search', () => {
 
       expect(offeredIn(1)).toContain('linear_list_issues');
       expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
-        content: 'Here is what shipped.', noOutboundRelay: true,
+        content: 'Here is what shipped.', noOutboundRelay: true, runId: 'run-1', runPodId: install.podId,
       }));
     });
 
@@ -329,7 +386,7 @@ describe('native turn with commonly_web_search', () => {
 
       await runAgent(proposalInstall, mention);
 
-      expect(mockProposeAction).toHaveBeenCalledWith(expect.objectContaining({ noOutboundRelay: true }));
+      expect(mockProposeAction).toHaveBeenCalledWith(expect.objectContaining({ noOutboundRelay: true, runId: 'run-1', runPodId: install.podId }));
     });
 
     test('a failed hosted turn after a broker call keeps its fixed line inside the pod', async () => {
@@ -346,7 +403,7 @@ describe('native turn with commonly_web_search', () => {
       expect(result.status).toBe('failed');
       expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
         metadata: expect.objectContaining({ runFailed: true }),
-        noOutboundRelay: true,
+        noOutboundRelay: true, runId: 'run-1', runPodId: install.podId,
       }));
     });
 
@@ -434,7 +491,7 @@ describe('native turn with commonly_web_search', () => {
     expect(offeredIn(0)).not.toContain('commonly_web_search');
   });
 
-  // Rhea on #2244: posting in the pod is the way out the narrowing keeps, and
+  // Posting in the pod is the way out the narrowing keeps, and
   // a bridged pod relays its posts to an external chat.
   describe('in a pod bridged to an external chat', () => {
     const postedContents = () => AgentMessageService.postMessage.mock.calls.map(([args]) => args.content);
@@ -514,7 +571,7 @@ describe('native turn with commonly_web_search', () => {
       await runAgent(install, mention);
 
       expect(postedContents()).toEqual(['found it']);
-      // In the pod, never through a channel relay (Rhea on #2244).
+      // In the pod, never through a channel relay.
       expect(AgentMessageService.postMessage.mock.calls[0][0].noOutboundRelay).toBe(true);
     });
 

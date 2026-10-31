@@ -59,6 +59,14 @@ it('wakes an assigned seat after five minutes, even with ambient board wake disa
   expect(await AgentTaskWakeState.countDocuments()).toBe(1);
 });
 
+it('names the board pod on a line of its own, so a fresh seat passes podId (TASK-581)', async () => {
+  await completed({}, 5);
+  await dispatchAssignedTaskWakes(NOW);
+  const lines = AgentEventService.enqueue.mock.calls[0][0].payload.content.split('\n');
+  expect(lines.filter((line) => line.startsWith('Board pod: ')))
+    .toEqual([`Board pod: ${String(podId)}; pass it as podId to every commonly_*_task call.`]);
+});
+
 it('waits five minutes after the latest completed turn', async () => {
   await completed({}, 15);
   await completed({}, 4);

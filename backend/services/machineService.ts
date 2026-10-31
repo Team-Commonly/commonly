@@ -15,6 +15,9 @@ export interface MachineView {
   id: string;
   machineId: string;
   name: string;
+  // When the owner added this computer. Two computers can share a name, and
+  // the pickers tell them apart by it.
+  createdAt: Date | null;
   lastSeenAt: Date | null;
   status: 'online' | 'offline';
   agentStates: IMachineAgentState[];
@@ -66,6 +69,7 @@ const serializeMachine = (machine: IMachine | LeanMachine, now = new Date()): Ma
     id: asId(machine._id),
     machineId: String(machine.machineId),
     name: String(machine.name),
+    createdAt: machine.createdAt ? new Date(machine.createdAt as string | Date) : null,
     lastSeenAt,
     status: lastSeenAt && now.getTime() - lastSeenAt.getTime() <= MACHINE_OFFLINE_AFTER_MS
       ? 'online'

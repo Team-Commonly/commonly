@@ -14,6 +14,8 @@ const connectorSecrets = require('../../services/connectorSecrets');
 const {
   buildTokenExchangeRequest, buildRefreshRequest, buildRevocationRequest,
 } = require('../../services/hostedMcpIntakeService');
+const { AIRTABLE_ENTRY } = require('../../integrations/hostedMcp/airtable');
+const AIRTABLE_AS_CAPTURE = require('../fixtures/hostedMcp/airtable-authorization-server-2026-10-28.json');
 
 const entry = {
   id: 'close',
@@ -153,6 +155,36 @@ describe('instance-scoped hosted MCP DCR registry', () => {
       .rejects.toMatchObject({ code: 'client_registration_unsupported' });
     expect(await Model.countDocuments({})).toBe(0);
     expect(await ConnectorSecret.countDocuments({})).toBe(0);
+  });
+
+  // The shared metadata puts the endpoint at issuer + /register, so only an
+  // endpoint on another path shows the POST follows the metadata.
+  test('registers at the endpoint the metadata names, never one guessed from the issuer', async () => {
+    const sent = [];
+    const elsewhere = { ...metadata, registration_endpoint: 'https://register.close.com/oauth2/v1/clients' };
+    await ensureDcrClient(entry, elsewhere, callback, registrationFetch(sent));
+    expect(sent.map(({ url }) => url)).toEqual(['https://register.close.com/oauth2/v1/clients']);
+  });
+
+  test('an answer that does not confirm our sole callback is refused, and nothing is stored', async () => {
+    const unconfirmed = [
+      ['https://elsewhere.example/callback'],
+      [callback, 'https://elsewhere.example/callback'],
+      [],
+      undefined,
+    ];
+    for (const redirectUris of unconfirmed) {
+      const answer = jest.fn(async () => new Response(JSON.stringify({
+        client_id: 'unconfirmed',
+        token_endpoint_auth_method: 'none',
+        redirect_uris: redirectUris,
+      }), { status: 201 }));
+      // eslint-disable-next-line no-await-in-loop
+      await expect(ensureDcrClient(entry, metadata, callback, answer))
+        .rejects.toMatchObject({ code: 'client_registration_unsupported' });
+      expect(answer).toHaveBeenCalledTimes(1);
+    }
+    expect(await Model.countDocuments({})).toBe(0);
   });
 
   describe('a vendor that offers only confidential registration (TASK-248)', () => {
@@ -337,7 +369,7 @@ describe('instance-scoped hosted MCP DCR registry', () => {
       expect(exchange.body.get('code_verifier')).toBe('verifier-1');
       expect(exchange.body.get('client_secret')).toBeNull();
 
-      // Vera on #2377: a recorded method is sent as recorded, never filtered by an
+      // A recorded method is sent as recorded, never filtered by an
       // advertised list. The removal passes `{}` for a dcr entry, and RFC 8414
       // defaults an omitted list to basic, which turned a post-registered client
       // into Basic. Held on both inputs: no revocation metadata at all, and a
@@ -375,6 +407,34 @@ describe('instance-scoped hosted MCP DCR registry', () => {
       expect(exchange.body.get('client_id')).toBe('registered-1');
       expect(exchange.body.get('client_secret')).toBeNull();
     });
+  });
+
+  test('Airtable registers once, as a public client, at its captured registration endpoint', async () => {
+    const airtableCallback = 'https://api.commonly.me/api/integrations/connect/hosted-mcp/airtable/callback';
+    const sent = [];
+    const fetch = jest.fn(async (url, init) => {
+      sent.push({ url, body: JSON.parse(init.body) });
+      return new Response(JSON.stringify({
+        client_id: 'airtable-registered',
+        token_endpoint_auth_method: 'none',
+        redirect_uris: [airtableCallback],
+      }), { status: 201 });
+    });
+    const client = await ensureDcrClient(AIRTABLE_ENTRY, AIRTABLE_AS_CAPTURE.metadata, airtableCallback, fetch);
+
+    expect(client).toEqual({ clientId: 'airtable-registered' });
+    expect(sent).toHaveLength(1);
+    expect(sent[0].url).toBe('https://airtable.com/oauth2/v1/register');
+    expect(sent[0].body).toEqual({
+      client_name: 'Commonly (Airtable)',
+      redirect_uris: [airtableCallback],
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+      token_endpoint_auth_method: 'none',
+      scope: AIRTABLE_ENTRY.scopes.join(' '),
+    });
+    const stored = await Model.findOne({ entryId: 'airtable', current: true });
+    expect(stored).toMatchObject({ issuer: 'https://airtable.com/oauth2/v1', clientSecretRef: null });
   });
 
   test('a CIMD entry never touches the registry or the AS', async () => {

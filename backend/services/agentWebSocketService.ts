@@ -12,6 +12,8 @@ const User = require('../models/User');
 const { hash } = require('../utils/secret');
 // eslint-disable-next-line global-require
 const { markByoConnectionAttempt } = require('./onboardingMarks');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { embeddedRuntimeTokenExpired, runtimeCredentialRefusalReason } = require('./runtimeCredentialGate');
 
 interface AgentSocket {
   agentName: string;
@@ -68,7 +70,7 @@ interface AgentUserDoc {
   username?: string;
   isBot?: boolean;
   botMetadata?: Record<string, unknown>;
-  agentRuntimeTokens?: Array<{ tokenHash: string; lastUsedAt?: Date }>;
+  agentRuntimeTokens?: Array<{ tokenHash: string; lastUsedAt?: Date; expiresAt?: Date | null }>;
 }
 
 interface InstallationDoc {
@@ -215,7 +217,7 @@ class AgentWebSocketService {
           // WS ack would take the `return null` branch, the socket would
           // report success, and the event would be requeued and redelivered.
           // 'ws' is its own consumer key: the socket transport can be flipped
-          // to Phase B independently of any HTTP client (Sam's per-consumer
+          // to Phase B independently of any HTTP client (the per-consumer
           // steer, 2026-08-30).
           if (!deliveryId && AgentEventService.isDeliveryNonceRequired('ws')) {
             socket.emit('ack:error', {
@@ -342,6 +344,10 @@ class AgentWebSocketService {
         }
       });
     }, 30000);
+    // The HTTP listener owns process lifetime. A heartbeat for existing
+    // sockets must not keep an otherwise idle process (or an app-importing
+    // test) alive after the listener closes.
+    this.pingInterval.unref();
   }
 
   stopPingInterval(): void {
@@ -366,27 +372,20 @@ class AgentWebSocketService {
         // ADR-026 Phase 0: the credential ledger gates the WS transport with
         // the same semantics as the HTTP middleware — a revoked credential
         // (or a child of a revoked issuer) must not connect over WS either
-        // (Vera's bypass finding on #1312).
+        // (bypass finding on #1312).
         // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
         const AgentCredential = require('../models/AgentCredential');
         // The ledger is an assertion, not a filtered runtime lookup: a daemon
         // hash in a legacy token list must veto the WS fallback too.
         const credential = await AgentCredential.findOne({ tokenHash });
-        if (credential) {
-          if (credential.kind !== 'runtime') return null;
-          if (credential.status !== 'active') return null;
-          if (credential.expiresAt && credential.expiresAt < new Date()) return null;
-          if (credential.parentId) {
-            const parent = await AgentCredential.findById(credential.parentId).select('status').lean();
-            if (!parent || parent.status !== 'active') return null;
-          }
-        }
+        if (credential && await runtimeCredentialRefusalReason(credential)) return null;
         const agentUser = await User.findOne({
           'agentRuntimeTokens.tokenHash': tokenHash,
           isBot: true,
         }) as AgentUserDoc | null;
 
         if (agentUser) {
+          if (embeddedRuntimeTokenExpired(agentUser, tokenHash)) return null;
           // Pre-update: no lastUsedAt = first-ever authentication. The WS
           // transport stamps the same field the HTTP middleware does, so
           // skipping the hook here would swallow the first-use signal for

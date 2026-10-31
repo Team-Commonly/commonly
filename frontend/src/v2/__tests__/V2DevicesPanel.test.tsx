@@ -25,5 +25,14 @@ test('lists a device without exposing its bearer and revokes it in place', async
   expect(screen.queryByText(/cm_[a-f0-9]/)).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
   await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/auth/devices/d1'));
-  expect(await screen.findByText('Revoked')).toBeInTheDocument();
+  expect(await screen.findByText(/^Revoked/)).toBeInTheDocument();
+});
+
+test('a revoked device shows its revoked date and no Revoke button', async () => {
+  axios.get.mockResolvedValue({ data: { devices: [{ id: 'd2', label: 'old-laptop · commonly-cli', createdAt: '2026-08-31T00:00:00.000Z', lastUsedAt: null, revokedAt: '2026-10-20T09:30:00.000Z' }] } });
+  render(<V2DevicesPanel />);
+
+  expect(await screen.findByText('old-laptop · commonly-cli')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
+  expect(screen.getByText(/^Revoked/)).toHaveTextContent(new Date('2026-10-20T09:30:00.000Z').toLocaleString());
 });

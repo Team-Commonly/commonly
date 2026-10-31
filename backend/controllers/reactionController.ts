@@ -189,7 +189,7 @@ async function enqueueReactionAcknowledgement({
       // `cap + addressedGrace` — so typing a receipt that way let a single 👍
       // buy a capped seat two extra turns, and a seat nobody could reach by
       // name could be un-capped by anyone reacting to an old message of its
-      // own. Ruled by fable-lead, who overrode its own earlier read.
+      // own. This overrode an earlier read.
       type: 'message.posted',
       payload: {
         content: reactionAcknowledgementContent(emoji),

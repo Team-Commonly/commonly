@@ -6,6 +6,13 @@ export interface GitHubToken {
   expiresAt: string | null;
 }
 
+export interface PatLiveness {
+  live: boolean | null;
+  status: 'absent' | 'accepted' | 'rejected' | 'unreachable';
+  upstreamStatus?: number;
+  detail?: string;
+}
+
 export interface GitHubIssueLabel {
   name: string;
   color?: string;
@@ -173,26 +180,63 @@ class GitHubAppService {
     return { token: process.env.GITHUB_PAT as string, expiresAt: null };
   }
 
+  /**
+   * Ask GitHub whether the PAT is accepted. Presence is not liveness: a token
+   * can be set and still refused (revoked, expired), which is what the
+   * 2026-08-04 outage looked like from inside the pods.
+   *
+   * Kept separate from isPatConfigured, which guards hot request paths and
+   * must stay free of I/O. GET /rate_limit is documented as not counting
+   * against the rate limit, so this diagnostic can be called freely.
+   *
+   * `live: null` means we could not reach a verdict. Only a 401 is a
+   * rejection; anything else (403, 5xx, network) is reported as unknown rather
+   * than guessed, since a false "dead" sends an operator to rotate a good key.
+   */
+  static async checkPatLiveness(): Promise<PatLiveness> {
+    if (!this.isPatConfigured()) return { live: false, status: 'absent' };
+    try {
+      await axios.get('https://api.github.com/rate_limit', {
+        headers: { Authorization: `Bearer ${process.env.GITHUB_PAT}`, Accept: 'application/vnd.github+json' },
+        timeout: 5000,
+      });
+      return { live: true, status: 'accepted', upstreamStatus: 200 };
+    } catch (err) {
+      const e = err as { message?: string; response?: { status?: number } };
+      const upstreamStatus = e.response?.status;
+      if (upstreamStatus === 401) return { live: false, status: 'rejected', upstreamStatus };
+      return { live: null, status: 'unreachable', upstreamStatus, detail: e.message };
+    }
+  }
+
   // ─── Issues API ──────────────────────────────────────────────────────────
 
   /**
-   * Shared headers for GitHub REST API calls (uses PAT or App token).
-   * Supplying an installationId is an app-only request. This keeps a future
-   * broker tool fail-closed even if its caller forgets to pass forceApp.
+   * Shared headers for GitHub REST API calls.
+   *
+   * The App installation token is the default credential: it lives an hour and
+   * is scoped to the repos the App is installed on. The shared GITHUB_PAT is a
+   * fallback for instances with no App configured, and using it is logged.
+   * Supplying an installationId (or forceApp) is an app-only request, so a
+   * broker tool stays fail-closed even if its caller forgets to pass forceApp.
    */
-  static async _apiHeaders(token?: string, installationId?: string, forceApp = false): Promise<Record<string, string>> {
-    const pat = forceApp || installationId ? undefined : (token || process.env.GITHUB_PAT);
-    let credential = pat;
+  static async _apiHeaders(installationId?: string, forceApp = false): Promise<Record<string, string>> {
+    // An explicit installationId is app-only even when it is empty, so a blank
+    // value can neither pick the default installation nor reach the PAT.
+    const appOnly = forceApp || installationId !== undefined;
+    if (installationId !== undefined && !installationId) throw new Error('github_not_configured');
+    const resolvedInstallationId = installationId || process.env.GITHUB_APP_INSTALLATION_ID_COMMONLY;
     const appConfigured = !!(
       process.env.GITHUB_APP_ID
       && process.env.GITHUB_APP_PRIVATE_KEY
-      && (installationId || process.env.GITHUB_APP_INSTALLATION_ID_COMMONLY)
+      && resolvedInstallationId
     );
-    if (!credential && appConfigured) {
-      const installation = await this.getInstallationToken(
-        installationId || process.env.GITHUB_APP_INSTALLATION_ID_COMMONLY as string,
-      );
-      credential = installation.token;
+    let credential: string | undefined;
+    if (appConfigured) {
+      credential = (await this.getInstallationToken(resolvedInstallationId as string)).token;
+    } else if (!appOnly && process.env.GITHUB_PAT) {
+      console.warn('[github] GitHub App not configured; falling back to GITHUB_PAT');
+      credential = process.env.GITHUB_PAT;
     }
     if (!credential) throw new Error('github_not_configured');
     return {
@@ -206,7 +250,7 @@ class GitHubAppService {
    * List open issues for a repo (excludes pull requests).
    */
   static async listOpenIssues({ owner = 'Team-Commonly', repo = 'commonly', perPage = 20, installationId, forceApp }: ListIssuesOptions = {}): Promise<GitHubIssue[]> {
-    const headers = await this._apiHeaders(undefined, installationId, forceApp);
+    const headers = await this._apiHeaders(installationId, forceApp);
     const res = await axios.get(
       `https://api.github.com/repos/${owner}/${repo}/issues?state=open&per_page=${perPage}`,
       { headers },
@@ -218,7 +262,7 @@ class GitHubAppService {
    * Create a new GitHub issue.
    */
   static async createIssue({ owner = 'Team-Commonly', repo = 'commonly', title, body, labels, installationId, forceApp }: CreateIssueOptions): Promise<GitHubIssue> {
-    const headers = await this._apiHeaders(undefined, installationId, forceApp);
+    const headers = await this._apiHeaders(installationId, forceApp);
     const payload: Record<string, unknown> = { title };
     if (body) payload.body = body;
     if (labels?.length) payload.labels = labels;
@@ -234,7 +278,7 @@ class GitHubAppService {
    * Add a comment to an existing issue.
    */
   static async addIssueComment({ owner = 'Team-Commonly', repo = 'commonly', issueNumber, body, installationId, forceApp }: IssueCommentOptions): Promise<unknown> {
-    const headers = await this._apiHeaders(undefined, installationId, forceApp);
+    const headers = await this._apiHeaders(installationId, forceApp);
     const res = await axios.post(
       `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}/comments`,
       { body },
@@ -250,7 +294,7 @@ class GitHubAppService {
     if (comment) {
       await this.addIssueComment({ owner, repo, issueNumber, body: comment, installationId, forceApp });
     }
-    const headers = await this._apiHeaders(undefined, installationId, forceApp);
+    const headers = await this._apiHeaders(installationId, forceApp);
     const res = await axios.patch(
       `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`,
       { state: 'closed' },
@@ -261,7 +305,7 @@ class GitHubAppService {
 
   /** Fetch one issue without exposing the server credential to the caller. */
   static async getIssue({ owner = 'Team-Commonly', repo = 'commonly', issueNumber, installationId, forceApp }: IssueNumberOptions): Promise<GitHubIssue> {
-    const headers = await this._apiHeaders(undefined, installationId, forceApp);
+    const headers = await this._apiHeaders(installationId, forceApp);
     const res = await axios.get(
       `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`,
       { headers },
@@ -271,7 +315,7 @@ class GitHubAppService {
 
   /** Fetch one pull request. */
   static async getPullRequest({ owner = 'Team-Commonly', repo = 'commonly', pullNumber, installationId, forceApp }: PullRequestOptions): Promise<unknown> {
-    const headers = await this._apiHeaders(undefined, installationId, forceApp);
+    const headers = await this._apiHeaders(installationId, forceApp);
     const res = await axios.get(
       `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}`,
       { headers },
@@ -281,7 +325,7 @@ class GitHubAppService {
 
   /** List files changed by one pull request. */
   static async listPullRequestFiles({ owner = 'Team-Commonly', repo = 'commonly', pullNumber, installationId, forceApp }: PullRequestOptions): Promise<unknown[]> {
-    const headers = await this._apiHeaders(undefined, installationId, forceApp);
+    const headers = await this._apiHeaders(installationId, forceApp);
     const res = await axios.get(
       `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/files`,
       { headers },
@@ -294,7 +338,7 @@ class GitHubAppService {
     owner = 'Team-Commonly', repo = 'commonly', pullNumber, mergeMethod, commitTitle, commitMessage,
     installationId, forceApp, sha,
   }: MergePullRequestOptions): Promise<unknown> {
-    const headers = await this._apiHeaders(undefined, installationId, forceApp);
+    const headers = await this._apiHeaders(installationId, forceApp);
     const payload: Record<string, unknown> = {};
     if (sha) payload.sha = sha;
     if (mergeMethod) payload.merge_method = mergeMethod;

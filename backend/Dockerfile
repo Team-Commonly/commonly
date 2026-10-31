@@ -1,3 +1,22 @@
+# Build stage: dev dependencies are needed for tsc and never ship.
+FROM node:22 AS build
+
+WORKDIR /app
+
+COPY package*.json ./
+
+# Install all dependencies including dev dependencies
+RUN npm install --include=dev
+
+COPY . .
+
+# Compile TypeScript to dist/
+RUN npm run build
+
+# Copy non-JS assets that tsc doesn't copy
+RUN cp -r external dist/external 2>/dev/null || true
+
+# Runtime stage
 FROM node:22
 
 WORKDIR /app
@@ -49,19 +68,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
     officecli --version && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Parse stored agent cards locally; never send install/runtime telemetry.
+ENV OPENUI_TELEMETRY_DISABLED=1
+
 COPY package*.json ./
 
-# Install all dependencies including dev dependencies
-RUN npm install --include=dev
+# Production dependencies only. Dev tooling (jest, eslint, ts-node, typescript,
+# mongodb-memory-server, ...) stays in the build stage and never reaches prod.
+RUN npm ci --omit=dev
 
 COPY . .
 
-# Compile TypeScript to dist/
-RUN npx tsc -p tsconfig.build.json
-
-# Copy non-JS assets that tsc doesn't copy
-RUN cp config/schema.sql dist/config/schema.sql
-RUN cp -r external dist/external 2>/dev/null || true
+# Compiled output from the build stage: dist/ with config/ and external/ in place
+COPY --from=build /app/dist ./dist
 
 EXPOSE 5000
 

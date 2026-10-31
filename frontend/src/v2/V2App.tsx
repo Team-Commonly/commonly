@@ -39,6 +39,7 @@ const V2AgentBYO = React.lazy(() => import('./components/V2AgentBYO'));
 const V2ConnectPage = React.lazy(() => import('./components/V2ConnectPage'));
 const V2ConnectorsPage = React.lazy(() => import('./components/V2ConnectorsPage'));
 const V2PodBoard = React.lazy(() => import('./components/V2PodBoard'));
+const V2RunTrace = React.lazy(() => import('./components/V2RunTrace'));
 const V2ActivityPage = React.lazy(() => import('./components/V2ActivityPage'));
 const V2ArtifactsPage = React.lazy(() => import('./components/V2ArtifactsPage'));
 const ChatRoom = React.lazy(() => import('../components/ChatRoom'));
@@ -186,7 +187,7 @@ const V2App: React.FC = () => {
     // Claim the page canvas while v2 is mounted. App.tsx unconditionally
     // stamps `modern-ui` (the V1 dark gradient) on <body>, and .v2-root only
     // paints its own box — so the V1 darkness showed through on load flash,
-    // overscroll, and every gap (Sam, 2026-08-24). The class must out-rank
+    // overscroll, and every gap (2026-08-24). The class must out-rank
     // body.modern-ui, not merely follow it in bundle order.
     document.body.classList.add('v2-canvas');
     return () => {
@@ -245,6 +246,7 @@ const V2App: React.FC = () => {
                     false,
                     /* V2PodBoard owns its own header (pod name + back). */
                     false,
+                    'v2-feature--board',
                   )}
                 />
                 <Route
@@ -303,6 +305,10 @@ const V2App: React.FC = () => {
                 <Route
                   path="artifacts"
                   element={feature('Artifacts', <V2ArtifactsPage />, false, false, 'v2-feature--artifacts')}
+                />
+                <Route
+                  path="pods/:podId/runs/:runId"
+                  element={feature('Run trace', <V2RunTrace />, false, false)}
                 />
                 <Route
                   path="activity"

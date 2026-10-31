@@ -55,6 +55,18 @@ const pgUserIdsWithMessages = async (userIds: string[]): Promise<Set<string>> =>
   return new Set(result.rows.map((r: { user_id: string }) => String(r.user_id)));
 };
 
+// Invite creation -> first distinct outside teammate, by inviter session cohort.
+router.get('/invites', adminReadLimiter, auth, adminAuth, async (req: any, res: any) => {
+  try {
+    const days = Math.max(1, Math.min(90, parseInt(req.query.days, 10) || 30));
+    const { readInviteFunnel } = require('../../services/inviteFunnelService');
+    return res.json(await readInviteFunnel(days));
+  } catch (error) {
+    console.error('[invite-funnel] read failed:', (error as Error).message);
+    return res.status(503).json({ error: 'invite_funnel_unavailable' });
+  }
+});
+
 // GET /api/admin/analytics/funnel?days=30
 // Daily signup cohorts with: signups, attached ≥1 agent, sent ≥1 message,
 // returned D1/D7 (proxy), plus a totals row with rates.

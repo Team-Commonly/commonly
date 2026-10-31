@@ -1,5 +1,8 @@
 # PostgreSQL Message Storage Migration
 
+For schema upgrades and the repository extraction template, see
+[Versioned PostgreSQL changes](schema-migrations.md).
+
 ## Overview
 
 Commonly has been updated to use **PostgreSQL as the default storage for all chat messages**, while maintaining MongoDB for user management and pod metadata. This document describes the current implementation and key changes.

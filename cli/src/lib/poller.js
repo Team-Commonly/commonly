@@ -8,6 +8,7 @@
 
 import { createClient } from './api.js';
 import { formatDigestFrame } from './digest-frame.js';
+import { EMPTY_OUTPUT } from './claim-outcome.js';
 
 // Delivery failures that must stop a consumer rather than fall through to the
 // normal at-least-once retry path. A stale delivery belongs to a replacement
@@ -35,6 +36,7 @@ export const startPoller = ({
   agentName,
   instanceId = 'default',
   intervalMs = 5000,
+  loginInstance,    // the --instance the connect ran with, so the login hint names it
   onEvent,          // async (event) => { outcome, content? }
   onError,          // (err) => void
 }) => {
@@ -80,7 +82,8 @@ export const startPoller = ({
         } : event;
         let result = { outcome: 'no_action' };
         try {
-          result = (await onEvent(forwarded)) || { outcome: 'no_action' };
+          // A handler that returns nothing said nothing: not a read of the digest.
+          result = (await onEvent(forwarded)) || { outcome: 'no_action', reason: EMPTY_OUTPUT };
         } catch (handlerErr) {
           result = { outcome: 'error', reason: handlerErr.message };
         }
@@ -137,7 +140,9 @@ export const startPoller = ({
         if (consecutiveAuthErrors >= MAX_AUTH_ERRORS) {
           onError?.(new Error(
             `Runtime token rejected ${consecutiveAuthErrors} times in a row — stopping poller. `
-            + `The token is likely revoked.`,
+            + `This connection takes its key from --token, then COMMONLY_TOKEN, then your saved login. `
+            + `If the key was rotated or revoked, re-run with the new key in --token or COMMONLY_TOKEN; `
+            + `with neither set, run commonly login${loginInstance ? ` --instance ${loginInstance}` : ''}.`,
           ));
           running = false;
           return;

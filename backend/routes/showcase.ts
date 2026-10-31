@@ -23,6 +23,7 @@
 // recognises the limiter on the router — same pattern as routes/uploads.ts.
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
+import { listPodMessages, type PodMessage } from '../repositories/messageRepository';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const express = require('express');
@@ -32,10 +33,6 @@ const mongoose = require('mongoose');
 const Pod = require('../models/Pod');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const User = require('../models/User');
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const MongoMessage = require('../models/Message');
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const PGMessage = require('../models/pg/Message');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const AgentMessageService = require('../services/agentMessageService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -204,8 +201,8 @@ interface RawMessage {
 }
 
 // Read newest-`limit` messages before the cursor, ascending (chronological),
-// PG-first with a Mongo fallback (mirrors messageController.getMessages). The
-// raw read is store-agnostic; display identity + the noise-filter + the
+// through the message repository (PG first; the store fallback lives there).
+// The raw read is store-agnostic; display identity + the noise-filter + the
 // whitelist serializer are applied uniformly afterwards so neither store can
 // leak a non-whitelisted field.
 const readRawMessages = async (
@@ -213,43 +210,15 @@ const readRawMessages = async (
   limit: number,
   before?: string,
 ): Promise<{ raw: RawMessage[]; hasMore: boolean }> => {
-  try {
-    const rows = await PGMessage.findByPodId(podId, limit, before || null);
-    const raw = (rows as Array<Record<string, unknown>>).map((r) => {
-      const uid = r.user_id
-        || (r.userId && typeof r.userId === 'object'
-          ? (r.userId as { _id?: { toString(): string } })._id
-          : r.userId);
-      return {
-        id: String(r.id ?? r._id ?? ''),
-        content: String(r.content ?? ''),
-        messageType: String(r.messageType ?? r.message_type ?? 'text'),
-        createdAt: r.createdAt ?? r.created_at,
-        userId: uid ? String(uid) : '',
-      };
-    });
-    return { raw, hasMore: rows.length === limit };
-  } catch (pgErr) {
-    console.warn('[showcase] PG unavailable, falling back to Mongo:', (pgErr as Error).message);
-  }
-
-  const query: Record<string, unknown> = { podId };
-  if (before) query.createdAt = { $lt: new Date(before) };
-  const docs = await MongoMessage.find(query)
-    .sort({ createdAt: -1 })
-    .limit(limit)
-    .lean();
-  const raw = (docs as Array<Record<string, unknown>>)
-    .slice()
-    .reverse()
-    .map((m) => ({
-      id: String(m._id),
-      content: String(m.content ?? ''),
-      messageType: String(m.messageType ?? 'text'),
-      createdAt: m.createdAt,
-      userId: m.userId ? String(m.userId) : '',
-    }));
-  return { raw, hasMore: docs.length === limit };
+  const rows = await listPodMessages(podId, { limit, before: before || null });
+  const raw = rows.map((r: PodMessage) => ({
+    id: String(r.id ?? r._id ?? ''),
+    content: String(r.content ?? ''),
+    messageType: String(r.messageType ?? r.message_type ?? 'text'),
+    createdAt: r.createdAt ?? r.created_at,
+    userId: r.user_id ? String(r.user_id) : '',
+  }));
+  return { raw, hasMore: rows.length === limit };
 };
 
 // GET /api/showcase/:podId/messages — filtered, whitelisted message feed.

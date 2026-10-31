@@ -1,4 +1,7 @@
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import {
+  mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync,
+} from 'fs';
+import { spawnSync } from 'child_process';
 import { homedir, tmpdir } from 'os';
 import { join } from 'path';
 
@@ -78,6 +81,74 @@ describe('macOS Seatbelt profile', () => {
     );
   });
 
+  // TASK-294: a workspace seat granted write keeps its project's .git
+  // read-only, so every change it makes shows in `git status`.
+  test('a writable workspace can hold named entries read-only', () => {
+    const profile = buildSeatbeltProfile({
+      workspacePath: workspace,
+      workspaceAccess: 'write',
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      readOnlyWorkspaceEntries: ['.git'],
+    });
+    const resolvedWorkspace = realpathSync(workspace);
+
+    expect(profile).toContain(
+      `(allow file-read* file-test-existence file-write* (subpath "${resolvedWorkspace}"))`,
+    );
+    expect(profile).toContain(`(deny file-write* (subpath "${join(resolvedWorkspace, '.git')}"))`);
+    // The deny must come after the allow it narrows: in SBPL the last match wins.
+    expect(profile.indexOf(`(deny file-write* (subpath "${join(resolvedWorkspace, '.git')}"))`))
+      .toBeGreaterThan(profile.indexOf(`file-write* (subpath "${resolvedWorkspace}"))`));
+  });
+
+  test('a symlinked read-only entry is held at its target too', () => {
+    const target = join(root, 'elsewhere-git');
+    mkdirSync(target);
+    symlinkSync(target, join(workspace, '.git'));
+    const profile = buildSeatbeltProfile({
+      workspacePath: workspace,
+      workspaceAccess: 'write',
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      readOnlyWorkspaceEntries: ['.git'],
+    });
+
+    expect(profile).toContain(`(deny file-write* (subpath "${join(realpathSync(workspace), '.git')}"))`);
+    expect(profile).toContain(`(deny file-write* (subpath "${realpathSync(target)}"))`);
+  });
+
+  test.each(['', '.', '..', 'a/b', '../x', 7])('rejects %p as a read-only workspace entry', (entry) => {
+    expect(() => buildSeatbeltProfile({
+      workspacePath: workspace,
+      workspaceAccess: 'write',
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      readOnlyWorkspaceEntries: [entry],
+    })).toThrow(/readOnlyWorkspaceEntries entries must be names inside the workspace/);
+  });
+
+  test('holds every .env file under the workspace, at any depth, and what a .env directory holds, out of reach', () => {
+    const profile = buildSeatbeltProfile({
+      workspacePath: workspace,
+      executablePath: '/usr/bin/true',
+      statePath: state,
+    });
+    const escaped = realpathSync(workspace).replace(/[\\^$.|?*+()[\]{}]/g, '\\$&');
+
+    expect(profile).toContain(`(deny file-read* file-write* (regex #"^${escaped}/(.*/)?\\.env([./].*)?$"))`);
+  });
+
+  test('refuses a workspace path an SBPL regex cannot hold', () => {
+    const quoted = join(root, 'a"b');
+    mkdirSync(quoted);
+    expect(() => buildSeatbeltProfile({
+      workspacePath: quoted,
+      executablePath: '/usr/bin/true',
+      statePath: state,
+    })).toThrow(/must not contain a quote or a line break/);
+  });
+
   test('OpenCode config roots remain read-only in the generated profile', () => {
     const configRoot = join(root, 'opencode-temp');
     const configDir = join(configRoot, 'config-dir');
@@ -145,6 +216,56 @@ describe('macOS Seatbelt profile', () => {
       statePath: state,
       loopbackNetworkPorts: [0],
     })).toThrow(/valid TCP ports/);
+  });
+
+  test('a loopback profile drops open network and the Security services, and nothing else', () => {
+    const port = 54321;
+    const base = {
+      workspacePath: workspace,
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      mcpConfigDir: mcp,
+      loopbackNetworkPorts: [port],
+    };
+    const open = buildSeatbeltProfile(base);
+    expect(buildSeatbeltProfile({ ...base, network: 'open' })).toBe(open);
+    expect(open).toMatch(/^\(allow network-outbound\)$/m);
+    expect(open).toContain('(global-name "com.apple.SecurityServer")');
+
+    const loopback = buildSeatbeltProfile({ ...base, network: 'loopback' });
+    expect(loopback).not.toMatch(/^\(allow network-outbound\)$/m);
+    expect(loopback).not.toContain('AF_SYSTEM');
+    for (const service of ['SecurityServer', 'securityd', 'ocspd', 'networkd', 'SystemConfiguration.configd']) {
+      expect(loopback).not.toContain(`com.apple.${service}`);
+    }
+    // The resolver's configuration only: without it the first hostname lookup
+    // blocks the process forever, see the sandboxed test below.
+    const configServices = loopback.match(/com\.apple\.SystemConfiguration\.\w+/g);
+    expect(configServices).toEqual(['com.apple.SystemConfiguration.DNSConfiguration']);
+    // The verb, not only the name: a deny here is the hang itself, and a
+    // bare allow would admit every service. Both modes carry the same rule.
+    const resolverRule = '(allow mach-lookup (global-name "com.apple.SystemConfiguration.DNSConfiguration"))';
+    // SBPL ignores whitespace inside a form, so a bare allow can be spelled
+    // with spaces or a line break before the close; any spelling admits every
+    // service. A multi-line rule opens `(allow mach-lookup` and continues with
+    // `(global-name`, so it never matches.
+    const bareAllow = /\(\s*allow\s+mach-lookup\s*\)/;
+    for (const variant of ['(allow mach-lookup)', '(allow mach-lookup )', '( allow  mach-lookup)', '(allow mach-lookup\n)']) {
+      expect(`${loopback}\n${variant}\n`).toMatch(bareAllow);
+    }
+    for (const profile of [open, loopback]) {
+      expect(profile.split('\n')).toContain(resolverRule);
+      expect(profile).not.toMatch(bareAllow);
+      expect(profile.split('\n').filter((line) => line.includes('DNSConfiguration'))).toEqual([resolverRule]);
+    }
+    expect(loopback).toContain(`(allow network-outbound (remote tcp "localhost:${port}"))`);
+    // Every line a loopback profile carries, the open one carries too.
+    const openLines = new Set(open.split('\n'));
+    expect(loopback.split('\n').filter((line) => !openLines.has(line))).toEqual([]);
+    const outbound = loopback.split('\n').filter((line) => line.includes('network-outbound'));
+    expect(outbound).toEqual([`(allow network-outbound (remote tcp "localhost:${port}"))`]);
+
+    expect(() => buildSeatbeltProfile({ ...base, network: 'none' })).toThrow(/open or loopback/);
   });
 
   test('Claude gets the login-keychain file on request, and never the shared Claude temp root', () => {
@@ -232,6 +353,44 @@ describe('macOS Seatbelt profile', () => {
       statePath: state,
     })).toThrow(/workspacePath must be an absolute path/);
   });
+
+  // Off macOS there is no sandbox-exec to run it under, so it reports as
+  // skipped rather than passing without running.
+  (process.platform === 'darwin' ? test : test.skip)('a loopback-confined process builds a DNS resolver and still reaches no outside host', () => {
+    // The profile once denied the resolver's configuration, and
+    // constructing a c-ares Resolver could block the process forever, so
+    // confined dsh turns ran to their 900 s timeout before sending a request.
+    // That hang was intermittent, so this run cannot catch its return on its
+    // own; the profile-shape test above pins the rule. This one proves the
+    // admitted service still lets nothing out.
+    const script = [
+      "const dns = require('dns'); const net = require('net');",
+      "new dns.Resolver().resolve4('example.com', (err) => {",
+      "  console.log('resolve4', err ? err.code : 'resolved');",
+      "  dns.lookup('example.com', (e) => {",
+      "    console.log('lookup', e ? e.code : 'resolved');",
+      "    const s = net.connect(443, '1.1.1.1', () => { console.log('tcp connected'); process.exit(0); });",
+      "    s.on('error', (e2) => { console.log('tcp', e2.code); process.exit(0); });",
+      "  });",
+      "});",
+    ].join('\n');
+    const argv = wrapArgvWithSeatbelt([process.execPath, '-e', script], {
+      workspacePath: workspace,
+      executablePath: process.execPath,
+      statePath: state,
+      network: 'loopback',
+      loopbackNetworkPorts: [9],
+    });
+    const run = spawnSync(argv[0], argv.slice(1), {
+      // SIGKILL, so a child blocked on a denied resolver lookup cannot hold
+      // the run past the timeout whether or not it honours SIGTERM.
+      env: { PATH: process.env.PATH, HOME: state }, encoding: 'utf8', timeout: 20000, killSignal: 'SIGKILL',
+    });
+    expect(run.error).toBeUndefined();
+    expect(run.stdout).toMatch(/resolve4 E(?:CONNREFUSED|TIMEOUT|NOTFOUND)/);
+    expect(run.stdout).toContain('lookup ENOTFOUND');
+    expect(run.stdout).toContain('tcp EPERM');
+  }, 30000);
 
   test('wrapper is fail-closed off macOS and invokes sandbox-exec on macOS', () => {
     if (process.platform !== 'darwin') {

@@ -23,6 +23,9 @@ const connectorSecrets = require('../services/connectorSecrets');
 // eslint-disable-next-line global-require
 const { DISCORD_WEBHOOK_URL } = require('../services/connectorSecretKinds');
 // eslint-disable-next-line global-require
+const { isFeedType, takeFeedTokens, storeFeedTokens } = require('../services/feedCredentials');
+const { isChatTokenType, takeChatTokens, storeGroupmeAccessToken } = require('../services/chatConnectorTokens');
+// eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
@@ -58,6 +61,8 @@ import {
 import {
   writeIntegrationsRateLimit,
   listIntegrationsRateLimit,
+  ingestIngressRateLimit,
+  ingestIntegrationsRateLimit,
 } from '../middleware/integrationRateLimit';
 
 // The list lives in `utils/serverOwnedConfigKeys.ts` so the manifest contract
@@ -140,6 +145,10 @@ const router: ReturnType<typeof express.Router> = express.Router();
 router.use('/connect/hosted-mcp', hostedMcpConnectRoutes);
 
 const resolveEffectiveConfig = (type: string, config: Record<string, unknown> = {}) => {
+  // An X / Instagram row holds its token as a ref (`services/feedCredentials`),
+  // so the stored ref satisfies the `accessToken` the manifest names; a request
+  // that supplies a token satisfies it before the token is stored.
+  if (isFeedType(type)) return { ...config, accessToken: config.accessToken || config.feedAccessTokenRef };
   if (type !== 'discord') return config;
   // env-first for every read, including this validation one (TASK-124).
   return { ...config, botToken: resolveDiscordBotToken(config.botToken) };
@@ -220,7 +229,7 @@ const ingestAuth = async (req: AuthReq, res: Res, next: () => void) => {
   return auth(req, res, next);
 };
 
-router.get('/catalog', auth, async (req: AuthReq, res: Res) => {
+router.get('/catalog', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const entries = await buildCatalogEntries({ userId: req.user?.id });
     res.json({ entries });
@@ -311,7 +320,7 @@ router.delete('/github-app/:id/gig-pod', writeIntegrationsRateLimit, auth, admin
   return res.status(204).json({});
 });
 
-router.post('/ingest', ingestAuth, async (req: AuthReq, res: Res) => {
+router.post('/ingest', ingestIngressRateLimit, ingestIntegrationsRateLimit, ingestAuth, async (req: AuthReq, res: Res) => {
   try {
     const { provider, integrationId, event, messages } = (req.body || {}) as { provider?: string; integrationId?: string; event?: unknown; messages?: unknown[] };
     const { integration: tokenIntegration } = req;
@@ -319,6 +328,12 @@ router.post('/ingest', ingestAuth, async (req: AuthReq, res: Res) => {
     if (!integrationId && !integration) return res.status(400).json({ message: 'integrationId is required' });
     if (!integration) integration = await Integration.findById(integrationId).lean();
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
+    // A signed-in session (not a cm_int_ token) may push only where it could
+    // mint an ingest token: the mint route's own gate, so this path grants
+    // nothing the mint does not. The buffer feeds summaries and agent context.
+    if (!req.integrationAuth && !await canDeleteIntegration(integration, req.user?.id || '')) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
     if (integrationId && (integration._id as { toString: () => string }).toString() !== integrationId.toString()) return res.status(400).json({ message: 'integrationId does not match token' });
     const providerName = provider || (integration.type as string);
     if (providerName !== integration.type) return res.status(400).json({ message: 'Provider does not match integration type' });
@@ -344,7 +359,7 @@ router.post('/ingest', ingestAuth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/:id/ingest-tokens', auth, async (req: AuthReq, res: Res) => {
+router.post('/:id/ingest-tokens', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const { label } = (req.body || {}) as { label?: string };
@@ -364,7 +379,7 @@ router.post('/:id/ingest-tokens', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/:id/ingest-tokens', auth, async (req: AuthReq, res: Res) => {
+router.get('/:id/ingest-tokens', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const integration = await Integration.findById(id) as { createdBy?: { toString: () => string }; podId?: unknown; ingestTokens?: Array<{ _id: { toString: () => string }; label?: string; createdAt?: Date; lastUsedAt?: Date; createdBy?: unknown }> } | null;
@@ -379,7 +394,7 @@ router.get('/:id/ingest-tokens', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.delete('/:id/ingest-tokens/:tokenId', auth, async (req: AuthReq, res: Res) => {
+router.delete('/:id/ingest-tokens/:tokenId', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id, tokenId } = req.params || {};
     const integration = await Integration.findById(id) as { createdBy?: { toString: () => string }; podId?: unknown; ingestTokens?: Array<{ _id: { toString: () => string } }>; save: () => Promise<void> } | null;
@@ -495,7 +510,23 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     if (type === 'discord' && missingRequired.length) return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
     if (missingRequired.length && (req.body as { status?: string })?.status === 'connected') return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
     validateManifestIfComplete(type, nextConfig);
-    const integration = new Integration({ podId, type, config: nextConfig, createdBy: req.user?.id, status: 'pending' });
+    let rowConfig = nextConfig;
+    const integrationId = new Types.ObjectId();
+    if (isFeedType(type)) {
+      // The token is stored through connectorSecrets under the row's id; the row
+      // is created holding only its ref.
+      const { rest, tokens } = takeFeedTokens(nextConfig);
+      rowConfig = { ...rest, ...await storeFeedTokens(String(integrationId), type, tokens) };
+    }
+    if (isChatTokenType(type)) {
+      // GroupMe's token is stored through connectorSecrets; Slack's copy has no
+      // reader and is dropped (TASK-539).
+      const { rest, accessToken } = takeChatTokens(type, nextConfig);
+      rowConfig = { ...rest, ...await storeGroupmeAccessToken(String(integrationId), accessToken) };
+    }
+    const integration = new Integration({
+      _id: integrationId, podId, type, config: rowConfig, createdBy: req.user?.id, status: 'pending',
+    });
     await integration.save();
     let platformIntegration = null;
     if (type === 'discord') {
@@ -517,7 +548,7 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
       platformIntegration = new DiscordIntegration({ integrationId: integration._id, serverId: config.serverId, serverName: config.serverName, channelId: config.channelId, channelName: config.channelName, webhookId: webhook.id, permissions: config.permissions || ['read_messages', 'send_messages'] });
       await platformIntegration.save();
     } else if (['slack', 'groupme', 'telegram', 'messenger', 'whatsapp', 'x', 'instagram'].includes(type)) {
-      integration.status = isManifestComplete(type, nextConfig) ? 'connected' : 'pending';
+      integration.status = isManifestComplete(type, rowConfig) ? 'connected' : 'pending';
       await integration.save();
     } else {
       return res.status(400).json({ message: 'Unsupported integration type' });
@@ -536,7 +567,7 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
   }
 });
 
-router.post('/:id/connect', auth, async (req: AuthReq, res: Res) => {
+router.post('/:id/connect', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;
@@ -556,7 +587,7 @@ router.post('/:id/connect', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/:id/disconnect', auth, async (req: AuthReq, res: Res) => {
+router.post('/:id/disconnect', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;
@@ -575,7 +606,7 @@ router.post('/:id/disconnect', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/:id/stats', auth, async (req: AuthReq, res: Res) => {
+router.get('/:id/stats', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;
@@ -594,7 +625,7 @@ router.get('/:id/stats', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/:id/messages', auth, async (req: AuthReq, res: Res) => {
+router.get('/:id/messages', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const { limit, before } = req.query || {};
@@ -616,7 +647,7 @@ router.get('/:id/messages', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/:id/send', auth, async (req: AuthReq, res: Res) => {
+router.post('/:id/send', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const { message } = (req.body || {}) as { message?: string };
@@ -638,7 +669,7 @@ router.post('/:id/send', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/admin/all', auth, adminAuth, async (_req: AuthReq, res: Res) => {
+router.get('/admin/all', listIntegrationsRateLimit, auth, adminAuth, async (_req: AuthReq, res: Res) => {
   try {
     const integrations = await Integration.find({ isActive: true }).populate('podId', 'name type createdBy').populate('createdBy', 'username email').populate('platformIntegration').sort({ createdAt: -1 });
     // The connect code is a member's one-time enable code; the admin list has no reader for it.
@@ -832,8 +863,20 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
     // Do not replace a snapshot of config: cards/relayMap may have been
     // appended (or closed) since the read above. Only write the requested
     // top-level fields; a gates map still replaces that one field as before.
-    if (incoming) {
-      Object.keys(incoming).forEach((key) => { update[`config.${key}`] = nextConfig[key]; });
+    let written = incoming;
+    if (incoming && isFeedType(integration.type)) {
+      // A supplied token is stored through connectorSecrets; the row takes the ref.
+      const { rest, tokens } = takeFeedTokens(incoming);
+      written = { ...rest, ...await storeFeedTokens(String(integrationId), integration.type || '', tokens) };
+    }
+    if (incoming && isChatTokenType(integration.type)) {
+      const { rest, accessToken } = takeChatTokens(integration.type, incoming);
+      written = { ...rest, ...await storeGroupmeAccessToken(String(integrationId), accessToken) };
+    }
+    if (incoming && written) {
+      Object.keys(written).forEach((key) => {
+        update[`config.${key}`] = key in incoming ? nextConfig[key] : written[key];
+      });
       if (incoming.liveRelay === true) update['config.linkedUserId'] = req.user?.id;
     }
     if (podId !== undefined) update.podId = podId;
@@ -862,7 +905,7 @@ router.delete('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res
     const deletedBy = String(req.user?.id || '').trim();
     // Fail closed on the identity rather than skipping the grants step and
     // deleting anyway, which would reinstate the orphan this route was fixed to
-    // stop creating (Vera 74462). `auth` always sets a non-empty id, so this is
+    // stop creating. `auth` always sets a non-empty id, so this is
     // unreachable today; it is here so it cannot become reachable in silence.
     if (!deletedBy) return res.status(401).json({ message: 'Unauthorized' });
     const integration = await Integration.findById(id) as {
@@ -899,11 +942,10 @@ router.delete('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res
         ...(result.revokeAt ? { revokeAt: result.revokeAt } : {}),
       });
     }
-    // §10.5's grants step, and it has to run here: the deletion below removes
-    // the row, and the granter's own revoke route resolves ownership through
-    // `findConnection` (routes/grants.ts:421) — after the row is gone every
-    // grant on this connection answers 403 `access_denied`, so the removal
-    // would orphan them un-revoked (TASK-145).
+    // §10.5's grants step, and it runs before the row is deleted below. Revoke
+    // reads the owner bound on each grant at mint, not the row, so the order no
+    // longer decides who may revoke. It still matters: removal ends these grants
+    // here, while the row they were minted against is still present (TASK-145).
     await revokeConnectionGrants({ connection: integration, revokedBy: deletedBy });
     const service = integration.type === 'discord' ? new DiscordService(id) : null;
     try { if (service) await service.disconnect(); } catch (error) { console.warn('Error disconnecting service during deletion:', error); }

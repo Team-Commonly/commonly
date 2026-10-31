@@ -6,6 +6,8 @@ export interface V2PodMember {
   username?: string;
   profilePicture?: string | null;
   isBot?: boolean;
+  // Bot members only: the curated label and identity, projected by the pod list.
+  botMetadata?: { displayName?: string; instanceId?: string };
 }
 
 export interface V2PodLastMessage {

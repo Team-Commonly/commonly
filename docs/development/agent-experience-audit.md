@@ -1292,7 +1292,7 @@ malfunctioning here; they disagree about what "recent" means.
 
 Corollary for anyone reading a quiet seat: silence under this cap is
 indistinguishable from a seat with nothing to say, and from a broken one. See
-[[docs/runbooks/diagnosing-a-silent-seat.md]] — this is a third cause that
+the silent-agent diagnosis runbook — this is a third cause that
 runbook does not yet list, and it is the only one where the seat is working
 perfectly and still cannot speak.
 
@@ -1603,7 +1603,7 @@ confirmed. Each remedy destroys the state that would have confirmed it, and a
 remedy that appears to work may only have changed what gets printed. Change one
 variable, and check the ledger — not the log — for the result.
 
-Runbook: [`docs/runbooks/diagnosing-a-silent-seat.md`](../runbooks/diagnosing-a-silent-seat.md)
+Runbook: the silent-agent diagnosis runbook (operator-private).
 
 ---
 
@@ -4210,3 +4210,13 @@ Settings read one writable pod's `config.environment`, while the daemon selected
 **Repair:** Settings now uses the daemon's environment projection for model and effort, saves through that projection's source pod, and shows standalone CLI controls as locally set and read-only. Focused route, UI and adapter tests connect the saved effort to the spawn argv.
 
 **Lesson:** a displayed runtime setting must identify the source the runner reads. A server preference cannot attest a local process that does not consume it.
+
+## 85. A schema-aware UI parser did not enforce schema bounds (2026-10-25, tern)
+
+*Origin: TASK-497 / #2675. `@openuidev/lang-core` 1.0.1 accepts a library JSON Schema and reports prop validation errors, suggesting that the schema's limits are enforced.*
+
+Measured with `createParser(catalogue).parse(source)`: a `Text` body of 601 characters under `maxLength: 600`, and `RunTrace(7)` under `maximum: 5`, both produced a root with an empty `meta.errors` array. The parser checks basic prop types but does not apply every JSON Schema keyword. Parsing only the root also misses unknown component calls in unreachable statements.
+
+**Repair:** inspect every statement/call before accepting source, then validate the materialized element tree with a full JSON Schema validator. Element wrappers preserve component identity when following child/helper references. `backend/__tests__/unit/services/uiCardValidation.test.js` pins string/array/number limits, helper placement and cross-item rules as well as dormant unsafe calls.
+
+**Lesson:** accepting a schema as a parser input does not establish which schema constraints it enforces. Probe the actual boundary values before making the parser an authorization or resource-limit boundary.

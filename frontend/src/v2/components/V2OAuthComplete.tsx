@@ -42,7 +42,7 @@ const V2OAuthComplete: React.FC = () => {
       return;
     }
 
-    axios.post('/api/auth/oauth/exchange', { code })
+    axios.post('/api/auth/oauth/exchange', { code }, { withCredentials: true })
       .then((res) => {
         const token = (res.data as { token?: string })?.token;
         if (!token) throw new Error('no token');

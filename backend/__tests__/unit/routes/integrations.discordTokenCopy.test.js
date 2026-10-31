@@ -3,7 +3,7 @@
  *
  * The row that stored it is what made `DISCORD_BOT_TOKEN` rotation miss
  * integrations that already existed: every read prefered the copy, so the new
- * env value reached new connectors only (Vera 73344-73346; all three
+ * env value reached new connectors only (all three
  * `discord_integrations` documents carried a 72-char copy). Step 1 of the
  * split removes the WRITE; the data step that clears the three legacy values
  * rides separately, because the field has to stay readable until it runs.
@@ -27,6 +27,8 @@ jest.mock('../../../middleware/adminAuth', () => (req, res, next) => next());
 jest.mock('../../../middleware/integrationRateLimit', () => ({
   writeIntegrationsRateLimit: (_req, _res, next) => next(),
   listIntegrationsRateLimit: (_req, _res, next) => next(),
+  ingestIngressRateLimit: (_req, _res, next) => next(),
+  ingestIntegrationsRateLimit: (_req, _res, next) => next(),
 }));
 jest.mock('../../../services/dmService', () => ({ canViewPod: jest.fn(() => true) }));
 jest.mock('jsonwebtoken', () => ({ sign: jest.fn(() => 't'), verify: jest.fn(), decode: jest.fn() }));

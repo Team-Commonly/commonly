@@ -81,6 +81,55 @@ describe('resolveAgentDisplayLabel', () => {
       expect(resolveAgentDisplayLabel(user)).toBe('aria');
     });
 
+    // TASK-551: Scout is a product agent, not a shared runtime. Its curated
+    // label equals its agentName on a per-user instance, and that label must
+    // show, not the raw instance id.
+    it('keeps a product agent\'s curated label that equals its agentName (Scout)', () => {
+      const user = {
+        username: 'scout-ubd1004e0d7',
+        botMetadata: { displayName: 'Scout', agentName: 'scout', instanceId: 'ubd1004e0d7' },
+      };
+      expect(resolveAgentDisplayLabel(user)).toBe('Scout');
+    });
+
+    // TASK-551: "Scout (Scout-Demo)" is the collision label the resolver writes
+    // for a named Scout instance. It is the product's own label, not a leak.
+    it('keeps a first-party collision label that spells its agentName and instanceId', () => {
+      const user = {
+        username: 'scout-demo',
+        botMetadata: { displayName: 'Scout (Scout-Demo)', agentName: 'scout', instanceId: 'scout-demo' },
+      };
+      expect(resolveAgentDisplayLabel(user)).toBe('Scout (Scout-Demo)');
+    });
+
+    // The shared-runtime set is wider than openclaw: a codex seat that takes
+    // its officialDisplayName ('Codex') must still fall back to its instance.
+    it('still falls back to instanceId when a shared codex runtime name leaks as displayName', () => {
+      const user = {
+        username: 'codex-cody',
+        botMetadata: { displayName: 'Codex', agentName: 'codex', instanceId: 'cody' },
+      };
+      expect(resolveAgentDisplayLabel(user)).toBe('cody');
+    });
+
+    // claude-code is a shared runtime too. Its runtime name and its
+    // officialDisplayName 'Claude Code' both fall back to the instanceId.
+    it('falls back to instanceId when a shared claude-code runtime name leaks as displayName', () => {
+      const user = {
+        username: 'claude-code-ops',
+        botMetadata: { displayName: 'claude-code', agentName: 'claude-code', instanceId: 'ops' },
+      };
+      expect(resolveAgentDisplayLabel(user)).toBe('ops');
+    });
+
+    it('falls back to instanceId when the claude-code officialDisplayName leaks as displayName', () => {
+      const user = {
+        username: 'claude-code-ops',
+        botMetadata: { displayName: 'Claude Code', agentName: 'claude-code', instanceId: 'ops' },
+      };
+      expect(resolveAgentDisplayLabel(user)).toBe('ops');
+    });
+
     it('is case-insensitive — "OpenClaw (Pixel)" still rejected', () => {
       const user = {
         username: 'openclaw-pixel',
@@ -107,4 +156,10 @@ describe('resolveAgentDisplayLabel', () => {
       expect(resolveAgentDisplayLabel(user)).toBe('Nova');
     });
   });
+});
+
+it('preserves a curated default-instance name equal to the agent name', () => {
+  expect(resolveAgentDisplayLabel({ username: 'pixel-default', botMetadata: {
+    agentName: 'pixel', instanceId: 'default', displayName: 'Pixel',
+  } })).toBe('Pixel');
 });

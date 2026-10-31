@@ -180,6 +180,8 @@ describe('performRun', () => {
     // so the whole page reaches one composite turn instead of aging untouched
     // behind a prior single-event turn.
     expect(mockGet.mock.calls[0][1].limit).toBe(10);
+    // TASK-317: the poll names the CLI for the chat chip (display only).
+    expect(mockGet.mock.calls[0][1].reportedCli).toBe('codex');
     expect(spawn).toHaveBeenCalledTimes(1);
     const spawnedEnv = spawn.mock.calls[0][1].env;
     const configIndex = Number(process.env.GIT_CONFIG_COUNT || 0);
@@ -282,7 +284,7 @@ describe('performRun', () => {
     expect(lines.some((line) => line.includes('upstream refused'))).toBe(false);
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-1/ack',
-      { result: { outcome: 'no_action' } },
+      { result: { outcome: 'no_action', reason: 'empty-output' } },
     );
   });
 
@@ -473,6 +475,79 @@ describe('performRun', () => {
 
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(ackPosts(post).map(([route]) => route)).toEqual(['/api/agents/runtime/events/evt-refused/ack']);
+  });
+
+  // The server answers an intentional NO_REPLY with `silent_or_empty`. That
+  // seat read the batch and chose silence, so its digest is read; any other
+  // skip leaves the digest for the next turn.
+  test.each([
+    ['silent_or_empty', true],
+    ['duplicate_recent', false],
+  ])('a server skip as %s marks the digest read: %s', async (reason, read) => {
+    const events = [
+      makeEvent({ _id: 'evt-wake', payload: { content: 'question' } }),
+      makeEvent({ _id: 'evt-ambient', type: 'message.posted', deliveryMode: 'digest',
+        payload: { content: 'background' } }),
+    ];
+    const get = jest.fn(async (route) => (
+      route.endsWith('/messages') ? { messages: [] } : { events, inboxCount: 2 }
+    ));
+    const post = jest.fn(async (route) => (
+      route === '/api/agents/runtime/pods/pod-abc/messages'
+        ? { success: true, skipped: true, reason }
+        : {}
+    ));
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'Nothing to add.' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const acked = ackPosts(post).map(([route]) => route);
+    expect(acked).toContain('/api/agents/runtime/events/evt-wake/ack');
+    expect(acked.includes('/api/agents/runtime/events/evt-ambient/ack')).toBe(read);
+    if (read) {
+      expect(post).toHaveBeenCalledWith('/api/agents/runtime/events/evt-ambient/ack', {
+        result: { outcome: 'no_action', reason: 'digest-read' },
+      });
+    }
+  });
+
+  // Only the sentinel is a choice. A seat that prints nothing every turn (a
+  // crash, a timeout, a lost route that says nothing) must not drain the
+  // digest it never saw (#2753).
+  test.each([
+    ['NO_REPLY', { outcome: 'no_action' }, true],
+    ['', { outcome: 'no_action', reason: 'empty-output' }, false],
+  ])('a reply of %j acks the wake as %j and reads the digest: %s', async (text, wakeResult, read) => {
+    const events = [
+      makeEvent({ _id: 'evt-wake', payload: { content: 'question' } }),
+      makeEvent({ _id: 'evt-ambient', type: 'message.posted', deliveryMode: 'digest',
+        payload: { content: 'background' } }),
+    ];
+    const get = jest.fn(async (route) => (
+      route.endsWith('/messages') ? { messages: [] } : { events, inboxCount: 2 }
+    ));
+    const post = jest.fn(async () => ({}));
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith('/api/agents/runtime/events/evt-wake/ack', { result: wakeResult });
+    const acked = ackPosts(post).map(([route]) => route);
+    expect(acked.includes('/api/agents/runtime/events/evt-ambient/ack')).toBe(read);
   });
 
   test('a lost binding item stays read-only context while another batch item may run', async () => {
@@ -851,8 +926,8 @@ describe('performRun', () => {
     // message and answer concurrently; the faster one lands its post inside
     // the slower one's spawn window. The old detection asked "did any bot
     // post?" and so threw away the slower agent's entire reply — silently,
-    // because the event was still acked. Sam hit this hand-sequencing his
-    // agents one at a time during a working session.
+    // because the event was still acked. This surfaced when an operator
+    // ran agents one at a time during a working session.
     let messagesCall = 0;
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
@@ -1275,6 +1350,60 @@ describe('performRun', () => {
     );
   });
 
+  // TASK-293: the wrapper posts any final text that is not exactly NO_REPLY, so
+  // every prompt whose final text reaches the pod says so. Pinned as a literal
+  // rather than imported, so rewording the line is a deliberate test change.
+  const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
+    + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary.';
+
+  const firstPromptFor = async (events) => {
+    createClient.mockReturnValue({
+      get: jest.fn().mockResolvedValue({ events }),
+      post: jest.fn().mockResolvedValue({}),
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    return spawn.mock.calls[0][0];
+  };
+
+  test.each([
+    ['a heartbeat wake', { _id: 'evt-hb-posted-line', type: 'heartbeat', payload: { content: 'Run your heartbeat checklist.' } }],
+    ['a mention', { _id: 'evt-mention-posted-line' }],
+  ])('the inbox-batch prompt for %s says its final text is posted unless it is exactly NO_REPLY', async (_label, overrides) => {
+    const prompt = await firstPromptFor([makeEvent(overrides)]);
+    expect(prompt).toContain('[Inbox batch: 1 new event in this pod.');
+    expect(prompt).toContain(FINAL_TEXT_IS_POSTED);
+  });
+
+  test('the agent.ask.response prompt says its final text is posted unless it is exactly NO_REPLY', async () => {
+    const prompt = await firstPromptFor([makeEvent({
+      _id: 'evt-ask-response-posted-line',
+      type: 'agent.ask.response',
+      payload: { requestId: 'ask-456', fromAgent: 'reviewer', response: 'Ship it.' },
+    })]);
+    expect(prompt).toContain('[Private agent consultation response]');
+    expect(prompt).toContain(FINAL_TEXT_IS_POSTED);
+  });
+
+  test('the agent.ask prompt does not say its final text is posted: that text goes to the requester', async () => {
+    const prompt = await firstPromptFor([makeEvent({
+      _id: 'evt-ask-posted-line',
+      type: 'agent.ask',
+      payload: { requestId: 'ask-789', fromAgent: 'planner', question: 'Ready?' },
+    })]);
+    expect(prompt).toContain('@planner asks:');
+    expect(prompt).not.toContain(FINAL_TEXT_IS_POSTED);
+  });
+
   test('decision.ruled spawns a turn with the durable pick, rather than dropping it as an unknown event', async () => {
     const events = [makeEvent({
       _id: 'evt-decision-ruled',
@@ -1627,7 +1756,9 @@ describe('performRun', () => {
       circuitOpen: true,
       eventId: event._id,
     });
-    expect(errors[2].message).toMatch(/circuit open, next probe in 1m/);
+    // The third consecutive failure of the same event releases it to the
+    // server's requeue rather than carrying it again (HELD_RETRY_MAX_FAILURES).
+    expect(errors[2].message).toMatch(/circuit open; releasing 1 event after 3 failed attempts .*; next poll in 1m/);
   });
 
   test('recognized quota failure opens the long circuit on the first attempt', async () => {
@@ -1754,9 +1885,15 @@ describe('performRun', () => {
     }));
     const acked = new Set();
     const pages = [];
-    const post = jest.fn(async (route) => {
+    const post = jest.fn(async (route, body) => {
       const match = route.match(/events\/(evt-check-\d)\/ack$/);
       if (match) acked.add(match[1]);
+      // renewDelivery renews only a row still delivered under that nonce: a
+      // checkpointed item is acked, so it is not renewed — which is how the
+      // failed turn's carry learns not to re-run it.
+      if (route.endsWith('/events/renew')) {
+        return { renewed: body.events.map((entry) => entry.eventId).filter((id) => !acked.has(id)) };
+      }
       return {};
     });
     const get = jest.fn(async (route) => {
@@ -2033,6 +2170,101 @@ describe('performRun', () => {
     });
     expect(errors).toHaveLength(1);
     expect(errors[0].message).toMatch(/Ack failed.*ack transport offline/);
+  });
+
+  // TASK-535: a long turn ends with the pod having moved on. The backend holds
+  // the reply with 409 `unseen_messages`; before the fix every rung hit the
+  // same hold, the reply was lost and the events re-ran.
+  const unseenHold = (unseenCount) => Object.assign(
+    new Error(`There are ${unseenCount} unseen messages. Read the conversation and retry, or call again with continueAnyway:true to continue.`),
+    { status: 409, body: { code: 'unseen_messages', unseenCount, messages: [] } },
+  );
+
+  test('a turn that ends with 12 unseen messages still posts exactly once — and a redelivery does not post again', async () => {
+    const event = makeEvent({ _id: 'evt-long-turn-unseen' });
+    const get = jest.fn(async (route) => (route.endsWith('/messages') ? { messages: [] } : { events: [event] }));
+    let held = false;
+    let ackAttempts = 0;
+    const post = jest.fn(async (route, body) => {
+      if (route.endsWith('/messages') && !body?.continueAnyway) {
+        held = true;
+        throw unseenHold(12);
+      }
+      if (route.endsWith('/ack')) {
+        ackAttempts += 1;
+        // The success is recorded locally before this ack; losing the ack is
+        // what makes the kernel redeliver the event.
+        if (ackAttempts === 1) throw new Error('ack transport offline');
+      }
+      return {};
+    });
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'Summary of 43 minutes of work.' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+    const logs = [];
+
+    const first = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test', adapter, agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout, log: (line) => logs.push(line), onError: () => {},
+    });
+    await drainMicrotasks();
+    first.stop();
+
+    expect(held).toBe(true);
+    expect(replyPosts(post)).toEqual([
+      ['/api/agents/runtime/pods/pod-abc/messages', { content: 'Summary of 43 minutes of work.' }],
+      ['/api/agents/runtime/pods/pod-abc/messages', { content: 'Summary of 43 minutes of work.', continueAnyway: true }],
+    ]);
+    expect(logs.some((l) => /posted .* as 1 message \(single\)/.test(l))).toBe(true);
+    expect(wasEventHandled('my-stub', event._id)).toBe(true);
+
+    // The kernel redelivers the event whose ack was lost. The reply already
+    // reached the pod, so it must not post a second time.
+    const second = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test', adapter, agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout, onError: () => {},
+    });
+    await drainMicrotasks();
+    second.stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(replyPosts(post).filter(([, body]) => body.continueAnyway === true)).toHaveLength(1);
+    expect(replyPosts(post)).toHaveLength(2);
+    expect(ackPosts(post)[1][1]).toEqual({ result: { outcome: 'no_action', reason: 'duplicate-delivery' } });
+  });
+
+  test('a reply that no rung can deliver leaves the events unacked and writes one error line naming pod, count and reason', async () => {
+    const events = [
+      makeEvent({ _id: 'evt-lost-1' }),
+      makeEvent({ _id: 'evt-lost-2', payload: { content: 'and another thing' } }),
+    ];
+    const get = jest.fn(async (route) => (route.endsWith('/messages') ? { messages: [] } : { events }));
+    const post = jest.fn(async (route) => {
+      if (route.endsWith('/messages')) throw unseenHold(12);
+      return {};
+    });
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'A summary nobody will see.' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+    const logs = [];
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test', adapter, agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout, log: (line) => logs.push(line), onError: () => {},
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    // One held post, one override post, then stop: never a loop.
+    expect(replyPosts(post)).toHaveLength(2);
+    expect(ackPosts(post)).toHaveLength(0);
+    for (const event of events) expect(wasEventHandled('my-stub', event._id)).toBe(false);
+    const errorLines = logs.filter((l) => /reply NOT delivered/.test(l));
+    expect(errorLines).toHaveLength(1);
+    expect(errorLines[0]).toContain('pod pod-abc');
+    expect(errorLines[0]).toContain('2 events left unacked');
+    expect(errorLines[0]).toContain('12 unseen messages');
   });
 
   test.each([false, true])('backlog catch-up reaches the model before one reply and ack (skills: %s)', async (skills) => {
@@ -2605,7 +2837,7 @@ describe('performRun', () => {
   });
 
   test('TASK-102 part B: the boot sweep runs once per process, before the first spawn, and never blocks it', async () => {
-    // The second net behind `close()`. wren's read found `close()` claiming a
+    // The second net behind `close()`. A review found `close()` claiming a
     // sweep that nothing invoked; this is the wiring that makes the claim true,
     // and the ordering assertion is the part a unit test of the sweep cannot
     // make.
@@ -2760,8 +2992,8 @@ describe('performRun — ADR-018 enforcement', () => {
   });
 
   test('a lost claim on a BROADCAST wake stands the turn down: no spawn, no post, acked no_action', async () => {
-    // Was a chat.mention event before the fairness ruling (Sam, 2026-08-12:
-    // "loser may never get a chance to speak") — addressed losses now proceed
+    // Was a chat.mention event before the fairness change (a
+    // loser might never get a chance to speak) — addressed losses now proceed
     // peer-aware (own test below); the hard stand-down contract continues to
     // hold for broadcast wakes, asserted here.
     const { post, del } = makeClient({
@@ -2819,9 +3051,9 @@ describe('performRun — ADR-018 enforcement', () => {
     expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'completed' });
   });
 
-  // TASK-096 / vera (71090, 71091): the release outcome keys on the PRESENCE
+  // TASK-096: the release outcome keys on the PRESENCE
   // of a reason, not its value. TASK-099 then split that reason-bearing case
-  // out into its own outcome, and the corrected ruling (71194/71195/71210)
+  // out into its own outcome, and the corrected ruling
   // made the CLASS an enum: `upstream-refused` (+ the HTTP status),
   // `cascade-cap`, `delivery-refused`. These tests move together — each
   // differs in one input, so a rule change that reddens one and not the other
@@ -2889,7 +3121,7 @@ describe('performRun — ADR-018 enforcement', () => {
     });
   });
 
-  test('a MINT VERDICT releases refused as delivery-refused and acks the class (wren 72153 / vera 72157)', async () => {
+  test('a MINT VERDICT releases refused as delivery-refused and acks the class', async () => {
     // The THIRD producer of `refused`, and the one that used to be invisible: a
     // verdict escaped `runTurn` as a bare throw, so `turnResult` was undefined
     // and the release was the legacy holder-only DELETE. A malicious or
@@ -2915,8 +3147,8 @@ describe('performRun — ADR-018 enforcement', () => {
       reason: 'delivery-refused',
     });
     // The number is deliberately NOT on the release: `status` on a claim record
-    // means an upstream call's HTTP status, and this refusal never made one
-    // (vera 72157 accepted that narrowing; wren 72153 asked for the class). The
+    // means an upstream call's HTTP status, and this refusal never made one.
+    // The
     // number and the server's own code stay in the ack instead.
     expect(post).toHaveBeenCalledWith('/api/agents/runtime/events/evt-1/ack', {
       result: {
@@ -2996,8 +3228,8 @@ describe('performRun — ADR-018 enforcement', () => {
   });
 
   test('the paired control: a CAPACITY failure still spawns on the seat token and releases completed', async () => {
-    // vera 72157: "capacity fallbacks are unaffected — those spawn successfully
-    // on the seat token and release normally." Same input shape as the verdict
+    // Capacity fallbacks are unaffected — those spawn successfully
+    // on the seat token and release normally. Same input shape as the verdict
     // above, different class, so the two arms are pinned against each other
     // rather than asserted separately.
     const busy = Object.assign(new Error('busy'), { status: 503 });
@@ -3476,6 +3708,62 @@ describe('performRun — ADR-018 enforcement', () => {
     );
   });
 
+  // TASK-640 done-when: holding a claimed row, a broadcast no person sent
+  // spawns nothing; a human post in the same pod still spawns at once.
+  describe('defer-while-claimed', () => {
+    const holdingRow = (opts) => {
+      const client = makeClient(opts);
+      const fallback = client.get.getMockImplementation();
+      client.get.mockImplementation(async (route, params) => (route === '/api/v1/tasks/pod-abc'
+        ? { tasks: [{ taskId: 'TASK-642', claimedByMe: true, leaseState: 'held' }] }
+        : fallback(route, params)));
+      return client;
+    };
+
+    test('an agent broadcast spawns no turn and is acked', async () => {
+      const { post, get } = holdingRow({
+        events: [makeClaimEvent({ type: 'message.posted' })],
+        messages: [{ _id: 'msg-1', isBot: true, self: false }],
+      });
+      const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+      const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+      await drainMicrotasks();
+      stop();
+
+      expect(spawn).not.toHaveBeenCalled();
+      expect(get).toHaveBeenCalledWith('/api/v1/tasks/pod-abc', { status: 'claimed' });
+      expect(callsTo(post, '/claim')).toHaveLength(0);
+      expect(ackPosts(post)).toHaveLength(1);
+      expect(ackPosts(post)[0][0]).toBe('/api/agents/runtime/events/evt-1/ack');
+    });
+
+    test('a human post still spawns', async () => {
+      holdingRow({
+        events: [makeClaimEvent({ type: 'message.posted' })],
+        messages: [{ _id: 'msg-1', isBot: false, self: false }],
+      });
+      const spawn = jest.fn(async () => ({ text: 'on it' }));
+      const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+      await drainMicrotasks();
+      stop();
+
+      expect(spawn).toHaveBeenCalledTimes(1);
+    });
+
+    test('a mention still spawns', async () => {
+      holdingRow({
+        events: [makeClaimEvent()],
+        messages: [{ _id: 'msg-1', isBot: true, self: false }],
+      });
+      const spawn = jest.fn(async () => ({ text: 'on it' }));
+      const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+      await drainMicrotasks();
+      stop();
+
+      expect(spawn).toHaveBeenCalledTimes(1);
+    });
+  });
+
   test('an enforcement stand-down does not reset the spawn-failure streak (#782 invariant)', async () => {
     // Failure → stand-down (claim held) → failure. The stand-down never
     // exercised the model, so the second failure must report streak 2, not 1.
@@ -3493,17 +3781,25 @@ describe('performRun — ADR-018 enforcement', () => {
       }
     };
 
+    // A failed turn's events are carried to its retry. Here the server
+    // reports each one as no longer this runner's (renewed: []), so the carry
+    // drops it and the stand-down tick runs alone — which is the sequence
+    // this invariant is about.
+    const failing = (id) => makeEvent({
+      _id: id, payload: { content: 'hello from tester', deliveryId: `nonce-${id}` },
+    });
     const batches = [
-      [makeEvent({ _id: 'evt-fail-1' })],
+      [failing('evt-fail-1')],
       // Broadcast wake, post-fairness: addressed claim-losses now spawn
       // peer-aware, so the stand-down under test must ride message.posted.
       [makeClaimEvent({ _id: 'evt-held', type: 'message.posted' })],
-      [makeEvent({ _id: 'evt-fail-2' })],
+      [failing('evt-fail-2')],
       [],
     ];
     let batch = 0;
     const post = jest.fn(async (route) => {
       if (route.endsWith('/claim')) return { claimed: false, claimedBy: 'nova' };
+      if (route.endsWith('/events/renew')) return { renewed: [] };
       return {};
     });
     const get = jest.fn(async (route) => {
@@ -3691,7 +3987,7 @@ describe('performRun — ADR-018 enforcement', () => {
   });
 });
 
-// TASK-111, ruling B (wren 71640/71641): the withhold goes at the performRun
+// TASK-111, ruling B: the withhold goes at the performRun
 // site, in memory, record untouched. The broker arrives as an injected MCP
 // entry written by hand into the seat's own record — there is no server
 // projection to gate (`GRANT_BROKER_URL` is imported by one route, the daemon
@@ -3757,7 +4053,7 @@ describe('performRun — the grant broker is withheld where no daemon will judge
     expect(spawned.mcp).toEqual([BROKER, OTHER]);
   });
 
-  // Vera's mapping case, at the run path: with no mode declared the legacy
+  // The mapping case, at the run path: with no mode declared the legacy
   // mapping is the only gate on the record, and `internal` reads as `public`.
   test('a legacy internal trust with no declared mode still carries the broker', async () => {
     const environment = { sandbox: { trust: 'internal' }, mcp: [BROKER] };

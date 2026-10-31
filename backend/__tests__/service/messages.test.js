@@ -69,7 +69,7 @@ describe('Message Routes Integration Tests', () => {
     expect(PGMessage.findByPodId).toHaveBeenCalledWith(
       pod._id.toString(),
       50,
-      undefined,
+      null,
     );
   });
 
@@ -102,11 +102,20 @@ describe('Message Routes Integration Tests', () => {
     PGMessage.create.mockResolvedValue(mockMessage);
     const token = generateTestToken(user._id);
 
-    const response = await request(app)
-      .post(`/api/messages/${pod._id}`)
-      .set('Authorization', `Bearer ${token}`)
-      .send({ text: 'Hi there' })
-      .expect(200);
+    // The send writes PostgreSQL only when PG_HOST is configured (TASK-503).
+    const oldPgHost = process.env.PG_HOST;
+    process.env.PG_HOST = 'localhost';
+    let response;
+    try {
+      response = await request(app)
+        .post(`/api/messages/${pod._id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ text: 'Hi there' })
+        .expect(200);
+    } finally {
+      if (oldPgHost === undefined) delete process.env.PG_HOST;
+      else process.env.PG_HOST = oldPgHost;
+    }
 
     expect(response.body.content).toBe('Hi there');
     expect(PGMessage.create).toHaveBeenCalledWith(

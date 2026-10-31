@@ -167,7 +167,6 @@ The rule this adds: an image that shows a retired concept is removed in the same
 | `docs/agents/NATIVE_RUNTIME.md` | 175 | 2026-04-12 | quire | **rewrite** | openclaw 2x; clawdbot 2x |  |
 | `docs/agents/README.md` | 75 | 2026-09-19 | quire | **rewrite** | rewrite to daemon-first: teaches `agent attach` as the way in; openclaw 7x; clawdbot 5x; attach 1x |  |
 | `docs/agents/WEBHOOK_SDK.md` | 163 | 2026-08-30 | quire | **rewrite** | rewrite to daemon-first: teaches `agent attach` as the way in; deadhost 4x; attach 1x |  |
-| `docs/agents/clawdbot-pin-and-the-cycles-outage.md` | 52 | 2026-08-18 | otto | **keep** | record, not a current-state claim: incident write-up; CLAUDE.md points at it |  |
 | `docs/agents/daemon-seat-state-surfaces.md` | 171 | 2026-09-19 | otto | **keep** | 0 rot; verified 1 CLI cmd(s) in 0.1.58 + 2 route(s) served live |  |
 | `docs/agents/pi-adapter.md` | 129 | 2026-09-19 | quire | **rewrite** | rewrite to daemon-first: teaches `agent attach` as the way in; attach 1x |  |
 | `docs/agents/public-facing-agent-sandboxing.md` | 79 | 2026-07-21 | otto | **keep** | 0 rot; prose only, no CLI/route claim to verify |  |
@@ -288,9 +287,7 @@ The rule this adds: an image that shows a retired concept is removed in the same
 | `docs/runbooks/clawdbot-gateway-config-crashloop.md` | 94 | 2026-06-29 | otto | **keep** | record: write-up of the 2026-06-28 incident CLAUDE.md cites; first-line "deployment retired (ADR-021)" note added — openclaw 13x; clawdbot 9x |  |
 | `docs/runbooks/codex-in-gateway-pod.md` | 256 | 2026-06-29 | otto | **keep** | record: ADR-005 links it twice (l.16, l.298) and ADRs are not rewritten; first-line "deployment retired (ADR-021)" note added — clawdbot 4x; deadhost 2x; gemini 1x; attach 3x |  |
 | `docs/runbooks/connector-credentials-setup.md` | 391 | 2026-09-18 | otto | **keep** | 0 rot; verified 0 CLI cmd(s) in 0.1.58 + 4 route(s) served live |  |
-| `docs/runbooks/cross-tool-operator-handoff.md` | 110 | 2026-09-07 | otto | **keep** | 0 rot; prose only, no CLI/route claim to verify |  |
 | `docs/runbooks/db-backup-restore.md` | 308 | 2026-07-11 | otto | **keep** | 0 rot; prose only, no CLI/route claim to verify |  |
-| `docs/runbooks/diagnosing-a-silent-seat.md` | 133 | 2026-08-18 | otto | **keep** | 0 rot; prose only, no CLI/route claim to verify |  |
 | `docs/runbooks/domain-migration-commonly-me.md` | 97 | 2026-07-02 | otto | **keep** | record, not a current-state claim: records the flip away from the dead hostnames |  |
 | `docs/runbooks/error-tracking.md` | 127 | 2026-07-10 | otto | **keep** | 0 rot; prose only, no CLI/route claim to verify |  |
 | `docs/runbooks/gcp-cost-optimization.md` | 217 | 2026-07-03 | quire | **rewrite** | clawdbot 2x |  |

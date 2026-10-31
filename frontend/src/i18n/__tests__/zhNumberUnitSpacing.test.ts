@@ -3,13 +3,13 @@ import path from 'path';
 
 // zh-CN spacing around numerals, in both directions. Two rulings, one rule.
 //
-// TASK-179 (lily-shen, 2026-09-27): zh writes a number and its unit together —
+// TASK-179 (2026-09-27): zh writes a number and its unit together —
 // 「24小时」, 「{{n}}天前」 — which is also what the browser's own zh-CN
 // Intl.RelativeTimeFormat and NumberFormat produce (ux-lead's 75076). The catalog
 // was 31 values the other way, so the convention gets a guard rather than a
 // reviewer's eye.
 //
-// TASK-180 (lily-shen's card choice, 2026-09-28 — "Apply the rule, both sides"):
+// TASK-180 (2026-09-28 — "Apply the rule, both sides"):
 // the same rule applies to every numeral next to hanzi, not only to the unit case.
 // 159 further spaces were closed across 103 values.
 //
@@ -24,8 +24,8 @@ import path from 'path';
 const NUMERAL_PLACEHOLDERS = [
   // bare numbers, or numbers formatted with grouping separators (Intl.NumberFormat)
   'count', 'formattedCount', 'uses', 'maxUses', 'complete', 'total', 'attempt',
-  'revision', 'position', 'cap', 'turns', 'notes', 'days', 'signups', 'active',
-  'working', 'needsYou', 'minutes', 'calls',
+  'revision', 'position', 'cap', 'used', 'turns', 'notes', 'days', 'signups', 'active',
+  'working', 'needsYou', 'minutes', 'calls', 'number', 'tokens',
   // a formatted duration, closed because the ruling names this key explicitly:
   // tools.budgetWindow renders 「每1小时可调用5次」
   'window',
@@ -43,9 +43,15 @@ const OPAQUE_PLACEHOLDERS = [
   'connector', 'user', 'workspace', 'channel', 'tool', 'tools', 'member', 'agents', 'os',
   // common.aboutPage receives a page title, currently Latin, not a count.
   'adapter', 'title',
-  'holder',
+  'holder', 'actor',
   // Runtime ownership names the visible blocking Pods and installers.
   'blockers', 'harness', 'effort', 'model',
+  // runTrace.served names the requested and the answering model groups.
+  'requested', 'served',
+  // runTrace.call inserts the opaque PG call ID, not a number.
+  'id',
+  // podChat.deliveryHintOthers names the agent that was woken.
+  'woken',
 ];
 
 // The exception runs the safe way: a name that is usually opaque and is a number
@@ -193,7 +199,7 @@ describe('zh-CN number and unit spacing', () => {
   });
 
   it('attaches a percent sign to the hanzi after it, the same way as a unit', () => {
-    // ux-lead's render-gate call on this PR (75149), open to lily-shen's overrule: the
+    // The render-gate call on this PR: the
     // `%` belongs to its numeral, so `{{attachRate}}%` closes to hanzi exactly like
     // `{{days}}天` does. Measured as the class before patching the instance, since a
     // one-key fix that leaves siblings is how the `256KB` defect happened: this is the

@@ -60,6 +60,8 @@ export interface V2Message {
     agentsInPod: number;
     // Wake-on-message targets (#914). Optional: older backends omit it.
     woken?: number;
+    // Who was woken; older backends omit it.
+    wokenAgents?: string[];
   };
   // Sender-only feedback from the POST response. Socket broadcasts and
   // history omit it, so other pod members never see the notice.
@@ -85,8 +87,19 @@ export interface V2Message {
   // (approval-card and byo-handoff). Server-composed; survives normalizeMessage via
   // the `...raw` spread — declared here so consumers can read it typed.
   payload?: {
+    runId?: string;
+    runPodId?: string;
     kind?: string;
+    action?: string;
+    actorName?: string;
+    taskId?: string;
     elements?: unknown[];
+    v?: number;
+    lang?: string;
+    source?: string;
+    catalogId?: string;
+    catalogRev?: number;
+    catalogHash?: string;
     // kind 'starts': offers rendered as buttons under the message (first
     // session, direction B). A plain start sends its label as the person's own
     // message; `href` navigates in-app, and supported actions act in place.
@@ -182,6 +195,8 @@ export interface UseV2PodDetailResult {
   loading: boolean;
   /** True after the current pod's initial pod/message read has settled. */
   initialLoadComplete?: boolean;
+  /** The current pod has returned a successful initial messages page, including an empty page. */
+  initialMessagesLoaded?: boolean;
   error: string | null;
   /** Send failures belong beside the composer; load failures use `error`. */
   sendError: string | null;
@@ -297,6 +312,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
   // state distinct from a settled empty page so landing cannot declare a
   // target absent before the initial messages request has even started.
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const [initialMessagesLoaded, setInitialMessagesLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -339,6 +355,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     setError(null);
     setSendError(null);
     setInitialLoadComplete(false);
+    setInitialMessagesLoaded(false);
     setHasMore(false);
     setLoadingOlder(false);
     updateHistorySearch({
@@ -364,6 +381,8 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       const list = Array.isArray(data) ? data : [];
       if (activePodIdRef.current !== id) return;
       const normalized = chronologicalMessages(list.map(normalizeMessage));
+      // A catch-up page cannot establish whether earlier history exists.
+      if (!reconnect) setInitialMessagesLoaded(true);
       if (reconnect) {
         // A socket event (or a previously loaded history page) can arrive
         // while the catch-up request is in flight. Keep those rows and dedupe.
@@ -591,6 +610,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     loadingOlderRef.current = false;
     setLoadingOlder(false);
     setInitialLoadComplete(false);
+    setInitialMessagesLoaded(false);
     if (!podId) {
       setPod(null);
       setMessages([]);
@@ -764,7 +784,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
                 // #646's graft, one field over: when the socket copy wins
                 // the race and lacks the thread root (older server), keep
                 // the POST copy's — or the sender's own in-thread reply
-                // renders top-level until refresh (Sam, 2026-08-24).
+                // renders top-level until refresh (2026-08-24).
                 thread_root_id: m.thread_root_id ?? normalized.thread_root_id ?? null,
                 mentionNotices: normalized.mentionNotices ?? m.mentionNotices,
               }
@@ -798,6 +818,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     agents,
     loading,
     initialLoadComplete,
+    initialMessagesLoaded,
     error,
     sendError,
     hasMore,

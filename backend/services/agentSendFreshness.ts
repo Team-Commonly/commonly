@@ -1,6 +1,6 @@
 // A pod-wide read watermark, recorded only after a successful current-tail read.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const Cursor = require('../models/AgentPodReadCursor');
+const Cursor = require('../repositories/agentPodReadCursorRepository');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const MongoMessage = require('../models/Message');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -28,14 +28,12 @@ async function readStart(podId: unknown): Promise<ReadStart> {
   if (!(hello.localTime instanceof Date)) throw new Error('MongoDB did not return a freshness clock');
   return { at: hello.localTime };
 }
-const cursorId = (agentUserId: unknown, podId: unknown): string => `${String(agentUserId)}:${String(podId)}`;
 
 async function recordRead(
   agentUserId: unknown, podId: unknown, start: ReadStart, observedIds: string[],
 ): Promise<void> {
   if (!Array.isArray(observedIds)) throw new Error('Read acknowledgement needs returned message IDs');
-  const previous = await Cursor.findOne({ _id: cursorId(agentUserId, podId) })
-    .select('readAt readRevision').lean();
+  const previous = await Cursor.getReadWatermark(agentUserId, podId);
   // The first read also needs evidence: a truncated tail cannot acknowledge
   // older history just because no cursor existed yet.
   if (await omittedMessages(
@@ -45,20 +43,10 @@ async function recordRead(
 }
 
 async function advanceCursor(agentUserId: unknown, podId: unknown, start: ReadStart): Promise<void> {
-  // A slow earlier read must not roll a newer read's watermark backwards.
-  const filter = { _id: cursorId(agentUserId, podId) };
-  const maximum = {
+  await Cursor.advanceReadWatermark(agentUserId, podId, {
     readAt: start.at,
     ...(start.revision === undefined ? {} : { readRevision: start.revision }),
-  };
-  try {
-    await Cursor.updateOne(filter, { $max: maximum, $setOnInsert: { agentUserId, podId } }, { upsert: true });
-  } catch (error) {
-    if ((error as { code?: number }).code !== 11000) throw error;
-    // Two first reads can race on the deterministic _id; the loser still
-    // advances the winner's cursor without ever replacing a later timestamp.
-    await Cursor.updateOne(filter, { $max: maximum });
-  }
+  });
 }
 
 async function omittedMessages(
@@ -77,6 +65,7 @@ async function omittedMessages(
       SELECT ${count ? 'COUNT(*)::integer AS skipped_count' : '1'} FROM messages m
       WHERE m.pod_id = $1 AND m.freshness_revision > $2 AND m.freshness_revision <= $3
         AND (m.user_id IS DISTINCT FROM $4 OR m.author_kind = 'kernel')
+        AND NOT (m.message_type = 'system' AND COALESCE(m.payload->>'kind', '') = 'system-action')
         AND NOT (m.id = ANY($5::int[]))
       ${count ? '' : 'LIMIT 1'}
     `, [String(podId), previous.readRevision ?? -1, start.revision, ownId, ids]);
@@ -85,6 +74,7 @@ async function omittedMessages(
   const observed = observedIds.filter((id) => /^[a-f\d]{24}$/i.test(id));
   const query = {
     podId,
+    $nor: [{ messageType: 'system', 'payload.kind': 'system-action' }],
     _id: { $nin: observed },
     $and: [
       { $or: [{ userId: { $ne: ownId } }, { authorKind: 'kernel' }] },
@@ -106,8 +96,7 @@ async function omittedMessages(
 async function recordCatchUp(
   agentUserId: unknown, podId: unknown, start: ReadStart, observedIds: string[],
 ): Promise<{ skippedCount: number }> {
-  const previous = await Cursor.findOne({ _id: cursorId(agentUserId, podId) })
-    .select('readAt readRevision').lean();
+  const previous = await Cursor.getReadWatermark(agentUserId, podId);
   const skippedCount = await omittedMessages(
     agentUserId, podId, previous || { readAt: new Date(0), readRevision: -1 }, start, observedIds, true,
   );
@@ -115,8 +104,13 @@ async function recordCatchUp(
   return { skippedCount };
 }
 
-async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hold> {
-  const cursor = await Cursor.findOne({ _id: cursorId(agentUserId, podId) }).select('readAt readRevision').lean();
+// A delivered event names the message that woke the agent. That message is the
+// one the reply answers, so it is treated as seen: only messages after it hold.
+// Without this, an inline webhook reply always counts its own trigger as unseen.
+async function unseenMessages(
+  agentUserId: unknown, podId: unknown, { seenThroughMessageId = null }: { seenThroughMessageId?: unknown } = {},
+): Promise<Hold> {
+  const cursor = await Cursor.getReadWatermark(agentUserId, podId);
   const after = cursor?.readAt || new Date(0);
   const afterRevision = cursor?.readRevision ?? -1;
   const ownId = String(agentUserId);
@@ -124,14 +118,17 @@ async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hol
   let messages: Preview[];
 
   if (pool && process.env.PG_HOST) {
+    const seenPgId = /^\d+$/.test(String(seenThroughMessageId ?? '')) ? Number(seenThroughMessageId) : null;
     const result = await pool.query(`
         SELECT m.id, m.content, m.created_at, COALESCE(u.username, 'Unknown') AS author,
           COUNT(*) OVER ()::integer AS unseen_count
         FROM messages m LEFT JOIN users u ON u._id = m.user_id
         WHERE m.pod_id = $1 AND m.freshness_revision > $2
           AND (m.user_id IS DISTINCT FROM $3 OR m.author_kind = 'kernel')
+          AND NOT (m.message_type = 'system' AND COALESCE(m.payload->>'kind', '') = 'system-action')
+          AND ($4::integer IS NULL OR m.id > $4)
         ORDER BY m.freshness_revision DESC, m.id DESC LIMIT 3
-      `, [String(podId), afterRevision, ownId]);
+      `, [String(podId), afterRevision, ownId, seenPgId]);
     unseenCount = Number(result.rows[0]?.unseen_count || 0);
     messages = result.rows.map((row: Record<string, unknown>) => ({
       id: String(row.id),
@@ -140,7 +137,8 @@ async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hol
       createdAt: row.created_at,
     }));
   } else {
-    ({ unseenCount, messages } = await unseenFromMongo(podId, ownId, after));
+    const seenMongoId = /^[a-f\d]{24}$/i.test(String(seenThroughMessageId ?? '')) ? String(seenThroughMessageId) : null;
+    ({ unseenCount, messages } = await unseenFromMongo(podId, ownId, after, seenMongoId));
   }
 
   if (!unseenCount) return null;
@@ -155,9 +153,13 @@ async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hol
   };
 }
 
-async function unseenFromMongo(podId: unknown, ownId: string, after: Date): Promise<{ unseenCount: number; messages: Preview[] }> {
+async function unseenFromMongo(
+  podId: unknown, ownId: string, after: Date, seenMongoId: string | null,
+): Promise<{ unseenCount: number; messages: Preview[] }> {
   const query = {
     podId,
+    ...(seenMongoId ? { _id: { $gt: seenMongoId } } : {}),
+    $nor: [{ messageType: 'system', 'payload.kind': 'system-action' }],
     $and: [
       { $or: [{ userId: { $ne: ownId } }, { authorKind: 'kernel' }] },
       { $or: [

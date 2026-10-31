@@ -87,8 +87,7 @@ const isSentinelWordCharacter = (character: string | undefined): boolean => (
 );
 
 /**
- * Does this reply OPEN with a bare sentinel (TASK-067, ratified by Sam
- * 2026-08-26)?
+ * Does this reply OPEN with a bare sentinel (TASK-067)?
  *
  * The measured failure mode is AX-43: a seat writes
  * `NO_REPLY.\n\n<private reasoning about why it is staying silent>`,
@@ -157,6 +156,9 @@ interface MetadataDoc {
 }
 
 interface PostMessageOptions {
+  /** Server-owned AgentRun identity. Never forwarded from runtime HTTP input. */
+  runId?: string;
+  runPodId?: string;
   agentName: string;
   podId: unknown;
   content: string;
@@ -840,6 +842,17 @@ class AgentMessageService {
     return run;
   }
 
+  /**
+   * Whether this agent's next post in the pod would be refused by the run cap.
+   * The same pieces postMessage reads: no cap in a 1:1 or an agent-admin pod.
+   */
+  static async holdsFloor(podId: unknown, userId: unknown, podType: unknown): Promise<boolean> {
+    if (podType === 'agent-admin' || AgentMessageService.isOneToOnePod(podType)) return false;
+    const cap = AgentMessageService.resolveConsecutiveRunCap();
+    if (cap <= 0) return false;
+    return (await AgentMessageService.countConsecutiveRun(podId, userId)) >= cap;
+  }
+
   static async findRecentDuplicate(options: {
     podId: unknown;
     userId: unknown;
@@ -1295,7 +1308,7 @@ class AgentMessageService {
       }
       // It's a 1:1 DM and this agent isn't a member.
       const err: Error & { code?: string; statusCode?: number } = new Error(
-        `Agent is not a member of ${podDoc.type} pod ${podId} — DM pods are 1:1 (ADR-001 §3.10). Open a new DM via commonly_open_dm if a private channel with this peer is needed.`,
+        `Agent is not a member of ${podDoc.type} pod ${podId} — DM pods are 1:1 (ADR-001 §3.10). Open a new DM via commonly_open_dm or commonly_dm_agent if a private channel with this peer is needed.`,
       );
       err.code = 'dm_membership_refused';
       err.statusCode = 403;
@@ -1502,7 +1515,7 @@ class AgentMessageService {
 
       // ── Consecutive-run cap ────────────────────────────────────────────
       //
-      // Ruled by @fable-lead, which named this chokepoint over the wrapper for
+      // This chokepoint was chosen over the wrapper for
       // a reason it could demonstrate on itself: "my posts ride MCP and no
       // wrapper ever saw them." Every agent post from every tier — MCP,
       // wrapper, moltbot, native — passes through here. A wrapper-side cap
@@ -1519,7 +1532,7 @@ class AgentMessageService {
       // attachment, so nothing the agent meant to say is lost.
       // NOT in a 1:1. The cap's entire rationale is "do not crowd others out of
       // a shared room", and in a DM there is no room to crowd: the only other
-      // participant is the person who asked. Sam caught this within hours of it
+      // participant is the person who asked. This was caught within hours of it
       // shipping — @ux-lead answered a three-part design question in an
       // agent-room, hit the cap, and attached its reply as a .md. A colleague's
       // considered answer arriving as a file you must open is strictly worse
@@ -1571,6 +1584,16 @@ class AgentMessageService {
       }
     }
 
+    // Provenance is kernel-owned even when the presentation is agent-authored.
+    let messagePayload = payload;
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      messagePayload = { ...payload } as Record<string, unknown>;
+      delete (messagePayload as Record<string, unknown>).runId;
+      delete (messagePayload as Record<string, unknown>).runPodId;
+    }
+    if (options.runId) messagePayload = { ...(messagePayload as object || {}), runId: options.runId,
+      ...(options.runPodId ? { runPodId: options.runPodId } : {}) };
+
     const posted = await AgentMessageService._postToTarget({
       agentName,
       instanceId,
@@ -1578,7 +1601,7 @@ class AgentMessageService {
       content: sanitizedContent,
       messageType,
       metadata,
-      payload,
+      payload: messagePayload,
       relayCard,
       agentUser,
       displayName,
@@ -1720,7 +1743,7 @@ class AgentMessageService {
         // to pod chat, which reads PG. Found in the 2026-07-03 live smoke:
         // the BYO hero path ("install agent → talk to it") broke at the
         // agent's first reply. Swallow errors: if PG is truly down the
-        // create below throws and the existing Mongo fallback handles it.
+        // create below throws and the post fails.
         try {
           // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
           const PGPod = require('../models/pg/Pod');
@@ -1791,20 +1814,21 @@ class AgentMessageService {
           thread_root_id: (newMessage.thread_root_id as number | string | null) ?? null,
         };
       } catch (pgError) {
-        console.error('PostgreSQL message creation failed, falling back to MongoDB:', pgError);
+        // PostgreSQL is the only message store once it is configured
+        // (TASK-503). A failed write fails the post so the caller can retry;
+        // a MongoDB row here would be invisible to pod chat, which reads PG.
+        console.error('[agent-msg] PostgreSQL message write failed:', (pgError as Error).message);
+        throw Object.assign(
+          new Error('Messages are temporarily unavailable. Please try again shortly.'),
+          { code: 'MESSAGE_STORE_UNAVAILABLE', statusCode: 503, cause: pgError },
+        );
       }
     }
 
-    if (!message && resolvedThreadRootId != null) {
-      // PG accepted the resolve but the INSERT failed. Falling to Mongo here
-      // would strand an explicitly-threaded post as an unthreaded row —
-      // fail the post instead; the caller can retry.
-      throw new Error('thread-scoped post failed at the PostgreSQL store');
-    }
-
+    // Reached only when PostgreSQL is not configured at all (no PG_HOST): a
+    // configured store that fails has already thrown above.
     if (!message) {
       const mongoMessage = new Message({
-        pgFallback: true,
         content,
         userId: agentUser._id,
         podId,
@@ -1932,7 +1956,7 @@ class AgentMessageService {
         ...(relayCard ? { card: relayCard } : {}),
         // Decided when the turn made the post, carried with the message, and
         // enforced where relays are selected, so a bridge enabled while this
-        // post was being stored still cannot carry it out (Rhea on #2244).
+        // post was being stored still cannot carry it out.
         ...(noOutboundRelay ? { noOutboundRelay: true } : {}),
       });
     } catch (bridgeError) {
@@ -2187,6 +2211,28 @@ class AgentMessageService {
    * exists without changing this array-shaped service contract for existing
    * internal consumers.
    */
+  static async authorIdsSince(podId: unknown, since: Date): Promise<string[]> {
+    const mongo = Message.distinct('userId', {
+      podId: { $eq: podId }, createdAt: { $gt: since }, messageType: { $ne: 'system' },
+    }) as Promise<unknown[]>;
+    if (!PGMessage || !process.env.PG_HOST) return (await mongo).map(String);
+    // A post that fell back to MongoDB while PostgreSQL was failing is only
+    // there until it is reconciled, so read both. An author either store
+    // returns did post, so one store failing keeps the other's authors; only
+    // both failing leaves nothing to answer with.
+    const [pg, fallback] = await Promise.allSettled([
+      (PGMessage as { findAuthorIdsSince(id: unknown, at: Date): Promise<string[]> }).findAuthorIdsSince(podId, since),
+      mongo,
+    ]);
+    if (pg.status === 'rejected' && fallback.status === 'rejected') throw pg.reason;
+    const ids: string[] = [];
+    for (const [store, read] of [['postgres', pg], ['mongo', fallback]] as const) {
+      if (read.status === 'fulfilled') ids.push(...read.value.map(String));
+      else console.warn(`[agent-message] ${store} author read failed:`, String(podId), (read.reason as Error)?.message);
+    }
+    return [...new Set(ids)];
+  }
+
   static async getRecentMessages(
     podId: unknown,
     limit = 20,

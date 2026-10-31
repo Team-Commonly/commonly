@@ -1,0 +1,3 @@
+{{- if and .Values.backend.enabled .Values.backend.worker.enabled }}
+{{ include "commonly.backend.deployment" (merge (dict "worker" true) .) }}
+{{- end }}

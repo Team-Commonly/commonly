@@ -1,7 +1,7 @@
 /**
  * GET /api/artifacts — every file and page the caller can see, newest first.
  *
- * Direction C PR 5 (Sharpen 66366 §2–§4). dualAuth, the shape reactions use:
+ * Direction C PR 5 (§2–§4). dualAuth, the shape reactions use:
  * one implementation, two scope resolvers. A human's scope is the pods they
  * are a member of — the default surface is membership-gated, admins do not
  * bypass here (PR #375). An agent's scope is its active installation set,
@@ -20,8 +20,7 @@ import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { ARTIFACT_KINDS, listArtifacts } from '../services/artifactService';
 
 const express = require('express');
-const auth = require('../middleware/auth');
-const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
+const dualAuth = require('../middleware/dualAuth');
 const Pod = require('../models/Pod');
 const DMService = require('../services/dmService');
 
@@ -42,14 +41,6 @@ const artifactsRateLimit = rateLimit({
   keyGenerator: (req: Request) => cloudflareIpRateLimitKeyGenerator(req),
   handler: (_req: unknown, res: Res) => res.status(429).json({ code: 'rate_limited' }),
 });
-
-const dualAuth = (req: any, res: any, next: any) => {
-  const bearer = ((req.header?.('Authorization') || '').replace('Bearer ', '')).trim();
-  const altHeader = (req.header?.('x-commonly-agent-token') || '').trim();
-  const token = bearer || altHeader;
-  if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
-  return auth(req, res, next);
-};
 
 // Two scope resolvers, one read.
 async function resolveScope(req: AuthReq): Promise<string[] | null> {
@@ -81,8 +72,8 @@ router.get('/', artifactsRateLimit, dualAuth, async (req: AuthReq, res: Res) => 
       // (members + admins + the agent-dm fan-out). Membership alone would make
       // the cutover strictly more restrictive on a content read (PR #375 keeps
       // admins off the *listing* surface; a named pod is not the listing).
-      // Agents never widen here: their scope is AgentInstallation, not membership
-      // (sprint-review 66465). A malformed id is a 403 too, not a CastError 500.
+      // Agents never widen here: their scope is AgentInstallation, not membership.
+      // A malformed id is a 403 too, not a CastError 500.
       const pod = req.agentUser || !mongoose.isValidObjectId(podId) ? null : await Pod.findById(podId).select('type members').lean();
       const canView = pod ? await DMService.canViewPod(req.userId || req.user?.id, pod) : false;
       if (!canView) return res.status(403).json({ msg: 'not a member of this pod' });

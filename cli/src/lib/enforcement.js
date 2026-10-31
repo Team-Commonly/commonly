@@ -18,6 +18,8 @@
  * stands the agent down, and both are logged with the reason.
  */
 
+import { isUnseenMessagesHold } from './pod-catch-up.js';
+
 // Event types whose payload.messageId identifies a claimable trigger message.
 // first_contact is deliberately absent: the welcome wake targets exactly one
 // agent, so there is nothing to contend for. Heartbeats have no message at
@@ -633,7 +635,7 @@ export const splitForChat = (text, { limit = 400 } = {}) => {
  *                                    text and post one message — the reply's
  *                                    own opening plus the file card.
  *
- * The thread rung is new (Sam 57691) and it replaces attachment as the answer
+ * The thread rung is new and it replaces attachment as the answer
  * for PROSE overflow. Before threads existed, a long analysis had nowhere to
  * go but a file, and that was the right workaround. It is now the wrong one:
  * an attachment is un-quotable, un-followable, and an all-or-nothing read,
@@ -673,7 +675,49 @@ export const deliverChatReply = async ({
   // request, but no message was created. Keep that distinction at the client
   // boundary so every delivery mode shares it rather than treating a resolved
   // promise as proof of a post.
-  const postMessage = (body) => client.post(messagesPath, body);
+  //
+  // TASK-535 — the send-time freshness hold. The backend answers 409
+  // `unseen_messages` when other members posted after this seat's last
+  // recorded tail read. A turn that ran ~43 minutes
+  // hit it on the thread headline, the attach card and the split fallback in
+  // turn, so the reply was lost and its 10 events re-ran. A retry without an
+  // override cannot succeed — every rung posts to the same guarded route.
+  //
+  // CTO ruling: on the FIRST hold of a delivery, re-read the pod tail once,
+  // then post with `continueAnyway: true`, and keep the override for every
+  // later post in THIS delivery (remaining chunks, later rungs). The re-read
+  // is GET /messages at the route's 50-row cap with no `before`/`threadRootId`
+  // — the read that records a seen cursor (AgentSendFreshness.recordRead). It
+  // advances the cursor only when the page holds EVERY message since the last
+  // recorded read. The wrapper's own post-turn snapshot is that same read at
+  // limit 10, which is why a 12-message gap stayed unseen. So a re-read alone
+  // passes a normal post only while the gap is ≤ 50 and nothing lands between
+  // read and post; the override is what delivers, and the read records what
+  // the wrapper saw, exactly as its snapshots already do. One re-read and one
+  // override per delivery; a post that still fails throws to the next rung as
+  // before. Nothing here loops.
+  let freshnessOverride = false;
+  const postMessage = async (body) => {
+    if (freshnessOverride) return client.post(messagesPath, { ...body, continueAnyway: true });
+    try {
+      return await client.post(messagesPath, body);
+    } catch (error) {
+      if (!isUnseenMessagesHold(error)) throw error;
+      freshnessOverride = true;
+      const unseen = error.body?.unseenCount;
+      log(
+        `reply held: ${Number.isFinite(unseen) ? unseen : 'some'} unseen message(s) in pod ${podId} `
+        + 'arrived during the turn — re-reading the pod once, then posting with continueAnyway (TASK-535)',
+      );
+      try {
+        await client.get(messagesPath, { limit: 50 });
+      } catch (readError) {
+        // The re-read is bookkeeping, not permission: the override delivers.
+        log(`pod re-read before the continueAnyway post failed (${readError.message}) — posting anyway`);
+      }
+      return client.post(messagesPath, { ...body, continueAnyway: true });
+    }
+  };
   const refused = (response, messages, attemptedMessages) => ({
     mode: 'refused',
     messages,
@@ -727,7 +771,7 @@ export const deliverChatReply = async ({
   // its rendering. The tone contract's own rule covers it: over ~800 chars of
   // ONE indivisible thing is a document, not a message — attach it. Without
   // this check a 659-char fence rode the single/split branches straight past
-  // the gate (found by the fleet's implementation audit, Sharpen msg 53018).
+  // the gate (found by the fleet's implementation audit).
   const hasIndivisibleOversize = chunks.some((c) => c.length > attachThreshold);
   if (chunks.length <= 1 && !hasIndivisibleOversize) {
     const response = await postMessage({ content: chunks[0] ?? text });

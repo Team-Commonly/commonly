@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
@@ -8,7 +9,8 @@ const AgentIdentityService = require('../services/agentIdentityService');
 const { sendEmail } = require('../services/emailService');
 const { ensureUserInCommunityPod } = require('../services/communityPodService');
 const { normalizeAvatarUrl } = require('../services/avatarService');
-const { cleanSignupRef } = require('../utils/signupRef');
+const { signupSourceFields } = require('../utils/signupSource');
+const { loginEmailOf } = require('../utils/loginEmail');
 const { deriveUsernameFromEmail, ACCOUNT_LABEL_COLLATION } = require('../services/derivedUsername');
 const { issueSessionToken } = require('../services/sessionTokenService');
 const {
@@ -18,13 +20,6 @@ const {
 const { disconnectUserSessionSockets } = require('../services/sessionSocketService');
 const { isInstanceAccessRestricted, isInstanceEmailAllowed,
   INSTANCE_ACCESS_ERROR } = require('../services/instanceAccessPolicy');
-
-// The first-touch ref a signup arrived with (?ref=x), stored once on the new
-// account. Anything that is not a short plain code is dropped, not refused.
-const signupRefField = (raw: unknown) => {
-  const ref = cleanSignupRef(raw);
-  return ref ? { onboarding: { signupRef: ref } } : {};
-};
 
 const joinCommunityPodBestEffort = (userId: any) => {
   void ensureUserInCommunityPod(userId).catch((err: Error) => {
@@ -171,7 +166,7 @@ const sendVerificationEmailInBackground = (user: any) => {
 // step's rejection surfaces as an unhandled rejection from the `void
 // finishWorkspaceOnboarding(...)` call site, which is a process crash under
 // Node's default --unhandled-rejections=throw, on the register path.
-const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
+const finishWorkspaceOnboarding = async (pod: any, userId: any, locale: string = 'en') => {
   try {
     // Mirror the workspace into PostgreSQL immediately. The UI path
     // (`createPod`) already does this, but registration's workspace pod did
@@ -245,7 +240,7 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
     try {
       // eslint-disable-next-line global-require
       const {
-        scoutApp, SCOUT_HOSTED_START, SCOUT_STARTS, SCOUT_WELCOME,
+        scoutApp, SCOUT_HOSTED_START, SCOUT_STARTS, scoutWelcomeFor,
       } = require('../config/native-agents/scout');
       // eslint-disable-next-line global-require
       const { buildInstallationConfig } = require('../scripts/seed-native-agents');
@@ -258,7 +253,7 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
       // A's "my repo is X" surfacing in user B's workspace. Same leak class
       // as the 2026-07-03 BYO incident, caught pre-data this time.
       //
-      // CONVENTION (Sam, 2026-08-13 — this is the per-user-agent identity
+      // CONVENTION (2026-08-13 — this is the per-user-agent identity
       // rule, not a guide special case): `u` + first 10 hex of
       // sha256(userId). Short enough to live in a mention handle, stable and
       // derivable at signup with no lookup, and OPAQUE — the raw ObjectId
@@ -333,7 +328,7 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
           instanceId: scoutInstanceId,
           podId: pod._id.toString(),
           displayName: scoutApp.displayName,
-          content: SCOUT_WELCOME,
+          content: scoutWelcomeFor(locale),
           // ADR-020 D3: the starts render as buttons under this message from
           // the payload, not from the text. Server-composed, never model prose.
           payload: {
@@ -367,7 +362,7 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
 // awaited. The queued call is not tracked anywhere: a pod-restart mid-tail
 // leaves a workspace with no Guide and no starter checklist, the same
 // best-effort limit the verification email already carries.
-const createDefaultWorkspacePod = async (userId: any) => {
+const createDefaultWorkspacePod = async (userId: any, locale: string = 'en') => {
   try {
     const pod = await Pod.create({
       name: 'My Workspace',
@@ -378,7 +373,7 @@ const createDefaultWorkspacePod = async (userId: any) => {
       members: [userId],
     });
 
-    void finishWorkspaceOnboarding(pod, userId);
+    void finishWorkspaceOnboarding(pod, userId, locale);
   } catch (podError: any) {
     console.warn('[register] default workspace pod creation failed:', podError?.message);
   }
@@ -412,6 +407,8 @@ exports.register = async (req: any, res: any) => {
       password,
       invitationCode,
       signupRef,
+      signupSource,
+      locale,
     } = req.body;
 
     const normalizedEmail = normalizeEmail(email);
@@ -534,7 +531,7 @@ exports.register = async (req: any, res: any) => {
       password: rawPassword,
       verified: shouldAutoVerify,
       entitlements: { cloudAgents: invitationRedeemed },
-      ...signupRefField(signupRef),
+      ...signupSourceFields(signupSource, 'password', signupRef),
     });
 
     // Save user to database
@@ -548,7 +545,9 @@ exports.register = async (req: any, res: any) => {
       await user.save();
     }
 
-    await createDefaultWorkspacePod(user._id);
+    // eslint-disable-next-line global-require
+    const { normalizeScoutLocale } = require('../config/native-agents/scout');
+    await createDefaultWorkspacePod(user._id, normalizeScoutLocale(locale));
 
     if (shouldAutoVerify) joinCommunityPodBestEffort(user._id);
 
@@ -830,44 +829,41 @@ exports.verifyEmail = async (req: any, res: any) => {
   }
 };
 
+// A failed sign-in gets one reply whatever the reason: no account, a wrong
+// password, or an account that has no password (OAuth-only). Each of those
+// also runs one bcrypt compare, so the response time does not tell them apart.
+const INVALID_LOGIN = 'Invalid credentials';
+let missHash: Promise<string> | null = null;
+const compareOnMiss = async (candidate: string): Promise<boolean> => {
+  missHash ??= bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10);
+  return bcrypt.compare(candidate, await missHash);
+};
+
 // 📌 Login User
 exports.login = async (req: any, res: any) => {
-  const { password } = req.body;
-  // Coerce email to a string BEFORE it reaches Mongo. Without this a body like
-  // {"email":{"$ne":null}} is interpreted as a query operator and matches an
-  // arbitrary user (NoSQL injection → account enumeration). register/
-  // forgotPassword already normalize; login was the gap.
-  const email = normalizeEmail(req.body?.email);
+  const candidate = typeof req.body?.password === 'string' ? req.body.password : '';
+  // Only a string email is looked up. An operator object such as
+  // {"$ne":null} would otherwise reach Mongo as a query, and an array would
+  // sign in without counting against the per-address limiter, which reads the
+  // address through the same helper.
+  const email = loginEmailOf(req.body);
   try {
-    if (!email) return res.status(400).json({ error: 'User not found' });
     // `isBot` matches the two recovery paths beside it (forgotPassword,
     // resendVerification). An agent row is a User and can carry a password hash,
     // and this route is the one that MINTS a password session — which every user
     // session verifier then accepted, because a bot is neither banned nor
     // otherwise marked (TASK-133). A bot row still has its runtime token.
-    const user = await User.findOne({ email, isBot: { $ne: true } });
-    if (!user) return res.status(400).json({ error: 'User not found' });
+    const user = email ? await User.findOne({ email, isBot: { $ne: true } }) : null;
+    const isMatch = user?.password
+      ? await bcrypt.compare(candidate, user.password)
+      : await compareOnMiss(candidate);
+    if (!user?.password || !isMatch) return res.status(400).json({ error: INVALID_LOGIN });
 
-    // Admin moderation: banned accounts cannot start a session.
+    // Moderation and the team gate apply only after a valid password, so
+    // neither refusal discloses whether a guessed address has an account.
     if (user.banned) {
       return res.status(403).json({ error: 'This account has been suspended.' });
     }
-
-    // OAuth-only accounts have no password hash — send them to their provider
-    // instead of letting bcrypt throw on an undefined hash.
-    if (!user.password) {
-      const providers = (user.authProviders || []).map((p: any) => p.provider).join(' or ');
-      return res.status(400).json({
-        error: `This account signs in with ${providers || 'a linked provider'}. Use the social sign-in button.`,
-        code: 'OAUTH_ONLY_ACCOUNT',
-      });
-    }
-
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ error: 'Invalid credentials' });
-
-    // Apply the team gate only after a valid password, so the refusal does not
-    // disclose whether a guessed address belongs to an unverified account.
     if (!isInstanceEmailAllowed(user.email) || (isInstanceAccessRestricted() && !user.verified)) {
       return res.status(403).json({ error: INSTANCE_ACCESS_ERROR, code: 'INSTANCE_ACCESS_RESTRICTED' });
     }
@@ -937,6 +933,10 @@ exports.getCurrentUser = async (req: any, res: any) => {
     const user = await User.findById(req.userId).select('-password -deviceTokens -agentRuntimeTokens');
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
+    }
+    if (user.accountDeletionRequestedAt) {
+      return res.json({ _id: user._id, username: user.username, email: user.email,
+        role: user.role, accountDeletionPending: true });
     }
     res.json(user);
   } catch (err: any) {

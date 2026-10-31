@@ -343,7 +343,7 @@ describe('session-store.js handled-event ring', () => {
 
 // ── webhook-server.js tests ───────────────────────────────────────────────────
 
-const { startWebhookServer, forwardToLocalWebhook } = await import('../src/lib/webhook-server.js');
+const { startWebhookServer, forwardToLocalWebhook, logOnlyHandler } = await import('../src/lib/webhook-server.js');
 
 describe('webhook-server.js', () => {
   test('startWebhookServer starts and resolves with { server, url, close }', async () => {
@@ -456,6 +456,56 @@ describe('webhook-server.js', () => {
 
     await new Promise((r) => server.close(r));
   });
+
+  // A body without a stated outcome must not read the pod digest (#2753).
+  test.each([
+    ['an empty body', 204, ''],
+    ['a non-JSON body', 200, 'ok'],
+    ['JSON null', 200, 'null'],
+    ['a JSON array', 200, '[]'],
+    ['an object without an outcome', 200, '{"content":"hi"}'],
+    ['a non-string outcome', 200, '{"outcome":5}'],
+  ])('forwardToLocalWebhook reads %s as empty output', async (_label, status, body) => {
+    const server = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => { res.writeHead(status); res.end(body); });
+    });
+    await new Promise((r) => server.listen(0, r));
+    const url = `http://localhost:${server.address().port}/cap`;
+    try {
+      expect(await forwardToLocalWebhook({ _id: 'evt-1', type: 'chat.mention' }, url, null))
+        .toEqual({ outcome: 'no_action', reason: 'empty-output' });
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+
+  test('startWebhookServer answers empty output for a handler that returns nothing', async () => {
+    const { server, url } = await startOnFreePort({ onEvent: async () => undefined });
+    try {
+      expect(await forwardToLocalWebhook({ _id: 'evt-1', type: 'chat.mention' }, url, null))
+        .toEqual({ outcome: 'no_action', reason: 'empty-output' });
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+
+  test.each([
+    ['{"outcome":"acknowledged"}', { outcome: 'acknowledged' }],
+    ['{"outcome":"no_action"}', { outcome: 'no_action' }],
+  ])('forwardToLocalWebhook keeps a stated outcome: %s', async (body, expected) => {
+    const server = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(body); });
+    });
+    await new Promise((r) => server.listen(0, r));
+    const url = `http://localhost:${server.address().port}/cap`;
+    try {
+      expect(await forwardToLocalWebhook({ _id: 'evt-1', type: 'chat.mention' }, url, null)).toEqual(expected);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
 });
 
 // ── poller.js tests ───────────────────────────────────────────────────────────
@@ -472,6 +522,60 @@ const { startPoller } = await import('../src/lib/poller.js');
 describe('poller.js', () => {
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  test('a rejected token stops the poller with a message that says to check the token, not that it is revoked', async () => {
+    const authError = Object.assign(new Error('unauthorized'), { status: 401 });
+    const mockGet = jest.fn().mockRejectedValue(authError);
+    createClient.mockReturnValue({ get: mockGet, post: jest.fn() });
+
+    const errors = [];
+    startPoller({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_test',
+      agentName: 'my-agent',
+      intervalMs: 1,
+      onEvent: async () => ({ outcome: 'acknowledged' }),
+      onError: (err) => errors.push(err),
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+    const stopMsg = errors.map((e) => e.message).find((m) => /stopping poller/.test(m));
+    // The three sources `agent connect` reads, in order: --token, COMMONLY_TOKEN, saved login.
+    expect(stopMsg).toMatch(/--token, then COMMONLY_TOKEN, then your saved login/);
+    expect(stopMsg).toMatch(/commonly login/);
+    // connect never reads the token file or detach: naming them would send the reader to the wrong place.
+    expect(stopMsg).not.toMatch(/detach/);
+    expect(stopMsg).not.toMatch(/tokens\//);
+    expect(stopMsg).not.toMatch(/likely revoked/);
+  });
+
+  const rejectedMessage = async (loginInstance) => {
+    const authError = Object.assign(new Error('unauthorized'), { status: 401 });
+    createClient.mockReturnValue({ get: jest.fn().mockRejectedValue(authError), post: jest.fn() });
+    const errors = [];
+    startPoller({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_test',
+      agentName: 'my-agent',
+      intervalMs: 1,
+      loginInstance,
+      onEvent: async () => ({ outcome: 'acknowledged' }),
+      onError: (err) => errors.push(err),
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    return errors.map((e) => e.message).find((m) => /stopping poller/.test(m));
+  };
+
+  test('the login hint names the --instance connect ran with, so it refreshes that profile', async () => {
+    const stopMsg = await rejectedMessage('dev');
+    expect(stopMsg).toMatch(/run commonly login --instance dev\./);
+  });
+
+  test('with no --instance, the login hint is the bare commonly login', async () => {
+    const stopMsg = await rejectedMessage(undefined);
+    expect(stopMsg).toMatch(/run commonly login\./);
+    expect(stopMsg).not.toMatch(/--instance/);
   });
 
   const makeEvent = (id = 'evt-1') => ({
@@ -646,6 +750,57 @@ describe('poller.js', () => {
     expect(onEvent).toHaveBeenCalledTimes(1);
     expect(mockPost.mock.calls.map(([url]) => url)).toEqual([
       '/api/agents/runtime/events/wake-1/ack',
+    ]);
+  });
+
+  test('a handler that returns nothing acks the wake as empty output and leaves the digest unread', async () => {
+    const events = [
+      { ...makeEvent('wake-1'), deliveryMode: 'wake' },
+      { ...makeEvent('digest-1'), deliveryMode: 'digest', payload: { content: 'ambient' } },
+    ];
+    const mockPost = jest.fn().mockResolvedValue({});
+    const onEvent = jest.fn().mockResolvedValue(undefined);
+    createClient.mockReturnValue({ get: jest.fn().mockResolvedValue({ events }), post: mockPost });
+    const { stop } = startPoller({
+      instanceUrl: 'http://localhost:5000', token: 'cm_test', agentName: 'my-agent',
+      intervalMs: 100_000, onEvent,
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    stop();
+
+    expect(mockPost.mock.calls).toEqual([
+      ['/api/agents/runtime/events/wake-1/ack', { result: { outcome: 'no_action', reason: 'empty-output' } }],
+    ]);
+  });
+
+  // `agent connect` forwards to its own log-only server; nothing read the digest.
+  test('a wake forwarded through the agent connect server leaves the digest unread', async () => {
+    const port = await new Promise((resolve) => {
+      const probe = http.createServer();
+      probe.listen(0, () => { const p = probe.address().port; probe.close(() => resolve(p)); });
+    });
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const { server, url } = await startWebhookServer({ port, onEvent: logOnlyHandler });
+    const events = [
+      { ...makeEvent('wake-1'), deliveryMode: 'wake' },
+      { ...makeEvent('digest-1'), deliveryMode: 'digest', payload: { content: 'ambient' } },
+    ];
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: jest.fn().mockResolvedValue({ events }), post: mockPost });
+    try {
+      const { stop } = startPoller({
+        instanceUrl: 'http://localhost:5000', token: 'cm_test', agentName: 'my-agent',
+        intervalMs: 100_000, onEvent: (event) => forwardToLocalWebhook(event, url, null),
+      });
+      await new Promise((r) => setTimeout(r, 150));
+      stop();
+    } finally {
+      log.mockRestore();
+      await new Promise((r) => server.close(r));
+    }
+
+    expect(mockPost.mock.calls).toEqual([
+      ['/api/agents/runtime/events/wake-1/ack', { result: { outcome: 'no_action', reason: 'empty-output' } }],
     ]);
   });
 

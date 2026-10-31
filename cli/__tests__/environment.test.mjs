@@ -219,15 +219,39 @@ describe('validateEnvironmentSpec', () => {
     });
     expect(res.ok).toBe(false);
     // The message has to name what DOES something, or the next author just
-    // guesses again: `public`, or no trust field at all.
-    expect(res.errors.join(' ')).toMatch(/sandbox\.trust must be 'public'/);
-    expect(res.errors.join(' ')).toMatch(/omit it for your own seat/);
+    // guesses again: `public`, `workspace`, or no trust field at all.
+    expect(res.errors.join(' ')).toMatch(/sandbox\.trust must be 'public' or 'workspace'/);
+    expect(res.errors.join(' ')).toMatch(/omit it for an unconfined seat of your own/);
     expect(res.errors.join(' ')).toMatch(/got "internal"/);
   });
 
-  test('accepts the two declarations that do something: public trust, or none', () => {
+  test('accepts the declarations that do something: public, workspace, or none', () => {
     expect(validateEnvironmentSpec({ sandbox: { trust: 'public' } }).ok).toBe(true);
+    expect(validateEnvironmentSpec({ sandbox: { trust: 'workspace' } }).ok).toBe(true);
     expect(validateEnvironmentSpec({ sandbox: { mode: 'bwrap' } }).ok).toBe(true);
+  });
+
+  test('accepts the workspace opt-ins, and only on a workspace seat', () => {
+    expect(validateEnvironmentSpec({
+      sandbox: { trust: 'workspace', allow: ['write', 'web'] },
+    })).toEqual({ ok: true, errors: [] });
+    const onPublic = validateEnvironmentSpec({ sandbox: { trust: 'public', allow: ['write'] } });
+    expect(onPublic.ok).toBe(false);
+    expect(onPublic.errors.join(' ')).toMatch(/sandbox\.allow applies only to trust 'workspace'/);
+    const unknown = validateEnvironmentSpec({ sandbox: { trust: 'workspace', allow: ['search'] } });
+    expect(unknown.ok).toBe(false);
+    expect(unknown.errors.join(' ')).toMatch(/sandbox\.allow must be an array of: write, web/);
+  });
+
+  test('refuses a write grant on a read-only seat rather than let the jail quietly drop it', () => {
+    const result = validateEnvironmentSpec({
+      sandbox: { mode: 'read-only', trust: 'workspace', allow: ['write'] },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors.join(' ')).toMatch(/sandbox\.allow 'write' cannot be combined with sandbox\.mode 'read-only'/);
+    expect(validateEnvironmentSpec({
+      sandbox: { mode: 'read-only', trust: 'workspace', allow: ['web'] },
+    }).ok).toBe(true);
   });
 
   test('rejects bad sandbox.trust', () => {

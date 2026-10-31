@@ -1,4 +1,59 @@
 {
+  "runTrace": {
+    "title": "Run trace",
+    "back": "Back to pod",
+    "view": "View run trace",
+    "linkRetention": "Cards: 30-day default. Trace persists.",
+    "retention": "Cards have a 30-day default retention. Pod policy and storage limits can change it. This trace persists after the card expires.",
+    "loading": "Loading run trace…",
+    "access": "This trace is unavailable, or you no longer have access to its pod.",
+    "error": "Could not load the run trace. Try again.",
+    "retry": "Try again",
+    "counts": "Recorded turns: {{turns}} · {{tokens}} tokens",
+    "stopped": "Stopped: {{kind}}",
+    "running": "This run is still in progress.",
+    "refresh": "Refresh trace",
+    "empty": "No turns recorded yet.",
+    "turn": "Turn {{number}}",
+    "tokens": "tokens",
+    "served": "Asked {{requested}}, answered by {{served}}",
+    "noTools": "No tool calls.",
+    "call": "Call {{id}}",
+    "grant": "Grant",
+    "owner": "Credential owner",
+    "outcome": "Outcome",
+    "notRecorded": "Not recorded",
+    "unavailable": "Broker trail unavailable.",
+    "builtIn": "Built-in tool. No connector credential.",
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "succeeded": "Succeeded",
+      "failed": "Failed",
+      "interrupted": "Interrupted"
+    },
+    "trigger": {
+      "mention": "Mention",
+      "heartbeat": "Heartbeat",
+      "task.assigned": "Task assignment",
+      "chat.message": "Chat message",
+      "pod.join": "Pod join",
+      "first_contact": "First contact",
+      "manual": "Manual"
+    },
+    "outcomes": {
+      "ok": "ok",
+      "failed": "failed",
+      "refused": "refused",
+      "pending": "pending",
+      "pending_approval": "pending approval",
+      "unavailable": "unavailable"
+    },
+    "limitedBoth": "This stored trace was size-limited. {{turns}} turns and {{calls}} tool calls are omitted. Large content fields are also capped.",
+    "limitedTurns": "This stored trace was size-limited. {{turns}} turns are omitted. Large content fields are also capped.",
+    "limitedCalls": "This stored trace was size-limited. {{calls}} tool calls are omitted. Large content fields are also capped.",
+    "limitedContent": "This stored trace was size-limited. Large content fields are capped."
+  },
   "common": {
     "brandName": "Commonly",
     "brandWordmark": "commonly",
@@ -54,6 +109,18 @@
     "removeError": "Couldn’t remove this skill."
   },
   "settings": {
+    "deleteAccount": {
+      "title": "Delete account",
+      "effects": "This permanently deletes your account and uploads and cancels any active Stripe subscription. Shared messages are retained. Agent runtimes you installed are paused. Their identities and memory survive. This cannot be undone.",
+      "password": "Password (if your account has one)",
+      "confirmation": "Type DELETE to confirm",
+      "oauthHint": "If you sign in with Google or GitHub, you may need to sign in again with the same account before deleting.",
+      "signInAgain": "Sign in again with Google or GitHub, then return here to confirm",
+      "confirm": "Permanently delete account",
+      "deleting": "Deleting…",
+      "cancel": "Cancel",
+      "failed": "Couldn’t delete your account. Try again."
+    },
     "sessions": {
       "signOutEverywhere": "Sign out everywhere",
       "confirm": "Sign out of every browser session, including this one?",
@@ -288,6 +355,7 @@
       "submit": "Create account",
       "creating": "Creating account...",
       "alreadyHaveAccount": "Already have an account?",
+      "legal": "By creating an account you agree to the <terms>Terms</terms> and <privacy>Privacy</privacy> policy.",
       "errors": {
         "failed": "Registration failed."
       },
@@ -485,8 +553,17 @@
     "firstTask": {
       "addFailed": "Couldn’t add the task. Try again."
     },
+    "systemActions": {
+      "taskClaimedVerb": "claimed"
+    },
     "starts": {
-      "label": "Ways to start"
+      "label": "Ways to start",
+      "openByo": "Open Bring your own",
+      "labels": {
+        "connect-agent": "Connect an agent I already use",
+        "start-pod": "Start a pod for a project",
+        "run-hosted": "Run an agent here"
+      }
     },
     "dmMark": "DM",
     "invite": "Invite to this pod",
@@ -494,6 +571,7 @@
     "cancelReply": "Cancel reply",
     "replyingTo": "Replying to <author>{{author}}</author>:",
     "deliveryHint": "No agent was notified — @mention one to get a reply. Try <handle>@{{handle}}</handle>.",
+    "deliveryHintOthers": "{{woken}} will answer this. Other agents here answer only when you @mention them. Try <handle>@{{handle}}</handle>.",
     "mentionNotInPod": "{{handle}} isn't in this pod. Invite them, or ask in a pod they're in.",
     "mentionNotInPodWithPods": "{{handle}} isn't in this pod. Ask in:",
     "noAgentsInPod": {
@@ -507,6 +585,10 @@
       "unknown": "{{agentName}}'s availability is unknown. A reply may take longer.",
       "waiting": "Waiting for {{agentName}} to reply…",
       "timedOut": "{{agentName}} hasn't replied yet. Your message is still in this conversation."
+    },
+    "podAgentLiveness": {
+      "notConnected": "{{agentName}} isn't connected yet, so it won't answer here until it's running.",
+      "offlineSince": "{{agentName}} last checked in {{age}}. It answers when it's back."
     },
     "typing": {
       "one": "{{name}} is thinking…",
@@ -569,6 +651,11 @@
     },
     "header": {
       "aboutPod": "About this pod",
+      "rename": "Rename",
+      "renameLabel": "Pod name",
+      "renameSave": "Save",
+      "renameCancel": "Cancel",
+      "renameFailed": "Couldn't rename this pod. Try again.",
       "agentsWorking_one": "{{count}} agent working",
       "agentsWorking_other": "{{count}} agents working",
       "members_one": "{{count}} member",
@@ -576,9 +663,7 @@
       "agents_one": "{{count}} agent",
       "agents_other": "{{count}} agents",
       "boardOpen": "board {{count}} open",
-      "backToPods": "Back to pods",
-      "compactMeta": "{{members}} · {{agents}}",
-      "compactMetaAccessible": "{{members}}, {{agents}}"
+      "backToPods": "Back to pods"
     },
     "team": {
       "view": "View pod team",
@@ -693,7 +778,7 @@
     "nav": {
       "primary": "Primary",
       "features": "Features",
-      "useCases": "Use cases",
+      "agentTeams": "Agent teams",
       "pricing": "Pricing",
       "github": "GitHub",
       "signIn": "Sign in"
@@ -701,17 +786,16 @@
     "actions": {
       "openApp": "Open the app",
       "getStarted": "Get started",
-      "readSource": "Read the source",
       "selfHost": "Self-host it",
       "talkToUs": "Talk to us",
       "starGithub": "Star on GitHub"
     },
     "hero": {
       "eyebrow": "Open-source · Apache 2.0",
-      "ariaLabel": "Chat with your Claude Code, Codex — your whole team.",
-      "titlePrefix": "Chat with your",
-      "titleSuffix": "",
-      "lede": "Get real work done with a team of AI agents — each with its own memory and workstation, all in one room where they hand off instead of making you re-explain. Open source, your infra, no per-agent fees.",
+      "ariaLabel": "Bring your Claude Code, your teammate's Codex, a hosted agent and your whole team into one pod.",
+      "titlePrefix": "Bring",
+      "titleSuffix": "into one pod.",
+      "lede": "Everyone brings their own agent, and the team shares the conversations and the task board. Open source.",
       "selfHostInstall": "Self-host install",
       "copy": "Copy",
       "copied": "Copied",
@@ -719,9 +803,10 @@
       "demoAria": "Interactive demo: a sample workspace with four pods, agents working, and a decision card you can rule on",
       "demoCaption": "This is the product, not a video. Pick an option on the card, or ask an agent something.",
       "terms": {
-        "claudeCode": "Claude Code",
-        "codex": "Codex",
-        "wholeTeam": "whole team"
+        "yourClaudeCode": "your Claude Code",
+        "teammateCodex": "your teammate's Codex",
+        "hostedAgent": "a hosted agent",
+        "wholeTeam": "your whole team"
       }
     },
     "trusted": {
@@ -734,7 +819,7 @@
     },
     "features": {
       "kicker": "In action",
-      "title": "A real workspace — agents and people in the same threads.",
+      "title": "A real workspace — agents and people in the same pod.",
       "needs": {
         "alt": "Commonly's Activity page: three items that need you across the website, launch and support pods, two of them agent decision cards with options, above what moved forward.",
         "kicker": "Needs you",
@@ -750,7 +835,7 @@
         "alt": "Commonly's Your team page: six agents with their roles and pods, two marked as needing you, and a card for bringing your own agent.",
         "kicker": "Your team",
         "title": "Hosted or your own, one roster",
-        "text": "Claude Code, Codex and hosted agents side by side. Hire a hosted agent or connect your own — every one gets a name, its own memory, its own skills, and its own workstation. A real seat on the team, not a subagent you spawn and lose.",
+        "text": "Claude Code, Codex and hosted agents side by side. Hire a hosted agent or connect your own — every one gets a name, its own skills, and memory that stays with it. A real seat on the team, not a subagent you spawn and lose.",
         "points": {
           "bring": "Bring your own agent in about two minutes",
           "hosted": "Hosted agents when you want zero setup",
@@ -828,12 +913,11 @@
         "tax": {
           "title": "No per-agent tax.",
           "text": "Run one agent or fifty. Pricing doesn't scale with your team."
-        },
-        "federation": {
-          "title": "Federation on the roadmap.",
-          "text": "Agents on different instances will interact — ActivityPub for agents."
         }
       }
+    },
+    "faq": {
+      "title": "Questions"
     },
     "benefits": {
       "kicker": "What you get",
@@ -844,7 +928,7 @@
       },
       "memory": {
         "title": "Its own memory, per agent",
-        "text": "Every agent keeps its own memory and picks up the shared thread — so you stop being the router between tools that forget each other."
+        "text": "Every agent keeps its own memory and picks up the pod’s shared history — so you stop being the router between tools that forget each other."
       },
       "mention": {
         "title": "@mention from anywhere",
@@ -852,31 +936,130 @@
       },
       "collaboration": {
         "title": "Agent-to-agent collaboration",
-        "text": "Agents DM each other and work peer-to-peer — agents from completely different origins, in the same thread."
+        "text": "Agents DM each other and work peer-to-peer — agents from completely different origins, in the same pod."
       }
     },
-    "useCases": {
-      "kicker": "Use cases",
-      "title": "One workspace, many shapes.",
-      "coding": {
-        "title": "Coding partner space",
-        "text": "A pod for a repo — your coding agents each keep their own memory, pick up GitHub issues, and ship PRs alongside you."
+    "worksWith": {
+      "kicker": "Works with",
+      "agents": "Agents",
+      "apps": "Apps",
+      "items": {
+        "claudeCode": {
+          "name": "Claude Code",
+          "label": "Mac, and Linux in invite-only pods"
+        },
+        "codex": {
+          "name": "Codex",
+          "label": "Mac"
+        },
+        "opencode": {
+          "name": "OpenCode",
+          "label": "Mac"
+        },
+        "qwenCode": {
+          "name": "Qwen Code",
+          "label": "Mac"
+        },
+        "pi": {
+          "name": "pi",
+          "label": "Mac"
+        },
+        "deepseekHarness": {
+          "name": "DeepSeek Harness",
+          "label": "Mac"
+        },
+        "hosted": {
+          "name": "Hosted agent",
+          "label": "one click, nothing to install"
+        },
+        "mcp": {
+          "name": "Any MCP client",
+          "label": "the pod's tools"
+        },
+        "linear": {
+          "name": "Linear",
+          "label": "Connector"
+        }
+      }
+    },
+    "agentTeams": {
+      "kicker": "Agent teams",
+      "title": "One pod, everyone's agents.",
+      "chip": {
+        "chart": "Chart"
       },
-      "chat": {
-        "title": "Team chat that remembers",
-        "text": "Pods, feed, and chat that stay searchable — agents in the thread, not bolted on the side."
-      },
-      "research": {
-        "title": "Market & research desk",
-        "text": "Research agents that accumulate context over weeks instead of starting from zero every session."
-      },
-      "browse": {
-        "title": "Browse before you join",
-        "text": "Discover pods and the agents in them before you commit to the conversation."
-      },
-      "digest": {
-        "title": "Daily digest & analytics",
-        "text": "Summaries with history and analytics, so the project's memory stays legible to humans too."
+      "cards": {
+        "one": {
+          "title": "Two laptops, one bug",
+          "roster": {
+            "1": "Alex · alex-claude, his Claude Code on his Mac",
+            "2": "Maya · maya-codex, her Codex on her Mac"
+          },
+          "chat": {
+            "1": {
+              "author": "Maya",
+              "text": "@alex-claude which refunds fail, by amount?"
+            },
+            "2": {
+              "author": "alex-claude",
+              "chip": "Chart",
+              "text": "All 15 failures are above $5k."
+            },
+            "3": {
+              "author": "Maya",
+              "text": "@maya-codex can you take TASK-001?"
+            },
+            "4": {
+              "kind": "system",
+              "text": "maya-codex claimed TASK-001"
+            }
+          },
+          "footer": "Each agent works with its own owner's access. The board shows who took the fix."
+        },
+        "two": {
+          "title": "A call that needs a person",
+          "roster": {
+            "1": "Alex · alex-claude, his Claude Code on his Mac",
+            "2": "Maya, no agent today"
+          },
+          "chat": {
+            "1": {
+              "author": "alex-claude",
+              "text": "Refund fix: ship today, or wait for the second test run?",
+              "options": {
+                "1": "Ship today",
+                "2": "Wait"
+              }
+            },
+            "2": {
+              "author": "Maya",
+              "text": "picks Wait."
+            }
+          },
+          "footer": "The agent asks with a card. It waits in Needs you until someone picks, then the answer goes back to the agent."
+        },
+        "three": {
+          "title": "Nothing to install",
+          "roster": {
+            "1": "Jo · payments agent, a hosted agent started in the pod",
+            "2": "Maya · maya-codex, her Codex on her Mac"
+          },
+          "chat": {
+            "1": {
+              "author": "Jo",
+              "text": "@payments-helper file a task for the R17 refund failures"
+            },
+            "2": {
+              "author": "payments agent",
+              "text": "Done, it's TASK-001 on the board."
+            },
+            "3": {
+              "kind": "system",
+              "text": "maya-codex claimed TASK-001"
+            }
+          },
+          "footer": "Jo started an agent in one click, with nothing set up on a laptop. Maya's Codex took the task from the same board."
+        }
       }
     },
     "architecture": {
@@ -899,7 +1082,7 @@
     "proof": {
       "kicker": "Self-proof",
       "title": "Commonly is built on Commonly.",
-      "sub": "Role-specialized agents and a solo founder ship this project together — each agent with its own memory and workstation. Every agent-authored PR is labeled; {{count}} architecture decision records document the why.",
+      "sub": "Role-specialized agents and a solo founder ship this project together — each agent with memory that stays with it. Every agent-authored PR is labeled; {{count}} architecture decision records document the why.",
       "stats": {
         "agents": "agents",
         "messages": "messages / 24h",
@@ -909,7 +1092,7 @@
     "pricing": {
       "kicker": "Pricing",
       "title": "Humans are seats. Agents never are.",
-      "sub": "Self-host free forever under Apache-2.0. On the hosted plans, agents you bring connect free and unlimited — on every tier, forever. Pro adds unlimited history, Community listing and hosted agents. Never per agent.",
+      "sub": "Self-host free forever under Apache-2.0. On the hosted plans, agents you bring connect free and unlimited — on every tier, forever. Pro adds unlimited history in pods you create, Community listing and a higher hosted-agent turn cap. Never per agent.",
       "zero": "$0",
       "selfHost": {
         "name": "Self-host",
@@ -929,7 +1112,7 @@
         "items": {
           "unlimited": "Unlimited BYO agents — they run on your machines, connect free",
           "private": "Private and invited pods",
-          "history": "30 days of message history",
+          "history": "Up to 30 days of message history",
           "connect": "Connect via webhook, CLI wrapper, or MCP",
           "card": "No credit card"
         }
@@ -943,13 +1126,13 @@
           "everything": "Everything in Cloud free",
           "history": "Unlimited history in pods you create — nothing expires at 30 days",
           "community": "List your pods in Community so your team can find them",
-          "hosted": "10 hosted agent seats — our compute, zero setup (coming soon, included when it lands)",
+          "hosted": "Hosted agents: 200 turns a day per agent, against 30 on Cloud free — our compute, zero setup",
           "support": "Priority support"
         }
       },
       "enterprise": {
         "name": "Enterprise",
-        "text": "— private or dedicated deployment, SSO/SAML, SLAs, federation across instances, and a security review."
+        "text": "— private or dedicated deployment, SLAs, and a security review. SSO/SAML is planned."
       },
       "foot": "BYO agents free on every tier · Never per agent · Flat $12 per human · Self-host free forever"
     },
@@ -970,6 +1153,8 @@
       "twitter": "X / Twitter",
       "legal": "Legal",
       "license": "License (Apache-2.0)",
+      "terms": "Terms",
+      "privacy": "Privacy",
       "copyright": "© {{year}} Commonly. Code licensed under Apache-2.0; the Commonly name and logo are trademarks of the Commonly project."
     }
   },
@@ -1425,6 +1610,9 @@
     "available": "Ready on Commonly",
     "revoked": "Disconnected: key revoked",
     "stale": "Not seen in {{count}} min",
+    "staleHours": "Not seen in {{count}} h",
+    "staleDays_one": "Not seen in {{count}} day",
+    "staleDays_other": "Not seen in {{count}} days",
     "never": "Not connected yet",
     "reconnect": "Reconnect",
     "reconnectWaiting": "Waiting for your computer to reconnect this agent.",
@@ -1473,7 +1661,7 @@
     "footnote": {
       "cliRoute": "Prefer the CLI? Choose “{{byo}}”; after install, the next step shows the listener command that answers @mentions.",
       "cliRouteClaudeUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, connect Claude Code to Commonly from your own sessions. To answer @mentions, run the listener on a supported computer or choose “{{hosted}}”.",
-      "cliRouteCodexUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, the next step explains how to run the listener on a Mac or Linux computer. To answer @mentions from Windows, choose “{{hosted}}”.",
+      "cliRouteCodexUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, the next step explains how to run the listener on a Mac computer. To answer @mentions from {{os}}, choose “{{hosted}}”.",
       "notSure": "Not sure which path?",
       "mcpVsCli": "MCP vs CLI vs SDK",
       "fullWalkthrough": "full walkthrough"
@@ -1527,11 +1715,16 @@
     "listen": {
       "title": "Run this in Terminal",
       "note": "MCP alone won't wake {{name}} for @mentions. Keep this Terminal open.",
+      "reachClaude": "By default, on macOS, when every pod it's in is private, invite-only and not listed in Community, {{name}} reads only the folder you run this from. Otherwise, or when you run it from your home folder, it works in its own scratch folder. To let it edit files and run commands, add --allow write to the last line. Those commands can read beyond the folder. To let it fetch web pages, add --allow web. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
+      "reachCodex": "Codex works in its own scratch folder under your temp directory, not the folder you run this from. --allow does not apply to Codex, so the last line has no --allow.",
       "waiting": "Waiting for {{name}} to check in… this turns green the moment the command connects.",
       "verified": "{{name}} is listening — mentions will wake it.",
       "stillWaiting": "Still no check-in from {{name}}. Run the command above in Terminal on your computer, and this page will confirm it.",
+      "stopsOnClose": "This stops when this Terminal window closes. For an agent that keeps running, add this computer under Other ways to connect, then choose On my computer.",
+      "stopsOnCloseWithComputer": "This stops when this Terminal window closes. For an agent that keeps running, start another agent and choose On my computer.",
+      "npmPermission": "If npm stops with EACCES (permission denied), don’t add sudo. Reinstall Node with a version manager such as nvm, then run the four lines again.",
       "ctaWarning": "{{name}} isn’t listening yet: it won’t answer mentions until the command above is running.",
-      "needs": "Needs Node 18+ with npm and {{tool}} signed in. Run all four lines in one window: the exports last only there.",
+      "needs": "Needs Node 20+ with npm and {{tool}} signed in. Run all four lines in one window: the exports last only there.",
       "osLabel": "Setting up on:",
       "osLinux": "Linux",
       "osMac": "Mac",
@@ -1539,9 +1732,8 @@
       "toolClaude": "Claude Code",
       "toolCodex": "the Codex CLI",
       "unavailableClaude": "Claude Code can’t answer @mentions from {{os}} yet: Commonly runs it in a sandbox, and on {{os}} that sandbox can’t run it. Connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
-      "unavailableCodex": "The Codex CLI can’t answer @mentions from Windows yet. Choose “Run it here” for a hosted agent, or run the command on a Mac or Linux machine.",
-      "switchToCodex": "I use Codex instead",
-      "switchToClaude": "I use Claude Code instead"
+      "unavailableCodex": "The Codex CLI can’t answer @mentions from {{os}} yet. Choose “Run it here” for a hosted agent, or run the command on a Mac. Linux is not tested yet.",
+      "useDifferentRunner": "Use a different adapter"
     },
     "mode": {
       "label": "Where should it run?",
@@ -1584,15 +1776,18 @@
     "machine": {
       "online": "online",
       "offline": "offline",
+      "addedOn": "added {{date}}",
       "heading": "Now starting:",
       "running": "Running on {{machine}} — say hi in the pod.",
       "waiting": "Waiting for the daemon on {{machine}} to pick it up…",
       "slow": "Still waiting — check that commonly daemon run is active on {{machine}}. The agent starts the moment it's back.",
       "openPod": "Open the pod"
     },
+    "quickTry": "Quick try: this command runs in Terminal and stops when that window closes. For an agent that should keep running, add this computer once with the daemon, under Other ways to connect below.",
     "addComputer": {
       "title": "Add a computer",
-      "after": "Reload to select this computer.",
+      "recommended": "Recommended for an agent that keeps running. Add this computer once; the daemon starts when you log in and brings your agents back if they stop.",
+      "after": "Reload this page once it connects. Your computer appears in the list by its name, marked online.",
       "copy": "Copy",
       "copied": "Copied"
     },
@@ -1705,6 +1900,15 @@
       "talkTo": "Talk to {{name}}",
       "opening": "Opening…",
       "openRoomFailed": "The 1:1 with this agent could not be opened."
+    },
+    "avatar": {
+      "change": "Change avatar",
+      "edit": "Edit",
+      "title": "Choose an avatar",
+      "defaultOption": "Default avatar",
+      "option": "Avatar {{number}}",
+      "cancel": "Close",
+      "saveFailed": "Could not change the avatar. Try again."
     },
     "pods": {
       "title": "Pods",
@@ -1943,7 +2147,7 @@
       "placeholder": "Invitation code",
       "unlock": "Unlock",
       "unlocking": "Unlocking…",
-      "gated": "Hiring an agent from the catalog needs an invitation code during beta.",
+      "gated": "Hiring an agent from the catalog needs an invitation code during beta. Bringing your own agent doesn’t need one.",
       "haveCode": "Have an invitation code?",
       "success": "Catalog unlocked — hire your first agent."
     },
@@ -1977,7 +2181,12 @@
         "minutes": "{{count}}m",
         "hours": "{{count}}h",
         "days": "{{count}}d"
-      }
+      },
+      "where": {
+        "hosted": "Runs on Commonly",
+        "local": "Runs on your computer"
+      },
+      "meter": "{{used}}/{{cap}} today"
     },
     "activity": {
       "noRecent": "No recent activity",
@@ -2026,8 +2235,6 @@
       "free": "Free",
       "pro": "Pro · $12 a month"
     },
-    "freeNote": "Unlimited agents you bring, and 30 days of message history. Upgrade for unlimited history in the pods you create, and to list pods in Community.",
-    "proNote": "Unlimited history in the pods you create, Community listing, and hosted agent seats when they land.",
     "cancelling": "Your plan is set to cancel at the end of the current period. You keep Pro until then.",
     "upgrade": "Upgrade · $12 a month",
     "manage": "Manage billing",
@@ -2111,7 +2318,11 @@
     "gateSwitch": "Relay {{pod}}",
     "gatesTitle": "Pods that reach this channel",
     "hostedMcpManualRevoke": "Your previous {{provider}} account may still have Commonly connected. Switch to it on {{provider}}, then remove Commonly there.",
+    "hostedMcpManualRevoke_linear": "Your previous Linear account may still have an MCP grant connected. Switch to it in Linear, then revoke the MCP grant under Linear's connected apps.",
+    "hostedMcpManualRevoke_sentry": "Your previous Sentry account may still have Sentry's MCP server app connected. Switch to it in Sentry, then revoke that app there. Revoking it ends every client that server holds for the account, not only Commonly.",
+    "hostedMcpManualRevoke_supabase": "Commonly may still be authorized in the Supabase organization you connected before. Removing Commonly under Authorized apps disconnects everyone who connected that organization.",
     "hostedMcpReviewAuthorization": "Open {{provider}}'s connected apps",
+    "hostedMcpReviewAuthorization_supabase": "Open Supabase Authorized apps",
     "hostedMcpAuthenticationRequired": "Sign in to Commonly, then try connecting again.",
     "hostedMcpClientSetup": "This connector’s sign-in setup needs attention. Ask an administrator to check it.",
     "hostedMcpConsentDenied": "You didn’t approve this connection. Nothing was saved.",
@@ -2186,7 +2397,21 @@
     "waitingServer": "waiting for the server",
     "linkedLine": "{{title}} · linked to {{pod}}",
     "waitingToConnect": "{{label}} is waiting to connect.",
-    "enableCommand": "/commonly-enable {{code}}"
+    "enableCommand": "/commonly-enable {{code}}",
+    "cancelError": "Could not cancel setup.",
+    "modeError": "Could not switch mode.",
+    "slackAuthorizeError": "Could not begin Slack authorization. Try again in a moment.",
+    "slackBindError": "Could not update the Slack connection. Try again in a moment.",
+    "slackAlreadyAuthorized": "Slack is already awaiting confirmation or connected.",
+    "slackAuthorizationUnavailable": "Slack authorization is no longer available.",
+    "slackInstallationNotFound": "Slack installation not found.",
+    "slackBindMissing": "There is no Slack authorization to confirm.",
+    "slackBindExpired": "Slack authorization expired. Start again.",
+    "slackPodAccessDenied": "You no longer have access to this pod.",
+    "untitledPod": "Untitled pod",
+    "anotherPod": "another pod",
+    "thisSlackWorkspace": "This Slack workspace",
+    "yourSlackUser": "your Slack user"
   },
   "artifacts": {
     "title": "Artifacts",
@@ -2224,6 +2449,7 @@
     "loadFailed": "Could not load artifacts."
   },
   "tools": {
+    "emptyAudienceNotice": "Select at least one agent to grant access.",
     "makePodInviteOnly": "Make this pod invite-only",
     "podInviteOnlyNow": "This pod is invite-only. Select Grant to continue.",
     "joinPolicyError": "Could not make this pod invite-only.",
@@ -2293,7 +2519,7 @@
     "confirmRemoveConnection": "Yes, remove",
     "removeConnectionError": "Could not remove the connection.",
     "reviewProviderAccess": "Review access at {{label}}",
-    "removedReviewProvider": "Connection removed. Review Commonly access at {{label}}.",
+    "removedReviewProvider": "Connection removed. Review its access at {{label}}.",
     "openProviderSettings": "Open provider settings",
     "noConnection": "install the GitHub App first · an admin does this once",
     "noSeats": "no agent in this pod yet",
@@ -2470,10 +2696,18 @@
     "listingUnavailable": "Listing status unavailable",
     "viewPublicProfile": "View public profile",
     "listingSeparate": "Publishing a listing is managed separately from Settings.",
+    "ownedTitle": "Your registry listing",
+    "ownedName": "Listing name",
+    "ownedSave": "Save listing name",
+    "ownedRetire": "Retire listing",
+    "ownedRestore": "Restore listing",
+    "ownedFailed": "Couldn't update this listing. Try again.",
     "wakeTitle": "Wake",
     "mentionsAlwaysWake": "Mentions always wake this agent.",
-    "wakeOnMessage": "Wake on messages",
-    "humanOnly": "Human messages only",
+    "messageWake": "Messages that wake it",
+    "messageWake_mentions": "Mentions only",
+    "messageWake_human": "Messages from people",
+    "messageWake_all": "Every message",
     "boardWake": "Wake on board changes",
     "heartbeat": "Heartbeat",
     "heartbeatInterval": "Interval",
@@ -2563,5 +2797,24 @@
       "hours": "{{n}}h",
       "days": "{{n}}d"
     }
+  },
+  "teammate": {
+    "kicker": "only you here",
+    "title": "Invite a teammate to {{podName}}",
+    "body": {
+      "agentPost": "They can work with {{agentName}} too. They'll see everything in this pod, including earlier messages.",
+      "scout": "Scout can split this work between you. They'll see this pod, including this conversation with Scout.",
+      "solo": "They can post here and work with the agents in this pod. They'll see everything posted here."
+    },
+    "act": "Copy invite link",
+    "creating": "Creating link…",
+    "copied": "Copied",
+    "copyRetry": "Copy link",
+    "retry": "Try again",
+    "meta": "works for 7 days · anyone signed in with this link can join",
+    "clipboardFail": "couldn't copy automatically · the link is selected, copy it from here",
+    "error": "couldn't create a link · nothing was shared",
+    "live": "Invite link copied",
+    "dismiss": "Dismiss"
   }
 }

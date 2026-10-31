@@ -18,6 +18,10 @@ export interface RoomGrantCreateInput {
   expiresAt: Date | string | number;
   brokerId: string;
   parentGrantId?: string;
+  /** The Integration row `_id` the route resolved; set by the mint, never the body. */
+  connectionRowId?: string;
+  /** The row's owner at mint; set by the mint, never the body. */
+  ownerId?: string;
 }
 
 export interface RoomGrantAttenuationInput {
@@ -273,6 +277,8 @@ export const mintGrant = async (input: RoomGrantCreateInput): Promise<IRoomGrant
     parentGrantId,
     rootGrantId,
     brokerId: asId(input.brokerId, 'brokerId'),
+    connectionRowId: input.connectionRowId ? asId(input.connectionRowId, 'connectionRowId') : null,
+    ownerId: input.ownerId ? asId(input.ownerId, 'ownerId') : null,
   });
 
   // Re-read the root after insertion. A revoke can race the pre-insert check;
@@ -384,6 +390,10 @@ export const attenuateGrant = async (input: RoomGrantAttenuationInput): Promise<
     expiresAt,
     parentGrantId,
     brokerId: parent.brokerId,
+    // A child inherits the parent's binding, bound or unbound, so attenuation
+    // can never re-bind a grant to whoever holds the connection now.
+    connectionRowId: parent.connectionRowId || undefined,
+    ownerId: parent.ownerId || undefined,
   });
 };
 
@@ -448,10 +458,10 @@ export const assertGrantUsable = async (
 
 /**
  * Removal's grants step (tools plan §10.5), the one place a connection's own
- * grants are ended. It has to run while the connection row still exists: the
- * granter's revoke route resolves ownership through `findConnection`
- * (`routes/grants.ts:421`), so once removal has deleted the row every grant on
- * it answers 403 `access_denied` and can never be revoked (TASK-145).
+ * grants are ended. It runs while the connection row still exists, so the
+ * grants are ended against the row they were minted for. Revoke takes the
+ * owner from each grant's binding, not from the row, so this ordering no longer
+ * decides who may revoke (TASK-145).
  *
  * A connection is addressed in three ways and a grant stores whichever
  * identifier it was minted with, so all three are matched: the row's `_id`,

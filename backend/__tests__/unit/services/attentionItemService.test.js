@@ -203,7 +203,7 @@ describe('attentionItemService', () => {
     expect(rows[0]).toMatchObject({ status: 'resolved', source: { type: 'message', id: '42' } });
   });
 
-  // actorUserId (ux-lead 66164): actorName holds three shapes across the three
+  // actorUserId: actorName holds three shapes across the three
   // writers (author username, runtime agentName, nothing on decisions), so the
   // Your Team ring keys on the principal's id instead. Each writer is pinned.
   it('a mention carries its author id as actorUserId', async () => {
@@ -531,10 +531,10 @@ describe('attentionItemService', () => {
     });
     const recipients = () => mockUpdateOne.mock.calls.map(([selector]) => selector.recipientUserId);
 
-    it("a note reporting a ruling already made opens nothing (the 2026-10-19 \"Sam's ruling\" fan-out)", async () => {
+    it("a note reporting a ruling already made opens nothing", async () => {
       shipRoom();
       // "needs" passes the cheap gate, so this reaches isHandoffRequest itself.
-      await AttentionItemService.recordTaskAttention(update("Sam's ruling, 10-19 (relayed by Cofounder): writes are allowed when the member approves them; the Linear entry needs a re-pin."));
+      await AttentionItemService.recordTaskAttention(update("Sam's ruling, 10-19 (relayed): writes are allowed when the member approves them; the Linear entry needs a re-pin."));
       expect(mockUserFind).toHaveBeenCalled();
       expect(mockUpdateOne).not.toHaveBeenCalled();
     });
@@ -693,9 +693,95 @@ describe('attentionItemService', () => {
     expect(sourcePattern.test('task.1:update-1')).toBe(true);
     expect(sourcePattern.test('taskx1:update-1')).toBe(false);
   });
+
+  it('reopens a replied stamp the source contradicts, and keeps the one it corroborates', async () => {
+    const rows = [
+      {
+        _id: 'attention-false', recipientUserId: 'sam', podId: 'pod-1', kind: 'mention',
+        source: { type: 'message', id: '42' }, messageId: '42', threadRootId: '40',
+        sourceCreatedAt: new Date('2026-09-05T09:00:00.000Z'),
+      },
+      {
+        _id: 'attention-true', recipientUserId: 'sam', podId: 'pod-1', kind: 'mention',
+        source: { type: 'message', id: '43' }, messageId: '43', threadRootId: '43',
+        sourceCreatedAt: new Date('2026-09-05T09:30:00.000Z'),
+      },
+    ];
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => rows }) });
+    mockPgMessageHasReplyByUserAfter.mockImplementation(async (podId, userId, after, target) => target.messageId === '43');
+
+    const result = await AttentionItemService.auditRepliedMentionAttention({ apply: true });
+
+    expect(result).toEqual({ scanned: 2, kept: 1, contradicted: 1, reopened: 1, undecidable: 0, unavailable: 0 });
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      { _id: 'attention-false', kind: 'mention', status: 'resolved', resolvedBy: 'replied' },
+      { $set: { status: 'open' }, $unset: { resolvedAt: '', resolvedBy: '' } },
+    );
+  });
+
+  it('changes nothing without --apply, and still reports what it would reopen', async () => {
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => [{
+      _id: 'attention-false', recipientUserId: 'sam', podId: 'pod-1', kind: 'mention',
+      source: { type: 'message', id: '42' }, messageId: '42',
+      sourceCreatedAt: new Date('2026-09-05T09:00:00.000Z'),
+    }] }) });
+    mockPgMessageHasReplyByUserAfter.mockResolvedValue(false);
+
+    const result = await AttentionItemService.auditRepliedMentionAttention();
+
+    expect(result).toMatchObject({ scanned: 1, contradicted: 1, reopened: 0 });
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('counts a Mongo-sourced stamp as undecidable rather than reopening it', async () => {
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => [{
+      _id: 'attention-mongo', recipientUserId: 'sam', podId: 'pod-1', kind: 'mention',
+      source: { type: 'message', id: '507f191e810c19729de860ea' },
+      sourceCreatedAt: new Date('2026-09-05T09:00:00.000Z'),
+    }] }) });
+
+    const result = await AttentionItemService.auditRepliedMentionAttention({ apply: true });
+
+    expect(result).toMatchObject({ scanned: 1, kept: 0, contradicted: 0, reopened: 0, undecidable: 1 });
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+    expect(mockPgMessageHasReplyByUserAfter).not.toHaveBeenCalled();
+  });
+
+  it('counts a source-less stamp as undecidable and never reopens it', async () => {
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => [{
+      _id: 'attention-sourceless', recipientUserId: 'sam', podId: 'pod-1', kind: 'mention',
+      sourceCreatedAt: new Date('2026-09-05T09:00:00.000Z'),
+    }] }) });
+
+    const result = await AttentionItemService.auditRepliedMentionAttention({ apply: true });
+
+    expect(result).toMatchObject({ scanned: 1, kept: 0, contradicted: 0, reopened: 0, undecidable: 1 });
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+    expect(mockPgMessageHasReplyByUserAfter).not.toHaveBeenCalled();
+  });
+
+  it('reads only replied stamps, and honours the resolvedBefore bound', async () => {
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => [] }) });
+    const before = new Date('2026-09-06T00:00:00.000Z');
+
+    await AttentionItemService.auditRepliedMentionAttention({ resolvedBefore: before });
+
+    expect(mockFind).toHaveBeenCalledWith({
+      kind: 'mention', status: 'resolved', resolvedBy: 'replied', resolvedAt: { $lt: before },
+    });
+  });
+
+  it('omits the resolvedAt bound entirely when none is given', async () => {
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => [] }) });
+
+    await AttentionItemService.auditRepliedMentionAttention();
+
+    expect(mockFind).toHaveBeenCalledWith({ kind: 'mention', status: 'resolved', resolvedBy: 'replied' });
+  });
 });
 
-// Stickiness Phase 1b (ux-lead, Sharpen 78222-78224): an agent's answer to the
+// Stickiness Phase 1b: an agent's answer to the
 // person who asked opens no needs-you row. QA 10-16: a hosted agent answered 4
 // plain questions and the Agents card read "needs you".
 describe('an agent answering the person who asked', () => {

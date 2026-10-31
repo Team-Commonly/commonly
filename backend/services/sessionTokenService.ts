@@ -13,6 +13,7 @@ export const issueSessionToken = (
   user: { _id: unknown; tokenVersion?: number },
   sessionStartedAt?: number,
   authenticatedVersion?: number,
+  oauthAuthenticatedAt?: number,
 ): string | null => {
   const now = Math.floor(Date.now() / 1000);
   const startedAt = sessionStartedAt === undefined ? now : sessionStartedAt;
@@ -23,5 +24,6 @@ export const issueSessionToken = (
     id: user._id,
     tokenVersion: authenticatedVersion ?? user.tokenVersion ?? 0,
     sessionStartedAt: startedAt,
+    ...(oauthAuthenticatedAt === undefined ? {} : { oauthAuthenticatedAt }),
   }, process.env.JWT_SECRET!, { expiresIn: Math.min(SESSION_TOKEN_SECONDS, remaining) });
 };

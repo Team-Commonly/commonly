@@ -9,20 +9,24 @@
  * reaches the upstream service. The source-level check below counts every
  * handler that calls GitHubAppService, not merely every mapper call, so an
  * unmapped proxy route cannot make both sides of the assertion move together.
- * `/status` carries the single explicit exemption because it only reads local
- * configuration and signs locally; it must keep its honest local 500.
+ * `/status` carries the single explicit exemption because it is a diagnostic:
+ * it reports a refused credential as data (200, credentialLive: false) rather
+ * than mapping it to a 502. Its own tests live in github.status.test.js.
  */
 
-jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => {
-  req.agentUser = { _id: 'bot-1' };
+let mockAgentInstallations = [];
+let mockAgentUser = { _id: 'bot-1' };
+jest.mock('../../../middleware/agentRuntimeAuth', () => jest.fn((req, res, next) => {
+  if (mockAgentUser) req.agentUser = mockAgentUser;
+  req.agentInstallations = mockAgentInstallations;
   next();
-});
+}));
 
-jest.mock('../../../middleware/auth', () => (req, res, next) => {
+jest.mock('../../../middleware/auth', () => jest.fn((req, res, next) => {
   req.user = { _id: 'user-1', role: 'member' };
   req.userId = 'user-1';
   next();
-});
+}));
 
 jest.mock('../../../services/githubAppService', () => ({
   isPatConfigured: jest.fn(),
@@ -119,6 +123,7 @@ const REMOVED_CREDENTIAL_ROUTES = [
 describe('GitHub proxy routes preserve upstream credential guidance (AX #9)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAgentInstallations = [];
     GitHubAppService.isPatConfigured.mockReturnValue(false);
     GitHubAppService.isConfigured.mockReturnValue(true);
   });
@@ -147,6 +152,91 @@ describe('GitHub proxy routes preserve upstream credential guidance (AX #9)', ()
       retryable: false,
     }));
     if (assertResponse) assertResponse(res);
+  });
+});
+
+describe('GitHub issue write capability', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAgentUser = { _id: 'bot-1' };
+    GitHubAppService.isPatConfigured.mockReturnValue(true);
+    GitHubAppService.isConfigured.mockReturnValue(true);
+  });
+
+  test.each([
+    ['/issues', { title: 'untrusted agent write' }, 'createIssue'],
+    ['/issues/1/comment', { body: 'untrusted agent comment' }, 'addIssueComment'],
+    ['/issues/1/close', {}, 'closeIssue'],
+  ])('denies an ungranted agent token on POST %s', async (routePath, body, service) => {
+    mockAgentInstallations = [{ githubIssueWrite: false }];
+
+    const res = await request(app)
+      .post(`/api/github${routePath}`)
+      .set('Authorization', 'Bearer cm_agent_ungranted')
+      .send(body);
+
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual(expect.objectContaining({ code: 'github_issue_write_not_granted' }));
+    expect(GitHubAppService[service]).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['/issues', { title: 'legacy agent write' }, 'createIssue'],
+    ['/issues/1/comment', { body: 'legacy agent comment' }, 'addIssueComment'],
+    ['/issues/1/close', {}, 'closeIssue'],
+  ])(
+    'denies an ungranted legacy token without an attached agent user on POST %s',
+    async (routePath, body, service) => {
+      mockAgentUser = undefined;
+      mockAgentInstallations = [{ githubIssueWrite: false }];
+      GitHubAppService[service].mockResolvedValue({});
+
+      const res = await request(app)
+        .post(`/api/github${routePath}`)
+        .set('Authorization', 'Bearer cm_agent_legacy')
+        .send(body);
+
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual(expect.objectContaining({ code: 'github_issue_write_not_granted' }));
+      expect(GitHubAppService[service]).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps issue reads open to the same ungranted agent token', async () => {
+    mockAgentInstallations = [{ githubIssueWrite: false }];
+    GitHubAppService.listOpenIssues.mockResolvedValue([]);
+
+    const res = await request(app)
+      .get('/api/github/issues')
+      .set('Authorization', 'Bearer cm_agent_ungranted');
+
+    expect(res.status).toBe(200);
+    expect(GitHubAppService.listOpenIssues).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows a server-granted dev installation to create an issue', async () => {
+    mockAgentInstallations = [{ githubIssueWrite: true }];
+    GitHubAppService.createIssue.mockResolvedValue({ number: 7, title: 'dev write', html_url: 'url' });
+
+    const res = await request(app)
+      .post('/api/github/issues')
+      .set('Authorization', 'Bearer cm_agent_dev')
+      .send({ title: 'dev write' });
+
+    expect(res.status).toBe(201);
+    expect(GitHubAppService.createIssue).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps human issue writing unchanged', async () => {
+    GitHubAppService.createIssue.mockResolvedValue({ number: 8, title: 'human write', html_url: 'url' });
+
+    const res = await request(app)
+      .post('/api/github/issues')
+      .set('Authorization', 'Bearer human-jwt')
+      .send({ title: 'human write' });
+
+    expect(res.status).toBe(201);
+    expect(GitHubAppService.createIssue).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -187,4 +277,16 @@ describe('routes that lent out the server GitHub credential stay removed', () =>
       expect.objectContaining({ owner: 'Team-Commonly', repo: 'commonly' }),
     );
   });
+});
+
+test('GitHub issue reads accept the alternate runtime header without human auth', async () => {
+  const agentAuth = require('../../../middleware/agentRuntimeAuth');
+  const humanAuth = require('../../../middleware/auth');
+  jest.clearAllMocks();
+  GitHubAppService.isConfigured.mockReturnValue(true);
+  GitHubAppService.listOpenIssues.mockResolvedValue([]);
+  const res = await request(app).get('/api/github/issues').set('x-commonly-agent-token', 'cm_agent_valid');
+  expect(res.status).toBe(200);
+  expect(agentAuth).toHaveBeenCalledTimes(1);
+  expect(humanAuth).not.toHaveBeenCalled();
 });

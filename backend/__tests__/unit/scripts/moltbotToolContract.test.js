@@ -395,7 +395,7 @@ describe('moltbot tool contract', () => {
        * CI's real topology, and the reason this cell used to assert the wrong
        * thing. `tests.yml`'s tool-tests job checked out with no `fetch-depth`,
        * so `origin/main` did not exist and there was no shared history to take
-       * a merge base from. @otto measured that on #2497: the probe returned
+       * a merge base from. This was measured on #2497: the probe returned
        * undetermined, the caller dropped it, and the check never fired on a
        * single pull request. This cell asserted `contained` and therefore
        * PINNED that silence as acceptable.
@@ -450,7 +450,7 @@ describe('moltbot tool contract', () => {
       });
 
       /**
-       * The verdict has to reach the exit code. This is the defect @otto found
+       * The verdict has to reach the exit code. This is the defect found
        * on #2497: the probe computed `undetermined` correctly and the caller
        * dropped it on the floor, so the check was structurally incapable of
        * failing a run. `main()` cannot be exercised through the injected exec

@@ -56,7 +56,7 @@ export const podWelcomerApp = {
   // burning it for these heavy-traffic event handlers exhausts dev agents'
   // accounts. Same default community agents use; if quality drops, reach for
   // gemini-2.5-flash (paid but cheap) before paid Codex.
-  model: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
+  model: 'deepseek-v4-flash',
   triggers: ['pod.join'],
   tools: ['commonly_read_context', 'commonly_post_message'],
   iconUrl: '',

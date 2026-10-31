@@ -1,3 +1,4 @@
+const catalogueRevision = require('../../../config/uiCardCatalogueRevision.json');
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => next());
 jest.mock('../../../middleware/auth', () => (req, res, next) => next());
 jest.mock('../../../middleware/apiTokenScopes', () => ({
@@ -169,6 +170,32 @@ describe('agentsRuntime post message installation config forwarding', () => {
     }
   });
 
+  it('returns a retryable 503 when the message store is unavailable (TASK-503)', async () => {
+    const handler = getRouteHandler('/pods/:podId/messages', 'post');
+    AgentMessageService.postMessage.mockRejectedValueOnce(Object.assign(
+      new Error('Messages are temporarily unavailable. Please try again shortly.'),
+      { code: 'MESSAGE_STORE_UNAVAILABLE', statusCode: 503 },
+    ));
+    const installation = { podId: 'pod-1', agentName: 'openclaw', instanceId: 'tarik', config: {} };
+    const req = {
+      params: { podId: 'pod-1' }, body: { content: 'hello' },
+      agentInstallation: installation, agentInstallations: [installation],
+    };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      await handler(req, res);
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith({
+        message: 'Messages are temporarily unavailable. Please try again shortly.',
+        code: 'MESSAGE_STORE_UNAVAILABLE',
+      });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   // answeringMessageId tells the answer rule which message a post answers
   // (agentAnswerService): it completes "Give your agent its first task" and
   // suppresses a needs-you row. Only the native runtime sets it, from its run's
@@ -218,12 +245,73 @@ describe('agentsRuntime post message installation config forwarding', () => {
   });
 });
 
+describe('agent card route boundary', () => {
+  const installation = { podId: 'pod-1', agentName: 'openclaw', instanceId: 'default', config: {} };
+  const payload = { ...catalogueRevision, kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hello")' };
+  const handler = getRouteHandler('/pods/:podId/messages', 'post');
+  const req = (body) => ({ params: { podId: 'pod-1' }, body: { continueAnyway: true, ...body },
+    agentInstallation: installation, agentInstallations: [installation] });
+  const response = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
+  beforeEach(() => { jest.clearAllMocks(); findNonMemberMentionNotices.mockResolvedValue([]); });
+  it('returns a visible 400 reason for an unknown catalogue revision before writing', async () => {
+    const res = response();
+    await handler(req({ messageType: 'card', payload: { ...payload, catalogRev: 999 }, content: 'fallback' }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'invalid_ui_card', message: expect.stringContaining('catalogRev'),
+    }));
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+  });
+  it('forwards a validated UI payload unchanged to the durable message writer', async () => {
+    AgentMessageService.postMessage.mockResolvedValue({ success: true });
+    const res = response();
+    await handler(req({ messageType: 'card', payload, content: 'fallback' }), res);
+    expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      messageType: 'card', payload, content: 'fallback',
+    }));
+    expect(res.status).not.toHaveBeenCalled();
+  });
+  it('refuses system messages without a payload before persistence', async () => {
+    const res = response();
+    await handler(req({ messageType: 'system', content: 'hello' }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+    expect(findNonMemberMentionNotices).not.toHaveBeenCalled();
+  });
+  it.each([
+    { ...payload, kind: 'approval' },
+    { ...payload, source: 'root = Text("hello")\nq = Query("secret", {})' },
+    { ...payload, source: 'root = Unknown("hello")' },
+  ])('refuses unsafe cards before persistence or mention fan-out %#', async (badPayload) => {
+    const res = response();
+    await handler(req({ messageType: 'card', payload: badPayload, content: 'fallback' }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+    expect(findNonMemberMentionNotices).not.toHaveBeenCalled();
+  });
+  it('refuses a fallback that the existing sanitizer suppresses', async () => {
+    AgentMessageService.sanitizeAgentContent.mockReturnValueOnce('');
+    const res = response();
+    await handler(req({ messageType: 'card', payload, content: 'NO_REPLY' }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+  });
+  it('keeps the pod authorization check ahead of parsing', async () => {
+    const res = response();
+    await handler({ ...req({ payload }), params: { podId: 'other' } }, res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+  });
+});
+
 describe('bot-token send-time freshness', () => {
   const user = {
     _id: 'bot-1', username: 'openclaw', isBot: true,
     botMetadata: { agentName: 'openclaw', instanceId: 'default' },
   };
-  const req = { params: { podId: 'pod-1' }, userId: 'bot-1', query: {}, body: { content: 'hello' } };
+  // The /bot/* routes take a pod id only as an ObjectId.
+  const botPodId = '6a0000000000000000000001';
+  const req = { params: { podId: botPodId }, userId: 'bot-1', query: {}, body: { content: 'hello' } };
   const response = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
 
   beforeEach(() => {
@@ -234,15 +322,42 @@ describe('bot-token send-time freshness', () => {
     });
   });
 
+  it.each(['ui', 'approval'])('validates bot-token card kind %s before writing', async (kind) => {
+    const payload = { ...catalogueRevision, kind, v: 1, lang: 'openui@1', source: 'root = Text("hello")' };
+    AgentMessageService.postMessage.mockResolvedValue({ success: true });
+    const res = response();
+    await getRouteHandler('/bot/pods/:podId/messages', 'post')({ ...req,
+      body: { content: 'fallback', messageType: 'card', payload, continueAnyway: true } }, res);
+    if (kind === 'ui') {
+      expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+        content: 'fallback', messageType: 'card', payload,
+      }));
+      expect(res.status).not.toHaveBeenCalled();
+    } else {
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+      expect(findNonMemberMentionNotices).not.toHaveBeenCalled();
+    }
+  });
+  it('refuses system messages without a payload on the bot-token route', async () => {
+    const res = response();
+    await getRouteHandler('/bot/pods/:podId/messages', 'post')({ ...req,
+      body: { content: 'hello', messageType: 'system', continueAnyway: true } }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+    expect(findNonMemberMentionNotices).not.toHaveBeenCalled();
+  });
+
   it('stamps only a successful bot-token message read and holds a stale post', async () => {
     const messages = [{ id: 'm1', content: 'new message' }];
+    Object.defineProperty(messages, 'readSource', { value: 'postgres' });
     AgentMessageService.getRecentMessages.mockResolvedValue(messages);
     const get = getRouteHandler('/bot/pods/:podId/messages', 'get');
     const getRes = response();
     await get(req, getRes);
     expect(getRes.json).toHaveBeenCalledWith({ messages });
     expect(AgentSendFreshness.recordRead).toHaveBeenCalledWith(
-      'bot-1', 'pod-1', expect.objectContaining({ at: expect.any(Date) }), ['m1'],
+      'bot-1', botPodId, expect.objectContaining({ at: expect.any(Date) }), ['m1'],
     );
 
     AgentSendFreshness.unseenMessages.mockResolvedValueOnce({ code: 'unseen_messages', unseenCount: 1 });

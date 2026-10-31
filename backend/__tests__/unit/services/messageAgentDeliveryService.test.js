@@ -26,7 +26,7 @@ describe('messageAgentDeliveryService', () => {
     AgentMentionService.enqueueMentions.mockResolvedValue({
       enqueued: [{ installationId: 'mention-1' }],
       implicit: ['recorder'],
-      woken: [{ installationId: 'wake-1' }],
+      woken: ['guide'],
     });
     AgentInstallation.countDocuments.mockResolvedValue(2);
   });
@@ -66,6 +66,7 @@ describe('messageAgentDeliveryService', () => {
         implicit: ['recorder'],
         agentsInPod: 2,
         woken: 1,
+        wokenAgents: ['guide'],
       },
     });
   });

@@ -40,6 +40,18 @@ export interface IRoomGrant extends Document {
   rootGrantId?: string | null;
   /** Required proxy identifier; an agent must never receive connection material. */
   brokerId: string;
+  /**
+   * The Integration row `_id` this grant was minted against. Bound at mint, so
+   * a later row that reuses `installationId` cannot inherit the grant.
+   * Null on grants minted before binding and not yet backfilled.
+   */
+  connectionRowId?: string | null;
+  /**
+   * The row's owner at mint (the granter). Read for revoke and seat-grant
+   * access; never re-resolved from the current holder of `connectionId`.
+   * Null means unbound: revoke and seat read refuse it.
+   */
+  ownerId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -89,6 +101,8 @@ const RoomGrantSchema = new Schema<IRoomGrant>(
     parentGrantId: { type: String, default: null, trim: true },
     rootGrantId: { type: String, default: null, trim: true },
     brokerId: { type: String, required: true, trim: true },
+    connectionRowId: { type: String, default: null, trim: true },
+    ownerId: { type: String, default: null, trim: true },
   },
   { timestamps: true, collection: 'room_grants' },
 );

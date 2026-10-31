@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { listPodMessages } from '../repositories/messageRepository';
 
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
@@ -43,16 +44,6 @@ interface NormalizedMessage {
   updated_at: unknown;
   user?: { username: string; profile_picture?: string };
 }
-
-const pgAvailable = (): boolean => {
-  try {
-    // eslint-disable-next-line global-require
-    const { pool } = require('../config/db-pg');
-    return !!pool;
-  } catch {
-    return false;
-  }
-};
 
 const normalizeMongo = (m: Record<string, unknown>): NormalizedMessage => {
   // When .populate('userId') ran, m.userId is a populated User document. Calling
@@ -146,48 +137,31 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
     // workspace. Write-once, fire-and-forget (services/onboardingMarks.ts).
     if (!before) markPodOpened(userId, pod);
 
+    const messages = await listPodMessages(podId, { limit, before });
+    // Sprint B5: attach reactions per message in one batched query
+    // (MessageReaction.listForMessages aggregates by GROUP BY).
+    // Falls through to `messages` unchanged on any reaction lookup error.
     try {
-      const messages = await PGMessage.findByPodId(podId, limit, before);
-      // Sprint B5: attach reactions per message in one batched query
-      // (MessageReaction.listForMessages aggregates by GROUP BY).
-      // Falls through to `messages` unchanged on any reaction lookup error.
-      try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+      const MessageReaction = require('../models/pg/MessageReaction').default;
+      // Keyed by the PG row id: a reconciled message's client `id` is its
+      // Mongo id, which reaction rows do not know.
+      const ids = messages.map((m) => m.pgId).filter(Boolean);
+      if (ids.length > 0) {
+        const reactionsMap = await MessageReaction.listForMessages(ids, String(userId));
         // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-        const MessageReaction = require('../models/pg/MessageReaction').default;
-        // Keyed by the PG row id: a reconciled message's client `id` is its
-        // Mongo id, which reaction rows do not know.
-        const ids = (messages as Array<{ pgId?: string }>)
-          .map((m) => m.pgId)
-          .filter(Boolean);
-        if (ids.length > 0) {
-          const reactionsMap = await MessageReaction.listForMessages(ids, String(userId));
-          // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-          const { decorateReactionMap } = require('../services/reactionAttributionService');
-          const decorated = await decorateReactionMap(reactionsMap);
-          for (const m of messages as Array<{ pgId?: string; reactions?: unknown }>) {
-            const key = String(m.pgId || '');
-            m.reactions = decorated.get(key) || [];
-          }
+        const { decorateReactionMap } = require('../services/reactionAttributionService');
+        const decorated = await decorateReactionMap(reactionsMap);
+        for (const m of messages) {
+          m.reactions = decorated.get(String(m.pgId || '')) || [];
         }
-      } catch (rxnErr) {
-        // Non-fatal: reactions are a render enhancement.
-        // eslint-disable-next-line no-console
-        console.warn('[messages] reaction enrichment skipped:', (rxnErr as Error).message);
       }
-      res.json(await gateWelcomeHostedActions(messages as Array<Record<string, unknown>>, podId, userId));
-      return;
-    } catch (pgErr) {
-      const e = pgErr as { message?: string };
-      console.warn('PG unavailable for getMessages, falling back to MongoDB:', e.message);
+    } catch (rxnErr) {
+      // Non-fatal: reactions are a render enhancement.
+      // eslint-disable-next-line no-console
+      console.warn('[messages] reaction enrichment skipped:', (rxnErr as Error).message);
     }
-
-    const query: Record<string, unknown> = { podId };
-    if (before) query.createdAt = { $lt: new Date(before) };
-    const messages = await MongoMessage.find(query)
-      .populate('userId', 'username profilePicture')
-      .sort({ createdAt: -1 })
-      .limit(limit);
-    res.json(await gateWelcomeHostedActions(messages.map(normalizeMongo), podId, userId));
+    res.json(await gateWelcomeHostedActions(messages, podId, userId));
   } catch (err) {
     const e = err as { message?: string; kind?: string };
     console.error('Error in getMessages:', e.message);
@@ -261,11 +235,9 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     // Best-effort backfill: pods created via the Mongo-only POST /api/pods
     // path (podController) have no row in the PG `pods` table, so the
     // subsequent PGMessage.create fails the messages.pod_id foreign key
-    // and the message lands in the Mongo fallback indefinitely.
-    // pgMessageController already does this; mirror it here so the dual-DB
-    // path stays consistent with the PG-primary path. Swallow errors —
-    // if PG is unreachable, PGMessage.create below will throw and the
-    // existing Mongo fallback handles it.
+    // and the send fails. pgMessageController already does this; mirror it
+    // here. Swallow errors: if PG is unreachable, PGMessage.create below
+    // throws and the send returns 503.
     try {
       const pgPodExists = await PGPod.findById(podId);
       if (!pgPodExists) {
@@ -315,38 +287,10 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       throw err;
     }
 
-    try {
-      const created = await PGMessage.create(
-        podId,
-        userId,
-        messageContent || '',
-        'text',
-        replyToMessageId || null,
-        null,
-        resolvedThreadRootId,
-      );
-      // create() returns the raw INSERT row with no users JOIN, so the
-      // response would lack username/profile_picture and the v2 chat would
-      // render the author as "Unknown" until a refresh pulled the joined
-      // row. findById re-fetches with the JOIN so the optimistic render
-      // already has the right author identity. A JOIN failure is not a write
-      // failure: falling into the Mongo fallback after INSERT would duplicate
-      // the message (or falsely reject an already-persisted reply).
-      let populated = null;
-      try {
-        populated = created?.id ? await PGMessage.findById(created.id) : null;
-      } catch (readErr) {
-        console.warn('[messageController] PG post-write read failed:', (readErr as Error).message);
-      }
-      message = (populated || created) as NormalizedMessage;
-    } catch (pgErr) {
-      const e = pgErr as { message?: string };
-      console.warn('PG unavailable for createMessage, falling back to MongoDB:', e.message);
-      // Mongo rows have no reply_to_message_id column, and the reconciler
-      // (services/pgMessageReconcileService, TASK-313 part 2) copies them into
-      // PG without a reply edge. A reply written here would look successful
-      // while losing its parent edge, so replies still wait for Postgres.
-      // Non-replies take this fallback and are moved once PG is back.
+    if (!process.env.PG_HOST) {
+      // No PostgreSQL configured: MongoDB is this instance's only message
+      // store, as on the socket and agent paths and in the readers. Mongo
+      // rows have no reply edge, so replies still need PostgreSQL.
       if (replyToMessageId) {
         res.status(503).json({
           error: 'Replies are temporarily unavailable. Please try again shortly.',
@@ -355,7 +299,6 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
         return;
       }
       const mongoMsg = await MongoMessage.create({
-        pgFallback: true,
         podId,
         userId,
         content: messageContent || '',
@@ -364,6 +307,43 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       const populated = await MongoMessage.findById(mongoMsg._id)
         .populate('userId', 'username profilePicture');
       message = normalizeMongo(populated || mongoMsg);
+    } else {
+      try {
+        const created = await PGMessage.create(
+          podId,
+          userId,
+          messageContent || '',
+          'text',
+          replyToMessageId || null,
+          null,
+          resolvedThreadRootId,
+        );
+        // create() returns the raw INSERT row with no users JOIN, so the
+        // response would lack username/profile_picture and the v2 chat would
+        // render the author as "Unknown" until a refresh pulled the joined
+        // row. findById re-fetches with the JOIN so the optimistic render
+        // already has the right author identity. A JOIN failure is not a write
+        // failure: falling into the Mongo fallback after INSERT would duplicate
+        // the message (or falsely reject an already-persisted reply).
+        let populated = null;
+        try {
+          populated = created?.id ? await PGMessage.findById(created.id) : null;
+        } catch (readErr) {
+          console.warn('[messageController] PG post-write read failed:', (readErr as Error).message);
+        }
+        message = (populated || created) as NormalizedMessage;
+      } catch (pgErr) {
+        // PostgreSQL is the only message store (TASK-503). A failed write is
+        // a failed send the client can retry, never a silent MongoDB row that
+        // pod chat (which reads PG) cannot show.
+        const e = pgErr as { message?: string };
+        console.error('[messageController] PG message write failed:', e.message);
+        res.status(503).json({
+          error: 'Messages are temporarily unavailable. Please try again shortly.',
+          code: 'MESSAGE_STORE_UNAVAILABLE',
+        });
+        return;
+      }
     }
 
     // Scout's first-task proposal is a deterministic handoff tied to the pod
@@ -440,8 +420,8 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
           replyTo: m.replyTo ?? null,
           // #646's lesson, one field over: without the thread root every
           // live viewer rendered an in-thread reply as a TOP-LEVEL message
-          // until refresh, and the thread never updated live (Sam,
-          // 2026-08-24). The agent path (#1175) carries it; this human
+          // until refresh, and the thread never updated live
+          // (2026-08-24). The agent path (#1175) carries it; this human
           // path was the gap.
           thread_root_id: (m as { thread_root_id?: number | string | null }).thread_root_id ?? null,
           reply_to_message_id: (m as { reply_to_message_id?: number | string | null }).reply_to_message_id ?? null,

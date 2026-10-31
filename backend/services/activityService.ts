@@ -129,8 +129,8 @@ class ActivityService {
     // made the pod, and `leavePod` keeps it after unlisting them, so reading it
     // as membership handed a departed creator this pod's recap.
     // TASK-170: `{ 'members.userId': userId }` sat beside the live term as a
-    // second spelling of membership. No pod has a `members.userId` entry (Vera,
-    // 0 of 424, 2026-09-27), so it selected nothing while teaching that a member
+    // second spelling of membership. No pod has a `members.userId` entry (0
+    // of 424, 2026-09-27), so it selected nothing while teaching that a member
     // is an object carrying a `userId` — the belief behind the `getPodFeed`
     // defect TASK-166 fixed. Deleted rather than kept as a fallback.
     const pods: PodDoc[] = await Pod.find({ members: userId }).select('_id name type').lean();
@@ -368,7 +368,10 @@ class ActivityService {
       // recap still commonly-bot-only because the working pods still never
       // made the fetch window).
       const { rows } = await pool.query(
-        'SELECT pod_id, MAX(created_at) AS latest FROM messages WHERE pod_id = ANY($1::text[]) GROUP BY pod_id ORDER BY latest DESC',
+        `SELECT pod_id, MAX(created_at) AS latest FROM messages
+         WHERE pod_id = ANY($1::text[])
+           AND NOT (message_type = 'system' AND COALESCE(payload->>'kind', '') = 'system-action')
+         GROUP BY pod_id ORDER BY latest DESC`,
         [ids],
       );
       const ranked = rows.map((r) => String(r.pod_id));
@@ -716,7 +719,13 @@ class ActivityService {
           // the vacuum. (Verified live: findByPodId(oid) -> 0 rows,
           // findByPodId(String(oid)) -> rows.)
           const podMessagesList = await Promise.all(
-            podIds.slice(0, 12).map((podId) => (PGMessage as { findByPodId(id: unknown, limit: number): Promise<unknown[]> }).findByPodId(String(podId), limit)),
+            podIds.slice(0, 12).map((podId) => (PGMessage as {
+              findByPodId(
+                id: unknown, count: number, cursor: string | null, thread: string | null,
+                queryOptions: { excludeSystemActions: boolean },
+              ): Promise<unknown[]>;
+            })
+              .findByPodId(String(podId), limit, before || null, null, { excludeSystemActions: true })),
           );
           messages = podMessagesList.flat() as Array<Record<string, unknown>>;
         } catch (e) {
@@ -725,7 +734,10 @@ class ActivityService {
       }
 
       if (messages.length === 0 && Message) {
-        const query: Record<string, unknown> = { podId: { $in: podIds } };
+        const query: Record<string, unknown> = {
+          podId: { $in: podIds },
+          $nor: [{ messageType: 'system', 'payload.kind': 'system-action' }],
+        };
         if (before) {
           query.createdAt = { $lt: new Date(before) };
         }

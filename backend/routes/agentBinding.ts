@@ -145,7 +145,7 @@ const grantServersForIdentities = async (
   return output;
 };
 
-// Ownership predicate — SOLE-INSTALLER (Vera's ruling on #1315). Shared with
+// Ownership predicate — SOLE-INSTALLER. Shared with
 // the token routes since 2026-10-14; see services/runtimeIdentityOwnership.ts.
 const ownsAgent = ownsRuntimeIdentity;
 
@@ -181,15 +181,17 @@ router.get('/placement', bindingRateLimit, auth, async (req: express.Request & {
       isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId,
     }).select('botMetadata.machineId botMetadata.requestedMachineId').lean();
     if (!identity) return res.status(404).json({ message: 'Agent identity not found' });
-    const machines = await Machine.find({ ownerUserId: req.user?.id }).select('machineId name').lean();
-    const activeMachines = (await Promise.all(machines.map(async (machine: { machineId: string; name: string }) => ({
+    const machines = await Machine.find({ ownerUserId: req.user?.id }).select('machineId name createdAt').lean();
+    type PlacementMachine = { machineId: string; name: string; createdAt: Date };
+    const activeMachines = (await Promise.all(machines.map(async (machine: PlacementMachine) => ({
       machineId: machine.machineId,
       name: machine.name,
+      createdAt: machine.createdAt,
       active: Boolean(await AgentCredential.exists({ kind: 'daemon', ownerUserId: req.user?.id,
         machineId: machine.machineId, status: 'active',
         $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] }))
         && await machineHasLiveAuthorization(machine.machineId, req.user!.id!),
-    })))).filter((machine) => machine.active).map(({ machineId, name }) => ({ machineId, name }));
+    })))).filter((machine) => machine.active).map(({ machineId, name, createdAt }) => ({ machineId, name, createdAt }));
     const boundMachineId = identity.botMetadata?.machineId || null;
     return res.json({
       boundMachineId,
@@ -539,7 +541,7 @@ router.post('/runtime-token', bindingRateLimit, daemonAuth('agents:adopt'), asyn
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const AgentCredential = require('../models/AgentCredential');
 
-    // req.machine is deliberately a minimal projection (Vera's S1 ruling), so
+    // req.machine is deliberately a minimal projection, so
     // re-derive the issuing daemon credential for parent lineage.
     const daemonCredential = await AgentCredential.findOne({
       kind: 'daemon', machineId: machine.machineId, ownerUserId: machine.ownerUserId, status: 'active',

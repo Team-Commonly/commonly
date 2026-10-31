@@ -192,8 +192,8 @@ describe('classifies the possessive-exhaustion phrase (2026-08-25, third miss)',
   test.each([
     ['weekly, the wording behind 283 of 365 fleet failures', WEEKLY],
     ['per-model, whose variable part is a model name', PER_MODEL],
-    // The HTTP status is a prefix here, not a throttle wording. otto's HOLD on
-    // #2553 (review 5638173449): this shape classed RUNTIME_LIMIT's 60s probe.
+    // The HTTP status is a prefix here, not a throttle wording. A hold on
+    // #2553: this shape classed RUNTIME_LIMIT's 60s probe.
     ['per-model behind an HTTP 429 prefix', "429: You've reached your Fable 5 limit"],
   ])('%s is QUOTA, not RUNTIME', (_label, message) => {
     expect(classifySpawnFailure(new Error(message))).toBe(SPAWN_FAILURE_CLASS.QUOTA);
@@ -241,7 +241,7 @@ describe('classifies the possessive-exhaustion phrase (2026-08-25, third miss)',
     "you've hit your Rate Limit",
     // The lookahead only guards the word IMMEDIATELY after "your", so these
     // two walked past it into the 15-minute circuit while main correctly gave
-    // the 60-second probe — a regression this branch introduced and otto's
+    // the 60-second probe — a regression this branch introduced and the
     // gate on #2491 caught. The call site now refuses the possessive shape
     // whenever a throttle wording appears anywhere in the text.
     "You've hit your API rate limit",

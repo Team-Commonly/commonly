@@ -203,6 +203,8 @@ describe('dispatchHostedBrokerTool', () => {
       agentName: 'kai',
       instanceId: 'default',
       noOutboundRelay: true,
+      runId: 'aaaaaaaaaaaaaaaaaaaaa111',
+      runPodId: POD_A,
     });
 
     expect(mockCallTool).toHaveBeenCalledWith({
@@ -214,6 +216,8 @@ describe('dispatchHostedBrokerTool', () => {
       // so the seat-confinement refusal does not apply to it (Wren, TASK-175).
       hostedTurn: true,
       noOutboundRelay: true,
+      runId: 'aaaaaaaaaaaaaaaaaaaaa111',
+      runPodId: POD_A,
       tool: 'github.list_issues',
       args: { grantId: 'grant-someone-else', agentUserId: OTHER_SEAT, state: 'open' },
     });

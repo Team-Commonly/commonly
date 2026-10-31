@@ -22,10 +22,14 @@ jest.mock('../../services/taskEventService', () => {
   const actual = jest.requireActual('../../services/taskEventService');
   return { ...actual, notifyPodAgents: jest.fn().mockResolvedValue(undefined) };
 });
+jest.mock('../../services/systemActionLineService', () => ({
+  emitSystemActionLine: jest.fn().mockResolvedValue(undefined),
+}));
 
 const express = require('express');
 const request = require('supertest');
 const { notifyPodAgents } = require('../../services/taskEventService');
+const { emitSystemActionLine } = require('../../services/systemActionLineService');
 const Pod = require('../../models/Pod');
 const Task = require('../../models/Task');
 const User = require('../../models/User');
@@ -62,6 +66,7 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
 
   beforeEach(async () => {
     await clearMongoDb();
+    emitSystemActionLine.mockClear();
     owner = await User.create({
       username: `lease-owner-${Date.now()}`,
       email: `lease-owner-${Date.now()}@test.com`,
@@ -81,7 +86,7 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
       verified: true,
       isBot: true,
       botType: 'agent',
-      botMetadata: { agentName: 'claim-audit-agent', instanceId: 'default' },
+      botMetadata: { agentName: 'claim-audit-agent', instanceId: 'default', displayName: 'Audit Agent' },
       agentRuntimeTokens: [{
         tokenHash: hash(AGENT_TOKEN),
         label: 'task-claim-audit',
@@ -134,6 +139,11 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
         authorId: agent._id.toString(),
       }),
     ]));
+    expect(emitSystemActionLine).toHaveBeenCalledWith(expect.objectContaining({
+      actorName: 'Audit Agent',
+      actorUsername: 'claim-audit-agent',
+      actorIsBot: true,
+    }));
   });
 
   test('a fresh claim stamps a lease ~30 minutes out', async () => {
@@ -145,6 +155,16 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     const expires = new Date(res.body.task.claimExpiresAt).getTime();
     expect(expires).toBeGreaterThanOrEqual(before + LEASE_MS - 5000);
     expect(expires).toBeLessThanOrEqual(Date.now() + LEASE_MS + 5000);
+    expect(emitSystemActionLine).toHaveBeenCalledWith({
+      podId: pod._id.toString(),
+      actorUserId: owner._id.toString(),
+      actorName: owner.username,
+      actorUsername: owner.username,
+      actorAvatarUrl: null,
+      actorIsBot: false,
+      action: 'task-claimed',
+      taskId: 'T-1',
+    });
   });
 
   test('a live lease refuses a rival, naming the holder and when the lease frees', async () => {
@@ -164,6 +184,7 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     const renewed = await claim(ownerToken);
     expect(renewed.status).toBe(200);
     expect(new Date(renewed.body.task.claimExpiresAt).getTime()).toBeGreaterThan(firstExpiry);
+    expect(emitSystemActionLine).toHaveBeenCalledTimes(1);
   });
 
   test('a lapsed lease is claimable by a peer — dead claimants never hold work forever', async () => {
@@ -176,6 +197,7 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     const res = await claim(rivalToken);
     expect(res.status).toBe(200);
     expect(res.body.task.claimedBy).toBe(rival._id.toString());
+    expect(emitSystemActionLine).toHaveBeenCalledTimes(1);
   });
 
   test('a RECENT legacy claim (no lease field) is still protected', async () => {
@@ -298,7 +320,7 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
   // A lease timestamp is not an event. Renewals fanned a wake to every seat
   // in the pod, each burning a model turn to conclude "nothing new" — 4 wakes
   // for one task in one session, with seats meta-discussing the noise
-  // (measured in Sharpen, 2026-08-25). The board UI still updates via the
+  // (measured in a pod, 2026-08-25). The board UI still updates via the
   // socket emit; only the agent fan-out is gated.
   describe('renewal wakes nobody — the fan-out fires only on news', () => {
     beforeEach(() => {
@@ -556,6 +578,21 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
       .send({ text: 'Change priority', priority: 'P3', continueAnyway: true });
     expect(response.status).toBe(409);
     expect((await Task.findOne({ podId: pod._id, taskId: 'T-1' })).priority).toBe('P1');
+  });
+
+  // A seat that omits podId reaches these routes with the literal "undefined"
+  // in the path (the MCP interpolates it). That used to throw a Pod CastError
+  // and answer 500, which seats read as the board being down.
+  test.each([
+    ['list', (path) => request(app).get(path)],
+    ['claim', (path) => request(app).post(`${path}/T-1/claim`).send({})],
+    ['note', (path) => request(app).post(`${path}/T-1/updates`).send({ text: 'renewal' })],
+  ])('an agent %s with podId "undefined" is a 400 naming podId, not a 500', async (_label, send) => {
+    await seedTask();
+    const res = await send('/api/v1/tasks/undefined').set('Authorization', `Bearer ${AGENT_TOKEN}`);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('podId must be a pod id');
+    expect((await Task.findOne({ podId: pod._id, taskId: 'T-1' })).status).toBe('pending');
   });
 
 });

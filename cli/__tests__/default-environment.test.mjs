@@ -159,6 +159,16 @@ describe('withDefaultSandbox', () => {
     expect(withDefaultSandbox(derived)).toBe(derived);
   });
 
+  test('leaves a workspace trust alone, so a private-pod seat keeps the tier it was given', () => {
+    // TASK-294. Replacing it would narrow the seat to public, which is safe and
+    // wrong; a non-claude adapter handed it refuses at spawn, so keeping it never
+    // produces a bare spawn either.
+    const workspace = { sandbox: { trust: 'workspace', allow: ['write'] } };
+    expect(withDefaultSandbox(workspace)).toBe(workspace);
+    expect(withDefaultSandbox({ sandbox: { trust: 'workspace', mode: 'none' } }).sandbox)
+      .toEqual({ trust: 'public' });
+  });
+
   test('leaves a malformed environment alone, and is idempotent', () => {
     expect(withDefaultSandbox('nonsense')).toBe('nonsense');
     expect(withDefaultSandbox([1])).toEqual([1]);

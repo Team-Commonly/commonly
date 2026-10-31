@@ -3,7 +3,7 @@ const express = require('express');
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 // eslint-disable-next-line global-require
-const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
+const dualAuth = require('../middleware/dualAuth');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
@@ -15,9 +15,13 @@ const githubIpRateLimit = rateLimit({
   legacyHeaders: false,
   keyGenerator: cloudflareIpRateLimitKeyGenerator,
 });
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { agentCanWriteGitHubIssues } = require('../services/githubIssueWriteCapability');
 
 interface AuthReq {
   user?: { role?: string };
+  agentUser?: { _id?: unknown };
+  agentInstallations?: Array<{ githubIssueWrite?: boolean }>;
   body?: Record<string, unknown>;
   query?: Record<string, string>;
   params?: Record<string, string>;
@@ -124,13 +128,20 @@ function mapGitHubUpstreamError(
   return { status: 500, body: { error: labels.fallback, code: 'github_proxy_error', retryable: false, detail } };
 }
 
-function anyAuth(req: AuthReq, res: Res, next: () => void) {
-  const token = ((req.header?.('Authorization') || '').replace('Bearer ', ''));
-  if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
-  return auth(req, res, next);
-}
-
 const router: ReturnType<typeof express.Router> = express.Router();
+
+const requireGitHubIssueWriteCapability = (req: AuthReq, res: Res): boolean => {
+  // `anyAuth` also serves ordinary human JWTs. The capability is only for
+  // agent-runtime callers. `agentUser` is best-effort for legacy tokens, but
+  // both successful agent auth paths always attach the installation list.
+  const isAgentRuntimeCaller = Array.isArray(req.agentInstallations);
+  if (!isAgentRuntimeCaller || agentCanWriteGitHubIssues(req.agentInstallations)) return true;
+  res.status(403).json({
+    error: 'GitHub issue writing is not granted to this agent installation',
+    code: 'github_issue_write_not_granted',
+  });
+  return false;
+};
 
 // REMOVED — `POST /token`, which handed our GitHub credential to callers.
 //
@@ -147,14 +158,27 @@ const router: ReturnType<typeof express.Router> = express.Router();
 // per-user App install of its own, not a share of ours.
 
 router.get('/status', auth, async (req: AuthReq, res: Res) => {
-  // @github-upstream-exempt: this route touches no upstream — it reads env and
-  // signs a JWT locally — so a throw here really is our fault and 500 is the
-  // honest answer. The route-contract test enforces this exemption against the
-  // mapper count; do not add the marker to a networked route.
+  // @github-upstream-exempt: a diagnostic, not a proxy. It probes GitHub for
+  // the PAT's liveness and reports the outcome as data, so a dead credential is
+  // a successful diagnosis (200, credentialLive: false), never a 502. Mapping
+  // it would make "the credential is dead" indistinguishable from "this
+  // diagnostic is broken". A throw from our own code still gets the honest 500.
+  // The route-contract test enforces this exemption against the mapper count.
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
-    if (GitHubAppService.isPatConfigured()) return res.json({ mode: 'pat', configured: true });
-    if (!GitHubAppService.isConfigured()) return res.json({ mode: 'none', configured: false, message: 'Set GITHUB_PAT or GitHub App env vars' });
+    if (!GitHubAppService.isConfigured()) {
+      if (GitHubAppService.isPatConfigured()) {
+        const liveness = await GitHubAppService.checkPatLiveness();
+        return res.json({
+          mode: 'pat',
+          configured: true,
+          credentialLive: liveness.live,
+          credentialStatus: liveness.status,
+          upstreamStatus: liveness.upstreamStatus,
+        });
+      }
+      return res.json({ mode: 'none', configured: false, message: 'Set GitHub App env vars' });
+    }
     const appJWT = GitHubAppService.generateAppJWT();
     return res.json({ mode: 'app', configured: true, appId: process.env.GITHUB_APP_ID, installationId: process.env.GITHUB_APP_INSTALLATION_ID_COMMONLY, jwtGenerated: !!appJWT });
   } catch (err) {
@@ -163,7 +187,7 @@ router.get('/status', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/issues', githubIpRateLimit, anyAuth, async (req: AuthReq, res: Res) => {
+router.get('/issues', githubIpRateLimit, dualAuth, async (req: AuthReq, res: Res) => {
   try {
     if (!GitHubAppService.isPatConfigured() && !GitHubAppService.isConfigured()) {
       return res.status(503).json({ error: 'No GitHub credentials configured' });
@@ -178,8 +202,9 @@ router.get('/issues', githubIpRateLimit, anyAuth, async (req: AuthReq, res: Res)
   }
 });
 
-router.post('/issues', githubIpRateLimit, anyAuth, async (req: AuthReq, res: Res) => {
+router.post('/issues', githubIpRateLimit, dualAuth, async (req: AuthReq, res: Res) => {
   try {
+    if (!requireGitHubIssueWriteCapability(req, res)) return;
     if (!GitHubAppService.isPatConfigured() && !GitHubAppService.isConfigured()) {
       return res.status(503).json({ error: 'No GitHub credentials configured' });
     }
@@ -194,8 +219,9 @@ router.post('/issues', githubIpRateLimit, anyAuth, async (req: AuthReq, res: Res
   }
 });
 
-router.post('/issues/:number/comment', githubIpRateLimit, anyAuth, async (req: AuthReq, res: Res) => {
+router.post('/issues/:number/comment', githubIpRateLimit, dualAuth, async (req: AuthReq, res: Res) => {
   try {
+    if (!requireGitHubIssueWriteCapability(req, res)) return;
     const issueNumber = Number(req.params?.number);
     const { body } = (req.body || {}) as { body?: string };
     if (!body) return res.status(400).json({ error: 'body is required' });
@@ -208,8 +234,9 @@ router.post('/issues/:number/comment', githubIpRateLimit, anyAuth, async (req: A
   }
 });
 
-router.post('/issues/:number/close', githubIpRateLimit, anyAuth, async (req: AuthReq, res: Res) => {
+router.post('/issues/:number/close', githubIpRateLimit, dualAuth, async (req: AuthReq, res: Res) => {
   try {
+    if (!requireGitHubIssueWriteCapability(req, res)) return;
     const issueNumber = Number(req.params?.number);
     const { comment } = (req.body || {}) as { comment?: string };
     await GitHubAppService.closeIssue({ owner: PINNED_OWNER, repo: PINNED_REPO, issueNumber, comment });

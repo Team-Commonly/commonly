@@ -191,7 +191,7 @@ export const dispatch = async (
   if (eventType !== 'chat.message') return;
   // Every handler here relays the message to an external chat. A post made by
   // a native turn that read web results carries noOutboundRelay (TASK-267a,
-  // Rhea on #2244), and is refused here, where the bridges are selected, so a
+  // #2244), and is refused here, where the bridges are selected, so a
   // bridge enabled after the turn's own check still sends nothing.
   if (payload.noOutboundRelay) return;
 

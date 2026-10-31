@@ -1,3 +1,7 @@
+import mongoose from 'mongoose';
+import { podMemberPopulate } from '../services/podMemberPopulate';
+import dualAuth from '../middleware/dualAuth';
+import { validateAgentCardPayload } from '../services/uiCardValidation';
 export {};
 
 // TASK-099: the refusal classes a driver may name on release. The enum is the
@@ -39,6 +43,7 @@ const Post = require('../models/Post');
 const Pod = require('../models/Pod');
 const PodAsset = require('../models/PodAsset');
 const { AgentInstallation } = require('../models/AgentRegistry');
+const { recordReportedCli } = require('../services/reportedCli');
 const File = require('../models/File');
 const { getObjectStore } = require('../services/objectStore');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
@@ -92,7 +97,7 @@ const { patchAgentRuntimeConfiguration } = require('../services/agentRuntimeConf
 // Pre-auth, agentRateLimitKeyGenerator has no `req.agentTokenHash` yet (that
 // is set by agentRuntimeAuth), so it keys on a sha256 of the Authorization /
 // x-commonly-agent-token header. That isolates callers, but a caller who
-// rotates the header gets a fresh bucket every request (Vera measured it on
+// rotates the header gets a fresh bucket every request (measured on
 // #1689: 300 fixed-header requests reached auth 120 times, 300 rotating
 // headers reached auth 300 times — the same class as the B2 webhook finding).
 // So the stack is two tiers, IP first: a coarse per-IP limiter keyed by the
@@ -133,13 +138,13 @@ const phase4AgentRateLimit = rateLimit({
 const phase4RateLimit = [phase4IpRateLimit, phase4AgentRateLimit, rateLimitObserver];
 
 // TASK-108 / TASK-097 §5: the long-poll reads take the IP tier with the token
-// tier OFF (ruled, wren 71374) — a long-poll's request count is not a per-token
+// tier OFF (ruled) — a long-poll's request count is not a per-token
 // budget question, and a retry storm is still an IP. 3000/60s is the existing
 // IP tier's own budget, restated here rather than reusing `phase4IpRateLimit`
 // because that instance emits the legacy `{message, code}` body and these two
 // routes sit on a seat's tool path, where a refusal has to be classifiable
 // (see middleware/platformRateLimit.ts). Registering a limiter per ROUTE is
-// not (A): (A) is the mount-level limiter on the family, which is Sam's order
+// not (A): (A) is the mount-level limiter on the family, which is a separate order
 // and is not registered by this change.
 const longPollIpLimit = platformIpRateLimit({
   windowMs: 60_000,
@@ -147,25 +152,8 @@ const longPollIpLimit = platformIpRateLimit({
   label: '3000 long-poll reads per 60s per IP',
 });
 
-// Dual-auth dispatcher (mirrors `backend/routes/tasksApi.ts:34-36`). Routes
-// that accept BOTH human JWTs and agent runtime tokens use this — the token
-// prefix distinguishes the two. `cm_agent_*` → `agentRuntimeAuth` (stamps
-// `req.agentUser`), anything else → `auth` (stamps `req.userId`/`req.user`).
-//
-// Both `Authorization: Bearer <token>` and `x-commonly-agent-token: <token>`
-// are checked because `agentRuntimeAuth` accepts either; missing one would
-// silently route the alternate-header caller to the human path and 401.
-//
-// Per ADR-010, MCP tools wrap routes the agent runtime token can already
-// authenticate against; for `/room` (the agent-room endpoint) that means
-// adding the agent path without breaking the existing human path.
-const dualAuth = (req: any, res: any, next: any) => {
-  const bearer = ((req.header?.('Authorization') || '').replace('Bearer ', '')).trim();
-  const altHeader = (req.header?.('x-commonly-agent-token') || '').trim();
-  const token = bearer || altHeader;
-  if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
-  return auth(req, res, next);
-};
+// /room accepts human sessions and runtime credentials through shared dualAuth.
+// Keep the IP limiter before it: both verification paths read the database.
 
 const Integration = require('../models/Integration');
 const AgentMemory = require('../models/AgentMemory');
@@ -296,12 +284,39 @@ const requireBotUser = async (req: any, res: any) => {
   return { user };
 };
 
+// The agent a /bot/* caller acts as, named in its query or body. A query or
+// body value can arrive as an array or object, which a Mongo filter reads as
+// an operator, so only strings are taken. The token's bot user must be that
+// agent.
+const resolveBotIdentity = (res: any, user: any, fields: any) => {
+  const { agentName, instanceId } = fields || {};
+  if ((agentName !== undefined && typeof agentName !== 'string')
+    || (instanceId !== undefined && typeof instanceId !== 'string')) {
+    return { error: res.status(400).json({ message: 'agentName and instanceId must be strings' }) };
+  }
+  const identity = {
+    agentName: String(agentName || user.botMetadata?.agentName || user.username),
+    instanceId: String(instanceId || user.botMetadata?.instanceId || 'default'),
+  };
+  const expectedUsername = AgentIdentityService.buildAgentUsername(identity.agentName, identity.instanceId);
+  if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
+    return { error: res.status(403).json({ message: 'Agent token does not match bot user' }) };
+  }
+  return { identity };
+};
+
+// A pod id from a route param or a request body is taken only as an ObjectId
+// or its hex string, so an object or array never reaches a filter as an
+// operator.
+const isPodId = (podId: unknown): boolean => mongoose.isObjectIdOrHexString(podId);
+
 const ensureBotInstallation = async (
-  agentName: any,
-  podId: any,
+  agentName: string,
+  podId: unknown,
   statuses = ['active'],
   instanceId = 'default',
 ) => {
+  if (!isPodId(podId)) return null;
   const installation = await AgentInstallation.findOne({
     agentName: agentName.toLowerCase(),
     podId,
@@ -313,11 +328,12 @@ const ensureBotInstallation = async (
 
 const ensureBotPodAccess = async (
   user: any,
-  agentName: any,
-  podId: any,
+  agentName: string,
+  podId: unknown,
   statuses = ['active'],
   instanceId = 'default',
 ) => {
+  if (!isPodId(podId)) return null;
   const installation = await ensureBotInstallation(agentName, podId, statuses, instanceId);
   if (installation) return installation;
 
@@ -388,7 +404,7 @@ router.post('/messages/:messageId/claim', phase4RateLimit, agentRuntimeAuth, asy
     // this pod, or absent entirely, so the route leaks no membership oracle —
     // and the guard inside messageExists runs before the query, because
     // `messages.id` is SERIAL and a non-numeric id would otherwise reach
-    // Postgres as a syntax error the catch turns into a 500 (vera 71873).
+    // Postgres as a syntax error the catch turns into a 500.
     // That guard is a split over namespaces, not a digits test: the wake for a
     // post-thread comment carries a Mongo ObjectId, so refusing that shape
     // 404s a legitimate wake and costs the claim race its dedupe.
@@ -554,10 +570,27 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
     const allPodIds = [...podIds.map(String), ...dmPodIds.map(String)];
 
     const pods = allPodIds.length > 0
-      ? await Pod.find({ _id: { $in: allPodIds } }).select('_id name type').lean()
+      ? await Pod.find({ _id: { $in: allPodIds } }).select('_id name type publicRead communityListed joinPolicy').lean()
       : [];
 
     const podMap = Object.fromEntries(pods.map((p: any) => [String(p._id), p]));
+
+    // Whether strangers can read or join each room this seat answers in
+    // (TASK-294). A `workspace`-trust CLI seat reads it before every turn and
+    // runs that turn public unless every pod here is private and invite-only,
+    // so the effective values are reported: an absent stored visibility field
+    // means false, as everywhere else that reads `publicRead || communityListed`,
+    // and an absent joinPolicy means open, as in podListing.ts. Visibility
+    // alone is not enough: POST /pods/:podId/self-install admits any agent to
+    // an open pod an agent created, whether or not it is listed. A pod that no
+    // longer exists gets none of the fields, which the CLI reads as not-private.
+    const podVisibility = (pod: any) => (pod?._id
+      ? {
+        publicRead: pod.publicRead === true,
+        communityListed: pod.communityListed === true,
+        joinPolicy: pod.joinPolicy === 'invite-only' ? 'invite-only' : 'open',
+      }
+      : {});
 
     const installationList = installations.map((inst: any) => {
       const pod = podMap[String(inst?.podId)] || {};
@@ -572,6 +605,7 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
         // Known runtime kinds (such as a connect-page `webhook`) stay null.
         // Expose only this non-secret discriminator, never the full config.
         runtimeAdapter: adapterForRuntimeBinding(inst?.config?.runtime),
+        ...podVisibility(pod),
         type: 'installation',
       };
     });
@@ -584,6 +618,7 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
         podType: pod.type || 'agent-admin',
         instanceId,
         status: 'active',
+        ...podVisibility(pod),
         type: 'dm',
       };
     });
@@ -616,6 +651,11 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
       || 'default';
     if (!agentName) {
       return res.status(403).json({ message: 'Agent token not authorized for events' });
+    }
+    // TASK-317: the chat chip's label for a BYO seat, display only and
+    // unverified (services/reportedCli.ts). Never feeds runtime.adapter.
+    if (req.query.reportedCli) {
+      recordReportedCli((req.agentInstallations || []).map((item: any) => item?._id), req.query.reportedCli);
     }
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
     const installationPodIds = (req.agentInstallations || [])
@@ -687,13 +727,9 @@ router.get('/bot/events', longPollIpLimit, auth, requireApiTokenScopes(['agent:e
     const { user, error } = await requireBotUser(req, res);
     if (error) return error;
 
-    const agentName = req.query.agentName || user.botMetadata?.agentName || null;
-    const instanceId = req.query.instanceId || user.botMetadata?.instanceId || 'default';
-    const resolvedAgentName = agentName || user.username;
-    const expectedUsername = AgentIdentityService.buildAgentUsername(resolvedAgentName, instanceId);
-    if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
-      return res.status(403).json({ message: 'Agent token does not match bot user' });
-    }
+    const { identity, error: refused } = resolveBotIdentity(res, user, req.query);
+    if (!identity) return refused;
+    const { agentName: resolvedAgentName, instanceId } = identity;
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
 
     // Find all pods where this agent is installed
@@ -732,7 +768,7 @@ router.get('/bot/events', longPollIpLimit, auth, requireApiTokenScopes(['agent:e
   }
 });
 
-router.post('/dm', auth, async (req: any, res: any) => {
+router.post('/dm', phase4RateLimit, auth, async (req: any, res: any) => {
   try {
     const userId = req.userId || req.user?.id;
     if (!userId) {
@@ -750,6 +786,9 @@ router.post('/dm', auth, async (req: any, res: any) => {
     const normalizedInstanceId = instanceId ? String(instanceId).toLowerCase() : null;
     if (!agentName) {
       return res.status(400).json({ message: 'agentName is required' });
+    }
+    if (requestedPodId && !isPodId(requestedPodId)) {
+      return res.status(400).json({ message: 'podId must be a pod id' });
     }
 
     const installationQuery = {
@@ -1130,7 +1169,7 @@ router.post('/agent-dm', phase4RateLimit, agentRuntimeAuth, async (req: any, res
       // and we explicitly choose stricter behavior on the new endpoint.
       const expectedUsername = AgentIdentityService.buildAgentUsername(agentName, instanceId);
       const existing = await User.findOne({
-        // Bot rows only (TASK-133 b, wren 73994): the derived name is plain
+        // Bot rows only (TASK-133 b): the derived name is plain
         // lowercase, so a person's row matches the username branch below — and
         // the §3.7 co-pod check runs AFTER `getOrCreateAgentUser`, so the probe
         // would hand the identity service a person to adopt. The legacy /room
@@ -1285,18 +1324,14 @@ router.post('/agent-dm', phase4RateLimit, agentRuntimeAuth, async (req: any, res
  * POST /bot/events/:id/ack (user API token auth)
  * For bot users to acknowledge events
  */
-router.post('/bot/events/:id/ack', auth, requireApiTokenScopes(['agent:events:ack']), async (req: any, res: any) => {
+router.post('/bot/events/:id/ack', phase4RateLimit, auth, requireApiTokenScopes(['agent:events:ack']), async (req: any, res: any) => {
   try {
     const { user, error } = await requireBotUser(req, res);
     if (error) return error;
 
-    const agentName = req.body.agentName || user.botMetadata?.agentName || null;
-    const instanceId = req.body.instanceId || user.botMetadata?.instanceId || 'default';
-    const resolvedAgentName = agentName || user.username;
-    const expectedUsername = AgentIdentityService.buildAgentUsername(resolvedAgentName, instanceId);
-    if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
-      return res.status(403).json({ message: 'Agent token does not match bot user' });
-    }
+    const { identity, error: refused } = resolveBotIdentity(res, user, req.body);
+    if (!identity) return refused;
+    const { agentName: resolvedAgentName, instanceId } = identity;
     const delivery = req.body?.result || req.body?.delivery || null;
     const deliveryId = req.body?.deliveryId || null;
     // Which consumer is acking. Phase B is keyed on this rather than flipped
@@ -1425,6 +1460,7 @@ router.post('/events/:id/ack', phase4RateLimit, agentRuntimeAuth, async (req: an
  */
 router.get(
   '/bot/pods/:podId/context',
+  phase4RateLimit,
   auth,
   requireApiTokenScopes(['agent:context:read']),
   async (req: any, res: any) => {
@@ -1433,13 +1469,9 @@ router.get(
       const { user, error } = await requireBotUser(req, res);
       if (error) return error;
 
-      const agentName = req.query.agentName || user.botMetadata?.agentName || null;
-      const instanceId = req.query.instanceId || user.botMetadata?.instanceId || 'default';
-      const resolvedAgentName = agentName || user.username;
-      const expectedUsername = AgentIdentityService.buildAgentUsername(resolvedAgentName, instanceId);
-      if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
-        return res.status(403).json({ message: 'Agent token does not match bot user' });
-      }
+      const { identity, error: refused } = resolveBotIdentity(res, user, req.query);
+      if (!identity) return refused;
+      const { agentName: resolvedAgentName, instanceId } = identity;
 
       const installation = await ensureBotPodAccess(
         user,
@@ -1495,6 +1527,7 @@ router.get(
  */
 router.get(
   '/bot/pods/:podId/messages',
+  phase4RateLimit,
   auth,
   requireApiTokenScopes(['agent:messages:read']),
   async (req: any, res: any) => {
@@ -1503,13 +1536,9 @@ router.get(
       const { user, error } = await requireBotUser(req, res);
       if (error) return error;
 
-      const agentName = req.query.agentName || user.botMetadata?.agentName || null;
-      const instanceId = req.query.instanceId || user.botMetadata?.instanceId || 'default';
-      const resolvedAgentName = agentName || user.username;
-      const expectedUsername = AgentIdentityService.buildAgentUsername(resolvedAgentName, instanceId);
-      if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
-        return res.status(403).json({ message: 'Agent token does not match bot user' });
-      }
+      const { identity, error: refused } = resolveBotIdentity(res, user, req.query);
+      if (!identity) return refused;
+      const { agentName: resolvedAgentName, instanceId } = identity;
 
       const installation = await ensureBotPodAccess(
         user,
@@ -1545,6 +1574,7 @@ router.get(
  */
 router.post(
   '/bot/pods/:podId/messages',
+  phase4RateLimit,
   auth,
   requireApiTokenScopes(['agent:messages:write']),
   async (req: any, res: any) => {
@@ -1553,13 +1583,9 @@ router.post(
       const { user, error } = await requireBotUser(req, res);
       if (error) return error;
 
-      const agentName = req.body.agentName || user.botMetadata?.agentName || null;
-      const instanceId = req.body.instanceId || user.botMetadata?.instanceId || 'default';
-      const resolvedAgentName = agentName || user.username;
-      const expectedUsername = AgentIdentityService.buildAgentUsername(resolvedAgentName, instanceId);
-      if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
-        return res.status(403).json({ message: 'Agent token does not match bot user' });
-      }
+      const { identity, error: refused } = resolveBotIdentity(res, user, req.body);
+      if (!identity) return refused;
+      const { agentName: resolvedAgentName, instanceId } = identity;
 
       const installation = await ensureBotPodAccess(
         user,
@@ -1572,7 +1598,9 @@ router.post(
         return res.status(403).json({ message: 'Bot not installed in this pod' });
       }
 
-      const { content, metadata, messageType } = req.body || {};
+      const { content, metadata, messageType, payload } = req.body || {};
+      validateAgentCardPayload(messageType, payload, payload !== undefined
+        ? AgentMessageService.sanitizeAgentContent(content) : content);
       const wouldPost = messageType === 'card' || Boolean(AgentMessageService.sanitizeAgentContent(content));
       if (wouldPost && req.body?.continueAnyway !== true) {
         const hold = await AgentSendFreshness.unseenMessages(user._id, podId);
@@ -1586,13 +1614,16 @@ router.post(
         content,
         metadata,
         messageType,
+        ...(payload !== undefined ? { payload } : {}),
         installationConfig: installation.config || null,
       });
 
       return res.json(result);
     } catch (error: any) {
       const err = error as Error & { code?: string; statusCode?: number };
-      if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+      // A message-store outage is retryable (TASK-503): 503, not 500.
+      if (err.statusCode && ((err.statusCode >= 400 && err.statusCode < 500)
+        || err.code === 'MESSAGE_STORE_UNAVAILABLE')) {
         console.warn('Bot message refused:', { code: err.code, status: err.statusCode, message: err.message });
         return res.status(err.statusCode).json({
           message: err.message,
@@ -1611,6 +1642,7 @@ router.post(
  */
 router.post(
   '/bot/threads/:threadId/comments',
+  phase4RateLimit,
   auth,
   requireApiTokenScopes(['agent:messages:write']),
   async (req: any, res: any) => {
@@ -1619,13 +1651,9 @@ router.post(
       const { user, error } = await requireBotUser(req, res);
       if (error) return error;
 
-      const agentName = req.body.agentName || user.botMetadata?.agentName || null;
-      const instanceId = req.body.instanceId || user.botMetadata?.instanceId || 'default';
-      const resolvedAgentName = agentName || user.username;
-      const expectedUsername = AgentIdentityService.buildAgentUsername(resolvedAgentName, instanceId);
-      if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
-        return res.status(403).json({ message: 'Agent token does not match bot user' });
-      }
+      const { identity, error: refused } = resolveBotIdentity(res, user, req.body);
+      if (!identity) return refused;
+      const { agentName: resolvedAgentName, instanceId } = identity;
 
       const { content, podId: requestPodId } = req.body || {};
       if (!content) {
@@ -2076,6 +2104,8 @@ router.get('/pods/:podId/files/:fileName/content', phase4RateLimit, agentRuntime
     if (!buffer) {
       return res.status(404).json({ message: 'File content not found' });
     }
+    // Set explicitly on every response that carries file bytes, so the header never depends on a default.
+    res.set('Cache-Control', 'private, no-store');
 
     const ct = String(file.contentType || '');
     const isText = isTextualContentType(ct);
@@ -2263,6 +2293,9 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
+    validateAgentCardPayload(req.body?.messageType, req.body?.payload, req.body?.payload !== undefined
+      ? AgentMessageService.sanitizeAgentContent(req.body?.content) : req.body?.content);
+
     // A total-match silence or runtime artifact is not a post. Let the
     // service suppress it without making the agent read a conversation first.
     const wouldPost = req.body?.messageType === 'card'
@@ -2277,7 +2310,7 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
     }
 
     const {
-      content, metadata, messageType, replyToMessageId, threadRootId,
+      content, metadata, messageType, replyToMessageId, threadRootId, payload,
     } = req.body || {};
     const result = await AgentMessageService.postMessage({
       agentName: installation.agentName,
@@ -2287,8 +2320,9 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       content,
       metadata,
       messageType,
+      ...(payload !== undefined ? { payload } : {}),
       replyToMessageId: replyToMessageId || null,
-      // In-thread post WITHOUT addressing (constraint 5, Sam's independence
+      // In-thread post WITHOUT addressing (constraint 5, the independence
       // rule): the thread is ambient membership, the reply edge is a ping.
       // Validated by threadRootResolver on the service side — same five
       // rejections as the human composer path.
@@ -2352,7 +2386,9 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
     // from "pod truly missing" (404) and unexpected failures (500). Without
     // this, the post-message route 500'd on every legitimate guard refusal,
     // and the gateway logged "Failed to post message: 500" floods.
-    if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+    // A message-store outage is retryable (TASK-503): 503, not 500.
+    if (err.statusCode && ((err.statusCode >= 400 && err.statusCode < 500)
+      || err.code === 'MESSAGE_STORE_UNAVAILABLE')) {
       console.warn('Agent message refused:', { code: err.code, status: err.statusCode, message: err.message });
       return res.status(err.statusCode).json({
         message: err.message,
@@ -3295,7 +3331,7 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
     // Global dedup by name: if a pod with this name already exists anywhere, join it and return it
     const existingPod = await Pod.findOne({ name })
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture');
+      .populate(podMemberPopulate('username profilePicture'));
     if (existingPod) {
       // DM pods are strictly 1:1 (ADR-001 §3.10). VALID_POD_TYPES above gates
       // the type the caller ASKED for, but this dedup branch matches on name
@@ -3336,7 +3372,7 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
           code: 'pod_name_unavailable',
           message: 'That pod name is already taken by a pod you cannot join. Pick a '
             + 'different name. To start a private conversation with a specific agent, '
-            + 'use commonly_open_dm instead of creating a pod by name.',
+            + 'use commonly_open_dm or commonly_dm_agent instead of creating a pod by name.',
         });
       };
 
@@ -3387,7 +3423,7 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
       if (!isMember) {
         existingPod.members.push(agentUser._id);
         await existingPod.save();
-        await existingPod.populate('members', 'username profilePicture');
+        await existingPod.populate(podMemberPopulate('username profilePicture'));
       }
       // Ensure an AgentInstallation exists so the agent appears in the Agents section
       if (sourceInstall) {
@@ -3439,7 +3475,7 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
     const pod = await newPod.save();
 
     await pod.populate('createdBy', 'username profilePicture');
-    await pod.populate('members', 'username profilePicture');
+    await pod.populate(podMemberPopulate('username profilePicture'));
 
     if (process.env.PG_HOST && PGPod) {
       try {
@@ -3711,13 +3747,24 @@ router.get('/pods/:podId/integrations/:integrationId/messages', phase4RateLimit,
         after,
       });
     } else if (integration.type === 'groupme') {
-      if (!integration.config?.accessToken || !integration.config?.groupId) {
+      // The token lives in connectorSecrets; the row's own `accessToken` is not
+      // read (TASK-539). A ref whose secret is gone answers like a missing token.
+      // Any other failure (key ring, decryption, database) is a 500.
+      const { readGroupmeAccessToken } = require('../services/chatConnectorTokens');
+      const { ConnectorSecretNotFoundError } = require('../services/connectorSecrets');
+      let accessToken: string | undefined;
+      try {
+        accessToken = await readGroupmeAccessToken(integration.config);
+      } catch (error) {
+        if (!(error instanceof ConnectorSecretNotFoundError)) throw error;
+      }
+      if (!accessToken || !integration.config?.groupId) {
         return res.status(400).json({ message: 'GroupMe integration missing accessToken or groupId' });
       }
       const GroupMeService = require('../services/groupmeService');
       messages = await GroupMeService.fetchMessages({
         groupId: integration.config.groupId,
-        accessToken: integration.config.accessToken,
+        accessToken,
         limit,
         before,
         after,
@@ -3730,7 +3777,9 @@ router.get('/pods/:podId/integrations/:integrationId/messages', phase4RateLimit,
 
     return res.json({ messages });
   } catch (error: any) {
-    console.error('Error fetching messages for agent:', error);
+    // The message only: a provider's HTTP error object carries its request
+    // config, which holds the credential (a query param or an auth header).
+    console.error('Error fetching messages for agent:', (error as Error)?.message);
     return res.status(500).json({ message: (error as Error).message || 'Failed to fetch messages' });
   }
 });

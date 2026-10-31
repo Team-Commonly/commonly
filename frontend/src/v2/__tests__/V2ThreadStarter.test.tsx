@@ -24,6 +24,7 @@ jest.mock('../components/V2MessageRow', () => {
 // jsdom has no scrollIntoView; the component auto-scrolls on mount.
 beforeAll(() => {
   Element.prototype.scrollIntoView = jest.fn();
+  Element.prototype.scrollTo = jest.fn();
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,
     value: { writeText: jest.fn().mockResolvedValue(undefined) },
@@ -67,6 +68,7 @@ const makeDetail = (overrides = {}) => ({
   agents: [],
   sendMessage: jest.fn(),
   loading: false,
+  initialMessagesLoaded: true,
   error: null,
   refresh: jest.fn(),
   ...overrides,
@@ -109,15 +111,22 @@ describe('V2Thread teaching empty states', () => {
     expect(document.querySelector('.v2-thread__empty-line')).toHaveTextContent('no messages yet');
   });
 
-  test('compact header shows singular agents and names both counts for assistive tech', () => {
+  test('a failed first history read never shows a solo-pod invite', () => {
+    renderChat(makeDetail({ initialLoadComplete: true, initialMessagesLoaded: false, error: 'Messages unavailable' }));
+    expect(screen.queryByRole('button', { name: 'Copy invite link' })).not.toBeInTheDocument();
+    expect(document.querySelector('.v2-teammate')).toBeNull();
+  });
+
+  test('compact header shows the member count; the agent count stays in the desktop meta', () => {
     const detail = makeDetail({
       agents: [{ agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria' }],
     });
     renderChat(detail);
 
-    const compact = screen.getByRole('group', { name: '1 member, 1 agent' });
-    expect(compact).toHaveTextContent('1 · 1 agent');
-    expect(compact.querySelector('[aria-hidden="true"]')).toHaveTextContent('1 · 1 agent');
+    const compact = document.querySelector('.v2-pod-header__meta--compact');
+    expect(compact).toHaveTextContent('1 member');
+    expect(compact).not.toHaveTextContent('agent');
+    expect(document.querySelector('.v2-pod-header__meta:not(.v2-pod-header__meta--compact)')).toHaveTextContent('1 agent');
   });
 
   test('multi-member regular pods use the same teaching state', () => {
@@ -316,6 +325,8 @@ describe('V2Thread just-created Pod starter panel', () => {
     expect(await screen.findByRole('button', { name: 'Run it here' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Bring your own' })).toBeInTheDocument();
     expect(screen.queryByText('Bring in people or an agent, or start the conversation yourself.')).not.toBeInTheDocument();
+    expect(axios.post).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy invite link' }));
     await waitFor(() => {
       expect(axios.post).toHaveBeenCalledWith(
         '/api/pods/p1/invites',
@@ -326,7 +337,6 @@ describe('V2Thread just-created Pod starter panel', () => {
 
     const inviteUrl = `${window.location.origin}/v2/invite/${token}`;
     expect(await screen.findByLabelText('Invite link for this pod')).toHaveValue(inviteUrl);
-    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
     await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(inviteUrl));
 
     fireEvent.click(screen.getByRole('button', { name: 'Run it here' }));
@@ -442,4 +452,155 @@ describe('V2Thread just-created Pod starter panel', () => {
     expect(screen.queryByText('Your pod is ready')).not.toBeInTheDocument();
     expect(sessionStorage.getItem('v2.justCreated.p1')).toBeNull();
   });
+});
+
+describe('second-person prompt placements', () => {
+  beforeEach(() => {
+    jest.clearAllMocks(); sessionStorage.clear(); localStorage.clear();
+    axios.post.mockReset();
+    navigator.clipboard.writeText.mockReset().mockResolvedValue(undefined);
+    axios.get.mockImplementation((url) => Promise.resolve({ data: /\/invites$/.test(url) ? [] : {} }));
+  });
+  const member = { _id: 'u1', username: 'solo-user', isBot: false };
+  const agent = { _id: 'bot', username: 'scout', isBot: true };
+  const messages = [
+    { id: '10', pod_id: 'p1', user_id: 'u1', content: 'Help with this launch', message_type: 'text', created_at: '2026-10-25T10:00:00Z', user: { username: 'solo-user', isBot: false } },
+    { id: '11', pod_id: 'p1', user_id: 'bot', content: 'Here is the first plan', message_type: 'text', created_at: '2026-10-25T10:01:00Z', user: { username: 'scout', isBot: true } },
+  ];
+  const withReply = (pod = { _id: 'p1', name: 'Launch', type: 'chat' }) => makeDetail({
+    pod, members: [member, agent], messages, hasMore: false,
+    agents: [{ agentName: 'scout', instanceId: 'default', status: 'active', displayName: 'Scout' }],
+  });
+  test('the empty state offers the card without minting or taking composer focus', async () => {
+    renderChat(makeDetail());
+    expect(await screen.findByRole('region', { name: 'Invite a teammate to My Workspace' })).toBeInTheDocument();
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(screen.getByRole('textbox')).toHaveFocus();
+  });
+  test('the group reply offers one prompt and joining a second human removes it', async () => {
+    const detail = withReply();
+    const view = renderChat(detail);
+    expect(await screen.findByText(/They can work with Scout too/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Copy invite link' })).toHaveLength(1);
+    view.rerender(<AuthContext.Provider value={authValue}><MemoryRouter>
+      <V2Thread detail={{ ...detail, members: [...detail.members, { _id: 'other', isBot: false }] }} />
+    </MemoryRouter></AuthContext.Provider>);
+    expect(screen.queryByRole('button', { name: 'Copy invite link' })).not.toBeInTheDocument();
+  });
+  test('socket messages after a failed initial history read do not qualify as the first reply', () => {
+    const failed = makeDetail({ initialLoadComplete: true, initialMessagesLoaded: false, error: 'History unavailable', hasMore: false });
+    const view = renderChat(failed);
+    const liveDetail = { ...withReply(), initialMessagesLoaded: false, error: 'History unavailable' };
+    view.rerender(<AuthContext.Provider value={authValue}><MemoryRouter><V2Thread detail={liveDetail} /></MemoryRouter></AuthContext.Provider>);
+    expect(screen.getAllByText('Rendered message')).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: 'Copy invite link' })).not.toBeInTheDocument();
+  });
+
+  test('Lily’s Drop B ruling suppresses the automatic card in Scout’s owned workspace', async () => {
+    const detail = withReply({ _id: 'p1', name: 'My Workspace', type: 'chat', createdBy: { _id: 'u1' } });
+    const username = 'scout-u0123456789';
+    detail.agents = [{ agentName: 'scout', instanceId: 'u0123456789', status: 'active', displayName: 'Scout' }];
+    detail.members = [member, { ...agent, username }];
+    detail.messages = [messages[0], { ...messages[1], user: { username, isBot: true } }];
+    renderChat(detail);
+    await act(async () => { await Promise.resolve(); });
+    expect(document.querySelector('.v2-teammate')).toBeNull();
+    expect(axios.get.mock.calls.filter(([url]) => url.endsWith('/invites'))).toHaveLength(0);
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+  test('a pending invite press completes once across expanding and collapsing its thread', async () => {
+    let finish;
+    axios.post.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const detail = withReply();
+    detail.messages = [messages[0], { ...messages[1], thread_root_id: '10' }];
+    renderChat(detail);
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy invite link' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Expand thread, 1 reply' }));
+    expect(screen.getByRole('button', { name: 'Creating link…' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse' }));
+    await act(async () => { finish({ data: { token: 'a'.repeat(32) } }); });
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(`${window.location.origin}/v2/invite/${'a'.repeat(32)}`);
+    expect(axios.post).toHaveBeenCalledTimes(1);
+  });
+
+  // TASK-583: on a reload the card mounts after history settles, below where
+  // the arrival effect already followed. A follow scrolls the message list
+  // itself; scrollIntoView would also scroll the overflow-hidden main pane and
+  // take the whole thread off screen (UX Lead on #2870), so it must never run.
+  const endFollows = () => Element.prototype.scrollTo.mock.contexts
+    .filter((el) => el.classList.contains('v2-chat__messages')).length;
+  const clearScrolls = () => {
+    Element.prototype.scrollTo.mockClear();
+    Element.prototype.scrollIntoView.mockClear();
+  };
+  const rerenderChat = (view, detail) => view.rerender(<AuthContext.Provider value={authValue}><MemoryRouter>
+    <V2Thread detail={detail} />
+  </MemoryRouter></AuthContext.Provider>);
+  // `byReader` fires the reader's own input first. Without it, the scroll is
+  // treated as part of the app's smooth follow, as in a real browser.
+  const scrollListTo = (scrollTop, { byReader = true } = {}) => {
+    const list = document.querySelector('.v2-chat__messages');
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, value: 2000 });
+    Object.defineProperty(list, 'clientHeight', { configurable: true, value: 400 });
+    if (byReader) fireEvent.wheel(list);
+    list.scrollTop = scrollTop;
+    fireEvent.scroll(list);
+  };
+  test('when the invite card mounts with the reader at the end, the thread follows it into view', async () => {
+    const settled = withReply();
+    const view = renderChat({ ...settled, hasMore: true });
+    expect(document.querySelector('.v2-teammate')).toBeNull();
+    scrollListTo(1600);
+    clearScrolls();
+    rerenderChat(view, settled);
+    expect(await screen.findByRole('button', { name: 'Copy invite link' })).toBeInTheDocument();
+    expect(endFollows()).toBe(1);
+    expect(Element.prototype.scrollTo.mock.calls.at(-1)[0]).toEqual({ top: 2000, behavior: 'smooth' });
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+  });
+  // UX Lead on e0fd1523: the open-time follow is a smooth scroll whose own
+  // mid-animation scroll events read as the reader scrolling up, so a card
+  // mounting after the first of them was skipped and the list stopped one card
+  // short. 6 of 18 opens at 1440.
+  test('a card that mounts while a follow is still animating is still followed', async () => {
+    const settled = withReply();
+    const arrived = { ...settled, messages: [...settled.messages, {
+      id: '12', pod_id: 'p1', user_id: 'bot', content: 'And a second step', message_type: 'text',
+      created_at: '2026-10-25T10:02:00Z', user: { username: 'scout', isBot: true },
+    }] };
+    const view = renderChat({ ...settled, hasMore: true });
+    scrollListTo(1600);
+    clearScrolls();
+    // An arrival at the end starts a smooth follow...
+    rerenderChat(view, { ...arrived, hasMore: true });
+    expect(endFollows()).toBe(1);
+    clearScrolls();
+    // ...whose first animation frame is still far from the end. That is the
+    // app scrolling, not the reader (no wheel/touch/key/pointer input).
+    scrollListTo(800, { byReader: false });
+    rerenderChat(view, arrived);
+    expect(await screen.findByRole('button', { name: 'Copy invite link' })).toBeInTheDocument();
+    expect(endFollows()).toBe(1);
+  });
+  test('a reader scrolled up stays put when the invite card mounts', async () => {
+    const settled = withReply();
+    const view = renderChat({ ...settled, hasMore: true });
+    scrollListTo(100);
+    clearScrolls();
+    rerenderChat(view, settled);
+    expect(await screen.findByRole('button', { name: 'Copy invite link' })).toBeInTheDocument();
+    expect(endFollows()).toBe(0);
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  test('dismissing the state-owned invite leaves the transcript and composer mounted', async () => {
+    renderChat(withReply());
+    fireEvent.click(await screen.findByRole('button', { name: 'Dismiss' }));
+    expect(screen.queryByRole('button', { name: 'Copy invite link' })).not.toBeInTheDocument();
+    expect(screen.getAllByText('Rendered message')).toHaveLength(2);
+    expect(screen.getByRole('textbox')).toBeInTheDocument();
+  });
+
 });

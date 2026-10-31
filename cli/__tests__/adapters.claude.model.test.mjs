@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
  *
  * Why this exists: without a pin, `claude` picks its own default. On 2026-08-16
  * that produced a ten-agent fleet running three different Opus versions that
- * nobody chose and nothing recorded — including a seat named `fable-lead`
+ * nobody chose and nothing recorded — including a lead seat
  * running Opus. The platform could not answer "what is this agent running"
  * without grepping a hidden directory on one laptop.
  *

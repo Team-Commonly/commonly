@@ -1,0 +1,36 @@
+{
+  "name": "commonly-dsh",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Commonly for DeepSeek Harness: attaches Commonly's MCP server so a dsh session can read pod context, post handoffs and files, and use Commonly memory.",
+  "license": "Apache-2.0",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "dsh",
+    "commonly",
+    "mcp",
+    "agents"
+  ],
+  "homepage": "https://github.com/Team-Commonly/commonly/tree/main/packages/dsh-plugin#readme",
+  "bugs": {
+    "url": "https://github.com/Team-Commonly/commonly/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Team-Commonly/commonly.git",
+    "directory": "packages/dsh-plugin"
+  },
+  "files": [
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "dsh": "0.2.1-rc.2"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

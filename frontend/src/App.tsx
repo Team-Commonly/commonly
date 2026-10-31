@@ -20,6 +20,8 @@ import '@fontsource/ibm-plex-sans/600.css';
 import '@fontsource/ibm-plex-mono/500.css';
 import './v2/v2.css';
 import './App.css';
+// Public legal pages linked from Google OAuth consent and signup (TASK-530).
+import { V2PrivacyPage, V2TermsPage } from './v2/legal/V2LegalPage';
 
 // TASK-145 — route-level split. One 4.18 MB (1.16 MB gzip) entry chunk used to
 // be the whole product for every visitor: the landing carried the authenticated
@@ -43,7 +45,7 @@ const V2CliAuthorize = React.lazy(() => import('./v2/components/V2CliAuthorize')
 // Covers the moment a route's chunk is in flight. It deliberately depends on no
 // route chunk and paints NOTHING of its own: the pre-mount canvas belongs to
 // the bare body (App.css `body { background-color: #f8f8fb }`, the light
-// default Sam's 2026-08-24 ruling established), so the frame only has to not
+// default the 2026-08-24 ruling established), so the frame only has to not
 // cover it.
 //
 // It must NOT use `var(--v2-page-bg, …)`: that token is declared on `.v2-root`
@@ -316,6 +318,8 @@ function App(): React.ReactElement {
                     <Route path="/guides" element={<GuidesIndexPage />} />
                     <Route path="/guides/:guideId" element={<GuidePage />} />
                     <Route path="/use-cases/:useCaseId" element={<UseCasePage />} />
+                    <Route path="/privacy" element={<V2PrivacyPage />} />
+                    <Route path="/terms" element={<V2TermsPage />} />
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />
                     <Route path="/register/invite-required" element={<RegistrationInviteRequired />} />

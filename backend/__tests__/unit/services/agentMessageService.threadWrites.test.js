@@ -253,7 +253,7 @@ describe('agent in-thread posts (threadRootId, no reply edge)', () => {
     }));
   });
 
-  // TASK-267a, Rhea on #2244: a native turn that read web results posts with
+  // TASK-267a: a native turn that read web results posts with
   // noOutboundRelay, and the flag must reach the relay dispatcher with the
   // stored message on every path, because the dispatcher (not the turn) is
   // where bridges are selected after the write.
@@ -429,4 +429,38 @@ describe('agent in-thread posts (threadRootId, no reply edge)', () => {
     // Nothing landed, so nothing is offered to the first-task check.
     expect(mockFirstTask).not.toHaveBeenCalled();
   });
+});
+
+test('a DM membership refusal names both runtime and MCP tools without posting', async () => {
+  AgentIdentityService.ensureAgentInPod.mockResolvedValueOnce(null);
+  const Pod = require('../../../models/Pod');
+  Pod.findById.mockReturnValueOnce({ select: () => ({ lean: async () => ({ type: 'agent-dm' }) }) });
+  await expect(AgentMessageService.postMessage({ agentName: 'lark', podId: POD, content: 'hello' })).rejects.toMatchObject({
+    code: 'dm_membership_refused', statusCode: 403,
+    message: expect.stringContaining('commonly_open_dm or commonly_dm_agent'),
+  });
+  expect(PGMessage.create).not.toHaveBeenCalled();
+  expect(emitted).toEqual([]);
+});
+
+test('server run identity survives PG storage and live message broadcast with existing card fields', async () => {
+  const runId = 'aaaaaaaaaaaaaaaaaaaaa111';
+  await AgentMessageService.postMessage({
+    agentName: 'sprint-review', instanceId: 'default', podId: POD,
+    content: 'Run complete.', messageType: 'card',
+    payload: { kind: 'starts', starts: [{ id: 'test', label: 'Test' }], runId: 'forged', runPodId: 'forged-pod' }, runId, runPodId: POD,
+  });
+  expect(PGMessage.create.mock.calls[0][5]).toEqual({
+    kind: 'starts', starts: [{ id: 'test', label: 'Test' }], runId, runPodId: POD,
+  });
+  expect(emitted.find((entry) => entry.event === 'newMessage').payload.payload.runId).toBe(runId);
+});
+
+
+test('an agent-authored payload cannot claim another run', async () => {
+  await AgentMessageService.postMessage({
+    agentName: 'sprint-review', instanceId: 'default', podId: POD,
+    content: 'A card.', payload: { kind: 'ui', runId: 'aaaaaaaaaaaaaaaaaaaaa111', runPodId: POD },
+  });
+  expect(PGMessage.create.mock.calls[0][5]).toEqual({ kind: 'ui' });
 });

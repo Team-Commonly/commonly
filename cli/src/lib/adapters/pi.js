@@ -44,7 +44,7 @@ import {
   spawnCredentials,
 } from '../upstream-refusal.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
-import { effectiveSandboxTrust } from '../environment.js';
+import { effectiveSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
 import { GRANT_BROKER_REFUSAL, isGrantBrokerUrl } from './pi-mcp-client.mjs';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn } from '../mcp-home.js';
@@ -100,7 +100,7 @@ const substitutePlaceholders = (value, ctx) => {
  * deliberately not friendlier than the guard's — a normalized `'HTTP'` or a
  * padded `' http '` is a shape the guard refuses as an unknown transport, and an
  * adapter that accepted one would be running something the guard never judged
- * (Vera, Connectors 69776). The schema admits `http`/`stdio`/`sse`
+ * The schema admits `http`/`stdio`/`sse`
  * (environment.js:236) and admits an ABSENT transport, which the guard reads as
  * stdio; that is what this reads too.
  */
@@ -129,8 +129,7 @@ const originOf = (value) => {
  * environment is not usable for this: the kernel keeps the copy the process was
  * started with, so a same-user child could read the token back with
  * `ps eww $PPID` / `/proc/$PPID/environ` even after the bridge deleted its own
- * copy — which is what the previous channel did, and the row this closes
- * (Vera, Connectors).
+ * copy — which is what the previous channel did, and the row this closes.
  *
  * WHICH shape an entry becomes is decided by `transport` — the same field, read
  * with the same default and the same exact comparison the daemon's
@@ -141,7 +140,7 @@ const originOf = (value) => {
  * `${COMMONLY_AGENT_TOKEN}` in the command is one of the known placeholders), and
  * a presence-classifier then ran that command as stdio with the real token
  * substituted. The guard's judgement and the adapter's disagreed, and the adapter
- * is what executes (Vera, Connectors 69774).
+ * is what executes.
  *
  * The http half also enforces the guard's own origin rule, so the HTTP half does
  * not depend on a guard that may not be on the machine: `auditDeclaredMcp`
@@ -153,7 +152,7 @@ const originOf = (value) => {
  *
  * The grant broker is refused outright, by PATH rather than by entry name: it is
  * the one http entry that carries authority rather than data, and pi confines on
- * no host. wren's ruling for TASK-063 (`isGrantBrokerUrl` in pi-mcp-client.mjs),
+ * no host. The ruling for TASK-063 (`isGrantBrokerUrl` in pi-mcp-client.mjs),
  * the daemon-side half of the same refusal the server makes at the projection —
  * this is the half that holds on deploy skew, when the row names no adapter for
  * the server to key on, and in any backend older than the refusal.
@@ -162,7 +161,7 @@ const originOf = (value) => {
  * a declared stdio command is executed with no allowlist check, here and in both
  * sibling adapters, so it depends entirely on the guard — `auditDeclaredMcp`
  * admits only the shipped commonly MCP server or a command already present in the
- * local record, and that rule exists nowhere else (Vera, 69778; TASK-069).
+ * local record, and that rule exists nowhere else (TASK-069).
  */
 export const resolveMcpServers = (mcpServers, ctx = {}) => {
   const carried = [];
@@ -295,7 +294,7 @@ export const sessionExists = async (sessionDir, sessionId) => {
  * one does not start.
  *
  * The trust is read THROUGH the legacy table (`effectiveSandboxTrust`), not
- * raw. A stored `internal` means `public` (Vera 69592, Wren 69585) and every
+ * raw. A stored `internal` means `public` and every
  * other gate in this package resolves it that way: the attach path
  * (`agent.js`), the mode resolver (`sandbox/mode.js`) and the grant-broker
  * guard. Reading it raw here made this gate the one site that failed OPEN — a
@@ -306,6 +305,7 @@ export const sessionExists = async (sessionDir, sessionId) => {
  */
 export const assertNoSandboxDeclared = (environment = {}) => {
   const sandbox = environment?.sandbox || {};
+  refuseWorkspaceTrust(sandbox, 'pi');
   if (effectiveSandboxTrust(sandbox.trust) === 'public') {
     throw new Error('pi adapter: public-trust seats are not supported — pi has no enforced sandbox; do not attach a pi seat to a stranger-readable pod');
   }

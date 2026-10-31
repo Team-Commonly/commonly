@@ -38,10 +38,15 @@ tier1('commonly verify wave 1 — production HTTP routes', () => {
     // Importing the factory must not connect Mongo at module scope.
     expect(mongoose.connection.readyState).toBe(0);
     const { createApp } = require('../../server');
+    expect(() => createApp({ startServices: true })).toThrow('Service startup is singleton-only');
     expect(mongoose.connection.readyState).toBe(0);
     await setupMongoDb();
     pg = await setupPgDb();
+    // A test app registers no boot job on the shared connection (the
+    // registry bootstrap, the grant-owner backfill): those are the singleton's.
+    const openListeners = mongoose.connection.listenerCount('open');
     app = createApp();
+    expect(mongoose.connection.listenerCount('open')).toBe(openListeners);
     owner = await User.create({ username: 'verify-owner', email: 'verify-owner@test.com', password: 'password123' });
     other = await User.create({ username: 'verify-other', email: 'verify-other@test.com', password: 'password123' });
     ownerToken = jwt.sign({ id: String(owner._id) }, process.env.JWT_SECRET);

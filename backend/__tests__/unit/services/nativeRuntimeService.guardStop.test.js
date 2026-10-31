@@ -170,7 +170,7 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(posted()).toEqual(['Here is the changelog. I could not use the blog page.']);
   });
 
-  // Rhea on #2305: the extra round is one model call, not the rest of the budget.
+  // The extra round is one model call, not the rest of the budget.
   describe('the extra round is one model call', () => {
     const neverAsked = reply('A later round.');
 
@@ -298,6 +298,68 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
   });
 
+  // 10-25: the recovery round was stopped though every kept result passed the
+  // check on its own. The rest are set aside for one last round.
+  test('a stop in the extra round sets aside the web results left and answers in one last round', async () => {
+    chatReplies = [
+      toolCalls(fetchCall('c1', CLEAN_URL), fetchCall('c2', LATER_URL)),
+      toolCalls(fetchCall('c3', STOPPED_URL)),
+      guardStop,
+      guardStop,
+      reply('Here is what I can say without those pages.'),
+    ];
+
+    const result = await runAgent(hostedInstall(), mention);
+
+    expect(result.status).toBe('succeeded');
+    expect(chatBodies).toHaveLength(5);
+    const last = JSON.stringify(chatBodies[4].messages);
+    expect(last).not.toContain(STOPPED_TEXT);
+    expect(last).not.toContain(CLEAN_TEXT);
+    expect(last).not.toContain(LATER_TEXT);
+    expect(offeredIn(chatBodies[4])).toEqual(['commonly_post_message']);
+    expect(savedRun.webSetAside).toBe(3);
+    expect(posted()).toEqual(['Here is what I can say without those pages.']);
+  });
+
+  test('text the model wrote after a web read is cleared too, its tool calls kept', async () => {
+    const quoting = toolCalls(fetchCall('c3', STOPPED_URL));
+    quoting.data.choices[0].message.content = `Noting: ${CLEAN_TEXT}`;
+    chatReplies = [
+      toolCalls(fetchCall('c1', CLEAN_URL), fetchCall('c2', LATER_URL)),
+      quoting,
+      guardStop,
+      guardStop,
+      reply('Answered without the pages.'),
+    ];
+
+    const result = await runAgent(hostedInstall(), mention);
+
+    expect(result.status).toBe('succeeded');
+    const last = chatBodies[4].messages;
+    expect(JSON.stringify(last)).not.toContain(CLEAN_TEXT);
+    // Every tool result still follows the assistant call that asked for it.
+    const calls = last.filter((m) => m.role === 'assistant').flatMap((m) => (m.tool_calls || []).map((c) => c.id));
+    last.filter((m) => m.role === 'tool').forEach((m) => expect(calls).toContain(m.tool_call_id));
+  });
+
+  test('a third stop ends the run with the fixed line', async () => {
+    chatReplies = [
+      toolCalls(fetchCall('c1', CLEAN_URL)),
+      toolCalls(fetchCall('c2', STOPPED_URL)),
+      guardStop,
+      guardStop,
+      guardStop,
+      reply('Never asked.'),
+    ];
+
+    const result = await runAgent(hostedInstall(), mention);
+
+    expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'guardrail_blocked' }));
+    expect(chatBodies).toHaveLength(5);
+    expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+  });
+
   test('a stop with no web read checks nothing and ends with the fixed line', async () => {
     chatReplies = [guardStop];
 
@@ -307,14 +369,30 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
   });
 
-  test('a model error with nothing posted gets the fixed line and uses no turn', async () => {
+  test('a model error names the model and HTTP reason and uses no turn', async () => {
     chatReplies = [{ status: 502, headers: {}, data: { error: 'upstream unavailable' } }];
 
     const result = await runAgent(hostedInstall(), mention);
 
     expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'llm_error' }));
     expect(savedRun.metered).toBe(false);
-    expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+    expect(posted()).toEqual([`Model deepseek-v4-flash could not answer (HTTP 502). ${HOSTED_RUN_FAILED_LINE}`]);
+    expect(chatBodies[0].disable_fallbacks).toBe(true);
+  });
+
+  test.each([
+    ['ECONNABORTED', 'request timed out'],
+    ['ETIMEDOUT', 'request timed out'],
+    ['ECONNRESET', 'connection failed'],
+  ])('a transport error %s reports a safe category without the raw error', async (code, reason) => {
+    axios.post.mockRejectedValueOnce(Object.assign(new Error('secret-token-in-proxy-url'), { code }));
+    const result = await runAgent(hostedInstall(), mention);
+    expect(result).toMatchObject({ status: 'failed', errorKind: 'llm_error' });
+    expect(savedRun.metered).toBe(false);
+    expect(posted()).toEqual([`Model deepseek-v4-flash could not answer (${reason}). ${HOSTED_RUN_FAILED_LINE}`]);
+    expect(posted().join('')).not.toContain('secret-token');
+    expect(savedRun.errorMessage).not.toContain('secret-token');
+    expect(result.errorMessage).not.toContain('secret-token');
   });
 
   test('a thrown fallback post fails unmetered and tries the fixed line', async () => {

@@ -7,7 +7,8 @@
  *  - createClaimKeeper: win/lose/fail-open, renewal loss, release semantics
  *  - splitForChat: short passthrough, boundary preference, fences atomic,
  *    never cuts content
- *  - deliverChatReply: single/split/attach/attach-fallback modes
+ *  - deliverChatReply: single/split/attach/attach-fallback modes, and the
+ *    end-of-turn unseen-messages hold (TASK-535)
  *
  * The run-loop wiring of these pieces is covered in run-loop.test.mjs.
  */
@@ -637,7 +638,7 @@ describe('deliverChatReply', () => {
     ]);
   });
 
-  // Prose overflow is a THREAD now, not an attachment (Sam 57691).
+  // Prose overflow is a THREAD now, not an attachment.
   //
   // These pin the rung itself, not just its return value. The old behaviour
   // and the new one both post a first message containing the reply's opening
@@ -764,7 +765,7 @@ describe('deliverChatReply', () => {
 
   // Was 'a document-sized reply uploads whole and posts one lead message with
   // the file card'. Its fixture is eight paragraphs of prose, which is the
-  // case Sam 57691 reclassified: prose that outgrew a message is not a
+  // case that was reclassified: prose that outgrew a message is not a
   // document. The test's INTENT — nothing is cut, the whole reply survives —
   // is preserved verbatim below, now carried by the thread instead of a file.
   test('a document-sized reply keeps every word, now in a thread rather than a file', async () => {
@@ -926,6 +927,199 @@ describe('deliverChatReply', () => {
       mode: 'refused', messages: 1, attemptedMessages: splitForChat(text).length, reason: 'consecutive_run_cap',
     });
     expect(post).toHaveBeenCalledTimes(2);
+  });
+});
+
+// TASK-535. A long turn ends after the pod has moved on, and the backend's
+// send-time freshness guard answers every post with 409 `unseen_messages`.
+// Before the fix the thread headline, the attach card and the split fallback
+// each hit that same hold in turn and the reply was
+// lost. These pin the rule: on the first hold of a delivery, re-read the
+// pod tail ONCE, then post with continueAnyway — and every word still lands
+// exactly once.
+describe('deliverChatReply — the unseen-messages hold at end of turn (TASK-535)', () => {
+  const messagesPath = '/api/agents/runtime/pods/pod-1/messages';
+  // The shape api.js throws for a non-2xx response: status + parsed body.
+  const unseenHold = (unseenCount = 12) => Object.assign(
+    new Error(`There are ${unseenCount} unseen messages. Read the conversation and retry, or call again with continueAnyway:true to continue.`),
+    { status: 409, body: { code: 'unseen_messages', unseenCount, messages: [] } },
+  );
+  const prose = Array.from({ length: 8 }, (_, i) => `Point ${i}: ${'x'.repeat(300)}`).join('\n\n');
+  const fence = `\`\`\`js\n${'const x = 1;\n'.repeat(72)}\`\`\``; // one indivisible oversize unit
+  const rereads = (get) => get.mock.calls.filter(([p]) => p === messagesPath);
+  // A call that threw delivered nothing, so "posted" is every call whose
+  // promise resolved. Calls are settled in order, so pairing each call with
+  // whether it rejected is exact.
+  const deliveredBodies = async (post) => {
+    const settled = await Promise.allSettled(post.mock.results.map((r) => r.value));
+    return post.mock.calls
+      .filter((_, i) => settled[i].status === 'fulfilled')
+      .map(([, body]) => body);
+  };
+
+  test('thread rung: a held headline re-reads once, then the whole thread posts once with continueAnyway', async () => {
+    const post = jest.fn()
+      .mockRejectedValueOnce(unseenHold())
+      .mockResolvedValue({ message: { id: 'root-1' } });
+    const get = jest.fn().mockResolvedValue({ messages: [] });
+    const upload = jest.fn();
+    const log = jest.fn();
+
+    const res = await deliverChatReply({ client: { post, get, upload }, podId: 'pod-1', text: prose, log });
+
+    const chunks = splitForChat(prose);
+    expect(res).toMatchObject({ mode: 'thread', messages: chunks.length, threadRootId: 'root-1' });
+    expect(upload).not.toHaveBeenCalled();
+    // The held attempt carried no override; the re-read is the tail read that
+    // records a seen cursor (no before / threadRootId), at the route's cap.
+    expect(post.mock.calls[0][1]).toEqual({ content: chunks[0] });
+    expect(rereads(get)).toEqual([[messagesPath, { limit: 50 }]]);
+    // Exactly once: each chunk delivered one time, all under the override.
+    const delivered = await deliveredBodies(post);
+    expect(delivered.map((b) => b.content)).toEqual(chunks);
+    expect(delivered.every((b) => b.continueAnyway === true)).toBe(true);
+    expect(delivered.slice(1).every((b) => b.threadRootId === 'root-1')).toBe(true);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('12 unseen message(s) in pod pod-1'));
+  });
+
+  test('attach rung: a held file card re-reads once and posts once — the upload is not repeated', async () => {
+    const post = jest.fn()
+      .mockRejectedValueOnce(unseenHold())
+      .mockResolvedValue({});
+    const get = jest.fn().mockResolvedValue({ messages: [] });
+    const upload = jest.fn().mockResolvedValue({
+      fileName: 'srv.md', originalName: 'reply.md', size: 950, kind: 'document',
+    });
+
+    const res = await deliverChatReply({ client: { post, get, upload }, podId: 'pod-1', text: fence });
+
+    expect(res).toEqual({ mode: 'attach', messages: 1 });
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(rereads(get)).toHaveLength(1);
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(post.mock.calls[0][1].continueAnyway).toBeUndefined();
+    const delivered = await deliveredBodies(post);
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toMatchObject({ continueAnyway: true });
+    expect(delivered[0].content).toContain('[[upload:srv.md');
+  });
+
+  test('split rung: a held first chunk re-reads once, then every chunk posts once with continueAnyway', async () => {
+    const post = jest.fn()
+      .mockRejectedValueOnce(unseenHold())
+      .mockResolvedValue({});
+    const get = jest.fn().mockResolvedValue({ messages: [] });
+    const upload = jest.fn().mockRejectedValue(new Error('older server'));
+    const text = `${'y'.repeat(350)}\n\n${fence}\n\n${'z'.repeat(350)}`;
+
+    const res = await deliverChatReply({ client: { post, get, upload }, podId: 'pod-1', text });
+
+    const chunks = splitForChat(text);
+    expect(res).toEqual({ mode: 'split-fallback', messages: chunks.length });
+    expect(rereads(get)).toHaveLength(1);
+    const delivered = await deliveredBodies(post);
+    expect(delivered.map((b) => b.content)).toEqual(chunks);
+    expect(delivered.every((b) => b.continueAnyway === true)).toBe(true);
+  });
+
+  test('the override is per DELIVERY: a later rung carries it without a second re-read', async () => {
+    // The same shape with the fix in place, made harder: the override retry
+    // on the thread headline dies for an unrelated reason, so the ladder
+    // falls through to attach. That rung must not re-read or wait for its own
+    // hold — it posts with the override straight away.
+    const post = jest.fn()
+      .mockRejectedValueOnce(unseenHold())
+      .mockRejectedValueOnce(Object.assign(new Error('upstream 503'), { status: 503 }))
+      .mockResolvedValue({});
+    const get = jest.fn().mockResolvedValue({ messages: [] });
+    const upload = jest.fn().mockResolvedValue({ fileName: 'srv.md', originalName: 'reply.md' });
+
+    const res = await deliverChatReply({ client: { post, get, upload }, podId: 'pod-1', text: prose });
+
+    expect(res).toEqual({ mode: 'attach', messages: 1 });
+    expect(rereads(get)).toHaveLength(1);
+    expect(post).toHaveBeenCalledTimes(3);
+    expect(post.mock.calls[2][1]).toMatchObject({ continueAnyway: true });
+    expect(await deliveredBodies(post)).toHaveLength(1);
+  });
+
+  test('a hold on a thread continuation also re-reads once, and no chunk posts twice', async () => {
+    let n = 0;
+    const post = jest.fn().mockImplementation(async () => {
+      n += 1;
+      if (n === 3) throw unseenHold(2); // a peer posted mid-thread
+      return { message: { id: 'root-1' } };
+    });
+    const get = jest.fn().mockResolvedValue({ messages: [] });
+
+    const res = await deliverChatReply({ client: { post, get, upload: jest.fn() }, podId: 'pod-1', text: prose });
+
+    const chunks = splitForChat(prose);
+    expect(res.mode).toBe('thread');
+    expect(rereads(get)).toHaveLength(1);
+    const delivered = await deliveredBodies(post);
+    expect(delivered.map((b) => b.content)).toEqual(chunks);
+    expect(delivered.slice(1).every((b) => b.threadRootId === 'root-1')).toBe(true);
+  });
+
+  test('a short single reply held at the end of a turn still posts exactly once', async () => {
+    const post = jest.fn()
+      .mockRejectedValueOnce(unseenHold(1))
+      .mockResolvedValue({});
+    const get = jest.fn().mockResolvedValue({ messages: [] });
+
+    const res = await deliverChatReply({ client: { post, get }, podId: 'pod-1', text: 'short answer' });
+
+    expect(res).toEqual({ mode: 'single', messages: 1 });
+    expect(post.mock.calls).toEqual([
+      [messagesPath, { content: 'short answer' }],
+      [messagesPath, { content: 'short answer', continueAnyway: true }],
+    ]);
+  });
+
+  test('a failed re-read does not block the override post', async () => {
+    const post = jest.fn()
+      .mockRejectedValueOnce(unseenHold())
+      .mockResolvedValue({});
+    const get = jest.fn().mockRejectedValue(new Error('read timeout'));
+    const log = jest.fn();
+
+    const res = await deliverChatReply({ client: { post, get }, podId: 'pod-1', text: 'short answer', log });
+
+    expect(res).toEqual({ mode: 'single', messages: 1 });
+    expect(post.mock.calls[1][1]).toEqual({ content: 'short answer', continueAnyway: true });
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('read timeout'));
+  });
+
+  test('when every rung still fails it throws after ONE re-read — never a loop', async () => {
+    const post = jest.fn().mockRejectedValue(unseenHold());
+    const get = jest.fn().mockResolvedValue({ messages: [] });
+    const upload = jest.fn().mockResolvedValue({ fileName: 'srv.md', originalName: 'reply.md' });
+
+    await expect(deliverChatReply({ client: { post, get, upload }, podId: 'pod-1', text: prose }))
+      .rejects.toThrow(/unseen messages/);
+
+    expect(rereads(get)).toHaveLength(1);
+    // headline + its one override retry, the attach card, the first split
+    // chunk. Each later rung tries once, with the override, and stops.
+    expect(post).toHaveBeenCalledTimes(4);
+    expect(post.mock.calls.slice(1).every(([, b]) => b.continueAnyway === true)).toBe(true);
+  });
+
+  test.each([
+    ['a 409 with a different code', Object.assign(new Error('conflict'), { status: 409, body: { code: 'claim_held' } })],
+    ['a 500', Object.assign(new Error('boom'), { status: 500, body: { message: 'boom' } })],
+    ['a network error', new Error('fetch failed')],
+  ])('%s never triggers a re-read or continueAnyway', async (_label, error) => {
+    const post = jest.fn().mockRejectedValue(error);
+    const get = jest.fn();
+    const upload = jest.fn().mockRejectedValue(new Error('older server'));
+
+    await expect(deliverChatReply({ client: { post, get, upload }, podId: 'pod-1', text: prose }))
+      .rejects.toThrow(error.message);
+
+    expect(get).not.toHaveBeenCalled();
+    expect(post.mock.calls.some(([, b]) => 'continueAnyway' in b)).toBe(false);
   });
 });
 

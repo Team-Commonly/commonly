@@ -70,7 +70,7 @@ export interface PgBootDeps {
   mountRoutes: () => void;
   /** `connectPG` — resolves the pool, or null when the attempt failed. */
   connect: () => Promise<unknown>;
-  /** `initializePGDB` — applies schema.sql; false means the schema is not there. */
+  /** `initializePGDB` — runs pending SQL migrations; false keeps routes unavailable. */
   initialize: () => Promise<boolean>;
   /** Started once, after the mount (retention + installation-cleanup crons). */
   onMounted?: () => void;
@@ -115,8 +115,8 @@ export const PG_MESSAGE_PATH = '/api/pg/messages';
  * because the lazily-created pool answered `SELECT 1` the moment the transient
  * passed, while `/api/pg/messages` stayed unmounted and chat history 404'd.
  * Readiness has to assert the route it depends on, from the route table, rather
- * than trust a flag set by the code that was supposed to mount it (lily,
- * TASK-168, 20:57Z: "readiness must not reuse that block's outcome as its own
+ * than trust a flag set by the code that was supposed to mount it (TASK-168:
+ * "readiness must not reuse that block's outcome as its own
  * evidence; assert the mount").
  *
  * Identity rather than a path string, on purpose: matching a mount prefix means

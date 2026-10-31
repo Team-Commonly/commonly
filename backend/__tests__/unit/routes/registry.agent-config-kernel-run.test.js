@@ -1,5 +1,5 @@
 jest.mock('../../../services/runtimeControlValidation', () => ({ runtimeControlRefusal: jest.fn(async () => null) }));
-// Security, 2026-10-15 (Rhea on #2224): PATCH /api/registry/pods/:podId/agents/:name
+// Security, 2026-10-15: PATCH /api/registry/pods/:podId/agents/:name
 // let an agent's installer shallow-merge any `config` key. A self-serve
 // install could become `native` (Commonly's model account, past the install
 // entitlement gate), and every user, as the installer of their own native
@@ -130,7 +130,7 @@ describe('agent config PATCH — what an installer cannot write', () => {
     expect(row.config.get('runtime')).toMatchObject({ runtimeType: 'webhook' });
   });
 
-  // Rhea on #2229 (5535507160): two bypasses of the first version.
+  // Two bypasses of the first version.
   it('saves the stored type when the installer resends it in another case, so HOSTED cannot slip past exact readers', async () => {
     const row = installation({ runtime: { runtimeType: 'hosted' } });
     given(row);

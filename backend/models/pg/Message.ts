@@ -245,6 +245,7 @@ class Message {
     // derivation in create()). This is what makes agent-side thread reads
     // cheaper than paging the whole pod (TASK-052's cue depends on it).
     threadRootId: string | null = null,
+    options: { excludeSystemActions?: boolean } = {},
   ): Promise<FormattedMessage[]> {
     // Defense-in-depth clamp at the data layer: callers should pass a bounded
     // limit, but a stray unbounded value must never turn into a million-row
@@ -270,6 +271,9 @@ class Message {
         WHERE m.pod_id = $1
       `;
       const queryParams: unknown[] = [podId];
+      if (options.excludeSystemActions) {
+        query += " AND NOT (m.message_type = 'system' AND COALESCE(m.payload->>'kind', '') = 'system-action')";
+      }
       if (before) {
         query += ' AND m.created_at < $2';
         queryParams.push(before);
@@ -413,13 +417,17 @@ class Message {
     return (result.rows as Array<{ content?: unknown }>).map((row) => String(row.content || ''));
   }
 
-  /** Recent words by one person across pods, for their first greeting language. */
+  /**
+   * Recent words by one person across pods, for their first greeting language.
+   * Newest by created_at, not id: the TASK-503 history copy gives old rows high ids.
+   * created_at is nullable, and DESC puts NULL first, so an undated row sorts last.
+   */
   static async recentContentByUser(userId: unknown, limit = 10): Promise<string[]> {
     if (!userId) return [];
     const result = await (pool as PgPool).query(
       `SELECT content FROM messages
        WHERE user_id = $1 AND message_type = 'text' AND content <> ''
-       ORDER BY id DESC LIMIT $2`,
+       ORDER BY created_at DESC NULLS LAST, id DESC LIMIT $2`,
       [String(userId), limit],
     );
     return (result.rows as Array<{ content?: unknown }>).map((row) => String(row.content || ''));
@@ -670,6 +678,18 @@ class Message {
       console.error('Error in findActivityHint:', e.message);
       return { count: 0, lastAt: null, unavailable: true };
     }
+  }
+
+  // Everyone who posted in the pod after `since`, however many messages that
+  // was. Throws, so a caller can tell "nobody" from "could not read".
+  static async findAuthorIdsSince(podId: unknown, since: Date): Promise<string[]> {
+    const result = await (pool as PgPool).query(
+      `SELECT DISTINCT user_id
+         FROM messages
+        WHERE pod_id = $1 AND created_at > $2 AND message_type != 'system'`,
+      [String(podId), since],
+    );
+    return (result.rows as Array<{ user_id: string }>).map((r) => String(r.user_id));
   }
 
   static async findMostRecentPodActivity(

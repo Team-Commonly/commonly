@@ -221,7 +221,7 @@ describe('installable connector projection', () => {
     // — stack-adjacent detail like `connect ECONNREFUSED <addr>:443` — so it is
     // the writer that must say `false`. The catalog row renders this field only
     // when the flag is true, and the row belongs to the installer, not to us
-    // (TASK-131, vera 73848).
+    // (TASK-131).
     expect(failed.errorMessageUserFacing).toBe(false);
     expect(inactive.isActive).toBe(false);
     expect(inactive.config.connectCode).toBeUndefined();
@@ -666,7 +666,7 @@ describe('installable connector projection', () => {
     expect(expired.errorMessageUserFacing).toBe(true);
     // The copy itself is pinned here: these two strings are the whole set of
     // reasons the catalogue will ever print verbatim, so a writer that changes
-    // one has to change this line too (wren 73914, vera 73915).
+    // one has to change this line too.
     expect(expiring.errorMessage).toBe('Setup was interrupted before it finished. Try again.');
   });
 
@@ -730,7 +730,7 @@ describe('installable connector projection', () => {
   });
 
   it('prunes a NON-ACTIVE gate for a pod the owner created and then left', async () => {
-    // TASK-161, from Vera's 74663. The connecting gate is not the active pod:
+    // TASK-161. The connecting gate is not the active pod:
     // only `sweepOrphanedGates` prunes a secondary gate, so this cell cannot be
     // satisfied by the active-pod sweep — which is why the first draft of this
     // arm survived the reconciler being reverted. A pod the owner CREATED and
@@ -917,7 +917,7 @@ describe('installable connector projection', () => {
   };
 
   it('keeps a Discord webhook secret past the grace window while its row still points at it', async () => {
-    // Blocker 1 (vera 74130): the keep-condition was a literal `botTokenRef`
+    // Blocker 1: the keep-condition was a literal `botTokenRef`
     // pair, so this secret matched neither path, the sweep revoked it ten
     // minutes after the write, and the connector's webhook stopped resolving.
     const { ref } = await seedDiscordConnectorWithSecret();
@@ -930,7 +930,7 @@ describe('installable connector projection', () => {
   });
 
   it('names the Discord webhook, not a Slack key, when a Discord secret is unreadable', async () => {
-    // Blocker 2 (vera 74131): the reason string is written through
+    // Blocker 2: the reason string is written through
     // `userFacingError` and rendered verbatim on the Connectors page, so a
     // Slack-named sentence reached Discord owners.
     const { integrationId, ref } = await seedDiscordConnectorWithSecret();

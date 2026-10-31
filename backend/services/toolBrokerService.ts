@@ -102,6 +102,9 @@ export interface BrokerCallInput {
   hostedTurn?: boolean;
   /** Server-set native turn marker. A parked approval card must stay in the pod. */
   noOutboundRelay?: boolean;
+  /** Server-owned origin for approval cards posted into another pod. */
+  runId?: string;
+  runPodId?: string;
 }
 
 export interface BrokerCallResult {
@@ -677,12 +680,14 @@ const HOSTED_OWNER_REFUSALS: Record<SessionAccountRefusal, string> = {
   banned: 'connection_owner_banned',
   missing: 'connection_owner_missing',
   bot: 'connection_owner_bot',
+  deleting: 'connection_owner_deleting',
 };
 
 const HOSTED_OWNER_MESSAGES: Record<SessionAccountRefusal, string> = {
   banned: 'the person who connected this connection is suspended',
   missing: 'the person who connected this connection no longer exists',
   bot: 'this connection is owned by a bot account, which cannot be its granter',
+  deleting: 'the person who connected this connection is deleting their account',
 };
 
 const assertHostedOwnerUsable = async (ownerUserId?: string): Promise<void> => {
@@ -1266,6 +1271,8 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
           ownerUserId: connection.ownerUserId,
           agentUserId: input.agentUserId,
           noOutboundRelay: input.noOutboundRelay,
+          runId: input.runId,
+          runPodId: input.runPodId,
           approvalExpiresAt: new Date((grant as IRoomGrant).expiresAt),
           toolCall: {
             grantId: String((grant as Record<string, unknown>).grantId || input.grantId),

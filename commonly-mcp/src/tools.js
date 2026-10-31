@@ -184,11 +184,13 @@ export const buildTools = (config) => {
         threadRootId: STRING,
         continueAnyway: { type: 'boolean' },
         metadata: { type: 'object', additionalProperties: true },
+        messageType: { type: 'string', enum: ['text', 'card'] },
+        payload: { type: 'object', description: 'UI card only: {kind:"ui",v:1,lang:"openui@1",catalogId,catalogRev,catalogHash,source}. Use catalogId:"commonly.ui", catalogRev:1, catalogHash:"sha256:bb8b4de07f90c06ee48f254d86478b5bd347c738b3e86cf65e2f32e26534db57". Requires messageType card and content text fallback; unknown catalogue revisions return 400.', additionalProperties: true },
       }, ['podId', 'content']),
-      call: wrap(async ({ podId, content, replyToMessageId, threadRootId, metadata, continueAnyway }) => request(config, {
+      call: wrap(async ({ podId, content, replyToMessageId, threadRootId, metadata, continueAnyway, messageType, payload }) => request(config, {
         method: 'POST',
         path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/messages`,
-        body: { content, replyToMessageId, threadRootId, metadata, continueAnyway },
+        body: { content, replyToMessageId, threadRootId, metadata, continueAnyway, messageType, payload },
       })),
     },
     {
@@ -651,5 +653,22 @@ export const buildTools = (config) => {
     // as the machine's OWN GitHub identity rather than ours, and it supports
     // line-level review comments, which these tools never did.
   ];
-  return tools;
+  // A model can call a tool without an argument its schema requires; MCP
+  // clients do not enforce `required`. Interpolated into a path, a missing
+  // podId becomes the literal "undefined" and the backend answers 500, which
+  // tells the caller nothing. Refuse the call here and name the argument.
+  return tools.map((tool) => {
+    const keys = tool.inputSchema?.required || [];
+    if (keys.length === 0) return tool;
+    return {
+      ...tool,
+      call: async (args = {}, ...rest) => {
+        const missing = keys.filter((key) => args?.[key] === undefined || args?.[key] === null || args?.[key] === '');
+        if (missing.length > 0) {
+          return err(new Error(`${tool.name}: missing required argument${missing.length > 1 ? 's' : ''} ${missing.join(', ')}`));
+        }
+        return tool.call(args, ...rest);
+      },
+    };
+  });
 };

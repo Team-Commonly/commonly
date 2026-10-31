@@ -297,7 +297,7 @@ describe('reactionController.addReaction — agent runtime path', () => {
     // payload.messageId, so classifyTrigger returns 'unknown' — and 'unknown'
     // is FAIL-OPEN for admission. A capped seat would still take a full turn
     // on every reaction, uncounted, and agent↔agent reaction chains would
-    // ratchet instead of terminating. Caught by fable-lead against its own
+    // ratchet instead of terminating. Caught against an
     // earlier ruling, which closed the grace hole and left this one open.
     // The agent auth path checks AgentInstallation, not pg pod_members — so
     // only ONE pool.query (loadMessageContext) is consumed here. Getting this

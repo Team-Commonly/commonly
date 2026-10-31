@@ -268,6 +268,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root .v2-byo__needs')).toContain('color: var(--v2-text-primary)');
   });
 
+  // #2670: the Cursor rule card's header names an unbroken save path; without
+  // these two declarations it pushes the Copy button out of the card at 390px.
+  test('Cursor rule card header wraps its save path inside the card', () => {
+    expect(ruleBody(v2, '.v2-connect__rule .v2-connect__code-head span')).toContain('min-width: 0');
+    expect(ruleBody(v2, '.v2-connect__rule .v2-connect__code-head code')).toContain('overflow-wrap: anywhere');
+  });
+
   test('Your Team card name owns its line so the category chip cannot crush it', () => {
     // Direction C: the name sits in its own column of the card head; the
     // crush guard is min-width 0 on the name and the head, not a flex basis.
@@ -353,7 +360,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(head).toContain('font: 600 12px/16px var(--v2-font)');
     expect(search).toContain('height: 32px');
     // The + square shares the search box's 32px so the two tools sit on one
-    // baseline (Sam caught the 28/32 mismatch on the first walk, 2026-09-06).
+    // baseline (the 28/32 mismatch was caught on the first walk, 2026-09-06).
     expect(ruleBody(v2, '.v2-root button.v2-pods__new')).toContain('height: 32px');
     expect(ruleBody(v2, '.v2-root button.v2-pods__new')).toContain('width: 32px');
     expect(row).toContain('grid-template-columns: 22px minmax(0, 1fr) auto');
@@ -545,7 +552,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('touch inputs are 16px — iOS auto-zoom never fires and never strands the page zoomed', () => {
     // Every input under 16px makes iOS Safari zoom on focus and stay zoomed
-    // on blur (Sam, 2026-08-26). The floor lives in the touch media block and
+    // on blur (2026-08-26). The floor lives in the touch media block and
     // must keep its !important (it has to beat per-component sizes including
     // a legacy 15px !important).
     expect(v2).toMatch(/@media \(hover: none\), \(pointer: coarse\) \{[\s\S]*?\.v2-root input,\n\s*\.v2-root textarea,\n\s*\.v2-root select \{\n\s*font-size: 16px !important;/);
@@ -603,7 +610,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(detail).toContain('overflow: hidden');
     const reveal = selectorRuleBody(v2, '.v2-root .v2-activity__queue-detail--expanded');
     expect(reveal).toContain('display: block');
-    // Tab-in preview is kept; a reader's collapse is excluded so focus can't re-open it (Lumen HOLD on #2407).
+    // Tab-in preview is kept; a reader's collapse is excluded so focus can't re-open it (#2407).
     const focusReveal = selectorRuleBody(v2, '.v2-root .v2-activity__queue-detail:focus-visible:not(.v2-activity__queue-detail--dismissed)');
     expect(focusReveal).toContain('display: block');
     expect(focusReveal).toContain('-webkit-line-clamp: unset');
@@ -713,7 +720,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('the mobile inspector is a drawer, never display:none — the header avatars button must do something', () => {
     // Below 1024px the pane used display:none while V2Layout still mounted it
     // on tap: the avatar-stack button looked broken and members/files were
-    // unreachable on phones (Sam, 2026-08-26). The pane's presence in the DOM
+    // unreachable on phones (2026-08-26). The pane's presence in the DOM
     // is the open state, so the drawer needs no extra toggle class.
     // Slice the 1023px block out rather than regex across it — a lazy
     // [\s\S]*? happily crosses media-block boundaries and matches unrelated
@@ -814,7 +821,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('v2 claims the page canvas — the V1 dark body cannot show through', () => {
     // App.tsx stamps `modern-ui` (V1 dark gradient) on <body> unconditionally;
     // .v2-root paints only its own box. Without this override the V1 dark
-    // showed on load flash, overscroll, and gaps (Sam, 2026-08-24). The
+    // showed on load flash, overscroll, and gaps (2026-08-24). The
     // compound selector must out-rank body.modern-ui so bundle order can
     // never decide the canvas color. Keep the literal in lockstep with
     // --v2-page-bg (tokens don't reach body — it sits outside .v2-root).
@@ -846,7 +853,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // still see the content. The script must PRECEDE the style block that
     // uses it, and both must precede </head>.
     const indexHtml = read('../../../index.html');
-    // Rev 2 (Sam re-sighted the flash, 2026-08-26): the script-gate had a
+    // Rev 2 (the flash was re-sighted, 2026-08-26): the script-gate had a
     // timing window — delayed head-script execution painted the prerender.
     // Hidden-by-default has none: #seo-page is display:none from the first
     // byte, and <noscript> reveals it only for text-only crawlers. The
@@ -860,7 +867,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // painted the whole viewport — the SAME shape as the four above, one
     // mount point further out. ux-lead's #1861 gate, 390 at 1.6 Mbps: light
     // at 3.0 s from the entry CSS, #0b1220 from 4.4 s to 7.35 s from this
-    // frame, light again. Three seconds of the flash Sam ruled out on 08-24,
+    // frame, light again. Three seconds of the flash ruled out on 08-24,
     // and under 150 ms unthrottled, so a laptop check cannot see it.
     //
     // The frame therefore paints nothing and lets the bare-body canvas pinned
@@ -883,7 +890,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('the conversation column is FULL-WIDTH — no measure cap, one left edge (rule 2, v5)', () => {
-    // Fifth mechanism, ruled by Sam 2026-08-23: the Slack model. With a
+    // Fifth mechanism, ruled 2026-08-23: the Slack model. With a
     // line cap, leftover space must pool somewhere — center was rejected,
     // and left-anchor pools it all on the right — so the cap itself goes.
     // No revision may reintroduce a conversation measure token: that is
@@ -891,7 +898,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('--v2-conv-measure');
     // v6 (2026-09-01): the var ban was not enough — #1367 reintroduced the
     // cap as a LITERAL (`max-width: 75ch`) via a craft audit that called it
-    // a P0, and even claimed this test guarded it. Sam's third ruling:
+    // a P0, and even claimed this test guarded it. The third ruling:
     // full-width stands. Ban any ch-unit max-width inside the message
     // content block, not just the token.
     const msgContentBlock = v2.slice(v2.indexOf('.v2-msg__content {'), v2.indexOf('.v2-msg__content p'));
@@ -905,7 +912,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-composer')).toContain('border: 1px solid var(--v2-border)');
     // Direction C: the identity line is gone; the plus and Send sit inside the one bordered row.
     expect(ruleBody(v2, '.v2-root button.v2-composer__plus')).toContain('border: 1px solid var(--v2-border)');
-    // Nothing in the column may escape the shared edge (Sam, 2026-08-23:
+    // Nothing in the column may escape the shared edge (2026-08-23:
     // mentions and threads sat off-grid while messages aligned).
     // Mentions: the wash bleed must equal the padding (the old -12px against
     // 10px padding put mention TEXT 2px off-grid), widening the wash by one
@@ -923,7 +930,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-thread .v2-thread-block__inner')).toContain('margin-left: 36px');
     // Indent + width must still sum to 100%: an indented child that ALSO
     // carried width:100% pushed every thread past the pane's right edge and
-    // made the transcript horizontally swipeable (Sam, 2026-08-24; 350 vs
+    // made the transcript horizontally swipeable (2026-08-24; 350 vs
     // 326 scrollWidth at 390). The inner wrap must never take a width.
     expect(ruleBody(v2, '.v2-thread .v2-thread-block__inner')).not.toContain('width');
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-block__inner \{[\s\S]*?margin-left: 24px/);
@@ -997,6 +1004,28 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(aprofile).toContain('background: var(--v2-ink-hover)');
   });
 
+  test('agent profile Phase B uses ink actions, the halo, and the type ladder', () => {
+    const primary = ruleBody(aprofile, '.v2-root button.v2-aprofile__btn--primary');
+    expect(primary).toContain('background: var(--v2-ink)');
+    expect(primary).not.toContain('var(--v2-accent)');
+    expect(ruleBody(aprofile, '.v2-root button.v2-aprofile__btn--primary:hover')).toContain('var(--v2-ink-hover)');
+    expect(ruleBody(aprofile, '.v2-root .v2-aprofile__btn--primary')).toContain('color: var(--v2-on-ink)');
+    // The footer CTA sits on the accent-deep band, so it keeps main's white fill.
+    // An ink fill there reads as a dark hole (review 5673841827).
+    const footerPrimary = ruleBody(aprofile, '.v2-root .v2-aprofile__footer-cta .v2-aprofile__btn--primary');
+    expect(footerPrimary).toContain('background: #fff');
+    expect(footerPrimary).toContain('color: var(--v2-accent)');
+
+    const avatarFocus = ruleBody(aprofile, '.v2-root button.v2-aprofile__avatar-button:focus-visible');
+    expect(avatarFocus).toContain('outline: none');
+    expect(avatarFocus).toContain('box-shadow: var(--v2-focus-ring)');
+
+    for (const selector of ['.v2-aprofile__empty-title', '.v2-aprofile__name', '.v2-aprofile__stat-num']) {
+      expect(ruleBody(aprofile, selector)).toContain('font-weight: 700');
+    }
+    expect(aprofile).not.toContain('font-weight: 850');
+  });
+
   test('the nav rail pane lets its language dropdown escape the pane clip', () => {
     // The rail is 56px wide; its language menu is a wider floating popover.
     // Base `.v2-pane { overflow: hidden }` clips it to the rail edge, so the
@@ -1046,6 +1075,21 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // regressed on exactly that). Higher specificity wins regardless of order.
     expect(v2).toContain('.v2-msg.v2-msg--system {');
     expect(ruleBody(v2, '.v2-msg.v2-msg--system')).toContain('display: block');
+  });
+
+  test('system actions align with message text and keep the avatar and time in their own slots', () => {
+    const rule = ruleBody(v2, '.v2-system-action-line');
+    expect(rule).toContain('display: grid');
+    expect(rule).toContain('grid-template-columns: 16px minmax(0, max-content) auto minmax(0, 1fr) auto');
+    expect(rule).toContain('margin-left: 36px');
+    expect(rule).toContain('width: calc(100% - 36px)');
+    expect(ruleBody(v2, '.v2-thread .v2-system-action-line .v2-avatar')).toContain('width: 16px');
+    expect(ruleBody(v2, '.v2-system-action-line__action')).toContain('grid-column: 3;');
+    expect(ruleBody(v2, '.v2-system-action-line time')).toContain('grid-column: 5');
+    expect(ruleBody(v2, '.v2-system-action-line__name')).toContain('color: var(--v2-text-primary)');
+    expect(ruleBody(v2, '.v2-system-action-line__verb')).toContain('color: var(--v2-text-tertiary)');
+    expect(ruleBody(v2, '.v2-system-action-line__object')).toContain('var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-system-action-line time')).toContain('var(--v2-font-mono)');
   });
 
   test('the feedback popover overrides the legacy dark MUI paper theme', () => {
@@ -1510,6 +1554,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(compactMeta).toBeGreaterThan(-1);
     expect(ruleBody(v2, '.v2-pod-header__meta')).toContain('display: flex');
     expect(compactMeta).toBeGreaterThan(baseMeta);
+    // TASK-647 item 3: the phone line keeps the board link, with a 44px hit
+    // area drawn as a pseudo-element so the 28px meta row does not grow.
+    expect(ruleBody(v2, 'button.v2-pod-header__board--compact::before')).toContain('inset: -14px -10px');
+    expect(ruleBody(v2, '.v2-thread__title-line > h1')).toContain('max-width: calc(100% - 36px)');
     expect(v2).not.toContain('.v2-thread__working');
   });
 
@@ -1699,6 +1747,23 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(maskOff).toMatch(/^\s*-webkit-mask-image:\s*none;/m);
   });
 
+  test('landing trusted-by logos render as one grey ink, on hover too', () => {
+    // OROZ ships white artwork and Fluxr a white wordmark. `grayscale(1)`
+    // alone left both white on the light strip — present in the DOM, invisible
+    // on the page. `brightness(0)` maps every opaque pixel to black, so each
+    // logo reads as its silhouette and the opacity sets the grey. Measured in a
+    // real browser at 1440 and 390: all 24 logos non-blank.
+    const logo = selectorRuleBody(landing, '.v2-landing__trusted-logo {');
+    expect(logo).toMatch(/filter:\s*grayscale\(1\)\s+brightness\(0\)\s*;/);
+    expect(logo).toMatch(/opacity:\s*0\.6\s*;/);
+    // Hover lifts the opacity only. Restoring the source colours on hover
+    // (`grayscale(0)`, the old rule) makes the white files vanish under the
+    // pointer.
+    const hover = selectorRuleBody(landing, '.v2-landing__trusted-logo:hover {');
+    expect(hover).toMatch(/opacity:\s*1\s*;/);
+    expect(hover).not.toMatch(/filter\s*:/);
+  });
+
   test('landing adapter code scrolls inside its card instead of widening the page', () => {
     // Preformatted adapter commands have a wide min-content size. Without a
     // zero-width grid minimum + shrinkable card, the mobile landing page grows
@@ -1727,7 +1792,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // gains a line whenever a term is long enough to push 对话 onto a third
     // line: at 320–414 it measures 94.6px under three terms and 140.6px under
     // the fourth, so the lede, the CTAs and everything below move 46px once per
-    // rotation cycle. lily-shen ruled option 1 (2026-09-30 00:23Z): the suffix
+    // rotation cycle. Option 1 was chosen: the suffix
     // is a block at ≤680, which makes the height the same under every term.
     // Scoped with `mediaAt` rather than a whole-sheet read or an `indexOf`: the
     // sheet has one (max-width: 680px) block today, and the helper is what makes
@@ -1743,10 +1808,48 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(selectorRuleBody(phone, '.v2-landing__title-suffix')).toContain('margin-left: 0');
   });
 
+  test('the phone hero rotator wraps and balances, and zh terms break only at the ZWSP', () => {
+    // CodeRabbit (Minor) on #2883: presence pins for the ≤760 rotator rules. jsdom
+    // has no line boxes, so these only guard against the declarations being dropped.
+    // The block is placed last in the sheet and wins by order over the ≤680 rules.
+    expect(landing).toContain('.v2-landing__rotator { max-width: 100%; text-wrap: balance; }');
+    // The sizer stacks every term in one grid cell, so the h1 holds one height
+    // without a min-height reservation.
+    expect(landing).toContain('.v2-landing__rotator-sizer {\n  display: grid;');
+    expect(landing).toContain('.v2-landing__rotator-sizer > span {\n  grid-area: 1 / 1;');
+    expect(landing).not.toContain('min-height: calc(72px + 0.06em)');
+    expect(landing).toContain('.v2-landing__rotator-term { white-space: normal; }');
+    expect(landing).toMatch(/:lang\(zh\) \.v2-landing__rotator \{ word-break: keep-all; \}/);
+  });
+
+  test('the zh hero suffix takes its own line from 761 to 1359 px', () => {
+    // UX-GATE HOLD on 18bf0ce9. Between 761 and 1339 px the zh suffix shared line
+    // 2 with 队友的智能体 and wrapped for the other two terms, so the h1 changed
+    // height on every rotation (173↔257 at 1200). The band sits between TASK-213's
+    // phone rule (≤680) and the desktop title, so this is its own block. jsdom has
+    // no line boxes; the pin binds to ux-lead's zh sweep at 761/900/1060/1200/1300/
+    // 1359/1360, and `mediaAt` returns '' if the block is dropped.
+    const band = mediaAt(landing, '@media (min-width: 761px) and (max-width: 1359px) {');
+    expect(band).not.toBe('');
+    expect(selectorRuleBody(band, '.v2-landing__title-suffix')).toContain('display: block');
+    expect(selectorRuleBody(band, '.v2-landing__title-suffix')).toContain('margin-left: 0');
+  });
+
+  test('the hero option 1 suffix takes its own line at every width', () => {
+    // Option 1 is "Bring / <term> / into one pod." Inline, the widest term pushed
+    // the suffix to a third line at 1440 and the h1 jumped ~84px on that term
+    // (measured 173 vs 257 on the 1440 sweep). The modifier class is set only for
+    // option 1, so the rule is unconditional and sits after the base suffix rule.
+    expect(landing).toContain('.v2-landing__title-suffix--own-line { display: block; margin-left: 0; }');
+    expect(landing.indexOf('.v2-landing__title-suffix--own-line')).toBeGreaterThan(
+      landing.indexOf('.v2-landing__title-suffix {'),
+    );
+  });
+
   test('reaction chips baseline-align emoji ink with the count (not box-centering)', () => {
     // align-items: center centers the spans' layout boxes, but Apple Color
     // Emoji ink extends below the baseline while digit ink does not, so the
-    // count visibly rides high on desktop (2026-08-05, Sam's HQ screenshot).
+    // count visibly rides high on desktop (2026-08-05, HQ screenshot).
     // Baseline alignment + a 22px emoji line box (chip inner height, which is
     // the only thing vertically centering the pair once baseline is on) is
     // the fix; both halves are load-bearing and invisible to jsdom.
@@ -1755,7 +1858,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('message actions live in ONE hover cluster, and its picker opens downward', () => {
-    // 2026-08-23 (Sam's placement rulings): Reply, Thread, and the reaction
+    // 2026-08-23 (placement rulings): Reply, Thread, and the reaction
     // trigger share a floating pill at the row's top-right — no inline head
     // buttons (layout shift), no orphaned "+" in an empty reactions band
     // (the 2026-08-13 phantom-band bug cannot recur because a chip-less row
@@ -2018,7 +2121,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // correct rail from a missing one — the card and replies still appear,
     // just unindented and with no rule. This pins the three numbers that a
     // reader would otherwise have to take from a comment.
-    // REV 3 (Sam, 2026-08-23): the whole thread block is indented to the
+    // REV 3 (2026-08-23): the whole thread block is indented to the
     // message TEXT column like an attachment (margin-left 50px, pinned in
     // the column test above), so the rail sits AT the block edge — margin 0
     // — and card, rail, and message text share one line. Rev 2's
@@ -2068,7 +2171,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Tap-reveal, not always-on: the touch blocks must gate visibility on
     // .v2-msg--reveal (set by the bubble's tap handler) — an ungated
     // `.v2-msg__actions { opacity: 1 }` here would put chrome over every
-    // message by default (Sam's report, 2026-08-23).
+    // message by default (reported 2026-08-23).
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-msg--reveal \.v2-msg__actions[\s\S]*?opacity: 1/);
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root button\.v2-msg__action[\s\S]*?height: 44px/);
     // Reply in thread / Follow / Collapse moved from the chip to the band's
@@ -2135,10 +2238,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2.slice(floorStart, v2.indexOf('}', floorStart))).toContain('font-size: 12px');
   });
 
-  // Connectors v2 (Wren spec §5): platform tint tokens must exist in BOTH
+  // Connectors v2 (spec §5): platform tint tokens must exist in BOTH
   // token files (the same-PR rule), and the tile class must consume them.
-  it('chat message text has NO measure cap (Sam overruled craft finding 6, 2026-09-01)', () => {
-    // #1367 pinned a 75ch cap here as the audit's P0. Sam overruled it —
+  it('chat message text has NO measure cap (craft finding 6 overruled, 2026-09-01)', () => {
+    // #1367 pinned a 75ch cap here as the audit's P0. It was overruled —
     // third full-width ruling; worst case was a large screen with the
     // sidebar collapsed. The rule-2 v6 assertion above owns the ban; this
     // test flips to the same polarity so the two can never disagree.
@@ -2182,7 +2285,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('.v2-connector__tile--telegram');
   });
 
-  it('nothing in v2.css hides the connector row\'s reason, at 390 or anywhere (eng lead 73726, vera 73776)', () => {
+  it('nothing in v2.css hides the connector row\'s reason, at 390 or anywhere', () => {
     // Show is the default. This rule used to hide __detail for every state except
     // two enumerated ones, so the not-yet row that IS available
     // (V2ConnectorTools.tsx:562) lost "install the GitHub App first" /
@@ -2195,8 +2298,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Scope is the whole sheet, deliberately rather than by accident. Three
     // rounds of this guard each picked the wrong media set — unbounded, then
     // 760-only, then every `max-width >= 390` — because a 390 phone matches
-    // `max-width` blocks *and* `@media (hover: none)` / `(pointer: coarse)`
-    // (vera 73776). The claim is not about a viewport: no rule in this sheet may
+    // `max-width` blocks *and* `@media (hover: none)` / `(pointer: coarse)`.
+    // The claim is not about a viewport: no rule in this sheet may
     // hide the reason, and NAMED_DETAIL_HIDE_CASES is the deliberate exception
     // list. So this reads the whole file and no media-picking predicate is left
     // to get wrong.
@@ -2211,7 +2314,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // same loss through a different property, and neither hides the rule from a
     // reader who greps for the class.
     //
-    // The class test below is a substring on purpose (vera 73782):
+    // The class test below is a substring on purpose:
     // `.v2-connector-row__detail` also matches `.v2-connector-row__details`, the
     // wrapper the reason sits inside, and hiding that wrapper loses the reason
     // just as completely. Do not tighten it to an exact-selector match.
@@ -2411,7 +2514,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     }
   });
 
-  describe('TASK-122 Phase A — the ruled restyle (Sam, 2026-09-03; spec on TASK-122)', () => {
+  describe('TASK-122 Phase A — the ruled restyle (spec on TASK-122)', () => {
     const v2Root = ruleBody(v2, '.v2-root');
 
     test('the tint step exists in both token files and the content pane is the inset card', () => {
@@ -2510,7 +2613,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // One seat, one mark: agent cobalt, human tint.
       expect(ruleBody(v2, '.v2-activity__queue-row .v2-activity__queue-mark--agent')).toContain('background: var(--v2-accent)');
       expect(ruleBody(v2, '.v2-activity__queue-row .v2-activity__queue-mark--human')).toContain('background: var(--v2-surface-hover)');
-      // Direction A (Sam 2026-09-11): the mark holds a 16px glyph; a secondary act is a 32px square
+      // Direction A: the mark holds a 16px glyph; a secondary act is a 32px square
       // (44 under 760), never a word — and never a menu.
       expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-mark svg')).toContain('width: 16px');
       expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--icon svg')).toContain('width: 16px');
@@ -2785,7 +2888,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // row under Scout's message, in the slot the delivery cue and the
       // no-agent row share, so they land on the message text column too.
       expect(threadMessages).toContain('className="v2-chat__starts"');
-      expect(threadMessages).toContain('className="v2-chat__start"');
+      expect(threadMessages).toContain('v2-chat__start${start.action === WELCOME_HOSTED_ACTION ? \' v2-chat__start--primary\' : \'\'}');
       // The 44px phone minimum must come AFTER the 32px base in the sheet: at
       // equal specificity the later rule wins, and a base rule placed after
       // the media block would silently render 32 on a phone.
@@ -2959,12 +3062,10 @@ describe('the landing hero demo (TASK-147)', () => {
     // selector's first match is the max-width rule, so a shadow on the later
     // rule would pass a ruleBody check (ux-lead, #1918).
     expect(landingPage).not.toContain('v2-landing__shot-bar');
-    // Row D's use-case row draws its focus ring with an INSET box-shadow, because
-    // the list's `overflow: hidden` clips v2.css's outer one. That is not the
-    // card elevation this test bans, so the ban is narrowed to NON-inset shadows
-    // rather than dropped: anything with an offset or blur still fails here.
+    // Any inset shadow is a focus ring, not card elevation, so the ban is narrowed
+    // to NON-inset shadows rather than dropped: anything with an offset or blur
+    // still fails here. The agent-team cards draw a border and no shadow at all.
     const shadows = [...landing.matchAll(/box-shadow:\s*([^;]+);/g)].map((m) => m[1].trim());
-    expect(shadows).toContain('inset var(--v2-focus-ring)');
     expect(shadows.filter((s) => !s.startsWith('inset '))).toEqual([]);
   });
 
@@ -3984,11 +4085,13 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
     expect(trusted).not.toContain('padding-top: 94px');
   });
 
-  test('the copy column is uncapped, and the title carries the 1000', () => {
+  test('the copy column is uncapped, and the title is uncapped inside it', () => {
     // 288 + 24 + 784 = 1096 wrapped the install box at 1440 and 1200 while the
-    // inner was capped at 1000 (ux-lead's #2018 finding 3).
+    // inner was capped at 1000 (ux-lead's #2018 finding 3). The hero title is
+    // uncapped so "One pod for your team and" stays on one line at 1440; the
+    // hero column is the cap.
     expect(selectorRuleBody(landing, '.v2-landing__hero-inner {')).not.toContain('max-width');
-    expect(selectorRuleBody(landing, '.v2-landing__title {')).toContain('max-width: 1000px');
+    expect(selectorRuleBody(landing, '.v2-landing__title {')).toContain('max-width: none');
     expect(selectorRuleBody(landing, '.v2-landing__lede {')).toContain('max-width: 780px');
   });
 
@@ -4430,57 +4533,51 @@ describe('TASK-167 row D — Use cases, Architecture, the proof panel and Pricin
     expect(files).toHaveLength(count);
   });
 
-  test('a use case is a row in one bordered list, not a card in a grid', () => {
-    const list = topLevelRuleBody(landing, '.v2-landing__usecases');
-    expect(list).toContain('border: 1px solid var(--v2-border)');
-    expect(list).toContain('border-radius: var(--v2-radius)');
-    expect(list).toContain('overflow: hidden');
-    expect(list).not.toContain('grid-template-columns');
-
-    const row = topLevelRuleBody(landing, '.v2-landing__usecase');
-    expect(row).toContain('grid-template-columns: 340px minmax(0, 1fr) 16px');
-    expect(row).toContain("grid-template-areas: 'title text arrow'");
-    expect(row).toContain('gap: 32px');
-    expect(row).toContain('padding: 22px 28px');
-    // The card treatment is gone, not merely overridden.
-    expect(row).not.toContain('background: var(--v2-surface)');
-    expect(row).not.toContain('border:');
-    expect(row).not.toContain('border-radius');
-
-    // Hairlines between rows are what make the frame one list.
-    expect(landing).toContain(
-      '.v2-landing__usecase + .v2-landing__usecase { border-top: 1px solid var(--v2-border-soft); }',
+  test('an agent-team card is one bordered box, with its footer pinned to the bottom', () => {
+    expect(topLevelRuleBody(landing, '.v2-landing__team-cards')).toContain(
+      'grid-template-columns: repeat(3, minmax(0, 1fr))',
     );
-    // `overflow: hidden` clips v2.css's OUTER focus ring, so the row has to draw
-    // it inset — the same ring, inside the frame. (0,3,0) beats the shared
-    // (0,2,1) `.v2-root a:focus-visible` rule, which is why the override holds.
-    expect(landing).toContain(
-      '.v2-root .v2-landing__usecase:focus-visible { box-shadow: inset var(--v2-focus-ring); }',
+    const card = topLevelRuleBody(landing, '.v2-landing__team-card');
+    expect(card).toContain('border: 1px solid var(--v2-border)');
+    expect(card).toContain('border-radius: var(--v2-radius)');
+    expect(card).toContain('flex-direction: column');
+    expect(topLevelRuleBody(landing, '.v2-landing__team-footer')).toContain('margin: auto 0 0');
+    // Three cards in one row, and one column once the tablet switch applies.
+    expect(mediaAt(landing, '@media (max-width: 900px)')).toContain(
+      '.v2-landing__team-cards { grid-template-columns: minmax(0, 1fr); }',
     );
   });
 
-  test("the use-case arrow is the board's 16px path, one per row, decorative", () => {
-    expect(landingTsx.match(/<UseCaseArrow \/>/g) || []).toHaveLength(5);
-    expect(landingTsx).toContain('M3 8h9M8.5 4.5L12 8l-3.5 3.5');
-    expect(landingTsx).toContain('strokeLinecap="square"');
-    expect(landingTsx).toContain('stroke="currentColor"');
-    expect(landingTsx).toContain('aria-hidden="true"');
-    expect(topLevelRuleBody(landing, '.v2-landing__usecase-arrow')).toContain('grid-area: arrow');
+  test('the works-with chips wrap inside their container instead of running past it', () => {
+    // CodeRabbit (PR #2956): the chip list is the element that has to wrap. Removing
+    // flex-wrap would let the set run past a narrow phone container without a failing test.
+    expect(topLevelRuleBody(landing, '.v2-landing__works-list')).toContain('flex-wrap: wrap');
   });
 
-  test('the use-case title keeps its weight and leading, not only its tracking', () => {
-    const title = topLevelRuleBody(landing, '.v2-landing__usecase-title');
+  test('the star count is absent until GitHub answers and never takes the link name', () => {
+    expect(landingTsx).toContain('{starLabel && <span className="v2-landing__star-count"');
+    expect(landingTsx).toContain(
+      "href={REPO} target=\"_blank\" rel=\"noreferrer\">{t('landing.actions.starGithub')}</a>",
+    );
+    expect(topLevelRuleBody(landing, '.v2-landing__star-count')).toContain('font-variant-numeric: tabular-nums');
+  });
+
+  test('the team-card title keeps its weight, leading and tracking', () => {
+    const title = topLevelRuleBody(landing, '.v2-landing__team-title');
     expect(title).toContain('font-weight: 800');
     expect(title).toContain('line-height: 24px');
+    expect(title).toContain('letter-spacing: -0.03em');
   });
 
   test('the marketplace case is gone from the page and from both locales', () => {
     expect(landingTsx).not.toContain('app-marketplace');
     for (const locale of ['en.json', 'zh-CN.json']) {
       const json = JSON.parse(read(`../../i18n/locales/${locale}`));
-      expect(Object.keys(json.landing.useCases)).toEqual(
-        ['kicker', 'title', 'coding', 'chat', 'research', 'browse', 'digest'],
-      );
+      expect(json.landing.useCases).toBeUndefined();
+      expect(Object.keys(json.landing.agentTeams.cards)).toEqual(['one', 'two', 'three']);
+      expect(Object.keys(json.landing.worksWith.items)).toEqual([
+        'claudeCode', 'codex', 'opencode', 'qwenCode', 'pi', 'deepseekHarness', 'hosted', 'mcp', 'linear',
+      ]);
     }
   });
 
@@ -4595,7 +4692,6 @@ describe('TASK-167 row D — Use cases, Architecture, the proof panel and Pricin
 
   test('the phone block carries this row, and the one-column switches sit at 900', () => {
     const phone = mediaAt(landing, '@media (max-width: 680px)');
-    expect(phone).toContain('.v2-landing__usecase { padding: 16px 18px; }');
     expect(phone).toContain('.v2-landing__tile { padding: 18px 20px; }');
     expect(phone).toContain('.v2-landing__proof-inner { padding: 28px 22px; }');
     expect(phone).toContain(
@@ -4605,13 +4701,7 @@ describe('TASK-167 row D — Use cases, Architecture, the proof panel and Pricin
     expect(phone).toContain('.v2-landing__tier { padding: 24px; }');
     expect(phone).toContain('.v2-landing__tier--featured { padding: 23px; }');
     expect(phone).toContain('.v2-landing__tier-price { font-size: 44px; line-height: 44px; }');
-    // The use-case frame is no longer a grid at any width, so neither of the
-    // old column counts may survive in the blocks they were written for.
-    expect(phone).not.toContain('.v2-landing__usecases { grid-template-columns: 1fr; }');
-    expect(mediaAt(landing, '@media (max-width: 1024px)')).not.toContain('.v2-landing__usecases');
-
     const tablet = mediaAt(landing, '@media (max-width: 900px)');
-    expect(tablet).toContain("grid-template-areas: 'title arrow' 'text text'");
     expect(tablet).toContain('.v2-landing__tile { grid-template-columns: minmax(0, 1fr); row-gap: 6px; }');
     expect(tablet).toContain(
       '.v2-landing__tier-enterprise { grid-template-columns: minmax(0, 1fr); gap: 14px; justify-items: start; }',
@@ -4625,7 +4715,7 @@ describe('TASK-167 row D — Use cases, Architecture, the proof panel and Pricin
     const resetStart = landing.indexOf(':lang(zh) .v2-landing__brand-name');
     const resetBlock = landing.slice(resetStart, landing.indexOf('}', resetStart));
     for (const selector of [
-      '.v2-landing__usecase-title',
+      '.v2-landing__team-title',
       '.v2-landing__tile-title',
       '.v2-landing__tier-enterprise strong',
     ]) {
@@ -4972,4 +5062,103 @@ test('TASK-435 runtime columns can shrink on phones without dropping the observe
   expect(ruleBody(css, '.v2-runtime-controls__saved')).toContain('min-width: 0');
   expect(ruleBody(css, '.v2-runtime-controls__observed')).toContain('overflow-wrap: anywhere');
   expect(css).toContain('content: attr(data-label)');
+});
+
+test('teammate invite cards keep one-column phone controls at the 44px minimum', () => {
+  const css = read('../components/V2BringTeammate.css');
+  const phone = blockContaining(css, '@media (max-width: 760px)', '.v2-teammate');
+  expect(phone).toContain('grid-template-columns: minmax(0, 1fr)');
+  expect(phone).toContain('height: 44px');
+  expect(phone).toContain('flex-basis: 44px');
+  expect(css).toContain('width: calc(100% - 36px)');
+  expect(css).toContain('.v2-teammate.v2-teammate--message');
+  expect(css).toContain('.v2-teammate .v2-teammate__copy {');
+  expect(css).toContain('max-width: 100%');
+});
+
+test('standalone teammate invite button keeps desktop and phone touch targets', () => {
+  const css = read('../v2.css');
+  const standalone = ruleBody(css, '.v2-chat__new-pod-action--invite > .v2-chat__new-pod-copy');
+  expect(standalone).toContain('min-height: 32px');
+  expect(standalone).toContain('margin-top: auto');
+  expect(css).toMatch(/@media \(max-width: 760px\) \{\s*\.v2-chat__new-pod-action--invite > \.v2-chat__new-pod-copy \{ min-height: 44px;/);
+});
+
+describe('run trace layout', () => {
+  const css = read('../components/V2RunTrace.css');
+  test('long attribution IDs wrap, phone records stack, and links meet touch height', () => {
+    expect(css).toContain('overflow-wrap: anywhere');
+    expect(css).toContain('min-width: 0');
+    expect(css).toContain('min-height: 44px');
+    expect(css).toMatch(/@media \(max-width: 760px\)/);
+    expect(css).toMatch(/grid-template-columns: minmax\(0, 1fr\)/);
+  });
+});
+
+test('TASK-531 landing FAQ keeps its measure, rhythm and question style', () => {
+  const css = read('../landing/v2-landing.css');
+  expect(ruleBody(css, '.v2-landing__faq')).toMatch(/max-width:\s*720px/);
+  expect(ruleBody(css, '.v2-landing__faq')).toMatch(/gap:\s*30px/);
+  expect(ruleBody(css, '.v2-landing__faq-item')).toMatch(/gap:\s*8px/);
+  expect(ruleBody(css, '.v2-landing__faq-item + .v2-landing__faq-item')).toMatch(
+    /border-top:\s*1px solid var\(--v2-border-soft\)/,
+  );
+  expect(ruleBody(css, '.v2-landing__faq-item dt')).toMatch(/font-size:\s*18px/);
+  expect(ruleBody(css, '.v2-landing__faq-item dt')).toMatch(/font-weight:\s*600/);
+  expect(css).toContain('.v2-landing__faq-item dt::first-letter');
+});
+
+test('OpenUI cards keep the approved phone controls and table records', () => {
+  const css = read('../cards/uiCard.css');
+  expect(css).toContain('@media (max-width:760px)');
+  expect(css).toMatch(/\.ui-ft \.ub\{height:44px/);
+  expect(css).toContain('.ui-table--records .ui-tw { display:none; }');
+  expect(css).toContain('.ui-table--records .ui-recs { display:grid; }');
+  expect(css).toContain('.v2-root .v2-msg.v2-ui-card { display:flex; flex-direction:column;');
+  expect(css).toContain('.ui.gone{border-style:dashed');
+});
+
+describe('v2 board on a phone (TASK-576)', () => {
+  test('the board head wraps so the title keeps a full-width row above the actions', () => {
+    const css = read('../v2.css');
+    const phone = mediaBlockContaining(css, '.v2-board__head');
+    expect(ruleBody(phone, '.v2-board__head')).toContain('flex-wrap: wrap');
+    expect(ruleBody(phone, '.v2-board__title-wrap')).toContain('flex: 1 1 100%');
+    expect(ruleBody(phone, '.v2-board__title-wrap')).toContain('order: 1');
+    expect(ruleBody(phone, '.v2-board__new')).toContain('margin-left: auto');
+  });
+
+  test('the board drops the feature body gutter on a phone', () => {
+    const css = read('../v2.css');
+    const phone = mediaBlockContaining(css, '.v2-feature--board > .v2-feature__body');
+    expect(ruleBody(phone, '.v2-feature--board > .v2-feature__body')).toMatch(/padding:\s*0;/);
+  });
+
+  test('the board route passes the class that opts it into that override', () => {
+    expect(read('../V2App.tsx')).toMatch(
+      /<V2PodBoard \/>,\s*false,\s*\/\*[^*]*\*\/\s*false,\s*'v2-feature--board'/,
+    );
+  });
+
+  test('feature panes reserve the tab bar height so the body stops above the fixed nav', () => {
+    const css = read('../v2.css');
+    const phone = mediaBlockContaining(css, 'padding-bottom: 56px');
+    expect(ruleBody(phone, '.v2-feature')).toContain('padding-bottom: 56px');
+    expect(ruleBody(phone, '.v2-mobile-tabs')).toContain('height: 56px');
+  });
+
+  test('hosted meter track keeps its flex width and clips the fill inside the card', () => {
+    const v2 = read('../v2.css');
+    expect(ruleBody(v2, '.v2-team-card__meter-track')).toContain('flex: 1');
+    expect(ruleBody(v2, '.v2-team-card__meter-track')).toContain('min-width: 0');
+    expect(ruleBody(v2, '.v2-team-card__meter-track')).toContain('overflow: hidden');
+  });
+
+  test('feature pages mount the phone tab bar and share one attention count with the rail', () => {
+    const page = read('../components/V2FeaturePage.tsx');
+    expect(page).toContain("import V2MobileTabs from './V2MobileTabs';");
+    expect(page).toContain('const attention = useV2PodAttention();');
+    expect(page).toContain('<V2NavRail needsYouCount={attention.count} />');
+    expect(page).toContain('<V2MobileTabs needsYouCount={attention.count ?? 0} />');
+  });
 });

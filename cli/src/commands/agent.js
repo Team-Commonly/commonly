@@ -1,4 +1,6 @@
 import { createOwnKeyResolver, createMachineReportClient } from '../lib/own-key-launch.js';
+import { foregroundDaemonHint } from '../lib/daemon-hint.js';
+import { loadDaemonRecord } from '../lib/daemon-store.js';
 import { WALKED_HARNESSES } from '../lib/runtime-inventory.js';
 import { createRuntimeReporter } from '../lib/runtime-observation.js';
 /**
@@ -22,7 +24,6 @@ import { createHash } from 'crypto';
 
 import { requireSeatModel } from '../lib/adapters/seat-model.js';
 import { createClient } from '../lib/api.js';
-import { copyHandoffMemory } from '../lib/handoff-memory.js';
 import {
   buildSpawnId,
   createSpawnCredentialLease,
@@ -33,7 +34,7 @@ import {
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
 import { startPoller, terminalDeliveryAckError } from '../lib/poller.js';
 import { formatDigestFrame } from '../lib/digest-frame.js';
-import { startWebhookServer, forwardToLocalWebhook } from '../lib/webhook-server.js';
+import { startWebhookServer, forwardToLocalWebhook, logOnlyHandler } from '../lib/webhook-server.js';
 import { getAdapter, listAdapterNames } from '../lib/adapters/index.js';
 import {
   getSession,
@@ -59,9 +60,12 @@ import {
   environmentForServer,
   normalizeSandboxTrust,
   parseEnvironmentFile,
+  refuseWorkspaceTrust,
   resolveWorkspace,
   validateEnvironmentSpec,
+  WORKSPACE_SANDBOX_ALLOW,
 } from '../lib/environment.js';
+import { firstRunWorkspace, podIsConfirmedPrivate, workspaceTurnPlacement } from '../lib/workspace-trust.js';
 import {
   ADAPTERS_WITH_DEFAULT_MCP,
   ADAPTERS_WITH_GRANT_BROKER,
@@ -77,12 +81,14 @@ import {
   formatPodFocusFrame,
   readPodFocus,
 } from '../lib/pod-focus.js';
-import { claimReleaseFor, ackResultFor } from '../lib/claim-outcome.js';
+import { claimReleaseFor, ackResultFor, EMPTY_OUTPUT } from '../lib/claim-outcome.js';
+import { createClaimedWorkGate } from '../lib/claimed-work-gate.js';
 import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
+import { createSeatStop } from '../lib/seat-stop.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import { describeUpstreamRefusal } from '../lib/upstream-refusal.js';
 import {
@@ -175,8 +181,7 @@ export const NO_AGENT_CLI_CODE = 'no_agent_cli';
  * workspace, and an environment that is absent or enforces nothing (a record
  * from before bootstrap applied the default, or one attached without an
  * environment file). Such a record is told how to pick the default up; it is
- * not rewritten here (Cofounder, 2026-10-16: none were found outside our own
- * tests).
+ * not rewritten here.
  */
 export const savedSeatLacksDefaultSandbox = (record) => Boolean(record)
   && ADAPTERS_WITH_DEFAULT_SANDBOX.has(record.adapter)
@@ -297,6 +302,53 @@ export const printAttachRunGuidance = ({
 // a foreground run re-bootstraps from the Connect page's env exports after the
 // local record is removed; a daemon-managed seat is switched through the
 // registry, which the daemon applies on its next pass.
+// `run --allow write,web`: the grants a first-run workspace seat starts with
+// (TASK-294). An unknown name is refused rather than dropped.
+export const parseAllowGrants = (value) => {
+  if (value === undefined || value === null) return [];
+  const requested = String(value).split(',').map((grant) => grant.trim()).filter(Boolean);
+  if (!requested.length || requested.some((grant) => !WORKSPACE_SANDBOX_ALLOW.includes(grant))) {
+    throw new Error(`--allow takes ${WORKSPACE_SANDBOX_ALLOW.join(' and/or ')}, comma-separated `
+      + `(got ${JSON.stringify(String(value))})`);
+  }
+  return WORKSPACE_SANDBOX_ALLOW.filter((grant) => requested.includes(grant));
+};
+
+// Grants are fixed when the token file is written. A later --allow that
+// differs is refused with the way to change them, never applied quietly.
+export const checkRunAllowRequest = ({ record, requested = [] }) => {
+  if (!requested.length) return { ok: true };
+  const savedList = record?.environment?.sandbox?.allow || [];
+  const saved = WORKSPACE_SANDBOX_ALLOW.filter((grant) => savedList.includes(grant));
+  if (saved.join(',') === requested.join(',')) return { ok: true };
+  const name = record.agentName;
+  return {
+    ok: false,
+    message: [
+      `'${name}' was set up with ${saved.length ? `--allow ${saved.join(',')}` : 'no --allow'}; `
+        + `--allow ${requested.join(',')} was not applied.`,
+      `To change it: commonly agent detach ${name} --force, then re-run with the Connect-page `
+        + `env exports and --allow ${requested.join(',')}.`,
+    ].join('\n'),
+  };
+};
+
+// What a first-run workspace seat may do, said once at bootstrap. A write
+// grant hands it Bash, whose commands reach the network, so that line never
+// claims the seat is offline.
+const workspaceGrantLine = (workspacePath, allow) => {
+  const write = allow.includes('write');
+  const web = allow.includes('web');
+  if (!write) {
+    return web
+      ? `this agent can read ${workspacePath}, run read-only git there, and fetch web pages; it cannot edit files.`
+      : `this agent can read ${workspacePath} and run read-only git there; it cannot edit files or reach the web.`;
+  }
+  return `this agent can read and edit files in ${workspacePath} and run commands there`
+    + (web ? ', and fetch web pages' : '')
+    + '. Its commands can reach the network. Its .git stays read-only, so it cannot commit.';
+};
+
 export const checkRunAdapterRequest = ({ record, requestedAdapter, tokenPath }) => {
   const requested = String(requestedAdapter || '').trim().toLowerCase();
   if (!requested) return { ok: true };
@@ -320,6 +372,10 @@ export const bootstrapAgentRecordFromEnv = async ({
   adapterRegistry = { getAdapter, listAdapterNames },
   adapterOverride = null,
   log = () => {},
+  startDir = process.cwd(),
+  home,
+  allow = [],
+  platform = process.platform,
 }) => {
   const runtimeToken = (env.COMMONLY_AGENT_TOKEN || '').trim();
   if (!runtimeToken) return null;
@@ -398,6 +454,28 @@ export const bootstrapAgentRecordFromEnv = async ({
   });
   if (bindingRefusal) throw new Error(bindingRefusal);
 
+  // The daemon's baseline for a seat nobody wrote a spec for, sandbox
+  // included: this record is derived from nothing the person declared.
+  const environment = seatBaseline(buildDefaultEnvironment(adapterName), adapterName, { sandbox: true });
+  // A claude seat whose every pod is confirmed private reads the directory
+  // it was started from (TASK-294); anything else keeps the public default.
+  const workspace = firstRunWorkspace({
+    adapterName, installations: installs, startDir, home, platform,
+  });
+  if (allow.length && !workspace?.workspacePath) {
+    throw new Error(`--allow ${allow.join(',')} applies only to an agent that works in the folder it `
+      + 'starts in, and this one '
+      + (workspace?.reason
+        ? `would read only its scratch folder, because ${workspace.reason}.${workspace.fix ? ` ${workspace.fix}` : ''}`
+        : 'does not.'));
+  }
+  if (workspace?.workspacePath) {
+    log(workspaceGrantLine(workspace.workspacePath, allow));
+  } else if (workspace?.reason) {
+    log(`this agent can read only its own scratch folder, because ${workspace.reason}.`
+      + (workspace.fix ? ` ${workspace.fix}` : ''));
+  }
+
   return {
     agentName,
     displayName: identity?.displayName || primary?.displayName || agentName,
@@ -406,10 +484,10 @@ export const bootstrapAgentRecordFromEnv = async ({
     instanceUrl,
     runtimeToken,
     adapter: adapterName,
-    // The daemon's baseline for a seat nobody wrote a spec for, sandbox
-    // included: this record is derived from nothing the person declared.
-    environment: seatBaseline(buildDefaultEnvironment(adapterName), adapterName, { sandbox: true }),
-    workspacePath: null,
+    environment: workspace?.workspacePath
+      ? { ...environment, sandbox: { trust: 'workspace', ...(allow.length ? { allow } : {}) } }
+      : environment,
+    workspacePath: workspace?.workspacePath || null,
   };
 };
 
@@ -486,6 +564,28 @@ const inboxPriority = (event) => {
 // pod-chat delivery. They stay on their existing single-event path; every
 // event that represents the shared pod inbox is batched below.
 const PRIVATE_RESPONSE_EVENT_TYPES = new Set(['agent.ask', 'agent.ask.response']);
+
+// How often a live delivery lease is renewed: during a turn, and while a failed
+// turn's events wait for their retry. The server requeues a delivery whose
+// lease is 10+ minutes old (AGENT_EVENT_REQUEUE_DELIVERED_MINUTES).
+const DELIVERY_RENEW_INTERVAL_MS = 60_000;
+
+// A failed turn's events are carried in memory and re-run when the retry timer
+// fires (see `holdForRetry` in performRun). Each local re-run is a delivery
+// attempt the server's requeue cap (AGENT_EVENT_REQUEUE_MAX_ATTEMPTS, 3) never
+// counts, so a carry with no bound would retry poison content forever and
+// block every later event behind it. At this many consecutive failures of the
+// same event the carry lets it go: renewal stops, and the server's requeue
+// sweep redelivers it under the cap it already enforces. Three matches the
+// point where spawnRetryPolicy stops treating an unknown failure as transient.
+const HELD_RETRY_MAX_FAILURES = 3;
+
+const deliveryIdOf = (event) => {
+  const deliveryId = event?.payload?.deliveryId;
+  return typeof deliveryId === 'string' && deliveryId ? deliveryId : null;
+};
+
+const countEvents = (count) => `${count} event${count === 1 ? '' : 's'}`;
 
 // ── default environment for adapters that benefit from auto-MCP wiring ─────
 
@@ -594,7 +694,32 @@ export const assertSandboxDeclaredForPublicPod = async ({
     return;
   }
 
-  // Normalized FIRST (Vera 71715, Wren 71718): the predicate below reads a
+  // A `workspace` seat lets the room read its start directory (TASK-294), so it
+  // needs the pod CONFIRMED private, not merely not known to be public: a pod
+  // whose visibility cannot be read fails closed here, the way dsh does above.
+  if (environment?.sandbox?.trust === 'workspace') {
+    let pod;
+    try {
+      pod = await client.get(`/api/pods/${podId}`);
+    } catch {
+      throw new Error(
+        'sandbox.trust=workspace requires confirmed private pod visibility before attach, '
+        + 'and this pod\'s visibility could not be read',
+      );
+    }
+    if (podIsConfirmedPrivate(pod)) return;
+    const label = pod?.name ? `"${pod.name}"` : podId;
+    const reported = typeof pod?.publicRead === 'boolean' && typeof pod?.communityListed === 'boolean';
+    let why = 'did not report its visibility';
+    if (reported) why = pod.publicRead || pod.communityListed ? 'is publicly readable' : 'is open to join';
+    throw new Error(
+      `${label} ${why}, so sandbox.trust=workspace would let people you do not control read this `
+      + 'agent\'s start directory. Declare "sandbox": { "trust": "public" } for this pod, or attach '
+      + 'to a private, invite-only pod.',
+    );
+  }
+
+  // Normalized FIRST: the predicate below reads a
   // legacy `internal` record as the `public` it means, the same mapping the
   // attach gate and both adapters use. Reading it raw refused a record that
   // means public one call before the gate #1840 fixes — TASK-113 claims
@@ -781,7 +906,7 @@ export const updateAgentConfiguration = async ({
  * The sandbox an attach will actually run under — derived, then gated.
  *
  * The trust is normalized ONCE, before it is used for anything. A stored
- * `internal` means `public` (environment.js, Wren 69585), and resolving the mode
+ * `internal` means `public` (environment.js), and resolving the mode
  * off the raw value made this gate disagree with the adapters in BOTH
  * directions: `{ trust: 'internal' }` with no declared mode left the attach-time
  * mode at `'none'` and refused nothing here, and `internal` beside
@@ -794,8 +919,7 @@ export const updateAgentConfiguration = async ({
  * either way; what was wrong is that this gate's verdict contradicted theirs, and
  * its refusal for the `mode: 'none'` shape landed later, at adapter spawn, after
  * attach had already published and minted. Normalizing here makes the two agree
- * and puts the refusal where the user can see it (Kai, TASK-113; re-measured at
- * source after Vera 71664).
+ * and puts the refusal where the user can see it (TASK-113).
  *
  * Whether the resolved mode is AVAILABLE here — bwrap installed, macOS for
  * Seatbelt, the codex permission-profile version — is deliberately not this
@@ -809,30 +933,47 @@ export const updateAgentConfiguration = async ({
  * codex.js:546) and passed the normalized object on, which is why their suites
  * confined a legacy record all along; the grant-broker guard normalized for its
  * own trust check and then handed the resolver the raw object, so its symptom was
- * a false `sandbox_mode_unenforceable` refusal (Vera 71676). Both are settled on
+ * a false `sandbox_mode_unenforceable` refusal. Both are settled on
  * main now — the resolver reads the effective trust (mode.js:38) and the guard
  * imports the same reader from environment.js (grant-broker-guard.js:186) — so
  * this helper needs no coupling to them: it normalizes once, here, before its own
  * two gates, because those gates compare `trust` directly.
  */
 export const resolveAttachSandbox = ({
-  environment, adapterName, platform = process.platform,
+  environment, adapterName, adapter = null, platform = process.platform,
 } = {}) => {
+  // An adapter that enforces one confined shape of its own (dsh: Seatbelt with a
+  // restricted network and NO trust) says so here, and its check is the one that
+  // decides: the trust-keyed gates below cannot express that shape, so before
+  // this they refused the only environment dsh accepts. The adapter's
+  // check throws on every other shape, so this admits nothing it would refuse.
+  if (typeof adapter?.confinesOwnSandbox === 'function' && adapter.confinesOwnSandbox(environment)) {
+    return { mode: environment.sandbox.mode, trust: environment.sandbox.trust };
+  }
   const sandbox = normalizeSandboxTrust(environment?.sandbox);
   const trust = sandbox?.trust;
+  // `workspace` is claude-only for now (TASK-294). Refused here with the words
+  // the adapter would use at spawn, so the attach fails before anything is
+  // published rather than at the seat's first turn.
+  if (trust === 'workspace' && adapterName !== 'claude') {
+    refuseWorkspaceTrust(sandbox, adapterName || 'this');
+  }
+  // Both confined trusts take their mode from the host the same way; they
+  // differ in what the policy inside the sandbox allows, not in the sandbox.
+  const confined = trust === 'public' || trust === 'workspace';
   const mode = sandbox?.mode
-    || (trust === 'public' ? resolvePublicSandboxMode(sandbox, platform) : 'none');
-  if (trust === 'public' && mode === 'none') {
+    || (confined ? resolvePublicSandboxMode(sandbox, platform) : 'none');
+  if (confined && mode === 'none') {
     throw new Error(
-      'sandbox.trust=public requires an enforced sandbox mode; refusing to attach unsandboxed',
+      `sandbox.trust=${trust} requires an enforced sandbox mode; refusing to attach unsandboxed`,
     );
   }
-  // Moved in from the call site (Vera 71675): this is the check the raw compare
+  // Moved in from the call site: this is the check the raw compare
   // used to fail closed on, refusing `internal` beside `mode: 'workspace'`. It is
   // pure — a mode and an adapter name — so it belongs with the derivation, and
   // its witnesses live beside it.
   if ((mode === 'workspace' || mode === 'read-only')
-    && (trust !== 'public' || !ADAPTERS_WITH_DEFAULT_SANDBOX.has(adapterName))) {
+    && (!confined || !ADAPTERS_WITH_DEFAULT_SANDBOX.has(adapterName))) {
     throw new Error(
       `sandbox.mode=${mode} requires public trust and an adapter with sandbox enforcement`,
     );
@@ -856,6 +997,7 @@ export const performAttach = async ({
   memoryInstance = 'default',
   log = () => {},
   adapterRegistry = { getAdapter, listAdapterNames },
+  seatbelt: probeSeatbelt = detectSeatbelt,
 }) => {
   const adapter = adapterRegistry.getAdapter(adapterName);
   if (!adapter) {
@@ -890,7 +1032,7 @@ export const performAttach = async ({
     }
     log(`workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
 
-    const { mode: sandboxMode } = resolveAttachSandbox({ environment, adapterName });
+    const { mode: sandboxMode } = resolveAttachSandbox({ environment, adapterName, adapter });
     if (sandboxMode === 'bwrap') {
       const bwrap = detectBwrap();
       if (!bwrap.available) {
@@ -915,19 +1057,20 @@ export const performAttach = async ({
           + '(deny-by-default filesystem + network)',
         );
       } else {
-        const seatbelt = detectSeatbelt();
-        if (!seatbelt.available) {
-          throw new Error(
-            `public Claude sandbox.mode=${sandboxMode} requires macOS Seatbelt: `
-            + `${seatbelt.error}. On Linux use sandbox.mode=bwrap.`,
-          );
-        }
         const adapterLabel = ({ opencode: 'OpenCode', qwen: 'Qwen', claude: 'Claude' })[adapterName]
           || adapterName;
-        log(
-          `sandbox: public ${sandboxMode} via macOS Seatbelt `
-          + `(deny-by-default host filesystem; ${adapterLabel}/MCP network retained)`,
-        );
+        const seatbelt = probeSeatbelt();
+        if (!seatbelt.available) {
+          // dsh refuses bwrap, so it gets no Linux hint that leads to a second refusal.
+          throw new Error(adapterName === 'dsh'
+            ? `confined dsh sandbox.mode=${sandboxMode} requires macOS Seatbelt: ${seatbelt.error}.`
+            : `public ${adapterLabel} sandbox.mode=${sandboxMode} requires macOS Seatbelt: `
+              + `${seatbelt.error}. On Linux use sandbox.mode=bwrap.`);
+        }
+        log(adapterName === 'dsh'
+          ? `sandbox: confined dsh ${sandboxMode} via macOS Seatbelt (restricted network)`
+          : `sandbox: public ${sandboxMode} via macOS Seatbelt `
+            + `(deny-by-default host filesystem; ${adapterLabel}/MCP network retained)`);
       }
     } else if (sandboxMode !== 'none' && sandboxMode !== undefined) {
       throw new Error(
@@ -965,6 +1108,13 @@ export const performAttach = async ({
   // server via legacy normalization).
   const runtimeType = adapter.runtimeType || adapter.name;
 
+  if (memoryFrom) {
+    const capability = await client.get('/api/registry/install/memory-handoff');
+    if (capability?.installTimeMemoryHandoff !== true) {
+      throw new Error('Server does not support install-time memory handoff; upgrade the server before attaching');
+    }
+  }
+
   // Idempotent publish — already-published is expected and fine. Install will
   // surface the real error if the manifest is truly unusable.
   try {
@@ -988,7 +1138,9 @@ export const performAttach = async ({
   // on config.environment so cross-driver implementations can realize it
   // server-side without re-reading the user's file.
   const installResult = await client.post('/api/registry/install', {
-    ...(memoryFrom ? { resumeExisting: true } : {}),
+    ...(memoryFrom ? {
+      resumeExisting: true, memoryFrom: { agentName: memoryFrom, instanceId: memoryInstance },
+    } : {}),
     agentName,
     podId,
     displayName: displayName || agentName,
@@ -1012,10 +1164,8 @@ export const performAttach = async ({
   const instanceId = installation.instanceId || 'default';
 
   if (memoryFrom) {
-    const memoryCopy = await copyHandoffMemory(client, {
-      sourceAgentName: memoryFrom, sourceInstanceId: memoryInstance,
-      targetAgentName: installation.agentName, targetInstanceId: instanceId,
-    });
+    const memoryCopy = installResult.memoryCopy;
+    if (!memoryCopy) throw new Error('Server does not support install-time memory handoff; upgrade the server before attaching');
     log(memoryCopy.reason === 'source-empty'
       ? 'hosted agent has no long-term memory to copy'
       : 'hosted long-term memory is present in the local agent');
@@ -1117,6 +1267,17 @@ export const runMemoryImport = async ({
 
 // ── run: local-CLI wrapper loop (ADR-005) ────────────────────────────────────
 
+// TASK-293, and the rule AX entry 43 earned: a frame that says "otherwise
+// return NO_REPLY" must also say what the otherwise costs. Silence here is an
+// exact match (`silentReply` in runTurn), so a seat that checkpointed and then
+// ended its turn on a summary of doing nothing had the summary posted — four
+// times in 24 h, from two seats. No wrapper-side classifier guesses which
+// summaries were meant for nobody; the consequence goes where the instruction
+// is. Every prompt whose final text the wrapper posts to the pod carries it.
+// agent.ask does not: its final text goes only to the asking agent.
+const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
+  + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary.';
+
 const extractPrompt = (event) => {
   const p = event.payload || {};
   if (PROMPT_EVENT_TYPES.has(event.type)) {
@@ -1174,6 +1335,7 @@ const extractPrompt = (event) => {
       '',
       'Use this answer to continue the work you were doing.',
       'Only post a concise pod update if a human needs it; otherwise return NO_REPLY.',
+      FINAL_TEXT_IS_POSTED,
     ].join('\n');
   }
   if (event.type === 'decision.ruled') {
@@ -1329,7 +1491,7 @@ export const performRun = ({
   // (`daemon-supervisor.js`); this is the same predicate at the only other site
   // that can see the record — same code, so one refusal with two emitters.
   //
-  // IN MEMORY, RECORD UNTOUCHED (wren 71641): the withheld environment is what
+  // IN MEMORY, RECORD UNTOUCHED: the withheld environment is what
   // the adapter spawns with, and the stored record keeps its broker, so the
   // daemon stays the layer that judges a host it knows. Applied once for the
   // run rather than per turn: `agent run` reads its record once at boot.
@@ -1377,6 +1539,7 @@ export const performRun = ({
     warn: (message) => log(`cascade config: ${message}`),
   });
   const cascadeGovernor = createCascadeGovernor(cascadeSettings);
+  const claimedWorkGate = createClaimedWorkGate({ client });
   // Unconditional, because the only other cascade line on this path is the
   // warn callback above — which fires only when a value is BAD. Without this,
   // a seat running COMMONLY_CASCADE_CAP=8 logs exactly what a seat on the
@@ -1397,8 +1560,44 @@ export const performRun = ({
   // as binary-not-found — so we ensure it up front to avoid the confusing
   // diagnostic. ADR-008: when an environment spec was attached, the resolved
   // workspace path replaces the /tmp default.
-  const agentCwd = workspacePath || join(tmpdir(), 'commonly-agents', agentName);
+  const scratchCwd = join(tmpdir(), 'commonly-agents', agentName);
+  const agentCwd = workspacePath || scratchCwd;
   if (!existsSync(agentCwd)) mkdirSync(agentCwd, { recursive: true });
+  // TASK-294: a pod can turn public after attach, so a workspace seat re-reads
+  // its pods before every turn, and a turn it cannot confirm (a failed read
+  // included) runs as a public seat in the scratch folder. The session is
+  // bound to where and as what the turn runs, so a public turn never resumes
+  // a conversation that read the workspace, whatever claude's resume would
+  // find from another folder.
+  let lastPlacementReason = null;
+  const placeTurn = async () => {
+    if (seatEnvironment?.sandbox?.trust !== 'workspace') {
+      return { environment: seatEnvironment, cwd: agentCwd, binding: sessionBinding };
+    }
+    let installations = null;
+    let readError = null;
+    try {
+      const identity = await client.get('/api/agents/runtime/installations', {}, {
+        signal: AbortSignal.timeout(5000),
+      });
+      installations = Array.isArray(identity?.installations) ? identity.installations : [];
+    } catch (err) {
+      installations = null;
+      readError = err;
+    }
+    const placement = workspaceTurnPlacement({
+      environment: seatEnvironment, workspacePath: agentCwd, installations, scratchDir: scratchCwd,
+    });
+    if (placement.reason !== lastPlacementReason) {
+      log(placement.reason
+        ? `this turn runs as a public seat in ${scratchCwd}, because ${placement.reason}`
+        : `every pod is confirmed private again; turns read ${agentCwd}`);
+      lastPlacementReason = placement.reason;
+    }
+    if (!existsSync(placement.cwd)) mkdirSync(placement.cwd, { recursive: true });
+    const where = `${placement.environment.sandbox.trust}:${placement.cwd}`;
+    return { ...placement, readError, binding: sessionBinding ? `${sessionBinding}:${where}` : where };
+  };
   const batchLimit = Math.min(50, Math.max(1, Number(inboxBatchLimit) || 10));
 
   const processEvent = async (event) => {
@@ -1496,6 +1695,13 @@ export const performRun = ({
     // Recording a human trigger sets the streak to 0, so this call and the
     // completion-time one are idempotent with each other.
     if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
+    // Defer-while-claimed (TASK-640), before the cascade check so a deferred
+    // broadcast spends none of the addressed grace.
+    if (await claimedWorkGate.shouldDefer(eventPodId, [{ event, trigger }])) {
+      log(`[${event.type}] holding a claimed row in pod ${eventPodId} — broadcast`
+        + (event?.payload?.messageId ? ` ${event.payload.messageId}` : '') + ' acked without a spawn');
+      return { outcome: 'no_action', reason: 'claimed-work', details: { messageId: event?.payload?.messageId || null } };
+    }
     const admission = cascadeGovernor.admit(eventPodId, trigger, event.type, event.payload);
     if (!admission.allowed) {
       // Name the MESSAGE, not just the pod. Without this the refusal is silent at
@@ -1649,11 +1855,39 @@ export const performRun = ({
   const runTurn = async ({
     event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger,
   }) => {
+    const placement = await placeTurn();
+    // A workspace turn placed public (its pod turned public, or its pods could
+    // not be read) is confined as a public seat, which this host may not be
+    // able to do: Claude Code on Linux has only the workspace jail. Refuse it
+    // as the run start would, before anything is read or spawned. The model
+    // never runs and nothing is posted. A public pod is a settled answer, so a
+    // human's message is handed to another listener (claim-outcome.js). A
+    // failed read is not: it throws, so the event stays unacked and comes back
+    // through the spawn-retry backoff instead of being refused for good.
+    if (placement.reason) {
+      const turnRefusal = hostSandboxRefusal({ environment: placement.environment, adapterName: adapter.name });
+      if (turnRefusal && placement.readError) {
+        throw Object.assign(
+          new Error(`turn deferred, because its pods could not be read: ${placement.readError.message}`, {
+            cause: placement.readError,
+          }),
+          { status: placement.readError.status },
+        );
+      }
+      if (turnRefusal) {
+        log(`turn refused, because ${placement.reason}: ${turnRefusal.replace(/\n\s*/g, ' ')}`);
+        return {
+          outcome: 'no_action',
+          refused: { reason: 'delivery-refused' },
+          reason: 'host-cannot-confine-turn',
+        };
+      }
+    }
     // TASK-440: a cold, large session starts fresh at wake instead of being
     // resumed. The restart note leads the prompt; memory still reaches the
     // fresh session through the adapter's preamble.
-    const sessionEntry = getSessionEntry(agentName, eventPodId, { binding: sessionBinding });
-    let sessionId = getSession(agentName, eventPodId, { binding: sessionBinding });
+    const sessionEntry = getSessionEntry(agentName, eventPodId, { binding: placement.binding });
+    let sessionId = getSession(agentName, eventPodId, { binding: placement.binding });
     let recycleBriefing = null;
     if (sessionId && shouldStartFreshSession({
       lastTurn: sessionEntry?.lastTurn,
@@ -1670,10 +1904,15 @@ export const performRun = ({
       sessionId = null;
     }
     // ADR-005 §Memory bridge: read long_term before spawn, inject via ctx,
-    // and (if the adapter returns a summary) patch-sync back after.
-    const memoryLongTerm = await readLongTerm(client, { onError });
+    // and (if the adapter returns a summary) patch-sync back after. A workspace
+    // seat's turn that runs public (placement.reason) gets none of it: its
+    // memory may hold what earlier turns read in the project, and what this
+    // turn reads in an unconfirmed room must not reach the next workspace turn.
+    // The adapter also denies the memory tools for it (memoryWithheld).
+    const memoryWithheld = Boolean(placement.reason);
+    const memoryLongTerm = memoryWithheld ? undefined : await readLongTerm(client, { onError });
 
-    // Sharpen TASK-129: focus is a turn-start read, not an enqueue-time
+    // TASK-129: focus is a turn-start read, not an enqueue-time
     // snapshot. Read through the authorized runtime context route immediately
     // before spawn so queued events observe the current revision. The helper
     // disables pod-skill synthesis and throws on failure; the surrounding
@@ -1767,8 +2006,8 @@ export const performRun = ({
     try {
       opened = await lease.open();
     } catch (err) {
-      // A VERDICT IS NOT A CRASH, AND IT IS NOT A NO-OP (wren 72153, vera
-      // 72157). Letting it escape as a bare throw left `turnResult` undefined,
+      // A VERDICT IS NOT A CRASH, AND IT IS NOT A NO-OP.
+      // Letting it escape as a bare throw left `turnResult` undefined,
       // so `claimReleaseFor` returned the legacy holder-only DELETE — right for
       // a transient failure, wrong for a refusal that recurs on every
       // redelivery: the wake loops forever with one local log line as its only
@@ -1815,7 +2054,7 @@ export const performRun = ({
       // only for tests and has no commit-making child process.
       if (adapter?.name !== 'stub') {
         commitAttribution = prepareCommitAttribution({
-          cwd: agentCwd,
+          cwd: placement.cwd,
           env: process.env,
           agentName,
           displayName,
@@ -1845,11 +2084,13 @@ export const performRun = ({
         providerKey,
         timeoutMs: effectiveTurnTimeoutMs,
         sessionId,
-        cwd: agentCwd,
+        cwd: placement.cwd,
+        skillMountDir: scratchCwd,
         env: commitAttribution?.env || process.env,
         commitAttributionEnv: commitAttribution?.sandboxEnv || null,
         memoryLongTerm,
-        environment: seatEnvironment,
+        memoryWithheld,
+        environment: placement.environment,
         onSkillsLinked: ({ mounted, conflicted }) => {
           skillMount = {
             mounted: [...new Set([...serverSkills.mounted, ...mounted.map(reportedSkillName)])],
@@ -1893,7 +2134,7 @@ export const performRun = ({
       // wake can decide whether to recycle. Adapters that report nothing keep
       // resuming.
       setSession(agentName, eventPodId, result.newSessionId, {
-        binding: sessionBinding,
+        binding: placement.binding,
         contextTokens: result.contextTokens ?? null,
       });
     }
@@ -2035,15 +2276,32 @@ export const performRun = ({
     } else {
       // ADR-018 length gate: the tone contract is enforced here, where the
       // wrapper is the one posting. Split, attach — never truncate.
-      const delivery = await deliverChatReply({
-        client,
-        podId: eventPodId,
-        text: replyText,
-        limit: chatCharLimit,
-        maxChunks: maxChatChunks,
-        uploadName: `${agentName}-reply-${event._id}.md`,
-        log: (line) => log(`[${event.type}] ${line}`),
-      });
+      let delivery;
+      try {
+        delivery = await deliverChatReply({
+          client,
+          podId: eventPodId,
+          text: replyText,
+          limit: chatCharLimit,
+          maxChunks: maxChatChunks,
+          uploadName: `${agentName}-reply-${event._id}.md`,
+          log: (line) => log(`[${event.type}] ${line}`),
+        });
+      } catch (deliveryError) {
+        // TASK-535: every rung threw, so the reply reached nobody. The throw
+        // still leaves the events unacked for redelivery (unchanged), but the
+        // retry report is about the BATCH; this line is about the reply, and
+        // it names where it was going so a lost summary is never silent.
+        const eventCount = Array.isArray(event.payload?.batchEventIds)
+          ? event.payload.batchEventIds.length
+          : 1;
+        log(
+          `[${event.type}] ERROR reply NOT delivered to pod ${eventPodId} — `
+          + `${Buffer.byteLength(replyText)} bytes lost, ${eventCount} event${eventCount === 1 ? '' : 's'} `
+          + `left unacked for retry: ${deliveryError.message}`,
+        );
+        throw deliveryError;
+      }
       if (delivery.skipped) {
         // The server answered 200 and created nothing: a duplicate inside its
         // dedupe window, a silent body, a heartbeat it keeps. Nothing reached
@@ -2099,7 +2357,7 @@ export const performRun = ({
         );
       }
     }
-    if (result.memorySummary) {
+    if (result.memorySummary && !memoryWithheld) {
       try {
         await syncBack(client, { summary: result.memorySummary });
         log(`[${event.type}] memory synced (${Buffer.byteLength(result.memorySummary)} bytes)`);
@@ -2156,6 +2414,13 @@ export const performRun = ({
         },
       };
     }
+    // Empty output is not the sentinel. A seat that answered `NO_REPLY` read
+    // its batch and chose silence; one that printed nothing may have crashed,
+    // timed out or lost its route without saying so. The bare `no_action`
+    // stays the sentinel's alone, because a digest counts as read only on
+    // that (#2753). Release, hand-off and spawn counting treat
+    // `empty-output` exactly as they treat a bare decline.
+    if (!delivered && !replyText) return { outcome: 'no_action', reason: EMPTY_OUTPUT };
     return { outcome: delivered ? 'posted' : 'no_action' };
   };
 
@@ -2203,7 +2468,8 @@ export const performRun = ({
       ...(omitted > 0
         ? [`[${omitted} more event${omitted === 1 ? '' : 's'} arrived. Their count is real; pull pod context if needed.]`]
         : []),
-      'Do not narrate the inbox. Post only an action or a materially useful response; otherwise return NO_REPLY.',
+      'Do not narrate the inbox. Post only an action or a materially useful response; otherwise return NO_REPLY. '
+        + FINAL_TEXT_IS_POSTED,
     ].join('\n\n');
   };
 
@@ -2284,6 +2550,145 @@ export const performRun = ({
   let heldGreeting = [];
   let greetingHoldSpent = false;
 
+  // The same is true of a batch whose turn FAILED: its events are claimed, so
+  // scheduling a later poll retries nothing — the next poll cannot return
+  // them, and the old "retry scheduled" was really a 10–20 minute wait for the
+  // requeue sweep with the process idle in between (sprint-review,
+  // 2026-10-25). So a failed turn's events are carried exactly like the
+  // greeting and rejoin the inbox when the retry timer fires. Their leases are
+  // renewed while they wait, because an ack under a lapsed lease is a 409
+  // `stale_delivery`, and that stops the run. The rule (CTO ruling,
+  // 2026-10-25): a scheduled retry either fires, re-running the held events,
+  // or releases them; it never leaves a live process idle on unacked work.
+  let heldRetry = [];
+  // eventId → consecutive local failures, for HELD_RETRY_MAX_FAILURES.
+  const heldRetryFailures = new Map();
+  let heldRenewTimer = null;
+  const clearHeldRenewal = () => {
+    if (heldRenewTimer !== null) clearIntervalImpl(heldRenewTimer);
+    heldRenewTimer = null;
+  };
+
+  // Renew the nonce-bound leases of carried events. Returns the ids the server
+  // confirmed are still this runner's delivery, or null when it cannot say:
+  // nothing carried a nonce, the request failed, or an older server answered
+  // without a `renewed` list.
+  const renewHeldDeliveries = async (events) => {
+    const deliveries = events.filter(deliveryIdOf)
+      .map((event) => ({ eventId: String(event._id), deliveryId: deliveryIdOf(event) }));
+    if (deliveries.length === 0) return null;
+    const confirmed = new Set();
+    try {
+      for (let offset = 0; offset < deliveries.length; offset += 50) {
+        // eslint-disable-next-line no-await-in-loop
+        const response = await client.post('/api/agents/runtime/events/renew', {
+          events: deliveries.slice(offset, offset + 50),
+        });
+        if (!Array.isArray(response?.renewed)) return null;
+        for (const id of response.renewed) confirmed.add(String(id));
+      }
+    } catch (error) {
+      log(`[inbox.batch] held delivery renewal failed: ${error.message}`);
+      return null;
+    }
+    return confirmed;
+  };
+  // A nonce-bound event the server did not renew is no longer ours to ack:
+  // the child checkpointed it mid-turn, the requeue took it, or the cap
+  // retired it. Re-running it would at best repeat finished work, and at worst
+  // end in a stale-delivery ack that stops the run.
+  const stillHeld = (event, confirmed) => (
+    confirmed === null || !deliveryIdOf(event) || confirmed.has(String(event._id))
+  );
+
+  // Decide what a failed turn's retry carries. `failedEvents` were attempted
+  // and count toward HELD_RETRY_MAX_FAILURES; `untriedEvents` are later groups
+  // from the same page that the failure stopped before they ran (#782), and
+  // are just as claimed, so they ride along without a strike.
+  const holdForRetry = async (failedEvents, untriedEvents = []) => {
+    const released = [];
+    const carry = [];
+    const seen = new Set();
+    for (const event of failedEvents) {
+      const id = String(event._id);
+      if (!seen.has(id)) {
+        seen.add(id);
+        const failures = (heldRetryFailures.get(id) || 0) + 1;
+        if (failures >= HELD_RETRY_MAX_FAILURES) released.push(event);
+        else {
+          heldRetryFailures.set(id, failures);
+          carry.push(event);
+        }
+      }
+    }
+    for (const event of untriedEvents) {
+      const id = String(event._id);
+      if (!seen.has(id)) {
+        seen.add(id);
+        carry.push(event);
+      }
+    }
+    // A stopping run carries nothing and renews nothing: extending the lease
+    // of a process on its way out only delays the replacement's redelivery.
+    const confirmed = running && carry.length ? await renewHeldDeliveries(carry) : null;
+    const held = running ? carry.filter((event) => stillHeld(event, confirmed)) : [];
+    const dropped = running ? carry.filter((event) => !stillHeld(event, confirmed)) : [];
+    const heldIds = new Set(held.map((event) => String(event._id)));
+    for (const id of [...heldRetryFailures.keys()]) {
+      if (!heldIds.has(id)) heldRetryFailures.delete(id);
+    }
+    heldRetry = held;
+    if (dropped.length) {
+      log(
+        `[inbox.batch] ${countEvents(dropped.length)} no longer held by this runner on the server `
+        + '(checkpointed, requeued or retired) — not retried',
+      );
+    }
+    return { held, released };
+  };
+
+  // Keep a long wait's leases alive. A wait shorter than one renewal interval
+  // needs none: holdForRetry renewed at the start, and the re-run turn renews
+  // its own batch from there.
+  const keepHeldLeases = (delayMs) => {
+    clearHeldRenewal();
+    if (!running || delayMs <= DELIVERY_RENEW_INTERVAL_MS || !heldRetry.some(deliveryIdOf)) return;
+    heldRenewTimer = setIntervalImpl(async () => {
+      if (!running) {
+        clearHeldRenewal();
+        return;
+      }
+      const carry = heldRetry;
+      const confirmed = await renewHeldDeliveries(carry);
+      // The tick may already have taken this carry; never resurrect it.
+      if (heldRetry !== carry || confirmed === null) return;
+      heldRetry = carry.filter((event) => stillHeld(event, confirmed));
+      if (heldRetry.length < carry.length) {
+        log(
+          `[inbox.batch] ${countEvents(carry.length - heldRetry.length)} no longer held by this runner `
+          + 'on the server during the retry wait — not retried',
+        );
+      }
+    }, DELIVERY_RENEW_INTERVAL_MS);
+    heldRenewTimer?.unref?.();
+  };
+
+  // What the retry will actually do, for the failure report.
+  const describeHold = ({ held, released }, retry) => {
+    const parts = [];
+    if (retry.circuitOpen) parts.push('circuit open');
+    if (released.length) {
+      parts.push(
+        `releasing ${countEvents(released.length)} after ${HELD_RETRY_MAX_FAILURES} failed attempts `
+        + 'to the server\'s requeue (redelivered in ~10–20 min)',
+      );
+    }
+    parts.push(held.length
+      ? `retrying ${held.length} held event${held.length === 1 ? '' : 's'} in ${formatRetryDelay(retry.delayMs)}`
+      : `next poll in ${formatRetryDelay(retry.delayMs)}`);
+    return parts.join('; ');
+  };
+
   const handleEventBatch = async (events, inboxCount = events.length) => {
     const eventPodId = events[0]?.podId || podId;
     if (!eventPodId || events.some((event) => (event.podId || podId) !== eventPodId)) {
@@ -2349,6 +2754,17 @@ export const performRun = ({
     const trigger = triggers.includes('human') ? 'human'
       : (triggers.includes('agent') ? 'agent' : 'unknown');
     if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
+    if (await claimedWorkGate.shouldDefer(eventPodId, wakingEntries.map((entry, index) => ({
+      event: entry.event, trigger: triggers[index],
+    })))) {
+      log(`[inbox.batch] holding a claimed row in pod ${eventPodId} — ${wakingEntries.length} broadcast`
+        + `${wakingEntries.length === 1 ? '' : 's'} acked without a spawn`);
+      // Digests are left as the cascade refusal leaves them: unread.
+      for (const entry of wakingEntries) {
+        entry.result = { outcome: 'no_action', reason: 'claimed-work', details: { messageId: entry.event.payload?.messageId || null } };
+      }
+      return { entries };
+    }
     const admissionEvent = wakingEntries.find((entry) => (
       ADDRESSED_EVENT_TYPES.has(entry.event.type) || entry.event.payload?.addressed === true
     ))
@@ -2483,9 +2899,15 @@ export const performRun = ({
         for (const entry of actionEntries) entry.result = turnResult;
         // A digest was context in this successful waking turn, never an
         // independent action. If the waking work stood down or the provider
-        // refused the batch, leave it unread for the next real turn.
+        // refused the batch, leave it unread for the next real turn. A reply
+        // the server skipped as `silent_or_empty` is the seat choosing silence
+        // (the server's answer to an intentional NO_REPLY), so it read the
+        // digest. Empty output (`empty-output`) is not a choice anyone can see:
+        // a broken seat produces it every turn, and reading on it would drain
+        // the backlog that seat never saw.
         if (turnResult?.outcome === 'posted'
-          || (turnResult?.outcome === 'no_action' && !turnResult?.reason)) {
+          || (turnResult?.outcome === 'no_action'
+            && (!turnResult?.reason || turnResult.reason === 'silent_or_empty'))) {
           for (const entry of activeEntries) {
             if (entry.event.deliveryMode === 'digest') {
               entry.result = { outcome: 'no_action', reason: 'digest-read' };
@@ -2561,7 +2983,7 @@ export const performRun = ({
         log(`[inbox.batch] delivery renewal failed: ${error.message}`);
       } finally { renewing = false; }
     };
-    const timer = deliveries.length ? setIntervalImpl(renew, 60_000) : null;
+    const timer = deliveries.length ? setIntervalImpl(renew, DELIVERY_RENEW_INTERVAL_MS) : null;
     const stopRenewal = () => {
       renewalStopped = true;
       if (timer !== null) clearIntervalImpl(timer);
@@ -2583,14 +3005,18 @@ export const performRun = ({
     if (!running) return;
     let nextPollDelayMs = intervalMs;
     let completedModelTurn = false;
+    let retryScheduled = false;
     try {
       // ADR-024 D3: this is an inbox fetch, not a stream of interrupts. The
       // backend returns one pod's oldest pending batch, so every delivered row
       // below reaches the SAME composite turn before it can age into the
       // requeue sweep. The service selects the pod before claiming any row;
       // do not reintroduce a mixed-pod `limit: 10` here.
+      // TASK-317: name this CLI for the chat chip. The server keeps it as a
+      // display-only label (runtime.reportedCli) and never as a binding.
       const { events = [], inboxCount } = await client.get('/api/agents/runtime/events', {
         agentName, instanceId, limit: batchLimit,
+        ...(adapter?.name ? { reportedCli: adapter.name } : {}),
       });
       consecutiveAuthErrors = 0;
       consecutivePollFailures = 0;
@@ -2598,15 +3024,25 @@ export const performRun = ({
       // returns multiple pods in one page. Preserve pod privacy in that
       // migration window by partitioning locally. Current servers produce one
       // group, so the normal path remains one tick → one turn.
-      // A carried greeting rejoins the inbox here, so it is grouped, ordered
-      // and acked by exactly the same path as anything the poll returned. The
-      // carried row is still 'delivered' on the server, so a requeue during the
-      // carry can hand the same id back in this very page: drop the copy rather
-      // than processing it twice.
-      const carried = heldGreeting;
+      // A carried greeting or failed batch rejoins the inbox here, so it is
+      // grouped, ordered and acked by exactly the same path as anything the
+      // poll returned. The carried row is still 'delivered' on the server, so a
+      // requeue during the carry can hand the same id back in this very page:
+      // drop the carried copy rather than processing it twice. The fetched
+      // copy wins because it carries the live deliveryId; the carried one's
+      // nonce was cleared by that requeue.
+      const carried = [...heldRetry, ...heldGreeting];
       heldGreeting = [];
+      heldRetry = [];
+      clearHeldRenewal();
       const fetchedIds = new Set(events.map((event) => String(event._id)));
-      const carriedFresh = carried.filter((event) => !fetchedIds.has(String(event._id)));
+      const carriedIds = new Set();
+      const carriedFresh = carried.filter((event) => {
+        const id = String(event._id);
+        if (fetchedIds.has(id) || carriedIds.has(id)) return false;
+        carriedIds.add(id);
+        return true;
+      });
       const pageEvents = carriedFresh.length ? [...carriedFresh, ...events] : events;
       const pageInboxCount = (Number.isFinite(inboxCount) ? inboxCount : events.length)
         + carriedFresh.length;
@@ -2621,7 +3057,14 @@ export const performRun = ({
         group.push(event);
         eventGroups.set(key, group);
       }
-      for (const group of eventGroups.values()) {
+      const groups = [...eventGroups.values()];
+      // The claimed events a failure at `groupIndex` stops before they run.
+      // A digest-only group was never claimed, so it is not carried.
+      const untriedAfter = (groupIndex) => groups.slice(groupIndex + 1)
+        .filter((later) => !later.every((event) => event.deliveryMode === 'digest'))
+        .flat();
+      for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
+        const group = groups[groupIndex];
         if (!running) break;
         // A current kernel never claims a digest-only page. Guard a mixed
         // version rollout too: an ambient batch must not start a model turn.
@@ -2642,7 +3085,9 @@ export const performRun = ({
           }
           // One failure report for a batch whose items stay unacked, whether
           // the composite turn threw or an isolated item did after a refusal.
-          const scheduleBatchRetry = (err, unackedCount) => {
+          // The unacked items are carried to the retry, not left to the
+          // requeue sweep, so the delay below is when they run again.
+          const scheduleBatchRetry = async (err, failedEvents) => {
             consecutiveSpawnFailures += 1;
             const retry = spawnRetryPolicy({
               error: err,
@@ -2651,11 +3096,13 @@ export const performRun = ({
               jitterRatio: spawnJitterRatio,
             });
             nextPollDelayMs = retry.delayMs;
+            retryScheduled = true;
+            const hold = await holdForRetry(failedEvents, untriedAfter(groupIndex));
+            keepHeldLeases(retry.delayMs);
             const event = group[0];
             const wrapped = new Error(
               `inbox batch processing failed (${retry.failureClass}; ${consecutiveSpawnFailures} consecutive) `
-              + `— ${unackedCount} events remain unacked; ${retry.circuitOpen ? 'circuit open' : 'retry scheduled'}, `
-              + `next probe in ${formatRetryDelay(retry.delayMs)}: ${err.message}`,
+              + `— ${describeHold(hold, retry)}: ${err.message}`,
               { cause: err },
             );
             Object.assign(wrapped, {
@@ -2664,6 +3111,8 @@ export const performRun = ({
               consecutiveFailures: consecutiveSpawnFailures,
               retryAfterMs: retry.delayMs,
               circuitOpen: retry.circuitOpen,
+              heldCount: hold.held.length,
+              releasedCount: hold.released.length,
               eventId: event._id,
               ...(isPodFocusDiagnostic(err) ? {
                 focusDiagnostic: {
@@ -2687,12 +3136,13 @@ export const performRun = ({
               pageInboxCount,
             );
           } catch (err) {
-            scheduleBatchRetry(err, group.length);
+            await scheduleBatchRetry(err, group);
             break;
           }
           const batchSpawned = batch.entries.some((entry) => (
             entry.result?.outcome === 'posted'
-            || (entry.result?.outcome === 'no_action' && !entry.result?.reason)
+            || (entry.result?.outcome === 'no_action'
+              && (!entry.result?.reason || entry.result.reason === EMPTY_OUTPUT))
           ));
           if (batchSpawned) {
             consecutiveSpawnFailures = 0;
@@ -2725,7 +3175,10 @@ export const performRun = ({
             }
           }
           if (batch.deferredError) {
-            scheduleBatchRetry(batch.deferredError, batch.entries.filter((entry) => !entry.result).length);
+            await scheduleBatchRetry(
+              batch.deferredError,
+              batch.entries.filter((entry) => !entry.result).map((entry) => entry.event),
+            );
             break;
           }
           continue;
@@ -2758,12 +3211,16 @@ export const performRun = ({
                 jitterRatio: spawnJitterRatio,
               });
               nextPollDelayMs = retry.delayMs;
-              const retryIn = formatRetryDelay(retry.delayMs);
-              const state = retry.circuitOpen ? 'circuit open' : 'retry scheduled';
+              retryScheduled = true;
+              // Carried to the retry like a failed batch: the event is claimed,
+              // so the next poll would not return it.
+              // eslint-disable-next-line no-await-in-loop
+              const hold = await holdForRetry([event], untriedAfter(groupIndex));
+              keepHeldLeases(retry.delayMs);
               const wrapped = new Error(
                 `${event.type} processing failed (${retry.failureClass}; `
-                + `${consecutiveSpawnFailures} consecutive) — event ${event._id} remains unacked; `
-                + `${state}, next probe in ${retryIn}: ${err.message}`,
+                + `${consecutiveSpawnFailures} consecutive) — event ${event._id} unacked; `
+                + `${describeHold(hold, retry)}: ${err.message}`,
                 { cause: err },
               );
               Object.assign(wrapped, {
@@ -2772,6 +3229,8 @@ export const performRun = ({
                 consecutiveFailures: consecutiveSpawnFailures,
                 retryAfterMs: retry.delayMs,
                 circuitOpen: retry.circuitOpen,
+                heldCount: hold.held.length,
+                releasedCount: hold.released.length,
                 eventId: event._id,
                 ...(isPodFocusDiagnostic(err) ? {
                   focusDiagnostic: {
@@ -2877,12 +3336,19 @@ export const performRun = ({
       onError?.(err);
     }
     // Notices landing during a turn share one three-second collection window
-    // before the next inbox read, independent of the idle polling cadence.
-    if (running) setTimeoutImpl(tick, completedModelTurn ? 3000 : nextPollDelayMs);
+    // before the next inbox read, independent of the idle polling cadence. A
+    // retry scheduled in the same tick keeps its own delay: the failure report
+    // names it, and a sibling's completed turn must not shorten the backoff.
+    if (running) setTimeoutImpl(tick, completedModelTurn && !retryScheduled ? 3000 : nextPollDelayMs);
   };
 
   tick();
-  return { stop: () => { running = false; } };
+  return {
+    stop: () => {
+      running = false;
+      clearHeldRenewal();
+    },
+  };
 };
 
 // ── init: scaffold a webhook-SDK agent (ADR-006 §Scaffolding) ───────────────
@@ -2894,22 +3360,27 @@ const SUPPORTED_LANGUAGES = ['python'];
 // three levels up. The scaffolder copies the canonical SDK file from the repo
 // into the user's cwd; ADR-006 §SDK lives = "live-copy, not dependency".
 //
-// Removal condition: ADR-006 §Migration path Phase 4 — when the CLI is
-// published as `@commonlyai/cli` on npm, the example files won't sit at a
-// repo-relative path; we'll need to bundle them into the package at build
-// time and resolve via `import.meta.resolve` or a packaged-data lookup.
-// Until that phase, repo-relative is the simplest correct answer.
-const repoFile = (...parts) => pathResolve(
-  dirname(fileURLToPath(import.meta.url)), '..', '..', '..', ...parts,
-);
+// The published package carries these files under cli/assets/webhook-sdk/,
+// bundled from examples/ by scripts/bundle-sdk-examples.mjs at prepack (npm
+// pack and publish run it). A repo clone that has not packed yet falls back to
+// the examples/ tree, which stays the single source of truth.
+const cliRoot = pathResolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const sdkAsset = (bundledRel, repoRel) => {
+  const bundled = pathResolve(cliRoot, 'assets', 'webhook-sdk', bundledRel);
+  return existsSync(bundled) ? bundled : pathResolve(cliRoot, '..', 'examples', repoRel);
+};
 
 const SDK_SOURCES = {
   python: {
-    sdkSrc: () => repoFile('examples', 'sdk', 'python', 'commonly.py'),
-    botSrc: () => repoFile('examples', 'hello-world-python', 'bot.py'),
+    sdkSrc: () => sdkAsset('python/commonly.py', join('sdk', 'python', 'commonly.py')),
+    botSrc: () => sdkAsset('python/bot.py', join('hello-world-python', 'bot.py')),
     sdkOut: 'commonly.py',
     botOut: (name) => `${name}.py`,
-    runHint: (name) => `COMMONLY_TOKEN=$(cat .commonly-env) python3 ${name}.py`,
+    // .commonly-env is already KEY=VALUE. Sourcing it under `set -a` exports
+    // the key as written and keeps the token out of argv (`env $(cat …)` would
+    // put it on the command line). `COMMONLY_TOKEN=$(cat …)` would set the
+    // variable to the literal `COMMONLY_TOKEN=cm_agent_…` and the bot would 401.
+    runHint: (name) => `(set -a; . ./.commonly-env; exec python3 ${name}.py)`,
   },
 };
 
@@ -2964,6 +3435,9 @@ export const performInit = async ({
   });
   const installation = installResult.installation || installResult;
   const instanceId = installation.instanceId || 'default';
+  // Same rule as `attach`: the mention handle is the instanceId when there is
+  // one, otherwise the registry agentName.
+  const mentionHandle = instanceId !== 'default' ? instanceId : (installation.agentName || agentName);
 
   let runtimeToken = installResult.runtimeToken;
   if (!runtimeToken) {
@@ -2989,6 +3463,7 @@ export const performInit = async ({
   return {
     installation,
     instanceId,
+    mentionHandle,
     runtimeToken,
     files: {
       sdk: sdkOutPath,
@@ -3078,6 +3553,9 @@ export const performDetach = async ({
  * kernel's own timestamps without conversion.
  */
 const stamp = () => new Date().toISOString();
+// An unreadable daemon record still means a daemon was registered here; the
+// hint only chooses between the two steps, so it must not throw on it.
+const hasDaemonRecord = () => { try { return Boolean(loadDaemonRecord()); } catch { return true; } };
 
 /**
  * Map `agent run`'s cascade flags onto resolveCascadeSettings' override keys.
@@ -3224,11 +3702,7 @@ Docs:
         port,
         path: opts.path,
         secret: opts.secret,
-        onEvent: async (event) => {
-          // Developer's agent code handles this — just ack locally
-          console.log(`[local] ${event.type} from pod ${event.podId}`);
-          return { outcome: 'acknowledged' };
-        },
+        onEvent: logOnlyHandler,
         onReady: (url) => console.log(`Local server ready: ${url}`),
       });
 
@@ -3239,6 +3713,7 @@ Docs:
         agentName: opts.name,
         instanceId: opts.instanceId,
         intervalMs: parseInt(opts.interval, 10),
+        loginInstance: opts.instance,
         onEvent: async (event) => {
           const ts = new Date().toTimeString().slice(0, 8);
           process.stdout.write(`[${ts}] ${event.type.padEnd(18)}`);
@@ -3460,7 +3935,15 @@ Docs:
     .option('--cascade-grace <n>', `Extra turns allowed when this seat was directly addressed; 0 disables the grace (env ${CASCADE_ENV_VARS.addressedGrace}, default ${CASCADE_DEFAULTS.addressedGrace})`)
     .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
     .option('--refusal-handoff <agent>', 'Agent to @mention when the model provider refuses a request\'s content; the request is acked as refused, never retried')
+    .option('--allow <grants>', 'On first run of an agent that works in its folder, also let it edit files and run commands (write) and/or fetch web pages (web), comma-separated. Commands reach the network.')
     .action(async (name, opts) => {
+      let allow;
+      try {
+        allow = parseAllowGrants(opts.allow);
+      } catch (err) {
+        console.error(`${stamp()} [${name}] ${err.message}`);
+        process.exit(1);
+      }
       let record = loadAgentToken(name);
       let bootstrapped = false;
       if (!record) {
@@ -3471,6 +3954,7 @@ Docs:
             name,
             adapterOverride: opts.adapter || null,
             log: (line) => console.log(`${stamp()} [${name}] ${line}`),
+            allow,
           });
         } catch (err) {
           console.error(`${stamp()} [${name}] ${err.message}`);
@@ -3510,6 +3994,11 @@ Docs:
         );
       }
 
+      const allowRequest = checkRunAllowRequest({ record, requested: allow });
+      if (!allowRequest.ok) {
+        console.error(`${stamp()} [${name}] ${allowRequest.message}`);
+        process.exit(1);
+      }
       const adapterRequest = checkRunAdapterRequest({
         record, requestedAdapter: opts.adapter, tokenPath: tokenFile(name),
       });
@@ -3561,7 +4050,7 @@ Docs:
       });
 
       console.log(`${stamp()} [${name}] polling ${record.instanceUrl} for events (ctrl+c to stop)`);
-      console.log(`${stamp()} [${name}] foreground mode; to background and keep it across logins, run: commonly daemon install`);
+      console.log(`${stamp()} [${name}] ${foregroundDaemonHint({ daemonRegistered: hasDaemonRecord() })}`);
 
       const { stop } = performRun({
         instanceUrl: record.instanceUrl,
@@ -3612,12 +4101,16 @@ Docs:
       // SIGTERM is the daemon's idle-boundary handoff signal. `stop()` stops
       // future polls but lets the in-flight turn finish and ack before the
       // event loop drains; exiting here would cut a model turn in half.
-      const requestStop = () => {
+      // seat-stop also arms the supervised-group deadline before launchd's
+      // SIGKILL, and kills any group still live when the process exits.
+      const seatStop = createSeatStop({ name, stop });
+      const requestStop = (signal) => {
         console.log(`\n${stamp()} [${name}] stopping after the current turn...`);
-        stop();
+        seatStop.requestStop(signal);
       };
       process.on('SIGINT', requestStop);
       process.on('SIGTERM', requestStop);
+      process.once('exit', seatStop.onExit);
     });
 
   // ── detach (ADR-005) ──────────────────────────────────────────────────────
@@ -3712,6 +4205,7 @@ Docs:
         console.log('\nNext:');
         console.log(`  1. Edit ${opts.name}.py to handle events.`);
         console.log(`  2. Run: ${result.runHint}`);
+        console.log(`  3. In pod ${opts.pod}, @mention ${result.mentionHandle} to talk to it.`);
       } catch (err) {
         console.error(`Init failed: ${err.message}`);
         process.exit(1);

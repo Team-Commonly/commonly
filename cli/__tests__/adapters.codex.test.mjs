@@ -39,7 +39,7 @@ const codex = (await import('../src/lib/adapters/codex.js')).default;
  * inherited from the runner. Three tests in this file assert the runtime's
  * environment carries no credential; they passed in a runner without
  * `COMMONLY_AGENT_TOKEN` and failed in one with it, so the property they were
- * checking was decided by whoever ran the suite (Vera, 70455).
+ * checking was decided by whoever ran the suite.
  */
 const LAUNCHER_TOKEN = 'cm_agent_'.padEnd(73, 'L');
 const spawnEnv = () => ({ ...process.env, COMMONLY_AGENT_TOKEN: LAUNCHER_TOKEN });
@@ -362,7 +362,7 @@ describe('codex adapter — spawn()', () => {
 
     // Before this, `internal` read by no adapter meant the operator got the
     // bypass flag — the exact opposite of the confinement they declared
-    // (Vera 69592). It is now read as public and confined.
+    // It is now read as public and confined.
     const args = calls[0].args;
     expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
     expect(args).not.toContain('--sandbox');
@@ -429,6 +429,9 @@ describe('codex adapter — spawn()', () => {
       });
       const args = calls[0].args;
       expect(args).toContain('mcp_servers.commonly.command="node"');
+      // TASK-287: a public seat is never offered attach_file. (The private
+      // spawn's exact -c list above proves the private seat keeps it.)
+      expect(args).toContain('mcp_servers.commonly.disabled_tools=["commonly_attach_file"]');
       const permissionConfig = args.find((arg) => arg.startsWith('permissions.commonly_public.filesystem='));
       expect(permissionConfig).toContain(`${JSON.stringify(versionDir)}="read"`);
       expect(permissionConfig).not.toContain(`${JSON.stringify(home)}="read"`);
@@ -447,7 +450,7 @@ describe('codex adapter — spawn()', () => {
   // `auditDeclaredMcp` classifies an entry by `transport` and never judges the
   // command of one that declared an http transport, so emitting it here ran a
   // command the guard had not approved, with the seat's token substituted
-  // (Vera, Connectors 69774). The flag list must be empty for such an entry even
+  // The flag list must be empty for such an entry even
   // though it carries a perfectly Array-shaped command.
   test('an entry declaring a non-stdio transport is skipped even when it carries a command', async () => {
     const { impl, calls } = makeSpawnImpl({
@@ -632,12 +635,12 @@ describe('codex adapter — spawn()', () => {
     expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
   });
 
-  // INVERTED deliberately (TASK-052, Wren 69545): this test used to require a
+  // INVERTED deliberately (TASK-052): this test used to require a
   // throw for a mode-less public record. The derived record stores trust only —
   // the block is portable, the host is not — so a mode-less public record must
   // now spawn under the public profile with the write-capable workspace default.
   // Leaving the throw in place would make every derived codex seat unspawnable,
-  // which is the same breakage Vera measured on Linux for claude (69542).
+  // which is the same breakage measured on Linux for claude.
   test('public trust with no mode defaults to the workspace permission profile', async () => {
     const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
     const publicHome = await mkdtemp(join(tmpdir(), 'commonly-codex-public-home-'));
@@ -764,6 +767,69 @@ describe('codex adapter — spawn()', () => {
     expect(calls[0].args[calls[0].args.length - 1]).not.toContain('=== Fresh session ===');
   });
 
+  // TASK-545. Codex has no subagent tool, so it is taught row slicing
+  // and not parallel reads; claude.js carries that half.
+  test('a fresh private Codex seat is taught row slicing alone', async () => {
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-1"}\n'],
+      outputContents: 'ok',
+    });
+    await codex.spawn('current message', { environment: { model: 'test-model' },
+      sessionId: null,
+      memoryLongTerm: 'open gate: #123',
+      _spawnImpl: impl,
+    });
+
+    const promptArg = calls[0].args[calls[0].args.length - 1];
+    expect(promptArg).toContain('=== Working a row ===');
+    expect(promptArg).toContain('commonly_create_task with parentTask');
+    expect(promptArg).not.toContain('Agent tool');
+  });
+
+  test('a resumed Codex seat is not re-taught row slicing', async () => {
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-1"}\n'],
+      outputContents: 'ok',
+    });
+    await codex.spawn('current message', { environment: { model: 'test-model' },
+      sessionId: 'sid-1',
+      memoryLongTerm: 'open gate: #123',
+      _spawnImpl: impl,
+    });
+
+    expect(calls[0].args[calls[0].args.length - 1]).not.toContain('=== Working a row ===');
+  });
+
+  // The legacy `internal` record reads as public, so it is held to the same line.
+  test.each(['public', 'internal'])('a fresh trust=%s Codex seat is not taught row slicing', async (trust) => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    const publicHome = await mkdtemp(join(tmpdir(), 'commonly-codex-public-home-'));
+    try {
+      await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+      const { impl, calls } = makeSpawnImpl({
+        stdoutChunks: ['{"type":"thread.started","thread_id":"sid-public"}\n'],
+        outputContents: 'ok',
+      });
+      await codex.spawn('current message', {
+        sessionId: null,
+        cwd: '/tmp/public-agent-workspace',
+        environment: { model: 'test-model', sandbox: { trust } },
+        env: { ...process.env, CODEX_HOME: operatorHome },
+        agentName: 'public-work-cue-agent',
+        memoryLongTerm: 'open gate: #123',
+        _publicCodexHome: publicHome,
+        _spawnImpl: impl,
+      });
+
+      const promptArg = calls[0].args[calls[0].args.length - 1];
+      expect(promptArg).toContain('=== Fresh session ===');
+      expect(promptArg).not.toContain('=== Working a row ===');
+    } finally {
+      await rm(operatorHome, { recursive: true, force: true });
+      await rm(publicHome, { recursive: true, force: true });
+    }
+  });
+
   // Same swap as the claude adapter: both delegate to `buildMemoryPreamble`, so
   // the empty case is a cue rather than a bare prompt. Pinned on both adapters
   // deliberately — a shared helper is only shared until someone re-inlines one.
@@ -852,12 +918,10 @@ describe('codex adapter — spawn()', () => {
     const proc = new EventEmitter();
     proc.stdout = new EventEmitter();
     proc.stderr = new EventEmitter();
-    proc.kill = jest.fn();
+    proc.kill = jest.fn(() => proc.emit('close', null));
     const impl = () => proc;
 
     const p = codex.spawn('x', { environment: { model: 'test-model' }, sessionId: null, timeoutMs: 20, _spawnImpl: impl });
-    setTimeout(() => proc.emit('close', null), 40);
-
     await expect(p).rejects.toThrow(/timed out after 20ms/);
     expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
   });

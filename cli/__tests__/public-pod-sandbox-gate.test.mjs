@@ -46,7 +46,7 @@ describe('public-pod sandbox gate', () => {
   });
 
   test('accepts a legacy `internal` record, which means public here too', async () => {
-    // Vera 71715 / Wren 71718. `internal` is read as `public` by the attach
+    // `internal` is read as `public` by the attach
     // gate and by both adapters, so a raw compare here refused a record that
     // means public one call before the gate TASK-113 fixes — the row's claim
     // would be false with this path still throwing. No pod read: a declared
@@ -136,5 +136,50 @@ describe('public-pod sandbox gate', () => {
     })).resolves.toBeUndefined();
 
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/could not read pod visibility/i));
+  });
+});
+
+// A `workspace` seat lets the room read its start directory (TASK-294), so the
+// gate needs the pod CONFIRMED private and fails closed on anything less.
+describe('workspace trust needs a confirmed private pod', () => {
+  const WORKSPACE = { sandbox: { trust: 'workspace' } };
+  const CONFIRMED_PRIVATE = {
+    _id: 'p2', name: 'My Workspace', publicRead: false, communityListed: false, joinPolicy: 'invite-only',
+  };
+
+  test('accepts a pod that reports itself private and invite-only', async () => {
+    await expect(assertSandboxDeclaredForPublicPod({
+      client: clientFor(CONFIRMED_PRIVATE), podId: 'p2', environment: WORKSPACE,
+    })).resolves.toBeUndefined();
+  });
+
+  test('refuses a publicly readable pod', async () => {
+    await expect(assertSandboxDeclaredForPublicPod({
+      client: clientFor({ ...PUBLIC_POD, communityListed: false }), podId: 'p1', environment: WORKSPACE,
+    })).rejects.toThrow(/"Commonly HQ" is publicly readable, so sandbox\.trust=workspace/);
+  });
+
+  // Any agent can add itself to an open pod an agent created, listed or not.
+  test('refuses a private pod that is open to join', async () => {
+    const { joinPolicy: _policy, ...unstated } = CONFIRMED_PRIVATE;
+    for (const pod of [{ ...CONFIRMED_PRIVATE, joinPolicy: 'open' }, unstated]) {
+      // eslint-disable-next-line no-await-in-loop
+      await expect(assertSandboxDeclaredForPublicPod({
+        client: clientFor(pod), podId: 'p2', environment: WORKSPACE,
+      })).rejects.toThrow(/"My Workspace" is open to join, .* attach to a private, invite-only pod/);
+    }
+  });
+
+  test('refuses a pod that does not report both fields, rather than guessing private', async () => {
+    await expect(assertSandboxDeclaredForPublicPod({
+      client: clientFor(PRIVATE_POD), podId: 'p2', environment: WORKSPACE,
+    })).rejects.toThrow(/did not report its visibility/);
+  });
+
+  test('refuses when the visibility read fails, where a public declaration only warns', async () => {
+    const client = { get: jest.fn().mockRejectedValue(new Error('offline')) };
+    await expect(assertSandboxDeclaredForPublicPod({
+      client, podId: 'p2', environment: WORKSPACE,
+    })).rejects.toThrow(/requires confirmed private pod visibility/);
   });
 });

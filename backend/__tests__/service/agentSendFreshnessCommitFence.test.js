@@ -85,4 +85,24 @@ d('agent freshness: in-flight PostgreSQL insert', () => {
     }
   });
 
+  it('a trigger-revisioned claim line creates no send hold; ordinary peer chat still does', async () => {
+    const { emitSystemActionLine } = require('../../services/systemActionLineService');
+    await pool.query('DELETE FROM messages WHERE pod_id = $1', [String(podId)]);
+    await Cursor.deleteOne({ _id: `${agentId}:${podId}` });
+    const before = await Freshness.readStart(podId);
+    await Freshness.recordRead(agentId, podId, before, []);
+    await emitSystemActionLine({ podId: String(podId), actorUserId: String(peerId),
+      actorName: 'fence-peer', action: 'task-claimed', taskId: 'TASK-406' });
+    const { rows: [line] } = await pool.query('SELECT freshness_revision FROM messages WHERE pod_id = $1', [String(podId)]);
+    expect(Number(line.freshness_revision)).toBeGreaterThan(before.revision);
+    expect(await Freshness.unseenMessages(agentId, podId)).toBeNull();
+    const after = await Freshness.readStart(podId);
+    await Freshness.recordRead(agentId, podId, after, []);
+    expect((await Cursor.findById(`${agentId}:${podId}`).lean()).readRevision).toBe(after.revision);
+    await pool.query('INSERT INTO messages (pod_id, user_id, content) VALUES ($1, $2, $3)',
+      [String(podId), String(peerId), 'ordinary peer chat']);
+    expect(await Freshness.unseenMessages(agentId, podId)).toMatchObject({ unseenCount: 1,
+      messages: [{ content: 'ordinary peer chat' }] });
+  });
+
 });

@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema, Types } from 'mongoose';
+import type { SignupTouch } from '../utils/signupSource';
 
 // One row per social-login attempt. Lives for the length of the OAuth
 // round-trip and is deliberately separate from OAuthState (the X/Twitter
@@ -15,6 +16,8 @@ export type OAuthLoginProvider = 'github' | 'google';
 export interface IOAuthLoginState extends Document {
   provider: OAuthLoginProvider;
   state: string;
+  browserNonceHash?: string;
+  pkceVerifier?: string;
   // Optional invite code captured at /start so an OAuth signup can satisfy
   // the invite-only gate without a form round-trip.
   invitationCode?: string;
@@ -22,6 +25,7 @@ export interface IOAuthLoginState extends Document {
   next?: string;
   // First-touch ref code (?ref=x) for a signup made through this login.
   signupRef?: string;
+  signupSource?: SignupTouch;
   userId?: Types.ObjectId | null;
   exchangeCode?: string | null;
   exchangeExpiresAt?: Date | null;
@@ -36,9 +40,14 @@ const OAuthLoginStateSchema = new Schema<IOAuthLoginState>(
   {
     provider: { type: String, required: true, enum: ['github', 'google'], index: true },
     state: { type: String, required: true, unique: true, index: true },
+    browserNonceHash: { type: String },
+    pkceVerifier: { type: String, select: false },
     invitationCode: { type: String, default: '' },
     next: { type: String, default: '/v2' },
     signupRef: { type: String, default: '' },
+    signupSource: {
+      type: new Schema({ ref: String, referrer: String, landingPath: String, firstSeenAt: Date }, { _id: false }),
+    },
     userId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     // NO default here — a sparse unique index skips MISSING fields but still
     // indexes explicit nulls, so `default: null` made every pending state row

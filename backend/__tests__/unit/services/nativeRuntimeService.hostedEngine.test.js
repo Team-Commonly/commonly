@@ -223,7 +223,7 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
     expect(axios.post).toHaveBeenCalledTimes(1);
   });
 
-  // Search and code runs are on every plan (Cofounder, 2026-10-16), offered
+  // Search and code runs are on every plan, offered
   // only where this instance holds the key, and bounded per turn.
   describe('web search and code runs', () => {
     test('are on the hosted list, and an instance with both keys offers both', async () => {

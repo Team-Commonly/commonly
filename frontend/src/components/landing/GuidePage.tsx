@@ -231,12 +231,7 @@ const GuidePage: React.FC = () => {
 
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mt: 4 }}>
           {guide.relatedLinks.map((link) => (
-            link.path === '/compare/'
-              // Compare is emitted as a static document. React Router would
-              // otherwise hand this path to the V2 catch-all instead of
-              // requesting build/compare/index.html.
-              ? <Button key={link.path} variant="text" component="a" href={link.path} sx={guideTextButtonSx}>{link.label}</Button>
-              : <Button key={link.path} variant="text" sx={guideTextButtonSx} onClick={() => navigate(link.path)}>{link.label}</Button>
+            <Button key={link.path} variant="text" sx={guideTextButtonSx} onClick={() => navigate(link.path)}>{link.label}</Button>
           ))}
         </Stack>
       </Container>
