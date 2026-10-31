@@ -56,9 +56,9 @@ const completeStarterTask = async (podId: string, sourceRef: string, text: strin
     { new: true },
   );
   if (task) {
+    recordTaskTransition({ podId, task, from: null, to: 'done', at: task.completedAt || new Date() });
     await onTaskClosed(task);
     emitTaskUpdated(podId, task, 'updated');
-    recordTaskTransition({ podId, task, from: null, to: 'done', at: task.completedAt || new Date() });
   }
 };
 

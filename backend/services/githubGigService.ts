@@ -96,10 +96,10 @@ export const completeTaskForMergedPull = async (podId: string, href: string): Pr
       { new: true },
     );
     if (!task) return;
+    recordTaskTransition({ podId, task, from: null, to: 'done', at });
     // eslint-disable-next-line no-await-in-loop
     await onTaskClosed(task);
     emitTaskUpdated(podId, task, 'updated');
-    recordTaskTransition({ podId, task, from: null, to: 'done', at });
   }
 };
 

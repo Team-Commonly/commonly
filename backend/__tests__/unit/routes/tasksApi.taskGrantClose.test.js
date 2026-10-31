@@ -13,6 +13,26 @@ jest.mock('../../../services/taskEventService', () => ({ emitTaskUpdated: jest.f
 jest.mock('../../../services/attentionItemService', () => ({ resolveTaskAttention: jest.fn(async () => {}), recordTaskAttention: jest.fn(async () => {}) }));
 jest.mock('../../../services/systemExchangeTriggers', () => ({ recordTaskCompleted: jest.fn(async () => {}) }));
 jest.mock('../../../services/agentSendFreshness', () => ({ unseenMessages: jest.fn(async () => null) }));
+// An in-memory record chain store with the repository's contract.
+const mockChains = new Map();
+jest.mock('../../../repositories/recordChainRepository', () => {
+  const actual = jest.requireActual('../../../repositories/recordChainRepository');
+  return {
+    ...actual,
+    appendToChain: jest.fn(async (ref, runId, eventKey, build) => {
+      const key = `${ref.podId}|${ref.taskId || ''}`;
+      if (!mockChains.has(key)) mockChains.set(key, { runId, lines: [], keys: new Set() });
+      const chain = mockChains.get(key);
+      if (chain.keys.has(eventKey)) return { appended: 0, duplicate: true };
+      const { lines } = build(chain.lines[chain.lines.length - 1] || null, chain.runId);
+      chain.lines.push(...lines);
+      chain.keys.add(eventKey);
+      return { appended: lines.length, duplicate: false };
+    }),
+  };
+});
+const { flushRecordWrites } = require('../../../services/recordService');
+const { verifyRecord } = require('../../../vendor/seats/src/record/format');
 const Task = require('../../../models/Task');
 const Pod = require('../../../models/Pod');
 const RoomGrant = require('../../../models/RoomGrant');
@@ -23,10 +43,19 @@ const router = require('../../../routes/tasksApi');
 const POD = new mongoose.Types.ObjectId().toString();
 let app;
 let grant;
-beforeAll(async () => { await setupMongoDb(); app = express(); app.use(express.json()); app.use('/tasks', router); });
-afterEach(clearMongoDb);
-afterAll(closeMongoDb);
+const recordPods = process.env.RECORD_V1_PODS;
+beforeAll(async () => {
+  process.env.RECORD_V1_PODS = POD;
+  await setupMongoDb(); app = express(); app.use(express.json()); app.use('/tasks', router);
+});
+afterEach(async () => { await flushRecordWrites(); await clearMongoDb(); });
+afterAll(async () => {
+  if (recordPods === undefined) delete process.env.RECORD_V1_PODS;
+  else process.env.RECORD_V1_PODS = recordPods;
+  await closeMongoDb();
+});
 beforeEach(async () => {
+  mockChains.clear();
   mockActor.bot = false;
   await Pod.create({ _id: POD, name: 'Bound task', createdBy: mockActor.id, members: [mockActor.id] });
   await Task.create({ podId: POD, taskId: 'TASK-1', taskNum: 1, title: 'Bound task', status: 'claimed',
@@ -50,6 +79,13 @@ test.each(['complete', 'patch', 'github', 'onboarding'])('%s close revokes the b
   expect(revoked.revokedAt).toBeInstanceOf(Date);
   await expect(assertGrantUsable({ grantId: grant.grantId, agentUserId: mockActor.id, currentMemberIds: [mockActor.id] }))
     .rejects.toMatchObject({ code: 'grant_revoked' });
+  // ADR-033 §4: the close's task.done, then grant.revoked for its bound grants.
+  await flushRecordWrites();
+  const { lines } = mockChains.get(`${POD}|TASK-1`);
+  expect(verifyRecord(lines.map((line) => `${line}\n`).join(''))).toMatchObject({ ok: true });
+  expect(lines.map((line) => JSON.parse(line)).map((l) => [l.kind, l.data.grantIds || null])).toEqual([
+    ['grant.issued', null], ['task.done', null], ['grant.revoked', [grant.grantId]],
+  ]);
 });
 
 test('a failed revocation write leaves the close committed and the grant refused by its epoch', async () => {

@@ -787,10 +787,11 @@ router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req
     // PATCH gate already does this on a status change; this route wrote
     // `done` without it, and 11 of 12 open handoffs on 2026-09-19 pointed at
     // tasks completed here.
+    // task.done is queued before the close hook's grant.revoked (ADR-033 §4).
+    recordTaskTransition({ podId, task, from: null, to: 'done', at: now, doneBy: userId });
     await onTaskClosed(task);
     await resolveTaskAttention(task);
     emitTaskUpdated(podId, task, 'updated');
-    recordTaskTransition({ podId, task, from: null, to: 'done', at: now, doneBy: userId });
     notifyAgents(req, podId, task, 'updated', { status: 'claimed' });
     return res.json({ task });
   } catch (err) {
@@ -1163,13 +1164,7 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
       }
       task.updatedAt = writeTime;
     }
-    if (fieldUpdates.status === 'blocked') await recordTaskAttention(task, { includeBlocked: true });
-    if (fieldUpdates.status === 'done') {
-      task.grantEpoch = (task.grantEpoch || 0) + 1;
-      await onTaskClosed(task);
-    }
-    if (fieldUpdates.status !== undefined && fieldUpdates.status !== 'blocked') await resolveTaskAttention(task);
-    emitTaskUpdated(podId, task, 'updated');
+    // Before the close hook, so task.done precedes its grant.revoked (ADR-033 §4).
     if (fieldUpdates.status !== undefined && previousTask && writeTime) {
       recordTaskTransition({
         podId,
@@ -1181,6 +1176,13 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
         doneBy: userId,
       });
     }
+    if (fieldUpdates.status === 'blocked') await recordTaskAttention(task, { includeBlocked: true });
+    if (fieldUpdates.status === 'done') {
+      task.grantEpoch = (task.grantEpoch || 0) + 1;
+      await onTaskClosed(task);
+    }
+    if (fieldUpdates.status !== undefined && fieldUpdates.status !== 'blocked') await resolveTaskAttention(task);
+    emitTaskUpdated(podId, task, 'updated');
     notifyAgents(req, podId, task, 'updated', previousTask);
     return res.json({ task });
   } catch (err) {

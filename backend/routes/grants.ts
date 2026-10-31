@@ -26,6 +26,7 @@ import { grantBrokerRefusal } from '../services/grantBrokerConfinement';
 import type { GrantBrokerRefusal } from '../services/grantBrokerConfinement';
 import { projectSeatEnvironments, seatEnvironmentKey } from '../services/seatEnvironmentProjection';
 import { outsiderGrantPodRefusal, outsiderGrantRefusalMessage } from '../services/outsiderGrantPodEligibility';
+import { agentActor, requestActor } from '../services/recordService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -426,6 +427,7 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       // Bound here, at mint, to the row the caller just proved they own.
       connectionRowId,
       ownerId: connectionOwnerId(connection),
+      issuer: requestActor(req as Parameters<typeof requestActor>[0]),
     };
     const grant = await createGrant(grantInput);
     return res.status(201).json(grant);
@@ -474,6 +476,7 @@ router.post(
       budget: body.budget as any,
       audience: body.audience as string[] | undefined,
       expiresAt: body.expiresAt as string | undefined,
+      issuer: agentActor(req.agentUser as Parameters<typeof agentActor>[0]),
     });
     return res.status(201).json(child);
   } catch (error) {

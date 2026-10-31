@@ -1,9 +1,10 @@
 # Task-bound connector grants (TASK-288)
 
-Status: implementation draft. Not cleared for merge or release. Lifecycle records
-still depend on the shared `seats.record` writer owned by TASK-513. This document
-is not a second record specification: names follow
-`packages/seats/docs/record-v1.md` (on main via #2739) and ADR-033 §5.1.
+Status: implementation. Lifecycle records go through the server's record-v1
+writer (`services/recordService.ts`, TASK-513), which writes nothing for a pod
+outside `RECORD_V1_PODS`. This document is not a second record specification:
+names follow `packages/seats/docs/record-v1.md` (on main via #2739) and
+ADR-033 §5.1.
 
 ## Authority
 
@@ -51,20 +52,27 @@ A call already executing at the provider is not canceled by task closure.
 Approved calls that have not begun execution must recheck authority before
 provider dispatch.
 
-## Record dependency and acceptance
+## Records and acceptance
 
 The single record contract is `packages/seats/docs/record-v1.md` and ADR-033
-(#2691). The spec is on main; the server writer (TASK-513) is not. This change
-stores what that writer needs (the binding with `endsOn`, `taskEpoch`,
-`revokedAt` and `revocationReason`) but does not emit `grant.issued` or
-`grant.revoked` itself; that is an incomplete requirement and blocks clearance.
+(#2691). Both lines land on the bound task's own chain, since a line's binding
+must name its chain's task:
 
-Once TASK-513 supplies the writer, issuance must carry the binding and close
-must emit `task.done` then `grant.revoked {grantIds, reason: task.done}` (ADR-033
-§4), using the canonical envelope.
-No credential values or raw tool arguments enter those records. Failed record
-emission must not undo enforcement. A non-author must walk issuance, allowed use,
-closure, refused replay and the exported records before public activation.
+- **`grant.issued`** is written by `mintGrant` once every post-insert check has
+  passed, so a refused mint writes nothing. It carries the scope, target,
+  expiry and binding, and `issuedBy` from authentication: the connection owner
+  on mint, or the delegating agent on attenuation, named as an agent actor.
+- **`grant.revoked {grantIds, reason: task.done}`** is written by the close
+  hook, actor `system:board`. It names only the grants that write revoked,
+  read back by its own `revokedAt`, so a grant an earlier close revoked is not
+  named twice. Every close writer queues its `task.done` first (ADR-033 §4).
+
+Unbound grants have no task chain, and their issuance, along with the
+`cascade`, `manual` and `expired` revocations, stays with the TASK-513 grant
+writers. No credential values or raw tool arguments enter these records.
+Emission is best-effort and after commit, so a failed line never undoes
+enforcement. A non-author must walk issuance, allowed use, closure, refused
+replay and the exported records before public activation.
 
 Tests cover authenticated ownership, missing/closed/foreign tasks, lease expiry,
 grant expiry, attenuation, close/reopen, mint/close races, all four completion
