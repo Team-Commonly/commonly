@@ -1,0 +1,38 @@
+name: Gate verdict
+
+# Enforces the seat-gate rule in docs/development/external-review.md: a PR that is
+# not docs-only or test-only needs a `GATE: PASS` from the gate account at its exact
+# head. The logic is scripts/gate-verdict.sh, unit-tested by
+# scripts/__tests__/gate-verdict.test.mjs. This file only says when to run it.
+#
+# Not a required check yet. Making it one is a repo-settings step for the operator.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  gate-verdict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Script unit tests
+        run: node --test scripts/__tests__/gate-verdict.test.mjs
+      - name: Docs or tests only, or a seat gate PASS at this head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/gate-verdict.sh

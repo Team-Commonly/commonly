@@ -102,6 +102,12 @@ can't tell us whether it's wrong or whether we are.
   CodeRabbit review is never a verdict. It only lets a docs-only or test-only
   PR skip the seat gate.
 
+- **`gate-verdict` checks this rule on every PR head.** `.github/workflows/gate-verdict.yml`
+  runs `scripts/gate-verdict.sh`. A PR whose files are all docs or test code passes.
+  Any other PR needs a `GATE: PASS` from the gate account at its exact head, and the
+  latest verdict at that head wins. The job does not count the Tier 2 second gate,
+  and it is not a required check until the operator makes it one.
+
 ## Keeping a PR out of automatic review
 
 `.coderabbit.yaml` turns off the generated summary in PR descriptions. A PR
