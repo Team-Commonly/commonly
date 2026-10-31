@@ -147,6 +147,15 @@ const RECOVERY_REPLIED_REFUSAL = 'This turn has posted its reply.';
 // turn read.
 export const HOSTED_RUN_FAILED_LINE = 'I couldn\'t finish a reply to this, and it didn\'t count against today\'s '
   + 'turns. You can ask again, or ask it a different way.';
+// The same moment when the turn ran out of its per-run budget (steps, tokens
+// or time). That is a reason the person can act on, so the line names it.
+export const HOSTED_RUN_BUDGET_LINE = 'I ran out of this turn\'s working budget before I could reply, and it '
+  + 'didn\'t count against today\'s turns. You can ask again, or ask for a smaller piece.';
+// A kernel wake (assigned work, a board change) has no one waiting on a
+// reply, so the budget line says where the work stands instead.
+export const HOSTED_WAKE_BUDGET_LINE = 'I ran out of this turn\'s working budget before I finished my assigned '
+  + 'work. It is still open on the board.';
+const BUDGET_ERROR_KINDS: ReadonlySet<string> = new Set(['token_cap', 'turn_cap', 'timeout']);
 
 // --- helpers ---------------------------------------------------------------
 
@@ -1327,6 +1336,17 @@ export const wasDirectlyAddressed = (trigger: NativeRunTrigger): boolean => (
   ADDRESSED_RAW_TYPES.has(String(trigger.type))
   || (trigger.payload as { repliesToYourMessage?: unknown } | null)?.repliesToYourMessage === true
 );
+
+/** The fixed line a hosted turn posts when it failed with nothing posted. */
+export const hostedFailureLine = (errorKind: string | undefined, trigger: NativeRunTrigger): string => {
+  if (!BUDGET_ERROR_KINDS.has(String(errorKind))) return HOSTED_RUN_FAILED_LINE;
+  const payload = (trigger.payload || {}) as {
+    triggerAuthor?: unknown; boardWake?: unknown; assignedTaskWake?: unknown;
+  };
+  const kernelWake = payload.triggerAuthor === 'kernel'
+    || payload.boardWake === true || payload.assignedTaskWake === true;
+  return kernelWake ? HOSTED_WAKE_BUDGET_LINE : HOSTED_RUN_BUDGET_LINE;
+};
 
 /**
  * Whether the agent holding a message's claim was itself addressed by it: it
@@ -2567,7 +2587,7 @@ export async function runAgent(
           content: modelFailureReason
             ? `Model ${model} could not answer (${modelFailureReason}). ${hostedNative
               ? HOSTED_RUN_FAILED_LINE : 'Please try again.'}`
-            : HOSTED_RUN_FAILED_LINE,
+            : hostedFailureLine(run.errorKind, trigger),
           messageType: 'text',
           displayName,
           installationConfig: cfg,
