@@ -1,5 +1,5 @@
 import React from 'react';
-import { getAvatarSrc } from '../../utils/avatarUtils';
+import { getAvatarSrc, isFacePresetId } from '../../utils/avatarUtils';
 import {
   characterAvatarFor, paperAvatarFor, gradientFor, initialsFor, AvatarKind,
 } from '../utils/avatars';
@@ -65,6 +65,9 @@ const V2Avatar: React.FC<V2AvatarProps> = ({
   // is not a plausible image reference — no request, no flash, straight to the
   // right tier.
   const cleanSrc = getAvatarSrc(rawSrc) || null;
+  // A picked face or robot is a generated character, so it takes the same frame
+  // as the characterSrc tier (TASK-679). Photos and uploads stay unframed.
+  const pickedCharacter = isFacePresetId(rawSrc);
   const [imgFailed, setImgFailed] = React.useState(false);
   const flat = tone === 'flat';
   const classes = [
@@ -94,7 +97,7 @@ const V2Avatar: React.FC<V2AvatarProps> = ({
   if (cleanSrc && !imgFailed) {
     return (
       <span
-        className={classes}
+        className={pickedCharacter ? `${classes} v2-avatar--character` : classes}
         style={{ background: bg }}
         title={display}
       >

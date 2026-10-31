@@ -161,12 +161,32 @@ const COLLAR = 'M25 47.2L32 55L39 47.2C36.8 46.6 34.5 46.3 32 46.3C29.5 46.3 27.
 const MUSTACHE = 'M26.5 35.6C28.5 34.2 30.8 34.4 32 35.4C33.2 34.4 35.5 34.2 37.5 35.6C35.6 37.2 33.4 37 32 36.2C30.6 37 28.4 37.2 26.5 35.6Z';
 
 /** The face as a standalone SVG string, drawn back to front. */
+// WCAG relative luminance of a hex skin tone (no '#').
+const relativeLuminance = (hex: string): number => {
+  const lin = [16, 8, 0].map((shift) => {
+    const c = ((parseInt(hex, 16) >> shift) & 255) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+};
+
+// Light skins sit on the pale TASK-679 grounds with almost no contrast and lose
+// their silhouette (Lumen, 1.00–1.25:1). From this luminance up, a darker edge
+// one unit out keeps the face readable. Darker skins render exactly as before.
+const LIGHT_SKIN_LUMINANCE = 0.6;
+
 export const renderFace = (t: FaceTraits): string => {
   const agent = t.kind === 'agent';
   const layers: Array<[string, string]> = [[rect(0, 0, 64, 64), t.background]];
   const back = HAIR_BACK[t.style];
   if (back) layers.push([back, t.hair]);
   layers.push([SHOULDERS, t.shirt]);
+  if (relativeLuminance(t.skin) >= LIGHT_SKIN_LUMINANCE) {
+    layers.push([
+      rect(26.5, 37.5, 11, 11) + ellipse(32, 29, 14.9, 16.9) + circle(18.5, 31, 4.2) + circle(45.5, 31, 4.2),
+      darken(t.skin, 0.78),
+    ]);
+  }
   layers.push([rect(27, 38, 10, 10) + ellipse(32, 29, 14, 16) + circle(18.5, 31, 3.6) + circle(45.5, 31, 3.6), t.skin]);
   layers.push([circle(24, 36, 2.6) + circle(40, 36, 2.6), darken(t.skin, 0.9)]);
   layers.push([HAIR_FRONT[t.style], t.hair]);
