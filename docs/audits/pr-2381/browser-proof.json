@@ -1,0 +1,72 @@
+{
+  "source": "actual rebased components; local controlled API fixtures, not deployed or vendor calls",
+  "proof": [
+    {
+      "lang": "en",
+      "width": 1440,
+      "overflow": false,
+      "approveHeights": [
+        33,
+        33
+      ],
+      "allOwnKeysVisible": true,
+      "exactJsonPreserved": true,
+      "loadedFonts": [
+        "IBM Plex Sans",
+        "IBM Plex Sans",
+        "IBM Plex Mono"
+      ]
+    },
+    {
+      "lang": "en",
+      "width": 390,
+      "overflow": false,
+      "approveHeights": [
+        33,
+        33
+      ],
+      "allOwnKeysVisible": true,
+      "exactJsonPreserved": true,
+      "loadedFonts": [
+        "IBM Plex Sans",
+        "IBM Plex Sans",
+        "IBM Plex Mono"
+      ]
+    },
+    {
+      "lang": "zh-CN",
+      "width": 1440,
+      "overflow": false,
+      "approveHeights": [
+        34,
+        34
+      ],
+      "allOwnKeysVisible": true,
+      "exactJsonPreserved": true,
+      "loadedFonts": [
+        "IBM Plex Sans",
+        "IBM Plex Sans",
+        "IBM Plex Mono"
+      ]
+    },
+    {
+      "lang": "zh-CN",
+      "width": 390,
+      "overflow": false,
+      "approveHeights": [
+        34,
+        34
+      ],
+      "allOwnKeysVisible": true,
+      "exactJsonPreserved": true,
+      "loadedFonts": [
+        "IBM Plex Sans",
+        "IBM Plex Sans",
+        "IBM Plex Mono"
+      ]
+    }
+  ],
+  "errors": [],
+  "posts": 0,
+  "failedResponses": []
+}

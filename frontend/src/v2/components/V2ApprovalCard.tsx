@@ -14,6 +14,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useV2Api } from '../hooks/useV2Api';
 import { notifyAttentionChanged } from '../hooks/useV2PodAttention';
 import type { V2Message } from '../hooks/useV2PodDetail';
+import { toolCallView } from './toolCallView';
 
 interface V2ApprovalCardProps {
   message: V2Message;
@@ -184,6 +185,9 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
   const action = describeAction(payload.actionType, payload.params);
   const prose = payload.summary || message.content;
   const toolCallReady = !needsToolCall || !!pendingToolCall;
+  const readable = pendingToolCall?.tool && pendingToolCall.canonicalArgs
+    ? toolCallView(pendingToolCall.tool, pendingToolCall.canonicalArgs)
+    : null;
 
   const decide = async (decision: 'approved' | 'declined') => {
     if (
@@ -229,12 +233,35 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
         </div>
         {pendingToolCall ? (
           <>
-            <div className="v2-approval__action" data-testid="approval-action">
-              {pendingToolCall.tool}
-            </div>
-            <pre className="v2-approval__tool-call" data-testid="approval-tool-call">
-              {JSON.stringify(pendingToolCall.canonicalArgs, null, 2)}
-            </pre>
+            {readable?.verb ? (
+              <div className="v2-approval__action v2-approval__action--tool" data-testid="approval-action">
+                <span>{t(readable.verb.key, readable.verb.vars)}</span>
+                <span className="v2-approval__tool-name">{pendingToolCall.tool}</span>
+              </div>
+            ) : (
+              <div className="v2-approval__action" data-testid="approval-action">{pendingToolCall.tool}</div>
+            )}
+            {/* Every pinned argument, relabelled but never dropped (toolCallView). */}
+            {readable && readable.rows.length > 0 && (
+              <dl className="v2-approval__args" data-testid="approval-args">
+                {readable.rows.map((row) => (
+                  <div className="v2-approval__arg" key={row.keys.join('+')} data-testid={`approval-arg-${row.keys.join('-')}`}>
+                    <dt>{row.labelKey ? t(row.labelKey) : row.label}</dt>
+                    <dd className={`v2-approval__arg-value v2-approval__arg-value--${row.kind}`} title={row.title}>
+                      {row.href
+                        ? <a href={row.href} target="_blank" rel="noopener noreferrer">{row.value}</a>
+                        : row.value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+            <details className="v2-approval__exact">
+              <summary>{t('approvalCard.toolCall.exactArgs')}</summary>
+              <pre className="v2-approval__tool-call" data-testid="approval-tool-call">
+                {JSON.stringify(pendingToolCall.canonicalArgs, null, 2)}
+              </pre>
+            </details>
           </>
         ) : isToolCall ? (
           <>

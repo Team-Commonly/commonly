@@ -1566,12 +1566,31 @@
       "failed": "已批准 — 工具调用失败（{{code}}）。",
       "refused": "已批准 — 工具调用被拒绝（{{code}}）。",
       "pinChanged": "已批准，但工具在请求后已变更。请重新发起请求后再执行。",
-      "expiredPending": "该工具调用批准已过期。"
+      "expiredPending": "该工具调用批准已过期。",
+      "verb": {
+        "mergePullRequest": "合并 PR #{{number}}",
+        "createIssue": "创建 Issue",
+        "commentOnIssue": "评论 Issue #{{number}}",
+        "closeIssue": "关闭 Issue #{{number}}"
+      },
+      "label": {
+        "repository": "仓库",
+        "pullRequest": "PR",
+        "issue": "Issue",
+        "head": "头提交",
+        "mergeMethod": "合并方式",
+        "commitTitle": "提交标题",
+        "commitMessage": "提交信息",
+        "title": "标题",
+        "body": "正文",
+        "labels": "标签"
+      },
+      "exactArgs": "原始参数"
     },
     "approve": "批准",
     "decline": "拒绝",
     "deciding": "处理中…",
-    "waitingForOwner": "等待工作区所有者决定。",
+    "waitingForOwner": "等待工作空间所有者决定。",
     "aged": "该提议已等待较久 — 请确认它仍然适用。",
     "approved": "✓ 已批准 — 已完成。",
     "approvedButFailed": "已批准，但执行失败：{{error}}",
