@@ -149,8 +149,8 @@ test('identity edits go through the shared installation PATCH with the exact ins
   });
   axios.patch.mockResolvedValue({ data: { success: true } });
   renderPage();
-  const save = await screen.findByRole('button', { name: 'Save identity' });
-  expect(save).toBeDisabled();
+  const save = await screen.findByLabelText('Display name');
+  expect(screen.queryByRole('button', { name: 'Save identity' })).not.toBeInTheDocument();
   fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Maya 2' } });
   expect(screen.queryByRole('textbox', { name: 'Instructions' })).not.toBeInTheDocument();
   expect(screen.queryByRole('group', { name: 'Persona' })).not.toBeInTheDocument();
@@ -181,7 +181,7 @@ test('OpenClaw identity keeps the live Persona editor and saves its changes', as
   renderPage('/v2/agents/openclaw/scout');
   expect(await screen.findByRole('group', { name: 'Persona' })).toBeInTheDocument();
   fireEvent.change(screen.getByRole('textbox', { name: 'Persona notes' }), { target: { value: 'Keep detail' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
+  fireEvent.submit(screen.getByLabelText('Display name').closest('form') as HTMLFormElement);
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
     '/api/registry/pods/pod-1/agents/openclaw',
     { instanceId: 'scout', persona: {
@@ -208,7 +208,7 @@ test('OpenClaw name-only edits leave Persona out of the PATCH', async () => {
   renderPage('/v2/agents/openclaw/scout');
   expect(await screen.findByRole('group', { name: 'Persona' })).toBeInTheDocument();
   fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Scout 2' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
+  fireEvent.submit(screen.getByLabelText('Display name').closest('form') as HTMLFormElement);
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
     '/api/registry/pods/pod-1/agents/openclaw',
     { instanceId: 'scout', displayName: 'Scout 2' },
@@ -222,9 +222,9 @@ test.each([
 ])('identity refusal %i uses localized UI copy', async (status, expectedMessage) => {
   axios.patch.mockRejectedValue({ response: { status, data: { error: 'Raw English server text' } } });
   renderPage();
-  await screen.findByRole('button', { name: 'Save identity' });
+  await screen.findByLabelText('Display name');
   fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Maya 2' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
+  fireEvent.submit(screen.getByLabelText('Display name').closest('form') as HTMLFormElement);
   expect(await screen.findByText(expectedMessage)).toBeInTheDocument();
   expect(screen.queryByText('Raw English server text')).not.toBeInTheDocument();
 });
@@ -234,9 +234,9 @@ test('a taken display name has its own refusal, separate from the writable-pods 
     code: 'agent_display_name_taken', error: 'Raw English server text',
   } } });
   renderPage();
-  await screen.findByRole('button', { name: 'Save identity' });
+  await screen.findByLabelText('Display name');
   fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Scout (Cody)' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
+  fireEvent.submit(screen.getByLabelText('Display name').closest('form') as HTMLFormElement);
   expect(await screen.findByText('Another agent already uses this name.')).toBeInTheDocument();
   expect(screen.queryByText('Raw English server text')).not.toBeInTheDocument();
 });
@@ -246,9 +246,9 @@ test('a partial rename tells the installer to retry Save', async () => {
     status: 503, data: { code: 'identity_projection_retryable', error: 'Raw server text' },
   } });
   renderPage();
-  await screen.findByRole('button', { name: 'Save identity' });
+  await screen.findByLabelText('Display name');
   fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Maya 2' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
+  fireEvent.submit(screen.getByLabelText('Display name').closest('form') as HTMLFormElement);
   expect(await screen.findByText('Name update was interrupted. Save again to finish updating every pod.'))
     .toBeInTheDocument();
 });

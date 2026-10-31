@@ -87,8 +87,9 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
     setSaved(false);
   }, [installation, profile]);
 
-  const save = async (event: React.FormEvent) => {
-    event.preventDefault();
+  // Identity autosaves: a quiet pause after the last edit persists it, so there is no Save button.
+  const dirty = displayName.trim() !== (installation.displayName || '') || personaChanged;
+  const persist = async () => {
     const name = displayName.trim();
     if (!name || name.length > 80) {
       setError(t('agentSettings.identityNameError'));
@@ -128,6 +129,14 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
     }
   };
 
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const timer = window.setTimeout(() => { void persist(); }, 600);
+    return () => window.clearTimeout(timer);
+    // persist reads the current fields; the timer is keyed on the edited values only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayName, persona]);
+
   const entryOwnerId = listing?.publisher?.userId ? String(listing.publisher.userId) : null;
   const ownsListing = Boolean(currentUser?._id) && entryOwnerId === String(currentUser._id);
   const retired = listing?.status === 'unpublished';
@@ -149,7 +158,7 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
   };
   return <section className="v2-agent-settings__section" aria-labelledby="agent-identity-title">
     <h2 id="agent-identity-title">{t('agentSettings.identityTitle')}</h2>
-    <form className="v2-agent-settings__identity" onSubmit={save}>
+    <form className="v2-agent-settings__identity" onSubmit={(event) => { event.preventDefault(); void persist(); }}>
       <label><span>{t('agentSettings.displayName')}</span>
         <input value={displayName} maxLength={80} required onChange={(event) => setDisplayName(event.target.value)} />
       </label>
@@ -172,8 +181,7 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
         </label>
       </fieldset>}
       <div className="v2-agent-settings__actions">
-        <button type="submit" disabled={busy || (!personaChanged && displayName.trim() === installation.displayName)}>{busy ? t('agentSettings.saving') : t('agentSettings.saveIdentity')}</button>
-        {saved && <span role="status">{t('agentSettings.identitySaved')}</span>}
+        <span role="status">{busy ? t('agentSettings.saving') : saved && !dirty ? t('agentSettings.identitySaved') : ''}</span>
       </div>
       {error && <p role="alert" className="v2-agent-settings__error">{error}</p>}
     </form>
