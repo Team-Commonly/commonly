@@ -41,7 +41,7 @@ const agentFor = async (viewerId, tokens = []) => {
   });
   const res = await request(app).get(`/api/registry/pods/${podId}/agents`);
   expect(res.status).toBe(200);
-  return res.body.agents.find((a) => a.agentName === 'Nova' || a.name === 'Nova');
+  return res.body.agents.find((a) => a.name === 'nova');
 };
 
 beforeAll(setupMongoDb);
