@@ -390,11 +390,13 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         const machineId = user?.botMetadata?.machineId;
         const daemonBound = Boolean(machineId);
         // The harness label moves to `adapter`, so the chat tag keeps naming it.
+        // The poller's report (TASK-704) outranks a stale runtimeType declaration:
+        // a seat declared codex that polls claude must not project codex here.
         const seatPayload = daemonBound
           ? { ...payload, runtime: {
             ...payload?.runtime,
             runtimeType: 'wrapper',
-            adapter: payload?.runtime?.adapter || payload?.runtime?.runtimeType,
+            adapter: payload?.runtime?.adapter || payload?.runtime?.reportedCli || payload?.runtime?.runtimeType,
           } }
           : payload;
         const hasRuntimeConnection = payload?.runtime?.host === 'byo'
