@@ -1,6 +1,7 @@
 import { createOwnKeyResolver, createMachineReportClient } from '../lib/own-key-launch.js';
 import { foregroundDaemonHint } from '../lib/daemon-hint.js';
 import { loadDaemonRecord } from '../lib/daemon-store.js';
+import { daemonSeatLogPath, readLogTail } from '../lib/daemon-logs.js';
 import { WALKED_HARNESSES } from '../lib/runtime-inventory.js';
 import { createRuntimeReporter } from '../lib/runtime-observation.js';
 /**
@@ -16,7 +17,7 @@ import { createRuntimeReporter } from '../lib/runtime-observation.js';
  * heartbeat  — manually trigger an agent's heartbeat
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync, watch } from 'fs';
 import { join, dirname, basename, resolve as pathResolve } from 'path';
 import { homedir, tmpdir } from 'os';
 import { fileURLToPath } from 'url';
@@ -4356,38 +4357,64 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
     });
 
   // ── logs ──────────────────────────────────────────────────────────────────
+  // A seat the daemon supervises on this machine reads its local log. Any
+  // other seat needs --pod: the owner login reads recent events and runs from
+  // the member-gated seat-activity route. The owner login is never sent to the
+  // agent-runtime routes, which only accept a seat's own token.
   agent
     .command('logs <name>')
-    .description('Stream recent events for an agent')
-    .option('--instance-id <id>', 'Instance ID', 'default')
-    .option('--follow', 'Keep polling for new events', false)
-    .option('--instance <url>', 'Target Commonly instance')
+    .description("Show a seat's recent log: local daemon log, or server activity with --pod")
+    .option('--pod <podId>', 'Read server-side events and runs for a pod you belong to')
+    .option('--instance-id <id>', 'Seat instance ID', 'default')
+    .option('--follow', 'Continue printing new output', false)
+    .option('--lines <n>', 'Number of trailing local lines to show', '50')
+    .option('--instance <url>', 'Target Commonly instance (with --pod)')
     .action(async (name, opts) => {
+      const path = daemonSeatLogPath(name);
+      const localLog = readLogTail(path, opts.lines) !== null;
+      if (localLog || !opts.pod) {
+        if (!localLog) {
+          console.error(`No local log for '${name}' at ${path}. Pass --pod <podId> to read its server-side activity.`);
+          process.exit(1);
+        }
+        const printTail = () => {
+          const output = readLogTail(path, opts.lines);
+          if (output) console.log(output);
+        };
+        printTail();
+        if (!opts.follow) return;
+        const watcher = watch(path, printTail);
+        const close = () => { watcher.close(); process.exit(0); };
+        process.once('SIGINT', close);
+        process.once('SIGTERM', close);
+        return;
+      }
+
       const token = getToken(opts.instance);
       if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
-
       const client = createClient({ instance: resolveInstanceUrl(opts.instance), token });
-
-      const fetchAndPrint = async () => {
-        const { events = [] } = await client.get('/api/agents/runtime/events', {
+      const printActivity = async () => {
+        const { events = [], runs = [] } = await client.get('/api/agents/seat-activity', {
+          podId: opts.pod,
           agentName: name,
           instanceId: opts.instanceId,
-          limit: 20,
         });
         events.forEach((e) => {
           const ts = new Date(e.createdAt).toTimeString().slice(0, 8);
-          const outcome = e.delivery?.outcome || e.status;
-          console.log(`[${ts}] ${e.type.padEnd(18)} → ${outcome}`);
+          console.log(`[${ts}] ${String(e.type).padEnd(18)} → ${e.outcome || e.status}`);
         });
-        return events;
+        runs.forEach((r) => {
+          const ts = new Date(r.startedAt).toTimeString().slice(0, 8);
+          console.log(`[${ts}] run ${String(r.trigger).padEnd(14)} → ${r.status} (${r.totalTokens} tokens)`);
+        });
+        if (events.length === 0 && runs.length === 0) console.log(`No recent activity for '${name}' in this pod.`);
       };
-
+      if (opts.follow) {
+        console.error('--follow needs a local seat log; server activity is a snapshot. Re-run without --follow.');
+        process.exit(1);
+      }
       try {
-        await fetchAndPrint();
-        if (opts.follow) {
-          console.log('Following... (Ctrl+C to stop)');
-          setInterval(fetchAndPrint, 5000);
-        }
+        await printActivity();
       } catch (err) {
         console.error(`Failed: ${err.message}`);
         process.exit(1);
