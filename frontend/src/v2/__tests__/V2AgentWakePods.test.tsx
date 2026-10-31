@@ -166,7 +166,8 @@ describe('per-agent Wake and Pods settings', () => {
   it('removes a pod installation and leaves the settings view open', async () => {
     const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
     renderSettings();
-    fireEvent.click(await screen.findByRole('button', { name: 'Remove from pod' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Pod actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove from pod' }));
     await waitFor(() => expect(client.delete).toHaveBeenCalledWith(
       '/api/registry/agents/test-agent/pods/pod-1?instanceId=my-machine',
     ));
@@ -188,12 +189,12 @@ describe('per-agent Wake and Pods settings', () => {
     view.rerender(
       <MemoryRouter><V2AgentWakePods agentName="new-agent" instanceId="default" updatePod={updatePod} /></MemoryRouter>,
     );
-    expect((await screen.findAllByText('New pod')).length).toBe(2);
+    expect((await screen.findAllByText('New pod'))).toHaveLength(1);
     await act(async () => { finishOld({ data: { installations: [{
       podId: 'pod-old', podName: 'Old pod', wakeOnMessage: true, boardWake: true, heartbeatMinutes: 60,
     }] } }); });
     expect(screen.queryByText('Old pod')).not.toBeInTheDocument();
-    expect(screen.getAllByText('New pod')).toHaveLength(2);
+    expect(screen.getAllByText('New pod')).toHaveLength(1);
   });
 
   it('previews heartbeat turns against the plan cap before saving', async () => {
@@ -223,7 +224,8 @@ describe('per-agent Wake and Pods settings', () => {
       ] } });
     const confirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
     renderSettings();
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Remove from pod' }))[0]);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Pod actions' }))[0]);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove from pod' }));
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('No active installation will remain'));
     expect(client.delete).not.toHaveBeenCalled();
     confirm.mockRestore();
