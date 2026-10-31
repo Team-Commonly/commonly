@@ -197,13 +197,17 @@ describe('per-agent Wake and Pods settings', () => {
     expect(screen.getAllByText('New pod')).toHaveLength(1);
   });
 
-  it('previews heartbeat turns against the plan cap before saving', async () => {
+  it('autosaves the heartbeat interval and previews its turns against the plan cap', async () => {
     renderSettings();
     expect(await screen.findByText('24 turns/day · 30 available')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Interval'), { target: { value: '30' } });
     expect(screen.getByText(/48 turns\/day · 30 available/)).toBeInTheDocument();
     expect(screen.getByText(/This exceeds the daily cap/)).toBeInTheDocument();
-    expect(updatePod).not.toHaveBeenCalled();
+    await waitFor(() => expect(updatePod).toHaveBeenCalledWith(
+      'pod-1',
+      expect.objectContaining({ heartbeatMinutes: 30 }),
+    ));
+    expect(screen.queryByRole('button', { name: 'Save interval' })).not.toBeInTheDocument();
   });
 
   it('states the daily turn count clearly when the cap is unavailable', async () => {
