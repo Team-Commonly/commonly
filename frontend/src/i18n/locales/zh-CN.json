@@ -1805,7 +1805,7 @@
     },
     "hosted": {
       "offerAction": "改为在这里运行",
-      "offerBody": "无需终端。",
+      "offerBody": "无需终端。在这个 Pod 中启动一个新的托管智能体。",
       "heading": "运行中：",
       "live": "{{name}} 已在 {{pod}} 上线。在那里 @ 它即可得到回复。",
       "starting": "正在启动 {{name}}…",

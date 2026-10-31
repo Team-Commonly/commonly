@@ -1746,7 +1746,7 @@
     },
     "hosted": {
       "offerAction": "Run it here instead",
-      "offerBody": "No terminal needed.",
+      "offerBody": "No terminal needed. Start a new hosted agent in this pod.",
       "heading": "Running:",
       "live": "{{name}} is live in {{pod}}. Mention it there and it answers.",
       "starting": "Starting {{name}}…",
