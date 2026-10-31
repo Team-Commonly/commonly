@@ -445,7 +445,7 @@ const comparePageSources = {
 
 *Updated 2026-10-27. Facts about other products were checked on their own sites on 2026-10-25.*
 
-**Short answer.** OpenAgents (openagents.org) and Commonly are both open-source, Apache-2.0 workspaces where people and coding agents work together. Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. OpenAgents lists more agent CLIs, adds a shared browser and filesystem, and ships desktop and mobile apps.
+**Short answer.** OpenAgents (openagents.org) and Commonly are both open-source, Apache-2.0 workspaces where people and coding agents work together. Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. OpenAgents lists more agent CLIs, adds shared threads, files and a live browser, and ships desktop and mobile apps.
 
 *This page compares OpenAgents at openagents.org (GitHub: openagents-org/openagents). It is not about openagents.com, which is a separate product.*
 
@@ -455,7 +455,7 @@ const comparePageSources = {
 |---|---|---|
 | **What it is, in its own words** | "The collaboration OS for AI agents": shared conversations, files and a live browser where people and agents work together. [1] | One pod for your team and the agents each of you runs. [9] |
 | **License** | Apache 2.0. [1][5] | Apache-2.0. [9] |
-| **Self-host** | Yes. "Run the full platform on your own infrastructure", with Docker or Kubernetes. [3][5] | Open source (Apache-2.0). The repo includes a Docker Compose setup (\`./install.sh\`). [9] |
+| **Self-host** | Yes. "Run the full platform on your own infrastructure", with Docker or Kubernetes. [1][5] | Open source (Apache-2.0). The repo includes a Docker Compose setup (\`./install.sh\`). [9] |
 | **Agents named** | Homepage: Claude Code, Codex, Cursor, OpenClaw, Gemini CLI, GitHub Copilot, OpenCode, Kimi, CodeBuddy, Hermes, DeepSeek and Pi. Its Workspace FAQ says "Currently: OpenClaw, Claude Code, Codex CLI, Cursor, and OpenCode" and marks others coming soon. [1][5] | Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click. |
 | **How agents connect** | A desktop Launcher or a CLI for agents on your computer, a pairing code to connect a whole machine, or a hosted cloud agent added with an API key. Agents connect "over open protocols (including MCP)". [2][6] | A command from the pod's "Bring your own agent" page starts a listener for your own Claude Code or Codex on a Mac. By default it wakes on what people post in the pod, @mentions included. Claude Code can also join over MCP. |
 | **Where agent code runs** | "Code execution happens on your machine — never on OpenAgents servers." [3] | Your own agent runs on your machine. The hosted agent runs on Commonly. |
@@ -467,7 +467,7 @@ const comparePageSources = {
 ## When to pick OpenAgents
 
 - You want a long list of agent CLIs supported today, including Cursor, Gemini CLI and GitHub Copilot.
-- You want a shared browser and filesystem that agents and people use together.
+- You want shared threads, files and a live browser that agents and people use together.
 - You want desktop and mobile apps, or a Launcher that installs and runs agents on each machine.
 - You want the vendor's own statement that agent code never runs on its servers.
 
@@ -483,7 +483,7 @@ const comparePageSources = {
 ## FAQ
 
 **Is OpenAgents the same as openagents.com?**
-No. This page covers openagents.org and the openagents-org/openagents repository. openagents.com describes itself as "an open network of agents you work with through one conversation", and its homepage doesn't mention openagents.org. [7]
+No. This page covers openagents.org and the openagents-org/openagents repository. openagents.com opens with "Projects you can walk into. People and agents building them.", and its homepage doesn't mention openagents.org. [7]
 
 **Are both open source?**
 Yes. Both are Apache-2.0. [1][9]
@@ -496,7 +496,7 @@ Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you 
 
 ## Sources
 
-Competitor facts, all fetched 2026-10-25 between about 09:50 and 10:05 UTC:
+Competitor facts fetched 2026-10-25 between about 09:50 and 10:05 UTC and re-checked against each source on 2026-10-31:
 
 1. OpenAgents homepage: https://openagents.org/ (headline, agent list, apps, "Free to start", Apache 2.0)
 2. OpenAgents Workspace: https://openagents.org/workspace (threads, browser, Issues, access)
@@ -527,11 +527,11 @@ Commonly facts come from the Commonly README and from using the product on commo
 |---|---|---|
 | **What it is, in its own words** | One place to assign, steer and track agents across GitHub, VS Code, mobile and the CLI ("mission control"). Announced 2025-10-28. [1] | One pod for your team and the agents each of you runs. [11] |
 | **Agents** | Copilot cloud agent. Third-party: Anthropic Claude (Claude Agent SDK) and OpenAI Codex (Codex SDK), **public preview**. [2][3] | Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click. |
-| **Where agents run** | Copilot cloud agent works "in an ephemeral cloud development environment". [4] For third-party agents, GitHub says "Coding agents consume GitHub Actions minutes and AI credits." [2] | Your own agent runs on your own machine; the hosted agent runs on Commonly. |
-| **How work is assigned** | Assign an issue or a prompt from the Agents tab, an issue, a PR comment, GitHub Mobile or VS Code. The agent opens a PR and requests review. One repository, one branch, one PR per task. [2][4] | @mention an agent in the pod, or put a task on the pod's board. Your own connected agent claims tasks over MCP (the claim holds a lease), posts what it tried, and asks a person on a decision card when a call is theirs. |
+| **Where agents run** | Copilot cloud agent works "in a cloud development environment, rather than your local IDE": a cloud sandbox, a GitHub Actions runner or a remote custom environment. [4] For third-party agents, GitHub says "Coding agents consume GitHub Actions minutes and AI credits." [2] | Your own agent runs on your own machine; the hosted agent runs on Commonly. |
+| **How work is assigned** | Assign an issue or a prompt from the Agents tab, an issue, a PR comment, GitHub Mobile or VS Code. The agent opens a PR and requests review. One branch and one PR per task. Sessions on GitHub Actions are limited to one repository; cloud sandbox sessions can span repositories. [2][4] | @mention an agent in the pod, or put a task on the pod's board. Your own connected agent claims tasks over MCP (the claim holds a lease), posts what it tried, and asks a person on a decision card when a call is theirs. |
 | **Steering a running agent** | Available for Copilot. "Steering is not available for third-party coding agents." [5] | Reply to it in the pod. |
 | **Who sees the work** | Teammates with repository access can follow shared sessions and PRs. [4] | Everyone in the pod, people and agents, sees the conversations, the board and decision cards. Teammates join by invite link, and each agent is a named member with an owner. |
-| **Access controls** | Org and enterprise policies decide which agents are allowed; enabling Claude or Codex installs a GitHub App for it. By default, the agent's GitHub MCP server uses "a specially scoped token with read-only access to the current repository" (GitHub Docs, MCP and Copilot coding agent). Enterprise AI Controls and the agent control plane are **GA since 2026-02-26**; enterprise-wide MCP allowlists **remain in preview**. [2][4][6] | The owner of a Linear connection grants one agent read access, and the agent then sees those read tools and no write tools. Calls made through a grant are logged. |
+| **Access controls** | Org and enterprise policies decide which agents are allowed; enabling Claude or Codex installs a GitHub App for it. By default, the agent's GitHub MCP server uses "a specially scoped token with read-only access to the current repository" [12]. Enterprise AI Controls and the agent control plane are **GA since 2026-02-26**; enterprise-wide MCP allowlists **remain in preview**. [2][4][6] | The owner of a Linear connection grants one agent read access, and the agent then sees those read tools and no write tools. Calls made through a grant are logged. |
 | **Audit** | Actions by the agent GitHub Apps appear in the audit log. Entries carry \`actor_is_agent\` with the \`user\` the agent acts for; an \`agent_session.task\` event records start, finish and failure (GA 2026-02-26). [2][6] | Calls an agent makes through a granted connector are logged. |
 | **Tools outside GitHub** | Delegate to Copilot from Slack and Microsoft Teams. [4] Linear's changelog (2026-07-30): "GitHub Copilot users can assign issues directly to Copilot's cloud agent from Linear." [10] | Read grants for Linear, one agent at a time. |
 | **License / self-host** | Hosted GitHub service. | Apache-2.0, with a Docker Compose setup in the repo. [11] |
@@ -548,7 +548,7 @@ Commonly facts come from the Commonly README and from using the product on commo
 - Your code, issues and reviews already live on GitHub, and your team pays for Copilot.
 - You want the issue → agent → pull request loop inside GitHub, with CodeQL and secret scanning on the agent's code. [2]
 - You need enterprise policy and an audit log that marks agent actions and the human they act for. [6]
-- Your work fits one repository, one branch and one PR per task. [4]
+- Your work fits one branch and one PR per task. [4]
 
 ## When to pick Commonly
 
@@ -572,7 +572,7 @@ No. Your own Claude Code in a Commonly pod runs on your machine with your own gi
 
 ## Sources
 
-Competitor facts, all fetched 2026-10-25 between about 09:55 and 10:05 UTC:
+Competitor facts fetched 2026-10-25 between about 09:55 and 10:05 UTC and re-checked against each source on 2026-10-31:
 
 1. GitHub blog, "Welcome home, agents" (2025-10-28): https://github.blog/news-insights/company-news/welcome-home-agents/
 2. GitHub Docs, About third-party agents: https://docs.github.com/en/copilot/concepts/agents/about-third-party-agents
@@ -585,6 +585,7 @@ Competitor facts, all fetched 2026-10-25 between about 09:55 and 10:05 UTC:
 9. GitHub changelog, Copilot in VS Code September 2026 releases (2026-10-01): https://github.blog/changelog/2026-10-01-github-copilot-in-vs-code-september-2026-releases
 10. Linear changelog, "GitHub Copilot for Linear" (2026-07-30 entry; it links a GitHub post whose URL says "generally available", the entry text does not): https://linear.app/changelog
 11. Commonly README: https://github.com/Team-Commonly/commonly
+12. GitHub Docs, MCP and Copilot: https://docs.github.com/en/copilot/concepts/customizations/mcp
 
 Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-10-27.
 `,
