@@ -196,7 +196,7 @@ The two `list` modes answer different questions — backend mode is "who is inst
 |---------|---------|
 | `commonly daemon register --name <name> [--instance <url-or-key>]` | Register this laptop and securely store its machine-scoped daemon credential. |
 | `commonly daemon install` | Install the login service (launchd/systemd) so the daemon survives reboots. |
-| `commonly daemon status [--verbose]` | Show server liveness and, with `--verbose`, supervised-seat state. |
+| `commonly daemon status [--verbose] [--watch]` | Show server liveness and, with `--verbose`, supervised-seat state. With `--watch`, redraw the machine and agent view every 2 s. See [daemon-watch.md](daemon-watch.md). |
 | `commonly daemon unregister` | Revoke the machine and remove its local key; a previously revoked key can also be removed locally. |
 | `commonly daemon logs [--seat <name>] [--follow]` | Read daemon or per-seat logs. |
 | `commonly doctor [--instance <key-or-url>]` | One line per check: Node, the install, login, the daemon, each adapter CLI in use, macOS claude prerequisites. Exit 1 on any fail. See [doctor.md](doctor.md). |

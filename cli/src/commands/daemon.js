@@ -38,6 +38,10 @@ import {
 } from '../lib/daemon-service.js';
 import { daemonLogsDir, daemonSeatLogPath, readLogTail } from '../lib/daemon-logs.js';
 import { loadDaemonState, saveDaemonState } from '../lib/daemon-state.js';
+import {
+  CLEAR_SCREEN, renderDaemonWatch, shouldRedraw, WATCH_INTERVAL_MS,
+} from '../lib/daemon-watch.js';
+import { createReachCache, loadReachByAgent } from '../lib/daemon-agent-states.js';
 import { installedCliVersion, startUpdateNotice, UPDATE_CHECK_OPT_OUT_ENV } from '../lib/update-check.js';
 
 // One supervised seat, as `commonly daemon status --verbose` names it. Two of these
@@ -56,6 +60,72 @@ export const formatSeatLine = (seat = {}) => {
   const error = seat.lastError ? ` error=${seat.lastError}` : '';
   const restarts = seat.restarts === undefined || seat.restarts === null ? '-' : seat.restarts;
   return `  ${seat.agentName}: ${seat.state} instance=${seat.instanceId || '-'} adapter=${seat.adapter || 'unknown'} model=${model}${effort} pid=${seat.pid || '-'} restarts=${restarts} lastTurn=${seat.lastTurnAt || 'never'}${error}`;
+};
+
+// `daemon status --watch`: one frame, then a redraw every 2 s on a terminal. Off a
+// terminal, or with NO_COLOR set, it prints one frame and returns. A failed
+// fetch is shown in the frame, so the loop keeps running through a brief outage.
+const watchDaemonStatus = async () => {
+  const redraw = shouldRedraw({ isTTY: process.stdout.isTTY });
+  // The agent verdict is read through the operator's login, every 10 s, not on
+  // every 2 s frame. A load that fails is thrown, so the next tick retries.
+  const reach = createReachCache({
+    load: () => loadReachByAgent({ client: createClient({ instance: requireDaemonRecord().instanceUrl }) }),
+  });
+  const frame = async () => {
+    try {
+      const record = requireDaemonRecord();
+      const machine = await getDaemonMachineStatus({
+        client: createClient({ instance: record.instanceUrl, token: record.daemonToken }),
+        record,
+      });
+      const seats = loadDaemonState()?.seats || [];
+      const logTails = {};
+      for (const seat of seats) {
+        const tail = readLogTail(daemonSeatLogPath(seat.agentName), 3);
+        logTails[seat.agentName] = tail ? tail.split('\n') : [];
+      }
+      let states = null;
+      let stateNote = '';
+      if (!getToken(record.instanceUrl)) {
+        stateNote = `Agent states need a login. Run: commonly login --instance ${record.instanceUrl}`;
+      } else {
+        try {
+          states = await reach();
+        } catch (error) {
+          stateNote = `Agent states unavailable: ${error.message}`;
+        }
+      }
+      return renderDaemonWatch({
+        machine, seats, logTails, states, stateNote, now: Date.now(), width: process.stdout.columns || 80, color: redraw,
+      });
+    } catch (error) {
+      return daemonStatusErrorMessage(error);
+    }
+  };
+  if (!redraw) {
+    console.log(await frame());
+    return;
+  }
+  let busy = false;
+  const tick = async () => {
+    if (busy) return;
+    busy = true;
+    try {
+      process.stdout.write(`${CLEAR_SCREEN}${await frame()}\n`);
+    } finally {
+      busy = false;
+    }
+  };
+  await tick();
+  const timer = setInterval(tick, WATCH_INTERVAL_MS);
+  const stop = () => {
+    clearInterval(timer);
+    process.stdout.write('\n');
+    process.exit(0);
+  };
+  process.once('SIGINT', stop);
+  process.once('SIGTERM', stop);
 };
 
 const requireDaemonRecord = () => {
@@ -571,7 +641,12 @@ Examples:
     .command('status')
     .description('Show the server-derived liveness of this machine')
     .option('--verbose', 'Include locally supervised seat state and process details')
+    .option('--watch', 'Redraw the machine and agent view every 2 s until Ctrl-C')
     .action(async (opts) => {
+      if (opts.watch) {
+        await watchDaemonStatus();
+        return;
+      }
       try {
         const record = requireDaemonRecord();
         const machine = await getDaemonMachineStatus({
