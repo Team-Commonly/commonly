@@ -862,6 +862,54 @@ router.patch('/:id/join-policy', podAdminRateLimit, auth, async (req: AuthReq, r
   }
 });
 
+/** Pod rename (TASK-419): the name only. The pod creator or a global admin may rename. */
+router.patch('/:id/name', podAdminRateLimit, auth, async (req: AuthReq, res: Res) => {
+  try {
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    if (!name || name.length > 80) return res.status(400).json({ error: 'invalid_pod_name' });
+    const pod = await Pod.findById(req.params?.id) as {
+      _id: { toString: () => string };
+      type?: string;
+      name?: string;
+      createdBy?: { toString: () => string };
+      save: () => Promise<unknown>;
+    } | null;
+    if (!pod) return res.status(404).json({ error: 'pod_not_found' });
+    const userId = req.userId || req.user?.id;
+    const actor = userId
+      ? await User.findById(userId).select('role').lean() as { role?: string } | null
+      : null;
+    const isCreator = pod.createdBy && userId && pod.createdBy.toString() === String(userId);
+    if (!isCreator && actor?.role !== 'admin') {
+      return res.status(403).json({ error: 'not_pod_owner', message: 'Only the pod creator or a global admin may rename this pod.' });
+    }
+    if (NON_LISTABLE_POD_TYPES.includes(String(pod.type))) {
+      return res.status(400).json({ error: 'pod_type_not_configurable' });
+    }
+    const previous = pod.name;
+    pod.name = name;
+    await pod.save();
+    if (previous !== name) {
+      try {
+        await AuditLog.create({
+          action: 'pod.renamed',
+          target: pod._id.toString(),
+          detail: `name=${name} previous=${previous || ''}`,
+          userId,
+          ip: req.ip,
+          userAgent: req.headers?.['user-agent'],
+        });
+      } catch (auditErr) {
+        console.warn('[pods] rename audit log write failed (non-fatal):', (auditErr as Error).message);
+      }
+    }
+    return res.json({ id: pod._id.toString(), name });
+  } catch (err) {
+    console.error('[pods] rename error:', (err as Error).message);
+    return res.status(500).json({ error: 'Server Error' });
+  }
+});
+
 router.get('/:type/:id', podReadRateLimit, auth, getPodById);
 router.delete('/:id', auth, deletePod);
 

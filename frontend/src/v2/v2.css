@@ -12100,6 +12100,55 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pod-header__board:hover { text-decoration: underline; }
 
+/* Owner rename (TASK-419): an inline form in the title line. It wraps at phone
+   width; the input takes the spare room and the buttons keep their content width. */
+.v2-pod-header__rename {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.v2-root .v2-pod-header__rename input {
+  flex: 1 1 180px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 600 15px/20px var(--v2-font);
+}
+.v2-root .v2-pod-header__rename input:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
+.v2-root .v2-pod-header__rename button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 600 12px/16px var(--v2-font);
+  cursor: pointer;
+}
+.v2-root .v2-pod-header__rename button[type="submit"] { background: var(--v2-ink); color: var(--v2-on-ink); border-color: var(--v2-ink); }
+.v2-root .v2-pod-header__rename button:not([type="submit"]):hover:not(:disabled) { background: var(--v2-surface-hover); }
+.v2-root .v2-pod-header__rename button[type="submit"]:hover:not(:disabled) { background: var(--v2-ink-hover); color: var(--v2-on-ink); }
+.v2-root .v2-pod-header__rename button:disabled { opacity: .55; cursor: default; }
+.v2-root .v2-pod-header__rename button:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
+.v2-pod-header__rename-error { flex: 1 0 100%; color: var(--v2-danger); font: 400 12px/16px var(--v2-font); }
+.v2-root button.v2-pod-header__rename-open {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: 500 11px/16px var(--v2-font-mono);
+  cursor: pointer;
+}
+.v2-root button.v2-pod-header__rename-open:hover { text-decoration: underline; }
+
 
 
 .v2-root button.v2-thread__back { display: none; }
