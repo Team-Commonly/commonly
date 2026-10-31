@@ -108,8 +108,26 @@ const METRICS = () => {
   return { helperWords: words, innerRatio: +Math.max(innerRatio, docRatio).toFixed(2) };
 };
 
+// Navigates, opens the tab or panel a surface needs, and measures it. The URL is checked again
+// just before measuring, so a redirect that lands after a click cannot be scored either.
+async function checkSurface(p, [name, route, opt = {}], vp, targets) {
+  const { go, assertLanded } = require('./lib');
+  const url = route(vp);
+  await go(p, url);
+  if (opt.tab) {
+    const t = p.getByRole('tab', { name: opt.tab });
+    if (!(await t.count())) throw new Error(`${name}-${vp}: no "${opt.tab}" tab on ${url}`);
+    await t.first().click(); await p.waitForTimeout(2000);
+  }
+  if (opt.click390 && vp === '390') { const c = p.getByRole('button', { name: opt.click390 }); if (await c.count()) { await c.first().click(); await p.waitForTimeout(1500); } }
+  assertLanded(url, p.url());
+  const m = await p.evaluate(METRICS);
+  const key = `${name}-${vp}`, t = targets[key];
+  return { key, m, t, ok: m.helperWords <= t.helperWords && m.innerRatio <= t.innerRatio };
+}
+
 async function prod(only) {
-  const { open, go } = require('./lib');
+  const { open } = require('./lib');
   const pod = process.env.D215_POD, agent = process.env.D215_AGENT;
   if (!pod || !agent) throw new Error('D215_POD and D215_AGENT must be set');
   const side = process.env.D215_SIDEBAR_POD || pod;
@@ -126,18 +144,9 @@ async function prod(only) {
   let miss = 0;
   for (const [vw, vh, mob, vp] of [[1440, 900, false, '1440'], [390, 844, true, '390']]) {
     const { b, p } = await open(vw, vh, mob);
-    for (const [name, route, opt = {}] of SURF) {
-      if (only && !only.includes(name)) continue;
-      await go(p, route(vp));
-      if (opt.tab) {
-        const t = p.getByRole('tab', { name: opt.tab });
-        if (!(await t.count())) throw new Error(`${name}-${vp}: no "${opt.tab}" tab on ${route(vp)}`);
-        await t.first().click(); await p.waitForTimeout(2000);
-      }
-      if (opt.click390 && vp === '390') { const c = p.getByRole('button', { name: opt.click390 }); if (await c.count()) { await c.first().click(); await p.waitForTimeout(1500); } }
-      const m = await p.evaluate(METRICS);
-      const key = `${name}-${vp}`, t = targets[key];
-      const ok = m.helperWords <= t.helperWords && m.innerRatio <= t.innerRatio;
+    for (const surface of SURF) {
+      if (only && !only.includes(surface[0])) continue;
+      const { key, m, t, ok } = await checkSurface(p, surface, vp, targets);
       if (!ok) miss++;
       console.log(key.padEnd(20), `words ${m.helperWords}/${t.helperWords}`.padEnd(16), `scroll ${m.innerRatio}/${t.innerRatio}`.padEnd(20), ok ? 'HIT' : 'MISS');
     }
@@ -146,7 +155,7 @@ async function prod(only) {
   process.exit(miss ? 1 : 0);
 }
 
-module.exports = { parseArgs, validateTargets, EXPECTED, SURFACES };
+module.exports = { parseArgs, validateTargets, checkSurface, EXPECTED, SURFACES };
 
 if (require.main === module) {
   let args;
