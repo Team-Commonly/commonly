@@ -2146,3 +2146,31 @@ test('the compare page is unlisted: noindex, out of the sitemap, and linked from
   assert.doesNotMatch(sitemap, /\/compare\//);
   assert.match(sitemap, /<loc>https:\/\/commonly\.me\/use-cases\/team-chat\/<\/loc>/);
 });
+
+// The guide restyle scopes its CSS on the header's use-cases link, so every guide
+// page and the guides index must carry it, and no other page may. (The restyle's CSS-only
+// proof, every page's markup hashed against main with <style> removed, ran once
+// on the PR; a fixture of main's hashes would break on every new page.)
+test('every guide page carries the header link the restyle scopes on (TASK-594)', async () => {
+  const source = await readFile(resolve(frontendDir, 'index.html'), 'utf8');
+  const template = source.replace('</head>', '<link rel="modulepreload" href="/assets/chunk-shim.js"><script type="module" crossorigin src="/assets/index-shim.js"></script></head>');
+  const outputDir = await mkdtemp(join(tmpdir(), 'seo-guides-'));
+  try {
+    await writeFile(resolve(outputDir, 'index.html'), template);
+    const pages = await generateSeoPages({ outputDir });
+    // index.html carries the restyle, scoped on that header link.
+    assert.match(source, /#seo-page:has\(header nav a\[href="\/use-cases\/agent-collab\/"\]\)/);
+    const nav = /<nav aria-label="Primary navigation">.*<a href="\/use-cases\/agent-collab\/">/;
+    const guides = pages.filter((page) => page.outputPath.startsWith('guides/'));
+    assert.ok(guides.length > 0);
+    for (const page of guides) {
+      assert.match(await readFile(resolve(outputDir, page.outputPath), 'utf8'), nav, page.outputPath);
+    }
+    // Every other page keeps its own look, so it must not carry the link the restyle scopes on.
+    for (const page of pages.filter((p) => !p.outputPath.startsWith('guides/') && p.outputPath.endsWith('.html'))) {
+      assert.doesNotMatch(await readFile(resolve(outputDir, page.outputPath), 'utf8'), nav, page.outputPath);
+    }
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
