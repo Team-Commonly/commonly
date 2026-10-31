@@ -29,6 +29,16 @@ body.modern-ui.v2-canvas {
   --v2-border-strong: #98a2b3;
   --v2-text-primary: #101828;
   --v2-message-text: #1f2937;
+  /* TASK-701: inactive rail glyphs, join-radio outlines (3:1 on white and
+     #f2f4f7) and the neutral selected pod row. Dark values sit in both dark
+     sets below. */
+  --v2-rail-icon: #374151;
+  --v2-control-outline: #667085;
+  /* Light keeps the cobalt block; dark swaps it for a neutral row. */
+  --v2-row-active: var(--v2-accent-fill);
+  --v2-row-active-text: var(--v2-on-accent);
+  --v2-row-active-mute: rgba(255, 255, 255, 0.85);
+  --v2-row-active-mark: rgba(255, 255, 255, 0.22);
   --v2-text-secondary: #475467;
   --v2-text-tertiary: #667085;
   --v2-text-muted: #667085;
@@ -220,6 +230,12 @@ body.modern-ui.v2-canvas {
     --v2-status-blocked-edge: #f97066;
     --v2-text-primary: #e8ebf1;
     --v2-message-text: #e8ebf1;
+    --v2-rail-icon: #aeb6c4;
+    --v2-control-outline: #737e92;
+    --v2-row-active: #1e2531;
+    --v2-row-active-text: #e8ebf1;
+    --v2-row-active-mute: #aeb6c4;
+    --v2-row-active-mark: #2a3342;
     --v2-text-secondary: #aeb6c4;
     --v2-text-tertiary: #8b94a5;
     --v2-text-muted: #8b94a5;
@@ -272,6 +288,12 @@ body.modern-ui.v2-canvas {
       --v2-status-blocked-edge: #f97066;
       --v2-text-primary: #e8ebf1;
       --v2-message-text: #e8ebf1;
+      --v2-rail-icon: #aeb6c4;
+      --v2-control-outline: #737e92;
+      --v2-row-active: #1e2531;
+      --v2-row-active-text: #e8ebf1;
+      --v2-row-active-mute: #aeb6c4;
+      --v2-row-active-mark: #2a3342;
       --v2-text-secondary: #aeb6c4;
       --v2-text-tertiary: #8b94a5;
       --v2-text-muted: #8b94a5;
@@ -816,7 +838,7 @@ body.modern-ui.v2-canvas {
   border-radius: var(--v2-radius);
   font-size: 14px;
   font-weight: 600;
-  color: #374151;
+  color: var(--v2-rail-icon);
   background: var(--v2-surface-hover);
   text-align: left;
   transition: background 80ms ease;
@@ -1139,12 +1161,29 @@ body.modern-ui.v2-canvas {
   cursor: pointer;
 }
 
+/* Native radios ignore border tokens, so draw the outline from one. Checked, the
+   border thickens into the accent dot, so no cobalt background is added. */
 .v2-pods__join-policy input,
-.v2-pod-join-settings input { accent-color: var(--v2-accent); }
+.v2-pod-join-settings input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  flex-shrink: 0;
+  border: 1.5px solid var(--v2-control-outline);
+  border-radius: 50%;
+  background: var(--v2-surface);
+  cursor: pointer;
+}
+
+.v2-pods__join-policy input:checked,
+.v2-pod-join-settings input:checked {
+  border: 4px solid var(--v2-accent);
+}
 
 .v2-pods__join-policy-hint {
   margin: 0;
-  color: var(--v2-text-tertiary);
+  color: var(--v2-text-secondary);
   font: 400 var(--v2-fs-meta)/16px var(--v2-font);
 }
 
@@ -12206,10 +12245,13 @@ body.modern-ui.v2-canvas {
   box-shadow: inset 0 0 0 2px var(--v2-accent);
 }
 
+/* Dark swaps the cobalt block for a neutral row. The accent bar on the leading
+   edge carries "selected" when the fill alone is too close to the pane. */
 .v2-root button.v2-pods__row--selected,
 .v2-root button.v2-pods__row--selected:hover {
-  background: var(--v2-accent-fill);
-  color: var(--v2-on-accent);
+  background: var(--v2-row-active);
+  color: var(--v2-row-active-text);
+  box-shadow: inset 3px 0 0 var(--v2-accent);
   font-weight: 600;
 }
 
@@ -12235,8 +12277,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-pods__row--selected .v2-pods__row-mark {
-  background: rgba(255, 255, 255, 0.22);
-  color: var(--v2-on-accent);
+  background: var(--v2-row-active-mark);
+  color: var(--v2-row-active-text);
 }
 
 .v2-pods__row-name {
@@ -12257,7 +12299,12 @@ body.modern-ui.v2-canvas {
   font: 400 11px/16px var(--v2-font-mono);
 }
 
-.v2-root button.v2-pods__row--selected .v2-pods__row-meta { color: rgba(255, 255, 255, 0.85); }
+.v2-root button.v2-pods__row--selected .v2-pods__row-meta { color: var(--v2-row-active-mute); }
+
+/* Keyboard focus on the selected row keeps its accent edge beside the ring. */
+.v2-root button.v2-pods__row--selected:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--v2-accent), inset 3px 0 0 var(--v2-accent);
+}
 
 .v2-pods__row-pill {
   display: grid;
