@@ -269,13 +269,6 @@ const connectionOwnerId = (connection: any): string => String(
   connection?.createdBy || connection?.config?.linkedUserId || '',
 );
 
-/** Connection ids are stored as either the row id or its external installation id. */
-const connectionIdsOf = (connection: any): string[] => [
-  connection?._id,
-  connection?.installationId,
-  connection?.config?.installationId,
-].filter(Boolean).map(String);
-
 const getTargetMembers = async (target: { kind: 'pod' | 'seat'; id: string }): Promise<string[] | undefined> => {
   // Seat grants already identify their single target; there is no pod census
   // to intersect for them. The broker still checks the explicit audience.
@@ -601,15 +594,9 @@ router.get('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: exp
     if (!userId) return res.status(401).json({ error: 'unauthorized' });
     if (req.query.connectionOwner !== 'me') return res.status(400).json({ error: 'invalid_connection_owner' });
 
-    const connections = await Integration.find({ createdBy: userId })
-      .select('_id installationId config.installationId createdBy')
-      .lean();
-    const connectionIds = Array.from(new Set(connections
-      .filter((connection: any) => connectionOwnerId(connection) === userId)
-      .flatMap(connectionIdsOf)));
-    if (!connectionIds.length) return res.json({ grants: [] });
-
-    const grants = await RoomGrant.find({ connectionId: { $in: connectionIds } })
+    // The owner is the binding fixed at mint, not whoever holds the connection id
+    // now. An unbound grant is listed for nobody here.
+    const grants = await RoomGrant.find({ ownerId: userId })
       .sort({ createdAt: -1 }).lean();
     const podIds = Array.from(new Set(grants
       .filter((grant) => grant.target.kind === 'pod' && Types.ObjectId.isValid(grant.target.id))

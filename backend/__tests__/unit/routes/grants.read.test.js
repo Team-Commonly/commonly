@@ -156,11 +156,7 @@ describe('GET /api/grants?connectionOwner=me', () => {
     const owned = await RoomGrant.create(podIds.map((id) => grant({ target: { kind: 'pod', id } })));
     const revokedAt = new Date('2026-09-11T00:00:00.000Z');
     await RoomGrant.updateOne({ grantId: owned[0].grantId }, { $set: { revokedAt, revokedBy: OWNER } });
-    await RoomGrant.create(grant({ connectionId: 'conn-other', target: { kind: 'pod', id: podIds[20] } }));
-    Integration.find.mockImplementation(() => ({ select: () => ({ lean: async () => [
-      { _id: 'conn-1', installationId: 'conn-1', createdBy: OWNER },
-      { _id: 'conn-other', createdBy: STRANGER },
-    ] }) }));
+    await RoomGrant.create(grant({ connectionId: 'conn-other', ownerId: STRANGER, target: { kind: 'pod', id: podIds[20] } }));
     Pod.findById.mockImplementation((id) => ({ select: () => ({ lean: async () => (
       { _id: id, type: 'public', members: [OWNER, SEAT] }
     ) }) }));
@@ -176,7 +172,22 @@ describe('GET /api/grants?connectionOwner=me', () => {
     expect(revoked).toMatchObject({ revokedBy: OWNER, revokedAt: revokedAt.toISOString() });
     expect(res.body.grants.every((row) => row.expiresAt && Object.keys(row).sort().join() === [...FIELDS].sort().join())).toBe(true);
     expect(JSON.stringify(res.body)).not.toContain('conn-other');
-    expect(Integration.find).toHaveBeenCalledWith({ createdBy: OWNER });
+  });
+
+  // The connection id now names a row another user holds. The list follows the
+  // binding fixed at mint: the bound owner keeps the grant, the holder does not
+  // get it, and an unbound grant is listed for nobody.
+  test('follows the binding, not the connection holder, and lists unbound grants for nobody', async () => {
+    const bound = await RoomGrant.create(grant({ target: { kind: 'pod', id: POD } }));
+    await RoomGrant.create(grant({ ownerId: null, connectionRowId: null, target: { kind: 'pod', id: POD } }));
+    Integration.find.mockImplementation(() => ({ select: () => ({ lean: async () => [
+      { _id: 'conn-1', installationId: 'conn-1', createdBy: STRANGER },
+    ] }) }));
+
+    const owner = await request(app).get('/api/grants?connectionOwner=me').set('x-test-user', OWNER);
+    expect(owner.body.grants.map((row) => row.grantId)).toEqual([bound.grantId]);
+    const holder = await request(app).get('/api/grants?connectionOwner=me').set('x-test-user', STRANGER);
+    expect(holder.body.grants).toEqual([]);
   });
 
   test('drops a pod grant once the owner can no longer view that pod', async () => {
@@ -203,16 +214,12 @@ describe('GET /api/grants?connectionOwner=me', () => {
     Pod.findById.mockImplementation(() => ({ select: () => ({ lean: async () => null }) }));
     // Deliberately return a foreign row even for the admin caller. The route
     // must enforce ownership after the query as well as in its predicate.
-    Integration.find.mockImplementation(() => ({ select: () => ({ lean: async () => [
-      { _id: 'conn-1', createdBy: OWNER },
-    ] }) }));
     expect((await request(app).get('/api/grants?connectionOwner=me')).status).toBe(401);
     expect((await request(app).get('/api/grants').set('x-test-user', OWNER)).status).toBe(400);
     const other = await request(app).get('/api/grants?connectionOwner=me')
       .set('x-test-user', STRANGER).set('x-test-role', 'admin');
     expect(other.status).toBe(200);
     expect(other.body.grants).toEqual([]);
-    expect(Integration.find).toHaveBeenCalledWith({ createdBy: STRANGER });
   });
 });
 
