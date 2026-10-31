@@ -36,6 +36,7 @@ export const startPoller = ({
   agentName,
   instanceId = 'default',
   intervalMs = 5000,
+  loginInstance,    // the --instance the connect ran with, so the login hint names it
   onEvent,          // async (event) => { outcome, content? }
   onError,          // (err) => void
 }) => {
@@ -141,7 +142,7 @@ export const startPoller = ({
             `Runtime token rejected ${consecutiveAuthErrors} times in a row — stopping poller. `
             + `This connection takes its key from --token, then COMMONLY_TOKEN, then your saved login. `
             + `If the key was rotated or revoked, re-run with the new key in --token or COMMONLY_TOKEN; `
-            + `with neither set, run commonly login.`,
+            + `with neither set, run commonly login${loginInstance ? ` --instance ${loginInstance}` : ''}.`,
           ));
           running = false;
           return;

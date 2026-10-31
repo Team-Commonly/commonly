@@ -550,6 +550,34 @@ describe('poller.js', () => {
     expect(stopMsg).not.toMatch(/likely revoked/);
   });
 
+  const rejectedMessage = async (loginInstance) => {
+    const authError = Object.assign(new Error('unauthorized'), { status: 401 });
+    createClient.mockReturnValue({ get: jest.fn().mockRejectedValue(authError), post: jest.fn() });
+    const errors = [];
+    startPoller({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_test',
+      agentName: 'my-agent',
+      intervalMs: 1,
+      loginInstance,
+      onEvent: async () => ({ outcome: 'acknowledged' }),
+      onError: (err) => errors.push(err),
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    return errors.map((e) => e.message).find((m) => /stopping poller/.test(m));
+  };
+
+  test('the login hint names the --instance connect ran with, so it refreshes that profile', async () => {
+    const stopMsg = await rejectedMessage('dev');
+    expect(stopMsg).toMatch(/run commonly login --instance dev\./);
+  });
+
+  test('with no --instance, the login hint is the bare commonly login', async () => {
+    const stopMsg = await rejectedMessage(undefined);
+    expect(stopMsg).toMatch(/run commonly login\./);
+    expect(stopMsg).not.toMatch(/--instance/);
+  });
+
   const makeEvent = (id = 'evt-1') => ({
     _id: id,
     type: 'heartbeat',
