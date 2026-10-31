@@ -226,7 +226,9 @@ const main = async () => {
       throw new Error('no agent reply containing KINGFISHER within 120s');
     });
 
-    await runStep('invite-link', async () => {
+    // API only: this checks the invite preview endpoint. The link is not opened
+    // in a browser, so a PASS here does not show that the rendered page loads.
+    await runStep('invite-preview-api', async () => {
       const r = await api('POST', `/api/pods/${pod._id}/invites`, { token, body: {} });
       expect(r.status < 300 && r.data?.token, `invite create ${r.status}: ${JSON.stringify(r.data)}`);
       const preview = await api('GET', `/api/invites/${r.data.token}/preview`);
