@@ -1,4 +1,5 @@
 import User from '../models/User';
+import { isInstanceAccessRestricted, isInstanceEmailAllowed } from './instanceAccessPolicy';
 
 /**
  * The one live-row read behind every user-session verifier.
@@ -24,7 +25,7 @@ import User from '../models/User';
  * nothing, which is why the fields are selected here rather than at each call
  * site.
  */
-export type SessionAccountRefusal = 'missing' | 'banned' | 'bot' | 'deleting';
+export type SessionAccountRefusal = 'missing' | 'banned' | 'bot' | 'restricted' | 'deleting';
 export type SessionTokenRefusal = SessionAccountRefusal | 'revoked';
 
 export interface SessionAccount {
@@ -37,6 +38,11 @@ export interface SessionAccount {
   tokenVersion?: number;
   accountDeletionRequestedAt?: Date;
 }
+
+/** Same term for the cm_ bearer branch, which reads its own user row. */
+export const isAccountInstanceRestricted = (email: unknown): boolean => (
+  isInstanceAccessRestricted() && !isInstanceEmailAllowed(email)
+);
 
 export const loadSessionAccount = async (userId: string): Promise<SessionAccount | null> => {
   // Express auth also needs identity fields for the same req.user shape as
@@ -60,6 +66,11 @@ export function sessionRefusal(
   if (!account) return 'missing';
   if (account.banned) return 'banned';
   if (account.isBot) return 'bot';
+  // The sign-in allowlist gates register and login only; without this term a
+  // session minted before the list existed (or for a since-removed address)
+  // stays valid until it expires. Unrestricted instances skip the term, and a
+  // row with no email fails shut once the list is on.
+  if (isInstanceAccessRestricted() && !isInstanceEmailAllowed(account.email)) return 'restricted';
   // Pre-deploy JWTs have no claim. They represent version zero and remain
   // usable only until the first revoke. A malformed explicit claim fails shut.
   if (claims && (claims.tokenVersion === undefined ? 0 : claims.tokenVersion) !== (account.tokenVersion ?? 0)) {

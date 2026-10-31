@@ -1,8 +1,9 @@
 import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
 import User from '../models/User';
+import { INSTANCE_ACCESS_ERROR } from '../services/instanceAccessPolicy';
 import { hashDeviceCredential } from '../services/deviceAuthorizationService';
-import { loadSessionAccount, sessionRefusal } from '../services/sessionAccountService';
+import { isAccountInstanceRestricted, loadSessionAccount, sessionRefusal } from '../services/sessionAccountService';
 
 // User.lastActive was only ever set at account creation, which made every
 // activity-based metric (returned D1/D7 in /api/admin/analytics/funnel,
@@ -75,6 +76,10 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
         return res.status(403).json({ msg: 'This account has been suspended.' });
       }
 
+      if (isAccountInstanceRestricted(user.email)) {
+        return res.status(403).json({ code: 'INSTANCE_ACCESS_RESTRICTED', msg: INSTANCE_ACCESS_ERROR });
+      }
+
       if (user.accountDeletionRequestedAt) {
         return res.status(403).json({ code: 'ACCOUNT_DELETING', msg: 'Account deletion is pending.' });
       }
@@ -130,6 +135,9 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
       return res.status(403).json({
         msg: 'Agent accounts authenticate with their runtime token, not a browser session.',
       });
+    }
+    if (refusal === 'restricted') {
+      return res.status(403).json({ code: 'INSTANCE_ACCESS_RESTRICTED', msg: INSTANCE_ACCESS_ERROR });
     }
     if (refusal === 'revoked') return res.status(401).json({ msg: 'Session has been revoked' });
 
