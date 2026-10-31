@@ -232,6 +232,23 @@ const V2AgentBYO: React.FC = () => {
     listenAdapter,
     pods.find((p) => p._id === (issued?.podId || podId)),
   );
+  // TASK-705: "Work in my repo". The CLI already confines a seat to the folder it
+  // starts in when every pod is confirmed private (workspace trust: Seatbelt on
+  // a Mac, bwrap on Linux). This choice makes that explicit and carries the two
+  // opt-ins. There is no unconfined path: write and web only ever ride on
+  // `--allow`, and the CLI refuses them for a folder it will not confine.
+  const [workInRepo, setWorkInRepo] = useState(false);
+  const [allowWrite, setAllowWrite] = useState(false);
+  const [allowWeb, setAllowWeb] = useState(false);
+  const repoPod = pods.find((p) => p._id === (issued?.podId || podId));
+  const repoChoiceAvailable = listenAdapter === 'claude'
+    && setupOs !== 'windows'
+    && podIsConfirmedPrivate(repoPod);
+  const repoActive = workInRepo && repoChoiceAvailable;
+  const allowFlag = repoActive
+    ? [allowWrite && 'write', allowWeb && 'web'].filter(Boolean).join(',')
+    : '';
+
   // Live listening verification (#887 class, second half). #888 made the
   // listening step legible; this makes it CHECKABLE — the page polls the
   // kernel until THIS agent's runtime token authenticates for the first time
@@ -1061,7 +1078,7 @@ const V2AgentBYO: React.FC = () => {
   // EINVALIDTAGNAME "#" and installs nothing (ux-lead on #2104). The command
   // names itself; the body above the box says where to run it.
   const listenSnippet = issued
-    ? `${CLI_INSTALL_COMMAND}\nexport COMMONLY_API_URL=${apiUrl}\nexport COMMONLY_AGENT_TOKEN=${issued.token}\ncommonly agent run ${issued.agentName} --adapter ${listenAdapter}`
+    ? `${CLI_INSTALL_COMMAND}\nexport COMMONLY_API_URL=${apiUrl}\nexport COMMONLY_AGENT_TOKEN=${issued.token}\n${repoActive ? 'cd ~/path/to/your-repo\n' : ''}commonly agent run ${issued.agentName} --adapter ${listenAdapter}${allowFlag ? ` --allow ${allowFlag}` : ''}`
     : '';
 
   const cursorSnippet = issued
@@ -1683,6 +1700,43 @@ const V2AgentBYO: React.FC = () => {
               <p className="v2-byo__listen-note" data-testid="byo-listen-reach">
                 {t(setupOs === 'linux' ? 'agentByo.listen.reachClaudeLinux' : 'agentByo.listen.reachClaude', { name: issued.agentName })}
               </p>
+            )}
+            {listenerAvailable && repoChoiceAvailable && (
+              <div className="v2-byo__listen-note" data-testid="byo-repo-choice">
+                <label>
+                  <input
+                    type="checkbox"
+                    data-testid="byo-repo-toggle"
+                    checked={workInRepo}
+                    onChange={(e) => setWorkInRepo(e.target.checked)}
+                  />
+                  {' '}{t('agentByo.listen.repo.label')}
+                </label>
+                <p>{t('agentByo.listen.repo.hint')}</p>
+                {workInRepo && (
+                  <>
+                    <label>
+                      <input
+                        type="checkbox"
+                        data-testid="byo-repo-write"
+                        checked={allowWrite}
+                        onChange={(e) => setAllowWrite(e.target.checked)}
+                      />
+                      {' '}{t('agentByo.listen.repo.write')}
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        data-testid="byo-repo-web"
+                        checked={allowWeb}
+                        onChange={(e) => setAllowWeb(e.target.checked)}
+                      />
+                      {' '}{t('agentByo.listen.repo.web')}
+                    </label>
+                    <p data-testid="byo-repo-folder-note">{t('agentByo.listen.repo.folder')}</p>
+                  </>
+                )}
+              </div>
             )}
             {listenerAvailable && listenAdapter === 'codex' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-reach-codex">

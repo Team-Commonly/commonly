@@ -432,3 +432,46 @@ describe('BYO listener snippet', () => {
     });
   });
 });
+
+// TASK-705: "Work in my repo" only ever adds a folder step and the two existing
+// opt-ins to the same command. It has no path that skips the sandbox.
+describe('BYO listener: Work in my repo', () => {
+  const PRIVATE_POD = { joinPolicy: 'invite-only', publicRead: false, communityListed: false };
+  const MAC_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)';
+  const runLine = () => Array.from(document.querySelectorAll('.v2-byo__pre'))
+    .map((el) => el.textContent || '')
+    .find((txt) => /commonly agent run /.test(txt));
+
+  beforeEach(() => {
+    Object.defineProperty(window.navigator, 'userAgent', { value: MAC_UA, configurable: true });
+  });
+
+  test('off by default: the command is unchanged and carries no --allow', async () => {
+    await issueToken(undefined, PRIVATE_POD);
+    expect(screen.getByTestId('byo-repo-toggle')).not.toBeChecked();
+    expect(runLine()).not.toMatch(/--allow|cd ~/);
+  });
+
+  test('choosing it adds the folder step, and write/web add only their own --allow', async () => {
+    await issueToken(undefined, PRIVATE_POD);
+    fireEvent.click(screen.getByTestId('byo-repo-toggle'));
+    expect(runLine()).toMatch(/\ncd ~\/path\/to\/your-repo\ncommonly agent run \S+ --adapter claude$/);
+    fireEvent.click(screen.getByTestId('byo-repo-write'));
+    expect(runLine()).toMatch(/--adapter claude --allow write$/);
+    fireEvent.click(screen.getByTestId('byo-repo-web'));
+    expect(runLine()).toMatch(/--adapter claude --allow write,web$/);
+    expect(runLine()).not.toMatch(/dangerously|skip-permissions/);
+  });
+
+  test('not offered in a pod that is not confirmed private', async () => {
+    await issueToken(undefined, { joinPolicy: 'open', publicRead: false, communityListed: false });
+    expect(screen.queryByTestId('byo-repo-choice')).toBeNull();
+    expect(runLine()).not.toMatch(/--allow/);
+  });
+
+  test('not offered for Codex, where --allow does not apply', async () => {
+    await issueToken('codex', PRIVATE_POD);
+    expect(screen.queryByTestId('byo-repo-choice')).toBeNull();
+    expect(runLine()).not.toMatch(/--allow/);
+  });
+});

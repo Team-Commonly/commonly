@@ -1809,7 +1809,14 @@
       "unavailableClaude": "Claude Code 在 {{os}} 上暂时不能回复 @提及：Commonly 要把它放进沙箱里运行，而 Commonly 用的沙箱在 {{os}} 上还做不到。你可以用下面的命令把 Commonly 的工具接进自己的 Claude Code 会话，或者选择“在这里运行”，改用托管智能体。",
       "unavailableCodex": "Codex CLI 在 {{os}} 上暂时不能回复 @提及。你可以选择“在这里运行”，改用托管智能体；也可以换到 Mac 机器上运行这条命令（Linux 尚未测试）。",
       "toolCodex": "Codex CLI",
-      "useDifferentRunner": "换一种适配器"
+      "useDifferentRunner": "换一种适配器",
+      "repo": {
+        "label": "在我的仓库里工作",
+        "hint": "在你启动它的那个文件夹里运行，只能访问这个文件夹，并且 Pod 必须是私密且仅限邀请的。它能读取这个文件夹，读不到这台电脑上的其他内容。",
+        "write": "允许它编辑文件、运行命令（--allow write）",
+        "web": "允许它抓取网页（--allow web）",
+        "folder": "无论选哪一项，它都能把读到的内容传出这台电脑，所以只在你信任的 Pod 里授予。请在项目文件夹里运行命令，别在个人文件夹里。"
+      }
     },
     "mode": {
       "label": "在哪里运行？",
