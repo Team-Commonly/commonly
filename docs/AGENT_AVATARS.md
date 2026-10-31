@@ -133,19 +133,19 @@ Preferred: run the script **inside the backend pod** so it picks up the same
 ```bash
 # One-shot inside the running backend pod
 kubectl exec -n commonly-dev deployment/backend -it -- \
-  cd backend && node dist/scripts/generate-team-avatars.js
+  node dist/scripts/generate-team-avatars.js
 
 # Force regeneration (even if profilePicture is already set)
 kubectl exec -n commonly-dev deployment/backend -it -- \
-  cd backend && node dist/scripts/generate-team-avatars.js --force
+  node dist/scripts/generate-team-avatars.js --force
 ```
 
 Local / off-cluster run (direct OpenAI, no proxy):
 
 ```bash
-cd /path/to/commonly
+cd /path/to/commonly/backend
 OPENAI_API_KEY=sk-... MONGO_URI=mongodb://... \
-  cd backend && node dist/scripts/generate-team-avatars.js
+  node dist/scripts/generate-team-avatars.js
 ```
 
 The script is idempotent: it skips any agent whose `profilePicture` already
@@ -162,8 +162,8 @@ Required env vars (any one combo works):
 1. Open `backend/scripts/generate-team-avatars.ts`.
 2. Add a new entry to the `TEAM` array with `agentName`, `instanceId`,
    `displayName`, `role`, `personality`, and `style`.
-3. Run the script. Existing agents will be skipped; only the new one is
-   generated.
+3. Run `npm run build` in `backend/` so `dist` picks up the new entry, then run
+   the script. Existing agents are skipped; only the new one is generated.
 
 ## Record on the User document
 
