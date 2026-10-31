@@ -5,6 +5,10 @@ name: Gate verdict
 # head. The logic is scripts/gate-verdict.sh, unit-tested by
 # scripts/__tests__/gate-verdict.test.mjs. This file only says when to run it.
 #
+# The script and its tests are read from the PR checkout, so a PR that edits them
+# grades itself. Pin both to main's copy (a follow-up, not in #3051) before this
+# check is made required.
+#
 # Not a required check yet. Making it one is a repo-settings step for the operator.
 
 on:
@@ -27,6 +31,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Script unit tests
         run: node --test scripts/__tests__/gate-verdict.test.mjs
       - name: Docs or tests only, or a seat gate PASS at this head

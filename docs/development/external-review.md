@@ -93,20 +93,28 @@ can't tell us whether it's wrong or whether we are.
   as the second check. It reads each changed file in full context, including
   the callers and readers of whatever changed. For example, a new setting must
   have something that reads it. The verdict names the head SHA it checked out
-  and the commands it ran. A PASS without both does not count. Full suites
-  stay in CI, so run focused tests only.
+  and the commands it ran. `gate-verdict` enforces the SHA. The commands are not
+  machine-checked, so the reviewer lists them. Full suites stay in CI, so run
+  focused tests only.
 
   The writer names the tier in the PR body. A reviewer can raise it but
   never lower it. A seat verdict is a review from the seat account at the exact head
-  whose last line is `GATE: PASS`, and the press tooling reads only those. A
-  CodeRabbit review is never a verdict. It only lets a docs-only or test-only
-  PR skip the seat gate.
+  whose last line is `GATE: PASS`, and the press tooling reads only those. The last
+  line is taken after `Written by` and `Pod thread:` footers and `*` or backtick
+  markup are removed. `gate-verdict` also treats any last line that mentions `GATE:`
+  as a verdict, so a `GATE: HOLD` after a PASS at the same head blocks it. A CodeRabbit
+  review is never a verdict. It only lets a docs-only or test-only PR skip the seat gate.
 
 - **`gate-verdict` checks this rule on every PR head.** `.github/workflows/gate-verdict.yml`
-  runs `scripts/gate-verdict.sh`. A PR whose files are all docs or test code passes.
-  Any other PR needs a `GATE: PASS` from the gate account at its exact head, and the
-  latest verdict at that head wins. The job does not count the Tier 2 second gate,
-  and it is not a required check until the operator makes it one.
+  runs `scripts/gate-verdict.sh`. A PR passes as Tier 0 when every changed file is docs
+  or test code and the file list covers `changed_files`. A rename counts both its old
+  and its new path. Outside `docs/`, `SKILL.md` files, skill trees, `k8s/helm/commonly/configs/`,
+  and `CLAUDE.md`, `AGENTS.md` and `REVIEW.md` are behaviour, not docs. Any other PR
+  needs a `GATE: PASS` from the gate account at its exact head that names the head SHA,
+  and the latest verdict at that head wins. The job does not count the Tier 2 second
+  gate. It runs the script from the PR head, so a PR that edits the script grades itself
+  until the script is pinned to main, and it is not a required check until the operator
+  makes it one.
 
 ## Keeping a PR out of automatic review
 
