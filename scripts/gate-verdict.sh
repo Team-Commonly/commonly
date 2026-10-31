@@ -17,7 +17,7 @@ export GATE_REVIEWER="${GATE_REVIEWER:-lilyshen0722}" HEAD_SHA
 
 # Tier 0 is docs and test files only. Dot-directories never count as docs: .github,
 # .claude and .agents hold workflows and agent skills, which change behaviour.
-EXEMPT_RE='^(docs/([^/]+/)*[^/]+\.(md|mdx|txt|png|jpe?g|gif|svg|webp)|([^./][^/]*/)*[^/]+\.(md|mdx)|([^./][^/]*/)*__tests__/([^/]+/)*[^/]+|([^./][^/]*/)*[^/]+\.(test|spec)\.[cm]?[jt]sx?)$'
+EXEMPT_RE='^(docs/([^./][^/]*/)*[^/]+\.(md|mdx|txt|png|jpe?g|gif|svg|webp)|([^./][^/]*/)*[^/]+\.(md|mdx)|([^./][^/]*/)*__tests__/([^/]+/)*[^/]+|([^./][^/]*/)*[^/]+\.(test|spec)\.[cm]?[jt]sx?)$'
 # Markdown that the code or the agents load is behaviour: skill files and skill trees, the
 # k8s config directory and the agent instruction files. Under docs/ it stays docs.
 BEHAVIOUR_RE='(^|/)SKILL\.md$|(^|/)[^/]*skills/|^k8s/helm/commonly/configs/|(^|/)(CLAUDE|AGENTS|REVIEW)\.md$'

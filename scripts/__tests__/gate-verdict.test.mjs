@@ -92,6 +92,11 @@ test('a dot-directory markdown file is not docs: it needs a gate', () => {
   assert.equal(run({ files: ['.github/PULL_REQUEST_TEMPLATE.md', '.claude/skills/x/SKILL.md'] }).status, 1);
 });
 
+test('a dot-directory under docs is not docs either: it needs a gate', () => {
+  assert.equal(run({ files: ['docs/.claude/skills/x/SKILL.md'] }).status, 1);
+  assert.equal(run({ files: ['docs/.hidden/notes.md'] }).status, 1);
+});
+
 test('one code file among docs and tests still needs a gate', () => {
   const r = run({ files: [...TIER0_FILES, ...CODE_FILES] });
   assert.equal(r.status, 1);
