@@ -14,8 +14,8 @@ const connectorSecrets = require('../connectorSecrets');
 // The kinds registry is the single definition of where each kind's ref lives and
 // what its unavailability is called. Both sweeps below read it — the orphan
 // sweep's keep-condition was a literal `botTokenRef` pair, which revoked a
-// Discord webhook secret ten minutes after it was written (vera 74130), and the
-// unavailable sweep named Slack for any provider (vera 74131).
+// Discord webhook secret ten minutes after it was written, and the
+// unavailable sweep named Slack for any provider.
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const {
   allRefPaths, kindSpec, ownedByIntegration, rowReferencesSecret,
@@ -69,7 +69,7 @@ const sweepStaleLocks = async (now: Date): Promise<{ completed: number; errored:
       { _id: installation._id, status: installation.status, claimId },
       // The copy is the outcome the operator reads in the Connectors list, so
       // it names the event and the next step and no internal one: a lock is our
-      // word, not theirs (wren 73914, vera 73915).
+      // word, not theirs.
       { $set: userFacingInstallationError('Setup was interrupted before it finished. Try again.') },
     );
     errored += result.modifiedCount || 0;
@@ -101,7 +101,7 @@ const sweepActiveInstallations = async (): Promise<{ staleComponents: number; cl
         $set: {
           // Distinct from the page's generic 'Setup didn't finish.' on purpose: the
           // connector existed and its channel record vanished, which is a different
-          // event, and the evidence pair has to read as two outcomes (vera 73915).
+          // event, and the evidence pair has to read as two outcomes.
           ...userFacingInstallationError("This connector's channel is gone. Retry to rebuild it."),
           'components.$[].status': 'stale',
         },
@@ -149,7 +149,7 @@ const sweepPausedInstallations = async (): Promise<number> => {
 // and keeps `createdBy`, so the permissive predicate kept this sweep blind to
 // them, and after TASK-161 made relay strict the ON switch they were shown could
 // never deliver. It shares the relay's MEMBERSHIP half and deliberately nothing
-// else, for two measured reasons (Vera 74753): the per-pod read projects
+// else, for two measured reasons: the per-pod read projects
 // `.select('members')`, so a type half here would see `type: undefined` — not a
 // hidden type — and refuse nothing while looking like enforcement; and widening
 // that projection is what would start pruning, unsetting a live gate and the

@@ -23,16 +23,17 @@ jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => {
   req.agentUser = { _id: id };
   return next();
 });
-jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
-jest.mock('../../../models/Integration', () => ({ findById: jest.fn(), findOne: jest.fn() }));
+jest.mock('../../../models/Pod', () => ({ findById: jest.fn(), find: jest.fn() }));
+jest.mock('../../../models/Integration', () => ({ findById: jest.fn(), findOne: jest.fn(), find: jest.fn() }));
 jest.mock('../../../models/ToolCall', () => ({
   listForGrant: jest.fn(),
   countsForGrant: jest.fn(),
 }));
 // pods.ts ends with `router.get('/:type/:id', getPodById)`, which would answer
-// `/:podId/grants` as type=<podId>, id='grants' if it were mounted first
-// (Wren 67721 / Vera 67727). The controller is stubbed so that shadowing shows.
+// `/:podId/grants` as type=<podId>, id='grants' if it were mounted first.
+// The controller is stubbed so that shadowing shows.
 jest.mock('../../../controllers/podController', () => ({
+  updatePodParent: jest.fn(),
   getAllPods: jest.fn((req, res) => res.status(500).json({ shadowed: 'getAllPods' })),
   getPodsByType: jest.fn((req, res) => res.status(500).json({ shadowed: 'getPodsByType' })),
   getPodById: jest.fn((req, res) => res.status(500).json({ shadowed: 'getPodById', params: req.params })),
@@ -69,6 +70,9 @@ const grant = (over = {}) => ({
   audience: [SEAT, GONE],
   expiresAt: new Date('2026-10-01T00:00:00.000Z'),
   brokerId: 'broker-1',
+  // Minted by OWNER: the binding, not the connection's current holder, names the granter.
+  ownerId: OWNER,
+  connectionRowId: 'conn-row-1',
   ...over,
 });
 
@@ -85,7 +89,7 @@ const trailRow = (over = {}) => ({
 // whether the daemon-facing projection would withhold the broker from this
 // seat. The scope is part of the contract on purpose — it says WHAT was judged
 // (`seat` / `not_installed` / `unbound` / `not_evaluated`), so a null refusal
-// cannot mean both "checked, fine" and "never looked" (Vera 69881, 69890). A
+// cannot mean both "checked, fine" and "never looked". A
 // DAEMON-side refusal still reaches no surface, so the pair says nothing about
 // liveness either.
 const FIELDS = ['grantId', 'installationId', 'target', 'tools', 'writeMode', 'budget', 'effectiveAudience',
@@ -120,8 +124,103 @@ beforeEach(async () => {
   Integration.findOne.mockImplementation(async ({ installationId }) => (installationId === 'conn-1'
     ? { _id: 'conn-1', type: 'github-app', status: 'connected', createdBy: OWNER }
     : null));
+  Integration.find.mockImplementation(() => ({ select: () => ({ lean: async () => [
+    { _id: 'conn-1', installationId: 'conn-1', createdBy: OWNER },
+  ] }) }));
   ToolCall.listForGrant.mockResolvedValue([]);
   ToolCall.countsForGrant.mockResolvedValue({ total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 });
+});
+
+describe('GET /api/grants?connectionOwner=me', () => {
+  test('includes grants backed by both an external installation id and a hosted connection row id', async () => {
+    const hostedId = 'eeeeeeeeeeeeeeeeeeeeee01';
+    const githubGrant = await RoomGrant.create(grant());
+    const hostedGrant = await RoomGrant.create(grant({ connectionId: hostedId }));
+    Integration.find.mockImplementation(() => ({ select: () => ({ lean: async () => [
+      { _id: 'ffffffffffffffffffffff01', installationId: 'conn-1', createdBy: OWNER },
+      { _id: hostedId, createdBy: OWNER },
+    ] }) }));
+    Pod.findById.mockImplementation((id) => ({ select: () => ({ lean: async () => (
+      { _id: id, type: 'public', members: [OWNER, SEAT] }
+    ) }) }));
+
+    const res = await request(app).get('/api/grants?connectionOwner=me').set('x-test-user', OWNER);
+    expect(res.status).toBe(200);
+    expect(res.body.grants.map((row) => row.grantId).sort()).toEqual([
+      githubGrant.grantId, hostedGrant.grantId,
+    ].sort());
+  });
+
+  test('lists the owner’s grants beyond 20 pods, preserves dead grants, and excludes another owner’s connection', async () => {
+    const podIds = Array.from({ length: 21 }, (_, index) => `aaaaaaaaaaaaaaaaaaaaaa${String(index + 1).padStart(2, '0')}`);
+    const owned = await RoomGrant.create(podIds.map((id) => grant({ target: { kind: 'pod', id } })));
+    const revokedAt = new Date('2026-09-11T00:00:00.000Z');
+    await RoomGrant.updateOne({ grantId: owned[0].grantId }, { $set: { revokedAt, revokedBy: OWNER } });
+    await RoomGrant.create(grant({ connectionId: 'conn-other', ownerId: STRANGER, target: { kind: 'pod', id: podIds[20] } }));
+    Pod.findById.mockImplementation((id) => ({ select: () => ({ lean: async () => (
+      { _id: id, type: 'public', members: [OWNER, SEAT] }
+    ) }) }));
+
+    const res = await request(app).get('/api/grants?connectionOwner=me').set('x-test-user', OWNER);
+    expect(res.status).toBe(200);
+    expect(res.body.grants).toHaveLength(21);
+    expect(res.body.grants.map((row) => row.grantId)).toEqual(expect.arrayContaining(owned.map((row) => row.grantId)));
+    expect(res.body.grants.find((row) => row.target.id === podIds[20])).toMatchObject({
+      grantId: owned[20].grantId, effectiveAudience: [SEAT], grantedBy: OWNER,
+    });
+    const revoked = res.body.grants.find((row) => row.grantId === owned[0].grantId);
+    expect(revoked).toMatchObject({ revokedBy: OWNER, revokedAt: revokedAt.toISOString() });
+    expect(res.body.grants.every((row) => row.expiresAt && Object.keys(row).sort().join() === [...FIELDS].sort().join())).toBe(true);
+    expect(JSON.stringify(res.body)).not.toContain('conn-other');
+  });
+
+  // The connection id now names a row another user holds. The list follows the
+  // binding fixed at mint: the bound owner keeps the grant, the holder does not
+  // get it, and an unbound grant is listed for nobody.
+  test('follows the binding, not the connection holder, and lists unbound grants for nobody', async () => {
+    const bound = await RoomGrant.create(grant({ target: { kind: 'pod', id: POD } }));
+    await RoomGrant.create(grant({ ownerId: null, connectionRowId: null, target: { kind: 'pod', id: POD } }));
+    Integration.find.mockImplementation(() => ({ select: () => ({ lean: async () => [
+      { _id: 'conn-1', installationId: 'conn-1', createdBy: STRANGER },
+    ] }) }));
+
+    const owner = await request(app).get('/api/grants?connectionOwner=me').set('x-test-user', OWNER);
+    expect(owner.body.grants.map((row) => row.grantId)).toEqual([bound.grantId]);
+    const holder = await request(app).get('/api/grants?connectionOwner=me').set('x-test-user', STRANGER);
+    expect(holder.body.grants).toEqual([]);
+  });
+
+  test('drops a pod grant once the owner can no longer view that pod', async () => {
+    const hidden = '0000000000000000000000ab';
+    const visible = '0000000000000000000000ac';
+    const [hiddenGrant, visibleGrant] = await RoomGrant.create([
+      grant({ target: { kind: 'pod', id: hidden } }),
+      grant({ target: { kind: 'pod', id: visible } }),
+    ]);
+    Pod.findById.mockImplementation((id) => ({ select: () => ({ lean: async () => (
+      { _id: id, type: 'private', members: id === hidden ? [SEAT] : [OWNER, SEAT] }
+    ) }) }));
+
+    const res = await request(app).get('/api/grants?connectionOwner=me').set('x-test-user', OWNER);
+    expect(res.status).toBe(200);
+    const ids = res.body.grants.map((row) => row.grantId);
+    expect(ids).toContain(visibleGrant.grantId);
+    expect(ids).not.toContain(hiddenGrant.grantId);
+    expect(JSON.stringify(res.body)).not.toContain(hidden);
+  });
+
+  test('requires a signed-in owner and never gives a different user or admin the owner’s grants', async () => {
+    await RoomGrant.create(grant());
+    Pod.findById.mockImplementation(() => ({ select: () => ({ lean: async () => null }) }));
+    // Deliberately return a foreign row even for the admin caller. The route
+    // must enforce ownership after the query as well as in its predicate.
+    expect((await request(app).get('/api/grants?connectionOwner=me')).status).toBe(401);
+    expect((await request(app).get('/api/grants').set('x-test-user', OWNER)).status).toBe(400);
+    const other = await request(app).get('/api/grants?connectionOwner=me')
+      .set('x-test-user', STRANGER).set('x-test-role', 'admin');
+    expect(other.status).toBe(200);
+    expect(other.body.grants).toEqual([]);
+  });
 });
 
 describe('GET /api/pods/:podId/grants', () => {
@@ -248,7 +347,7 @@ describe('GET /api/grants/:grantId', () => {
     expect((await request(app).get(`/api/grants/${row.grantId}`).set('x-test-user', STRANGER)).status).toBe(403);
   });
 
-  test("a seat grant's read is gated like its trail: granter and seat only (Vera 67727)", async () => {
+  test("a seat grant's read is gated like its trail: granter and seat only", async () => {
     const row = await RoomGrant.create(grant({ target: { kind: 'seat', id: SEAT }, audience: [SEAT] }));
     const read = (headers) => request(app).get(`/api/grants/${row.grantId}`).set(headers);
     const owner = await read({ 'x-test-user': OWNER });
@@ -298,7 +397,7 @@ describe('POST /api/grants/:grantId/revoke', () => {
  * the two surfaces agree rather than that this route re-implements the
  * predicate.
  *
- * The scope carries the honesty (Vera 69881): a null refusal means "checked,
+ * The scope carries the honesty: a null refusal means "checked,
  * not refused" ONLY when the scope says the seat was resolved and judged.
  */
 describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)', () => {
@@ -469,7 +568,7 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
   });
 
   test('a bound seat with no installation under its owner is reported as not installed', async () => {
-    // INVERTED DELIBERATELY (Vera 69890). This test previously asserted
+    // INVERTED DELIBERATELY. This test previously asserted
     // `seat` + null here, reading as "judged, the broker reaches it". It is a
     // verdict from an authoritative scope but not a verdict about a REFUSAL:
     // the owner's projection holds no row for this seat, so the daemon is

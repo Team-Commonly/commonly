@@ -2,12 +2,12 @@
 // where it is WRITTEN. `validateEnvironmentSpec` runs only in the CLI (an
 // operator's `--environment <file>`); the write that daemons execute is
 // `PATCH /api/registry/pods/:podId/agents/:name`, which merged `config`
-// wholesale (Vera's premise correction, 2026-09-19), so a PATCH could store an
+// wholesale, so a PATCH could store an
 // entry whose fields contradict its own transport and every reader resolved it
 // differently — pi's client drops the entry, its connect path resolves
 // url-first.
 //
-// The gate Vera described is the first test here: a PATCH carrying
+// The gate described is the first test here: a PATCH carrying
 // `{ transport: 'http', url, command }` must come back a typed 400.
 const request = require('supertest');
 const express = require('express');
@@ -115,7 +115,7 @@ describe('agent config PATCH — write-time mcp entry shape (TASK-071)', () => {
   });
   afterEach(() => jest.restoreAllMocks());
 
-  it("Vera's gate: refuses transport 'http' carrying both a url and a command, and writes nothing", async () => {
+  it("refuses transport 'http' carrying both a url and a command, and writes nothing", async () => {
     const res = await patch({
       environment: {
         version: 1,

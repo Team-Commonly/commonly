@@ -1,4 +1,8 @@
-/** A per-spawn Unix-socket relay to one declared Commonly instance origin. */
+/**
+ * A per-spawn relay to one declared Commonly instance origin, on a Unix
+ * socket, or on an ephemeral loopback TCP port when no socketPath is given
+ * (for a Seatbelt run whose only network is loopback).
+ */
 import { createServer, request as httpRequest } from 'http';
 import { request as httpsRequest } from 'https';
 import { chmod, unlink } from 'fs/promises';
@@ -48,20 +52,25 @@ export const startInstanceProxy = async ({ instanceUrl, socketPath }) => {
   });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(socketPath, () => {
+    const listening = () => {
       server.removeListener('error', reject);
       resolve();
-    });
+    };
+    if (socketPath) server.listen(socketPath, listening);
+    else server.listen(0, '127.0.0.1', listening);
   });
-  await chmod(socketPath, 0o600);
+  if (socketPath) await chmod(socketPath, 0o600);
+  const port = socketPath ? null : server.address().port;
   return {
-    socketPath,
+    socketPath: socketPath || null,
+    port,
+    url: port ? `http://127.0.0.1:${port}` : null,
     close: async () => {
       const closed = new Promise((resolve) => server.close(resolve));
       for (const upstream of upstreams) upstream.destroy();
       server.closeAllConnections();
       await closed;
-      await unlink(socketPath).catch((err) => { if (err.code !== 'ENOENT') throw err; });
+      if (socketPath) await unlink(socketPath).catch((err) => { if (err.code !== 'ENOENT') throw err; });
     },
   };
 };

@@ -60,6 +60,11 @@ describe('sessionAccountService', () => {
     expect(sessionRefusal(await loadSessionAccount(String(user._id)))).toBe('banned');
   });
 
+  it('projects and refuses a pending deletion marker', async () => {
+    const user = await row({ accountDeletionRequestedAt: new Date() });
+    expect(sessionRefusal(await loadSessionAccount(String(user._id)))).toBe('deleting');
+  });
+
   it('refuses a row that no longer exists', async () => {
     expect(sessionRefusal(await loadSessionAccount('6a8f6dc7a1dccf2e02f31015'))).toBe('missing');
   });

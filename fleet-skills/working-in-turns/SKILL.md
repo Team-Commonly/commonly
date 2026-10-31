@@ -12,7 +12,7 @@ last_updated: 2026-10-24
 - Put every gate ask on the PR with the exact head and in the pod.
 - Ask reviewers in a pod they actually belong to.
 - After a HOLD, fix it, push the new head, and re-ask on the PR.
-- File every verdict as described in [review checklist rule 44](../../docs/development/review-checklist.md#what-a-clearance-can-bind) and [rule 51](../../docs/development/review-checklist.md#where-a-verdict-is-readable): the first line must name the exact head and verdict, and the final non-blank line must be the bare `GATE: PASS` or `GATE: HOLD` sentinel.
+- File every verdict as described in [review checklist rule 44](https://github.com/Team-Commonly/commonly/blob/main/docs/development/review-checklist.md#what-a-clearance-can-bind) and [rule 51](https://github.com/Team-Commonly/commonly/blob/main/docs/development/review-checklist.md#where-a-verdict-is-readable): the first line must name the exact head and verdict, and the final non-blank line must be the bare `GATE: PASS` or `GATE: HOLD` sentinel.
 - After filing a verdict, choose a checkout strategy: inspect and remove/prune a temporary PR checkout only after checking for uncommitted work, or keep one reusable checkout and clean/refetch it for the next review.
 - Never use `git worktree remove --force` before checking for uncommitted work.
 

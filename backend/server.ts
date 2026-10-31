@@ -22,6 +22,7 @@ const attributionRoutes = require('./routes/attribution');
 const messageRoutes = require('./routes/messages');
 const uploadsRoutes = require('./routes/uploads');
 const { socketAuthMiddleware, installSocketSessionGuard } = require('./middleware/socketAuth');
+const { installSocketEventBudget } = require('./middleware/socketRateLimit');
 const { sessionSocketRoom } = require('./services/sessionSocketService');
 const docsRoutes = require('./routes/docs');
 const summariesRoutes = require('./routes/summaries');
@@ -44,6 +45,7 @@ const moltbotProviderRoutes = require('./routes/providers/moltbot');
 const activityRoutes = require('./routes/activity');
 const marketplaceRoutes = require('./routes/marketplace');
 const marketplaceApiRoutes = require('./routes/marketplace-api');
+const { refuseDollarKeys } = require('./middleware/refuseDollarKeys');
 const gatewayRoutes = require('./routes/gateways');
 const skillsRoutes = require('./routes/skills');
 const devRoutes = require('./routes/dev');
@@ -122,19 +124,9 @@ const app = express();
 // `req.protocol`, so a URL built as `${req.protocol}://...` is https behind the
 // TLS edge instead of http (Mixed Content on every page load).
 app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
-const buildAllowedOrigins = () => {
-  const raw = process.env.FRONTEND_URL;
-  if (raw && raw.trim()) {
-    return raw
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean);
-  }
-  return ['http://localhost:3000', 'https://commonly.me'];
-};
+const { buildAllowedOrigins, corsOptions } = require('./middleware/corsPolicy');
 
 const allowedOrigins = buildAllowedOrigins();
-const isAllowedOrigin = (origin: any) => !origin || allowedOrigins.includes(origin);
 
 const server = http.createServer(app);
 const io = socketIo(server, {
@@ -167,25 +159,8 @@ if (startServices) (async () => {
 })();
 
 
-// Middleware
-app.use(
-  cors({
-    origin: (origin: any, callback: any) => {
-      if (isAllowedOrigin(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
-    // Slack OAuth starts in the authenticated shell and returns through an
-    // unauthenticated callback. The browser-bound nonce is HttpOnly on the
-    // API origin, so the authorize-url request must be allowed to persist it
-    // when the shell is served from commonly.me.
-    credentials: true,
-  }),
-);
+// Middleware. A disallowed origin is refused with 403 (middleware/corsPolicy).
+app.use(cors(corsOptions(allowedOrigins)));
 
 // Raw body middleware for Discord signature verification
 app.use('/api/discord/interactions', express.raw({ type: 'application/json' }));
@@ -237,6 +212,10 @@ app.use('/api/webhooks/github', githubGigWebhookRoutes.githubGigRawError);
 // JSON parsing for all other routes
 app.use(express.json());
 
+// Refuse `$`-prefixed keys in every query string and body, after every
+// parser above and before any route (middleware/refuseDollarKeys.ts).
+app.use(refuseDollarKeys);
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/posts', postRoutes);
@@ -251,6 +230,7 @@ app.use('/api', attributionRoutes);
 // Before podRoutes: its `/:type/:id` catch-all would answer `/:podId/grants` as type=<podId>, id='grants' (Wren 67721).
 app.use('/api/pods', require('./routes/grants').podGrantsRouter); // tools plan §6: GET /api/pods/:podId/grants, the page's list
 app.use('/api/pods', require('./routes/runTraces'));
+app.use('/api/pods', require('./routes/podRecords')); // TASK-513: GET /api/pods/:podId/record/tasks/:taskId
 app.use('/api/pods', podRoutes);
 app.use('/api/billing', require('./routes/billing'));
 app.use('/api/messages', messageRoutes);
@@ -338,6 +318,20 @@ const mongoose = require('mongoose');
 const AgentBootstrapService = require('./services/agentBootstrapService');
 const { ensureLocalDevLogin } = require('./services/localDevLoginService');
 const { AgentInstallation } = require('./models/AgentRegistry');
+const { backfillGrantOwners } = require('./services/grantOwnerBinding');
+
+// Binds pre-existing room grants to their owner. Revoke and seat-grant read
+// refuse unbound grants. This runs at boot without holding requests, so a
+// revoke that lands while it is still scanning can be refused until it
+// finishes; the scan is idempotent and a restart re-runs it for the rest.
+mongoose.connection.once('open', () => {
+  if (process.env.NODE_ENV === 'test') return;
+  backfillGrantOwners()
+    .then((result: { scanned: number; bound: number; unbound: number }) => console.log(
+      `[grant-owner-backfill] scanned=${result.scanned} bound=${result.bound} unbound=${result.unbound}`,
+    ))
+    .catch((error: any) => console.error('[grant-owner-backfill] Error:', error.message));
+});
 
 if (startServices) mongoose.connection.once('open', () => {
   if (startServices && process.env.NODE_ENV !== 'test') {
@@ -567,6 +561,8 @@ const authorizeSocketPodAccess = async (socket: any, podId: any, action: any) =>
 
 // Socket.io event handlers
 io.on('connection', (socket: any) => {
+  // Budget first, so a flood is dropped before each packet's session re-check.
+  installSocketEventBudget(socket);
   installSocketSessionGuard(socket);
   socket.join(sessionSocketRoom(socket.userId));
   console.log(
@@ -657,67 +653,26 @@ io.on('connection', (socket: any) => {
           }
         }
 
-        // Use PostgreSQL for messages if available, otherwise fallback to MongoDB
-        if (pgAvailable) {
-          try {
-            // Create message in PostgreSQL
-            console.log('Creating message in PostgreSQL:', {
-              podId,
-              userId: socketUserId,
-              content,
-              messageType,
-            });
-            const newMessage = await PGMessage.create(
-              podId,
-              socketUserId,
-              content,
-              messageType,
-              replyToMessageId,
-            );
-            console.log('Message created successfully:', newMessage);
-
-            message = await PGMessage.findById(newMessage.id);
-            console.log('Message retrieved for broadcast:', message);
-          } catch (dbError) {
-            console.error(
-              'Database error with PostgreSQL, falling back to MongoDB:',
-              dbError,
-            );
-            try {
-              // Create message in MongoDB
-              const user = await User.findById(socketUserId);
-              const newMessage = new Message({
-                podId,
-                userId: socketUserId,
-                content,
-                messageType,
-              });
-
-              await newMessage.save();
-              console.log(
-                'Message saved to MongoDB after PG fallback:',
-                newMessage._id,
-              );
-
-              // Populate user info
-              message = {
-                ...newMessage.toObject(),
-                username: user.username,
-                profilePicture: user.profilePicture,
-              };
-            } catch (mongoDbError) {
-              console.error(
-                'Failed to save message in MongoDB fallback:',
-                mongoDbError,
-              );
-              socket.emit('error', {
-                message: 'Failed to save message to any database',
-              });
-              return;
-            }
+        // PostgreSQL is the only message store once it is configured
+        // (TASK-503); MongoDB is written only when no PG is configured.
+        if (process.env.PG_HOST) {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { writeSocketMessage, MESSAGE_SEND_FAILED_EVENT } = require('./services/socketMessageWrite');
+          const written = await writeSocketMessage({
+            pgReady: pgAvailable,
+            podId,
+            userId: socketUserId,
+            content,
+            messageType,
+            replyToMessageId,
+          });
+          if (!written.ok) {
+            socket.emit(MESSAGE_SEND_FAILED_EVENT, written.error);
+            return;
           }
+          message = written.message;
         } else {
-          console.log('Using MongoDB for messages (PostgreSQL not available)');
+          console.log('Using MongoDB for messages (PostgreSQL not configured)');
           try {
             // Create message in MongoDB
             const user = await User.findById(socketUserId);

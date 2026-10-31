@@ -14,7 +14,7 @@ export type IntegrationType =
   // The runtime `enum` on the schema below is a string array mongoose does not
   // tie to this union, so the two can drift — and in the first cut of
   // TASK-172's slice 1 they did: the value was in the enum and not here, which
-  // is how a typed write to a hosted row comes to need a cast (Vera, #1976
+  // is how a typed write to a hosted row comes to need a cast (#1976
   // gate). The validator below is the arm that fails the day they drift again.
   | 'hosted-mcp';
 
@@ -95,6 +95,7 @@ export interface IIntegration extends Document {
     accessToken?: string;
     refreshToken?: string;
     feedAccessTokenRef?: string;
+    accessTokenRef?: string;
     feedRefreshTokenRef?: string;
     tokenType?: string;
     tokenExpiresAt?: Date;
@@ -172,7 +173,7 @@ export interface IIntegration extends Document {
     // The hosted-MCP connection's own keys (TASK-172, scope §2), declared here
     // as well as in the schema below. The schema half closes the silent drop;
     // this half is what stops a typed write from needing a cast to state the
-    // same thing — a cast being the same silence one layer up (Vera, #1976 gate).
+    // same thing — a cast being the same silence one layer up (#1976 gate).
     entryId?: string;
     intake?: 'oauth';
     clientId?: string;
@@ -271,6 +272,9 @@ const IntegrationSchema = new Schema<IIntegration>(
       // drops an undeclared `$set` in silence.
       feedAccessTokenRef: String,
       feedRefreshTokenRef: String,
+      // The GroupMe access token's ConnectorSecret ref (`services/chatConnectorTokens`),
+      // declared for the same reason.
+      accessTokenRef: String,
       tokenType: String,
       tokenExpiresAt: Date,
       oauthScopes: [String],
@@ -364,7 +368,7 @@ const IntegrationSchema = new Schema<IIntegration>(
       // with no entry is indexed as `null`: two of them for one person collided
       // with an E11000 naming `config.entryId`, a refusal that reports a
       // duplicate entry to a writer whose two rows share no entry at all
-      // (Vera, #1976 gate, measured). Refused here, the failure names the
+      // (#1976 gate, measured). Refused here, the failure names the
       // missing field instead. `trim` for the same invariant: `'linear '` and
       // `'linear'` are one entry, not two.
       entryId: {

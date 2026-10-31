@@ -101,7 +101,8 @@ describe('Signal accent on standalone and bridged surfaces', () => {
     });
     const guidePage = read('src/components/landing/GuidePage.tsx');
     expect(guidePage).toContain("sx={{ ...guideTextButtonSx, alignSelf: 'flex-start' }}");
-    expect(guidePage).toContain('href={link.path} sx={guideTextButtonSx}>');
+    // The /compare/ static-link branch went with the unlisting (TASK-563): no related link is an anchor.
+    expect(guidePage).not.toContain('href={link.path} sx={guideTextButtonSx}>');
     expect(guidePage).toContain('sx={guideTextButtonSx} onClick={() => navigate(link.path)}>');
   });
 

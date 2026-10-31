@@ -31,6 +31,7 @@ const DiscordIntegration = require('../../models/DiscordIntegration');
 // Services
 const AgentEventService = require('../../services/agentEventService');
 const IntegrationSummaryService = require('../../services/integrationSummaryService');
+const { storeGroupmeAccessToken } = require('../../services/chatConnectorTokens');
 const schedulerService = require('../../services/schedulerService');
 
 // SchedulerService is exported as an instance, static methods are on constructor
@@ -1671,13 +1672,21 @@ describe('Integrations E2E Tests', () => {
           .set('Authorization', `Bearer ${authToken}`)
           .send({ label: 'GroupMe Messages Token' });
 
+        // TASK-539: the token lives in connectorSecrets; the row keeps the ref.
+        const savedKeys = process.env.CONNECTOR_SECRET_KEYS;
+        const savedActiveKey = process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+        process.env.CONNECTOR_SECRET_KEYS = `k1:${Buffer.alloc(32, 5).toString('base64')}`;
+        process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'k1';
+        const integrationId = new mongoose.Types.ObjectId();
+        const refs = await storeGroupmeAccessToken(String(integrationId), 'groupme-token-xyz');
         const integration = await Integration.create({
+          _id: integrationId,
           podId: testPod._id,
           type: 'groupme',
           status: 'connected',
           config: {
             groupId: 'group-xyz',
-            accessToken: 'groupme-token-xyz',
+            ...refs,
             agentAccessEnabled: true,
           },
           createdBy: testUser._id,
@@ -1706,9 +1715,13 @@ describe('Integrations E2E Tests', () => {
           .get(`/api/agents/runtime/pods/${testPod._id}/integrations/${integration._id}/messages?limit=20`)
           .set('Authorization', `Bearer ${tokenRes.body.token}`);
 
+        process.env.CONNECTOR_SECRET_KEYS = savedKeys;
+        process.env.CONNECTOR_SECRET_ACTIVE_KEY = savedActiveKey;
+
         expect(res.status).toBe(200);
         expect(res.body.messages).toHaveLength(1);
         expect(res.body.messages[0].authorName).toBe('bob');
+        expect(JSON.stringify(axios.get.mock.calls)).toContain('groupme-token-xyz');
       });
     });
   });

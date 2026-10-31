@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildPageDefinitions, renderStaticPage } from './generate-seo-pages.mjs';
+import { buildPageDefinitions, generateSeoPages, renderStaticPage } from './generate-seo-pages.mjs';
 
 const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -19,7 +20,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 95);
+  assert.equal(pages.length, 99);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -116,6 +117,10 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-data-boundaries/',
     '/guides/ai-agent-disagreement-resolution/',
     '/guides/ai-agent-task-prioritization/',
+    '/guides/ai-agent-collaboration-platforms/',
+    '/guides/control-what-coding-agents-can-access/',
+    '/guides/github-agent-hq-alternative/',
+    '/guides/run-claude-code-and-codex-together/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -127,7 +132,9 @@ test('emits a canonical crawlable page for every public route', async () => {
   const website = pages[0].schema['@graph'].find((item) => item['@type'] === 'WebSite');
   const softwareApplication = pages[0].schema['@graph'].find((item) => item['@type'] === 'SoftwareApplication');
   assert.equal(organization['@id'], 'https://commonly.me/#organization');
-  assert.deepEqual(organization.alternateName, ['Commonly.me', 'commonly.me', 'Commonly AI']);
+  assert.equal(organization.name, 'Commonly AI');
+  assert.equal(softwareApplication.name, 'Commonly AI');
+  assert.deepEqual(organization.alternateName, ['Commonly', 'commonly.me']);
   assert.deepEqual(organization.sameAs, [
     'https://github.com/Team-Commonly/commonly',
     'https://www.npmjs.com/package/@commonlyai/mcp',
@@ -151,27 +158,27 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 85);
+  assert.equal(guidePages.length, 89);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
     const webPage = guide.schema['@graph'].find((item) => item['@type'] === 'WebPage');
     assert.equal(article.author['@type'], 'Organization');
     assert.equal(webPage.reviewedBy['@type'], 'Organization');
-    assert.match(article.datePublished, /^2026-(?:08|09)-\d{2}$/);
-    assert.match(article.dateModified, /^2026-(?:08|09)-\d{2}$/);
+    assert.match(article.datePublished, /^2026-(?:08|09|10)-\d{2}$/);
+    assert.match(article.dateModified, /^2026-(?:08|09|10)-\d{2}$/);
     if (refreshedGuidePaths.has(guide.path)) {
       assert.equal(article.dateModified, '2026-08-30');
     }
   }
   const taskManagementGuide = guidePages.find((page) => page.path === '/guides/ai-agent-task-management/');
-  assert.equal(taskManagementGuide.title, 'AI Agent Task Management: Humans + Agents | Commonly');
+  assert.equal(taskManagementGuide.title, 'AI Agent Task Management: Humans + Agents | Commonly AI');
   const taskManagementArticle = taskManagementGuide.schema['@graph'].find((item) => item['@type'] === 'Article');
   assert.equal(taskManagementArticle.datePublished, '2026-08-25');
   assert.equal(taskManagementArticle.dateModified, '2026-08-30');
   const guideTemplate = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><style>#seo-page { color: #fff; }</style><!-- SEO_NAVIGATION_RUNTIME_START --><script>window.addEventListener(\'popstate\', () => {});</script><!-- SEO_NAVIGATION_RUNTIME_END --><link rel="modulepreload" href="/assets/chunk.js"><script type="module" crossorigin src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
   const sharedWorkspaceGuide = guidePages.find((page) => page.path === '/guides/connect-claude-codex-shared-workspace/');
-  assert.equal(sharedWorkspaceGuide.title, 'Connect Claude Code and Codex to a Shared Workspace | Commonly');
+  assert.equal(sharedWorkspaceGuide.title, 'Connect Claude Code and Codex to a Shared Workspace | Commonly AI');
   const sharedWorkspaceArticle = sharedWorkspaceGuide.schema['@graph'].find((item) => item['@type'] === 'Article');
   assert.equal(sharedWorkspaceArticle.datePublished, '2026-08-26');
   assert.equal(sharedWorkspaceArticle.dateModified, '2026-08-30');
@@ -192,7 +199,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(sharedWorkspaceHtml, /codex mcp add commonly/);
   assert.match(sharedWorkspaceHtml, /class="language-bash"/);
   const memoryGuide = guidePages.find((page) => page.path === '/guides/ai-agent-memory/');
-  assert.equal(memoryGuide.title, 'Shared Memory for AI Agents: Private, Shared, Durable | Commonly');
+  assert.equal(memoryGuide.title, 'Shared Memory for AI Agents: Private, Shared, Durable | Commonly AI');
   const memoryHtml = renderStaticPage(guideTemplate, memoryGuide);
   assert.match(memoryHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
   assert.match(memoryHtml, /<table class="seo-table">/);
@@ -201,7 +208,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(memoryHtml, /href="\/guides\/human-in-the-loop-ai-agents\//);
   assert.match(memoryHtml, /href="\/guides\/agent-to-agent-messaging\//);
   const humanReviewGuide = guidePages.find((page) => page.path === '/guides/human-in-the-loop-ai-agents/');
-  assert.equal(humanReviewGuide.title, 'Human-in-the-Loop Review for AI Agent Teams | Commonly');
+  assert.equal(humanReviewGuide.title, 'Human-in-the-Loop Review for AI Agent Teams | Commonly AI');
   const humanReviewHtml = renderStaticPage(guideTemplate, humanReviewGuide);
   assert.match(humanReviewHtml, /Human-in-the-loop review is a deliberate pause at a meaningful handoff/);
   assert.match(humanReviewHtml, /It is not a person reading every token an agent produces\./);
@@ -210,7 +217,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(humanReviewHtml, /href="\/guides\/ai-agent-handoffs\//);
   assert.match(humanReviewHtml, /href="\/guides\/agent-to-agent-messaging\//);
   const handoffsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-handoffs/');
-  assert.equal(handoffsGuide.title, 'AI Agent Handoffs: Transfer Work Without Losing Context | Commonly');
+  assert.equal(handoffsGuide.title, 'AI Agent Handoffs: Transfer Work Without Losing Context | Commonly AI');
   const handoffsHtml = renderStaticPage(guideTemplate, handoffsGuide);
   assert.match(handoffsHtml, /An AI agent handoff is the transfer of a piece of work to a new owner/);
   assert.match(handoffsHtml, /href="\/guides\/ai-agent-memory\//);
@@ -220,7 +227,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(handoffsHtml, /href="\/guides\/how-to-build-an-ai-agent-team\//);
   assert.match(handoffsHtml, /href="\/guides\/agent-to-agent-messaging\//);
   const teamGuide = guidePages.find((page) => page.path === '/guides/how-to-build-an-ai-agent-team/');
-  assert.equal(teamGuide.title, 'How to Build an AI Agent Team: Roles, Handoffs, and Review | Commonly');
+  assert.equal(teamGuide.title, 'How to Build an AI Agent Team: Roles, Handoffs, and Review | Commonly AI');
   const teamHtml = renderStaticPage(guideTemplate, teamGuide);
   assert.match(teamHtml, /An AI agent team is a small group of people and agents with distinct responsibilities/);
   assert.match(teamHtml, /href="\/guides\/ai-agent-memory\//);
@@ -229,7 +236,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(teamHtml, /https:\/\/openai\.com\/business\/guides-and-resources\/a-practical-guide-to-building-ai-agents\//);
   assert.match(teamHtml, /href="\/guides\/agent-to-agent-messaging\//);
   const messagingGuide = guidePages.find((page) => page.path === '/guides/agent-to-agent-messaging/');
-  assert.equal(messagingGuide.title, 'Agent-to-Agent Messaging: How AI Agents DM | Commonly');
+  assert.equal(messagingGuide.title, 'Agent-to-Agent Messaging: How AI Agents DM | Commonly AI');
   const messagingHtml = renderStaticPage(guideTemplate, messagingGuide);
   assert.match(messagingHtml, /An agent-to-agent message is a focused, one-to-one request or response/);
   assert.match(messagingHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -244,7 +251,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(messagingHtml, /<h2>When a shared thread is better than a DM<\/h2>\s*<p>Choose a thread[^<]*<\/p>\s*<ul>/);
   assert.match(messagingHtml, /<h2>When a DM is the better choice<\/h2>\s*<p>Choose a DM[^<]*<\/p>\s*<ul>/);
   const selfHostedGuide = guidePages.find((page) => page.path === '/guides/self-hosted-ai-agent-platform/');
-  assert.equal(selfHostedGuide.title, 'Self-Hosted AI Agent Platform: What to Look For | Commonly');
+  assert.equal(selfHostedGuide.title, 'Self-Hosted AI Agent Platform: What to Look For | Commonly AI');
   const selfHostedHtml = renderStaticPage(guideTemplate, selfHostedGuide);
   assert.match(selfHostedHtml, /A self-hosted AI agent platform is software you deploy and operate/);
   assert.match(selfHostedHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -261,7 +268,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(selfHostedHtml, /href="\/guides\/connect-claude-codex-shared-workspace\//);
   assert.match(selfHostedHtml, /href="\/guides\/ai-agent-memory\//);
   const permissionsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-permissions-and-tokens/');
-  assert.equal(permissionsGuide.title, 'AI Agent Permissions and Tokens: Scope Runtime Access Safely | Commonly');
+  assert.equal(permissionsGuide.title, 'AI Agent Permissions and Tokens: Scope Runtime Access Safely | Commonly AI');
   const permissionsHtml = renderStaticPage(guideTemplate, permissionsGuide);
   assert.match(permissionsHtml, /An AI agent runtime token is a bearer credential that identifies a specific agent installation/);
   assert.match(permissionsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -281,7 +288,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(permissionsHtml, /href="\/guides\/connect-claude-codex-shared-workspace\//);
   assert.match(permissionsHtml, /href="\/guides\/ai-agent-task-management\//);
   const cursorGuide = guidePages.find((page) => page.path === '/guides/connect-cursor-shared-workspace/');
-  assert.equal(cursorGuide.title, 'How to Connect Cursor to a Shared Workspace | Commonly');
+  assert.equal(cursorGuide.title, 'How to Connect Cursor to a Shared Workspace | Commonly AI');
   const cursorHtml = renderStaticPage(guideTemplate, cursorGuide);
   assert.match(cursorHtml, /Connecting Cursor to a shared workspace gives the agent you use in Cursor/);
   assert.match(cursorHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -293,7 +300,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(cursorHtml, /<h2>Verify both sides of the access boundary<\/h2>\s*<p>[^<]*<\/p>\s*<p>Confirm all four:<\/p>\s*<ol>/);
   assert.match(cursorHtml, /<h2>Give the first task a boundary<\/h2>/);
   const observabilityGuide = guidePages.find((page) => page.path === '/guides/ai-agent-observability/');
-  assert.equal(observabilityGuide.title, 'AI Agent Observability: Make Work, Handoffs, and Decisions Visible | Commonly');
+  assert.equal(observabilityGuide.title, 'AI Agent Observability: Make Work, Handoffs, and Decisions Visible | Commonly AI');
   const observabilityHtml = renderStaticPage(guideTemplate, observabilityGuide);
   assert.match(observabilityHtml, /AI agent observability is the ability to answer a practical set of questions/);
   assert.match(observabilityHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -302,7 +309,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(observabilityHtml, /Objective: The outcome this work is intended to produce\.[\s\S]*Owner: The person or agent responsible for that action\./);
   assert.match(observabilityHtml, /The right response is to connect the signals:<\/p>\s*<div class="seo-table-wrap">/);
   const eventsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-events/');
-  assert.equal(eventsGuide.title, 'AI Agent Events: Mentions, Tasks, Heartbeats, and Safe Handling | Commonly');
+  assert.equal(eventsGuide.title, 'AI Agent Events: Mentions, Tasks, Heartbeats, and Safe Handling | Commonly AI');
   const eventsHtml = renderStaticPage(guideTemplate, eventsGuide);
   assert.match(eventsHtml, /An AI agent event is a structured signal/);
   assert.match(eventsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -313,7 +320,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(eventsHtml, /cm_agent_\.\.\./);
   assert.doesNotMatch(eventsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   const comparisonGuide = guidePages.find((page) => page.path === '/guides/multi-agent-vs-single-agent/');
-  assert.equal(comparisonGuide.title, 'Multi-Agent vs. Single-Agent Systems: How to Choose | Commonly');
+  assert.equal(comparisonGuide.title, 'Multi-Agent vs. Single-Agent Systems: How to Choose | Commonly AI');
   const comparisonHtml = renderStaticPage(guideTemplate, comparisonGuide);
   assert.match(comparisonHtml, /A single-agent system gives one named agent responsibility/);
   assert.match(comparisonHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -322,7 +329,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(comparisonHtml, /A task claim is a visible coordination signal/);
   assert.doesNotMatch(comparisonHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   const patternsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-collaboration-patterns/');
-  assert.equal(patternsGuide.title, 'AI Agent Collaboration Patterns: Leads, Reviewers, Claims, and Races | Commonly');
+  assert.equal(patternsGuide.title, 'AI Agent Collaboration Patterns: Leads, Reviewers, Claims, and Races | Commonly AI');
   const patternsHtml = renderStaticPage(guideTemplate, patternsGuide);
   assert.match(patternsHtml, /AI agent collaboration patterns are repeatable ways/);
   assert.match(patternsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -331,7 +338,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(patternsHtml, /A claim is a coordination signal/);
   assert.doesNotMatch(patternsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   const onboardingGuide = guidePages.find((page) => page.path === '/guides/onboarding-an-ai-agent-to-your-team/');
-  assert.equal(onboardingGuide.title, 'How to Onboard an AI Agent to Your Team | Commonly');
+  assert.equal(onboardingGuide.title, 'How to Onboard an AI Agent to Your Team | Commonly AI');
   const onboardingHtml = renderStaticPage(guideTemplate, onboardingGuide);
   assert.match(onboardingHtml, /Onboarding an AI agent to a team is the process of/);
   assert.match(onboardingHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -340,7 +347,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(onboardingHtml, /cm_agent_…/);
   assert.doesNotMatch(onboardingHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   const discordGuide = guidePages.find((page) => page.path === '/guides/ai-agent-discord-integration/');
-  assert.equal(discordGuide.title, 'AI Agent Discord Integration: Reviewable Work Signals | Commonly');
+  assert.equal(discordGuide.title, 'AI Agent Discord Integration: Reviewable Work Signals | Commonly AI');
   const discordHtml = renderStaticPage(guideTemplate, discordGuide);
   assert.match(discordHtml, /An AI agent Discord integration connects a Discord conversation/);
   assert.match(discordHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -352,7 +359,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.doesNotMatch(discordHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   assert.doesNotMatch(discordHtml, /DISCORD_(?:BOT_TOKEN|CLIENT_ID|CLIENT_SECRET)=(?!\.\.\.)[^\s<]+/);
   const runtimeGuide = guidePages.find((page) => page.path === '/guides/what-is-an-ai-agent-runtime/');
-  assert.equal(runtimeGuide.title, 'What Is an AI Agent Runtime? | Commonly');
+  assert.equal(runtimeGuide.title, 'What Is an AI Agent Runtime? | Commonly AI');
   const runtimeHtml = renderStaticPage(guideTemplate, runtimeGuide);
   assert.match(runtimeHtml, /An AI agent runtime is the process that receives a trigger/);
   assert.match(runtimeHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -362,7 +369,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(runtimeHtml, /cm_agent_…/);
   assert.doesNotMatch(runtimeHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   const heartbeatsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-heartbeats-and-scheduled-work/');
-  assert.equal(heartbeatsGuide.title, 'AI Agent Heartbeats and Scheduled Work | Commonly');
+  assert.equal(heartbeatsGuide.title, 'AI Agent Heartbeats and Scheduled Work | Commonly AI');
   const heartbeatsHtml = renderStaticPage(guideTemplate, heartbeatsGuide);
   assert.match(heartbeatsHtml, /An AI agent heartbeat is a scheduled trigger/);
   assert.match(heartbeatsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -372,7 +379,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(heartbeatsHtml, /crash-loops the gateway/);
   assert.doesNotMatch(heartbeatsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   const marketplaceRolesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-marketplace-roles/');
-  assert.equal(marketplaceRolesGuide.title, 'AI Agent Marketplace Roles: Build a Clear Team | Commonly');
+  assert.equal(marketplaceRolesGuide.title, 'AI Agent Marketplace Roles: Build a Clear Team | Commonly AI');
   const marketplaceRolesHtml = renderStaticPage(guideTemplate, marketplaceRolesGuide);
   assert.match(marketplaceRolesHtml, /AI agent marketplace roles are reusable starting points/);
   assert.match(marketplaceRolesHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -383,7 +390,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(marketplaceRolesHtml, /AgentInstallation/);
   assert.doesNotMatch(marketplaceRolesHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   const customHttpGuide = guidePages.find((page) => page.path === '/guides/connect-a-custom-agent-http-api/');
-  assert.equal(customHttpGuide.title, 'Connect a Custom AI Agent with the HTTP API | Commonly');
+  assert.equal(customHttpGuide.title, 'Connect a Custom AI Agent with the HTTP API | Commonly AI');
   const customHttpHtml = renderStaticPage(guideTemplate, customHttpGuide);
   assert.match(customHttpHtml, /Connecting a custom AI agent over HTTP means/);
   assert.match(customHttpHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -394,7 +401,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(customHttpHtml, /pending, claimed, blocked, and done/);
   assert.doesNotMatch(customHttpHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   const agentPodGuide = guidePages.find((page) => page.path === '/guides/what-is-an-agent-pod/');
-  assert.equal(agentPodGuide.title, 'What Is an Agent Pod? Shared Workspace for AI Teams | Commonly');
+  assert.equal(agentPodGuide.title, 'What Is an Agent Pod? Shared Workspace for AI Teams | Commonly AI');
   const agentPodHtml = renderStaticPage(guideTemplate, agentPodGuide);
   assert.match(agentPodHtml, /An agent pod is a shared workspace/);
   assert.match(agentPodHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -422,14 +429,14 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(securityHtml, /installation-scoped/);
   assert.doesNotMatch(securityHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   const cliGuide = guidePages.find((page) => page.path === '/guides/ai-agent-cli/');
-  assert.equal(cliGuide.title, 'AI Agent CLI: Run a Local Agent as a Pod Member | Commonly');
+  assert.equal(cliGuide.title, 'AI Agent CLI: Run a Local Agent as a Pod Member | Commonly AI');
   const cliHtml = renderStaticPage(guideTemplate, cliGuide);
   assert.match(cliHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-cli\/"/);
   assert.match(cliHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
   assert.match(cliHtml, /commonly agent run/);
   assert.doesNotMatch(cliHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   const rolesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-roles/');
-  assert.equal(rolesGuide.title, 'AI Agent Roles: Define Work, Boundaries, and Handoffs | Commonly');
+  assert.equal(rolesGuide.title, 'AI Agent Roles: Define Work, Boundaries, and Handoffs | Commonly AI');
   assert.deepEqual(guides['ai-agent-roles'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 8], [3, 6], [3, 7], [3, 6], [4, 8], [2, 4], [2, 7]]);
   assert.equal(guides['ai-agent-roles'].sections.flatMap((section) => section.links || []).length, 11);
   const rolesHtml = renderStaticPage(guideTemplate, rolesGuide);
@@ -449,7 +456,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-roles\/"/);
   }
   const escalationGuide = guidePages.find((page) => page.path === '/guides/ai-agent-escalation/');
-  assert.equal(escalationGuide.title, 'AI Agent Escalation: Stop, Hand Off, and Decide | Commonly');
+  assert.equal(escalationGuide.title, 'AI Agent Escalation: Stop, Hand Off, and Decide | Commonly AI');
   assert.deepEqual(guides['ai-agent-escalation'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 5], [3, 9], [3, 9], [3, 6], [3, 4], [3, 6], [2, 8]]);
   assert.deepEqual(guides['ai-agent-escalation'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
   assert.equal(guides['ai-agent-escalation'].sections.flatMap((section) => section.links || []).length, 7);
@@ -470,7 +477,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-escalation\/"/);
   }
   const acceptanceCriteriaGuide = guidePages.find((page) => page.path === '/guides/ai-agent-acceptance-criteria/');
-  assert.equal(acceptanceCriteriaGuide.title, 'AI Agent Acceptance Criteria: Testable, Reviewable Work | Commonly');
+  assert.equal(acceptanceCriteriaGuide.title, 'AI Agent Acceptance Criteria: Testable, Reviewable Work | Commonly AI');
   assert.deepEqual(guides['ai-agent-acceptance-criteria'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 8], [2, 7], [2, 4], [2, 6], [3, 5], [2, 8]]);
   assert.deepEqual(guides['ai-agent-acceptance-criteria'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
   assert.equal(guides['ai-agent-acceptance-criteria'].sections.flatMap((section) => section.links || []).length, 9);
@@ -491,7 +498,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-acceptance-criteria\//);
   }
   const decisionPacketGuide = guidePages.find((page) => page.path === '/guides/ai-agent-decision-packet/');
-  assert.equal(decisionPacketGuide.title, 'AI Agent Decision Packet: Evidence, Options, and Ownership | Commonly');
+  assert.equal(decisionPacketGuide.title, 'AI Agent Decision Packet: Evidence, Options, and Ownership | Commonly AI');
   assert.deepEqual(guides['ai-agent-decision-packet'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 7], [3, 9], [3, 6], [3, 6], [3, 5], [3, 6], [3, 5], [2, 8]]);
   assert.deepEqual(guides['ai-agent-decision-packet'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
   assert.equal(guides['ai-agent-decision-packet'].sections.flatMap((section) => section.links || []).length, 9);
@@ -512,7 +519,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-decision-packet\//);
   }
   const auditTrailGuide = guidePages.find((page) => page.path === '/guides/ai-agent-audit-trail/');
-  assert.equal(auditTrailGuide.title, 'AI Agent Audit Trail: Make Work and Decisions Inspectable | Commonly');
+  assert.equal(auditTrailGuide.title, 'AI Agent Audit Trail: Make Work and Decisions Inspectable | Commonly AI');
   assert.deepEqual(guides['ai-agent-audit-trail'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 8], [3, 6], [3, 6], [3, 6], [3, 6], [3, 5], [3, 6]]);
   assert.deepEqual(guides['ai-agent-audit-trail'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
   assert.equal(guides['ai-agent-audit-trail'].sections.flatMap((section) => section.links || []).length, 10);
@@ -533,7 +540,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-audit-trail\//);
   }
   const noOpGuide = guidePages.find((page) => page.path === '/guides/ai-agent-no-op/');
-  assert.equal(noOpGuide.title, 'AI Agent No-Op: When Doing Nothing Is the Right Result | Commonly');
+  assert.equal(noOpGuide.title, 'AI Agent No-Op: When Doing Nothing Is the Right Result | Commonly AI');
   assert.deepEqual(guides['ai-agent-no-op'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 8], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 5], [3, 6]]);
   assert.deepEqual(guides['ai-agent-no-op'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
   assert.equal(guides['ai-agent-no-op'].sections.flatMap((section) => section.links || []).length, 9);
@@ -554,7 +561,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-no-op\//);
   }
   const sourceOfRecordGuide = guidePages.find((page) => page.path === '/guides/ai-agent-source-of-record/');
-  assert.equal(sourceOfRecordGuide.title, 'AI Agent Source of Record: Which Record Is Authoritative? | Commonly');
+  assert.equal(sourceOfRecordGuide.title, 'AI Agent Source of Record: Which Record Is Authoritative? | Commonly AI');
   assert.deepEqual(guides['ai-agent-source-of-record'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[4, 6], [3, 7], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(guides['ai-agent-source-of-record'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
   assert.equal(guides['ai-agent-source-of-record'].sections.flatMap((section) => section.links || []).length, 9);
@@ -575,7 +582,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-source-of-record\//);
   }
   const scopeCreepGuide = guidePages.find((page) => page.path === '/guides/ai-agent-scope-creep/');
-  assert.equal(scopeCreepGuide.title, 'AI Agent Scope Creep: Keep Work Boundaries Reviewable | Commonly');
+  assert.equal(scopeCreepGuide.title, 'AI Agent Scope Creep: Keep Work Boundaries Reviewable | Commonly AI');
   assert.deepEqual(guides['ai-agent-scope-creep'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[4, 6], [3, 8], [3, 7], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(guides['ai-agent-scope-creep'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
   assert.equal(guides['ai-agent-scope-creep'].sections.flatMap((section) => section.links || []).length, 9);
@@ -596,7 +603,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-scope-creep\//);
   }
   const reviewPacketGuide = guidePages.find((page) => page.path === '/guides/ai-agent-review-packet/');
-  assert.equal(reviewPacketGuide.title, 'AI Agent Review Packet: Evidence, Limits, and Reviewer Decision | Commonly');
+  assert.equal(reviewPacketGuide.title, 'AI Agent Review Packet: Evidence, Limits, and Reviewer Decision | Commonly AI');
   assert.deepEqual(guides['ai-agent-review-packet'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 9], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(guides['ai-agent-review-packet'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
   assert.equal(guides['ai-agent-review-packet'].sections.flatMap((section) => section.links || []).length, 9);
@@ -617,7 +624,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-review-packet\//);
   }
   const blockersGuide = guidePages.find((page) => page.path === '/guides/ai-agent-blockers/');
-  assert.equal(blockersGuide.title, 'AI Agent Blockers: Missing Prerequisites, Effect, and Owner | Commonly');
+  assert.equal(blockersGuide.title, 'AI Agent Blockers: Missing Prerequisites, Effect, and Owner | Commonly AI');
   assert.deepEqual(guides['ai-agent-blockers'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 7], [3, 7], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(guides['ai-agent-blockers'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
   assert.equal(guides['ai-agent-blockers'].sections.flatMap((section) => section.links || []).length, 9);
@@ -638,7 +645,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-blockers\//);
   }
   const statusUpdatesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-status-updates/');
-  assert.equal(statusUpdatesGuide.title, 'AI Agent Status Updates: Report Progress Without Noise | Commonly');
+  assert.equal(statusUpdatesGuide.title, 'AI Agent Status Updates: Report Progress Without Noise | Commonly AI');
   assert.deepEqual(guides['ai-agent-status-updates'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 7], [3, 7], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(guides['ai-agent-status-updates'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
   assert.equal(guides['ai-agent-status-updates'].sections.flatMap((section) => section.links || []).length, 9);
@@ -659,7 +666,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-status-updates\//);
   }
   const workContractGuide = guidePages.find((page) => page.path === '/guides/ai-agent-work-contract/');
-  assert.equal(workContractGuide.title, 'AI Agent Work Contract: Outcome, Inputs, Operations, and Stop | Commonly');
+  assert.equal(workContractGuide.title, 'AI Agent Work Contract: Outcome, Inputs, Operations, and Stop | Commonly AI');
   assert.deepEqual(guides['ai-agent-work-contract'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[4, 6], [3, 9], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(guides['ai-agent-work-contract'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
   assert.equal(guides['ai-agent-work-contract'].sections.flatMap((section) => section.links || []).length, 9);
@@ -680,7 +687,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-work-contract\//);
   }
   const followOnWorkGuide = guidePages.find((page) => page.path === '/guides/ai-agent-follow-on-work/');
-  assert.equal(followOnWorkGuide.title, 'AI Agent Follow-On Work: Turn Adjacent Ideas Into Owned Tasks | Commonly');
+  assert.equal(followOnWorkGuide.title, 'AI Agent Follow-On Work: Turn Adjacent Ideas Into Owned Tasks | Commonly AI');
   assert.deepEqual(guides['ai-agent-follow-on-work'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 8], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(guides['ai-agent-follow-on-work'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
   assert.equal(guides['ai-agent-follow-on-work'].sections.flatMap((section) => section.links || []).length, 10);
@@ -701,7 +708,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-follow-on-work\//);
   }
   const verificationPathGuide = guidePages.find((page) => page.path === '/guides/ai-agent-verification-path/');
-  assert.equal(verificationPathGuide.title, 'AI Agent Verification Path: Trace Claims to Evidence | Commonly');
+  assert.equal(verificationPathGuide.title, 'AI Agent Verification Path: Trace Claims to Evidence | Commonly AI');
   assert.deepEqual(guides['ai-agent-verification-path'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(guides['ai-agent-verification-path'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
   assert.equal(guides['ai-agent-verification-path'].sections.flatMap((section) => section.links || []).length, 9);
@@ -722,7 +729,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-verification-path\//);
   }
   const resumeConditionsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-resume-conditions/');
-  assert.equal(resumeConditionsGuide.title, 'AI Agent Resume Conditions: Restart Work Safely | Commonly');
+  assert.equal(resumeConditionsGuide.title, 'AI Agent Resume Conditions: Restart Work Safely | Commonly AI');
   assert.deepEqual(guides['ai-agent-resume-conditions'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(guides['ai-agent-resume-conditions'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
   assert.equal(guides['ai-agent-resume-conditions'].sections.flatMap((section) => section.links || []).length, 9);
@@ -743,7 +750,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
   }
   const prioritizationGuide = guidePages.find((page) => page.path === '/guides/ai-agent-task-prioritization/');
-  assert.equal(prioritizationGuide.title, 'AI Agent Task Prioritization: Choose What’s Next | Commonly');
+  assert.equal(prioritizationGuide.title, 'AI Agent Task Prioritization: Choose What’s Next | Commonly AI');
   const prioritization = guides['ai-agent-task-prioritization'];
   assert.deepEqual(prioritization.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(prioritization.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -800,7 +807,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.ok(prioritizationHtml.indexOf('<h2>Frequently asked questions</h2>') < prioritizationHtml.indexOf('<h2>Choose the next useful contribution</h2>'));
   assert.equal(prioritization.cta.secondary.label, 'Explore Commonly’s guides');
   const disagreementGuide = guidePages.find((page) => page.path === '/guides/ai-agent-disagreement-resolution/');
-  assert.equal(disagreementGuide.title, 'AI Agent Disagreement Resolution Guide | Commonly');
+  assert.equal(disagreementGuide.title, 'AI Agent Disagreement Resolution Guide | Commonly AI');
   const disagreement = guides['ai-agent-disagreement-resolution'];
   assert.deepEqual(disagreement.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(disagreement.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -859,7 +866,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.ok(disagreementHtml.indexOf('<h2>Frequently asked questions</h2>') < disagreementHtml.indexOf('<h2>Settle disagreements with evidence and owners</h2>'));
   assert.equal(disagreement.cta.secondary.label, 'Explore Commonly’s guides');
   const dataBoundariesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-data-boundaries/');
-  assert.equal(dataBoundariesGuide.title, 'AI Agent Data Boundaries: Read, Retain, Share | Commonly');
+  assert.equal(dataBoundariesGuide.title, 'AI Agent Data Boundaries: Read, Retain, Share | Commonly AI');
   const dataBoundaries = guides['ai-agent-data-boundaries'];
   assert.deepEqual(dataBoundaries.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(dataBoundaries.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -913,7 +920,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.ok(dataBoundariesHtml.indexOf('<h2>Frequently asked questions</h2>') < dataBoundariesHtml.indexOf('<h2>Define what to read, retain, and share</h2>'));
   assert.equal(dataBoundaries.cta.secondary.label, 'Explore Commonly’s guides');
   const changeRequestsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-change-requests/');
-  assert.equal(changeRequestsGuide.title, 'AI Agent Change Requests: Update Scope Clearly | Commonly');
+  assert.equal(changeRequestsGuide.title, 'AI Agent Change Requests: Update Scope Clearly | Commonly AI');
   const changeRequests = guides['ai-agent-change-requests'];
   assert.deepEqual(changeRequests.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(changeRequests.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -953,7 +960,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.ok(changeRequestsHtml.indexOf('<h2>Frequently asked questions</h2>') < changeRequestsHtml.indexOf('<h2>Update scope without silent drift</h2>'));
   assert.equal(changeRequests.cta.secondary.label, 'Explore Commonly’s guides');
   const stopConditionsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-stop-conditions/');
-  assert.equal(stopConditionsGuide.title, 'AI Agent Stop Conditions: When Agents Should Halt | Commonly');
+  assert.equal(stopConditionsGuide.title, 'AI Agent Stop Conditions: When Agents Should Halt | Commonly AI');
   const stopConditions = guides['ai-agent-stop-conditions'];
   assert.deepEqual(stopConditions.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(stopConditions.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -989,7 +996,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.ok(stopConditionsHtml.indexOf('<h2>Frequently asked questions</h2>') < stopConditionsHtml.indexOf('<h2>Make stopping a useful, truthful contribution</h2>'));
   assert.equal(stopConditions.cta.secondary.label, 'Explore Commonly’s guides');
   const audienceBoundariesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-audience-boundaries/');
-  assert.equal(audienceBoundariesGuide.title, 'AI Agent Audience Boundaries: Who an Agent May Address | Commonly');
+  assert.equal(audienceBoundariesGuide.title, 'AI Agent Audience Boundaries: Who an Agent May Address | Commonly AI');
   const audienceBoundaries = guides['ai-agent-audience-boundaries'];
   assert.deepEqual(audienceBoundaries.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(audienceBoundaries.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -1025,7 +1032,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.ok(audienceBoundariesHtml.indexOf('<h2>Frequently asked questions</h2>') < audienceBoundariesHtml.indexOf('<h2>Keep the right message with the right owner</h2>'));
   assert.equal(audienceBoundaries.cta.secondary.label, 'Explore Commonly’s guides');
   const interimResultsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-interim-results/');
-  assert.equal(interimResultsGuide.title, 'AI Agent Interim Results: Useful Work Before Completion | Commonly');
+  assert.equal(interimResultsGuide.title, 'AI Agent Interim Results: Useful Work Before Completion | Commonly AI');
   const interimResults = guides['ai-agent-interim-results'];
   assert.deepEqual(interimResults.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(interimResults.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -1058,7 +1065,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.equal((html.match(/href="\/guides\/ai-agent-interim-results\/"/g) || []).length, 1);
   }
   const taskSplittingGuide = guidePages.find((page) => page.path === '/guides/ai-agent-task-splitting/');
-  assert.equal(taskSplittingGuide.title, 'AI Agent Task Splitting: Divide Work Clearly | Commonly');
+  assert.equal(taskSplittingGuide.title, 'AI Agent Task Splitting: Divide Work Clearly | Commonly AI');
   const taskSplitting = guides['ai-agent-task-splitting'];
   assert.deepEqual(taskSplitting.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(taskSplitting.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -1091,7 +1098,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.equal((html.match(/href="\/guides\/ai-agent-task-splitting\/"/g) || []).length, 1);
   }
   const revisionLoopGuide = guidePages.find((page) => page.path === '/guides/ai-agent-revision-loop/');
-  assert.equal(revisionLoopGuide.title, 'AI Agent Revision Loop: Request, Revise, Re-Review | Commonly');
+  assert.equal(revisionLoopGuide.title, 'AI Agent Revision Loop: Request, Revise, Re-Review | Commonly AI');
   const revisionLoop = guides['ai-agent-revision-loop'];
   assert.deepEqual(revisionLoop.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(revisionLoop.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -1123,7 +1130,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.equal((html.match(/href="\/guides\/ai-agent-revision-loop\/"/g) || []).length, 1);
   }
   const retainedContextGuide = guidePages.find((page) => page.path === '/guides/ai-agent-retained-context/');
-  assert.equal(retainedContextGuide.title, 'AI Agent Retained Context: Keep Useful Context | Commonly');
+  assert.equal(retainedContextGuide.title, 'AI Agent Retained Context: Keep Useful Context | Commonly AI');
   const retainedContext = guides['ai-agent-retained-context'];
   assert.deepEqual(retainedContext.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(retainedContext.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -1160,7 +1167,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.equal((html.match(/href="\/guides\/ai-agent-retained-context\/"/g) || []).length, 1);
   }
   const approvalBoundariesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-approval-boundaries/');
-  assert.equal(approvalBoundariesGuide.title, 'AI Agent Approval Boundaries: What Review Can Authorize | Commonly');
+  assert.equal(approvalBoundariesGuide.title, 'AI Agent Approval Boundaries: What Review Can Authorize | Commonly AI');
   const approvalBoundaries = guides['ai-agent-approval-boundaries'];
   assert.deepEqual(approvalBoundaries.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(approvalBoundaries.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -1196,7 +1203,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.equal((html.match(/href="\/guides\/ai-agent-approval-boundaries\/"/g) || []).length, 1);
   }
   const focusedThreadsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-focused-threads/');
-  assert.equal(focusedThreadsGuide.title, 'AI Agent Focused Threads: One Review or Decision | Commonly');
+  assert.equal(focusedThreadsGuide.title, 'AI Agent Focused Threads: One Review or Decision | Commonly AI');
   const focusedThreads = guides['ai-agent-focused-threads'];
   assert.deepEqual(focusedThreads.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(focusedThreads.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -1225,7 +1232,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.equal((html.match(/href="\/guides\/ai-agent-focused-threads\/"/g) || []).length, 1);
   }
   const contextPacketGuide = guidePages.find((page) => page.path === '/guides/ai-agent-context-packet/');
-  assert.equal(contextPacketGuide.title, 'AI Agent Context Packet: Current Context for One Step | Commonly');
+  assert.equal(contextPacketGuide.title, 'AI Agent Context Packet: Current Context for One Step | Commonly AI');
   const contextPacket = guides['ai-agent-context-packet'];
   assert.deepEqual(contextPacket.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(contextPacket.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -1250,7 +1257,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.equal((html.match(/href="\/guides\/ai-agent-context-packet\/"/g) || []).length, 1);
   }
   const taskClosureGuide = guidePages.find((page) => page.path === '/guides/ai-agent-task-closure/');
-  assert.equal(taskClosureGuide.title, 'AI Agent Task Closure: Record What Done Means | Commonly');
+  assert.equal(taskClosureGuide.title, 'AI Agent Task Closure: Record What Done Means | Commonly AI');
   const taskClosure = guides['ai-agent-task-closure'];
   assert.deepEqual(taskClosure.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(taskClosure.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -1275,7 +1282,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.equal((html.match(/href="\/guides\/ai-agent-task-closure\/"/g) || []).length, 1);
   }
   const artifactVersionsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-artifact-versions/');
-  assert.equal(artifactVersionsGuide.title, 'AI Agent Artifact Versions: Make Work Reviewable | Commonly');
+  assert.equal(artifactVersionsGuide.title, 'AI Agent Artifact Versions: Make Work Reviewable | Commonly AI');
   const artifactVersions = guides['ai-agent-artifact-versions'];
   assert.deepEqual(artifactVersions.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(artifactVersions.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -1300,7 +1307,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.equal((html.match(/href="\/guides\/ai-agent-artifact-versions\/"/g) || []).length, 1);
   }
   const decisionOwnerGuide = guidePages.find((page) => page.path === '/guides/ai-agent-decision-owner/');
-  assert.equal(decisionOwnerGuide.title, 'AI Agent Decision Owner: Who Can Give the Answer? | Commonly');
+  assert.equal(decisionOwnerGuide.title, 'AI Agent Decision Owner: Who Can Give the Answer? | Commonly AI');
   const decisionOwner = guides['ai-agent-decision-owner'];
   assert.deepEqual(decisionOwner.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(decisionOwner.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -1325,7 +1332,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.equal((html.match(/href="\/guides\/ai-agent-decision-owner\/"/g) || []).length, 1);
   }
   const intakeGuide = guidePages.find((page) => page.path === '/guides/ai-agent-task-intake/');
-  assert.equal(intakeGuide.title, 'AI Agent Task Intake: Make Work Eligible | Commonly');
+  assert.equal(intakeGuide.title, 'AI Agent Task Intake: Make Work Eligible | Commonly AI');
   const intake = guides['ai-agent-task-intake'];
   assert.deepEqual(intake.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(intake.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -1353,7 +1360,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.equal((html.match(/href="\/guides\/ai-agent-task-intake\/"/g) || []).length, 1);
   }
   const dependencyGuide = guidePages.find((page) => page.path === '/guides/ai-agent-dependency-management/');
-  assert.equal(dependencyGuide.title, 'AI Agent Dependency Management: Required States | Commonly');
+  assert.equal(dependencyGuide.title, 'AI Agent Dependency Management: Required States | Commonly AI');
   const dependency = guides['ai-agent-dependency-management'];
   assert.deepEqual(dependency.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(dependency.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -1378,7 +1385,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.equal((html.match(/href="\/guides\/ai-agent-dependency-management\/"/g) || []).length, 1);
   }
   const evidenceLabelsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-evidence-labels/');
-  assert.equal(evidenceLabelsGuide.title, 'AI Agent Evidence Labels: Facts, Inferences, Decisions | Commonly');
+  assert.equal(evidenceLabelsGuide.title, 'AI Agent Evidence Labels: Facts, Inferences, Decisions | Commonly AI');
   const evidenceLabels = guides['ai-agent-evidence-labels'];
   assert.deepEqual(evidenceLabels.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(evidenceLabels.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -1407,7 +1414,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.equal((html.match(/href="\/guides\/ai-agent-evidence-labels\/"/g) || []).length, 1);
   }
   const nonGoalsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-non-goals/');
-  assert.equal(nonGoalsGuide.title, 'AI Agent Non-Goals: Write Clear Task Boundaries | Commonly');
+  assert.equal(nonGoalsGuide.title, 'AI Agent Non-Goals: Write Clear Task Boundaries | Commonly AI');
   const nonGoals = guides['ai-agent-non-goals'];
   assert.deepEqual(nonGoals.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(nonGoals.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
@@ -1433,7 +1440,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.equal((html.match(/href="\/guides\/ai-agent-non-goals\/"/g) || []).length, 1);
   }
   const reviewDecisionsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-review-decisions/');
-  assert.equal(reviewDecisionsGuide.title, 'AI Agent Review Decisions: Five Clear Answers | Commonly');
+  assert.equal(reviewDecisionsGuide.title, 'AI Agent Review Decisions: Five Clear Answers | Commonly AI');
   assert.deepEqual(guides['ai-agent-review-decisions'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
   assert.deepEqual(guides['ai-agent-review-decisions'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
   assert.equal(guides['ai-agent-review-decisions'].sections.flatMap((section) => section.links || []).length, 9);
@@ -1464,14 +1471,14 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/ai-agent-cli\//);
   }
   const orchestrationGuide = guidePages.find((page) => page.path === '/guides/ai-agent-orchestration/');
-  assert.equal(orchestrationGuide.title, 'AI Agent Orchestration: Coordinate Work Through Shared State | Commonly');
+  assert.equal(orchestrationGuide.title, 'AI Agent Orchestration: Coordinate Work Through Shared State | Commonly AI');
   const orchestrationHtml = renderStaticPage(guideTemplate, orchestrationGuide);
   assert.match(orchestrationHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-orchestration\/"/);
   assert.match(orchestrationHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
   assert.match(orchestrationHtml, /shared state/);
   assert.doesNotMatch(orchestrationHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   const skillsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-skills/');
-  assert.equal(skillsGuide.title, 'AI Agent Skills: Reusable Workflows for Reliable Agents | Commonly');
+  assert.equal(skillsGuide.title, 'AI Agent Skills: Reusable Workflows for Reliable Agents | Commonly AI');
   const skillsHtml = renderStaticPage(guideTemplate, skillsGuide);
   assert.match(skillsHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-skills\/"/);
   assert.match(skillsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -1488,7 +1495,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/ai-agent-skills\//);
   }
   const autonomousGuide = guidePages.find((page) => page.path === '/guides/autonomous-ai-agents/');
-  assert.equal(autonomousGuide.title, 'Autonomous AI Agents: A Practical Operating Model for Teams | Commonly');
+  assert.equal(autonomousGuide.title, 'Autonomous AI Agents: A Practical Operating Model for Teams | Commonly AI');
   const autonomousHtml = renderStaticPage(guideTemplate, autonomousGuide);
   assert.match(autonomousHtml, /href="https:\/\/commonly\.me\/guides\/autonomous-ai-agents\/"/);
   assert.match(autonomousHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -1505,7 +1512,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/autonomous-ai-agents\//);
   }
   const sandboxingGuide = guidePages.find((page) => page.path === '/guides/ai-agent-sandboxing/');
-  assert.equal(sandboxingGuide.title, 'AI Agent Sandboxing: Reduce the Blast Radius of Untrusted Input | Commonly');
+  assert.equal(sandboxingGuide.title, 'AI Agent Sandboxing: Reduce the Blast Radius of Untrusted Input | Commonly AI');
   const sandboxingHtml = renderStaticPage(guideTemplate, sandboxingGuide);
   assert.match(sandboxingHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-sandboxing\/"/);
   assert.match(sandboxingHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -1522,7 +1529,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/ai-agent-sandboxing\//);
   }
   const toolsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-tools/');
-  assert.equal(toolsGuide.title, 'AI Agent Tools: What They Are and How to Choose Them | Commonly');
+  assert.equal(toolsGuide.title, 'AI Agent Tools: What They Are and How to Choose Them | Commonly AI');
   const toolsHtml = renderStaticPage(guideTemplate, toolsGuide);
   assert.match(toolsHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-tools\/"/);
   assert.match(toolsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -1539,7 +1546,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/ai-agent-tools\//);
   }
   const promptInjectionGuide = guidePages.find((page) => page.path === '/guides/prompt-injection-defense-for-ai-agents/');
-  assert.equal(promptInjectionGuide.title, 'Prompt Injection Defense for AI Agents: Contain the Capability | Commonly');
+  assert.equal(promptInjectionGuide.title, 'Prompt Injection Defense for AI Agents: Contain the Capability | Commonly AI');
   const promptInjectionHtml = renderStaticPage(guideTemplate, promptInjectionGuide);
   assert.match(promptInjectionHtml, /href="https:\/\/commonly\.me\/guides\/prompt-injection-defense-for-ai-agents\/"/);
   assert.match(promptInjectionHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -1556,7 +1563,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/prompt-injection-defense-for-ai-agents\//);
   }
   const mcpGuide = guidePages.find((page) => page.path === '/guides/mcp-for-ai-agent-teams/');
-  assert.equal(mcpGuide.title, 'MCP for AI Agent Teams: Connect Tools Without Losing Context | Commonly');
+  assert.equal(mcpGuide.title, 'MCP for AI Agent Teams: Connect Tools Without Losing Context | Commonly AI');
   const mcpHtml = renderStaticPage(guideTemplate, mcpGuide);
   assert.match(mcpHtml, /href="https:\/\/commonly\.me\/guides\/mcp-for-ai-agent-teams\/"/);
   assert.match(mcpHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -1573,7 +1580,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/mcp-for-ai-agent-teams\//);
   }
   const agenticAiGuide = guidePages.find((page) => page.path === '/guides/what-is-agentic-ai/');
-  assert.equal(agenticAiGuide.title, 'What Is Agentic AI? A Practical Definition for Teams | Commonly');
+  assert.equal(agenticAiGuide.title, 'What Is Agentic AI? A Practical Definition for Teams | Commonly AI');
   const agenticAiHtml = renderStaticPage(guideTemplate, agenticAiGuide);
   assert.match(agenticAiHtml, /href="https:\/\/commonly\.me\/guides\/what-is-agentic-ai\/"/);
   assert.match(agenticAiHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -1590,7 +1597,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/what-is-agentic-ai\//);
   }
   const aiAgentGuide = guidePages.find((page) => page.path === '/guides/what-is-an-ai-agent/');
-  assert.equal(aiAgentGuide.title, 'What Is an AI Agent? A Practical Definition for Teams | Commonly');
+  assert.equal(aiAgentGuide.title, 'What Is an AI Agent? A Practical Definition for Teams | Commonly AI');
   const aiAgentHtml = renderStaticPage(guideTemplate, aiAgentGuide);
   assert.match(aiAgentHtml, /href="https:\/\/commonly\.me\/guides\/what-is-an-ai-agent\/"/);
   assert.match(aiAgentHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -1607,7 +1614,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/what-is-an-ai-agent\/"/);
   }
   const contextEngineeringGuide = guidePages.find((page) => page.path === '/guides/context-engineering-for-ai-agents/');
-  assert.equal(contextEngineeringGuide.title, 'Context Engineering for AI Agents: Give Each Decision the Right State | Commonly');
+  assert.equal(contextEngineeringGuide.title, 'Context Engineering for AI Agents: Give Each Decision the Right State | Commonly AI');
   const contextEngineeringHtml = renderStaticPage(guideTemplate, contextEngineeringGuide);
   assert.match(contextEngineeringHtml, /href="https:\/\/commonly\.me\/guides\/context-engineering-for-ai-agents\/"/);
   assert.match(contextEngineeringHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -1624,7 +1631,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/context-engineering-for-ai-agents\//);
   }
   const evaluationGuide = guidePages.find((page) => page.path === '/guides/how-to-evaluate-ai-agents/');
-  assert.equal(evaluationGuide.title, 'How to Evaluate AI Agents: Test the Work, Not Just the Answer | Commonly');
+  assert.equal(evaluationGuide.title, 'How to Evaluate AI Agents: Test the Work, Not Just the Answer | Commonly AI');
   const evaluationHtml = renderStaticPage(guideTemplate, evaluationGuide);
   assert.match(evaluationHtml, /href="https:\/\/commonly\.me\/guides\/how-to-evaluate-ai-agents\/"/);
   assert.match(evaluationHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -1641,7 +1648,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/how-to-evaluate-ai-agents\//);
   }
   const chatbotGuide = guidePages.find((page) => page.path === '/guides/ai-agent-vs-chatbot/');
-  assert.equal(chatbotGuide.title, 'AI Agent vs. Chatbot: What Is the Difference? | Commonly');
+  assert.equal(chatbotGuide.title, 'AI Agent vs. Chatbot: What Is the Difference? | Commonly AI');
   const chatbotHtml = renderStaticPage(guideTemplate, chatbotGuide);
   assert.match(chatbotHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-vs-chatbot\/"/);
   assert.match(chatbotHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -1658,7 +1665,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/ai-agent-vs-chatbot\//);
   }
   const useCasesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-use-cases/');
-  assert.equal(useCasesGuide.title, 'AI Agent Use Cases: Eight Roles Teams Can Start Safely | Commonly');
+  assert.equal(useCasesGuide.title, 'AI Agent Use Cases: Eight Roles Teams Can Start Safely | Commonly AI');
   const useCasesHtml = renderStaticPage(guideTemplate, useCasesGuide);
   assert.match(useCasesHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-use-cases\/"/);
   assert.match(useCasesHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -1675,7 +1682,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/ai-agent-use-cases\//);
   }
   const collaborationGuide = guidePages.find((page) => page.path === '/guides/human-ai-collaboration/');
-  assert.equal(collaborationGuide.title, 'Human-AI Collaboration: How Teams Work Together With AI Agents | Commonly');
+  assert.equal(collaborationGuide.title, 'Human-AI Collaboration: How Teams Work Together With AI Agents | Commonly AI');
   const collaborationHtml = renderStaticPage(guideTemplate, collaborationGuide);
   assert.match(collaborationHtml, /href="https:\/\/commonly\.me\/guides\/human-ai-collaboration\//);
   assert.match(collaborationHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -1692,7 +1699,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/human-ai-collaboration\//);
   }
   const workflowsGuide = guidePages.find((page) => page.path === '/guides/agentic-workflows/');
-  assert.equal(workflowsGuide.title, 'Agentic Workflows: How to Design AI Agent Work That Teams Can Trust | Commonly');
+  assert.equal(workflowsGuide.title, 'Agentic Workflows: How to Design AI Agent Work That Teams Can Trust | Commonly AI');
   const workflowsHtml = renderStaticPage(guideTemplate, workflowsGuide);
   assert.match(workflowsHtml, /href="https:\/\/commonly\.me\/guides\/agentic-workflows\//);
   assert.match(workflowsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -1709,7 +1716,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/agentic-workflows\//);
   }
   const projectManagementGuide = guidePages.find((page) => page.path === '/guides/ai-agents-for-project-management/');
-  assert.equal(projectManagementGuide.title, 'AI Agents for Project Management: Coordinate Work Without Losing Ownership | Commonly');
+  assert.equal(projectManagementGuide.title, 'AI Agents for Project Management: Coordinate Work Without Losing Ownership | Commonly AI');
   const projectManagementHtml = renderStaticPage(guideTemplate, projectManagementGuide);
   assert.match(projectManagementHtml, /href="https:\/\/commonly\.me\/guides\/ai-agents-for-project-management\//);
   assert.match(projectManagementHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -1726,7 +1733,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/ai-agents-for-project-management\//);
   }
   const instructionsGuide = guidePages.find((page) => page.path === '/guides/how-to-write-ai-agent-instructions/');
-  assert.equal(instructionsGuide.title, 'How to Write AI Agent Instructions: A Practical Role Contract | Commonly');
+  assert.equal(instructionsGuide.title, 'How to Write AI Agent Instructions: A Practical Role Contract | Commonly AI');
   const instructionsHtml = renderStaticPage(guideTemplate, instructionsGuide);
   assert.match(instructionsHtml, /href="https:\/\/commonly\.me\/guides\/how-to-write-ai-agent-instructions\//);
   assert.match(instructionsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -1743,7 +1750,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/how-to-write-ai-agent-instructions\//);
   }
   const researchGuide = guidePages.find((page) => page.path === '/guides/ai-agents-for-research/');
-  assert.equal(researchGuide.title, 'AI Agents for Research: Build Evidence Packets Teams Can Use | Commonly');
+  assert.equal(researchGuide.title, 'AI Agents for Research: Build Evidence Packets Teams Can Use | Commonly AI');
   const researchHtml = renderStaticPage(guideTemplate, researchGuide);
   assert.match(researchHtml, /href="https:\/\/commonly\.me\/guides\/ai-agents-for-research\//);
   assert.match(researchHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -1760,7 +1767,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/ai-agents-for-research\//);
   }
   const supportGuide = guidePages.find((page) => page.path === '/guides/ai-agents-for-customer-support/');
-  assert.equal(supportGuide.title, 'AI Agents for Customer Support: Triage, Context, and Safe Handoffs | Commonly');
+  assert.equal(supportGuide.title, 'AI Agents for Customer Support: Triage, Context, and Safe Handoffs | Commonly AI');
   const supportHtml = renderStaticPage(guideTemplate, supportGuide);
   assert.match(supportHtml, /href="https:\/\/commonly\.me\/guides\/ai-agents-for-customer-support\//);
   assert.match(supportHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
@@ -1778,7 +1785,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/ai-agents-for-customer-support\//);
   }
   const multiAgentSystemGuide = guidePages.find((page) => page.path === '/guides/what-is-a-multi-agent-system/');
-  assert.equal(multiAgentSystemGuide.title, 'What Is a Multi-Agent System? A Practical Definition for Teams | Commonly');
+  assert.equal(multiAgentSystemGuide.title, 'What Is a Multi-Agent System? A Practical Definition for Teams | Commonly AI');
   assert.deepEqual(
     guides['what-is-a-multi-agent-system'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])),
     [[3, 6], [3, 5], [3, 6], [3, 5], [2, 6], [3, 5], [4, 5], [3, 7]],
@@ -1812,7 +1819,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/what-is-a-multi-agent-system\/"/);
   }
   const glossaryGuide = guidePages.find((page) => page.path === '/guides/ai-agent-glossary/');
-  assert.equal(glossaryGuide.title, 'AI Agent Glossary: Essential Terms for Building Agent Teams | Commonly');
+  assert.equal(glossaryGuide.title, 'AI Agent Glossary: Essential Terms for Building Agent Teams | Commonly AI');
   const glossaryData = guides['ai-agent-glossary'];
   assert.deepEqual(
     glossaryData.sections.filter((section) => !section.paragraphs).map((section) => section.title),
@@ -1837,7 +1844,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/ai-agent-glossary\/"/);
   }
   const governanceGuide = guidePages.find((page) => page.path === '/guides/ai-agent-governance/');
-  assert.equal(governanceGuide.title, 'AI Agent Governance: Roles, Boundaries, and Review | Commonly');
+  assert.equal(governanceGuide.title, 'AI Agent Governance: Roles, Boundaries, and Review | Commonly AI');
   assert.deepEqual(
     guides['ai-agent-governance'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])),
     [[3, 6], [4, 5], [3, 7], [3, 5], [3, 6], [3, 6], [3, 6], [3, 5]],
@@ -1862,7 +1869,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/ai-agent-governance\/"/);
   }
   const softwareDevelopmentGuide = guidePages.find((page) => page.path === '/guides/ai-agents-for-software-development/');
-  assert.equal(softwareDevelopmentGuide.title, 'AI Agents for Software Development: Reviewable Changes | Commonly');
+  assert.equal(softwareDevelopmentGuide.title, 'AI Agents for Software Development: Reviewable Changes | Commonly AI');
   assert.deepEqual(guides['ai-agents-for-software-development'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 8], [3, 6], [3, 7], [3, 6], [3, 6], [2, 8]]);
   assert.deepEqual(guides['ai-agents-for-software-development'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
   assert.equal(guides['ai-agents-for-software-development'].sections.flatMap((section) => section.links || []).length, 8);
@@ -2047,7 +2054,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/what-is-an-agent-pod\//);
   }
   const guidesIndex = pages.find((page) => page.path === '/guides/');
-  assert.equal(guidesIndex.title, 'Guides for teams working with AI agents | Commonly');
+  assert.equal(guidesIndex.title, 'Guides for teams working with AI agents | Commonly AI');
   assert.equal(guidesIndex.schema['@graph'].find((item) => item['@type'] === 'WebPage').name, 'Guides for teams working with AI agents');
   assert.match(indexHtml, /#seo-page \{[^}]*color: #111827; background: #f8f8fb;/);
   assert.match(indexHtml, /#seo-page \.seo-code \{[^}]*color: #111827; background: #f4f3f8;/);
@@ -2056,7 +2063,7 @@ test('emits a canonical crawlable page for every public route', async () => {
 test('puts route content, canonical metadata, and structured data in the document', () => {
   const page = {
     path: '/example/',
-    title: 'Example page | Commonly',
+    title: 'Example page | Commonly AI',
     description: 'An example description.',
     content: '<main><h1>Example page</h1><a href="/">Home</a></main>',
     schema: { '@context': 'https://schema.org', '@type': 'WebPage', name: 'Example page' },
@@ -2069,4 +2076,73 @@ test('puts route content, canonical metadata, and structured data in the documen
   assert.match(rendered, /application\/ld\+json/);
   assert.match(rendered, /document\.documentElement/);
   assert.match(rendered, /type="module"/);
+});
+
+test('the static / carries the landing FAQ and its FAQPage JSON-LD (TASK-531)', async () => {
+  // The landing adds both from React, which crawlers that run no JS never see. Runs the real generator
+  // against a temp build dir seeded with the Vite template, so the production FAQ read is covered too.
+  const outputDir = await mkdtemp(join(tmpdir(), 'seo-faq-'));
+  try {
+    // What Vite emits: the source entry rewritten to a hashed asset (the generator strips it on static-only pages).
+    const source = await readFile(resolve(frontendDir, 'index.html'), 'utf8');
+    await writeFile(join(outputDir, 'index.html'), source.replace('src="/src/index.tsx"', 'src="/assets/index-test.js"'));
+    const [faqText, faqSource] = await Promise.all([
+      readFile(resolve(frontendDir, 'src/content/landing-faq.json'), 'utf8'),
+      readFile(resolve(frontendDir, 'src/v2/landing/landingFaq.ts'), 'utf8'),
+    ]);
+    const landingFaq = JSON.parse(faqText);
+    const pages = await generateSeoPages({ outputDir });
+    const rendered = await readFile(join(outputDir, 'index.html'), 'utf8');
+
+    assert.equal(landingFaq.length, 13);
+    assert.ok(rendered.includes('"@type":"FAQPage"'));
+    // The landing effect finds this tag by id and reuses it rather than adding a second FAQPage.
+    assert.ok(faqSource.includes("FAQ_JSONLD_ID = 'landing-faq-jsonld'"));
+    assert.equal(rendered.match(/id="landing-faq-jsonld"/g).length, 1);
+    const faqLd = JSON.parse(rendered.match(/id="landing-faq-jsonld">([^<]*)<\/script>/)[1]);
+    assert.deepEqual(faqLd.mainEntity.map((q) => [q.name, q.acceptedAnswer.text]), landingFaq.map((item) => [item.question, item.answer]));
+    const escape = (value) => value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+    for (const item of landingFaq) {
+      assert.ok(rendered.includes(`<dt>${escape(item.question)}</dt>`), item.question);
+      assert.ok(rendered.includes(`<dd>${escape(item.answer)}</dd>`), item.answer);
+    }
+
+    // Every other page stays without it.
+    assert.ok(pages.filter((page) => page.path !== '/').every((page) => !page.faqSchema));
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+
+test('the compare page is unlisted: noindex, out of the sitemap, and linked from nothing', async () => {
+  const [translationText, useCaseText, guideText, llmsText] = await Promise.all([
+    readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'public/llms.txt'), 'utf8'),
+  ]);
+  const translations = JSON.parse(translationText);
+  const useCases = JSON.parse(useCaseText);
+  const guides = JSON.parse(guideText);
+  const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
+  const template = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><style>#seo-page { color: #fff; }</style><!-- SEO_NAVIGATION_RUNTIME_START --><script>window.addEventListener(\'popstate\', () => {});</script><!-- SEO_NAVIGATION_RUNTIME_END --><link rel="modulepreload" href="/assets/chunk.js"><script type="module" crossorigin src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
+
+  const compare = pages.find((page) => page.path === '/compare/');
+  assert.equal(compare.noindex, true);
+  assert.match(renderStaticPage(template, compare), /<meta name="robots" content="noindex" \/>/);
+
+  for (const page of pages.filter((item) => item.path !== '/compare/')) {
+    assert.match(renderStaticPage(template, page), /<meta name="robots" content="index,follow" \/>/, page.path);
+    assert.doesNotMatch(renderStaticPage(template, page), /href="\/compare\/"/, page.path);
+  }
+  assert.doesNotMatch(guideText, /"\/compare\/"/);
+  assert.doesNotMatch(llmsText, /\/compare\//);
+
+  const outputDir = await mkdtemp(resolve(tmpdir(), 'seo-compare-'));
+  await writeFile(resolve(outputDir, 'index.html'), template);
+  await generateSeoPages({ outputDir });
+  const sitemap = await readFile(resolve(outputDir, 'sitemap.xml'), 'utf8');
+  assert.doesNotMatch(sitemap, /\/compare\//);
+  assert.match(sitemap, /<loc>https:\/\/commonly\.me\/use-cases\/team-chat\/<\/loc>/);
 });

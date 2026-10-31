@@ -1,3 +1,4 @@
+import { requirePodMember } from '../services/podMembershipService';
 import { compareTaskPriority, isTaskPriority } from '../utils/taskPriority';
 import { createHash } from 'crypto';
 import type { Request, Response } from 'express';
@@ -28,6 +29,10 @@ const { resolveAgentDisplayLabel } = require('../services/agentIdentityService')
 const { recordTaskAttention, resolveTaskAttention } = require('../services/attentionItemService');
 // eslint-disable-next-line global-require
 const { parseAssignee, toSingleLineTitle } = require('../utils/taskFieldNormalization');
+// eslint-disable-next-line global-require
+const { requestActor } = require('../services/recordService');
+// eslint-disable-next-line global-require
+const { recordTaskTransition } = require('../services/taskRecordService');
 
 /**
  * Who made this board change, for the agent fan-out.
@@ -192,29 +197,6 @@ function resolveAgentInstanceId(req: AuthReq): string | null {
   return req.user.botMetadata?.instanceId || req.user.botMetadata?.agentName || null;
 }
 
-async function requirePodMember(podId: string, userId: unknown, { write = false, memberOnly = false } = {}): Promise<{ error?: string; status?: number; pod?: unknown; canWrite?: boolean }> {
-  const pod = await Pod.findById(podId).lean() as { type?: string; members?: Array<{ userId?: { toString: () => string }; toString: () => string; role?: string }> } | null;
-  if (!pod) return { error: 'Pod not found', status: 404 };
-  const membership = pod.members?.find((m) => {
-    if (!m) return false;
-    const id = m.userId ? m.userId.toString() : m.toString();
-    return id === (userId as { toString: () => string }).toString();
-  });
-  // Read access on agent-dm pods follows §3.7 (shared-pod readers
-  // allowed). Write access stays member-only — non-members can observe
-  // but not post tasks into someone else's bot-bot DM. The viewer-role
-  // gate below applies to writes regardless.
-  if (!membership) {
-    if (write || memberOnly) return { error: 'Write access denied', status: 403 };
-    // eslint-disable-next-line global-require
-    const DMService = require('../services/dmService');
-    const canView = await DMService.canViewPod(userId, pod);
-    if (!canView) return { error: 'Access denied', status: 403 };
-    return { pod, canWrite: false };
-  }
-  if (write && (membership as { role?: string }).role === 'viewer') return { error: 'Write access denied', status: 403 };
-  return { pod, canWrite: (membership as { role?: string }).role !== 'viewer' };
-}
 
 async function nextTaskId(podId: string): Promise<{ taskId: string; taskNum: number }> {
   const last = await Task.findOne({ podId, taskId: { $exists: true } }).sort({ taskId: -1 }).select('taskId').lean() as { taskId?: string } | null;
@@ -254,9 +236,16 @@ router.get('/:podId', taskReadIpRateLimit, auth, async (req: AuthReq, res: Res) 
     // One `now` for the whole page: derived per row, two rows either side of a
     // tick boundary could otherwise report lease states that never coexisted.
     const now = new Date();
+    // The same holder id the claim route writes, so a seat can tell its own
+    // claims from a peer's without knowing its user id (TASK-640).
+    const caller = resolveAgentInstanceId(req) || userId?.toString() || '';
     return res.json({
       permissions: { canWrite: access.canWrite === true },
-      tasks: tasks.sort(compareTaskPriority).map((task: Record<string, unknown>) => ({ ...task, leaseState: deriveLeaseState(task, now) })),
+      tasks: tasks.sort(compareTaskPriority).map((task: Record<string, unknown>) => ({
+        ...task,
+        leaseState: deriveLeaseState(task, now),
+        claimedByMe: Boolean(caller) && task.claimedBy === caller,
+      })),
     });
   } catch (err) {
     console.error('GET /tasks error:', err);
@@ -640,7 +629,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
     // Classify the current holder only after this claim's CAS wins:
     // a same-holder continuation (renewal, or re-take after the holder's own
     // lapse) is no news to the room and must not fan out (the redundant wakes
-    // burned a model turn per seat per renewal and filled Sharpen with seats
+    // burned a model turn per seat per renewal and filled a pod with seats
     // narrating why they won't act — measured 2026-08-25, 4 wakes in one
     // session for one task). The revision CAS binds the ownership snapshot to
     // this successful write, even if an assignee PATCH raced the claim.
@@ -679,6 +668,16 @@ router.post('/:podId/:taskId/claim', rateLimit({
     }
     const { task, previous: preClaim } = result;
     emitTaskUpdated(podId, task, 'updated');
+    recordTaskTransition({
+      podId,
+      task,
+      from: preClaim?.status,
+      to: 'claimed',
+      at: now,
+      actor: requestActor(req),
+      leaseUntil: task.claimExpiresAt,
+      renewal: preClaim?.status === 'claimed' && preClaim.claimedBy === claimedBy,
+    });
     // Same-holder continuation: the seat that already held (or just lapsed
     // from) this task re-claimed it. The board UI still updates (socket emit
     // above); the room is NOT woken — a lease timestamp is not an event.
@@ -773,6 +772,7 @@ router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req
     // tasks completed here.
     await resolveTaskAttention(task);
     emitTaskUpdated(podId, task, 'updated');
+    recordTaskTransition({ podId, task, from: null, to: 'done', at: now, doneBy: userId });
     notifyAgents(req, podId, task, 'updated', { status: 'claimed' });
     return res.json({ task });
   } catch (err) {
@@ -963,6 +963,18 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
         },
       );
       leaseRenewed = Boolean(task);
+      // A note that restores a lapsed claim is a claim, and the record says so.
+      if (task) {
+        recordTaskTransition({
+          podId,
+          task,
+          from: 'pending',
+          to: 'claimed',
+          at: now,
+          actor: requestActor(req),
+          leaseUntil: task.claimExpiresAt,
+        });
+      }
     }
 
     if (!task) {
@@ -1132,6 +1144,17 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     if (fieldUpdates.status === 'blocked') await recordTaskAttention(task, { includeBlocked: true });
     if (fieldUpdates.status !== undefined && fieldUpdates.status !== 'blocked') await resolveTaskAttention(task);
     emitTaskUpdated(podId, task, 'updated');
+    if (fieldUpdates.status !== undefined && previousTask && writeTime) {
+      recordTaskTransition({
+        podId,
+        task,
+        from: previousTask.status,
+        to: String(fieldUpdates.status),
+        at: writeTime,
+        actor: requestActor(req),
+        doneBy: userId,
+      });
+    }
     notifyAgents(req, podId, task, 'updated', previousTask);
     return res.json({ task });
   } catch (err) {

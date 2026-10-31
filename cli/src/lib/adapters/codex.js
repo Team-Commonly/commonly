@@ -1,5 +1,6 @@
 import { codexRuntimeInventory } from '../native-runtime-inventory.js';
 import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
+import { spawnInOwnGroup, wantsOwnProcessGroup } from '@commonlyai/seats/process-group';
 /**
  * codex adapter — wraps the local `codex` CLI as a Commonly agent.
  *
@@ -66,10 +67,11 @@ import { CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
 import { supportedGitHooks } from '../commit-attribution.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
-import { buildMemoryPreamble } from '../memory-bridge.js';
+import { buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
 import { resolveSkillSource, skillsAsText } from '../skill-prompt.js';
-import { isLegacySandboxTrust, normalizeSandboxTrust } from '../environment.js';
+import { isLegacySandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
+import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 
 // Default timeout for a single codex spawn (exec mode).
 //
@@ -114,7 +116,7 @@ const buildPrompt = buildMemoryPreamble;
 //     when they also carry a `command`. `auditDeclaredMcp` classifies by
 //     `transport` and never judges the command of an entry that declared an
 //     http one, so emitting it here executes a command the guard did not
-//     approve — the case Vera measured on 2026-09-18 (Connectors 69774).
+//     approve — a case measured on 2026-09-18.
 //   - Token-bearing values ride through `env_vars`, never a `-c ...env=...`
 //     argv override. Command lines are visible to other same-user processes
 //     unless the OS sandbox blocks process inspection; keeping bearer tokens
@@ -211,6 +213,10 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
       '-c',
       `mcp_servers.${server.name}.default_tools_approval_mode="approve"`,
     );
+    // ...except the tools no public seat is offered (public-withheld-tools.js).
+    if (ctx.publicSeat) {
+      flags.push('-c', `mcp_servers.${server.name}.disabled_tools=[${PUBLIC_WITHHELD_TOOLS.map(toml).join(',')}]`);
+    }
     if (rest.length) {
       flags.push('-c', `mcp_servers.${server.name}.args=[${rest.map(toml).join(',')}]`);
     }
@@ -572,14 +578,15 @@ const CODEX_PROVIDER_KEY_ENVS = [
   'CODEX_API_KEY',
 ];
 
-const runCodex = ({ args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {} }) => new Promise((resolve, reject) => {  // stdio: ['ignore', 'pipe', 'pipe'] — without this, child_process.spawn
+// `ownGroup`: see runClaude in claude.js.
+const runCodex = ({ args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false }) => new Promise((resolve, reject) => {  // stdio: ['ignore', 'pipe', 'pipe'] — without this, child_process.spawn
   // defaults stdin to a fresh pipe. Codex 0.125.0's `exec` then blocks on
   // `Reading additional input from stdin...` because it sees an open pipe
   // and waits for input that never arrives. Interactive runs are fine because
   // codex detects a TTY and uses the argv prompt directly. Setting stdin to
   // `'ignore'` gives codex /dev/null → immediate EOF → it falls back to the
   // argv prompt as intended. Surfaced live during ADR-005 Phase 2 smoke.
-  const proc = spawnImpl('codex', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const proc = spawnInOwnGroup(spawnImpl, 'codex', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] }, { ownGroup });
   observeSpawn(proc, onSpawn, controls);
   let stderr = '';
   let timedOut = false;
@@ -650,14 +657,21 @@ export default {
 
   async spawn(prompt, ctx = {}) {
     const seatModel = requireSeatModel(ctx.environment, 'codex');
+    const sandbox = normalizeSandboxTrust(ctx.environment?.sandbox);
+    refuseWorkspaceTrust(sandbox, 'codex');
     // Passed through UNCOALESCED. `ctx.memoryLongTerm || ''` was here, and
     // `null || ''` is `''` — which routed the unreadable case straight into
     // the empty-memory branch and made the whole distinction unreachable from
     // the only two paths that build a real prompt. buildPrompt handles
     // undefined and '' as absence itself; it does not need a guard, it needs
     // the value.
+    //
+    // Codex has no subagent tool, so of the two habits (TASK-545) it is
+    // taught row slicing alone; claude.js adds parallel reads. A public seat
+    // answers strangers rather than working board rows, so it is taught neither.
     const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
       freshSession: !ctx.sessionId,
+      workCues: sandbox?.trust === 'public' ? [] : [ROW_SLICING_CUE],
     });
 
     // Per-spawn temp dir for --output-last-message. Cleaned up in `finally`
@@ -674,7 +688,6 @@ export default {
     });
 
     try {
-      const sandbox = normalizeSandboxTrust(ctx.environment?.sandbox);
       const mcp = buildMcpOverrideArgs(ctx.environment?.mcp, {
         runtimeToken: ctx.runtimeToken,
         instanceUrl: ctx.instanceUrl,
@@ -740,6 +753,7 @@ export default {
         // nothing left to compare a tail against.
         credentials: spawnCredentials(ctx, CODEX_PROVIDER_KEY_ENVS),
         spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(args.indexOf('exec') + (args[args.indexOf('exec') + 1] === 'resume' ? 3 : 1), -1), { modelFlag: '--model', valueFlags: ['-c', '-o', '--permission-profile'], codex: true }), // test seam only — do not use in production
+        ownGroup: wantsOwnProcessGroup(ctx),
       });
 
       let text = '';

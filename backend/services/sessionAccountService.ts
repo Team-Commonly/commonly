@@ -24,7 +24,7 @@ import User from '../models/User';
  * nothing, which is why the fields are selected here rather than at each call
  * site.
  */
-export type SessionAccountRefusal = 'missing' | 'banned' | 'bot';
+export type SessionAccountRefusal = 'missing' | 'banned' | 'bot' | 'deleting';
 export type SessionTokenRefusal = SessionAccountRefusal | 'revoked';
 
 export interface SessionAccount {
@@ -35,12 +35,14 @@ export interface SessionAccount {
   email?: string;
   role?: string;
   tokenVersion?: number;
+  accountDeletionRequestedAt?: Date;
 }
 
 export const loadSessionAccount = async (userId: string): Promise<SessionAccount | null> => {
   // Express auth also needs identity fields for the same req.user shape as
   // API-token auth. Keep one live-row read for all session verifiers.
-  const account = await User.findById(userId).select('banned isBot username email role tokenVersion').lean();
+  const account = await User.findById(userId)
+    .select('banned isBot username email role tokenVersion accountDeletionRequestedAt').lean();
   return (account as SessionAccount | null) || null;
 };
 
@@ -63,5 +65,6 @@ export function sessionRefusal(
   if (claims && (claims.tokenVersion === undefined ? 0 : claims.tokenVersion) !== (account.tokenVersion ?? 0)) {
     return 'revoked';
   }
+  if (account.accountDeletionRequestedAt) return 'deleting';
   return null;
 }

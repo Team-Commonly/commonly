@@ -65,6 +65,20 @@ test('returns durable turn + PG attribution after card retention without content
   expect(JSON.stringify(res.body)).not.toMatch(/PRIVATE_|private prompt|argsDigest/);
   expect(res.body.retention).toEqual({ cardDefaultDays: 30, traceExpiresAt: null });
 });
+test('a turn keeps the model that answered beside the one requested, through save and read (TASK-028)', async () => {
+  run.turns = [
+    { turnIndex: 0, model: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free', servedModel: 'deepseek-v4-flash', fallbacks: 1, elapsedMs: 1 },
+    { turnIndex: 1, model: 'deepseek-v4-flash', servedModel: 'deepseek-v4-flash', elapsedMs: 1 },
+    { turnIndex: 2, model: 'model', elapsedMs: 1 },
+  ];
+  await run.save();
+  const res = await get();
+  expect(res.body.run.turns.map(({ model, servedModel, fallbacks }) => ({ model, servedModel, fallbacks }))).toEqual([
+    { model: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free', servedModel: 'deepseek-v4-flash', fallbacks: 1 },
+    { model: 'deepseek-v4-flash', servedModel: 'deepseek-v4-flash' },
+    { model: 'model' },
+  ]);
+});
 test.each(['global admin', 'agent-dm observer'])(
   'returns trace metadata without authorization identities to a non-member %s', async (viewerType) => {
     if (viewerType === 'global admin') {

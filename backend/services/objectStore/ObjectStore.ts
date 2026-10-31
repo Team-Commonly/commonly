@@ -49,4 +49,7 @@ export interface ObjectStore {
 
   /** Remove bytes by `key`. No-op if the key does not exist. */
   delete(key: string): Promise<void>;
+
+  /** Delete an ownership namespace, including writes that lost their metadata. */
+  deletePrefix(prefix: string): Promise<void>;
 }

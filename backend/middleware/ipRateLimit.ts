@@ -1,5 +1,7 @@
 import type { Request } from 'express';
+import { createHash } from 'crypto';
 import { ipKeyGenerator } from 'express-rate-limit';
+import { loginEmailOf } from '../utils/loginEmail';
 
 const firstHeaderValue = (value: string | string[] | undefined): string | undefined => {
   if (Array.isArray(value)) return value[0];
@@ -54,6 +56,32 @@ export const cloudflareIpRateLimitKeyGenerator = (req: Request): string => {
   return req.ip ? ipKeyGenerator(req.ip) : 'anon';
 };
 
+// Pre-auth traffic bound per presented secret, not per proxy or forwarding
+// header. Anonymous requests share only the anonymous bucket, never a signed-in
+// user's. Rotating invalid secrets can evade this coarse bound; the post-auth
+// user quota is the durable account limit. Never retain plaintext credentials.
+export const presentedCredentialRateLimitKeyGenerator = (req: Request): string => {
+  const token = req.header('Authorization')?.replace('Bearer ', '') || req.header('x-auth-token');
+  return token ? `credential:${createHash('sha256').update(token).digest('hex')}` : 'no-credential';
+};
+
+export const authenticatedUserRateLimitKeyGenerator = (req: Request & { userId?: unknown }): string => (
+  req.userId ? `user:${String(req.userId)}` : 'unresolved-user'
+);
+
+// Failed sign-ins bound per submitted address, whatever IP sends them. The
+// address comes from the helper login itself uses, so the limiter and login
+// cannot disagree about which account a request is for. A body with no string
+// email is skipped at the route, never bucketed here.
+export const loginEmailRateLimitKeyGenerator = (req: Request): string => (
+  `login-account:${loginEmailOf(req.body)}`
+);
+
 // CJS compat for the require()-style imports used elsewhere in backend/.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { cloudflareIpRateLimitKeyGenerator };
+module.exports = {
+  cloudflareIpRateLimitKeyGenerator,
+  presentedCredentialRateLimitKeyGenerator,
+  authenticatedUserRateLimitKeyGenerator,
+  loginEmailRateLimitKeyGenerator,
+};

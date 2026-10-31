@@ -1,3 +1,4 @@
+import { podMemberPopulate } from '../services/podMemberPopulate';
 import path from 'path';
 import fs from 'fs';
 import { createHash } from 'crypto';
@@ -9,8 +10,9 @@ const multer = require('multer');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
+const { refuseDollarKeys } = require('../middleware/refuseDollarKeys');
 // eslint-disable-next-line global-require
-const { getAllPods, getPodsByType, getPodById, createPod, joinPod, leavePod, removeMember, deletePod } = require('../controllers/podController');
+const { getAllPods, getPodsByType, getPodById, createPod, joinPod, leavePod, removeMember, deletePod, updatePodParent } = require('../controllers/podController');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 const User = require('../models/User');
@@ -50,6 +52,7 @@ interface AuthReq {
 interface Res {
   status: (n: number) => Res;
   json: (d: unknown) => void;
+  set: (field: string, value: string) => void;
   sendFile: (path: string) => void;
 }
 
@@ -118,8 +121,39 @@ const podListingRateLimit = rateLimit({
   legacyHeaders: false,
   keyGenerator: podJoinRateLimitKey,
 });
+// Typed listings and by-id reads (`/:param`, `/:type/:id`) run the same
+// populate-heavy queries as the sidebar listing. Their own bucket at the same
+// budget, so opening pods does not spend the sidebar's refresh allowance.
+const podReadRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: podJoinRateLimitKey,
+});
+// Coarse ingress ceiling also counts rotating invalid credentials before they
+// allocate token-store entries or reach authentication. Use the canonical edge
+// IP key, not the reverse proxy address. Clients sharing a public IP share this
+// broader budget; the 60/min token budget below remains their write isolation.
+const podLifecycleIngressRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 6000,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+});
+// Bound lifecycle writes before authentication. Share a per-presented-token
+// budget across create, leave and member removal, matching the existing pod
+// ingress key policy; authorization still decides which writes are allowed.
+const podLifecycleRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 60,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: podJoinRateLimitKey,
+});
 router.get('/', podListingRateLimit, auth, getAllPods);
-router.post('/', auth, createPod);
+router.post('/', podLifecycleIngressRateLimit, podLifecycleRateLimit, auth, createPod);
 
 router.post('/announcement', auth, async (req: AuthReq, res: Res) => {
   try {
@@ -220,7 +254,18 @@ const deriveLinkName = (rawUrl: string): string => {
   }
 };
 
-router.post('/external-link', auth, upload.single('qrCode'), async (req: AuthReq, res: Res) => {
+// Creating an external link writes a row and may store an uploaded QR image.
+// CodeQL flags it as `js/missing-rate-limiting`; it had been unlimited since
+// the route landed (routeRateLimitGuard.baseline.json, row deleted with this
+// change). Keyed on the token, like the focus writers above.
+const externalLinkCreateRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: podJoinRateLimitKey,
+});
+router.post('/external-link', externalLinkCreateRateLimit, auth, upload.single('qrCode'), refuseDollarKeys, async (req: AuthReq, res: Res) => {
   try {
     const { podId, name: rawName, type: rawType, url } = (req.body || {}) as { podId?: string; name?: string; type?: string; url?: string };
     if (!podId) return res.status(400).json({ message: 'Missing podId' });
@@ -280,6 +325,8 @@ router.get('/external-link/:linkId/qrcode', auth, async (req: AuthReq, res: Res)
     if (!link || link.type !== 'wechat' || !link.qrCodePath) return res.status(404).json({ message: 'QR code not found' });
     const pod = await Pod.findById(link.podId) as { members?: Array<{ toString: () => string }> } | null;
     if (!pod || !pod.members?.some((m) => m.toString() === req.user?.id)) return res.status(403).json({ message: 'Access denied' });
+    // Set explicitly: send() defaults to public, max-age=0 when no header is set.
+    res.set('Cache-Control', 'private, no-store');
     return res.sendFile(path.resolve(link.qrCodePath));
   } catch (error) {
     console.error('Error fetching QR code:', error);
@@ -393,8 +440,8 @@ router.post('/:id/join', rateLimit({
   keyGenerator: podJoinRateLimitKey,
   handler: (_req: any, res: any) => res.status(429).json({ msg: 'rate limit exceeded: 20 pod joins per 60s' }),
 }), auth, joinPod);
-router.post('/:id/leave', auth, leavePod);
-router.delete('/:id/members/:memberId', auth, removeMember);
+router.post('/:id/leave', podLifecycleIngressRateLimit, podLifecycleRateLimit, auth, leavePod);
+router.delete('/:id/members/:memberId', podLifecycleIngressRateLimit, podLifecycleRateLimit, auth, removeMember);
 
 // Pod admin actions hit Mongo on every call but don't need much volume.
 // Capping per-IP keeps a stuck client from re-pinging contacts at full
@@ -406,6 +453,8 @@ const podAdminRateLimit = rateLimit({
   legacyHeaders: false,
   keyGenerator: cloudflareIpRateLimitKeyGenerator,
 });
+
+router.patch('/:id/parent', podAdminRateLimit, auth, updatePodParent);
 
 /**
  * PATCH /api/pods/:id/contacts
@@ -613,7 +662,7 @@ router.get('/:id/children', auth, async (req: AuthReq, res: Res) => {
     if (!canViewParent) return res.status(403).json({ msg: 'Not authorized to view child pods' });
     const children = await Pod.find({ parentPod: parentId })
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture')
+      .populate(podMemberPopulate('username profilePicture'))
       .sort({ name: 1 });
     const visibleChildren = [];
     for (const child of children) {
@@ -627,7 +676,7 @@ router.get('/:id/children', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/:param', auth, async (req: AuthReq, res: Res) => {
+router.get('/:param', podReadRateLimit, auth, async (req: AuthReq, res: Res) => {
   const { param } = req.params || {};
   const isObjectId = /^[0-9a-fA-F]{24}$/.test(param || '');
   if (isObjectId) { req.params!.id = param || ''; return getPodById(req, res); }
@@ -813,7 +862,55 @@ router.patch('/:id/join-policy', podAdminRateLimit, auth, async (req: AuthReq, r
   }
 });
 
-router.get('/:type/:id', auth, getPodById);
+/** Pod rename (TASK-419): the name only. The pod creator or a global admin may rename. */
+router.patch('/:id/name', podAdminRateLimit, auth, async (req: AuthReq, res: Res) => {
+  try {
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    if (!name || name.length > 80) return res.status(400).json({ error: 'invalid_pod_name' });
+    const pod = await Pod.findById(req.params?.id) as {
+      _id: { toString: () => string };
+      type?: string;
+      name?: string;
+      createdBy?: { toString: () => string };
+      save: () => Promise<unknown>;
+    } | null;
+    if (!pod) return res.status(404).json({ error: 'pod_not_found' });
+    const userId = req.userId || req.user?.id;
+    const actor = userId
+      ? await User.findById(userId).select('role').lean() as { role?: string } | null
+      : null;
+    const isCreator = pod.createdBy && userId && pod.createdBy.toString() === String(userId);
+    if (!isCreator && actor?.role !== 'admin') {
+      return res.status(403).json({ error: 'not_pod_owner', message: 'Only the pod creator or a global admin may rename this pod.' });
+    }
+    if (NON_LISTABLE_POD_TYPES.includes(String(pod.type))) {
+      return res.status(400).json({ error: 'pod_type_not_configurable' });
+    }
+    const previous = pod.name;
+    pod.name = name;
+    await pod.save();
+    if (previous !== name) {
+      try {
+        await AuditLog.create({
+          action: 'pod.renamed',
+          target: pod._id.toString(),
+          detail: `name=${name} previous=${previous || ''}`,
+          userId,
+          ip: req.ip,
+          userAgent: req.headers?.['user-agent'],
+        });
+      } catch (auditErr) {
+        console.warn('[pods] rename audit log write failed (non-fatal):', (auditErr as Error).message);
+      }
+    }
+    return res.json({ id: pod._id.toString(), name });
+  } catch (err) {
+    console.error('[pods] rename error:', (err as Error).message);
+    return res.status(500).json({ error: 'Server Error' });
+  }
+});
+
+router.get('/:type/:id', podReadRateLimit, auth, getPodById);
 router.delete('/:id', auth, deletePod);
 
 module.exports = router;

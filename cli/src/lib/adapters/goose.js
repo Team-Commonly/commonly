@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { buildMemoryPreamble } from '../memory-bridge.js';
-import { effectiveSandboxTrust, validateEnvironmentSpec } from '../environment.js';
+import { effectiveSandboxTrust, refuseWorkspaceTrust, validateEnvironmentSpec } from '../environment.js';
 import { writeCredentialFile } from '../credential-file.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn } from '../mcp-home.js';
@@ -24,6 +24,7 @@ const SAFE_ENV = /^(?:PATH|LANG|LC_[A-Z_]+|TERM|USER|LOGNAME|NO_COLOR|CI|SSL_CER
 
 export const assertNoSandboxDeclared = (environment = {}) => {
   const sandbox = environment?.sandbox || {};
+  refuseWorkspaceTrust(sandbox, 'goose');
   if (effectiveSandboxTrust(sandbox.trust) === 'public') {
     throw new Error('goose adapter: public-trust seats are not supported until the deny-by-default attack test passes');
   }

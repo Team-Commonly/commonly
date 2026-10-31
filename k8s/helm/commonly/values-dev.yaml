@@ -8,7 +8,7 @@ global:
 errorTracking:
   enabled: true
 
-# commonly-dev-e2b-api-key has one enabled version (Cofounder, 2026-10-15).
+# commonly-dev-e2b-api-key has one enabled version (2026-10-15).
 # Tools stay opt-in per install, so this offers code runs to nobody until an
 # agent declares commonly_run_code.
 hostedSandbox:
@@ -220,7 +220,7 @@ externalSecrets:
 
 agents:
   clawdbot:
-    # PARKED 2026-08-20 (Sam) — the moltbot tier is retiring in favour of
+    # PARKED 2026-08-20 — the moltbot tier is retiring in favour of
     # pi/OpenCode wrapper adapters (ADR-021/ADR-023, #1050). Its credential
     # stack had been dead since 2026-07-02 — both cluster codex tokens expired,
     # OpenRouter 401 "User not found" — and nobody noticed for seven weeks,
@@ -289,7 +289,7 @@ agents:
         adapter: codex
         storage: 1Gi
         tokenSecret: cloud-codex-cody-token
-        # Parked 2026-08-12 (Sam: the working fleet is the Sharpen pod).
+        # Parked 2026-08-12.
         # Identity, PVC, and token secret stay; flip to 1 to revive.
         replicas: 0
 
@@ -347,6 +347,10 @@ cloudflared:
 
 litellm:
   enabled: true
+  # TASK-555: budgeted service keys (backend $40/30d, commonly-bot $20/30d),
+  # minted 2026-10-25 and stored in Secret Manager.
+  serviceKeys:
+    fromSecret: true
   # The base image pin must match the shared boot script. v1.106.2 includes
   # spend-log tool-index retention and the headless device-login guard;
   # BerriAI/litellm#48153 tracks the remaining ChatGPT Responses input patch.
@@ -435,20 +439,17 @@ hostedMcp:
   hiddenEntries:
     # Client secrets exist, but Workspace MCP enrollment is still off.
     - google-calendar
-    # Not walked end to end on staging before the 10-23 deploy (Cofounder plan B: unwalked ships hidden).
+    # Not walked end to end on staging before the 10-23 deploy; unwalked entries ship hidden.
     # Remove each line once its staging walk passes.
     - atlassian
     - sentry
-    # Added by #2429 (deploy 4). Hidden until each is walked end to end (Cofounder 10-23).
+    # Added by #2429. Hidden until each is walked end to end.
     - notion
     - gitlab
     - supabase
-  # Mongo User _id(s) permitted to walk each hidden hosted-MCP entry (#2649, TASK-485).
-  # lily-shen is the designated walk user (keeps the walk off Sam's account, Cofounder 10-24).
-  # Sentry stays hidden for every other account.
-  hiddenEntryUserAllowlist:
-    sentry:
-      - "6a47891ee025ce2e0ca1d30b"
+    # The 10-27 prod walk failed before Airtable's consent screen ("invalid client_id
+    # or mismatched redirect_uri"). Hidden until TASK-318 lands and a walk passes.
+    - airtable
   googleCalendar:
     enabled: false
 

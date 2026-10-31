@@ -2,7 +2,7 @@
  * ADR-018 D8.1 (2026-10-21): an agent a person brings into a pod wakes on
  * every human message by default.
  *
- * Sam's direction: "have the byo agent by default wake on message instead of
+ * The direction: "have the byo agent by default wake on message instead of
  * mention (the knob is always there still)", and the principle behind it:
  * every agent should read new messages even when it doesn't own the reply.
  * Until now ambient wake was opt-in only, so a person who connected their own

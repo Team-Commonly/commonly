@@ -46,7 +46,7 @@ body.modern-ui.v2-canvas {
   --v2-ink-hover: #1d2939;
   --v2-on-ink: #ffffff;
 
-  /* BEND-1 (Wren spec 2026-08-30, Sam-approved): the featured-tier name
+  /* BEND-1 (spec 2026-08-30): the featured-tier name
      needs a step between 16 and 20. Mirrors --c-fs-feature in
      design-system/tokens.css; the two move together. */
   --v2-fs-feature: 17px;
@@ -78,7 +78,7 @@ body.modern-ui.v2-canvas {
   --v2-platform-groupme-soft: #e3f5fd;
 
   --v2-success: #10b981;
-  /* Text-on-soft success — one canonical value (Wren on #1368: a second
+  /* Text-on-soft success — one canonical value (#1368: a second
      ad-hoc success-text hex is how a third one happens). Mirrors
      --c-success-text in design-system/tokens.css. */
   --v2-success-text: #0f7a53;
@@ -90,6 +90,7 @@ body.modern-ui.v2-canvas {
   --v2-info: #0891b2;
   --v2-info-soft: #dff4f8;
   --v2-danger: #ef4444;
+  --v2-danger-text: #b91c1c;
   --v2-danger-soft: rgba(239, 68, 68, 0.10);
 
   /* Agent role colors */
@@ -100,7 +101,7 @@ body.modern-ui.v2-canvas {
   --v2-sky: #60a5fa;
   --v2-rose: #fb7185;
 
-  /* Typography — the Signal identity (Sam chose C on the Shell Parity canvas,
+  /* Typography — the Signal identity (direction C on the Shell Parity canvas,
      2026-09-03). Three faces, each with one job: Bricolage Grotesque for
      display (headings, wordmarks — weight 700/800), IBM Plex Sans for every
      line of body and control text, IBM Plex Mono for meta (timestamps,
@@ -1088,7 +1089,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-pods__filters {
-  /* Fourth mechanism for this row (Sam's ruling 2026-08-23): every chip the
+  /* Fourth mechanism for this row (2026-08-23): every chip the
      SAME size, at least as roomy as the widest label. Content-sized chips
      read ragged (EN measured 33/49/44/84px), and four equal cells cannot
      share one 239px rail — "Community" alone needs 84px. Equal therefore
@@ -1337,7 +1338,7 @@ body.modern-ui.v2-canvas {
   /* The title-row went align-items: flex-start for the 2-line name wrap
      (#1110), which parked this dot flush at the row's top-right corner —
      inside the row's border-radius + overflow:hidden clip, so the rounding
-     visibly shaved the dot (Sam, 2026-08-22). Center it on the first 20px
+     visibly shaved the dot (2026-08-22). Center it on the first 20px
      text line and inset it clear of the 10px corner curve. */
   margin-top: 6px;
   margin-right: 4px;
@@ -1757,7 +1758,7 @@ body.modern-ui.v2-canvas {
 .v2-chat__older-btn:disabled { opacity: 0.6; cursor: default; }
 
 /* Catch-up strip — the constant agents-TL;DR pinned above the transcript
-   (Sam 2026-09-01). One thin row; the expanded body is bounded so a long
+   (2026-09-01). One thin row; the expanded body is bounded so a long
    summary scrolls inside the strip, never the pane. */
 .v2-catchup {
   border-bottom: 1px solid var(--v2-border);
@@ -1834,7 +1835,7 @@ body.modern-ui.v2-canvas {
   /* The transcript never scrolls sideways — wide content (code, tables)
      manages its own overflow-x inside its message. Without this, any
      mis-sized row makes the whole pane horizontally swipeable (the
-     thread-block did exactly that; Sam's mobile report 2026-08-24). */
+     thread-block did exactly that; mobile report 2026-08-24). */
   overflow-x: hidden;
   padding: 0 24px 12px;
   display: flex;
@@ -1864,7 +1865,7 @@ body.modern-ui.v2-canvas {
   min-height: 0;
 }
 
-/* Conversation width — FIFTH revision of craft rule 2, ruled by Sam
+/* Conversation width — FIFTH revision of craft rule 2, ruled
    2026-08-23: FULL-WIDTH, the Slack/Discord model. The measure cap died
    with its last corner: v1 centered messages alone (island), v2/v4
    left-anchored the cap (dead space on the right once the inspector
@@ -1917,7 +1918,7 @@ body.modern-ui.v2-canvas {
    The width subtracts the same indent: `.v2-chat__messages > *` sets
    width: 100%, so an indent without its complement overruns the pane by exactly
    the indent. That was the #1846 defect — at 390 the full-width act ran 64→426
-   and the body line was cut (ux-lead's shot, 2026-09-23) — and Sam hit the same
+   and the body line was cut (ux-lead's shot, 2026-09-23) — and the same
    class one indent over on `.v2-thread-block` (2026-08-24): indent + width must
    sum to 100%.
 
@@ -2010,6 +2011,19 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-chat__start:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* TASK-647 item 4: the run-hosted start is the screen's one filled action.
+   Keyed on the action in the component, not on its position. */
+.v2-root button.v2-chat__start.v2-chat__start--primary {
+  background: var(--v2-ink);
+  border-color: var(--v2-ink);
+  color: var(--v2-on-ink);
+  font-weight: 600;
+}
+.v2-root button.v2-chat__start.v2-chat__start--primary:hover:not(:disabled) {
+  background: var(--v2-ink-hover);
+  border-color: var(--v2-ink-hover);
 }
 
 /* A line that belongs to the start above it: the hosted start's beta limits,
@@ -2179,7 +2193,16 @@ body.modern-ui.v2-canvas {
   text-decoration: none;
 }
 
-.v2-root a.v2-first-run__setup:hover,
+.v2-root a.v2-first-run__setup {
+  /* Bordered, not ink: the first-run card keeps one ink action (TASK-647 item 4). */
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  color: var(--v2-text-primary);
+}
+.v2-root a.v2-first-run__setup:hover {
+  background: var(--v2-surface-hover);
+  border-color: var(--v2-border-strong);
+}
 .v2-root button.v2-first-run__hello:hover:not(:disabled) {
   background: var(--v2-ink-hover);
   color: var(--v2-on-ink);
@@ -2471,6 +2494,14 @@ body.modern-ui.v2-canvas {
   color: var(--v2-accent-text);
   font-size: 11px;
   font-weight: 700;
+}
+
+.v2-chat__new-pod-action--invite > .v2-chat__new-pod-copy {
+  min-height: 32px;
+  margin-top: auto;
+}
+@media (max-width: 760px) {
+  .v2-chat__new-pod-action--invite > .v2-chat__new-pod-copy { min-height: 44px; }
 }
 
 .v2-root button.v2-chat__new-pod-copy:hover {
@@ -3092,7 +3123,7 @@ body.modern-ui.v2-canvas {
 .v2-msg--grouped { padding: 2px 0; }
 .v2-msg__avatar-ghost { width: 38px; }
 
-/* The message action cluster (Sam's taste rulings 2026-08-23): Reply,
+/* The message action cluster (taste rulings 2026-08-23): Reply,
    Thread, and the reaction trigger share ONE floating pill at the row's
    top-right, identical for headed and grouped rows. Absolute + hover means
    zero layout shift; icon buttons instead of text keep it quiet at rest and
@@ -3238,7 +3269,7 @@ body.modern-ui.v2-canvas {
   color: #1f2937;
   margin-top: 3px;
   word-break: break-word;
-  /* NO measure cap — Sam's THIRD ruling on this (2026-08-24 full-width Slack
+  /* NO measure cap — the THIRD ruling on this (2026-08-24 full-width Slack
      model; #1367's craft-audit 75ch reverted 2026-09-01 by explicit request:
      "I still don't like the char limit, looks really bad on desktop").
      Typographic best practice loses to the product decision here; the
@@ -3276,7 +3307,7 @@ body.modern-ui.v2-canvas {
 }
 
 /* The wash bleeds one padding past the row on BOTH sides so the mention
-   TEXT sits exactly on the shared grid like every other row (Sam,
+   TEXT sits exactly on the shared grid like every other row (
    2026-08-23 — mentions sat off-grid while messages aligned; the old
    bleed was -12px against 10px padding, 2px off). The bleed lands inside
    the pane's 24px gutter. 0-2-0 beats the `> *` width rule regardless of
@@ -5751,7 +5782,7 @@ body.modern-ui.v2-canvas {
      casualty. Hiding the pane outright here made the avatar-stack button a
      no-op on phones: V2Layout mounts the pane on tap, CSS hid it, and the
      pod's members/files/artifacts were unreachable on mobile entirely
-     (Sam, 2026-08-26). The pane only exists in the DOM while open
+     (2026-08-26). The pane only exists in the DOM while open
      (V2Layout mounts it conditionally), so its presence IS the open state;
      the existing v2-inspector__close dismisses it. Shadow is allowed here:
      the design system reserves shadows for floating UI, which this now is. */
@@ -5963,7 +5994,7 @@ body.modern-ui.v2-canvas {
   display: inline-flex;
   /* Baseline, not center: box-centering aligns the spans' LAYOUT boxes,
    * but Apple Color Emoji ink extends below the baseline while digit ink
-   * does not, so on desktop the count visibly rides high (reported by Sam
+   * does not, so on desktop the count visibly rides high (reported
    * 2026-08-05, HQ screenshot; reproduced 3x-zoomed in Chromium). Digits
    * hanging on the emoji's baseline is how "\1F44D 2" renders in plain
    * inline text -- the reference that looks right on every platform. The
@@ -5989,7 +6020,7 @@ body.modern-ui.v2-canvas {
 
 /* The standalone "+" trigger, its hover wrap, and the --bare collapsed row
  * were retired 2026-08-23: the reaction trigger lives in the
- * .v2-msg__actions hover cluster (Sam's placement ruling), and a reactions
+ * .v2-msg__actions hover cluster (placement ruling), and a reactions
  * row with no chips simply does not render — the phantom-band problem the
  * --bare machinery solved cannot occur at all now. The picker below is
  * shared by the cluster (which overrides its anchor to open downward). */
@@ -6227,7 +6258,7 @@ body.modern-ui.v2-canvas {
   border-radius: 50%;
   background: var(--v2-accent);
 }
-/* BYO decision layout (Sam 2026-08-30: "cloud agent vs byoa uiux"). Form on
+/* BYO decision layout (2026-08-30). Form on
    the left, live agent preview on the right — the page shows the teammate
    being created, not a settings form. Tokens only; borders, not shadows. */
 .v2-byo__layout {
@@ -6405,7 +6436,7 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-tertiary);
 }
 
-/* Persona context (Sam 2026-09-01): who was picked and why, carried from the
+/* Persona context (2026-09-01): who was picked and why, carried from the
    catalog — or an honest "nobody yet" for the machine-first entry. */
 .v2-byo__persona {
   display: flex;
@@ -6527,14 +6558,15 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 /* Signal §3 not yet: where the act will be, until a place to run it is
-   chosen. Sized like the submit button it stands in for. */
+   chosen. A muted hint line, not a box: a dashed slot read as a dead button
+   (TASK-647 item 1). */
 .v2-byo__unchosen {
   align-self: flex-start;
-  padding: 10px 18px;
-  border: 1px dashed var(--v2-border-strong);
-  border-radius: var(--v2-radius);
+  padding: 0;
+  border: 0;
   color: var(--v2-text-muted);
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 20px;
 }
 .v2-root button.v2-byo__link {
   /* A text action beside or under a line of copy ("Change", "Other ways to
@@ -6742,8 +6774,7 @@ body.modern-ui.v2-canvas {
   font-weight: 700;
 }
 
-.v2-connect__lane h2,
-.v2-connect__gateway h3 {
+.v2-connect__lane h2 {
   margin: 0;
   color: var(--v2-text-primary);
   font-size: 16px;
@@ -6752,7 +6783,6 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-connect__lane-heading p,
-.v2-connect__gateway p,
 .v2-connect__note {
   margin: 5px 0 0;
   color: var(--v2-text-secondary);
@@ -6848,8 +6878,7 @@ body.modern-ui.v2-canvas {
   margin-top: 12px;
 }
 
-.v2-connect__note code,
-.v2-connect__gateway-token code {
+.v2-connect__note code {
   font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -6890,86 +6919,9 @@ body.modern-ui.v2-canvas {
   margin-top: 16px;
 }
 
-.v2-connect__gateway {
-  display: grid;
-  gap: 12px;
-  margin-top: 18px;
-  padding: 16px;
-  border-top: 1px solid var(--v2-border-soft);
-  background: var(--v2-bg-subtle);
-}
-
-.v2-connect__gateway-form {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
-  align-items: end;
-  gap: 10px;
-}
-
-.v2-connect__gateway-form label {
-  display: grid;
-  gap: 5px;
-  color: var(--v2-text-secondary);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.v2-connect__gateway-form em {
-  color: var(--v2-text-tertiary);
-  font-style: normal;
-  font-weight: 400;
-}
-
-.v2-connect__gateway-form input {
-  min-width: 0;
-  padding: 8px 9px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
-  color: var(--v2-text-primary);
-  font: inherit;
-  outline: none;
-}
-
-.v2-connect__gateway-form input:focus {
-  border-color: var(--v2-accent);
-  box-shadow: var(--v2-focus-ring);
-}
-
-.v2-connect__gateway-token {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--v2-success);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-success-soft);
-}
-
-.v2-connect__gateway-token p {
-  flex-basis: 100%;
-  margin: 0;
-}
-
-.v2-connect__gateway-token code {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--v2-text-primary);
-  font-size: 12px;
-}
-
-.v2-connect__error {
-  margin: 0;
-  color: var(--v2-danger);
-  font-size: 13px;
-}
-
 @media (max-width: 760px) {
   .v2-connect__lane { padding: 16px; }
   .v2-connect__code-grid { grid-template-columns: 1fr; }
-  .v2-connect__gateway-form { grid-template-columns: 1fr; }
-  .v2-connect__gateway-form .v2-connect__cta { justify-self: start; }
 }
 
 /* ---------- Admin · Users (waitlist + invitation codes) ---------- */
@@ -7312,14 +7264,14 @@ body.modern-ui.v2-canvas {
    (mobile smoke 2026-07-05, worsened by the added Profile button). Wrap the
    actions onto their own full-width row instead of competing with the name. */
 
-/* Reply/Thread inline head buttons retired 2026-08-23 (Sam's taste ruling):
+/* Reply/Thread inline head buttons retired 2026-08-23 (taste ruling):
    the actions live in the .v2-msg__actions hover cluster now — one pill,
    all row variants, zero layout shift. See the cluster block near .v2-msg.
    Touch layouts keep ≥44px targets via the media block below. */
 @media (hover: none), (pointer: coarse) {
   /* iOS Safari auto-zooms on focusing any input under 16px and does not
      zoom back on blur — the shell's inputs ranged 12–15px, so every tap on
-     the composer or a search field left the page stuck zoomed (Sam,
+     the composer or a search field left the page stuck zoomed (
      2026-08-26). 16px on touch devices removes the trigger entirely; this
      is the root fix, NOT the viewport maximum-scale hack, which blocks
      pinch-zoom on Android and is an accessibility regression. !important is
@@ -7333,7 +7285,7 @@ body.modern-ui.v2-canvas {
   }
 
   /* No hover on touch — but always-on clusters over every message are
-     chrome over content (Sam, 2026-08-23). A tap on the message toggles
+     chrome over content (2026-08-23). A tap on the message toggles
      .v2-msg--reveal (V2MessageRow.onBubbleTap, gated to hoverless
      devices); only then does the cluster appear, at the 44px floor (craft
      baseline rule 9). Absolute positioning preserved — a static third
@@ -8994,9 +8946,29 @@ body.modern-ui.v2-canvas {
 }
 
 @media (max-width: 760px) {
+  /* At 390 the head was one nowrap row (back, subtitle, New task), which squeezed
+     the title to under 1px. On a phone the title takes its own full-width row;
+     back and New task share the row above it. */
   .v2-board__head {
+    flex-wrap: wrap;
+    row-gap: 8px;
     padding: 12px 14px;
     gap: 10px;
+  }
+
+  .v2-board__title-wrap {
+    order: 1;
+    flex: 1 1 100%;
+  }
+
+  .v2-board__new {
+    margin-left: auto;
+  }
+
+  /* The board is the phone's full-width surface. Its own head and columns carry
+     the 14px inset, so the feature body does not add its 34px desktop gutter. */
+  .v2-feature--board > .v2-feature__body {
+    padding: 0;
   }
 
   .v2-board__columns {
@@ -9083,7 +9055,7 @@ body.modern-ui.v2-canvas {
 /* The card sits IN the message content column, not flush with the row edge:
    38px avatar column + 12px gap, in lockstep with the .v2-msg grid. Without
    this inset the card starts 50px left of every bubble's text and reads as
-   misaligned (measured 372 vs 422; Sam, 2026-08-13). */
+   misaligned (measured 372 vs 422, 2026-08-13). */
 .v2-msg.v2-msg--card {
   padding-left: 50px;
 }
@@ -9455,7 +9427,7 @@ body.modern-ui.v2-canvas {
    dropping to 24px at 390; layout transition 300ms. */
 
 /* Card + rail travel as ONE column row, indented to the message TEXT
-   column like an attachment (Sam, 2026-08-23): 38px avatar column + 12px
+   column like an attachment (2026-08-23): 38px avatar column + 12px
    gap = 50px, so the thread visibly belongs to the message above it
    rather than starting a new row at the avatar edge. The bottom margin is
    the rail's terminator: without it the rail's last pixel abuts the next
@@ -9464,7 +9436,7 @@ body.modern-ui.v2-canvas {
   margin-left: 50px;
   /* The column's `> *` rule sets width: 100%; with the 50px indent that
      put every thread 50px past the pane's right edge — the pane became
-     horizontally swipeable, worst on phones (Sam, 2026-08-24; measured
+     horizontally swipeable, worst on phones (2026-08-24; measured
      scrollWidth 350 vs clientWidth 326 at 390px). Indent + width must sum
      to 100%. */
   width: calc(100% - 50px);
@@ -9538,7 +9510,7 @@ body.modern-ui.v2-canvas {
 /* Expanded replies hang off a left rail at the thread block's own edge.
    The rail used to aim at the root avatar's centre (margin-left 14, rev 2);
    with the whole block indented to the text column like an attachment
-   (Sam, 2026-08-23), the rail sits AT that column edge — margin 0 — so
+   (2026-08-23), the rail sits AT that column edge — margin 0 — so
    card, rail, and message text share one line. */
 .v2-thread-replies {
   position: relative;
@@ -9766,7 +9738,7 @@ body.modern-ui.v2-canvas {
   margin-top: 30px;
 }
 
-/* Composer (Sam ruled 2026-09-03 on the Shell Parity canvas, board 3): one
+/* Composer (ruled 2026-09-03 on the Shell Parity canvas, board 3): one
    card, radius-lg, the textarea borderless inside it, a small ink Send in the
    foot row. Focus is the halo on the CARD, not a harder border. */
 .v2-activity__compose {
@@ -10010,7 +9982,7 @@ body.modern-ui.v2-canvas {
   overflow: hidden;
 }
 
-/* Needs-you rows: no box, no dividers (Sam ruled 2026-09-03, TASK-122). Each
+/* Needs-you rows: no box, no dividers (TASK-122). Each
    row carries a permanent transparent 1px border and changes only its fill on
    hover, so nothing shifts by a pixel. Board rows keep their box until Phase B. */
 .v2-activity__queue {
@@ -10679,8 +10651,7 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-byo__mode-title,
 .v2-root:lang(zh) .v2-byo__preview-name,
 .v2-root:lang(zh) .v2-byo__stat-value,
-.v2-root:lang(zh) .v2-connect__lane h2,
-.v2-root:lang(zh) .v2-connect__gateway h3 {
+.v2-root:lang(zh) .v2-connect__lane h2 {
   letter-spacing: 0;
 }
 
@@ -10688,7 +10659,7 @@ body.modern-ui.v2-canvas {
  * zh-CN: mono labels drop `text-transform: lowercase` (TASK-164, rule class 3).
  * `.v2-connector-gates__title` and `.v2-tools__field > span:first-child` set
  * lowercase for Latin kickers. The zh copy for both is CJK plus one Latin
- * token — `Pod`, the product noun, which lily-shen ruled is never a synonym —
+ * token — `Pod`, the product noun, which is never a synonym —
  * and CSS lowercases it to `pod`, so a label contradicts the sentence beside
  * it. Case is not a property of CJK; the reset exists only for the Latin token
  * the copy carries. Guarded by v2-layout-invariants.test.ts.
@@ -10833,10 +10804,10 @@ body.modern-ui.v2-canvas {
   .v2-connector-row__dot--pulse { animation: none; }
 }
 .v2-connector-row__details { display: flex; min-width: 0; padding-right: 8px; flex-direction: column; gap: 2px; color: var(--v2-text-secondary); font-size: 13px; line-height: 18px; }
-/* Line 1 wraps like meta does; a sentence never ellipsises at 390 (wren, 64144). */
+/* Line 1 wraps like meta does; a sentence never ellipsises at 390. */
 .v2-connector-row__details strong { color: var(--v2-ink); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .v2-connector-row__detail, .v2-connector-row__when { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
-/* Meta wraps to a second line; it never ellipsises (lily-shen, 64026). */
+/* Meta wraps to a second line; it never ellipsises. */
 .v2-connector-row__detail { overflow-wrap: anywhere; }
 /* TASK-162 (3): line 3 used to be the bare 16px mark, its consequence words
    reachable only through the glyph's tooltip — and at ≤760 the mark is hidden,
@@ -10983,7 +10954,7 @@ body.modern-ui.v2-canvas {
 .v2-connector-gate__row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 36px; }
 .v2-root button.v2-connector-gate__name { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 0; border: none; background: transparent; color: var(--v2-ink); font: 500 13px/18px var(--v2-font); text-align: left; cursor: pointer; }
 .v2-connector-gate__mark { width: 4px; height: 4px; flex: none; background: var(--v2-ink); }
-/* A long pod name wraps under the mark; it never ellipsises (wren, 64144). */
+/* A long pod name wraps under the mark; it never ellipsises. */
 .v2-connector-gate__pod { min-width: 0; overflow-wrap: anywhere; }
 .v2-connector-gate__tag { flex: none; color: var(--v2-ink); font-family: var(--v2-font-mono); font-size: 11px; line-height: 16px; }
 .v2-connector-gate__since { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 11px; line-height: 16px; white-space: nowrap; }
@@ -11074,7 +11045,7 @@ body.modern-ui.v2-canvas {
   .v2-tools__search { flex-basis: 100%; margin-left: 0; }
 }
 
-/* Activity queue: reply-in-place on mention rows (Sam, 2026-09-01). The
+/* Activity queue: reply-in-place on mention rows (2026-09-01). The
    textarea shares the row's action cluster; on narrow screens it takes the
    full width of the row so the thumb has something to hit. */
 .v2-activity__reply {
@@ -11651,7 +11622,10 @@ body.modern-ui.v2-canvas {
 
   .v2-thread__header-row { align-items: center; gap: 8px; }
   .v2-thread__title-line { display: flex; flex-wrap: wrap; align-items: center; }
-  .v2-thread__title h1 { font: 600 15px/20px var(--v2-font); }
+  /* The name takes the free width with a zero basis and truncates, so the
+     "i" hint keeps its place on the line instead of wrapping under it and
+     growing the header (TASK-647 item 3). */
+  .v2-thread__title h1 { font: 600 15px/20px var(--v2-font); flex: 1 1 0; min-width: 0; white-space: nowrap; text-overflow: ellipsis; }
 
   .v2-thread .v2-msg__author,
   .v2-thread .v2-msg__author-btn { font-size: 15px; }
@@ -12125,6 +12099,57 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pod-header__board:hover { text-decoration: underline; }
 
+/* Owner rename (TASK-419): an inline form in the title line. It wraps at phone
+   width; the input takes the spare room and the buttons keep their content width. */
+.v2-pod-header__rename {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.v2-root .v2-pod-header__rename input {
+  flex: 1 1 180px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 600 15px/20px var(--v2-font);
+}
+.v2-root .v2-pod-header__rename input:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
+.v2-root .v2-pod-header__rename button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 600 12px/16px var(--v2-font);
+  cursor: pointer;
+}
+.v2-root .v2-pod-header__rename button[type="submit"] { background: var(--v2-ink); color: var(--v2-on-ink); border-color: var(--v2-ink); }
+.v2-root .v2-pod-header__rename button:not([type="submit"]):hover:not(:disabled) { background: var(--v2-surface-hover); }
+.v2-root .v2-pod-header__rename button[type="submit"]:hover:not(:disabled) { background: var(--v2-ink-hover); color: var(--v2-on-ink); }
+.v2-root .v2-pod-header__rename button:disabled { opacity: .55; cursor: default; }
+.v2-root .v2-pod-header__rename button:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
+.v2-pod-header__rename-error { flex: 1 0 100%; color: var(--v2-danger); font: 400 12px/16px var(--v2-font); }
+.v2-root button.v2-pod-header__rename-open {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: 500 11px/16px var(--v2-font-mono);
+  cursor: pointer;
+}
+.v2-root button.v2-pod-header__rename-open:hover { text-decoration: underline; }
+
+
+
 .v2-root button.v2-thread__back { display: none; }
 
 @media (max-width: 760px) {
@@ -12185,7 +12210,18 @@ body.modern-ui.v2-canvas {
     align-items: flex-start;
   }
   .v2-pod-header__meta { display: none; }
-  .v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; min-height: 28px; }
+  .v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; min-height: 28px; flex: 0 0 auto; white-space: nowrap; }
+  /* TASK-647 item 3: the board link keeps a 44px tap target without growing
+     the 28px meta row (the hit area is a pseudo-element), the name keeps room
+     for the "i" hint, and the compact meta sits closer to the link. */
+  .v2-root button.v2-pod-header__board--compact { position: relative; }
+  .v2-root button.v2-pod-header__board--compact::before {
+    content: '';
+    position: absolute;
+    inset: -14px -10px;
+  }
+  .v2-thread__title-line > h1 { max-width: calc(100% - 36px); }
+  .v2-pod-header__meta--compact { gap: 4px; }
 
   .v2-root button.v2-thread__back {
     display: inline-grid;
@@ -12204,6 +12240,12 @@ body.modern-ui.v2-canvas {
   .v2-mobile-tabs {
     height: 56px;
     padding: 6px 8px 4px;
+  }
+
+  /* Feature pages mount this same bar (V2FeaturePage). Reserve its height on
+     the pane so a scrolling body stops above the fixed bar, not under it. */
+  .v2-feature {
+    padding-bottom: 56px;
   }
 
   .v2-root button.v2-mobile-tabs__item {
@@ -12996,7 +13038,7 @@ body.modern-ui.v2-canvas {
   .v2-activity__controls { flex-direction: column; align-items: stretch; }
 }
 .v2-root .v2-activity__queue-row--decision .v2-activity__queue-mark { background: var(--v2-accent); color: #fff; }
-/* Categories are marks, only the deciding act is a word (Sam 2026-09-11, direction A). The
+/* Categories are marks, only the deciding act is a word (direction A). The
    mark holds a 16px glyph; a secondary act is a 32px square holding one, its word in the
    title and the accessible name. Nothing is hidden in a menu. */
 .v2-root .v2-activity__queue-mark svg { width: 16px; height: 16px; }
@@ -13223,6 +13265,13 @@ body.modern-ui.v2-canvas {
 .v2-team-card__pod { font: 500 11px/16px var(--v2-font-mono); padding: 2px 6px; border: 1px solid var(--v2-border); border-radius: 4px; color: var(--v2-text-secondary); }
 .v2-team-card__command { display: block; padding: 8px 10px; border-radius: 4px; background: #101828; color: #fff; font: 500 14px/20px var(--v2-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .v2-team-card__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+/* Where the seat runs: a cloud (Commonly) or a laptop (your computer), top-right. */
+.v2-team-card__where { display: inline-flex; flex: none; margin-left: auto; align-self: flex-start; color: var(--v2-text-muted); }
+/* Hosted meter: the server's count against the server's cap, as a bar and a mono line. */
+.v2-team-card__meter { display: flex; align-items: center; gap: 10px; }
+.v2-team-card__meter-track { flex: 1; min-width: 0; height: 4px; border-radius: 2px; background: var(--v2-border-soft); overflow: hidden; }
+.v2-team-card__meter-fill { display: block; height: 100%; background: var(--v2-accent); }
+.v2-team-card__meter-text { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; }
 .v2-root button.v2-team-card__answer { height: 32px; padding: 0 12px; border: 1px solid #101828; border-radius: 4px; background: #101828; color: #fff; font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team-card__talk { height: 32px; padding: 0 12px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-surface); color: var(--v2-text-primary); font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team-card__talk:hover { background: var(--v2-surface-hover); }
@@ -13244,7 +13293,7 @@ body.modern-ui.v2-canvas {
 }
 
 /* ---------------------------------------------------------------------------
-   Artifacts — direction C, PR 5 (ScaleArtifacts.dc.html; Sharpen 66366/66376).
+   Artifacts — direction C, PR 5 (ScaleArtifacts.dc.html).
    Every file and page shared in your pods. Display head + muted meta; two
    segment groups on one grammar (bordered white group, active = tint + ink
    600); a bordered search; a plain table whose numbers are mono; the ext chip
@@ -13380,3 +13429,15 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-board__new:hover, .v2-root button.v2-board__create-submit:not(:disabled):hover { background: var(--v2-text-secondary); border-color: var(--v2-text-secondary); }
 
 .v2-board__owner-time { color: var(--v2-text-muted); }
+
+/* Public Privacy and Terms pages (TASK-530). Outside .v2-root, so no root-scoped selectors. */
+/* .v2-root sets height:100vh and overflow:hidden; the legal pages must scroll, so override both (same as the landing). */
+.v2-root.v2-legal { display: block; height: 100vh; overflow-y: auto; overflow-x: hidden; box-sizing: border-box; padding: 48px 24px; background: var(--v2-bg-subtle); color: var(--v2-text-primary); }
+.v2-legal__doc { max-width: 680px; margin: 0 auto; }
+.v2-legal__home { display: inline-block; margin: 0 0 24px; font-size: 14px; color: var(--v2-text-secondary); text-decoration: none; }
+.v2-legal__home:hover { text-decoration: underline; }
+.v2-legal__section a { color: var(--v2-text-primary); text-decoration: underline; }
+.v2-legal__title { font-size: 32px; font-weight: 600; line-height: 1.2; margin: 0 0 32px; }
+.v2-legal__section { margin-bottom: 28px; }
+.v2-legal__section h2 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
+.v2-legal__section p { font-size: 15px; line-height: 1.6; color: var(--v2-text-secondary); margin: 0 0 8px; }

@@ -1,13 +1,15 @@
 /**
  * TASK-126 — behavioural probe: no rate limiter mounted in the app may put two
- * callers that differ only in `cf-connecting-ip` into one bucket.
+ * callers that differ in the configured identity into one bucket. Existing
+ * CF policies vary only cf-connecting-ip; explicit account-deletion/upload
+ * policies vary only the presented credential or trusted user id.
+ * The new policies are pinned to their exact function identities and routes.
  *
  * Why each walked instance is re-mounted on a stub instead of being exercised
  * through the loaded app — all four measured, not assumed:
- *   - Every entry in the loaded router stack is a Layer whose `handle.name` is
- *     `''` and whose `entry.name` is `<anonymous>`, for middleware generally and
- *     for limiters specifically. Identity (`resetKey`/`getKey` own properties)
- *     is the only census instrument; anything name-keyed mis-attributes.
+ *   - Function names do not identify limiters. Express may wrap a limiter
+ *     in a new function while copying resetKey/getKey. The router census uses
+ *     those own properties; policy capture keys on the unchanged getKey method.
  *   - On a route carrying two limiters both write `RateLimit-Remaining` and the
  *     last one that runs wins. Proved on `POST /api/webhooks/groupme/:integrationId`:
  *     the 3000-max IP limiter reported `remaining` 599/598/597 (the 600-max
@@ -18,9 +20,12 @@
  *     `profileWriteUserLimit`) never runs for a header-free request.
  *   - Three instances never answer at all through the app: their handlers need
  *     Mongo and unit mode runs without it.
- * On the stub there are no params and no auth header, so every key function
- * takes its IP branch (each one falls back to the Cloudflare-aware helper), and
- * the 204 terminal answers for all of them — no exemption list, no database.
+ * Existing policies receive no params, auth header or user id, so their IP
+ * branch remains the CF probe. Explicit new policies receive a presented
+ * credential, an authenticated user id, or a submitted sign-in address. The
+ * address policy counts only failed sign-ins, so its stub answers 401. Every
+ * limiter still runs a counted A,A,B sequence; no instance is exempted and no
+ * database is needed.
  *
  * The A,A,B sequence is deliberate: two requests cannot separate "different
  * buckets" from "not counting at all", so A2 is the instrument's own control.
@@ -31,12 +36,36 @@
  * everything handed to it would pass all 84 and establish nothing.
  */
 /* eslint-disable import/no-unresolved, import/extensions */
+// Express wraps middleware functions, but copies getKey unchanged. Capture
+// policy by that store method while retaining the real limiter and store. New
+// Authenticated-user quotas must be measured on their declared identity dimension.
+const mockLimiterKeys = new WeakMap();
+jest.mock('express-rate-limit', () => {
+  const actual = jest.requireActual('express-rate-limit');
+  const wrapped = (options) => {
+    const instance = actual(options);
+    mockLimiterKeys.set(instance.getKey, options?.keyGenerator);
+    return instance;
+  };
+  Object.assign(wrapped, actual);
+  wrapped.rateLimit = wrapped;
+  wrapped.default = wrapped;
+  return wrapped;
+});
+
 const fs = require('fs');
 const express = require('express');
 const request = require('supertest');
 const rateLimit = require('express-rate-limit');
 const { ipKeyGenerator } = require('express-rate-limit');
-const { cloudflareIpRateLimitKeyGenerator } = require('../../../middleware/ipRateLimit');
+const {
+  cloudflareIpRateLimitKeyGenerator,
+  presentedCredentialRateLimitKeyGenerator,
+  authenticatedUserRateLimitKeyGenerator,
+  loginEmailRateLimitKeyGenerator,
+} = require('../../../middleware/ipRateLimit');
+const { pgRoutesAreMounted } = require('../../../services/pgBootService');
+const { waitFor } = require('../../utils/testUtils');
 
 // Captured at MODULE LOAD, before any test can flip it. A baseline re-read inside
 // a test moves with a leak instead of catching it: measured, with the per-request
@@ -52,16 +81,28 @@ const ENTRY_NODE_ENV = process.env.NODE_ENV;
 // is needed — process.env is per test FILE (measured), so this assignment cannot
 // reach any other suite.
 process.env.PG_HOST = 'probe';
+let mockResolvePgInit;
 jest.mock('../../../config/db', () => jest.fn());
 jest.mock('../../../config/db-pg', () => {
   const actual = jest.requireActual('../../../config/db-pg');
   const pool = { query: jest.fn().mockResolvedValue({ rows: [] }), on: jest.fn(), end: jest.fn() };
   return { ...actual, connectPG: jest.fn().mockResolvedValue(pool) };
 });
-jest.mock('../../../config/init-pg-db', () => jest.fn().mockResolvedValue(true));
+jest.mock('../../../config/init-pg-db', () => jest.fn(() => new Promise((resolve) => {
+  mockResolvePgInit = resolve;
+})));
 jest.setTimeout(300000);
 
 const { app } = require('../../../server');
+const agentWebSocketService = require('../../../services/agentWebSocketService');
+
+// Each explicit policy is measured on the identity it declares; every other
+// limiter is measured on the CF-derived IP.
+const DIMENSION_OF = new Map([
+  [authenticatedUserRateLimitKeyGenerator, 'user'],
+  [presentedCredentialRateLimitKeyGenerator, 'credential'],
+  [loginEmailRateLimitKeyGenerator, 'login-email'],
+]);
 
 const isLimiter = (fn) => fn && typeof fn === 'function'
   && Object.prototype.hasOwnProperty.call(fn, 'resetKey')
@@ -110,24 +151,48 @@ const remainingOf = (res) => {
   return m ? Number(m[1]) : null;
 };
 
-const single = (instance) => {
+const single = (instance, dimension = 'cf') => {
   const stub = express();
-  stub.all('/', instance, (req, res) => {
+  stub.all('/', (req, _res, next) => {
+    if (dimension === 'user') req.userId = req.get('x-probe-identity');
+    if (dimension === 'credential') req.headers.authorization = `Bearer ${req.get('x-probe-identity')}`;
+    if (dimension === 'login-email') req.body = { email: req.get('x-probe-identity') };
+    next();
+  }, instance, (req, res) => {
+    // Marks the answer as this stub's. A probe socket can land on another local
+    // listener (measured: a mongod answered `GET /` with 200 under load), and
+    // that answer never reached the limiter, so `hit` retries it instead of
+    // reading it as a limiter that did not count.
+    res.set('x-probe-stub', '1');
     if (typeof req.rateLimit?.remaining === 'number') {
       res.set('x-probe-remaining', String(req.rateLimit.remaining));
     }
-    res.status(204).end();
+    // A failed sign-in is what the address policy counts; a 2xx is handed back.
+    res.status(dimension === 'login-email' ? 401 : 204).end();
   });
   return stub;
 };
 
-const hit = async (stub, ip) => {
+const PROBE_ATTEMPTS = 3;
+
+const hit = async (stub, ip, identity = ip) => {
   const entry = process.env.NODE_ENV;
   let outcome;
   try {
     process.env.NODE_ENV = 'development';
-    const res = await request(stub).get('/').set('cf-connecting-ip', ip)
-      .timeout({ response: 5000, deadline: 8000 });
+    let res;
+    // Only a stub answer can have reached the limiter, so only it is read. A
+    // foreign answer never counted, so it is retried; a third one fails the probe.
+    for (let attempt = 1; ; attempt += 1) {
+      // `Connection: close` keeps the probe off the global agent's keep-alive pool:
+      // a pooled socket can outlive its stub server and reset the next request.
+      // eslint-disable-next-line no-await-in-loop -- one probe socket at a time.
+      res = await request(stub).get('/').set('cf-connecting-ip', ip).set('x-probe-identity', identity)
+        .set('Connection', 'close')
+        .timeout({ response: 5000, deadline: 8000 });
+      if (res.headers['x-probe-stub']) break;
+      if (attempt === PROBE_ATTEMPTS) throw new Error(`misrouted ${PROBE_ATTEMPTS}x: status ${res.status}`);
+    }
     outcome = { remaining: remainingOf(res), status: res.status };
   } catch (err) {
     outcome = { error: String((err && err.message) || err).slice(0, 80) };
@@ -139,13 +204,13 @@ const hit = async (stub, ip) => {
   return outcome;
 };
 
-const observe = async (instance, tag) => {
+const observe = async (instance, tag, dimension = 'cf') => {
   const a = `198.51.100.${tag}`;
   const b = `203.0.113.${tag}`;
-  const stub = single(instance);
-  const first = await hit(stub, a);
-  const second = await hit(stub, a);
-  const other = await hit(stub, b);
+  const stub = single(instance, dimension);
+  const first = await hit(stub, a, a);
+  const second = await hit(stub, a, a);
+  const other = await hit(stub, dimension === 'cf' ? b : a, b);
   return {
     r1: first.remaining, r2: second.remaining, r3: other.remaining, status: first.status, error: first.error,
   };
@@ -161,14 +226,18 @@ describe('TASK-126 ip key separation', () => {
   // file, the two controls included — the leak mutation was introduced by the
   // negative control, before the walk ever ran.
   afterAll(() => {
+    agentWebSocketService.stopPingInterval();
+    expect(agentWebSocketService.pingInterval).toBeNull();
     expect(process.env.NODE_ENV).toBe(ENTRY_NODE_ENV);
   });
 
   beforeAll(async () => {
-    // pg-messages and pg-status mount from promise callbacks (server.ts:380-400),
-    // so the walk has to wait for the PG connect to resolve or those limiters are
-    // invisible to it.
-    await new Promise((resolve) => { setTimeout(resolve, 2000); });
+    // The PG message router is mounted after connection and schema init. Hold
+    // schema init so the walk proves it waits for that mount, not a guessed delay.
+    await waitFor(() => typeof mockResolvePgInit === 'function');
+    expect(pgRoutesAreMounted()).toBe(false);
+    mockResolvePgInit(true);
+    await waitFor(pgRoutesAreMounted, { timeout: 10_000 });
     collect(app._router || app.router, '', walked, seen);
   });
 
@@ -179,8 +248,19 @@ describe('TASK-126 ip key separation', () => {
     expect(distinct.size).toBe(walked.length);
   });
 
+  it('pins the explicit credential, user and address policies without exempting them from counting', () => {
+    for (const key of [presentedCredentialRateLimitKeyGenerator, authenticatedUserRateLimitKeyGenerator]) {
+      expect(walked.filter((w) => mockLimiterKeys.get(w.instance.getKey) === key)
+        .map((w) => `${w.method.toUpperCase()} ${w.path}`).sort())
+        .toEqual(['DELETE /api/users/me', 'POST /api/uploads/']);
+    }
+    expect(walked.filter((w) => mockLimiterKeys.get(w.instance.getKey) === loginEmailRateLimitKeyGenerator)
+      .map((w) => `${w.method.toUpperCase()} ${w.path}`))
+      .toEqual(['POST /api/auth/login']);
+  });
+
   it('negative control: the instrument catches a limiter keyed the way the swapped sites were', async () => {
-    // The defect's own spelling, not a cousin of it (vera 73704): the 21 sites
+    // The defect's own spelling, not a cousin of it: the 21 sites
     // keyed `req.ip ? ipKeyGenerator(req.ip) : 'anon'`. A bare `req.ip` collapses
     // on this stub for the same reason — no `trust proxy`, so both requests carry
     // the loopback socket address — but it also hands express-rate-limit's IPv6
@@ -226,16 +306,13 @@ describe('TASK-126 ip key separation', () => {
     expect(rec.r3).toBe(rec.r1);
   });
 
-  // What this measures (wren 73671, ruling (b)), not what it might be read as:
-  // a request with no credential, no param and no body — built from nothing and
-  // carrying only `cf-connecting-ip` — is bucketed per `cf-connecting-ip` on
-  // every instance. That is stricter than a per-arm check: a limiter with no IP
-  // arm at all keys such a request on a CONSTANT, one bucket for every anonymous
-  // caller, which is the same defect as raw `req.ip` behind cloudflared — and it
-  // collapses A and B here exactly the same way.
-  it('every walked instance counts and separates; none collapses', async () => {
+  // Legacy policies keep the original anonymous CF-header probe. New policies
+  // use their presented-credential or authenticated-user dimension while
+  // holding the CF header constant. Pinning their routes prevents reclassifying
+  // a legacy raw-req.ip regression as an intentional per-user policy.
+  it('every walked instance counts and separates its configured identity; none collapses', async () => {
     const results = [];
-    // Serial, not `Promise.all` (wren 73692): with 84 chains started in one tick,
+    // Serial, not `Promise.all`: with 84 chains started in one tick,
     // only the first reads the suite's NODE_ENV; the other 83 read the
     // 'development' it just set and each restores what it read — so the walk ends
     // flipped, and no per-request check can see it. Serialised, every iteration
@@ -246,12 +323,14 @@ describe('TASK-126 ip key separation', () => {
        purpose: the NODE_ENV restore of one iteration must complete before the
        next reads it, which is the property under test. */
     for (const [i, w] of walked.entries()) {
-      results[i] = { path: w.path, method: w.method, ...(await observe(w.instance, i + 1)) };
+      const key = mockLimiterKeys.get(w.instance.getKey);
+      const dimension = DIMENSION_OF.get(key) || 'cf';
+      results[i] = { path: w.path, method: w.method, dimension, ...(await observe(w.instance, i + 1, dimension)) };
     }
     /* eslint-enable no-await-in-loop, no-restricted-syntax */
     expect(process.env.NODE_ENV).toBe(ENTRY_NODE_ENV);
 
-    // Stub-only arm, disclosed rather than left implied (vera 73673): on the real
+    // Stub-only arm, disclosed rather than left implied: on the real
     // app `users.ts:65` `profileWriteUserLimit` keys on
     // `req.userId || req.user?.id || req.user?._id` FIRST, and `auth` runs before
     // it (`users.ts:171`, `router.put('/profile', profileWriteIngressLimit, auth,

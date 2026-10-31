@@ -51,7 +51,7 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
       // bearers share its public cm_ prefix but are stored only as a hash so a
       // database read cannot impersonate a CLI session.
       let user: any = await User.findOne({ apiToken: token }).select(
-        '_id username email role apiTokenScopes apiTokenCreatedAt banned',
+        '_id username email role apiTokenScopes apiTokenCreatedAt banned accountDeletionRequestedAt',
       );
 
       let isDeviceToken = false;
@@ -66,13 +66,17 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
               revokedAt: { $in: [null] },
             },
           },
-        }).select('_id username email role banned');
+        }).select('_id username email role banned accountDeletionRequestedAt');
         isDeviceToken = Boolean(user);
       }
 
       if (!user) return res.status(401).json({ msg: 'Invalid API token' });
       if ((user as unknown as { banned?: boolean }).banned) {
         return res.status(403).json({ msg: 'This account has been suspended.' });
+      }
+
+      if (user.accountDeletionRequestedAt) {
+        return res.status(403).json({ code: 'ACCOUNT_DELETING', msg: 'Account deletion is pending.' });
       }
 
       req.userId = user._id.toString();
@@ -129,6 +133,17 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
     }
     if (refusal === 'revoked') return res.status(401).json({ msg: 'Session has been revoked' });
 
+    if (refusal === 'deleting') {
+      // These canonical routes are the complete recovery surface. DELETE still
+      // requires password/fresh OAuth in its service. The read-only bootstrap
+      // lets AuthContext reopen Settings after provider sign-in or reload.
+      const retry = req.method === 'DELETE' && req.baseUrl === '/api/users' && req.path === '/me';
+      const bootstrap = req.method === 'GET' && req.baseUrl === '/api/auth' && req.path === '/user';
+      if (!retry && !bootstrap) {
+        return res.status(403).json({ code: 'ACCOUNT_DELETING', msg: 'Account deletion is pending.' });
+      }
+    }
+
     req.userId = id;
     req.user = {
       id,
@@ -140,7 +155,7 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
     req.sessionTokenVersion = decoded.tokenVersion === undefined ? 0 : decoded.tokenVersion as number;
     req.sessionStartedAt = typeof decoded.sessionStartedAt === 'number'
       ? decoded.sessionStartedAt : decoded.iat as number | undefined;
-    touchLastActive(id);
+    if (!account!.accountDeletionRequestedAt) touchLastActive(id);
     next();
   } catch (err: unknown) {
     console.error('Token validation error:', (err as Error).message);

@@ -11,7 +11,7 @@
 > `cloudflared.hostnames` is ignored); historical ADRs/memories keep their old
 > URLs (they describe the past accurately). Operator-side: laptop
 > `~/.commonly` saved `dev` profiles created pre-flip still store the dead
-> `api-dev` URL — re-`commonly login` (affects `sam-local-codex` revival).
+> `api-dev` URL — re-`commonly login` (affects local wrapper revival).
 > Lesson: a migration isn't done at "new host serves traffic" — it's done when
 > the runbook's own cleanup step is executed or explicitly descoped.
 
@@ -38,8 +38,10 @@ Move the dev cluster's public surface from `app-dev` / `api-dev` to the apex
   `backendUrl`, ingress `hosts.{frontend,backend,litellm}.host`, and
   `cloudflared.hostnames` (also deduped a repeated `api-dev` entry and dropped a
   stray `app.commonly.me`).
-- `.github/workflows/deploy-dev.yml` + `cloudbuild.frontend.yaml` —
-  `REACT_APP_API_URL=https://api.commonly.me` (frontend build arg).
+- `.github/workflows/deploy-dev.yml` —
+  `REACT_APP_API_URL=https://api.commonly.me` (frontend build arg). At the
+  time `cloudbuild.frontend.yaml` carried the same arg; that file was removed
+  in #2861, since Deploy Dev builds every image.
 - `backend/server.ts` — CORS fallback default + a doc comment.
 - `frontend/src/v2/components/V2AgentBYO.tsx` — BYO snippet API-URL fallback.
   (The hostname-derivation regex correctly falls through to this fallback for
@@ -92,6 +94,6 @@ Move the dev cluster's public surface from `app-dev` / `api-dev` to the apex
   add the old hosts back as ingress `aliases` on each service and keep them in
   `cloudflared.hostnames` until step 5 — say the word and I'll prepare that shape.
 - **Pre-existing (not from this branch):** `cloudbuild.frontend.yaml` line 19
-  hard-codes a GCP project id + AR path in the public repo. Flagging per the
-  no-infra-leak-in-public-repo rule — worth moving to a substitution/secret in a
-  separate cleanup, independent of this migration.
+  hard-coded a GCP project id + AR path in the public repo, against the
+  no-infra-leak-in-public-repo rule. Resolved: the file now uses
+  substitutions, and was then removed in #2861.

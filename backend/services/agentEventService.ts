@@ -90,12 +90,29 @@ const digestConversationFrame = (
     + `${lines.join('\n')}\nPull relevant messages with commonly_get_messages. On resume, read oldest unread first; at most 8 conversations, 5 messages each, 20 messages total.`;
 };
 
+// How many unread ambient rows a wake quotes; the rest are counted, not shown.
+const DIGEST_FRAME_ROWS = 8;
+
+// Whether a wake's outcome means its seat read the digest it carried: a post,
+// an ack, a plain decline, or a reply the server reduced to silence.
+// `silent_or_empty` is what agentMessageService returns for an intentional
+// NO_REPLY (a suppressed runtime failure is `runtime_*_suppressed` instead), so
+// it is the seat's decision, not a refusal. Treating it as unread left a
+// silent seat's digest pending, and the hourly unread-digest wake re-woke it to
+// be silent again. A turn that printed nothing acks as
+// `empty-output`, which is not a read: that is what a silently failing seat
+// sends every turn, and reading on it would drain a backlog nobody saw
+// (#2753).
+const digestConsumedBy = (outcome?: string, reason?: string): boolean => outcome === 'posted'
+  || outcome === 'acknowledged'
+  || (outcome === 'no_action' && (!reason || reason === 'silent_or_empty'));
+
 // TASK-264: how many stuck in-process events one sweep re-runs, and how long a
 // 'queued'/'running' AgentRun may sit before it counts as abandoned.
 const STUCK_REDISPATCH_BATCH = 50;
 const ABANDONED_RUN_MINUTES = 30;
 
-// TASK-265 (Rhea on #2236): an in-process event is born 'delivered', so one
+// TASK-265: an in-process event is born 'delivered', so one
 // left 'pending' for an agent that now runs in-process was routed before the
 // agent moved in-process (the hosted migration: enqueue decides routing before
 // the insert) and nothing polls it. The sweep runs those once they are a
@@ -111,7 +128,7 @@ const STRANDED_PENDING_MAX_AGE_MS = 30 * 60 * 1000;
 // Phase A (default): a presented nonce must match; an absent one is accepted
 // and counted. Phase B: an absent nonce is refused.
 //
-// **Phase B flips PER CONSUMER, not globally** (Sam, 2026-08-30). The first
+// **Phase B flips PER CONSUMER, not globally**. The first
 // draft gated the flip on `withoutNonce` reaching zero across everything,
 // which hands a veto to whichever consumer is slowest — and one of them, the
 // openclaw extension, has been parked since 2026-08-20. A parked runtime
@@ -168,12 +185,16 @@ interface EventDoc {
   deliveryNonce?: string | null;
   digestRollupRevision?: number | null;
   digestEventIds?: unknown[];
+  digestSnapshotAt?: Date | null;
 }
+
+type DigestScope = { agentName: string; instanceId: string; podId: unknown };
 
 interface InstallationDoc {
   _id?: unknown;
   agentName?: string;
   instanceId?: string;
+  displayName?: string;
   podId?: unknown;
   status?: string;
   scopes?: string[];
@@ -295,6 +316,59 @@ const normalizeConfig = (config: unknown): Record<string, unknown> => {
   return config as Record<string, unknown>;
 };
 
+// Inline webhook replies take the same service path as the CAP post route
+// (agentsRuntime.ts): the unseen-messages freshness hold, postMessage with the
+// installation config, then the mention or agent-dm enqueue. Resolves to a
+// recorded outcome only when the reply was held or skipped; throws when the post fails.
+const postInlineReply = async (
+  installation: InstallationDoc, event: EventDoc, content: string,
+): Promise<{ outcome: string; reason: string } | null> => {
+  // eslint-disable-next-line global-require
+  const AgentMessageService = require('./agentMessageService');
+  // eslint-disable-next-line global-require
+  const AgentMentionService = require('./agentMentionService');
+  // eslint-disable-next-line global-require
+  const AgentSendFreshness = require('./agentSendFreshness');
+  // eslint-disable-next-line global-require
+  const PodModel = require('../models/Pod');
+
+  const agentUser = await AgentIdentityService.getOrCreateAgentUser(event.agentName, {
+    instanceId: event.instanceId || 'default',
+    displayName: installation.displayName,
+  });
+  // The event's own message is the one being answered, so only messages that
+  // landed after it hold the reply (see unseenMessages).
+  const hold = await AgentSendFreshness.unseenMessages(agentUser._id, event.podId, {
+    seenThroughMessageId: event.payload?.messageId,
+  });
+  if (hold) return { outcome: 'skipped', reason: 'unseen_messages' };
+
+  const result = await AgentMessageService.postMessage({
+    agentName: event.agentName,
+    instanceId: event.instanceId || 'default',
+    displayName: installation.displayName,
+    podId: event.podId,
+    content,
+    replyToMessageId: null,
+    threadRootId: null,
+    installationConfig: installation.config || null,
+  });
+  if (result?.skipped) return { outcome: 'skipped', reason: String(result.reason || 'skipped') };
+  if (!result?.success || !result.message) throw new Error('post returned no message');
+
+  PodModel.findById(event.podId).select('type').lean()
+    .then((podDoc: { type?: string } | null) => {
+      const args = {
+        podId: event.podId, message: result.message, userId: agentUser._id, username: agentUser.username,
+      };
+      return podDoc?.type === 'agent-dm'
+        ? AgentMentionService.enqueueDmEvent(args)
+        : AgentMentionService.enqueueMentions(args);
+    })
+    .catch((err: Error) => console.warn('[webhook] inline reply enqueue failed:', err.message));
+  return null;
+};
+
 const deliverEventViaWebhook = async (installation: InstallationDoc, event: EventDoc): Promise<void> => {
   const runtimeConfig = (normalizeConfig(installation.config)?.runtime || {}) as Record<string, unknown>;
   const { webhookUrl, webhookSecret } = runtimeConfig as { webhookUrl?: string; webhookSecret?: string };
@@ -346,18 +420,21 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
       outcome?: string; content?: string; reason?: string;
     };
 
+    // The endpoint's claim is only what it asked for. If the inline reply does
+    // not land, record that instead of 'posted'.
+    let recordedOutcome = outcome;
+    let recordedReason = reason;
     if (outcome === 'posted' && content) {
       try {
-        // eslint-disable-next-line global-require
-        const agentMessageService = require('./agentMessageService');
-        await agentMessageService.postAgentMessage({
-          agentName: event.agentName,
-          instanceId: event.instanceId,
-          podId: event.podId,
-          content: String(content),
-        });
+        const held = await postInlineReply(installation, event, String(content));
+        if (held) {
+          recordedOutcome = held.outcome;
+          recordedReason = held.reason;
+        }
       } catch (postErr) {
         console.warn(`[webhook] Failed to post message for ${event.agentName}:`, (postErr as Error).message);
+        recordedOutcome = 'error';
+        recordedReason = 'inline_post_failed';
       }
     }
 
@@ -374,9 +451,9 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
     await AgentEvent.findByIdAndUpdate(event._id, {
       status: 'acked',
       deliveredAt: new Date(),
-      delivery: AgentEventService.normalizeDeliveryMeta({ outcome, reason }),
+      delivery: AgentEventService.normalizeDeliveryMeta({ outcome: recordedOutcome, reason: recordedReason }),
     });
-    if (outcome === 'posted' || outcome === 'acknowledged' || (outcome === 'no_action' && !reason)) {
+    if (digestConsumedBy(recordedOutcome, recordedReason)) {
       await AgentEventService.settleLegacyDigest(event).catch((err: Error) => {
         console.warn('[webhook] digest settle failed:', err.message);
       });
@@ -789,6 +866,11 @@ class AgentEventService {
     };
   }
 
+  // Test seam: unit tests drive the real webhook delivery, not a copy of it.
+  static deliverEventViaWebhook(installation: InstallationDoc, event: EventDoc): Promise<void> {
+    return deliverEventViaWebhook(installation, event);
+  }
+
   static normalizeDeliveryMeta(input: unknown = {}): DeliveryMeta | null {
     if (!input || typeof input !== 'object') return null;
     const allowedOutcomes = new Set(['acknowledged', 'posted', 'no_action', 'skipped', 'error']);
@@ -1134,7 +1216,7 @@ class AgentEventService {
    * identities (projections included), and keeps only the rows the routing
    * rule itself runs, with the engine in effect. An unfinished migration's
    * rows are therefore not targets, so their events can never fill the
-   * sweep's batch and starve a runnable agent's event (Rhea on #2236).
+   * sweep's batch and starve a runnable agent's event.
    */
   static async inProcessEventTargets(): Promise<{ agentName: string; instanceId: string; podId: unknown }[]> {
     const identities = await AgentInstallation.find({ status: 'active', ...IN_PROCESS_RUNTIME_FILTER })
@@ -1457,7 +1539,7 @@ class AgentEventService {
    * runtime runs for `installationDoc` (merged with `sibling`'s config when the
    * row is a projection with no runtime of its own), or null. Shared by
    * `resolveInProcessInstallation` and the stranded-event sweep, so the sweep
-   * can never select an event that enqueue would not run (Rhea on #2236).
+   * can never select an event that enqueue would not run.
    */
   static inProcessInstallationFrom(
     installationDoc: InstallationDoc,
@@ -1510,6 +1592,39 @@ class AgentEventService {
       conversations: state.conversations };
   }
 
+  // The newest page of a pod's unread ambient rows, and how many older ones sit
+  // behind it. Reading oldest-first fed a backlogged seat day-old context while
+  // every newer row waited (22,568 pending on 2026-10-25, the oldest 31h old).
+  static async readDigestPage(scope: DigestScope): Promise<{
+    rows: EventDoc[]; olderCount: number; snapshotAt: Date;
+  }> {
+    const snapshotAt = new Date();
+    const filter = { ...scope, status: 'pending', deliveryMode: 'digest', createdAt: { $lte: snapshotAt } };
+    const [newest, total] = await Promise.all([
+      AgentEvent.find(filter).sort({ createdAt: -1 }).limit(DIGEST_FRAME_ROWS).lean() as Promise<EventDoc[]>,
+      AgentEvent.countDocuments(filter),
+    ]);
+    return { rows: newest.reverse(), olderCount: Math.max(0, total - newest.length), snapshotAt };
+  }
+
+  // A digest row is ambient context, not a task. Once a wake that showed the
+  // unread count is consumed, every row it covered is read, not only the page it
+  // quoted; a row created after the snapshot stays pending for the next wake.
+  // `delivered` covers the companions claimed beside the wake: a CLI older than
+  // the silent_or_empty rule never acks them, and the requeue would bring them
+  // back as unread.
+  static async settleDigestBacklog(scope: DigestScope, snapshotAt: Date): Promise<void> {
+    await AgentEvent.updateMany(
+      {
+        ...scope,
+        status: { $in: ['pending', 'delivered'] },
+        deliveryMode: 'digest',
+        createdAt: { $lte: snapshotAt },
+      },
+      { $set: { status: 'acked', deliveredAt: new Date(), deliveryNonce: null } },
+    );
+  }
+
   /** Add one bounded ambient frame to a wake consumed by an older poller or webhook. */
   static async attachLegacyDigest(event: EventDoc): Promise<void> {
     if (!event._id || !event.podId || !event.agentName || event.deliveryMode === 'digest') return;
@@ -1518,13 +1633,14 @@ class AgentEventService {
       instanceId: String(event.instanceId || 'default'),
       podId: event.podId,
     };
-    const [raw, rollup] = await Promise.all([
-      AgentEvent.find({ ...scope, status: 'pending', deliveryMode: 'digest' })
-        .sort({ createdAt: 1 }).limit(8).lean() as Promise<EventDoc[]>,
+    const [page, rollup] = await Promise.all([
+      this.readDigestPage(scope),
       readFoldedDigest(scope),
     ]);
+    const { rows: raw, olderCount } = page;
     if (!raw.length && !rollup?.unreadCount) return;
     const ids = raw.map((row) => row._id);
+    const snapshotAt = raw.length ? page.snapshotAt : null;
     const saved = await AgentEvent.updateOne(
       {
         _id: event._id,
@@ -1535,12 +1651,16 @@ class AgentEventService {
       { $set: {
         digestEventIds: ids,
         digestRollupRevision: rollup?.revision ?? null,
+        digestSnapshotAt: snapshotAt,
       } },
     );
     if (!saved.matchedCount) return;
     event.digestEventIds = ids;
     event.digestRollupRevision = rollup?.revision ?? null;
-    const summary = digestConversationFrame(raw, rollup?.unreadCount || 0, rollup?.conversations);
+    event.digestSnapshotAt = snapshotAt;
+    const summary = digestConversationFrame(
+      raw, (rollup?.unreadCount || 0) + olderCount, rollup?.conversations,
+    );
     const baseContent = [event.payload?.content, event.payload?.prompt, event.payload?.text]
       .find((value): value is string => typeof value === 'string' && value.length > 0) || '';
     event.payload = {
@@ -1561,7 +1681,10 @@ class AgentEventService {
       instanceId: String(event.instanceId || 'default'),
       podId: event.podId,
     };
-    if (event.digestEventIds?.length) {
+    if (event.digestSnapshotAt) {
+      await this.settleDigestBacklog(scope, new Date(event.digestSnapshotAt));
+    } else if (event.digestEventIds?.length) {
+      // A wake framed before digestSnapshotAt existed settles what it quoted.
       await AgentEvent.updateMany(
         { ...scope, _id: { $in: event.digestEventIds }, status: 'pending', deliveryMode: 'digest' },
         { $set: { status: 'acked', deliveredAt: new Date() } },
@@ -1619,18 +1742,22 @@ class AgentEventService {
           console.warn('[native-runtime] folded digest lookup failed:', digestErr.message);
           return null;
         });
+        const digestScope = { agentName: agentName.toLowerCase(), instanceId, podId: event.podId };
         let digest: EventDoc[] = [];
+        let olderDigest = 0;
+        let digestSnapshotAt: Date | null = null;
         try {
-          digest = await AgentEvent.find({
-            agentName: agentName.toLowerCase(), instanceId, podId: event.podId,
-            status: 'pending', deliveryMode: 'digest',
-          }).sort({ createdAt: 1 }).limit(8).lean() as EventDoc[];
+          const page = await this.readDigestPage(digestScope);
+          digest = page.rows;
+          olderDigest = page.olderCount;
+          digestSnapshotAt = page.snapshotAt;
         } catch (digestErr) {
           console.warn('[native-runtime] digest lookup failed:', (digestErr as Error).message);
         }
         const baseContent = String(event.payload?.content || event.payload?.prompt || event.payload?.text || '');
         const summary = digest.length || folded?.unreadCount
-          ? digestConversationFrame(digest, folded?.unreadCount || 0, folded?.conversations) : null;
+          ? digestConversationFrame(digest, (folded?.unreadCount || 0) + olderDigest, folded?.conversations)
+          : null;
         const payload = summary ? {
           ...event.payload,
           content: `${baseContent}\n\n${summary}`,
@@ -1643,15 +1770,12 @@ class AgentEventService {
         // The model is done even if a digest/ack write stalls. Leave that
         // delivery for succeeded-run recovery instead of replaying its output.
         turnFinished();
-        // Leave digest unread when the native turn fails. On a successful turn,
-        // mark only the rows actually included; older backlog remains pending.
+        // Leave digest unread when the native turn fails. A successful turn was
+        // shown the unread count, so it reads everything up to its snapshot.
         const modelTurnRan = result?.status === 'succeeded'
           && Boolean(result.runId) && Number(result.totalTurns) > 0;
-        if (modelTurnRan && digest.length) {
-          await AgentEvent.updateMany(
-            { _id: { $in: digest.map((item) => item._id) }, status: 'pending', deliveryMode: 'digest' },
-            { $set: { status: 'acked' } },
-          ).catch((digestErr: Error) => {
+        if (modelTurnRan && digest.length && digestSnapshotAt) {
+          await this.settleDigestBacklog(digestScope, digestSnapshotAt).catch((digestErr: Error) => {
             console.warn('[native-runtime] digest settle failed:', digestErr.message);
           });
         }
@@ -1664,7 +1788,9 @@ class AgentEventService {
       // actually succeeded as 'failed'. The rejection handler here is scoped
       // to runAgent alone. Both terminal calls swallow their own errors so
       // this stays fire-and-forget for the caller.
-        (runResult: { status?: string; error?: string; runId?: string; totalTurns?: number }) => {
+        (runResult: {
+          status?: string; error?: string; runId?: string; totalTurns?: number; noActionReason?: string;
+        }) => {
           turnFinished();
           if (runResult?.status === 'drained') return undefined;
           return (runResult?.status === 'failed'
@@ -1679,9 +1805,12 @@ class AgentEventService {
           eventIdStr,
           agentName,
           instanceId,
-          runResult?.runId && Number(runResult.totalTurns) > 0
-            ? { outcome: 'acknowledged', reason: 'native-runtime-completed' }
-            : { outcome: 'no_action', reason: 'native-no-turn' },
+          // eslint-disable-next-line no-nested-ternary
+          runResult?.noActionReason
+            ? { outcome: 'no_action', reason: runResult.noActionReason }
+            : runResult?.runId && Number(runResult.totalTurns) > 0
+              ? { outcome: 'acknowledged', reason: 'native-runtime-completed' }
+              : { outcome: 'no_action', reason: 'native-no-turn' },
           nativeDeliveryId,
           'native',
         ).catch((ackErr: Error) => {
@@ -1967,15 +2096,19 @@ class AgentEventService {
     // one exists; otherwise keep the entire wake page.
     // At limit=1 the digest is a companion to the single wake, not another
     // runnable item. Return the pair so even that page exposes unread context.
+    // Newest first, so a backlogged seat sees current context; the wake that
+    // carries them settles everything up to this snapshot when it is consumed.
     const digestSlots = limit - wakeCandidates.length || 1;
+    const digestSnapshotAt = new Date();
     const digestCandidates = onePod && wakeCandidates.length > 0 && digestSlots > 0
-      ? await AgentEvent.find({ ...batchQuery, deliveryMode: 'digest' })
-        .sort({ createdAt: 1 })
+      ? await AgentEvent.find({ ...batchQuery, deliveryMode: 'digest', createdAt: { $lte: digestSnapshotAt } })
+        .sort({ createdAt: -1 })
         .limit(digestSlots)
         .select({ _id: 1 })
         .lean() as Array<{ _id: unknown }>
       : [];
     if (limit > 1 && wakeCandidates.length === limit && digestCandidates.length > 0) wakeCandidates.pop();
+    digestCandidates.reverse(); // the newest page, served in the order it happened
     const candidates = [...wakeCandidates, ...digestCandidates];
 
     // A sibling poller can claim every candidate after our pre-claim count.
@@ -2044,6 +2177,16 @@ class AgentEventService {
     }
 
     const firstWake = claimed.find((event) => event.deliveryMode !== 'digest');
+    if (firstWake && claimed.some((event) => event.deliveryMode === 'digest')) {
+      const marked = await AgentEvent.updateOne(
+        { _id: firstWake._id, status: 'delivered', deliveryNonce: firstWake.deliveryNonce ?? null },
+        { $set: { digestSnapshotAt } },
+      ).catch((err: Error) => {
+        console.warn('[agent-event] digest snapshot mark failed:', err.message);
+        return null;
+      });
+      if (marked?.modifiedCount) firstWake.digestSnapshotAt = digestSnapshotAt;
+    }
     const foldedRollup = onePod && firstWake
       ? await this.attachFoldedDigest(firstWake).catch((err: Error) => {
         console.warn('[agent-event] folded digest attachment failed:', err.message);
@@ -2167,11 +2310,9 @@ class AgentEventService {
     ) as EventDoc | null;
 
     const consumedDigest = !normalizedDelivery
-      || normalizedDelivery.outcome === 'posted'
-      || normalizedDelivery.outcome === 'acknowledged'
-      || (normalizedDelivery.outcome === 'no_action' && !normalizedDelivery.reason);
+      || digestConsumedBy(normalizedDelivery.outcome, normalizedDelivery.reason);
     if (result && consumedDigest) {
-      if (result.digestEventIds?.length) {
+      if (result.digestSnapshotAt || result.digestEventIds?.length) {
         await this.settleLegacyDigest(result).catch((err: Error) => {
           console.warn('[agent-event] legacy digest settle failed:', err.message);
         });

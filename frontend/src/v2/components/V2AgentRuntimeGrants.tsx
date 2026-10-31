@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { machineDisplayName } from '../utils/machineLabel';
 import { useV2Api } from '../hooks/useV2Api';
 import './V2AgentRuntimeGrants.css';
 import V2AgentProviderKey from './V2AgentProviderKey';
 import V2RuntimeControls, { RuntimeSettings, RuntimeUpdate } from './V2RuntimeControls';
+import { daemonSetupCommand } from '../utils/daemonSetupCommand';
 
 export interface Runtime extends RuntimeSettings {}
 
@@ -27,7 +29,7 @@ interface Placement {
   boundMachineId: string | null;
   requestedMachineId: string | null;
   boundMachineRevoked: boolean;
-  activeMachines: Array<{ machineId: string; name: string }>;
+  activeMachines: Array<{ machineId: string; name: string; createdAt?: string | null }>;
 }
 
 interface PlacementFailure {
@@ -49,7 +51,6 @@ const WALKED_ADAPTERS: Record<string, string> = {
   hermes: 'Hermes',
   dsh: 'DeepSeek Harness',
 };
-const DAEMON_SETUP_COMMAND = 'npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install';
 
 export const describeRuntime = (runtime: Runtime): { mode: 'native' | 'hosted' | 'daemon' | 'cli' | 'unknown'; adapter: string | null } => {
   const type = String(runtime.runtimeType || '').toLowerCase();
@@ -70,7 +71,7 @@ const dateLabel = (value: string | null): string => {
 const V2AgentRuntimeGrants: React.FC<Props> = ({
   name, instanceId, runtime, onSaveRuntime,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const api = useV2Api();
   const [grants, setGrants] = useState<AgentGrant[]>([]);
   const [loading, setLoading] = useState(true);
@@ -193,12 +194,12 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
               placement.activeMachines.length > 0 ? <>
                 <label htmlFor="agent-runtime-machine">{t('agentManage.runtime.moveLabel')}</label>
                 <select id="agent-runtime-machine" value={machineChoice} onChange={(event) => setMachineChoice(event.target.value)}>
-                  {placement.activeMachines.map((machine) => <option key={machine.machineId} value={machine.machineId}>{machine.name}</option>)}
+                  {placement.activeMachines.map((machine) => <option key={machine.machineId} value={machine.machineId}>{machineDisplayName(machine, placement.activeMachines, t, i18n.language)}</option>)}
                 </select>
                 <button type="button" disabled={!machineChoice || moving} onClick={() => { void moveAgent(); }}>
                   {moving ? t('agentManage.runtime.moving') : t('agentManage.runtime.move')}
                 </button>
-              </> : <p>{t('agentManage.runtime.noActiveMachine')} <code>{DAEMON_SETUP_COMMAND}</code></p>
+              </> : <p>{t('agentManage.runtime.noActiveMachine')} <code>{daemonSetupCommand()}</code></p>
             )}
           </div>
         )}

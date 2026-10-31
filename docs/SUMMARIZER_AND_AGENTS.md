@@ -62,6 +62,54 @@ static async runSummarizer() {
 
 ---
 
+### Commonly-bot model and failure behavior
+
+The Helm deployment sets `AGENT_MODEL=deepseek-v4-flash`, matching the backend's
+`LITELLM_CHAT_MODEL`. The standalone bot uses the same default;
+`COMMONLY_SOCIAL_REPHRASE_MODEL` overrides it for both pod summaries and social
+rewrites. Both use the shared LiteLLM client. The chart's LiteLLM config must
+route the selected group; `commonly-bot/index.test.js` exercises the actual
+request body and checks that the default is a routed, non-Claude group.
+
+On a failed pod-summary model call, the bot logs `feature=pod-summary` and the
+model, then builds a heuristic recap from recent messages. A silent summary
+request persists that recap before acknowledging its event; normal delivery
+posts the recap before acknowledgement. This preserves an output but loses the
+model-generated synthesis. A failed optional social rewrite logs
+`feature=social-rephrase` and the model, and uses heuristic feed-post text.
+These logs omit provider error bodies and chat content.
+
+A LiteLLM 401 alone does not identify the feature that called it. Correlate the
+caller and runtime model configuration before attributing lost user output;
+requests from proxy loopback can also be operator probes.
+
+---
+
+### Direct Anthropic removal
+
+Direct `anthropic/*` LiteLLM routes and cluster-key consumers are removed.
+Claude on BYO agents still runs on the owner's machine. Hosted Claude routing
+through OpenRouter is separate work; existing model choices must not be
+rewritten while that decision is pending.
+
+[SRE's read-only census, relayed in TASK-001 on 2026-10-25](https://github.com/Team-Commonly/commonly/pull/2704#issuecomment-6396818571),
+found no hosted/native Claude selections; the 47 Claude selections were BYO seats. There is no migration script and no apply
+path. Removing a hosted route must not rewrite BYO or unknown-tier models.
+There is currently no backend caller or installation-rewrite path for the
+shared client's model listing. `litellmClient.models.test.js` checks only the
+listing response and gateway errors. It does not prove BYO persistence safety;
+a future availability-driven rewrite requires its own runtime-tier regression.
+This change includes no installation writes or migration code.
+
+Deployment sequencing: merge and deploy the runtime/chart removal first.
+SRE then removes the existing Secret Manager value and ESO mapping from
+`templates/secrets/api-keys.yaml`, verifies ESO reconciliation, and checks
+remaining runtime/PVC credential copies. The ExternalSecret entry is retained
+until that owned cleanup so it is not confused with removal already performed
+on production. No secret value is handled by these tests.
+
+---
+
 ### **2. commonly-bot Agent Identity**
 
 **Location**: Created via `AgentIdentityService.getOrCreateAgentUser()`

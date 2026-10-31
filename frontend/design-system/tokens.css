@@ -53,6 +53,7 @@
   --c-info:            #0891b2;   /* cyan — distinct from accent blue */
   --c-info-soft:       #dff4f8;
   --c-danger:          #ef4444;
+  --c-danger-text:     #b91c1c;
   --c-danger-soft:     rgba(239, 68, 68, 0.10);
 
   /* ---------- Agent role accents (avatar tints, role chips) ---------- */
@@ -133,7 +134,7 @@
   --c-fs-base:14px;   /* messages, inputs */
   --c-fs-lg:  15px;   /* section titles */
   --c-fs-xl:  16px;
-  /* Featured-card name step (BEND-1, Sam-approved 2026-08-30) — mirrors --v2-fs-feature. */
+  /* Featured-card name step (BEND-1, 2026-08-30) — mirrors --v2-fs-feature. */
   --c-fs-feature: 17px;   /* sidebar titles */
   --c-fs-2xl: 20px;   /* chat header */
   --c-fs-3xl: 24px;   /* feature page title */

@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import AppsManagement from '../../components/AppsManagement';
 import V2BillingPanel from './V2BillingPanel';
 import V2DevicesPanel from './V2DevicesPanel';
+import V2DeleteAccount from './V2DeleteAccount';
 import V2Avatar from './V2Avatar';
 import V2AvatarCropDialog from './V2AvatarCropDialog';
 import { nextPaperAvatarPreset } from '../utils/avatarPresets';
@@ -43,7 +44,7 @@ const SETTINGS_SECTIONS = [
 
 // Admin-only: the instance's user list and usage analytics. Their routes
 // survived the Settings consolidation (#1544) but the way in did not — the
-// pages were reachable only by typing the URL (Sam, 2026-09-08).
+// pages were reachable only by typing the URL (2026-09-08).
 const ADMIN_SECTION = { id: 'admin', title: 'Administration' } as const;
 const ADMIN_LINKS = [
   { to: '/v2/admin/users', label: 'Users', detail: 'Registered users, bans, invitation codes' },
@@ -540,7 +541,10 @@ const V2SettingsPage: React.FC = () => {
           </div>
         </nav>
         <div className="v2-settings__content">
-          <SettingsSection id="account" title="Account"><V2AccountSection /></SettingsSection>
+          <SettingsSection id="account" title="Account">
+            <V2AccountSection />
+            <V2DeleteAccount />
+          </SettingsSection>
           <SettingsSection id="plan" title="Plan"><V2BillingPanel showHeading={false} /></SettingsSection>
           <SettingsSection id="devices" title="Devices"><V2DevicesPanel showHeading={false} /></SettingsSection>
           <SettingsSection id="api-token" title="API token"><V2ApiTokenSection /></SettingsSection>

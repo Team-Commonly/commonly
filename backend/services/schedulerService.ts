@@ -68,6 +68,9 @@ interface InstallationDoc {
     autonomy?: {
       enabled?: boolean;
     };
+    digestWake?: {
+      afterMinutes?: number;
+    };
   };
 }
 
@@ -126,6 +129,7 @@ interface CodexRefreshResult {
 }
 
 const HEARTBEAT_DISPATCH_LEASE_ID = 'agent-heartbeat-dispatch';
+const DIGEST_WAKE_DEFAULT_MINUTES = 60;
 // A rollout briefly runs the old and new schedulers together (~40 seconds).
 // Keep the lease long enough to cover that overlap, but shorter than the
 // one-minute cron cadence so an otherwise healthy tick is never skipped.
@@ -141,9 +145,14 @@ class SchedulerService {
 
   jobs: CronJob[];
 
+  // One-shot startup runs (5–30 s after start). stop() clears them, so a
+  // stopped scheduler never fires them later in the same process.
+  startupTimers: NodeJS.Timeout[];
+
   constructor() {
     this.isRunning = false;
     this.jobs = [];
+    this.startupTimers = [];
   }
 
   start(): void {
@@ -546,6 +555,25 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // A late upload can outlive the deletion request and fail its own cleanup.
+    // Durable intents contain only opaque user ids; this sweep can retry after
+    // the User row is gone. Deletes are idempotent across backend replicas.
+    const accountDeletionUploadJob: CronJob = cron.schedule(
+      '* * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { sweepAccountDeletions } = require('./accountDeletionService');
+          await sweepAccountDeletions();
+        } catch (error) {
+          const errorName = error instanceof AggregateError ? error.message
+            : error instanceof Error ? error.name : 'Unknown error';
+          console.error('[account-deletion] sweep failed:', errorName);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     const spawnCredentialReapJob: CronJob = cron.schedule(
       '*/5 * * * *',
       async () => {
@@ -596,6 +624,14 @@ class SchedulerService {
         } catch (error) {
           console.error('[spend-alarm] check failed:', error);
         }
+        // TASK-555: warn at 80% of any LiteLLM key budget (litellmBudgetAlarmService).
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { checkLiteLLMBudgets } = require('./litellmBudgetAlarmService');
+          await checkLiteLLMBudgets();
+        } catch (error) {
+          console.error('[budget-alarm] check failed:', (error as Error).message);
+        }
       },
       { scheduled: false, timezone: 'UTC' },
     );
@@ -623,6 +659,7 @@ class SchedulerService {
       decisionCardReconcileJob,
       approvalToolCallSweepJob,
       spawnCredentialReapJob,
+      accountDeletionUploadJob,
       spendAlarmJob,
       ...(process.env.SYNTHETIC_ACCOUNT_PURGE === 'true' ? [syntheticAccountPurgeJob] : []),
     ];
@@ -665,40 +702,40 @@ class SchedulerService {
     console.log('- Skills catalog refreshes from upstream every 6 hours (stars re-fetched via GitHub API)');
     console.log('- Installable reconciliation runs every 5 minutes (CAS/idempotent; no lease required)');
 
-    setTimeout(() => {
+    this.startupTimers.push(setTimeout(() => {
       SchedulerService.runSummarizer().catch((error) => {
         console.error('Error in initial summarizer run:', error);
       });
-    }, 5000);
+    }, 5000));
 
-    setTimeout(() => {
+    this.startupTimers.push(setTimeout(() => {
       externalFeedService.syncExternalFeeds().catch((error: unknown) => {
         console.error('Error in initial external feed sync:', error);
       });
-    }, 7000);
+    }, 7000));
 
-    setTimeout(() => {
+    this.startupTimers.push(setTimeout(() => {
       AgentEventService.garbageCollect().catch((error: unknown) => {
         console.error('Error in initial agent event GC:', error);
       });
-    }, 8000);
+    }, 8000));
 
-    setTimeout(() => {
+    this.startupTimers.push(setTimeout(() => {
       PodCurationService.runThemedPodAutonomy({ hours: 12, minMatches: 4 }).catch((error: unknown) => {
         console.error('Error in initial themed pod autonomy run:', error);
       });
-    }, 9000);
+    }, 9000));
 
-    setTimeout(() => {
+    this.startupTimers.push(setTimeout(() => {
       SchedulerService.dispatchScheduledAgentHeartbeats({
         trigger: 'startup',
         respectIntervals: true,
       }).catch((error: unknown) => {
         console.error('Error in initial heartbeat dispatch:', error);
       });
-    }, 11000);
+    }, 11000));
 
-    setTimeout(() => {
+    this.startupTimers.push(setTimeout(() => {
       if (!AgentEventService.isSessionResetDue()) return;
       AgentEventService.clearOpenClawSessionsForActiveInstallations({
         source: 'startup-session-reset',
@@ -706,17 +743,17 @@ class SchedulerService {
       }).catch((error: unknown) => {
         console.error('Error in initial OpenClaw session reset:', error);
       });
-    }, 12000);
+    }, 12000));
 
-    setTimeout(() => {
+    this.startupTimers.push(setTimeout(() => {
       AgentAutoJoinService.runAutoJoinAgentOwnedPods({ source: 'startup-autojoin' }).catch((error: unknown) => {
         console.error('Error in initial auto-join run:', error);
       });
-    }, 13000);
+    }, 13000));
 
     // Kick a skill catalog refresh 30s after startup so dev gets fresh data
     // without waiting for the first 6-hourly cron window.
-    setTimeout(() => {
+    this.startupTimers.push(setTimeout(() => {
       refreshSkillsIndex()
         .then((result: { refreshed: number; reposUpdated: number; reposTotal: number; errors: Error[] }) => {
           console.log(
@@ -727,7 +764,7 @@ class SchedulerService {
         .catch((error: unknown) => {
           console.error('[skills-refresh] Startup refresh failed:', error);
         });
-    }, 30000);
+    }, 30000));
   }
 
   stop(): void {
@@ -742,6 +779,8 @@ class SchedulerService {
         job.stop();
       }
     });
+    this.startupTimers.forEach((timer) => clearTimeout(timer));
+    this.startupTimers = [];
     this.jobs = [];
     this.isRunning = false;
     activeScheduler = null;
@@ -1144,43 +1183,69 @@ class SchedulerService {
     return { ...result, enqueued: result.enqueued + unreadWakes, skippedByLease: false };
   }
 
+  /**
+   * How long digest may sit unread before it wakes the seat:
+   * `config.digestWake.afterMinutes`, 60 by default, clamped to 60..1440.
+   * A seat whose digest wakes rarely produce anything can be given a longer
+   * wait; its digest stays unread and rides its next wake of any kind.
+   */
+  static resolveDigestWakeAfterMinutes(installation?: InstallationDoc | null): number {
+    const raw = Number(installation?.config?.digestWake?.afterMinutes);
+    if (!Number.isFinite(raw)) return DIGEST_WAKE_DEFAULT_MINUTES;
+    return Math.max(DIGEST_WAKE_DEFAULT_MINUTES, Math.min(1440, Math.trunc(raw)));
+  }
+
   /** One slow wake for a pod with unread digest, never for an empty inbox. */
   static async dispatchUnreadDigestHeartbeats(now: Date = new Date()): Promise<number> {
-    const threshold = new Date(now.getTime() - 60 * 60 * 1000);
+    // The default is also the shortest wait, so this query finds every candidate.
+    const threshold = new Date(now.getTime() - DIGEST_WAKE_DEFAULT_MINUTES * 60 * 1000);
     const rawGroups = await AgentEvent.aggregate([
       { $match: { status: 'pending', deliveryMode: 'digest', createdAt: { $lte: threshold } } },
       { $group: {
         _id: { agentName: '$agentName', instanceId: '$instanceId', podId: '$podId' },
+        oldestAt: { $min: '$createdAt' },
       } },
-    ]) as Array<{ _id: { agentName: string; instanceId: string; podId: unknown } }>;
+    ]) as Array<{ _id: { agentName: string; instanceId: string; podId: unknown }; oldestAt: Date }>;
     const foldedGroups = await AgentDigestState.find({ unreadCount: { $gt: 0 }, unreadSince: { $lte: threshold } })
-      .select('agentName instanceId podId').lean() as Array<{ agentName: string; instanceId: string; podId: unknown }>;
-    const groups = [...new Map([...rawGroups.map((row) => row._id), ...foldedGroups]
-      .map((scope) => [`${scope.agentName}:${scope.instanceId}:${scope.podId}`, { _id: scope }])).values()];
+      .select('agentName instanceId podId unreadSince').lean() as Array<{
+        agentName: string; instanceId: string; podId: unknown; unreadSince: Date;
+      }>;
+    const groups = new Map<string, { scope: { agentName: string; instanceId: string; podId: unknown }; oldestAt: Date }>();
+    const addGroup = (scope: { agentName: string; instanceId: string; podId: unknown }, at: Date) => {
+      const key = `${scope.agentName}:${scope.instanceId}:${scope.podId}`;
+      const existing = groups.get(key);
+      if (!existing || at < existing.oldestAt) groups.set(key, { scope, oldestAt: at });
+    };
+    rawGroups.forEach((row) => addGroup(row._id, new Date(row.oldestAt)));
+    foldedGroups.forEach(({ agentName, instanceId, podId, unreadSince }) => (
+      addGroup({ agentName, instanceId, podId }, new Date(unreadSince))));
     let enqueued = 0;
-    for (const row of groups) {
+    for (const { scope: rowScope, oldestAt } of groups.values()) {
       const scope = {
-        agentName: row._id.agentName,
-        instanceId: row._id.instanceId || 'default',
-        podId: row._id.podId,
+        agentName: rowScope.agentName,
+        instanceId: rowScope.instanceId || 'default',
+        podId: rowScope.podId,
       };
       // A retired projection has no listener. Its old digest remains for GC,
       // but must not create a new wake every hour.
       // eslint-disable-next-line no-await-in-loop
-      const active = await AgentInstallation.exists({
+      const active: InstallationDoc | null = await AgentInstallation.findOne({
         ...scope, status: 'active', 'config.autonomy.enabled': { $ne: false },
-      });
+      }).select('config.digestWake').lean();
       if (!active) continue;
+      const waitMs = SchedulerService.resolveDigestWakeAfterMinutes(active) * 60 * 1000;
+      if (now.getTime() - oldestAt.getTime() < waitMs) continue;
+      const windowStart = new Date(now.getTime() - waitMs);
       // An existing wake will carry the digest. A recent completed wake says
-      // the seat has already had a turn inside this 60-minute window.
+      // the seat has already had a turn inside this install's wait.
       // eslint-disable-next-line no-await-in-loop
       const [pendingWake, recentWake] = await Promise.all([
         AgentEvent.exists({ ...scope, status: 'pending', deliveryMode: { $ne: 'digest' } }),
         AgentEvent.exists({ ...scope, deliveryMode: { $ne: 'digest' }, $or: [
-          { status: { $in: ['delivered', 'acked'] }, deliveredAt: { $gte: threshold } },
+          { status: { $in: ['delivered', 'acked'] }, deliveredAt: { $gte: windowStart } },
           // AgentEvent timestamps update on every failed transition, including
           // failures before delivery and failures after an older delivery.
-          { status: 'failed', updatedAt: { $gte: threshold } },
+          { status: 'failed', updatedAt: { $gte: windowStart } },
         ] }),
       ]);
       if (pendingWake || recentWake) continue;

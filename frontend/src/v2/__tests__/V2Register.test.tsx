@@ -131,13 +131,14 @@ describe('V2Register', () => {
 
   it('sends the first-touch ref with the signup', async () => {
     localStorage.setItem('commonly.firstTouchRef', JSON.stringify({ ref: 'x' }));
+    localStorage.setItem('commonly.signupSource.v1', JSON.stringify({ landingPath: '/guides/start', ref: 'x' }));
     renderRegister();
 
     await createAccount();
 
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
       '/api/auth/register',
-      expect.objectContaining({ signupRef: 'x' }),
+      expect.objectContaining({ signupRef: 'x', signupSource: expect.objectContaining({ landingPath: '/guides/start', ref: 'x' }) }),
     ));
     localStorage.clear();
   });
@@ -313,5 +314,18 @@ describe('V2Register invite code handoff', () => {
 
     const body = await submit();
     expect(body.invitationCode).toBe('CM-KEPT');
+  });
+});
+
+// Launch row 2: signup links the Terms and Privacy pages it asks people to agree to.
+describe('V2Register legal links', () => {
+  beforeEach(() => {
+    axios.get.mockResolvedValue({ data: { inviteOnly: false, providers: [] } });
+  });
+
+  it('links Terms and Privacy under the form', async () => {
+    renderRegister();
+    expect(await screen.findByRole('link', { name: 'Terms' })).toHaveAttribute('href', '/terms');
+    expect(screen.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy');
   });
 });

@@ -119,7 +119,7 @@ describe('native runtime: recent pod messages inline (recentMessages)', () => {
     ]);
     await runAgent(installationWith({ recentMessages: 3 }), trigger);
 
-    expect(PgMessage.findByPodId).toHaveBeenCalledWith('pod-1', 4);
+    expect(PgMessage.findByPodId).toHaveBeenCalledWith('pod-1', 4, null);
     const sent = sentUserMessage();
     expect(sent.startsWith('Recent messages in this pod, oldest first')).toBe(true);
     const block = sent.split('\n\n')[0];
@@ -144,7 +144,7 @@ describe('native runtime: recent pod messages inline (recentMessages)', () => {
   test('one long message is clipped, and the count is capped', async () => {
     PgMessage.findByPodId.mockResolvedValue([row('m1', 'hamza', 'x'.repeat(RECENT_MESSAGE_CHARS + 500)), row('m4', 'hamza', 'claude code')]);
     await runAgent(installationWith({ recentMessages: 999 }), trigger);
-    expect(PgMessage.findByPodId).toHaveBeenCalledWith('pod-1', RECENT_MESSAGES_MAX + 1);
+    expect(PgMessage.findByPodId).toHaveBeenCalledWith('pod-1', RECENT_MESSAGES_MAX + 1, null);
     const line = sentUserMessage().split('\n').find((l) => l.startsWith('- hamza: x'));
     expect(line.length).toBeLessThanOrEqual('- hamza: '.length + RECENT_MESSAGE_CHARS + 1);
   });

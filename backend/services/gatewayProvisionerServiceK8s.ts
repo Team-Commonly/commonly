@@ -306,10 +306,6 @@ const createOrUpdateDeployment = async ({
                   valueFrom: { secretKeyRef: { name: 'api-keys', key: 'gemini-api-key' } },
                 },
                 {
-                  name: 'ANTHROPIC_API_KEY',
-                  valueFrom: { secretKeyRef: { name: 'api-keys', key: 'anthropic-api-key', optional: true } },
-                },
-                {
                   name: 'OPENAI_API_KEY',
                   valueFrom: { secretKeyRef: { name: 'api-keys', key: 'openai-api-key', optional: true } },
                 },

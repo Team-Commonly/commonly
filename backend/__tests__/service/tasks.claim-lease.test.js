@@ -320,7 +320,7 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
   // A lease timestamp is not an event. Renewals fanned a wake to every seat
   // in the pod, each burning a model turn to conclude "nothing new" — 4 wakes
   // for one task in one session, with seats meta-discussing the noise
-  // (measured in Sharpen, 2026-08-25). The board UI still updates via the
+  // (measured in a pod, 2026-08-25). The board UI still updates via the
   // socket emit; only the agent fan-out is gated.
   describe('renewal wakes nobody — the fan-out fires only on news', () => {
     beforeEach(() => {
@@ -578,6 +578,21 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
       .send({ text: 'Change priority', priority: 'P3', continueAnyway: true });
     expect(response.status).toBe(409);
     expect((await Task.findOne({ podId: pod._id, taskId: 'T-1' })).priority).toBe('P1');
+  });
+
+  // A seat that omits podId reaches these routes with the literal "undefined"
+  // in the path (the MCP interpolates it). That used to throw a Pod CastError
+  // and answer 500, which seats read as the board being down.
+  test.each([
+    ['list', (path) => request(app).get(path)],
+    ['claim', (path) => request(app).post(`${path}/T-1/claim`).send({})],
+    ['note', (path) => request(app).post(`${path}/T-1/updates`).send({ text: 'renewal' })],
+  ])('an agent %s with podId "undefined" is a 400 naming podId, not a 500', async (_label, send) => {
+    await seedTask();
+    const res = await send('/api/v1/tasks/undefined').set('Authorization', `Bearer ${AGENT_TOKEN}`);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('podId must be a pod id');
+    expect((await Task.findOne({ podId: pod._id, taskId: 'T-1' })).status).toBe('pending');
   });
 
 });

@@ -41,7 +41,7 @@ const AgentEventService = require('../../../services/agentEventService');
 const AgentEvent = require('../../../models/AgentEvent');
 const Task = require('../../../models/Task');
 const User = require('../../../models/User');
-const { notifyPodAgents, notifyFoundWork } = require('../../../services/taskEventService');
+const { notifyPodAgents, notifyFoundWork, notifyLeaseWarning } = require('../../../services/taskEventService');
 
 const POD_ID = new mongoose.Types.ObjectId().toString();
 const HUMAN_ID = new mongoose.Types.ObjectId().toString();
@@ -230,7 +230,7 @@ describe('notifyPodAgents', () => {
     mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
 
     await notifyPodAgents(POD_ID, task({ assignee: 'sprint-impl' }), 'updated',
-      { userId: HUMAN_ID, isAgent: false }, { assignee: 'scout' });
+      { userId: AGENT_ID, isAgent: true }, { assignee: 'scout' });
 
     // A messageId would re-engage the wrapper's claim gate and put us back to
     // one-looker-per-change — dedupe at the wrong layer. Contention belongs on
@@ -260,7 +260,7 @@ describe('notifyPodAgents', () => {
     await notifyPodAgents(POD_ID, task(), 'updated', { userId: AGENT_ID, isAgent: true });
 
     const [, update] = AgentEvent.findOneAndUpdate.mock.calls[0];
-    expect(update.$set).toBeUndefined();
+    expect(update.$set).toEqual({ 'payload.wakeReason': 'assignee' });
   });
 
   it('never wakes the actor about their own edit', async () => {
@@ -633,5 +633,41 @@ describe('notifyFoundWork', () => {
 
     expect(AgentEventService.enqueue).not.toHaveBeenCalled();
     expect(mockTaskUpdateOne).not.toHaveBeenCalled();
+  });
+});
+
+// TASK-581: a wake carries other 24-hex ids (owner, event, delivery). Fresh
+// seat sessions called commonly_*_task without podId until the board's pod was
+// stated on a line of its own, naming that id and no other.
+describe('board wakes name their pod', () => {
+  const offerRows = (count) => Array.from({ length: count }, (_, index) => ({
+    _id: `row-${index + 1}`,
+    taskId: `TASK-${index + 1}`,
+    title: `Task ${index + 1}`,
+    updatedAt: new Date(`2026-08-20T20:00:${String(index).padStart(2, '0')}.000Z`),
+  }));
+  const boardLine = (content) => content.split('\n').filter((line) => line.startsWith('Board pod: '));
+  const expectBoardLine = (content) => {
+    expect(boardLine(content)).toEqual([`Board pod: ${POD_ID}; pass it as podId to every commonly_*_task call.`]);
+    for (const other of [HUMAN_ID, AGENT_ID]) expect(boardLine(content)[0]).not.toContain(other);
+  };
+
+  it('in the board-moved wake', async () => {
+    mockInstalls([install('scout', HUMAN_ID)]);
+    await notifyPodAgents(POD_ID, task(), 'created', { userId: HUMAN_ID, isAgent: false });
+    expectBoardLine(AgentEventService.enqueue.mock.calls[0][0].payload.content);
+  });
+
+  it('in the found-work wake', async () => {
+    mockInstalls([install('scout', HUMAN_ID)]);
+    const rows = offerRows(2);
+    await notifyFoundWork(POD_ID, rows, rows.length, new Date('2026-08-20T20:00:00.000Z'));
+    expectBoardLine(AgentEventService.enqueue.mock.calls[0][0].payload.content);
+  });
+
+  it('in the lapsed-lease warning', async () => {
+    AgentEvent.findOneAndUpdate.mockResolvedValueOnce(null);
+    await notifyLeaseWarning(POD_ID, { agentName: 'scout', instanceId: 'default', label: 'scout' }, { taskId: 'TASK-042', title: 't' }, 0, 2);
+    expectBoardLine(AgentEventService.enqueue.mock.calls[0][0].payload.content);
   });
 });

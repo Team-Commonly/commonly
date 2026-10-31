@@ -88,7 +88,7 @@ and [the recovery boundary](../../docs/design/signal-recovery-2026-09-07.md).
 In particular, the open-decision primary option is cobalt; ordinary Activity
 Reply/Open/Mark handled controls are bordered secondary controls.
 
-- **One accent**: blue `#2f6feb`. Never blends with another. Filled buttons are **ink** `#111827` (hover `#1f2937`); blue is for links, the mention mark, the active nav row and tab underline (2px), the LEAD badge, the unread counter and the **focus halo**. One accent still — it no longer paints buttons (Sam, 2026-09-03, TASK-122).
+- **One accent**: blue `#2f6feb`. Never blends with another. Filled buttons are **ink** `#111827` (hover `#1f2937`); blue is for links, the mention mark, the active nav row and tab underline (2px), the LEAD badge, the unread counter and the **focus halo**. One accent still — it no longer paints buttons (2026-09-03, TASK-122).
 - **Neutrals do most of the work**: `#111827` (text), `#4b5563` (secondary), `#7b8494` (tertiary), `#8a93a3` (muted/placeholder).
 - **Backgrounds layer as one tint step**: shell `#f1f1f4` behind rail, pods and inspector; the content pane is an inset white card with a 1px `#e5e7eb` ring and 14px radius; inside the card the ground is white. `#f8f8fb` remains the page canvas behind the shell.
 - **Semantic** colors stay desaturated: success `#10b981`, warning `#f4a23a`, danger `#ef4444`. Info is `#0891b2` (cyan, deliberately off-axis from accent blue). Always paired with their `*-soft` background tint for badges/chips.
@@ -177,7 +177,7 @@ entrance and scroll-reveal animation is allowed within these limits:
 ### Imagery vibe
 
 - **No stock photography or illustration in chrome.** When images appear, they are user-generated (uploaded files in messages, avatars, screenshots in posts).
-- Avatars use **4px square frames**. Uploaded photos win; otherwise known humans and agents render deterministic faces from **Commonly's own avatar kit** ("Cut", `src/v2/utils/avatarKit.ts`: flat paper shapes, about 1 KB of SVG each), with separate background families, and agents dressed in ink with a cobalt collar. The compact chat and thread style keeps those faces (Sam, 2026-09-08); initials are a fallback for unknown identity or generation failure. Seed on the user ID when available so chat and the inspector agree, with `agentName:instanceId` as the agent fallback. Display-name changes must not change the face. Big Smile is **CC BY 4.0**; retain the visible DiceBear credit on login. The brand mascot is separate from the avatar system.
+- Avatars use **4px square frames**. Uploaded photos win; otherwise known humans and agents render deterministic faces from **Commonly's own avatar kit** ("Cut", `src/v2/utils/avatarKit.ts`: flat paper shapes, about 1 KB of SVG each), with separate background families, and agents dressed in ink with a cobalt collar. The compact chat and thread style keeps those faces (2026-09-08); initials are a fallback for unknown identity or generation failure. Seed on the user ID when available so chat and the inspector agree, with `agentName:instanceId` as the agent fallback. Display-name changes must not change the face. Big Smile is **CC BY 4.0**; retain the visible DiceBear credit on login. The brand mascot is separate from the avatar system.
 
 ### Layout rules
 
@@ -210,7 +210,7 @@ entrance and scroll-reveal animation is allowed within these limits:
 - **Style**: outlined / line icons at `20–24px`, `1.5–2px` stroke weight (MUI default outlined). Filled variants are used for **active states only** (e.g. starred pod, selected tab).
 - **No emoji in chrome.** Emoji are reserved for user-typed content (reactions, message body). The marketplace and pods do not use emoji as identifiers.
 - **No unicode glyph icons** (no `→`, `✓`, `★` as decoration). Real SVG/icon-font icons only.
-- **Categories are glyphs; only the deciding act is a word** (Sam, 2026-09-11). Ask kinds, modes, statuses, platforms and outcomes render as 16px marks (`frontend/src/v2/icons/glyphs.tsx`); secondary acts are 32px icon buttons with the word in `title` and the accessible name; the primary act keeps its label. Full rule and the measurement behind it: `docs/design/signal-identity.md` §4 *Marks and acts*.
+- **Categories are glyphs; only the deciding act is a word** (2026-09-11). Ask kinds, modes, statuses, platforms and outcomes render as 16px marks (`frontend/src/v2/icons/glyphs.tsx`); secondary acts are 32px icon buttons with the word in `title` and the accessible name; the primary act keeps its label. Full rule and the measurement behind it: `docs/design/signal-identity.md` §4 *Marks and acts*.
 - **Brand mark**: `assets/commonly-mark.svg` — a stylized C arc with three centered dots. Uses `currentColor` so it inherits the brand blue at 28×28 in the rail; switches to white on the marketing dark hero. Full logo PNG (`assets/commonly-logo.png`) is reserved for marketing, README, and login.
 - **Avatar fallbacks** are uppercase initials on a role-tinted circle — the "icon" of every user/agent.
 
@@ -226,7 +226,7 @@ entrance and scroll-reveal animation is allowed within these limits:
 
 ## Identity: Signal (chosen 2026-09-03)
 
-Sam chose this on the Shell Parity canvas from three directions (Studio, Workshop, Signal). It is one system at two volumes, never a hybrid:
+Chosen on the Shell Parity canvas from three directions (Studio, Workshop, Signal). It is one system at two volumes, never a hybrid:
 
 - **Cobalt `#1d3fd1` is the one colour.** On marketing surfaces (landing, connect, create account) it is used as **blocks**: the hero band, the wordmark underlines. Inside the app it is only ever a **mark**: the live dot, the agent's name in mono, the one card that needs you (2px cobalt ring), a link. Ordinary filled actions such as Send are **ink** `#101828`. The primary option of an open decision card is the explicit **cobalt** exception; alternative options and Activity Reply/Open/Mark handled controls are bordered. Other… is cobalt text. Preserve the agent’s option order in the thread and Activity. Keep the first option cobalt and show plain “Recommended” text on whichever option carries `recommended`, including its accessible name; an unflagged option has no such label. Do not sort or require recommended-first authoring. See [Signal §1/§3](../../docs/design/signal-identity.md) and the [2026-09-07 recovery](../../docs/design/signal-recovery-2026-09-07.md).
 - **Three faces, one job each.** Bricolage Grotesque for display (700/800), IBM Plex Sans for body and controls (14/20), IBM Plex Mono for meta (timestamps, ids, status, lowercase labels). Self-hosted via `@fontsource`.

@@ -82,3 +82,35 @@ test('closes the downstream client when an upstream response ends incomplete', a
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('without a socket path the relay listens on a loopback port to the same origin', async () => {
+  let seen;
+  const target = createServer((request, response) => {
+    seen = { path: request.url, host: request.headers.host, proxyAuth: request.headers['proxy-authorization'] };
+    response.end('ok');
+  });
+  await new Promise((resolve) => target.listen(0, '127.0.0.1', resolve));
+  const origin = `127.0.0.1:${target.address().port}`;
+  let proxy;
+  try {
+    proxy = await startInstanceProxy({ instanceUrl: `http://${origin}` });
+    expect(proxy.socketPath).toBeNull();
+    expect(proxy.url).toBe(`http://127.0.0.1:${proxy.port}`);
+    const response = await fetch(`${proxy.url}/api/agents/runtime/pods/p/context`, {
+      headers: { 'proxy-authorization': 'Basic x' },
+    });
+    expect(await response.text()).toBe('ok');
+    expect(seen).toEqual({ path: '/api/agents/runtime/pods/p/context', host: origin, proxyAuth: undefined });
+    // An absolute-form target is refused, not followed to another origin.
+    const client = connect(proxy.port, '127.0.0.1');
+    await once(client, 'connect');
+    client.write('GET //elsewhere.example/ HTTP/1.1\r\nHost: x\r\n\r\n');
+    const [chunk] = await once(client, 'data');
+    expect(String(chunk)).toMatch(/^HTTP\/1\.1 400/);
+    client.destroy();
+  } finally {
+    await proxy?.close();
+    target.closeAllConnections();
+    await new Promise((resolve) => target.close(resolve));
+  }
+});

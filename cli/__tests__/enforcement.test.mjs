@@ -638,7 +638,7 @@ describe('deliverChatReply', () => {
     ]);
   });
 
-  // Prose overflow is a THREAD now, not an attachment (Sam 57691).
+  // Prose overflow is a THREAD now, not an attachment.
   //
   // These pin the rung itself, not just its return value. The old behaviour
   // and the new one both post a first message containing the reply's opening
@@ -765,7 +765,7 @@ describe('deliverChatReply', () => {
 
   // Was 'a document-sized reply uploads whole and posts one lead message with
   // the file card'. Its fixture is eight paragraphs of prose, which is the
-  // case Sam 57691 reclassified: prose that outgrew a message is not a
+  // case that was reclassified: prose that outgrew a message is not a
   // document. The test's INTENT — nothing is cut, the whole reply survives —
   // is preserved verbatim below, now carried by the thread instead of a file.
   test('a document-sized reply keeps every word, now in a thread rather than a file', async () => {
@@ -933,8 +933,8 @@ describe('deliverChatReply', () => {
 // TASK-535. A long turn ends after the pod has moved on, and the backend's
 // send-time freshness guard answers every post with 409 `unseen_messages`.
 // Before the fix the thread headline, the attach card and the split fallback
-// each hit that same hold in turn (rhea, 2026-10-25 10:01Z) and the reply was
-// lost. These pin the CTO ruling: on the first hold of a delivery, re-read the
+// each hit that same hold in turn and the reply was
+// lost. These pin the rule: on the first hold of a delivery, re-read the
 // pod tail ONCE, then post with continueAnyway — and every word still lands
 // exactly once.
 describe('deliverChatReply — the unseen-messages hold at end of turn (TASK-535)', () => {
@@ -1023,7 +1023,7 @@ describe('deliverChatReply — the unseen-messages hold at end of turn (TASK-535
   });
 
   test('the override is per DELIVERY: a later rung carries it without a second re-read', async () => {
-    // The rhea shape with the fix in place, made harder: the override retry
+    // The same shape with the fix in place, made harder: the override retry
     // on the thread headline dies for an unrelated reason, so the ladder
     // falls through to attach. That rung must not re-read or wait for its own
     // hold — it posts with the override straight away.

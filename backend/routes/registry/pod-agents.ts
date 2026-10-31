@@ -23,6 +23,7 @@ const {
   resolveInstallation,
   buildAgentProfileId,
   buildAgentInstallationPayload,
+  resolveSeatRuntimeIdentities,
 } = require('./helpers');
 
 const podAgentsRouter = express.Router();
@@ -299,7 +300,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       console.warn('[pod-agents] connection lookup failed:', (connectionErr as Error).message);
     }
 
-    // Last thing each agent said in THIS pod (Wren spec §1.1 line 2).
+    // Last thing each agent said in THIS pod (spec §1.1 line 2).
     // Advisory like the activity map: a PG hiccup must never fail the roster.
     let lastMessageByUserId = new Map<string, { content: string; createdAt: unknown }>();
     try {
@@ -317,7 +318,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       console.warn('[pod-agents] last-message lookup failed:', (snippetErr as Error).message);
     }
 
-    // Day-zero step 2 (#1648, ux-lead 67071 / sprint-impl 67078): "Say something to it" closes
+    // Day-zero step 2 (#1648): "Say something to it" closes
     // on the caller's own message in this pod, reply or not. A seat's install intro, a heartbeat
     // or a teammate's post is not the caller speaking, so no per-agent field can carry this.
     // Advisory like the snippet: a PG hiccup reads as "not yet", never as a failed roster.
@@ -330,8 +331,17 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       console.warn('[pod-agents] caller-spoke lookup failed:', (spokeErr as Error).message);
     }
 
+    // A seat's runtime identity comes from its newest install in any pod
+    // (TASK-569). Advisory: on a failed read each install shows its own.
+    let seatRuntimeIdentities = new Map<string, Record<string, unknown>>();
+    try {
+      seatRuntimeIdentities = await resolveSeatRuntimeIdentities(installations);
+    } catch (identityErr) {
+      console.warn('[pod-agents] runtime identity lookup failed:', (identityErr as Error).message);
+    }
+
     // A push webhook's URL can carry a credential in its query string, so only
-    // its installer and instance admins see it (Cofounder's hardening ruling,
+    // its installer and instance admins see it (hardening ruling,
     // 2026-10-21). The admin lookup runs only when the roster holds a URL the
     // viewer did not install.
     const viewerId = String(userId);
@@ -360,6 +370,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           user,
           lastMessage: (user && lastMessageByUserId.get(String(user._id))) || null,
           revealWebhookUrl: viewerIsAdmin || installedByViewer(i),
+          runtimeIdentity: seatRuntimeIdentities.get(instanceKey) || null,
         });
         const runtimeType = payload?.runtime?.runtimeType;
         // A provisioned in-process seat needs no external connection. Its
@@ -370,16 +381,32 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         // Legacy local-cli installs are normalized to their harness name
         // (codex/claude-code) in the public payload. Host, not that label,
         // identifies a BYO listener whose credential use proves liveness.
+        // A seat bound to a daemon machine is a wrapper whatever its install
+        // label says: manage-settings projects it as `wrapper` for the same
+        // reason. Without this, a running daemon-managed seat carried no
+        // connection and Settings rendered "Connection status unavailable".
+        // The runtime type is projected as `wrapper` too: Settings keys its
+        // machine-key action and Reconnect link on that field, not on connection.
+        const machineId = user?.botMetadata?.machineId;
+        const daemonBound = Boolean(machineId);
+        // The harness label moves to `adapter`, so the chat tag keeps naming it.
+        const seatPayload = daemonBound
+          ? { ...payload, runtime: {
+            ...payload?.runtime,
+            runtimeType: 'wrapper',
+            adapter: payload?.runtime?.adapter || payload?.runtime?.runtimeType,
+          } }
+          : payload;
         const hasRuntimeConnection = payload?.runtime?.host === 'byo'
           || runtimeType === 'wrapper'
+          || daemonBound
           || (runtimeType === 'webhook' && !payload?.runtime?.host);
         if (!connectionAvailable || !user || !hasRuntimeConnection
-          || normalizeConfigMap(i.config)?.runtime?.webhookUrl) return payload;
-        const machineId = user.botMetadata?.machineId;
+          || normalizeConfigMap(i.config)?.runtime?.webhookUrl) return seatPayload;
         return {
-          ...payload,
+          ...seatPayload,
           connection: deriveAgentConnection({
-            runtimeType,
+            runtimeType: daemonBound ? 'wrapper' : runtimeType,
             credentials: credentialByAgent.get(String(user._id)) || [],
             machineCredentials: credentialByMachine.get(String(machineId)) || [],
             embeddedTokens: [...(user.agentRuntimeTokens || []), ...(i.runtimeTokens || [])],
@@ -453,9 +480,18 @@ podAgentsRouter.get('/pods/:podId/agents/:name', auth, async (req: any, res: any
       || templateCandidates[0]
     )?.iconUrl || '';
 
+    let runtimeIdentity = null;
+    try {
+      const identities = await resolveSeatRuntimeIdentities([installation]);
+      runtimeIdentity = identities.values().next().value || null;
+    } catch (identityErr) {
+      console.warn('[pod-agents] runtime identity lookup failed:', (identityErr as Error).message);
+    }
+
     return res.json({
       agent: buildAgentInstallationPayload(installation, {
         profile,
+        runtimeIdentity,
         iconUrl: templateIcon || registryEntry?.iconUrl || '',
         revealWebhookUrl: installedBy === String(userId)
           || (Boolean(normalizeConfigMap(installation.config)?.runtime?.webhookUrl)

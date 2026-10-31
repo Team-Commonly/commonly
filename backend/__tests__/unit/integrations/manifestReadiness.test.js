@@ -53,15 +53,15 @@ describe('installable connector manifest readiness', () => {
     expect(manifests.slack.readiness()).toEqual({ available: false, reason: 'not_configured' });
   });
 
-  it('accepts Telegram only with its secret token or the explicit unverified override', () => {
+  it('accepts Telegram only with its secret token', () => {
     process.env.TELEGRAM_BOT_TOKEN = 'configured';
     expect(manifests.telegram.readiness()).toEqual({ available: false, reason: 'not_configured' });
 
-    process.env.TELEGRAM_SECRET_TOKEN = 'configured';
-    expect(manifests.telegram.readiness()).toEqual({ available: true });
-
-    delete process.env.TELEGRAM_SECRET_TOKEN;
+    // The removed bypass flag no longer makes the provider look ready (D137 A9).
     process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED = 'true';
+    expect(manifests.telegram.readiness()).toEqual({ available: false, reason: 'not_configured' });
+
+    process.env.TELEGRAM_SECRET_TOKEN = 'configured';
     expect(manifests.telegram.readiness()).toEqual({ available: true });
   });
 

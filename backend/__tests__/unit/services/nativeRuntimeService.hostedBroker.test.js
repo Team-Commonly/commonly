@@ -10,7 +10,7 @@
 //   - the dispatch uses the projection's grant/tool and the run's seat id;
 //   - a broker call is recorded by reference (callId + outcome), never by value;
 //   - the runtime calls the broker on EVERY call, which is what lets a
-//     mid-run revocation refuse the second one (vera 73751).
+//     mid-run revocation refuse the second one.
 const mockAxiosPost = jest.fn();
 jest.mock('axios', () => ({ __esModule: true, default: { post: (...args) => mockAxiosPost(...args) } }));
 
@@ -113,7 +113,7 @@ const LIVE_GRANT = {
 };
 
 // A second row for the SAME (agentName, instanceId) pair that happens to be a
-// pod member too — the ambiguity wren 73887 named, and the reason the identity is
+// pod member too — the ambiguity a review named, and the reason the identity is
 // resolved by the unique username instead of by the pair. A name-pair query can
 // answer with this row, and a grant minted for it would then be executed on its
 // behalf inside a conversation it is not posting in.
@@ -129,7 +129,7 @@ const OTHER_IN_POD_SEAT_GRANT = {
 // A grant minted for a row that is NOT a member of the pod the run happens in.
 // A `seat` target carries no pod condition in the projection, so the only thing
 // standing between this grant and execution inside someone else's pod is the
-// identity resolution that feeds it (vera's HOLD on #1880).
+// identity resolution that feeds it.
 const OUT_OF_POD_ROW = 'row-a';
 const OUT_OF_POD_SEAT_GRANT = {
   grantId: 'grant-elsewhere',
@@ -226,7 +226,7 @@ describe('a hosted run in a granted pod', () => {
       agentName: 'scout',
       instanceId: 'default',
       // A hosted turn has no shell, web or file tools, so the
-      // seat-confinement refusal is out of scope for it (Wren, TASK-175).
+      // seat-confinement refusal is out of scope for it (TASK-175).
       hostedTurn: true,
       noOutboundRelay: false,
       runId: 'run-1',
@@ -372,7 +372,7 @@ describe('a hosted run in a granted pod', () => {
     expect(mockAxiosPost.mock.calls[0][1].tools.some((tool) => tool.function.name.startsWith('github'))).toBe(false);
   });
 
-  test('two rows share the name pair and both are in the pod: the run follows the row it posts as (wren 73887)', async () => {
+  test('two rows share the name pair and both are in the pod: the run follows the row it posts as', async () => {
     // The ambiguity, walked. `User.find` (the name-pair query) answers with
     // `row-other`, which IS a pod member, so the old resolution would have
     // selected it and executed its grant — while the chat posts as `SEAT`, the
@@ -393,7 +393,7 @@ describe('a hosted run in a granted pod', () => {
     }));
   });
 
-  test('a grant for a row that is not in this pod is not executed here, and nothing is substituted (vera 73879)', async () => {
+  test('a grant for a row that is not in this pod is not executed here, and nothing is substituted', async () => {
     // The identity the run resolves to exists but is not a member of the pod the
     // run happens in, and a grant is live for it. The projection's seat arm has
     // no pod condition, so this resolution is the only gate there is.
@@ -505,7 +505,7 @@ describe('resolveSeatUserId', () => {
     expect(mockSeatFindOne).toHaveBeenCalledWith({ username: 'commonly-bot' });
   });
 
-  test('a row that is not a member of this pod is empty, never another row’s identity (vera 73879)', async () => {
+  test('a row that is not a member of this pod is empty, never another row’s identity', async () => {
     mockSeatFindOne.mockReturnValue(seatRow({ _id: OUT_OF_POD_ROW }));
     expect(await resolveSeatUserId(POD, 'scout', 'default')).toBe('');
   });

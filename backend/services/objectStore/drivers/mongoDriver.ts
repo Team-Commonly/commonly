@@ -45,6 +45,13 @@ export class MongoObjectStore implements ObjectStore {
     };
   }
 
+  async deletePrefix(prefix: string): Promise<void> {
+    if (!prefix) throw new Error('An object deletion prefix is required');
+    // Keys are indexed. The range matches this exact prefix, not a regex
+    // supplied by a caller; upload namespaces contain only ASCII characters.
+    await MediaObject.deleteMany({ key: { $gte: prefix, $lt: `${prefix}\uffff` } });
+  }
+
   async delete(key: string): Promise<void> {
     await MediaObject.deleteOne({ key });
   }

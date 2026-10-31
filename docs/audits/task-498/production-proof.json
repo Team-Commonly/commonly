@@ -1,0 +1,21 @@
+{
+  "mode": "production",
+  "api": "controlled fixtures; no deployed walk",
+  "measurements": [
+    {
+      "width": 1440,
+      "overflow": false,
+      "buttonHeight": 32,
+      "devtools": 0
+    },
+    {
+      "width": 390,
+      "overflow": false,
+      "buttonHeight": 44,
+      "devtools": 0
+    }
+  ],
+  "jsdelivrRequests": 0,
+  "posthogRequests": 0,
+  "pageErrors": []
+}

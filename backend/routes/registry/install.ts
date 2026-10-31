@@ -1,5 +1,6 @@
 // Agent install route — extracted from registry.js (GH#112)
 // Handles: POST /install
+const { copyInstallHandoffMemory } = require('../../services/installHandoffMemory');
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
@@ -23,13 +24,15 @@ const {
   AGENT_USERNAME_CONFLICT_CODE?: string;
   AGENT_IDENTITY_CONFLICT_CODE?: string;
 };
+const GlobalModelConfigService = require('../../services/globalModelConfigService');
 const AgentMessageService = require('../../services/agentMessageService');
-const { deriveAgentState } = require('../../services/agentStateService');
+const { deriveAgentState, runInstructionFor } = require('../../services/agentStateService');
 const FirstContactService = require('../../services/firstContactService');
 const HostedRuntime = require('../../services/hostedRuntimeService');
 const HostedEngine = require('../../services/hostedEngine');
 const { reservedAgentNameRefusal } = require('../../services/agentNameReservation');
 const { normalizeAvatarUrl } = require('../../services/avatarService');
+const { isPersonalPodType } = require('../../services/podTypePolicyService');
 const {
   getUserId,
   resolveUsername,
@@ -42,12 +45,14 @@ const {
   buildAgentProfileId,
   composeInstallIntro,
 } = require('./helpers');
+const { isDevTierGitHubIssueWriter } = require('../../services/githubIssueWriteCapability');
 const {
   AUTO_GRANTED_INTEGRATION_SCOPES,
   revokeRuntimeTokensAfterLastUninstall,
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 const { willSolelyInstallRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
+const { webhookUrlRegistrationRefusal } = require('../../services/outboundUrlGuard');
 const { personAgentWakeDefault } = require('../../services/wakeDefaultService');
 const { logAgentInstallRefusal } = require('../../middleware/logAgentInstallRefusal');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
@@ -152,7 +157,15 @@ const findExistingAgentInstance = async (agentName: any, instanceId: any) => {
  * POST /api/registry/install
  * Install an agent to a pod
  */
+// Clients must discover this before posting to an older server, which would
+// otherwise ignore memoryFrom and install before reporting an unsupported copy.
+installRouter.get('/install/memory-handoff', installRateLimit, auth, (_req: any, res: any) => {
+  res.json({ installTimeMemoryHandoff: true });
+});
+
 installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), installRateLimit, auth, async (req: any, res: any) => {
+  let handoffRegistryClaim: { id: unknown; agentName: string; userId: unknown; version: number } | null = null;
+  let handoffFinished = false;
   try {
     const {
       agentName, podId, version, config = {}, scopes = [], instanceId, displayName, gatewayId, description,
@@ -347,7 +360,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         context: { required: [], optional: [] },
         runtime: { type: 'standalone', connection: 'rest' },
       };
-      agent = await AgentRegistry.create({
+      const registryData = {
         agentName: synthManifest.name,
         displayName: String(displayName || agentName),
         description: synthManifest.description,
@@ -357,7 +370,13 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         registry: 'private',
         publisher: { userId, name: resolveUsername(req) },
         ephemeral: true,
-      });
+      };
+      // The unique registry row claims ownership BEFORE private memory is
+      // written under this name. An unsaved document is not a claim.
+      agent = await AgentRegistry.create(registryData);
+      if (req.body.memoryFrom !== undefined) {
+        handoffRegistryClaim = { id: agent._id, agentName: agent.agentName, userId, version: agent.__v };
+      }
       console.log('[cap self-serve-install]', {
         user: String(userId),
         pod: String(podId),
@@ -373,6 +392,24 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       status: 'active',
     });
 
+    const copyMemory = async () => {
+      if (req.body.memoryFrom !== undefined) {
+        // Fence cleanup against another in-flight handoff. A stale reader must
+        // touch the persisted claim before writing memory, or refuse if the
+        // claim was released. The creator only releases its own untouched revision.
+        const claimed = await AgentRegistry.findOneAndUpdate({
+          _id: agent._id,
+          ...(handoffRegistryClaim ? { __v: handoffRegistryClaim.version } : {}),
+        }, { $inc: { __v: 1 } }, { new: true }).select('__v').lean();
+        if (!claimed) throw Object.assign(new Error('Agent name claim changed; retry attach'), { status: 409 });
+        if (handoffRegistryClaim) handoffRegistryClaim.version = claimed.__v;
+      }
+      return copyInstallHandoffMemory({
+        source: req.body.memoryFrom, agentName: safeAgentName, instanceId: normalizedInstanceId,
+        userId, registryOwner: agent.publisher?.userId, runtime: normalizeConfigMap(config)?.runtime,
+      });
+    };
+
     if (existingInPod) {
       if (req.body.resumeExisting === true) {
         const storedRuntime = normalizeConfigMap(existingInPod.config)?.runtime;
@@ -385,7 +422,8 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
           || storedRuntime.runtimeType !== requestedRuntime?.runtimeType) {
           return res.status(409).json({ error: 'Existing installation does not match this local handoff' });
         }
-        return res.json({ resumed: true, installation: {
+        const memoryCopy = await copyMemory();
+        return res.json({ resumed: true, memoryCopy, installation: {
           _id: existingInPod._id, agentName: existingInPod.agentName,
           instanceId: existingInPod.instanceId, podId: existingInPod.podId,
           displayName: existingInPod.displayName,
@@ -437,7 +475,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     }
 
     const installConfig = normalizeConfigMap(config) || {};
-    // WRITE-TIME SHAPE CHECK (TASK-071, Vera's ruling). This route is the OTHER
+    // WRITE-TIME SHAPE CHECK (TASK-071). This route is the OTHER
     // backend writer of `config.environment` — the first is the agent-config
     // PATCH — and it stores the body's config unchecked. Same rule, same
     // refusal, same code, so a caller can branch on one thing.
@@ -467,6 +505,12 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       if (!ownership.owned) {
         return res.status(403).json({ code: ownership.failure, error: webhookUrlRefusal[ownership.failure] });
       }
+    }
+    // A URL supplied at install is a new registration, so it must be https,
+    // admins included.
+    if (requestedWebhookUrl) {
+      const schemeRefusal = webhookUrlRegistrationRefusal(requestedWebhookUrl);
+      if (schemeRefusal) return res.status(400).json({ code: 'webhook_url_refused', error: schemeRefusal });
     }
     const runtimeConfig = typeof installConfig.runtime === 'object' && installConfig.runtime
       ? { ...installConfig.runtime }
@@ -526,8 +570,8 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     // Store runtimeType NORMALIZED. Every gate below lowercases its own copy;
     // the stored value was whatever the caller sent, so `runtimeType: "Hosted"`
     // passed the hosted gate, got metered as hosted, and was never counted by
-    // countHostedAgentsForUser (exact 'hosted') — the per-user cap failed open
-    // (Otto on #1355). Query the field the code writes: write it normalized.
+    // countHostedAgentsForUser (exact 'hosted') — the per-user cap failed open.
+    // Query the field the code writes: write it normalized.
     if (runtimeConfig.runtimeType !== undefined && runtimeConfig.runtimeType !== null) {
       runtimeConfig.runtimeType = String(runtimeConfig.runtimeType).trim().toLowerCase();
     }
@@ -592,6 +636,23 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       if (newHostedEngine === HostedEngine.HOSTED_ENGINE_NATIVE) {
         installConfig.hosted = HostedEngine.nativeHostedConfigForInstall(explicitDescription || undefined);
       }
+    }
+
+    // GitHub issue writes spend a server-held credential, so this is a
+    // server-owned per-installation capability rather than a caller-provided
+    // scope. The configured OpenClaw dev seats are its only initial grant.
+    // If configuration cannot be read, fail closed: the install still works,
+    // but it receives no GitHub write authority.
+    let githubIssueWrite = false;
+    try {
+      const modelConfig = await GlobalModelConfigService.getConfig();
+      githubIssueWrite = isDevTierGitHubIssueWriter({
+        instanceId: normalizedInstanceId,
+        runtimeType: effectiveRuntimeType,
+        devAgentIds: modelConfig?.openclaw?.devAgentIds,
+      });
+    } catch (err) {
+      console.warn('[install] could not resolve dev-tier GitHub issue capability:', (err as Error).message);
     }
 
     const grantedScopes = Array.from(new Set([
@@ -679,6 +740,9 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       effectiveDisplayName = agent.displayName;
     }
 
+    const memoryCopy = await copyMemory();
+    handoffFinished = true;
+
     // Identity before the installation row (TASK-133 b): a refused identity must
     // not leave an AgentInstallation behind, and that refusal is the one error in
     // this block that is not best-effort. Probed first, a 409 writes nothing.
@@ -728,7 +792,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       });
       await AgentIdentityService.ensureAgentInPod(agentUser, podId, effectiveRuntimeType, newHostedEngine);
     } catch (identityError: unknown) {
-      // A refusal is not a best-effort failure (TASK-133 b, wren 73987/73988):
+      // A refusal is not a best-effort failure (TASK-133 b):
       // swallowing it would answer 2xx and leave an AgentInstallation row with
       // no identity behind it. Every other identity failure stays best-effort.
       const refusal = identityError as { code?: string; message?: string; username?: string };
@@ -766,6 +830,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       version: version || agent.latestVersion,
       config: installConfig,
       scopes: grantedScopes,
+      githubIssueWrite,
       installedBy: userId,
       instanceId: normalizedInstanceId,
       displayName: effectiveDisplayName,
@@ -834,7 +899,10 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         podId,
         installedByUserId: userId,
         installerIsAgent: installerUser?.isBot === true,
-        ...(greetsItself ? { mentionHandle: handle } : {}),
+        // A personal pod (agent-room, agent-dm, agent-admin) auto-routes every
+        // plain reply to the agent, so the greeting must not tell the person to
+        // @mention it there. Only a team pod needs the handle.
+        ...(greetsItself && !isPersonalPodType(pod?.type) ? { mentionHandle: handle } : {}),
         ...(greetsItself ? { hostedAgentUserId: String(agentUser._id) } : {}),
       });
     } catch (firstContactError: unknown) {
@@ -871,13 +939,19 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
 
     // Post a short self-introduction so the room learns the new member
     // without having to wait for their first heartbeat. Team pods only —
-    // skip DMs, agent-rooms, and single-member surfaces.
+    // skip DMs, agent-rooms, and single-member surfaces — except the installer's
+    // own solo My Workspace, where they are the only audience (TASK-223).
     try {
-      const podDoc = await Pod.findById(podId).select('type members').lean();
+      // Reuse the pod loaded above: a second findById on the request's podId is
+      // the query CodeQL flags as user-controlled (new high alert on this PR).
+      const podDoc = pod;
+      // The agent is not counted in `members` (routing goes through
+      // AgentInstallation), so a solo workspace reads as one member here.
+      const isOwnWorkspace = podDoc?.name === 'My Workspace';
       const introWorthy = podDoc
         && podDoc.type !== 'dm'
         && podDoc.type !== 'agent-room'
-        && (podDoc.members?.length || 0) >= 2
+        && ((podDoc.members?.length || 0) >= 2 || isOwnWorkspace)
         && !(greetsItself && firstContactFired);
       if (introWorthy) {
         // Task #62 follow-up: the intro post passes `displayName` to
@@ -928,7 +1002,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         // (inferred from staleness), which made a gone-dark agent announce
         // "Nothing is running me yet" — flat-certain and factually wrong,
         // since it demonstrably ran. Asserting an inference in the agent's own
-        // voice is the same defect in a new costume (ux-lead, 2026-08-14).
+        // voice is the same defect in a new costume.
         //
         // The token store is the BOT's, not the installer's (sprint-impl,
         // fleet review 2026-08-14). `deriveAgentState` unions
@@ -940,7 +1014,13 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         // been announced as dead. Same identity match the pod roster uses
         // (routes/pods.ts:437).
         let state = 'unknown';
-        let fixCommand = `commonly agent run ${safeAgentName}`;
+        // The default is what the seat's own runtime needs. It used to be the
+        // BYO command for every seat, so a webhook agent's intro told its
+        // owner to run a command that starts the wrong program.
+        let fixCommand: string | null = runInstructionFor({
+          agentName: safeAgentName,
+          config: normalizeConfigMap(installation.config) || {},
+        });
         try {
           const botRow = await User.findOne({
             isBot: true,
@@ -1029,13 +1109,36 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         scopes: installation.scopes,
         runtime: sanitizeRuntimeConfig(installConfig.runtime) || null,
       },
+      memoryCopy,
       sharedIdentity: isReusingExistingAgent,
       otherPods: otherPodIds,
       hasExistingRuntimeToken: globalAgent.agentUser?.agentRuntimeTokens?.length > 0,
     });
   } catch (error) {
+    if (handoffRegistryClaim && !handoffFinished) {
+      try {
+        // Only roll back the claim made by THIS request. Existing/published
+        // rows and any name with a retained installation must survive.
+        const inUse = await AgentInstallation.countDocuments({ agentName: handoffRegistryClaim.agentName });
+        if (!inUse) {
+          await AgentRegistry.deleteOne({
+            _id: handoffRegistryClaim.id,
+            __v: handoffRegistryClaim.version,
+            'publisher.userId': handoffRegistryClaim.userId,
+            ephemeral: true,
+          });
+        }
+      } catch (cleanupError) {
+        console.error('[install] handoff claim cleanup failed:', (cleanupError as Error).message);
+        return res.status(503).json({
+          error: 'Memory handoff failed and its name claim could not be released; retry attach',
+        });
+      }
+    }
     console.error('Error installing agent:', error);
-    res.status(500).json({ error: (error as any).message || 'Failed to install agent' });
+    const status = (error as { status?: number }).status;
+    res.status(status === 400 || status === 403 || status === 409 ? status : 500)
+      .json({ error: (error as Error).message || 'Failed to install agent' });
   }
 });
 

@@ -198,6 +198,26 @@ describe('direction C threading restyle (PR 2b)', () => {
     expect(container.querySelector('.v2-thread-block--open')).toBeNull();
   });
 
+  test('the first-reply invite survives collapse and the hidden expanded prefix exactly once', () => {
+    const { container } = renderThread({ afterMessage: { messageId: '21', content: <div data-testid="teammate-prompt">Invite</div> } });
+    expect(screen.getAllByTestId('teammate-prompt')).toHaveLength(1);
+    expect(container.querySelector('.v2-thread-replies')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand thread, 11 replies' }));
+    const prompt = screen.getByTestId('teammate-prompt');
+    expect(prompt.previousElementSibling).toHaveClass('v2-thread-replies__more');
+    expect(container.querySelector('#message-21')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '3 more replies' }));
+    expect(screen.getAllByTestId('teammate-prompt')).toHaveLength(1);
+    expect(screen.getByTestId('teammate-prompt').previousElementSibling).toHaveAttribute('id', 'message-21');
+  });
+
+  test('an expanded visible reply keeps its invite directly after that reply', () => {
+    renderThread({ afterMessage: { messageId: '31', content: <div data-testid="teammate-prompt">Invite</div> } });
+    fireEvent.click(screen.getByRole('button', { name: 'Expand thread, 11 replies' }));
+    expect(screen.getAllByTestId('teammate-prompt')).toHaveLength(1);
+    expect(screen.getByTestId('teammate-prompt').previousElementSibling).toHaveAttribute('id', 'message-31');
+  });
+
   test('expanded settled source replies render one ruled answer instead of a duplicate durable reply', () => {
     const root = msg(20);
     const source = msg(21, { thread_root_id: '20', content: 'Choose a path' });
@@ -210,11 +230,13 @@ describe('direction C threading restyle (PR 2b)', () => {
         { kind: 'card', rootId: '20', replyCount: replies.length, participants: [], lastActivityAt: null, replies },
       ],
       settledDecisionByMessageId: new Map([['21', { value: 'Ship it', by: 'Sam', messageId: '22' }]]),
+      afterMessage: { messageId: '21', content: <div data-testid="settled-invite">Invite</div> },
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Expand thread, 2 replies' }));
     const block = container.querySelector('.v2-thread-block--open');
     expect(block.querySelectorAll('.v2-thread-replies .v2-msg')).toHaveLength(1);
+    expect(screen.getAllByTestId('settled-invite')).toHaveLength(1);
     expect(block.querySelector('[data-testid="decision-ruling-row"]')).toHaveTextContent('Ship it');
     expect(block.querySelectorAll('#message-22')).toHaveLength(1);
     Element.prototype.scrollIntoView = jest.fn();

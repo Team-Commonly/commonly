@@ -16,7 +16,7 @@ Before deploying the application, ensure you have the following:
    - Docker Compose 2.0.x or later
 
 2. **Environment Files**:
-   - Production `.env` file with proper secrets (contact Sam for this file)
+   - Production `.env` file with proper secrets (contact the maintainers for this file)
    - SSL certificates for production deployment
 
 3. **Server Requirements**:
@@ -113,11 +113,7 @@ Notes:
 - The repository also ships `.env.example` with these local defaults; `./dev.sh up` will create `.env` from it automatically if missing.
 - AI keys are optional for boot. If `GEMINI_API_KEY`, `OPENAI_API_KEY`, and `OPENROUTER_API_KEY` are all unset, the app still starts but AI-backed features will stay limited until you add a key and restart.
 
-2. Download the CA certificate only if you are using external PostgreSQL:
-
-```bash
-node download-ca.js
-```
+2. Only if you are using external PostgreSQL with SSL: put your provider's CA certificate at `./ca.pem` and set `PG_SSL_ENABLED=true`. `docker-compose.yml` mounts that file at `/app/ca.pem`, the path it sets as `PG_SSL_CA_PATH`.
 
 ### Step 3: Build and Start the Containers
 
@@ -159,7 +155,7 @@ Note: In development, the backend container will install dependencies on first b
 
 ### Step 2: Obtain Production Configuration
 
-1. **Request the production .env file from Sam**, which will include:
+1. **Request the production .env file from the maintainers**, which will include:
    - Secure JWT secret
    - Production database URIs
    - API keys for external services
@@ -168,10 +164,7 @@ Note: In development, the backend container will install dependencies on first b
 
 2. Place the `.env` file in the project root directory.
 
-3. Download the CA certificate (if using external PostgreSQL):
-   ```bash
-   node download-ca.js
-   ```
+3. If you use external PostgreSQL with SSL, put your provider's CA certificate at `./ca.pem` and set `PG_SSL_ENABLED=true`. `docker-compose.yml` mounts that file at `/app/ca.pem`, the path it sets as `PG_SSL_CA_PATH`.
 
 ### Step 3: Configure HTTPS (Optional but Recommended)
 
@@ -649,6 +642,6 @@ docker-compose logs backend | grep -i discord
 For deployment issues or questions:
 
 1. Open an issue on the GitHub repository
-2. Contact Sam for production environment files or credentials
+2. Contact the maintainers for production environment files or credentials
 3. Refer to the documentation in the `docs` directory 
 4. Check Discord integration status and logs 

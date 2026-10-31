@@ -155,7 +155,7 @@ const manifests: Record<string, IntegrationManifest> = {
     configSchema: buildConfigSchema(['chatId']),
     readiness: () => (
       hasConfiguration('TELEGRAM_BOT_TOKEN')
-        && (hasConfiguration('TELEGRAM_SECRET_TOKEN') || process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED === 'true')
+        && hasConfiguration('TELEGRAM_SECRET_TOKEN')
         ? { available: true }
         : notConfigured()
     ),

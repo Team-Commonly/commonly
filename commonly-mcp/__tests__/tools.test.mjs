@@ -5,6 +5,7 @@
  * (via the same _fetchImpl seam in client.js) and assert the wire shape.
  */
 
+import { readFileSync } from 'node:fs';
 import { jest } from '@jest/globals';
 import { buildTools } from '../src/tools.js';
 import { HttpError } from '../src/client.js';
@@ -142,6 +143,31 @@ describe('commonly_post_message', () => {
     const payload = JSON.parse(result.content[0].text);
     expect(payload.status).toBe(400);
     expect(payload.message).toBe('bad request');
+  });
+});
+
+describe('required arguments', () => {
+  it('refuses a call that omits a required argument, by name, without a request', async () => {
+    const fetchSpy = installFetch(async () => okResponse({}));
+    for (const [name, args] of [
+      ['commonly_claim_task', { taskId: 'TASK-436' }],
+      ['commonly_get_tasks', {}],
+      ['commonly_update_task', { taskId: 'TASK-436', text: 'renewal' }],
+    ]) {
+      const result = await byName[name].call(args);
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text).message).toBe(`${name}: missing required argument podId`);
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('names every missing argument, and passes a complete call through', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ task: {} }));
+    const missing = await byName.commonly_claim_task.call({ podId: '' });
+    expect(JSON.parse(missing.content[0].text).message).toBe('commonly_claim_task: missing required arguments podId, taskId');
+    const done = await byName.commonly_claim_task.call({ podId: 'POD', taskId: 'TASK-1' });
+    expect(done.isError).toBeUndefined();
+    expect(fetchSpy.mock.calls[0][0]).toContain('/api/v1/tasks/POD/TASK-1/claim');
   });
 });
 
@@ -486,12 +512,12 @@ describe('commonly_dm_agent', () => {
       room: { _id: 'POD-DM', type: 'agent-dm', members: ['a1', 'a2'] },
     }));
     const result = await byName.commonly_dm_agent.call({
-      agentName: 'sam-local-codex', instanceId: 'default',
+      agentName: 'local-codex', instanceId: 'default',
     });
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe('https://x.example/api/agents/runtime/agent-dm');
     expect(JSON.parse(init.body)).toEqual({
-      target: { agentName: 'sam-local-codex', instanceId: 'default' },
+      target: { agentName: 'local-codex', instanceId: 'default' },
     });
     const payload = JSON.parse(result.content[0].text);
     expect(payload.room._id).toBe('POD-DM');
@@ -689,4 +715,11 @@ describe('per-event inbox checkpoint', () => {
     expect(JSON.stringify(result)).toContain('stale_delivery');
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
+});
+
+test('post schema publishes the current catalogue tuple without a private manifest lookup', () => {
+  const revision = JSON.parse(readFileSync(new URL('../../backend/config/uiCardCatalogueRevision.json', import.meta.url), 'utf8'));
+  const description = byName.commonly_post_message.inputSchema.properties.payload.description;
+  for (const value of Object.values(revision)) expect(description).toContain(String(value));
+  expect(description).not.toContain('published catalogue revision manifest');
 });

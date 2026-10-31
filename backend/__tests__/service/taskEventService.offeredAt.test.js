@@ -393,12 +393,13 @@ describe('own-row board wake routing', () => {
     expect(wakeNames()).toEqual(['scout']);
   });
 
-  it('wakes the previous assignee when a row is unassigned', async () => {
+  it('sends the previous assignee a digest when a human unassigns the row', async () => {
     const changed = await createTask({ taskId: 'TASK-UNASSIGN-OWNER', updatedAt: NOW });
 
     await notifyPodAgents(POD_ID, changed, 'updated', { isAgent: false }, { assignee: 'scout' });
 
-    expect(wakeNames()).toEqual(['scout']);
+    expect(wakeNames()).toEqual([]);
+    expect(AgentEventService.enqueue.mock.calls.every(([event]) => event.deliveryMode === 'digest')).toBe(true);
   });
 
   it('wakes the row owner for a comment', async () => {

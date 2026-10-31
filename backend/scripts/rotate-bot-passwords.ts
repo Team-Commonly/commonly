@@ -29,8 +29,8 @@
  * operator's word, never inline in a deploy.
  *
  * Usage:
- *   ts-node backend/scripts/rotate-bot-passwords.ts           # report
- *   ts-node backend/scripts/rotate-bot-passwords.ts --apply   # rotate
+ *   cd backend && node dist/scripts/rotate-bot-passwords.js           # report
+ *   cd backend && node dist/scripts/rotate-bot-passwords.js --apply   # rotate
  */
 
 import crypto from 'crypto';

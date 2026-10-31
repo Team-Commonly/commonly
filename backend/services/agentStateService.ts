@@ -26,6 +26,7 @@
  * derives; the seam is what makes the honesty rules testable without a DB.
  */
 import { hostedRunsNative } from './hostedEngine';
+import { BYO_STALE_MS } from './agentConnectionStateService';
 
 export const AGENT_LISTENING_STALE_MS = 5 * 60 * 1000;
 
@@ -67,14 +68,11 @@ const latestUse = (tokenLists: TokenRow[][]): Date | null => {
   return latest;
 };
 
-export function deriveAgentState(
-  installation: InstallationRow,
-  userTokens: TokenRow[],
-  callerId: string,
-  now: number = Date.now(),
-): AgentStateRow {
-  const agentName = String(installation.agentName || '').toLowerCase();
-  const instanceId = String(installation.instanceId || 'default');
+// One classification for both the liveness derivation and the run instruction,
+// so the two cannot disagree about what kind of seat this is.
+export function classifyRuntime(installation: InstallationRow): {
+  isNative: boolean; isPushWebhook: boolean; isByo: boolean;
+} {
   const runtime = installation.config?.runtime || {};
   const runtimeType = String(runtime.runtimeType || '').toLowerCase();
   const isPushWebhook = Boolean(runtime.webhookUrl);
@@ -87,6 +85,33 @@ export function deriveAgentState(
   // A provisioned hosted install on the native engine has no connection to
   // make either (services/hostedEngine.ts).
   const isNative = runtimeType === 'native' || hostedRunsNative(installation);
+  return { isNative, isPushWebhook, isByo };
+}
+
+export const WEBHOOK_RUN_INSTRUCTION = 'Run the program behind your webhook URL. '
+  + 'A webhook agent has no `commonly` run command; see docs/agents/WEBHOOK_SDK.md.';
+
+// What to tell an owner who must make an agent run. `commonly agent run` only
+// starts a polling BYO wrapper. A push webhook runs the owner's own endpoint,
+// and a native or hosted seat runs on Commonly, so neither gets that command.
+// Null means there is no instruction to give.
+export function runInstructionFor(installation: InstallationRow): string | null {
+  const { isByo, isPushWebhook } = classifyRuntime(installation);
+  if (isByo) return `commonly agent run ${String(installation.agentName || '').toLowerCase()}`;
+  if (isPushWebhook) return WEBHOOK_RUN_INSTRUCTION;
+  return null;
+}
+
+export function deriveAgentState(
+  installation: InstallationRow,
+  userTokens: TokenRow[],
+  callerId: string,
+  now: number = Date.now(),
+): AgentStateRow {
+  const agentName = String(installation.agentName || '').toLowerCase();
+  const instanceId = String(installation.instanceId || 'default');
+  const { isNative, isPushWebhook, isByo } = classifyRuntime(installation);
+  const runtimeType = String(installation.config?.runtime?.runtimeType || '').toLowerCase();
 
   let state: AgentReachState;
   let lastUsedAt: Date | null = null;
@@ -112,7 +137,8 @@ export function deriveAgentState(
     isOwner,
     // The shell hides Scout's "Run it here" start once the viewer holds one.
     hosted: runtimeType === 'hosted',
-    ...(isOwner && needsFix ? { fixCommand: `commonly agent run ${agentName}` } : {}),
+    ...(isOwner && needsFix && runInstructionFor(installation)
+      ? { fixCommand: runInstructionFor(installation) as string } : {}),
   };
 }
 
@@ -128,7 +154,10 @@ export function deriveAgentState(
 // Never add a "new" service without reading the path first; never name two
 // exports the same thing because they feel similar.
 
-const ACTIVE_WINDOW_MS = 10 * 60 * 1000; // active within 10 minutes
+// The same five minutes as the roster and Settings connection verdict
+// (agentConnectionStateService), so Scout and the page never disagree about
+// an agent that checked in seven minutes ago.
+const ACTIVE_WINDOW_MS = BYO_STALE_MS;
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000; // stale after a silent day
 
 export type AgentActivityBucket = 'active' | 'idle' | 'stale' | 'ready' | 'never-connected';
@@ -137,6 +166,7 @@ interface ActivityInstallationLike {
   agentName: string;
   instanceId?: string;
   config?: { runtime?: { runtimeType?: string } };
+  runtimeTokens?: Array<{ lastUsedAt?: Date | null }>;
 }
 
 /**
@@ -227,19 +257,42 @@ export const collectPodAgentActivity = async (
   }
   const userRows = usernameByKey.size > 0
     ? await User.find({ username: { $in: Array.from(usernameByKey.values()) } })
-      .select('username agentRuntimeTokens.lastUsedAt')
+      .select('_id username agentRuntimeTokens.lastUsedAt')
       .lean()
     : [];
-  const userByUsername = new Map<string, { agentRuntimeTokens?: Array<{ lastUsedAt?: Date }> }>(
+  const userByUsername = new Map<string, { _id?: unknown; agentRuntimeTokens?: Array<{ lastUsedAt?: Date }> }>(
     (userRows as Array<{ username: string }>).map((u) => [u.username, u as never]),
   );
+
+  // A seat's key can also live in the credential ledger (connect page,
+  // daemon mints, spawn children) or on a legacy installation. Runtime auth
+  // stamps lastUsedAt on whichever store authenticated the call, so the
+  // status read has to take all three.
+  // A failed ledger read throws rather than reading as "never connected":
+  // the status tool turns it into a failed call, and the roster route keeps
+  // its advisory fallback.
+  const credentialTimeByUser = new Map<string, number>();
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const AgentCredential = require('../models/AgentCredential');
+  const agentUserIds = (userRows as Array<{ _id?: unknown }>).map((u) => u._id).filter(Boolean);
+  const credentials = agentUserIds.length > 0
+    ? await AgentCredential.find({ kind: 'runtime', agentUserId: { $in: agentUserIds } })
+      .select('agentUserId lastUsedAt')
+      .lean()
+    : [];
+  for (const credential of credentials as Array<{ agentUserId?: unknown; lastUsedAt?: Date | null }>) {
+    const time = credential.lastUsedAt ? new Date(credential.lastUsedAt).getTime() : 0;
+    const id = String(credential.agentUserId);
+    if (time > (credentialTimeByUser.get(id) || 0)) credentialTimeByUser.set(id, time);
+  }
 
   for (const i of installations) {
     const k = key(i.agentName, i.instanceId);
     const user = userByUsername.get(usernameByKey.get(k) || '');
-    const tokenTimes = (user?.agentRuntimeTokens || [])
+    const tokenTimes = [...(user?.agentRuntimeTokens || []), ...(i.runtimeTokens || [])]
       .map((tok) => (tok?.lastUsedAt ? new Date(tok.lastUsedAt).getTime() : 0));
-    const candidates = [heartbeatMap.get(k), runMap.get(k), ...tokenTimes]
+    const credentialTime = user?._id ? credentialTimeByUser.get(String(user._id)) : undefined;
+    const candidates = [heartbeatMap.get(k), runMap.get(k), ...tokenTimes, credentialTime]
       .map((v) => (v ? new Date(v as Date).getTime() : 0))
       .filter((v) => Number.isFinite(v) && v > 0);
     result.set(k, candidates.length > 0 ? new Date(Math.max(...candidates)) : null);
