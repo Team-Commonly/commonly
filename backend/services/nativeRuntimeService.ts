@@ -125,6 +125,17 @@ const NATIVE_RUNTIME_GUARDRAILS = (
 // How a guardrail rejection reads in a chat call's error body.
 const GUARDRAIL_REJECTION = /guardrail|moderation|prompt-injection/i;
 const GUARD_CHECK_TIMEOUT_MS = 10_000;
+// The free-name walk is advisory; past this it gives up and the default name posts.
+const BYO_NAME_LOOKUP_TIMEOUT_MS = 3_000;
+// Rejects if `work` has not settled in time, so a hung registry read cannot
+// keep the handoff card from posting.
+const withDeadline = <T>(work: Promise<T>, ms: number): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('name lookup timed out')), ms);
+  });
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+};
 
 // A web result the guard stops on its own is replaced with this before the
 // turn's one extra round. It names no rule and repeats nothing from the result.
@@ -951,10 +962,10 @@ export async function dispatchTool(
           // keep the default name. Attach still enforces ownership on that name.
           try {
             const { AgentRegistry } = require('../models/AgentRegistry');
-            const availableName = await availableByoHandoffName(
+            const availableName = await withDeadline(availableByoHandoffName(
               payload.agentName,
               async (name) => Boolean(await AgentRegistry.exists({ agentName: name })),
-            );
+            ), BYO_NAME_LOOKUP_TIMEOUT_MS);
             const availablePayload = buildByoHandoffPayload({
               adapter, os: args.os, podId: ctx.podId, agentName: availableName,
               memoryFrom: ctx.agentName, memoryInstance: ctx.instanceId || 'default',
