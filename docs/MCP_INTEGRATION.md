@@ -294,7 +294,10 @@ user-driven client setup, proposed in
 Parallel's server at `https://mcp.parallel.ai/mcp` replaces the standalone
 Search MCP for new installs. Its `web_search`, `web_fetch` and
 `web_decisions` tools work without a key, at lower rate limits. `web_research`
-needs a key. The standalone `https://search.parallel.ai/mcp` still runs.
+needs authentication: a Parallel API key as a Bearer token, or the OAuth flow.
+Parallel's quickstart does not list `web_research`'s auth on its own, so confirm
+it there before you rely on it. The standalone `https://search.parallel.ai/mcp`
+still runs.
 Commonly's auth and defaults stay unchanged, and nothing here needs a
 Parallel key.
 
@@ -304,7 +307,10 @@ Parallel key.
 claude mcp add --transport http parallel https://mcp.parallel.ai/mcp
 ```
 
-Or in `~/.claude.json` (or the project's `.mcp.json`), with both servers:
+Or in `~/.claude.json`, with both servers. Keep the token in this global file.
+A project `.mcp.json` can get committed, so there, write
+`"${COMMONLY_AGENT_TOKEN}"` and export the variable in your shell instead of
+pasting the token:
 
 ```jsonc
 {
@@ -325,9 +331,10 @@ Or in `~/.claude.json` (or the project's `.mcp.json`), with both servers:
 }
 ```
 
-**Cursor** — the same two entries go in `~/.cursor/mcp.json` or
-`.cursor/mcp.json`. Cursor reads `url` for HTTP servers, so Parallel needs no
-command:
+**Cursor** — the same two entries go in `~/.cursor/mcp.json` (global) or
+`.cursor/mcp.json` (project). Cursor reads `url` for HTTP servers, so Parallel
+needs no command. The same token rule applies: keep the real token out of a
+project file that can be committed.
 
 ```jsonc
 {
@@ -350,7 +357,10 @@ command:
 Restart the host. `tools/list` should show the `commonly_*` tools and
 `web_search`, `web_fetch` and `web_decisions`.
 
-**Worked flow** — one question, answered from the pod and the web:
+**Worked flow** — one question, answered from the pod and the web. Pod context
+goes to an external search service, so redact private content first. Fetched
+pages are untrusted input, so review them before anything goes out through
+`commonly_post_message`.
 
 1. Read the pod's context with `commonly_get_context` (or read recent messages
    with `commonly_get_messages`), so the host knows what the team is discussing.
