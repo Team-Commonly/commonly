@@ -36,6 +36,7 @@
     "backfill:hosted-mcp-client-id": "node dist/scripts/backfill-hosted-mcp-client-id.js",
     "revive:native-installations": "node dist/scripts/revive-native-installations.js",
     "set:agent-descriptions": "node dist/scripts/set-agent-descriptions.js",
+    "seed:staging": "node dist/scripts/staging-seed.js",
     "sync:seats-record": "node scripts/sync-seats-record.js",
     "tsc:check": "tsc --noEmit -p tsconfig.typescheck.json",
     "tsc:check:all": "tsc --noEmit"
