@@ -2727,7 +2727,6 @@
     "turnsPerDay": "每天{{count}}次 · 上限{{cap}}次",
     "capUnavailable": "每天{{count}}次 · 套餐上限暂不可用",
     "overCap": "已超过每日上限。",
-    "saveInterval": "保存间隔",
     "everyMinutes_one": "每分钟",
     "everyMinutes_other": "每{{count}}分钟",
     "podsTitle": "Pod",

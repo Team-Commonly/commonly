@@ -2724,7 +2724,6 @@
     "turnsPerDay": "{{count}} turns/day · {{cap}} available",
     "capUnavailable": "{{count}} turns/day · plan cap unavailable",
     "overCap": "This exceeds the daily cap.",
-    "saveInterval": "Save interval",
     "everyMinutes_one": "Every minute",
     "everyMinutes_other": "Every {{count}} minutes",
     "podsTitle": "Pods",

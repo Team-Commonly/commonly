@@ -44,7 +44,6 @@ const V2AgentWakePods: React.FC<{
   const [activePodCount, setActivePodCount] = useState(0);
   const [podCount, setPodCount] = useState(0);
   const [turnCap, setTurnCap] = useState<number | null>(null);
-  const [draftMinutes, setDraftMinutes] = useState<Record<string, number>>({});
   const [openMenuPod, setOpenMenuPod] = useState<string | null>(null);
   const [loadedIdentity, setLoadedIdentity] = useState<string | null>(null);
   const query = `instanceId=${encodeURIComponent(instanceId)}`;
@@ -63,7 +62,6 @@ const V2AgentWakePods: React.FC<{
     setInstallations([]);
     setBusyPod(null);
     setError(null);
-    setDraftMinutes({});
     setOpenMenuPod(null);
     committedRef.current = {};
     queuedRef.current = {};
@@ -79,7 +77,6 @@ const V2AgentWakePods: React.FC<{
         committedRef.current = Object.fromEntries(rows.map((row) => [row.podId, row]));
         setActivePodCount(settingsResult.data.activePodCount ?? rows.filter((row) => row.status === 'active').length);
         setPodCount(settingsResult.data.podCount ?? rows.length);
-        setDraftMinutes(Object.fromEntries(rows.map((row) => [row.podId, row.heartbeatMinutes])));
         setTurnCap(settingsResult.data.turnCap ?? null);
       } catch (requestError) {
         if (active) setError((requestError as { response?: { status?: number } })?.response?.status === 403
@@ -200,7 +197,7 @@ const V2AgentWakePods: React.FC<{
             </thead>
             <tbody>
               {installations.map((entry) => {
-                const minutes = draftMinutes[entry.podId] ?? entry.heartbeatMinutes;
+                const minutes = entry.heartbeatMinutes;
                 const turns = Math.ceil(1440 / minutes);
                 return (
                   <tr className="v2-agent-wake-pods__pod" key={entry.podId} aria-busy={busyPod === entry.podId}>
@@ -235,8 +232,7 @@ const V2AgentWakePods: React.FC<{
                       <label className="v2-agent-wake-pods__interval">
                         <span className="v2-agent-wake-pods__sr">{t('agentSettings.heartbeatInterval')}</span>
                         <select value={minutes} disabled={busyPod === entry.podId}
-                          onChange={(event) => { setDraftMinutes((current) => ({ ...current,
-                            [entry.podId]: Number(event.target.value) })); }}>
+                          onChange={(event) => { void save(entry, { heartbeatMinutes: Number(event.target.value) }); }}>
                           {[...new Set([15, 30, 60, 120, 360, 720, 1440, entry.heartbeatMinutes])]
                             .sort((a, b) => a - b).map((option) => (
                               <option value={option} key={option}>{t('agentSettings.everyMinutes', { count: option })}</option>
@@ -249,11 +245,6 @@ const V2AgentWakePods: React.FC<{
                           : t('agentSettings.turnsPerDay', { count: turns, cap: turnCap })}
                         {turnCap !== null && turns > turnCap && ` ${t('agentSettings.overCap')}`}
                       </p>
-                      {entry.heartbeatEnabled && minutes !== entry.heartbeatMinutes
-                        && <button type="button" disabled={busyPod === entry.podId}
-                          onClick={() => { void save(entry, { heartbeatMinutes: minutes }); }}>
-                          {t('agentSettings.saveInterval')}
-                        </button>}
                     </td>
                     <td className="v2-agent-wake-pods__actions">
                       <button type="button" className="v2-agent-wake-pods__more" aria-haspopup="menu"
