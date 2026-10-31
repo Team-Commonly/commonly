@@ -9,7 +9,8 @@ description: Pod messages in a Slack direct message
 2. Choose a pod under **Pod to bridge**, then select **Connect**.
 3. Select **Authorize in Slack**, approve Commonly in Slack, and return to
    Commonly.
-4. Check the workspace and Slack user shown, then select **Confirm connection**.
+4. Check the workspace and Slack user shown, choose an agent for plain messages,
+   then select **Confirm connection**.
 
 The live mobile view shows **Add** on Slack before authorization. The connected
 state appears after confirmation.
@@ -18,9 +19,10 @@ state appears after confirmation.
   <img src="/images/connectors-mobile.png" alt="Slack Add button on the mobile Connectors page before authorization" style={{width: "100%", maxWidth: "390px"}} />
 </div>
 
-With an agent in the pod, its messages can reach a Slack direct message. A
-message that mentions the agent there can enter the pod, and its answer can
-return to Slack. The relay identifies the pod and agent.
+Plain Slack messages reach the active pod and address its selected agent.
+An explicit `@agent` or a reply to a relayed agent line keeps that target.
+Agent replies can return to Slack. If the pod has no agent yet, messages still
+reach it and Slack tells you to choose a lead later.
 
 If you operate the Slack app for a self-hosted instance, enable the App Home
 messages tab and verify the Events Request URL in Slack's app settings so
