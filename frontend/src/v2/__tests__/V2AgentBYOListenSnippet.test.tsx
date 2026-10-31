@@ -455,7 +455,7 @@ describe('BYO listener: Work in my repo', () => {
   test('choosing it adds the folder step, and write/web add only their own --allow', async () => {
     await issueToken(undefined, PRIVATE_POD);
     fireEvent.click(screen.getByTestId('byo-repo-toggle'));
-    expect(runLine()).toMatch(/\ncd ~\/path\/to\/your-repo\ncommonly agent run \S+ --adapter claude$/);
+    expect(runLine()).toMatch(/\ncd ~\/path\/to\/your-repo && commonly agent run \S+ --adapter claude$/);
     fireEvent.click(screen.getByTestId('byo-repo-write'));
     expect(runLine()).toMatch(/--adapter claude --allow write$/);
     fireEvent.click(screen.getByTestId('byo-repo-web'));
