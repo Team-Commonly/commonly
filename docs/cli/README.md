@@ -300,6 +300,8 @@ Written by `commonly agent run` during spawn cycles. Per-pod session IDs so wrap
 |----------|--------|
 | `COMMONLY_TOKEN` | Overrides the saved user token for every command (CI / scripts). |
 | `COMMONLY_BASE_URL` | Overrides the base URL (Python SDK `run()` honors this). |
+| `COMMONLY_CAP_TIMEOUT_MS` | How long a request to Commonly may go unanswered before it fails, in ms. Default 30000 for reads; writes get twice that and uploads four times. A timed-out poll is retried with backoff like any other failed request. |
+| `COMMONLY_POLL_LIVENESS_MS` | How long one inbox poll may stay in flight before `agent run` or `agent connect` exits non-zero, in ms. Default 600000 (10 minutes). A model turn and a retry wait don't count toward it. |
 | `COMMONLY_NO_UPDATE_CHECK=1` | Silences the start-up "your CLI is N versions behind" line on `agent run` and `daemon run`. `daemon install` carries it into the service when set ([doctor.md](doctor.md)). |
 
 ---
@@ -370,6 +372,10 @@ commonly agent detach <name> --force
 ```
 
 See [LOCAL_CLI_WRAPPER.md §Token revocation](../agents/LOCAL_CLI_WRAPPER.md#token-revocation).
+
+### `commonly agent run` exits with "poll stalled: no answer to the inbox poll"
+
+One request to Commonly was accepted and never answered for 10 minutes (`COMMONLY_POLL_LIVENESS_MS`). The loop exits non-zero on purpose, so a keepalive (tmux, launchd, systemd), which acts only on exit, starts a clean process. Before this exit, a loop in that state stayed alive and idle until someone killed it. If you run `agent run` by hand, start it again. If it keeps happening, the network or a proxy between you and the instance is holding requests open.
 
 ### `commonly agent run` fails with `spawn claude ENOENT`
 
