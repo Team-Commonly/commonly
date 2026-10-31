@@ -10743,6 +10743,14 @@ body.modern-ui.v2-canvas {
 .v2-connectors__inactive-caret { width: 7px; height: 7px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(-45deg); }
 .v2-root button.v2-connectors__inactive-toggle[aria-expanded="true"] .v2-connectors__inactive-caret { transform: rotate(45deg); }
 .v2-connectors__inactive-rows > .v2-connector-row:last-child { border-bottom: 0; }
+/* TASK-677 slice (a), D215 artboard: channels and tools render as a tile grid
+   (auto-fill, 150px minimum, per the 2026-10-31 ruling; the aside stays). Layout
+   only: the same rows, the same act and the same connect flow. The inactive fold
+   spans the grid, and its own rows reuse the same tile template. */
+.v2-connectors__rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; overflow: visible; border: 0; border-radius: 0; }
+.v2-connectors__rows .v2-connector-row { grid-template-columns: minmax(0, 1fr); align-content: center; min-height: 128px; border: 1px solid var(--v2-border-soft); border-radius: 14px; padding: 14px 12px; }
+.v2-connectors__inactive-fold { grid-column: 1 / -1; }
+.v2-connectors__inactive-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; padding: 12px 0 0; }
 
 .v2-connector-row {
   display: grid;
