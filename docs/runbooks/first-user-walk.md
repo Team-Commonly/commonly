@@ -37,9 +37,20 @@ The walk deletes its own account in a `finally` block, sending the password and
 run exits `1` and prints the error. A surviving account is a failed run, not a
 warning.
 
-If a run fails before cleanup can run, the account is left behind. Find it by
-the `walk-` prefix and delete it through the admin path. The script cannot
-recover it, because the password is not stored.
+The walk's token removes the hosted seat, every pod the account created (matched
+by `createdBy`, never a pod it did not make), and the account. The cleanup then
+checks each one is gone: a pod still listed, or an account whose password still
+logs in, is a survivor. A run with survivors exits 1 and names them.
+
+Each run writes a manifest, ids only, to `~/.commonly/state/walk-706/<stamp>.json`
+(override with `COMMONLY_WALK_STATE_DIR`). It holds no password, token or email.
+SRE purges what the walk's token cannot reach from that manifest: the hosted
+agent's User and the per-run Scout bot. The walk does not record those two ids
+yet, so the purge can only use the agent name and the pod ids.
+
+If a run dies before login, the account has no id and no manifest, and it is left
+behind. Find it by the `walk-` prefix and delete it through the admin path. The
+password is random and not stored, so the script cannot recover it.
 
 ## Daily schedule
 

@@ -6,8 +6,10 @@
  * duration, and the first error text. A failure exits 1 and names the step.
  *
  * Walk accounts are recognisable by WALK_PREFIX (`walk-`), which Growth's
- * numbers exclude. Each run deletes its own account at the end, so nothing
- * accumulates. Password comes from COMMONLY_WALK_PASSWORD, never from this file.
+ * numbers exclude. Each run removes the seat, the pods it created and its own
+ * account, then checks each of them is gone. What the walk's token cannot
+ * reach (Scout, the hosted agent's User) is recorded by id in a per-run
+ * manifest under the state dir, for SRE's admin purge. Password comes from COMMONLY_WALK_PASSWORD, never from this file.
  *
  * Usage:
  *   COMMONLY_WALK_PASSWORD=... node scripts/first-user-walk.mjs [--base https://api.commonly.me]
@@ -16,6 +18,11 @@
  * under a throwaway HOME, get a live reply). It is reported as NOT COVERED and
  * the run exits 2, so a green run never claims more than it checked.
  */
+
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import path from 'node:path';
+import { cleanupRun } from './first-user-walk-cleanup.mjs';
 
 const WALK_PREFIX = 'walk-';
 
@@ -68,16 +75,33 @@ const runStep = async (name, fn) => {
 
 const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 
-// Returns false when the account survives, so the run can fail loudly.
+// Per-run manifest: ids only, outside the repo, for SRE's admin purge of what
+// the walk's own token cannot remove (Scout, the hosted agent's User). It holds
+// no password, token or email. It is named by the run stamp, not the username.
+const STATE_DIR = process.env.COMMONLY_WALK_STATE_DIR || path.join(homedir(), '.commonly', 'state', 'walk-706');
+const manifest = { userId: null, podIds: [], agentName: null, survivors: [], status: 'running' };
+const writeManifest = () => {
+  mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
+  writeFileSync(path.join(STATE_DIR, `${stamp}.json`), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
+};
+
+// Returns false when anything survives, so the run fails loudly. With no token
+// (the human is already gone) the walk cannot remove pods or the seat, so it
+// reports the manifest's pods as survivors rather than claiming a clean run.
 const cleanup = async (token, password) => {
-  if (!token) return true;
-  const del = await api('DELETE', '/api/users/me', { token, body: { password, confirmation: 'DELETE' } });
-  if (del.status >= 300) {
-    console.error(`cleanup: account delete ${del.status}: ${JSON.stringify(del.data)}`);
-    return false;
+  if (!token) {
+    manifest.survivors = manifest.podIds.map((id) => `pod:${id} (no token; human already gone)`);
+    manifest.status = manifest.survivors.length ? 'needs-admin-purge' : 'clean';
+    writeManifest();
+    return manifest.survivors.length === 0;
   }
-  console.log(`cleanup: deleted ${username}`);
-  return true;
+  const result = await cleanupRun({ api, token, password, email, userId: manifest.userId, agentName });
+  manifest.survivors = result.survivors;
+  manifest.status = result.ok ? 'clean' : 'needs-admin-purge';
+  writeManifest();
+  if (result.ok) console.log(`cleanup: removed ${username}`);
+  else console.error(`cleanup: survivors: ${result.survivors.join('; ')}`);
+  return result.ok;
 };
 
 const main = async () => {
@@ -96,6 +120,9 @@ const main = async () => {
       const r = await api('POST', '/api/auth/login', { body: { email, password } });
       expect(r.status === 200 && r.data?.token, `login ${r.status}: ${JSON.stringify(r.data)}`);
       expect(r.data.user?.role !== 'admin', 'walk account is admin; the walk is meaningless');
+      manifest.userId = String(r.data.user?._id || r.data.user?.id || '');
+      expect(manifest.userId, 'login returned no user id');
+      writeManifest();
       return r.data.token;
     });
 
@@ -103,10 +130,14 @@ const main = async () => {
       const r = await api('POST', '/api/pods', { token, body: { name: `${username} workspace`, type: 'team' } });
       const created = r.data?.pod || r.data;
       expect(r.status < 300 && created?._id, `pod create ${r.status}: ${JSON.stringify(r.data)}`);
+      manifest.podIds.push(String(created._id));
+      writeManifest();
       return created;
     });
 
     await runStep('hosted-install', async () => {
+      manifest.agentName = agentName;
+      writeManifest();
       const r = await api('POST', '/api/registry/install', {
         token,
         body: { agentName, podId: pod._id, displayName: agentName, config: { runtime: { runtimeType: 'hosted' } }, scopes: [] },
