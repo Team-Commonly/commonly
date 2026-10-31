@@ -435,7 +435,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(shared).toContain('font-size: 12px');
     expect(cancel).toContain('color: var(--v2-text-tertiary)');
     expect(submit).toContain('background: var(--v2-ink)');
-    expect(submit).toContain('color: #fff');
+    expect(submit).toContain('color: var(--v2-bg)');
     expect(disabled).toContain('background: var(--v2-border-strong)');
     expect(phone).not.toBe('');
     expect(ruleBody(v2, '.v2-root button.v2-pods__create-submit', { within: phone })).toContain('min-height: 40px');
@@ -1369,7 +1369,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-thread .v2-msg__quote')).toContain('border-left: 2px solid var(--v2-border)');
     expect(ruleBody(v2, '.v2-thread .v2-msg__quote-text')).toContain('-webkit-line-clamp: 2');
     expect(ruleBody(v2, '.v2-root .v2-thread button.v2-msg__thread-chip')).toContain('min-height: 28px');
-    expect(ruleBody(v2, '.v2-thread .v2-thread-block--open')).toContain('background: #f9fafb');
+    expect(ruleBody(v2, '.v2-thread .v2-thread-block--open')).toContain('background: var(--v2-bg-subtle)');
     expect(ruleBody(v2, '.v2-thread .v2-thread-replies')).toContain('border-left: 2px solid var(--v2-border)');
     expect(ruleBody(v2, '.v2-thread .v2-msg__strip')).toContain('border-radius: 4px');
     expect(ruleBody(v2, '.v2-thread .v2-msg__strip')).toContain('box-shadow: none');
@@ -1406,7 +1406,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('.v2-thread-card__reply');
     expect(ruleBody(v2, '.v2-thread .v2-msg__mention')).toContain('background: #e8ecfb');
     expect(ruleBody(v2, '.v2-thread .v2-avatar--flat-agent')).toContain('var(--v2-accent)');
-    expect(ruleBody(v2, '.v2-thread .v2-avatar--flat-human')).toContain('#f2f4f7');
+    expect(ruleBody(v2, '.v2-thread .v2-avatar--flat-human')).toContain('var(--v2-surface-tint)');
   });
 
   test('Your Team (direction C): three-column card grid, state-coloured marks, cobalt ring for needs-you, ink Hire, no green, old tiers gone', () => {
@@ -1415,8 +1415,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(grid).toContain('gap: 12px');
     expect(ruleBody(v2, '.v2-team-card--needsYou')).toContain('border: 2px solid var(--v2-accent)');
     expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--needsYou')).toContain('var(--v2-accent)');
-    expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--working')).toContain('#101828');
-    expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--idle')).toContain('#e4e7ec');
+    expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--working')).toContain('var(--v2-text-primary)');
+    expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--idle')).toContain('var(--v2-border-soft)');
     expect(ruleBody(v2, '.v2-root button.v2-team__hire')).toContain('background: #101828');
     expect(ruleBody(v2, '.v2-root button.v2-team-card__answer')).toContain('background: #101828');
     expect(ruleBody(v2, '.v2-root button.v2-team-card__talk')).toContain('border: 1px solid var(--v2-border)');

@@ -961,7 +961,7 @@ body.modern-ui.v2-canvas {
   height: 40px;
   gap: 8px;
   background: var(--v2-accent);
-  color: #fff;
+  color: var(--v2-bg);
   font-weight: 600;
   font-size: 14px;
   padding: 0 14px;
@@ -1073,7 +1073,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pods__create-submit {
   background: var(--v2-ink);
-  color: #fff;
+  color: var(--v2-bg);
 }
 
 .v2-root button.v2-pods__create-submit:disabled {
@@ -3731,7 +3731,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-inspector__btn--danger:hover {
   background: var(--v2-danger);
-  color: #fff;
+  color: var(--v2-bg);
   border-color: var(--v2-danger);
 }
 
@@ -4888,7 +4888,7 @@ body.modern-ui.v2-canvas {
   border: none;
   border-radius: var(--v2-radius-sm);
   background: var(--v2-accent);
-  color: #fff;
+  color: var(--v2-bg);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -5058,7 +5058,7 @@ body.modern-ui.v2-canvas {
   margin-top: 8px;
   padding: 10px 14px;
   background: var(--v2-accent);
-  color: #fff;
+  color: var(--v2-bg);
   font-weight: 700;
   font-size: 14px;
   border-radius: var(--v2-radius);
@@ -6485,7 +6485,7 @@ body.modern-ui.v2-canvas {
   padding: 16px 18px 14px;
   border: 1px solid var(--v2-border);
   border-radius: 4px;
-  background: var(--v2-surface, #fff);
+  background: var(--v2-surface, var(--v2-bg));
   color: var(--v2-text-primary);
   cursor: pointer;
   transition: border-color 0.08s ease, background 0.08s ease;
@@ -7119,7 +7119,7 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-admin-users__btn--primary {
   background: var(--v2-accent);
   border-color: var(--v2-accent);
-  color: #fff;
+  color: var(--v2-bg);
 }
 
 .v2-root button.v2-admin-users__btn--primary:hover:not(:disabled) {
@@ -7432,7 +7432,7 @@ body.modern-ui.v2-canvas {
   border-radius: var(--v2-radius-md);
   padding: 16px;
   margin-bottom: 16px;
-  background: #ffffff;
+  background: var(--v2-bg);
 }
 .v2-billing__head {
   display: flex;
@@ -7487,7 +7487,7 @@ body.modern-ui.v2-canvas {
   padding: 0 14px;
   border-radius: var(--v2-radius-sm);
   border: 1px solid var(--v2-border);
-  background: #ffffff;
+  background: var(--v2-bg);
   color: var(--v2-text-primary);
   font-size: 13px;
   font-weight: 600;
@@ -8114,7 +8114,7 @@ body.modern-ui.v2-canvas {
   padding: 0 12px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
-  background: #ffffff;
+  background: var(--v2-bg);
   color: var(--v2-text-primary);
   font: 600 13px/20px var(--v2-font);
   cursor: pointer;
@@ -8682,7 +8682,7 @@ body.modern-ui.v2-canvas {
   border: none;
   border-radius: 8px;
   padding: 9px 16px;
-  color: #fff;
+  color: var(--v2-bg);
   background: var(--v2-ink);
   cursor: pointer;
   font-size: 13.5px;
@@ -8928,7 +8928,7 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-board__create-submit {
   border: none;
   background: var(--v2-accent);
-  color: #fff;
+  color: var(--v2-bg);
   font-size: 13.5px;
   font-weight: 600;
   padding: 9px 16px;
@@ -10908,7 +10908,7 @@ body.modern-ui.v2-canvas {
 .v2-connectors__select { min-width: 0; min-height: 40px; padding: 0 10px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); color: var(--v2-ink); font: 500 13px var(--v2-font); }
 
 .v2-connectors__aside { display: flex; min-width: 0; flex-direction: column; gap: 16px; }
-.v2-connector-aside__step, .v2-connector-aside__card { padding: 18px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-md); background: var(--v2-panel, #f9fafb); }
+.v2-connector-aside__step, .v2-connector-aside__card { padding: 18px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-md); background: var(--v2-panel, var(--v2-bg-subtle)); }
 .v2-connector-aside__step p, .v2-connector-aside__card p { margin: 0; color: var(--v2-text-secondary); font-size: 13px; line-height: 20px; }
 .v2-connector-aside__eyebrow { margin-bottom: 8px !important; color: var(--v2-accent-text) !important; font-family: var(--v2-font-mono); font-size: 11px !important; font-weight: 500; text-transform: lowercase; }
 .v2-connector-aside__card h2 { margin: 0 0 8px; color: var(--v2-ink); font-family: var(--v2-font-display); font-size: 16px; font-weight: 800; letter-spacing: -0.02em; }
@@ -11965,7 +11965,7 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-pods__row--selected,
 .v2-root button.v2-pods__row--selected:hover {
   background: var(--v2-accent);
-  color: #fff;
+  color: var(--v2-bg);
   font-weight: 600;
 }
 
@@ -11992,7 +11992,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pods__row--selected .v2-pods__row-mark {
   background: rgba(255, 255, 255, 0.22);
-  color: #fff;
+  color: var(--v2-bg);
 }
 
 .v2-pods__row-name {
@@ -12058,7 +12058,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-pods__row--selected .v2-pods__row-pill {
-  background: #fff;
+  background: var(--v2-bg);
   color: var(--v2-accent);
 }
 
@@ -12718,14 +12718,14 @@ body.modern-ui.v2-canvas {
 
 /* ---------- Workspace at scale · direction C · PR 2b (threading restyle, walk-3 misses 51–63) ----------
    Runtime tag on agent rows; 20px reaction chips; a two-line quote that jumps to
-   its source; the thread summary is one chip; the expanded thread is one #f9fafb
+   its source; the thread summary is one chip; the expanded thread is one var(--v2-bg-subtle)
    band with a 2px rule and a Collapse foot; the action strip is a 28px white box
    top-right on hover (inline under the body on long-press at 390); the Jump pill
    is white with a cobalt count; transcript avatars are two-tone. */
 
 /* Hover band and the expanded band share the panel colour, not the tint. */
 .v2-thread .v2-msg:hover,
-.v2-thread .v2-msg:focus-within { background: #f9fafb; }
+.v2-thread .v2-msg:focus-within { background: var(--v2-bg-subtle); }
 .v2-thread .v2-msg { border-radius: 4px; }
 .v2-thread .v2-msg--landed { background: var(--v2-accent-soft, #e8ecfb); transition: background 0.6s ease; }
 
@@ -12865,7 +12865,7 @@ body.modern-ui.v2-canvas {
    gap = 36px). */
 .v2-thread .v2-thread-block { margin: 0 0 10px; width: 100%; }
 .v2-thread .v2-thread-block__inner { margin-left: 36px; }
-.v2-thread .v2-thread-block--open { background: #f9fafb; border-radius: 4px; padding: 0 8px 6px 0; }
+.v2-thread .v2-thread-block--open { background: var(--v2-bg-subtle); border-radius: 4px; padding: 0 8px 6px 0; }
 .v2-thread .v2-thread-block--open > .v2-msg:hover,
 .v2-thread .v2-thread-block--open > .v2-msg:focus-within { background: transparent; }
 .v2-thread .v2-thread-block .v2-thread-card { margin: 2px 0 0; }
@@ -12908,8 +12908,8 @@ body.modern-ui.v2-canvas {
 /* Transcript avatars are two-tone squares (ux-lead 64476 (1)): human tint +
    #4f5c6e initials, agent cobalt + white initials; a photo still wins. */
 .v2-thread .v2-avatar--flat { border: 0; box-shadow: none; border-radius: 4px; font: 650 12px/1 var(--v2-font); letter-spacing: 0.02em; }
-.v2-thread .v2-avatar--flat-human { background: #f2f4f7; color: #4f5c6e; }
-.v2-thread .v2-avatar--flat-agent { background: var(--v2-accent); color: #fff; }
+.v2-thread .v2-avatar--flat-human { background: var(--v2-surface-tint); color: #4f5c6e; }
+.v2-thread .v2-avatar--flat-agent { background: var(--v2-accent); color: var(--v2-bg); }
 .v2-thread .v2-thread-replies .v2-msg .v2-avatar--flat { font: 650 12px/1 var(--v2-font); }
 .v2-thread .v2-thread-card__faces .v2-avatar--flat { font: 650 11px/1 var(--v2-font-mono); }
 .v2-root .v2-thread button.v2-thread-replies__aim { margin-left: auto; padding: 0; color: var(--v2-text-muted); font: 500 12px/16px var(--v2-font); }
@@ -12931,7 +12931,7 @@ body.modern-ui.v2-canvas {
   /* The row is a 28px | 1fr grid and the strip precedes the body in DOM: left
      to auto-place, a static strip takes the body's cell and the body drops
      into the avatar column (one word per line — 390 walk). Pin it. */
-  .v2-thread .v2-msg--reveal { background: #f9fafb; row-gap: 6px; }
+  .v2-thread .v2-msg--reveal { background: var(--v2-bg-subtle); row-gap: 6px; }
   .v2-thread .v2-msg--reveal .v2-msg__strip {
     position: static;
     grid-column: 2;
@@ -13229,9 +13229,9 @@ body.modern-ui.v2-canvas {
 }
 .v2-root button.v2-team-card__mark img { width: 100%; height: 100%; object-fit: cover; }
 .v2-root button.v2-team-card__mark .v2-avatar { width: 100%; height: 100%; border: 0; border-radius: inherit; }
-.v2-root button.v2-team-card__mark--needsYou { background: var(--v2-accent); color: #fff; }
-.v2-root button.v2-team-card__mark--working { background: #101828; color: #fff; }
-.v2-root button.v2-team-card__mark--idle { background: #e4e7ec; color: #4f5c6e; }
+.v2-root button.v2-team-card__mark--needsYou { background: var(--v2-accent); color: var(--v2-bg); }
+.v2-root button.v2-team-card__mark--working { background: var(--v2-text-primary); color: var(--v2-bg); }
+.v2-root button.v2-team-card__mark--idle { background: var(--v2-border-soft); color: #4f5c6e; }
 .v2-team-card__title { min-width: 0; }
 /* A primary identifier never one-line-ellipsizes (craft audit rule 1, #568):
    two lines, then clamp; min-width 0 so the grid column can shrink under it. */
