@@ -34,24 +34,18 @@ describe('recording the reported CLI', () => {
       _id: { $in: ['i1', 'i2'] },
       'config.runtime.host': 'byo',
       'config.runtime.adapter': null,
-      'config.runtime.runtimeType': { $in: expect.arrayContaining(['webhook', 'wrapper']) },
       'config.runtime.reportedCli': { $ne: 'claude' },
     });
     expect(update).toEqual({ $set: { 'config.runtime.reportedCli': 'claude' } });
   });
 
-  test('the runtimeType filter admits exactly the rows the binding reads as unbound', () => {
+  test('an adapter-shaped runtimeType does not block the label, so a stale declaration shows the poller (TASK-704)', () => {
     recordReportedCli(['i1'], 'claude');
-    const admitted = mockUpdateMany.mock.calls[0][0]['config.runtime.runtimeType'].$in;
-    expect(admitted).toContain(null);
-    admitted.forEach((runtimeType) => {
-      expect(adapterForRuntimeBinding({ runtimeType, host: 'byo' })).toBeNull();
-    });
-    expect(adapterForRuntimeBinding({ host: 'byo' })).toBeNull();
-    [...REPORTED_CLI_VALUES].forEach((runtimeType) => {
-      expect(admitted).not.toContain(runtimeType);
-      expect(adapterForRuntimeBinding({ runtimeType, host: 'byo' })).toBe(runtimeType);
-    });
+    const [filter, update] = mockUpdateMany.mock.calls[0];
+    expect(filter).not.toHaveProperty('config.runtime.runtimeType');
+    expect(update).toEqual({ $set: { 'config.runtime.reportedCli': 'claude' } });
+    // Still a single write: the label never gets a second path that could bind.
+    expect(mockUpdateMany).toHaveBeenCalledTimes(1);
   });
 
   test('only the CLI adapter names are accepted', () => {
@@ -128,6 +122,12 @@ describe('no binding reads reportedCli', () => {
     expect(adapterForRuntimeBinding({ runtimeType: 'webhook', host: 'byo', reportedCli: 'pi' })).toBeNull();
     expect(adapterForRuntimeBinding({ runtimeType: 'pi', host: 'byo', reportedCli: 'claude' }))
       .toBe(adapterForRuntimeBinding({ runtimeType: 'pi', host: 'byo' }));
+  });
+
+  test('a stale codex runtimeType polling claude keeps its binding, and the report only labels it (TASK-704)', () => {
+    const stale = { runtimeType: 'codex', host: 'byo' };
+    expect(adapterForRuntimeBinding(stale)).toBe('codex');
+    expect(adapterForRuntimeBinding({ ...stale, reportedCli: 'claude' })).toBe('codex');
   });
 
   test('the config write guard judges the same with or without it', () => {
