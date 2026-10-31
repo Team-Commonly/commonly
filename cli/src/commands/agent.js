@@ -1,6 +1,7 @@
 import { createOwnKeyResolver, createMachineReportClient } from '../lib/own-key-launch.js';
 import { foregroundDaemonHint } from '../lib/daemon-hint.js';
 import { loadDaemonRecord } from '../lib/daemon-store.js';
+import { daemonSeatLogPath, readLogTail } from '../lib/daemon-logs.js';
 import { WALKED_HARNESSES } from '../lib/runtime-inventory.js';
 import { createRuntimeReporter } from '../lib/runtime-observation.js';
 /**
@@ -16,7 +17,7 @@ import { createRuntimeReporter } from '../lib/runtime-observation.js';
  * heartbeat  — manually trigger an agent's heartbeat
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync, watch } from 'fs';
 import { join, dirname, basename, resolve as pathResolve } from 'path';
 import { homedir, tmpdir } from 'os';
 import { fileURLToPath } from 'url';
@@ -4356,42 +4357,30 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
     });
 
   // ── logs ──────────────────────────────────────────────────────────────────
+  // Reads the seat's supervised log on this machine. The previous version
+  // called the agent-runtime events route with the owner login, which always
+  // 401s ("Missing agent token"), so no agent could be read through it.
   agent
     .command('logs <name>')
-    .description('Stream recent events for an agent')
-    .option('--instance-id <id>', 'Instance ID', 'default')
-    .option('--follow', 'Keep polling for new events', false)
-    .option('--instance <url>', 'Target Commonly instance')
-    .action(async (name, opts) => {
-      const token = getToken(opts.instance);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
-
-      const client = createClient({ instance: resolveInstanceUrl(opts.instance), token });
-
-      const fetchAndPrint = async () => {
-        const { events = [] } = await client.get('/api/agents/runtime/events', {
-          agentName: name,
-          instanceId: opts.instanceId,
-          limit: 20,
-        });
-        events.forEach((e) => {
-          const ts = new Date(e.createdAt).toTimeString().slice(0, 8);
-          const outcome = e.delivery?.outcome || e.status;
-          console.log(`[${ts}] ${e.type.padEnd(18)} → ${outcome}`);
-        });
-        return events;
-      };
-
-      try {
-        await fetchAndPrint();
-        if (opts.follow) {
-          console.log('Following... (Ctrl+C to stop)');
-          setInterval(fetchAndPrint, 5000);
+    .description("Show a supervised seat's local log (written by the daemon)")
+    .option('--follow', 'Continue printing appended log output', false)
+    .option('--lines <n>', 'Number of trailing lines to show', '50')
+    .action((name, opts) => {
+      const path = daemonSeatLogPath(name);
+      const printTail = () => {
+        const output = readLogTail(path, opts.lines);
+        if (output === null) {
+          console.error(`No local log for '${name}' at ${path}. Only seats the daemon supervises write one.`);
+          process.exit(1);
         }
-      } catch (err) {
-        console.error(`Failed: ${err.message}`);
-        process.exit(1);
-      }
+        if (output) console.log(output);
+      };
+      printTail();
+      if (!opts.follow) return;
+      const watcher = watch(path, printTail);
+      const close = () => { watcher.close(); process.exit(0); };
+      process.once('SIGINT', close);
+      process.once('SIGTERM', close);
     });
 
   // ── config (existing-agent edit) ─────────────────────────────────────────
