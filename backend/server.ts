@@ -316,6 +316,20 @@ const mongoose = require('mongoose');
 const AgentBootstrapService = require('./services/agentBootstrapService');
 const { ensureLocalDevLogin } = require('./services/localDevLoginService');
 const { AgentInstallation } = require('./models/AgentRegistry');
+const { backfillGrantOwners } = require('./services/grantOwnerBinding');
+
+// Binds pre-existing room grants to their owner. Revoke and seat-grant read
+// refuse unbound grants. This runs at boot without holding requests, so a
+// revoke that lands while it is still scanning can be refused until it
+// finishes; the scan is idempotent and a restart re-runs it for the rest.
+mongoose.connection.once('open', () => {
+  if (process.env.NODE_ENV === 'test') return;
+  backfillGrantOwners()
+    .then((result: { scanned: number; bound: number; unbound: number }) => console.log(
+      `[grant-owner-backfill] scanned=${result.scanned} bound=${result.bound} unbound=${result.unbound}`,
+    ))
+    .catch((error: any) => console.error('[grant-owner-backfill] Error:', error.message));
+});
 
 mongoose.connection.once('open', () => {
   if (process.env.NODE_ENV !== 'test') {

@@ -70,6 +70,9 @@ const grant = (over = {}) => ({
   audience: [SEAT, GONE],
   expiresAt: new Date('2026-10-01T00:00:00.000Z'),
   brokerId: 'broker-1',
+  // Minted by OWNER: the binding, not the connection's current holder, names the granter.
+  ownerId: OWNER,
+  connectionRowId: 'conn-row-1',
   ...over,
 });
 

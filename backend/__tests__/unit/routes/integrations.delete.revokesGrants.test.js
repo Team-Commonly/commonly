@@ -93,6 +93,8 @@ const grantFixture = (overrides = {}) => ({
   audience: [OWNER],
   expiresAt: new Date(Date.now() + 3_600_000),
   brokerId: 'github-app',
+  // Minted by OWNER, so the binding names the granter.
+  ownerId: OWNER,
   ...overrides,
 });
 
@@ -191,15 +193,14 @@ describe('DELETE /api/integrations/:id ends the connection\'s grants first', () 
 
     await request(app).delete(`/api/integrations/${connection._id}`).set('x-test-user', OWNER);
 
-    // The sequence this test exists for: remove, then revoke. The route still
-    // 403s — the connection row is gone, so `findConnection` cannot resolve the
-    // caller's ownership — but the grant is already dead, so nothing is left
-    // for the granter to chase.
+    // The sequence this test exists for: remove, then revoke. The owner is read
+    // from the grant's binding, not the removed row, so the route answers 200
+    // with nothing left to revoke: the removal already revoked the grant.
     const after = await request(app)
       .post(`/api/grants/${root.grantId}/revoke`)
       .set('x-test-user', OWNER);
-    expect(after.status).toBe(403);
-    expect(after.body).toEqual({ error: 'access_denied' });
+    expect(after.status).toBe(200);
+    expect(after.body).toEqual({ grantId: root.grantId, revoked: 0 });
 
     const row = await RoomGrant.findOne({ grantId: root.grantId }).lean();
     expect(row.revokedAt).toBeInstanceOf(Date);

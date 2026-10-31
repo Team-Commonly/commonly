@@ -942,11 +942,10 @@ router.delete('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res
         ...(result.revokeAt ? { revokeAt: result.revokeAt } : {}),
       });
     }
-    // §10.5's grants step, and it has to run here: the deletion below removes
-    // the row, and the granter's own revoke route resolves ownership through
-    // `findConnection` (routes/grants.ts:421) — after the row is gone every
-    // grant on this connection answers 403 `access_denied`, so the removal
-    // would orphan them un-revoked (TASK-145).
+    // §10.5's grants step, and it runs before the row is deleted below. Revoke
+    // reads the owner bound on each grant at mint, not the row, so the order no
+    // longer decides who may revoke. It still matters: removal ends these grants
+    // here, while the row they were minted against is still present (TASK-145).
     await revokeConnectionGrants({ connection: integration, revokedBy: deletedBy });
     const service = integration.type === 'discord' ? new DiscordService(id) : null;
     try { if (service) await service.disconnect(); } catch (error) { console.warn('Error disconnecting service during deletion:', error); }
