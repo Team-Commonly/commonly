@@ -157,3 +157,19 @@ export const defaultByoHandoffName = (username: unknown, adapter: ByoHandoffAdap
   const base = safeName(username) || 'my';
   return `${base}-${adapter}`.slice(0, 40).replace(/-+$/g, '') || `my-${adapter}`;
 };
+
+/** Suggestions do not reserve names; attach must still enforce ownership. */
+export const availableByoHandoffName = async (
+  base: string,
+  isTaken: (name: string) => Promise<boolean>,
+): Promise<string> => {
+  for (let attempt = 1; attempt <= 100; attempt += 1) {
+    const suffix = attempt === 1 ? '' : `-${attempt}`;
+    const candidate = `${base.slice(0, 40 - suffix.length).replace(/-+$/g, '')}${suffix}`;
+    // Check the global registry, including other owners and uninstalled names.
+    // Reusing an owned name can still collide with that agent's existing memory.
+    // eslint-disable-next-line no-await-in-loop
+    if (!await isTaken(candidate)) return candidate;
+  }
+  throw new Error('No free local agent name found. Supply a different name.');
+};
