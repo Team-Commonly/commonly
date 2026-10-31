@@ -1,7 +1,7 @@
 // The planner behind scripts/repair-first-party-labels (TASK-551). Each repair
 // rule is pinned on its own, the rows it must leave alone are pinned too, and
 // a label another agent already holds is held rather than written.
-const { planLabelRepairs, splitRepairs } = require('../../../scripts/repair-first-party-labels');
+const { planLabelRepairs, splitRepairs, mirrorLabel } = require('../../../scripts/repair-first-party-labels');
 
 const row = (overrides) => ({
   id: 'u1',

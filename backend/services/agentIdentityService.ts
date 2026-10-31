@@ -431,26 +431,32 @@ async function resolveCollisionFreeDisplayName(
     .lean<Array<{ botMetadata?: { instanceId?: string; agentName?: string } }>>();
   if (peers.length === 0) return trimmed;
 
-  // Include `self` in the canonical-pick comparison so the rule is stable
-  // regardless of which row writes first.
+  // Include `current` in the canonical-pick comparison so the rule is stable
+  // regardless of which row writes first. It sits first, so an exact tie (the
+  // same agent on the same instance) still keeps the bare name.
+  const current = { instanceId, agentName };
   const all = [
+    current,
     ...peers.map((p) => ({
       instanceId: p.botMetadata?.instanceId || '',
       agentName: p.botMetadata?.agentName || '',
     })),
-    { instanceId, agentName },
   ];
-  // Default-first applies when the default instance belongs to a first-party
-  // agent. Length alone let a shorter named peer ('scout') win and turned the
-  // default row into "Scout (Default)" (TASK-551). Every other agent keeps the
-  // shortest-instanceId rule it has on main.
-  const defaultFirst = all.some((c) => c.instanceId === 'default' && isFirstPartyAgentName(c.agentName));
-  const canonical = all.map((c) => c.instanceId).sort((a, b) => {
-    if (defaultFirst && ((a === 'default') !== (b === 'default'))) return a === 'default' ? -1 : 1;
-    if (a.length !== b.length) return a.length - b.length;
-    return a.localeCompare(b);
+  // A first-party agent's default instance keeps the bare name over any peer
+  // (TASK-551). Length alone let a shorter named peer ('scout') win and turned
+  // the default row into "Scout (Default)". Every other claimant keeps the
+  // shortest-instanceId rule it has on main. The pick is a claimant, not an
+  // instanceId: a first-party and a community agent can both sit on 'default',
+  // and an instanceId tie falls to agentName, so row order never decides it.
+  const firstPartyDefault = (c: { instanceId: string; agentName: string }): boolean => (
+    c.instanceId === 'default' && isFirstPartyAgentName(c.agentName)
+  );
+  const canonical = all.sort((a, b) => {
+    if (firstPartyDefault(a) !== firstPartyDefault(b)) return firstPartyDefault(a) ? -1 : 1;
+    if (a.instanceId.length !== b.instanceId.length) return a.instanceId.length - b.instanceId.length;
+    return a.instanceId.localeCompare(b.instanceId) || a.agentName.localeCompare(b.agentName);
   })[0];
-  if (canonical === instanceId) {
+  if (canonical === current) {
     // Caller is the canonical; let them keep the bare name. Peers may
     // need rewriting via the offline sweep — see comment above.
     return trimmed;

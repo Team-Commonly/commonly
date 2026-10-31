@@ -562,6 +562,32 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
     expect(mockSaved[0].botMetadata.displayName).toBe('Helper (Default)');
   });
 
+  test('a first-party default keeps the bare name over a community default on the same label', async () => {
+    // Both claimants sit on 'default'. Only the first-party one keeps the bare
+    // name; the community agent's row takes the suffix.
+    mockPeers = [
+      { _id: 'default-scout', botMetadata: { displayName: 'Scout', instanceId: 'default', agentName: 'scout' } },
+    ];
+    await AgentIdentityService.getOrCreateAgentUser('helper', {
+      instanceId: 'default',
+      displayName: 'Scout',
+    });
+    expect(mockSaved.length).toBe(1);
+    expect(mockSaved[0].botMetadata.displayName).toBe('Scout (Default)');
+  });
+
+  test('two agents on one instanceId do not both keep the bare name', async () => {
+    mockPeers = [
+      { _id: 'bot-lab', botMetadata: { displayName: 'Helper', instanceId: 'lab', agentName: 'bot' } },
+    ];
+    await AgentIdentityService.getOrCreateAgentUser('helper', {
+      instanceId: 'lab',
+      displayName: 'Helper',
+    });
+    expect(mockSaved.length).toBe(1);
+    expect(mockSaved[0].botMetadata.displayName).toBe('Helper (Lab)');
+  });
+
   test('a first-party agent with no displayName is stored under its curated label, not its agentName', async () => {
     await AgentIdentityService.getOrCreateAgentUser('scout', {});
     expect(mockSaved.length).toBe(1);

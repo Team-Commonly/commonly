@@ -13,8 +13,8 @@
  *   1. Group every bot User by botMetadata.displayName.
  *   2. For each group with >1 user, pick ONE canonical to keep as-is. If the
  *      group's default instance is a first-party agent (isFirstPartyAgentName)
- *      it goes first; otherwise the shortest instanceId wins. Ties: alphabetically
- *      first instanceId. Deterministic across re-runs.
+ *      it goes first; otherwise the shortest instanceId wins. Ties on instanceId:
+ *      alphabetically first agentName, then _id. Deterministic across re-runs.
  *   3. For every other user in the group, rewrite displayName to
  *      `<originalDisplayName> (<instanceId>)`. instanceId is humanized:
  *      `pixel-demo` → "Pixel-demo", `inst-315667` → "inst-315667".
@@ -70,21 +70,23 @@ const isOpaquePerUserToken = (instanceId: string): boolean => (
   /^u[a-f0-9]{10}([a-f0-9]{14})?$/.test((instanceId || '').toLowerCase())
 );
 
-// Deterministic pick. A group whose default instance is a first-party agent
-// keeps that instance's bare name, as in the inline resolver (TASK-551). Every
-// other group: the shortest instanceId wins (so "pixel" beats "pixel-demo").
-// Ties resolved alphabetically. Stable across re-runs.
-export const pickCanonical = (users: BotUser[]): BotUser => {
-  const defaultFirst = users.some((u) => (u.botMetadata?.instanceId || '') === 'default'
-    && isFirstPartyAgentName(u.botMetadata?.agentName || ''));
-  return [...users].sort((a, b) => {
-    const ai = a.botMetadata?.instanceId || '';
-    const bi = b.botMetadata?.instanceId || '';
-    if (defaultFirst && ((ai === 'default') !== (bi === 'default'))) return ai === 'default' ? -1 : 1;
-    if (ai.length !== bi.length) return ai.length - bi.length;
-    return ai.localeCompare(bi);
-  })[0];
-};
+// Deterministic pick. A first-party agent's default instance keeps the bare
+// name over any peer, as in the inline resolver (TASK-551). Every other
+// claimant: the shortest instanceId wins (so "pixel" beats "pixel-demo"). An
+// instanceId tie falls to agentName, then _id, so the pick never depends on
+// the order Mongo returns rows.
+const isFirstPartyDefault = (u: BotUser): boolean => (u.botMetadata?.instanceId || '') === 'default'
+  && isFirstPartyAgentName(u.botMetadata?.agentName || '');
+
+export const pickCanonical = (users: BotUser[]): BotUser => [...users].sort((a, b) => {
+  if (isFirstPartyDefault(a) !== isFirstPartyDefault(b)) return isFirstPartyDefault(a) ? -1 : 1;
+  const ai = a.botMetadata?.instanceId || '';
+  const bi = b.botMetadata?.instanceId || '';
+  if (ai.length !== bi.length) return ai.length - bi.length;
+  return ai.localeCompare(bi)
+    || (a.botMetadata?.agentName || '').localeCompare(b.botMetadata?.agentName || '')
+    || String(a._id).localeCompare(String(b._id));
+})[0];
 
 async function main() {
   const uri = process.env.MONGO_URI;

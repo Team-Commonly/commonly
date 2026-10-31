@@ -22,6 +22,12 @@
  * may have chosen. Per-user rows (opaque instance tokens) never skip or contest
  * a label: every user's Scout shares the bare name by design.
  *
+ * --apply writes each label twice: `botMetadata.displayName` in Mongo, and the
+ * `users.username` column in PG, which chat renders. syncUserToPostgreSQL writes
+ * that column from the same displayName. PG goes first, so a run that stops
+ * between the two writes leaves the Mongo label unrepaired; the next run plans
+ * the row again and rewrites both.
+ *
  * Run:  cd backend && npx ts-node scripts/repair-first-party-labels.ts [--apply]
  */
 import mongoose from 'mongoose';
@@ -111,6 +117,24 @@ export function splitRepairs(repairs: LabelRepair[]): { writable: LabelRepair[];
   };
 }
 
+// The slice of a pg Pool the repair uses, so the tests pass a fake.
+interface PgPool {
+  query: (sql: string, params: unknown[]) => Promise<{ rowCount?: number | null }>;
+  end: () => Promise<void>;
+}
+
+// Sets the chat-facing PG label to the value the Mongo write sets.
+// syncUserToPostgreSQL writes the same column (chatUsernameFor: a bot's
+// displayName). Returns false when PG is not configured.
+export async function mirrorLabel(pool: PgPool | null, id: string, label: string): Promise<boolean> {
+  if (!pool) return false;
+  const result = await pool.query(
+    'UPDATE users SET username = $2, updated_at = $3 WHERE _id = $1',
+    [id, label, new Date()],
+  );
+  return (result.rowCount || 0) > 0;
+}
+
 interface LabelUser {
   _id: mongoose.Types.ObjectId;
   username?: string;
@@ -157,14 +181,21 @@ async function main() {
       `  ! skipped ${r.username}: "${r.from}" → "${r.to}" (${r.reason}); "${r.to}" is also taken by ${holders}`,
     );
   }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const pgPool: PgPool | null = APPLY ? require('../config/db-pg').pool || null : null;
+  if (APPLY && !pgPool) {
+    console.log('  PG_HOST is not set: users.username is not mirrored; the next agent sync writes it.');
+  }
   for (const r of writable) {
     console.log(`${APPLY ? '' : '[dry] '}${r.username}: "${r.from}" → "${r.to}" (${r.reason})`);
     if (APPLY) {
+      await mirrorLabel(pgPool, r.id, r.to);
       await User.updateOne({ _id: r.id }, { $set: { 'botMetadata.displayName': r.to } });
     }
   }
   const verb = APPLY ? 'repaired' : 'would be repaired (dry run; pass --apply to write)';
   console.log(`\nDone — ${writable.length} label(s) ${verb}, ${skipped.length} skipped for an operator decision.`);
+  if (pgPool) await pgPool.end();
   await mongoose.disconnect();
 }
 

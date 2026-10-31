@@ -92,6 +92,16 @@ describe('resolveAgentDisplayLabel', () => {
       expect(resolveAgentDisplayLabel(user)).toBe('Scout');
     });
 
+    // TASK-551: "Scout (Scout-Demo)" is the collision label the resolver writes
+    // for a named Scout instance. It is the product's own label, not a leak.
+    it('keeps a first-party collision label that spells its agentName and instanceId', () => {
+      const user = {
+        username: 'scout-demo',
+        botMetadata: { displayName: 'Scout (Scout-Demo)', agentName: 'scout', instanceId: 'scout-demo' },
+      };
+      expect(resolveAgentDisplayLabel(user)).toBe('Scout (Scout-Demo)');
+    });
+
     // The shared-runtime set is wider than openclaw: a codex seat that takes
     // its officialDisplayName ('Codex') must still fall back to its instance.
     it('still falls back to instanceId when a shared codex runtime name leaks as displayName', () => {
