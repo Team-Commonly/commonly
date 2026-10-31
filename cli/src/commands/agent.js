@@ -1414,6 +1414,15 @@ export { supervisedRunPolicy };
  * Every enforcement failure fails OPEN — a kernel without the claim route or
  * an unreachable upload endpoint must never produce a silent agent (#887).
  */
+// Codex turns are supervised by default (D211): a turn that stops making
+// progress is named and killed instead of holding the seat. COMMONLY_SUPERVISE_RUNS=0
+// opts out. Every other adapter stays off unless COMMONLY_SUPERVISE_RUNS=1.
+export const superviseRunsByDefault = (adapterName, env = process.env) => {
+  if (env.COMMONLY_SUPERVISE_RUNS === '0') return false;
+  if (adapterName === 'codex') return true;
+  return env.COMMONLY_SUPERVISE_RUNS === '1';
+};
+
 export const performRun = ({
   instanceUrl,
   token,
@@ -1461,14 +1470,15 @@ export const performRun = ({
   resolveOwnProviderKey = null,
   runtimeReportClient = null,
   refusalHandoff = null,
-  // Off unless COMMONLY_SUPERVISE_RUNS=1: each spawn runs under the seats
-  // supervisor (stall window, wall-clock backstop, a named failure on every
-  // settle). The CLI still talks to its provider directly, and one metadata
-  // line per turn goes to ~/.commonly/state/turns/<agent>.jsonl once
-  // delivery settles. Off, the spawn path is the plain adapter call it has
-  // always been, and nothing is written.
-  superviseRuns = process.env.COMMONLY_SUPERVISE_RUNS === '1',
+  // Each spawn runs under the seats supervisor (stall window, wall-clock
+  // backstop, a named failure on every settle) when superviseRuns is true.
+  // Unset, the default comes from superviseRunsByDefault. The CLI still talks
+  // to its provider directly, and one metadata line per turn goes to
+  // ~/.commonly/state/turns/<agent>.jsonl once delivery settles. Off, the spawn
+  // path is the plain adapter call it has always been, and nothing is written.
+  superviseRuns,
 }) => {
+  const supervising = superviseRuns ?? superviseRunsByDefault(adapter?.name);
   reportRuntime = reportRuntime && WALKED_HARNESSES.includes(adapter?.name);
   if (environment?.provider !== undefined && !adapter?.supportsProvider) {
     throw new Error('environment.provider requires a provider-capable adapter');
@@ -1480,9 +1490,9 @@ export const performRun = ({
   // The supervised run keeps its trace in memory, metadata only; no record of
   // a run is written to disk (lib/supervised-turn.js).
   const turnRunner = createTurnRunner({
-    seat: agentName, turnTimeoutMs: effectiveTurnTimeoutMs, supervise: superviseRuns, log,
+    seat: agentName, turnTimeoutMs: effectiveTurnTimeoutMs, supervise: supervising, log,
   });
-  if (superviseRuns) log(turnRunner.describe(adapter?.name));
+  if (supervising) log(turnRunner.describe(adapter?.name));
   const runtimeReporter = createRuntimeReporter({
     client: runtimeReportClient || { post: async () => {} },
     harness: adapter.name, detect: () => adapter.detect(),
@@ -1895,7 +1905,7 @@ export const performRun = ({
 
   // The spawn → post-decision half of a turn, split out so the claim release
   // above is a plain finally instead of threading through every return path.
-  // With superviseRuns, the turn's log line is written once delivery has
+  // With supervising, the turn's log line is written once delivery has
   // settled; anything thrown after a spawn that resolved means the reply never
   // reached the pod. Off, `turn` writes nothing.
   const runTurn = async (args) => {

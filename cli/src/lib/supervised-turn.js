@@ -3,7 +3,8 @@
  * path also writes one metadata line per turn (the turn log), once the
  * turn's outcome has reached the pod or failed to.
  *
- *   COMMONLY_SUPERVISE_RUNS=1  (read by performRun as `superviseRuns`)
+ *   codex by default, or COMMONLY_SUPERVISE_RUNS=1 (superviseRunsByDefault in
+ *     commands/agent.js; COMMONLY_SUPERVISE_RUNS=0 opts codex out)
  *     the turn runs under `superviseRun` from @commonlyai/seats: a stall
  *     window, a wall-clock backstop, and a guarantee the turn settles with a
  *     named failure. No provider relay: the CLI talks to its provider directly,
