@@ -102,25 +102,36 @@ export const composeStalledConnectNudge = ({
   locale?: NudgeLocale;
   evidence?: StalledConnectCopyEvidence;
 }): string => {
-  // Per-kind copies say which command is missing (TASK-721). The marks are
-  // per USER, not per agent, so a kind counts only when it happened inside
-  // this token's episode. A missing per-kind time is filled from the older
-  // first-copy pair when that pair names the same kind: a copy made before the
-  // per-kind marks shipped, or one whose per-kind write failed, must not read
-  // as "never copied".
+  // Per-kind copies say which command is missing (TASK-721). A per-kind mark
+  // is the FIRST copy of that kind ever, per USER, so it can prove a copy
+  // happened but never that none did. Two readings follow:
+  //  - `rawTime`: any copy of the kind, on any date. A kind with no raw time at
+  //    all was never copied, the only case where "you missed it" is true.
+  //  - `inEpisode`: the copy falls at or after this token was issued. Only
+  //    that one can be described as part of this setup.
+  // A missing or unparseable per-kind time is filled from the older first-copy
+  // pair when the pair names the same kind: a copy made before the per-kind
+  // marks shipped, or one whose per-kind write failed, must not read as "never".
   const hasKindEvidence = Boolean(evidence.mcpCopiedAt || evidence.cliCopiedAt);
   const issuedMs = evidence.tokenIssuedAt ? new Date(evidence.tokenIssuedAt).getTime() : NaN;
-  const kindTime = (kind: 'mcp' | 'cli'): Date | null => {
-    const own = kind === 'mcp' ? evidence.mcpCopiedAt : evidence.cliCopiedAt;
-    const raw = own || (evidence.commandType === kind ? evidence.commandCopiedAt : null);
-    if (!raw) return null;
-    const at = new Date(raw);
-    if (Number.isNaN(at.getTime())) return null;
-    return !Number.isNaN(issuedMs) && at.getTime() < issuedMs ? null : at;
+  const parse = (value: Date | string | null | undefined): Date | null => {
+    if (!value) return null;
+    const at = new Date(value);
+    return Number.isNaN(at.getTime()) ? null : at;
   };
-  const mcpAt = hasKindEvidence ? kindTime('mcp') : null;
-  const cliAt = hasKindEvidence ? kindTime('cli') : null;
-  const mcpOnly = hasKindEvidence && mcpAt !== null && cliAt === null;
+  const kindTimes = (kind: 'mcp' | 'cli'): { rawTime: Date | null; inEpisode: Date | null } => {
+    const own = parse(kind === 'mcp' ? evidence.mcpCopiedAt : evidence.cliCopiedAt);
+    const fromPair = evidence.commandType === kind ? parse(evidence.commandCopiedAt) : null;
+    const rawTime = own || fromPair;
+    const inEpisode = rawTime && (Number.isNaN(issuedMs) || rawTime.getTime() >= issuedMs) ? rawTime : null;
+    return { rawTime, inEpisode };
+  };
+  const mcp = hasKindEvidence ? kindTimes('mcp') : { rawTime: null, inEpisode: null };
+  const cli = hasKindEvidence ? kindTimes('cli') : { rawTime: null, inEpisode: null };
+  const mcpAt = mcp.inEpisode;
+  const cliAt = cli.inEpisode;
+  // True only when a listener command was never copied at all.
+  const mcpOnly = hasKindEvidence && mcpAt !== null && cli.rawTime === null;
   const effective: StalledConnectCopyEvidence = hasKindEvidence
     ? {
       ...evidence,
@@ -137,7 +148,7 @@ export const composeStalledConnectNudge = ({
       // tell this person they missed a command their browser never showed.
       return `@${installerName} — you copied the MCP command ${when}. `
         + `MCP-only clients can call Commonly, but they do not answer @mentions. `
-        + `The listener that does runs only from a Mac for now, and you opened this page on ${unavailableOs}. `
+        + `The listener that does runs only from a Mac for now, and you first opened this page on ${unavailableOs}. `
         + `Run \`${fixCommand}\` in a Terminal on a Mac, or choose “Run it here” on the Bring your own page for a hosted agent. `
         + `I'll post here the moment I connect.`;
     }

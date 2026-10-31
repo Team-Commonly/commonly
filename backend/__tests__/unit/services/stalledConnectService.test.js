@@ -280,7 +280,7 @@ describe('stalledConnectService.scan', () => {
     expect(content).not.toContain('but not the listener command');
   });
 
-  it('ignores a listener copy from before this token when the MCP copy is inside the episode', async () => {
+  it('makes no "missed it" claim when the listener copy is from an earlier agent and the MCP copy is inside this episode', async () => {
     setup();
     copiedKinds({
       byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() - 7 * 24 * 60 * MINUTE),
@@ -290,8 +290,23 @@ describe('stalledConnectService.scan', () => {
     });
     await scan({ now: NOW });
     const { content } = mockPost.mock.calls[0][0];
+    // The first-copy mark cannot show whether this seat's listener was copied.
     expect(content).toContain('you copied the MCP command');
-    expect(content).toContain('but not the listener command that starts me');
+    expect(content).toContain('here is the one thing to check');
+    expect(content).toContain('MCP-only clients can call Commonly');
+    expect(content).not.toContain('but not the listener command');
+  });
+
+  it('an unparseable per-kind time falls back to the first-copy pair', async () => {
+    setup();
+    copiedKinds({
+      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 1 * MINUTE),
+      byoCommandType: 'cli',
+      byoCliCopiedAt: 'garbage',
+      byoMcpCopiedAt: new Date(OLD_TOKEN.getTime() + 5 * MINUTE),
+    });
+    await scan({ now: NOW });
+    expect(mockPost.mock.calls[0][0].content).not.toContain('but not the listener command');
   });
 
   it('falls back to the generic nudge when every copy predates the token', async () => {
@@ -317,7 +332,7 @@ describe('stalledConnectService.scan', () => {
       });
       await scan({ now: NOW });
       const { content } = mockPost.mock.calls[0][0];
-      expect(content).toContain(`you opened this page on ${label}`);
+      expect(content).toContain(`you first opened this page on ${label}`);
       expect(content).toContain('in a Terminal on a Mac');
       expect(content).not.toContain('but not the listener command');
     },
