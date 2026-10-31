@@ -2503,6 +2503,16 @@ body.modern-ui.v2-canvas {
   user-select: all;
 }
 
+.v2-team-card__fix {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--v2-font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--v2-text-secondary);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
 .v2-chat__agent-room-status--wait {
   border-color: var(--v2-border);
   background: var(--v2-surface-hover);

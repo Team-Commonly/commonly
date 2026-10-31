@@ -94,6 +94,19 @@ describe('Your Team (direction C)', () => {
     expect(within(cardOf('Local')).getByRole('button', { name: 'Talk to Local one-to-one' })).toBeInTheDocument();
   });
 
+  test('a never-connected card shows the run command when the server sends one, and not otherwise', async () => {
+    renderPage({ p1Agents: [
+      { name: 'local', instanceId: 'default', displayName: 'Local', userId: 'local-user', installedBy: 'u1',
+        runtime: { runtimeType: 'webhook' }, connection: { state: 'never', lastSeenAt: null },
+        fixCommand: 'commonly agent run local' },
+      { name: 'mate', instanceId: 'default', displayName: 'Mate', userId: 'mate-user', installedBy: 'u2',
+        runtime: { runtimeType: 'webhook' }, connection: { state: 'never', lastSeenAt: null } },
+    ] });
+    await waitFor(() => expect(screen.getByText('Local')).toBeInTheDocument());
+    expect(within(cardOf('Local')).getByTestId('team-card-fix-command')).toHaveTextContent('commonly agent run local');
+    expect(within(cardOf('Mate')).queryByTestId('team-card-fix-command')).toBeNull();
+  });
+
   test('a stale BYO listener shows elapsed minutes and Reconnect', async () => {
     renderPage({ p1Agents: [{
       name: 'local', instanceId: 'default', displayName: 'Local', userId: 'local-user',
