@@ -185,7 +185,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
     : t('inspector.workspace.nothingOpen');
 
   return (
-    <aside className="v2-pane v2-pane--inspector v2-nightshift" aria-label={t('inspector.workspace.ariaLabel')}>
+    <aside className="v2-pane v2-pane--inspector" aria-label={t('inspector.workspace.ariaLabel')}>
       <div className="v2-workspace-inspector">
         {onClose && (
           <button type="button" className="v2-workspace-inspector__close" onClick={onClose} aria-label={t('inspector.workspace.close')}>
