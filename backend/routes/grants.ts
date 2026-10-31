@@ -116,17 +116,6 @@ const projectGrant = (
   grantBrokerRefusalScope: confinement.scope,
 });
 
-/** `grantedBy` is the Connection's owner (plan §9); one lookup per connection. */
-const resolveGranters = async (connectionIds: string[]): Promise<Map<string, string | null>> => {
-  const granters = new Map<string, string | null>();
-  await Promise.all(Array.from(new Set(connectionIds)).map(async (connectionId) => {
-    const connection = await findConnection(connectionId).catch(() => null);
-    const owner = connectionOwnerId(connection);
-    granters.set(connectionId, owner || null);
-  }));
-  return granters;
-};
-
 /**
  * What the read can say about the broker reaching a grant's seat.
  *
@@ -433,6 +422,9 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       audience: audienceValues,
       expiresAt: body.expiresAt,
       brokerId: broker.brokerId,
+      // Bound here, at mint, to the row the caller just proved they own.
+      connectionRowId,
+      ownerId: connectionOwnerId(connection),
     };
     const grant = await createGrant(grantInput);
     return res.status(201).json(grant);
@@ -489,11 +481,12 @@ const revokeHandler = async (req: AuthenticatedRequest, res: express.Response): 
     const grant = await RoomGrant.findOne({ grantId: req.params.grantId });
     if (!grant) return res.status(404).json({ error: 'grant_not_found' });
     const userId = callerId(req);
-    const connection = await findConnection(grant.connectionId);
-    if (!connection) return res.status(403).json({ error: 'access_denied' });
-    const isOwner = connectionOwnerId(connection) === userId;
+    const isOwner = Boolean(grant.ownerId) && grant.ownerId === userId;
     const isAdmin = !isOwner && (req.user?.role === 'admin'
       || (Boolean(userId) && (await User.findById(userId).select('role').lean())?.role === 'admin'));
+    // An unbound grant has no proven owner, so only an admin may act on it. Revoking
+    // only narrows access, so that is safe; no owner path is opened for it.
+    if (!grant.ownerId && !isAdmin) return res.status(403).json({ error: 'grant_unbound' });
     if (!isOwner && !isAdmin) {
       return res.status(403).json({ error: 'access_denied' });
     }
@@ -519,15 +512,18 @@ router.delete('/:grantId', grantRateLimit, auth, revokeHandler);
  * goes only to the granter (the Connection's owner) and that seat.
  */
 const gateGrantRead = async (
-  grant: { target: { kind: 'pod' | 'seat'; id: string }; connectionId: string },
+  grant: { target: { kind: 'pod' | 'seat'; id: string }; ownerId?: string | null },
   req: AuthenticatedRequest,
 ): Promise<{ status: number; error: string } | { members: string[]; granter: string | null }> => {
   const agentId = (req as any).agentUser?._id ? String((req as any).agentUser._id) : '';
   const humanId = agentId ? '' : callerId(req);
   if (!agentId && !humanId) return { status: 401, error: 'unauthorized' };
-  const granters = await resolveGranters([grant.connectionId]);
-  const granter = granters.get(grant.connectionId) ?? null;
+  // The granter is the owner bound at mint, never the current holder of the
+  // connection id: an installation id can be reused by a later row.
+  const granter = grant.ownerId || null;
   if (grant.target.kind === 'seat') {
+    // No proven granter, so no one reads it, the seat included.
+    if (!granter) return { status: 403, error: 'grant_unbound' };
     const isGranter = Boolean(humanId) && granter === humanId;
     const isSeat = Boolean(agentId) && agentId === String(grant.target.id);
     if (!isGranter && !isSeat) return { status: 403, error: 'access_denied' };
@@ -663,16 +659,13 @@ podGrantsRouter.get('/:podId/grants', grantRateLimit, auth, async (req: Authenti
         ...(members.length ? [{ 'target.kind': 'seat', 'target.id': { $in: members } }] : []),
       ],
     }).sort({ createdAt: -1 }).lean();
-    const [granters, confinements] = await Promise.all([
-      resolveGranters(grants.map((grant) => grant.connectionId)),
-      seatGrantRefusals(grants),
-    ]);
+    const confinements = await seatGrantRefusals(grants);
     return res.json({
       podId,
       grants: grants.map((grant) => projectGrant(
         grant,
         grant.target.kind === 'seat' ? grant.audience : members,
-        granters.get(grant.connectionId) ?? null,
+        grant.ownerId || null,
         confinements.get(grant.grantId),
       )),
     });

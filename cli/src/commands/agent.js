@@ -1,4 +1,6 @@
 import { createOwnKeyResolver, createMachineReportClient } from '../lib/own-key-launch.js';
+import { foregroundDaemonHint } from '../lib/daemon-hint.js';
+import { loadDaemonRecord } from '../lib/daemon-store.js';
 import { WALKED_HARNESSES } from '../lib/runtime-inventory.js';
 import { createRuntimeReporter } from '../lib/runtime-observation.js';
 /**
@@ -3551,6 +3553,9 @@ export const performDetach = async ({
  * kernel's own timestamps without conversion.
  */
 const stamp = () => new Date().toISOString();
+// An unreadable daemon record still means a daemon was registered here; the
+// hint only chooses between the two steps, so it must not throw on it.
+const hasDaemonRecord = () => { try { return Boolean(loadDaemonRecord()); } catch { return true; } };
 
 /**
  * Map `agent run`'s cascade flags onto resolveCascadeSettings' override keys.
@@ -4044,7 +4049,7 @@ Docs:
       });
 
       console.log(`${stamp()} [${name}] polling ${record.instanceUrl} for events (ctrl+c to stop)`);
-      console.log(`${stamp()} [${name}] foreground mode; to background and keep it across logins, run: commonly daemon install`);
+      console.log(`${stamp()} [${name}] ${foregroundDaemonHint({ daemonRegistered: hasDaemonRecord() })}`);
 
       const { stop } = performRun({
         instanceUrl: record.instanceUrl,

@@ -103,23 +103,21 @@ const STATE_DOT = '\u25CF';
 
 const agentKey = (a: { name: string; instanceId?: string }) => `${a.name}:${a.instanceId || 'default'}`;
 
-// Where a seat runs, mirroring agentIdentityService.isCloudRuntime (host first).
-// 'hosted' is the ADR-023 hosted runtime, which Commonly runs, so it is cloud even
-// though isCloudRuntime excludes it from the operator gate. A seat we can't
-// classify gets no mark rather than a guessed one.
-// A laptop mark means the viewer's own machine, so a seat another teammate installed
-// gets no laptop mark: we don't know which machine it runs on.
+// Where a seat runs. A stamped host decides it: config.runtime.host is 'cloud'
+// (Commonly runs it) or 'byo' (a machine polling in). A runtime type with no BYO
+// form has only one possible location, so it reads as cloud without a stamp:
+// hosted, native, internal and moltbot (the cluster gateway). Nothing stamps host
+// on a new hosted install, so these need the type. Every other type (codex,
+// claude-code, webhook, wrapper) can run on someone's machine, so it gets no mark
+// unless its host is stamped. A laptop mark means the viewer's own machine, so a
+// byo seat another teammate installed gets no laptop mark either.
 type RunsOn = 'cloud' | 'laptop' | null;
-const CLOUD_RUNTIME_TYPES = new Set(['hosted', 'moltbot', 'internal', 'native', 'managed-agents', 'codex']);
-// 'wrapper' is a daemon-bound seat (pod-agents projects it over the harness label).
-const BYO_RUNTIME_TYPES = new Set(['webhook', 'claude-code', 'wrapper']);
+const CLOUD_ONLY_RUNTIME_TYPES = new Set(['hosted', 'native', 'internal', 'moltbot']);
 const runsOn = (a: AgentInstallationSummary, viewerId: string | undefined): RunsOn => {
-  const type = (a.runtime?.runtimeType || '').trim().toLowerCase();
   const host = (a.runtime?.host || '').trim().toLowerCase();
-  if (host === 'cloud') return 'cloud';
+  const type = (a.runtime?.runtimeType || '').trim().toLowerCase();
+  if (host === 'cloud' || (!host && CLOUD_ONLY_RUNTIME_TYPES.has(type))) return 'cloud';
   if (host === 'byo') return a.installedBy === viewerId ? 'laptop' : null;
-  if (CLOUD_RUNTIME_TYPES.has(type)) return 'cloud';
-  if (BYO_RUNTIME_TYPES.has(type)) return a.installedBy === viewerId ? 'laptop' : null;
   return null;
 };
 

@@ -1605,6 +1605,9 @@
     "available": "Ready on Commonly",
     "revoked": "Disconnected: key revoked",
     "stale": "Not seen in {{count}} min",
+    "staleHours": "Not seen in {{count}} h",
+    "staleDays_one": "Not seen in {{count}} day",
+    "staleDays_other": "Not seen in {{count}} days",
     "never": "Not connected yet",
     "reconnect": "Reconnect",
     "reconnectWaiting": "Waiting for your computer to reconnect this agent.",
@@ -1708,9 +1711,11 @@
       "title": "Run this in Terminal",
       "note": "MCP alone won't wake {{name}} for @mentions. Keep this Terminal open.",
       "reachClaude": "By default, on macOS, when every pod it's in is private, invite-only and not listed in Community, {{name}} reads only the folder you run this from. Otherwise, or when you run it from your home folder, it works in its own scratch folder. To let it edit files and run commands, add --allow write to the last line. Those commands can read beyond the folder. To let it fetch web pages, add --allow web. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
+      "reachCodex": "Codex works in its own scratch folder under your temp directory, not the folder you run this from. --allow does not apply to Codex, so the last line has no --allow.",
       "waiting": "Waiting for {{name}} to check in… this turns green the moment the command connects.",
       "verified": "{{name}} is listening — mentions will wake it.",
       "stillWaiting": "Still no check-in from {{name}}. Run the command above in Terminal on your computer, and this page will confirm it.",
+      "npmPermission": "If npm stops with EACCES (permission denied), don’t add sudo. Reinstall Node with a version manager such as nvm, then run the four lines again.",
       "ctaWarning": "{{name}} isn’t listening yet: it won’t answer mentions until the command above is running.",
       "needs": "Needs Node 20+ with npm and {{tool}} signed in. Run all four lines in one window: the exports last only there.",
       "osLabel": "Setting up on:",
@@ -1721,8 +1726,7 @@
       "toolCodex": "the Codex CLI",
       "unavailableClaude": "Claude Code can’t answer @mentions from {{os}} yet: Commonly runs it in a sandbox, and on {{os}} that sandbox can’t run it. Connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
       "unavailableCodex": "The Codex CLI can’t answer @mentions from {{os}} yet. Choose “Run it here” for a hosted agent, or run the command on a Mac. Linux is not tested yet.",
-      "switchToCodex": "I use Codex instead",
-      "switchToClaude": "I use Claude Code instead"
+      "useDifferentRunner": "Use a different adapter"
     },
     "mode": {
       "label": "Where should it run?",
@@ -1765,6 +1769,7 @@
     "machine": {
       "online": "online",
       "offline": "offline",
+      "addedOn": "added {{date}}",
       "heading": "Now starting:",
       "running": "Running on {{machine}} — say hi in the pod.",
       "waiting": "Waiting for the daemon on {{machine}} to pick it up…",
@@ -2133,7 +2138,7 @@
       "placeholder": "Invitation code",
       "unlock": "Unlock",
       "unlocking": "Unlocking…",
-      "gated": "Hiring an agent from the catalog needs an invitation code during beta.",
+      "gated": "Hiring an agent from the catalog needs an invitation code during beta. Bringing your own agent doesn’t need one.",
       "haveCode": "Have an invitation code?",
       "success": "Catalog unlocked — hire your first agent."
     },

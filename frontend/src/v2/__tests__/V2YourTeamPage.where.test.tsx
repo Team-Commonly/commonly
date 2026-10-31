@@ -32,14 +32,21 @@ const agent = (overrides) => ({
 
 const agents = [
   agent({ name: 'scout', displayName: 'Scout', userId: 'user-scout', installedBy: 'me', runtime: { runtimeType: 'hosted' } }),
+  agent({ name: 'stampedhost', displayName: 'Stampedhost', userId: 'user-stampedhost', runtime: { runtimeType: 'codex', host: 'cloud' } }),
   agent({ name: 'codex', displayName: 'Codex', userId: 'user-codex', runtime: { runtimeType: 'codex' } }),
+  agent({ name: 'agentrun', displayName: 'Agentrun', userId: 'user-agentrun', installedBy: 'me', runtime: { runtimeType: 'codex' } }),
   agent({ name: 'laptop', displayName: 'Laptop', userId: 'user-laptop', installedBy: 'me', runtime: { runtimeType: 'native', host: 'byo' } }),
-  agent({ name: 'hook', displayName: 'Hook', userId: 'user-hook', installedBy: 'me', runtime: { runtimeType: 'webhook' } }),
-  agent({ name: 'daemon', displayName: 'Daemon', userId: 'user-daemon', installedBy: 'me', runtime: { runtimeType: 'wrapper', adapter: 'codex' } }),
-  agent({ name: 'teammate', displayName: 'Teammate', userId: 'user-teammate', installedBy: 'someone-else', runtime: { runtimeType: 'webhook' } }),
-  agent({ name: 'teamdaemon', displayName: 'Teamdaemon', userId: 'user-teamdaemon', installedBy: 'someone-else', runtime: { runtimeType: 'wrapper', adapter: 'codex' } }),
+  agent({ name: 'hook', displayName: 'Hook', userId: 'user-hook', installedBy: 'me', runtime: { runtimeType: 'webhook', host: 'byo' } }),
+  agent({ name: 'daemon', displayName: 'Daemon', userId: 'user-daemon', installedBy: 'me', runtime: { runtimeType: 'wrapper', adapter: 'codex', host: 'byo' } }),
+  agent({ name: 'teammate', displayName: 'Teammate', userId: 'user-teammate', installedBy: 'someone-else', runtime: { runtimeType: 'webhook', host: 'byo' } }),
+  agent({ name: 'teamdaemon', displayName: 'Teamdaemon', userId: 'user-teamdaemon', installedBy: 'someone-else', runtime: { runtimeType: 'wrapper', adapter: 'codex', host: 'byo' } }),
   agent({ name: 'cloudhost', displayName: 'Cloudhost', userId: 'user-cloudhost', runtime: { runtimeType: 'something-new', host: 'cloud' } }),
   agent({ name: 'mystery', displayName: 'Mystery', userId: 'user-mystery', runtime: { runtimeType: 'something-new' } }),
+  agent({ name: 'hookowned', displayName: 'Hookowned', userId: 'user-hookowned', installedBy: 'me', runtime: { runtimeType: 'webhook' } }),
+  agent({ name: 'wrapnohost', displayName: 'Wrapnohost', userId: 'user-wrapnohost', installedBy: 'me', runtime: { runtimeType: 'wrapper', adapter: 'codex' } }),
+  agent({ name: 'nativeunstamped', displayName: 'Nativeunstamped', userId: 'user-nativeunstamped', runtime: { runtimeType: 'native' } }),
+  agent({ name: 'internalunstamped', displayName: 'Internalunstamped', userId: 'user-internalunstamped', runtime: { runtimeType: 'internal' } }),
+  agent({ name: 'moltbotunstamped', displayName: 'Moltbotunstamped', userId: 'user-moltbotunstamped', runtime: { runtimeType: 'moltbot' } }),
 ];
 
 const renderPage = () => render(
@@ -74,15 +81,26 @@ describe('V2YourTeamPage location mark and hosted meter', () => {
     renderPage();
     const cardOf = async (name) => (await screen.findByText(name)).closest('article');
     expect(within(await cardOf('Scout')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
-    expect(within(await cardOf('Codex')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
+    // A hosted seat with no stamp is cloud by its type: it has no BYO form.
+    // A codex seat with no host stamp gets no mark: codex can run on someone's machine.
+    expect(within(await cardOf('Codex')).queryByRole('img', { name: /Runs on/ })).toBeNull();
+    expect(within(await cardOf('Agentrun')).queryByRole('img', { name: /Runs on/ })).toBeNull();
     expect(within(await cardOf('Laptop')).getByRole('img', { name: 'Runs on your computer' })).toBeInTheDocument();
     expect(within(await cardOf('Hook')).getByRole('img', { name: 'Runs on your computer' })).toBeInTheDocument();
     expect(within(await cardOf('Cloudhost')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
+    expect(within(await cardOf('Stampedhost')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
     // A teammate's laptop seat: we don't know which machine it runs on.
     expect(within(await cardOf('Teammate')).queryByRole('img', { name: /Runs on/ })).toBeNull();
     expect(within(await cardOf('Daemon')).getByRole('img', { name: 'Runs on your computer' })).toBeInTheDocument();
     expect(within(await cardOf('Teamdaemon')).queryByRole('img', { name: /Runs on/ })).toBeNull();
     expect(within(await cardOf('Mystery')).queryByRole('img', { name: /Runs on/ })).toBeNull();
+    // No host stamp and a BYO type: no mark, even for the installer's own seat.
+    expect(within(await cardOf('Hookowned')).queryByRole('img', { name: /Runs on/ })).toBeNull();
+    expect(within(await cardOf('Wrapnohost')).queryByRole('img', { name: /Runs on/ })).toBeNull();
+    // Cloud-only runtime types with no stamp read as cloud.
+    expect(within(await cardOf('Nativeunstamped')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
+    expect(within(await cardOf('Internalunstamped')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
+    expect(within(await cardOf('Moltbotunstamped')).getByRole('img', { name: 'Runs on Commonly' })).toBeInTheDocument();
     // The own-agent tile is the viewer's own machine by definition.
     expect(screen.getByTestId('team-own-card').querySelector('[role="img"]')).not.toBeNull();
   });

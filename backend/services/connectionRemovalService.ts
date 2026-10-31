@@ -4,9 +4,9 @@
  * grants, row, provider, mark, material, delete.
  *
  * Every step is placed rather than merely sequenced:
- * - Grants first, because the granter's own revoke route resolves ownership
- *   through `findConnection` — once the row is gone every grant on it answers
- *   403, so removing the row first would orphan them un-revoked (TASK-145).
+ * - Grants first. Revoke reads the owner bound on each grant at mint, so the
+ *   order is not about ownership; ending the grants while their row still
+ *   exists keeps them from outliving it un-revoked (TASK-145).
  * - Row second, because the broker refuses a row carrying `revokedAt` from that
  *   instant, however slow the vendor call turns out to be. `isActive` is left
  *   alone on purpose: the orphan sweep reads it, and it revokes the material of

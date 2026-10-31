@@ -237,7 +237,7 @@ describe('Your Team (direction C)', () => {
     fireEvent.click(within(cardOf('Kai')).getByRole('button', { name: 'Talk to Kai one-to-one' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/agents/runtime/room', { agentName: 'kai', instanceId: 'default', podId: 'p1' }, { headers: { Authorization: 'Bearer jwt' } }));
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/v2/pods/room-kai'));
-    expect(screen.getByText('Hiring an agent from the catalog needs an invitation code during beta.')).toBeInTheDocument();
+    expect(screen.getByText('Hiring an agent from the catalog needs an invitation code during beta. Bringing your own agent doesn’t need one.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Hire an agent' }));
     expect(screen.getByPlaceholderText('Invitation code')).toBeInTheDocument();
   });

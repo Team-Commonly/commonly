@@ -76,9 +76,8 @@ router.get('/agents/:name/instances/:instanceId/grants', grantManageLimit, auth,
         return [connectionId, connection] as const;
       }));
     const connectionById = new Map(connections);
-    const granterIds = Array.from(new Set(connections
-      .map(([, connection]) => String(connection?.createdBy || connection?.config?.linkedUserId || ''))
-      .filter(Boolean)));
+    // The granter is the owner bound at mint, not whoever holds the connection id now.
+    const granterIds = Array.from(new Set(visibleGrants.map((grant) => String(grant.ownerId || '')).filter(Boolean)));
     const granters = granterIds.length
       ? await User.find({ _id: { $in: granterIds } }).select('username displayName').lean()
       : [];
@@ -87,7 +86,7 @@ router.get('/agents/:name/instances/:instanceId/grants', grantManageLimit, auth,
     return res.json({
       grants: visibleGrants.map((grant) => {
         const connection = connectionById.get(grant.connectionId);
-        const granterId = String(connection?.createdBy || connection?.config?.linkedUserId || '');
+        const granterId = String(grant.ownerId || '');
         const granter: any = granterById.get(granterId);
         return {
           grantId: grant.grantId,
@@ -100,7 +99,9 @@ router.get('/agents/:name/instances/:instanceId/grants', grantManageLimit, auth,
           createdAt: grant.createdAt,
           expiresAt: grant.expiresAt,
           revokedAt: grant.revokedAt || null,
-          canRevoke: Boolean(connection) && (isAdmin || granterId === userId),
+          // Mirrors the revoke route: an admin, or the bound owner. An unbound grant is admin only,
+          // and nothing depends on the connection row still existing.
+          canRevoke: isAdmin || (Boolean(granterId) && granterId === userId),
         };
       }),
     });
