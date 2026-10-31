@@ -70,11 +70,12 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
     return () => { current = false; };
   }, [agentName, instanceId, memoryUrl, t]);
 
-  const saveTrust = async () => {
-    if (!canSetTrust || !['read-only', 'workspace'].includes(trustMode)) return;
+  // Trust mode autosaves the moment a valid choice is made; there is no Save button.
+  const saveTrust = async (mode: string) => {
+    if (!canSetTrust || !['read-only', 'workspace'].includes(mode)) return;
     setBusy(true); setFeedback(null);
     try {
-      await update({ config: { environment: { sandbox: { mode: trustMode } } } });
+      await update({ config: { environment: { sandbox: { mode } } } });
       setFeedback({ group: 'trust', kind: 'saved', text: t('agentPolicy.saved') });
     } catch (requestError) { setFeedback({ group: 'trust', kind: 'error', text: message(requestError, t('agentPolicy.saveError')) }); }
     finally { setBusy(false); }
@@ -112,12 +113,12 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
     <h2 id="agent-policy-title">{t('agentPolicy.title')}</h2>
     {canSetTrust && <div className="v2-agent-policy__group">
       <h3>{t('agentPolicy.trust')}</h3>
-      <label>{t('agentPolicy.repoAccess')}<select value={trustMode} onChange={(event) => setTrustMode(event.target.value)}>
+      <label>{t('agentPolicy.repoAccess')}<select value={trustMode} disabled={busy}
+        onChange={(event) => { setTrustMode(event.target.value); void saveTrust(event.target.value); }}>
         <option value="">{t('agentPolicy.chooseAccess')}</option>
         <option value="read-only">{t('agentPolicy.readOnly')}</option>
         <option value="workspace">{t('agentPolicy.workspace')}</option>
       </select></label>
-      <button type="button" disabled={busy || !['read-only', 'workspace'].includes(trustMode)} onClick={saveTrust}>{t('agentPolicy.saveTrust')}</button>
       {groupFeedback('trust')}
     </div>}
     <div className="v2-agent-policy__group">

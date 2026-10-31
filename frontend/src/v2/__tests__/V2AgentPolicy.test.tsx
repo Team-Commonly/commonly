@@ -59,7 +59,6 @@ it('writes only the chosen trust mode and edits memory with its revision', async
   renderPolicy();
   await screen.findByDisplayValue('Original');
   fireEvent.change(screen.getByLabelText('Repository access'), { target: { value: 'workspace' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save trust mode' }));
   await waitFor(() => expect(update).toHaveBeenCalledWith({
     config: { environment: { sandbox: { mode: 'workspace' } } },
   }));
@@ -75,7 +74,7 @@ it('shows server quota for hosted agents without editable trust controls', async
   renderPolicy({ ...installation, runtime: { runtimeType: 'hosted' } });
   expect(await screen.findByText('Hosted turns per day')).toBeInTheDocument();
   expect(screen.getByText('Runs per day')).toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Save trust mode' })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Repository access')).not.toBeInTheDocument();
 });
 
 it('offers trust mode for the canonical BYO runtime shape', async () => {
