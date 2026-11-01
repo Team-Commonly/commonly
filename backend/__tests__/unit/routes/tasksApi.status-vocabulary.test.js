@@ -11,9 +11,15 @@
 const request = require('supertest');
 const express = require('express');
 
+// A request with `x-test-seat` is a seat: `isSeatCaller` reads `req.agentUser` or
+// `req.user.isBot`, the two signals a bot's auth sets. Any other request is a person.
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
   req.userId = 'u1';
   req.user = { id: 'u1', _id: 'u1' };
+  if (req.headers['x-test-seat']) {
+    req.user.isBot = true;
+    req.agentUser = { _id: 'u1' };
+  }
   next();
 });
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => next());
@@ -195,15 +201,34 @@ describe('PATCH /:podId/:taskId status vocabulary', () => {
   });
 
   test.each(['claimed', 'in_progress', 'In_Progress'])(
-    "refuses status '%s' on PATCH: a claim takes a lease, and this route writes none",
+    "refuses status '%s' from a seat: a seat's claim is a lease, and this route writes none for a seat",
     async (status) => {
       const res = await request(app)
         .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
+        .set('x-test-seat', '1')
         .send({ status });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/commonly_claim_task/);
       expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(['claimed', 'in_progress', 'In_Progress'])(
+    "accepts status '%s' from a person, and writes no lease",
+    async (status) => {
+      const res = await request(app)
+        .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
+        .send({ status });
+
+      expect(res.status).toBe(200);
+      const [, update] = mockFindOneAndUpdate.mock.calls[0];
+      expect(update.$set).toMatchObject({ status: 'claimed' });
+      // A person's Start leaves whatever lease the row carries alone, as it does on main.
+      expect(update.$set).not.toHaveProperty('claimedBy');
+      expect(update.$set).not.toHaveProperty('claimedAt');
+      expect(update.$set).not.toHaveProperty('claimExpiresAt');
+      expect(update.$set).not.toHaveProperty('claimedByUserId');
     },
   );
 
@@ -228,15 +253,19 @@ describe('PATCH /:podId/:taskId status vocabulary', () => {
   });
 
   test('a PATCH to done on a row already done does not announce the completion again', async () => {
-    const task = { _id: 'task-1', taskId: 'TASK-001', title: 'ship it', assignee: 'scout', status: 'done', podId: POD_ID, updates: [] };
-    mockFindOneAndUpdate.mockResolvedValueOnce(task);
+    // The early read is what makes this a repeat. The mock returns the done row for that
+    // one read, so if the early check is removed the write runs and this test fails.
+    const done = { _id: 'task-1', taskId: 'TASK-001', title: 'ship it', assignee: 'scout', status: 'done', podId: POD_ID, updates: [] };
+    Task.findOne.mockResolvedValueOnce(done);
 
     const res = await request(app)
       .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
       .send({ status: 'done' });
 
     expect(res.status).toBe(200);
+    expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
     expect(mockRecordTaskCompleted).not.toHaveBeenCalled();
+    expect(mockOnTaskClosed).not.toHaveBeenCalled();
   });
 
   test('rejects unknown statuses with the vocabulary in the error', async () => {

@@ -1112,13 +1112,15 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
             + 'Aliases accepted: completed→done, todo→pending.',
         });
       }
-      // A PATCH cannot claim. A claim is a lease, and this route writes none, so a row
-      // set to `claimed` here is stranded: /claim sees no lapsed lease to take over.
-      if (normalized === 'claimed') {
+      // A seat cannot PATCH a claim. A claim is a lease, and this route writes none for a
+      // seat, so the row would sit `claimed` under a lease nobody renews. A person's Start
+      // is still a PATCH: it writes no lease, and any lease the row carries stays as it is.
+      // Whether a Start should carry a lease is TASK-723.
+      if (normalized === 'claimed' && isSeatCaller(req)) {
         return res.status(400).json({ error: "status 'claimed' takes a lease: claim the row with commonly_claim_task (POST /:podId/:taskId/claim)" });
       }
       fieldUpdates.status = normalized;
-      fieldUpdates.claimedByUserId = null;
+      if (normalized !== 'claimed') fieldUpdates.claimedByUserId = null;
     }
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
