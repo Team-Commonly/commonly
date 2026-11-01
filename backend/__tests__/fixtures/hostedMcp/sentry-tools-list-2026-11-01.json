@@ -1,0 +1,989 @@
+{
+  "server": "https://mcp.sentry.dev/mcp",
+  "capturedAt": "2026-11-01T22:13:49.109Z",
+  "method": "tools/list through listHostedMcpTools (the broker drift check's client, guarded fetch) with the consenting Lily-owned row's credential, run from ops-runner; tool metadata only",
+  "toolCount": 12,
+  "consentedSkills": "inferred, not recorded: the list leaves out update_issue (Sentry's Triage skill) and analyze_issue_with_seer (its Seer skill), so the row was consented without either. Sentry grants all five scopes whatever the skills, so the scope cannot show them. Per getsentry/sentry-mcp main on 2026-11-01: packages/mcp-core/src/tools/surfaces.ts and packages/mcp-core/src/skills.ts",
+  "tools": [
+    {
+      "name": "find_organizations",
+      "description": "Find organizations that the user has access to in Sentry.\n\nUse this tool when you need to:\n- View organizations in Sentry\n- Find an organization's slug to aid other tool requests\n- Search for specific organizations by name or slug\n\nReturns up to 25 results per page. When hasMore is true, pass the returned nextCursor with the same filters and scope to fetch the next page.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "query": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "Search query to filter results by name or slug. Use this to narrow down results when there are many items."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cursor": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "Pagination cursor from a previous call's nextCursor. Reuse it with the same filters and scope to fetch the next page."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "organizations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "slug": {
+                  "type": "string"
+                },
+                "webUrl": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "regionUrl": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "slug",
+                "webUrl",
+                "regionUrl"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "organizations",
+          "hasMore",
+          "nextCursor"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "find_projects",
+      "description": "Find projects in Sentry.\n\nUse this tool when you need to:\n- View projects in a Sentry organization\n- Find a project's slug to aid other tool requests\n- Search for specific projects by name or slug\n\nReturns up to 25 results per page. When hasMore is true, pass the returned nextCursor with the same filters and scope to fetch the next page.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "organizationSlug": {
+            "type": "string",
+            "description": "The organization's slug. You can find a existing list of organizations you have access to using the `find_organizations()` tool."
+          },
+          "regionUrl": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "The region URL for the organization you're querying, if known. For Sentry's Cloud Service (sentry.io), this is typically the region-specific URL like 'https://us.sentry.io'. For self-hosted Sentry installations, this parameter is usually not needed and should be omitted. You can find the correct regionUrl from the organization details using the `find_organizations()` tool."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "query": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "Search query to filter results by name or slug. Use this to narrow down results when there are many items."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cursor": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "Pagination cursor from a previous call's nextCursor. Reuse it with the same filters and scope to fetch the next page."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "organizationSlug"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "slug": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "slug"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "projects",
+          "hasMore",
+          "nextCursor"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "search_errors",
+      "description": "Search Sentry error events: exceptions and crashes with stack traces. Use for error counts, statistics, trends, and individual error events.\n\n`query` is natural language (preferred) or Sentry search syntax; a configured agent translates it into query, fields, and sort.\n\nSupports aggregations ('how many errors today', 'top error types'), individual events ('latest TypeErrors in checkout'), and time series ('errors per hour last 24h').\n\nNOT for log messages, including error/warning logs (use search_logs), requests or latency (use search_traces), or grouped issue lists (use search_issues).\n\n<examples>\nsearch_errors(organizationSlug='my-org', query='how many errors today')\nsearch_errors(organizationSlug='my-org', query='most common error types in production this week')\nsearch_errors(organizationSlug='my-org', query='errors per hour last 24h')\n</examples>\n\n<hints>\n- name/otherName notation means <organizationSlug>/<projectSlug>; parse it directly, don't call find_organizations/find_projects.\n- Natural language is usually enough. Only pass fields/sort when you need exact columns or ordering.\n</hints>",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "organizationSlug": {
+            "type": "string",
+            "description": "The organization's slug. You can find a existing list of organizations you have access to using the `find_organizations()` tool."
+          },
+          "query": {
+            "description": "What to find, in natural language (preferred) or Sentry search syntax. Include environment, release, or other filters here.",
+            "type": "string"
+          },
+          "fields": {
+            "description": "Fields to return. If not specified, uses sensible defaults. Include aggregate functions like count(), avg() for statistics.",
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sort": {
+            "description": "Sort field (prefix with - for descending). Defaults to -timestamp. Use -count() for aggregations.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "projectSlug": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "The project's slug. You can find a list of existing projects in an organization using the `find_projects()` tool."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "period": {
+            "type": "string",
+            "pattern": "^\\d+[mhdw]$",
+            "description": "Relative time window, such as `30m`, `1h`, `24h`, `7d`, or `90d`. Controls which records fall within the search window."
+          },
+          "regionUrl": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "The region URL for the organization you're querying, if known. For Sentry's Cloud Service (sentry.io), this is typically the region-specific URL like 'https://us.sentry.io'. For self-hosted Sentry installations, this parameter is usually not needed and should be omitted. You can find the correct regionUrl from the organization details using the `find_organizations()` tool."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limit": {
+            "default": 10,
+            "description": "Maximum number of results to return (1-100)",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "includeExplanation": {
+            "default": false,
+            "description": "Include explanation of how the query was translated or repaired",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "organizationSlug"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "search_logs",
+      "description": "Search Sentry logs: application log entries, including error- and warning-severity log messages. Use for log counts, statistics, trends, and individual log lines.\n\n`query` is natural language (preferred) or Sentry search syntax; a configured agent translates it into query, fields, and sort.\n\nSupports aggregations ('warning logs by service'), individual entries ('error logs from the last hour'), and time series ('error logs per hour').\n\nNOT for exceptions/crashes (use search_errors). For requests or spans whose trace also has a matching log, use search_traces.\n\n<examples>\nsearch_logs(organizationSlug='my-org', query='error logs from the last hour')\nsearch_logs(organizationSlug='my-org', query='logs mentioning payment timeout in production')\nsearch_logs(organizationSlug='my-org', query='count warning logs by service over 7 days')\n</examples>\n\n<hints>\n- name/otherName notation means <organizationSlug>/<projectSlug>; parse it directly, don't call find_organizations/find_projects.\n- Natural language is usually enough. Only pass fields/sort when you need exact columns or ordering.\n- Sentry search syntax for logs includes RE2 regex filters, never quoted: `message://^Timeout after \\d+ms//`.\n</hints>",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "organizationSlug": {
+            "type": "string",
+            "description": "The organization's slug. You can find a existing list of organizations you have access to using the `find_organizations()` tool."
+          },
+          "query": {
+            "description": "What to find, in natural language (preferred) or Sentry search syntax. Include environment, release, or other filters here.",
+            "type": "string"
+          },
+          "fields": {
+            "description": "Fields to return. If not specified, uses sensible defaults. Include aggregate functions like count(), avg() for statistics.",
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sort": {
+            "description": "Sort field (prefix with - for descending). Defaults to -timestamp. Use -count() for aggregations.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "projectSlug": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "The project's slug. You can find a list of existing projects in an organization using the `find_projects()` tool."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "period": {
+            "type": "string",
+            "pattern": "^\\d+[mhdw]$",
+            "description": "Relative time window, such as `30m`, `1h`, `24h`, `7d`, or `90d`. Controls which records fall within the search window."
+          },
+          "regionUrl": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "The region URL for the organization you're querying, if known. For Sentry's Cloud Service (sentry.io), this is typically the region-specific URL like 'https://us.sentry.io'. For self-hosted Sentry installations, this parameter is usually not needed and should be omitted. You can find the correct regionUrl from the organization details using the `find_organizations()` tool."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limit": {
+            "default": 10,
+            "description": "Maximum number of results to return (1-100)",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "includeExplanation": {
+            "default": false,
+            "description": "Include explanation of how the query was translated or repaired",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "organizationSlug"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "search_traces",
+      "description": "Search Sentry spans and traces: requests, API/HTTP calls, endpoints, DB queries, AI/LLM calls, and other operations. Use for latency, throughput, slowness, and performance questions.\n\n`query` is natural language (preferred) or Sentry search syntax; a configured agent translates it into query, fields, and sort.\n\nAlso use for spans whose trace contains a matching log, metric, or other span, e.g. 'slow checkout requests that also logged an error'.\n\nSupports aggregations ('p95 duration by span.op'), individual spans ('slowest API calls today'), and time series ('requests per minute last hour').\n\nNOT for exceptions/crashes (use search_errors), standalone log lines (use search_logs), or a single trace's span tree (use get_sentry_resource with the trace).\n\n<examples>\nsearch_traces(organizationSlug='my-org', query='slowest API calls in the last 24 hours')\nsearch_traces(organizationSlug='my-org', query='p95 duration of db spans grouped by span.op over 7 days')\nsearch_traces(organizationSlug='my-org', query='checkout requests that also have an error log')\n</examples>\n\n<hints>\n- name/otherName notation means <organizationSlug>/<projectSlug>; parse it directly, don't call find_organizations/find_projects.\n- Natural language is usually enough. Only pass fields/sort when you need exact columns or ordering.\n</hints>",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "organizationSlug": {
+            "type": "string",
+            "description": "The organization's slug. You can find a existing list of organizations you have access to using the `find_organizations()` tool."
+          },
+          "query": {
+            "description": "What to find, in natural language (preferred) or Sentry search syntax. Include environment, release, or other filters here.",
+            "type": "string"
+          },
+          "fields": {
+            "description": "Fields to return. If not specified, uses sensible defaults. Include aggregate functions like count(), avg() for statistics.",
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sort": {
+            "description": "Sort field (prefix with - for descending). Defaults to -timestamp. Use -count() for aggregations.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "projectSlug": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "The project's slug. You can find a list of existing projects in an organization using the `find_projects()` tool."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "period": {
+            "type": "string",
+            "pattern": "^\\d+[mhdw]$",
+            "description": "Relative time window, such as `30m`, `1h`, `24h`, `7d`, or `90d`. Controls which records fall within the search window."
+          },
+          "regionUrl": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "The region URL for the organization you're querying, if known. For Sentry's Cloud Service (sentry.io), this is typically the region-specific URL like 'https://us.sentry.io'. For self-hosted Sentry installations, this parameter is usually not needed and should be omitted. You can find the correct regionUrl from the organization details using the `find_organizations()` tool."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limit": {
+            "default": 10,
+            "description": "Maximum number of results to return (1-100)",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "includeExplanation": {
+            "default": false,
+            "description": "Include explanation of how the query was translated or repaired",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "organizationSlug"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "search_metrics",
+      "description": "Search Sentry metrics: counters, gauges, and distributions, as rows or aggregates. Use for metric values, percentiles, totals, and trends.\n\n`query` is natural language (preferred) or Sentry search syntax; a configured agent translates it into query, fields, and sort.\n\nSupports aggregations ('p95 http.request.duration by environment'), individual metric rows, and time series ('total tokens per day this week').\n\nNOT for span or request latency recorded on traces (use search_traces).\n\n<examples>\nsearch_metrics(organizationSlug='my-org', query='p95 http.request.duration grouped by environment over the last 24 hours')\nsearch_metrics(organizationSlug='my-org', query='total tokens used per day this week')\n</examples>\n\n<hints>\n- name/otherName notation means <organizationSlug>/<projectSlug>; parse it directly, don't call find_organizations/find_projects.\n- Natural language is usually enough. Only pass fields/sort when you need exact columns or ordering.\n</hints>",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "organizationSlug": {
+            "type": "string",
+            "description": "The organization's slug. You can find a existing list of organizations you have access to using the `find_organizations()` tool."
+          },
+          "query": {
+            "description": "What to find, in natural language (preferred) or Sentry search syntax. Include environment, release, or other filters here.",
+            "type": "string"
+          },
+          "fields": {
+            "description": "Fields to return. If not specified, uses sensible defaults. Include aggregate functions like count(), avg() for statistics.",
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sort": {
+            "description": "Sort field (prefix with - for descending). Defaults to -timestamp. Use -count() for aggregations.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "projectSlug": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "The project's slug. You can find a list of existing projects in an organization using the `find_projects()` tool."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "period": {
+            "type": "string",
+            "pattern": "^\\d+[mhdw]$",
+            "description": "Relative time window, such as `30m`, `1h`, `24h`, `7d`, or `90d`. Controls which records fall within the search window."
+          },
+          "regionUrl": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "The region URL for the organization you're querying, if known. For Sentry's Cloud Service (sentry.io), this is typically the region-specific URL like 'https://us.sentry.io'. For self-hosted Sentry installations, this parameter is usually not needed and should be omitted. You can find the correct regionUrl from the organization details using the `find_organizations()` tool."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limit": {
+            "default": 10,
+            "description": "Maximum number of results to return (1-100)",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "includeExplanation": {
+            "default": false,
+            "description": "Include explanation of how the query was translated or repaired",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "organizationSlug"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "search_profiles",
+      "description": "Search Sentry profiles: transaction and continuous profile results, profile IDs, and profiled transactions. Use to find profiles to inspect.\n\n`query` is natural language (preferred) or Sentry search syntax; a configured agent translates it into query, fields, and sort.\n\nUse get_profile or get_profile_details on a result for flamegraph and hotspot analysis.\n\n<examples>\nsearch_profiles(organizationSlug='my-org', query='recent profiles for the /checkout transaction')\n</examples>\n\n<hints>\n- name/otherName notation means <organizationSlug>/<projectSlug>; parse it directly, don't call find_organizations/find_projects.\n- Natural language is usually enough. Only pass fields/sort when you need exact columns or ordering.\n</hints>",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "organizationSlug": {
+            "type": "string",
+            "description": "The organization's slug. You can find a existing list of organizations you have access to using the `find_organizations()` tool."
+          },
+          "query": {
+            "description": "What to find, in natural language (preferred) or Sentry search syntax. Include environment, release, or other filters here.",
+            "type": "string"
+          },
+          "fields": {
+            "description": "Fields to return. If not specified, uses sensible defaults. Include aggregate functions like count(), avg() for statistics.",
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sort": {
+            "description": "Sort field (prefix with - for descending). Defaults to -timestamp. Use -count() for aggregations.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "projectSlug": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "The project's slug. You can find a list of existing projects in an organization using the `find_projects()` tool."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "period": {
+            "type": "string",
+            "pattern": "^\\d+[mhdw]$",
+            "description": "Relative time window, such as `30m`, `1h`, `24h`, `7d`, or `90d`. Controls which records fall within the search window."
+          },
+          "regionUrl": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "The region URL for the organization you're querying, if known. For Sentry's Cloud Service (sentry.io), this is typically the region-specific URL like 'https://us.sentry.io'. For self-hosted Sentry installations, this parameter is usually not needed and should be omitted. You can find the correct regionUrl from the organization details using the `find_organizations()` tool."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limit": {
+            "default": 10,
+            "description": "Maximum number of results to return (1-100)",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "includeExplanation": {
+            "default": false,
+            "description": "Include explanation of how the query was translated or repaired",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "organizationSlug"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "search_replays",
+      "description": "Search Sentry session replays: rage clicks, dead clicks, visited pages, errors seen, and replay users.\n\n`query` is natural language (preferred) or replay search syntax; a configured agent translates it into a replay search.\n\nReturns replay lists only; count()/avg()/sum() are not supported. Use get_replay_details on a result for one replay.\n\n<examples>\nsearch_replays(organizationSlug='my-org', query='replays with rage clicks on checkout in the last day')\nsearch_replays(organizationSlug='my-org', query='count_errors:>0', sort='-count_errors')\n</examples>\n\n<hints>\n- name/otherName notation means <organizationSlug>/<projectSlug>; parse it directly, don't call find_organizations/find_projects.\n</hints>",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "organizationSlug": {
+            "type": "string",
+            "description": "The organization's slug. You can find a existing list of organizations you have access to using the `find_organizations()` tool."
+          },
+          "query": {
+            "description": "What to find, in natural language (preferred) or replay search syntax.",
+            "type": "string"
+          },
+          "sort": {
+            "description": "Replay sort (prefix with - for descending): -started_at (default), -count_errors, -count_rage_clicks, or -duration.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "projectSlug": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "The project's slug. You can find a list of existing projects in an organization using the `find_projects()` tool."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "environment": {
+            "description": "Optional environment filter. Use a string for one environment or an array for multiple. Omit when unused.",
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            ]
+          },
+          "period": {
+            "type": "string",
+            "pattern": "^\\d+[mhdw]$",
+            "description": "Relative time window, such as `30m`, `1h`, `24h`, `7d`, or `90d`. Controls which records fall within the search window."
+          },
+          "regionUrl": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "The region URL for the organization you're querying, if known. For Sentry's Cloud Service (sentry.io), this is typically the region-specific URL like 'https://us.sentry.io'. For self-hosted Sentry installations, this parameter is usually not needed and should be omitted. You can find the correct regionUrl from the organization details using the `find_organizations()` tool."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limit": {
+            "default": 10,
+            "description": "Maximum number of results to return (1-100)",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "includeExplanation": {
+            "default": false,
+            "description": "Include explanation of how the query was translated or repaired",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "organizationSlug"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "search_issues",
+      "description": "Search for grouped issues/problems in Sentry - returns a LIST of issues, NOT counts or aggregations.\n\nProvide `query` as natural language or Sentry issue search syntax. When an embedded agent is configured, it fixes query and sort before running while preserving explicit Sentry search syntax.\n\nReturns grouped issues with metadata like title, status, and user count.\n\nCommon Query Syntax:\n- is:unresolved / is:resolved / is:ignored / is:for_review / is:new / is:regressed / is:escalating\n- level:error / level:warning\n- firstSeen:-24h / lastSeen:-7d\n- assigned:me / assigned_or_suggested:me\n- release:latest\n- issue.category:feedback\n- issue.priority:high\n- environment:production\n- userCount:>100\n\nNo AND/OR or parentheses: spaces mean AND. For OR on one field use field:[a,b]; for several statuses use status:[resolved,ignored] or substatus:[regressed,escalating].\n\nDO NOT USE FOR COUNTS/AGGREGATIONS → use search_errors\nDO NOT USE FOR individual events with timestamps → use search_errors, search_logs, or search_traces\nDO NOT USE FOR details about a specific issue → use get_sentry_resource\n\n<examples>\nsearch_issues(organizationSlug='my-org', query='critical bugs from last week')\nsearch_issues(organizationSlug='my-org', query='is:unresolved is:unassigned', sort='freq')\nsearch_issues(organizationSlug='my-org', query='level:error firstSeen:-24h', projectSlugOrId='my-project')\n</examples>\n\n<hints>\n- If the user passes a parameter in the form of name/otherName, it's likely in the format of <organizationSlug>/<projectSlugOrId>.\n- Parse org/project notation directly without calling find_organizations or find_projects.\n- The projectSlugOrId parameter accepts both project slugs (e.g., 'my-project') and numeric IDs (e.g., '123456').\n</hints>",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "organizationSlug": {
+            "type": "string",
+            "description": "The organization's slug. You can find a existing list of organizations you have access to using the `find_organizations()` tool."
+          },
+          "query": {
+            "default": "is:unresolved",
+            "description": "Natural language or Sentry issue search query syntax.",
+            "type": "string"
+          },
+          "sort": {
+            "default": "date",
+            "description": "Sort order: date (last seen), freq (frequency), new (first seen), user (user count), recommended (Sentry's prioritized ranking)",
+            "type": "string",
+            "enum": [
+              "date",
+              "freq",
+              "new",
+              "user",
+              "recommended"
+            ]
+          },
+          "projectSlugOrId": {
+            "default": null,
+            "description": "The project's slug or numeric ID (optional)",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "regionUrl": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "The region URL for the organization you're querying, if known. For Sentry's Cloud Service (sentry.io), this is typically the region-specific URL like 'https://us.sentry.io'. For self-hosted Sentry installations, this parameter is usually not needed and should be omitted. You can find the correct regionUrl from the organization details using the `find_organizations()` tool."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limit": {
+            "default": 10,
+            "description": "Maximum number of issues to return (1-100)",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "period": {
+            "default": "30d",
+            "description": "Time window for issue search results. Controls which issues are returned based on when they had activity. Default 30d is a balance between coverage and query performance; use 1h or 24h for very recent issues or 90d for broader historical searches.",
+            "type": "string",
+            "enum": [
+              "1h",
+              "24h",
+              "7d",
+              "14d",
+              "30d",
+              "90d"
+            ]
+          },
+          "includeExplanation": {
+            "default": false,
+            "description": "Include explanation of how the query was translated or repaired",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "organizationSlug"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "get_sentry_resource",
+      "description": "Fetch a Sentry resource by URL, or by resourceType plus resourceId.\nPass a Sentry URL directly when possible; the resource type is auto-detected.\n\nSupports issues, events, traces, spans, agent conversations, replays, monitors, dashboards, preprod snapshots, and snapshot images.\nTrace lookups return a condensed overview by default.\n\nAgent Conversations: A conversation is a set of spans sharing the same gen_ai.conversation.id. Use resourceType='ai_conversation' with a conversation ID, or pass a Sentry conversation URL, to fetch the transcript/details. To discover or list conversations, use search_agent_conversations. Conversations are NOT issues — do not use search_issues for conversation queries.\n\nFor preprod snapshot URLs (matching 'sentry.io/preprod/snapshots/'):\n- Without ?selectedSnapshot=: returns the snapshot diff summary (changed, added, removed images)\n- With ?selectedSnapshot=<image_file_name>: returns the image preview and metadata. Use the Sentry tool `get_snapshot_image` for full-resolution image bytes.\n\nResource IDs:\n- monitor: <monitorSlug>\n- dashboard: <dashboardId or title>\n- snapshot: <snapshotId>\n\n<examples>\nget_sentry_resource(url='https://sentry.io/issues/PROJECT-123/')\nget_sentry_resource(resourceType='issue', organizationSlug='my-org', resourceId='PROJECT-123')\nget_sentry_resource(resourceType='ai_conversation', organizationSlug='my-org', resourceId='conversation-123')\nget_sentry_resource(url='https://sentry.sentry.io/dashboard/542438/')\nget_sentry_resource(url='https://sentry.sentry.io/preprod/snapshots/123/')\nget_sentry_resource(url='https://sentry.sentry.io/preprod/snapshots/123/?selectedSnapshot=login_screen.png')\n</examples>",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "url": {
+            "description": "Sentry URL. The resource type is auto-detected from the URL pattern.",
+            "type": "string",
+            "format": "uri"
+          },
+          "resourceType": {
+            "description": "Resource type. With a URL, can override a span-focused trace URL with `trace`. Use `monitor` with a monitor slug only when inspect monitor tools are available, `snapshot` with a snapshot artifact ID, or `dashboard` with a dashboard ID or exact title when inspect dashboard tools are available.",
+            "type": "string",
+            "enum": [
+              "issue",
+              "event",
+              "trace",
+              "ai_conversation",
+              "replay",
+              "monitor",
+              "snapshot",
+              "dashboard"
+            ]
+          },
+          "resourceId": {
+            "description": "Resource identifier: issue shortId (e.g., 'PROJECT-123'), event ID, trace ID, agent conversation ID, replay ID, monitor slug when inspect monitor tools are available, dashboard ID or title when inspect dashboard tools are available, or snapshot artifact ID. Required when not using a URL.",
+            "type": "string"
+          },
+          "organizationSlug": {
+            "type": "string",
+            "description": "The organization's slug. You can find a existing list of organizations you have access to using the `find_organizations()` tool."
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "search_sentry_tools",
+      "description": "Search the available Sentry MCP tool catalog by name and description.\n\nMany Sentry operations are intentionally not exposed as top-level tools. Use this for any Sentry-related task when you do not see an obvious direct tool, including long-tail inspection, project management, documentation lookup, preprod snapshots, attachments, DSNs, releases, teams, and issue-specific pivots.\n\nUse this tool when you need to:\n- Find the right Sentry operation for a task\n- Discover catalog tools and their schemas for a task\n- Inspect the executable JSON input schema for an available tool\n\n<examples>\nsearch_sentry_tools(query='list projects')\nsearch_sentry_tools(query='issue details')\nsearch_sentry_tools(query='find dsn', limit=5)\nsearch_sentry_tools(query='snapshot image')\n</examples>\n\n<hints>\n- Results only include tools available in the current session.\n- If a Sentry operation is not listed as a direct tool, search here before deciding it is unavailable.\n- Returned schemas already account for active organization, project, and region constraints.\n- Use the returned name and schema when executing a catalog result.\n- This tool returns structured JSON. Do not parse markdown from its text content.\n</hints>",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Natural language keywords describing the Sentry operation, resource, or workflow to find."
+          },
+          "limit": {
+            "default": 8,
+            "description": "Maximum number of matching tools to return, up to 20.",
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 20
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "inputSchema": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {},
+                  "description": "JSON Schema for the matching tool's arguments. Session-constrained parameters are omitted."
+                },
+                "annotations": {
+                  "type": "object",
+                  "properties": {
+                    "readOnlyHint": {
+                      "type": "boolean"
+                    },
+                    "destructiveHint": {
+                      "type": "boolean"
+                    },
+                    "idempotentHint": {
+                      "type": "boolean"
+                    },
+                    "openWorldHint": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "name",
+                "description",
+                "inputSchema",
+                "annotations"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "query",
+          "results"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "execute_sentry_tool",
+      "description": "Execute an available Sentry MCP tool discovered through search_sentry_tools.\n\nUse this tool when you need to:\n- Call a Sentry operation returned by search_sentry_tools\n- Execute a tool by name using arguments that match its returned schema\n\n<examples>\nexecute_sentry_tool(name='find_projects', arguments={ organizationSlug: 'my-org' })\nexecute_sentry_tool(name='whoami', arguments={})\n</examples>\n\n<hints>\n- Use search_sentry_tools first if you are not sure which name or arguments to pass.\n- Arguments are validated against the target tool's schema before execution.\n- Active organization, project, and region constraints are injected automatically.\n</hints>",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The name of the available tool to execute."
+          },
+          "arguments": {
+            "default": {},
+            "description": "Arguments for the target tool, matching the schema returned by search_sentry_tools.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true
+      }
+    }
+  ]
+}

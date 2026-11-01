@@ -2,14 +2,23 @@
  * Sentry hosted-MCP entry (TASK-241). The OAuth proxy requests its complete
  * five-scope set, including write scopes; every pinned writer must therefore
  * have class `write` so the broker parks it for the credential owner's approval.
+ * The scope set is the proxy's, not ours to narrow
+ * (docs/plans/hosted-mcp-catalogue-sweep-2026-10-13.md).
  *
  * Resource and authorization-server metadata were fetched from mcp.sentry.dev
  * on 2026-10-19. The tool pin comes from connector-ops's consenting tools/list
- * capture at 2026-10-19T07:02:33Z. The get_sentry_resource pin deliberately
+ * capture at 2026-10-19T07:02:33Z, a row consented with the Triage skill. The
+ * seven search reads are re-pinned from a capture at 2026-11-01T22:13:49Z,
+ * where Sentry had respelled nullable strings, added minutes to `period` and
+ * added `1h` to search_issues. That row was consented without Triage or Seer,
+ * so its list leaves out update_issue and Seer analysis: update_issue keeps its
+ * 10-19 pin, and a row without Triage sees it as unavailable.
+ * find_dropped_events is no longer a top-level tool (it moved behind the
+ * dispatcher), so it is not pinned. The get_sentry_resource pin deliberately
  * omits the vendor's optional `url`: that route can reach types outside the
- * pinned enum, so its live schema always reports a compatible addition in
- * the assessment log. The by-name dispatcher and its catalogue are excluded
- * because they can reach operations outside this reviewed pin. Seer analysis is
+ * pinned enum, so its live schema always reports a compatible addition in the
+ * assessment log. The by-name dispatcher and its catalogue are excluded because
+ * they can reach operations outside this reviewed pin. Seer analysis is
  * excluded because it starts a vendor AI workflow.
  */
 import type { HostedMcpEntry } from '../../services/hostedMcpEntryService';
@@ -234,6 +243,7 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
       class: 'read',
       inputSchema: {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           organizationSlug: {
             type: "string",
@@ -259,13 +269,9 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
           },
           sort: {
             description: "Sort field (prefix with - for descending). Defaults to -timestamp. Use -count() for aggregations.",
-            anyOf: [
-              {
-                type: "string",
-              },
-              {
-                type: "null",
-              },
+            type: [
+              "string",
+              "null",
             ],
           },
           projectSlug: {
@@ -282,8 +288,8 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
           },
           period: {
             type: "string",
-            pattern: "^\\d+[hdw]$",
-            description: "Relative time window, such as `24h`, `7d`, `14d`, `30d`, or `90d`. Controls which records fall within the search window.",
+            pattern: "^\\d+[mhdw]$",
+            description: "Relative time window, such as `30m`, `1h`, `24h`, `7d`, or `90d`. Controls which records fall within the search window.",
           },
           regionUrl: {
             default: null,
@@ -313,7 +319,6 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
         required: [
           "organizationSlug",
         ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -324,6 +329,7 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
       class: 'read',
       inputSchema: {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           organizationSlug: {
             type: "string",
@@ -349,13 +355,9 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
           },
           sort: {
             description: "Sort field (prefix with - for descending). Defaults to -timestamp. Use -count() for aggregations.",
-            anyOf: [
-              {
-                type: "string",
-              },
-              {
-                type: "null",
-              },
+            type: [
+              "string",
+              "null",
             ],
           },
           projectSlug: {
@@ -372,8 +374,8 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
           },
           period: {
             type: "string",
-            pattern: "^\\d+[hdw]$",
-            description: "Relative time window, such as `24h`, `7d`, `14d`, `30d`, or `90d`. Controls which records fall within the search window.",
+            pattern: "^\\d+[mhdw]$",
+            description: "Relative time window, such as `30m`, `1h`, `24h`, `7d`, or `90d`. Controls which records fall within the search window.",
           },
           regionUrl: {
             default: null,
@@ -403,7 +405,6 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
         required: [
           "organizationSlug",
         ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -414,6 +415,7 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
       class: 'read',
       inputSchema: {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           organizationSlug: {
             type: "string",
@@ -439,13 +441,9 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
           },
           sort: {
             description: "Sort field (prefix with - for descending). Defaults to -timestamp. Use -count() for aggregations.",
-            anyOf: [
-              {
-                type: "string",
-              },
-              {
-                type: "null",
-              },
+            type: [
+              "string",
+              "null",
             ],
           },
           projectSlug: {
@@ -462,8 +460,8 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
           },
           period: {
             type: "string",
-            pattern: "^\\d+[hdw]$",
-            description: "Relative time window, such as `24h`, `7d`, `14d`, `30d`, or `90d`. Controls which records fall within the search window.",
+            pattern: "^\\d+[mhdw]$",
+            description: "Relative time window, such as `30m`, `1h`, `24h`, `7d`, or `90d`. Controls which records fall within the search window.",
           },
           regionUrl: {
             default: null,
@@ -493,7 +491,6 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
         required: [
           "organizationSlug",
         ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -504,6 +501,7 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
       class: 'read',
       inputSchema: {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           organizationSlug: {
             type: "string",
@@ -529,13 +527,9 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
           },
           sort: {
             description: "Sort field (prefix with - for descending). Defaults to -timestamp. Use -count() for aggregations.",
-            anyOf: [
-              {
-                type: "string",
-              },
-              {
-                type: "null",
-              },
+            type: [
+              "string",
+              "null",
             ],
           },
           projectSlug: {
@@ -552,8 +546,8 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
           },
           period: {
             type: "string",
-            pattern: "^\\d+[hdw]$",
-            description: "Relative time window, such as `24h`, `7d`, `14d`, `30d`, or `90d`. Controls which records fall within the search window.",
+            pattern: "^\\d+[mhdw]$",
+            description: "Relative time window, such as `30m`, `1h`, `24h`, `7d`, or `90d`. Controls which records fall within the search window.",
           },
           regionUrl: {
             default: null,
@@ -583,7 +577,6 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
         required: [
           "organizationSlug",
         ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -594,6 +587,7 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
       class: 'read',
       inputSchema: {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           organizationSlug: {
             type: "string",
@@ -619,13 +613,9 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
           },
           sort: {
             description: "Sort field (prefix with - for descending). Defaults to -timestamp. Use -count() for aggregations.",
-            anyOf: [
-              {
-                type: "string",
-              },
-              {
-                type: "null",
-              },
+            type: [
+              "string",
+              "null",
             ],
           },
           projectSlug: {
@@ -642,8 +632,8 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
           },
           period: {
             type: "string",
-            pattern: "^\\d+[hdw]$",
-            description: "Relative time window, such as `24h`, `7d`, `14d`, `30d`, or `90d`. Controls which records fall within the search window.",
+            pattern: "^\\d+[mhdw]$",
+            description: "Relative time window, such as `30m`, `1h`, `24h`, `7d`, or `90d`. Controls which records fall within the search window.",
           },
           regionUrl: {
             default: null,
@@ -673,7 +663,6 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
         required: [
           "organizationSlug",
         ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -684,6 +673,7 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
       class: 'read',
       inputSchema: {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           organizationSlug: {
             type: "string",
@@ -695,13 +685,9 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
           },
           sort: {
             description: "Replay sort (prefix with - for descending): -started_at (default), -count_errors, -count_rage_clicks, or -duration.",
-            anyOf: [
-              {
-                type: "string",
-              },
-              {
-                type: "null",
-              },
+            type: [
+              "string",
+              "null",
             ],
           },
           projectSlug: {
@@ -735,8 +721,8 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
           },
           period: {
             type: "string",
-            pattern: "^\\d+[hdw]$",
-            description: "Relative time window, such as `24h`, `7d`, `14d`, `30d`, or `90d`. Controls which records fall within the search window.",
+            pattern: "^\\d+[mhdw]$",
+            description: "Relative time window, such as `30m`, `1h`, `24h`, `7d`, or `90d`. Controls which records fall within the search window.",
           },
           regionUrl: {
             default: null,
@@ -766,7 +752,6 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
         required: [
           "organizationSlug",
         ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -777,6 +762,7 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
       class: 'read',
       inputSchema: {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           organizationSlug: {
             type: "string",
@@ -802,13 +788,9 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
           projectSlugOrId: {
             default: null,
             description: "The project's slug or numeric ID (optional)",
-            anyOf: [
-              {
-                type: "string",
-              },
-              {
-                type: "null",
-              },
+            type: [
+              "string",
+              "null",
             ],
           },
           regionUrl: {
@@ -832,9 +814,10 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
           },
           period: {
             default: "30d",
-            description: "Time window for issue search results. Controls which issues are returned based on when they had activity. Default 30d is a balance between coverage and query performance; use 24h for very recent issues or 90d for broader historical searches.",
+            description: "Time window for issue search results. Controls which issues are returned based on when they had activity. Default 30d is a balance between coverage and query performance; use 1h or 24h for very recent issues or 90d for broader historical searches.",
             type: "string",
             enum: [
+              "1h",
               "24h",
               "7d",
               "14d",
@@ -851,142 +834,6 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
         required: [
           "organizationSlug",
         ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
-      },
-      annotations: { readOnlyHint: true, destructiveHint: false },
-    },
-    {
-      name: 'find_dropped_events',
-      upstreamName: 'find_dropped_events',
-      description: "Find events dropped before Sentry stored them.",
-      class: 'read',
-      inputSchema: {
-        type: "object",
-        properties: {
-          organizationSlug: {
-            type: "string",
-            description: "The organization's slug. You can find a existing list of organizations you have access to using the `find_organizations()` tool.",
-          },
-          regionUrl: {
-            default: null,
-            anyOf: [
-              {
-                type: "string",
-                description: "The region URL for the organization you're querying, if known. For Sentry's Cloud Service (sentry.io), this is typically the region-specific URL like 'https://us.sentry.io'. For self-hosted Sentry installations, this parameter is usually not needed and should be omitted. You can find the correct regionUrl from the organization details using the `find_organizations()` tool.",
-              },
-              {
-                type: "null",
-              },
-            ],
-          },
-          dataset: {
-            default: "spans",
-            type: "string",
-            enum: [
-              "spans",
-              "logs",
-              "metrics",
-              "errors",
-            ],
-            description: "Which data type to report drops for.",
-          },
-          projectSlug: {
-            default: null,
-            anyOf: [
-              {
-                type: "string",
-                description: "The project's slug. You can find a list of existing projects in an organization using the `find_projects()` tool.",
-              },
-              {
-                type: "null",
-              },
-            ],
-          },
-          statsPeriod: {
-            default: null,
-            anyOf: [
-              {
-                type: "string",
-                description: "Relative time range, e.g. '24h', '7d', '30d'. Mutually exclusive with start/end.",
-              },
-              {
-                type: "null",
-              },
-            ],
-          },
-          start: {
-            default: null,
-            anyOf: [
-              {
-                type: "string",
-                description: "Absolute start (ISO 8601). Must be paired with end.",
-              },
-              {
-                type: "null",
-              },
-            ],
-          },
-          end: {
-            default: null,
-            anyOf: [
-              {
-                type: "string",
-                description: "Absolute end (ISO 8601). Must be paired with start.",
-              },
-              {
-                type: "null",
-              },
-            ],
-          },
-          interval: {
-            default: null,
-            anyOf: [
-              {
-                type: "string",
-                description: "Bucket size, e.g. '1h', '1d'. Omit to let Sentry pick for the range.",
-              },
-              {
-                type: "null",
-              },
-            ],
-          },
-          outcome: {
-            default: null,
-            anyOf: [
-              {
-                type: "string",
-                enum: [
-                  "rate_limited",
-                  "filtered",
-                  "invalid",
-                  "abuse",
-                  "client_discard",
-                  "cardinality_limited",
-                ],
-                description: "Scope the dropped side to one top-level drop classification. Accepted volume is still returned in full.",
-              },
-              {
-                type: "null",
-              },
-            ],
-          },
-          reason: {
-            default: null,
-            anyOf: [
-              {
-                type: "string",
-                description: "Scope the dropped side to one reason (sub-classification within an outcome, e.g. 'spike_protection'). Combine with `outcome`.",
-              },
-              {
-                type: "null",
-              },
-            ],
-          },
-        },
-        required: [
-          "organizationSlug",
-        ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
