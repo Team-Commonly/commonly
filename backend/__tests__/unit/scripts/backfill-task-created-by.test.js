@@ -1,9 +1,12 @@
 /**
- * TASK-718: the creator rule the backfill stamps from, and the reading of the
- * frozen id file. This decides which rows may be attributed at all, and what an
- * SRE run may apply; the write path (compare-and-set, idempotence, the frozen
- * set at apply time) is in the service test.
+ * TASK-718: the creator rule the backfill stamps from, and the reading and
+ * writing of the frozen id file. This decides which rows may be attributed at
+ * all, and what an SRE run may apply; the write path (compare-and-set,
+ * idempotence, the frozen set at apply time) is in the service test.
  */
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const mongoose = require('mongoose');
 const {
   CREATED_BY_PREFIX,
@@ -12,6 +15,7 @@ const {
   parseArgs,
   parseIdsText,
   renderIdsText,
+  writeIdsFile,
 } = require('../../../scripts/backfill-task-created-by');
 
 const ID_A = '6ae5a1fc0a8ccf82743b94b8';
@@ -24,6 +28,10 @@ describe('decideCreator', () => {
   // init update carries the row's author name and its own createdAt.
   const init = (text, { author = 'wren', at = createdAt } = {}) => ({
     text, author, authorId: String(wren), createdAt: at,
+  });
+  // The creator decision for a "Created by wren" init update `ms` from the row.
+  const offset = (ms) => decideCreator({
+    createdAt, updates: [init('Created by wren', { at: new Date(createdAt.getTime() + ms) })],
   });
 
   it('takes the creator from a first "Created by" update', () => {
@@ -80,10 +88,19 @@ describe('decideCreator', () => {
       .toEqual({ reason: 'created-by-not-at-create' });
   });
 
-  it('accepts an init update a few ms after the row, as the create path writes it', () => {
-    const shortly = new Date(createdAt.getTime() + 20);
-    expect(decideCreator({ createdAt, updates: [init('Created by wren', { at: shortly })] }))
-      .toEqual({ creatorId: String(wren) });
+  it('accepts an init update within a second either side of the row', () => {
+    // The create path writes the init update a few ms before the row. A second is slack.
+    expect(offset(-20)).toEqual({ creatorId: String(wren) });
+    expect(offset(-1000)).toEqual({ creatorId: String(wren) });
+    expect(offset(1000)).toEqual({ creatorId: String(wren) });
+  });
+
+  it('refuses an update more than a second from the row, on either side', () => {
+    // The window used to be a minute, and a note a minute out could stamp its author.
+    expect(offset(-1001)).toEqual({ reason: 'created-by-not-at-create' });
+    expect(offset(1001)).toEqual({ reason: 'created-by-not-at-create' });
+    expect(offset(-60 * 1000)).toEqual({ reason: 'created-by-not-at-create' });
+    expect(offset(60 * 1000)).toEqual({ reason: 'created-by-not-at-create' });
   });
 
   it('handles a row with no updates', () => {
@@ -112,6 +129,20 @@ describe('renderIdsText', () => {
   it('writes one id per line, and nothing for an empty set', () => {
     expect(renderIdsText([ID_A, ID_B])).toBe(`${ID_A}\n${ID_B}\n`);
     expect(renderIdsText([])).toBe('');
+  });
+});
+
+describe('writeIdsFile', () => {
+  it('writes the reviewed ids, and refuses to overwrite a file that is already there', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'backfill-ids-'));
+    const outPath = path.join(dir, 'ids.txt');
+    try {
+      writeIdsFile(outPath, [ID_A]);
+      expect(() => writeIdsFile(outPath, [ID_B])).toThrow(/already exists: pick a new --out path/);
+      expect(fs.readFileSync(outPath, 'utf8')).toBe(`${ID_A}\n`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

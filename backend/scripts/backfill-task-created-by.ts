@@ -53,8 +53,10 @@ export type LeftNullReason =
   | 'created-by-not-at-create';
 
 // A real create writes the row and its init update in one request, a few
-// milliseconds apart. A minute is slack for a slow write.
-const CREATE_SLACK_MS = 60 * 1000;
+// milliseconds apart. A second is slack for that gap on either side. A wider gap
+// is a later note, not the create, and a wrong stamp is a grant, so the window
+// fails closed.
+const CREATE_SLACK_MS = 1000;
 
 interface RawTask {
   _id: Types.ObjectId;
@@ -228,6 +230,19 @@ export function parseIdsText(text: string): string[] {
 
 export const renderIdsText = (ids: string[]): string => (ids.length ? `${ids.join('\n')}\n` : '');
 
+// The dry run's ids file is the reviewed record, so an existing file is never
+// overwritten. 'wx' refuses it, and the error says what to do.
+export function writeIdsFile(outPath: string, ids: string[]): void {
+  try {
+    writeFileSync(outPath, renderIdsText(ids), { flag: 'wx' });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new Error(`${outPath} already exists: pick a new --out path. The reviewed ids file is never overwritten.`);
+    }
+    throw error;
+  }
+}
+
 export interface CliOptions {
   apply: boolean;
   idsPath?: string;
@@ -301,7 +316,7 @@ async function main(): Promise<void> {
       const toStamp = summary.plan.toStamp.map((row) => row._id.toString());
       console.log(`ids it would write (${toStamp.length}):`);
       toStamp.forEach((id) => console.log(id));
-      if (options.outPath) writeFileSync(options.outPath, renderIdsText(toStamp));
+      if (options.outPath) writeIdsFile(options.outPath, toStamp);
     }
   } finally {
     await mongoose.disconnect();
