@@ -111,7 +111,11 @@ jobs:
     needs: require_staging_smoke
     runs-on: ubuntu-latest
     environment: dev
-    timeout-minutes: 30
+    # 45, not 30: a bad image makes `kubectl rollout status` wait its full 8m per
+    # stuck workload before the rollout step fails, and the rollback step then needs
+    # its own window. 30m could see GitHub cancel the job mid-rollback (cancellation
+    # does not satisfy failure(), so the rollback would not re-run). 45m reserves room.
+    timeout-minutes: 45
 
     steps:
       - name: Checkout (with submodules for _external/clawdbot)
@@ -261,6 +265,20 @@ jobs:
           cluster_name: ${{ env.CLUSTER }}
           location: ${{ env.REGION }}
 
+      # Record the revision Helm currently has as `deployed` — the last known-good
+      # release — BEFORE the upgrade, so the rollback step can return to exactly this
+      # revision instead of inferring one by arithmetic after a failed upgrade (a
+      # failed retry can leave a bad image at CUR-1). 0 == no prior deploy (first
+      # install): nothing to roll back to.
+      - name: Record the current good revision (for rollback)
+        id: prerev
+        run: |
+          set -uo pipefail
+          HIST=$(helm history commonly-dev -n "$NAMESPACE" -o json 2>/dev/null || echo '[]')
+          PRE=$(printf '%s' "$HIST" | jq -r '[.[] | select(.status=="deployed")] | (sort_by(.revision) | last | .revision) // 0')
+          echo "prerev=$PRE" >> "$GITHUB_OUTPUT"
+          echo "Pre-upgrade good (deployed) revision: $PRE"
+
       # `--wait` is deliberately NOT used here. It waits for EVERY resource in
       # the release, so any long-unhealthy auxiliary workload fails a deploy
       # that actually succeeded. On 2026-08-04 that produced five consecutive
@@ -328,13 +346,21 @@ jobs:
         id: rollout
         run: |
           set -uo pipefail
+          # Derived from the cluster AND intersected with the workloads this job sets
+          # image tags for — backend (+ its worker), frontend, clawdbot-gateway,
+          # commonly-bot. A parked workload (enabled:false removes the Deployment, as
+          # #1051 did to the gateway) simply isn't present and drops out; an unrelated
+          # unhealthy workload in the same namespace (litellm, redis, cloud-codex,
+          # ops-runner, cloudflared) is a real problem but NOT this job's failure, and
+          # must not fail the deploy or trip the rollback below. A scaled-to-zero managed
+          # workload passes instantly (0 of 0 updated) — parked is not stuck.
+          MANAGED=" backend backend-worker frontend clawdbot-gateway commonly-bot "
           FAILED=""
-          DEPLOYS=$(kubectl get deploy -n "$NAMESPACE" -o name)
-          if [ -z "$DEPLOYS" ]; then
-            echo "::error title=Rollout failed::no deployments found in $NAMESPACE — nothing to verify is itself a failure"
-            exit 1
-          fi
-          for d in $DEPLOYS; do
+          CHECKED=""
+          for d in $(kubectl get deploy -n "$NAMESPACE" -o name); do
+            n=${d##*/}
+            case "$MANAGED" in *" $n "*) : ;; *) continue ;; esac
+            CHECKED="$CHECKED $n"
             echo "::group::rollout status $d"
             if kubectl rollout status "$d" -n "$NAMESPACE" --timeout=8m; then
               echo "$d: rolled out"
@@ -344,11 +370,15 @@ jobs:
             fi
             echo "::endgroup::"
           done
+          if [ -z "$CHECKED" ]; then
+            echo "::error title=Rollout failed::none of the image-tagged workloads (backend/frontend/clawdbot-gateway/commonly-bot) found in $NAMESPACE — nothing to verify is itself a failure"
+            exit 1
+          fi
           if [ -n "$FAILED" ]; then
             echo "Deploy failed for:$FAILED"
             exit 1
           fi
-          echo "All four deployed workloads are live."
+          echo "Deployed workloads live:$CHECKED"
 
       # A pod can be Ready and still unable to serve chat. The backend decides
       # once at boot whether Postgres is available, and /ready answers 200 in
@@ -400,27 +430,46 @@ jobs:
       # deploy/verify step above failed, undo this release in-cluster by rolling back to the
       # previous helm revision, so prod self-heals without waiting for a human. The job still
       # ends red, which makes the auto-deploy dispatcher write auto-deploy.hold and stop
-      # re-dispatching (Mac-side). Rolls back to the newest prior good revision; a no-op at
-      # revision 1 or if the cluster is unreachable (helm history empty). Gated on the helm
+      # re-dispatching (Mac-side). Rolls back to the revision recorded as good before this
+      # upgrade (steps.prerev); a no-op at first install, if the cluster is unreachable, or
+      # if the upgrade created no new revision (live release unchanged). Gated on the helm
       # upgrade or a verify step failing (not bare failure()), so a pre-deploy failure (checkout,
       # auth, build/push) never demotes a healthy release.
       - name: Roll back on a failed deploy
         if: ${{ failure() && (steps.helm.outcome == 'failure' || steps.rollout.outcome == 'failure' || steps.chat.outcome == 'failure') }}
+        env:
+          PRE: ${{ steps.prerev.outputs.prerev }}
         run: |
           set -uo pipefail
           HIST=$(helm history commonly-dev -n "$NAMESPACE" -o json 2>/dev/null || echo '[]')
           CUR=$(printf '%s' "$HIST" | jq -r '.[-1].revision // 0')
-          # Target the newest revision BELOW current that Helm recorded as a real deploy
-          # (status superseded or deployed), skipping failed/pending revisions a retry may
-          # have left — a blind CUR-1 could land on another bad image (Cofounder, 2026-11-01).
-          TARGET=$(printf '%s' "$HIST" | jq -r --argjson cur "${CUR:-0}" '[.[] | select((.revision < $cur) and (.status=="superseded" or .status=="deployed"))] | (sort_by(.revision) | last | .revision) // empty')
-          if [ -z "$TARGET" ]; then
-            echo "::warning title=No rollback target::commonly-dev has no prior superseded/deployed revision below ${CUR:-0}; nothing to roll back to."
+          # Roll back only to the revision recorded as `deployed` BEFORE this upgrade
+          # (steps.prerev). Two no-ops, each a release we must NOT demote:
+          #   - no recorded good revision (first install) -> nothing to roll back to;
+          #   - CUR == PRE -> the upgrade failed before Helm created a revision (chart
+          #     load / values parse): the live release is unchanged, so leave it.
+          if [ "${CUR:-0}" = "0" ] || [ "${PRE:-0}" = "0" ] || [ -z "${PRE:-}" ]; then
+            echo "::warning title=No rollback target::commonly-dev has no pre-upgrade good revision (CUR=${CUR:-0} PRE=${PRE:-0}); nothing to roll back to."
             exit 0
           fi
-          echo "Rolling commonly-dev back: revision $CUR -> $TARGET (last successfully-deployed)"
-          helm rollback commonly-dev "$TARGET" -n "$NAMESPACE" --wait --timeout 8m
-          echo "::error title=Deploy rolled back::commonly-dev rolled back to revision $TARGET after a failed deploy. Investigate the bad image before the next deploy."
+          if [ "$CUR" = "$PRE" ]; then
+            echo "::warning title=No rollback needed::the upgrade created no new revision (CUR==PRE==$PRE); the live release is unchanged."
+            exit 0
+          fi
+          echo "Rolling commonly-dev back: revision $CUR -> $PRE (last successfully-deployed)"
+          # No `--wait`: like the upgrade above, a release-wide wait can be blocked by an
+          # unrelated unhealthy workload and would then record the rollback itself as
+          # failed, leaving the bad revision marked deployed. Apply, then verify only the
+          # workloads this job manages.
+          helm rollback commonly-dev "$PRE" -n "$NAMESPACE" --timeout 8m
+          MANAGED=" backend backend-worker frontend clawdbot-gateway commonly-bot "
+          for d in $(kubectl get deploy -n "$NAMESPACE" -o name); do
+            n=${d##*/}
+            case "$MANAGED" in *" $n "*) : ;; *) continue ;; esac
+            kubectl rollout status "$d" -n "$NAMESPACE" --timeout=8m \
+              || echo "::warning title=Rollback not yet ready::$d did not report ready within 8m after rollback to $PRE; check the cluster."
+          done
+          echo "::error title=Deploy rolled back::commonly-dev rolled back to revision $PRE after a failed deploy. Investigate the bad image before the next deploy."
 
       # The stranger journey walks signup -> Scout's welcome -> a real question
       # -> the connect card against the release just deployed
