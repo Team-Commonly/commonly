@@ -123,15 +123,23 @@ export const submitOperatorKey = async (req: OperatorKeyRequest, res: Response) 
     // Fixed copy only: the store's error text stays out of the response.
     return res.status(500).json({ error: 'key_store_failed', message: 'the key could not be stored; try again' });
   }
+  // Published only while the row is still the pending row this paste wrote. A
+  // removal marks the row disconnected and revoked before it deletes it, so
+  // the generation alone would let a paste that lands in between put that row
+  // back to connected. The OAuth callback fences on its own interim status the
+  // same way (hostedMcpConnect.ts).
   const published = await Integration.updateOne(
-    { _id: row._id, 'config.authGeneration': generation },
+    {
+      _id: row._id, 'config.authGeneration': generation, status: 'pending', revokedAt: null,
+    },
     { $set: { status: 'connected', 'config.credentialRef': credentialRef } },
   );
   if (published?.matchedCount === 0) {
-    // A removal deleted the row mid-paste, or a newer paste took it. Only the
-    // first leaves this secret with nothing pointing at it; a newer paste wrote
-    // the same ref, so it is left alone.
-    if (!(await Integration.exists({ _id: row._id }))) await connectorSecrets.revoke(credentialRef);
+    // A removal took the row mid-paste (deleted it, or marked it on the way),
+    // or a newer paste took it. Only a removal leaves this secret with nothing
+    // that will use it; a newer paste wrote the same ref and cleared the
+    // revocation, so its row still exists unrevoked and the secret is left alone.
+    if (!(await Integration.exists({ _id: row._id, revokedAt: null }))) await connectorSecrets.revoke(credentialRef);
     return res.status(409).json({
       error: 'connection_changed',
       message: 'the connection changed while the key was saved; paste it again',

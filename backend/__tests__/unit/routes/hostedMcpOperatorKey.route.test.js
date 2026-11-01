@@ -227,7 +227,9 @@ describe('POST /connect/hosted-mcp/:entryId/operator-key', () => {
     );
     expect(connectorSecrets.put).toHaveBeenCalledWith(ROW_ID, expect.anything(), KEY, expect.any(Number));
     expect(Integration.updateOne).toHaveBeenCalledWith(
-      { _id: ROW_ID, 'config.authGeneration': 1 },
+      {
+        _id: ROW_ID, 'config.authGeneration': 1, status: 'pending', revokedAt: null,
+      },
       { $set: { status: 'connected', 'config.credentialRef': 'secret-ref-1' } },
     );
     // A first paste has no grants to end.
@@ -271,6 +273,25 @@ describe('POST /connect/hosted-mcp/:entryId/operator-key', () => {
     const res = await submit();
     expect(res.status).toBe(409);
     expect(res.body).toEqual({ error: 'connection_changed', message: 'the connection changed while the key was saved; paste it again' });
+    expect(connectorSecrets.revoke).toHaveBeenCalledWith('secret-ref-1');
+  });
+
+  // Removal marks the row disconnected and revoked before it deletes it
+  // (connectionRemovalService), so a paste can finish between the two. That
+  // row must not go back to connected, and nothing will use the new secret.
+  test('a row marked by a removal mid-paste stays unpublished, and its new secret is revoked', async () => {
+    const marked = {
+      _id: ROW_ID, 'config.authGeneration': 1, status: 'disconnected', revokedAt: new Date(),
+    };
+    const matches = (filter) => Object.entries(filter)
+      .every(([key, value]) => (value === null ? marked[key] == null : marked[key] === value));
+    Integration.updateOne.mockImplementation(async (filter) => ({
+      acknowledged: true, matchedCount: matches(filter) ? 1 : 0,
+    }));
+    Integration.exists.mockImplementation(async (filter) => (matches(filter) ? { _id: ROW_ID } : null));
+    const res = await submit();
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('connection_changed');
     expect(connectorSecrets.revoke).toHaveBeenCalledWith('secret-ref-1');
   });
 
