@@ -133,13 +133,15 @@
   .v2-agent-settings-page .lrow .vl { grid-column: 1; grid-row: 2; font-size: 12px; }
   .v2-agent-settings-page .lrow .ac { grid-row: 1 / span 2; }
 }
-@media (max-width: 600px) {
+@media (max-width: 760px) {
   .v2-agent-settings-page .wt thead { display: none; }
   .v2-agent-settings-page .wt, .v2-agent-settings-page .wt tbody, .v2-agent-settings-page .wt tr, .v2-agent-settings-page .wt td { display: block; width: 100%; }
 }
 .v2-agent-settings-page .v2-agent-wake-pods__cap { margin-left: auto; font: 400 11.5px/1 var(--f-mono); color: var(--mu); }
 .v2-agent-settings-page .v2-agent-wake-pods__mode, .v2-agent-settings-page .v2-agent-wake-pods__fold { display: none; }
-@media (max-width: 600px) {
+/* The Wake table stacks at the same 760px the page's other phone rules use (with the thead
+   block above); between 600 and 760 the five columns overflowed the page. */
+@media (max-width: 760px) {
   .v2-agent-settings-page .wt td:not(:first-child) { display: none; }
   .v2-agent-settings-page .wt tr[data-open="true"] td:not(:first-child) { display: block; }
   .v2-agent-settings-page .wt td:first-child { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 14px; }
@@ -281,4 +283,17 @@
   .v2-agent-settings-page__group .b, .v2-agent-settings-page__group .b-sm { height: 44px; }
   .v2-agent-settings-page__group .sel, .v2-agent-settings-page__group .field:not(.field--area) { --box-h: 44px; height: var(--box-h); }
   .v2-agent-settings-page__group .seg > label { height: 44px; }
+  /* The Wake table and Identity & access rows, lifted earlier, take the same targets. */
+  .v2-agent-settings-page .lrow .ac .b { height: 44px; }
+  .v2-agent-settings-page .lrow .ac .b.ib { width: 44px; }
+  .v2-agent-settings-page .v2-agent-wake-pods__fold { width: 44px; height: 44px; }
+  /* The pod link stays a text box so its ellipsis survives; the 44px comes from padding. */
+  .v2-agent-settings-page .wt td:first-child { padding-block: 0; }
+  .v2-agent-settings-page .wt td:first-child a { display: block; padding-block: 12px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; }
+  .v2-agent-settings-page .wt .seg > label { height: 44px; min-width: 44px; justify-content: center; }
+  .v2-agent-settings-page .wt .sel { --box-h: 44px; height: var(--box-h); }
+  .v2-agent-settings-page .wt .b { height: 44px; }
+  .v2-agent-settings-page .wt .b.ib { width: 44px; }
+  .v2-agent-settings-page .v2-agent-wake-pods__toggle { min-width: 44px; min-height: 44px; align-items: center; }
+  .v2-agent-settings-page .ph .seg > a, .v2-agent-settings-page .ph .seg > button { height: 44px; }
 }
