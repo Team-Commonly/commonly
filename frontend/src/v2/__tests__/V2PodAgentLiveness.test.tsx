@@ -125,6 +125,10 @@ describe('group pod agent liveness', () => {
       "Swift isn't connected yet, so it won't answer here until it's running.",
     ]);
     expect(rows.every((r) => away.contains(r))).toBe(true);
+    rows.forEach((r) => expect(r).not.toBeVisible());
+    fireEvent.click(away.querySelector('summary'));
+    expect(away).toHaveAttribute('open');
+    rows.forEach((r) => expect(r).toBeVisible());
     expect(document.querySelectorAll('.v2-chat__agent-room-status')).toHaveLength(1);
   });
 
