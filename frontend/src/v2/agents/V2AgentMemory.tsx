@@ -65,8 +65,9 @@ export const groupSections = (sections: MemorySection[]) => {
 };
 
 // Frame icons (docs/design/artboards/d215, #s-memory): stroke-only, 1.8 weight.
-const ICON_PATHS: Record<'pin' | 'brain' | 'cal' | 'search' | 'info' | 'chev', React.ReactNode> = {
+const ICON_PATHS: Record<'pin' | 'brain' | 'cal' | 'search' | 'info' | 'chev' | 'chat', React.ReactNode> = {
   chev: <path d="m6 9 6 6 6-6" />,
+  chat: <path d="M21 12a8 8 0 0 1-11.8 7L3 21l2-6.2A8 8 0 1 1 21 12z" />,
   pin: <path d="M12 17v5M8 3h8l-1 6 3 4H6l3-4z" />,
   brain: <path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a2 2 0 0 0-3-1zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1" />,
   cal: <><rect x="3" y="5" width="18" height="16" rx="2.5" /><path d="M3 10h18M8 3v4M16 3v4" /></>,
@@ -114,6 +115,8 @@ const V2AgentMemory: React.FC = () => {
   const [index, setIndex] = useState<MemoryIndex | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'denied'>('loading');
   const [query, setQuery] = useState('');
+  const [openingRoom, setOpeningRoom] = useState(false);
+  const [roomError, setRoomError] = useState(false);
   // Public header facts (name, avatar, pod count). Readable by any viewer, so the
   // shell renders the same for owners, admins and everyone else.
   const [head, setHead] = useState<{ displayName: string; profilePicture?: string; pods: number } | null>(null);
@@ -145,6 +148,22 @@ const V2AgentMemory: React.FC = () => {
     return () => { cancelled = true; };
   }, [agentName, instanceId]);
 
+  // Same idempotent room endpoint as the profile and Your Team entry points:
+  // returns the existing DM or opens one.
+  const talkTo = async () => {
+    setOpeningRoom(true);
+    setRoomError(false);
+    try {
+      const res = await axios.post<{ room?: { _id?: string } }>('/api/agents/runtime/room', { agentName, instanceId: instanceId || 'default' });
+      const roomId = res.data?.room?._id;
+      if (!roomId) throw new Error('Agent room not returned');
+      navigate(`/v2/pods/${roomId}`);
+    } catch {
+      setRoomError(true);
+      setOpeningRoom(false);
+    }
+  };
+
   const profileHref = `/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`;
   const settingsHref = `/v2/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`;
   const memoryLabel = t('agentSettings.memory', { defaultValue: 'Memory' });
@@ -165,7 +184,18 @@ const V2AgentMemory: React.FC = () => {
           <button type="button" onClick={() => navigate(settingsHref)}>{t('agentSettings.settings')}</button>
         </nav>
         <span className="sp" />
+        <button
+          type="button"
+          className="v2p-b v2p-b-s v2p-ib"
+          title={t('agentProfile.hero.talkTo', { name: head?.displayName || agentName })}
+          aria-label={t('agentProfile.hero.talkTo', { name: head?.displayName || agentName })}
+          onClick={() => { void talkTo(); }}
+          disabled={openingRoom}
+        >
+          <MemIcon name="chat" size={17} />
+        </button>
       </header>
+      {roomError && <p className="v2m-state" role="alert">{t('agentProfile.hero.openRoomFailed')}</p>}
       <div className="v2m-pbody">
       {state === 'ready' && index ? null : <MemoryShell loading={state === 'loading'} message={state === 'denied' ? t('agentProfile.memory.none', { defaultValue: 'No memory recorded yet.' }) : ''} loadingLabel={t('common.loading', { defaultValue: 'Loading…' })} query={query} setQuery={setQuery} searchLabel={searchLabel} navLabel={memoryLabel} />}
       {state === 'ready' && index && (() => {

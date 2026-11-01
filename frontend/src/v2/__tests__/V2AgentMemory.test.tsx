@@ -127,4 +127,37 @@ describe('V2AgentMemory', () => {
     expect(document.querySelector('.v2m-mnav')).not.toBeNull();
     expect(document.querySelector('.v2m-body [role="status"]')).not.toBeNull();
   });
+
+  it('Talk to opens the agent room and navigates to it', async () => {
+    axios.get.mockResolvedValue({ data: { viewerRole: 'owner', totalEntries: 1, sections: [section('daily', 1)] } });
+    axios.post.mockResolvedValue({ data: { room: { _id: 'room1' } } });
+    render(
+      <MemoryRouter initialEntries={['/v2/agents/maya-claude/default/memory']}>
+        <Routes>
+          <Route path="/v2/agents/:agentName/:instanceId/memory" element={<V2AgentMemory />} />
+          <Route path="/v2/pods/:id" element={<div>room opened</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByRole('heading', { name: /Journal/ })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /maya-claude/ }));
+    await waitFor(() => expect(screen.getByText('room opened')).toBeInTheDocument());
+    expect(axios.post).toHaveBeenCalledWith('/api/agents/runtime/room', { agentName: 'maya-claude', instanceId: 'default' });
+  });
+
+  it('shows an error and stays on the page when the room cannot be opened', async () => {
+    axios.get.mockResolvedValue({ data: { viewerRole: 'owner', totalEntries: 1, sections: [section('daily', 1)] } });
+    axios.post.mockRejectedValue(new Error('500'));
+    render(
+      <MemoryRouter initialEntries={['/v2/agents/maya-claude/default/memory']}>
+        <Routes>
+          <Route path="/v2/agents/:agentName/:instanceId/memory" element={<V2AgentMemory />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByRole('heading', { name: /Journal/ })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /maya-claude/ }));
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /maya-claude/ })).not.toBeDisabled();
+  });
 });
