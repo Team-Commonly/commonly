@@ -16,4 +16,7 @@
 .v2-agent-wake-pods__empty, .v2-agent-wake-pods__loading { margin: 0; color: var(--v2-text-muted); }
 @media (max-width: 600px) { .v2-agent-wake-pods__section { padding: 16px; } }
 .v2-agent-wake-pods__choice { min-width: 0; margin: 0; border: 0; padding: 0; }
-.v2-agent-wake-pods__choice legend { padding: 12px 0 0; color: var(--v2-text-primary); font: 500 14px/20px var(--v2-font); }
+.v2-agent-wake-pods__choice > span { display: block; padding: 12px 0 0; color: var(--v2-text-primary); font: 500 14px/20px var(--v2-font); }
+.v2-agent-wake-pods__segment { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0 0; }
+.v2-agent-wake-pods__option { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px; border: 1px solid var(--v2-border); border-radius: 999px; color: var(--v2-text-primary); font: 500 13px/18px var(--v2-font); cursor: pointer; }
+.v2-agent-wake-pods__option input { width: 14px; height: 14px; accent-color: var(--v2-ink); }
