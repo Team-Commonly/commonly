@@ -63,9 +63,11 @@ const V2AgentSettingsPage: React.FC = () => {
   const [keyOpen, setKeyOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [skillCount, setSkillCount] = useState<number | null | undefined>(undefined);
+  const [runsNeedAttention, setRunsNeedAttention] = useState(false);
   const [memory, setMemory] = useState<{ notes: number; updatedAt: string | null } | null>(null);
   const navigate = useNavigate();
-  const phone = usePhone('(max-width: 767px)');
+  // The same width the page's one-line phone rows start at.
+  const phone = usePhone('(max-width: 600px)');
   const { talkTo, opening: openingRoom, failed: roomFailed } = useTalkToAgent(agentName, instanceId);
   const [connectionRefreshNonce, setConnectionRefreshNonce] = useState(0);
   const identityKey = `${agentName}:${instanceId}:${podId || ''}`;
@@ -102,6 +104,7 @@ const V2AgentSettingsPage: React.FC = () => {
     setKeyOpen(false);
     setSkillsOpen(false);
     setSkillCount(undefined);
+    setRunsNeedAttention(false);
     if (access && podId) {
       void fetchKeys().then((rows) => {
         if (active) {
@@ -294,6 +297,8 @@ const V2AgentSettingsPage: React.FC = () => {
   const newestUse = activeKeys.map((key) => key.lastUsedAt).filter((value): value is string => Boolean(value)).sort().pop();
   // The key panel stays open whenever it holds something the owner must see or answer.
   const keyPanelOpen = keyOpen || Boolean(oneTimeKey || pendingAction || error);
+  // A failed skills read opens its panel, where the error and retry are.
+  const skillsShown = skillsOpen || skillCount === null;
   const runtimeDetails = describeRuntime(runtime);
   const runtimeSummary = [runtimeDetails.adapter || runtime.adapter || runtime.runtimeType, runtime.model].filter(Boolean).join(' · ');
   const processState = runtime.processConnected === true ? 'connected' : runtime.processConnected === false ? 'disconnected' : 'notReported';
@@ -434,17 +439,18 @@ const V2AgentSettingsPage: React.FC = () => {
                 </span>
                 <span className="ac">
                   <button type="button" className="b b-g ib b-sm v2-agent-settings-page__toggle" title={t('agentSkills.title')} aria-label={t('agentSkills.title')}
-                    aria-expanded={skillsOpen} aria-controls="agent-skills-panel" onClick={() => setSkillsOpen((value) => !value)}>
+                    aria-expanded={skillsShown} aria-controls="agent-skills-panel" onClick={() => setSkillsOpen((value) => !value)}>
                     <V2AgentSettingsIcon name="chev" />
                   </button>
                 </span>
               </div>
               {/* Mounted while closed, so the row can count what the panel loads. */}
-              <div id="agent-skills-panel" className="v2-agent-settings-page__panel v2-agent-settings-page__panel--pad" hidden={!skillsOpen}>
+              <div id="agent-skills-panel" className="v2-agent-settings-page__panel v2-agent-settings-page__panel--pad" hidden={!skillsShown}>
                 <V2AgentSkills podId={podId} podName={access.pods.find((pod) => pod.id === podId)?.name || podId}
                   agentName={agentName} instanceId={instanceId} onCount={setSkillCount} />
               </div>
-              <details className="disc" data-testid="agent-how-it-runs">
+              {/* Opens by itself when the machine placement needs a move or failed. */}
+              <details className="disc" data-testid="agent-how-it-runs" open={runsNeedAttention || undefined}>
                 <summary>
                   <span className="lb"><V2AgentSettingsIcon name="cpu" />{t('agentManage.controls.title')}</span>
                   <span className="vl">{runtimeSummary || t('agentManage.controls.notReported')}
@@ -458,6 +464,7 @@ const V2AgentSettingsPage: React.FC = () => {
                     name={agentName}
                     instanceId={instanceId}
                     runtime={runtime}
+                    onNeedsAttention={setRunsNeedAttention}
                     onSaveRuntime={runtimeEditable ? async (changes) => {
                       await updateRuntime(changes);
                     } : undefined}

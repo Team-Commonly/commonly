@@ -43,6 +43,8 @@ interface Props {
   instanceId: string;
   runtime: Runtime;
   onSaveRuntime?: (update: RuntimeUpdate) => Promise<void>;
+  /** Told when the body holds something to act on, so a closed disclosure around it can open. */
+  onNeedsAttention?: (needs: boolean) => void;
 }
 
 const WALKED_ADAPTERS: Record<string, string> = {
@@ -74,7 +76,7 @@ const grantEnded = (grant: AgentGrant): boolean => Boolean(grant.revokedAt) || n
 
 // The body of the How it runs disclosure: where it runs, the runtime controls and the own-key entry.
 const V2AgentRuntimeBody: React.FC<Props> = ({
-  name, instanceId, runtime, onSaveRuntime,
+  name, instanceId, runtime, onSaveRuntime, onNeedsAttention,
 }) => {
   const { t, i18n } = useTranslation();
   const api = useV2Api();
@@ -145,6 +147,8 @@ const V2AgentRuntimeBody: React.FC<Props> = ({
 
   const machineName = (id: string | null) => placement?.activeMachines.find((machine) => machine.machineId === id)?.name || id;
   const canMove = Boolean(placement && (placement.boundMachineRevoked || !placement.boundMachineId));
+  const needsAttention = Boolean(placementError) || (details.mode === 'daemon' && canMove);
+  useEffect(() => { onNeedsAttention?.(needsAttention); }, [needsAttention, onNeedsAttention]);
   const machineState = placement && <>
     {placement.boundMachineRevoked && <span role="status">{t('agentManage.runtime.machineRevoked')}</span>}
     {!placement.boundMachineRevoked && placement.boundMachineId && <span><span className="dot" aria-hidden="true" />{t('agentManage.runtime.currentMachine', { name: machineName(placement.boundMachineId) })}</span>}

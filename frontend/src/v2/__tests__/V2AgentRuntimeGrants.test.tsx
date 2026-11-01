@@ -82,6 +82,30 @@ test('revoked Runtime row offers an active computer and moves in one request', a
   expect(axios.post).toHaveBeenCalledTimes(1);
 });
 
+test('a revoked machine tells the page the body needs attention; a healthy one does not', async () => {
+  const runtime = { runtimeType: 'wrapper', adapter: 'claude', model: 'sonnet', managed: true };
+  const renderBody = (onNeedsAttention) => render(
+    <AuthContext.Provider value={authValue}><MemoryRouter>
+      <V2AgentRuntimeBody name="nib" instanceId="default" runtime={runtime} onNeedsAttention={onNeedsAttention} />
+    </MemoryRouter></AuthContext.Provider>,
+  );
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true,
+      activeMachines: [{ machineId: 'new', name: 'New Mac' }] } : response }));
+  const revoked = jest.fn();
+  const { unmount } = renderBody(revoked);
+  await waitFor(() => expect(revoked).toHaveBeenLastCalledWith(true));
+  unmount();
+
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: false,
+      activeMachines: [{ machineId: 'old', name: 'Old Mac' }] } : response }));
+  const healthy = jest.fn();
+  renderBody(healthy);
+  expect(await screen.findByText(/Old Mac/)).toBeInTheDocument();
+  expect(healthy).not.toHaveBeenCalledWith(true);
+});
+
 test('two computers with one name are told apart by when each was added', async () => {
   axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
     ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true,

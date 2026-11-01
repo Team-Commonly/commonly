@@ -707,16 +707,19 @@ test('a name outside 1–80 characters is refused under the field; other refusal
 
 describe('one Identity & access list (d215 frame)', () => {
   // A connected webhook agent with one active key, a memory index and no skills or grants.
-  const fleet = ({ state = 'connected', memory = 'ok' } = {}) => (url) => {
+  const fleet = ({ state = 'connected', memory = 'ok', skills = 'ok', runtimeType = 'webhook', placement = null } = {}) => (url) => {
+    if (url.includes('/agent-binding/placement')) return Promise.resolve({ data: placement === 'revoked'
+      ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, activeMachines: [{ machineId: 'new', name: 'New Mac' }] }
+      : { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: false, activeMachines: [{ machineId: 'old', name: 'Old Mac' }] } });
     if (url.endsWith('/manage-settings')) return Promise.resolve({ data: {
       writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
     } });
     if (url === '/api/registry/pods/pod-1/agents') return Promise.resolve({ data: { agents: [{
-      name: 'maya-claude', instanceId: 'default', runtime: { runtimeType: 'webhook' },
+      name: 'maya-claude', instanceId: 'default', runtime: { runtimeType },
       connection: { state, lastSeenAt: null },
     }] } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
-      name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'webhook' },
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType },
     } } });
     if (url === '/api/registry/agents/maya-claude') return Promise.resolve({ data: { status: 'active', verified: true } });
     if (url === '/api/agent-memory/maya-claude/default') {
@@ -727,13 +730,43 @@ describe('one Identity & access list (d215 frame)', () => {
         { key: 'daily', label: 'Daily', kind: 'log', updatedAt: null, notes: [{ header: '2026-10-30', snippet: 'c' }] },
       ] } });
     }
-    if (url.startsWith('/api/skills/pods/')) return Promise.resolve({ data: { items: [], canEdit: true, skillLoad: null } });
+    if (url.startsWith('/api/skills/pods/')) {
+      if (skills === 'failed') return Promise.reject({ response: { status: 500 } });
+      return Promise.resolve({ data: { items: [], canEdit: true, skillLoad: null } });
+    }
     if (url.includes('/grants')) return Promise.resolve({ data: { grants: [] } });
     if (url === '/api/credentials') return Promise.resolve({ data: [{
       _id: 'tok-1', label: 'Laptop', createdAt: '2026-10-01T00:00:00Z', lastUsedAt: new Date(Date.now() - 5 * 60_000).toISOString(), status: 'active',
     }] });
     return Promise.resolve({ data: [] });
   };
+
+  test('How it runs opens by itself when the machine was revoked, and stays closed when it is healthy', async () => {
+    axios.get.mockImplementation(fleet({ runtimeType: 'wrapper', placement: 'revoked' }));
+    const { unmount } = renderPage();
+    await waitFor(() => expect(screen.getByTestId('agent-how-it-runs')).toHaveAttribute('open'));
+    unmount();
+    axios.get.mockImplementation(fleet({ runtimeType: 'wrapper', placement: 'healthy' }));
+    renderPage();
+    expect(await screen.findByText(/Old Mac/)).toBeInTheDocument();
+    expect(screen.getByTestId('agent-how-it-runs')).not.toHaveAttribute('open');
+  });
+
+  test('a failed skills read opens the Skills panel, where its error is', async () => {
+    axios.get.mockImplementation(fleet({ skills: 'failed' }));
+    renderPage();
+    expect(await screen.findByText('Connected · 1 pod')).toBeInTheDocument();
+    await waitFor(() => expect(document.getElementById('agent-skills-panel')).not.toHaveAttribute('hidden'));
+    expect(screen.getByRole('button', { name: 'Skills' })).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  test('a healthy skills read leaves the Skills panel closed', async () => {
+    axios.get.mockImplementation(fleet());
+    renderPage();
+    expect(await screen.findByText('Connected · 1 pod')).toBeInTheDocument();
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/skills\/pods\//), expect.anything()));
+    expect(document.getElementById('agent-skills-panel')).toHaveAttribute('hidden');
+  });
 
   test('a healthy connection lives in the header, and the Connection row is hidden', async () => {
     axios.get.mockImplementation(fleet());
@@ -905,7 +938,7 @@ describe('one Identity & access list (d215 frame)', () => {
     const realMatchMedia = window.matchMedia;
     beforeEach(() => {
       window.matchMedia = jest.fn().mockImplementation((query) => ({
-        matches: query === '(max-width: 767px)', media: query, onchange: null,
+        matches: query === '(max-width: 600px)', media: query, onchange: null,
         addEventListener: jest.fn(), removeEventListener: jest.fn(), addListener: jest.fn(), removeListener: jest.fn(),
       }));
     });
