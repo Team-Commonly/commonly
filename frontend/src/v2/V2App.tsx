@@ -37,10 +37,11 @@ const V2CommunityRedirect = React.lazy(() => import('./components/V2CommunityRed
 const V2SettingsPage = React.lazy(() => import('./components/V2SettingsPage'));
 const V2AgentProfile = React.lazy(() => import('./agents/V2AgentProfile'));
 const V2AgentSettingsPage = React.lazy(() => import('./agents/V2AgentSettingsPage'));
+const V2AgentMemory = React.lazy(() => import('./agents/V2AgentMemory'));
 const UserProfile = React.lazy(() => import('../components/UserProfile'));
 const V2AgentBYO = React.lazy(() => import('./components/V2AgentBYO'));
 const V2ConnectPage = React.lazy(() => import('./components/V2ConnectPage'));
-const V2ConnectorsPage = React.lazy(() => import('./components/V2ConnectorsPage'));
+const ConnectorsPage = React.lazy(() => import('./connectors/ConnectorsPage'));
 const V2PodBoard = React.lazy(() => import('./components/V2PodBoard'));
 const V2RunTrace = React.lazy(() => import('./components/V2RunTrace'));
 const V2ActivityPage = React.lazy(() => import('./components/V2ActivityPage'));
@@ -297,6 +298,10 @@ const V2App: React.FC = () => {
                   element={feature('Agent settings', <V2AgentSettingsPage />, false, false)}
                 />
                 <Route
+                  path="agents/:agentName/:instanceId/memory"
+                  element={feature('Agent memory', <V2AgentMemory />, false, false)}
+                />
+                <Route
                   path="connect"
                   element={<V2FeaturePage title="Connect" hint="MCP uses an agent token created during setup."><V2ConnectPage /></V2FeaturePage>}
                 />
@@ -304,10 +309,11 @@ const V2App: React.FC = () => {
                   path="connectors"
                   element={feature(
                     'Connectors',
-                    <V2ConnectorsPage />,
+                    <ConnectorsPage />,
                     false,
                     // The Signal artboard owns this page's display-sized head.
                     false,
+                    'v2-feature--connectors',
                   )}
                 />
                 <Route

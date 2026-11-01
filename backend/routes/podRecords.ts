@@ -2,8 +2,9 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import mongoose from 'mongoose';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
+import { MAX_PAGE_LINES } from '../repositories/recordChainRepository';
 import {
-  isRecordEnabled, readRecordExport, RecordStoreUnavailableError, toOtlp,
+  isRecordEnabled, readRecordExport, RecordStoreUnavailableError, toOtlp, type ChainPage,
 } from '../services/recordService';
 
 /* eslint-disable @typescript-eslint/no-require-imports, global-require */
@@ -30,6 +31,19 @@ type RecordReq = express.Request & {
 
 const notFound = (res: express.Response) => res.status(404).json({ error: 'record_not_found' });
 
+// A page cursor: `after` is a seq (0 is the start), `limit` 1..MAX_PAGE_LINES.
+const SEQ = /^\d{1,9}$/;
+const readPage = (query: express.Request['query']): ChainPage | null => {
+  const { after, limit } = query;
+  if (after !== undefined && (typeof after !== 'string' || !SEQ.test(after))) return null;
+  if (limit !== undefined && (typeof limit !== 'string' || !SEQ.test(limit)
+    || Number(limit) < 1 || Number(limit) > MAX_PAGE_LINES)) return null;
+  return {
+    ...(after !== undefined ? { after: Number(after) } : {}),
+    ...(limit !== undefined ? { limit: Number(limit) } : {}),
+  };
+};
+
 /**
  * A chain as record-v1 JSONL, or `?format=otlp` for the spec's OTLP/JSON
  * export. `taskId` null is the pod's taskless chain (grants and the calls
@@ -41,11 +55,17 @@ const notFound = (res: express.Response) => res.status(404).json({ error: 'recor
  * credential-owner ids verbatim, and a hash-chained line can't be redacted
  * without breaking verification. That is the same set runTraces shows those
  * ids to, so admins and agent-DM observers who pass canViewPod get a 403.
+ *
+ * One read returns at most MAX_PAGE_LINES lines after `?after=<seq>`. While
+ * more remain, `X-Record-Next-After` names the cursor for the next page; the
+ * head headers always describe the whole chain.
  */
 const serveRecord = async (req: RecordReq, res: express.Response, taskId: string | null) => {
   try {
     const { podId } = req.params;
     if (!mongoose.isObjectIdOrHexString(podId) || (taskId !== null && !TASK_ID.test(taskId))) return notFound(res);
+    const page = readPage(req.query);
+    if (!page) return res.status(400).json({ error: 'record_bad_cursor' });
     if (!isRecordEnabled(podId)) return notFound(res);
     const userId = req.userId || req.user?._id || req.agentUser?._id;
     const pod = await Pod.findById(podId).select('members type').lean();
@@ -57,7 +77,19 @@ const serveRecord = async (req: RecordReq, res: express.Response, taskId: string
 
     let record;
     try {
-      record = await readRecordExport({ podId: String(pod._id), ...(taskId !== null ? { taskId } : {}) });
+      const ref = { podId: String(pod._id), ...(taskId !== null ? { taskId } : {}) };
+      record = await readRecordExport(ref, undefined, page);
+      // OTLP has no paging of its own: an export of one page would be a
+      // silently short trace. An OTLP read with no cursor covers the chain.
+      if (req.query.format === 'otlp' && page.after === undefined && page.limit === undefined) {
+        const lines = [record.jsonl];
+        for (let next = record.nextAfter; next !== null;) {
+          const more = await readRecordExport(ref, undefined, { after: next });
+          lines.push(more.jsonl);
+          next = more.nextAfter;
+        }
+        record = { ...record, jsonl: lines.join(''), nextAfter: null };
+      }
     } catch (error) {
       // A store outage is an error, never an apparently empty record.
       if (!(error instanceof RecordStoreUnavailableError)) {
@@ -71,6 +103,7 @@ const serveRecord = async (req: RecordReq, res: express.Response, taskId: string
     // The spec's outside record of the head (§4): it covers the last line.
     if (record.head) res.set('X-Record-Head', record.head);
     if (record.runId) res.set('X-Record-Run-Id', record.runId);
+    if (record.nextAfter !== null) res.set('X-Record-Next-After', String(record.nextAfter));
     if (req.query.format === 'otlp') return res.json(toOtlp(record.jsonl));
     res.type('application/x-ndjson; charset=utf-8');
     return res.send(record.jsonl);

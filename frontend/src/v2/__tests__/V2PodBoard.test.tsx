@@ -244,6 +244,21 @@ describe('V2PodBoard', () => {
     });
   });
 
+  test('the P0 chip narrows the columns and the done rail shows the done column', async () => {
+    renderBoard();
+    const pending = await screen.findByRole('region', { name: 'Pending' });
+    expect(within(pending).getAllByRole('article').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'P0' }));
+    expect(screen.getByRole('button', { name: 'P0' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(pending).queryAllByRole('article')).toHaveLength(0);
+
+    const rail = screen.getByRole('complementary', { name: 'Done' });
+    expect(screen.getByTestId('v2-board').querySelector('.v2-board__columns')).not.toHaveClass('is-showdone');
+    fireEvent.click(within(rail).getByRole('button', { name: 'Show' }));
+    expect(screen.getByTestId('v2-board').querySelector('.v2-board__columns')).toHaveClass('is-showdone');
+  });
+
   test('creates a task from the dialog', async () => {
     axios.post.mockResolvedValue({ data: { task: { taskId: 'N-9', title: 'Ship it', status: 'pending' } } });
     renderBoard();

@@ -36,3 +36,16 @@ test('a revoked device shows its revoked date and no Revoke button', async () =>
   expect(screen.queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
   expect(screen.getByText(/^Revoked/)).toHaveTextContent(new Date('2026-10-20T09:30:00.000Z').toLocaleString());
 });
+
+test('the folded Devices summary updates after revoking a listed device', async () => {
+  axios.get.mockResolvedValue({ data: { devices: [{ id: 'd3', label: 'sam-laptop · commonly-cli', createdAt: '2026-08-31T00:00:00.000Z', lastUsedAt: null, revokedAt: null }] } });
+  axios.delete.mockResolvedValue({ data: { message: 'Device revoked' } });
+  jest.spyOn(window, 'confirm').mockReturnValue(true);
+  render(<V2DevicesPanel asFold showHeading={false} />);
+
+  expect(await screen.findByText('1 CLI device')).toBeInTheDocument();
+  fireEvent.click(screen.getByText('Devices').closest('summary'));
+  fireEvent.click(await screen.findByRole('button', { name: 'Revoke' }));
+  await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/auth/devices/d3'));
+  expect(await screen.findByText('None')).toBeInTheDocument();
+});

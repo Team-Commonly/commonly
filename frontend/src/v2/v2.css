@@ -32,7 +32,11 @@ body.modern-ui.v2-canvas {
   /* TASK-701: inactive rail glyphs, join-radio outlines (3:1 on white and
      #f2f4f7) and the neutral selected pod row. Dark values sit in both dark
      sets below. */
-  --v2-rail-icon: #374151;
+  /* D223 ruling (Cofounder, 11-01): the artboard's --ph (#98a2b3) is under
+     3:1 on the rail's own surface, --v2-shell-bg #eef0f4 (2.26:1), so this is
+     the nearest grey that passes there: 3.05:1, and 3.47:1 on the white tab
+     bar. Dark #5f6979 is 3.48:1 on the dark shell and 3.17:1 on its surface. */
+  --v2-rail-icon: #828a99;
   --v2-control-outline: #667085;
   /* D223 (TASK-735): the artboard's .pod.on in both themes, a neutral tint
      row whose mark alone turns cobalt. */
@@ -273,7 +277,7 @@ body.modern-ui.v2-canvas {
     --v2-status-blocked-edge: #f97066;
     --v2-text-primary: #e8ebf1;
     --v2-message-text: #e8ebf1;
-    --v2-rail-icon: #aeb6c4;
+    --v2-rail-icon: #5f6979;
     --v2-control-outline: #737e92;
     --v2-row-active: #1e2531;
     --v2-row-active-text: #e8ebf1;
@@ -347,7 +351,7 @@ body.modern-ui.v2-canvas {
       --v2-status-blocked-edge: #f97066;
       --v2-text-primary: #e8ebf1;
       --v2-message-text: #e8ebf1;
-      --v2-rail-icon: #aeb6c4;
+      --v2-rail-icon: #5f6979;
       --v2-control-outline: #737e92;
       --v2-row-active: #1e2531;
       --v2-row-active-text: #e8ebf1;
@@ -803,7 +807,10 @@ body.modern-ui.v2-canvas {
 
 .v2-rail {
   height: 100%;
-  padding: 6px 10px;
+  /* 56px rail - 1px pane border - 2 x 8px = 39px, room for the 38px nav glyph.
+     At 10px the nav was 35px wide and scrolled sideways by 2px, which the
+     staging smoke's "rail no h-scroll @1440px" check caught after #3139. */
+  padding: 6px 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -892,8 +899,9 @@ body.modern-ui.v2-canvas {
   align-items: center;
   justify-content: center;
   gap: 0;
-  /* D223 (TASK-735): the artboard's .nav, a bare 38px glyph at rest. The
-     glyph colour stays the TASK-701 token, so dark keeps its lift. */
+  /* D223 (TASK-735): the artboard's .nav, a bare 38px glyph at rest, coloured
+     by --v2-rail-icon: the nearest grey to the artboard's that clears 3:1 on
+     the shell (values and ratios at the token). */
   width: 38px;
   min-height: 38px;
   height: 38px;
@@ -7787,16 +7795,13 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-settings__layout {
-  display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
-  grid-template-rows: auto 1fr;
-  gap: 0 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
   padding-top: 40px;
 }
 
 .v2-settings__title {
-  grid-column: 1;
-  grid-row: 1;
   margin: 0;
   color: var(--v2-text-primary);
   font-family: var(--v2-font-display);
@@ -7806,98 +7811,82 @@ body.modern-ui.v2-canvas {
   line-height: 1.1;
 }
 
-.v2-settings__nav {
-  grid-column: 1;
-  grid-row: 2;
-  position: sticky;
-  top: 24px;
-  align-self: start;
-}
+.v2-settings__section { min-width: 0; }
 
-.v2-settings__nav-list {
-  display: grid;
-  gap: 2px;
-  margin-top: 24px;
-}
-
-.v2-root a.v2-settings__nav-link {
-  display: flex;
-  align-items: center;
-  min-height: 38px;
-  padding: 0 8px;
-  border-radius: var(--v2-radius-sm);
-  color: var(--v2-text-secondary);
-  font-family: var(--v2-font);
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 20px;
-  text-decoration: none;
-}
-
-.v2-root a.v2-settings__nav-link:hover {
-  color: var(--v2-text-primary);
-}
-
-.v2-root a.v2-settings__nav-link--active {
-  color: var(--v2-text-primary);
-  background: var(--v2-bg-subtle);
-  font-weight: 600;
-}
-
-.v2-root a.v2-settings__nav-link:focus-visible {
-  outline: 2px solid var(--v2-accent);
-  outline-offset: 2px;
-}
-
-.v2-settings__nav-note {
-  margin: 24px 0 0;
-  padding-top: 16px;
-  border-top: 1px solid var(--v2-border-soft);
+.v2-settings__label {
+  margin: 0 0 8px;
   color: var(--v2-text-tertiary);
   font-family: var(--v2-font-mono);
   font-size: 12px;
+  font-weight: 500;
   line-height: 16px;
 }
 
-.v2-settings__section {
-  padding: 28px 0;
-  border-bottom: 1px solid var(--v2-border-soft);
-  scroll-margin-top: 24px;
-}
-
-.v2-settings__label {
-  margin: 0 0 16px;
-  color: var(--v2-text-primary);
-  font-family: var(--v2-font-display);
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-}
-
-.v2-settings__section-body {
+/* One bordered card per group; rows are separated by hairlines. */
+.v2-settings__group,
+.v2-settings__fold {
   min-width: 0;
-}
-
-.v2-settings__link-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: baseline;
-  gap: 12px;
-  padding: 12px;
+  overflow: hidden;
   border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-surface);
+}
+.v2-settings__group > * + *,
+.v2-settings__group .v2-settings__fold { border-top: 1px solid var(--v2-border-soft); }
+.v2-settings__group .v2-settings__fold { border-width: 0; border-radius: 0; border-top: 1px solid var(--v2-border-soft); }
+.v2-settings__group > .v2-settings__fold:first-child { border-top: 0; }
+.v2-settings__group > .v2-settings__account { border-top: 0; }
+.v2-settings__account > .v2-settings__row + .v2-settings__row,
+.v2-settings__account > .v2-settings__edit { border-top: 1px solid var(--v2-border-soft); }
+.v2-settings__row {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
   color: var(--v2-text-primary);
   text-decoration: none;
 }
-.v2-settings__link-row:hover { background: var(--v2-surface-hover); }
-.v2-settings__link-row:focus-visible {
-  outline: 2px solid var(--v2-accent);
-  outline-offset: 2px;
+.v2-settings__row > .v2-settings__row-label { flex: 0 0 auto; min-width: 84px; font: 600 13px/18px var(--v2-font); }
+.v2-settings__row > .v2-settings__row-value { flex: 1 1 auto; min-width: 0; color: var(--v2-text-muted); font-size: 12px; }
+.v2-settings__row-value--mono { font-family: var(--v2-font-mono); }
+.v2-settings__row-actions { display: inline-flex; gap: 8px; margin-left: auto; }
+.v2-settings__row > .v2-settings__secondary,
+.v2-settings__row > .v2-settings__icon-btn,
+.v2-settings__row > .v2-settings__row-actions { margin-left: auto; }
+.v2-settings__icon { flex: 0 0 auto; color: var(--v2-text-tertiary); }
+.v2-settings__summary { cursor: pointer; list-style: none; }
+.v2-settings__summary::-webkit-details-marker { display: none; }
+.v2-settings__summary > .v2-settings__icon:last-child { margin-left: auto; transition: transform .15s; }
+details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transform: rotate(180deg); }
+.v2-settings__fold-body { padding: 12px 14px 14px; border-top: 1px solid var(--v2-border-soft); }
+.v2-settings__fold--actions .v2-settings__fold-body { display: flex; flex-direction: column; gap: 12px; }
+.v2-settings__row--link:hover { background: var(--v2-surface-hover); }
+.v2-settings__row--link:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: -2px; }
+.v2-settings__row-arrow { margin-left: auto; color: var(--v2-text-tertiary); font-size: 18px; line-height: 18px; }
+.v2-settings__row--plan > .v2-billing { display: flex; flex: 1 1 auto; align-items: center; justify-content: space-between; gap: 12px; }
+.v2-settings__row--plan .v2-billing__head { margin: 0; }
+.v2-settings__row--plan .v2-billing__badge,
+.v2-settings__row--plan .v2-billing__btn { white-space: nowrap; }
+.v2-settings__row--plan .v2-billing__actions { margin: 0; }
+.v2-root .v2-settings button.v2-settings__icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--v2-radius-sm);
+  background: transparent; color: var(--v2-text-tertiary); cursor: pointer;
 }
-.v2-settings__link-row-label { font: 600 13px/18px var(--v2-font); }
-.v2-settings__link-row-detail { color: var(--v2-text-muted); font-size: 12px; }
-.v2-settings__link-row-arrow { color: var(--v2-accent-text); font-size: 18px; line-height: 18px; }
+.v2-root .v2-settings button.v2-settings__icon-btn:hover { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+.v2-settings__edit { padding: 12px 14px 14px; }
+.v2-settings__edit--closed { display: none; }
+.v2-settings__group .v2-settings__developer-disclosure { margin: 0; padding: 12px 14px; }
+.v2-settings__token-detail { padding: 0 14px 12px; }
+@media (max-width: 560px) {
+  .v2-settings__layout { padding-top: 20px; gap: 16px; }
+  .v2-settings__row > .v2-settings__row-label { min-width: 0; }
+  .v2-settings__token > .v2-settings__row { flex-wrap: wrap; }
+  .v2-settings__row-actions { flex: 1 0 100%; justify-content: flex-end; }
+  .v2-settings__row--plan > .v2-billing { flex-wrap: wrap; justify-content: flex-start; }
+  .v2-settings__row--plan .v2-billing__actions { margin-left: auto; }
+}
 
 .v2-settings__developer-disclosure {
   margin-top: 20px;
@@ -7912,21 +7901,19 @@ body.modern-ui.v2-canvas {
 .v2-settings__developer-disclosure[open] > summary { margin-bottom: 16px; }
 
 .v2-settings__content {
-  grid-column: 2;
-  grid-row: 1 / span 2;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: min(100%, 640px);
+  margin: 0 auto;
 }
 
-.v2-settings__account-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 44px;
-}
+.v2-settings__account-row { min-height: 64px; }
 
 .v2-settings__avatar {
-  width: 64px;
-  height: 64px;
-  flex: 0 0 64px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
   border: 0;
   border-radius: var(--v2-radius-sm);
   font-size: 12px;
@@ -8179,9 +8166,9 @@ body.modern-ui.v2-canvas {
   overflow: hidden;
   color: var(--v2-text-primary);
   font-family: var(--v2-font-display);
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -8431,16 +8418,8 @@ body.modern-ui.v2-canvas {
 /* D215 Settings › Look: a label and a segment per row. Language moved here
    from the rail (TASK-691). */
 .v2-settings__look { display: flex; flex-direction: column; }
-.v2-settings__look-row {
-  display: flex;
-  min-height: 44px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid var(--v2-border-soft);
-}
-.v2-settings__look-row:last-child { border-bottom: 0; }
-.v2-settings__look-label { color: var(--v2-text-primary); font: 500 13px/18px var(--v2-font); }
+.v2-settings__look .v2-settings__row { justify-content: space-between; }
+.v2-settings__look .v2-settings__row + .v2-settings__row { border-top: 1px solid var(--v2-border-soft); }
 
 
 /* Settings owns the connected-apps controls without inheriting the legacy
@@ -8525,17 +8504,6 @@ body.modern-ui.v2-canvas {
     font-size: 28px;
   }
 
-  .v2-settings__nav {
-    display: none;
-  }
-
-  .v2-settings__section {
-    padding: 20px 0;
-  }
-
-  .v2-settings__label {
-    margin-bottom: 14px;
-  }
 
   .v2-settings__token-value {
     grid-template-columns: 1fr 1fr;
@@ -10907,7 +10875,6 @@ body.modern-ui.v2-canvas {
  * ------------------------------------------------------------------------ */
 .v2-root:lang(zh) .v2-rail__brand,
 .v2-root:lang(zh) .v2-board__detail .v2-modal__title,
-.v2-root:lang(zh) .v2-tools__title,
 .v2-root:lang(zh) .v2-tools__count strong,
 .v2-root:lang(zh) .v2-artifacts__title,
 .v2-root:lang(zh) .v2-team__title,
@@ -10929,7 +10896,6 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-settings__account-name,
 .v2-root:lang(zh) .v2-settings__section .v2-billing__title,
 .v2-root:lang(zh) .v2-settings__section .v2-devices h2,
-.v2-root:lang(zh) .v2-connectors__header h1,
 .v2-root:lang(zh) .v2-connector-row__name,
 .v2-root:lang(zh) .v2-connector-aside__card h2,
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h1,
@@ -11011,55 +10977,9 @@ body.modern-ui.v2-canvas {
   font-size: 12px;
 }
 
-/* ── Connectors — Signal Coverage artboard ──────────────────────────────── */
-.v2-connectors {
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-}
-.v2-connectors__header h1 {
-  margin: 0;
-  color: var(--v2-ink);
-  font-family: var(--v2-font-display);
-  font-size: 32px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  line-height: 36px;
-}
+/* ── Connectors: the page itself is connectors.css; what is left here is the
+   panels the drawer holds (rows, asides, gates). ──────────────────────────── */
 .v2-connectors__loading { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; }
-.v2-connectors__content { display: grid; grid-template-columns: minmax(min-content, 1fr) minmax(240px, 400px); gap: 40px; align-items: start; }
-.v2-connectors__main { display: flex; min-width: 0; min-height: 0; flex-direction: column; }
-.v2-connectors__rows { overflow: hidden; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius-sm); }
-.v2-connectors__inactive-fold { min-width: 0; }
-.v2-root button.v2-connectors__inactive-toggle { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 10px 18px; border: 0; background: var(--v2-surface); color: var(--v2-text-tertiary); font: 500 12px/16px var(--v2-font-mono); text-align: left; cursor: pointer; }
-.v2-root button.v2-connectors__inactive-toggle:hover { background: var(--v2-surface-hover); }
-.v2-root button.v2-connectors__inactive-toggle:focus-visible { box-shadow: inset 0 0 0 2px var(--v2-accent); outline: none; }
-.v2-connectors__inactive-caret { width: 7px; height: 7px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(-45deg); }
-.v2-root button.v2-connectors__inactive-toggle[aria-expanded="true"] .v2-connectors__inactive-caret { transform: rotate(45deg); }
-.v2-connectors__inactive-rows > .v2-connector-row:last-child { border-bottom: 0; }
-/* TASK-677 slice (a), D215 artboard: channel rows render as a tile grid
-   (auto-fill, 150px minimum, per the 2026-10-31 ruling; the aside stays). Layout
-   only: the same rows, the same act and the same connect flow. Tools rows are not
-   tiled in this slice. The inactive fold spans the grid, and its own rows reuse
-   the same tile template. */
-.v2-connectors__rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; overflow: visible; border: 0; border-radius: 0; }
-.v2-connectors__rows .v2-connector-row { grid-template-columns: minmax(0, 1fr); align-content: center; min-height: 128px; border: 1px solid var(--v2-border-soft); border-radius: 14px; padding: 14px 12px; }
-.v2-connectors__inactive-fold { grid-column: 1 / -1; }
-.v2-connectors__inactive-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; padding: 12px 0 0; }
-/* Lumen's 1440 HOLD (review 5722362448): the row's own two-track grid and its
-   spanning placements sized the name, detail and act past a 150px tile. Inside a
-   tile the content stacks in one track and wraps within the tile. */
-.v2-root .v2-connectors__rows button.v2-connector-row__selection { grid-column: 1; grid-template-columns: minmax(0, 1fr); row-gap: 6px; }
-.v2-connectors__rows .v2-connector-row__name { min-width: 0; overflow-wrap: anywhere; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
-.v2-connectors__rows .v2-connector-row__details { min-width: 0; overflow-wrap: anywhere; padding-right: 0; }
-/* The 760px rule reserved 52px beside the icon act (column 2). Inside a tile the
-   icon act is centred under the text, so the reserve only narrowed the text. The
-   specificity here is (0,5,1), above the 760px padding-right rule (0,4,1). */
-.v2-root .v2-connectors__rows .v2-connector-row:has(.v2-connector-row__action--icon) button.v2-connector-row__selection { padding-right: 0; }
-.v2-root .v2-connectors__rows .v2-connector-row__action { grid-column: 1; grid-row: 2; justify-self: stretch; }
-/* The icon act is 32px or 44px wide, so stretch does nothing; centre it under the
-   text. Specificity (0,4,1) beats the 760px icon placement (0,2,1). */
-.v2-root .v2-connectors__rows button.v2-connector-row__action--icon { grid-column: 1; grid-row: 2; justify-self: center; }
 
 .v2-connector-row {
   display: grid;
@@ -11082,7 +11002,6 @@ body.modern-ui.v2-canvas {
 }
 .v2-connector-row:last-child { border-bottom: none; }
 .v2-connector-row--selected { background: var(--v2-surface-tint); }
-.v2-connector-row--not-yet { color: var(--v2-text-tertiary); }
 .v2-root button.v2-connector-row__selection {
   display: grid;
   grid-column: 1 / 3;
@@ -11099,19 +11018,14 @@ body.modern-ui.v2-canvas {
   cursor: pointer;
 }
 .v2-connector-row__name { display: inline-flex; align-items: center; gap: 10px; color: var(--v2-ink); font-family: var(--v2-font-display); font-size: 18px; font-weight: 800; letter-spacing: -0.02em; }
-.v2-connector-row--not-yet .v2-connector-row__name { color: var(--v2-text-tertiary); }
 .v2-connector-row__dot { width: 8px; height: 8px; flex: none; border-radius: var(--v2-radius-sm); background: var(--v2-border-soft); }
 .v2-connector-row__glyph { display: inline-flex; width: 20px; height: 20px; flex: 0 0 20px; color: inherit; }
 .v2-connector-row__glyph svg { width: 20px; height: 20px; }
-.v2-connector-row--not-yet .v2-connector-row__glyph { color: var(--v2-text-placeholder); }
 /* Direction A: the state dot is a mark — ink filled, hollow, dashed, grey — never
    cobalt (cobalt is who asks) and never a status colour (ux-lead 70159). */
 .v2-connector-row__dot--live { background: var(--v2-ink); }
-.v2-connector-row__dot--pending { border: 1px solid var(--v2-border-strong); background: transparent; }
-.v2-connector-row--dead .v2-connector-row__dot, .v2-connector-row__dot--dead { background: var(--v2-text-placeholder); }
+.v2-connector-row--dead .v2-connector-row__dot { background: var(--v2-text-placeholder); }
 .v2-connector-row__dot--empty { border: 1px solid var(--v2-border-strong); background: transparent; }
-.v2-connector-row__dot--idle { background: var(--v2-border-soft); }
-.v2-connector-row__dot--not-yet { border: 1px dashed var(--v2-border-strong); background: transparent; }
 .v2-connector-row__dot--pulse { animation: v2-connector-pulse 1.6s ease-in-out infinite; }
 @keyframes v2-connector-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(16, 24, 40, 0); }
@@ -11123,26 +11037,9 @@ body.modern-ui.v2-canvas {
 .v2-connector-row__details { display: flex; min-width: 0; padding-right: 8px; flex-direction: column; gap: 2px; color: var(--v2-text-secondary); font-size: 13px; line-height: 18px; }
 /* Line 1 wraps like meta does; a sentence never ellipsises at 390. */
 .v2-connector-row__details strong { color: var(--v2-ink); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
-.v2-connector-row__detail, .v2-connector-row__when { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
+.v2-connector-row__detail { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
 /* Meta wraps to a second line; it never ellipsises. */
 .v2-connector-row__detail { overflow-wrap: anywhere; }
-/* TASK-162 (3): line 3 used to be the bare 16px mark, its consequence words
-   reachable only through the glyph's tooltip — and at ≤760 the mark is hidden,
-   so line 3 disappeared entirely on a phone. The consequence is now TEXT beside
-   the mark; the mode word moved onto the mark itself (title + aria-label), and
-   the glyph follows #1782 — it takes the Tools glyph's rule below for layout and
-   colour (gap 6, tertiary, vertical-align -2px) rather than a rule of its own.
-   That rule carries NO dimensions: the 14px is `size={14}` on the call site,
-   held equal to the Tools glyph's own hardcoded 14 (V2ConnectorTools' local `G`)
-   by a same-size pin in V2ConnectorsPage.test.tsx (TASK-177). 16px would grow the
-   line box to 18px beside a 12/16 mono sentence, which is why it is 14 and not
-   the glyph's 16 default. */
-/* TASK-162 (2): the not-yet row lists two channels. Above 760 they stack in the
-   140px name track; at ≤760 they join with ' · ' (the separator is the only
-   element that switches, so nothing here depends on generated content). */
-.v2-connector-row__names { display: flex; flex-direction: column; }
-.v2-connector-row__name-sep { display: none; }
-.v2-connector-row__when { padding-right: 16px; }
 /* Direction A rule 3: `pod · verb age` in mono 11 above line 1, on every row. */
 .v2-connector-row__kicker { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 11px; font-weight: 500; line-height: 16px; text-transform: lowercase; overflow-wrap: anywhere; }
 /* The mode word rides the kicker only where the glyph's tooltip cannot (≤760). */
@@ -11151,7 +11048,7 @@ body.modern-ui.v2-canvas {
    the sentence in title + aria-label — and the mark shares the Tools glyph's rule
    (search `.v2-connector-row__mark, .v2-tools__mode`) for layout and colour. That
    sharing does NOT carry the size: the two agree at 14px through two independent
-   literals in two files, so a same-size pin in V2ConnectorsPage.test.tsx is what
+   literals in two files, so a same-size pin in ConnectorsPage.tools.test.tsx is what
    keeps them from drifting (TASK-177). */
 .v2-root button.v2-connector-row__action,
 .v2-root a.v2-connector-row__action {
@@ -11192,9 +11089,6 @@ body.modern-ui.v2-canvas {
    min-height is what actually releases the 36px clamp. */
 .v2-root button.v2-connector-aside__secondary.v2-connector-aside__icon { display: inline-grid; place-items: center; width: 32px; height: 32px; min-height: 32px; padding: 0; }
 .v2-root button.v2-connector-aside__icon svg { width: 16px; height: 16px; }
-
-.v2-connectors__add { margin-top: 24px; }
-.v2-root button.v2-connectors__connect,
 .v2-root button.v2-connectors__create,
 .v2-root button.v2-connector-aside__primary {
   min-height: 40px;
@@ -11206,12 +11100,10 @@ body.modern-ui.v2-canvas {
   font: 600 13px/18px var(--v2-font);
   cursor: pointer;
 }
-.v2-root button.v2-connectors__connect:hover,
 .v2-root button.v2-connectors__create:hover:not(:disabled),
 .v2-root button.v2-connector-aside__primary:hover:not(:disabled) { background: var(--v2-ink-hover); }
 .v2-root button.v2-connectors__create:disabled,
 .v2-root button.v2-connector-aside__primary:disabled { cursor: progress; opacity: 0.65; }
-.v2-connectors__add > p { margin: 8px 0 0; color: var(--v2-text-tertiary); font-size: 13px; }
 .v2-connectors__new-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 240px) auto; gap: 10px; margin-top: 16px; }
 .v2-connectors__new-row--aside { grid-template-columns: minmax(0, 1fr) auto; }
 .v2-connectors__new-row--aside .v2-connectors__select { grid-column: 1 / -1; }
@@ -11255,7 +11147,6 @@ body.modern-ui.v2-canvas {
 .v2-connector-row__refusal { grid-column: 1 / -1; margin: 10px 0 0; padding: 8px 10px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface-tint); color: var(--v2-ink); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
 .v2-connector-row__refusal a,
 .v2-connector-aside__refusal a { color: var(--v2-accent-text); text-decoration: underline; }
-.v2-connectors__error { padding: 10px 12px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); color: var(--v2-ink); font-size: 13px; }
 
 .v2-connector-aside__note { margin-top: 12px !important; color: var(--v2-text-tertiary) !important; font-size: 12px !important; }
 /* Row C: the refusal the row's own button earned, beside that button in the
@@ -11282,18 +11173,6 @@ body.modern-ui.v2-canvas {
 .v2-connector-gate__switch:disabled { cursor: progress; opacity: 0.65; }
 .v2-connector-gate__more { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 0 12px 12px; }
 .v2-connector-gate__lead { min-height: 30px; padding: 0 8px; font-size: 12px; }
-
-/* Tools — the second list (tools plan §6). Rows reuse .v2-connector-row; the
-   aside reuses the connector aside cards. Outcomes are words in muted mono,
-   never a coloured word. A list card is as tall as its rows (TASK-156): neither
-   list stretches, so the page scrolls instead of a card holding empty space. */
-.v2-tools__head { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
-.v2-tools__title { margin: 0; color: var(--v2-ink); font-family: var(--v2-font-display); font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
-.v2-tools__count-line { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
-.v2-tools__search { min-width: 0; flex: 1 1 200px; min-height: 32px; margin-left: auto; padding: 0 10px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); color: var(--v2-ink); font: 500 13px var(--v2-font); }
-.v2-tools__search:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 0; }
-.v2-tools__segment { flex: none; }
-.v2-tools__empty { margin: 0; padding: 14px 16px; color: var(--v2-text-tertiary); font-size: 13px; }
 .v2-tools__facts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; margin: 14px 0 0; }
 .v2-tools__facts dt { margin-top: 8px; color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 11px; line-height: 16px; text-transform: lowercase; }
 .v2-tools__facts dt:first-child { margin-top: 0; }
@@ -11308,7 +11187,8 @@ body.modern-ui.v2-canvas {
 .v2-tools__trail-line { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--v2-border-soft); color: var(--v2-text-muted); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
 .v2-tools__trail-line > span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .v2-tools__trail-when { flex: none; }
-.v2-tools__mode, .v2-tools__outcome, .v2-connector-row__mark { display: inline-flex; align-items: center; margin-right: 6px; vertical-align: -2px; color: var(--v2-text-tertiary); }
+.v2-tools__mode,
+.v2-tools__outcome { display: inline-flex; align-items: center; margin-right: 6px; vertical-align: -2px; color: var(--v2-text-tertiary); }
 .v2-tools__form { display: grid; gap: 14px; margin-top: 14px; }
 .v2-tools__field { display: grid; gap: 6px; margin: 0; padding: 0; border: none; min-width: 0; }
 .v2-tools__field > span:first-child, .v2-tools__field > legend { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 11px; line-height: 16px; text-transform: lowercase; padding: 0; }
@@ -11317,24 +11197,15 @@ body.modern-ui.v2-canvas {
 .v2-tools__agents { display: grid; gap: 6px; }
 .v2-tools__hint { color: var(--v2-text-secondary); font-size: 12px; line-height: 18px; }
 .v2-tools__hint code { display: inline-block; margin: 0 6px 4px 0; padding: 1px 6px; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius-sm); font-family: var(--v2-font-mono); font-size: 12px; white-space: nowrap; }
-@media (max-width: 1010px) {
-  .v2-connectors__content { grid-template-columns: minmax(0, 1fr); gap: 24px; }
-}
 @media (max-width: 760px) {
-  .v2-connectors { gap: 24px; margin: -12px -18px 0; }
-  .v2-connectors__content { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .v2-connector-row { grid-template-columns: minmax(0, 1fr) auto; min-height: 0; padding: 14px 12px; }
   .v2-root button.v2-connector-row__selection { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
   .v2-root button.v2-connector-row__selection .v2-connector-row__name { grid-column: 1; grid-row: 1; }
   .v2-root button.v2-connector-row__selection .v2-connector-row__details { grid-column: 1 / -1; grid-row: 2; }
-  .v2-root button.v2-connector-row__selection .v2-connector-row__when { grid-column: 1 / -1; grid-row: 3; padding-right: 0; }
-  .v2-connector-row--not-yet .v2-connector-row__name { grid-column: 1; grid-row: 1; }
-  .v2-connector-row--not-yet .v2-connector-row__details { grid-column: 1 / -1; grid-row: 2; }
-  .v2-connector-row--not-yet .v2-connector-row__when { grid-column: 1 / -1; grid-row: 3; padding-right: 0; }
   /* A phone keeps the row's REASON. This used to be a blanket hide with
      enumerated exceptions (`:not(.v2-connector-row--dead):not(.v2-connector-row--not-enabled)`),
      which silently swallowed every state the list had not anticipated: the
-     not-yet row that IS available (V2ConnectorTools.tsx:562) lost
+     not-yet row that IS available (ToolPanels.tsx) lost
      "install the GitHub App first" / "read, or read and write", and a stranger
      saw a "not granted" kicker with no reason under it (eng lead 73726).
      Default is now SHOW; if one row ever needs its detail hidden on phones, hide
@@ -11346,9 +11217,6 @@ body.modern-ui.v2-canvas {
   .v2-connector-row { min-height: 72px; }
   .v2-root button.v2-connector-row__selection { grid-row: 1; }
   .v2-connector-row__kicker-mode { display: inline; }
-  .v2-connector-row__mark { display: none; }
-  .v2-connector-row__names { display: block; }
-  .v2-connector-row__name-sep { display: inline; }
   .v2-root button.v2-connector-row__action--icon { width: 44px; min-height: 44px; grid-column: 2; grid-row: 1; justify-self: end; align-self: start; }
   .v2-root button.v2-connector-row__action:not(.v2-connector-row__action--icon), .v2-root a.v2-connector-row__action { display: inline-flex; grid-column: 1 / -1; grid-row: 3; width: 100%; justify-content: center; min-height: 44px; margin-top: 8px; }
   /* The gear sits over the selection button's top-right; keep the kicker out from under it. */
@@ -11358,8 +11226,6 @@ body.modern-ui.v2-canvas {
   .v2-connectors__new-row { grid-template-columns: minmax(0, 1fr); }
   .v2-connectors__providers { width: fit-content; }
   .v2-connector-gate__more { padding-left: 0; }
-  .v2-tools__head { gap: 8px; }
-  .v2-tools__search { flex-basis: 100%; margin-left: 0; }
 }
 
 /* Activity queue: reply-in-place on mention rows (2026-09-01). The
@@ -12798,7 +12664,9 @@ body.modern-ui.v2-canvas {
     gap: 3px;
     padding: 0 6px;
     background: transparent;
-    color: var(--v2-text-placeholder);
+    /* Icons are controls: the rail's 3:1 grey, not the artboard's 2.58:1
+       placeholder (D223 standing rule, 11-01). The label sets its own colour. */
+    color: var(--v2-rail-icon);
   }
 
   .v2-root button.v2-mobile-tabs__item--active,
@@ -12816,8 +12684,10 @@ body.modern-ui.v2-canvas {
 
   .v2-root button.v2-mobile-tabs__item--active .v2-mobile-tabs__icon { color: var(--v2-ink); }
 
+  /* D223 ruling (Cofounder, 11-01): the artboard's sans family, at the
+     12px sans floor rather than its 10px. */
   .v2-mobile-tabs__label {
-    font: 500 11px/12px var(--v2-font-mono);
+    font: 500 12px/14px var(--v2-font);
     white-space: nowrap;
   }
 
@@ -13774,7 +13644,7 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-team__byo { height: 36px; padding: 0 14px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-surface); color: var(--v2-text-primary); font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team__byo:hover { background: var(--v2-surface-hover); }
 /* Ink acts (signal-identity §2): Hire is the page's one filled control. */
-.v2-root button.v2-team__hire { height: 36px; padding: 0 14px; border: 1px solid #101828; border-radius: 4px; background: #101828; color: #fff; font: 600 13px/1 var(--v2-font); cursor: pointer; }
+.v2-root button.v2-team__hire { height: 36px; padding: 0 14px; border: 1px solid var(--v2-ink); border-radius: 4px; background: var(--v2-ink); color: var(--v2-on-ink); font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team__hire:disabled { opacity: 0.5; cursor: default; }
 .v2-team__notice { font-size: 13px; color: var(--v2-text-secondary); }
 .v2-team__notice--ok { color: var(--v2-text-primary); }
@@ -13862,7 +13732,7 @@ body.modern-ui.v2-canvas {
 .v2-team-card__meter-track { flex: 1; min-width: 0; height: 4px; border-radius: 2px; background: var(--v2-border-soft); overflow: hidden; }
 .v2-team-card__meter-fill { display: block; height: 100%; background: var(--v2-accent); }
 .v2-team-card__meter-text { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; }
-.v2-root button.v2-team-card__answer { height: 32px; padding: 0 12px; border: 1px solid #101828; border-radius: 4px; background: #101828; color: #fff; font: 600 13px/1 var(--v2-font); cursor: pointer; }
+.v2-root button.v2-team-card__answer { height: 32px; padding: 0 12px; border: 1px solid var(--v2-ink); border-radius: 4px; background: var(--v2-ink); color: var(--v2-on-ink); font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team-card__talk { height: 32px; padding: 0 12px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-surface); color: var(--v2-text-primary); font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team-card__talk:hover { background: var(--v2-surface-hover); }
 .v2-root button.v2-team-card__talk:disabled { color: var(--v2-text-placeholder); cursor: default; }
@@ -13975,7 +13845,7 @@ body.modern-ui.v2-canvas {
 .v2-board__card--done { border-color: var(--v2-border-soft); }
 .v2-board__card--done .v2-board__card-title { color: var(--v2-text-secondary); }
 .v2-root button.v2-board__card-move { min-height: 32px; padding: 0 10px; border-radius: 4px; }
-.v2-board__overlay { background: color-mix(in srgb, var(--v2-text-primary) 32%, transparent); align-items: flex-start; padding-top: 72px; }
+.v2-board__overlay { background: var(--v2-scrim); align-items: flex-start; padding-top: 72px; }
 .v2-board .v2-modal { border-radius: 6px; box-shadow: none; }
 .v2-board__detail { width: min(560px, 100%); max-height: calc(100dvh - 96px); }
 .v2-board__detail .v2-modal__head { padding: 20px 24px 16px; border-bottom: 1px solid var(--v2-border-soft); }
@@ -14046,3 +13916,147 @@ body.modern-ui.v2-canvas {
 .v2-legal__section { margin-bottom: 28px; }
 .v2-legal__section h2 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
 .v2-legal__section p { font-size: 15px; line-height: 1.6; color: var(--v2-text-secondary); margin: 0 0 8px; }
+
+/* TASK-687 / D223 — board rebuilt to the d215 board frame: 40px focus strip,
+   three columns + 120px done rail, two-line cards, mobile segment tabs. */
+.v2-feature--board .v2-feature__legacy { max-width: none; }
+.v2-feature--board > .v2-feature__body { padding: 0; }
+.v2-board__head { gap: 10px; padding: 0 24px; min-height: 64px; flex-wrap: nowrap; }
+.v2-board__title-wrap { flex: 1 1 auto; min-width: 0; }
+.v2-board__filters { display: flex; gap: 6px; }
+.v2-root button.v2-board__chip {
+  height: 28px; padding: 0 10px; border-radius: var(--v2-r-14); font: 500 12px/16px var(--v2-font);
+  color: var(--v2-text-secondary); background: transparent; border: 1px solid var(--v2-border);
+  cursor: pointer;
+}
+.v2-root button.v2-board__chip.is-on {
+  color: var(--v2-accent-text); background: var(--v2-accent-soft); border-color: var(--v2-accent);
+}
+.v2-board__search {
+  height: 32px; width: 180px; padding: 0 10px; border-radius: var(--v2-r-8); font-size: 13px;
+  border: 1px solid var(--v2-border); background: var(--v2-bg); color: var(--v2-text-primary);
+}
+.v2-root button.v2-board__icon-btn {
+  width: 32px; height: 32px; display: inline-grid; place-items: center; padding: 0;
+  border-radius: var(--v2-r-8); border: 1px solid var(--v2-border); background: transparent;
+  color: var(--v2-text-secondary); cursor: pointer;
+}
+.v2-root button.v2-board__icon-btn:hover { background: var(--v2-surface-hover); }
+.v2-board__new { min-height: 32px; }
+
+.v2-board__focus { margin: 14px 24px 0; padding: 0; border: 0; background: transparent; flex: none; }
+.v2-board__focus > summary { list-style: none; }
+.v2-board__focus > summary::-webkit-details-marker { display: none; }
+.v2-board__focus-strip {
+  display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px; cursor: pointer;
+  border-radius: var(--v2-r-10); background: var(--v2-bg-subtle); box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+}
+.v2-root button.v2-board__focus-edit { white-space: nowrap; flex: none; }
+.v2-board__focus-strip .v2-board__focus-eyebrow { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-tertiary); }
+.v2-board__focus-strip .v2-board__focus-title {
+  flex: 1 1 auto; min-width: 0; margin: 0; font: 600 13px/18px var(--v2-font);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.v2-board__focus-progress { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-tertiary); white-space: nowrap; }
+.v2-board__focus-chevron { color: var(--v2-text-tertiary); transition: transform 0.15s; }
+.v2-board__focus[open] .v2-board__focus-chevron { transform: rotate(180deg); }
+.v2-board__focus[open] > :not(summary) { margin-left: 12px; margin-right: 12px; }
+.v2-board__focus[open] { max-height: 40vh; overflow-y: auto; }
+
+.v2-board__tabs { display: none; }
+.v2-board__columns {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) 120px; gap: 10px;
+  padding: 12px 24px 0; overflow: hidden; align-items: stretch;
+}
+.v2-board__columns.is-showdone { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.v2-board__col {
+  min-width: 0; max-width: none; padding: 0; gap: 0; border-radius: var(--v2-r-12); overflow: hidden;
+  background: var(--v2-bg-subtle); border: 0; box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+  max-height: none; display: flex; flex-direction: column;
+}
+.v2-board__col--done { display: none; }
+.v2-board__columns.is-showdone .v2-board__col--done { display: flex; }
+.v2-board__columns.is-showdone .v2-board__donecol { display: none; }
+.v2-board__col-head { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; flex: none; }
+.v2-board__col-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--v2-text-placeholder); }
+.v2-board__col-dot--claimed { background: var(--v2-accent); }
+.v2-board__col-dot--blocked { background: var(--v2-status-blocked); }
+.v2-board__col-dot--done { background: var(--v2-success); }
+.v2-board__col-head .v2-board__col-count { margin-right: auto; }
+.v2-root button.v2-board__col-add {
+  width: 24px; height: 24px; display: inline-grid; place-items: center; padding: 0 6px; border: 0;
+  background: transparent; color: var(--v2-text-secondary); border-radius: var(--v2-r-6); cursor: pointer; font-size: 12px;
+}
+.v2-root button.v2-board__col-add:hover { background: var(--v2-surface-hover); }
+.v2-root button.v2-board__col-hide { width: auto; }
+.v2-board__col-body { display: grid; grid-auto-rows: max-content; gap: 6px; padding: 0 8px 8px; overflow-y: auto; align-content: start; flex: 1; min-height: 0; }
+.v2-board__col-empty { padding: 12px 4px; font-size: 12px; color: var(--v2-text-tertiary); }
+
+.v2-board__card {
+  position: relative; display: grid; gap: 4px; padding: 8px 10px 9px; border-radius: var(--v2-r-9);
+  background: var(--v2-surface); border: 1px solid var(--v2-border-soft);
+}
+.v2-board__card.is-picked { outline: 2px solid var(--v2-accent); outline-offset: -1px; }
+.v2-board__card-main { display: grid; gap: 4px; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; min-width: 0; color: inherit; font: inherit; }
+.v2-board__card-kicker > :not(.v2-board__owner-line):not(.v2-board__card-spacer) { flex: none; }
+.v2-board__card-kicker { display: flex; align-items: center; gap: 6px; min-width: 0; font: 500 11px/16px var(--v2-font-mono); }
+.v2-board__card-spacer { flex: 1 1 auto; }
+.v2-board__card-kicker .v2-board__owner-line { min-width: 0; flex: 0 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-tertiary); }
+.v2-board__card-title {
+  font: 500 13px/18px var(--v2-font); display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden;
+}
+.v2-board__card-actions {
+  position: absolute; right: 6px; top: 4px; display: none; gap: 4px; padding: 2px;
+  background: var(--v2-surface); border-radius: var(--v2-r-8); box-shadow: var(--v2-shadow-pane);
+}
+.v2-board__card:hover .v2-board__card-actions,
+.v2-board__card:focus-within .v2-board__card-actions { display: flex; }
+
+.v2-board__donecol {
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 10px; gap: 6px;
+  border-radius: var(--v2-r-12); background: var(--v2-bg-subtle); box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+}
+.v2-board__donecol-label { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-tertiary); }
+.v2-board__donecol-count { font: 600 22px/28px var(--v2-font); }
+.v2-root button.v2-board__donecol-show {
+  height: 28px; padding: 0 12px; border-radius: var(--v2-r-8); border: 1px solid var(--v2-border);
+  background: transparent; color: var(--v2-text-secondary); font: 500 12px/16px var(--v2-font); cursor: pointer;
+}
+
+@media (max-width: 760px) {
+  .v2-board__head { padding: 8px 12px; min-height: 52px; gap: 6px; flex-wrap: wrap; }
+  .v2-board__back-label, .v2-board__subtitle { display: none; }
+  .v2-board__head > .v2-board__back { order: 1; }
+  .v2-board__title-wrap { order: 2; }
+  .v2-board__head > .v2-board__icon-btn { order: 3; }
+  .v2-board__search { order: 3; }
+  .v2-board__head > .v2-board__new { order: 4; }
+  .v2-board__filters { order: 5; width: 100%; padding-bottom: 6px; }
+  .v2-board__focus { margin: 10px 12px 0; }
+  .v2-board__focus-strip .v2-board__focus-eyebrow { display: none; }
+  .v2-board__new-label { display: none; }
+  .v2-board__tabs { display: flex; gap: 4px; padding: 8px 12px 0; overflow-x: auto; }
+  .v2-root button.v2-board__tab {
+    flex: 1 1 0; display: inline-flex; justify-content: center; gap: 4px; height: 32px; align-items: center;
+    padding: 0 8px; border: 0; border-radius: var(--v2-r-8); background: transparent; cursor: pointer;
+    font: 500 12px/16px var(--v2-font); color: var(--v2-text-secondary); white-space: nowrap;
+  }
+  .v2-root button.v2-board__tab.is-active { background: var(--v2-surface-tint); color: var(--v2-text-primary); }
+  .v2-board__tab-count { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-tertiary); }
+  .v2-board__columns, .v2-board__columns.is-showdone { display: block; padding: 8px 12px 0; overflow-y: auto; flex: 1; min-height: 0; }
+  .v2-board__col, .v2-board__columns.is-showdone .v2-board__col--done { display: none; }
+  .v2-board__col.is-active, .v2-board__columns .v2-board__col--done.is-active { display: flex; background: transparent; box-shadow: none; }
+  .v2-board__col.is-active .v2-board__col-head { display: none; }
+  .v2-board__col-body { padding: 0; }
+  .v2-board__donecol { display: none; }
+  /* Two-line cards like the frame; the drawer's status segment moves a task on touch. */
+  .v2-board__card-actions, .v2-board__card:hover .v2-board__card-actions, .v2-board__card:focus-within .v2-board__card-actions { display: none; }
+}
+
+.v2-root button.v2-board__card-main, .v2-root button.v2-board__card-main:hover { background: none; }
+/* The action bar sits on the id row, so it never covers the title; the owner line yields to it. */
+.v2-board__card:hover .v2-board__owner-line, .v2-board__card:focus-within .v2-board__owner-line { visibility: hidden; }
+.v2-root button.v2-board__card-main:focus-visible, .v2-root button.v2-board__card-move:focus-visible {
+  outline: 2px solid var(--v2-accent); outline-offset: 2px; box-shadow: none;
+}

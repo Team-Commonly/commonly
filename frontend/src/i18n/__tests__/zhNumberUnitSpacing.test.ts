@@ -17,7 +17,7 @@ import path from 'path';
 // be decided from this catalog: ``{{agents}}`` is a count in `yourTeam.head.meta_other`
 // and a name list joined with ' and ' in `inspector.workspace.nothingWorking_other`.
 // A first cut of the sweep declared `agents` a numeral by name and closed
-// 「Scout 可以使用」 in the Tools panel; `V2ConnectorTools.test.tsx` caught it. So the
+// 「Scout 可以使用」 in the Tools panel; `ConnectorsPage.tools.test.tsx` caught it. So the
 // default is opaque, the numeral names are declared here, and the coverage test
 // below makes a new interpolation fail rather than inherit whichever silence looks
 // convenient.
@@ -59,7 +59,14 @@ const OPAQUE_PLACEHOLDERS = [
 // The exception runs the safe way: a name that is usually opaque and is a number
 // here, named by key. `agents` is a count in yourTeam.head.meta (counts.agents) and
 // a name list in the inspector, so it cannot be declared for the catalog as a whole.
-const NUMERAL_BY_KEY: Array<[string, string]> = [['yourTeam.head.meta_other', 'agents']];
+// `on`, `available` and `n` are counts in the Connectors page strings (the tile
+// grid meta line and the "+N off" toggle), but opaque elsewhere.
+const NUMERAL_BY_KEY: Array<[string, string]> = [
+  ['yourTeam.head.meta_other', 'agents'],
+  ['connectors.meta', 'on'],
+  ['connectors.meta', 'available'],
+  ['connectors.offCount', 'n'],
+];
 
 // A digit is this rule's numeral only when it stands alone, and that is a question
 // about the TOKEN the digit sits inside, so it has two halves. `Apache-2.0 许可` and

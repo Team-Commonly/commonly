@@ -14,7 +14,13 @@ describe('page head copy budget', () => {
     expect(app).not.toMatch(/description=\{description\}|description: string/);
     expect(source('components/V2AgentBYO.tsx')).not.toMatch(/eyebrow=|description=/);
     expect(source('components/V2ArtifactsPage.tsx')).not.toContain('v2-artifacts__meta');
-    for (const file of ['components/V2ActivityPage.tsx', 'components/V2ConnectorsPage.tsx', 'components/V2Thread.tsx']) {
+    for (const file of [
+      'components/V2ActivityPage.tsx',
+      'connectors/ConnectorsPage.tsx',
+      'connectors/ChannelPanel.tsx',
+      'connectors/ToolPanels.tsx',
+      'components/V2Thread.tsx',
+    ]) {
       expect(source(file)).not.toMatch(/v2-activity__subtitle|v2-connectors__header p|<p>\{pod\.description\}<\/p>/);
     }
   });

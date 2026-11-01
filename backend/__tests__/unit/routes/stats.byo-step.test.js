@@ -2,6 +2,8 @@ const request = require('supertest');
 const express = require('express');
 
 const mockMarkByoCommandCopied = jest.fn();
+const mockMarkByoCopyType = jest.fn();
+const mockMarkByoSetup = jest.fn();
 const mockMarkSurface = jest.fn();
 const mockInsertOne = jest.fn().mockResolvedValue({ acknowledged: true });
 const mockPassThrough = () => (_req, _res, next) => next();
@@ -19,6 +21,8 @@ jest.mock('../../../middleware/auth', () => (req, _res, next) => {
 });
 jest.mock('../../../services/onboardingMarks', () => ({
   markByoCommandCopied: (...args) => mockMarkByoCommandCopied(...args),
+  markByoCopyType: (...args) => mockMarkByoCopyType(...args),
+  markByoSetup: (...args) => mockMarkByoSetup(...args),
   markSurface: (...args) => mockMarkSurface(...args),
 }));
 jest.mock('express-rate-limit', () => ({
@@ -94,6 +98,29 @@ describe('POST /api/stats/byo-step', () => {
     expect(mockInsertOne).toHaveBeenCalledWith({ userId: 'human-1', step, at: expect.any(Date) });
   });
 
+  it('a copy step passes the copy type and the setup the page showed to the marks', async () => {
+    const res = await request(app).post('/api/stats/byo-step')
+      .send({ step: 'mcp-command-copied', copyType: 'mcp-claude', setupOs: 'mac', listenerAvailable: true });
+
+    expect(res.status).toBe(200);
+    expect(mockMarkByoCopyType).toHaveBeenCalledWith('human-1', 'mcp-claude');
+    expect(mockMarkByoSetup).toHaveBeenCalledWith('human-1', { setupOs: 'mac', listenerAvailable: true });
+    // The event row is unchanged: the copy type and setup stay out of telemetry.
+    expect(mockInsertOne).toHaveBeenCalledWith(expect.objectContaining({
+      step: 'mcp-command-copied',
+      commandType: 'mcp',
+    }));
+    expect(JSON.stringify(mockInsertOne.mock.calls[0][0])).not.toContain('mcp-claude');
+  });
+
+  it('a non-copy step records the setup but never a copy type', async () => {
+    await request(app).post('/api/stats/byo-step')
+      .send({ step: 'seat-created', copyType: 'token', setupOs: 'windows', listenerAvailable: false });
+
+    expect(mockMarkByoCopyType).not.toHaveBeenCalled();
+    expect(mockMarkByoSetup).toHaveBeenCalledWith('human-1', { setupOs: 'windows', listenerAvailable: false });
+  });
+
   it('other steps set no surface mark', async () => {
     await request(app).post('/api/stats/byo-step').send({ step: 'page-viewed' });
     expect(mockMarkSurface).not.toHaveBeenCalled();
@@ -104,6 +131,13 @@ describe('POST /api/stats/byo-step', () => {
 
     expect(res.status).toBe(400);
     expect(mockInsertOne).not.toHaveBeenCalled();
+  });
+
+  it('a copy type that does not match its step writes no per-type mark', async () => {
+    await request(app).post('/api/stats/byo-step').send({ step: 'token-copied', copyType: 'listen' });
+    await request(app).post('/api/stats/byo-step').send({ step: 'cli-command-copied', copyType: 'mcp-claude' });
+
+    expect(mockMarkByoCopyType).not.toHaveBeenCalled();
   });
 
   it('rejects unknown steps without writing a mark or telemetry event', async () => {

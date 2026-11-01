@@ -55,6 +55,12 @@ const snip = (s: unknown): string => {
   const t = String(s ?? '').replace(/\s+/g, ' ').trim();
   return t.length > SNIPPET ? `${t.slice(0, SNIPPET)}…` : t;
 };
+// Section last-write time as ISO, or null when the stored value is absent or unparseable.
+const isoOrNull = (v: unknown): string | null => {
+  if (v == null || v === '') return null;
+  const d = new Date(v as string | number | Date);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+};
 
 // Sections that are internal housekeeping, never shown as "memory". Shared with
 // the service so the public profile's durable/bookkeeping split and this
@@ -278,7 +284,7 @@ router.get('/:agentName/:instanceId?', auth, async (req: AuthReq, res: Res) => {
       .select('sections')
       .lean();
 
-    const sections: Array<{ key: string; label: string; kind: string; notes: unknown[] }> = [];
+    const sections: Array<{ key: string; label: string; kind: string; updatedAt: string | null; notes: unknown[] }> = [];
     let totalEntries = 0;
     const raw = ((record as Record<string, unknown>)?.sections || {}) as Record<string, unknown>;
 
@@ -291,7 +297,7 @@ router.get('/:agentName/:instanceId?', auth, async (req: AuthReq, res: Res) => {
           .reverse()
           .map((d: Record<string, unknown>) => ({ header: String(d.date || ''), snippet: snip(d.content) }))
           .filter((n) => n.header || n.snippet);
-        if (notes.length) { sections.push({ key, label: 'Daily journal', kind: 'log', notes }); totalEntries += notes.length; }
+        if (notes.length) { sections.push({ key, label: 'Daily journal', kind: 'log', updatedAt: null, notes }); totalEntries += notes.length; }
       } else if (key === 'cycles' && value && typeof value === 'object') {
         const entries = Array.isArray((value as Record<string, unknown>).entries)
           ? ((value as Record<string, unknown>).entries as Array<Record<string, unknown>>)
@@ -300,12 +306,13 @@ router.get('/:agentName/:instanceId?', auth, async (req: AuthReq, res: Res) => {
           header: e.ts ? String(e.ts).slice(0, 10) : 'cycle',
           snippet: snip(e.content),
         }));
-        if (notes.length) { sections.push({ key, label: 'Heartbeat cycles', kind: 'log', notes }); totalEntries += notes.length; }
+        if (notes.length) { sections.push({ key, label: 'Heartbeat cycles', kind: 'log', updatedAt: null, notes }); totalEntries += notes.length; }
       } else if (value && typeof value === 'object' && 'content' in (value as Record<string, unknown>)) {
         // long_term (and any future doc-shaped section) → index its headers.
         const notes = indexMarkdown(String((value as Record<string, unknown>).content || ''));
         const label = key === 'long_term' ? 'Long-term memory' : key.replace(/_/g, ' ');
-        if (notes.length) { sections.push({ key, label, kind: 'doc', notes }); totalEntries += notes.length; }
+        const updatedAt = isoOrNull((value as Record<string, unknown>).updatedAt);
+        if (notes.length) { sections.push({ key, label, kind: 'doc', updatedAt, notes }); totalEntries += notes.length; }
       }
     }
 

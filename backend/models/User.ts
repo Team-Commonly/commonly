@@ -222,6 +222,15 @@ export interface IUser extends Document {
     /** First copy of each setup command, kept per kind (TASK-721). */
     byoMcpCopiedAt?: Date;
     byoCliCopiedAt?: Date;
+    /** First copy of each command type, each its own write-once mark (TASK-714). */
+    byoListenCopiedAt?: Date;
+    byoMcpClaudeCopiedAt?: Date;
+    byoMcpCursorCopiedAt?: Date;
+    byoDaemonCopiedAt?: Date;
+    byoTokenCopiedAt?: Date;
+    /** The OS the result page set up for, and whether the listener could run there. */
+    byoSetupOs?: 'mac' | 'linux' | 'windows' | 'other';
+    byoListenerEligible?: boolean;
     /** First authenticated BYO runtime request, never overwritten. */
     byoFirstConnectionAttemptAt?: Date;
     /** First successful `commonly daemon register`, never overwritten (TASK-661). */
@@ -481,6 +490,13 @@ const userSchema = new Schema<IUser>({
     byoCommandType: { type: String, enum: ['mcp', 'cli'] },
     byoMcpCopiedAt: { type: Date },
     byoCliCopiedAt: { type: Date },
+    byoListenCopiedAt: { type: Date },
+    byoMcpClaudeCopiedAt: { type: Date },
+    byoMcpCursorCopiedAt: { type: Date },
+    byoDaemonCopiedAt: { type: Date },
+    byoTokenCopiedAt: { type: Date },
+    byoSetupOs: { type: String, enum: ['mac', 'linux', 'windows', 'other'] },
+    byoListenerEligible: { type: Boolean },
     byoFirstConnectionAttemptAt: { type: Date },
     byoDaemonRegisteredAt: { type: Date },
     inviteCardShownAt: { type: Date },

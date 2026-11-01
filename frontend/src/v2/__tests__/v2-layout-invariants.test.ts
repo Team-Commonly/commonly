@@ -334,7 +334,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const brand = ruleBody(v2, '.v2-rail__brand-icon');
     const item = ruleBody(v2, '.v2-root button.v2-rail__item');
     const active = ruleBody(v2, '.v2-root button.v2-rail__item--active');
-    expect(rail).toContain('padding: 6px 10px');
+    expect(rail).toContain('padding: 6px 8px');
+    // The nav glyph must fit the rail's content box or the nav scrolls
+    // sideways (staging smoke, "rail no h-scroll @1440px"): rail width, less
+    // the pane's 1px border, less both side paddings.
+    const railW = Number(/--v2-rail-w:\s*(\d+)px/.exec(v2)?.[1]);
+    const padX = Number(/padding: \d+px (\d+)px/.exec(rail)?.[1]);
+    const itemW = Number(/(?:^|\s)width: (\d+)px/.exec(item)?.[1]);
+    expect(railW - 1 - 2 * padX).toBeGreaterThanOrEqual(itemW);
     expect(brand).toContain('width: 36px');
     expect(brand).toContain('height: 36px');
     expect(item).toContain('width: 38px');
@@ -458,6 +465,20 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('phone tab labels keep text contrast while the glyphs take the artboard grey (D223)', () => {
     expect(v2).toContain('.v2-root button.v2-mobile-tabs__item:not(.v2-mobile-tabs__item--active) .v2-mobile-tabs__label { color: var(--v2-text-muted); }');
+    // The glyph half: inactive tabs take the artboard's placeholder grey.
+    const phone = blockContaining(v2, '@media (max-width: 760px)', '.v2-mobile-tabs__label {');
+    // Icons are controls, so they take the rail's 3:1 grey, not the artboard's placeholder.
+    expect(ruleBody(v2, '.v2-root button.v2-mobile-tabs__item', { within: phone })).toContain('color: var(--v2-rail-icon)');
+    // D223 ruling: the artboard's sans family at the 12px sans floor.
+    expect(ruleBody(v2, '.v2-mobile-tabs__label', { within: phone })).toContain('font: 500 12px/14px var(--v2-font)');
+  });
+
+  test('rail glyphs at rest are the nearest grey to the artboard that clears 3:1 (D223 ruling)', () => {
+    // Measured on the rail's own surface, --v2-shell-bg #eef0f4: the
+    // artboard's #98a2b3 is 2.26:1 and #828a99 is 3.05:1.
+    expect(v2).toContain('--v2-shell-bg: #eef0f4;');
+    expect(v2).toContain('--v2-rail-icon: #828a99;');
+    expect(v2.match(/--v2-rail-icon: #5f6979;/g) || []).toHaveLength(2);
   });
 
   test('the phone pods page leads with the artboard title bar, search behind an icon (D223)', () => {
@@ -1191,10 +1212,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // positive controls below pin both the new destination and the public
     // profile route that must remain available.
     expect(settingsPage).toContain('<SettingsSection id="account" title="Account">');
-    expect(settingsPage).toContain('<SettingsSection id="plan" title="Plan">');
-    expect(settingsPage).toContain('<SettingsSection id="devices" title="Devices">');
-    expect(settingsPage).toContain('<SettingsSection id="api-token" title="API token">');
-    expect(settingsPage).toContain('<SettingsSection id="connected-apps" title="Connected apps">');
+    // D215 (TASK-688): Plan, Devices, API token and Connectors are rows in Account / Access.
+    expect(settingsPage).toContain('<SettingsSection id="access" title="Access">');
     // D215: the language segment lives under Look, beside the theme.
     expect(settingsPage).toContain('<SettingsSection id="look" title="Look">');
     expect(settingsPage).toContain('className="v2-settings__avatar"');
@@ -1204,8 +1223,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('to="/v2/connectors"');
     expect(settingsPage).toContain('<summary>Developer apps</summary>');
     expect(settingsPage).toContain('<V2BillingPanel showHeading={false} />');
-    expect(settingsPage).toContain('<V2DevicesPanel showHeading={false} />');
-    expect(ruleBody(v2, '.v2-settings__avatar')).toContain('width: 64px');
+    expect(settingsPage).toContain('<V2DevicesPanel showHeading={false} asFold />');
+    expect(ruleBody(v2, '.v2-settings__avatar')).toContain('width: 44px');
     expect(ruleBody(v2, '.v2-settings__avatar')).toContain('border-radius: var(--v2-radius-sm)');
     expect(ruleBody(v2, '.v2-settings__avatar img')).toContain('border-radius: var(--v2-radius-sm)');
     expect(avatar).toContain("borderRadius: 'inherit'");
@@ -1216,14 +1235,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(app).toContain('<Route path="/settings/devices" element={<Navigate to="/v2/settings" replace />} />');
   });
 
-  test('Settings section labels navigate to their own anchored sections', () => {
-    expect(settingsPage).toContain('className="v2-settings__nav"');
-    expect(settingsPage).toContain('className={`v2-settings__nav-link${activeSection === id');
-    expect(settingsPage).toContain('href={`#${settingsSectionId(id)}`}');
-    expect(ruleBody(v2, '.v2-settings__section')).toContain('scroll-margin-top: 24px');
-    expect(ruleBody(v2, '.v2-root a.v2-settings__nav-link:focus-visible')).toContain('outline: 2px solid var(--v2-accent)');
-    expect(ruleBody(v2, '.v2-root a.v2-settings__nav-link--active')).toContain('background: var(--v2-bg-subtle)');
-    expect(ruleBody(v2, '.v2-settings__nav')).toContain('position: sticky');
+  test('Settings is one screen: grouped cards, no jump nav', () => {
+    expect(settingsPage).not.toContain('v2-settings__nav');
+    expect(ruleBody(v2, '.v2-settings__content')).toContain('width: min(100%, 640px)');
+    expect(ruleBody(v2, '.v2-settings__edit--closed')).toContain('display: none');
+    expect(ruleBody(v2, '.v2-settings__group,\n.v2-settings__fold')).toContain('overflow: hidden');
+    expect(ruleBody(v2, '.v2-settings__row > .v2-settings__row-value')).toContain('min-width: 0');
   });
 
   test('Settings saves a display name while allowing handle changes and exposing the email change affordance', () => {
@@ -1252,8 +1269,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('Settings avatar controls keep the account face square and the crop step usable on phones', () => {
     const avatar = ruleBody(v2, '.v2-settings__avatar');
-    expect(avatar).toContain('width: 64px');
-    expect(avatar).toContain('height: 64px');
+    expect(avatar).toContain('width: 44px');
+    expect(avatar).toContain('height: 44px');
     expect(avatar).toContain('border-radius: var(--v2-radius-sm)');
     expect(ruleBody(v2, '.v2-settings__avatar-overlay')).toContain('background: rgba(16, 24, 40, 0.55)');
     expect(avatarCropDialog).toContain('className="v2-root v2-modal__overlay v2-settings__avatar-overlay"');
@@ -1480,8 +1497,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--needsYou')).toContain('var(--v2-accent)');
     expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--working')).toContain('var(--v2-text-primary)');
     expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--idle')).toContain('var(--v2-border-soft)');
-    expect(ruleBody(v2, '.v2-root button.v2-team__hire')).toContain('background: #101828');
-    expect(ruleBody(v2, '.v2-root button.v2-team-card__answer')).toContain('background: #101828');
+    expect(ruleBody(v2, '.v2-root button.v2-team__hire')).toContain('background: var(--v2-ink)');
+    expect(ruleBody(v2, '.v2-root button.v2-team-card__answer')).toContain('background: var(--v2-ink)');
     expect(ruleBody(v2, '.v2-root button.v2-team-card__talk')).toContain('border: 1px solid var(--v2-border)');
     expect(ruleBody(v2, '.v2-team-card__status')).toContain('var(--v2-font-mono)');
     // ux-lead 66246: the ask wraps, the command wraps at mono 14, the name is display-18,
@@ -2368,10 +2385,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   it('nothing in v2.css hides the connector row\'s reason, at 390 or anywhere', () => {
     // Show is the default. This rule used to hide __detail for every state except
     // two enumerated ones, so the not-yet row that IS available
-    // (V2ConnectorTools.tsx:562) lost "install the GitHub App first" /
+    // (ToolPanels) lost "install the GitHub App first" /
     // "read, or read and write" and a stranger saw a "not granted" kicker with
     // nothing under it. The two reason strings are already render-asserted in
-    // V2ConnectorTools.test.tsx:280/:317 — this is the half jsdom cannot see.
+    // ConnectorsPage.tools.test.tsx — this is the half jsdom cannot see.
     // If one row ever needs the detail hidden on phones, add that selector to the
     // list below on purpose rather than re-introducing an exception chain.
     const NAMED_DETAIL_HIDE_CASES: string[] = [];
@@ -2388,7 +2405,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // below vacuous: the sheet was read, it carries the class, and it carries the
     // not-yet row's details wrapper.
     expect(v2).toContain('.v2-connector-row__detail');
-    expect(v2).toContain('.v2-connector-row--not-yet .v2-connector-row__details');
     // Every hiding mechanism a declaration can use, not just the one that
     // caused this. `display:none` was the defect; `visibility:hidden` is the
     // same loss through a different property, and neither hides the rule from a
@@ -2405,122 +2421,39 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(hidingRules).toEqual([]);
   });
 
-  it('Signal connectors pin the row grid, aside, colour grammar, and phone collapse', () => {
-    // Direction A (2026-09-19): three tracks — the age moved into the kicker.
-    expect(ruleBody(v2, '.v2-connector-row')).toContain('grid-template-columns: 140px minmax(150px, 1fr) 120px');
-    expect(ruleBody(v2, '.v2-root button.v2-connector-row__selection')).toContain('grid-template-columns: 140px minmax(150px, 1fr)');
-    // TASK-162 (2): the name track ends exactly where the details track begins, so
-    // a name that fills it touches the sentence. The gutter has to be on BOTH row
-    // grids — the article's and the selection button's inner one.
-    expect(ruleBody(v2, '.v2-connector-row')).toContain('column-gap: 12px');
-    expect(ruleBody(v2, '.v2-root button.v2-connector-row__selection')).toContain('column-gap: 12px');
+  it('Signal connectors pin the drawer row, aside, colour grammar, and phone collapse', () => {
     // TASK-162 (1): the ink hover must NOT claim a secondary action, or a hovered
     // gear is ink behind an ink glyph. Asserted on the SELECTOR rather than on a
     // computed style: jsdom resolves no :hover rules at all, so the cascade this
-    // bug lived in cannot be measured in-suite — only the shape that fixes it can.
+    // bug lived in cannot be measured in-suite, only the shape that fixes it can.
     const inkHoverChunks = [...v2.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
       .filter(([, , body]) => body.includes('var(--v2-ink-hover)'))
       .flatMap(([, selector]) => selector.split(','))
       .map((selector) => selector.trim())
       .filter((selector) => selector.includes('.v2-connector-row__action:hover'));
-    // Split per SELECTOR, not per rule: both variants share one declaration block,
-    // so a rule-level check is satisfied by whichever selector kept the exclusion
-    // and reads green with the button — the gear that actually broke — still
-    // claiming secondary. Two separate assertions, one per line.
+    // Split per SELECTOR, not per rule: both variants share one declaration block.
     expect(inkHoverChunks).toHaveLength(2);
     expect(inkHoverChunks.find((selector) => selector.includes('button.v2-connector-row__action:hover'))).toContain(':not(:disabled)');
     for (const selector of inkHoverChunks) {
       expect(selector).toContain(':not(.v2-connector-row__action--secondary)');
     }
-    // TASK-162 (3): line 3 is the consequence as TEXT beside the mark (the mode
-    // word moved onto the mark itself) and the not-yet names stack above 760.
-    expect(ruleBody(v2, '.v2-connector-row__names')).toContain('flex-direction: column');
-    // …and the mark SHARES the Tools glyph's rule rather than carrying a second
-    // rule of its own. The two rows had drifted 16 vs 14, gap 8 vs 6, secondary vs
-    // tertiary; a rule of its own can always drift again, so the guard counts the
-    // rules that mention the mark: the shared one and the ≤760 hide, nothing else.
-    const stripComments = (css: string): string => css.replace(/\/\*[\s\S]*?\*\//g, '');
-    const markRuleChunks = [...stripComments(v2).matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-      .filter(([, selector]) => selector.includes('.v2-connector-row__mark'));
-    expect(markRuleChunks).toHaveLength(2);
-    const sharedMarkRule = markRuleChunks.find(([, selector]) => selector.includes('.v2-tools__mode'));
-    expect(sharedMarkRule?.[2]).toContain('display: inline-flex');
-    expect(sharedMarkRule?.[2]).toContain('vertical-align: -2px');
-    expect(sharedMarkRule?.[2]).toContain('color: var(--v2-text-tertiary)');
-    // Rule 3: the kicker is mono 11; rule 1 (as revised by the TASK-162 gate): the mode word is hidden until 760 and the mark's own 16px rule is GONE — the shared rule carries no dimensions, so the size is the glyph's `size` prop alone, pinned same-size against the Tools glyph in V2ConnectorsPage.test.tsx (TASK-177); rule 2: the gear is 32 (44 on the phone).
+    // Rule 3: the kicker is mono 11; the mode word is hidden until 760; the gear is 32.
     expect(ruleBody(v2, '.v2-connector-row__kicker')).toContain('var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-connector-row__kicker')).toContain('font-size: 11px');
     expect(ruleBody(v2, '.v2-connector-row__kicker-mode')).toContain('display: none');
-    expect(v2).not.toContain('width: 16px; height: 16px; color: var(--v2-text-secondary)');
     expect(ruleBody(v2, '.v2-root button.v2-connector-row__action--icon')).toContain('width: 32px');
-    const phone760 = v2.slice(v2.indexOf('@media (max-width: 760px) {\n  .v2-connectors {'));
-    expect(phone760).toContain('.v2-connector-row__kicker-mode { display: inline; }');
-    expect(phone760).toContain('.v2-connector-row__names { display: block; }');
-    expect(phone760).toContain('.v2-connector-row__name-sep { display: inline; }');
-    expect(phone760).toContain('.v2-root button.v2-connector-row__action--icon { width: 44px; min-height: 44px;');
-    // TASK-140: the aside's Revoke ✕ carries `--secondary` as well as `--icon`,
-    // and `--secondary` sets `min-height: 36px`. Because min-height beats height,
-    // a composed rule that pins `height: 32px` alone still measures 32×36 — the
-    // first cut of this fix did exactly that and the gate caught it (#1799, 1440).
-    // The assertion below is on `min-height` for that reason: this guard would
-    // otherwise have been green while the box was still 36 tall.
+    // TASK-140: the aside's Revoke carries `--secondary` as well as `--icon`, and
+    // `--secondary` sets `min-height: 36px`. min-height beats height, so the
+    // composed rule must pin min-height too or the box measures 32x36.
     const asideIcon = ruleBody(v2, '.v2-root button.v2-connector-aside__secondary.v2-connector-aside__icon');
     expect(asideIcon).toContain('width: 32px');
     expect(asideIcon).toContain('height: 32px');
     expect(asideIcon).toContain('min-height: 32px');
-    expect(phone760).toContain('.v2-root button.v2-connector-aside__secondary.v2-connector-aside__icon { width: 44px; height: 44px; min-height: 44px; }');
-    expect(phone760).toContain('.v2-connector-row { min-height: 72px; }');
-    // The gear shares row 1 with the name (the selection button is pinned to row 1 too), and it is declared AFTER the older act placement so the cascade keeps it.
-    expect(phone760).toContain('.v2-root button.v2-connector-row__selection { grid-row: 1; }');
-    expect(phone760.indexOf('.v2-root button.v2-connector-row__action--icon { width: 44px')).toBeGreaterThan(phone760.indexOf('.v2-root a.v2-connector-row__action { grid-column: 2; grid-row: 1; z-index: 1; }'));
-    expect(ruleBody(v2, '.v2-connectors__content')).toContain('grid-template-columns: minmax(min-content, 1fr) minmax(240px, 400px)');
+    expect(v2).toContain('.v2-root button.v2-connector-aside__secondary.v2-connector-aside__icon { width: 44px; height: 44px; min-height: 44px; }');
     expect(ruleBody(v2, '.v2-connector-row__details')).toContain('padding-right: 8px');
-    const connectors = ruleBody(v2, '.v2-connectors');
-    // TASK-156, inverting #1547: a list card is as tall as its rows. The page
-    // scrolls; no card holds empty space. ux-lead measured 564px of card around
-    // 262px of rows at 1200, and a Tools card of 718px around one 86px row with
-    // the GitHub grant open.
-    expect(connectors).not.toContain('min-height');
-    expect(connectors).not.toContain('max-width');
-    const connectorsContent = ruleBody(v2, '.v2-connectors__content');
-    expect(connectorsContent).toContain('align-items: start');
-    expect(connectorsContent).not.toContain('flex: 1');
-    expect(ruleBody(v2, '.v2-connectors__rows')).not.toContain('flex: 1');
-    // sprint-review's #1869 note: ruleBody reads the FIRST line-start match, so a
-    // second `.v2-connectors { min-height: … }` written later in the sheet passes
-    // every assertion above while the browser paints the stretch again — equal
-    // specificity, later rule wins. Scan EVERY declaration block by selector, so
-    // position cannot hide one. Matching is on the last compound's class tokens
-    // (so `.v2-root .v2-connectors` counts, and `.v2-connectors__content` does
-    // not); a rule scoped some other way is still not covered.
-    const layoutBlocks = (className: string) =>
-      Array.from(v2.matchAll(/([^{}]+)\{([^{}]*)\}/g))
-        .filter(([, sels]) =>
-          sels
-            .split(',')
-            .some((sel) => (sel.trim().split(/\s+/).pop() ?? '').split('.').includes(className)),
-        )
-        .map(([, , body]) => body);
-    // Non-vacuous: each selector's scan must still find the rule it is about.
-    for (const cls of ['v2-connectors', 'v2-connectors__content', 'v2-connectors__rows']) {
-      expect(layoutBlocks(cls).length).toBeGreaterThan(0);
-    }
-    // A list card is as tall as its rows wherever the rule is written.
-    expect(layoutBlocks('v2-connectors').filter((b) => b.includes('min-height'))).toEqual([]);
-    expect(layoutBlocks('v2-connectors__content').filter((b) => b.includes('flex: 1'))).toEqual([]);
-    expect(layoutBlocks('v2-connectors__rows').filter((b) => b.includes('flex: 1'))).toEqual([]);
-    // TASK-677 tile grid: the channel rows tile at 150px minimum, the fold spans
-    // the grid, and the icon act is centred. jsdom cannot see the cascade, so the
-    // 760px overrides are guarded by presence here.
-    // ruleBody takes the first line-start match, which is the base rule, so scan
-    // every block for the tile declarations instead.
-    expect(layoutBlocks('v2-connectors__rows').some((b) => b.includes('repeat(auto-fill, minmax(150px, 1fr))'))).toBe(true);
-    expect(layoutBlocks('v2-connectors__inactive-fold').some((b) => b.includes('grid-column: 1 / -1'))).toBe(true);
-    expect(layoutBlocks('v2-connector-row__action--icon').some((b) => b.includes('justify-self: center'))).toBe(true);
     expect(ruleBody(v2, '.v2-page-head__meta')).toContain('var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('width: 20px');
     expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('color: inherit');
-    expect(ruleBody(v2, '.v2-connector-row--not-yet .v2-connector-row__glyph')).toContain('color: var(--v2-text-placeholder)');
     expect(ruleBody(v2, '.v2-connector-row__detail')).not.toContain('text-overflow');
     expect(ruleBody(v2, '.v2-connector-row__detail')).not.toContain('nowrap');
     // Line 1 and the gate's pod name wrap too; the 390 clips were the defect (64144).
@@ -2533,38 +2466,80 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // The state dot is a mark: ink filled / hollow / grey, never cobalt, never a status colour.
     expect(ruleBody(v2, '.v2-connector-row__dot--live')).toContain('var(--v2-ink)');
     expect(ruleBody(v2, '.v2-connector-row__dot--live')).not.toContain('var(--v2-accent)');
-    expect(ruleBody(v2, '.v2-connector-row__dot--pending')).toContain('transparent');
-    expect(ruleBody(v2, '.v2-connector-row__dot--idle')).toContain('var(--v2-border-soft)');
     expect(ruleBody(v2, '.v2-connector-gate__mark')).toContain('width: 4px');
     expect(ruleBody(v2, '.v2-connector-gate__mark')).toContain('var(--v2-ink)');
     expect(ruleBody(v2, '.v2-connector-gate__switch')).toContain('accent-color: var(--v2-ink)');
     expect(ruleBody(v2, '.v2-connector-gate__switch')).not.toContain('border-radius');
     expect(ruleBody(v2, '.v2-connector-gate__tag')).toContain('var(--v2-font-mono)');
     const connectorCss = v2.slice(v2.indexOf('/* ── Connectors'), v2.indexOf('/* Activity queue'));
+    expect(connectorCss.length).toBeGreaterThan(1000);
     expect(connectorCss).not.toContain('var(--v2-success)');
     expect(connectorCss).not.toContain('var(--v2-warning)');
     expect(connectorCss).not.toContain('var(--v2-danger)');
-    // Tools (plan §6): the list reuses the connector row grid, and a trail line is muted mono —
-    // an outcome is a word, never a coloured one.
+    // Tools: a trail line is muted mono, an outcome is a word, never a coloured one.
     expect(ruleBody(v2, '.v2-tools__trail-line')).toContain('var(--v2-text-muted)');
     expect(ruleBody(v2, '.v2-tools__trail-line')).toContain('var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-tools__count strong')).toContain('font-size: 22px');
     expect(ruleBody(v2, '.v2-tools__count span')).toContain('font-size: 11px');
-    expect(connectorCss).toMatch(/@media \(max-width: 1010px\) \{[\s\S]*?\.v2-connectors__content \{ grid-template-columns: minmax\(0, 1fr\); gap: 24px;/);
-    expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connector-row \{ grid-template-columns: minmax\(0, 1fr\) auto;/);
-    expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connectors__content \{ grid-template-columns: minmax\(0, 1fr\);/);
-    expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connectors \{ gap: 24px; margin: -12px -18px 0;/);
-    // The Tools list opt-out is dead once nothing stretches. Matched as a regex on
-    // the Connectors section, not through ruleBody: with the rule gone ruleBody
-    // returns '' and would have passed this assertion without reading anything.
     expect(connectorCss).not.toMatch(/\.v2-tools \{[^}]*flex: none/);
-    expect(connectorCss).toMatch(/\.v2-root button\.v2-connector-row__selection \{ grid-column: 1 \/ -1;/);
-    expect(connectorCss).toMatch(/\.v2-root button\.v2-connector-row__selection \.v2-connector-row__details \{ grid-column: 1 \/ -1; grid-row: 2;/);
-    // The phone block used to hide __detail behind an exception list — whose
-    // presence was pinned HERE, which is why the shape survived until a third
-    // state fell outside it (eng lead 73726). The inverted shape (show, hide no
-    // row) is pinned by the test above this one; the enumerating rule is gone.
+    // The phone block keeps the row's reason rather than carrying an exception chain.
     expect(connectorCss).not.toContain('v2-connector-row--dead):not(.v2-connector-row--not-enabled) .v2-connector-row__detail');
+  });
+
+  describe('connectors.css (tile grid, popover, drawer)', () => {
+    const cx = fs.readFileSync(path.join(__dirname, '../connectors/connectors.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    // The text of every `@media (max-width: N)` block, brace-balanced, joined.
+    const mediaBlock = (px: number): string => {
+      const marker = `@media (max-width: ${px}px)`;
+      const blocks: string[] = [];
+      for (let from = cx.indexOf(marker); from > -1; from = cx.indexOf(marker, from + 1)) {
+        const open = cx.indexOf('{', from);
+        let depth = 0;
+        for (let i = open; i < cx.length; i += 1) {
+          if (cx[i] === '{') depth += 1;
+          if (cx[i] === '}') { depth -= 1; if (depth === 0) { blocks.push(cx.slice(open + 1, i)); break; } }
+        }
+      }
+      expect(blocks.length).toBeGreaterThan(0);
+      return blocks.join('\n');
+    };
+    const baseBody = (selector: string): string => {
+      const outside = cx.replace(/@media[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '');
+      const m = outside.match(new RegExp(`(?:^|\\})\\s*${selector.replace(/[.\\-]/g, '\\$&')}\\s*\\{([^}]*)\\}`));
+      return m ? m[1] : '';
+    };
+
+    it('the page body hands the full height to the tile grid with no padding', () => {
+      expect(cx).toMatch(/\.v2-feature--connectors > \.v2-feature__body \{[^}]*padding: 0;/);
+    });
+
+    it('the grid is six columns, three on a phone', () => {
+      expect(baseBody('.v2-cx-grid')).toContain('grid-template-columns: repeat(6, minmax(0, 1fr))');
+      expect(mediaBlock(640)).toMatch(/\.v2-cx-grid \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+    });
+
+    it('the popover becomes a sheet above the tab bar at 760', () => {
+      const pop = mediaBlock(760).match(/\.v2-cx-pop \{([^}]*)\}/)?.[1] ?? '';
+      expect(pop).toContain('position: fixed');
+      expect(pop).toMatch(/bottom: calc\(84px/);
+      expect(pop).toContain('top: auto !important');
+      // the popover's inline top and left must lose to the sheet, or it floats off-screen
+      expect(pop).toContain('left: 12px !important');
+      expect(pop).toMatch(/max-height: calc\(100vh/);
+    });
+
+    it('colours come from the Signal tokens, so dark and auto themes follow the shell', () => {
+      expect(cx).toContain('--cx-key-a: var(--v2-key-a)');
+      expect(cx).toContain('--cx-pop-shadow: var(--v2-shadow-pop)');
+      expect(cx).not.toContain("data-theme='dark'");
+    });
+
+    it('the drawer is fixed over the page at 760, clear of the tab bar', () => {
+      const drawer = mediaBlock(760).match(/\.v2-cx-drawer \{([^}]*)\}/)?.[1] ?? '';
+      expect(drawer).toContain('position: fixed');
+      expect(drawer).toMatch(/inset: 0 0 calc\(72px/);
+      expect(baseBody('.v2-cx-drawer')).toContain('position: absolute');
+    });
   });
 
   it('connector refusal links keep the in-text link treatment in the parsed stylesheet', () => {
@@ -2855,7 +2830,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // And the surfaces the composer does not need stay OUT of it.
       for (const heavy of [
         "'./components/V2PodBoard'",
-        "'./components/V2ConnectorsPage'",
+        "'./connectors/ConnectorsPage'",
         "'./components/V2ActivityPage'",
         "'./components/V2ArtifactsPage'",
         "'../components/ChatRoom'",
@@ -3171,7 +3146,7 @@ describe('the landing hero demo (TASK-147)', () => {
   });
 
   test('a row refusal takes a line of its own, under the row that raised it (Row C)', () => {
-    // A refused Slack authorize now renders inside its row (V2ConnectorsPage).
+    // A refused Slack authorize now renders inside its row (ConnectorsPage).
     // jsdom cannot see this: the row is a 140px / minmax(150px, 1fr) / 120px
     // grid, so without the span the message would be squeezed into the name or
     // act track instead of reading as one line — the TASK-029 failure mode.
@@ -5026,17 +5001,6 @@ describe('BYO command boxes wrap at spaces', () => {
   });
 });
 
-describe('connector inactive fold layout', () => {
-  const v2 = read('../v2.css');
-  test('the toggle stays a full-width row with a visible keyboard focus state', () => {
-    const rule = ruleBody(v2, '.v2-root button.v2-connectors__inactive-toggle');
-    expect(rule).toContain('width: 100%');
-    expect(rule).toContain('min-height: 44px');
-    expect(ruleBody(v2, '.v2-root button.v2-connectors__inactive-toggle:focus-visible'))
-      .toContain('box-shadow: inset 0 0 0 2px var(--v2-accent)');
-  });
-});
-
 describe('GitHub gig card fits the chat column', () => {
   const css = read('../v2.css');
   test('bounds card width, wraps long repository text, and releases the avatar inset on phones', () => {
@@ -5080,6 +5044,25 @@ describe('agent Identity editor', () => {
     expect(ruleBody(css, '.v2-agent-settings__listing')).toContain('display: grid');
     expect(ruleBody(css, '.v2-root .v2-agent-settings .v2-agent-settings__listing a')).toContain('color: var(--v2-accent)');
     expect(ruleBody(css, '.v2-root .v2-agent-settings .v2-agent-settings__listing a:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
+  });
+});
+
+describe('agent Memory tab (TASK-690 slice 1 and 2)', () => {
+  const css = read('../agents/v2-agent-settings.css');
+  const desktop = blockContaining(css, '@media (min-width: 768px)', '.v2-agent-memory');
+  const phone = blockContaining(css, '@media (max-width: 767px)', '.v2-agent-memory__nav ul');
+  test('desktop keeps the group nav beside the notes at 200px', () => {
+    expect(ruleBody(css, '.v2-agent-memory')).toContain('display: grid');
+    expect(ruleBody(css, '.v2-agent-memory', { within: desktop })).toContain('grid-template-columns: 200px minmax(0, 1fr)');
+  });
+  test('phone hides the group nav and makes the groups collapsible', () => {
+    expect(ruleBody(css, '.v2-agent-memory__nav ul', { within: phone })).toContain('display: none');
+    expect(ruleBody(css, '.v2-agent-memory__gtitle', { within: phone })).toContain('cursor: pointer');
+  });
+  test('desktop group titles do not take pointer input, and the chevron is phone-only', () => {
+    const titles = blockContaining(css, '@media (min-width: 768px)', '.v2-agent-memory__gtitle');
+    expect(ruleBody(css, '.v2-agent-memory__gtitle', { within: titles })).toContain('pointer-events: none');
+    expect(ruleBody(css, '.v2-agent-memory__chev')).toContain('display: none');
   });
 });
 
@@ -5319,5 +5302,19 @@ describe('pod board column scroll (TASK-698)', () => {
     const block = mediaBlockContaining(read('../v2.css'), '.v2-pod-header__invite span');
     expect(block).toMatch(/\.v2-pod-header__invite span\s*\{[^}]*clip-path:\s*inset\(50%\)/);
     expect(block).toMatch(/\.v2-pod-header__invite\s*\{[^}]*width:\s*28px/);
+  });
+
+  test('the board keeps three columns plus a 120px done rail, and tabs only on phones (TASK-687)', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'v2.css'), 'utf8');
+    expect(css).toMatch(/\.v2-board__columns \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\) 120px/);
+    expect(css).toMatch(/\.v2-board__tabs \{ display: none; \}/);
+    // Card actions stay on the id row (off the title); card buttons keep a visible focus ring.
+    expect(css).toMatch(/\.v2-board__card-actions \{\s*position: absolute; right: 6px; top: 4px;/);
+    expect(css).toMatch(/button\.v2-board__card-main:focus-visible[^{]*\{[^}]*outline: 2px solid/);
+    // The column body is the scroller; the page itself does not scroll.
+    expect(css).toMatch(/\.v2-board__col-body \{[^}]*overflow-y: auto;[^}]*flex: 1;[^}]*min-height: 0;/);
+    // Phones get the tab bar back: scope to the TASK-687 mobile block.
+    const mobile = css.slice(css.indexOf('/* TASK-687 / D223'));
+    expect(mobile).toMatch(/@media \(max-width: 760px\) \{[\s\S]*\.v2-board__tabs \{ display: flex;/);
   });
 });
