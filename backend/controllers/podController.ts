@@ -156,6 +156,21 @@ const installDefaultAgentForPod = async ({ pod, userId }: { pod: any; userId: an
 };
 
 // Get all pods or filter by type
+// An agent-room outlives its agent's uninstall on purpose: the pod keeps the
+// agent's memory and history, so a reinstall returns the owner to the same
+// room (CLAUDE.md design rule 8). It must not stay in the owner's list while
+// the agent is gone, or the room still offers prompts to nobody. One batched
+// query over the rooms in the result, not one per room.
+const dropUninstalledAgentRooms = async (pods: any[]): Promise<any[]> => {
+  const roomIds = pods.filter((p: any) => p.type === 'agent-room').map((p: any) => p._id);
+  if (roomIds.length === 0) return pods;
+  const installedRoomIds = new Set(
+    (await AgentInstallation.distinct('podId', { podId: { $in: roomIds }, status: { $ne: 'uninstalled' } }))
+      .map((id: any) => String(id)),
+  );
+  return pods.filter((p: any) => p.type !== 'agent-room' || installedRoomIds.has(String(p._id)));
+};
+
 exports.getAllPods = async (req: any, res: any) => {
   try {
     // `?type=` is a user-supplied value that used to reach the Mongo query
@@ -262,6 +277,8 @@ exports.getAllPods = async (req: any, res: any) => {
       // reference anywhere on the instance into a 500 for the whole sidebar.
       pods = pods.filter((p: any) => (p.members || []).some((m: any) => m && String(m._id || m) === uid));
     }
+
+    if (!isCommunityScope && !isDiscoverScope) pods = await dropUninstalledAgentRooms(pods);
 
     // Attach last-message preview per pod for the sidebar snippet. Single
     // PG query with DISTINCT ON, batched across all returned pod IDs —
