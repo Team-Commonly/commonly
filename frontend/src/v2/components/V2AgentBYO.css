@@ -1,0 +1,371 @@
+/* Bring your own agent (/v2/agents/byo), lifted from the d215 frame (R04):
+   docs/design/artboards/d215/index.html, section s-byo, frames "byo" and
+   "byo-handoff" at 1440 and 390. The rules below are the frame's own, same
+   selectors and values; only the tokens are translated to --v2-* (so light,
+   dark and auto switch together) and the frame's `.app.m` phone rules sit in
+   the page's 760px phone query. Scoped to .v2-feature--byo, the page's wrapper. */
+.v2-feature--byo .v2-byo__layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 28px; max-width: 1040px; margin: 0 auto; align-items: start; }
+.v2-feature--byo .v2-byo__main { min-width: 0; }
+.v2-feature--byo .v2-byo__form, .v2-feature--byo .v2-byo__result, .v2-feature--byo .v2-byo__snippet { display: flex; flex-direction: column; gap: 10px; }
+.v2-feature--byo .v2-byo__modes-question, .v2-feature--byo .v2-byo__preview-label, .v2-feature--byo .v2-byo__snippet-head { margin: 0 4px; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-feature--byo .v2-byo__modes, .v2-feature--byo .v2-byo__os { margin: 0; display: inline-flex; align-self: flex-start; gap: 2px; padding: 2px; border-radius: 9px; background: var(--v2-surface-tint); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
+.v2-feature--byo .v2-byo__mode-option { display: inline-flex; align-items: center; gap: 2px; padding-right: 4px; }
+.v2-feature--byo .v2-byo__mode, .v2-feature--byo .v2-byo__os .v2-byo__link { all: unset; box-sizing: border-box; cursor: pointer; height: 28px; padding: 0 10px; border-radius: 7px; display: inline-flex; align-items: center; font: 500 12.5px/1 var(--v2-font); color: var(--v2-text-secondary); white-space: nowrap; }
+.v2-feature--byo .v2-byo__mode[aria-pressed="true"], .v2-feature--byo .v2-byo__os .v2-byo__link[aria-pressed="true"] { background: var(--v2-surface); color: var(--v2-text-primary); font-weight: 600; box-shadow: 0 0 0 1px var(--v2-key-edge), var(--v2-key-inset); }
+.v2-feature--byo .v2-byo__field { display: grid; grid-template-columns: 180px minmax(0, 1fr); align-items: center; gap: 4px 14px; min-height: 52px; margin-top: -11px; padding: 8px 14px 8px 16px; background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
+.v2-feature--byo .v2-byo__field:first-of-type { margin-top: 8px; border-radius: 12px 12px 0 0; }
+.v2-feature--byo .v2-byo__field:last-of-type { border-radius: 0 0 12px 12px; }
+.v2-feature--byo .v2-byo__label { font-size: 13px; font-weight: 600; color: var(--v2-text-primary); }
+.v2-feature--byo .v2-byo__input { box-sizing: border-box; width: 100%; min-width: 0; height: 34px; padding: 0 10px; border: 0; border-radius: 9px; background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-text-muted); font: 400 13.5px/1 var(--v2-font); color: var(--v2-text-primary); }
+.v2-feature--byo .v2-byo__field .v2-byo__hint { grid-column: 2; font-size: 12.5px; line-height: 1.45; color: var(--v2-text-secondary); }
+/* the page shows a field's hint only while it has focus or an error */
+.v2-feature--byo .v2-byo__field > .v2-byo__hint { display: none; }
+.v2-feature--byo .v2-byo__field:focus-within > .v2-byo__hint, .v2-feature--byo .v2-byo__field--error > .v2-byo__hint { display: block; }
+.v2-feature--byo .v2-byo__submit, .v2-feature--byo .v2-byo__secondary { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 13px; border-radius: 10px; font: 600 13px/1 var(--v2-font); white-space: nowrap; }
+.v2-feature--byo .v2-byo__submit { align-self: flex-start; margin-top: 6px; color: var(--v2-on-fill); background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b)); border: 1px solid var(--v2-fill-edge); }
+.v2-feature--byo .v2-byo__secondary { color: var(--v2-text-secondary); }
+.v2-feature--byo .v2-byo__link { all: unset; cursor: pointer; color: var(--v2-accent-text); font-weight: 600; }
+.v2-feature--byo .v2-byo__more { margin-top: 8px; border-radius: 12px; background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
+.v2-feature--byo .v2-byo__more > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 8px 18px 8px 16px; font-size: 13px; font-weight: 600; color: var(--v2-text-primary); }
+.v2-feature--byo .v2-byo__more > summary::-webkit-details-marker { display: none; }
+.v2-feature--byo .v2-byo__more > summary::after { content: ""; flex: none; margin-left: auto; width: 7px; height: 7px; border-right: 1.8px solid var(--v2-text-muted); border-bottom: 1.8px solid var(--v2-text-muted); transform: translateY(-2px) rotate(45deg); }
+.v2-feature--byo .v2-byo__more[open] > summary::after { transform: translateY(2px) rotate(225deg); }
+.v2-feature--byo .v2-byo__more > :not(summary) { margin: 0 16px 14px; }
+.v2-feature--byo .v2-byo__more + .v2-byo__more { margin-top: 0; }
+.v2-feature--byo .v2-byo__footnote, .v2-feature--byo .v2-byo__more .v2-byo__hint, .v2-feature--byo .v2-byo__listen-note, .v2-feature--byo .v2-byo__needs, .v2-feature--byo [data-testid="byo-key-once"] { margin: 0 4px; font-size: 12.5px; line-height: 1.5; color: var(--v2-text-secondary); }
+.v2-feature--byo .v2-byo__needs { font-size: 13px; }
+.v2-feature--byo .v2-byo__preview { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.v2-feature--byo .v2-byo__preview-card { display: grid; justify-items: center; gap: 6px; padding: 22px 16px 18px; text-align: center; border-radius: 12px; background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
+.v2-feature--byo .v2-byo__preview-name { font-size: 14px; font-weight: 600; color: var(--v2-text-primary); }
+.v2-feature--byo .v2-byo__preview-pod { font: 500 12px/1.4 var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-feature--byo .v2-byo__preview-status { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border-radius: 7px; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-secondary); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
+.v2-feature--byo .v2-byo__preview-dot { width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--v2-text-muted); }
+.v2-feature--byo .v2-byo__preview-status--waiting .v2-byo__preview-dot, .v2-feature--byo .v2-byo__preview-status--starting .v2-byo__preview-dot { background: var(--v2-text-muted); box-shadow: none; }
+.v2-feature--byo .v2-byo__preview-status--live { color: var(--v2-accent-text); background: var(--v2-accent-soft); box-shadow: inset 0 0 0 1px var(--v2-accent); }
+.v2-feature--byo .v2-byo__preview-status--live .v2-byo__preview-dot { background: var(--v2-accent); box-shadow: none; }
+.v2-feature--byo .v2-byo__result > h2 { margin: 0 4px 4px; font: 700 18px/1.3 var(--v2-font-display); letter-spacing: -0.02em; color: var(--v2-text-primary); }
+.v2-feature--byo .v2-byo__result > h2 code { font: 600 15px/1 var(--v2-font-mono); color: var(--v2-accent-text); }
+.v2-feature--byo .v2-byo__command { position: relative; padding: 12px 96px 12px 14px; border-radius: 12px; background: var(--v2-bg-subtle); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
+.v2-feature--byo .v2-byo__pre { margin: 0; font: 500 12.5px/21px var(--v2-font-mono); color: var(--v2-text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
+.v2-feature--byo .v2-byo__copy { all: unset; box-sizing: border-box; cursor: pointer; position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; justify-content: center; height: 28px; padding: 0 12px; border-radius: 8px; font: 600 12.5px/1 var(--v2-font); color: var(--v2-text-primary); background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b)); border: 1px solid var(--v2-key-edge); box-shadow: var(--v2-key-inset); }
+.v2-feature--byo [data-testid="byo-listen-waiting"], .v2-feature--byo .v2-byo__live { margin: 0; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 12px; border-radius: 10px; background: var(--v2-bg-subtle); box-shadow: inset 0 0 0 1px var(--v2-border-soft); font-size: 13px; line-height: 1.45; color: var(--v2-ink-2); }
+.v2-feature--byo [data-testid="byo-listen-waiting"]::before, .v2-feature--byo .v2-byo__live::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--v2-accent); }
+.v2-feature--byo .v2-byo__live { color: var(--v2-text-primary); background: var(--v2-accent-soft); box-shadow: inset 0 0 0 1px var(--v2-accent); }
+.v2-feature--byo .v2-byo__live::before { background: var(--v2-accent); }
+.v2-feature--byo .v2-byo__cta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 6px; }
+.v2-feature--byo .v2-byo__cta-row .v2-byo__listen-note { flex: 1 1 220px; margin: 0; }
+@media (max-width: 760px) {
+  .v2-feature--byo .v2-byo__layout { grid-template-columns: minmax(0, 1fr); }
+  .v2-feature--byo .v2-byo__modes { display: flex; flex-direction: column; align-self: stretch; gap: 0; padding: 0; overflow: hidden; border-radius: 12px; background: var(--v2-surface); }
+  .v2-feature--byo .v2-byo__mode-option { padding: 0; border-top: 1px solid var(--v2-border-soft); }
+  .v2-feature--byo .v2-byo__mode-option:first-child { border-top: 0; }
+  .v2-feature--byo .v2-byo__mode { flex: 1; height: 44px; padding: 0 14px; border-radius: 0; font-size: 14px; }
+  .v2-feature--byo .v2-byo__mode[aria-pressed="true"] { color: var(--v2-accent-text); background: transparent; box-shadow: none; }
+  .v2-feature--byo .v2-byo__mode-option:has(.v2-byo__mode[aria-pressed="true"]) { background: var(--v2-accent-soft); }
+  .v2-feature--byo .v2-byo__field { grid-template-columns: minmax(0, 1fr); padding: 10px 12px; }
+  .v2-feature--byo .v2-byo__field .v2-byo__hint { grid-column: 1; }
+  .v2-feature--byo .v2-byo__input { height: 44px; font-size: 14px; }
+  .v2-feature--byo .v2-byo__submit, .v2-feature--byo .v2-byo__secondary { align-self: stretch; height: 44px; font-size: 14px; }
+  .v2-feature--byo .v2-byo__cta-row { flex-direction: column; align-items: stretch; }
+  .v2-feature--byo .v2-byo__os { display: flex; align-self: stretch; }
+  .v2-feature--byo .v2-byo__os .v2-byo__link { flex: 1; justify-content: center; height: 44px; font-size: 14px; }
+  .v2-feature--byo .v2-byo__command { padding-right: 14px; }
+  .v2-feature--byo .v2-byo__copy { position: static; width: 100%; height: 44px; margin-top: 10px; font-size: 14px; }
+  .v2-feature--byo .v2-byo__more > summary { min-height: 48px; padding: 8px 16px 8px 12px; }
+}
+
+/* Live behaviour the frame does not draw, kept working. The hosted offer bar
+   is sticky over the last screen of the result; its space is reserved at the
+   bottom of the layout before it appears (e2e/byo-offer-layout.spec.ts). */
+.v2-feature--byo .v2-byo__layout { padding-bottom: calc(40px + var(--v2-byo-offer-height, 0px)); }
+
+/* Exceptions to the frame, each for a floor the frame's drawing does not meet
+   in production:
+   - phone: a mode's (i) is V2Hint's 28px trigger; the frame draws it 44px
+     (.info--lg), so its box and hit area grow to 44px without enlarging the mark.
+   - focus: the pressed option's key shadow (0,3,0) outranks the shell's
+     `.v2-root button:focus-visible` ring (0,2,1), so the ring is restated at
+     the pressed rule's weight and keyboard focus stays visible on it.
+   - the memory import textarea shares .v2-byo__input, whose frame height (34px,
+     line-height 1) is a one-line control; a 6-row textarea keeps its old box. */
+.v2-feature--byo .v2-byo__mode:focus-visible, .v2-feature--byo .v2-byo__os .v2-byo__link:focus-visible { box-shadow: var(--v2-focus-ring); }
+.v2-feature--byo textarea.v2-byo__memory-text { height: auto; padding: 10px 12px; line-height: 20px; }
+@media (max-width: 760px) {
+  .v2-feature--byo .v2-byo__mode-option > .v2-hint { min-width: 44px; min-height: 44px; justify-content: center; }
+  .v2-root .v2-feature--byo .v2-byo__mode-option button.v2-hint__trigger { position: relative; }
+  .v2-root .v2-feature--byo .v2-byo__mode-option button.v2-hint__trigger::after { content: ''; position: absolute; inset: -8px; }
+}
+
+/* not drawn in the frame yet: kept as it was */
+/* The bar's space exists before it appears; its negative margin makes the
+   sticky overlay occupy no additional flow space when it becomes visible. */
+.v2-feature--byo { --v2-byo-offer-height: 96px; }
+.v2-feature--byo > .v2-feature__body { padding-bottom: 0; }
+.v2-byo__hosted-offer {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  box-sizing: border-box;
+  min-height: var(--v2-byo-offer-height);
+  margin-top: calc(-1 * var(--v2-byo-offer-height));
+  padding: 12px 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  align-content: center;
+  gap: 8px 16px;
+  border-top: 1px solid var(--v2-border);
+  background: var(--v2-surface);
+}
+.v2-byo__hosted-offer > p:first-child {
+  margin: 0;
+  color: var(--v2-text-muted);
+  font: 400 13px/20px var(--v2-font);
+}
+.v2-root .v2-byo__hosted-offer button.v2-byo__hosted-offer-action {
+  height: 40px;
+  padding: 0 16px;
+  align-self: center;
+}
+.v2-byo__hosted-offer .v2-byo__error {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+@media (max-width: 760px) {
+  .v2-feature--byo { --v2-byo-offer-height: 128px; }
+  .v2-byo__hosted-offer { grid-template-columns: minmax(0, 1fr); padding: 12px 16px; }
+  .v2-root .v2-byo__hosted-offer button.v2-byo__hosted-offer-action { height: 44px; width: 100%; }
+}
+.v2-byo__result h2 {
+  font-size: 20px;
+  margin: 0;
+}
+/* A <p> keeps its user-agent margin inside a flex column, and flex gaps do not
+   collapse it — so the authored 28 was drawing as 42 (28 + the paragraph's 1em)
+   and the h2's 4px rode on top of the next gap. The `>` is load-bearing: it
+   zeroes the result's own flex children and leaves a paragraph nested inside a
+   snippet its own rhythm. (ux-lead's TASK-169 render gate measured 28 at 1200
+   and 390 with exactly these declarations.) */
+.v2-byo__result > p { margin: 0; }
+/* An agent's name in mono is a mark (Signal rule 1), so the name carries the
+   accent — it is already named once in the sentence above it. */
+.v2-byo__result h2 code {
+  font-family: var(--v2-font-mono);
+  font-weight: 500;
+  color: var(--v2-accent-text);
+}
+.v2-byo__hint {
+  font-size: 12px;
+  color: var(--v2-text-tertiary);
+  margin: 0;
+}
+/* §3 error — a white card with a border, ink text, no icon. The red fill was
+   the pre-Signal shape: it read as a state of the page rather than a message
+   beside the field it belongs to. */
+.v2-byo__error {
+  padding: 12px 16px;
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  color: var(--v2-text-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+/* Optional memory import (retention plan Phase C) — lives inside the
+   post-issue snippet card. */
+.v2-byo__memory {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* The padding outlived the card it was inset in (item 6). */
+  padding: 0;
+}
+.v2-byo__memory > p { margin: 0; }
+
+/* `.v2-root textarea` (v2.css:211) inherits the family and outranks a lone
+   class, so the 'SF Mono' stack never applied and this box rendered Plex Sans.
+   The selector carries the element for the same reason. */
+.v2-root textarea.v2-byo__memory-text {
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+  resize: vertical;
+}
+/* The hint codes (MEMORY.md, CLAUDE.md) rendered in the UA monospace. */
+.v2-byo__layout code {
+  font-family: var(--v2-font-mono);
+  font-weight: 500;
+}
+.v2-byo__memory-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* §3 connected/live is never green, and it is never a ✓ either — the mark is
+   the cobalt dot, which replaces the ✓ that used to open these lines (the dot
+   and the ✓ together marked the same line twice). `memory-done` keeps its name
+   because the memory line is a completed action, not a presence. */
+.v2-byo__memory-done {
+  padding: 0;
+  margin: 0;
+  color: var(--v2-text-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+.v2-byo__memory-done code {
+  font-size: 12px;
+  color: var(--v2-accent-text);
+}
+/* Signal rule 4 — avatars are a 4px square frame. All four avatars on this
+   route are in scope together (the persona context, the placed and hosted
+   result cards, and the preview) because they show the same agent a click
+   apart: a square preview that turns round after "Add to this computer" reads
+   as two different things. The square is also what UNCLIPS the online dot —
+   at 50% the base class's `overflow: hidden` cuts the 9px dot to a lens
+   (ux-lead measured 13 device px at DPR 2, against 68 once square), so the
+   cobalt rule below must land in the same scope, or the dot goes full green.
+   (0,2,0) over `.v2-avatar`'s (0,1,0): this wins on specificity, with no
+   dependency on document order. */
+.v2-byo__layout .v2-avatar {
+  border-radius: 4px;
+  border: 0;
+  box-shadow: none;
+}
+
+/* Signal §3 — connected/live is a solid cobalt dot, never green. Same
+   (0,2,0) scope as the square; `.v2-avatar__online` carries its own 50%
+   radius, so this rule must never declare one (the dot stays round). */
+.v2-byo__layout .v2-avatar__online {
+  background: var(--v2-accent);
+}
+/* The frame's note: the preview card is 1440 only, prod hides it under 940px.
+   Scoped like the frame's rules so it outranks them. */
+@media (max-width: 940px) {
+  .v2-feature--byo .v2-byo__layout { grid-template-columns: minmax(0, 1fr); }
+  .v2-feature--byo .v2-byo__preview { display: none; }
+}
+.v2-byo__result-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.v2-byo__result-hero h2 { margin: 0; }
+.v2-byo__stats {
+  display: flex;
+  gap: 12px;
+}
+.v2-byo__stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-surface);
+}
+/* Counts are data, and §3 sets data in mono. */
+.v2-byo__stat-value {
+  font: 500 18px/24px var(--v2-font-mono);
+  letter-spacing: 0;
+  color: var(--v2-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.v2-byo__stat-label {
+  font: 500 11px/16px var(--v2-font-mono);
+  color: var(--v2-text-tertiary);
+}
+
+/* Persona context (2026-09-01): who was picked and why, carried from the
+   catalog — or an honest "nobody yet" for the machine-first entry. */
+.v2-byo__persona {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-surface);
+}
+.v2-byo__persona-body { min-width: 0; flex: 1; }
+.v2-byo__persona-title {
+  font-size: 14px;
+  color: var(--v2-text-secondary);
+}
+.v2-byo__persona-title strong { color: var(--v2-text-primary); font-weight: 700; }
+.v2-byo__persona-line {
+  font-size: 13px;
+  color: var(--v2-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2-root button.v2-byo__submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+/* Signal §3 not yet: where the act will be, until a place to run it is
+   chosen. A muted hint line, not a box: a dashed slot read as a dead button
+   (TASK-647 item 1). */
+.v2-byo__unchosen {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  color: var(--v2-text-muted);
+  font-size: 13px;
+  line-height: 20px;
+}
+.v2-root a.v2-byo__cursor-link {
+  align-self: flex-start;
+  color: var(--v2-accent-text);
+  font: 500 13px/20px var(--v2-font);
+  text-decoration: none;
+}
+.v2-root a.v2-byo__cursor-link:hover { text-decoration: underline; }
+/* ADR-026 D1: one-paste computer setup, shown only while no machine exists. */
+.v2-byo__add-computer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-bg-subtle);
+}
+.v2-byo__add-computer > p { margin: 0; }
+.v2-byo__add-computer-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 12px;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-ink);
+}
+/* The frame's Copy is placed absolutely on a command block; this undrawn row
+   keeps it in its own grid column, as it was. */
+.v2-feature--byo .v2-byo__add-computer-row .v2-byo__copy { position: static; }
+.v2-byo__add-computer-row code {
+  padding: 5px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font: 500 14px/20px var(--v2-font-mono);
+  color: var(--v2-on-ink);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow: visible;
+}
+.v2-byo__footnote code {
+  font-family: var(--v2-font-mono);
+  font-weight: 500;
+  font-size: 12px;
+  padding: 2px 6px;
+  background: var(--v2-bg-subtle);
+  border-radius: 4px;
+}

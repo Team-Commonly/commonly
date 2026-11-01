@@ -35,6 +35,7 @@ import { hostedCapNotice } from './hostedCapNotice';
 import { readPodVisits } from '../lib/podRecency';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
+import './V2AgentBYO.css';
 
 const DEFAULT_AGENT_NAME = 'my-mcp-agent';
 // The token routes refuse a name that belongs to an agent Commonly runs (the
@@ -142,6 +143,7 @@ const CLAUDE_MODEL_OPTIONS: ModelOption[] = [
   { value: 'haiku', labelKey: 'agentByo.form.modelHaiku' },
 ];
 // Suggestions only: the installed Codex CLI catalog decides which slugs work.
+const LISTEN_RUNNERS = ['claude', 'codex'] as const;
 const CODEX_MODEL_SUGGESTIONS = ['gpt-6-sol', 'gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra'];
 
 const sanitizeAgentName = (raw: string): string => raw
@@ -1162,23 +1164,21 @@ const V2AgentBYO: React.FC = () => {
     </div>
   ) : null;
   const runnerPicker = mode === 'byo' && !issued && !onCardStart ? (
-    <p className="v2-byo__os" data-testid="byo-runner">
-      {t('agentByo.form.adapterLabel')}{' '}
-      {(['claude', 'codex'] as const).map((runner, i) => (
-        <React.Fragment key={runner}>
-          {i > 0 && ' · '}
-          <button
-            type="button"
-            className="v2-byo__link"
-            aria-pressed={listenAdapter === runner}
-            data-testid={`byo-runner-${runner}`}
-            disabled={submitting}
-            // The name follows the runner, so a key prompt for the old name is stale.
-            onClick={() => { setPendingReplacement(null); setListenAdapter(runner); }}
-          >
-            {t(runner === 'claude' ? 'agentByo.form.adapterClaude' : 'agentByo.form.adapterCodex')}
-          </button>
-        </React.Fragment>
+    // A segment (d215 frame): the label names the group, the buttons are its options.
+    <p className="v2-byo__os" data-testid="byo-runner" role="group" aria-label={t('agentByo.form.adapterLabel')}>
+      {LISTEN_RUNNERS.map((runner) => (
+        <button
+          key={runner}
+          type="button"
+          className="v2-byo__link"
+          aria-pressed={listenAdapter === runner}
+          data-testid={`byo-runner-${runner}`}
+          disabled={submitting}
+          // The name follows the runner, so a key prompt for the old name is stale.
+          onClick={() => { setPendingReplacement(null); setListenAdapter(runner); }}
+        >
+          {t(runner === 'claude' ? 'agentByo.form.adapterClaude' : 'agentByo.form.adapterCodex')}
+        </button>
       ))}
     </p>
   ) : null;
@@ -1528,9 +1528,9 @@ const V2AgentBYO: React.FC = () => {
               os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
             })}{' '}
             {t('agentByo.footnote.notSure')}{' '}
-            <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/agents/CONNECTING_LOCAL_AGENTS.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.mcpVsCli')}</a>
+            <a className="v2-byo__link" href="https://github.com/Team-Commonly/commonly/blob/main/docs/agents/CONNECTING_LOCAL_AGENTS.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.mcpVsCli')}</a>
             {' · '}
-            <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/MCP_INTEGRATION.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.fullWalkthrough')}</a>.
+            <a className="v2-byo__link" href="https://github.com/Team-Commonly/commonly/blob/main/docs/MCP_INTEGRATION.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.fullWalkthrough')}</a>.
           </p>
           </details>
         </div>
@@ -1655,21 +1655,18 @@ const V2AgentBYO: React.FC = () => {
             {/* Everything a stranger needs BEFORE the paste, in one place (QA
                 BYO walk 1 found none of it on the page). One block, so other
                 systems can add their own line beside it. */}
-            <p className="v2-byo__os" data-testid="byo-setup-os">
-              {t('agentByo.listen.osLabel')}{' '}
-              {SETUP_OS_OPTIONS.map(({ os, labelKey }, i) => (
-                <React.Fragment key={os}>
-                  {i > 0 && ' · '}
-                  <button
-                    type="button"
-                    className="v2-byo__link"
-                    aria-pressed={setupOs === os}
-                    data-testid={`byo-setup-os-${os}`}
-                    onClick={() => setSetupOs(os)}
-                  >
-                    {t(labelKey)}
-                  </button>
-                </React.Fragment>
+            <p className="v2-byo__os" data-testid="byo-setup-os" role="group" aria-label={t('agentByo.listen.osLabel')}>
+              {SETUP_OS_OPTIONS.map(({ os, labelKey }) => (
+                <button
+                  key={os}
+                  type="button"
+                  className="v2-byo__link"
+                  aria-pressed={setupOs === os}
+                  data-testid={`byo-setup-os-${os}`}
+                  onClick={() => setSetupOs(os)}
+                >
+                  {t(labelKey)}
+                </button>
               ))}
             </p>
             {!listenerAvailable && (
