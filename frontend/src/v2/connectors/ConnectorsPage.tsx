@@ -14,6 +14,7 @@ import type { ToolCatalogEntry } from './toolModel';
 import { useChannelConnectors } from './useChannelConnectors';
 import { useToolConnectors } from './useToolConnectors';
 import { useToolPanels } from './ToolPanels';
+import { usePhone } from './usePhone';
 import ChannelPanel from './ChannelPanel';
 import ConnectorDrawer from './ConnectorDrawer';
 import ConnectorLogo from './ConnectorLogo';
@@ -52,6 +53,8 @@ const ConnectorsPage: React.FC = () => {
   const [pop, setPop] = useState<Pop | null>(null);
   const [toolKey, setToolKey] = useState<string | null>(null);
   const [offOpen, setOffOpen] = useState({ channels: false, tools: false });
+  const phone = usePhone();
+  const [searchOpen, setSearchOpen] = useState(false);
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const tileRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
@@ -452,29 +455,53 @@ const ConnectorsPage: React.FC = () => {
     </button>
   ) : null);
 
+  const filterSeg = (
+    <div className="v2-cx-seg" role="group" aria-label={t('connectors.filterLabel', { defaultValue: 'Show' })}>
+      {FILTERS.map((value) => (
+        <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>
+          {t(`connectors.filter.${value}`, { defaultValue: value === 'all' ? 'All' : value === 'channels' ? 'Channels' : 'Tools' })}
+        </button>
+      ))}
+    </div>
+  );
+  const searchBox = (
+    <label className="v2-cx-search">
+      <SearchGlyph />
+      <input
+        type="search"
+        value={search}
+        placeholder={t('connectors.search', { defaultValue: 'Search' })}
+        aria-label={t('connectors.search', { defaultValue: 'Search' })}
+        onChange={(event) => onSearch(event.target.value)}
+      />
+    </label>
+  );
+  // Phone: one grid, channels then tools, the add tile last, one "+N off" under it.
+  const offTotal = offChannels.length + offTools.length + orphanHidden.length;
+  const phoneOffOpen = offOpen.channels || offOpen.tools;
+
   return (
     <div className="v2-cx">
       <header className="v2-cx-head">
         <h1>{t('connectors.title', { defaultValue: 'Connectors' })}</h1>
-        {!c.loading && <span className="v2-cx-head__meta">{meta}</span>}
+        {!phone && !c.loading && <span className="v2-cx-head__meta">{meta}</span>}
         <span className="v2-cx-head__sp" />
-        <label className="v2-cx-search">
-          <SearchGlyph />
-          <input
-            type="search"
-            value={search}
-            placeholder={t('connectors.search', { defaultValue: 'Search' })}
+        {phone ? (
+          <button
+            type="button"
+            className="v2-cx-searchbtn"
             aria-label={t('connectors.search', { defaultValue: 'Search' })}
-            onChange={(event) => onSearch(event.target.value)}
-          />
-        </label>
-        <div className="v2-cx-seg" role="group" aria-label={t('connectors.filterLabel', { defaultValue: 'Show' })}>
-          {FILTERS.map((value) => (
-            <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>
-              {t(`connectors.filter.${value}`, { defaultValue: value === 'all' ? 'All' : value === 'channels' ? 'Channels' : 'Tools' })}
-            </button>
-          ))}
-        </div>
+            aria-expanded={searchOpen}
+            onClick={() => setSearchOpen((open) => !open)}
+          >
+            <SearchGlyph />
+          </button>
+        ) : (
+          <>
+            {searchBox}
+            {filterSeg}
+          </>
+        )}
       </header>
 
       {c.loading && <div className="v2-connectors__loading">{t('connectors.loading', { defaultValue: 'Loading connectors…' })}</div>}
@@ -482,9 +509,44 @@ const ConnectorsPage: React.FC = () => {
       {!c.loading && (
         <div className="v2-cx-body" ref={setContainer}>
           <div className="v2-cx-inner">
+            {phone && filterSeg}
+            {phone && (searchOpen || q) && searchBox}
             {!channelDrawerOpen && !toolDrawerOpen && noticeBlock}
 
-            {showChannels && (
+            {phone && (
+              <>
+                <div className="v2-cx-grid">
+                  {showChannels && liveChannels.map((item) => renderChannelTile(item))}
+                  {showTools && liveTools.map((entry) => renderToolTile(entry))}
+                  {phoneOffOpen && showChannels && offChannels.map((item) => renderChannelTile(item, true))}
+                  {phoneOffOpen && showTools && offTools.map((entry) => renderToolTile(entry, true))}
+                  {showChannels && availableProviders.length > 0 && !q && (
+                    <ConnectorTile
+                      type="add"
+                      name={t('connectors.addChannelTile', { defaultValue: 'Channel' })}
+                      add
+                      onClick={openAdd}
+                    />
+                  )}
+                </div>
+                {offTotal > 0 && (
+                  <button
+                    type="button"
+                    className="v2-cx-off v2-cx-off--phone"
+                    aria-expanded={phoneOffOpen}
+                    onClick={() => setOffOpen({ channels: !phoneOffOpen, tools: !phoneOffOpen })}
+                  >
+                    {t('connectors.offCount', { defaultValue: '+{{n}} off', n: offTotal })}
+                  </button>
+                )}
+                {showTools && orphanGrants.length > 0 && <div className="v2-cx-list">{orphanGrants.map(tp.renderRow)}</div>}
+                {showTools && phoneOffOpen && orphanHidden.length > 0 && (
+                  <div className="v2-cx-list">{orphanHidden.map(tp.renderHiddenConnection)}</div>
+                )}
+              </>
+            )}
+
+            {!phone && showChannels && (
               <section className="v2-cx-group" aria-label={t('connectors.channelsGroup', { defaultValue: 'Channels' })}>
                 <h2 className="v2-cx-group__title">
                   {t('connectors.channelsGroup', { defaultValue: 'Channels' })}
@@ -505,7 +567,7 @@ const ConnectorsPage: React.FC = () => {
               </section>
             )}
 
-            {showTools && (
+            {!phone && showTools && (
               <section className="v2-cx-group" aria-label={t('tools.title', { defaultValue: 'Tools' })}>
                 <h2 className="v2-cx-group__title">
                   {t('tools.title', { defaultValue: 'Tools' })}

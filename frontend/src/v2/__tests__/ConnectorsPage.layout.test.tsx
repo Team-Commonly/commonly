@@ -328,3 +328,53 @@ describe('Connectors page: the tile surface', () => {
     expect(screen.queryByRole('region', { name: 'Discord' })).toBeNull();
   });
 });
+
+describe('Connectors page: phone layout (d215 frame, 390)', () => {
+  const realMatchMedia = window.matchMedia;
+  beforeEach(() => {
+    window.matchMedia = jest.fn().mockImplementation(() => ({
+      matches: true, addEventListener: jest.fn(), removeEventListener: jest.fn(),
+    }));
+  });
+  afterEach(() => { window.matchMedia = realMatchMedia; });
+
+  it('is one grid with no group titles, the filter under the head and search behind an icon', async () => {
+    mockCatalog([channel('telegram', 'Telegram'), liveSlack, tool('github', 'GitHub'), tool('linear', 'Linear')]);
+    renderPage();
+
+    await findTile('GitHub');
+    expect(document.querySelectorAll('.v2-cx-grid')).toHaveLength(1);
+    expect(document.querySelector('.v2-cx-group__title')).toBeNull();
+    expect(document.querySelector('.v2-cx-head__meta')).toBeNull();
+    // the filter sits in the body under the 52px head, not in it
+    expect(document.querySelector('.v2-cx-head .v2-cx-seg')).toBeNull();
+    expect(document.querySelector('.v2-cx-body .v2-cx-seg')).not.toBeNull();
+    // channels first, tools next, the add tile last
+    const names = Array.from(document.querySelectorAll('.v2-cx-tile')).map((node) => node.getAttribute('title'));
+    expect(names.slice(0, 4)).toEqual(expect.arrayContaining(['Telegram', 'Slack', 'GitHub', 'Linear']));
+    expect(names[names.length - 1]).toBe('Channel');
+
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(screen.getByRole('searchbox')).toBeInTheDocument();
+  });
+
+  it('folds every inactive tile under one +N off', async () => {
+    mockCatalog([
+      channel('discord', 'Discord', { available: false }),
+      tool('github', 'GitHub'),
+      tool('linear', 'Linear', { available: false, connections: [] }),
+    ]);
+    renderPage();
+
+    await findTile('GitHub');
+    const toggles = document.querySelectorAll('.v2-cx-off');
+    expect(toggles).toHaveLength(1);
+    expect(toggles[0]).toHaveTextContent('+2 off');
+    expect(document.querySelector('.v2-cx-tile[title="Discord"]')).toBeNull();
+    fireEvent.click(toggles[0]);
+    expect(await findTile('Discord')).toBeInTheDocument();
+    expect(await findTile('Linear')).toBeInTheDocument();
+  });
+});
+

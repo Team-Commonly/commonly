@@ -23,6 +23,9 @@
 .v2-cx-head h1 { margin: 0; font: 800 24px/1 var(--v2-font-display, inherit); letter-spacing: -0.03em; white-space: nowrap; }
 .v2-cx-head__meta { font: 500 11.5px/1 var(--v2-font-mono, ui-monospace, monospace); color: var(--v2-text-muted); white-space: nowrap; }
 .v2-cx-head__sp { flex: 1; }
+.v2-cx-searchbtn { all: unset; box-sizing: border-box; display: none; cursor: pointer; place-items: center; width: 44px; height: 44px; margin-right: -8px; border-radius: 8px; color: var(--v2-text-secondary); }
+.v2-cx-searchbtn svg { width: 18px; height: 18px; }
+.v2-cx-searchbtn:focus-visible { box-shadow: 0 0 0 2px var(--v2-accent); }
 .v2-cx-search { flex: none; width: 260px; height: 34px; border-radius: 10px; background: var(--v2-bg-subtle); box-shadow: inset 0 0 0 1px var(--v2-border-soft); display: flex; align-items: center; gap: 7px; padding: 0 10px; color: var(--v2-text-placeholder); min-width: 0; }
 .v2-cx-search svg { flex: none; width: 15px; height: 15px; }
 .v2-cx-search input { all: unset; flex: 1; min-width: 0; font-size: 13px; color: var(--v2-text-primary); }
@@ -89,10 +92,14 @@
 
 /* phone: three to a row, a tab bar below (the shell's), the reveal as a sheet */
 @media (max-width: 640px) {
-  .v2-cx-head { min-height: 52px; padding: 10px 10px 0 12px; gap: 8px; flex-wrap: wrap; }
+  .v2-cx-head { min-height: 52px; height: 52px; padding: 0 12px; gap: 8px; border-bottom: 0; }
   .v2-cx-head h1 { font-size: 21px; }
-  .v2-cx-search { width: auto; flex: 1 1 100%; order: 3; margin: 0 0 10px; }
+  .v2-cx-searchbtn { display: grid; }
   .v2-cx-body { padding: 12px; }
+  .v2-cx-body .v2-cx-seg { display: flex; width: 100%; box-sizing: border-box; margin: 0 0 10px; }
+  .v2-cx-body .v2-cx-seg button { flex: 1 1 0; }
+  .v2-cx-body .v2-cx-search { width: auto; margin: 0 0 10px; }
+  .v2-cx-off--phone { display: block; margin: 10px 0 0 4px; font: 500 11.5px/1 var(--v2-font-mono, ui-monospace, monospace); }
   .v2-cx-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
   .v2-cx-tile { height: 104px; }
 }
