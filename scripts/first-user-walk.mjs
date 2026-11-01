@@ -14,6 +14,12 @@
  * Usage:
  *   COMMONLY_WALK_PASSWORD=... node scripts/first-user-walk.mjs [--base https://api.commonly.me]
  *
+ * Staging: signup needs a verified email, so SRE's shared walk account is used
+ * instead. Set COMMONLY_WALK_EMAIL and COMMONLY_WALK_PASSWORD from env (never a
+ * flag default or a file in the repo) and pass the staging API as --base. The
+ * run signs in, removes only its own pods, seats and agents, and never deletes
+ * that account. A COMMONLY_WALK_EMAIL aimed at any other host is refused.
+ *
  * Not yet covered: the Bring your own connect step (copy the command, run it
  * under a throwaway HOME, get a live reply). It is reported as NOT COVERED and
  * the run exits 2, so a green run never claims more than it checked.
@@ -22,7 +28,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { cleanupRun, ownerOf } from './first-user-walk-cleanup.mjs';
+import { cleanupRun, ownerOf, recoverRunPods } from './first-user-walk-cleanup.mjs';
+import { chooseWalkMode } from './first-user-walk-mode.mjs';
 
 const WALK_PREFIX = 'walk-';
 // Every request is bounded, cleanup included, so one stalled socket cannot
@@ -39,12 +46,14 @@ const BASE = (flag('base', process.env.COMMONLY_API_URL || 'https://api.commonly
 const now = Date.now();
 const stamp = now.toString(36);
 const username = `${WALK_PREFIX}${stamp}`;
-const email = `${username}@example.invalid`;
+let email = `${username}@example.invalid`;
 const agentName = `${username}-agent`;
 const results = [];
 let step = 'init';
 // True once signup may have created the account, so cleanup knows to look for it.
 let accountMayExist = false;
+// 'signup' makes a fresh account; 'signin' uses the shared staging account and never deletes it.
+let walkMode = { mode: 'signup' };
 
 const api = async (method, path, { token, body } = {}) => {
   const res = await fetch(`${BASE}${path}`, {
@@ -55,6 +64,8 @@ const api = async (method, path, { token, body } = {}) => {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
+    // A redirect would replay the JSON body, shared password included, to another origin.
+    redirect: 'error',
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   let data = null;
@@ -87,7 +98,10 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 const STATE_DIR = process.env.COMMONLY_WALK_STATE_DIR || path.join(homedir(), '.commonly', 'state', 'walk-706');
 // Signup returns no user id, so the manifest carries the exact username instead:
 // SRE finds the account by that name, not by a prefix. Never the email.
-const manifest = { userId: null, username: null, podIds: [], agentName: null, botIds: [], survivors: [], status: 'running' };
+const manifest = { mode: null, userId: null, username: null, podIds: [], unresolvedPodNames: [], agentName: null, botIds: [], survivors: [], status: 'running' };
+// A pod whose create outcome could not be checked. Its name is unique to the run,
+// so SRE can find it by exact name, the same way as the account.
+const unresolvedSurvivors = () => manifest.unresolvedPodNames.map((name) => `pod named "${name}" (create outcome unknown)`);
 const writeManifest = () => {
   mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
   writeFileSync(path.join(STATE_DIR, `${stamp}.json`), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
@@ -113,6 +127,7 @@ const cleanup = async (token, password) => {
     manifest.survivors = [
       ...manifest.podIds.map((id) => `pod:${id} (no sign-in for cleanup)`),
       ...(accountMayExist ? [`account ${manifest.username} (no sign-in for cleanup)`] : []),
+      ...unresolvedSurvivors(),
     ];
     manifest.status = manifest.survivors.length ? 'needs-admin-purge' : 'clean';
     writeManifest();
@@ -128,6 +143,7 @@ const cleanup = async (token, password) => {
       userId: manifest.userId,
       agentName,
       podIds: manifest.podIds,
+      deleteAccount: walkMode.deleteAccount,
       // Persist each pod's bot ids before that pod is deleted, so a throw
       // later in the loop still leaves the ids SRE needs.
       onBotIds: (podId, bots) => {
@@ -135,11 +151,11 @@ const cleanup = async (token, password) => {
         writeManifest();
       },
     });
-    manifest.survivors = result.survivors;
+    manifest.survivors = [...result.survivors, ...unresolvedSurvivors()];
     manifest.botIds = [...new Set([...manifest.botIds, ...result.botIds])];
-    manifest.status = result.ok ? 'clean' : 'needs-admin-purge';
+    manifest.status = result.ok && manifest.survivors.length === 0 ? 'clean' : 'needs-admin-purge';
   } catch (error) {
-    manifest.survivors = [`cleanup error: ${error.message}`];
+    manifest.survivors = [`cleanup error: ${error.message}`, ...unresolvedSurvivors()];
     manifest.status = 'needs-admin-purge';
   }
   writeManifest();
@@ -151,27 +167,33 @@ const cleanup = async (token, password) => {
 const main = async () => {
   const password = process.env.COMMONLY_WALK_PASSWORD;
   if (!password) throw new Error('COMMONLY_WALK_PASSWORD is not set');
+  walkMode = chooseWalkMode({ base: BASE, env: process.env });
+  if (walkMode.mode === 'signin') email = walkMode.email;
+  manifest.mode = walkMode.mode;
 
   let token = null;
   let exitCode = 0;
   try {
-    await runStep('signup', async () => {
-      manifest.username = username;
-      writeManifest();
-      let r;
-      try {
-        r = await api('POST', '/api/auth/register', { body: { username, email, password } });
-      } catch (error) {
-        accountMayExist = true; // the request may have landed before the failure
-        throw error;
-      }
-      if (r.status === 201) accountMayExist = true;
-      expect(r.status === 201, `register ${r.status}: ${JSON.stringify(r.data)}`);
-    });
+    if (walkMode.mode === 'signup') {
+      await runStep('signup', async () => {
+        manifest.username = username;
+        writeManifest();
+        let r;
+        try {
+          r = await api('POST', '/api/auth/register', { body: { username, email, password } });
+        } catch (error) {
+          accountMayExist = true; // the request may have landed before the failure
+          throw error;
+        }
+        if (r.status === 201) accountMayExist = true;
+        expect(r.status === 201, `register ${r.status}: ${JSON.stringify(r.data)}`);
+      });
+    }
 
     token = await runStep('login', async () => {
       const r = await api('POST', '/api/auth/login', { body: { email, password } });
-      expect(r.status === 200 && r.data?.token, `login ${r.status}: ${JSON.stringify(r.data)}`);
+      // Status and error code only: a body could echo the shared email into the log.
+      expect(r.status === 200 && r.data?.token, `login ${r.status}${r.data?.code ? ` ${r.data.code}` : ''}`);
       expect(r.data.user?.role !== 'admin', 'walk account is admin; the walk is meaningless');
       manifest.userId = String(r.data.user?._id || r.data.user?.id || '');
       expect(manifest.userId, 'login returned no user id');
@@ -181,7 +203,9 @@ const main = async () => {
 
     // Signup creates a workspace pod. Check it exists before the walk makes its
     // own pod, so a failed signup workspace cannot be hidden by the second pod.
-    await runStep('signup-workspace', async () => {
+    // Signup-only: on the shared account a workspace pod already exists, and
+    // recording it here would make cleanup delete a pod this run did not create.
+    if (walkMode.mode === 'signup') await runStep('signup-workspace', async () => {
       const list = await api('GET', '/api/pods', { token });
       const pods = Array.isArray(list.data) ? list.data : (list.data?.pods || []);
       const owned = list.status === 200 ? pods.filter((p) => ownerOf(p) === manifest.userId) : [];
@@ -193,8 +217,27 @@ const main = async () => {
     });
 
     const pod = await runStep('first-pod', async () => {
-      const r = await api('POST', '/api/pods', { token, body: { name: `${username} workspace`, type: 'team' } });
+      const podName = `${username} workspace`;
+      // An error, or a reply without an id, may still mean the pod was made.
+      // Look for it by its unique name before the step can fail, so cleanup
+      // removes it, or the name is reported as unresolved.
+      const recover = async () => {
+        if (!await recoverRunPods({ api, token, userId: manifest.userId, podName, podIds: manifest.podIds })) {
+          manifest.unresolvedPodNames.push(podName);
+        }
+        writeManifest();
+      };
+      let r;
+      try {
+        r = await api('POST', '/api/pods', { token, body: { name: podName, type: 'team' } });
+      } catch (error) {
+        await recover();
+        throw error;
+      }
       const created = r.data?.pod || r.data;
+      // Any reply without a created pod may still have committed one, including a
+      // 4xx or 5xx, so the outcome is checked by name rather than trusted.
+      if (!(r.status < 300 && created?._id)) await recover();
       expect(r.status < 300 && created?._id, `pod create ${r.status}: ${JSON.stringify(r.data)}`);
       manifest.podIds.push(String(created._id));
       writeManifest();
