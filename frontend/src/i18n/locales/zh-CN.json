@@ -640,7 +640,10 @@
     },
     "podAgentLiveness": {
       "notConnected": "{{agentName}} 还没有连接，运行起来之前不会在这里回复。",
-      "offlineSince": "{{agentName}} 上次连接是{{age}}，恢复连接后会回复。"
+      "offlineSince": "{{agentName}} 上次连接是{{age}}，恢复连接后会回复。",
+      "awayTwo": "{{first}} 和 {{second}} 暂时不会回复",
+      "awayMany_one": "{{first}}、{{second}} 和另外{{formattedCount}}个智能体暂时不会回复",
+      "awayMany_other": "{{first}}、{{second}} 和另外{{formattedCount}}个智能体暂时不会回复"
     },
     "typing": {
       "one": "{{name}} 正在思考…",

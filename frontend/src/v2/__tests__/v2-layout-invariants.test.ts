@@ -5846,4 +5846,19 @@ describe('chat sheets lifted out of v2.css (S3)', () => {
   test('every token the chat sheets read is defined', () => {
     for (const sheet of chatSheets) expect(sheet).not.toMatch(/var\(--v2-text\)/);
   });
+
+  test('two or more agents away stay one 40px line that opens to a scrolling list', () => {
+    const states = chatSheets[4];
+    // The notice row is a flex row; as a disclosure it must be a block, or the summary and the list sit side by side.
+    expect(ruleBody(states, '.v2-chat__agent-room-status.v2-chat__agents-away')).toContain('display: block');
+    const summary = ruleBody(states, '.v2-chat__agents-away > summary');
+    expect(summary).toContain('display: flex');
+    expect(summary).toContain('min-height: 40px');
+    expect(ruleBody(states, '.v2-chat__agents-away-chev')).toContain('flex: none');
+    expect(ruleBody(states, '.v2-chat__agents-away[open] .v2-chat__agents-away-chev')).toContain('transform: rotate(180deg)');
+    const list = ruleBody(states, '.v2-chat__agents-away > ul');
+    expect(list).toContain('display: grid');
+    expect(list).toContain('max-height: 132px');
+    expect(list).toContain('overflow-y: auto');
+  });
 });

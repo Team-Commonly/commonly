@@ -88,7 +88,6 @@ interface AgentStateRow {
   fixCommand?: string;
 }
 const REACH_IS_ACTIVE = new Set<AgentReachState>(['listening', 'reachable']);
-const POD_LIVENESS_MAX_ROWS = 3;
 
 interface DirectAgentIdentity {
   username: string;
@@ -231,7 +230,7 @@ interface V2ThreadProps {
 }
 
 const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite, onOpenFile, onBack, onDecisionSettled }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const {
     pod, members, messages, agents, sendMessage, loading, error, sendError,
     hasMore, loadingOlder, loadOlder,
@@ -1582,7 +1581,24 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const podAgentLiveness = isAgentRoom || isAgentDm ? [] : agentStates.filter((s) => (
     typeof s?.agentName === 'string' && s.agentName
     && (s.state === 'never-connected' || s.state === 'gone-dark')
-  )).slice(0, POD_LIVENESS_MAX_ROWS);
+  ));
+  const podAgentLivenessLine = (row: typeof podAgentLiveness[number]) => (
+    row.state === 'never-connected' || !row.lastUsedAt
+      ? t('podChat.podAgentLiveness.notConnected', { agentName: row.displayName || row.agentName })
+      : t('podChat.podAgentLiveness.offlineSince', {
+        agentName: row.displayName || row.agentName,
+        age: localizeRelativeTime(row.lastUsedAt, t),
+      })
+  );
+  const awayNames = podAgentLiveness.map((row) => row.displayName || row.agentName);
+  const podAgentsAwaySummary = awayNames.length === 2
+    ? t('podChat.podAgentLiveness.awayTwo', { first: awayNames[0], second: awayNames[1] })
+    : t('podChat.podAgentLiveness.awayMany', {
+      first: awayNames[0],
+      second: awayNames[1],
+      count: awayNames.length - 2,
+      formattedCount: new Intl.NumberFormat(i18n.resolvedLanguage || i18n.language || 'en').format(awayNames.length - 2),
+    });
   const showAwaitingAgentReply = Boolean(
     isAgentRoom && awaitingAgentReply && awaitingAgentReply.podId === pod._id,
   );
@@ -2248,23 +2264,41 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                   </div>
                 </div>
               )}
-              {podAgentLiveness.map((row) => (
+              {podAgentLiveness.length === 1 && (
                 <div
-                  key={`${row.agentName}:${row.instanceId}`}
                   className="v2-chat__agent-room-status"
                   data-testid="pod-agent-liveness"
                   role="status"
                 >
-                  <div className="v2-chat__agent-room-status-body">
-                    {row.state === 'never-connected' || !row.lastUsedAt
-                      ? t('podChat.podAgentLiveness.notConnected', { agentName: row.displayName || row.agentName })
-                      : t('podChat.podAgentLiveness.offlineSince', {
-                        agentName: row.displayName || row.agentName,
-                        age: localizeRelativeTime(row.lastUsedAt, t),
-                      })}
-                  </div>
+                  <div className="v2-chat__agent-room-status-body">{podAgentLivenessLine(podAgentLiveness[0])}</div>
                 </div>
-              ))}
+              )}
+              {/* Two or more agents away fold into one line that opens to the
+                  list (d215 #s-chat "Agents away"), so the notices never stack
+                  over the transcript. */}
+              {/* A summary's children are presentational, so the live region
+                  sits beside the line rather than inside it. */}
+              {podAgentLiveness.length > 1 && (
+                <span className="v2-chat__agents-away-live" role="status">{podAgentsAwaySummary}</span>
+              )}
+              {podAgentLiveness.length > 1 && (
+                <details className="v2-chat__agent-room-status v2-chat__agents-away" data-testid="pod-agents-away">
+                  <summary>
+                    <span className="v2-chat__agent-room-status-icon" aria-hidden="true">
+                      <ShellGlyph name="info" size={16} />
+                    </span>
+                    <span className="v2-chat__agent-room-status-body">{podAgentsAwaySummary}</span>
+                    <span className="v2-chat__agents-away-chev" aria-hidden="true">
+                      <ShellGlyph name="chevron" size={16} />
+                    </span>
+                  </summary>
+                  <ul>
+                    {podAgentLiveness.map((row) => (
+                      <li key={`${row.agentName}:${row.instanceId}`} data-testid="pod-agent-liveness">{podAgentLivenessLine(row)}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
               {showAwaitingAgentReply && awaitingAgentReply && (
                 <div
                   className={`v2-chat__agent-room-status${awaitingAgentReply.timedOut ? '' : ' v2-chat__agent-room-status--wait'}`}
