@@ -108,8 +108,8 @@ describe('V2AgentMemory', () => {
     );
     await waitFor(() => expect(screen.getByRole('heading', { name: /Journal/ })).toBeInTheDocument());
     // Rules and How I work each carry the long_term time; Journal has none.
-    expect(document.querySelectorAll('.v2-agent-memory__gmeta')).toHaveLength(2);
-    expect(document.querySelectorAll('.v2-agent-memory__mnote .v2-agent-memory__gmeta')).toHaveLength(0);
+    expect(document.querySelectorAll('.v2m-saved')).toHaveLength(2);
+    expect(document.querySelectorAll('.v2m-mnote .v2m-saved')).toHaveLength(0);
   });
 
   it('keeps the agent header, tabs and nav when the viewer cannot read entries, with the empty state inside', async () => {
@@ -123,8 +123,8 @@ describe('V2AgentMemory', () => {
     );
     await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument());
     expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Profile' })).toBeInTheDocument();
-    expect(document.querySelector('.v2-agent-memory__nav')).not.toBeNull();
-    expect(document.querySelector('.v2-agent-memory__body [role="status"]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Profile' })).toBeInTheDocument();
+    expect(document.querySelector('.v2m-mnav')).not.toBeNull();
+    expect(document.querySelector('.v2m-body [role="status"]')).not.toBeNull();
   });
 });

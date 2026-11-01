@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import V2Avatar from '../components/V2Avatar';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
-import './v2-agent-settings.css';
+import '../primitives/primitives.css';
+import './V2AgentMemory.css';
 
 // Owner/admin memory index, as served by GET /api/agent-memory/:agentName/:instanceId.
 interface MemoryNote { header: string; snippet: string }
@@ -73,7 +74,7 @@ const ICON_PATHS: Record<'pin' | 'brain' | 'cal' | 'search' | 'info' | 'chev', R
   info: <><circle cx="12" cy="12" r="9" /><path d="M12 16v-4M12 8h.01" /></>,
 };
 const MemIcon: React.FC<{ name: keyof typeof ICON_PATHS; size?: number; className?: string }> = ({ name, size = 16, className }) => (
-  <svg className={`v2-agent-memory__icon${className ? ` ${className}` : ''}`} viewBox="0 0 24 24" width={size} height={size} aria-hidden="true"
+  <svg className={`i${className ? ` ${className}` : ''}`} viewBox="0 0 24 24" width={size} height={size} aria-hidden="true"
     fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
     {ICON_PATHS[name]}
   </svg>
@@ -82,32 +83,33 @@ const GROUP_ICON: Record<GroupId, 'pin' | 'brain' | 'cal'> = { rules: 'pin', how
 
 // The D215 frame without entries: same nav and body, the state sits inside it.
 const MemoryShell: React.FC<{ loading: boolean; message: string; loadingLabel: string; query: string; setQuery: (q: string) => void; searchLabel: string; navLabel: string }> = ({ loading, message, loadingLabel, query, setQuery, searchLabel, navLabel }) => (
-  <div className="v2-agent-memory">
-    <aside className="v2-agent-memory__nav" aria-label={navLabel}>
+  <div className="v2m-mem">
+    <nav className="v2m-mnav" aria-label={navLabel}>
       <ul>
         {MEMORY_GROUPS.map((g) => (
           <li key={g.id}>
-            <span className="v2-agent-memory__navitem">
+            <span className="v2m-navitem">
               <MemIcon name={GROUP_ICON[g.id]} />
               {g.label}
-              <span className="v2-agent-memory__count">0</span>
+              <span className="mo">0</span>
             </span>
           </li>
         ))}
       </ul>
-      <label className="v2-agent-memory__search">
+      <label className="v2m-search">
         <MemIcon name="search" size={15} />
         <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={searchLabel} aria-label={searchLabel} />
       </label>
-    </aside>
-    <div className="v2-agent-memory__body">
-      <p className="v2-agent-settings__muted" role="status">{loading ? loadingLabel : message}</p>
+    </nav>
+    <div className="v2m-body">
+      <p className="v2m-state" role="status">{loading ? loadingLabel : message}</p>
     </div>
   </div>
 );
 
 const V2AgentMemory: React.FC = () => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { agentName = '', instanceId = '' } = useParams<{ agentName: string; instanceId: string }>();
   const [index, setIndex] = useState<MemoryIndex | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'denied'>('loading');
@@ -145,23 +147,27 @@ const V2AgentMemory: React.FC = () => {
 
   const profileHref = `/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`;
   const settingsHref = `/v2/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`;
+  const memoryLabel = t('agentSettings.memory', { defaultValue: 'Memory' });
+  const searchLabel = t('agentProfile.memory.search', { defaultValue: 'Search memory' });
 
   return (
-    <main className="v2-agent-settings v2-agent-memory-page">
-      <header className="v2-agent-memory__head">
+    <main className="v2m-page">
+      <header className="v2p-ph">
         <V2Avatar name={head?.displayName || agentName} src={head?.profilePicture} size="lg" kind="agent" seed={`${agentName}:${instanceId}`} />
-        <div className="v2-agent-memory__ident">
+        <div className="v2m-ahead">
           <h1>{head?.displayName || agentName}</h1>
-          {head && <p>{t('agentProfile.hero.activeInPods', { count: head.pods })}</p>}
+          {head && <p className="st">{t('agentProfile.hero.activeInPods', { count: head.pods })}</p>}
         </div>
-        <nav className="v2-agent-settings__tabs v2-agent-memory__seg" aria-label={t('agentSettings.tabs')}>
-          <Link to={profileHref}>{t('agentSettings.profile')}</Link>
-          <span aria-current="page">{t('agentSettings.memory', { defaultValue: 'Memory' })}</span>
-          <Link to={settingsHref}>{t('agentSettings.settings')}</Link>
+        <span className="sp" />
+        <nav className="v2p-seg" aria-label={t('agentSettings.tabs')}>
+          <button type="button" onClick={() => navigate(profileHref)}>{t('agentSettings.profile')}</button>
+          <button type="button" className="on" aria-current="page">{memoryLabel}</button>
+          <button type="button" onClick={() => navigate(settingsHref)}>{t('agentSettings.settings')}</button>
         </nav>
+        <span className="sp" />
       </header>
-      <div className="v2-agent-memory-page__body">
-      {state === 'ready' && index ? null : <MemoryShell loading={state === 'loading'} message={state === 'denied' ? t('agentProfile.memory.none', { defaultValue: 'No memory recorded yet.' }) : ''} loadingLabel={t('common.loading', { defaultValue: 'Loading…' })} query={query} setQuery={setQuery} searchLabel={t('agentProfile.memory.search', { defaultValue: 'Search memory' })} navLabel={t('agentSettings.memory', { defaultValue: 'Memory' })} />}
+      <div className="v2m-pbody">
+      {state === 'ready' && index ? null : <MemoryShell loading={state === 'loading'} message={state === 'denied' ? t('agentProfile.memory.none', { defaultValue: 'No memory recorded yet.' }) : ''} loadingLabel={t('common.loading', { defaultValue: 'Loading…' })} query={query} setQuery={setQuery} searchLabel={searchLabel} navLabel={memoryLabel} />}
       {state === 'ready' && index && (() => {
         const needle = query.trim().toLowerCase();
         const groups = groupSections(index.sections)
@@ -176,62 +182,63 @@ const V2AgentMemory: React.FC = () => {
               }))
               .filter((sec) => sec.notes.length > 0),
           }));
+        const firstShown = groups.find((g) => g.sections.length > 0)?.id;
         return (
-          <div className="v2-agent-memory">
-            <aside className="v2-agent-memory__nav" aria-label={t('agentSettings.memory', { defaultValue: 'Memory' })}>
+          <div className="v2m-mem">
+            <nav className="v2m-mnav" aria-label={memoryLabel}>
               <ul>
                 {groups.map((group) => (
                   <li key={group.id}>
                     <a href={`#memory-group-${group.id}`}>
                       <MemIcon name={GROUP_ICON[group.id]} />
                       {group.label}
-                      <span className="v2-agent-memory__count">{group.sections.reduce((n, s) => n + s.notes.length, 0)}</span>
+                      <span className="mo">{group.sections.reduce((n, s) => n + s.notes.length, 0)}</span>
                     </a>
                   </li>
                 ))}
               </ul>
-              <label className="v2-agent-memory__search">
+              <label className="v2m-search">
                 <MemIcon name="search" size={15} />
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={t('agentProfile.memory.search', { defaultValue: 'Search memory' })}
-                  aria-label={t('agentProfile.memory.search', { defaultValue: 'Search memory' })}
-                />
+                <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={searchLabel} aria-label={searchLabel} />
               </label>
-            </aside>
-            <div className="v2-agent-memory__body">
+            </nav>
+            <div className="v2m-body">
               {groups.filter((g) => g.sections.length > 0).map((group) => {
                 // One time per group: the newest section update in it. Never per note.
                 const updated = group.sections.map((s) => s.updatedAt).filter(Boolean).sort().pop() ?? null;
                 return (
-                  <details key={group.id} id={`memory-group-${group.id}`} className="v2-agent-memory__group" open>
-                    <summary className="v2-agent-memory__gtitle">
-                      <span role="heading" aria-level={2} className="v2-agent-memory__gheading">
+                  <details key={group.id} id={`memory-group-${group.id}`} className="v2m-grp" open>
+                    <summary className="v2m-gtitle">
+                      <span role="heading" aria-level={2} className="v2m-gheading">
                         <MemIcon name={GROUP_ICON[group.id]} size={13} />
                         {group.label}
                       </span>
                       {updated && (
-                        <span className="v2-agent-memory__gmeta">
+                        <span className="v2m-saved">
                           {t('agentProfile.memory.sectionUpdated', { defaultValue: 'Section updated {{when}}', when: localizeRelativeTime(updated, t) })}
                         </span>
                       )}
-                      <MemIcon name="chev" size={13} className="v2-agent-memory__chev" />
+                      {group.id === firstShown && (
+                        <button type="button" className="v2m-info" aria-label={t('agentProfile.memory.moreAbout', { defaultValue: 'More about this' })}>
+                          <MemIcon name="info" size={15} />
+                          <span className="tip" role="tooltip">{t('agentProfile.memory.privacy', { defaultValue: 'Memory is private to you and the agent. The agent writes it.' })}</span>
+                        </button>
+                      )}
+                      <MemIcon name="chev" size={13} className="v2m-chev" />
                     </summary>
-                    <ul className="v2-agent-memory__list">
+                    <ul className="v2p-list v2m-list">
                       {group.sections.flatMap((sec) => sec.notes).map((n, i) => (
                         group.id === 'journal' ? (
-                          <li key={i} className="v2-agent-memory__jday">
-                            <span className="v2-agent-memory__jdate">{n.header}</span>
+                          <li key={i} className="v2m-jday">
+                            <span className="mo">{n.header}</span>
                             <span>{n.snippet}</span>
                           </li>
                         ) : (
-                          <li key={i} className="v2-agent-memory__mnote">
+                          <li key={i} className="v2m-mnote">
                             <MemIcon name={GROUP_ICON[group.id]} />
                             <div>
-                              <div className="v2-agent-memory__tx">{n.header}</div>
-                              {n.snippet && <div className="v2-agent-memory__snip">{n.snippet}</div>}
+                              <div className="tx">{n.header}</div>
+                              {n.snippet && <div className="snip">{n.snippet}</div>}
                             </div>
                           </li>
                         )

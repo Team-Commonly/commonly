@@ -5090,28 +5090,35 @@ describe('agent Identity editor', () => {
   });
 });
 
-describe('agent Memory tab (TASK-690 slice 1 and 2)', () => {
-  const css = read('../agents/v2-agent-settings.css');
-  const desktop = blockContaining(css, '@media (min-width: 768px)', '.v2-agent-memory');
-  const phone = blockContaining(css, '@media (max-width: 767px)', '.v2-agent-memory__nav ul');
+describe('agent Memory tab (TASK-732 lift of d215 #s-memory)', () => {
+  const css = read('../agents/V2AgentMemory.css');
+  const desktop = blockContaining(css, '@media (min-width: 768px)', '.v2m-grp > summary');
+  const phone = blockContaining(css, '@media (max-width: 767px)', '.v2m-mnav ul');
   test('desktop keeps the group nav beside the notes at 200px', () => {
-    expect(ruleBody(css, '.v2-agent-memory')).toContain('display: grid');
-    expect(ruleBody(css, '.v2-agent-memory', { within: desktop })).toContain('grid-template-columns: 200px minmax(0, 1fr)');
+    expect(ruleBody(css, '.v2m-mem')).toContain('grid-template-columns: 200px minmax(0, 1fr)');
   });
   test('the page spans the pane instead of a centred column', () => {
-    const page = ruleBody(css, '.v2-agent-memory-page');
+    const page = ruleBody(css, '.v2m-page');
     expect(page).toContain('width: 100%');
-    expect(page).toContain('max-width: none');
     expect(page).toContain('align-self: stretch');
+    expect(page).not.toContain('max-width');
   });
-  test('phone hides the group nav and makes the groups collapsible', () => {
-    expect(ruleBody(css, '.v2-agent-memory__nav ul', { within: phone })).toContain('display: none');
-    expect(ruleBody(css, '.v2-agent-memory__gtitle', { within: phone })).toContain('cursor: pointer');
+  test('the header is the frame agent bar: 76px tall, 28px left padding', () => {
+    const ph = ruleBody(css, '.v2m-page .v2p-ph');
+    expect(ph).toContain('height: 76px');
+    expect(ph).toContain('padding-left: 28px');
+  });
+  test('phone hides the group nav and makes the groups collapsible rows', () => {
+    expect(ruleBody(css, '.v2m-mnav ul', { within: phone })).toContain('display: none');
+    expect(ruleBody(css, '.v2m-grp > summary', { within: phone })).toContain('cursor: pointer');
+    expect(ruleBody(css, '.v2m-gtitle', { within: phone })).toContain('height: 44px');
   });
   test('desktop group titles do not take pointer input, and the chevron is phone-only', () => {
-    const titles = blockContaining(css, '@media (min-width: 768px)', '.v2-agent-memory__gtitle');
-    expect(ruleBody(css, '.v2-agent-memory__gtitle', { within: titles })).toContain('pointer-events: none');
-    expect(ruleBody(css, '.v2-agent-memory__chev')).toContain('display: none');
+    expect(ruleBody(css, '.v2m-grp > summary', { within: desktop })).toContain('pointer-events: none');
+    expect(ruleBody(css, '.v2m-gtitle .v2m-chev')).toContain('display: none');
+  });
+  test('the old memory rules are gone from the agent settings sheet', () => {
+    expect(read('../agents/v2-agent-settings.css')).not.toContain('v2-agent-memory');
   });
 });
 

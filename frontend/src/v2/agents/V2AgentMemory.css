@@ -1,0 +1,84 @@
+/* Agent memory (TASK-732, D223 lift). Lifted from docs/design/artboards/d215
+   #s-memory: the artboard's .ahead, .mem, .mnav, .gtitle, .list, .mnote, .jday,
+   details.grp and .info blocks, with the frame's values and the --v2-* token
+   mapping from primitives.css. Class names keep the frame's names under a v2m-
+   prefix so they cannot collide with existing v2 rules. The header, segment,
+   list and group title come from the v2p- primitives. */
+
+.v2m-page { width: 100%; min-width: 0; align-self: stretch; display: flex; flex-direction: column; box-sizing: border-box; }
+.v2m-page .v2p-ph { height: 76px; padding-left: 28px; }
+.v2m-ahead { display: block; min-width: 0; }
+.v2m-ahead h1 { font: 800 24px/1 var(--v2-font-display); letter-spacing: -0.03em; margin: 0; white-space: nowrap; }
+.v2m-ahead .st { display: flex; align-items: center; gap: 6px; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-muted); margin: 5px 0 0; }
+.v2m-pbody { flex: 1; min-height: 0; padding: 24px 28px; box-sizing: border-box; }
+
+.v2m-mem { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; align-items: start; }
+.v2m-mnav { display: grid; gap: 2px; align-content: start; }
+.v2m-mnav ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.v2m-mnav a,
+.v2m-mnav .v2m-navitem { display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 10px; border-radius: var(--v2-r-8); font-size: 13.5px; color: var(--v2-ink-2); text-decoration: none; }
+.v2m-mnav a:hover { background: var(--v2-surface-tint); }
+.v2m-mnav a:focus-visible { box-shadow: var(--v2-focus-ring); outline: none; }
+.v2m-mnav svg.i { width: 16px; height: 16px; flex: none; color: var(--v2-text-secondary); }
+.v2m-mnav .mo { margin-left: auto; font-size: 11px; color: var(--v2-text-muted); }
+.v2m-search { display: flex; align-items: center; gap: 7px; height: 32px; margin-top: 12px; box-sizing: border-box; padding: 0 8px 0 10px; min-width: 0; border-radius: var(--v2-r-10); background: var(--v2-page-bg); box-shadow: inset 0 0 0 1px var(--v2-border-soft); color: var(--v2-text-placeholder); font-size: 13px; }
+.v2m-search svg.i { width: 15px; height: 15px; flex: none; }
+.v2m-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--v2-text-primary); font: inherit; }
+.v2m-search:focus-within { box-shadow: var(--v2-focus-ring); }
+.v2m-body { display: grid; min-width: 0; align-content: start; }
+
+/* Group title: the frame's .gtitle, with the saved time and the info tip at the end. */
+.v2m-grp { margin-bottom: 18px; }
+.v2m-grp > summary { list-style: none; }
+.v2m-grp > summary::-webkit-details-marker { display: none; }
+.v2m-gtitle { display: flex; align-items: center; gap: 8px; margin: 0 4px 8px; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2m-gheading { display: inline-flex; align-items: center; gap: 8px; }
+.v2m-gtitle svg.i { width: 13px; height: 13px; flex: none; }
+.v2m-gtitle .v2m-saved { margin-left: auto; font-weight: 400; }
+.v2m-gtitle .v2m-chev { display: none; }
+
+.v2m-info { all: unset; cursor: help; position: relative; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: var(--v2-text-placeholder); vertical-align: middle; }
+.v2m-info svg.i { width: 15px; height: 15px; }
+.v2m-info:hover, .v2m-info:focus-visible { color: var(--v2-text-primary); }
+.v2m-info .tip { display: none; position: absolute; z-index: 30; top: 24px; right: -8px; width: 260px; padding: 10px 12px; border-radius: var(--v2-r-10); background: var(--v2-surface); box-shadow: var(--v2-shadow-pop); font: 400 12.5px/1.45 var(--v2-font); color: var(--v2-text-secondary); text-align: left; white-space: normal; }
+.v2m-info:hover .tip, .v2m-info:focus-visible .tip { display: block; }
+
+/* Notes: the frame's .list rows. */
+.v2m-list { list-style: none; margin: 0; padding: 0; overflow: hidden; }
+.v2m-mnote { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; padding: 11px 14px; border-top: 1px solid var(--v2-border-soft); }
+.v2m-mnote:first-child { border-top: 0; }
+.v2m-mnote > svg.i { width: 16px; height: 16px; margin-top: 2px; color: var(--v2-text-secondary); }
+.v2m-mnote .tx { font-size: 13.5px; line-height: 20px; color: var(--v2-text-primary); overflow-wrap: anywhere; }
+.v2m-mnote .snip { font-size: 12.5px; line-height: 18px; color: var(--v2-text-secondary); overflow-wrap: anywhere; }
+.v2m-jday { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 12px; padding: 10px 14px; border-top: 1px solid var(--v2-border-soft); font-size: 13.5px; color: var(--v2-ink-2); }
+.v2m-jday:first-child { border-top: 0; }
+.v2m-jday .mo { font: 500 11.5px/20px var(--v2-font-mono); color: var(--v2-text-muted); }
+
+.v2m-state { margin: 0; padding: 14px; font-size: 13.5px; color: var(--v2-text-secondary); }
+
+/* Phone (frame 390): search first, groups become the frame's details.grp rows. */
+@media (max-width: 767px) {
+  .v2m-page .v2p-ph { height: auto; min-height: 64px; flex-wrap: wrap; padding: 12px 16px; }
+  .v2m-page .v2p-ph .v2p-seg { order: 3; flex: 1 1 100%; display: flex; }
+  .v2m-page .v2p-ph .v2p-seg button { flex: 1; justify-content: center; }
+  .v2m-pbody { padding: 12px; }
+  .v2m-mem { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .v2m-mnav ul { display: none; }
+  .v2m-search { margin-top: 0; }
+  .v2m-body { gap: 10px; }
+  .v2m-grp { margin-bottom: 0; background: var(--v2-surface); border-radius: var(--v2-r-14); box-shadow: var(--v2-shadow-pane); }
+  .v2m-grp > summary { cursor: pointer; }
+  .v2m-gtitle { height: 44px; margin: 0; padding: 0 12px 0 14px; font: 600 13.5px/1 var(--v2-font); color: var(--v2-text-primary); }
+  .v2m-gtitle svg.i { width: 16px; height: 16px; color: var(--v2-text-secondary); }
+  .v2m-gtitle .v2m-saved { font: 500 11px/1 var(--v2-font-mono); color: var(--v2-text-muted); }
+  .v2m-gtitle .v2m-info { display: none; }
+  .v2m-gtitle .v2m-chev { display: inline-block; margin-left: 4px; color: var(--v2-text-placeholder); transition: transform 160ms; }
+  .v2m-grp[open] > summary .v2m-chev { transform: rotate(180deg); }
+  .v2m-grp .v2m-list { border-radius: 0 0 var(--v2-r-12) var(--v2-r-12); box-shadow: none; background: transparent; }
+}
+
+/* Desktop: the groups are plain titles, not collapsible; only the info tip takes input. */
+@media (min-width: 768px) {
+  .v2m-grp > summary { pointer-events: none; cursor: default; }
+  .v2m-grp > summary .v2m-info { pointer-events: auto; }
+}
