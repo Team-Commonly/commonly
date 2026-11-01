@@ -2630,6 +2630,7 @@
     "disconnected": "Disconnected {{label}}.",
     "reviewProviderAccess": "Review access at {{label}}",
     "removedReviewProvider": "Connection removed. Review its access at {{label}}.",
+    "removedStillListed": "Disconnected {{label}} here, but {{label}} still lists Commonly. Remove it there too.",
     "openProviderSettings": "Open provider settings",
     "noConnection": "install the GitHub App first · an admin does this once",
     "noSeats": "no agent in this pod yet",
