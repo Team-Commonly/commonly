@@ -64,7 +64,7 @@ const trigger = (type = 'chat.mention') => ({
 
 const sentUserMessage = () => axios.post.mock.calls[0][1].messages.find((m) => m.role === 'user').content;
 
-const CUE = '[Their own agent has never connected] start it: commonly agent run kfir-agent';
+const CUE = '[Their own agent has never connected] start it: commonly agent run river-agent';
 
 describe('native runtime: Scout carries the start command for a never-connected agent', () => {
   const previousEnv = { baseUrl: process.env.LITELLM_BASE_URL, masterKey: process.env.LITELLM_MASTER_KEY };
@@ -94,7 +94,7 @@ describe('native runtime: Scout carries the start command for a never-connected 
     else process.env.LITELLM_MASTER_KEY = previousEnv.masterKey;
   });
 
-  test.each(['chat.mention', 'message.posted', 'dm.message'])('a %s from a person puts the cue ahead of their message', async (type) => {
+  test.each(['chat.mention', 'thread.mention', 'message.posted', 'dm.message'])('a %s from a person puts the cue ahead of their message', async (type) => {
     await runAgent(installation('scout'), trigger(type));
 
     expect(askerStartCommandCue).toHaveBeenCalledWith('pod-1', 'human-1');
