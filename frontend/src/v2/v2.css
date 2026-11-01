@@ -12850,7 +12850,9 @@ body.modern-ui.v2-canvas {
   .v2-root button.v2-pod-header__board--compact::before {
     content: '';
     position: absolute;
-    inset: -14px -10px;
+    /* 6px sideways, not 10: with the 12px header gap, the next key's 44px
+       area reaches 6px toward this one, so 6 + 6 meets without overlap. */
+    inset: -14px -6px;
   }
   .v2-thread__title-line > h1 { max-width: calc(100% - 36px); }
   .v2-pod-header__meta--compact { gap: 4px; }

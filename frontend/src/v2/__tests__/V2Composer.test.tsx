@@ -16,7 +16,7 @@ jest.mock('../../context/SocketContext', () => ({
 // Composer behavior does not depend on avatar rendering. Keep this test
 // isolated from the external DiceBear package graph used by V2Avatar.
 jest.mock('../components/V2Avatar', () => {
-  const MockAvatar = () => <span data-testid="avatar" />;
+  const MockAvatar = ({ name }: { name?: string }) => <span data-testid="avatar" data-name={name} />;
   MockAvatar.displayName = 'MockAvatar';
   return MockAvatar;
 });
@@ -104,6 +104,27 @@ describe('V2Composer send button', () => {
     // With no board count there is nothing for the phone head to carry.
     expect(header.querySelector('.v2-pod-header__meta--compact')).toBeNull();
     expect(view.container.querySelector('.v2-thread__working')).toBeNull();
+  });
+
+  test('the header shows three faces, people before agents, and counts the rest as +N', () => {
+    const view = renderChat(makeDetail({
+      members: [
+        { _id: 'b1', username: 'bot-one', isBot: true },
+        { _id: 'b2', username: 'bot-two', isBot: true },
+        { _id: 'h1', username: 'ana', isBot: false },
+        { _id: 'h2', username: 'ben', isBot: false },
+        { _id: 'h3', username: 'cai', isBot: false },
+        { _id: 'h4', username: 'dee', isBot: false },
+      ],
+      agents: [{ agentName: 'scout', instanceId: 'default', displayName: 'Scout' }],
+    }));
+
+    const meta = view.container.querySelector('.v2-pod-header__meta:not(.v2-pod-header__meta--compact)');
+    const faces = meta.querySelector('.v2-pod-header__faces');
+    expect(faces).toHaveAttribute('aria-label', '4 members, 1 agent');
+    const titles = Array.from(faces.querySelector('.v2-pod-header__stack').children).map((face: Element) => face.getAttribute('data-name'));
+    expect(titles).toEqual(['ana', 'ben', 'cai']);
+    expect(meta.querySelector('.v2-pod-header__more')).toHaveTextContent('+3');
   });
 
   test('clicking the send button sends the drafted text', async () => {

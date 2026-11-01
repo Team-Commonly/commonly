@@ -183,6 +183,23 @@ describe('V2Inspector', () => {
     expect(screen.getByText('No threads in the loaded messages.')).toBeInTheDocument();
   });
 
+  test('opening another pod puts the panel back on the pod view', () => {
+    const view = renderInspector();
+    fireEvent.click(screen.getByRole('radio', { name: 'Threads' }));
+    expect(screen.getByRole('radio', { name: 'Threads' })).toBeChecked();
+    view.rerender(
+      <MemoryRouter>
+        <V2Inspector
+          detail={{ ...detail, pod: { ...detail.pod, _id: 'pod-2' } } as any}
+          attentionCount={0}
+          attentionItems={[]}
+          onOpenInvite={jest.fn()}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('radio', { name: 'Pod' })).toBeChecked();
+  });
+
   test('the open panel carries its own Hide panel key', () => {
     const onClose = jest.fn();
     renderInspector({ onClose });

@@ -1637,7 +1637,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(compactMeta).toBeGreaterThan(baseMeta);
     // TASK-647 item 3: the phone line keeps the board link, with a 44px hit
     // area drawn as a pseudo-element so the 28px meta row does not grow.
-    expect(ruleBody(v2, 'button.v2-pod-header__board--compact::before')).toContain('inset: -14px -10px');
+    expect(ruleBody(v2, 'button.v2-pod-header__board--compact::before')).toContain('inset: -14px -6px');
     expect(ruleBody(v2, '.v2-thread__title-line > h1')).toContain('max-width: calc(100% - 36px)');
     expect(v2).not.toContain('.v2-thread__working');
   });
@@ -5345,7 +5345,13 @@ describe('pod board column scroll (TASK-698)', () => {
       expect(phoneHead).toContain(`.v2-root button.${key}::after`);
     }
     expect(phoneHead).toMatch(/::after \{\s*content: '';\s*position: absolute;[^}]*inset: -7px;\s*\}/);
-    // z-index keeps the hit area above later positioned siblings.
-    expect(phoneHead).toContain('.v2-root button.v2-composer__send { position: relative; z-index: 1; }');
+    // z-index keeps every key's hit area above later positioned siblings.
+    const raised = phoneHead.match(/([^{}]*)\{ position: relative; z-index: 1; \}/);
+    expect(raised).not.toBeNull();
+    for (const key of ['v2-thread__back', 'v2-pod-header__invite', 'v2-thread__inspector-toggle', 'v2-composer__plus', 'v2-composer__send']) {
+      expect(raised![1]).toContain(`.v2-root button.${key}`);
+    }
+    // The 12px gap is what keeps neighbouring 44px areas from overlapping.
+    expect(phoneHead).toMatch(/\.v2-pod-header \.v2-thread__header-row \{[^}]*gap: 12px;/);
   });
 });
