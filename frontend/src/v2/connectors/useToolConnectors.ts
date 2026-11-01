@@ -519,7 +519,7 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
       // revoked and the row is disconnected, and only the provider's own revoke
       // failed. A bare 502 (ingress, a pod restarting) reached nothing, so it takes
       // the plain error below and marks nothing revoked.
-      const response = (err as { response?: { status?: number; data?: { code?: string; revokeAt?: string } } })?.response;
+      const response = (err as { response?: { status?: number; data?: { code?: string; revokeAt?: string; providerRevoked?: boolean } } })?.response;
       const partial = response?.status === 502
         && (response.data?.code === 'provider_revoke_failed' || response.data?.code === 'provider_revoked_removal_incomplete');
       if (partial) {
@@ -530,11 +530,12 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
         await load();
         if (safeProviderRevokePage(response?.data?.revokeAt)) {
           // `provider_revoke_failed`: the vendor did not take the revoke, so its
-          // app is still listed. The other code means the revoke took.
+          // app is still listed. The other code can follow a step 3 that never
+          // called the vendor (a page-only entry), so it carries the answer.
           setRemovedHiddenNotice({
             label: entry.label,
             revokePage: response?.data?.revokeAt as string,
-            stillListed: response?.data?.code === 'provider_revoke_failed',
+            stillListed: response?.data?.code === 'provider_revoke_failed' || response?.data?.providerRevoked === false,
           });
         } else {
           setError(t('tools.disconnectPartial', { defaultValue: 'Disconnected {{label}} here, but {{label}} did not confirm. Remove Commonly in its connected apps.', label: entry.label }));

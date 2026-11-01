@@ -388,9 +388,27 @@ describe('removeConnection (a hosted-MCP row)', () => {
       message: 'secret store unavailable',
       grantsRevoked: 2,
       revokeAt: PAGE,
+      providerRevoked: true,
     });
     expect(deps.markProviderRevoked).toHaveBeenCalled();
     expect(deps.remove).not.toHaveBeenCalled();
+  });
+
+  it('an incomplete removal on a page-only entry says the vendor was never told', async () => {
+    // The code's name reads as "the provider revoked", and a page-only entry
+    // never calls the vendor, so the result has to carry the answer itself.
+    const { deps, revokeGrants } = recorder({
+      entryFor: jest.fn(() => ({ ...ENTRY, revoke: { page: PAGE } })),
+      secrets: {
+        get: jest.fn(async () => 'refresh-token-value'),
+        revoke: jest.fn(async () => { throw new Error('secret store unavailable'); }),
+      },
+    });
+    const result = await remove(hostedRow(), deps, revokeGrants);
+    expect(result).toMatchObject({
+      removed: false, code: 'provider_revoked_removal_incomplete', providerRevoked: false,
+    });
+    expect(deps.revokeAtVendor).not.toHaveBeenCalled();
   });
 
   it('calls the endpoint and returns the page when the entry names both', async () => {
@@ -541,6 +559,7 @@ describe('a row whose entry is gone', () => {
       message: 'row delete unavailable',
       grantsRevoked: 2,
       revokeAt: COPIED_PAGE,
+      providerRevoked: false,
     });
   });
 

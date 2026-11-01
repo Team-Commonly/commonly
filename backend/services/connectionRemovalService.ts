@@ -140,12 +140,17 @@ export type RemovalResult =
     /**
      * `provider_revoke_failed` — step 3 did not take, the row keeps its
      * references and a retry still holds the token to send.
-     * `provider_revoked_removal_incomplete` — step 3 TOOK and steps 4 or 5
-     * failed; the retry finds the mark, skips the vendor, and finishes.
+     * `provider_revoked_removal_incomplete` — step 3 is behind us and steps 4
+     * or 5 failed; the retry finds the mark, skips the vendor, and finishes.
+     * "Behind us" includes a step 3 that never called the vendor (a page-only
+     * entry), so the name does not say the vendor revoked: `providerRevoked`
+     * does.
      */
     code: 'provider_revoke_failed' | 'provider_revoked_removal_incomplete';
     message: string;
     grantsRevoked: number;
+    /** On `provider_revoked_removal_incomplete` only: as on success. */
+    providerRevoked?: boolean;
     /** Present whenever the entry is known, so a person can act on the refusal itself (§10.5). */
     revokeAt?: string;
   };
@@ -464,6 +469,7 @@ export const removeConnection = async (options: {
       message: (error as { message?: string })?.message || 'removal incomplete after the provider revoke',
       grantsRevoked,
       revokeAt: revokePage,
+      providerRevoked,
     };
   }
 

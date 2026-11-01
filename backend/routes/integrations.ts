@@ -935,6 +935,7 @@ router.delete('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res
           code: result.code,
           message: result.message,
           ...(result.revokeAt ? { revokeAt: result.revokeAt } : {}),
+          ...(typeof result.providerRevoked === 'boolean' ? { providerRevoked: result.providerRevoked } : {}),
         });
       }
       return res.json({

@@ -2627,7 +2627,7 @@
     "disconnected": "已断开 {{label}}。",
     "reviewProviderAccess": "查看 {{label}} 的授权",
     "removedReviewProvider": "连接已移除。请检查 {{label}} 中的授权。",
-    "removedStillListed": "已在此处断开 {{label}}，但 {{label}} 中仍列着 Commonly，请到那里一并移除。",
+    "removedStillListed": "已在此处断开 {{label}}，但 {{label}} 仍显示 Commonly，请到那里一并移除。",
     "openProviderSettings": "打开服务提供方设置",
     "noConnection": "请先安装 GitHub App · 管理员只需安装一次",
     "noSeats": "此 Pod 中还没有智能体",

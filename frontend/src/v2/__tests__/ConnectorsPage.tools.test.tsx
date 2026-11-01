@@ -651,6 +651,20 @@ describe('Connectors page: tools', () => {
       expect(within(card).queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
     });
 
+    // TASK-339: this code follows a step 3 that may never have called the vendor
+    // (a page-only entry), so the body's providerRevoked decides the copy.
+    it('a 502 incomplete removal the provider never revoked says the app is still listed', async () => {
+      mockTools({ entries: [atlassian], grants: [grantAtl] });
+      axios.delete.mockRejectedValue({ response: { status: 502, data: { code: 'provider_revoked_removal_incomplete', revokeAt: 'https://id.atlassian.com/manage-profile/apps', providerRevoked: false } } });
+      renderPage();
+
+      const { aside } = await openRow('Atlassian', 'View Atlassian in Launch pod');
+      fireEvent.click(within(aside).getByRole('button', { name: 'Disconnect Atlassian' }));
+      fireEvent.click(within(aside).getByRole('button', { name: 'Yes, disconnect' }));
+      expect(await screen.findByText(/Disconnected Atlassian here, but Atlassian still lists Commonly/)).toBeInTheDocument();
+      expect(screen.queryByText(/Review its access/)).not.toBeInTheDocument();
+    });
+
     // A 502 from the ingress while a pod restarts never reached the route: nothing was revoked.
     it('a bare 502 (no route code) leaves the grant live and says the disconnect failed', async () => {
       mockTools({ entries: [atlassian], grants: [grantAtl] });
