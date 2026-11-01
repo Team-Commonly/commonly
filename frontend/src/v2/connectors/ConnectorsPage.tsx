@@ -102,9 +102,12 @@ const ConnectorsPage: React.FC = () => {
     && (!q || connection.label.toLowerCase().includes(q))
   ));
   // A grant whose catalogue entry is gone (retired or unreadable) has no tile, but it
-  // is still live access: it stays listed so it can still be seen and revoked.
+  // is still live access: it stays listed so it can still be seen and revoked. A dead
+  // one is not access any more, so it leaves the list (TASK-752); the Connectors trail
+  // keeps the record.
   const orphanGrants = grants.filter((grant) => (
     !m.catalog.some((entry) => entryCovers(entry, grant))
+    && !isDead(grant, m.now)
     && (!q || m.toolLabel(grant).toLowerCase().includes(q))
   ));
   const toolHasDrawer = (entry: ToolCatalogEntry): boolean => grantsOf(entry).length > 0 || hiddenOf(entry).length > 0;
