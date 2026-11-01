@@ -240,3 +240,12 @@ test('names a grant by its connector brand, not its id', async () => {
   renderSection();
   expect(await screen.findByText('GitHub')).toBeInTheDocument();
 });
+
+test('Connector grants is one heading, named by its title and not its count', async () => {
+  renderSection();
+  await screen.findByText('1 active');
+  const headings = screen.getAllByRole('heading').filter((node) => node.textContent.includes('Connector grants'));
+  expect(headings).toHaveLength(1);
+  expect(headings[0]).toHaveClass('gtitle');
+  expect(screen.getByRole('heading', { name: 'Connector grants' })).toBe(headings[0]);
+});

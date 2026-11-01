@@ -107,3 +107,10 @@ test('a set key rests as a row; a failed save keeps the entry open, empty, with 
   expect(screen.getByRole('button', { name: 'Save key' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
 });
+
+test('a row with no confirmation reads "unconfirmed", never "confirmed unconfirmed"', () => {
+  render(<Controls runtime={runtime} onSave={jest.fn()} />);
+  const row = screen.getByLabelText('model').closest('.lrow') as HTMLElement;
+  expect(row.textContent).toContain('last spawn actual-model · unconfirmed');
+  expect(row.textContent).not.toContain('confirmed unconfirmed');
+});

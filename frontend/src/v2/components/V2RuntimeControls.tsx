@@ -95,7 +95,7 @@ const V2RuntimeControls: React.FC<{ runtime: RuntimeSettings; onSave?: (update: 
             </select>}
           {!(field === 'model' && !models?.length) && <V2AgentSettingsIcon name="chev" />}
         </span>
-        <span className="mo">{k('lastSpawn')} <span>{value(last, field)}</span> · {k('confirmed')} <span>{value(confirmed, field, true)}</span></span>
+        <span className="mo">{k('lastSpawn')} <span>{value(last, field)}</span> · {confirmed ? <>{k('confirmed')} <span>{value(confirmed, field, true)}</span></> : <span>{k('unconfirmed')}</span>}</span>
         {editable && field === 'model' && !models?.length && <span className="mo">{k('modelsUnavailable')}</span>}
         {editable && field === 'effort' && !levels.length && effort && <span className="mo">{k('effortUnavailable', { harness: LABELS[harness] || harness, effort })}</span>}
       </span>

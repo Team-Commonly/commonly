@@ -5180,7 +5180,7 @@ describe('agent settings sections lifted from #s-agent-states', () => {
   const targets = blockContaining(css, '@media (max-width: 760px)', '.v2-agent-settings-page__group .b');
   test('every lifted control is a 44px target on phones', () => {
     expect(ruleBody(targets, '.v2-agent-settings-page__group .b, .v2-agent-settings-page__group .b-sm')).toContain('height: 44px');
-    expect(ruleBody(targets, '.v2-agent-settings-page__group .sel, .v2-agent-settings-page__group .field:not(.field--area)')).toContain('height: 44px');
+    expect(ruleBody(targets, '.v2-agent-settings-page__group .sel, .v2-agent-settings-page__group .field:not(.field--area)')).toContain('--box-h: 44px');
     expect(ruleBody(targets, '.v2-agent-settings-page__group .seg > label')).toContain('height: 44px');
   });
   test('setting rows stack on phones and keep their value under the label', () => {
@@ -5199,6 +5199,17 @@ describe('agent settings sections lifted from #s-agent-states', () => {
     expect(css).toContain('.v2-agent-settings-page .sel input, .v2-agent-settings-page .sel select { all: unset;');
     expect(ruleBody(css, '.v2-agent-settings-page .field:focus-within, .v2-agent-settings-page .sel:focus-within')).toContain('var(--v2-focus-ring)');
     expect(ruleBody(css, '.v2-agent-settings-page .sel:has(.is-unsupported)')).toContain('inset 0 0 0 2px var(--ink)');
+  });
+  test('a select fills its box, so the whole box takes the click, with the value centred', () => {
+    const select = ruleBody(css, '.v2-agent-settings-page .field select, .v2-agent-settings-page .sel select');
+    expect(select).toContain('height: var(--box-h)');
+    expect(select).toContain('line-height: var(--box-h)');
+    expect(ruleBody(css, '.v2-agent-settings-page .sel')).toContain('--box-h: 28px; height: var(--box-h)');
+    expect(ruleBody(css, '.v2-agent-settings-page .field')).toContain('--box-h: 34px; height: var(--box-h)');
+  });
+  test('a read-only runtime draws its disabled selects as values, without the box ring or chevron', () => {
+    expect(ruleBody(css, '.v2-agent-settings-page .sel:has(:disabled)')).toContain('box-shadow: none');
+    expect(ruleBody(css, '.v2-agent-settings-page .sel:has(:disabled) svg.i')).toContain('display: none');
   });
   test('the identity form does not add a box between the list and its rows', () => {
     expect(ruleBody(css, '.v2-agent-settings-page__form')).toContain('display: contents');

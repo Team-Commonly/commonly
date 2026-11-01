@@ -72,7 +72,7 @@
 .v2-agent-settings-page .info:hover, .v2-agent-settings-page .info:focus-visible { color: var(--ink); }
 .v2-agent-settings-page .info .tip { display: none; position: absolute; z-index: 30; top: 24px; left: -8px; width: 260px; padding: 10px 12px; border-radius: 10px; background: var(--sf); box-shadow: var(--sh-pop); font: 400 12.5px/1.45 var(--f-body); color: var(--se); text-align: left; white-space: normal; }
 .v2-agent-settings-page .info:hover .tip, .v2-agent-settings-page .info:focus-visible .tip, .v2-agent-settings-page .info.pin .tip { display: block; }
-.v2-agent-settings-page .sel { height: 28px; border-radius: 8px; background: var(--sf); box-shadow: inset 0 0 0 1px var(--b); display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; font-size: 12.5px; color: var(--ink2); white-space: nowrap; }
+.v2-agent-settings-page .sel { --box-h: 28px; height: var(--box-h); border-radius: 8px; background: var(--sf); box-shadow: inset 0 0 0 1px var(--b); display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; font-size: 12.5px; color: var(--ink2); white-space: nowrap; }
 .v2-agent-settings-page .sel svg.i { width: 14px; height: 14px; color: var(--mu); }
 
 /* page head: avatar, name, status, tabs and actions on one 76px row */
@@ -161,7 +161,6 @@
 .v2-agent-settings-page .mu { color: var(--mu); }
 .v2-agent-settings-page__group { margin-top: 18px; }
 .v2-agent-settings-page .gtitle svg.i { width: 13px; height: 13px; }
-.v2-agent-settings-page .gtitle h2 { font: inherit; color: inherit; margin: 0; }
 .v2-agent-settings-page__count { margin-left: auto; }
 .v2-agent-settings-page .list > details.disc:first-child { border-top: 0; }
 .v2-agent-settings-page details.disc > summary:focus-visible { outline: none; border-radius: 12px; box-shadow: var(--v2-focus-ring); }
@@ -177,19 +176,22 @@
 .v2-agent-settings-page .lrow .lb label { text-transform: capitalize; }
 
 /* fields and selects: the native control sits inside the frame's box */
-.v2-agent-settings-page .field { height: 34px; border-radius: 9px; background: var(--p); box-shadow: inset 0 0 0 1px var(--b); display: flex; align-items: center; padding: 0 10px; font-size: 13.5px; color: var(--ink); gap: 8px; min-width: 0; }
+.v2-agent-settings-page .field { --box-h: 34px; height: var(--box-h); border-radius: 9px; background: var(--p); box-shadow: inset 0 0 0 1px var(--b); display: flex; align-items: center; padding: 0 10px; font-size: 13.5px; color: var(--ink); gap: 8px; min-width: 0; }
 .v2-agent-settings-page .field .mu { font-size: 12px; }
 .v2-agent-settings-page .field--area { height: 78px; align-items: flex-start; padding-top: 8px; padding-bottom: 8px; }
 .v2-agent-settings-page .field input, .v2-agent-settings-page .field select, .v2-agent-settings-page .field textarea,
 .v2-agent-settings-page .sel input, .v2-agent-settings-page .sel select { all: unset; box-sizing: border-box; flex: 1; min-width: 0; height: 100%; font: inherit; color: inherit; }
 .v2-agent-settings-page .field textarea { line-height: 1.5; white-space: pre-wrap; resize: vertical; }
-/* Auto height, so the flex box centres the value; a 100%-tall unset select pins its text to the top. */
-.v2-agent-settings-page .field select, .v2-agent-settings-page .sel select { cursor: pointer; height: auto; }
+/* The select fills its box so the whole box is the hit area. An unset select pins its text to the top,
+   so a line-height of the box's own height (--box-h) centres the value. */
+.v2-agent-settings-page .field select, .v2-agent-settings-page .sel select { cursor: pointer; height: var(--box-h); line-height: var(--box-h); }
 .v2-agent-settings-page .field input:focus-visible, .v2-agent-settings-page .field select:focus-visible, .v2-agent-settings-page .field textarea:focus-visible,
 .v2-agent-settings-page .sel input:focus-visible, .v2-agent-settings-page .sel select:focus-visible { box-shadow: none; outline: none; }
 .v2-agent-settings-page .field:focus-within, .v2-agent-settings-page .sel:focus-within { box-shadow: inset 0 0 0 1px var(--b), var(--v2-focus-ring); }
 .v2-agent-settings-page .field svg.i { width: 14px; height: 14px; color: var(--mu); pointer-events: none; }
-.v2-agent-settings-page .sel:has(:disabled) { background: var(--p); }
+/* A read-only runtime keeps disabled controls, drawn as values: no ring, no chevron (as before the lift). */
+.v2-agent-settings-page .sel:has(:disabled) { background: var(--t); box-shadow: none; }
+.v2-agent-settings-page .sel:has(:disabled) svg.i { display: none; }
 .v2-agent-settings-page .sel:has(:disabled) select { cursor: default; }
 .v2-agent-settings-page .sel:has(.is-unsupported) { box-shadow: inset 0 0 0 2px var(--ink); }
 .v2-agent-settings-page .v2-runtime-controls__control { min-width: 220px; justify-content: space-between; }
@@ -217,7 +219,7 @@
 .v2-agent-settings-page__live code { font-family: var(--f-mono); font-size: 12px; }
 .v2-agent-settings-page__move { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .v2-agent-settings-page__move .mu { font-size: 12.5px; }
-.v2-agent-settings-page__move .sel { height: 34px; min-width: 200px; justify-content: space-between; }
+.v2-agent-settings-page__move .sel { --box-h: 34px; height: var(--box-h); min-width: 200px; justify-content: space-between; }
 .v2-agent-settings-page__move .b { height: 34px; }
 
 /* How it runs: the status line under the three runtime rows */
@@ -272,6 +274,6 @@
 /* 44px phone targets for every control these sections lift; the frame's 390 sizes. */
 @media (max-width: 760px) {
   .v2-agent-settings-page__group .b, .v2-agent-settings-page__group .b-sm { height: 44px; }
-  .v2-agent-settings-page__group .sel, .v2-agent-settings-page__group .field:not(.field--area) { height: 44px; }
+  .v2-agent-settings-page__group .sel, .v2-agent-settings-page__group .field:not(.field--area) { --box-h: 44px; height: var(--box-h); }
   .v2-agent-settings-page__group .seg > label { height: 44px; }
 }

@@ -233,13 +233,14 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
         <V2AgentProviderKey key={`${name}/${instanceId}`} name={name} instanceId={instanceId} editable={Boolean(onSaveRuntime && runtime.managed)} capability={runtime.ownKeyCapability} harness={details.adapter || runtime.adapter || ''} />
       </section>
       <section className="v2-agent-settings-page__group" aria-labelledby="agent-grants-heading">
-        <div className="gtitle"><V2AgentSettingsIcon name="plug" />
-          <h2 id="agent-grants-heading">{t('agentManage.grants.title', { defaultValue: 'Connector grants' })}</h2>
+        {/* One heading; its name is the title alone, so the count beside it stays out of the section's name. */}
+        <h2 className="gtitle" aria-labelledby="agent-grants-heading"><V2AgentSettingsIcon name="plug" />
+          <span id="agent-grants-heading">{t('agentManage.grants.title', { defaultValue: 'Connector grants' })}</span>
           {grants.length > 0 && <span className="v2-agent-settings-page__count">
             {[t('agentManage.grants.activeCount', { count: activeGrants }),
               endedGrants > 0 && t('agentManage.grants.endedCount', { count: endedGrants })].filter(Boolean).join(' · ')}
           </span>}
-        </div>
+        </h2>
         {loadError && <div className="list">
           {alertRow(loadError, 'muted', <button type="button" className="b b-s b-sm" disabled={loading} onClick={() => { void load(); }}>{t('agentManage.grants.retry')}</button>)}
         </div>}
