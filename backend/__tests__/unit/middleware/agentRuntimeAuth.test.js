@@ -200,6 +200,22 @@ describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#
     expect(mockRecordByoEvent).toHaveBeenCalledWith('human-1', 'seat-registered', {}, expect.stringMatching(/^seat-registered:[0-9a-f]{64}$/));
   });
 
+  test('stamps lastUsedAt but never lastListenedAt — a tool call is not a listener check-in', async () => {
+    mockUserFindOne.mockResolvedValue(buildAgentUser(new Date('2026-08-12T00:00:00Z')));
+    mockInstallationFind.mockReturnValue({
+      lean: async () => [
+        { podId: { toString: () => 'pod-workspace' }, status: 'active' },
+      ],
+    });
+
+    await agentRuntimeAuth(buildReq('cm_agent_test'), buildRes(), jest.fn());
+
+    expect(mockUserUpdateOne).toHaveBeenCalled();
+    const written = JSON.stringify(mockUserUpdateOne.mock.calls);
+    expect(written).toContain('lastUsedAt');
+    expect(written).not.toContain('lastListenedAt');
+  });
+
   test('stays silent on every subsequent authentication', async () => {
     mockUserFindOne.mockResolvedValue(buildAgentUser(new Date('2026-08-12T00:00:00Z')));
     mockInstallationFind.mockReturnValue({

@@ -19,6 +19,9 @@ export interface IAgentRuntimeToken {
   label?: string;
   createdAt: Date;
   lastUsedAt?: Date;
+  // Set only by a listener check-in (the events poll, the agent WebSocket
+  // connect), never by an ordinary authenticated call such as an MCP tool.
+  lastListenedAt?: Date;
   expiresAt?: Date;
 }
 
@@ -397,6 +400,7 @@ const userSchema = new Schema<IUser>({
       label: { type: String },
       createdAt: { type: Date, default: Date.now },
       lastUsedAt: { type: Date },
+      lastListenedAt: { type: Date },
       expiresAt: { type: Date },
     },
   ],
