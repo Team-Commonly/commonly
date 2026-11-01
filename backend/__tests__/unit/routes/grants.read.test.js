@@ -355,6 +355,7 @@ describe('GET /api/grants/:grantId', () => {
     expect(res.body).toMatchObject({
       grantId: row.grantId, installationId: 'install-1', target: { kind: 'pod', id: POD },
       tools: ['github.list_issues', 'github.comment'], writeMode: 'write-with-confirm',
+      connector: { id: 'github', label: 'GitHub' },
       budget: { calls: 10, windowMs: 60000 }, effectiveAudience: [SEAT], revokedAt: null, revokedBy: null,
       parentGrantId: null, rootGrantId: 'grant_root', grantedBy: OWNER,
     });
