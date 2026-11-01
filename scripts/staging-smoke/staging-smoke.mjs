@@ -154,11 +154,13 @@ async function main() {
         }
         // 6b) at least one connectable TOOL tile shown OUTSIDE the "+N off" fold, whose reveal
         //     carries a Connect/Install button (never the secondary "Ask" link, never "Add").
-        const fctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+        // en-US: the Tools group is found by its English label, and zh-CN would read 工具.
+        const fctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'en-US' });
         await fctx.addInitScript(t => { try { localStorage.setItem('token', t); } catch(e){} }, ftoken);
         const page = await fctx.newPage();
         await page.goto(BASE+'/v2/connectors', { waitUntil:'networkidle', timeout: 30000 });
-        await page.waitForTimeout(1800);
+        // Wait for the catalogue's first tile rather than a fixed sleep; a timeout falls through to the FAIL detail.
+        await page.locator('section.v2-cx-group[aria-label="Tools"] .v2-cx-tile').first().waitFor({ timeout: 15000 }).catch(() => {});
         const TOOLS = ['GitHub','Linear','Slack','Notion','Google','Jira','Atlassian','Gmail','Airtable','Sentry'];
         const tiles = page.locator('section.v2-cx-group[aria-label="Tools"] .v2-cx-tile:not(.v2-cx-tile--add):not(.v2-cx-tile--dim)');
         const shown = [], connectable = [];
