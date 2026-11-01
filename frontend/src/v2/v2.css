@@ -11403,8 +11403,8 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-workspace-inspector__head-spacer { flex: 1; }
 
 /* Hide panel is the desktop key; the phone sheet keeps its close X. The key
-   also carries .v2-icon-button, whose later `display` rule ties at (0,2,1),
-   so this selector names both classes to outrank it. */
+   is a primitive (.v2p-b, 0,1,0), so .v2-root button.<class> outranks its
+   display. */
 @media (max-width: 760px) {
   .v2-root button.v2-workspace-inspector__hide { display: none; }
 }
@@ -11848,6 +11848,10 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
     box-shadow: none;
     color: var(--v2-text-secondary);
   }
+
+  /* box-shadow: none above outranks the primitive's focus ring, so the ring
+     is restated for keyboard focus. */
+  .v2-root button.v2-pod-header__invite:focus-visible { box-shadow: 0 0 0 3px var(--v2-accent-soft), 0 0 0 1px var(--v2-accent); }
 
   .v2-root button.v2-pod-header__invite span {
     position: absolute;
