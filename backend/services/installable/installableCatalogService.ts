@@ -110,10 +110,20 @@ const publicInstallation = (installation: any): unknown => {
 // A Connection the caller may grant from: the mint requires the connection's
 // owner, so only the caller's own rows are offered. `connectionId` is the key
 // the mint takes; owner/repo are the card's evidence of what the grant acts on.
+//
+// A hosted entry can hold several of the caller's rows, an OAuth sign-in and
+// operator keys bound per agent (TASK-330), so a hosted row also carries what
+// tells them apart: when it was connected, and for a key its masked hint and
+// the agent it is bound to.
 const publicConnection = (integration: any) => ({
   connectionId: String(integration.installationId || integration._id || ''),
   owner: String(integration.config?.owner || ''),
   repo: String(integration.config?.repo || ''),
+  ...(integration.type === 'hosted-mcp' ? {
+    ...(integration.createdAt ? { connectedAt: new Date(integration.createdAt).toISOString() } : {}),
+    ...(integration.config?.agentId ? { agentId: String(integration.config.agentId) } : {}),
+    ...(integration.config?.credentialHint ? { credentialHint: String(integration.config.credentialHint) } : {}),
+  } : {}),
 });
 
 /**
