@@ -8,7 +8,7 @@ import './primitives.css';
 const V2PrimitivesPage: React.FC = () => (
   <div className="v2p-root" data-testid="v2p-root">
     <div className="v2p-sh v2p-sh--page" style={{ height: '100vh' }}>
-      <div aria-hidden="true" />
+      <div className="v2p-rail" aria-hidden="true" />
       <section className="v2p-pane" aria-label="Primitives">
         <header className="v2p-ph">
           <h1>Primitives</h1>

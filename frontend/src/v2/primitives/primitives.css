@@ -70,7 +70,7 @@
   cursor: pointer;
   height: 28px;
   padding: 0 10px;
-  border-radius: var(--v2-r-8);
+  border-radius: var(--v2-r-7);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -94,7 +94,7 @@
   gap: 5px;
   height: 24px;
   padding: 0 8px;
-  border-radius: var(--v2-r-8);
+  border-radius: var(--v2-r-7);
   font: 500 11.5px/1 var(--v2-font-mono);
   color: var(--v2-text-secondary);
   background: var(--v2-surface);
@@ -237,3 +237,16 @@
 .v2p-drawer .dh { height: 64px; display: flex; align-items: center; gap: 8px; padding: 0 14px 0 20px; border-bottom: 1px solid var(--v2-border-soft); }
 .v2p-drawer .db { padding: 18px 20px; display: grid; gap: 14px; align-content: start; }
 .v2p-drawer h2 { font: 700 19px/1.25 var(--v2-font-display); letter-spacing: -0.02em; margin: 0; }
+
+/* ---- 390 (the artboard's phone frame): the rail goes, rows stack, the drawer
+   becomes a full sheet, and the header wraps instead of overflowing ---- */
+@media (max-width: 480px) {
+  .v2p-sh--page { grid-template-columns: minmax(0, 1fr); padding: 0; gap: 0; }
+  .v2p-rail { display: none; }
+  .v2p-pane { border-radius: 0; box-shadow: none; overflow: auto; }
+  .v2p-ph { height: auto; min-height: 52px; flex-wrap: wrap; padding: 10px 14px; row-gap: 8px; }
+  .v2p-ph h1 { font-size: 20px; white-space: normal; }
+  .v2p-body { padding: 16px 14px; }
+  .v2p-lrow { grid-template-columns: minmax(0, 1fr); min-height: 48px; padding: 8px 12px; }
+  .v2p-drawer { width: 100%; border-radius: 0; }
+}
