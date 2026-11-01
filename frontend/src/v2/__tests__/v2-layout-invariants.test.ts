@@ -474,8 +474,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('rail glyphs at rest are the nearest grey to the artboard that clears 3:1 (D223 ruling)', () => {
-    // The artboard's #98a2b3 measures 2.34:1 on the light shell; #848c9b is 3.07:1.
-    expect(v2).toContain('--v2-rail-icon: #848c9b;');
+    // Measured on the rail's own surface, --v2-shell-bg #eef0f4: the
+    // artboard's #98a2b3 is 2.26:1 and #828a99 is 3.05:1.
+    expect(v2).toContain('--v2-shell-bg: #eef0f4;');
+    expect(v2).toContain('--v2-rail-icon: #828a99;');
     expect(v2.match(/--v2-rail-icon: #5f6979;/g) || []).toHaveLength(2);
   });
 
