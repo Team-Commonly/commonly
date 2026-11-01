@@ -5290,5 +5290,10 @@ describe('pod board column scroll (TASK-698)', () => {
     const css = fs.readFileSync(path.join(__dirname, '..', 'v2.css'), 'utf8');
     expect(css).toMatch(/\.v2-board__columns \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\) 120px/);
     expect(css).toMatch(/\.v2-board__tabs \{ display: none; \}/);
+    // The column body is the scroller; the page itself does not scroll.
+    expect(css).toMatch(/\.v2-board__col-body \{[^}]*overflow-y: auto;[^}]*flex: 1;[^}]*min-height: 0;/);
+    // Phones get the tab bar back: scope to the TASK-687 mobile block.
+    const mobile = css.slice(css.indexOf('/* TASK-687 / D223'));
+    expect(mobile).toMatch(/@media \(max-width: 760px\) \{[\s\S]*\.v2-board__tabs \{ display: flex;/);
   });
 });
