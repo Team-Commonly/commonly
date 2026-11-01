@@ -30,7 +30,9 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { PROCESS_GROUPS_SUPPORTED, readProcesses, readProcessTable } from './process-group.js';
+import {
+  PROCESS_GROUPS_SUPPORTED, readProcesses, readProcessTable, startedMs,
+} from './process-group.js';
 
 export const TURN_MARK_ENV = 'COMMONLY_TURN_ID';
 export const KEEP_PROCESS_ENV = 'COMMONLY_KEEP_PROCESS';
@@ -100,7 +102,7 @@ export const findTurnProcesses = (mark, since, io = {}) => {
   if (!rows) return [];
   const skip = selfAndAncestors(rows, self);
   const floor = Number(since) - TURN_START_SLACK_MS;
-  const recent = rows.filter((row) => !skip.has(row.pid) && Date.parse(row.started) >= floor);
+  const recent = rows.filter((row) => !skip.has(row.pid) && startedMs(row.started) >= floor);
   const environments = envs(recent.map((row) => row.pid));
   const marked = `${TURN_MARK_ENV}=${mark}`;
   const keep = `${KEEP_PROCESS_ENV}=1`;
@@ -154,8 +156,8 @@ export const reapTurnProcesses = (mark, since, { graceMs = TURN_REAP_GRACE_MS, i
 /**
  * One turn's marker. `env` is the child's environment with the marker added;
  * `reap(child)` runs once the child has closed, and returns what
- * `reapTurnProcesses` does, or null when the check is off or the child never
- * had a pid.
+ * `reapTurnProcesses` does, or null when the check is off, the child never had
+ * a pid, or the turn was already reaped.
  */
 export const markTurn = (env, { enabled = turnReapEnabled(), now = Date.now, graceMs } = {}) => {
   if (!enabled) return { env, mark: null, reap: () => null };
@@ -164,11 +166,13 @@ export const markTurn = (env, { enabled = turnReapEnabled(), now = Date.now, gra
   // A keep setting the seat itself was started with would keep every turn.
   const childEnv = { ...env, [TURN_MARK_ENV]: mark };
   delete childEnv[KEEP_PROCESS_ENV];
+  let reaped = false;
   return {
     env: childEnv,
     mark,
     reap: (child, { io } = {}) => {
-      if (!Number.isInteger(child?.pid) || child.pid <= 0) return null;
+      if (reaped || !Number.isInteger(child?.pid) || child.pid <= 0) return null;
+      reaped = true;
       try { return reapTurnProcesses(mark, since, { graceMs, io }); } catch { return null; }
     },
   };

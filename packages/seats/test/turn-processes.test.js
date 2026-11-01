@@ -14,10 +14,21 @@ import {
   describeTurnReap, findTurnProcesses, KEEP_PROCESS_ENV, markTurn, reapTurnProcesses, TURN_MARK_ENV,
   TURN_START_SLACK_MS, turnReapEnabled,
 } from '../src/turn-processes.js';
-import { readProcess, readProcesses } from '../src/process-group.js';
+import { readProcess, readProcesses, startedMs } from '../src/process-group.js';
 
 const POSIX = process.platform !== 'win32';
-const at = (ms) => new Date(ms).toUTCString();
+// A start time as ps prints it: `Sun Nov  1 12:00:00 2026`, in UTC.
+const at = (ms) => {
+  const [day, date, month, year, time] = new Date(ms).toUTCString().split(' ');
+  return `${day.slice(0, 3)} ${month} ${String(Number(date)).padStart(2)} ${time} ${year}`;
+};
+const inZone = (tz, fn) => {
+  const before = process.env.TZ;
+  process.env.TZ = tz;
+  try { return fn(); } finally {
+    if (before === undefined) delete process.env.TZ; else process.env.TZ = before;
+  }
+};
 
 test('findTurnProcesses takes the marked, their descendants, and nothing kept, old or ours', () => {
   const since = Date.parse('2026-11-01T12:00:00Z');
@@ -73,6 +84,32 @@ test('a leftover whose recorded start reads a few seconds early is still found',
   assert.deepEqual(asked, [800]);
 });
 
+test('a start time in the hour daylight saving repeats reads as the hour it was', () => {
+  // 01:30 comes twice in Los Angeles on 2026-11-01: at 08:30 and at 09:30 UTC.
+  inZone('America/Los_Angeles', () => {
+    assert.equal(startedMs(at(Date.parse('2026-11-01T08:30:00Z'))), Date.parse('2026-11-01T08:30:00Z'));
+    assert.equal(startedMs(at(Date.parse('2026-11-01T09:30:00Z'))), Date.parse('2026-11-01T09:30:00Z'));
+  });
+});
+
+test('ps prints start times in UTC whatever zone the seat runs in', { skip: !POSIX }, () => {
+  const self = readProcess(process.pid);
+  const began = Date.now() - process.uptime() * 1000;
+  assert.ok(Math.abs(startedMs(self.started) - began) < 5_000, `${self.started} is not when this process began`);
+});
+
+test('a leftover is found in a seat running east of UTC', () => {
+  // Read as local time, 12:00:05 UTC would be 06:30:05 UTC here, before the turn.
+  const since = Date.parse('2026-11-01T12:00:00Z');
+  const table = () => [{ pid: 900, ppid: 1, started: at(since + 5_000) }];
+  const pair = `${TURN_MARK_ENV}=m-4`;
+  const envs = (pids) => new Map(pids.map((pid) => [pid, new Set([pair])]));
+
+  const found = inZone('Asia/Kolkata', () => findTurnProcesses('m-4', since, { table, envs, self: 500 }));
+
+  assert.deepEqual(found.map((row) => row.pid), [900]);
+});
+
 test('a kept process keeps everything under it, even a child whose environment cannot be read', () => {
   const since = Date.parse('2026-11-01T12:00:00Z');
   const fresh = at(since + 5_000);
@@ -109,6 +146,12 @@ test('the check is on unless COMMONLY_TURN_REAP=0, and a child with no pid is ne
   assert.equal(on.env[TURN_MARK_ENV], on.mark);
   assert.equal(on.env.A, '1');
   assert.equal(on.reap({}), null);
+  // A turn is reaped once, however often its child reports closing.
+  let reads = 0;
+  const io = { table: () => { reads += 1; return []; }, envs: () => new Map() };
+  assert.deepEqual(on.reap({ pid: 123 }, { io }).termed, []);
+  assert.equal(on.reap({ pid: 123 }, { io }), null);
+  assert.equal(reads, 1);
   // A keep setting the seat was started with is not handed to its turns.
   const seatKept = markTurn({ A: '1', [KEEP_PROCESS_ENV]: '1' }, { enabled: true });
   assert.equal(seatKept.env[KEEP_PROCESS_ENV], undefined);

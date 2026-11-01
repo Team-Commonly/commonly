@@ -82,7 +82,9 @@ export const leadsOwnGroup = (child) => !!child
 
 // ── The process table ──────────────────────────────────────────────────────
 
-const PS_ENV = { ...process.env, LC_ALL: 'C' };
+// lstart is printed in local time with no offset, which repeats an hour when
+// daylight saving ends. In UTC it never repeats; `startedMs` reads it as UTC.
+const PS_ENV = { ...process.env, LC_ALL: 'C', TZ: 'UTC' };
 
 const parseTable = (text) => {
   const rows = [];
@@ -99,6 +101,9 @@ const ps = (args) => {
     return out.error ? null : parseTable(out.stdout);
   } catch { return null; }
 };
+
+/** A row's `started` as epoch ms. */
+export const startedMs = (started) => Date.parse(`${started} GMT`);
 
 /** Every process: { pid, ppid, started }. null when ps is unavailable. */
 export const readProcessTable = () => ps(['-A', '-o', 'pid=,ppid=,lstart=']);
