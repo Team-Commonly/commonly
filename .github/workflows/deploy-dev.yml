@@ -282,6 +282,7 @@ jobs:
       # incident silently reverts every deploy since, which by then included
       # two auth fixes. Rollback safety depends on this job telling the truth.
       - name: Helm upgrade commonly-dev
+        id: helm
         env:
           TAG: ${{ steps.tag.outputs.tag }}
           GATEWAY_ENABLED: ${{ steps.gateway.outputs.enabled }}
@@ -357,6 +358,7 @@ jobs:
       # (TASK-168), ask the newest backend pod from the inside. Unauthenticated,
       # a mounted /api/pg/messages answers 401 and an unmounted one 404.
       - name: Verify the new backend serves chat
+        id: chat
         # Deliberately not `always()` / `!cancelled()`: if an earlier step failed
         # (image push, helm upgrade, GKE credentials) the cluster is unreachable
         # or unchanged, and this step would then report "Chat unavailable on the
@@ -398,10 +400,12 @@ jobs:
       # deploy/verify step above failed, undo this release in-cluster by rolling back to the
       # previous helm revision, so prod self-heals without waiting for a human. The job still
       # ends red, which makes the auto-deploy dispatcher write auto-deploy.hold and stop
-      # re-dispatching (Mac-side). Rolls back revision CUR -> CUR-1; a no-op at revision 1 or
-      # if the cluster is unreachable (helm history empty).
+      # re-dispatching (Mac-side). Rolls back to the newest prior good revision; a no-op at
+      # revision 1 or if the cluster is unreachable (helm history empty). Gated on the helm
+      # upgrade or a verify step failing (not bare failure()), so a pre-deploy failure (checkout,
+      # auth, build/push) never demotes a healthy release.
       - name: Roll back on a failed deploy
-        if: failure()
+        if: ${{ failure() && (steps.helm.outcome == 'failure' || steps.rollout.outcome == 'failure' || steps.chat.outcome == 'failure') }}
         run: |
           set -uo pipefail
           HIST=$(helm history commonly-dev -n "$NAMESPACE" -o json 2>/dev/null || echo '[]')

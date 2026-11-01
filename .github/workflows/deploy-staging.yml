@@ -160,6 +160,7 @@ jobs:
       # Namespace and collide with the one helm creates here. Tracked against
       # the staging chart PR.
       - name: Helm upgrade commonly-staging
+        id: helm
         env:
           TAG: ${{ steps.tag.outputs.tag }}
           FORCE_BAD: ${{ inputs.force_bad_tag }}
@@ -184,6 +185,7 @@ jobs:
             --qps 100
 
       - name: Verify rollout of the deployed workloads
+        id: rollout
         run: |
           set -uo pipefail
           FAILED=""
@@ -315,12 +317,13 @@ jobs:
             -f description="$DESC" >/dev/null
           [ "$STATE" = "success" ]
 
-      # D227 (Sam via Cofounder, 2026-11-01): mirror of the prod rollback net. If any step
-      # above failed (rollout or smoke), roll this staging release back to the previous helm
-      # revision so staging self-heals. The `force_bad_tag` rehearsal input drives a failed
-      # rollout specifically to exercise this path. The job still ends red.
+      # D227 (Sam via Cofounder, 2026-11-01): mirror of the prod rollback net. Roll this staging
+      # release back to the newest prior good revision when the helm upgrade or the rollout verify
+      # fails — NOT on a post-deploy infra flake (setup-node / npm / playwright-install), which
+      # would otherwise self-heal a healthy release. The `force_bad_tag` rehearsal input drives a
+      # failed rollout to exercise this path. The job still ends red.
       - name: Roll back on a failed deploy
-        if: failure()
+        if: ${{ failure() && (steps.helm.outcome == 'failure' || steps.rollout.outcome == 'failure') }}
         run: |
           set -uo pipefail
           HIST=$(helm history "$RELEASE" -n "$NAMESPACE" -o json 2>/dev/null || echo '[]')
