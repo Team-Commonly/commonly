@@ -48,11 +48,19 @@ interface ThreadRow { rootId: string; author: string; snippet: string; lastAt: s
  * history reaches it rather than rendering as a blank row.
  */
 export const threadRowsFrom = (messages: UseV2PodDetailResult['messages']): ThreadRow[] => {
-  const byId = new Map(messages.map((message) => [String(message.id), message]));
+  // A reconciled root's `id` is its old Mongo id, while replies carry the
+  // root's Postgres id in thread_root_id, so the root answers to both. Rows
+  // key on the exposed id, which is what the #message-<id> anchor uses.
+  const byId = new Map<string, UseV2PodDetailResult['messages'][number]>();
+  messages.forEach((message) => {
+    byId.set(String(message.id), message);
+    const { pgId } = message as { pgId?: string | number | null };
+    if (pgId !== null && pgId !== undefined && pgId !== '') byId.set(String(pgId), message);
+  });
   const lastAt = new Map<string, string>();
   messages.forEach((message) => {
     if (message.thread_root_id === null || message.thread_root_id === undefined) return;
-    const rootId = String(message.thread_root_id);
+    const rootId = String(byId.get(String(message.thread_root_id))?.id ?? message.thread_root_id);
     const at = message.created_at || message.createdAt || '';
     if (!lastAt.has(rootId) || at > (lastAt.get(rootId) || '')) lastAt.set(rootId, at);
   });

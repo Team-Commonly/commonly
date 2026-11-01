@@ -177,6 +177,16 @@ describe('V2Inspector', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/v2/pods/pod-1#message-20');
   });
 
+  test('a reconciled root is found by its Postgres id and listed by the id its anchor uses', () => {
+    const messages = [
+      { id: '6a1f00000000000000000001', pgId: '40', content: 'Migrated root', created_at: '2026-10-31T01:00:00Z', user: { username: 'ada' }, thread_root_id: null },
+      { id: '41', pgId: '41', content: 'reply', created_at: '2026-10-31T01:05:00Z', user: { username: 'bo' }, thread_root_id: 40 },
+    ];
+    expect(threadRowsFrom(messages as any).map((row) => [row.rootId, row.snippet])).toEqual([
+      ['6a1f00000000000000000001', 'Migrated root'],
+    ]);
+  });
+
   test('the threads view says so when the pod has none', () => {
     renderInspector();
     fireEvent.click(screen.getByRole('radio', { name: 'Threads' }));

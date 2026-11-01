@@ -559,17 +559,20 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   // ADR-020 D3: payload-driven components render from structure, not
   // content regex — the first message class where `payload` is the truth
   // and `content` is only the plain-text fallback for legacy surfaces.
+  // The delegated cards below carry the standard message-<id> anchor in a
+  // wrapper, so landOnMessage (a Threads row, a Needs-you link) can reach a
+  // card that roots a thread.
   if (message.payload?.kind === 'approval-card') {
-    return <><V2ApprovalCard message={message} authorLabel={author} time={time} /><V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} /></>;
+    return <><div id={`message-${message.id}`} tabIndex={-1}><V2ApprovalCard message={message} authorLabel={author} time={time} /></div><V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} /></>;
   }
   if (message.payload?.kind === 'byo-handoff') {
-    return <><V2BYOHandoffCard message={message} authorLabel={author} time={time} /><V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} /></>;
+    return <><div id={`message-${message.id}`} tabIndex={-1}><V2BYOHandoffCard message={message} authorLabel={author} time={time} /></div><V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} /></>;
   }
   if (message.payload?.kind === 'ui') {
     return <CardRenderBoundary key={message.id} fallback={<div id={`message-${message.id}`} tabIndex={-1} className="v2-msg__content">{message.content}</div>}><Suspense fallback={<div id={`message-${message.id}`} tabIndex={-1} className="v2-msg__content">{message.content}</div>}><V2UICard message={message} authorLabel={author} time={time} /></Suspense></CardRenderBoundary>;
   }
   if (message.payload?.kind === 'gig-card') {
-    return <><V2GigCard message={message} time={time} /><V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} /></>;
+    return <><div id={`message-${message.id}`} tabIndex={-1}><V2GigCard message={message} time={time} /></div><V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} /></>;
   }
 
   // §3.8 system event card. Detected by content shape (commonly-bot only
