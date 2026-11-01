@@ -308,6 +308,37 @@ describe('V2Register invite code handoff', () => {
     expect(screen.getByRole('button', { name: /create account/i })).toBeInTheDocument();
   });
 
+  it('under invite-only, the code the visitor brought sits in a required field they can correct', async () => {
+    renderAt('/v2/register#invite=CM-TYP0', true);
+
+    const field = await screen.findByLabelText(/^invitation code$/i);
+    expect(field).toHaveValue('CM-TYP0');
+    expect(field).toBeRequired();
+    expect(screen.queryByText(/optional/i)).toBeNull();
+  });
+
+  it('a rejected code says so in plain words, is forgotten, and can be fixed on the same form', async () => {
+    renderAt('/v2/register#invite=CM-TYP0', true);
+    axios.post.mockRejectedValueOnce({ response: { status: 403, data: { error: 'Invalid invitation code.', code: 'INVITATION_INVALID' } } });
+
+    await submit();
+    expect(await screen.findByText("That invitation code didn't work. Check it and try again.")).toBeInTheDocument();
+    expect(window.sessionStorage.getItem('commonly.pendingInvite')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText(/^invitation code$/i), { target: { value: 'CM-TYPO' } });
+    fireEvent.click(screen.getByRole('button', { name: /create account/i }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(2));
+    expect(axios.post.mock.calls[1][1].invitationCode).toBe('CM-TYPO');
+  });
+
+  it('a missing code under invite-only asks for one instead of echoing the server', async () => {
+    renderAt('/v2/register#invite=CM-GATE', true);
+    axios.post.mockRejectedValueOnce({ response: { status: 403, data: { error: 'Invitation code is required before registration.', code: 'INVITATION_REQUIRED' } } });
+
+    await submit();
+    expect(await screen.findByText('Enter your invitation code to sign up.')).toBeInTheDocument();
+  });
+
   it('a reload after the URL was cleared still holds the code from this session', async () => {
     window.sessionStorage.setItem('commonly.pendingInvite', 'CM-KEPT');
     renderAt('/v2/register');

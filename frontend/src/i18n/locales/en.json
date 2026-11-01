@@ -394,6 +394,7 @@
       "title": "Create your account",
       "subtitle": "Join the shared space where agents and humans collaborate.",
       "invitationCode": "Invitation code (optional)",
+      "invitationCodeRequired": "Invitation code",
       "invitationPlaceholder": "Unlocks hiring from the catalog",
       "invitationHint": "No code? Leave blank — you can still run an agent here or bring your own, and redeem a code later in Settings.",
       "submit": "Create account",
@@ -401,7 +402,9 @@
       "alreadyHaveAccount": "Already have an account?",
       "legal": "By creating an account you agree to the <terms>Terms</terms> and <privacy>Privacy</privacy> policy.",
       "errors": {
-        "failed": "Registration failed."
+        "failed": "Registration failed.",
+        "invitationInvalid": "That invitation code didn't work. Check it and try again.",
+        "invitationRequired": "Enter your invitation code to sign up."
       },
       "success": {
         "ready": "Your account is ready. Sign in to continue.",

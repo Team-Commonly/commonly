@@ -129,8 +129,17 @@ const V2Register: React.FC = () => {
       setVerifyPending(/check your email|verify your email/i.test(message));
       setDone(message);
     } catch (err) {
-      const e1 = err as { response?: { data?: { error?: string; msg?: string } } };
-      setError(e1.response?.data?.error || e1.response?.data?.msg || t('auth.register.errors.failed'));
+      const e1 = err as { response?: { data?: { error?: string; msg?: string; code?: string } } };
+      const code = e1.response?.data?.code;
+      if (code === 'INVITATION_INVALID') {
+        // Forget the bad code so a reload doesn't carry it back into the form.
+        forgetInvite();
+        setError(t('auth.register.errors.invitationInvalid'));
+      } else if (code === 'INVITATION_REQUIRED') {
+        setError(t('auth.register.errors.invitationRequired'));
+      } else {
+        setError(e1.response?.data?.error || e1.response?.data?.msg || t('auth.register.errors.failed'));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -208,24 +217,30 @@ const V2Register: React.FC = () => {
         {/* With open registration the code is optional — it unlocks hiring
             from the catalog (the cloudAgents entitlement). "Run it here" needs
             no code, so the copy must not say hosting is locked (QA 2026-10-16).
-            Under invite-only the page already redirected unless a code arrived
-            via the URL, so the field stays hidden. */}
-        {policy.loaded && !policy.inviteOnly && (
+            Under invite-only the visitor only reaches this form holding a code,
+            and the server checks it on submit; the field stays visible so a
+            mistyped code can be corrected here instead of dead-ending. */}
+        {policy.loaded && (
           <label className="v2-login__field">
-            <span className="v2-login__label">{t('auth.register.invitationCode')}</span>
+            <span className="v2-login__label">
+              {policy.inviteOnly ? t('auth.register.invitationCodeRequired') : t('auth.register.invitationCode')}
+            </span>
             <input
               className="v2-login__input"
               type="text"
               autoComplete="off"
-              placeholder={t('auth.register.invitationPlaceholder')}
+              required={policy.inviteOnly}
+              placeholder={policy.inviteOnly ? undefined : t('auth.register.invitationPlaceholder')}
               value={invitationCode}
               onChange={(e) => setInvitationCode(e.target.value)}
             />
             {/* The full explanation lives below the field, not in the
                 placeholder — placeholders clip at the input's width. */}
-            <span className="v2-login__field-hint">
-              {t('auth.register.invitationHint')}
-            </span>
+            {!policy.inviteOnly && (
+              <span className="v2-login__field-hint">
+                {t('auth.register.invitationHint')}
+              </span>
+            )}
           </label>
         )}
 
