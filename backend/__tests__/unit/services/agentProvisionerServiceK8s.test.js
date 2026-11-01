@@ -361,6 +361,55 @@ describe('agentProvisionerServiceK8s', () => {
     expect(agentEntry.workspace).toBe('/workspace/cuz');
   });
 
+  it('says so when an OpenClaw account is left with no user token', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await provisionAgentRuntime({
+        runtimeType: 'moltbot',
+        agentName: 'openclaw',
+        instanceId: 'cuz',
+        runtimeToken: 'cm_agent_test',
+        userToken: null,
+        baseUrl: 'http://backend',
+        displayName: 'Cuz',
+        heartbeat: null,
+      });
+      const said = warn.mock.calls.map((args) => args.join(' ')).filter((line) => line.includes('no user token'));
+      expect(said).toHaveLength(1);
+      expect(said[0]).toContain('cuz');
+      expect(said[0]).toContain('force');
+      expect(said[0]).not.toContain('cm_');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('keeps a Commonly bot account\'s saved tokens when a reprovision has none to give', async () => {
+    // A stored token is a hash, so reissuing an existing one returns no bearer.
+    k8s.__mock.readNamespacedConfigMap.mockResolvedValueOnce({
+      body: {
+        data: {
+          'runtime.json': JSON.stringify({
+            accounts: { default: { runtimeToken: 'cm_agent_saved', userToken: 'cm_user_saved' } },
+          }),
+        },
+      },
+    });
+
+    await provisionAgentRuntime({
+      runtimeType: 'internal',
+      agentName: 'commonly-summarizer',
+      instanceId: 'default',
+      runtimeToken: null,
+      userToken: null,
+    });
+
+    const calls = k8s.__mock.replaceNamespacedConfigMap.mock.calls;
+    const written = JSON.parse(calls[calls.length - 1][2].data['runtime.json']);
+    expect(written.accounts.default.runtimeToken).toBe('cm_agent_saved');
+    expect(written.accounts.default.userToken).toBe('cm_user_saved');
+  });
+
   it('sets default heartbeat prompt that requires commonly reads before HEARTBEAT_OK', async () => {
     await provisionAgentRuntime({
       runtimeType: 'moltbot',

@@ -67,6 +67,11 @@ describe('API token storage rollout', () => {
     }
     expect(await backfillApiTokenStorage({ apply: true })).toEqual({ candidates: 0, migrated: 0, conflicts: 0, skipped: 0, remaining: 0 });
   });
+  it('counts only string bearers as left to migrate', async () => {
+    const user = await create('empty-bearer');
+    await users().updateOne({ _id: user._id }, { $set: { apiToken: null } });
+    expect(await backfillApiTokenStorage({ apply: true })).toEqual({ candidates: 0, migrated: 0, conflicts: 0, skipped: 0, remaining: 0 });
+  });
   it('compares fixed-size digests on correct and wrong tokens', async () => {
     const user = await create('constant-time');
     const token = user.generateApiToken();

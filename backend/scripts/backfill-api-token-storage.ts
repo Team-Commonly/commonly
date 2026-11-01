@@ -36,7 +36,7 @@ export const backfillApiTokenStorage = async ({ apply = false }: { apply?: boole
   } finally {
     await cursor.close();
   }
-  report.remaining = await users.countDocuments({ apiToken: { $exists: true } });
+  report.remaining = await users.countDocuments({ apiToken: { $type: 'string' } });
   return report;
 };
 

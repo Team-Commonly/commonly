@@ -241,6 +241,74 @@ describe('agentProvisionerService', () => {
     expect(parsed.accounts.default.runtimeToken).toBe('cm_agent_summary');
   });
 
+  it('says so when an OpenClaw account is left with no user token', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await provisionAgentRuntime({
+        runtimeType: 'moltbot',
+        agentName: 'openclaw',
+        instanceId: 'cuz',
+        runtimeToken: 'cm_agent_test',
+        userToken: null,
+        baseUrl: 'http://backend:5000',
+      });
+      const said = warn.mock.calls.map((args) => args.join(' ')).filter((line) => line.includes('no user token'));
+      expect(said).toHaveLength(1);
+      expect(said[0]).toContain('cuz');
+      expect(said[0]).toContain('force');
+      expect(said[0]).not.toContain('cm_');
+
+      warn.mockClear();
+      await provisionAgentRuntime({
+        runtimeType: 'moltbot',
+        agentName: 'openclaw',
+        instanceId: 'cuz',
+        runtimeToken: 'cm_agent_test',
+        userToken: 'cm_user_test',
+        baseUrl: 'http://backend:5000',
+      });
+      await provisionAgentRuntime({
+        runtimeType: 'moltbot',
+        agentName: 'openclaw',
+        instanceId: 'cuz',
+        runtimeToken: 'cm_agent_test',
+        userToken: null,
+        baseUrl: 'http://backend:5000',
+      });
+      expect(warn.mock.calls.some((args) => args.join(' ').includes('no user token'))).toBe(false);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('keeps a Commonly bot account\'s saved tokens when a reprovision has none to give', async () => {
+    // A stored token is a hash, so reissuing an existing one returns no bearer.
+    fs.writeFileSync(commonlyConfigPath, JSON.stringify({
+      accounts: { default: { runtimeToken: 'cm_agent_saved', userToken: 'cm_user_saved' } },
+    }));
+    await provisionAgentRuntime({
+      runtimeType: 'internal',
+      agentName: 'commonly-summarizer',
+      instanceId: 'default',
+      runtimeToken: null,
+      userToken: null,
+    });
+    const kept = JSON.parse(fs.readFileSync(commonlyConfigPath, 'utf8')).accounts.default;
+    expect(kept.runtimeToken).toBe('cm_agent_saved');
+    expect(kept.userToken).toBe('cm_user_saved');
+
+    await provisionAgentRuntime({
+      runtimeType: 'internal',
+      agentName: 'commonly-summarizer',
+      instanceId: 'default',
+      runtimeToken: 'cm_agent_new',
+      userToken: 'cm_user_new',
+    });
+    const replaced = JSON.parse(fs.readFileSync(commonlyConfigPath, 'utf8')).accounts.default;
+    expect(replaced.runtimeToken).toBe('cm_agent_new');
+    expect(replaced.userToken).toBe('cm_user_new');
+  });
+
   describe('heartbeat configuration', () => {
     it('sets default heartbeat target to "commonly"', async () => {
       await provisionAgentRuntime({
