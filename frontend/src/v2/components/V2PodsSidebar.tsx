@@ -194,7 +194,10 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     pods, loading, error, createPod, refresh: refreshPods,
   } = podsState || ownPodsState;
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const searchToggleRef = useRef<HTMLButtonElement | null>(null);
   const [query, setQuery] = useState('');
+  // The phone page folds search behind an icon in its title bar (D223).
+  const [searchOpen, setSearchOpen] = useState(false);
   const [listView, setListView] = useState<PodListView>(() => readListView());
   const [openKinds, setOpenKinds] = useState<Set<PodKind>>(() => readOpenKinds());
   const [creating, setCreating] = useState(false);
@@ -241,6 +244,9 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
+        // The phone page renders the field only once its search is open;
+        // opening it lets the field's autoFocus take the focus.
+        setSearchOpen(true);
         searchRef.current?.focus();
         searchRef.current?.select();
       }
@@ -457,92 +463,130 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   );
 
   const isPage = variant === 'page';
+  const showSearch = !isPage || searchOpen || query !== '';
+
+  const newPodButton = (
+    <button
+      type="button"
+      className="v2-pods__new"
+      onClick={() => {
+        setShowCreate((open) => !open);
+        setCreateError(null);
+      }}
+      disabled={creating}
+      aria-label={t('podsSidebar.newPod')}
+      title={t('podsSidebar.newPod')}
+      aria-expanded={showCreate}
+    >
+      <ShellGlyph name="plus" size={17} />
+    </button>
+  );
 
   return (
     <aside className={`v2-pane v2-pods-aside${isPage ? ' v2-pods-aside--page' : ''}`}>
       <div className="v2-pods">
-        {isPage && <h1 className="v2-pods__page-title">{t('podsSidebar.workspace.listTitle')}</h1>}
-        <div className="v2-pods__tools">
-          <label className="v2-pods__search">
-            <input
-              ref={searchRef}
-              className="v2-pods__search-input"
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => { if (event.key === 'Escape') setQuery(''); }}
-              placeholder={t('podsSidebar.workspace.search')}
+        {/* D223 (TASK-735): the phone page leads with the artboard's title bar,
+            search as an icon beside the new-pod key. */}
+        {isPage && (
+          <div className="v2-pods__bar">
+            <h1 className="v2-pods__page-title">{t('podsSidebar.workspace.listTitle')}</h1>
+            <button
+              ref={searchToggleRef}
+              type="button"
+              className="v2-icon-button v2-pods__search-open"
+              onClick={() => {
+                if (showSearch) {
+                  // Closing removes the field that held focus; keep it here.
+                  setSearchOpen(false);
+                  setQuery('');
+                  searchToggleRef.current?.focus();
+                } else {
+                  setSearchOpen(true);
+                }
+              }}
               aria-label={t('podsSidebar.workspace.search')}
-            />
-            <kbd className="v2-pods__search-kbd" aria-hidden="true">{searchShortcutHint(browserPlatform())}</kbd>
-          </label>
-          <button
-            type="button"
-            className="v2-pods__new"
-            onClick={() => {
-              setShowCreate((open) => !open);
-              setCreateError(null);
-            }}
-            disabled={creating}
-            aria-label={t('podsSidebar.newPod')}
-            title={t('podsSidebar.newPod')}
-            aria-expanded={showCreate}
-          >
-            +
-          </button>
+              title={t('podsSidebar.workspace.search')}
+              aria-expanded={showSearch}
+            >
+              <ShellGlyph name="search" size={17} />
+            </button>
+            {newPodButton}
+          </div>
+        )}
+        <div className="v2-pods__body">
+          {showSearch && (
+            <div className="v2-pods__tools">
+              <label className="v2-pods__search">
+                <ShellGlyph name="search" size={15} />
+                <input
+                  ref={searchRef}
+                  className="v2-pods__search-input"
+                  type="search"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === 'Escape') setQuery(''); }}
+                  placeholder={t('podsSidebar.workspace.search')}
+                  aria-label={t('podsSidebar.workspace.search')}
+                  autoFocus={isPage && searchOpen}
+                />
+                <kbd className="v2-pods__search-kbd" aria-hidden="true">{searchShortcutHint(browserPlatform())}</kbd>
+              </label>
+              {!isPage && newPodButton}
+            </div>
+          )}
+          {createForm}
+          {!loading && !error && listablePods.length > 0 && (
+            <div className="v2-pods__view">
+              <V2Segmented
+                size={isPage ? 'md' : 'sm'}
+                ariaLabel={t('podsSidebar.workspace.viewLabel')}
+                value={listView}
+                onChange={chooseListView}
+                options={[
+                  { value: 'recent', label: t('podsSidebar.workspace.recent') },
+                  { value: 'all', label: t('podsSidebar.workspace.all'), count: listablePods.length },
+                  { value: 'pinned', label: t('podsSidebar.workspace.pinnedTitle') },
+                ]}
+              />
+            </div>
+          )}
+          {loading && <div className="v2-pods__empty"><span className="v2-spinner" /></div>}
+          {!loading && error && <div className="v2-pods__empty">{error}</div>}
+          {!loading && !error && (
+            <div className="v2-pods__list">
+              {searching ? (
+                matches.length > 0
+                  ? <div className="v2-pods__rows">{matches.map((pod) => renderRow(pod))}</div>
+                  : <div className="v2-pods__empty v2-pods__empty--mono">{t('podsSidebar.workspace.noMatch')}</div>
+              ) : (
+                <>
+                  {listablePods.length > 0 && listView === 'recent' && (
+                    <div className="v2-pods__rows">{recent.map((pod) => renderRow(pod))}</div>
+                  )}
+                  {listablePods.length > 0 && listView === 'all' && everything.map((group) => renderSection(
+                    group.kind,
+                    t(`podsSidebar.workspace.${group.kind}`),
+                    group.pods.map((pod) => renderRow(pod, true)),
+                    {
+                      count: group.pods.length,
+                      open: openKinds.has(group.kind),
+                      onToggle: () => toggleKind(group.kind),
+                      nested: true,
+                    },
+                  ))}
+                  {listablePods.length > 0 && listView === 'pinned' && (
+                    pinnedPods.length > 0
+                      ? <div className="v2-pods__rows">{pinnedPods.map((pod) => renderRow(pod))}</div>
+                      : <div className="v2-pods__empty">{t('podsSidebar.workspace.noPinned')}</div>
+                  )}
+                  {listablePods.length === 0 && (
+                    <div className="v2-pods__empty">{t('podsSidebar.empty.noPods')}</div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
-        {createForm}
-        {!loading && !error && listablePods.length > 0 && (
-          <div className="v2-pods__view">
-            <V2Segmented
-              size="sm"
-              ariaLabel={t('podsSidebar.workspace.viewLabel')}
-              value={listView}
-              onChange={chooseListView}
-              options={[
-                { value: 'recent', label: t('podsSidebar.workspace.recent') },
-                { value: 'all', label: t('podsSidebar.workspace.all'), count: listablePods.length },
-                { value: 'pinned', label: t('podsSidebar.workspace.pinnedTitle') },
-              ]}
-            />
-          </div>
-        )}
-        {loading && <div className="v2-pods__empty"><span className="v2-spinner" /></div>}
-        {!loading && error && <div className="v2-pods__empty">{error}</div>}
-        {!loading && !error && (
-          <div className="v2-pods__list">
-            {searching ? (
-              matches.length > 0
-                ? <div className="v2-pods__rows">{matches.map((pod) => renderRow(pod))}</div>
-                : <div className="v2-pods__empty v2-pods__empty--mono">{t('podsSidebar.workspace.noMatch')}</div>
-            ) : (
-              <>
-                {listablePods.length > 0 && listView === 'recent' && (
-                  <div className="v2-pods__rows">{recent.map((pod) => renderRow(pod))}</div>
-                )}
-                {listablePods.length > 0 && listView === 'all' && everything.map((group) => renderSection(
-                  group.kind,
-                  t(`podsSidebar.workspace.${group.kind}`),
-                  group.pods.map((pod) => renderRow(pod, true)),
-                  {
-                    count: group.pods.length,
-                    open: openKinds.has(group.kind),
-                    onToggle: () => toggleKind(group.kind),
-                    nested: true,
-                  },
-                ))}
-                {listablePods.length > 0 && listView === 'pinned' && (
-                  pinnedPods.length > 0
-                    ? <div className="v2-pods__rows">{pinnedPods.map((pod) => renderRow(pod))}</div>
-                    : <div className="v2-pods__empty">{t('podsSidebar.workspace.noPinned')}</div>
-                )}
-                {listablePods.length === 0 && (
-                  <div className="v2-pods__empty">{t('podsSidebar.empty.noPods')}</div>
-                )}
-              </>
-            )}
-          </div>
-        )}
       </div>
     </aside>
   );

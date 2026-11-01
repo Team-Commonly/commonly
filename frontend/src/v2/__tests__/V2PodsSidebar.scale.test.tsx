@@ -369,6 +369,30 @@ describe('V2PodsSidebar — direction C', () => {
     expect(document.querySelector('.v2-pods-aside--page')).toBeTruthy();
   });
 
+  test('the phone page folds search behind its title-bar icon, and closing it keeps focus (D223)', () => {
+    renderSidebar(fleet, null, { variant: 'page' });
+    const toggle = document.querySelector<HTMLButtonElement>('.v2-pods__search-open');
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(toggle);
+    const field = screen.getByRole('searchbox');
+    expect(field).toHaveFocus();
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.change(field, { target: { value: 'sharp' } });
+
+    fireEvent.click(toggle);
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(toggle).toHaveFocus();
+  });
+
+  test('⌘K opens the folded phone search', () => {
+    renderSidebar(fleet, null, { variant: 'page' });
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    expect(screen.getByRole('searchbox')).toHaveFocus();
+  });
+
   test('kinds: every reviewed type maps to one kind, unknown types are not listed, DMs are direct', () => {
     expect(podKind(pod('t', 'T', 'team', []))).toBe('team');
     expect(podKind(pod('c', 'C', 'team', [], { communityListed: true }))).toBe('community');
