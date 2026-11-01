@@ -16,6 +16,7 @@ import V2ConnectorTools, { type HostedMcpManualRevokeNotice } from './V2Connecto
 import { hostedMcpErrorNotice } from './hostedMcpErrorNotice';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 import { catalogDescription } from '../utils/connectorCatalogDescription';
+import { safeProviderRevokePage } from '../utils/safeProviderRevokePage';
 import V2PageHead from './V2PageHead';
 import V2InactiveFold from './V2InactiveFold';
 
@@ -274,16 +275,6 @@ const claimIsStale = (installation: CatalogInstallation): boolean => {
   const claimedAt = installation.claimedAt ? new Date(installation.claimedAt).getTime() : NaN;
   if (!Number.isFinite(claimedAt)) return true;
   return Date.now() - claimedAt >= INSTALL_LOCK_TTL_MS;
-};
-
-const safeProviderRevokePage = (value: unknown): value is string => {
-  if (typeof value !== 'string') return false;
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' && !url.username && !url.password;
-  } catch {
-    return false;
-  }
 };
 
 const projectionMissing = (entry: CatalogEntry): boolean => (
