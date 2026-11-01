@@ -156,7 +156,7 @@ const renderGuideProvenance = (guide) => {
   return `<p class="seo-byline">By ${escapeHtml(provenance.author)} · Reviewed by ${escapeHtml(provenance.reviewer)}<br>${dates}</p>`;
 };
 
-const renderLanding = (landing, guides, faq = []) => {
+const renderLanding = (landing, guides, faq = [], siteLinks = '') => {
   const featureCards = [
     landing.features.needs,
     landing.features.team,
@@ -254,8 +254,20 @@ const renderLanding = (landing, guides, faq = []) => {
           <p><a href="https://github.com/Team-Commonly/commonly">${escapeHtml(landing.actions.readSource)}</a></p>
         </section>${faqSection}
       </main>
-      <footer class="seo-footer">Commonly is open source under Apache-2.0.</footer>
+      <footer class="seo-footer">Commonly is open source under Apache-2.0.${siteLinks}</footer>
     </div>`;
+};
+
+// Links every static page carries, so the comparison and use-case pages are reachable from a page
+// crawlers already index, not only from the sitemap (D139: most of the sitemap sits "Discovered – not indexed").
+export const renderSiteLinks = ({ useCases = {}, compareSources = {} }) => {
+  const compareLinks = Object.values(compareSources).map((source) => `<a href="${escapeHtml(source.path)}">${escapeHtml(source.title.split(':')[0])}</a>`);
+  const useCaseLinks = Object.entries(useCases).map(([id, useCase]) => `<a href="/use-cases/${encodeURIComponent(id)}/">${escapeHtml(useCase.title)}</a>`);
+  return `<nav class="seo-site-links" aria-label="More from Commonly">
+        <p><a href="/guides/">Guides</a></p>
+        ${compareLinks.length ? `<p>Compare: ${compareLinks.join(' · ')}</p>` : ''}
+        ${useCaseLinks.length ? `<p>Use cases: ${useCaseLinks.join(' · ')}</p>` : ''}
+      </nav>`;
 };
 
 const renderCompare = (compare) => {
@@ -300,7 +312,7 @@ const renderCompare = (compare) => {
     </div>`;
 };
 
-const renderUseCase = (useCase) => `
+const renderUseCase = (useCase, siteLinks = '') => `
   <div id="seo-page">
     <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a></nav></header>
     <main>
@@ -319,10 +331,10 @@ const renderUseCase = (useCase) => `
       <section><h2>Example flow</h2><ol>${useCase.exampleFlow.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}</ol></section>
       ${useCase.relatedGuides?.length ? `<section><h2>Related guides</h2><ul>${useCase.relatedGuides.map((guide) => `<li><a href="${escapeHtml(guide.path)}">${escapeHtml(guide.title)}</a></li>`).join('')}</ul></section>` : ''}
     </main>
-    <footer class="seo-footer"><a href="/">Back to Commonly</a></footer>
+    <footer class="seo-footer"><a href="/">Back to Commonly</a>${siteLinks}</footer>
   </div>`;
 
-const renderGuide = (guide) => {
+const renderGuide = (guide, siteLinks = '') => {
   const sections = guide.sections.map((section) => `
     <section>
       <h2>${escapeHtml(section.title)}</h2>
@@ -359,11 +371,11 @@ const renderGuide = (guide) => {
       <section class="seo-band"><h2>${escapeHtml(guide.cta.title)}</h2><p>${escapeHtml(guide.cta.body)}</p><p class="seo-actions"><a class="seo-primary" href="${escapeHtml(guide.cta.primary.path)}">${escapeHtml(guide.cta.primary.label)}</a><a href="${escapeHtml(guide.cta.secondary.path)}">${escapeHtml(guide.cta.secondary.label)}</a></p></section>
       <p class="seo-note">${relatedLinks}</p>
     </main>
-    <footer class="seo-footer"><a href="/">Back to Commonly</a></footer>
+    <footer class="seo-footer"><a href="/">Back to Commonly</a>${siteLinks}</footer>
   </div>`;
 };
 
-const renderGuidesIndex = (guides) => {
+const renderGuidesIndex = (guides, siteLinks = '') => {
   const guideCards = Object.entries(guides).map(([id, guide]) => `
     <article class="seo-card">
       <p class="seo-kicker">${escapeHtml(guide.eyebrow)}</p>
@@ -385,7 +397,7 @@ const renderGuidesIndex = (guides) => {
           <div class="seo-grid">${guideCards}</div>
         </section>
       </main>
-      <footer class="seo-footer"><a href="/">Back to Commonly</a></footer>
+      <footer class="seo-footer"><a href="/">Back to Commonly</a>${siteLinks}</footer>
     </div>`;
 };
 
@@ -701,6 +713,7 @@ export const renderMarkdown = (markdown) => {
 };
 
 export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, landingFaq = [], compareSources = comparePageSources }) => {
+  const siteLinks = renderSiteLinks({ useCases, compareSources });
   const organizationId = `${siteUrl}/#organization`;
   const websiteId = `${siteUrl}/#website`;
   const organization = {
@@ -754,7 +767,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     outputPath: 'index.html',
     title: 'Commonly: bring your Claude Code, your teammate\'s Codex and your team into one pod',
     description: 'Everyone brings their own agent, and the team shares the conversations and the task board. Open source under Apache-2.0, and you can self-host.',
-    content: renderLanding(landing, guides, landingFaq),
+    content: renderLanding(landing, guides, landingFaq, siteLinks),
   };
   if (landingFaq.length) landingPage.faqSchema = faqPageJsonLd(landingFaq);
   landingPage.schema = {
@@ -777,7 +790,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
       <main class="seo-article">
         ${renderMarkdown(source.markdown)}
       </main>
-      <footer class="seo-footer"><a href="/">Back to Commonly</a></footer>
+      <footer class="seo-footer"><a href="/">Back to Commonly</a>${siteLinks}</footer>
     </div>`,
       schema: webPage(source.title, source.description, source.path),
     };
@@ -800,7 +813,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     outputPath: 'guides/index.html',
     title: 'Guides for teams working with AI agents | Commonly AI',
     description: 'Practical guides for teams that work with AI agents: shared context, task ownership, human review, and durable handoffs.',
-    content: renderGuidesIndex(guides),
+    content: renderGuidesIndex(guides, siteLinks),
     staticOnly: true,
     schema: webPage('Guides for teams working with AI agents', 'Practical guides for teams that work with AI agents: shared context, task ownership, human review, and durable handoffs.', guidesIndexPath),
   };
@@ -812,7 +825,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
       outputPath: `use-cases/${id}/index.html`,
       title: `${useCase.title} | Commonly AI`,
       description: useCase.summary,
-      content: renderUseCase(useCase),
+      content: renderUseCase(useCase, siteLinks),
       schema: webPage(useCase.title, useCase.summary, path),
     };
   });
@@ -827,7 +840,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
       outputPath: `guides/${id}/index.html`,
       title: guide.titleTag,
       description: guide.description,
-      content: renderGuide(guide),
+      content: renderGuide(guide, siteLinks),
       staticOnly: true,
       ogType: 'article',
       datePublished: provenance.datePublished,

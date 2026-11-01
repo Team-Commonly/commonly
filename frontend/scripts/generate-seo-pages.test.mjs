@@ -2201,6 +2201,23 @@ test('the compare page is unlisted: noindex, out of the sitemap, and linked from
   assert.match(sitemap, /<loc>https:\/\/commonly\.me\/use-cases\/team-chat\/<\/loc>/);
 });
 
+test('every indexable page links the comparison and use-case pages, not only the sitemap (D139)', async () => {
+  const [translationText, useCaseText, guideText] = await Promise.all([
+    readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
+  ]);
+  const translations = JSON.parse(translationText);
+  const useCases = JSON.parse(useCaseText);
+  const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides: JSON.parse(guideText) });
+  const targets = ['/compare/openagents/', '/compare/github-agent-hq/', ...Object.keys(useCases).map((id) => `/use-cases/${id}/`)];
+  const indexable = pages.filter((page) => !page.noindex);
+  assert.ok(indexable.length > 10);
+  for (const page of indexable) {
+    for (const target of targets) assert.ok(page.content.includes(`href="${target}"`), `${page.path} -> ${target}`);
+  }
+});
+
 test('a compare page renders GTM markdown and refuses to build while a HOLD is open', () => {
   const html = renderMarkdown([
     '# Title',
