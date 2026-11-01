@@ -56,7 +56,8 @@ describe('D223 phone shell', () => {
     expect(phoneBlock).toMatch(/\.v2m-page \.v2p-ph\s*\{[^}]*min-height:\s*52px[^}]*flex-wrap:\s*nowrap/);
     expect(phoneBlock).toMatch(/\.v2m-ahead\s*\{\s*min-width:\s*0/);
     expect(phoneBlock).toMatch(/\.v2m-ahead h1\s*\{[^}]*white-space:\s*nowrap[^}]*text-overflow:\s*ellipsis/);
-    expect(phoneBlock).toMatch(/\.v2p-seg\s*\{[^}]*flex:\s*none/);
+    // The d215 390 frame puts the tabs in a full-width row below the bar.
+    expect(phoneBlock).toMatch(/\.v2m-pbody > \.v2p-seg\s*\{[^}]*align-self:\s*stretch/);
   });
 
   test('the settings head spans the pane and only the body scrolls', () => {

@@ -5,14 +5,19 @@
    prefix so they cannot collide with existing v2 rules. The header, segment,
    list and group title come from the v2p- primitives. */
 
-.v2m-page { width: 100%; min-width: 0; align-self: stretch; display: flex; flex-direction: column; box-sizing: border-box; }
+/* The frame's page fills the pane: no feature-page inset, no 1240px cap. The
+   route passes v2-feature--memory, the same opt-out settings and connectors use. */
+.v2-feature--memory > .v2-feature__body { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.v2-feature--memory .v2-feature__legacy { flex: 1 1 auto; width: 100%; max-width: none; min-height: 0; margin: 0; display: flex; flex-direction: column; }
+.v2m-page { width: 100%; min-width: 0; flex: 1 1 auto; min-height: 0; align-self: stretch; display: flex; flex-direction: column; box-sizing: border-box; }
 .v2m-page .v2p-ph { height: 76px; padding-left: 28px; }
 .v2m-ahead { display: block; min-width: 0; }
 .v2m-ahead h1 { font: 800 24px/1 var(--v2-font-display); letter-spacing: -0.03em; margin: 0; white-space: nowrap; }
 .v2m-ahead .st { display: flex; align-items: center; gap: 6px; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-muted); margin: 5px 0 0; }
-.v2m-pbody { flex: 1; min-height: 0; padding: 24px 28px; box-sizing: border-box; }
+.v2m-pbody { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 28px; box-sizing: border-box; }
 
-.v2m-mem { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; align-items: start; }
+/* The frame's grid stretches its row, so the nav column runs as tall as the notes. */
+.v2m-mem { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; }
 .v2m-mnav { display: grid; gap: 2px; align-content: start; }
 .v2m-mnav ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .v2m-mnav a,
@@ -37,6 +42,8 @@
 .v2m-gtitle svg.i { width: 13px; height: 13px; flex: none; }
 .v2m-gtitle .v2m-saved { margin-left: auto; font-weight: 400; }
 .v2m-gtitle .v2m-chev { display: none; }
+/* Phone-only title parts: the count and the Journal's latest day. */
+.v2m-ct, .v2m-latest { display: none; }
 
 .v2m-info { all: unset; cursor: help; position: relative; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: var(--v2-text-placeholder); vertical-align: middle; }
 .v2m-info svg.i { width: 15px; height: 15px; }
@@ -54,20 +61,26 @@
 .v2m-jday { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 12px; padding: 10px 14px; border-top: 1px solid var(--v2-border-soft); font-size: 13.5px; color: var(--v2-ink-2); }
 .v2m-jday:first-child { border-top: 0; }
 .v2m-jday .mo { font: 500 11.5px/20px var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2m-jday .v2m-mu { color: var(--v2-text-muted); }
 
 .v2m-state { margin: 0; padding: 14px; font-size: 13.5px; color: var(--v2-text-secondary); }
 
 /* Phone (frame 390): search first, groups become the frame's details.grp rows. */
 @media (max-width: 767px) {
-  /* D223 (TASK-730): the same 52px phone top bar feature pages get. The segment
-     stays in the bar, the name shrinks and ellipsizes. */
+  /* D223 (TASK-730): the same 52px phone top bar feature pages get; the name
+     shrinks and ellipsizes. */
   .v2m-page .v2p-ph { height: auto; min-height: 52px; flex-wrap: nowrap; gap: 8px; padding: 0 10px 0 12px; }
   .v2m-page .v2p-ph .sp { display: none; }
   .v2m-page .v2p-ph .v2m-ahead { min-width: 0; flex: 1; }
-  .v2m-page .v2p-ph .v2m-ahead h1 { margin: 0; white-space: nowrap; font: 800 21px/1 var(--v2-font-display); letter-spacing: -0.03em; overflow: hidden; text-overflow: ellipsis; }
+  /* The frame's phone bar: back, a 24px face, the name at 16px, then actions.
+     The tabs sit below it in a full-width row. */
+  .v2m-page .v2p-ph .v2-avatar { width: 24px; height: 24px; flex: none; }
+  .v2m-page .v2p-ph .v2m-ahead h1 { margin: 0; white-space: nowrap; font: 700 16px/1.1 var(--v2-font-display); letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; }
   .v2m-page .v2p-ph .v2m-ahead .st { display: none; }
-  .v2m-page .v2p-ph .v2p-seg { flex: none; margin-top: 0; }
-  .v2m-pbody { padding: 12px; }
+  .v2m-pbody { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .v2m-pbody > .v2p-seg { display: flex; align-self: stretch; margin: 0; }
+  .v2m-pbody > .v2p-seg > button { flex: 1; justify-content: center; }
+  .v2m-search { height: 34px; }
   .v2m-mem { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .v2m-mnav ul { display: none; }
   .v2m-search { margin-top: 0; }
@@ -76,9 +89,12 @@
   .v2m-grp > summary { cursor: pointer; }
   .v2m-gtitle { height: 44px; margin: 0; padding: 0 12px 0 14px; font: 600 13.5px/1 var(--v2-font); color: var(--v2-text-primary); }
   .v2m-gtitle svg.i { width: 16px; height: 16px; color: var(--v2-text-secondary); }
-  .v2m-gtitle .v2m-saved { font: 500 11px/1 var(--v2-font-mono); color: var(--v2-text-muted); }
+  .v2m-gtitle .v2m-saved { display: none; }
+  .v2m-ct { display: inline; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-muted); }
+  .v2m-latest { display: inline; margin-left: auto; font: 500 11px/1 var(--v2-font-mono); color: var(--v2-text-muted); }
   .v2m-gtitle .v2m-info { display: none; }
-  .v2m-gtitle .v2m-chev { display: inline-block; margin-left: 4px; color: var(--v2-text-placeholder); transition: transform 160ms; }
+  .v2m-gtitle .v2m-chev { display: inline-block; margin-left: auto; color: var(--v2-text-placeholder); transition: transform 160ms; }
+  .v2m-latest ~ .v2m-chev { margin-left: 0; }
   .v2m-grp[open] > summary .v2m-chev { transform: rotate(180deg); }
   .v2m-grp .v2m-list { border-radius: 0 0 var(--v2-r-12) var(--v2-r-12); box-shadow: none; background: transparent; }
 }

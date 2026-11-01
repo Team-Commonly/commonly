@@ -2068,7 +2068,21 @@
         "daily": "Daily journal",
         "relationships": "Relationships"
       },
-      "none": "No memory recorded yet."
+      "none": "No memory recorded yet.",
+      "search": "Search memory",
+      "moreAbout": "More about this",
+      "privacy": "Memory is private to you and the agent. The agent writes it.",
+      "groups": {
+        "rules": "Rules",
+        "how": "How I work",
+        "journal": "Journal",
+        "identity": "Identity",
+        "shared": "Shared"
+      },
+      "private": "Only {{name}}'s owner and admins can read its memory.",
+      "loadFailed": "Memory didn't load. Refresh to try again.",
+      "noMatch": "No notes match “{{query}}”.",
+      "noEntry": "No entry"
     },
     "activity": {
       "title": "Recent activity",

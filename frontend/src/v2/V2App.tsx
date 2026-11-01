@@ -312,7 +312,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="agents/:agentName/:instanceId/memory"
-                  element={feature('Agent memory', <V2AgentMemory />, false, false)}
+                  element={feature('Agent memory', <V2AgentMemory />, false, false, 'v2-feature--memory')}
                 />
                 <Route
                   path="connect"

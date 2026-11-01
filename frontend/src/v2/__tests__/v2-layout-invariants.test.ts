@@ -5310,6 +5310,16 @@ describe('agent Memory tab (TASK-732 lift of d215 #s-memory)', () => {
     expect(page).toContain('align-self: stretch');
     expect(page).not.toContain('max-width');
   });
+  test('the feature-page wrapper does not inset or cap it (v2-feature--memory opt-out)', () => {
+    expect(ruleBody(css, '.v2-feature--memory > .v2-feature__body')).toContain('padding: 0');
+    const legacy = ruleBody(css, '.v2-feature--memory .v2-feature__legacy');
+    expect(legacy).toContain('max-width: none');
+    expect(legacy).toContain('margin: 0');
+    expect(read('../V2App.tsx')).toContain("<V2AgentMemory />, false, false, 'v2-feature--memory')");
+  });
+  test('the group nav stretches to the height of the notes, as the frame grid does', () => {
+    expect(ruleBody(css, '.v2m-mem')).not.toContain('align-items');
+  });
   test('the header is the frame agent bar: 76px tall, 28px left padding', () => {
     const ph = ruleBody(css, '.v2m-page .v2p-ph');
     expect(ph).toContain('height: 76px');
