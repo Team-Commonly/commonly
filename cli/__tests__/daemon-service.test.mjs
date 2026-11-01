@@ -16,7 +16,9 @@ import {
   SYSTEMD_UNIT,
   daemonLogPath,
   installDaemonService,
+  installSummary,
   launchdPlist,
+  lingerFile,
   restartDaemonService,
   servicePaths,
   serviceTempPath,
@@ -134,6 +136,88 @@ describe('install', () => {
       [['systemctl', '--user', 'enable', SYSTEMD_UNIT]],
       [['systemctl', '--user', 'restart', SYSTEMD_UNIT]],
     ]);
+  });
+
+  // D171: a systemd user unit without lingering starts at the user's login, not
+  // at boot, so on a headless box nobody logs in to it never comes back after a
+  // reboot. The install turns lingering on and says "survives reboots" only when
+  // logind's own linger file shows it is on.
+  describe('linux lingering (D171)', () => {
+    const username = 'sam';
+    const lingerPath = lingerFile(username);
+
+    test('already on: nothing to run, and the daemon starts at boot', async () => {
+      const deps = makeDeps();
+      const result = await installDaemonService({
+        platform: 'linux', home, nodePath, cliPath, username, ...deps,
+      });
+      expect(deps.existsFile).toHaveBeenCalledWith(lingerPath);
+      expect(deps.execCmd.mock.calls.map(([argv]) => argv[0])).not.toContain('loginctl');
+      expect(result.startsAtBoot).toBe(true);
+    });
+
+    test('off: turns it on for this user, then confirms it from the linger file', async () => {
+      const deps = makeDeps();
+      let lingering = false;
+      deps.existsFile = jest.fn((path) => (path === lingerPath ? lingering : true));
+      deps.execCmd = jest.fn(async (argv) => { if (argv[0] === 'loginctl') lingering = true; });
+      const warn = jest.fn();
+      const result = await installDaemonService({
+        platform: 'linux', home, nodePath, cliPath, username, ...deps, warn,
+      });
+      expect(deps.execCmd.mock.calls).toEqual([
+        [['systemctl', '--user', 'daemon-reload']],
+        [['systemctl', '--user', 'enable', SYSTEMD_UNIT]],
+        [['systemctl', '--user', 'restart', SYSTEMD_UNIT]],
+        [['loginctl', '--no-ask-password', 'enable-linger', username]],
+      ]);
+      expect(result.startsAtBoot).toBe(true);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    test('refused: the unit stays installed, the exact command is printed, and no boot start is claimed', async () => {
+      const deps = makeDeps();
+      deps.existsFile = jest.fn((path) => path !== lingerPath);
+      deps.execCmd = jest.fn(async (argv) => {
+        if (argv[0] === 'loginctl') throw new Error('loginctl --no-ask-password enable-linger sam exited 1');
+      });
+      const warn = jest.fn();
+      const result = await installDaemonService({
+        platform: 'linux', home, nodePath, cliPath, username, ...deps, warn,
+      });
+      expect(deps.execCmd).toHaveBeenCalledWith(['systemctl', '--user', 'restart', SYSTEMD_UNIT]);
+      expect(result.startsAtBoot).toBe(false);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(`sudo loginctl enable-linger ${username}`));
+      expect(installSummary(result)).not.toMatch(/reboot|boot/);
+    });
+
+    test('a zero exit that leaves no linger file is not taken as lingering', async () => {
+      const deps = makeDeps();
+      deps.existsFile = jest.fn((path) => path !== lingerPath);
+      const warn = jest.fn();
+      const result = await installDaemonService({
+        platform: 'linux', home, nodePath, cliPath, username, ...deps, warn,
+      });
+      expect(deps.execCmd).toHaveBeenCalledWith(['loginctl', '--no-ask-password', 'enable-linger', username]);
+      expect(result.startsAtBoot).toBe(false);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(`sudo loginctl enable-linger ${username}`));
+    });
+
+    test('macOS never runs loginctl and never claims a boot start', async () => {
+      const deps = makeDeps();
+      const result = await installDaemonService({
+        platform: 'darwin', home, nodePath, cliPath, username, ...deps,
+      });
+      expect(deps.execCmd.mock.calls.map(([argv]) => argv[0])).not.toContain('loginctl');
+      expect(result.startsAtBoot).toBe(false);
+    });
+
+    test('the summary says "survives reboots" only for a boot start', () => {
+      expect(installSummary({ kind: 'systemd', startsAtBoot: true })).toMatch(/starts at boot.*survives reboots/);
+      expect(installSummary({ kind: 'systemd', startsAtBoot: false })).toMatch(/starts at login/);
+      expect(installSummary({ kind: 'systemd', startsAtBoot: false })).not.toMatch(/reboot/);
+      expect(installSummary({ kind: 'launchd', startsAtBoot: false })).not.toMatch(/reboot/);
+    });
   });
 
   test('a failing load surfaces instead of reporting success', async () => {
