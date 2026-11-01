@@ -55,6 +55,21 @@ describe('askerStartCommandCue', () => {
     expect(cue).not.toMatch(/Answer what they asked/);
   });
 
+  test('names at most three agents, newest first', async () => {
+    const asker = await person('river');
+    const pod = await chatPod(asker);
+    await install(pod, asker, 'oldest-agent', { displayName: 'Oldest agent' });
+    await install(pod, asker, 'older-agent', { displayName: 'Older agent' });
+    await install(pod, asker, 'newer-agent', { displayName: 'Newer agent' });
+    await install(pod, asker, 'newest-agent', { displayName: 'Newest agent' });
+
+    const cue = await askerStartCommandCue(String(pod._id), String(asker._id));
+
+    expect(cue).toContain('set up "Newest agent", "Newer agent", "Older agent", and they have never connected');
+    expect(cue).not.toContain('Oldest agent');
+    expect(cue).not.toContain('commonly agent run oldest-agent');
+  });
+
   test('says nothing once the agent has listened on its install token', async () => {
     const asker = await person('river');
     const pod = await chatPod(asker);
@@ -128,6 +143,21 @@ describe('askerStartCommandCue', () => {
     const cue = await askerStartCommandCue(String(room._id), String(asker._id));
 
     expect(cue).toContain('commonly agent run river-agent');
+  });
+
+  test("in the asker's own room, a listen on the agent's install in another pod counts", async () => {
+    const asker = await person('river');
+    const first = await chatPod(asker);
+    await install(first, asker, 'river-agent');
+    await AgentInstallation.updateOne({ podId: first._id }, {
+      $set: { runtimeTokens: [{ tokenHash: 'h3', createdAt: new Date(), lastListenedAt: new Date() }] },
+    });
+    // The same agent, added to a second pod later, has never listened there.
+    const second = await chatPod(asker);
+    await install(second, asker, 'river-agent');
+    const room = await Pod.create({ name: 'Scout', type: 'agent-room', createdBy: asker._id, members: [asker._id] });
+
+    expect(await askerStartCommandCue(String(room._id), String(asker._id))).toBe('');
   });
 
   test('in a shared pod, says nothing about the asker\'s agent in another pod', async () => {

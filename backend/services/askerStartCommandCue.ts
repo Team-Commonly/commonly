@@ -77,9 +77,15 @@ async function askerNeverConnectedAgents(podId: string, askerId: string): Promis
     .select('botMetadata.agentName botMetadata.instanceId agentRuntimeTokens.lastListenedAt')
     .lean() as BotRow[];
   // The username is not injective, so the row is matched on its metadata too.
-  const tokensByKey = new Map(bots.map((b) => [
-    keyOf(b.botMetadata?.agentName, b.botMetadata?.instanceId), b.agentRuntimeTokens || [],
+  const tokensByKey = new Map<string, Array<{ lastListenedAt?: Date | string | null }>>(bots.map((b) => [
+    keyOf(b.botMetadata?.agentName, b.botMetadata?.instanceId), [...(b.agentRuntimeTokens || [])],
   ]));
+  // In the asker's room one agent can show up once per pod it was added to. A
+  // listen on any of those installs means it has connected.
+  byo.forEach((i) => {
+    const { key } = identity(i);
+    tokensByKey.set(key, [...(tokensByKey.get(key) || []), ...(i.runtimeTokens || [])]);
+  });
 
   const seen = new Set<string>();
   const agents: NeverConnectedAgent[] = [];

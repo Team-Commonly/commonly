@@ -87,6 +87,9 @@ describe('native runtime: Scout carries the start command for a never-connected 
     askerStartCommandCue.mockResolvedValue(CUE);
   });
 
+  // A hung-lookup arm that fails must not leave fake timers for the next arm.
+  afterEach(() => jest.useRealTimers());
+
   afterAll(() => {
     if (previousEnv.baseUrl === undefined) delete process.env.LITELLM_BASE_URL;
     else process.env.LITELLM_BASE_URL = previousEnv.baseUrl;
@@ -114,6 +117,23 @@ describe('native runtime: Scout carries the start command for a never-connected 
     await runAgent(installation('scout'), { type: 'heartbeat', eventId: 'evt-2', payload: {} });
 
     expect(askerStartCommandCue).not.toHaveBeenCalled();
+  });
+
+  test('a lookup that never settles is given up on, and the turn goes on without the cue', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    askerStartCommandCue.mockReturnValue(new Promise(() => {}));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const turn = runAgent(installation('scout'), trigger());
+      await jest.advanceTimersByTimeAsync(5_000);
+      await turn;
+
+      expect(sentUserMessage()).toContain('how do I use this?');
+      expect(sentUserMessage()).not.toContain('never connected');
+    } finally {
+      jest.useRealTimers();
+      warn.mockRestore();
+    }
   });
 
   test('a failed lookup leaves the turn as it was', async () => {
