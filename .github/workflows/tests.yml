@@ -84,8 +84,18 @@ jobs:
       - id: filter
         run: |
           backend=false; frontend=false; chart=false
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
+          # Resolve a diff base: the PR base for a pull_request, the pushed-from
+          # commit for a push. Other events (merge_group, schedule, dispatch)
+          # leave all-false — the heavy jobs gate those on the event name, not on
+          # these outputs; only Latchkey routing reads them, and on push:main that
+          # is what keeps Latchkey from firing on a docs-only merge (D227).
+          event="${{ github.event_name }}"; base=""
+          if [ "$event" = "pull_request" ]; then
             base="${{ github.event.pull_request.base.sha }}"
+          elif [ "$event" = "push" ]; then
+            base="${{ github.event.before }}"
+          fi
+          if [ -n "$base" ] && ! printf '%s' "$base" | grep -qE '^0{40}$'; then
             files=$(git diff --no-renames --name-only "$base"...HEAD 2>/dev/null || git diff --no-renames --name-only "$base" HEAD)
             printf '%s\n' "$files"
             printf '%s\n' "$files" | grep -qE '^(backend/|cli/|packages/|package(-lock)?\.json)' && backend=true
@@ -111,11 +121,16 @@ jobs:
       - name: Filter regex regression test
         run: node --test scripts/changes-filter.test.mjs
 
-  # Heavy jobs (backend, frontend, service tests) run on Latchkey runners on
-  # merge-queue runs when vars.LATCHKEY_HEAVY is 'on': those runners don't
-  # count against the org's 20-concurrent-job cap that made the queue wait
-  # (D37). Every other run, PRs included, stays on GitHub-hosted runners, which
-  # are free on this public repo. Unsetting LATCHKEY_HEAVY turns it all off.
+  # Heavy jobs (backend, frontend, service tests) route to Latchkey runners on
+  # a push to main when vars.LATCHKEY_HEAVY is 'on' AND the push touched a heavy
+  # path (the changes filter above — D227), so a docs-only merge does not spend
+  # Latchkey minutes. Every other run — PRs, and the merge_group required check —
+  # stays on GitHub-hosted runners, which are free on this public repo, so the
+  # queue no longer burns Latchkey minutes per entry. The heavy jobs still RUN on
+  # push and merge_group regardless (safety net); only the runner they land on
+  # depends on the route. Unsetting LATCHKEY_HEAVY turns Latchkey off entirely.
+  # (Earlier this routed on merge_group; moved to push:main 2026-11-01 to stay
+  # under the free-minute cap — the queue ran Latchkey on every entry.)
   #
   # A Latchkey job that is held (free minutes spent, or an outage) sits
   # "queued" on GitHub with no error, so the route never trusts Latchkey
@@ -125,7 +140,8 @@ jobs:
   # required check. See docs/runbooks/ci-heavy-runner.md.
   latchkey-probe:
     name: Latchkey probe
-    if: ${{ (github.event_name == 'merge_group' && vars.LATCHKEY_HEAVY == 'on') || (github.event_name == 'workflow_dispatch' && inputs.latchkey) }}
+    needs: changes
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.LATCHKEY_HEAVY == 'on' && (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.chart == 'true')) || (github.event_name == 'workflow_dispatch' && inputs.latchkey) }}
     runs-on: ${{ inputs.latchkey_probe_label || vars.LATCHKEY_LIGHT_LABEL || 'latchkey-small' }}
     timeout-minutes: 2
     steps:
@@ -133,7 +149,8 @@ jobs:
 
   latchkey-route:
     name: Latchkey route
-    if: ${{ (github.event_name == 'merge_group' && vars.LATCHKEY_HEAVY == 'on') || (github.event_name == 'workflow_dispatch' && inputs.latchkey) }}
+    needs: changes
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.LATCHKEY_HEAVY == 'on' && (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.chart == 'true')) || (github.event_name == 'workflow_dispatch' && inputs.latchkey) }}
     runs-on: ubuntu-latest
     timeout-minutes: 6
     permissions:
