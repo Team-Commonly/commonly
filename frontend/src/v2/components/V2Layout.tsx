@@ -181,7 +181,8 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
 
   const selectedPodId = paramPodId || null;
   const detail = useV2PodDetail(selectedPodId);
-  // The sidebar's list already knows the type, so a room never paints the pod panel while its detail loads.
+  // The sidebar's list knows the type before the detail loads. A room that isn't in the list yet
+  // (a cold deep link, a just-opened "Talk to") reads as a team pod until its detail arrives.
   const selectedPodType = pods.find((pod) => pod._id === selectedPodId)?.type ?? detail.pod?.type;
   const directPod = INVITE_BLOCKED_POD_TYPES.has(String(selectedPodType));
   const inspectorCollapsed = directPod ? directInspectorCollapsed : podInspectorCollapsed;
