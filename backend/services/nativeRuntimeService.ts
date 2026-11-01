@@ -1257,7 +1257,10 @@ export async function dispatchTool(
           return { content: { ok: false, error: 'This agent is not a member of this pod.' }, error: 'not_a_member' };
         }
         const { claimTaskAs, claimantOf } = require('../routes/tasksApi');
-        const result = await claimTaskAs(String(ctx.podId), taskId, await claimantOf({ userId: seatUserId, user: bot }));
+        // The bot arrives as `agentUser`, the shape agentRuntimeAuth gives the
+        // route, so the claim carries the same keys as the seat's own HTTP claim.
+        // As `user` it would key by instance id and match name-only legacy claims.
+        const result = await claimTaskAs(String(ctx.podId), taskId, await claimantOf({ userId: seatUserId, agentUser: bot }));
         if ('body' in result) {
           const error = result.status === 409 ? 'task_already_claimed' : 'claim_refused';
           return { content: { ok: false, ...result.body }, error };

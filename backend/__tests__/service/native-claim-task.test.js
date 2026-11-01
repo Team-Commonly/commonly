@@ -90,8 +90,9 @@ describe('commonly_claim_task (TASK-340)', () => {
     expect(result.content).toMatchObject({ ok: true, taskId: 'TASK-001', status: 'claimed' });
 
     const task = await Task.findOne({ taskId: 'TASK-001' }).lean();
-    // The authority field is the bot User id; the board key is the one a seat's own claim would carry.
-    expect(task).toMatchObject({ status: 'claimed', claimedByUserId: String(bot._id), claimedBy: INSTANCE });
+    // Both keys are the bot User id, as a seat's own claim over its runtime token
+    // carries them (agentRuntimeAuth sets req.agentUser only, so claimedBy falls to the id).
+    expect(task).toMatchObject({ status: 'claimed', claimedByUserId: String(bot._id), claimedBy: String(bot._id) });
     expect(task.claimExpiresAt.getTime()).toBeGreaterThan(Date.now());
     expect(await liveGrants()).toHaveLength(1);
     expect(mockEmitTaskUpdated).toHaveBeenCalledTimes(1);
@@ -117,6 +118,19 @@ describe('commonly_claim_task (TASK-340)', () => {
     expect(await Task.findOne({ taskId: 'TASK-001' }).lean()).toEqual(before);
     expect(mockEmitTaskUpdated).not.toHaveBeenCalled();
     expect(mockNotifyPodAgents).not.toHaveBeenCalled();
+  });
+
+  it("does not take another seat's live name-only claim that shares its instance id", async () => {
+    // A legacy claim keyed by display name only. Keyed by instance id, the hosted
+    // claim would match the legacy renewal CAS, which has no expiry predicate.
+    const until = new Date(Date.now() + 600000);
+    await Task.updateOne({ taskId: 'TASK-001' }, { $set: {
+      status: 'claimed', claimedBy: INSTANCE, claimedByUserId: null, claimedAt: new Date(), claimExpiresAt: until,
+    } });
+    const before = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    const result = await claim({ taskId: 'TASK-001' });
+    expect(result.error).toBe('task_already_claimed');
+    expect(await Task.findOne({ taskId: 'TASK-001' }).lean()).toEqual(before);
   });
 
   it('writes nothing for an agent that is not a member of the pod', async () => {
