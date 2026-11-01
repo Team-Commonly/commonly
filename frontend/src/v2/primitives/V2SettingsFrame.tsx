@@ -12,7 +12,7 @@ const seg = (items: string[], on: string, label: string) => (
 );
 
 const V2SettingsFrame: React.FC = () => (
-  <div data-testid="v2p-settings-frame" style={{ maxWidth: 760, margin: '0 auto' }}>
+  <div className="v2p-frame" data-testid="v2p-settings-frame" style={{ width: '100%', maxWidth: 760, margin: '0 auto' }}>
     <div className="v2p-gtitle">Account</div>
     <div className="v2p-list">
       <div className="v2p-lrow" style={{ minHeight: 64 }}>

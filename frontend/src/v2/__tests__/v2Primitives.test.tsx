@@ -77,4 +77,13 @@ describe('D223 primitives', () => {
     expect(classes.filter((c) => c.startsWith('v2p-')).length).toBeGreaterThan(10);
     expect(frame.querySelectorAll('details.v2p-disc')).toHaveLength(1);
   });
+
+  test('the Settings frame fills its column to 760 and drops the value cell at 390', () => {
+    render(<V2PrimitivesPage />);
+    const frame = screen.getByTestId('v2p-settings-frame');
+    expect(frame.style.width).toBe('100%');
+    expect(frame.style.maxWidth).toBe('760px');
+    expect(css).toMatch(/\.v2p-lrow \{ grid-template-columns: minmax\(0, 1fr\) auto;/);
+    expect(css).toMatch(/\.v2p-frame \.v2p-lrow \.vl[^}]*display: none/);
+  });
 });
