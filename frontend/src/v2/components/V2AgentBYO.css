@@ -24,7 +24,7 @@
 .v2-feature--byo .v2-byo__submit, .v2-feature--byo .v2-byo__secondary { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 13px; border-radius: 10px; font: 600 13px/1 var(--v2-font); white-space: nowrap; }
 .v2-feature--byo .v2-byo__submit { align-self: flex-start; margin-top: 6px; color: var(--v2-on-fill); background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b)); border: 1px solid var(--v2-fill-edge); }
 .v2-feature--byo .v2-byo__secondary { color: var(--v2-text-secondary); }
-.v2-feature--byo .v2-byo__link { all: unset; cursor: pointer; color: var(--v2-accent-text); font-weight: 600; }
+.v2-feature--byo .v2-byo__link { all: unset; align-self: flex-start; cursor: pointer; color: var(--v2-accent-text); font-weight: 600; }
 .v2-feature--byo .v2-byo__more { margin-top: 8px; border-radius: 12px; background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
 .v2-feature--byo .v2-byo__more > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 8px 18px 8px 16px; font-size: 13px; font-weight: 600; color: var(--v2-text-primary); }
 .v2-feature--byo .v2-byo__more > summary::-webkit-details-marker { display: none; }
@@ -89,6 +89,11 @@
    - the memory import textarea shares .v2-byo__input, whose frame height (34px,
      line-height 1) is a one-line control; a 6-row textarea keeps its old box. */
 .v2-feature--byo .v2-byo__mode:focus-visible, .v2-feature--byo .v2-byo__os .v2-byo__link:focus-visible { box-shadow: var(--v2-focus-ring); }
+/* hover and select focus: states the frame doesn't draw, kept from the old page in its tokens */
+.v2-feature--byo .v2-byo__mode:not([aria-pressed="true"]):hover, .v2-feature--byo .v2-byo__os .v2-byo__link:not([aria-pressed="true"]):not(:disabled):hover, .v2-feature--byo .v2-byo__secondary:hover { background: var(--v2-surface-hover); }
+.v2-feature--byo .v2-byo__submit:hover:not(:disabled) { background: var(--v2-ink-hover); border-color: var(--v2-ink-hover); }
+.v2-feature--byo .v2-byo__copy:hover { background: var(--v2-surface-hover); }
+.v2-feature--byo select.v2-byo__input:focus-visible { box-shadow: var(--v2-focus-ring); outline: none; }
 .v2-feature--byo textarea.v2-byo__memory-text { height: auto; padding: 10px 12px; line-height: 20px; }
 @media (max-width: 760px) {
   .v2-feature--byo .v2-byo__mode-option > .v2-hint { min-width: 44px; min-height: 44px; justify-content: center; }
@@ -123,6 +128,7 @@
   font: 400 13px/20px var(--v2-font);
 }
 .v2-root .v2-byo__hosted-offer button.v2-byo__hosted-offer-action {
+  margin-top: 0;
   height: 40px;
   padding: 0 16px;
   align-self: center;

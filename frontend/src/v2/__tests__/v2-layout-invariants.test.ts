@@ -3286,6 +3286,13 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
 
   // R04 lifted the page onto the d215 frame (V2AgentBYO.css). The items below
   // keep guarding what they guarded, at the frame's values.
+  test('controls keep hover feedback and selects keep the focus ring the frame does not draw', () => {
+    expect(selectorRuleBody(byoCss, '.v2-feature--byo .v2-byo__mode:not([aria-pressed="true"]):hover, .v2-feature--byo .v2-byo__os .v2-byo__link:not([aria-pressed="true"]):not(:disabled):hover, .v2-feature--byo .v2-byo__secondary:hover'))
+      .toContain('var(--v2-surface-hover)');
+    expect(ruleBody(byoCss, '.v2-feature--byo .v2-byo__submit:hover:not(:disabled)')).toContain('var(--v2-ink-hover)');
+    expect(ruleBody(byoCss, '.v2-feature--byo .v2-byo__copy:hover')).toContain('var(--v2-surface-hover)');
+    expect(ruleBody(byoCss, '.v2-feature--byo select.v2-byo__input:focus-visible')).toContain('var(--v2-focus-ring)');
+  });
   test('the submit button is the ink key, at radius 10 (item 1)', () => {
     const submit = cssDeclarations(ruleBody(byoCss, '.v2-feature--byo .v2-byo__submit'));
     expect(submit.background).toBe('linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b))');

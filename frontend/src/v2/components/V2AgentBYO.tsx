@@ -1164,8 +1164,11 @@ const V2AgentBYO: React.FC = () => {
     </div>
   ) : null;
   const runnerPicker = mode === 'byo' && !issued && !onCardStart ? (
-    // A segment (d215 frame): the label names the group, the buttons are its options.
-    <p className="v2-byo__os" data-testid="byo-runner" role="group" aria-label={t('agentByo.form.adapterLabel')}>
+    // A segment (d215 frame) under a visible label: the frame doesn't draw this
+    // picker, so it keeps the "Adapter" label the page always showed.
+    <>
+    <p className="v2-byo__modes-question" id="byo-runner-label">{t('agentByo.form.adapterLabel')}</p>
+    <p className="v2-byo__os" data-testid="byo-runner" role="group" aria-labelledby="byo-runner-label">
       {LISTEN_RUNNERS.map((runner) => (
         <button
           key={runner}
@@ -1181,6 +1184,7 @@ const V2AgentBYO: React.FC = () => {
         </button>
       ))}
     </p>
+    </>
   ) : null;
 
   return (
