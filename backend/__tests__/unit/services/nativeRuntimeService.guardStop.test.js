@@ -268,8 +268,34 @@ describe('a hosted turn the guard stops, or that fails', () => {
       const result = await runAgent(hostedInstall(), mention);
 
       expect(result.status).toBe('failed');
+      expect(savedRun.errorMessage).toMatch(/ended without a reply: its post was refused\.$/);
       expect(chatBodies).toHaveLength(3);
       expect(posted()).toEqual([]);
+    });
+
+    // The extra call can itself be stopped. Then every web result left is set
+    // aside, and the last round still gets no further call.
+    test('a stop on the extra call sets the rest aside, and a refetch after it ends the run', async () => {
+      chatReplies = [
+        toolCalls(fetchCall('c1', CLEAN_URL), fetchCall('c2', STOPPED_URL)),
+        guardStop,
+        toolCalls(fetchCall('c3', STOPPED_URL)),
+        guardStop,
+        toolCalls(fetchCall('c4', STOPPED_URL)),
+        neverAsked,
+      ];
+
+      const result = await runAgent(hostedInstall(), mention);
+
+      expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'guardrail_blocked' }));
+      expect(chatBodies).toHaveLength(5);
+      chatBodies.slice(2).forEach((body) => expect(offeredIn(body)).toEqual(['commonly_post_message']));
+      const last = JSON.stringify(chatBodies[4].messages);
+      expect(last).not.toContain(CLEAN_TEXT);
+      expect(last).not.toContain(STOPPED_TEXT);
+      expect(mockGetPage.mock.calls).toEqual([[CLEAN_URL], [STOPPED_URL]]);
+      expect(savedRun.metered).toBe(false);
+      expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
     });
 
     test('the set-aside notice says no lookups are left', async () => {

@@ -144,9 +144,10 @@ const WEB_SET_ASIDE_NOTICE = 'This result was set aside: a content filter stoppe
   + 'in this conversation. No more lookups are possible in this turn: answer with what you have, and tell the '
   + 'person which page or search you could not use.';
 const RECOVERY_REPLIED_REFUSAL = 'This turn has posted its reply.';
-// The refusal for any other tool in that round. The model reads it before its
-// one further call (F33: it asked for the set-aside page again).
-const RECOVERY_LOOKUP_REFUSAL = 'No more lookups are possible in this turn. Reply with commonly_post_message from '
+// The refusal for any tool that round does not offer. When the round did not
+// try to post, the model reads it before one further call (F33: it asked for
+// the set-aside page again).
+const RECOVERY_NOT_OFFERED_REFUSAL = 'No more lookups are possible in this turn. Reply with commonly_post_message from '
   + 'what you have, and tell the person which page or search you could not use.';
 // What a hosted agent posts when a turn someone was waiting on ends on a guard
 // stop or an error with nothing posted. Fixed text, so it carries nothing the
@@ -2492,7 +2493,7 @@ export async function runAgent(
             && !keptInPod(toolName, Boolean(dispatchCtx.brokerCallSeen)))
             || withdrawnAfterBroker(toolName, Boolean(dispatchCtx.brokerCallSeen));
           const notOffered = recoveryRound
-            ? RECOVERY_LOOKUP_REFUSAL
+            ? RECOVERY_NOT_OFFERED_REFUSAL
             : `${toolName || 'That tool'} is not available to you in this turn.`;
           // The recovery round posts at most one reply.
           const replied = recoveryRound && postedViaTool ? RECOVERY_REPLIED_REFUSAL : '';
@@ -2583,9 +2584,13 @@ export async function runAgent(
           } else {
             run.status = 'failed';
             run.errorKind = 'guardrail_blocked';
-            const other = [...new Set(asked.filter((name) => name !== 'commonly_post_message'))];
+            const other = [...new Set(asked.filter((name) => name && name !== 'commonly_post_message'))];
+            const why = [
+              ...(asked.includes('commonly_post_message') ? ['its post was refused'] : []),
+              ...(other.length ? [`it asked for ${other.join(', ')}, which that round does not offer`] : []),
+            ];
             run.errorMessage = 'A content filter set web results aside, and the round after it ended without a reply'
-              + (other.length ? `: it asked for ${other.join(', ')}, which that round does not offer.` : '.');
+              + (why.length ? `: ${why.join('; ')}.` : '.');
           }
           break;
         }
