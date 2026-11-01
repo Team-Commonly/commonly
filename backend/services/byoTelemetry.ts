@@ -5,13 +5,19 @@ import mongoose from 'mongoose';
 // POST /api/stats/byo-step; events only the backend can see (an agent's first
 // authenticated call) are written here directly, so they never depend on the
 // user keeping the page open. Fixed step names only: never a command, key or name.
-export type ServerByoStep = 'seat-registered';
+export type ServerByoStep = 'seat-registered' | 'daemon-registered';
 
 // A once-per-seat event is keyed by a hash of the token record's hash, so the
 // unique _id index makes concurrent first calls write one row. The hash is one-way
 // and is never the credential itself.
 export function seatRegisteredKey(tokenHash: string): string {
   return `seat-registered:${createHash('sha256').update(tokenHash).digest('hex')}`;
+}
+
+// A person registers a daemon once per setup, however many machines they add,
+// so the row is keyed by the user alone.
+export function daemonRegisteredKey(userId: unknown): string {
+  return `daemon-registered:${String(userId)}`;
 }
 
 export async function recordByoEvent(

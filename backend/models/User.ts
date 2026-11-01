@@ -224,6 +224,8 @@ export interface IUser extends Document {
     byoCliCopiedAt?: Date;
     /** First authenticated BYO runtime request, never overwritten. */
     byoFirstConnectionAttemptAt?: Date;
+    /** First successful `commonly daemon register`, never overwritten (TASK-661). */
+    byoDaemonRegisteredAt?: Date;
     /** First "invite a teammate" card mounted, and first dismissed. */
     inviteCardShownAt?: Date;
     inviteCardDismissedAt?: Date;
@@ -480,6 +482,7 @@ const userSchema = new Schema<IUser>({
     byoMcpCopiedAt: { type: Date },
     byoCliCopiedAt: { type: Date },
     byoFirstConnectionAttemptAt: { type: Date },
+    byoDaemonRegisteredAt: { type: Date },
     inviteCardShownAt: { type: Date },
     inviteCardDismissedAt: { type: Date },
     byoOfferShownAt: { type: Date },
