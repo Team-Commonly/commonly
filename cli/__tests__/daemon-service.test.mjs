@@ -246,6 +246,18 @@ describe('install', () => {
       expect(warned).toMatch(/v253/);
     });
 
+    test('lingering already on for an escaped user name skips loginctl and claims no boot start', async () => {
+      const deps = makeDeps();
+      deps.existsFile = jest.fn((path) => path === "/var/lib/systemd/linger/o\\'brien x");
+      const warn = jest.fn();
+      const result = await installDaemonService({
+        platform: 'linux', home, nodePath, cliPath, username: "o'brien x", ...deps, warn,
+      });
+      expect(deps.execCmd).not.toHaveBeenCalledWith(expect.arrayContaining(['loginctl']));
+      expect(result.startsAtBoot).toBe(false);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('v253'));
+    });
+
     test('the printed command quotes a user name the shell would split', async () => {
       const deps = makeDeps();
       deps.existsFile = jest.fn(() => false);
