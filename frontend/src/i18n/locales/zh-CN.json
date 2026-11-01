@@ -2556,6 +2556,7 @@
     "disconnectLabel": "断开 {{label}}",
     "confirmDisconnect": "确认断开",
     "disconnectError": "无法断开 {{label}}。",
+    "disconnectPartial": "已在此处断开 {{label}}，但 {{label}} 未确认。请在其已连接的应用中移除 Commonly。",
     "disconnected": "已断开 {{label}}。",
     "reviewProviderAccess": "查看 {{label}} 的授权",
     "removedReviewProvider": "连接已移除。请检查 {{label}} 中的授权。",

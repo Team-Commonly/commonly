@@ -691,20 +691,26 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
       setRemovedHiddenNotice({ label: entry.label, revokePage: safeProviderRevokePage(res?.revokeAt) ? res.revokeAt : null });
       await load();
     } catch (err) {
-      // A 502 is a partial removal: the grants are already revoked and the row is
-      // disconnected, only the provider's own revoke failed. Show that, and send
-      // the person to the provider page the server named.
-      const data = (err as { response?: { status?: number; data?: { revokeAt?: string } } })?.response;
-      if (data?.status === 502) {
+      // The route answers 502 with one of these codes when the grants are already
+      // revoked and the row is disconnected, and only the provider's own revoke
+      // failed. A bare 502 (ingress, a pod restarting) reached nothing, so it takes
+      // the plain error below and marks nothing revoked.
+      const response = (err as { response?: { status?: number; data?: { code?: string; revokeAt?: string } } })?.response;
+      const partial = response?.status === 502
+        && (response.data?.code === 'provider_revoke_failed' || response.data?.code === 'provider_revoked_removal_incomplete');
+      if (partial) {
         const ended = (grants || []).filter((grant) => !isDead(grant) && entryCovers(entry, grant));
         setRevokedHere((current) => ({ ...current, ...Object.fromEntries(ended.map((grant) => [grant.grantId, new Date().toISOString()])) }));
         setConfirmDisconnect(null);
-        if (safeProviderRevokePage(data.data?.revokeAt)) {
-          setRemovedHiddenNotice({ label: entry.label, revokePage: data.data.revokeAt });
-        }
         await load();
+        if (safeProviderRevokePage(response?.data?.revokeAt)) {
+          setRemovedHiddenNotice({ label: entry.label, revokePage: response?.data?.revokeAt as string });
+        } else {
+          setError(t('tools.disconnectPartial', { defaultValue: 'Disconnected {{label}} here, but {{label}} did not confirm. Remove Commonly in its connected apps.', label: entry.label }));
+        }
+      } else {
+        setError(t('tools.disconnectError', { defaultValue: 'Could not disconnect {{label}}.', label: entry.label }));
       }
-      setError(t('tools.disconnectError', { defaultValue: 'Could not disconnect {{label}}.', label: entry.label }));
     } finally {
       setBusy(false);
     }

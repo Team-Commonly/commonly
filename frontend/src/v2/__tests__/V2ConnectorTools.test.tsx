@@ -611,6 +611,20 @@ describe('Disconnect on a live connection of an offered hosted connector', () =>
     expect(within(card).queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
   });
 
+  // A 502 from the ingress while a pod restarts never reached the route: nothing was revoked.
+  test('a bare 502 (no route code) leaves the grant live and says the disconnect failed', async () => {
+    mockTwoEntries({ catalog: [atlassian], grants: { p1: [grantAtl], p2: [] } });
+    axios.delete.mockRejectedValue({ response: { status: 502, data: '<html>Bad gateway</html>' } });
+    renderTools();
+    fireEvent.click(await screen.findByRole('button', { name: 'View Atlassian in Launch pod' }));
+    const aside = await screen.findByRole('complementary', { name: 'Grant details' });
+    fireEvent.click(within(aside).getByRole('button', { name: 'Disconnect Atlassian' }));
+    fireEvent.click(within(aside).getByRole('button', { name: 'Yes, disconnect' }));
+    expect(await within(aside).findByText('Could not disconnect Atlassian.')).toBeInTheDocument();
+    expect(within(aside).getByRole('button', { name: 'Revoke' })).toBeInTheDocument();
+    expect(within(aside).queryByText(/Revoked by/)).not.toBeInTheDocument();
+  });
+
   test('two connections of one entry offer no Disconnect, since a grant does not name its connection', async () => {
     const two = { ...atlassian, connections: [...atlassian.connections, { connectionId: 'conn-atl-2', owner: 'me', repo: 'atlassian' }] };
     mockTwoEntries({ catalog: [two], grants: { p1: [], p2: [] } });
