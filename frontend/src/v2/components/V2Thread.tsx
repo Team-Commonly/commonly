@@ -247,6 +247,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const { socket, connected } = useSocket();
   const { currentUser } = useAuth();
   const [draft, setDraft] = useState('');
+  const [fixCommandCopied, setFixCommandCopied] = useState(false);
   const [sending, setSending] = useState(false);
   // Owner-only pod rename (TASK-419). The draft lives here so the header
   // can swap the title for an input without touching the message state.
@@ -704,6 +705,13 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     }, remaining);
     return () => clearTimeout(timeout);
   }, [awaitingAgentReply, pod?._id, messages, directAgent?.username]);
+
+  // The copy key on the fix command shows a check for two seconds.
+  useEffect(() => {
+    if (!fixCommandCopied) return undefined;
+    const timeout = window.setTimeout(() => setFixCommandCopied(false), 2000);
+    return () => window.clearTimeout(timeout);
+  }, [fixCommandCopied]);
 
   useEffect(() => {
     setAgentDeliveryHint(null);
@@ -1551,14 +1559,17 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     ? botMembers.slice(0, 2).map((m) => m.username || t('common.agent'))
     : null;
   const directAgentReach = directAgent?.state?.state;
+  // Only a reach state the server measured gets a row. An unknown state shows
+  // nothing, so a failed status read never reads as offline (d215 frame).
   const showDirectAgentLiveness = Boolean(
-    isAgentRoom && directAgent && directAgentReach && !REACH_IS_ACTIVE.has(directAgentReach),
+    isAgentRoom && directAgent && (directAgentReach === 'never-connected' || directAgentReach === 'gone-dark'),
   );
   const directAgentLivenessKey = directAgentReach === 'never-connected'
     ? 'podChat.agentRoomLiveness.neverConnected'
-    : directAgentReach === 'gone-dark'
-      ? 'podChat.agentRoomLiveness.goneDark'
-      : 'podChat.agentRoomLiveness.unknown';
+    : 'podChat.agentRoomLiveness.goneDark';
+  const directAgentFixCommand = directAgentReach === 'never-connected' && directAgent?.state?.isOwner
+    ? directAgent.state.fixCommand || ''
+    : '';
   // Group pods name each agent that isn't running, so nobody waits on a reply
   // that can't come: 5 of 7 people who heard nothing in their first pod had an
   // agent that never connected (silence census, 10-30). Only reach states the
@@ -1570,6 +1581,13 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const showAwaitingAgentReply = Boolean(
     isAgentRoom && awaitingAgentReply && awaitingAgentReply.podId === pod._id,
   );
+
+  const copyFixCommand = async (command: string) => {
+    try {
+      await navigator.clipboard.writeText(command);
+      setFixCommandCopied(true);
+    } catch { /* clipboard unavailable: the command stays selectable */ }
+  };
 
   // `override` is a start from Scout's welcome: it posts its own text as a
   // root message and leaves the composer's draft and targets alone.
@@ -1864,10 +1882,21 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
       <span>{headerMeta.boardOpen}</span>
     </button>
   );
-  if (headerMeta.boardOpen !== null) {
+  // A 1:1 room is a pod without the pod furniture (d215 frame): no board
+  // count and no member stack. "DM" sits in a mono chip, and an observer of an
+  // agent DM sees "read only" before reaching the banner.
+  const isDirectPod = isAgentRoom || isAgentDm;
+  const directChips = isDirectPod ? [
+    <span key="dm" className="v2-pod-header__chip">{t('podChat.header.dm')}</span>,
+    ...(isReadOnly ? [<span key="read-only" className="v2-pod-header__chip">{t('podChat.header.readOnly')}</span>] : []),
+  ] : [];
+  if (isDirectPod) {
+    metaParts.push(...directChips);
+  }
+  if (!isDirectPod && headerMeta.boardOpen !== null) {
     metaParts.push(boardChip(false));
   }
-  if (faceMembers.length > 0) {
+  if (!isDirectPod && faceMembers.length > 0) {
     metaParts.push(
       <span key="faces" className="v2-pod-header__faces" role="img" aria-label={facesLabel} title={facesLabel}>
         <span className="v2-pod-header__stack" aria-hidden="true">
@@ -1887,9 +1916,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
       </span>,
     );
   }
-  headerMeta.channels.forEach((channel) => {
-    metaParts.push(<span key={`channel-${channel}`} className="v2-pod-header__channel">{channel}</span>);
-  });
+  if (!isDirectPod) {
+    headerMeta.channels.forEach((channel) => {
+      metaParts.push(<span key={`channel-${channel}`} className="v2-pod-header__channel">{channel}</span>);
+    });
+  }
 
   return (
     <main className="v2-pane v2-pane--main">
@@ -1943,7 +1974,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             </div>
             {/* The phone head carries the board chip alone (D215 phone frame);
                 the member faces live in the panel there. */}
-            {headerMeta.boardOpen !== null && (
+            {isDirectPod ? (
+              <span className="v2-pod-header__meta v2-pod-header__meta--compact">
+                {directChips}
+              </span>
+            ) : headerMeta.boardOpen !== null && (
               <span className="v2-pod-header__meta v2-pod-header__meta--compact">
                 {boardChip(true)}
               </span>
@@ -2136,34 +2171,45 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
 
             {isReadOnly ? (
               <div className="v2-chat__readonly" role="note" aria-label={t('podChat.readOnly.label')}>
-                <div className="v2-chat__readonly-icon" aria-hidden="true">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                    <path d="M7 11V7a5 5 0 0110 0v4" />
-                  </svg>
-                </div>
+                <span className="v2-chat__readonly-icon" aria-hidden="true">
+                  <ShellGlyph name="lock" size={15} />
+                </span>
                 <div className="v2-chat__readonly-body">
-                  <div className="v2-chat__readonly-title">{t('podChat.readOnly.title')}</div>
-                  <div className="v2-chat__readonly-text">
+                  <b className="v2-chat__readonly-title">{t('podChat.readOnly.title')}</b>
+                  <span className="v2-chat__readonly-text">
                     {isBotToBot && botPair
                       ? t('podChat.readOnly.botPair', { first: botPair[0], second: botPair[1] })
                       : t('podChat.readOnly.agentDm')}
-                  </div>
+                  </span>
                 </div>
               </div>
             ) : (
             <>
               {showDirectAgentLiveness && directAgent && (
                 <div className="v2-chat__agent-room-status" data-testid="agent-room-liveness" role="status">
-                  {t(directAgentLivenessKey, { agentName: directAgent.displayName })}
-                  {directAgentReach === 'never-connected' && directAgent.state?.isOwner && directAgent.state?.fixCommand && (
-                    <>
-                      {' '}{t('podChat.agentRoomLiveness.runCommand')}
-                      <code className="v2-chat__agent-room-command" data-testid="agent-room-fix-command">
-                        {directAgent.state.fixCommand}
-                      </code>
-                    </>
-                  )}
+                  <span className="v2-chat__agent-room-status-icon" aria-hidden="true">
+                    <ShellGlyph name={directAgentReach === 'never-connected' ? 'alert' : 'info'} size={16} />
+                  </span>
+                  <div className="v2-chat__agent-room-status-body">
+                    {t(directAgentLivenessKey, { agentName: directAgent.displayName })}
+                    {directAgentFixCommand && (
+                      <>
+                        <div className="v2-chat__agent-room-lede">{t('podChat.agentRoomLiveness.runCommand')}</div>
+                        <div className="v2-chat__agent-room-command">
+                          <code data-testid="agent-room-fix-command">{directAgentFixCommand}</code>
+                          <button
+                            type="button"
+                            className="v2-chat__agent-room-copy"
+                            aria-label={fixCommandCopied ? t('common.copied') : t('podChat.agentRoomLiveness.copyCommand')}
+                            title={fixCommandCopied ? t('common.copied') : t('podChat.agentRoomLiveness.copyCommand')}
+                            onClick={() => { void copyFixCommand(directAgentFixCommand); }}
+                          >
+                            <ShellGlyph name={fixCommandCopied ? 'check' : 'copy'} size={16} />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
               {podAgentLiveness.map((row) => (
@@ -2173,24 +2219,35 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                   data-testid="pod-agent-liveness"
                   role="status"
                 >
-                  {row.state === 'never-connected' || !row.lastUsedAt
-                    ? t('podChat.podAgentLiveness.notConnected', { agentName: row.displayName || row.agentName })
-                    : t('podChat.podAgentLiveness.offlineSince', {
-                      agentName: row.displayName || row.agentName,
-                      age: localizeRelativeTime(row.lastUsedAt, t),
-                    })}
+                  <span className="v2-chat__agent-room-status-icon" aria-hidden="true">
+                    <ShellGlyph name={row.state === 'never-connected' ? 'alert' : 'info'} size={16} />
+                  </span>
+                  <div className="v2-chat__agent-room-status-body">
+                    {row.state === 'never-connected' || !row.lastUsedAt
+                      ? t('podChat.podAgentLiveness.notConnected', { agentName: row.displayName || row.agentName })
+                      : t('podChat.podAgentLiveness.offlineSince', {
+                        agentName: row.displayName || row.agentName,
+                        age: localizeRelativeTime(row.lastUsedAt, t),
+                      })}
+                  </div>
                 </div>
               ))}
               {showAwaitingAgentReply && awaitingAgentReply && (
                 <div
-                  className={`v2-chat__agent-room-status v2-chat__agent-room-status--wait${awaitingAgentReply.timedOut ? ' v2-chat__agent-room-status--timeout' : ''}`}
+                  className={`v2-chat__agent-room-status${awaitingAgentReply.timedOut ? '' : ' v2-chat__agent-room-status--wait'}`}
                   data-testid="agent-reply-wait"
                   role="status"
                 >
-                  {!awaitingAgentReply.timedOut && <span className="v2-chat__agent-room-status-dot" aria-hidden="true" />}
-                  {awaitingAgentReply.timedOut
-                    ? t('podChat.agentRoomLiveness.timedOut', { agentName: awaitingAgentReply.agentName })
-                    : t('podChat.agentRoomLiveness.waiting', { agentName: awaitingAgentReply.agentName })}
+                  {awaitingAgentReply.timedOut ? (
+                    <span className="v2-chat__agent-room-status-icon" aria-hidden="true">
+                      <ShellGlyph name="info" size={16} />
+                    </span>
+                  ) : <span className="v2-chat__agent-room-status-dot" aria-hidden="true" />}
+                  <div className="v2-chat__agent-room-status-body">
+                    {awaitingAgentReply.timedOut
+                      ? t('podChat.agentRoomLiveness.timedOut', { agentName: awaitingAgentReply.agentName })
+                      : t('podChat.agentRoomLiveness.waiting', { agentName: awaitingAgentReply.agentName })}
+                  </div>
                 </div>
               )}
               <V2Composer

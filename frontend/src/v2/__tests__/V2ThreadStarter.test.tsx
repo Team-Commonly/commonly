@@ -138,6 +138,34 @@ describe('V2Thread teaching empty states', () => {
     expect(screen.getByText('no messages yet')).toBeInTheDocument();
   });
 
+  test('a 1:1 room header carries a DM chip and none of the pod furniture', () => {
+    renderChat(makeAgentRoom());
+
+    const meta = document.querySelector('.v2-pod-header__meta:not(.v2-pod-header__meta--compact)');
+    expect(meta).toHaveTextContent('DM');
+    expect(document.querySelector('.v2-pod-header__faces')).toBeNull();
+    expect(document.querySelector('.v2-pod-header__board')).toBeNull();
+    expect(screen.queryByText('read only')).not.toBeInTheDocument();
+  });
+
+  test('an observer of an agent DM sees a read-only chip and note, and no composer', () => {
+    renderChat(makeDetail({
+      pod: { _id: 'agent-dm-1', name: 'Aria and Pixel', type: 'agent-dm' },
+      members: [
+        { _id: 'agent-1', username: 'Aria', isBot: true },
+        { _id: 'agent-2', username: 'Pixel', isBot: true },
+      ],
+    }));
+
+    const meta = document.querySelector('.v2-pod-header__meta:not(.v2-pod-header__meta--compact)');
+    expect(meta).toHaveTextContent('DM');
+    expect(meta).toHaveTextContent('read only');
+    const note = screen.getByRole('note', { name: 'Read-only conversation' });
+    expect(note).toHaveTextContent('Aria and Pixel are talking directly');
+    expect(note.querySelector('.v2-chat__readonly-icon svg')).not.toBeNull();
+    expect(screen.queryByPlaceholderText(/Message/)).not.toBeInTheDocument();
+  });
+
   test('keeps the agent-to-agent empty state unchanged', () => {
     renderChat(makeDetail({
       pod: { _id: 'agent-dm-1', name: 'Aria and Pixel', type: 'agent-dm' },
@@ -207,19 +235,34 @@ describe('V2Thread agent-room liveness', () => {
     axios.get.mockResolvedValue({ data: { agents: [] } });
   });
 
-  test('shows an unknown direct seat before the person sends a message', async () => {
+  test('an unknown reach state shows no row, so a failed status read never reads as offline', async () => {
     axios.get.mockResolvedValue({
       data: {
         agents: [{
-          agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', state: 'unknown', isOwner: false,
+          agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', state: 'unknown', isOwner: true, fixCommand: 'commonly agent run aria',
         }],
       },
     });
     renderChat(makeAgentRoom());
 
-    expect(await screen.findByTestId('agent-room-liveness')).toHaveTextContent(
-      "Aria's availability is unknown",
-    );
+    await waitFor(() => expect(axios.get).toHaveBeenCalled());
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.queryByTestId('agent-room-liveness')).not.toBeInTheDocument();
+  });
+
+  test('a gone-dark direct seat gets the line with no command, even for its owner', async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        agents: [{
+          agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', state: 'gone-dark', isOwner: true, fixCommand: 'commonly agent run aria',
+        }],
+      },
+    });
+    renderChat(makeAgentRoom());
+
+    expect(await screen.findByTestId('agent-room-liveness')).toHaveTextContent("Aria hasn't checked in recently");
+    expect(screen.queryByTestId('agent-room-fix-command')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Copy command' })).not.toBeInTheDocument();
   });
 
   test('a never-connected direct seat says so and shows the owner the command to run', async () => {
@@ -235,6 +278,22 @@ describe('V2Thread agent-room liveness', () => {
     const banner = await screen.findByTestId('agent-room-liveness');
     expect(banner).toHaveTextContent("Aria isn't connected yet");
     expect(screen.getByTestId('agent-room-fix-command')).toHaveTextContent('commonly agent run aria');
+  });
+
+  test('the owner copies the fix command with one key, which confirms the copy', async () => {
+    navigator.clipboard.writeText.mockClear();
+    axios.get.mockResolvedValue({
+      data: {
+        agents: [{
+          agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', state: 'never-connected', isOwner: true, fixCommand: 'commonly agent run aria',
+        }],
+      },
+    });
+    renderChat(makeAgentRoom());
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy command' }));
+    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith('commonly agent run aria'));
+    expect(await screen.findByRole('button', { name: 'Copied!' })).toBeInTheDocument();
   });
 
   test('a never-connected direct seat shows a non-owner no command', async () => {
@@ -325,8 +384,14 @@ describe('V2Thread agent-room liveness', () => {
     });
     expect(screen.getByTestId('agent-reply-wait')).toHaveTextContent('Waiting for Aria to reply');
 
+    expect(screen.getByTestId('agent-reply-wait')).toHaveClass('v2-chat__agent-room-status--wait');
+
     act(() => { jest.advanceTimersByTime(120_000); });
-    expect(screen.getByTestId('agent-reply-wait')).toHaveTextContent("Aria hasn't replied yet");
+    const timedOut = screen.getByTestId('agent-reply-wait');
+    expect(timedOut).toHaveTextContent("Aria hasn't replied yet");
+    // Timed out drops the pulsing dot and the mono face (d215 frame).
+    expect(timedOut.querySelector('.v2-chat__agent-room-status-dot')).toBeNull();
+    expect(timedOut).not.toHaveClass('v2-chat__agent-room-status--wait');
     jest.useRealTimers();
   });
 });
