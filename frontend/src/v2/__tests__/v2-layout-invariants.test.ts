@@ -5293,6 +5293,27 @@ test('OpenUI cards keep the approved phone controls and table records', () => {
   expect(css).toContain('.ui.gone{border-style:dashed');
 });
 
+test('the card Source line (TASK-607) uses v2 tokens only, one value per token, no dark-only colours', () => {
+  const css = read('../cards/uiCard.css');
+  const rules = css.split('\n').filter(line => /\.ui-src/.test(line));
+  expect(rules.length).toBeGreaterThanOrEqual(4);
+  for (const rule of rules.map(line => line.replace(/\[[^\]]*\]/g, ''))) {
+    // Colour comes only from v2 tokens (--m muted, --s secondary, --v2-bg). Attribute
+    // selectors name the bundled mark's own fills to replace them, so they are stripped first.
+    expect(rule).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i);
+    expect(rule).not.toMatch(/data-v2-theme|prefers-color-scheme/);
+  }
+  expect(css).toContain('.v2-ui-card .ui-src{display:inline-flex;align-items:center;gap:6px;margin-left:auto;min-width:0;font:500 11px/16px var(--mono);color:var(--m)}');
+  expect(css).toContain('.v2-ui-card .ui-src-n{color:var(--s)}');
+  expect(css).toContain('.v2-ui-card .ui-src-mk>*{display:block;width:16px;height:16px}');
+  // The bundled brand fills are replaced, not shown: Sentry's #362D59 is 1.4:1 on the dark card.
+  expect(css).toContain('.v2-ui-card .ui-src-mk svg *{fill:currentColor}');
+  expect(css).toContain('.v2-ui-card .ui-src-mk svg [fill="#fff"]{fill:var(--v2-bg)}');
+  expect(css).toContain('.v2-ui-card .ui-src-mk svg [stroke="#fff"]{stroke:var(--v2-bg);opacity:1}');
+  // The aliases resolve to the shared v2 tokens, which carry the theme themselves.
+  expect(css).toMatch(/--m:var\(--v2-text-muted\);--s:var\(--v2-text-secondary\)/);
+});
+
 describe('v2 board on a phone (TASK-576)', () => {
   test('the board head wraps so the title keeps a full-width row above the actions', () => {
     const css = read('../v2.css');
