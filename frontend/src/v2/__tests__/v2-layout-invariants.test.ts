@@ -1374,16 +1374,25 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-first-run')).toContain('overflow-y: auto');
   });
 
-  test('the first-run setup CTA beats the global inherited anchor color with ink', () => {
+  test('the first-run setup CTA beats the global inherited anchor color with its own', () => {
     // `.v2-root a { color: inherit }` outranks a bare class selector. The
     // first browser pass rendered inherited text on the filled CTA until this
     // compound selector matched/exceeded the reset specificity.
-    const rule = ruleBody(
-      v2,
-      '.v2-root a.v2-first-run__setup,\n.v2-root button.v2-first-run__hello',
-    );
-    expect(rule).toContain('background: var(--v2-ink)');
-    expect(rule).toContain('color: var(--v2-on-ink)');
+    // The shared key rule lists the anchor on its second line, so read its own, later block.
+    expect(lastRuleBody(v2, '.v2-root a.v2-first-run__setup')).toContain('color: var(--v2-text-primary)');
+    expect(lastRuleBody(v2, '.v2-root a.v2-first-run__setup')).toContain('linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b))');
+    expect(ruleBody(v2, '.v2-root button.v2-first-run__hello')).toContain('color: var(--v2-on-fill)');
+  });
+
+  test('the first-run dialog is a bottom sheet on a phone, its waiting dot still under reduced motion', () => {
+    // D215 phone: the dialog sits on the bottom edge with 44px touch targets.
+    const phone = mediaBlockContaining(v2, '.v2-first-run__overlay {');
+    expect(ruleBody(v2, '.v2-first-run__overlay', { within: phone })).toContain('place-items: end center');
+    expect(ruleBody(v2, '.v2-root button.v2-first-run__skip', { within: phone })).toContain('height: 44px');
+    expect(phone).toMatch(/\.v2-root a\.v2-first-run__setup,\n\s+\.v2-root button\.v2-first-run__hello \{\s+height: 44px;/);
+    expect(ruleBody(v2, '.v2-first-run__title')).toContain('text-wrap: balance');
+    expect(ruleBody(v2, '.v2-first-run__dot::after')).toContain('animation: v2-presence-pulse');
+    expect(v2).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s+\.v2-first-run__dot::after \{ animation: none; \}/);
   });
 
   test('Settings is the one home for the folded self-profile and device routes', () => {
@@ -2270,7 +2279,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   describe('Signal chat + inspector color contract (TASK-124)', () => {
     // The composer's send and mode buttons left with the old composer (TASK-758).
     const filledControls = [
-      '.v2-root button.v2-first-run__hello',
+      // The first-run hello takes the Signal fill, the ink gradient (D215 keys).
+      '\n.v2-root button.v2-first-run__hello {',
       '.v2-syscard__cta',
       '.v2-root button.v2-approval__btn--approve',
     ];
@@ -2278,7 +2288,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     test('every ordinary filled control uses ink, never cobalt', () => {
       for (const selector of filledControls) {
         const rule = selectorRuleBody(v2, selector);
-        expect(rule).toContain('var(--v2-ink)');
+        expect(rule).toMatch(/var\(--v2-(?:ink|fill-a)\)/);
         expect(rule).not.toContain('var(--v2-accent)');
       }
     });

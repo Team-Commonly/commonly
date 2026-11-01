@@ -5,9 +5,9 @@ import { useNavigate } from 'react-router-dom';
 import { useV2Api } from '../hooks/useV2Api';
 import { useTranslation } from 'react-i18next';
 import { FIRST_RUN_REOPEN_EVENT, FIRST_RUN_STARTED_KEY } from '../firstRunGuide';
+import { ShellGlyph } from '../icons/glyphs';
 
 const POLL_INTERVAL_MS = 3_000;
-const CHECK_MARK = '✓';
 const EXTERNAL_LINK_MARK = '↗';
 export { FIRST_RUN_STARTED_KEY } from '../firstRunGuide';
 
@@ -48,7 +48,7 @@ const writeFlag = (key: string, value: boolean): void => {
 
 const StepMark: React.FC<{ done: boolean; children: React.ReactNode }> = ({ done, children }) => (
   <span className={`v2-first-run__step-mark${done ? ' v2-first-run__step-mark--done' : ''}`} aria-hidden="true">
-    {done ? CHECK_MARK : children}
+    {done ? <ShellGlyph name="check" /> : children}
   </span>
 );
 
@@ -281,11 +281,13 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
           <li className="v2-first-run__step">
             <StepMark done={Boolean(status?.connected)}>2</StepMark>
             <div className="v2-first-run__step-body">
-              <strong>{status?.connected ? t('firstRun.steps.start.connected') : t('firstRun.steps.start.title')}</strong>
-              <span className={status?.connected ? 'v2-first-run__connected' : ''} role="status" aria-live="polite">
-                {status?.connected ? t('firstRun.steps.start.connectedStatus') : t('firstRun.steps.start.waiting')}
+              <strong>{t('firstRun.steps.start.title')}</strong>
+              <span className={status?.connected ? 'v2-first-run__connected' : 'v2-first-run__waiting'} role="status" aria-live="polite">
+                {status?.connected
+                  ? <><ShellGlyph name="check" />{t('firstRun.steps.start.connected')}</>
+                  : <><span className="v2-first-run__dot" aria-hidden="true" />{t('firstRun.steps.start.waiting')}</>}
               </span>
-              {statusError && <span className="v2-first-run__error">{statusError}</span>}
+              {statusError && <span className="v2-first-run__error"><ShellGlyph name="alert" />{statusError}</span>}
             </div>
           </li>
 
@@ -294,17 +296,18 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
             <div className="v2-first-run__step-body">
               <strong>{t('firstRun.steps.hello.title')}</strong>
               <span>{t('firstRun.steps.hello.text')}</span>
-              {status?.connected && status.connectedAgent && (
-                <button
-                  type="button"
-                  className="v2-first-run__hello"
-                  onClick={sayHello}
-                  disabled={openingRoom}
-                >
-                  {openingRoom ? t('firstRun.steps.hello.opening') : t('firstRun.steps.hello.cta')}
-                </button>
-              )}
-              {roomError && <span className="v2-first-run__error">{roomError}</span>}
+              {/* Shown before the agent connects, disabled, so the last step
+                  reads as one click away (D215 waiting frame). */}
+              <button
+                type="button"
+                className="v2-first-run__hello"
+                onClick={sayHello}
+                disabled={openingRoom || !(status?.connected && status.connectedAgent)}
+                aria-busy={openingRoom || undefined}
+              >
+                {openingRoom ? t('firstRun.steps.hello.opening') : t('firstRun.steps.hello.cta')}
+              </button>
+              {roomError && <span className="v2-first-run__error" role="alert"><ShellGlyph name="alert" />{roomError}</span>}
             </div>
           </li>
         </ol>

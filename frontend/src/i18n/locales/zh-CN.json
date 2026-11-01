@@ -520,7 +520,6 @@
       "start": {
         "title": "启动智能体",
         "connected": "已连接",
-        "connectedStatus": "✓ 已连接",
         "waiting": "正在等待智能体连接…"
       },
       "hello": {

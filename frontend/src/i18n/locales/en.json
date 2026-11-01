@@ -520,7 +520,6 @@
       "start": {
         "title": "Start your agent",
         "connected": "Connected",
-        "connectedStatus": "✓ Connected",
         "waiting": "Waiting for your agent to connect…"
       },
       "hello": {
