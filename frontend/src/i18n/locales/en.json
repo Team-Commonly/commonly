@@ -1405,7 +1405,12 @@
       "allFiles": "All {{count}} files",
       "agents": "Agents",
       "files": "Files",
-      "joinOpen": "Open"
+      "joinOpen": "Open",
+      "viewLabel": "Panel view",
+      "viewPod": "Pod",
+      "viewThreads": "Threads",
+      "hidePanel": "Hide panel",
+      "noThreads": "No threads in the loaded messages."
     },
     "goal": {
       "title": "Goal",

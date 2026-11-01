@@ -1845,15 +1845,17 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   attachFileRef.current = handleAttachFile;
 
   const starterPrompts = STARTER_PROMPT_KEYS.map((key) => t(key));
-  // Header meta (direction C): members · agents · board N open · bound
-  // channels. The agents-working count left the header for the inspector.
+  // Header meta (D215, TASK-734): board chip, three member faces and "+N",
+  // then bound channels. The counts moved into the faces' label.
   const humanMemberCount = (members || []).filter((member) => !member?.isBot).length;
   const memberCountText = t('podChat.header.members', { count: humanMemberCount });
   const agentCountText = t('podChat.header.agents', { count: agents.length });
-  const metaParts: React.ReactNode[] = [
-    <span key="members">{memberCountText}</span>,
-    <span key="agents">{agentCountText}</span>,
-  ];
+  const faceMembers = [...(members || [])]
+    .sort((a, b) => Number(Boolean(a?.isBot)) - Number(Boolean(b?.isBot)))
+    .slice(0, 3);
+  const moreMembers = Math.max(0, (members || []).length - faceMembers.length);
+  const facesLabel = `${memberCountText}, ${agentCountText}`;
+  const metaParts: React.ReactNode[] = [];
   // D215: the board is a chip with a glyph and the count, a status and a door at once.
   const boardLabel = headerMeta.boardOpen !== null ? t('podChat.header.boardOpen', { count: headerMeta.boardOpen }) : '';
   const boardChip = (compact: boolean) => (
@@ -1871,6 +1873,26 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   );
   if (headerMeta.boardOpen !== null) {
     metaParts.push(boardChip(false));
+  }
+  if (faceMembers.length > 0) {
+    metaParts.push(
+      <span key="faces" className="v2-pod-header__faces" role="img" aria-label={facesLabel} title={facesLabel}>
+        <span className="v2-pod-header__stack" aria-hidden="true">
+          {faceMembers.map((member, index) => (
+            <V2Avatar
+              key={member?._id || member?.username || index}
+              name={member?.botMetadata?.displayName || member?.username || ''}
+              src={member?.profilePicture || undefined}
+              size="sm"
+              tone="flat"
+              kind={member?.isBot ? 'agent' : 'human'}
+              seed={member?._id || member?.username || undefined}
+            />
+          ))}
+        </span>
+        {moreMembers > 0 && <span className="v2-pod-header__more" aria-hidden="true">+{moreMembers}</span>}
+      </span>,
+    );
   }
   headerMeta.channels.forEach((channel) => {
     metaParts.push(<span key={`channel-${channel}`} className="v2-pod-header__channel">{channel}</span>);
@@ -1926,24 +1948,15 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                 {pod.description && <V2Hint label={t('podChat.header.aboutPod')}>{pod.description}</V2Hint>}
               </div>
             </div>
-            {/* The phone line carries the board link and the member count, the
-                same two facts the desktop meta leads with (TASK-647 item 3). */}
-            <span className="v2-pod-header__meta v2-pod-header__meta--compact">
-              {headerMeta.boardOpen !== null && (
-                <>
-                  {boardChip(true)}
-                  <span className="v2-pod-header__sep" aria-hidden="true">·</span>
-                </>
-              )}
-              <span>{memberCountText}</span>
-            </span>
+            {/* The phone head carries the board chip alone (D215 phone frame);
+                the member faces live in the panel there. */}
+            {headerMeta.boardOpen !== null && (
+              <span className="v2-pod-header__meta v2-pod-header__meta--compact">
+                {boardChip(true)}
+              </span>
+            )}
             <span className="v2-pod-header__meta">
-              {metaParts.map((part, index) => (
-                <React.Fragment key={index}>
-                  {index > 0 && <span className="v2-pod-header__sep" aria-hidden="true">·</span>}
-                  {part}
-                </React.Fragment>
-              ))}
+              {metaParts}
             </span>
             {/* TASK-702: the invite lived only in the inspector, where nobody
                 looked. Members see it here; onOpenInvite is already absent
@@ -1960,14 +1973,16 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                 <span>{t('podChat.header.invite')}</span>
               </button>
             )}
-            {onToggleInspector && (
+            {/* D215: the open panel carries its own Hide button, so the
+                header offers the toggle only while the panel is hidden. */}
+            {onToggleInspector && inspectorCollapsed && (
               <button
                 type="button"
-                className={`v2-thread__inspector-toggle${inspectorCollapsed ? '' : ' v2-thread__inspector-toggle--active'}`}
+                className="v2-thread__inspector-toggle"
                 onClick={onToggleInspector}
-                title={inspectorCollapsed ? t('podChat.team.view') : t('podChat.team.hide')}
-                aria-label={inspectorCollapsed ? t('podChat.team.view') : t('podChat.team.hide')}
-                aria-pressed={!inspectorCollapsed}
+                title={t('podChat.team.view')}
+                aria-label={t('podChat.team.view')}
+                aria-pressed={false}
               >
                 <ViewSidebarOutlinedIcon fontSize="small" aria-hidden="true" />
               </button>

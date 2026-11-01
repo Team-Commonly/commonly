@@ -1400,7 +1400,12 @@
       "allFiles": "全部{{count}}个文件",
       "agents": "智能体",
       "files": "文件",
-      "joinOpen": "开放"
+      "joinOpen": "开放",
+      "viewLabel": "面板视图",
+      "viewPod": "Pod",
+      "viewThreads": "话题",
+      "hidePanel": "收起面板",
+      "noThreads": "已加载的消息里没有话题。"
     },
     "goal": {
       "title": "目标",

@@ -586,11 +586,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('grouped messages keep the avatar column so text never shifts (craft audit rule 3)', () => {
     // Consecutive same-author messages within the grouping window drop the
-    // header row; the ghost cell must match the artboard's 28px avatar
+    // header row; the ghost cell must match the D215 artboard's 36px avatar
     // column or grouped text mis-aligns with headed text by exactly the
     // avatar width — a defect jsdom cannot see.
-    expect(ruleBody(v2, '.v2-thread .v2-msg')).toContain('grid-template-columns: 28px');
-    expect(ruleBody(v2, '.v2-thread .v2-msg__avatar-ghost')).toContain('width: 28px');
+    expect(ruleBody(v2, '.v2-thread .v2-msg')).toContain('grid-template-columns: 36px');
+    expect(ruleBody(v2, '.v2-thread .v2-msg__avatar-ghost')).toContain('width: 36px');
+    expect(ruleBody(v2, '.v2-msg__gutter-time')).toContain('width: 36px');
+    // The typing line is not a message row; its faces stay small.
+    expect(ruleBody(v2, '.v2-thread .v2-chat__typing-avatars .v2-avatar')).toContain('width: 20px');
+    // The phone hides the panel's Hide key. It also carries .v2-icon-button,
+    // whose later display rule ties a one-class selector, so the hide rule
+    // must name both classes or it never applies.
+    expect(mediaBlockContaining(v2, '.v2-workspace-inspector__hide')).toMatch(/\.v2-root button\.v2-icon-button\.v2-workspace-inspector__hide \{ display: none; \}/);
     expect(v2).toContain('.v2-msg--grouped');
   });
 
@@ -992,9 +999,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // of rows and recreates the v1 island.
     expect(ruleBody(v2, '.v2-chat__messages > *')).toContain('width: 100%');
     expect(ruleBody(v2, '.v2-chat__messages > *')).toContain('margin-inline: 0');
-    expect(ruleBody(v2, '.v2-composer')).toContain('border: 1px solid var(--v2-border)');
-    // Direction C: the identity line is gone; the plus and Send sit inside the one bordered row.
-    expect(ruleBody(v2, '.v2-root button.v2-composer__plus')).toContain('border: 1px solid var(--v2-border)');
+    // D215 (TASK-734): the composer is a floating card on the pop shadow, so
+    // no border draws its edge; the plus is a ghost key inside it.
+    expect(ruleBody(v2, '.v2-composer')).toContain('border: 0');
+    expect(ruleBody(v2, '.v2-composer')).toContain('box-shadow: var(--v2-shadow-pop');
+    expect(ruleBody(v2, '.v2-root button.v2-composer__plus')).toContain('border: 1px solid transparent');
     // Nothing in the column may escape the shared edge (2026-08-23:
     // mentions and threads sat off-grid while messages aligned).
     // Mentions: the wash bleed must equal the padding (the old -12px against
@@ -1006,11 +1015,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       .toContain('width: calc(100% + 20px)');
     // Threads (ux-lead 64476 (2)): the ROOT now renders inside the block, so
     // the block itself is a full-width child like any message and the INDENT
-    // moved to the inner wrap (chip + rail at the text column, 28px avatar +
-    // 8px gap).
+    // moved to the inner wrap (chip + rail at the text column, 36px avatar +
+    // 12px gap, D215).
     const block = ruleBody(v2, '.v2-thread-block');
     expect(block).toContain('width: 100%');
-    expect(ruleBody(v2, '.v2-thread .v2-thread-block__inner')).toContain('margin-left: 36px');
+    expect(ruleBody(v2, '.v2-thread .v2-thread-block__inner')).toContain('margin-left: 48px');
     // Indent + width must still sum to 100%: an indented child that ALSO
     // carried width:100% pushed every thread past the pane's right edge and
     // made the transcript horizontally swipeable (2026-08-24; 350 vs
@@ -1164,8 +1173,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const rule = ruleBody(v2, '.v2-system-action-line');
     expect(rule).toContain('display: grid');
     expect(rule).toContain('grid-template-columns: 16px minmax(0, max-content) auto minmax(0, 1fr) auto');
-    expect(rule).toContain('margin-left: 36px');
-    expect(rule).toContain('width: calc(100% - 36px)');
+    expect(rule).toContain('margin-left: 48px');
+    expect(rule).toContain('width: calc(100% - 48px)');
     expect(ruleBody(v2, '.v2-thread .v2-system-action-line .v2-avatar')).toContain('width: 16px');
     expect(ruleBody(v2, '.v2-system-action-line__action')).toContain('grid-column: 3;');
     expect(ruleBody(v2, '.v2-system-action-line time')).toContain('grid-column: 5');
@@ -1417,14 +1426,17 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(podBoard).not.toContain('+ {t(\'board.newTask\')}');
   });
 
-  test('the composer is one line with a 24px plus menu and a 28px ink Send that exists only with text (direction C PR 2a)', () => {
-    expect(lastRuleBody(v2, '.v2-composer__row')).toContain('min-height: 42px');
-    expect(ruleBody(v2, '.v2-root button.v2-composer__plus')).toContain('width: 24px');
-    expect(ruleBody(v2, '.v2-root button.v2-composer__plus')).toContain('border-radius: 4px');
+  test('the composer is one line with a 32px plus menu and a 32px ink Send that exists only with text (D215, TASK-734)', () => {
+    expect(lastRuleBody(v2, '.v2-composer__row')).toContain('min-height: 52px');
+    expect(ruleBody(v2, '.v2-composer')).toContain('border-radius: var(--v2-r-14, 14px)');
+    expect(ruleBody(v2, '.v2-root button.v2-composer__plus')).toContain('width: 32px');
+    expect(ruleBody(v2, '.v2-root button.v2-composer__plus')).toContain('border-radius: var(--v2-r-8, 8px)');
+    // The menu opens above the 32px plus, not over it.
+    expect(ruleBody(v2, '.v2-composer__menu')).toContain('bottom: 40px');
     expect(lastRuleBody(v2, '.v2-root .v2-composer__field > textarea')).toContain('max-height: 112px');
     expect(lastRuleBody(v2, '.v2-root .v2-composer__field > textarea')).toContain('resize: none');
-    expect(lastRuleBody(v2, '.v2-root button.v2-composer__send')).toContain('width: 28px');
-    expect(lastRuleBody(v2, '.v2-root button.v2-composer__send')).toContain('background: var(--v2-ink)');
+    expect(lastRuleBody(v2, '.v2-root button.v2-composer__send')).toContain('width: 32px');
+    expect(lastRuleBody(v2, '.v2-root button.v2-composer__send')).toContain('background: linear-gradient(180deg, var(--v2-fill-a, var(--v2-ink)), var(--v2-fill-b, var(--v2-ink)))');
     expect(composer).toContain('{hasText && (');
     expect(composer).toContain("role=\"menu\"");
     expect(composer).not.toContain('postsAs');
@@ -1444,7 +1456,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('threading restyle (PR 2b): runtime tag, 20px reaction chips, two-line quote, thread chip, band, strip, white jump pill', () => {
-    expect(ruleBody(v2, '.v2-msg__tag')).toContain('font: 500 11px/16px var(--v2-font-mono)');
+    // D215: the runtime is plain mono joined to the time, "claude · 1:16 AM".
+    expect(ruleBody(v2, '.v2-msg__tag')).toContain('font: 500 11.5px/16px var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-msg__tag')).not.toContain('background');
+    expect(ruleBody(v2, '.v2-msg__tag + .v2-msg__time::before')).toContain("content: '· '");
     expect(ruleBody(v2, '.v2-thread .v2-msg__reaction')).toContain('height: 20px');
     expect(ruleBody(v2, '.v2-thread .v2-msg__quote')).toContain('border-left: 2px solid var(--v2-border)');
     expect(ruleBody(v2, '.v2-thread .v2-msg__quote-text')).toContain('-webkit-line-clamp: 2');
@@ -1615,16 +1630,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(status).not.toContain('box-shadow');
   });
 
-  test('the pod header is 50px: sans 15/600 name, inline description, mono meta — the working count moved to the inspector', () => {
-    // Walk-1 ruling (b) reverses the Main artboard's Bricolage 22px: a pod is
-    // a conversation, not a page. The display face stays on page titles.
+  test('the pod header is 64px: display 18/700 name, inline description, board chip and member faces (D215, TASK-734)', () => {
+    // D215 brings the display face back to the pod title (walk-1 ruling (b)
+    // had moved it to sans 15/600); the working count stays in the inspector.
     expect(podChat).toContain('className="v2-thread__header v2-pod-header"');
     expect(podChat).toContain('podChat.header.boardOpen');
     expect(podChat).toContain('v2-thread__inspector-toggle');
+    expect(podChat).toContain('v2-pod-header__stack');
     expect(podChat).not.toContain('podChat.header.agentsWorking');
-    expect(ruleBody(v2, '.v2-thread__header')).toContain('min-height: 50px');
+    expect(ruleBody(v2, '.v2-thread__header')).toContain('min-height: 64px');
     expect(ruleBody(v2, '.v2-thread__header')).toContain('border-bottom: 1px solid var(--v2-border-soft)');
-    expect(ruleBody(v2, '.v2-thread__title h1')).toContain('font: 600 15px/20px var(--v2-font)');
+    expect(ruleBody(v2, '.v2-thread__title h1')).toContain('font: 700 18px/24px var(--v2-font-display)');
+    // Faces overlap by 6px on a 2px surface ring, the artboard's stack.
+    expect(ruleBody(v2, '.v2-thread .v2-pod-header__stack .v2-avatar + .v2-avatar')).toContain('margin-left: -6px');
     expect(ruleBody(v2, '.v2-pod-header__meta')).toContain('font: 400 11px/16px var(--v2-font-mono)');
     // Both metas carry the base class; the compact one must out-rank the base
     // `display: flex` or 1440 shows two metas side by side (ux-lead, 2026-09-06).
@@ -1636,7 +1654,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(compactMeta).toBeGreaterThan(baseMeta);
     // TASK-647 item 3: the phone line keeps the board link, with a 44px hit
     // area drawn as a pseudo-element so the 28px meta row does not grow.
-    expect(ruleBody(v2, 'button.v2-pod-header__board--compact::before')).toContain('inset: -14px -10px');
+    expect(ruleBody(v2, 'button.v2-pod-header__board--compact::before')).toContain('inset: -14px -6px');
     expect(ruleBody(v2, '.v2-thread__title-line > h1')).toContain('max-width: calc(100% - 36px)');
     expect(v2).not.toContain('.v2-thread__working');
   });
@@ -1657,15 +1675,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const author = selectorRuleBody(v2, '.v2-thread .v2-msg__author');
     const time = ruleBody(v2, '.v2-thread .v2-msg__time');
     const actions = ruleBody(v2, '.v2-thread .v2-msg__actions');
-    expect(title).toContain('var(--v2-font)');
-    expect(title).not.toContain('var(--v2-font-display)');
-    expect(avatarRule).toContain('width: 28px');
-    expect(avatarRule).toContain('border-radius: 4px');
+    // D215 (TASK-734): display title, 36px faces at radius 9 on a 1px ring,
+    // and the time in the 11.5 mono the runtime label shares.
+    expect(title).toContain('var(--v2-font-display)');
+    expect(avatarRule).toContain('width: 36px');
+    expect(avatarRule).toContain('border-radius: var(--v2-r-9, 9px)');
     expect(avatarRule).toContain('border: 0');
-    expect(avatarRule).toContain('box-shadow: none');
+    expect(avatarRule).toContain('box-shadow: 0 0 0 1px var(--v2-av-ring');
     expect(author).toContain('font-size: 14px');
     expect(author).toContain('font-weight: 600');
-    expect(time).toContain('font: 500 12px/16px var(--v2-font-mono)');
+    expect(time).toContain('font: 500 11.5px/16px var(--v2-font-mono)');
     expect(actions).toContain('border-radius: 4px');
     expect(actions).toContain('box-shadow: none');
     // These scoped rules only take effect when the chat mounts the thread
@@ -2868,14 +2887,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
         v2.indexOf('.v2-chat__delivery-hint,\n.v2-chat__no-agents,\n.v2-chat__starts {'),
         v2.indexOf('}', v2.indexOf('.v2-chat__delivery-hint,\n.v2-chat__no-agents,\n.v2-chat__starts {')),
       );
-      expect(slot).toContain('margin: -4px 0 8px 36px');
-      expect(slot).toContain('width: calc(100% - 36px)');
+      expect(slot).toContain('margin: -4px 0 8px 48px');
+      expect(slot).toContain('width: calc(100% - 48px)');
       // Their box is declared exactly once in the sheet — the shared slot — so
       // there is no second copy left for the cascade to pick between. The
-      // margin pair is unique to this slot; `width: calc(100% - 36px)` is not
+      // margin pair is unique to this slot; `width: calc(100% - 48px)` is not
       // asserted globally because `.v2-thread-block` carries a complement of
       // its own one indent over.
-      expect(v2.match(/margin: -4px 0 8px 36px;/g) || []).toHaveLength(1);
+      expect(v2.match(/margin: -4px 0 8px 48px;/g) || []).toHaveLength(1);
       // And neither row's own block restates a box. `ruleBody` cannot answer
       // this: it takes the FIRST line-start match, and the shared rule's second
       // selector line is itself a line-start `.v2-chat__no-agents {`, so it
@@ -2924,10 +2943,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       const threadGrid = ruleBody(v2, '.v2-thread .v2-msg');
       const lead = /grid-template-columns:\s*(\d+)px/.exec(threadGrid);
       const gap = /(?:^|\s)gap:\s*(\d+)px/.exec(threadGrid);
-      expect(lead?.[1]).toBe('28');
-      expect(gap?.[1]).toBe('8');
+      expect(lead?.[1]).toBe('36');
+      expect(gap?.[1]).toBe('12');
       const indent = `${Number(lead?.[1]) + Number(gap?.[1])}px`;
-      expect(indent).toBe('36px');
+      expect(indent).toBe('48px');
       // The base grid is deliberately NOT the target. Without this line a
       // future reader finds 38 + 12 = 50 unreferenced and "corrects" the slot
       // back to it, which is exactly how this shipped wrong the first time.
@@ -5305,7 +5324,22 @@ describe('pod board column scroll (TASK-698)', () => {
   test('the header Invite hides its label on a phone, keeping it for screen readers', () => {
     const block = mediaBlockContaining(read('../v2.css'), '.v2-pod-header__invite span');
     expect(block).toMatch(/\.v2-pod-header__invite span\s*\{[^}]*clip-path:\s*inset\(50%\)/);
-    expect(block).toMatch(/\.v2-pod-header__invite\s*\{[^}]*width:\s*28px/);
+    expect(block).toMatch(/\.v2-pod-header__invite\s*\{[^}]*width:\s*32px/);
+    // 32px keys take touches at 44px. The inset runs from the padding box,
+    // inside a 1px border, so it is -7px: 30 + 2 x 7 = 44 (-6px measured 42 in a browser).
+    const phoneHead = mediaBlockContaining(read('../v2.css'), '.v2-root button.v2-thread__back::after');
+    for (const key of ['v2-thread__back', 'v2-pod-header__invite', 'v2-thread__inspector-toggle', 'v2-composer__plus', 'v2-composer__send']) {
+      expect(phoneHead).toContain(`.v2-root button.${key}::after`);
+    }
+    expect(phoneHead).toMatch(/::after \{\s*content: '';\s*position: absolute;[^}]*inset: -7px;\s*\}/);
+    // z-index keeps every key's hit area above later positioned siblings.
+    const raised = phoneHead.match(/([^{}]*)\{ position: relative; z-index: 1; \}/);
+    expect(raised).not.toBeNull();
+    for (const key of ['v2-thread__back', 'v2-pod-header__invite', 'v2-thread__inspector-toggle', 'v2-composer__plus', 'v2-composer__send']) {
+      expect(raised![1]).toContain(`.v2-root button.${key}`);
+    }
+    // The 12px gap is what keeps neighbouring 44px areas from overlapping.
+    expect(phoneHead).toMatch(/\.v2-pod-header \.v2-thread__header-row \{[^}]*gap: 12px;/);
   });
 
   test('the board keeps three columns plus a 120px done rail, and tabs only on phones (TASK-687)', () => {
