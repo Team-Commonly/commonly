@@ -1,5 +1,6 @@
 import React from 'react';
 import './primitives.css';
+import V2SettingsFrame from './V2SettingsFrame';
 
 // TASK-730 (D223): the shared primitives rendered alone, so a surface can be
 // checked against the artboard frame without the shell around it. Served at
@@ -21,6 +22,9 @@ const V2PrimitivesPage: React.FC = () => (
         </header>
 
         <div className="v2p-body">
+          <div className="v2p-gtitle">settings frame (d215 s-settings)</div>
+          <V2SettingsFrame />
+
           <div className="v2p-gtitle">buttons</div>
           <div className="v2p-list">
             <div className="v2p-lrow">

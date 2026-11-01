@@ -347,7 +347,10 @@ details.v2p-disc > summary .vl { font-size: 13.5px; color: var(--v2-ink-2); min-
   .v2p-ph { height: auto; min-height: 52px; flex-wrap: wrap; padding: 10px 14px; row-gap: 8px; }
   .v2p-ph h1 { font-size: 20px; white-space: normal; }
   .v2p-body { padding: 16px 14px; }
-  .v2p-lrow { grid-template-columns: minmax(0, 1fr); min-height: 48px; padding: 8px 12px; }
+  .v2p-lrow { grid-template-columns: minmax(0, 1fr) auto; min-height: 48px; padding: 8px 12px; }
+  /* d215's phone frame has no value cell: the label and the action carry the row. */
+  .v2p-frame .v2p-lrow .vl, .v2p-frame details.v2p-disc > summary .vl { display: none; }
+  .v2p-frame details.v2p-disc > summary { grid-template-columns: minmax(0, 1fr) auto; }
   details.v2p-disc > summary { grid-template-columns: minmax(0, 1fr) auto auto; min-height: 48px; padding: 8px 12px; }
   .v2p-drawer:not(.v2p-drawer--inline) { width: 100%; border-radius: 0; }
   .v2p-cols { grid-template-columns: minmax(0, 1fr); }

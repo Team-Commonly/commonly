@@ -67,4 +67,23 @@ describe('D223 primitives', () => {
     expect(container.querySelector('details.v2p-disc')).not.toBeNull();
     expect(container.querySelector('details.v2p-disc svg.chev path')?.getAttribute('d')).toBe('m6 9 6 6 6-6');
   });
+
+  test('the Settings frame is built from v2p- primitives alone, in the artboard order', () => {
+    render(<V2PrimitivesPage />);
+    const frame = screen.getByTestId('v2p-settings-frame');
+    const groups = Array.from(frame.querySelectorAll('.v2p-gtitle'), (n) => n.textContent);
+    expect(groups).toEqual(['Account', 'Access', 'Look']);
+    const classes = Array.from(frame.querySelectorAll('[class]')).flatMap((n) => Array.from(n.classList));
+    expect(classes.filter((c) => c.startsWith('v2p-')).length).toBeGreaterThan(10);
+    expect(frame.querySelectorAll('details.v2p-disc')).toHaveLength(1);
+  });
+
+  test('the Settings frame fills its column to 760 and drops the value cell at 390', () => {
+    render(<V2PrimitivesPage />);
+    const frame = screen.getByTestId('v2p-settings-frame');
+    expect(frame.style.width).toBe('100%');
+    expect(frame.style.maxWidth).toBe('760px');
+    expect(css).toMatch(/\.v2p-lrow \{ grid-template-columns: minmax\(0, 1fr\) auto;/);
+    expect(css).toMatch(/\.v2p-frame \.v2p-lrow \.vl[^}]*display: none/);
+  });
 });
